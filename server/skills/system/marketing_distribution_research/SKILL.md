@@ -1,8 +1,8 @@
 ---
-name: marketing_distribution_research
+name: distribution_research
 description: Finds and evaluates public distribution channels such as directories, communities, newsletters, podcasts, launch surfaces, and partner opportunities.
 metadata:
-  title: Marketing Distribution Research
+  title: Distribution Research
   supported_runtimes:
     - native_sdk
 ---

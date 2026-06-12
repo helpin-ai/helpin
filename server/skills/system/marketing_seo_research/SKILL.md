@@ -1,8 +1,8 @@
 ---
-name: marketing_seo_research
+name: seo_research
 description: Performs source-backed SERP, topic, content-gap, comparison-page, and AI-visibility research without keyword-volume or backlink tools.
 metadata:
-  title: Marketing SEO Research
+  title: SEO Research
   supported_runtimes:
     - native_sdk
 ---

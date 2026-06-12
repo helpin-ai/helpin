@@ -2,7 +2,7 @@
 name: marketing_plan
 description: Builds practical marketing plans, growth roadmaps, campaign plans, and prioritized marketing task backlogs from Helpin context.
 metadata:
-  title: Marketing Plan
+  title: Marketing Plan Creation
   supported_runtimes:
     - native_sdk
 ---

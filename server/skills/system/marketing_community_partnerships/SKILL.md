@@ -1,8 +1,8 @@
 ---
-name: marketing_community_partnerships
+name: community_partnerships_planning
 description: Plans community-led growth, co-marketing, partner campaigns, ambassador programs, and collaboration briefs using internal context and public research.
 metadata:
-  title: Marketing Community Partnerships
+  title: Community and Partnership Planning
   supported_runtimes:
     - native_sdk
 ---

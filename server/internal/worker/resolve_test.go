@@ -75,7 +75,7 @@ func TestResolveAgentProfileAddsAvailableSkillToolsForNativeSkillAgent(t *testin
 	}
 }
 
-func TestResolveAgentProfileDoesNotAddAvailableSkillToolsForCodexAgent(t *testing.T) {
+func TestResolveAgentProfileDoesNotAddNativeAvailableSkillToolsForCodexAgent(t *testing.T) {
 	agent := &model.Agent{
 		PresetKey:   model.AgentPresetCodeBuilder,
 		RuntimeKind: "codex",
@@ -85,7 +85,7 @@ func TestResolveAgentProfileDoesNotAddAvailableSkillToolsForCodexAgent(t *testin
 
 	for _, toolName := range []string{ToolListAvailableSkills, ToolSearchAvailableSkills, ToolReadSkill} {
 		if slices.Contains(resolved.Tools, toolName) {
-			t.Fatalf("did not expect codex tools to include native skill tool %q, got %v", toolName, resolved.Tools)
+			t.Fatalf("did not expect codex tools to include native available-skill tool %q, got %v", toolName, resolved.Tools)
 		}
 	}
 }

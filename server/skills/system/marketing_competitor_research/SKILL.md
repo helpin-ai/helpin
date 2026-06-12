@@ -1,8 +1,8 @@
 ---
-name: marketing_competitor_research
+name: competitor_research
 description: Builds source-backed competitor profiles, comparison notes, battlecards, and positioning recommendations from public websites and Helpin evidence.
 metadata:
-  title: Marketing Competitor Research
+  title: Competitor Research
   supported_runtimes:
     - native_sdk
 ---

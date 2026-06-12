@@ -1,8 +1,8 @@
 ---
-name: marketing_release_marketing
+name: release_marketing
 description: Turns GitHub and release context into customer-facing launch narratives, announcement drafts, changelog copy, sales notes, and follow-up tasks.
 metadata:
-  title: Marketing Release Marketing
+  title: Release Marketing
   supported_runtimes:
     - native_sdk
 ---

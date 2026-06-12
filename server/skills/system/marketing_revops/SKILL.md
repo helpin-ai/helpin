@@ -1,8 +1,8 @@
 ---
-name: marketing_revops
+name: marketing_revops_planning
 description: Designs lead lifecycle, scoring, routing, CRM hygiene, marketing-to-sales handoff, and revenue workflow recommendations from Helpin CRM context.
 metadata:
-  title: Marketing RevOps
+  title: Marketing RevOps Planning
   supported_runtimes:
     - native_sdk
 ---

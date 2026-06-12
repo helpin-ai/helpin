@@ -1,8 +1,8 @@
 ---
-name: marketing_conversion
+name: conversion_optimization
 description: Audits conversion paths and creates CRO, signup, pricing, paywall, popup, and experiment recommendations using available Helpin context.
 metadata:
-  title: Marketing Conversion
+  title: Conversion Optimization
   supported_runtimes:
     - native_sdk
 ---

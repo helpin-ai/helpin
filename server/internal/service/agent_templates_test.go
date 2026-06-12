@@ -45,8 +45,8 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	if releaseNotes.RuntimeKind != model.AgentTemplateRuntimeKindNativeSDK {
 		t.Fatalf("expected native_sdk runtime, got %q", releaseNotes.RuntimeKind)
 	}
-	if len(releaseNotes.Skills) != 1 || releaseNotes.Skills[0].Key != model.AgentTemplateTypeReleaseNotes {
-		t.Fatalf("expected release_notes_writer skill ref, got %+v", releaseNotes.Skills)
+	if len(releaseNotes.Skills) != 1 || releaseNotes.Skills[0].Key != "release_notes_writing" {
+		t.Fatalf("expected release_notes_writing skill ref, got %+v", releaseNotes.Skills)
 	}
 	var requiredContext []string
 	if err := json.Unmarshal(releaseNotes.RequiredContext, &requiredContext); err != nil {
@@ -123,8 +123,8 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	if dependencyAuditor.Name != "Dependency Auditor" {
 		t.Fatalf("expected Dependency Auditor template name, got %q", dependencyAuditor.Name)
 	}
-	if len(dependencyAuditor.Skills) != 1 || dependencyAuditor.Skills[0].Key != model.AgentTemplateTypeDependencyAuditor {
-		t.Fatalf("expected dependency_auditor skill ref, got %+v", dependencyAuditor.Skills)
+	if len(dependencyAuditor.Skills) != 1 || dependencyAuditor.Skills[0].Key != "dependency_audit" {
+		t.Fatalf("expected dependency_audit skill ref, got %+v", dependencyAuditor.Skills)
 	}
 	if dependencyAuditor.SystemPrompt == nil || !strings.Contains(*dependencyAuditor.SystemPrompt, "{{ecosystems}}") || !strings.Contains(*dependencyAuditor.SystemPrompt, "{{raw_configuration_json}}") {
 		t.Fatalf("expected dependency template prompt placeholders, got %+v", dependencyAuditor.SystemPrompt)
@@ -157,7 +157,7 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	if sentinel.Name != "Sentinel" {
 		t.Fatalf("expected Sentinel template name, got %q", sentinel.Name)
 	}
-	if len(sentinel.Skills) != 1 || sentinel.Skills[0].Key != model.AgentTemplateTypeSecurityTriage {
+	if len(sentinel.Skills) != 1 || sentinel.Skills[0].Key != "security_triage" {
 		t.Fatalf("expected security_triage skill ref, got %+v", sentinel.Skills)
 	}
 	if sentinel.SystemPrompt == nil || !strings.Contains(*sentinel.SystemPrompt, "{{scanners}}") || !strings.Contains(*sentinel.SystemPrompt, "{{raw_configuration_json}}") {
@@ -646,7 +646,7 @@ func TestCreateAgentFromSecurityTriageTemplateCreatesCronRepositoryStarterFlow(t
 	result, err := svc.CreateAgentFromTemplate(context.Background(), "ws-test", template.ID, model.CreateAgentFromTemplateRequest{
 		CreateFlow: true,
 		Flow: &model.CreateAgentFromTemplateFlow{
-			FlowKey:      "security_triage_cron",
+			FlowKey:      "engineering_security_triage_cron",
 			FlowInput:    flowInput,
 			RepositoryID: "repo-1",
 			RepoFullName: "acme/api",
@@ -754,7 +754,7 @@ func TestCreateAgentFromSecurityTriageTemplateValidatesFlowInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := securityTriageInputFromTemplateFlow(&model.CreateAgentFromTemplateFlow{
-				FlowKey:   "security_triage_cron",
+				FlowKey:   "engineering_security_triage_cron",
 				FlowInput: tt.flowInput,
 			})
 			if err == nil || err.Error() != tt.wantError {
@@ -798,7 +798,7 @@ func TestCreateAgentFromTemplateAppliesDrawerOverrides(t *testing.T) {
 			SystemPrompt:          &systemPrompt,
 			AllowedTools:          model.JSONBlob(`["get_release_context","create_document"]`),
 			AllowedTargets:        model.JSONBlob(`["repository","workspace"]`),
-			Skills:                &model.AgentSkillRefs{{Key: "release_notes_writer"}},
+			Skills:                &model.AgentSkillRefs{{Key: "release_notes_writing"}},
 			ApprovalMode:          &approvalMode,
 			MaxConcurrentRuns:     &maxConcurrentRuns,
 			DefaultInvocationMode: &invocationMode,

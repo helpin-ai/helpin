@@ -1,8 +1,8 @@
 ---
-name: epic_state_routing
+name: epic_planning_state_routing
 description: Planning loop and next-step routing rules for Epic Planner.
 metadata:
-  title: Epic State Routing
+  title: Epic Planning State Routing
   required_tools:
     - publish_prd_draft
     - publish_task_plan

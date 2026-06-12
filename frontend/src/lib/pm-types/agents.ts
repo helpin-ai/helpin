@@ -46,6 +46,7 @@ export interface Agent {
   template_key?: string;
   template_instance_id?: string;
   template_version?: number;
+  active_version_id?: string;
   role: string;
   status: AgentStatus;
   runtime_kind: AgentRuntimeKind;
@@ -59,6 +60,7 @@ export interface Agent {
   tools: unknown[];
   monthly_token_budget?: number;
   tokens_used_this_month: number;
+  tokens_used_total?: number;
   active_task_id?: string;
   team_id?: string;
   team_ids?: string[];
@@ -135,6 +137,7 @@ export interface AgentRun {
   workflow_run_id?: string;
   task_queue?: string;
   runner_pool?: string;
+  agent_version_id?: string;
   repository_id?: string;
   repo_full_name?: string;
   base_branch?: string;
@@ -161,6 +164,21 @@ export interface AgentRunTarget {
   target_id: string;
   title?: string;
   task_key?: string;
+}
+
+export interface AgentAnalyticsPoint {
+  period: string;
+  runs: number;
+  completed: number;
+  failed: number;
+  needs_attention: number;
+  tokens: number;
+}
+
+export interface AgentAnalyticsResponse {
+  range: '7d' | '30d' | '90d' | '12m';
+  bucket: 'day' | 'month';
+  series: AgentAnalyticsPoint[];
 }
 
 export interface AgentRunMessage {
@@ -753,6 +771,61 @@ export interface UpdateAgentRequest {
   default_invocation_mode?: AgentInvocationMode;
 }
 
+export interface AgentVersion {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  version_key: string;
+  label: string;
+  description?: string;
+  runtime_kind: AgentRuntimeKind;
+  provider?: AgentModelProvider;
+  model?: string;
+  execution_config?: AgentExecutionConfig;
+  system_prompt?: string;
+  skills: AgentSkillRef[];
+  allowed_tools: string[];
+  allowed_targets: AgentTargetType[];
+  supported_modes: AgentInvocationMode[];
+  default_invocation_mode: AgentInvocationMode;
+  created_by?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateAgentVersionRequest {
+  label: string;
+  description?: string;
+  source_version_id?: string;
+  runtime_kind?: AgentRuntimeKind;
+  provider?: AgentModelProvider;
+  model?: string;
+  execution_config?: AgentExecutionConfig;
+  system_prompt?: string;
+  skills?: AgentSkillRef[];
+  allowed_tools?: string[];
+  allowed_targets?: AgentTargetType[];
+  supported_modes?: AgentInvocationMode[];
+  default_invocation_mode?: AgentInvocationMode;
+}
+
+export interface UpdateAgentVersionRequest {
+  label?: string;
+  description?: string;
+  runtime_kind?: AgentRuntimeKind;
+  provider?: AgentModelProvider;
+  model?: string;
+  execution_config?: AgentExecutionConfig;
+  system_prompt?: string;
+  skills?: AgentSkillRef[];
+  allowed_tools?: string[];
+  allowed_targets?: AgentTargetType[];
+  supported_modes?: AgentInvocationMode[];
+  default_invocation_mode?: AgentInvocationMode;
+}
+
 export interface ApproveAgentRunRequest {
   content?: string;
   send_message?: boolean;
@@ -796,6 +869,8 @@ export interface AgentPresetDefinition {
   instruction_preamble?: string;
   instruction_skills?: string[];
   instruction_template_version?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface CreateWorkspaceAgentPresetVersionRequest {
@@ -812,6 +887,7 @@ export interface CreateWorkspaceAgentPresetVersionRequest {
   instruction_preamble?: string;
   instruction_skills?: string[];
   allowed_tools?: string[];
+  allowed_targets?: AgentTargetType[];
   supported_modes?: AgentInvocationMode[];
   approval_mode?: AgentApprovalMode;
   default_invocation_mode?: AgentInvocationMode;
@@ -828,6 +904,7 @@ export interface UpdateWorkspaceAgentPresetVersionRequest {
   instruction_preamble?: string;
   instruction_skills?: string[];
   allowed_tools?: string[];
+  allowed_targets?: AgentTargetType[];
   supported_modes?: AgentInvocationMode[];
   default_invocation_mode?: AgentInvocationMode;
 }

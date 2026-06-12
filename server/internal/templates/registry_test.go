@@ -158,15 +158,15 @@ func TestEmbeddedSystemRegistryLoads(t *testing.T) {
 		"api_docs_freshness_sweep",
 		"buying_signal_to_task",
 		"competitive_intelligence_digest",
-		"dependency_auditor",
 		"docs_freshness_sweep",
+		"engineering_dependency_auditor",
+		"engineering_security_triage",
 		"merge_when_done",
 		"public_help_freshness_sweep",
 		"release_notes_writer",
 		"review_merged_prs",
 		"run_on_a_schedule",
 		"run_on_release",
-		"security_triage",
 		"stale_task_escalation",
 		"triage_failing_checks",
 	}
@@ -183,11 +183,11 @@ func TestEmbeddedReportTemplatesUseStandardTitlePattern(t *testing.T) {
 	reportTemplates := []string{
 		"api_docs_freshness_sweep",
 		"competitive_intelligence_digest",
-		"dependency_auditor",
+		"engineering_dependency_auditor",
 		"docs_freshness_sweep",
 		"public_help_freshness_sweep",
 		"review_merged_prs",
-		"security_triage",
+		"engineering_security_triage",
 		"triage_failing_checks",
 	}
 	for _, key := range reportTemplates {

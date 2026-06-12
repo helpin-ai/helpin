@@ -1,8 +1,8 @@
 ---
-name: marketing_monetization
+name: monetization_strategy
 description: Creates pricing, packaging, upgrade, paywall, retention, and win-back recommendations from product, CRM, and customer context.
 metadata:
-  title: Marketing Monetization
+  title: Monetization Strategy
   supported_runtimes:
     - native_sdk
 ---

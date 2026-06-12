@@ -1,8 +1,8 @@
 ---
-name: docs_information_architecture
-description: Organizing docs into coherent spaces, collections, subcollections, names, links, and navigation.
+name: docs_architecture_review
+description: Reviews and improves documentation structure, naming, placement, links, and navigation.
 metadata:
-  title: Docs Information Architecture
+  title: Docs Architecture Review
   supported_runtimes:
     - native_sdk
 ---

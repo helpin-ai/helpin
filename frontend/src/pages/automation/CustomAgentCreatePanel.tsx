@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WorkspaceTeam } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
-import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
+import { AGENT_RUNTIME_HELP_TEXT, AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { HelpCircleIcon } from '@/lib/icons';
 import {
   Command,
@@ -30,7 +30,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import type {
-  AgentApprovalMode,
   AgentInvocationMode,
   AgentModelProvider,
   AgentModelProviderOption,
@@ -379,10 +378,13 @@ export function CustomAgentCreatePanel({
   return (
     <TooltipProvider>
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-b border-border/60 px-6 py-4 pr-14">
+      <div className="border-b border-border/60 bg-muted/20 py-4 pl-6 pr-14">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">{isEditMode ? 'Edit Custom Agent' : 'Create Custom Agent'}</h2>
+            <h2 className="text-lg font-semibold">{isEditMode ? (form.name.trim() || 'Custom Agent') : 'Create Custom Agent'}</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {isEditMode ? 'Custom agent' : 'Define a reusable workspace agent'}
+            </p>
           </div>
           {actionControls}
         </div>
@@ -731,33 +733,40 @@ export function CustomAgentCreatePanel({
           <section className="space-y-3 rounded-lg border border-border bg-card p-4">
             <div>
               <span className="flex items-center gap-1.5 text-sm font-semibold">
-                Run approval
+                Run mode
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="rounded-sm text-muted-foreground/70 hover:text-foreground" aria-label="Run approval help">
+                    <span className="rounded-sm text-muted-foreground/70 hover:text-foreground" aria-label="Run mode help">
                       <HelpCircleIcon className="h-3.5 w-3.5" />
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-64 text-xs leading-relaxed">
-                    Controls the initial approval gate for each agent run. Tool-requested checkpoints still appear separately during a run.
+                    Autonomous runs work in the background. Interactive runs can ask follow-up questions during execution.
                   </TooltipContent>
                 </Tooltip>
               </span>
             </div>
             <div className="block max-w-sm border-t border-border pt-3">
               <Select
-                value={form.approval_mode}
-                onValueChange={(value) => update({ approval_mode: value as AgentApprovalMode })}
+                value={form.default_invocation_mode}
+                onValueChange={(value) => update({ default_invocation_mode: value as AgentInvocationMode })}
               >
-                <SelectTrigger className="h-9" aria-label="Run approval">
+                <SelectTrigger className="h-9" aria-label="Run mode">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="always">Require approval before each run</SelectItem>
-                  <SelectItem value="never">Start runs automatically</SelectItem>
-                  <SelectItem value="preset_default">Use runtime default</SelectItem>
+                  {supportedModes.map((mode) => (
+                    <SelectItem key={mode} value={mode}>
+                      {INVOCATION_MODE_LABELS[mode]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {form.default_invocation_mode === 'interactive'
+                  ? 'Can ask follow-up questions or request approval.'
+                  : 'Runs autonomously end-to-end.'}
+              </p>
             </div>
           </section>
 
@@ -789,21 +798,9 @@ export function CustomAgentCreatePanel({
                           ))}
                         </SelectContent>
                       </Select>
-                    </label>
-                    <label className="block space-y-2">
-                      <FieldLabel tooltip="Autonomous runs work in the background. Interactive runs can ask follow-up questions during execution.">Run mode</FieldLabel>
-                      <Select value={form.default_invocation_mode} onValueChange={(value) => update({ default_invocation_mode: value as AgentInvocationMode })}>
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {supportedModes.map((mode) => (
-                            <SelectItem key={mode} value={mode}>
-                              {INVOCATION_MODE_LABELS[mode]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <p className="text-[11px] leading-relaxed text-muted-foreground">
+                        {AGENT_RUNTIME_HELP_TEXT[form.runtime_kind]}
+                      </p>
                     </label>
                     <label className="block space-y-2">
                       <FieldLabel tooltip="The AI service that powers this agent. The list only includes providers configured for this workspace/server.">AI Provider</FieldLabel>

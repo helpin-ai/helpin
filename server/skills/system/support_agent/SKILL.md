@@ -1,8 +1,8 @@
 ---
-name: support_agent
-description: Support reply drafting and conversation-triage guidance.
+name: support_triage_response
+description: Support conversation triage and grounded customer response drafting.
 metadata:
-  title: Support Agent
+  title: Support Triage and Response
   supported_runtimes:
     - native_sdk
 ---

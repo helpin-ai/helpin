@@ -106,6 +106,12 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 	if skillInstructions != "" {
 		parts = append(parts, skillInstructions)
 	}
+	if !options.IncludeResolvedSkillText {
+		if guidance := availableSkillAccessGuidance(agent, toolSet); guidance != "" {
+			parts = append(parts, "\n## Available Skills")
+			parts = append(parts, guidance)
+		}
+	}
 
 	if options.IncludeTargetContext {
 		// Story context.
@@ -165,7 +171,7 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 			}
 			parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_task_plan, or publish_task_plan_doc.")
 		}
-		if toolSet["list_available_skills"] || toolSet["search_available_skills"] || toolSet["read_skill"] {
+		if options.IncludeResolvedSkillText && (toolSet["list_available_skills"] || toolSet["search_available_skills"] || toolSet["read_skill"]) {
 			parts = append(parts, "- Use list_available_skills or search_available_skills when specialized workflow guidance would materially improve the task, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default.")
 		}
 	}
@@ -186,6 +192,16 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 	parts = append(parts, "- Leave Helpin artifacts and summaries in a state a human can review.")
 
 	return strings.Join(parts, "\n")
+}
+
+func availableSkillAccessGuidance(agent *model.Agent, toolSet map[string]bool) string {
+	if !agentHasAvailableSkills(agent) {
+		return ""
+	}
+	if toolSet["list_available_skills"] || toolSet["search_available_skills"] || toolSet["read_skill"] {
+		return "Use list_available_skills or search_available_skills when specialized workflow guidance would materially improve the task, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default."
+	}
+	return "This agent has available skills for specialized workflow guidance. Use the runtime's available skill mechanism to inspect only the specific skill instructions the task needs. Do not load every available skill by default."
 }
 
 // BuildUserPrompt creates the initial user message for the run.

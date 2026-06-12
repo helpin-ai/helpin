@@ -1,8 +1,8 @@
 ---
-name: marketing_lifecycle
+name: lifecycle_messaging
 description: Designs lifecycle messaging, onboarding, activation, retention, churn-prevention, nurture, and win-back sequences.
 metadata:
-  title: Marketing Lifecycle
+  title: Lifecycle Messaging
   supported_runtimes:
     - native_sdk
 ---

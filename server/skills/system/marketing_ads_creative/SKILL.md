@@ -1,8 +1,8 @@
 ---
-name: marketing_ads_creative
+name: ads_creative_planning
 description: Produces paid-channel strategy drafts, ad copy variants, creative briefs, test matrices, and landing-page alignment recommendations without ad platform execution.
 metadata:
-  title: Marketing Ads Creative
+  title: Ads Creative Planning
   supported_runtimes:
     - native_sdk
 ---

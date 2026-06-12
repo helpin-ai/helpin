@@ -604,6 +604,37 @@ func TestBuildRuntimeSystemPromptSkipsBehaviorAndSkillTextWhenDisabled(t *testin
 	}
 }
 
+func TestBuildRuntimeSystemPromptDescribesAvailableSkillsWhenSkillTextDisabled(t *testing.T) {
+	prompt := BuildRuntimeSystemPrompt(
+		&model.Agent{
+			Name:                      "Code Builder",
+			PresetKey:                 model.AgentPresetCodeBuilder,
+			RuntimeKind:               "codex",
+			ResolvedSkillInstructions: "Full code builder skill body should not be in the prompt.",
+		},
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+		true,
+		false,
+	)
+
+	if strings.Contains(prompt, "Full code builder skill body should not be in the prompt.") {
+		t.Fatalf("did not expect runtime prompt to include full skill instructions\n%s", prompt)
+	}
+	for _, expected := range []string{
+		"Available Skills",
+		"Do not load every available skill by default.",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected runtime prompt to include %q\n%s", expected, prompt)
+		}
+	}
+}
+
 func TestBuildRuntimeExecutionSupplementPromptOmitsArtifactContext(t *testing.T) {
 	supplement := BuildRuntimeExecutionSupplementPrompt(
 		&model.AgentRun{InvocationMode: model.InvocationModeInteractive},

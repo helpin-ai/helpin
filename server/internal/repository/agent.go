@@ -43,6 +43,9 @@ func (r *AgentRepository) List(ctx context.Context, workspaceID string) ([]model
 	if err := r.LoadTeamAccess(ctx, agents); err != nil {
 		return nil, err
 	}
+	if err := r.LoadTokenTotals(ctx, agents); err != nil {
+		return nil, err
+	}
 	return agents, nil
 }
 
@@ -57,6 +60,9 @@ func (r *AgentRepository) GetByID(ctx context.Context, workspaceID, id string) (
 	}
 	agents := []model.Agent{agent}
 	if err := r.LoadTeamAccess(ctx, agents); err != nil {
+		return nil, err
+	}
+	if err := r.LoadTokenTotals(ctx, agents); err != nil {
 		return nil, err
 	}
 	agent = agents[0]
@@ -85,7 +91,13 @@ func (r *AgentRepository) GetSystemByPreset(ctx context.Context, workspaceID, pr
 // Create creates a new agent.
 func (r *AgentRepository) Create(ctx context.Context, agent *model.Agent) error {
 	if err := r.db.WithContext(ctx).Create(agent).Error; err != nil {
-		return fmt.Errorf("create agent: %w", err)
+		if isMissingAgentActiveVersionColumn(err) {
+			if err := r.db.WithContext(ctx).Omit("ActiveVersionID").Create(agent).Error; err != nil {
+				return fmt.Errorf("create agent: %w", err)
+			}
+		} else {
+			return fmt.Errorf("create agent: %w", err)
+		}
 	}
 	if len(normalizeAgentTeamIDs(agent.TeamIDs)) > 0 {
 		if err := r.ReplaceTeamAccess(ctx, agent.ID, agent.TeamIDs); err != nil {
@@ -98,11 +110,22 @@ func (r *AgentRepository) Create(ctx context.Context, agent *model.Agent) error 
 // Update saves an agent.
 func (r *AgentRepository) Update(ctx context.Context, agent *model.Agent) error {
 	if err := r.db.WithContext(ctx).Save(agent).Error; err != nil {
-		return fmt.Errorf("update agent: %w", err)
+		if isMissingAgentActiveVersionColumn(err) {
+			if err := r.db.WithContext(ctx).Omit("ActiveVersionID").Save(agent).Error; err != nil {
+				return fmt.Errorf("update agent: %w", err)
+			}
+		} else {
+			return fmt.Errorf("update agent: %w", err)
+		}
 	}
 	if err := r.ReplaceTeamAccess(ctx, agent.ID, agent.TeamIDs); err != nil {
 		return err
 	}
+	agents := []model.Agent{*agent}
+	if err := r.LoadTokenTotals(ctx, agents); err != nil {
+		return err
+	}
+	agent.TokensUsedTotal = agents[0].TokensUsedTotal
 	return nil
 }
 
@@ -189,6 +212,72 @@ func isMissingAgentTeamAccessTable(err error) bool {
 		strings.Contains(msg, `relation "agent_team_access" does not exist`)
 }
 
+func (r *AgentRepository) LoadTokenTotals(ctx context.Context, agents []model.Agent) error {
+	if len(agents) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(agents))
+	indexByID := make(map[string]int, len(agents))
+	for idx := range agents {
+		ids = append(ids, agents[idx].ID)
+		indexByID[agents[idx].ID] = idx
+		agents[idx].TokensUsedTotal = 0
+	}
+	type tokenTotalRow struct {
+		AgentID         string
+		TokensUsedTotal int
+	}
+	var rows []tokenTotalRow
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Select("agent_id, COALESCE(SUM(tokens_used), 0) AS tokens_used_total").
+		Where("agent_id IN ?", ids).
+		Group("agent_id").
+		Scan(&rows).Error; err != nil {
+		if isMissingAgentRunsTable(err) {
+			return nil
+		}
+		return fmt.Errorf("load agent token totals: %w", err)
+	}
+	for _, row := range rows {
+		idx, ok := indexByID[row.AgentID]
+		if !ok {
+			continue
+		}
+		agents[idx].TokensUsedTotal = row.TokensUsedTotal
+	}
+	return nil
+}
+
+func isMissingAgentRunsTable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such table: agent_runs") ||
+		strings.Contains(msg, `relation "agent_runs" does not exist`)
+}
+
+func isMissingAgentActiveVersionColumn(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no column named active_version_id") ||
+		strings.Contains(msg, "no such column: active_version_id") ||
+		strings.Contains(msg, `column "active_version_id" of relation "agents" does not exist`)
+}
+
+func isMissingAgentRunVersionColumn(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no column named agent_version_id") ||
+		strings.Contains(msg, "no such column: agent_version_id") ||
+		strings.Contains(msg, `column "agent_version_id" of relation "agent_runs" does not exist`)
+}
+
 func normalizeAgentTeamIDs(teamIDs []string) []string {
 	seen := make(map[string]struct{}, len(teamIDs))
 	normalized := make([]string, 0, len(teamIDs))
@@ -267,6 +356,18 @@ func (r *AgentRunRepository) ListByAgent(ctx context.Context, workspaceID, agent
 		return nil, 0, fmt.Errorf("list agent runs: %w", err)
 	}
 	return runs, total, nil
+}
+
+// ListByAgentSince returns all runs for an agent created at or after the given time.
+func (r *AgentRunRepository) ListByAgentSince(ctx context.Context, workspaceID, agentID string, since time.Time) ([]model.AgentRun, error) {
+	var runs []model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND agent_id = ? AND created_at >= ?", workspaceID, agentID, since).
+		Order("created_at ASC").
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list agent runs since: %w", err)
+	}
+	return runs, nil
 }
 
 // ListByWorkspace returns runs in a workspace with pagination.
@@ -665,6 +766,12 @@ func (r *AgentRunRepository) FindCompletedByTargetStage(ctx context.Context, wor
 // Create creates a new run.
 func (r *AgentRunRepository) Create(ctx context.Context, run *model.AgentRun) error {
 	if err := r.db.WithContext(ctx).Create(run).Error; err != nil {
+		if isMissingAgentRunVersionColumn(err) {
+			if err := r.db.WithContext(ctx).Omit("AgentVersionID").Create(run).Error; err != nil {
+				return fmt.Errorf("create agent run: %w", err)
+			}
+			return nil
+		}
 		return fmt.Errorf("create agent run: %w", err)
 	}
 	return nil
@@ -673,7 +780,13 @@ func (r *AgentRunRepository) Create(ctx context.Context, run *model.AgentRun) er
 // Update saves a run.
 func (r *AgentRunRepository) Update(ctx context.Context, run *model.AgentRun) error {
 	if err := r.db.WithContext(ctx).Save(run).Error; err != nil {
-		return fmt.Errorf("update agent run: %w", err)
+		if isMissingAgentRunVersionColumn(err) {
+			if err := r.db.WithContext(ctx).Omit("AgentVersionID").Save(run).Error; err != nil {
+				return fmt.Errorf("update agent run: %w", err)
+			}
+		} else {
+			return fmt.Errorf("update agent run: %w", err)
+		}
 	}
 	if r.triggerExecutionRepo != nil {
 		_ = r.triggerExecutionRepo.SyncRunStatus(ctx, run)

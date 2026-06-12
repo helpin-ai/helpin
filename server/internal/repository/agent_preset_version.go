@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -69,6 +70,7 @@ func (r *WorkspaceAgentPresetVersionRepository) GetByID(ctx context.Context, wor
 }
 
 func (r *WorkspaceAgentPresetVersionRepository) Create(ctx context.Context, version *model.WorkspaceAgentPresetVersion) error {
+	normalizeWorkspacePresetVersionTargets(version)
 	if err := r.db.WithContext(ctx).Create(version).Error; err != nil {
 		return fmt.Errorf("create workspace preset version: %w", err)
 	}
@@ -78,10 +80,22 @@ func (r *WorkspaceAgentPresetVersionRepository) Create(ctx context.Context, vers
 func (r *WorkspaceAgentPresetVersionRepository) Update(ctx context.Context, version *model.WorkspaceAgentPresetVersion) error {
 	// Workspace preset versions currently use last-writer-wins semantics.
 	// If the UI later needs conflict banners, this should move to an optimistic updated_at guard.
+	normalizeWorkspacePresetVersionTargets(version)
 	if err := r.db.WithContext(ctx).Save(version).Error; err != nil {
 		return fmt.Errorf("update workspace preset version: %w", err)
 	}
 	return nil
+}
+
+func normalizeWorkspacePresetVersionTargets(version *model.WorkspaceAgentPresetVersion) {
+	if version == nil {
+		return
+	}
+	var targets []string
+	if err := json.Unmarshal(version.AllowedTargets, &targets); err == nil && len(targets) > 0 {
+		return
+	}
+	version.AllowedTargets = json.RawMessage(`["task"]`)
 }
 
 func (r *WorkspaceAgentPresetVersionRepository) Delete(ctx context.Context, workspaceID, id string) error {

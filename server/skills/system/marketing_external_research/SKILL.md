@@ -1,8 +1,8 @@
 ---
-name: marketing_external_research
+name: market_research
 description: Conducts source-backed public market, category, audience, trend, channel, and customer research using search and fetched URLs.
 metadata:
-  title: Marketing External Research
+  title: Market Research
   supported_runtimes:
     - native_sdk
 ---

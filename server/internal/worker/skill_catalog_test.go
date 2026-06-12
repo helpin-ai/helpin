@@ -14,46 +14,48 @@ func TestListBuiltInSkillsContainsExpectedKeys(t *testing.T) {
 		keys = append(keys, skill.Key)
 	}
 	for _, key := range []string{
-		"approval_protocol",
-		"prd_authorship",
-		"task_decomposition",
-		"epic_state_routing",
-		"general_agent_behavior",
-		"task_planner_context",
-		"code_builder",
-		"review_agent",
-		"crm_operator",
-		"support_agent",
-		"dependency_auditor",
+		"prd_task_plan_approval",
+		"product_prd_authorship",
+		"coding_task_decomposition",
+		"epic_planning_state_routing",
+		"engineering_planner_operating_rules",
+		"coding_task_planning",
+		"code_implementation",
+		"code_review",
+		"crm_record_operations",
+		"support_triage_response",
+		"dependency_audit",
 		"security_triage",
-		"external_help_doc_writing",
-		"api_doc_writing",
+		"public_help_doc_writing",
+		"api_reference_doc_writing",
 		"internal_docs_maintenance",
 		"public_help_docs_maintenance",
 		"api_docs_maintenance",
-		"docs_information_architecture",
-		"release_to_docs_update",
-		"support_gap_to_docs",
-		"marketing_context",
+		"docs_architecture_review",
+		"post_release_docs_update",
+		"support_gap_docs_update",
+		"release_notes_writing",
+		"competitive_intelligence_digest",
+		"marketing_context_setup",
 		"marketing_plan",
 		"marketing_copywriting",
-		"marketing_conversion",
-		"marketing_customer_research",
-		"marketing_lifecycle",
-		"marketing_launch",
-		"marketing_seo_content",
-		"marketing_competitive",
-		"marketing_lead_generation",
-		"marketing_outbound",
-		"marketing_ads_creative",
-		"marketing_community_partnerships",
-		"marketing_revops",
-		"marketing_monetization",
-		"marketing_external_research",
-		"marketing_competitor_research",
-		"marketing_distribution_research",
-		"marketing_seo_research",
-		"marketing_release_marketing",
+		"conversion_optimization",
+		"customer_research_synthesis",
+		"lifecycle_messaging",
+		"launch_marketing",
+		"seo_content_strategy",
+		"competitive_positioning",
+		"lead_generation_strategy",
+		"outbound_campaign_planning",
+		"ads_creative_planning",
+		"community_partnerships_planning",
+		"marketing_revops_planning",
+		"monetization_strategy",
+		"market_research",
+		"competitor_research",
+		"distribution_research",
+		"seo_research",
+		"release_marketing",
 	} {
 		if !containsString(keys, key) {
 			t.Fatalf("expected built-in skill %q in registry, got %v", key, keys)
@@ -67,31 +69,33 @@ func TestMiraBundleIncludesMarketingSkills(t *testing.T) {
 		t.Fatal("expected Mira marketer bundle")
 	}
 	for _, expected := range []string{
-		"marketing_context",
+		"marketing_context_setup",
 		"marketing_plan",
 		"marketing_copywriting",
-		"marketing_conversion",
-		"marketing_customer_research",
-		"marketing_lifecycle",
-		"marketing_launch",
-		"marketing_seo_content",
-		"marketing_competitive",
-		"marketing_lead_generation",
-		"marketing_outbound",
-		"marketing_ads_creative",
-		"marketing_community_partnerships",
-		"marketing_revops",
-		"marketing_monetization",
-		"marketing_external_research",
-		"marketing_competitor_research",
-		"marketing_distribution_research",
-		"marketing_seo_research",
-		"marketing_release_marketing",
-		"general_agent_behavior",
+		"conversion_optimization",
+		"customer_research_synthesis",
+		"lifecycle_messaging",
+		"launch_marketing",
+		"seo_content_strategy",
+		"competitive_positioning",
+		"lead_generation_strategy",
+		"outbound_campaign_planning",
+		"ads_creative_planning",
+		"community_partnerships_planning",
+		"marketing_revops_planning",
+		"monetization_strategy",
+		"market_research",
+		"competitor_research",
+		"distribution_research",
+		"seo_research",
+		"release_marketing",
 	} {
 		if !containsString(bundle.SkillKeys, expected) {
 			t.Fatalf("expected Mira skill %q in bundle: %v", expected, bundle.SkillKeys)
 		}
+	}
+	if containsString(bundle.SkillKeys, "engineering_planner_operating_rules") {
+		t.Fatalf("Mira bundle should not include engineering planner rules: %v", bundle.SkillKeys)
 	}
 	prompt := BuiltInPresetPrompt(model.AgentPresetMarketer)
 	if prompt == nil {
@@ -124,12 +128,12 @@ func TestMiraBundleIncludesMarketingSkills(t *testing.T) {
 
 func TestDocumentationSkillsDeclareExpectedGuidance(t *testing.T) {
 	cases := map[string][]string{
-		"external_help_doc_writing": {
+		"public_help_doc_writing": {
 			"Write for customers and end users",
 			"Do not publish directly",
 			"Place the article in the most specific existing collection",
 		},
-		"api_doc_writing": {
+		"api_reference_doc_writing": {
 			"Document authentication, permissions, request shape, response shape, errors, and examples",
 			"Do not invent endpoints, fields, limits, or SDK behavior",
 			"Include at least one realistic request example and one realistic response example",
@@ -149,17 +153,17 @@ func TestDocumentationSkillsDeclareExpectedGuidance(t *testing.T) {
 			"Mark deprecations and breaking changes explicitly",
 			"Keep examples synchronized with the documented schema",
 		},
-		"docs_information_architecture": {
+		"docs_architecture_review": {
 			"Organize docs into spaces, collections, and subcollections",
 			"Avoid duplicate articles unless the audience or workflow is genuinely different",
 			"Maintain naming, ordering, and related-link consistency",
 		},
-		"release_to_docs_update": {
+		"post_release_docs_update": {
 			"Map shipped changes to internal docs, public help docs, and API docs",
 			"Separate user-visible behavior from internal operational changes",
 			"Call out uncertainty instead of filling gaps with guesses",
 		},
-		"support_gap_to_docs": {
+		"support_gap_docs_update": {
 			"Read the gap evidence before deciding what to write",
 			"Decide whether the gap needs a new article, an update to an existing article, or an information architecture change",
 			"Do not close or mark a gap resolved until the doc work is actually created, updated, or explicitly handed off",
@@ -206,9 +210,9 @@ func TestSecurityTriageSkillReferencesScannerWorkflow(t *testing.T) {
 }
 
 func TestDependencyAuditorSkillReferencesExecutionDocs(t *testing.T) {
-	skill, ok := GetBuiltInSkill("dependency_auditor")
+	skill, ok := GetBuiltInSkill("dependency_audit")
 	if !ok {
-		t.Fatal("expected dependency_auditor built-in skill")
+		t.Fatal("expected dependency_audit built-in skill")
 	}
 	for _, snippet := range []string{
 		"ecosystems/go.md",
@@ -264,10 +268,10 @@ func TestTaskPlannerBundleUsesTaskPlanDocSkillStack(t *testing.T) {
 	if !ok {
 		t.Fatal("expected task planner bundle")
 	}
-	if !containsString(bundle.SkillKeys, "task_planner_context") {
+	if !containsString(bundle.SkillKeys, "coding_task_planning") {
 		t.Fatalf("expected task planner context skill, got %v", bundle.SkillKeys)
 	}
-	if containsString(bundle.SkillKeys, "task_decomposition") {
+	if containsString(bundle.SkillKeys, "coding_task_decomposition") {
 		t.Fatalf("did not expect epic task-plan skill in task planner bundle, got %v", bundle.SkillKeys)
 	}
 }
@@ -277,7 +281,7 @@ func TestReviewAgentBundleDoesNotIncludePlannerSkills(t *testing.T) {
 	if !ok {
 		t.Fatal("expected review bundle")
 	}
-	for _, forbidden := range []string{"prd_authorship", "task_decomposition", "epic_state_routing", "task_planner_context"} {
+	for _, forbidden := range []string{"product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "coding_task_planning"} {
 		if containsString(bundle.SkillKeys, forbidden) {
 			t.Fatalf("did not expect planner skill %q in review bundle: %v", forbidden, bundle.SkillKeys)
 		}
@@ -289,7 +293,7 @@ func TestSupportAgentBundleDoesNotIncludePlannerSkills(t *testing.T) {
 	if !ok {
 		t.Fatal("expected support bundle")
 	}
-	for _, forbidden := range []string{"prd_authorship", "task_decomposition", "epic_state_routing", "task_planner_context"} {
+	for _, forbidden := range []string{"product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "coding_task_planning"} {
 		if containsString(bundle.SkillKeys, forbidden) {
 			t.Fatalf("did not expect planner skill %q in support bundle: %v", forbidden, bundle.SkillKeys)
 		}
@@ -302,19 +306,21 @@ func TestDocumentationAgentBundleIncludesDocumentationSkills(t *testing.T) {
 		t.Fatal("expected documentation agent bundle")
 	}
 	for _, expected := range []string{
-		"docs_information_architecture",
-		"external_help_doc_writing",
-		"api_doc_writing",
+		"docs_architecture_review",
+		"public_help_doc_writing",
+		"api_reference_doc_writing",
 		"internal_docs_maintenance",
 		"public_help_docs_maintenance",
 		"api_docs_maintenance",
-		"release_to_docs_update",
-		"support_gap_to_docs",
-		"general_agent_behavior",
+		"post_release_docs_update",
+		"support_gap_docs_update",
 	} {
 		if !containsString(bundle.SkillKeys, expected) {
 			t.Fatalf("expected documentation skill %q in bundle: %v", expected, bundle.SkillKeys)
 		}
+	}
+	if containsString(bundle.SkillKeys, "engineering_planner_operating_rules") {
+		t.Fatalf("documentation bundle should not include engineering planner rules: %v", bundle.SkillKeys)
 	}
 	if strings.Contains(bundle.Preamble, "Helpin") || strings.Contains(bundle.Preamble, "helpin") {
 		t.Fatalf("documentation preamble must use workspace context, got %q", bundle.Preamble)
@@ -382,7 +388,7 @@ func TestListSkillCatalogReturnsBuiltInSkills(t *testing.T) {
 	}
 	found := false
 	for _, skill := range catalog.Skills {
-		if skill.Key != "approval_protocol" {
+		if skill.Key != "prd_task_plan_approval" {
 			continue
 		}
 		found = true
@@ -397,17 +403,17 @@ func TestListSkillCatalogReturnsBuiltInSkills(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("expected approval_protocol in skill catalog")
+		t.Fatal("expected prd_task_plan_approval in skill catalog")
 	}
 }
 
 func TestReviewAgentSkillDeclaresCompletionInteractionPolicy(t *testing.T) {
-	skill, ok := GetBuiltInSkill("review_agent")
+	skill, ok := GetBuiltInSkill("code_review")
 	if !ok {
-		t.Fatal("expected review_agent built-in skill")
+		t.Fatal("expected code_review built-in skill")
 	}
 	if len(skill.RequiredTools) != 0 {
-		t.Fatalf("expected review_agent to avoid transport-specific required tools, got %v", skill.RequiredTools)
+		t.Fatalf("expected code_review to avoid transport-specific required tools, got %v", skill.RequiredTools)
 	}
 	if !containsString(skill.Policy.CompletionRequiresInteractionKinds, model.AgentRunInteractionKindReviewCheckpoint) {
 		t.Fatalf("expected review checkpoint completion requirement, got %v", skill.Policy.CompletionRequiresInteractionKinds)
@@ -444,9 +450,9 @@ func TestReviewAgentSkillDeclaresCompletionInteractionPolicy(t *testing.T) {
 }
 
 func TestApprovalProtocolSkillDeclaresPlannerCompletionInteractionPolicy(t *testing.T) {
-	skill, ok := GetBuiltInSkill("approval_protocol")
+	skill, ok := GetBuiltInSkill("prd_task_plan_approval")
 	if !ok {
-		t.Fatal("expected approval_protocol built-in skill")
+		t.Fatal("expected prd_task_plan_approval built-in skill")
 	}
 	if !containsString(skill.Policy.CompletionRequiresInteractionKinds, InteractionKindApprovalRequest) {
 		t.Fatalf("expected approval request completion requirement, got %v", skill.Policy.CompletionRequiresInteractionKinds)

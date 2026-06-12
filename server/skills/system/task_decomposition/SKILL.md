@@ -1,8 +1,8 @@
 ---
-name: task_decomposition
-description: Implementation task planning guidance including vertical slicing and task-plan tool contracts.
+name: coding_task_decomposition
+description: Breaks approved product specs into implementation-ready coding tasks with vertical slices, affected files, dependencies, and test strategy.
 metadata:
-  title: Task Decomposition
+  title: Coding Task Decomposition
   required_tools:
     - publish_task_plan
     - update_plan

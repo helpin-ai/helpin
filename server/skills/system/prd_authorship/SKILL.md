@@ -1,5 +1,5 @@
 ---
-name: prd_authorship
+name: product_prd_authorship
 description: Product-spec authorship guidance for Epic Planner runs.
 metadata:
   title: PRD Authorship

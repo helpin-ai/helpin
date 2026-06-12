@@ -7,7 +7,9 @@ import type {
 } from '../types';
 import type {
   Agent,
+  AgentAnalyticsResponse,
   AgentTemplate,
+  AgentVersion,
   AgentRun,
   AgentRunArtifact,
   AgentRunMessage,
@@ -16,6 +18,7 @@ import type {
   ContinueAgentRunRequest,
   AutomationRule,
   CreateAgentRequest,
+  CreateAgentVersionRequest,
   CustomAgentDraftRequest,
   CustomAgentDraftResponse,
   CreateAgentFromTemplateRequest,
@@ -35,6 +38,7 @@ import type {
   SkillCatalogResponse,
   ToolCatalogResponse,
   UpdateAgentRequest,
+  UpdateAgentVersionRequest,
   UpdateAutomationRuleRequest,
   UpdateWorkspaceSkillRequest,
   WorkspaceSkillResponse,
@@ -153,6 +157,9 @@ export const automationService = {
   getAgentUsage: (workspaceId: string, id: string) =>
     api.get<AgentTriggerUsageSummary>(`/automation/agents/${id}/usage${qs(workspaceId)}`),
 
+  getAgentAnalytics: (workspaceId: string, id: string, range: '7d' | '30d' | '90d' | '12m' = '30d') =>
+    api.get<AgentAnalyticsResponse>(`/automation/agents/${id}/analytics${qs(workspaceId)}&range=${encodeURIComponent(range)}`),
+
   createAgent: (workspaceId: string, payload: CreateAgentRequest) =>
     api.post<Agent>(`/automation/agents${qs(workspaceId)}`, payload),
 
@@ -164,6 +171,21 @@ export const automationService = {
 
   updateAgent: (workspaceId: string, id: string, payload: UpdateAgentRequest) =>
     api.put<Agent>(`/automation/agents/${id}${qs(workspaceId)}`, payload),
+
+  listAgentVersions: (workspaceId: string, id: string) =>
+    api.get<AgentVersion[]>(`/automation/agents/${id}/versions${qs(workspaceId)}`),
+
+  createAgentVersion: (workspaceId: string, id: string, payload: CreateAgentVersionRequest) =>
+    api.post<AgentVersion>(`/automation/agents/${id}/versions${qs(workspaceId)}`, payload),
+
+  updateAgentVersion: (workspaceId: string, id: string, versionId: string, payload: UpdateAgentVersionRequest) =>
+    api.put<AgentVersion>(`/automation/agents/${id}/versions/${versionId}${qs(workspaceId)}`, payload),
+
+  activateAgentVersion: (workspaceId: string, id: string, versionId: string) =>
+    api.post<Agent>(`/automation/agents/${id}/versions/${versionId}/activate${qs(workspaceId)}`, {}),
+
+  deleteAgentVersion: (workspaceId: string, id: string, versionId: string) =>
+    api.del<void>(`/automation/agents/${id}/versions/${versionId}${qs(workspaceId)}`),
 
   deleteAgent: (workspaceId: string, id: string) =>
     api.del(`/automation/agents/${id}${qs(workspaceId)}`),

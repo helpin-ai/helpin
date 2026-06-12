@@ -92,6 +92,23 @@ func (h *AgentHandler) GetAgentUsage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, summary)
 }
 
+// GetAgentAnalytics handles GET /api/pm/agents/{id}/analytics.
+func (h *AgentHandler) GetAgentAnalytics(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	id := chi.URLParam(r, "id")
+
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	analytics, err := h.agentService.GetAgentAnalytics(r.Context(), workspaceID, id, r.URL.Query().Get("range"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, analytics)
+}
+
 // ListAgentPresets handles GET /api/pm/agent-presets.
 func (h *AgentHandler) ListAgentPresets(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -221,6 +238,98 @@ func (h *AgentHandler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, agent)
+}
+
+func (h *AgentHandler) ListAgentVersions(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	agentID := chi.URLParam(r, "id")
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	versions, err := h.agentService.ListAgentVersions(r.Context(), workspaceID, agentID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, versions)
+}
+
+func (h *AgentHandler) CreateAgentVersion(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	agentID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	var req model.CreateAgentVersionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.WorkspaceID = workspaceID
+	req.AgentID = agentID
+	version, err := h.agentService.CreateAgentVersion(r.Context(), workspaceID, agentID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, version)
+}
+
+func (h *AgentHandler) UpdateAgentVersion(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	agentID := chi.URLParam(r, "id")
+	versionID := chi.URLParam(r, "versionID")
+	actorID := middleware.GetUserID(r.Context())
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	var req model.UpdateAgentVersionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	version, err := h.agentService.UpdateAgentVersion(r.Context(), workspaceID, agentID, versionID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, version)
+}
+
+func (h *AgentHandler) ActivateAgentVersion(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	agentID := chi.URLParam(r, "id")
+	versionID := chi.URLParam(r, "versionID")
+	actorID := middleware.GetUserID(r.Context())
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	agent, err := h.agentService.ActivateAgentVersion(r.Context(), workspaceID, agentID, versionID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, agent)
+}
+
+func (h *AgentHandler) DeleteAgentVersion(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	agentID := chi.URLParam(r, "id")
+	versionID := chi.URLParam(r, "versionID")
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	if err := h.agentService.DeleteAgentVersion(r.Context(), workspaceID, agentID, versionID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // DeleteAgent handles DELETE /api/pm/agents/{id}.

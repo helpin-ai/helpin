@@ -1,8 +1,8 @@
 ---
-name: crm_operator
+name: crm_record_operations
 description: CRM execution and mutation guidance.
 metadata:
-  title: CRM Operator
+  title: CRM Record Operations
   supported_runtimes:
     - native_sdk
 ---

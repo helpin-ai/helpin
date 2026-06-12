@@ -1,8 +1,8 @@
 ---
-name: marketing_launch
+name: launch_marketing
 description: Plans product launches, feature announcements, release campaigns, launch checklists, and launch copy from Helpin context.
 metadata:
-  title: Marketing Launch
+  title: Launch Marketing
   supported_runtimes:
     - native_sdk
 ---

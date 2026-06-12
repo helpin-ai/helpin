@@ -37,15 +37,17 @@ import { agentService } from '@/lib/services/agentService';
 import { gitService } from '@/lib/services/gitService';
 import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
-import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
+import { AGENT_RUNTIME_HELP_TEXT, AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import type {
   Agent,
+  AgentAnalyticsResponse,
   AgentExecutionConfig,
   AgentPresetDefinition,
   AgentPresetKey,
+  AgentVersion,
   AgentApprovalMode,
   AgentInvocationMode,
   AgentModelProvider,
@@ -124,6 +126,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CustomAgentCreatePanel } from './CustomAgentCreatePanel';
 import {
   buildCustomAgentCreatePayload,
@@ -252,12 +255,6 @@ const INVOCATION_MODE_LABELS: Record<AgentInvocationMode, string> = {
   interactive: 'Interactive',
 };
 
-const APPROVAL_MODE_OPTIONS: { value: AgentApprovalMode; label: string; description: string }[] = [
-  { value: 'always', label: 'Require approval before each run', description: 'A team member must approve each run before the agent starts.' },
-  { value: 'never', label: 'Start runs automatically', description: 'Runs start without the initial approval gate.' },
-  { value: 'preset_default', label: 'Use runtime default', description: 'Uses the default approval behavior for this agent profile.' },
-];
-
 const EMPTY_STATE_CARDS = [
   {
     icon: ZapIcon,
@@ -312,7 +309,7 @@ const COMPETITIVE_INTEL_SCHEDULE_OPTIONS = [
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
 ] as const;
-const DEPENDENCY_AUDITOR_TEMPLATE_KEY = 'dependency_auditor';
+const DEPENDENCY_AUDITOR_TEMPLATE_KEY = 'engineering_dependency_auditor';
 const DEPENDENCY_AUDITOR_FLOW_KEY = 'dependency_audit_cron';
 const DEPENDENCY_AUDITOR_SYSTEM_PROMPT_TEMPLATE = `You are an autonomous dependency auditor for the selected repository.
 
@@ -343,8 +340,8 @@ const DEPENDENCY_AUDITOR_ECOSYSTEM_OPTIONS = [
 ] as const;
 const DEPENDENCY_AUDITOR_SCHEDULE_OPTIONS = COMPETITIVE_INTEL_SCHEDULE_OPTIONS;
 type DependencyAuditorEcosystem = typeof DEPENDENCY_AUDITOR_ECOSYSTEM_OPTIONS[number]['value'];
-const SECURITY_TRIAGE_TEMPLATE_KEY = 'security_triage';
-const SECURITY_TRIAGE_FLOW_KEY = 'security_triage_cron';
+const SECURITY_TRIAGE_TEMPLATE_KEY = 'engineering_security_triage';
+const SECURITY_TRIAGE_FLOW_KEY = 'engineering_security_triage_cron';
 const SECURITY_TRIAGE_SYSTEM_PROMPT_TEMPLATE = `You are Sentinel, an autonomous security triage agent for the selected repository.
 
 Configured security triage:
@@ -455,13 +452,13 @@ interface TemplateDraft {
 }
 
 const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string; description: string }> = [
-  { value: 'task', label: 'Task', description: 'Run on tasks and task planning loops.' },
-  { value: 'epic', label: 'Epic', description: 'Run on epics and planning loops.' },
-  { value: 'repository', label: 'Repository', description: 'Run directly against a synced repository without requiring a linked task.' },
+  { value: 'task', label: 'Tasks', description: 'Run on tasks and task planning loops.' },
+  { value: 'epic', label: 'Epics', description: 'Run on epics and planning loops.' },
+  { value: 'crm_deal', label: 'CRM deals', description: 'Run on CRM deal records.' },
+  { value: 'document', label: 'Docs', description: 'Run on documents and docs-backed context.' },
+  { value: 'support_conversation', label: 'Support', description: 'Run on support inbox conversations.' },
   { value: 'workspace', label: 'Workspace', description: 'Run without a fixed entity target and gather context across the workspace.' },
-  { value: 'crm_deal', label: 'CRM Deal', description: 'Run on CRM deal records.' },
-  { value: 'document', label: 'Document', description: 'Run on documents and docs-backed context.' },
-  { value: 'support_conversation', label: 'Support Conversation', description: 'Run on support inbox conversations.' },
+  { value: 'repository', label: 'Code repo', description: 'Run directly against a synced repository without requiring a linked task.' },
 ];
 
 const RUN_NOW_SUPPORTED_TARGETS = new Set<AgentTargetType>([
@@ -974,6 +971,24 @@ function buildCustomAgentForm(agent: Agent): AgentFormData {
   };
 }
 
+function buildCustomAgentVersionForm(agent: Agent, version: AgentVersion): AgentFormData {
+  const runtimeKind = version.runtime_kind || agent.runtime_kind || 'native_sdk';
+  const provider = normalizeProviderForRuntime(runtimeKind, version.provider ?? agent.provider ?? 'anthropic');
+  return {
+    ...buildCustomAgentForm(agent),
+    runtime_kind: runtimeKind,
+    supported_modes: version.supported_modes?.length ? version.supported_modes : supportedModesForForm(runtimeKind),
+    provider,
+    model: version.model ?? '',
+    ...deriveExecutionConfigFields(runtimeKind, provider, version.execution_config),
+    system_prompt: version.system_prompt ?? '',
+    allowed_targets: normalizeTargetList(version.allowed_targets ?? ['task']),
+    allowed_tools: normalizeToolList(version.allowed_tools ?? []),
+    skills: version.skills ?? [],
+    default_invocation_mode: normalizeDefaultInvocationMode(version.default_invocation_mode, runtimeKind),
+  };
+}
+
 function comparableCustomAgentForm(form: AgentFormData) {
   const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
   const teamIDs = form.teamAccessMode === 'specific_teams'
@@ -1020,6 +1035,25 @@ function customAgentFormDirtyKey(form: AgentFormData) {
 function normalizeTokenBudgetFormValue(value: string) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+const MONTHLY_TOKEN_LIMIT_PRESETS = [
+  { label: 'No limit', value: 0 },
+  { label: '1M', value: 1_000_000 },
+  { label: '5M', value: 5_000_000 },
+  { label: '10M', value: 10_000_000 },
+  { label: '25M', value: 25_000_000 },
+] as const;
+
+function formatRate(numerator: number, denominator: number) {
+  if (denominator <= 0) return '—';
+  return `${Math.round((numerator / denominator) * 100)}%`;
+}
+
+function runTargetLabel(run: AgentRun) {
+  if (run.target_info?.task_key) return run.target_info.task_key;
+  if (run.target_info?.title) return run.target_info.title;
+  return run.target_type.replace(/_/g, ' ');
 }
 
 function normalizePositiveIntegerFormValue(value: string, fallback: number) {
@@ -1399,10 +1433,12 @@ interface AgentRunStats {
   recentRuns: number;
   recentCompleted: number;
   recentFailed: number;
+  recentTokens: number;
   lastRun?: AgentRun;
   attentionRun?: AgentRun;
   attentionRunCount: number;
   lastFiveStatuses: AgentRun['status'][];
+  recentRunItems: AgentRun[];
 }
 
 function trimSummaryText(value?: string, fallback = 'No description yet.') {
@@ -1675,6 +1711,86 @@ function RunBars5({ statuses }: { statuses: AgentRun['status'][] }) {
           )}
         />
       ))}
+    </div>
+  );
+}
+
+type AgentAnalyticsRange = '7d' | '30d' | '90d' | '12m';
+
+const AGENT_ANALYTICS_RANGES: Array<{ value: AgentAnalyticsRange; label: string }> = [
+  { value: '7d', label: '7d' },
+  { value: '30d', label: '30d' },
+  { value: '90d', label: '90d' },
+  { value: '12m', label: '12m' },
+];
+
+function AgentRunsTrendChart({ analytics }: { analytics?: AgentAnalyticsResponse | null }) {
+  const series = analytics?.series ?? [];
+  const width = 720;
+  const height = 220;
+  const padX = 34;
+  const padY = 24;
+  const plotWidth = width - padX * 2;
+  const plotHeight = height - padY * 2;
+  const maxValue = Math.max(1, ...series.flatMap((point) => [point.runs, point.completed, point.failed, point.needs_attention]));
+  const xFor = (idx: number) => padX + (series.length <= 1 ? plotWidth / 2 : (idx / (series.length - 1)) * plotWidth);
+  const yFor = (value: number) => padY + plotHeight - (value / maxValue) * plotHeight;
+  const pathFor = (key: 'runs' | 'completed' | 'failed' | 'needs_attention') => {
+    if (series.length === 0) return '';
+    return series
+      .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${xFor(idx).toFixed(1)} ${yFor(point[key]).toFixed(1)}`)
+      .join(' ');
+  };
+  const totalRuns = series.reduce((sum, point) => sum + point.runs, 0);
+  const axisLabels = series.length > 0
+    ? [series[0], series[Math.floor(series.length / 2)], series[series.length - 1]].filter(Boolean)
+    : [];
+
+  if (series.length === 0 || totalRuns === 0) {
+    return (
+      <div className="flex h-56 items-center justify-center rounded-lg border border-dashed border-border/70 bg-muted/20 text-sm text-muted-foreground">
+        No runs in this range.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/60 bg-card">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-4 py-3 text-xs">
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-foreground" />Runs</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" />Completed</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-500" />Failed</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-500" />Needs attention</span>
+      </div>
+      <div className="p-4">
+        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Agent run trends" className="h-60 w-full">
+          {[0, 0.5, 1].map((ratio) => (
+            <line
+              key={ratio}
+              x1={padX}
+              x2={width - padX}
+              y1={padY + plotHeight * ratio}
+              y2={padY + plotHeight * ratio}
+              className="stroke-border/70"
+              strokeDasharray={ratio === 1 ? undefined : '4 6'}
+            />
+          ))}
+          <path d={pathFor('runs')} fill="none" className="stroke-foreground" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={pathFor('completed')} fill="none" className="stroke-emerald-500" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={pathFor('failed')} fill="none" className="stroke-rose-500" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={pathFor('needs_attention')} fill="none" className="stroke-amber-500" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          {axisLabels.map((point) => {
+            const idx = series.indexOf(point);
+            return (
+              <text key={`${point.period}-${idx}`} x={xFor(idx)} y={height - 4} textAnchor={idx === 0 ? 'start' : idx === series.length - 1 ? 'end' : 'middle'} className="fill-muted-foreground text-[11px]">
+                {point.period}
+              </text>
+            );
+          })}
+          <text x={padX} y={14} className="fill-muted-foreground text-[11px]">{maxValue.toLocaleString()}</text>
+          <text x={padX} y={height - 22} className="fill-muted-foreground text-[11px]">0</text>
+        </svg>
+      </div>
     </div>
   );
 }
@@ -2193,6 +2309,11 @@ export function AgentsPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [systemDrawerOpen, setSystemDrawerOpen] = useState(false);
+  const [systemDrawerTab, setSystemDrawerTab] = useState<'analytics' | 'limits' | 'versions'>('versions');
+  const [tokenLimitMode, setTokenLimitMode] = useState<'preset' | 'custom'>('preset');
+  const [agentAnalyticsRange, setAgentAnalyticsRange] = useState<AgentAnalyticsRange>('30d');
+  const [agentAnalytics, setAgentAnalytics] = useState<AgentAnalyticsResponse | null>(null);
+  const [agentAnalyticsLoading, setAgentAnalyticsLoading] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [agentUsage, setAgentUsage] = useState<AgentTriggerUsageSummary | null>(null);
   const [agentUsageLoading, setAgentUsageLoading] = useState(false);
@@ -2202,6 +2323,8 @@ export function AgentsPage() {
   const [compiledPromptOpen, setCompiledPromptOpen] = useState(false);
   const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
+  const [versionSkillsOpen, setVersionSkillsOpen] = useState(false);
+  const [versionToolsOpen, setVersionToolsOpen] = useState(false);
   const [systemPromptEditorOpen, setSystemPromptEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -2213,6 +2336,9 @@ export function AgentsPage() {
   const [workspaceVersionPendingDelete, setWorkspaceVersionPendingDelete] = useState<AgentPresetDefinition | null>(null);
   const [deletingVersion, setDeletingVersion] = useState(false);
   const [workspaceVersionBeingRenamed, setWorkspaceVersionBeingRenamed] = useState<AgentPresetDefinition | null>(null);
+  const [customAgentVersions, setCustomAgentVersions] = useState<AgentVersion[]>([]);
+  const [selectedCustomVersionID, setSelectedCustomVersionID] = useState('');
+  const [customVersionsLoading, setCustomVersionsLoading] = useState(false);
   const [renameLabelDraft, setRenameLabelDraft] = useState('');
   const [renameDescriptionDraft, setRenameDescriptionDraft] = useState('');
   const [renamingVersion, setRenamingVersion] = useState(false);
@@ -2349,6 +2475,44 @@ export function AgentsPage() {
     setAgentUsageLoading(false);
   }, [workspaceId]);
 
+  const loadAgentAnalytics = useCallback(async (agentId: string, range: AgentAnalyticsRange) => {
+    if (!workspaceId) return;
+    setAgentAnalyticsLoading(true);
+    const res = await automationService.getAgentAnalytics(workspaceId, agentId, range);
+    if (!res.error) {
+      setAgentAnalytics(res.data ?? null);
+    } else {
+      setAgentAnalytics(null);
+      toast.error('Failed to load agent analytics', { description: res.error });
+    }
+    setAgentAnalyticsLoading(false);
+  }, [workspaceId]);
+
+  const loadCustomAgentVersions = useCallback(async (agent: Agent) => {
+    if (!workspaceId || agent.is_system) {
+      setCustomAgentVersions([]);
+      setSelectedCustomVersionID('');
+      return;
+    }
+    setCustomVersionsLoading(true);
+    const res = await automationService.listAgentVersions(workspaceId, agent.id);
+    if (res.error) {
+      toast.error('Failed to load agent versions', { description: res.error });
+      setCustomAgentVersions([]);
+      setSelectedCustomVersionID('');
+    } else {
+      const versions = res.data ?? [];
+      setCustomAgentVersions(versions);
+      const activeVersionID = agent.active_version_id ?? versions.find((version) => version.version_key === 'default')?.id ?? versions[0]?.id ?? '';
+      setSelectedCustomVersionID(activeVersionID);
+      const activeVersion = versions.find((version) => version.id === activeVersionID);
+      if (activeVersion) {
+        setForm(buildCustomAgentVersionForm(agent, activeVersion));
+      }
+    }
+    setCustomVersionsLoading(false);
+  }, [workspaceId]);
+
   const openRunNowDialog = useCallback((agent: Agent) => {
     const defaultTarget = defaultRunNowTarget(agent);
     const firstRunnableRepo = repositories.find((repo) => repo.selected && repo.active && !repo.archived);
@@ -2454,10 +2618,12 @@ export function AgentsPage() {
         recentRuns: 0,
         recentCompleted: 0,
         recentFailed: 0,
+        recentTokens: 0,
         lastRun: undefined,
         attentionRun: undefined,
         attentionRunCount: 0,
         lastFiveStatuses: [],
+        recentRunItems: [],
       };
     }
 
@@ -2490,11 +2656,15 @@ export function AgentsPage() {
       if (stats.lastFiveStatuses.length < 5) {
         stats.lastFiveStatuses.push(run.status);
       }
+      if (stats.recentRunItems.length < 5) {
+        stats.recentRunItems.push(run);
+      }
 
       const createdAt = new Date(run.created_at).getTime();
       if (Number.isNaN(createdAt) || createdAt < sevenDaysAgo) continue;
 
       stats.recentRuns += 1;
+      stats.recentTokens += run.tokens_used ?? 0;
       if (run.status === 'completed') stats.recentCompleted += 1;
       if (run.status === 'failed') stats.recentFailed += 1;
     }
@@ -2509,8 +2679,16 @@ export function AgentsPage() {
   }, [loadFleetData]);
 
   useEffect(() => {
+    if (!systemDrawerOpen || systemDrawerTab !== 'analytics' || !editingAgent?.id) return;
+    void loadAgentAnalytics(editingAgent.id, agentAnalyticsRange);
+  }, [agentAnalyticsRange, editingAgent?.id, loadAgentAnalytics, systemDrawerOpen, systemDrawerTab]);
+
+  useEffect(() => {
     const handler = () => {
       void loadFleetData();
+      if (systemDrawerOpen && systemDrawerTab === 'analytics' && editingAgent?.id) {
+        void loadAgentAnalytics(editingAgent.id, agentAnalyticsRange);
+      }
     };
     window.addEventListener('agent_run-created', handler);
     window.addEventListener('agent_run-updated', handler);
@@ -2518,7 +2696,7 @@ export function AgentsPage() {
       window.removeEventListener('agent_run-created', handler);
       window.removeEventListener('agent_run-updated', handler);
     };
-  }, [loadFleetData]);
+  }, [agentAnalyticsRange, editingAgent?.id, loadAgentAnalytics, loadFleetData, systemDrawerOpen, systemDrawerTab]);
 
   const openCreateDialog = () => {
     setEditingAgent(null);
@@ -2730,21 +2908,27 @@ export function AgentsPage() {
     setEditingAgent(agent);
     setTemplateDraft(null);
     setAgentUsage(null);
+    setAgentAnalytics(null);
     void loadAgentUsage(agent.id);
     setAdvancedOpen(hasConfiguredAdvancedFields(agent, presets));
     setAutomationOpen(agent.is_system ? false : agent.approval_mode !== 'preset_default');
     setToolPickerOpen(false);
     setVersionDraftOpen(false);
+    setTokenLimitMode('preset');
     setVersionLabelDraft('');
     setVersionDescriptionDraft('');
     if (agent.is_system) {
       setForm(buildSystemAgentForm(agent, presets));
+      setSystemDrawerTab('versions');
       setSystemDrawerOpen(true);
       setDialogOpen(false);
       return;
     }
     setForm(buildCustomAgentForm(agent));
-    setDialogOpen(true);
+    setSystemDrawerTab('versions');
+    setSystemDrawerOpen(true);
+    setDialogOpen(false);
+    void loadCustomAgentVersions(agent);
   };
 
   const openDeleteDialog = (agent: Agent) => {
@@ -2967,8 +3151,37 @@ export function AgentsPage() {
   };
 
   const handleCreatePresetVersion = async () => {
-    if (!workspaceId || !editingAgent?.is_system || !versionLabelDraft.trim()) return;
+    if (!workspaceId || !editingAgent || !versionLabelDraft.trim()) return;
     setCreatingVersion(true);
+    if (!editingAgent.is_system) {
+      const res = await automationService.createAgentVersion(workspaceId, editingAgent.id, {
+        label: versionLabelDraft.trim(),
+        description: versionDescriptionDraft.trim() || undefined,
+        source_version_id: selectedCustomVersionID || undefined,
+        runtime_kind: form.runtime_kind,
+        provider: form.provider,
+        model: form.model.trim(),
+        execution_config: buildExecutionConfigPayload(form),
+        system_prompt: form.system_prompt.trim() || undefined,
+        skills: form.skills,
+        allowed_tools: normalizeToolList(form.allowed_tools),
+        allowed_targets: normalizeTargetList(form.allowed_targets),
+        supported_modes: form.supported_modes,
+        default_invocation_mode: form.default_invocation_mode,
+      });
+      if (!res.error && res.data) {
+        await loadCustomAgentVersions(editingAgent);
+        setSelectedCustomVersionID(res.data.id);
+        setForm(buildCustomAgentVersionForm(editingAgent, res.data));
+        setVersionDraftOpen(false);
+        setVersionLabelDraft('');
+        setVersionDescriptionDraft('');
+      } else if (res.error) {
+        toast.error('Failed to save custom version', { description: res.error });
+      }
+      setCreatingVersion(false);
+      return;
+    }
     const payload: CreateWorkspaceAgentPresetVersionRequest = {
       workspace_id: workspaceId,
       family_key: form.preset_key,
@@ -2982,6 +3195,7 @@ export function AgentsPage() {
       system_prompt: form.system_prompt.trim() || undefined,
       instruction_skills: form.instruction_skills,
       allowed_tools: normalizeToolList(form.allowed_tools),
+      allowed_targets: normalizeTargetList(form.allowed_targets),
       supported_modes: form.supported_modes,
       approval_mode: 'never',
       default_invocation_mode: form.default_invocation_mode,
@@ -2995,6 +3209,7 @@ export function AgentsPage() {
         system_prompt: res.data?.system_prompt ?? current.system_prompt,
         instruction_preamble: res.data?.instruction_preamble ?? current.instruction_preamble,
         instruction_skills: res.data?.instruction_skills ?? current.instruction_skills,
+        allowed_targets: normalizeTargetList(res.data?.allowed_target_types ?? current.allowed_targets),
       }));
       setVersionDraftOpen(false);
       setVersionLabelDraft('');
@@ -3006,7 +3221,42 @@ export function AgentsPage() {
   };
 
   const handleSaveWorkspaceVersion = async (options?: { silent?: boolean }) => {
-    if (!workspaceId || !editingAgent?.is_system || !selectedPreset?.id) return false;
+    if (!workspaceId || !editingAgent) return false;
+    if (!editingAgent.is_system) {
+      if (!selectedCustomVersion) return false;
+      if (!options?.silent) setSaving(true);
+      const res = await automationService.updateAgentVersion(workspaceId, editingAgent.id, selectedCustomVersion.id, {
+        label: selectedCustomVersion.label,
+        description: selectedCustomVersion.description,
+        runtime_kind: form.runtime_kind,
+        provider: form.provider,
+        model: form.model.trim(),
+        execution_config: buildExecutionConfigPayload(form),
+        system_prompt: form.system_prompt.trim() || undefined,
+        skills: form.skills,
+        allowed_tools: normalizeToolList(form.allowed_tools),
+        allowed_targets: normalizeTargetList(form.allowed_targets),
+        supported_modes: form.supported_modes,
+        default_invocation_mode: form.default_invocation_mode,
+      });
+      if (res.error) {
+        toast.error('Failed to save version', { description: res.error });
+        if (!options?.silent) setSaving(false);
+        return false;
+      }
+      if (res.data) {
+        setCustomAgentVersions((current) => current.map((version) => (version.id === res.data?.id ? res.data : version)));
+      }
+      if (editingAgent.active_version_id === selectedCustomVersion.id) {
+        await loadAgents();
+      }
+      if (!options?.silent) {
+        toast.success('Version saved');
+        setSaving(false);
+      }
+      return true;
+    }
+    if (!selectedPreset?.id) return false;
     if (!options?.silent) setSaving(true);
     const payload: UpdateWorkspaceAgentPresetVersionRequest = {
       label: selectedPreset.version_label,
@@ -3018,6 +3268,7 @@ export function AgentsPage() {
       system_prompt: form.system_prompt.trim() || undefined,
       instruction_skills: form.instruction_skills,
       allowed_tools: normalizeToolList(form.allowed_tools),
+      allowed_targets: normalizeTargetList(form.allowed_targets),
       supported_modes: form.supported_modes,
       default_invocation_mode: form.default_invocation_mode,
     };
@@ -3035,8 +3286,55 @@ export function AgentsPage() {
     return true;
   };
 
+  const handleSaveAgentSettings = async () => {
+    if (!workspaceId || !editingAgent) return;
+    setSaving(true);
+    const res = await automationService.updateAgent(workspaceId, editingAgent.id, {
+      monthly_token_budget: form.monthly_token_budget.trim()
+        ? Number.parseInt(form.monthly_token_budget, 10)
+        : 0,
+    });
+    if (res.error) {
+      toast.error('Failed to save agent settings', { description: res.error });
+      setSaving(false);
+      return;
+    }
+    if (res.data) {
+      setEditingAgent(res.data);
+      setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
+      setForm((current) => ({
+        ...current,
+        monthly_token_budget: res.data?.monthly_token_budget?.toString() ?? '',
+      }));
+    }
+    await loadAgents();
+    toast.success('Agent settings saved');
+    setSaving(false);
+  };
+
   const handleSetActiveVersion = async (versionKey: string) => {
-    if (!workspaceId || !editingAgent?.is_system || !versionKey || versionKey === currentSystemVersionKey) return;
+    if (!workspaceId || !editingAgent || !versionKey) return;
+    if (!editingAgent.is_system) {
+      if (versionKey === editingAgent.active_version_id) return;
+      setSaving(true);
+      const res = await automationService.activateAgentVersion(workspaceId, editingAgent.id, versionKey);
+      if (res.error) {
+        toast.error('Failed to set active version', { description: res.error });
+        setSaving(false);
+        return;
+      }
+      if (res.data) {
+        setEditingAgent(res.data);
+        setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
+        setForm(buildCustomAgentForm(res.data));
+        await loadCustomAgentVersions(res.data);
+      }
+      await loadAgents();
+      setSaving(false);
+      toast.success('Active version updated');
+      return;
+    }
+    if (!versionKey || versionKey === currentSystemVersionKey) return;
     setSaving(true);
     const res = await automationService.updateAgent(workspaceId, editingAgent.id, {
       preset_key: form.preset_key,
@@ -3160,36 +3458,73 @@ export function AgentsPage() {
 
   const advancedConfigured = hasConfiguredAdvancedFields(editingAgent, presets);
   const editingSystemAgent = Boolean(editingAgent?.is_system);
+  const editingCustomAgent = Boolean(editingAgent && !editingAgent.is_system);
   const selectedPreset = editingSystemAgent ? presetMetaForSelection(form.preset_key, form.preset_version_key, presets) : null;
   const selectedPresetVersions = editingSystemAgent ? presetVersionsForKey(form.preset_key, presets) : [];
+  const selectedCustomVersion = editingCustomAgent
+    ? customAgentVersions.find((version) => version.id === selectedCustomVersionID) ?? null
+    : null;
   const currentSystemVersionKey = editingSystemAgent
     ? (editingAgent?.preset_version_key?.trim() || selectedPreset?.version_key || fallbackPresetVersionKey(form.preset_key))
     : '';
   const selectedSystemVersionKey = editingSystemAgent
     ? (form.preset_version_key?.trim() || selectedPreset?.version_key || fallbackPresetVersionKey(form.preset_key))
     : '';
-  const currentSystemPreset = editingSystemAgent
-    ? presetMetaForSelection(form.preset_key, currentSystemVersionKey, presets)
-    : null;
   const hasPendingSystemVersionSelection = editingSystemAgent
     && Boolean(selectedSystemVersionKey)
     && Boolean(currentSystemVersionKey)
     && selectedSystemVersionKey !== currentSystemVersionKey;
-  const isEditingWorkspaceVersion = editingSystemAgent
-    && !versionDraftOpen
-    && selectedPreset?.scope === 'workspace'
-    && Boolean(selectedPreset?.id);
+  const hasAgentSettingsChanges = Boolean(editingAgent && (
+    normalizeTokenBudgetFormValue(form.monthly_token_budget) !== normalizeTokenBudgetFormValue(editingAgent.monthly_token_budget?.toString() ?? '')
+  ));
+  const selectedAgentStats = editingAgent ? runStats[editingAgent.id] : undefined;
+  const monthlyTokenLimit = normalizeTokenBudgetFormValue(form.monthly_token_budget);
+  const monthlyTokensUsed = editingAgent?.tokens_used_this_month ?? 0;
+  const monthlyTokenPercent = monthlyTokenLimit > 0 ? Math.min(100, Math.round((monthlyTokensUsed / monthlyTokenLimit) * 100)) : 0;
+  const monthlyLimitMatchesPreset = MONTHLY_TOKEN_LIMIT_PRESETS.some((preset) => preset.value === monthlyTokenLimit);
+  const showCustomTokenLimitInput = tokenLimitMode === 'custom' || !monthlyLimitMatchesPreset;
+  const recentRunSuccessRate = formatRate(selectedAgentStats?.recentCompleted ?? 0, selectedAgentStats?.recentRuns ?? 0);
+  const avgTokensPerRecentRun = selectedAgentStats?.recentRuns ? Math.round((selectedAgentStats.recentTokens ?? 0) / selectedAgentStats.recentRuns) : 0;
+  const recentRunItems = selectedAgentStats?.recentRunItems ?? [];
+  const selectedVersionLabel = editingSystemAgent ? selectedPreset?.version_label : selectedCustomVersion?.label;
+  const selectedVersionDescription = editingSystemAgent ? selectedPreset?.description : selectedCustomVersion?.description;
+  const selectedVersionCreatedAt = editingSystemAgent ? selectedPreset?.created_at : selectedCustomVersion?.created_at;
+  const selectedVersionIsActive = editingSystemAgent
+    ? selectedPreset?.version_key === currentSystemVersionKey
+    : selectedCustomVersion?.id === editingAgent?.active_version_id;
+  const selectedVersionActivationKey = editingSystemAgent ? selectedSystemVersionKey : selectedCustomVersionID;
+  const canSetSelectedVersionActive = editingSystemAgent
+    ? hasPendingSystemVersionSelection
+    : Boolean(selectedCustomVersionID && selectedCustomVersionID !== editingAgent?.active_version_id);
+  const isEditingWorkspaceVersion = editingSystemAgent && !versionDraftOpen && selectedPreset?.scope === 'workspace' && Boolean(selectedPreset?.id);
+  const isEditingCustomVersion = editingCustomAgent && !versionDraftOpen && Boolean(selectedCustomVersion);
   const systemVersionReadOnly = editingSystemAgent && !versionDraftOpen && !isEditingWorkspaceVersion;
+  const versionReadOnly = editingSystemAgent ? systemVersionReadOnly : false;
   const hasWorkspaceVersionChanges = Boolean(isEditingWorkspaceVersion && selectedPreset && (
     form.runtime_kind !== selectedPreset.runtime_kind ||
     form.provider !== (selectedPreset.provider ?? '') ||
     form.model.trim() !== (selectedPreset.model ?? '') ||
     stableConfigJSON(buildExecutionConfigPayload(form)) !== stableConfigJSON(selectedPreset.execution_config) ||
     form.system_prompt.trim() !== (selectedPreset.system_prompt ?? '') ||
+    stableJSON(form.instruction_skills) !== stableJSON(selectedPreset.instruction_skills ?? []) ||
     stableJSON(normalizeToolList(form.allowed_tools)) !== stableJSON(normalizeToolList(selectedPreset.allowed_tools ?? [])) ||
+    stableJSON(normalizeTargetList(form.allowed_targets)) !== stableJSON(normalizeTargetList(selectedPreset.allowed_target_types ?? [])) ||
     stableJSON(form.supported_modes) !== stableJSON(selectedPreset.supported_modes) ||
     form.default_invocation_mode !== selectedPreset.default_invocation_mode
   ));
+  const hasCustomVersionChanges = Boolean(isEditingCustomVersion && selectedCustomVersion && (
+    form.runtime_kind !== selectedCustomVersion.runtime_kind ||
+    form.provider !== (selectedCustomVersion.provider ?? '') ||
+    form.model.trim() !== (selectedCustomVersion.model ?? '') ||
+    stableConfigJSON(buildExecutionConfigPayload(form)) !== stableConfigJSON(selectedCustomVersion.execution_config) ||
+    form.system_prompt.trim() !== (selectedCustomVersion.system_prompt ?? '') ||
+    stableJSON(form.skills) !== stableJSON(selectedCustomVersion.skills ?? []) ||
+    stableJSON(normalizeToolList(form.allowed_tools)) !== stableJSON(normalizeToolList(selectedCustomVersion.allowed_tools ?? [])) ||
+    stableJSON(normalizeTargetList(form.allowed_targets)) !== stableJSON(normalizeTargetList(selectedCustomVersion.allowed_targets ?? [])) ||
+    stableJSON(form.supported_modes) !== stableJSON(selectedCustomVersion.supported_modes ?? []) ||
+    form.default_invocation_mode !== selectedCustomVersion.default_invocation_mode
+  ));
+  const hasVersionChanges = hasWorkspaceVersionChanges || hasCustomVersionChanges;
   const effectiveTargets =
     editingSystemAgent
       ? (selectedPreset?.allowed_target_types ?? form.allowed_targets)
@@ -3207,7 +3542,7 @@ export function AgentsPage() {
   const isCustomEdit = Boolean(editingAgent && !editingAgent.is_system && !templateDraft);
   const isTemplateCreate = Boolean(templateDraft && !editingAgent);
   const createDrawerTitle = editingAgent
-    ? 'Edit Custom Agent'
+    ? 'Custom Agent'
     : templateDraft
       ? `Create ${templateDraft.template.name}`
       : 'Create Custom Agent';
@@ -3316,6 +3651,13 @@ export function AgentsPage() {
   const skillCatalogEntries = skillCatalog?.skills ?? [];
   const attachedSkillIdentities = new Set(form.skills.map(agentSkillIdentity));
   const availableSkillEntries = skillCatalogEntries.filter((s) => !attachedSkillIdentities.has(agentSkillIdentity(s)));
+  const versionSkillItems = editingCustomAgent
+    ? form.skills.map((skill) => ({ key: skill.key, identity: agentSkillIdentity(skill) }))
+    : form.instruction_skills.map((key) => ({ key, identity: key }));
+  const attachedVersionSkillIdentities = new Set(versionSkillItems.map((skill) => skill.identity));
+  const availableVersionSkillEntries = skillCatalogEntries.filter((s) => (
+    !attachedVersionSkillIdentities.has(editingCustomAgent ? agentSkillIdentity(s) : s.key)
+  ));
   const addSkill = (entry: { id?: string; key: string; source_kind: string; required_tools?: string[] }) => {
     const ref: AgentSkillRef = { key: entry.key };
     if (entry.id) ref.skill_id = entry.id;
@@ -3328,6 +3670,44 @@ export function AgentsPage() {
   };
   const removeSkill = (identity: string) => {
     setForm((current) => ({ ...current, skills: current.skills.filter((s) => agentSkillIdentity(s) !== identity) }));
+  };
+  const addVersionInstructionSkill = (entry: { id?: string; key: string; source_kind?: string; required_tools?: string[] }) => {
+    const missingTools = (entry.required_tools ?? []).filter((t) => !form.allowed_tools.includes(t));
+    if (missingTools.length > 0) {
+      toast.warning(`Skill "${entry.key}" requires tools not yet allowed: ${missingTools.join(', ')}`);
+    }
+    setForm((current) => {
+      if (editingCustomAgent) {
+        const ref: AgentSkillRef = { key: entry.key };
+        if (entry.id) ref.skill_id = entry.id;
+        const identity = agentSkillIdentity(ref);
+        if (current.skills.some((skill) => agentSkillIdentity(skill) === identity)) return current;
+        return {
+          ...current,
+          skills: [...current.skills, ref],
+        };
+      }
+      if (current.instruction_skills.includes(entry.key)) return current;
+      return {
+        ...current,
+        instruction_skills: [...current.instruction_skills, entry.key],
+      };
+    });
+    setSkillPickerOpen(false);
+  };
+  const removeVersionInstructionSkill = (identity: string) => {
+    setForm((current) => {
+      if (editingCustomAgent) {
+        return {
+          ...current,
+          skills: current.skills.filter((skill) => agentSkillIdentity(skill) !== identity),
+        };
+      }
+      return {
+        ...current,
+        instruction_skills: current.instruction_skills.filter((key) => key !== identity),
+      };
+    });
   };
   const toggleTarget =(target: AgentTargetType) => {
     setForm((current) => {
@@ -3367,6 +3747,7 @@ export function AgentsPage() {
       instruction_preamble: nextPreset.instruction_preamble ?? '',
       instruction_skills: nextPreset.instruction_skills ?? [],
       allowed_tools: normalizeToolList(nextPreset.allowed_tools ?? []),
+      allowed_targets: normalizeTargetList(nextPreset.allowed_target_types ?? []),
       approval_mode: 'never',
       default_invocation_mode: normalizeDefaultInvocationMode(
         nextPreset.default_invocation_mode,
@@ -3374,6 +3755,16 @@ export function AgentsPage() {
         nextPreset.default_invocation_mode,
       ),
     }));
+  };
+  const selectCustomAgentVersion = (versionID: string) => {
+    if (!editingAgent || editingAgent.is_system) return;
+    const nextVersion = customAgentVersions.find((version) => version.id === versionID);
+    if (!nextVersion) return;
+    setVersionDraftOpen(false);
+    setVersionLabelDraft('');
+    setVersionDescriptionDraft('');
+    setSelectedCustomVersionID(nextVersion.id);
+    setForm(buildCustomAgentVersionForm(editingAgent, nextVersion));
   };
 
   return (
@@ -3641,6 +4032,9 @@ export function AgentsPage() {
             setVersionDraftOpen(false);
             setVersionLabelDraft('');
             setVersionDescriptionDraft('');
+            setCustomAgentVersions([]);
+            setSelectedCustomVersionID('');
+            setAgentAnalytics(null);
           }
         }}
       >
@@ -3651,38 +4045,283 @@ export function AgentsPage() {
               <div className="min-w-0 flex-1">
                 <SheetTitle className="text-lg">{editingAgent?.name ?? 'Built-in Agent'}</SheetTitle>
                 <SheetDescription className="mt-0.5 text-xs">
-                  Built-in {selectedPreset ? presetLabel(form.preset_key, presets) : 'agent'}
-                  {currentSystemPreset && (
-                    <>
-                      {' · active version '}
-                      <span className="font-medium text-foreground">{currentSystemPreset.version_label}</span>
-                    </>
-                  )}
+                  {editingAgent?.is_system
+                    ? `Built-in ${selectedPreset ? presetLabel(form.preset_key, presets) : 'agent'}`
+                    : 'Custom agent'}
                 </SheetDescription>
               </div>
-              {editingAgent && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="shrink-0"
-                  onClick={() => {
-                    window.open(resolveTriggerHistoryPath(workspace?.slug, editingAgent.id), '_blank');
-                  }}
-                >
-                  View runs
-                </Button>
-              )}
             </div>
           </SheetHeader>
 
-          <div className="grid min-h-0 flex-1 lg:grid-cols-[20rem_minmax(0,1fr)]">
+          <Tabs value={systemDrawerTab} onValueChange={(value) => setSystemDrawerTab(value as 'analytics' | 'limits' | 'versions')} className="min-h-0 flex-1 gap-0 overflow-hidden">
+            <div className="border-b border-border/60 bg-background px-6 py-2">
+              <TabsList variant="line">
+                <TabsTrigger value="versions" className="focus-visible:border-transparent focus-visible:outline-none focus-visible:ring-0">Versions</TabsTrigger>
+                <TabsTrigger value="analytics" className="focus-visible:border-transparent focus-visible:outline-none focus-visible:ring-0">Analytics</TabsTrigger>
+                <TabsTrigger value="limits" className="focus-visible:border-transparent focus-visible:outline-none focus-visible:ring-0">Limits</TabsTrigger>
+              </TabsList>
+            </div>
+
+            <TabsContent value="analytics" className="mt-0 min-h-0 overflow-y-auto px-6 pb-12 pt-6">
+              <div className="mx-auto w-full max-w-6xl space-y-6">
+                <section className="space-y-3">
+                  <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agent analytics</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">Usage and run health for this agent.</p>
+                    </div>
+                    {editingAgent && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => window.open(resolveTriggerHistoryPath(workspace?.slug, editingAgent.id), '_blank')}
+                      >
+                        View runs
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg border border-border/60 bg-card p-4">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Runs · 7d</p>
+                      <p className="mt-2 text-2xl font-semibold">{selectedAgentStats?.recentRuns ?? 0}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {(selectedAgentStats?.recentCompleted ?? 0).toLocaleString()} completed · {(selectedAgentStats?.recentFailed ?? 0).toLocaleString()} failed
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-card p-4">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Success rate · 7d</p>
+                      <p className="mt-2 text-2xl font-semibold">{recentRunSuccessRate}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{selectedAgentStats?.attentionRunCount ?? 0} runs need attention</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-card p-4">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Avg tokens / run · 7d</p>
+                      <p className="mt-2 text-2xl font-semibold">{avgTokensPerRecentRun > 0 ? avgTokensPerRecentRun.toLocaleString() : '-'}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Efficiency signal across recent runs</p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-medium">Run trends</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">Runs, completions, failures, and paused runs over time.</p>
+                    </div>
+                    <div className="flex rounded-md border border-border p-0.5">
+                      {AGENT_ANALYTICS_RANGES.map((range) => (
+                        <button
+                          key={range.value}
+                          type="button"
+                          onClick={() => setAgentAnalyticsRange(range.value)}
+                          className={cn(
+                            'h-7 rounded px-2.5 text-xs font-medium transition-colors',
+                            agentAnalyticsRange === range.value
+                              ? 'bg-muted text-foreground'
+                              : 'text-muted-foreground hover:text-foreground',
+                          )}
+                        >
+                          {range.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {agentAnalyticsLoading ? (
+                    <div className="flex h-56 items-center justify-center rounded-lg border border-border/60 bg-card text-sm text-muted-foreground">
+                      <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
+                      Loading trends...
+                    </div>
+                  ) : (
+                    <AgentRunsTrendChart analytics={agentAnalytics} />
+                  )}
+                </section>
+
+                <section className="rounded-lg border border-border/60 bg-card">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
+                    <div>
+                      <h3 className="text-sm font-medium">Recent runs</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">Last five runs with status, target, tokens, and time.</p>
+                    </div>
+                    {editingAgent && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => window.open(resolveTriggerHistoryPath(workspace?.slug, editingAgent.id), '_blank')}
+                      >
+                        View all
+                      </Button>
+                    )}
+                  </div>
+                  {recentRunItems.length > 0 ? (
+                    <div className="divide-y divide-border/60">
+                      {recentRunItems.map((run) => (
+                        <button
+                          key={run.id}
+                          type="button"
+                          onClick={() => openRunDetails(run.id)}
+                          className="grid w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 sm:grid-cols-[8rem_minmax(0,1fr)_8rem_8rem]"
+                        >
+                          <div>
+                            <Badge variant="outline" className={cn('h-5 px-1.5 text-[10px]', lastRunStatusClass(run))}>
+                              {lastRunStatusLabel(run)}
+                            </Badge>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{runTargetLabel(run)}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{run.target_type.replace(/_/g, ' ')}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tokens</p>
+                            <p className="font-mono text-sm">{(run.tokens_used ?? 0).toLocaleString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">When</p>
+                            <p className="text-sm text-muted-foreground">{formatLastRunTime(run)}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="px-4 py-6 text-sm text-muted-foreground">No runs yet.</p>
+                  )}
+                </section>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="limits" className="mt-0 min-h-0 overflow-y-auto px-6 pb-12 pt-6">
+              <div className="mx-auto w-full max-w-4xl space-y-6">
+                <section className="space-y-3">
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agent limits</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">Usage limits that apply across all versions of this agent.</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg border border-border/60 bg-card p-4">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Monthly limit</p>
+                      <p className="mt-2 text-2xl font-semibold">{monthlyTokenLimit > 0 ? monthlyTokenLimit.toLocaleString() : '-'}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Tokens allowed this month.</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-card p-4">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Used this month</p>
+                      <p className="mt-2 text-2xl font-semibold">{monthlyTokensUsed.toLocaleString()}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{monthlyTokenLimit > 0 ? `${monthlyTokenPercent}% of limit` : 'No limit set'}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-card p-4">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Total tokens</p>
+                      <p className="mt-2 text-2xl font-semibold">{(editingAgent?.tokens_used_total ?? 0).toLocaleString()}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Across all recorded runs.</p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-border/60 bg-card p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-medium">Monthly token limit</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">Set to zero or leave blank for no monthly limit.</p>
+                    </div>
+                    {hasAgentSettingsChanges && (
+                      <Button type="button" size="sm" disabled={saving} onClick={handleSaveAgentSettings}>
+                        {saving ? 'Applying…' : 'Apply'}
+                      </Button>
+                    )}
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    <Label className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                      Preset limits
+                    </Label>
+                    <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                      {MONTHLY_TOKEN_LIMIT_PRESETS.map((preset) => {
+                        const active = tokenLimitMode !== 'custom' && monthlyTokenLimit === preset.value;
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => {
+                              setTokenLimitMode('preset');
+                              setForm((current) => ({
+                                ...current,
+                                monthly_token_budget: preset.value > 0 ? String(preset.value) : '',
+                              }));
+                            }}
+                            className={cn(
+                              'rounded-md border px-3 py-2 text-left text-sm font-medium transition-colors',
+                              active
+                                ? 'border-primary bg-primary/10 text-foreground'
+                                : 'border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                            )}
+                          >
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => setTokenLimitMode('custom')}
+                        className={cn(
+                          'rounded-md border px-3 py-2 text-left text-sm font-medium transition-colors',
+                          showCustomTokenLimitInput
+                            ? 'border-primary bg-primary/10 text-foreground'
+                            : 'border-border bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                        )}
+                      >
+                        Custom
+                      </button>
+                    </div>
+                    {showCustomTokenLimitInput && (
+                      <div className="max-w-sm">
+                        <Label htmlFor="agent-token-limit" className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                          Custom monthly token limit
+                        </Label>
+                        <Input
+                          id="agent-token-limit"
+                          type="number"
+                          min={0}
+                          value={form.monthly_token_budget}
+                          onChange={(e) => {
+                            setTokenLimitMode('custom');
+                            setForm((current) => ({ ...current, monthly_token_budget: e.target.value }));
+                          }}
+                          placeholder="Enter token limit"
+                          className="mt-1 h-9"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  {monthlyTokenLimit > 0 ? (
+                    <>
+                      <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={cn(
+                            'h-full rounded-full transition-all',
+                            monthlyTokenPercent >= 90 ? 'bg-destructive' : monthlyTokenPercent >= 70 ? 'bg-amber-500' : 'bg-primary',
+                          )}
+                          style={{ width: `${monthlyTokenPercent}%` }}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {monthlyTokensUsed.toLocaleString()} of {monthlyTokenLimit.toLocaleString()} tokens used this month.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-3 text-xs text-muted-foreground">No monthly limit is set.</p>
+                  )}
+                </section>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="versions" className="mt-0 flex min-h-0 overflow-hidden">
+            <div className="grid min-h-0 flex-1 lg:grid-cols-[20rem_minmax(0,1fr)]">
             {/* ──────── LEFT: VERSIONS PANE ──────── */}
             <aside className="flex min-h-0 flex-col border-b border-border/60 bg-muted/20 lg:border-b-0 lg:border-r">
               <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Versions</p>
-                  <p className="text-[10px] text-muted-foreground">{selectedPresetVersions.length} available</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {editingSystemAgent ? selectedPresetVersions.length : customAgentVersions.length} available
+                  </p>
                 </div>
                 <Button
                   type="button"
@@ -3691,8 +4330,8 @@ export function AgentsPage() {
                   className="h-7 gap-1 px-2 text-[11px]"
                   onClick={() => {
                     setVersionDraftOpen(true);
-                    setVersionLabelDraft(`${selectedPreset?.version_label ?? 'Version'} Copy`);
-                    setVersionDescriptionDraft(selectedPreset?.description ?? '');
+                    setVersionLabelDraft(`${editingSystemAgent ? selectedPreset?.version_label ?? 'Version' : selectedCustomVersion?.label ?? 'Version'} Copy`);
+                    setVersionDescriptionDraft(editingSystemAgent ? selectedPreset?.description ?? '' : selectedCustomVersion?.description ?? '');
                   }}
                 >
                   <PlusSignIcon className="h-3.5 w-3.5" />
@@ -3701,7 +4340,7 @@ export function AgentsPage() {
               </div>
               <div className="max-h-[30vh] overflow-y-auto px-2 py-2 lg:max-h-none lg:flex-1">
                 <div className="space-y-1">
-                  {selectedPresetVersions.map((presetVersion) => {
+                  {editingSystemAgent ? selectedPresetVersions.map((presetVersion) => {
                     const isSelected = presetVersion.version_key === form.preset_version_key;
                     const isCurrent = presetVersion.version_key === currentSystemVersionKey;
                     const isWorkspace = presetVersion.scope === 'workspace';
@@ -3783,35 +4422,99 @@ export function AgentsPage() {
                         </DropdownMenu>
                       </div>
                     );
+                  }) : customAgentVersions.map((version) => {
+                    const isSelected = version.id === selectedCustomVersionID;
+                    const isCurrent = version.id === editingAgent?.active_version_id;
+                    return (
+                      <div
+                        key={version.id}
+                        className={cn(
+                          'group relative rounded-lg border transition-colors focus-within:ring-2 focus-within:ring-primary/40',
+                          isSelected
+                            ? 'border-primary/40 bg-background shadow-sm ring-1 ring-primary/20'
+                            : 'border-transparent hover:bg-background hover:shadow-sm',
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => selectCustomAgentVersion(version.id)}
+                          className="flex w-full items-start gap-2 px-3 py-2 text-left"
+                        >
+                          <span className={cn(
+                            'mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                            isCurrent ? 'bg-emerald-500' : 'bg-transparent',
+                          )} />
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <p className="truncate text-sm font-medium">{version.label}</p>
+                            <p className="line-clamp-1 text-[11px] leading-snug text-muted-foreground">
+                              {version.description || 'No description'}
+                            </p>
+                            <div className="flex flex-wrap gap-1 pt-1">
+                              {isCurrent && (
+                                <Badge variant="outline" className="bg-emerald-500/10 text-[9px] px-1.5 py-0 text-emerald-700 dark:text-emerald-400">Active</Badge>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-1.5 top-1.5 h-6 w-6 text-muted-foreground opacity-50 transition-opacity hover:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+                              aria-label={`Actions for ${version.label}`}
+                            >
+                              <MoreHorizontalIcon className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                selectCustomAgentVersion(version.id);
+                                setVersionDraftOpen(true);
+                                setVersionLabelDraft(`${version.label} Copy`);
+                                setVersionDescriptionDraft(version.description ?? '');
+                              }}
+                            >
+                              Duplicate
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    );
                   })}
+                  {editingCustomAgent && customVersionsLoading && (
+                    <p className="px-3 py-2 text-xs text-muted-foreground">Loading versions...</p>
+                  )}
                 </div>
               </div>
             </aside>
 
             {/* ──────── RIGHT: SELECTED VERSION DETAIL ──────── */}
-            <div className="min-h-0 overflow-y-auto px-6 py-6">
+            <div className="min-h-0 overflow-y-auto px-6 pb-12 pt-6">
               <div className="mx-auto w-full max-w-4xl space-y-6">
                 {/* Selected version: header + behaviour strip, visually grouped */}
                 <section className="overflow-hidden rounded-xl border border-border/60 bg-card">
                   <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
                     <div className="min-w-0 flex-1 space-y-1.5">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-lg font-semibold leading-none">{selectedPreset?.version_label ?? 'Version'}</h2>
-                        {selectedPreset?.version_key === currentSystemVersionKey ? (
+                        <h2 className="text-lg font-semibold leading-none">{selectedVersionLabel ?? 'Version'}</h2>
+                        {selectedVersionIsActive ? (
                           <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400">Active</Badge>
                         ) : null}
                       </div>
-                      {selectedPreset?.description && (
-                        <p className="text-sm text-muted-foreground">{selectedPreset.description}</p>
+                      {selectedVersionDescription && (
+                        <p className="text-sm text-muted-foreground">{selectedVersionDescription}</p>
                       )}
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <Button
                         type="button"
                         size="sm"
-                        disabled={!hasPendingSystemVersionSelection || saving || hasWorkspaceVersionChanges}
+                        disabled={!canSetSelectedVersionActive || saving || hasVersionChanges}
                         onClick={() => {
-                          void handleSetActiveVersion(selectedSystemVersionKey);
+                          void handleSetActiveVersion(selectedVersionActivationKey);
                         }}
                       >
                         Set as active
@@ -3822,15 +4525,15 @@ export function AgentsPage() {
                         variant="outline"
                         onClick={() => {
                           setVersionDraftOpen(true);
-                          setVersionLabelDraft(`${selectedPreset?.version_label ?? 'Version'} Copy`);
-                          setVersionDescriptionDraft(selectedPreset?.description ?? '');
+                          setVersionLabelDraft(`${selectedVersionLabel ?? 'Version'} Copy`);
+                          setVersionDescriptionDraft(selectedVersionDescription ?? '');
                         }}
                       >
                         Duplicate
                       </Button>
                     </div>
                   </div>
-                  <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-3 lg:grid-cols-6">
+                  <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-5">
                     <div className="space-y-1 p-3">
                       <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Runtime</dt>
                       <dd className="truncate text-sm font-medium">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</dd>
@@ -3844,13 +4547,9 @@ export function AgentsPage() {
                       <dd className="truncate text-sm font-medium">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</dd>
                     </div>
                     <div className="space-y-1 p-3">
-                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tools · Available skills</dt>
-                      <dd className="truncate text-sm font-medium">{form.allowed_tools.length} · {form.instruction_skills.length}</dd>
-                    </div>
-                    <div className="space-y-1 p-3">
-                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Targets</dt>
-                      <dd className="truncate text-sm font-medium" title={effectiveTargets.join(', ') || '—'}>
-                        {effectiveTargets.length > 0 ? effectiveTargets.join(', ') : '—'}
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Created</dt>
+                      <dd className="truncate text-sm font-medium" title={formatAgentTimestampTitle(selectedVersionCreatedAt)}>
+                        {selectedVersionCreatedAt ? formatAgentTimestamp(selectedVersionCreatedAt) : 'Built-in default'}
                       </dd>
                     </div>
                     <div className="space-y-1 p-3">
@@ -3868,12 +4567,12 @@ export function AgentsPage() {
                 <section className="space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Version details</h3>
-                    <Badge variant={systemVersionReadOnly ? 'outline' : 'secondary'} className="text-[10px]">
-                      {versionDraftOpen
-                        ? 'New version'
-                        : isEditingWorkspaceVersion
-                          ? 'Editable'
-                          : 'Read-only'}
+                    <Badge variant={versionReadOnly ? 'outline' : 'secondary'} className="text-[10px]">
+	                      {versionDraftOpen
+	                        ? 'New version'
+	                        : isEditingWorkspaceVersion || isEditingCustomVersion
+	                          ? 'Editable'
+	                          : 'Read-only'}
                     </Badge>
                   </div>
                   <div className="space-y-2">
@@ -3889,14 +4588,14 @@ export function AgentsPage() {
                       <div className="border-t border-border/60 p-4">
                         <Textarea
                           value={form.system_prompt}
-                          disabled={systemVersionReadOnly}
+                          readOnly={versionReadOnly}
                           onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
                           rows={16}
                           placeholder="Write the system instructions that define how this agent should behave."
                           className={cn(
-                            'font-mono text-xs shadow-none',
-                            systemVersionReadOnly
-                              ? 'border-0 bg-transparent p-0 focus-visible:ring-0'
+                            'h-[24rem] max-h-[48vh] overflow-y-auto rounded-none font-mono text-xs shadow-none [field-sizing:fixed]',
+                            versionReadOnly
+                              ? 'border-0 bg-transparent px-0 py-1 focus-visible:ring-0'
                               : 'resize-y border border-dashed border-border/60 bg-muted/30 px-3 py-2 focus-visible:border-primary focus-visible:bg-background focus-visible:ring-1 focus-visible:ring-primary',
                           )}
                         />
@@ -3905,31 +4604,86 @@ export function AgentsPage() {
                   </Collapsible.Root>
 
                   {/* 01B — Available Skills */}
-                  {(form.instruction_skills.length > 0 || !systemVersionReadOnly) && (
-                  <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
-                    <Collapsible.Trigger asChild>
-                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
-                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                        <span className="flex-1 text-sm font-medium">Available skills</span>
-                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{form.instruction_skills.length} available</span>
-                      </button>
-                    </Collapsible.Trigger>
+                  {(versionSkillItems.length > 0 || !versionReadOnly) && (
+                  <Collapsible.Root open={versionSkillsOpen} onOpenChange={setVersionSkillsOpen} className="rounded-xl border border-border/60 bg-card">
+                    <div className="flex items-center gap-2 px-4 py-3">
+                      <Collapsible.Trigger asChild>
+                        <button type="button" className="group flex min-w-0 flex-1 items-center gap-3 text-left">
+                          <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                          <span className="flex-1 text-sm font-medium">Available skills</span>
+                          {!versionSkillsOpen && (
+                            <span className="text-xs text-muted-foreground">{versionSkillItems.length} available</span>
+                          )}
+                        </button>
+                      </Collapsible.Trigger>
+                      {versionSkillsOpen && !versionReadOnly && (
+                        <Popover open={skillPickerOpen} onOpenChange={setSkillPickerOpen}>
+                          <PopoverTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1.5 px-2 text-[11px]"
+                              disabled={availableVersionSkillEntries.length === 0}
+                            >
+                              <PlusSignIcon className="h-3.5 w-3.5" />
+                              Add skill
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            align="end"
+                            className="w-[28rem] overflow-hidden p-0"
+                            onWheelCapture={(event) => event.stopPropagation()}
+                          >
+                            <Command>
+                              <CommandInput placeholder="Search skills..." />
+                              <CommandList className="max-h-72 overscroll-contain">
+                                <CommandEmpty>No more skills available.</CommandEmpty>
+                                <CommandGroup heading={`${availableVersionSkillEntries.length} available`}>
+                                  {availableVersionSkillEntries.map((skill) => (
+                                    <CommandItem
+                                      key={skill.key}
+                                      value={`${skill.key} ${skill.title} ${skill.description}`}
+                                      onSelect={() => addVersionInstructionSkill(skill)}
+                                      className="cursor-pointer items-start py-2"
+                                    >
+                                      <div className="min-w-0 flex-1 space-y-0.5">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs font-medium text-foreground">{agentSkillDisplayName(skill, skill.key)}</span>
+                                          <span className="font-mono text-[10px] text-muted-foreground">{skill.key}</span>
+                                          <Badge variant="outline" className="text-[10px]">
+                                            {skill.source_kind === 'built_in' ? 'built-in' : skill.source_kind}
+                                          </Badge>
+                                        </div>
+                                        <p className="text-xs leading-relaxed text-muted-foreground">{skill.description}</p>
+                                      </div>
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </div>
                     <Collapsible.Content>
                       <div className="space-y-3 border-t border-border/60 p-4">
                         <p className="text-xs text-muted-foreground">
-                          Available skills are reusable behavior guides this version can discover and read during a run. They stay separate from the compiled system prompt.
+                          Available skills are reusable behavior guides this version can discover and read during a run.
                         </p>
                         <div className="space-y-2">
-                          {form.instruction_skills.map((skillKey, idx) => {
-                            const entry = skillCatalogEntries.find((s) => s.key === skillKey);
+                          {versionSkillItems.map((skill, idx) => {
+                            const entry = skillCatalogEntries.find((s) => (
+                              editingCustomAgent ? agentSkillIdentity(s) === skill.identity : s.key === skill.key
+                            ));
                             return (
-                              <div key={skillKey} className="flex items-start gap-3 rounded-lg border border-border/50 bg-background px-3 py-2.5">
+                              <div key={skill.identity} className="flex items-start gap-3 rounded-lg border border-border/50 bg-background px-3 py-2.5">
                                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-semibold text-muted-foreground">{idx + 1}</span>
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-2">
                                     <BookOpen01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                    <span className="text-xs font-medium">{agentSkillDisplayName(entry, skillKey)}</span>
-                                    <span className="font-mono text-[10px] text-muted-foreground">{skillKey}</span>
+                                    <span className="text-xs font-medium">{agentSkillDisplayName(entry, skill.key)}</span>
+                                    <span className="font-mono text-[10px] text-muted-foreground">{skill.key}</span>
                                     {entry && (
                                       <Badge variant="outline" className="text-[9px] px-1.5 py-0">{entry.source_kind === 'built_in' ? 'built-in' : entry.source_kind}</Badge>
                                     )}
@@ -3938,11 +4692,21 @@ export function AgentsPage() {
                                     <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{entry.description}</p>
                                   )}
                                 </div>
+                                {!versionReadOnly && (
+                                  <button
+                                    type="button"
+                                    className="mt-0.5 rounded-sm p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                                    onClick={() => removeVersionInstructionSkill(skill.identity)}
+                                    aria-label={`Remove ${skill.key}`}
+                                  >
+                                    <Cancel01Icon className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
                               </div>
                             );
                           })}
                         </div>
-                        {form.instruction_skills.length === 0 && (
+                        {versionSkillItems.length === 0 && (
                           <p className="rounded-md border border-dashed border-border/60 px-3 py-2 text-sm text-muted-foreground">No available skills configured.</p>
                         )}
                       </div>
@@ -3951,29 +4715,33 @@ export function AgentsPage() {
                   )}
 
                   {/* 01D — Allowed Tools */}
-                  <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
-                    <Collapsible.Trigger asChild>
-                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
-                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                        <span className="flex-1 text-sm font-medium">Allowed tools</span>
-                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{form.allowed_tools.length} enabled</span>
-                      </button>
-                    </Collapsible.Trigger>
+                  <Collapsible.Root open={versionToolsOpen} onOpenChange={setVersionToolsOpen} className="rounded-xl border border-border/60 bg-card">
+                    <div className="flex items-center gap-2 px-4 py-3">
+                      <Collapsible.Trigger asChild>
+                        <button type="button" className="group flex min-w-0 flex-1 items-center gap-3 text-left">
+                          <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                          <span className="flex-1 text-sm font-medium">Allowed tools</span>
+                          {!versionToolsOpen && (
+                            <span className="text-xs text-muted-foreground">{form.allowed_tools.length} enabled</span>
+                          )}
+                        </button>
+                      </Collapsible.Trigger>
+                      {versionToolsOpen && !versionReadOnly && (
+                        <ToolMultiSelectPopover
+                          open={toolPickerOpen}
+                          onOpenChange={setToolPickerOpen}
+                          tools={toolCatalogEntries}
+                          selectedTools={form.allowed_tools}
+                          disabled={codexUsesPresetCapabilities}
+                          onToggleTool={toggleTool}
+                        />
+                      )}
+                    </div>
                     <Collapsible.Content>
                       <div className="space-y-3 border-t border-border/60 p-4">
                         <p className="text-xs text-muted-foreground">
                           Allowed tools are the runtime actions and data sources this version may call. Skills can guide when to use tools, but tools control what the agent can actually do.
                         </p>
-                        <div className="flex items-center justify-end gap-2">
-                          <ToolMultiSelectPopover
-                            open={toolPickerOpen}
-                            onOpenChange={setToolPickerOpen}
-                            tools={toolCatalogEntries}
-                            selectedTools={form.allowed_tools}
-                            disabled={codexUsesPresetCapabilities || systemVersionReadOnly}
-                            onToggleTool={toggleTool}
-                          />
-                        </div>
                         {form.allowed_tools.length > 0 ? (
                           <div className="space-y-3">
                             {(toolCatalog?.categories ?? []).map((category) => {
@@ -3990,7 +4758,7 @@ export function AgentsPage() {
                                       <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
                                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
                                         <span>{tool}</span>
-                                        {versionDraftOpen && !codexUsesPresetCapabilities && (
+                                        {!versionReadOnly && !codexUsesPresetCapabilities && (
                                           <button
                                             type="button"
                                             className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
@@ -4020,7 +4788,7 @@ export function AgentsPage() {
                                     <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
                                       <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
                                       <span>{tool}</span>
-                                      {versionDraftOpen && !codexUsesPresetCapabilities && (
+                                      {!versionReadOnly && !codexUsesPresetCapabilities && (
                                         <button
                                           type="button"
                                           className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
@@ -4043,6 +4811,47 @@ export function AgentsPage() {
                     </Collapsible.Content>
                   </Collapsible.Root>
 
+                  {/* 01E — Working Areas */}
+                  <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
+                    <Collapsible.Trigger asChild>
+                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
+                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                        <span className="flex-1 text-sm font-medium">Working areas</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{form.allowed_targets.length} selected</span>
+                      </button>
+                    </Collapsible.Trigger>
+                    <Collapsible.Content>
+                      <div className="space-y-3 border-t border-border/60 p-4">
+                        <p className="text-xs text-muted-foreground">
+                          Working areas control where this agent appears as a runnable option.
+                        </p>
+                        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                          {CUSTOM_AGENT_TARGET_OPTIONS.map((target) => {
+                            const active = form.allowed_targets.includes(target.value);
+                            return (
+                              <button
+                                key={target.value}
+                                type="button"
+                                disabled={versionReadOnly}
+                                onClick={() => toggleTarget(target.value)}
+                                className={cn(
+                                  'rounded-md border px-3 py-2 text-left text-sm transition-colors disabled:cursor-default',
+                                  active
+                                    ? 'border-primary bg-primary/10 text-foreground'
+                                    : versionReadOnly
+                                      ? 'border-border bg-card text-muted-foreground'
+                                      : 'border-border bg-card hover:bg-muted/40',
+                                )}
+                              >
+                                {target.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </Collapsible.Content>
+                  </Collapsible.Root>
+
                   {/* 02 — Run Mode */}
                   <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
                     <Collapsible.Trigger asChild>
@@ -4053,28 +4862,34 @@ export function AgentsPage() {
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
-                      <div className="border-t border-border/60 px-4 py-3">
-                        <label className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-medium">Interactive mode</p>
-                            <p className="text-xs text-muted-foreground">
-                              {supportedModesForForm(form.runtime_kind).includes('interactive')
-                                ? 'On \u2014 opens a live back-and-forth run. Off \u2014 runs autonomously end-to-end.'
-                                : 'This runtime only supports autonomous runs.'}
-                            </p>
-                          </div>
-                          <Switch
-                            checked={form.default_invocation_mode === 'interactive'}
-                            disabled={systemVersionReadOnly || !supportedModesForForm(form.runtime_kind).includes('interactive')}
-                            onCheckedChange={(isInteractive) => {
-                              setForm((current) => ({
-                                ...current,
-                                supported_modes: [isInteractive ? 'interactive' : 'autonomous'],
-                                default_invocation_mode: isInteractive ? 'interactive' : 'autonomous',
-                              }));
-                            }}
-                          />
-                        </label>
+                      <div className="space-y-2 border-t border-border/60 px-4 py-3">
+                        <Select
+                          value={form.default_invocation_mode}
+                          disabled={versionReadOnly}
+                          onValueChange={(value) => {
+                            setForm((current) => ({
+                              ...current,
+                              supported_modes: supportedModesForForm(current.runtime_kind),
+                              default_invocation_mode: value as AgentInvocationMode,
+                            }));
+                          }}
+                        >
+                          <SelectTrigger className="h-9 max-w-sm" aria-label="Run mode">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {supportedModesForForm(form.runtime_kind).map((mode) => (
+                              <SelectItem key={mode} value={mode}>
+                                {INVOCATION_MODE_LABELS[mode]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          {form.default_invocation_mode === 'interactive'
+                            ? 'Can ask follow-up questions or request approval.'
+                            : 'Runs autonomously end-to-end.'}
+                        </p>
                       </div>
                     </Collapsible.Content>
                   </Collapsible.Root>
@@ -4095,7 +4910,7 @@ export function AgentsPage() {
                             <FieldLabel>Execution Engine</FieldLabel>
                             <Select
                               value={form.runtime_kind}
-                              disabled={systemVersionReadOnly}
+                              disabled={versionReadOnly}
                               onValueChange={(value) =>
                                 setForm((current) => {
                                   const runtimeKind = value as AgentRuntimeKind;
@@ -4131,14 +4946,14 @@ export function AgentsPage() {
                                   ))}
                               </SelectContent>
                             </Select>
-                            <p className="text-[11px] leading-relaxed text-muted-foreground">Sandbox + tool runtime used to execute the agent.</p>
+                            <p className="text-[11px] leading-relaxed text-muted-foreground">{AGENT_RUNTIME_HELP_TEXT[form.runtime_kind]}</p>
                           </div>
 
                           <div className="space-y-2">
                             <FieldLabel>AI Provider</FieldLabel>
                             <Select
                               value={form.provider}
-                              disabled={systemVersionReadOnly}
+                              disabled={versionReadOnly}
                               onValueChange={(value) =>
                                 setForm((current) => {
                                   const provider = normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider);
@@ -4176,7 +4991,7 @@ export function AgentsPage() {
                             <Input
                               id="system-agent-model"
                               value={form.model}
-                              disabled={systemVersionReadOnly}
+                              disabled={versionReadOnly}
                               onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
                               placeholder={selectedProviderOption?.model_placeholder ?? 'Auto'}
                               className="h-9"
@@ -4189,7 +5004,7 @@ export function AgentsPage() {
                               <FieldLabel>Reasoning Effort</FieldLabel>
                               <Select
                                 value={form.reasoning_effort || '_default'}
-                                disabled={systemVersionReadOnly}
+                                disabled={versionReadOnly}
                                 onValueChange={(value) =>
                                   setForm((current) => ({
                                     ...current,
@@ -4218,7 +5033,7 @@ export function AgentsPage() {
                               <FieldLabel>Service Tier</FieldLabel>
                               <Select
                                 value={form.service_tier || '_default'}
-                                disabled={systemVersionReadOnly}
+                                disabled={versionReadOnly}
                                 onValueChange={(value) =>
                                   setForm((current) => ({
                                     ...current,
@@ -4249,110 +5064,35 @@ export function AgentsPage() {
                   </div>
                 </section>
 
-                {/* ──────── AGENT SETTINGS (agent-scoped) ──────── */}
-                <section className="space-y-3">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <div>
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agent settings</h3>
-                      <p className="text-[11px] text-muted-foreground">Applies to {editingAgent?.name ?? 'this agent'}, not the active version.</p>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-border/60 bg-card p-4">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <p className="text-sm font-medium">Monthly usage limit</p>
-                      {editingAgent && (() => {
-                        const used = editingAgent.tokens_used_this_month ?? 0;
-                        const budget = form.monthly_token_budget ? Number.parseInt(form.monthly_token_budget, 10) : 0;
-                        const pct = budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 0;
-                        return (
-                          <p className="text-[11px] text-muted-foreground">
-                            {budget > 0
-                              ? `${used.toLocaleString()} of ${budget.toLocaleString()} tokens this month (${pct}%)`
-                              : `${used.toLocaleString()} tokens used this month · no limit set`}
-                          </p>
-                        );
-                      })()}
-                    </div>
-                    {editingAgent && (() => {
-                      const used = editingAgent.tokens_used_this_month ?? 0;
-                      const budget = form.monthly_token_budget ? Number.parseInt(form.monthly_token_budget, 10) : 0;
-                      const pct = budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 0;
-                      if (budget <= 0) return null;
-                      return (
-                        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
-                          <div
-                            className={cn(
-                              'h-full rounded-full transition-all',
-                              pct >= 90 ? 'bg-destructive' : pct >= 70 ? 'bg-amber-500' : 'bg-primary',
-                            )}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      );
-                    })()}
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {[
-                        { label: 'No limit', value: '' },
-                        { label: '50K', value: '50000' },
-                        { label: '100K', value: '100000' },
-                        { label: '250K', value: '250000' },
-                        { label: '500K', value: '500000' },
-                        { label: '1M', value: '1000000' },
-                      ].map((preset) => {
-                        const isActive = form.monthly_token_budget === preset.value;
-                        return (
-                          <button
-                            key={preset.value}
-                            type="button"
-                            onClick={() => setForm((current) => ({ ...current, monthly_token_budget: preset.value }))}
-                            className={cn(
-                              'rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors',
-                              isActive
-                                ? 'border-primary bg-primary/10 text-primary'
-                                : 'border-border/60 text-muted-foreground hover:border-border hover:text-foreground',
-                            )}
-                          >
-                            {preset.label}
-                          </button>
-                        );
-                      })}
-                      <Input
-                        id="agent-budget"
-                        type="number"
-                        value={form.monthly_token_budget}
-                        onChange={(e) => setForm((current) => ({ ...current, monthly_token_budget: e.target.value }))}
-                        placeholder="Custom…"
-                        className="h-7 w-28 text-xs"
-                      />
-                    </div>
-                  </div>
-                </section>
-
               </div>
             </div>
           </div>
+            </TabsContent>
+          </Tabs>
 
+          {systemDrawerTab === 'versions' && (
           <SheetFooter className="border-t border-border/60 bg-background py-4 pl-6 pr-20 sm:flex-row sm:justify-between">
             <div className="text-xs text-muted-foreground">
               {versionDraftOpen
                 ? 'Create the new version in the dialog.'
-                : isEditingWorkspaceVersion
-                  ? (hasWorkspaceVersionChanges ? `Editing ${selectedPreset?.version_label}. Save changes to apply.` : 'No changes to save.')
-                  : 'No changes to save.'}
+	                : isEditingWorkspaceVersion || isEditingCustomVersion
+	                  ? (hasVersionChanges ? `Editing ${selectedVersionLabel ?? 'version'}. Save changes to apply.` : 'No changes to save.')
+	                  : 'No changes to save.'}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setSystemDrawerOpen(false)}>
-                {hasWorkspaceVersionChanges || versionDraftOpen ? 'Cancel' : 'Close'}
+	                {hasVersionChanges || versionDraftOpen ? 'Cancel' : 'Close'}
               </Button>
               <Button
                 size="sm"
-                disabled={saving || !isEditingWorkspaceVersion || !hasWorkspaceVersionChanges}
+	                disabled={saving || !(isEditingWorkspaceVersion || isEditingCustomVersion) || !hasVersionChanges}
                 onClick={() => handleSaveWorkspaceVersion()}
               >
                 {saving ? 'Saving…' : 'Save'}
               </Button>
             </div>
           </SheetFooter>
+          )}
         </SheetContent>
       </Sheet>
 
@@ -4364,9 +5104,13 @@ export function AgentsPage() {
             setVersionDraftOpen(false);
             setVersionLabelDraft('');
             setVersionDescriptionDraft('');
-            if (editingAgent) {
-              setForm(buildSystemAgentForm(editingAgent, presets));
-            }
+	            if (editingAgent) {
+	              if (editingAgent.is_system) {
+	                setForm(buildSystemAgentForm(editingAgent, presets));
+	              } else if (selectedCustomVersion) {
+	                setForm(buildCustomAgentVersionForm(editingAgent, selectedCustomVersion));
+	              }
+	            }
           }
         }}
       >
@@ -4408,9 +5152,13 @@ export function AgentsPage() {
                 setVersionDraftOpen(false);
                 setVersionLabelDraft('');
                 setVersionDescriptionDraft('');
-                if (editingAgent) {
-                  setForm(buildSystemAgentForm(editingAgent, presets));
-                }
+	                if (editingAgent) {
+	                  if (editingAgent.is_system) {
+	                    setForm(buildSystemAgentForm(editingAgent, presets));
+	                  } else if (selectedCustomVersion) {
+	                    setForm(buildCustomAgentVersionForm(editingAgent, selectedCustomVersion));
+	                  }
+	                }
               }}
             >
               Cancel
@@ -5802,7 +6550,7 @@ export function AgentsPage() {
                         ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">Sandbox + tool runtime used to execute the agent.</p>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">{AGENT_RUNTIME_HELP_TEXT[form.runtime_kind]}</p>
                 </div>
 
                 <div className="space-y-2">
@@ -5981,35 +6729,11 @@ export function AgentsPage() {
                 <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
                   <span className="flex items-center gap-2 text-sm">
                     {automationOpen ? <ArrowDown01Icon className="h-4 w-4" /> : <ArrowRight01Icon className="h-4 w-4" />}
-                    Run Approval & Limits
+                    Run limits
                   </span>
                 </Button>
               </Collapsible.Trigger>
               <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
-                <div className="space-y-2">
-                  <FieldLabel tooltip="Controls the initial approval gate for each agent run, not individual tool or checkpoint approvals.">
-                    Run approval
-                  </FieldLabel>
-                  <Select
-                    value={form.approval_mode}
-                    onValueChange={(value) => setForm((current) => ({ ...current, approval_mode: value as AgentApprovalMode }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {APPROVAL_MODE_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-[11px] text-muted-foreground">
-                    {APPROVAL_MODE_OPTIONS.find((o) => o.value === form.approval_mode)?.description}
-                  </p>
-                </div>
-
                 <div className="space-y-2">
                   <FieldLabel
                     htmlFor="agent-concurrency"
@@ -6167,7 +6891,7 @@ export function AgentsPage() {
       </Sheet>
 
       <Dialog open={systemPromptEditorOpen} onOpenChange={setSystemPromptEditorOpen}>
-        <DialogContent className="z-[140] gap-0 overflow-hidden p-0 sm:max-w-5xl">
+        <DialogContent className="z-[140] max-h-[88vh] gap-0 overflow-hidden p-0 sm:max-w-5xl">
           <DialogHeader className="border-b border-border/70 px-6 py-4">
             <DialogTitle>System instructions</DialogTitle>
             <DialogDescription>
@@ -6180,7 +6904,7 @@ export function AgentsPage() {
               value={form.system_prompt}
               onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
               placeholder="Agent instructions"
-              className="min-h-[62vh] resize-none font-mono text-xs leading-relaxed"
+              className="h-[62vh] overflow-y-auto resize-none font-mono text-xs leading-relaxed [field-sizing:fixed]"
               autoFocus
             />
           </div>

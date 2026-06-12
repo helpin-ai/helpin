@@ -754,6 +754,48 @@ func TestUpdateAgent_ClearsSystemModelWhenBlankStringProvided(t *testing.T) {
 	}
 }
 
+func TestUpdateAgent_AllowsSystemAgentMonthlyTokenBudgetUpdate(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:   agentRepo,
+		activitySvc: activitySvc,
+		wsPublisher: nil,
+	}
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+
+	budget := 250000
+	updated, err := svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
+		MonthlyTokenBudget: &budget,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateAgent returned error: %v", err)
+	}
+	if updated.MonthlyTokenBudget == nil || *updated.MonthlyTokenBudget != budget {
+		t.Fatalf("expected monthly token budget %d, got %+v", budget, updated.MonthlyTokenBudget)
+	}
+	if updated.PresetKey != model.AgentPresetCodeBuilder {
+		t.Fatalf("expected preset key to remain %q, got %q", model.AgentPresetCodeBuilder, updated.PresetKey)
+	}
+
+	clearBudget := 0
+	updated, err = svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
+		MonthlyTokenBudget: &clearBudget,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateAgent clear returned error: %v", err)
+	}
+	if updated.MonthlyTokenBudget != nil {
+		t.Fatalf("expected monthly token budget to clear, got %+v", updated.MonthlyTokenBudget)
+	}
+}
+
 func TestEnsureBuiltInAgent_UpgradesLegacyCodeBuilderRuntimeToCodex(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -1125,7 +1167,7 @@ func TestUpdateWorkspacePresetVersion(t *testing.T) {
 		Model:             &blankModel,
 		AllowedTools:      mustJSONStringSlice([]string{"read_file"}),
 		SupportedModes:    mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
-		InstructionSkills: mustJSONStringSlice([]string{"system/general_agent_behavior"}),
+		InstructionSkills: mustJSONStringSlice([]string{"system/engineering_planner_operating_rules"}),
 	}
 	updated, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, updateReq, "user-2")
 	if err != nil {
@@ -1235,7 +1277,7 @@ func TestCreateWorkspacePresetVersion_SystemPromptWinsOverInstructionMetadata(t 
 		SourceVersionKey:      agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner)),
 		SystemPrompt:          &rawPrompt,
 		InstructionPreamble:   &legacyPreamble,
-		InstructionSkills:     mustJSONStringSlice([]string{"general_agent_behavior"}),
+		InstructionSkills:     mustJSONStringSlice([]string{"engineering_planner_operating_rules"}),
 		AllowedTools:          mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
 		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeInteractive}),
 		DefaultInvocationMode: agentTestStringPtr(model.InvocationModeInteractive),
@@ -1279,7 +1321,7 @@ func TestUpdateWorkspacePresetVersion_SystemPromptWinsOverInstructionMetadata(t 
 	updated, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, model.UpdateWorkspaceAgentPresetVersionRequest{
 		SystemPrompt:        &rawPrompt,
 		InstructionPreamble: &legacyPreamble,
-		InstructionSkills:   mustJSONStringSlice([]string{"general_agent_behavior"}),
+		InstructionSkills:   mustJSONStringSlice([]string{"engineering_planner_operating_rules"}),
 	}, "user-2")
 	if err != nil {
 		t.Fatalf("UpdateWorkspacePresetVersion returned error: %v", err)
@@ -1636,7 +1678,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			team_id TEXT,
 			allowed_tools BLOB NOT NULL DEFAULT '[]',
 			allowed_commands BLOB NOT NULL DEFAULT '[]',
-			allowed_targets BLOB NOT NULL DEFAULT '[]',
+			allowed_targets BLOB NOT NULL DEFAULT x'5b5d',
 			schedule TEXT,
 			target_selector TEXT,
 			trigger_events BLOB NOT NULL DEFAULT '[]',
@@ -1669,6 +1711,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			instruction_skills BLOB NOT NULL DEFAULT '[]',
 			instruction_template_version TEXT NOT NULL DEFAULT '',
 			allowed_tools BLOB NOT NULL DEFAULT '[]',
+			allowed_targets BLOB NOT NULL DEFAULT '[]',
 			supported_modes BLOB NOT NULL DEFAULT '[]',
 			approval_mode TEXT NOT NULL DEFAULT 'preset_default',
 			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',

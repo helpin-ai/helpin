@@ -17,7 +17,7 @@ describe('custom agent create model', () => {
     expect(form.supported_modes).toEqual(['autonomous', 'interactive']);
     expect(form.allowed_targets).toEqual(['task']);
     expect(form.allowed_tools).toEqual([]);
-    expect(form.approval_mode).toBe('always');
+    expect(form.approval_mode).toBe('never');
     expect(form.max_concurrent_runs).toBe('1');
     expect(form.preset_key).toBe('code_builder');
     expect(form.preset_version_key).toBe('code_builder_default');
@@ -76,7 +76,7 @@ describe('custom agent create model', () => {
       trigger_mode: 'manual',
       team_ids: ['team-1', 'team-2'],
       allowed_targets: ['support_conversation'],
-      approval_mode: 'always',
+      approval_mode: 'never',
       max_concurrent_runs: 1,
       default_invocation_mode: 'interactive',
     });

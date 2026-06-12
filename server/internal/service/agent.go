@@ -650,6 +650,165 @@ func materializeAgentSystemPrompt(agent *model.Agent) {
 	agent.SystemPrompt = resolveEffectiveSystemPromptForPreset(agent.EffectivePresetKey(), agent.SystemPrompt)
 }
 
+func agentVersionRepoFromAgentRepo(repo *repository.AgentRepository) *repository.AgentVersionRepository {
+	if repo == nil {
+		return nil
+	}
+	return repository.NewAgentVersionRepository(repo.DB())
+}
+
+func applyAgentVersionToAgent(agent *model.Agent, version *model.AgentVersion) {
+	if agent == nil || version == nil || agent.IsSystem {
+		return
+	}
+	agent.ActiveVersionID = &version.ID
+	agent.RuntimeKind = version.RuntimeKind
+	agent.Provider = version.Provider
+	agent.Model = version.Model
+	agent.ExecutionConfig = version.ExecutionConfig
+	agent.SystemPrompt = version.SystemPrompt
+	agent.Skills = version.Skills.Normalize()
+	agent.AllowedTools = normalizeAllowedToolsJSON(version.AllowedTools)
+	agent.AllowedTargets = normalizeJSONSlice(version.AllowedTargets)
+	agent.DefaultInvocationMode = strings.TrimSpace(version.DefaultInvocationMode)
+	if agent.DefaultInvocationMode == "" {
+		agent.DefaultInvocationMode = model.InvocationModeAutonomous
+	}
+}
+
+func agentVersionFromAgent(agent *model.Agent, actorID string) *model.AgentVersion {
+	if agent == nil {
+		return nil
+	}
+	version := &model.AgentVersion{
+		WorkspaceID:           agent.WorkspaceID,
+		AgentID:               agent.ID,
+		VersionKey:            "default",
+		Label:                 "Default",
+		RuntimeKind:           strings.TrimSpace(agent.RuntimeKind),
+		Provider:              agent.Provider,
+		Model:                 agent.Model,
+		ExecutionConfig:       normalizeExecutionConfigJSON(agent.ExecutionConfig),
+		SystemPrompt:          agent.SystemPrompt,
+		Skills:                agent.Skills.Normalize(),
+		AllowedTools:          normalizeAllowedToolsJSON(agent.AllowedTools),
+		AllowedTargets:        normalizeJSONSlice(agent.AllowedTargets),
+		SupportedModes:        mustJSONStringSlice(supportedModesForRuntime(agent.RuntimeKind)),
+		DefaultInvocationMode: strings.TrimSpace(agent.DefaultInvocationMode),
+	}
+	if version.RuntimeKind == "" {
+		version.RuntimeKind = "native_sdk"
+	}
+	if version.DefaultInvocationMode == "" {
+		version.DefaultInvocationMode = model.InvocationModeAutonomous
+	}
+	if actorID != "" {
+		version.CreatedBy = &actorID
+		version.UpdatedBy = &actorID
+	}
+	return version
+}
+
+func (s *AgentService) ensureCustomAgentDefaultVersion(ctx context.Context, agent *model.Agent, actorID string) error {
+	if agent == nil || agent.IsSystem {
+		return nil
+	}
+	versionRepo := agentVersionRepoFromAgentRepo(s.agentRepo)
+	if versionRepo == nil {
+		return nil
+	}
+	if agent.ActiveVersionID != nil && strings.TrimSpace(*agent.ActiveVersionID) != "" {
+		if version, err := versionRepo.GetActive(ctx, agent); err == nil && version != nil {
+			applyAgentVersionToAgent(agent, version)
+			return nil
+		} else if err != nil {
+			if isMissingAgentVersionsStore(err) {
+				return nil
+			}
+			return err
+		}
+	}
+	version, err := versionRepo.GetByVersionKey(ctx, agent.WorkspaceID, agent.ID, "default")
+	if err != nil {
+		if isMissingAgentVersionsStore(err) {
+			return nil
+		}
+		return err
+	}
+	if version == nil {
+		version = agentVersionFromAgent(agent, actorID)
+		if err := versionRepo.Create(ctx, version); err != nil {
+			if isMissingAgentVersionsStore(err) {
+				return nil
+			}
+			return err
+		}
+	}
+	agent.ActiveVersionID = &version.ID
+	applyAgentVersionToAgent(agent, version)
+	return s.agentRepo.Update(ctx, agent)
+}
+
+func (s *AgentService) syncActiveCustomAgentVersionFromAgent(ctx context.Context, agent *model.Agent, actorID string) error {
+	if agent == nil || agent.IsSystem {
+		return nil
+	}
+	versionRepo := agentVersionRepoFromAgentRepo(s.agentRepo)
+	if versionRepo == nil {
+		return nil
+	}
+	var version *model.AgentVersion
+	var err error
+	if agent.ActiveVersionID != nil && strings.TrimSpace(*agent.ActiveVersionID) != "" {
+		version, err = versionRepo.GetActive(ctx, agent)
+		if err != nil {
+			if isMissingAgentVersionsStore(err) {
+				return nil
+			}
+			return err
+		}
+	}
+	if version == nil {
+		version, err = versionRepo.GetByVersionKey(ctx, agent.WorkspaceID, agent.ID, "default")
+		if err != nil {
+			if isMissingAgentVersionsStore(err) {
+				return nil
+			}
+			return err
+		}
+	}
+	next := agentVersionFromAgent(agent, actorID)
+	if version == nil {
+		if err := versionRepo.Create(ctx, next); err != nil {
+			if isMissingAgentVersionsStore(err) {
+				return nil
+			}
+			return err
+		}
+		agent.ActiveVersionID = &next.ID
+		return nil
+	}
+	version.RuntimeKind = next.RuntimeKind
+	version.Provider = next.Provider
+	version.Model = next.Model
+	version.ExecutionConfig = next.ExecutionConfig
+	version.SystemPrompt = next.SystemPrompt
+	version.Skills = next.Skills
+	version.AllowedTools = next.AllowedTools
+	version.AllowedTargets = next.AllowedTargets
+	version.SupportedModes = next.SupportedModes
+	version.DefaultInvocationMode = next.DefaultInvocationMode
+	version.UpdatedBy = next.UpdatedBy
+	if err := versionRepo.Update(ctx, version); err != nil {
+		if isMissingAgentVersionsStore(err) {
+			return nil
+		}
+		return err
+	}
+	agent.ActiveVersionID = &version.ID
+	return nil
+}
+
 // ListAgents returns all agents in a workspace.
 func (s *AgentService) ListAgents(ctx context.Context, workspaceID string) ([]model.Agent, error) {
 	if workspaceID == "" {
@@ -660,6 +819,9 @@ func (s *AgentService) ListAgents(ctx context.Context, workspaceID string) ([]mo
 		return nil, err
 	}
 	for idx := range agents {
+		if err := s.ensureCustomAgentDefaultVersion(ctx, &agents[idx], ""); err != nil {
+			slog.WarnContext(ctx, "failed to resolve custom agent version for list", "agent_id", agents[idx].ID, "workspace_id", workspaceID, "error", err)
+		}
 		normalizeAgentRecord(&agents[idx])
 		if err := s.validateAndMaterializeAgentSkills(ctx, &agents[idx]); err != nil {
 			slog.WarnContext(ctx, "failed to resolve agent skills for list", "agent_id", agents[idx].ID, "workspace_id", workspaceID, "error", err)
@@ -736,6 +898,9 @@ func (s *AgentService) GetAgent(ctx context.Context, workspaceID, id string) (*m
 	}
 	if agent == nil {
 		return nil, fmt.Errorf("agent not found")
+	}
+	if err := s.ensureCustomAgentDefaultVersion(ctx, agent, ""); err != nil {
+		return nil, err
 	}
 	normalizeAgentRecord(agent)
 	if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {
@@ -1354,6 +1519,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		InstructionSkills:          mustJSONStringSlice(nil),
 		InstructionTemplateVersion: strings.TrimSpace(basePreset.InstructionTemplateVersion),
 		AllowedTools:               normalizeAllowedToolsJSON(mustJSONStringSlice(basePreset.AllowedTools)),
+		AllowedTargets:             mustJSONStringSlice(basePreset.AllowedTargetTypes),
 		SupportedModes:             mustJSONStringSlice(normalizedSupportedModes),
 		ApprovalMode:               "never",
 		DefaultInvocationMode:      defaultInvocationMode,
@@ -1362,6 +1528,10 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	if req.AllowedTools != nil {
 		version.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
 	}
+	if req.AllowedTargets != nil {
+		version.AllowedTargets = normalizeJSONSlice(req.AllowedTargets)
+	}
+	version.AllowedTargets = ensureWorkspacePresetAllowedTargets(version.AllowedTargets, basePreset.AllowedTargetTypes)
 	if req.Model != nil {
 		modelValue := strings.TrimSpace(*req.Model)
 		version.Model = &modelValue
@@ -1410,6 +1580,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		Provider:         version.Provider,
 		Model:            version.Model,
 		ExecutionConfig:  version.ExecutionConfig,
+		AllowedTargets:   version.AllowedTargets,
 	}
 	if _, err := parseAndValidateExecutionConfig(versionValidationAgent); err != nil {
 		return nil, err
@@ -1444,6 +1615,310 @@ func workspacePresetCurrentDefinition(version *model.WorkspaceAgentPresetVersion
 		return model.AgentPresetDefinition{}, err
 	}
 	return workspacePresetDefinition(base, *version), nil
+}
+
+func (s *AgentService) ListAgentVersions(ctx context.Context, workspaceID, agentID string) ([]model.AgentVersion, error) {
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+	if err != nil {
+		return nil, err
+	}
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found")
+	}
+	if agent.IsSystem {
+		return nil, fmt.Errorf("system agents use preset versions")
+	}
+	if err := s.ensureCustomAgentDefaultVersion(ctx, agent, ""); err != nil {
+		return nil, err
+	}
+	return agentVersionRepoFromAgentRepo(s.agentRepo).ListByAgent(ctx, workspaceID, agentID)
+}
+
+func (s *AgentService) CreateAgentVersion(ctx context.Context, workspaceID, agentID string, req model.CreateAgentVersionRequest, actorID string) (*model.AgentVersion, error) {
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+	if err != nil {
+		return nil, err
+	}
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found")
+	}
+	if agent.IsSystem {
+		return nil, fmt.Errorf("system agents use preset versions")
+	}
+	if err := s.ensureCustomAgentDefaultVersion(ctx, agent, actorID); err != nil {
+		return nil, err
+	}
+	versionRepo := agentVersionRepoFromAgentRepo(s.agentRepo)
+	base, err := versionRepo.GetActive(ctx, agent)
+	if err != nil {
+		return nil, err
+	}
+	if req.SourceVersionID != nil && strings.TrimSpace(*req.SourceVersionID) != "" {
+		base, err = versionRepo.GetByID(ctx, workspaceID, agentID, strings.TrimSpace(*req.SourceVersionID))
+		if err != nil {
+			return nil, err
+		}
+		if base == nil {
+			return nil, fmt.Errorf("source version not found")
+		}
+	}
+	if base == nil {
+		return nil, fmt.Errorf("active version not found")
+	}
+	label := strings.TrimSpace(req.Label)
+	if label == "" {
+		label = fmt.Sprintf("%s Copy", base.Label)
+	}
+	version := *base
+	version.ID = ""
+	version.VersionKey = fmt.Sprintf("custom_%d", time.Now().UTC().UnixNano())
+	version.Label = label
+	version.Description = trimPtr(req.Description)
+	version.CreatedBy = nil
+	version.UpdatedBy = nil
+	version.DeletedAt = nil
+	version.CreatedAt = time.Time{}
+	version.UpdatedAt = time.Time{}
+	if actorID != "" {
+		version.CreatedBy = &actorID
+		version.UpdatedBy = &actorID
+	}
+	applyAgentVersionCreateRequest(&version, req)
+	if err := validateAgentVersion(&version); err != nil {
+		return nil, err
+	}
+	if err := versionRepo.Create(ctx, &version); err != nil {
+		return nil, err
+	}
+	return &version, nil
+}
+
+func (s *AgentService) UpdateAgentVersion(ctx context.Context, workspaceID, agentID, versionID string, req model.UpdateAgentVersionRequest, actorID string) (*model.AgentVersion, error) {
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+	if err != nil {
+		return nil, err
+	}
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found")
+	}
+	if agent.IsSystem {
+		return nil, fmt.Errorf("system agents use preset versions")
+	}
+	versionRepo := agentVersionRepoFromAgentRepo(s.agentRepo)
+	version, err := versionRepo.GetByID(ctx, workspaceID, agentID, versionID)
+	if err != nil {
+		return nil, err
+	}
+	if version == nil {
+		return nil, fmt.Errorf("agent version not found")
+	}
+	applyAgentVersionUpdateRequest(version, req)
+	if actorID != "" {
+		version.UpdatedBy = &actorID
+	}
+	if err := validateAgentVersion(version); err != nil {
+		return nil, err
+	}
+	if err := versionRepo.Update(ctx, version); err != nil {
+		return nil, err
+	}
+	if agent.ActiveVersionID != nil && *agent.ActiveVersionID == version.ID {
+		applyAgentVersionToAgent(agent, version)
+		normalizeAgentRecord(agent)
+		if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {
+			return nil, err
+		}
+		if err := s.agentRepo.Update(ctx, agent); err != nil {
+			return nil, err
+		}
+	}
+	return version, nil
+}
+
+func (s *AgentService) ActivateAgentVersion(ctx context.Context, workspaceID, agentID, versionID string, actorID string) (*model.Agent, error) {
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+	if err != nil {
+		return nil, err
+	}
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found")
+	}
+	if agent.IsSystem {
+		return nil, fmt.Errorf("system agents use preset versions")
+	}
+	versionRepo := agentVersionRepoFromAgentRepo(s.agentRepo)
+	version, err := versionRepo.GetByID(ctx, workspaceID, agentID, versionID)
+	if err != nil {
+		return nil, err
+	}
+	if version == nil {
+		return nil, fmt.Errorf("agent version not found")
+	}
+	applyAgentVersionToAgent(agent, version)
+	normalizeAgentRecord(agent)
+	if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {
+		return nil, err
+	}
+	if err := validateRuntimeForAgent(agent); err != nil {
+		return nil, err
+	}
+	if err := s.validateModelRouting(agent); err != nil {
+		return nil, err
+	}
+	if err := s.agentRepo.Update(ctx, agent); err != nil {
+		return nil, err
+	}
+	s.publishSimpleEvent("updated", "agent", agent.ID, agent.WorkspaceID, actorID)
+	materializeAgentSystemPrompt(agent)
+	return agent, nil
+}
+
+func (s *AgentService) DeleteAgentVersion(ctx context.Context, workspaceID, agentID, versionID string) error {
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+	if err != nil {
+		return err
+	}
+	if agent == nil {
+		return fmt.Errorf("agent not found")
+	}
+	if agent.IsSystem {
+		return fmt.Errorf("system agents use preset versions")
+	}
+	versionRepo := agentVersionRepoFromAgentRepo(s.agentRepo)
+	version, err := versionRepo.GetByID(ctx, workspaceID, agentID, versionID)
+	if err != nil {
+		return err
+	}
+	if version == nil {
+		return fmt.Errorf("agent version not found")
+	}
+	if version.VersionKey == "default" {
+		return fmt.Errorf("default version cannot be deleted")
+	}
+	if agent.ActiveVersionID != nil && *agent.ActiveVersionID == version.ID {
+		return fmt.Errorf("active version cannot be deleted")
+	}
+	return versionRepo.Delete(ctx, workspaceID, agentID, versionID)
+}
+
+func applyAgentVersionCreateRequest(version *model.AgentVersion, req model.CreateAgentVersionRequest) {
+	if req.RuntimeKind != nil {
+		version.RuntimeKind = strings.TrimSpace(*req.RuntimeKind)
+	}
+	if req.Provider != nil {
+		version.Provider = trimPtr(req.Provider)
+	}
+	if req.Model != nil {
+		version.Model = trimPtr(req.Model)
+	}
+	if req.ExecutionConfig != nil {
+		version.ExecutionConfig = normalizeExecutionConfigJSON(req.ExecutionConfig)
+	}
+	if req.SystemPrompt != nil {
+		version.SystemPrompt = trimPtr(req.SystemPrompt)
+	}
+	if req.Skills != nil {
+		version.Skills = req.Skills.Normalize()
+	}
+	if req.AllowedTools != nil {
+		version.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
+	}
+	if req.AllowedTargets != nil {
+		version.AllowedTargets = normalizeJSONSlice(req.AllowedTargets)
+	}
+	if req.SupportedModes != nil {
+		version.SupportedModes = normalizeJSONSlice(req.SupportedModes)
+	}
+	if req.DefaultInvocationMode != nil {
+		version.DefaultInvocationMode = strings.TrimSpace(*req.DefaultInvocationMode)
+	}
+}
+
+func applyAgentVersionUpdateRequest(version *model.AgentVersion, req model.UpdateAgentVersionRequest) {
+	if req.Label != nil {
+		version.Label = strings.TrimSpace(*req.Label)
+	}
+	if req.Description != nil {
+		version.Description = trimPtr(req.Description)
+	}
+	applyAgentVersionCreateRequest(version, model.CreateAgentVersionRequest{
+		RuntimeKind:           req.RuntimeKind,
+		Provider:              req.Provider,
+		Model:                 req.Model,
+		ExecutionConfig:       req.ExecutionConfig,
+		SystemPrompt:          req.SystemPrompt,
+		Skills:                req.Skills,
+		AllowedTools:          req.AllowedTools,
+		AllowedTargets:        req.AllowedTargets,
+		SupportedModes:        req.SupportedModes,
+		DefaultInvocationMode: req.DefaultInvocationMode,
+	})
+}
+
+func validateAgentVersion(version *model.AgentVersion) error {
+	if version == nil {
+		return fmt.Errorf("version is required")
+	}
+	if strings.TrimSpace(version.Label) == "" {
+		return fmt.Errorf("version label is required")
+	}
+	if err := validateRuntimeKind(version.RuntimeKind); err != nil {
+		return err
+	}
+	if err := validateVersionInvocationMode(version.DefaultInvocationMode, version.RuntimeKind, version.SupportedModes); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateVersionInvocationMode(defaultMode, runtimeKind string, supportedModesJSON json.RawMessage) error {
+	defaultMode = strings.TrimSpace(defaultMode)
+	if defaultMode == "" {
+		defaultMode = model.InvocationModeAutonomous
+	}
+	supportedModes := normalizeVersionSupportedModes(supportedModesJSON, runtimeKind)
+	if !slices.Contains(supportedModes, defaultMode) {
+		return fmt.Errorf("default_invocation_mode %q must be included in supported_modes", defaultMode)
+	}
+	return nil
+}
+
+func normalizeVersionSupportedModes(raw json.RawMessage, runtimeKind string) []string {
+	var values []string
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &values)
+	}
+	allowed := supportedModesForRuntime(runtimeKind)
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, mode := range allowed {
+		allowedSet[mode] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if _, ok := allowedSet[value]; !ok {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	if len(normalized) == 0 {
+		return allowed
+	}
+	return normalized
+}
+
+func isMissingAgentVersionsStore(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such table: agent_versions") ||
+		strings.Contains(msg, `relation "agent_versions" does not exist`)
 }
 
 func (s *AgentService) cloneWithTx(tx *gorm.DB) *AgentService {
@@ -1667,6 +2142,12 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 		} else {
 			version.AllowedTools = normalizeAllowedToolsJSON(mustJSONStringSlice(currentPreset.AllowedTools))
 		}
+		if req.AllowedTargets != nil {
+			version.AllowedTargets = normalizeJSONSlice(req.AllowedTargets)
+		} else {
+			version.AllowedTargets = mustJSONStringSlice(currentPreset.AllowedTargetTypes)
+		}
+		version.AllowedTargets = ensureWorkspacePresetAllowedTargets(version.AllowedTargets, currentPreset.AllowedTargetTypes)
 		version.SupportedModes = mustJSONStringSlice(normalizedSupportedModes)
 		version.DefaultInvocationMode = defaultInvocationMode
 		version.ApprovalMode = "never"
@@ -1942,6 +2423,9 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	if err := s.agentRepo.Create(ctx, agent); err != nil {
 		return nil, err
 	}
+	if err := s.ensureCustomAgentDefaultVersion(ctx, agent, actorID); err != nil {
+		return nil, err
+	}
 
 	newValue := agent.Name
 	if s.activitySvc != nil {
@@ -2178,6 +2662,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if err := s.validateModelRouting(agent); err != nil {
 		return nil, err
 	}
+	if !agent.IsSystem {
+		if err := s.syncActiveCustomAgentVersionFromAgent(ctx, agent, actorID); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := s.agentRepo.Update(ctx, agent); err != nil {
 		return nil, err
@@ -2242,6 +2731,115 @@ func (s *AgentService) ListWorkspaceRuns(ctx context.Context, workspaceID string
 	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
 	s.enrichRunTargets(ctx, workspaceID, normalized)
 	return normalized, total, nil
+}
+
+// GetAgentAnalytics returns bucketed run and token trends for one agent.
+func (s *AgentService) GetAgentAnalytics(ctx context.Context, workspaceID, agentID, rangeKey string) (*model.AgentAnalyticsResponse, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return nil, fmt.Errorf("agent_id is required")
+	}
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
+	if err != nil {
+		return nil, err
+	}
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found")
+	}
+
+	now := time.Now().UTC()
+	rangeKey = strings.TrimSpace(rangeKey)
+	if rangeKey == "" {
+		rangeKey = "30d"
+	}
+	bucket := "day"
+	var starts []time.Time
+	switch rangeKey {
+	case "7d":
+		starts = dayBucketStarts(now, 7)
+	case "30d":
+		starts = dayBucketStarts(now, 30)
+	case "90d":
+		starts = dayBucketStarts(now, 90)
+	case "12m":
+		bucket = "month"
+		starts = monthBucketStarts(now, 12)
+	default:
+		return nil, fmt.Errorf("unsupported analytics range %q", rangeKey)
+	}
+	if len(starts) == 0 {
+		return &model.AgentAnalyticsResponse{Range: rangeKey, Bucket: bucket, Series: []model.AgentAnalyticsPoint{}}, nil
+	}
+
+	runs, err := s.runRepo.ListByAgentSince(ctx, workspaceID, agentID, starts[0])
+	if err != nil {
+		return nil, err
+	}
+	points := make([]model.AgentAnalyticsPoint, len(starts))
+	indexByPeriod := make(map[string]int, len(starts))
+	for idx, start := range starts {
+		period := analyticsPeriodKey(start, bucket)
+		points[idx] = model.AgentAnalyticsPoint{Period: period}
+		indexByPeriod[period] = idx
+	}
+	for _, run := range runs {
+		period := analyticsPeriodKey(run.CreatedAt.UTC(), bucket)
+		idx, ok := indexByPeriod[period]
+		if !ok {
+			continue
+		}
+		points[idx].Runs++
+		points[idx].Tokens += run.TokensUsed
+		status, _ := model.NormalizeAgentRunStatus(run.Status, run.PauseReason, run.ApprovalState, run.ExecutionStage)
+		switch status {
+		case model.AgentRunStatusCompleted:
+			points[idx].Completed++
+		case model.AgentRunStatusFailed:
+			points[idx].Failed++
+		case model.AgentRunStatusPaused:
+			points[idx].NeedsAttention++
+		}
+	}
+	return &model.AgentAnalyticsResponse{
+		Range:  rangeKey,
+		Bucket: bucket,
+		Series: points,
+	}, nil
+}
+
+func dayBucketStarts(now time.Time, count int) []time.Time {
+	if count <= 0 {
+		return nil
+	}
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	starts := make([]time.Time, count)
+	for idx := 0; idx < count; idx++ {
+		starts[idx] = today.AddDate(0, 0, idx-count+1)
+	}
+	return starts
+}
+
+func monthBucketStarts(now time.Time, count int) []time.Time {
+	if count <= 0 {
+		return nil
+	}
+	thisMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	starts := make([]time.Time, count)
+	for idx := 0; idx < count; idx++ {
+		starts[idx] = thisMonth.AddDate(0, idx-count+1, 0)
+	}
+	return starts
+}
+
+func analyticsPeriodKey(t time.Time, bucket string) string {
+	t = t.UTC()
+	if bucket == "month" {
+		return t.Format("2006-01")
+	}
+	return t.Format("2006-01-02")
 }
 
 // ListRecentRunsForActor returns the most recent runs the given user triggered
@@ -4275,6 +4873,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		Status:            "queued",
 		TaskQueue:         &taskQueue,
 		RunnerPool:        &taskQueue,
+		AgentVersionID:    params.agent.ActiveVersionID,
 		Input:             json.RawMessage(params.input),
 		OutputSummary:     json.RawMessage("{}"),
 	}
@@ -4677,6 +5276,16 @@ func mustJSONStringSlice(values []string) json.RawMessage {
 		return json.RawMessage("[]")
 	}
 	return payload
+}
+
+func ensureWorkspacePresetAllowedTargets(raw json.RawMessage, fallback []string) json.RawMessage {
+	if targets := parseJSONStringSlice(raw); len(targets) > 0 {
+		return mustJSONStringSlice(targets)
+	}
+	if len(fallback) > 0 {
+		return mustJSONStringSlice(fallback)
+	}
+	return mustJSONStringSlice([]string{"task"})
 }
 
 func sliceOrPresetJSON(raw json.RawMessage, fallback []string) json.RawMessage {

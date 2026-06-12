@@ -1,8 +1,8 @@
 ---
-name: marketing_competitive
+name: competitive_positioning
 description: Turns provided competitor material and workspace context into competitor profiles, comparison pages, positioning notes, and sales battlecards.
 metadata:
-  title: Marketing Competitive
+  title: Competitive Positioning
   supported_runtimes:
     - native_sdk
 ---

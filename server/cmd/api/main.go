@@ -196,6 +196,7 @@ func main() {
 			&model.AgentTeamAccess{},
 			&model.AgentTemplate{},
 			&model.WorkspaceAgentPresetVersion{},
+			&model.AgentVersion{},
 			&model.WorkspaceSkill{},
 			&model.AgentRun{},
 			&model.AgentTriggerExecution{},

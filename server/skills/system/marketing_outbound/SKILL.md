@@ -1,8 +1,8 @@
 ---
-name: marketing_outbound
+name: outbound_campaign_planning
 description: Plans outbound motions, ICP qualification, prospect research criteria, cold email sequences, and sales handoff assets without enrichment or sending tools.
 metadata:
-  title: Marketing Outbound
+  title: Outbound Campaign Planning
   supported_runtimes:
     - native_sdk
 ---

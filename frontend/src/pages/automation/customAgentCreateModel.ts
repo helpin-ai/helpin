@@ -59,7 +59,7 @@ export function createDefaultCustomAgentForm(): CustomAgentFormData {
     allowed_targets: ['task'],
     allowed_tools: [],
     skills: [],
-    approval_mode: 'always',
+    approval_mode: 'never',
     max_concurrent_runs: '1',
     default_invocation_mode: 'interactive',
   };

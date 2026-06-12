@@ -1,8 +1,8 @@
 ---
-name: marketing_context
+name: marketing_context_setup
 description: "Creates and maintains the workspace marketing context for Mira: product overview, ICP, positioning, objections, voice, competitors, proof, and goals."
 metadata:
-  title: Marketing Context
+  title: Marketing Context Setup
   supported_runtimes:
     - native_sdk
 ---

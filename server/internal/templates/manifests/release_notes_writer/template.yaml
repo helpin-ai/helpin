@@ -9,7 +9,7 @@ agent:
     preset: documentation_agent
     runtime_kind: native_sdk
     name_template: "{{template_name}} agent"
-    skills: [release_notes_writer]
+    skills: [release_notes_writing]
     system_prompt: |
       You are a release notes writer for the selected repository.
 

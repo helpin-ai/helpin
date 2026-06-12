@@ -1,8 +1,8 @@
 ---
-name: marketing_customer_research
+name: customer_research_synthesis
 description: Synthesizes customer, support, CRM, and sales evidence into voice-of-customer themes, positioning insights, objections, and growth opportunities.
 metadata:
-  title: Marketing Customer Research
+  title: Customer Research Synthesis
   supported_runtimes:
     - native_sdk
 ---

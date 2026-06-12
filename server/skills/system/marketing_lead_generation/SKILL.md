@@ -1,8 +1,8 @@
 ---
-name: marketing_lead_generation
+name: lead_generation_strategy
 description: Creates lead generation offers, lead magnets, free-tool briefs, referral ideas, and capture-path recommendations from Helpin context and optional public research.
 metadata:
-  title: Marketing Lead Generation
+  title: Lead Generation Strategy
   supported_runtimes:
     - native_sdk
 ---

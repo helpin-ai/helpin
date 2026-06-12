@@ -1,8 +1,8 @@
 ---
-name: marketing_seo_content
+name: seo_content_strategy
 description: Creates SEO, AI visibility, content strategy, schema, and content-roadmap recommendations from existing Helpin context.
 metadata:
-  title: Marketing SEO And Content
+  title: SEO and Content Strategy
   supported_runtimes:
     - native_sdk
 ---

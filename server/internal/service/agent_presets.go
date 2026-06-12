@@ -167,6 +167,8 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	definition.Scope = "workspace"
 	definition.WorkspaceID = &version.WorkspaceID
 	definition.SourceVersionKey = version.SourceVersionKey
+	definition.CreatedAt = &version.CreatedAt
+	definition.UpdatedAt = &version.UpdatedAt
 	if version.Provider != nil {
 		definition.Provider = trimPtr(version.Provider)
 	}
@@ -201,6 +203,13 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	}
 	if len(version.AllowedTools) > 0 {
 		definition.AllowedTools = worker.NormalizeToolNames(parseJSONStringSlice(version.AllowedTools))
+	}
+	if len(version.AllowedTargets) > 0 {
+		if targets := parseJSONStringSlice(version.AllowedTargets); targets != nil {
+			definition.AllowedTargetTypes = targets
+		} else {
+			definition.AllowedTargetTypes = []string{}
+		}
 	}
 	if len(version.SupportedModes) > 0 {
 		definition.SupportedModes = parseJSONStringSlice(version.SupportedModes)

@@ -22,19 +22,19 @@ func TestJSONBlobValueReturnsJSONString(t *testing.T) {
 
 func TestAgentSkillRefsUnmarshalLegacyStringArray(t *testing.T) {
 	var refs AgentSkillRefs
-	if err := json.Unmarshal([]byte(`["approval_protocol","review_agent"]`), &refs); err != nil {
+	if err := json.Unmarshal([]byte(`["prd_task_plan_approval","code_review"]`), &refs); err != nil {
 		t.Fatalf("Unmarshal returned error: %v", err)
 	}
 	if len(refs) != 2 {
 		t.Fatalf("expected 2 refs, got %d", len(refs))
 	}
-	if refs[0].Key != "approval_protocol" || refs[1].Key != "review_agent" {
+	if refs[0].Key != "prd_task_plan_approval" || refs[1].Key != "code_review" {
 		t.Fatalf("unexpected refs: %+v", refs)
 	}
 }
 
 func TestAgentSkillRefsValueRoundTrip(t *testing.T) {
-	refs := AgentSkillRefs{{Key: "approval_protocol"}, {SkillID: strPtr("skill-1"), Key: "workspace_skill", VersionKey: strPtr("v1")}}
+	refs := AgentSkillRefs{{Key: "prd_task_plan_approval"}, {SkillID: strPtr("skill-1"), Key: "workspace_skill", VersionKey: strPtr("v1")}}
 	value, err := refs.Value()
 	if err != nil {
 		t.Fatalf("Value returned error: %v", err)
