@@ -1,17 +1,8 @@
 import { create } from 'zustand';
 import type { AgentRun, CommandBarPlanStep, CommandBarPlanSummary } from '@/lib/pmTypes';
+import { planSummaryToRunPlan, type CommandBarRunPlan } from '@/components/agents/dock/planSummary';
 
-export interface CommandBarRunPlan {
-  id: string;
-  steps: CommandBarPlanStep[];
-  runIdsByStep: Record<number, string>;
-  planKind?: CommandBarPlanSummary['plan_kind'];
-  status?: CommandBarPlanSummary['status'];
-  prompt?: string;
-  currentStepIndex?: number;
-  createdAt?: string;
-  updatedAt?: string;
-}
+export type { CommandBarRunPlan };
 
 export type RailMode = 'closed' | 'peek' | 'open';
 export type RailFilter = 'all' | 'running' | 'queued' | 'failed';
@@ -135,17 +126,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
       const plansById = { ...state.plansById };
       for (const plan of plans) {
         planIds.add(plan.id);
-        plansById[plan.id] = {
-          id: plan.id,
-          steps: plan.steps,
-          runIdsByStep: plan.run_ids_by_step ?? {},
-          planKind: plan.plan_kind,
-          status: plan.status,
-          prompt: plan.prompt,
-          currentStepIndex: plan.current_step_index,
-          createdAt: plan.created_at,
-          updatedAt: plan.updated_at,
-        };
+        plansById[plan.id] = planSummaryToRunPlan(plan);
         for (const run of plan.runs ?? []) {
           runsById[run.id] = run;
           runIds.add(run.id);
@@ -183,17 +164,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
         planIds: Array.from(new Set([...state.planIds, plan.id])),
         plansById: {
           ...state.plansById,
-          [plan.id]: {
-            id: plan.id,
-            steps: plan.steps,
-            runIdsByStep: plan.run_ids_by_step ?? {},
-            planKind: plan.plan_kind,
-            status: plan.status,
-            prompt: plan.prompt,
-            currentStepIndex: plan.current_step_index,
-            createdAt: plan.created_at,
-            updatedAt: plan.updated_at,
-          },
+          [plan.id]: planSummaryToRunPlan(plan),
         },
       };
     }),

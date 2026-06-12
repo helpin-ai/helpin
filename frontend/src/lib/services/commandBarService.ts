@@ -36,6 +36,8 @@ export const commandBarService = {
     api.get<CommandBarPlanListResponse>(`/command-bar/plans${qs(workspaceId)}&limit=${encodeURIComponent(limit)}`),
   getPlan: (workspaceId: string, planId: string) =>
     api.get<CommandBarPlanDetailResponse>(`/command-bar/plans/${encodeURIComponent(planId)}${qs(workspaceId)}`),
+  listEpicPlans: (workspaceId: string, epicId: string) =>
+    api.get<CommandBarPlanListResponse>(`/pm/epics/${encodeURIComponent(epicId)}/command-bar-plans${qs(workspaceId)}`),
   getAgentToolCatalog: (workspaceId: string, agentId: string, selectedTools?: string[]) => {
     const params = (selectedTools ?? []).map((tool) => `&selected=${encodeURIComponent(tool)}`).join('');
     return api.get<CommandBarToolCatalogResponse>(`/command-bar/agents/${encodeURIComponent(agentId)}/tools${qs(workspaceId)}${params}`);
