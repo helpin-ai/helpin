@@ -10,6 +10,7 @@ import {
   isDeliveryPlanKind,
   isPlanStalled,
   pickLatestDeliveryPlan,
+  planHasActiveRuns,
   planHasFailedSteps,
   planRunIdSet,
   runDurationMs,
@@ -255,6 +256,11 @@ describe('isPlanStalled', () => {
     expect(isPlanStalled(plan, { r1: agentRun({ id: 'r1', status: 'failed' }) })).toBe(false);
   });
 
+  it('is not stalled when a run was cancelled — that plan is dead, retry territory', () => {
+    const plan = stallablePlan({ 0: 'r1' });
+    expect(isPlanStalled(plan, { r1: agentRun({ id: 'r1', status: 'cancelled' }) })).toBe(false);
+  });
+
   it('is not stalled when the plan is not running', () => {
     expect(isPlanStalled(stallablePlan({}, 'completed'), {})).toBe(false);
   });
@@ -353,6 +359,27 @@ describe('deliveryVerdict', () => {
     expect(verdict?.text).toContain('Resume to continue.');
   });
 
+  it('offers retry on a zombie running plan (cancelled runs, nothing active)', () => {
+    const plan = planSummaryToRunPlan(
+      summary({ status: 'running', steps: [step()], run_ids_by_step: { 0: 'r1' } }),
+    );
+    const verdict = deliveryVerdict(plan, { r1: agentRun({ id: 'r1', status: 'cancelled' }) });
+    expect(verdict?.tone).toBe('attention');
+    expect(verdict?.text).toContain('Retry to continue.');
+  });
+
+  it('omits the retry hint while runs are still active', () => {
+    const plan = planSummaryToRunPlan(
+      summary({ status: 'running', steps: [step(), step()], run_ids_by_step: { 0: 'r1', 1: 'r2' } }),
+    );
+    const verdict = deliveryVerdict(plan, {
+      r1: agentRun({ id: 'r1', status: 'failed' }),
+      r2: agentRun({ id: 'r2', status: 'running' }),
+    });
+    expect(verdict?.tone).toBe('attention');
+    expect(verdict?.text).not.toContain('Retry to continue.');
+  });
+
   it('is null for a healthy running plan', () => {
     const plan = planSummaryToRunPlan(
       summary({ status: 'running', steps: [step()], run_ids_by_step: { 0: 'r1' } }),
@@ -365,6 +392,26 @@ describe('deliveryVerdict', () => {
       summary({ status: 'completed', steps: [step()], run_ids_by_step: { 0: 'r1' } }),
     );
     expect(deliveryVerdict(plan, { r1: agentRun({ id: 'r1', status: 'completed' }) })).toBeNull();
+  });
+});
+
+describe('planHasActiveRuns', () => {
+  it('is true while any step run is active and false otherwise', () => {
+    const plan = planSummaryToRunPlan(
+      summary({ status: 'running', steps: [step(), step()], run_ids_by_step: { 0: 'r1', 1: 'r2' } }),
+    );
+    expect(
+      planHasActiveRuns(plan, {
+        r1: agentRun({ id: 'r1', status: 'completed' }),
+        r2: agentRun({ id: 'r2', status: 'paused' }),
+      }),
+    ).toBe(true);
+    expect(
+      planHasActiveRuns(plan, {
+        r1: agentRun({ id: 'r1', status: 'completed' }),
+        r2: agentRun({ id: 'r2', status: 'cancelled' }),
+      }),
+    ).toBe(false);
   });
 });
 

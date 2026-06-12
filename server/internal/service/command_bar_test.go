@@ -3454,6 +3454,80 @@ func setupCommandBarRepositoryTargetResolutionTest(t *testing.T) (*CommandBarSer
 	return service, db, workspaceID, repoID
 }
 
+// A plan can be left status "running" with all child runs failed/cancelled —
+// a zombie that resume cannot revive. Retry must accept it (rejecting only
+// while runs are genuinely active).
+func TestRetryPlanFromStepAcceptsRunningPlanWithNoActiveRuns(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	planRepo := repository.NewCommandBarPlanRepository(db)
+	service := &CommandBarService{
+		planRepo:     planRepo,
+		agentService: &AgentService{runRepo: runRepo, commandBarPlanRepo: planRepo},
+	}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	planID := "22222222-2222-2222-2222-222222222222"
+	runID := "33333333-3333-3333-3333-333333333333"
+	agentID := "44444444-4444-4444-4444-444444444444"
+	targetID := "55555555-5555-5555-5555-555555555555"
+	pageContext := model.CommandBarPageContext{EntityType: "epic", EntityID: targetID, DisplayTitle: "Epic"}
+	steps := []model.CommandBarPlanStep{
+		{
+			AgentID:      agentID,
+			AgentName:    "Forge",
+			PlanKind:     model.CommandBarPlanKindTaskPipeline,
+			Target:       pageContext,
+			Instructions: "Build it.",
+		},
+	}
+	plan, err := newCommandBarPlanRecord(workspaceID, "", planID, "run all tasks", pageContext, steps)
+	if err != nil {
+		t.Fatalf("build plan record: %v", err)
+	}
+	runIDs, _ := json.Marshal(map[int]string{0: runID})
+	plan.RunIDsByStep = runIDs
+	if err := planRepo.Create(ctx, plan); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	if plan.Status != model.CommandBarPlanStatusRunning {
+		t.Fatalf("expected plan to start running, got %q", plan.Status)
+	}
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             runID,
+		WorkspaceID:    workspaceID,
+		AgentID:        agentID,
+		TargetType:     "epic",
+		TargetID:       targetID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeAutonomous,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusCancelled,
+		Input:          json.RawMessage("{}"),
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	// Zombie (running plan, cancelled run): must pass the running gate and
+	// only fail later on the missing temporal engine in this test harness.
+	_, err = service.RetryPlanFromStep(ctx, workspaceID, "actor-2", planID, model.CommandBarRetryPlanRequest{StepIndex: 0})
+	if err == nil || !strings.Contains(err.Error(), "orchestration is not configured") {
+		t.Fatalf("expected zombie plan to pass the running gate, got %v", err)
+	}
+
+	// Genuinely active run: retry must be rejected.
+	if err := db.Exec(`UPDATE agent_runs SET status = 'running' WHERE id = ?`, runID).Error; err != nil {
+		t.Fatalf("activate run: %v", err)
+	}
+	_, err = service.RetryPlanFromStep(ctx, workspaceID, "actor-2", planID, model.CommandBarRetryPlanRequest{StepIndex: 0})
+	if err == nil || !strings.Contains(err.Error(), "active runs") {
+		t.Fatalf("expected active-run rejection, got %v", err)
+	}
+}
+
 func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dbName := fmt.Sprintf("file:command_bar_plan_%d?mode=memory&cache=shared", time.Now().UnixNano())

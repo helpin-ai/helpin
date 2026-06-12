@@ -124,8 +124,21 @@ export function isPlanStalled(plan: CommandBarRunPlan, runsById: Record<string, 
     .map((id) => runsById[id])
     .filter(Boolean);
   if (runs.some((run) => ACTIVE_RUN_STATUSES.has(run.status))) return false;
-  if (runs.some((run) => run.status === 'failed')) return false;
+  // Failed/cancelled runs make the plan dead, not stalled — resume only
+  // starts steps that have no run yet, so retry is the action there.
+  if (runs.some((run) => run.status === 'failed' || run.status === 'cancelled')) return false;
   return true;
+}
+
+/** True while any of the plan's step runs is still executing (or queued/paused). */
+export function planHasActiveRuns(
+  plan: CommandBarRunPlan,
+  runsById: Record<string, AgentRun>,
+): boolean {
+  return Object.values(plan.runIdsByStep ?? {}).some((id) => {
+    const run = runsById[id];
+    return !!run && ACTIVE_RUN_STATUSES.has(run.status);
+  });
 }
 
 /** True when any step run failed or was cancelled — the delivery cannot finish on its own. */
@@ -172,7 +185,7 @@ export function deliveryVerdict(
       const extra = blocked.length - names.length;
       text += ` — ${names.join(', ')}${extra > 0 ? ` +${extra} more` : ''} blocked downstream`;
     }
-    if (plan.status !== 'running') text += '. Retry to continue.';
+    if (!planHasActiveRuns(plan, runsById)) text += '. Retry to continue.';
     return { tone: 'attention', text };
   }
   if (awaiting.length > 0) {

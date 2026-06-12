@@ -3196,7 +3196,7 @@ func (s *CommandBarService) ResumePlan(ctx context.Context, workspaceID, actorID
 }
 
 func (s *CommandBarService) RetryPlanFromStep(ctx context.Context, workspaceID, actorID, planID string, req model.CommandBarRetryPlanRequest) (*model.CommandBarRetryPlanResponse, error) {
-	if s == nil || s.planRepo == nil || s.agentService == nil {
+	if s == nil || s.planRepo == nil || s.agentService == nil || s.agentService.runRepo == nil {
 		return nil, fmt.Errorf("command bar plan service is not configured")
 	}
 	plan, err := s.planRepo.GetByID(ctx, workspaceID, strings.TrimSpace(planID))
@@ -3209,8 +3209,25 @@ func (s *CommandBarService) RetryPlanFromStep(ctx context.Context, workspaceID, 
 	// Like ResumePlan, retry is team-actionable (not owner-gated): a failed
 	// epic delivery can be retried by any member with command-bar edit
 	// permission. Retried runs are attributed to the retrying actor.
+	//
+	// A plan can be left in status "running" with all of its child runs
+	// failed or cancelled (e.g. runs cancelled mid-delivery) — a zombie that
+	// resume cannot revive because there is nothing ready to start. Retry is
+	// the only way out, so only reject while work is genuinely in flight.
 	if plan.Status == model.CommandBarPlanStatusRunning {
-		return nil, fmt.Errorf("running command bar plans cannot be retried")
+		activeIDs := make([]string, 0)
+		for _, runID := range decodeCommandBarPlanRunIDs(plan.RunIDsByStep) {
+			activeIDs = append(activeIDs, runID)
+		}
+		runs, err := s.agentService.runRepo.ListByIDs(ctx, workspaceID, activeIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, run := range runs {
+			if model.IsAgentRunActiveStatus(run.Status) {
+				return nil, fmt.Errorf("command bar plan still has active runs; cancel them or wait before retrying")
+			}
+		}
 	}
 	var pageContext model.CommandBarPageContext
 	if err := json.Unmarshal(plan.PageContext, &pageContext); err != nil {

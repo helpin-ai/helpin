@@ -56,7 +56,6 @@ function useSizes() {
         status: 'text-[11px]',
         chip: 'text-[11px]',
         microLabel: 'text-[10px]',
-        laneTitle: 'w-28 shrink-0 sm:w-44',
         stepDot: 'sm' as const,
         avatar: 'h-3.5 w-3.5',
         chipAvatar: 'h-3 w-3',
@@ -66,7 +65,6 @@ function useSizes() {
         status: 'text-xs',
         chip: 'text-xs',
         microLabel: 'text-[11px]',
-        laneTitle: 'w-36 shrink-0 sm:w-56 lg:w-72',
         stepDot: 'md' as const,
         avatar: 'h-4 w-4',
         chipAvatar: 'h-3.5 w-3.5',
@@ -390,11 +388,11 @@ function BookendRow({
   return (
     <div className="flex items-center gap-3 px-2.5 py-1">
       <span
-        className={cn(sizes.laneTitle, sizes.microLabel, 'font-medium uppercase tracking-wider text-muted-foreground')}
+        className={cn('min-w-0 flex-1 truncate', sizes.microLabel, 'font-medium uppercase tracking-wider text-muted-foreground')}
       >
         {label}
       </span>
-      <div className="flex min-w-0 flex-1 items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         {stepChain(plan, stepIndexes, runsById, onSelectStep)}
       </div>
       <span className={cn('shrink-0 tabular-nums', sizes.status, status.className)}>
@@ -478,12 +476,12 @@ function TaskPipelineLanes({
       >
         <div className="flex items-center gap-3">
           <span
-            className={cn(sizes.laneTitle, 'truncate font-medium text-foreground/85', sizes.name)}
+            className={cn('min-w-0 flex-1 truncate font-medium text-foreground/85', sizes.name)}
             title={group.title}
           >
             {group.title}
           </span>
-          <div className="flex min-w-0 flex-1 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             {stepChain(plan, group.stepIndexes, runsById, onSelectStep)}
           </div>
           <span className={cn('shrink-0 tabular-nums', sizes.status, status.className)}>

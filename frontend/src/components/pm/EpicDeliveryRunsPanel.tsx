@@ -5,11 +5,16 @@ import { Button } from '@/components/ui/button';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { DeliveryPlanView } from '@/components/agents/dock/DeliveryPlanView';
 import { StatusDot } from '@/components/agents/dock/StatusDot';
-import { classifyPlan, planSummaryText } from '@/components/agents/dock/utils';
+import { planSummaryText } from '@/components/agents/dock/utils';
 import type { CommandBarRunPlan } from '@/components/agents/dock/planSummary';
 import { commandBarService } from '@/lib/services/commandBarService';
 import type { AgentRun } from '@/lib/pmTypes';
-import { deliveryDotState, isPlanStalled } from './epicDeliveryDag';
+import {
+  deliveryDotState,
+  isPlanStalled,
+  planHasActiveRuns,
+  planHasFailedSteps,
+} from './epicDeliveryDag';
 
 export const EPIC_DELIVERY_PANEL_ID = 'epic-delivery-panel';
 
@@ -38,9 +43,10 @@ export function EpicDeliveryRunsPanel({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const state = classifyPlan(plan, runsById);
-  const canRetry =
-    canEdit && (state === 'attention' || state === 'cancelled') && plan.status !== 'running';
+  // Retry whenever something failed/was cancelled and nothing is in flight —
+  // including plans the backend still considers "running" (a zombie state
+  // resume can't revive, since resume only starts steps with no run yet).
+  const canRetry = canEdit && planHasFailedSteps(plan, runsById) && !planHasActiveRuns(plan, runsById);
   const canResume = canEdit && !canRetry && isPlanStalled(plan, runsById);
 
   const resume = async () => {
