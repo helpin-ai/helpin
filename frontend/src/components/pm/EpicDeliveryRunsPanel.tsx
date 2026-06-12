@@ -111,10 +111,7 @@ export function EpicDeliveryRunsPanel({
     ) : undefined;
 
   return (
-    <div
-      id={EPIC_DELIVERY_PANEL_ID}
-      className="scroll-mt-4 overflow-hidden rounded-md border border-border/60 bg-card px-3 py-2.5"
-    >
+    <div id={EPIC_DELIVERY_PANEL_ID} className="scroll-mt-4">
       <DeliveryPlanView
         plan={plan}
         runsById={runsById}
