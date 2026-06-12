@@ -3454,6 +3454,42 @@ func setupCommandBarRepositoryTargetResolutionTest(t *testing.T) (*CommandBarSer
 	return service, db, workspaceID, repoID
 }
 
+// The retry handler pre-fetches the plan for per-step authorization; that
+// lookup must not be owner-gated or cross-actor retries from the epic page
+// die with "not found" before the team-actionable service method runs.
+func TestGetWorkspacePlanBypassesOwnerGate(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	planRepo := repository.NewCommandBarPlanRepository(db)
+	service := &CommandBarService{
+		planRepo:     planRepo,
+		agentService: &AgentService{runRepo: repository.NewAgentRunRepository(db)},
+	}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	planID := "66666666-6666-6666-6666-666666666666"
+	pageContext := model.CommandBarPageContext{EntityType: "epic", EntityID: "epic-1", DisplayTitle: "Epic"}
+	steps := []model.CommandBarPlanStep{{AgentID: "agent-1", AgentName: "Forge", Target: pageContext, Instructions: "Build."}}
+	plan, err := newCommandBarPlanRecord(workspaceID, "actor-owner", planID, "run all tasks", pageContext, steps)
+	if err != nil {
+		t.Fatalf("build plan record: %v", err)
+	}
+	if err := planRepo.Create(ctx, plan); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	if _, err := service.GetPlan(ctx, workspaceID, "actor-other", planID); err == nil {
+		t.Fatalf("expected owner-gated GetPlan to hide another actor's plan")
+	}
+	detail, err := service.GetWorkspacePlan(ctx, workspaceID, planID)
+	if err != nil {
+		t.Fatalf("GetWorkspacePlan: %v", err)
+	}
+	if detail.Plan.ID != planID {
+		t.Fatalf("expected plan %q, got %q", planID, detail.Plan.ID)
+	}
+}
+
 // A plan can be left status "running" with all child runs failed/cancelled —
 // a zombie that resume cannot revive. Retry must accept it (rejecting only
 // while runs are genuinely active).

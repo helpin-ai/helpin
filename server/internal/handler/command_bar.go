@@ -248,7 +248,11 @@ func (h *CommandBarHandler) RetryPlan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	plan, err := h.commandBarService.GetPlan(r.Context(), workspaceID, actorID, planID)
+	// Retry is team-actionable (the epic Delivery panel offers it to any
+	// editor, including for plans triggered by someone else), so look the
+	// plan up without the dock's owner gate; per-step authorization below
+	// still applies to the retrying actor.
+	plan, err := h.commandBarService.GetWorkspacePlan(r.Context(), workspaceID, planID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

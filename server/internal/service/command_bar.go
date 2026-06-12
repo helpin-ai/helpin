@@ -3067,6 +3067,28 @@ func (s *CommandBarService) GetPlan(ctx context.Context, workspaceID, actorID, p
 	return &model.CommandBarPlanDetailResponse{Plan: summary}, nil
 }
 
+// GetWorkspacePlan loads a plan without the dock's owner gate, for
+// team-actionable flows (epic-page resume/retry) where any member with
+// command-bar edit permission may act on another actor's delivery. Callers
+// remain responsible for per-step authorization.
+func (s *CommandBarService) GetWorkspacePlan(ctx context.Context, workspaceID, planID string) (*model.CommandBarPlanDetailResponse, error) {
+	if s == nil || s.planRepo == nil {
+		return nil, fmt.Errorf("command bar plan service is not configured")
+	}
+	record, err := s.planRepo.GetByID(ctx, workspaceID, strings.TrimSpace(planID))
+	if err != nil {
+		return nil, err
+	}
+	if record == nil {
+		return nil, fmt.Errorf("command bar plan not found")
+	}
+	summary, err := s.commandBarPlanSummaryForRecord(ctx, workspaceID, *record)
+	if err != nil {
+		return nil, err
+	}
+	return &model.CommandBarPlanDetailResponse{Plan: summary}, nil
+}
+
 func (s *CommandBarService) commandBarPlanSummaryForRecord(ctx context.Context, workspaceID string, record model.CommandBarPlanRecord) (model.CommandBarPlanSummary, error) {
 	runIDsByStep := decodeCommandBarPlanRunIDs(record.RunIDsByStep)
 	runIDs := make([]string, 0, len(runIDsByStep))
