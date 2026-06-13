@@ -46,6 +46,37 @@ func (r *SupportEmailSenderRepository) UpdateDisplayName(ctx context.Context, wo
 	return nil
 }
 
+func (r *SupportEmailSenderRepository) UpdateVerificationByDomain(ctx context.Context, workspaceID, domainName string, senderDomain *model.SupportEmailSenderDomain) error {
+	if senderDomain == nil {
+		return nil
+	}
+	now := time.Now().UTC()
+	updates := map[string]any{
+		"postmark_domain_id":             senderDomain.PostmarkDomainID,
+		"return_path_domain":             senderDomain.ReturnPathDomain,
+		"return_path_domain_cname_value": senderDomain.ReturnPathDomainCNAMEValue,
+		"return_path_domain_verified":    senderDomain.ReturnPathDomainVerified,
+		"dkim_host":                      senderDomain.DKIMHost,
+		"dkim_text_value":                senderDomain.DKIMTextValue,
+		"dkim_pending_host":              senderDomain.DKIMPendingHost,
+		"dkim_pending_text_value":        senderDomain.DKIMPendingTextValue,
+		"dkim_verified":                  senderDomain.DKIMVerified,
+		"dkim_update_status":             senderDomain.DKIMUpdateStatus,
+		"domain_status":                  senderDomain.Status,
+		"verification_status":            senderDomain.Status,
+		"last_checked_at":                senderDomain.LastCheckedAt,
+		"last_error":                     senderDomain.LastError,
+		"updated_at":                     now,
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportEmailSender{}).
+		Where("workspace_id = ? AND LOWER(domain) = LOWER(?)", workspaceID, strings.TrimSpace(domainName)).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update support email sender verification by domain: %w", err)
+	}
+	return nil
+}
+
 func (r *SupportEmailSenderRepository) ListByWorkspace(ctx context.Context, workspaceID string) ([]model.SupportEmailSender, error) {
 	var senders []model.SupportEmailSender
 	if err := r.baseQuery(ctx).

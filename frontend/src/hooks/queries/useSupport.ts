@@ -582,6 +582,7 @@ export function useVerifySupportEmailSenderDomain(workspaceId: string) {
       supportService.verifyEmailSenderDomain(workspaceId, domainId).then(unwrap),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenderDomains(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenders(workspaceId) });
     },
     onError: (error: Error) => {
       toast.error('Failed to verify sender domain', { description: error.message });

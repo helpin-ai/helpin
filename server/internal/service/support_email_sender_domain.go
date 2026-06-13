@@ -117,6 +117,11 @@ func (s *SupportInboxService) VerifyEmailSenderDomain(ctx context.Context, works
 	if err := s.emailSenderDomainRepo.Update(ctx, senderDomain); err != nil {
 		return nil, err
 	}
+	if s.emailSenderRepo != nil {
+		if err := s.emailSenderRepo.UpdateVerificationByDomain(ctx, workspaceID, senderDomain.Domain, senderDomain); err != nil {
+			return nil, err
+		}
+	}
 	return senderDomain, nil
 }
 

@@ -804,6 +804,106 @@ func TestSupportInboxServiceCreateEmailSenderDomainReusesExistingPostmarkDomain(
 	}
 }
 
+func TestSupportInboxServiceVerifyEmailSenderDomainSyncsSenderAddresses(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	seedUser(t, db, actorID, "owner@example.com", "Owner", "hashed")
+	seedWorkspace(t, db, workspaceID, "Acme", "acme", actorID)
+
+	postmarkClient := email.NewDomainClient("account-token")
+	postmarkClient.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodPut && req.URL.Path == "/domains/123/verifyDkim":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ID": 123,
+					"Name": "example.com",
+					"ReturnPathDomain": "pm-bounces.example.com",
+					"ReturnPathDomainCNAMEValue": "pm.mtasv.net",
+					"ReturnPathDomainVerified": true,
+					"DKIMHost": "pm._domainkey.example.com",
+					"DKIMTextValue": "k=rsa; p=verified",
+					"DKIMVerified": true
+				}`)),
+			}, nil
+		case req.Method == http.MethodPut && req.URL.Path == "/domains/123/verifyReturnPath":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ID": 123,
+					"Name": "example.com",
+					"ReturnPathDomain": "pm-bounces.example.com",
+					"ReturnPathDomainCNAMEValue": "pm.mtasv.net",
+					"ReturnPathDomainVerified": true,
+					"DKIMHost": "pm._domainkey.example.com",
+					"DKIMTextValue": "k=rsa; p=verified",
+					"DKIMVerified": true
+				}`)),
+			}, nil
+		default:
+			t.Fatalf("unexpected postmark request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		}
+	})})
+
+	postmarkDomainID := 123
+	domainRepo := repository.NewSupportEmailSenderDomainRepository(db)
+	senderRepo := repository.NewSupportEmailSenderRepository(db)
+	svc := NewSupportInboxService(nil, repository.NewSupportMailboxRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetEmailSenderDomainRepository(domainRepo).
+		SetEmailSenderRepository(senderRepo).
+		SetPostmarkDomainClient(postmarkClient).
+		SetRouteDomain("on.helpin.email")
+
+	senderDomain := &model.SupportEmailSenderDomain{
+		WorkspaceID:      workspaceID,
+		Domain:           "example.com",
+		FromLocalPart:    "support",
+		PostmarkDomainID: &postmarkDomainID,
+		Status:           supportEmailSenderStatusPendingDNS,
+		CreatedByID:      actorID,
+	}
+	if err := domainRepo.Create(ctx, senderDomain); err != nil {
+		t.Fatalf("create sender domain: %v", err)
+	}
+	sender := &model.SupportEmailSender{
+		WorkspaceID:        workspaceID,
+		Email:              "support@example.com",
+		LocalPart:          "support",
+		Domain:             "example.com",
+		DisplayName:        "Support",
+		PostmarkDomainID:   &postmarkDomainID,
+		DomainStatus:       supportEmailSenderStatusPendingDNS,
+		ForwardingStatus:   supportEmailSenderForwardingNotStarted,
+		VerificationStatus: supportEmailSenderStatusPendingDNS,
+		DefaultScope:       supportEmailSenderDefaultScopeNone,
+		CreatedByID:        actorID,
+	}
+	if err := senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	if _, err := svc.VerifyEmailSenderDomain(ctx, workspaceID, senderDomain.ID); err != nil {
+		t.Fatalf("verify sender domain: %v", err)
+	}
+	updatedSender, err := senderRepo.GetByEmail(ctx, workspaceID, "support@example.com")
+	if err != nil {
+		t.Fatalf("get updated sender: %v", err)
+	}
+	if updatedSender == nil || !updatedSender.DKIMVerified || !updatedSender.ReturnPathDomainVerified || updatedSender.VerificationStatus != supportEmailSenderStatusVerified {
+		t.Fatalf("expected sender verification to sync from domain, got %#v", updatedSender)
+	}
+	if _, err := svc.SetDefaultEmailSender(ctx, workspaceID, sender.ID, model.SetSupportEmailSenderDefaultRequest{DefaultScope: supportEmailSenderDefaultScopeWorkspace}); err != nil {
+		t.Fatalf("expected synced sender to be usable as default: %v", err)
+	}
+}
+
 func TestInboundPayloadMentionsAddressMatchesExactEmailTokens(t *testing.T) {
 	payload := model.PostmarkInboundPayload{
 		To:      "Helpin Support <support@example.com>",
