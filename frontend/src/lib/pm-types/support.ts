@@ -258,6 +258,7 @@ export interface SupportEmailSender {
   mailbox_name?: string | null;
   mailbox_handle?: string | null;
   mailbox_icon?: string | null;
+  mailbox_ids?: string[];
 }
 
 export interface CreateSupportEmailSenderRequest {
