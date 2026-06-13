@@ -5,7 +5,7 @@ import { SettingsPageFrame } from './SettingsPageFrame';
 const TABS = [
   { value: 'inboxes', label: 'Inboxes & Routing' },
   { value: 'email', label: 'Email Forwarding' },
-  { value: 'senders', label: 'Sending Domains' },
+  { value: 'senders', label: 'Sender Addresses' },
 ] as const;
 
 export type InboxesRoutingTab = (typeof TABS)[number]['value'];
