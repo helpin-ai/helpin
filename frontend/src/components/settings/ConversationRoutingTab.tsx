@@ -809,7 +809,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
         <div className="hidden grid-cols-[minmax(240px,1.15fr)_108px_120px_minmax(135px,0.95fr)_120px_108px_80px] gap-3 border-b bg-muted/25 px-6 py-2 text-xs font-medium text-muted-foreground lg:grid">
           <ColumnHeaderTooltip label="Inbox" className="pl-[3.75rem]" tooltip="Team inbox shown in the support queue." />
           <ColumnHeaderTooltip label="Members" tooltip="People who can access this inbox." />
-          <ColumnHeaderTooltip label="Email forwarding" tooltip="Shows whether forwarded emails can arrive in this inbox." />
+          <ColumnHeaderTooltip label="Email forwarding" tooltip="Shows whether email forwarding is set up to receive emails in this inbox." />
           <ColumnHeaderTooltip label="Sender address" tooltip="Email address used when this inbox sends replies." />
           <ColumnHeaderTooltip label="Rule-based routing" tooltip="Manual rules checked before AI routing." />
           <ColumnHeaderTooltip label="AI routing" tooltip="AI can route here when no manual rule matches." />
