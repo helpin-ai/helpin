@@ -349,7 +349,7 @@ func TestSupportInboxTriageEvaluateAndRoute_AutoMovesHighConfidenceRule(t *testi
 	if !systemMessages[len(systemMessages)-1].IsInternal {
 		t.Fatal("expected auto-move system message to be internal")
 	}
-	if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Conversation moved to Billing by routing rule") {
+	if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Routing rule moved to inbox 'Billing'.") {
 		t.Fatalf("unexpected system message %q", systemMessages[len(systemMessages)-1].Content)
 	}
 }
@@ -523,7 +523,7 @@ func TestSupportInboxTriageDismissConversation(t *testing.T) {
 	if len(systemMessages) == 0 {
 		t.Fatal("expected dismissal system message")
 	}
-	if systemMessages[len(systemMessages)-1].Content != "Routing suggestion dismissed" {
+	if systemMessages[len(systemMessages)-1].Content != "Support dismissed the routing suggestion." {
 		t.Fatalf("unexpected system message %q", systemMessages[len(systemMessages)-1].Content)
 	}
 }
@@ -574,7 +574,7 @@ func TestSupportInboxTriageManualMoveFeedback(t *testing.T) {
 		if len(systemMessages) == 0 {
 			t.Fatal("expected manual move system message")
 		}
-		if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Moved to Sales by Support Owner") {
+		if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Support moved to inbox 'Sales'.") {
 			t.Fatalf("unexpected system message %q", systemMessages[len(systemMessages)-1].Content)
 		}
 	})
@@ -620,7 +620,7 @@ func TestSupportInboxTriageManualMoveFeedback(t *testing.T) {
 		if len(systemMessages) == 0 {
 			t.Fatal("expected manual move system message")
 		}
-		if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Moved to Billing by Support Owner") {
+		if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Support moved to inbox 'Billing'.") {
 			t.Fatalf("unexpected system message %q", systemMessages[len(systemMessages)-1].Content)
 		}
 	})

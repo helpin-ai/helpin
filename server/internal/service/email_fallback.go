@@ -3298,7 +3298,7 @@ func createEmailReopenedSystemMessage(ctx context.Context, msgRepo *repository.S
 		WorkspaceID:     conv.WorkspaceID,
 		ConversationID:  conv.ID,
 		SenderType:      "user",
-		Content:         "Reopened conversation",
+		Content:         "Customer reply reopened this conversation.",
 		MessageType:     "system",
 		SystemEventType: model.SupportSystemEventTypeStrPtr(model.SystemEventReopened),
 		IsInternal:      true,

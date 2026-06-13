@@ -404,7 +404,7 @@ func (s *SupportInboxTriageService) DismissConversationTriage(ctx context.Contex
 		return nil, err
 	}
 
-	s.createSystemMessage(ctx, workspaceID, conversationID, &actorUserID, "user", "", "Routing suggestion dismissed", true, model.SystemEventTriageDismissed)
+	s.createSystemMessage(ctx, workspaceID, conversationID, &actorUserID, "user", "", "Dismissed the routing suggestion.", true, model.SystemEventTriageDismissed)
 	s.publishConversationUpdated(workspaceID, conversationID, actorUserID)
 	return triage, nil
 }
@@ -1086,6 +1086,12 @@ func (s *SupportInboxTriageService) createSystemMessage(ctx context.Context, wor
 	if displayName == "" {
 		displayName = "Routing"
 	}
+	messageContent := strings.TrimSpace(content)
+	if eventType == model.SystemEventTriageDismissed && actorUserID != nil {
+		if firstName := supportSystemFirstName(displayName); firstName != "" {
+			messageContent = fmt.Sprintf("%s dismissed the routing suggestion.", firstName)
+		}
+	}
 
 	msg := &model.SupportMessage{
 		WorkspaceID:       workspaceID,
@@ -1094,7 +1100,7 @@ func (s *SupportInboxTriageService) createSystemMessage(ctx context.Context, wor
 		SenderUserID:      actorUserID,
 		SenderDisplayName: &displayName,
 		SenderAvatarURL:   avatarURL,
-		Content:           strings.TrimSpace(content),
+		Content:           messageContent,
 		IsInternal:        isInternal,
 		MessageType:       "system",
 		SystemEventType:   model.SupportSystemEventTypeStrPtr(eventType),
@@ -1417,9 +1423,9 @@ func sameMailboxID(left, right *string) bool {
 func autoMoveMessage(source string, mailboxID *string, mailboxName string) string {
 	switch source {
 	case model.SupportConversationTriageSourceRule:
-		return fmt.Sprintf("Conversation moved to %s by routing rule", mailboxName)
+		return fmt.Sprintf("Routing rule moved to inbox '%s'.", mailboxName)
 	default:
-		return fmt.Sprintf("Conversation moved to %s by AI triage", mailboxName)
+		return fmt.Sprintf("AI routing moved to inbox '%s'.", mailboxName)
 	}
 }
 
