@@ -1030,6 +1030,15 @@ type SupportInboxSettings struct {
 	ForceVisitorIdentity bool `json:"force_visitor_identity"`
 }
 
+type SupportRoutingUsageStatus struct {
+	TriageEnabled  bool      `json:"triage_enabled"`
+	DailyBudget    int       `json:"daily_budget"`
+	UsedToday      int       `json:"used_today"`
+	RemainingToday *int      `json:"remaining_today,omitempty"`
+	ResetAt        time.Time `json:"reset_at"`
+	Exhausted      bool      `json:"exhausted"`
+}
+
 // DefaultSupportInboxSettings returns settings with sensible defaults.
 func DefaultSupportInboxSettings() SupportInboxSettings {
 	return SupportInboxSettings{
@@ -1052,8 +1061,8 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		DefaultMailboxID:              nil,
 		AIHandoffMailboxID:            nil,
 		TriageEnabled:                 false,
-		TriageAutoMoveEnabled:         false,
-		TriageConfidenceThreshold:     0.9,
+		TriageAutoMoveEnabled:         true,
+		TriageConfidenceThreshold:     0.8,
 		TriageWidgetEnabled:           true,
 		TriageEmailEnabled:            true,
 		TriageInternalEnabled:         false,

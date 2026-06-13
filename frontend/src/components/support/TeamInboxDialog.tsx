@@ -19,6 +19,7 @@ import { useAssignableMembers } from '@/hooks/queries/useWorkspaces';
 import {
   useCreateMailbox,
   useCreateSupportTriageRule,
+  useChatSettings,
   useDeleteSupportTriageRule,
   useMailboxMembers,
   useSupportTriageRules,
@@ -210,6 +211,7 @@ export function TeamInboxDialog({
   const { data: members = [] } = useAssignableMembers(workspaceId);
   const { teams, userMemberships } = useWorkspaceTeams(workspaceId);
   const { data: moduleAccess } = useWorkspaceModuleAccess(workspaceId);
+  const { data: chatSettings } = useChatSettings(workspaceId);
   const { data: triageRules = [] } = useSupportTriageRules(workspaceId);
   const { data: mailboxMembersData = EMPTY_MEMBERS } = useMailboxMembers(workspaceId, mailbox?.id);
   const mailboxMembers = Array.isArray(mailboxMembersData) ? mailboxMembersData : EMPTY_MEMBERS;
@@ -219,6 +221,8 @@ export function TeamInboxDialog({
   const updateTriageRule = useUpdateSupportTriageRule(workspaceId);
   const deleteTriageRule = useDeleteSupportTriageRule(workspaceId);
   const supportAccessHref = workspaceSlug ? `/w/${workspaceSlug}/settings/access` : '/workspaces';
+  const supportRoutingHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=inboxes` : '/workspaces';
+  const isRoutingOff = chatSettings ? !chatSettings.settings.triage_enabled : false;
 
   useEffect(() => {
     if (!open) {
@@ -933,7 +937,7 @@ export function TeamInboxDialog({
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-medium">Manual rule</h3>
+                    <h3 className="text-sm font-medium">Rule-based routing</h3>
                   </div>
                   <Button type="button" variant="outline" size="sm" className="shrink-0 gap-2" onClick={addManualCondition}>
                     <PlusSignIcon className="h-4 w-4" />
@@ -1037,7 +1041,17 @@ export function TeamInboxDialog({
                 </div>
 
                 {form.triageEligible && (
-                  <div className="space-y-1.5">
+                  <div className="space-y-3">
+                    {isRoutingOff && (
+                      <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                        <span>Routing is off. Enable it to use AI routing.</span>
+                        <Button asChild type="button" variant="outline" size="xs" className="h-7 w-fit border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100 dark:hover:bg-amber-900/40">
+                          <a href={supportRoutingHref} target="_blank" rel="noreferrer">
+                            Enable routing
+                          </a>
+                        </Button>
+                      </div>
+                    )}
                     <Textarea
                       id="team-inbox-routing-prompt"
                       value={form.routingPrompt}

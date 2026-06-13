@@ -934,6 +934,15 @@ export interface SupportInboxSettings {
   force_visitor_identity: boolean;
 }
 
+export interface SupportRoutingUsageStatus {
+  triage_enabled: boolean;
+  daily_budget: number;
+  used_today: number;
+  remaining_today?: number | null;
+  reset_at: string;
+  exhausted: boolean;
+}
+
 export interface SupportInstallationResponse {
   id: string;
   workspace_id: string;

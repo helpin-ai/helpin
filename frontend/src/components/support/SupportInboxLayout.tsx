@@ -6,7 +6,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
 import { supportInboxBuiltinViewKey, useSupportInboxStore } from '@/stores/supportInboxStore';
-import { useSupportInboxViews, useSupportMailboxes } from '@/hooks/queries/useSupport';
+import { useSupportInboxViews, useSupportMailboxes, useSupportRoutingUsage } from '@/hooks/queries/useSupport';
 import { ConversationList } from './ConversationList';
 import { MessageThread } from './MessageThread';
 import { ConversationDetailSidebar } from './ConversationDetailSidebar';
@@ -92,6 +92,7 @@ export function SupportInboxLayout() {
     editMailboxId,
   } = useSupportInboxStore();
   const { data: mailboxes = [] } = useSupportMailboxes(workspaceId);
+  const { data: routingUsage } = useSupportRoutingUsage(workspaceId);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { isAdmin } = usePermissions(access);
   const editMailbox = editMailboxId ? mailboxes.find((m) => m.id === editMailboxId) ?? null : null;
@@ -108,6 +109,10 @@ export function SupportInboxLayout() {
   const handleWidgetSettingsClick = useCallback(() => {
     if (!slug) return;
     void navigate({ to: '/w/$slug/settings/chat-general', params: { slug } });
+  }, [navigate, slug]);
+  const handleRoutingSettingsClick = useCallback(() => {
+    if (!slug) return;
+    void navigate({ to: '/w/$slug/settings/inboxes-routing', params: { slug }, search: { tab: 'inboxes' } });
   }, [navigate, slug]);
 
   const supportRouteSearch = useMemo(
@@ -310,6 +315,21 @@ export function SupportInboxLayout() {
           </Button>
         </div>
       )}
+
+      {routingUsage?.triage_enabled && routingUsage.exhausted ? (
+        <div className="flex flex-col gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          <span>AI routing limit reached for today. Manual rules still run; AI routing resumes after the daily reset.</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 w-fit border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100 dark:hover:bg-amber-900/40"
+            onClick={handleRoutingSettingsClick}
+          >
+            Manage routing
+          </Button>
+        </div>
+      ) : null}
 
       {/* Three-panel layout */}
       <div className="flex min-h-0 flex-1 overflow-hidden">

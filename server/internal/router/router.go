@@ -733,6 +733,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Installation settings
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/installations", h.SupportInbox.GetInstallation)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/routing-usage", h.SupportInbox.GetRoutingUsageStatus)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Patch("/inbox/installations", h.SupportInbox.UpdateInstallationSettings)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/regenerate-key", h.SupportInbox.RegenerateWidgetKey)
 

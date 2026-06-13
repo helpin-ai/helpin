@@ -109,6 +109,20 @@ func (h *SupportInboxHandler) GetConversation(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, conversation)
 }
 
+func (h *SupportInboxHandler) GetRoutingUsageStatus(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	status, err := h.supportService.GetRoutingUsageStatus(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
 // GetMessageEmailDetail handles GET /api/support/inbox/messages/{id}/email.
 func (h *SupportInboxHandler) GetMessageEmailDetail(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

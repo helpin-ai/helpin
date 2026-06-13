@@ -17,6 +17,7 @@ import type {
   ConversationStatus,
   SupportInstallationResponse,
   SupportInboxSettings,
+  SupportRoutingUsageStatus,
   ConversationListResponse,
   UnreadStats,
   VisitorContextResponse,
@@ -260,6 +261,8 @@ export const supportService = {
   // Installation settings
   getInstallation: (workspaceId: string) =>
     api.get<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`),
+  getRoutingUsageStatus: (workspaceId: string) =>
+    api.get<SupportRoutingUsageStatus>(`/support/inbox/routing-usage${qs(workspaceId)}`),
   updateInstallationSettings: (workspaceId: string, settings: Partial<SupportInboxSettings>) =>
     api.patch<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`, settings),
   regenerateWidgetKey: (workspaceId: string) =>

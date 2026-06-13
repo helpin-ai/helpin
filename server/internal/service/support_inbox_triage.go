@@ -584,7 +584,7 @@ func (s *SupportInboxTriageService) evaluateRules(ctx context.Context, workspace
 
 		intent := normalizeSupportTriageIntent(rule.Name)
 		confidence := 1.0
-		reason := fmt.Sprintf("Matched rule %q", rule.Name)
+		reason := "Routing rule matched."
 		targetMailboxID := strings.TrimSpace(rule.TargetMailboxID)
 		slog.InfoContext(ctx, "support triage rule matched",
 			"workspace_id", workspaceID,
@@ -1412,7 +1412,7 @@ Rules:
 - Do not invent mailbox handles.
 - If none of the provided mailboxes is a clear fit, return "shared".
 - Confidence must be between 0 and 1.
-- Reason must be short and concrete.`
+- Reason must be one short, concrete sentence.`
 
 func supportTriageJSONSchema() map[string]any {
 	return map[string]any{
@@ -1428,7 +1428,8 @@ func supportTriageJSONSchema() map[string]any {
 				"type": "number",
 			},
 			"reason": map[string]any{
-				"type": "string",
+				"type":        "string",
+				"description": "One short, concrete sentence.",
 			},
 		},
 		"required":             []string{"intent", "target_mailbox_handle", "confidence", "reason"},
@@ -1461,6 +1462,6 @@ Return this JSON shape:
   "intent": "short_snake_case_label",
   "target_mailbox_handle": "one_of_the_handles_or_shared",
   "confidence": 0.0,
-  "reason": "short reason"
+  "reason": "one short, concrete sentence"
 }`, strings.TrimSpace(conversation.Subject), strings.TrimSpace(inputContent), supportConversationChannel(conversation), emailValue, domain, strings.Join(mailboxLines, "\n"))
 }

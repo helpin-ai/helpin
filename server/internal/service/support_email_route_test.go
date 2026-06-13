@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -550,6 +553,70 @@ func TestSupportInboxServiceSetDefaultEmailSenderRequiresForwardingForMailboxOnl
 	}
 	if _, err := svc.SetDefaultEmailSender(ctx, workspaceID, sender.ID, model.SetSupportEmailSenderDefaultRequest{DefaultScope: supportEmailSenderDefaultScopeMailbox, MailboxID: &mailbox.ID}); err != nil {
 		t.Fatalf("mailbox default should pass after forwarding verification: %v", err)
+	}
+}
+
+func TestSupportInboxServiceCreateEmailSenderReusesExistingPostmarkDomain(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	seedUser(t, db, actorID, "owner@example.com", "Owner", "hashed")
+	seedWorkspace(t, db, workspaceID, "Acme", "acme", actorID)
+
+	var postDomains, getDomains int
+	postmarkClient := email.NewDomainClient("account-token")
+	postmarkClient.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodPost && req.URL.Path == "/domains":
+			postDomains++
+			return &http.Response{
+				StatusCode: http.StatusUnprocessableEntity,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"ErrorCode":300,"Message":"Domain already exists"}`)),
+			}, nil
+		case req.Method == http.MethodGet && req.URL.Path == "/domains":
+			getDomains++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"TotalCount": 1,
+					"Domains": [{
+						"ID": 123,
+						"Name": "example.com",
+						"ReturnPathDomain": "pm-bounces.example.com",
+						"ReturnPathDomainCNAMEValue": "pm.mtasv.net",
+						"DKIMHost": "pm._domainkey.example.com",
+						"DKIMPendingTextValue": "k=rsa; p=test"
+					}]
+				}`)),
+			}, nil
+		default:
+			t.Fatalf("unexpected postmark request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		}
+	})})
+
+	senderRepo := repository.NewSupportEmailSenderRepository(db)
+	svc := NewSupportInboxService(nil, repository.NewSupportMailboxRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetEmailSenderRepository(senderRepo).
+		SetPostmarkDomainClient(postmarkClient).
+		SetRouteDomain("on.helpin.email")
+
+	sender, err := svc.CreateEmailSender(ctx, workspaceID, model.CreateSupportEmailSenderRequest{
+		Email:       "support@example.com",
+		DisplayName: "Support",
+	}, actorID)
+	if err != nil {
+		t.Fatalf("create sender should reuse existing postmark domain: %v", err)
+	}
+	if sender.PostmarkDomainID == nil || *sender.PostmarkDomainID != 123 {
+		t.Fatalf("expected existing postmark domain id 123, got %#v", sender.PostmarkDomainID)
+	}
+	if postDomains != 1 || getDomains != 1 {
+		t.Fatalf("expected one create attempt and one lookup, got post=%d get=%d", postDomains, getDomains)
 	}
 }
 

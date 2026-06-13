@@ -210,7 +210,9 @@ func TestSupportInboxTriageEvaluateAndRoute_RuleSuggestion(t *testing.T) {
 	fakeLLM := &scriptedSupportTriageLLM{
 		response: `{"intent":"marketing_guest_post","target_mailbox_handle":"marketing","confidence":0.95,"reason":"guest post outreach"}`,
 	}
-	fixture := newSupportTriageTestFixture(t, fakeLLM, nil)
+	fixture := newSupportTriageTestFixture(t, fakeLLM, func(settings *model.SupportInboxSettings) {
+		settings.TriageAutoMoveEnabled = false
+	})
 	marketing := fixture.createMailbox(t, "Marketing", "marketing", true)
 
 	if _, err := fixture.triageSvc.CreateRule(fixture.ctx, fixture.workspaceID, fixture.actorID, model.CreateSupportTriageRuleRequest{
@@ -238,6 +240,9 @@ func TestSupportInboxTriageEvaluateAndRoute_RuleSuggestion(t *testing.T) {
 	}
 	if triage.ClassifierSource != model.SupportConversationTriageSourceRule {
 		t.Fatalf("source = %q, want %q", triage.ClassifierSource, model.SupportConversationTriageSourceRule)
+	}
+	if derefString(triage.Reason) != "Routing rule matched." {
+		t.Fatalf("reason = %q, want generic rule reason", derefString(triage.Reason))
 	}
 	if derefString(triage.SuggestedMailboxID) != marketing.ID {
 		t.Fatalf("suggested_mailbox_id = %q, want %q", derefString(triage.SuggestedMailboxID), marketing.ID)
@@ -277,6 +282,9 @@ func TestSupportInboxTriageEvaluateAndRoute_AISuggestion(t *testing.T) {
 	}
 	if triage.ClassifierSource != model.SupportConversationTriageSourceAI {
 		t.Fatalf("source = %q, want %q", triage.ClassifierSource, model.SupportConversationTriageSourceAI)
+	}
+	if derefString(triage.Reason) != "pricing request" {
+		t.Fatalf("reason = %q, want AI reason", derefString(triage.Reason))
 	}
 	if derefString(triage.SuggestedMailboxID) != sales.ID {
 		t.Fatalf("suggested_mailbox_id = %q, want %q", derefString(triage.SuggestedMailboxID), sales.ID)

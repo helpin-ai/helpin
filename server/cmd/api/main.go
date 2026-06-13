@@ -722,6 +722,7 @@ func main() {
 	supportInboxService.SetEmailSenderDomainRepository(supportEmailSenderDomainRepo)
 	supportInboxService.SetPostmarkDomainClient(postmarkDomainClient)
 	supportInboxService.SetEmailLogRepo(supportEmailLogRepo)
+	supportInboxService.SetTriageEventRepo(supportConversationTriageEventRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
 	supportInboxService.SetTaskService(pmTaskService)
 	supportInboxService.SetPresenceProvider(wsHub.Presence)

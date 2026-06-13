@@ -189,6 +189,16 @@ export function useChatSettings(workspaceId: string) {
   });
 }
 
+export function useSupportRoutingUsage(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.routingUsage(workspaceId),
+    queryFn: async () => unwrap(await supportService.getRoutingUsageStatus(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
 export function useUpdateChatSettings(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -196,6 +206,7 @@ export function useUpdateChatSettings(workspaceId: string) {
       supportService.updateInstallationSettings(workspaceId, settings).then(unwrap),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.installation(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.routingUsage(workspaceId) });
     },
     onError: (error: Error) => {
       toast.error('Failed to update chat settings', { description: error.message });

@@ -1,5 +1,5 @@
 import { type FormEvent, type ReactNode, useState } from 'react';
-import { Copy01Icon } from '@/lib/icons';
+import { ArrowDown01Icon, ArrowRight01Icon, Copy01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,7 @@ export function buildSupportSenderEmailPreview({
 }
 
 export function SupportEmailSendersTab({ workspaceId }: { workspaceId: string }) {
+  const [showHowItWorks, setShowHowItWorks] = useState(true);
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [mailboxId, setMailboxId] = useState('');
@@ -79,11 +80,41 @@ export function SupportEmailSendersTab({ workspaceId }: { workspaceId: string })
   };
 
   return (
-    <Card>
-      <CardContent className="space-y-4 pt-6">
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="pt-6">
+          <button
+            type="button"
+            onClick={() => setShowHowItWorks((value) => !value)}
+            className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {showHowItWorks ? <ArrowDown01Icon className="h-3.5 w-3.5" /> : <ArrowRight01Icon className="h-3.5 w-3.5" />}
+            How it works
+          </button>
+          {showHowItWorks && (
+            <ol className="mt-3 space-y-2 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2.5">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">1</span>
+                <span>Add a verified sender address for replies from Helpin.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">2</span>
+                <span>Choose a specific inbox for an inbox sender, or choose workspace-wide for the shared fallback sender.</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">3</span>
+                <span>Verify the address, then set it as the workspace default or inbox default.</span>
+              </li>
+            </ol>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="space-y-4 pt-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-muted-foreground">
-            {workspaceDefault ? `Workspace replies send from ${workspaceDefault.email}.` : 'Workspace replies use Helpin sender addresses until a verified sender is set as default.'}
+            {workspaceDefault ? `Workspace replies send from ${workspaceDefault.email}.` : 'No default sender email yet. Replies will use a Helpin email address.'}
           </p>
           {workspaceDefault && <StatusBadge tone="success">Workspace default</StatusBadge>}
         </div>
@@ -157,7 +188,8 @@ export function SupportEmailSendersTab({ workspaceId }: { workspaceId: string })
           </div>
         )}
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   );
 }
 

@@ -60,6 +60,7 @@ type SupportInboxService struct {
 	presence                websocket.PresenceProvider
 	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
 	emailLogRepo            *repository.SupportEmailLogRepository
+	triageEventRepo         *repository.SupportConversationTriageEventRepository
 	postmarkDomainClient    *email.DomainClient
 	triageService           *SupportInboxTriageService
 	taskService             *PMTaskService
@@ -240,6 +241,14 @@ func (s *SupportInboxService) SetEmailLogRepo(repo *repository.SupportEmailLogRe
 		return nil
 	}
 	s.emailLogRepo = repo
+	return s
+}
+
+func (s *SupportInboxService) SetTriageEventRepo(repo *repository.SupportConversationTriageEventRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.triageEventRepo = repo
 	return s
 }
 

@@ -279,6 +279,15 @@ func (s *SupportInboxService) postmarkDomainForSender(ctx context.Context, works
 	}
 	postmarkDomain, err := s.postmarkDomainClient.CreateDomain(domainName, "pm-bounces."+domainName)
 	if err != nil {
+		if email.IsDomainAlreadyExistsError(err) {
+			existingDomain, lookupErr := s.postmarkDomainClient.FindDomainByName(domainName)
+			if lookupErr != nil {
+				return nil, fmt.Errorf("find existing postmark sender domain: %w", lookupErr)
+			}
+			if existingDomain != nil {
+				return existingDomain, nil
+			}
+		}
 		return nil, fmt.Errorf("create postmark sender domain: %w", err)
 	}
 	return postmarkDomain, nil
