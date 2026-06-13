@@ -218,28 +218,78 @@ func (s *SupportInboxService) SetDefaultEmailSender(ctx context.Context, workspa
 		return nil, err
 	}
 
-	mailboxID := req.MailboxID
+	mailboxIDs := req.MailboxIDs
 	if scope == supportEmailSenderDefaultScopeMailbox {
-		if sender.ForwardingStatus != supportEmailSenderForwardingVerified {
-			return nil, fmt.Errorf("email sender forwarding must be verified before it can be used as an inbox default")
+		if len(mailboxIDs) == 0 && req.MailboxID != nil && strings.TrimSpace(*req.MailboxID) != "" {
+			mailboxIDs = []string{strings.TrimSpace(*req.MailboxID)}
 		}
-		if mailboxID == nil || strings.TrimSpace(*mailboxID) == "" {
-			mailboxID = sender.MailboxID
+		if len(mailboxIDs) == 0 && sender.MailboxID != nil && strings.TrimSpace(*sender.MailboxID) != "" {
+			mailboxIDs = []string{strings.TrimSpace(*sender.MailboxID)}
 		}
-		normalizedMailboxID, _, err := s.sanitizeMailboxSelection(ctx, workspaceID, mailboxID)
+		normalizedMailboxIDs, err := s.sanitizeMailboxSelections(ctx, workspaceID, mailboxIDs)
 		if err != nil {
 			return nil, err
 		}
-		if normalizedMailboxID == nil || strings.TrimSpace(*normalizedMailboxID) == "" {
-			return nil, fmt.Errorf("mailbox_id is required for mailbox sender default")
+		if len(normalizedMailboxIDs) == 0 {
+			return nil, fmt.Errorf("at least one inbox is required for inbox sender")
 		}
-		mailboxID = normalizedMailboxID
+		mailboxIDs = normalizedMailboxIDs
 	} else {
-		mailboxID = nil
+		mailboxIDs = nil
 	}
 
-	if err := s.emailSenderRepo.SetDefault(ctx, workspaceID, senderID, scope, mailboxID); err != nil {
+	if err := s.emailSenderRepo.SetDefault(ctx, workspaceID, senderID, scope, mailboxIDs); err != nil {
 		return nil, err
+	}
+	return s.emailSenderRepo.GetByID(ctx, workspaceID, senderID)
+}
+
+func (s *SupportInboxService) sanitizeMailboxSelections(ctx context.Context, workspaceID string, mailboxIDs []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(mailboxIDs))
+	normalized := make([]string, 0, len(mailboxIDs))
+	for _, mailboxID := range mailboxIDs {
+		mailboxID = strings.TrimSpace(mailboxID)
+		if mailboxID == "" {
+			continue
+		}
+		if _, ok := seen[mailboxID]; ok {
+			continue
+		}
+		id, _, err := s.sanitizeMailboxSelection(ctx, workspaceID, &mailboxID)
+		if err != nil {
+			return nil, err
+		}
+		if id == nil || strings.TrimSpace(*id) == "" {
+			continue
+		}
+		seen[*id] = struct{}{}
+		normalized = append(normalized, *id)
+	}
+	return normalized, nil
+}
+
+func (s *SupportInboxService) UpdateEmailSender(ctx context.Context, workspaceID, senderID string, req model.UpdateSupportEmailSenderRequest) (*model.SupportEmailSender, error) {
+	if s.emailSenderRepo == nil {
+		return nil, fmt.Errorf("support email sender repository is unavailable")
+	}
+	sender, err := s.emailSenderRepo.GetByID(ctx, workspaceID, senderID)
+	if err != nil {
+		return nil, err
+	}
+	if sender == nil {
+		return nil, fmt.Errorf("email sender not found")
+	}
+	if req.DisplayName != nil {
+		if err := s.emailSenderRepo.UpdateDisplayName(ctx, workspaceID, senderID, *req.DisplayName); err != nil {
+			return nil, err
+		}
+	}
+	if req.DefaultScope != nil {
+		return s.SetDefaultEmailSender(ctx, workspaceID, senderID, model.SetSupportEmailSenderDefaultRequest{
+			DefaultScope: *req.DefaultScope,
+			MailboxID:    req.MailboxID,
+			MailboxIDs:   req.MailboxIDs,
+		})
 	}
 	return s.emailSenderRepo.GetByID(ctx, workspaceID, senderID)
 }

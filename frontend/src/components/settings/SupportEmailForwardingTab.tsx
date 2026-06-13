@@ -23,6 +23,7 @@ import type { SupportEmailRoute, SupportMailbox } from '@/lib/pmTypes';
 export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string }) {
   const { data: mailboxes = [], isLoading: mailboxesLoading } = useSupportMailboxes(workspaceId);
   const { data: routes = [], isLoading: routesLoading } = useSupportEmailRoutes(workspaceId);
+  const activeMailboxes = mailboxes.filter((mailbox) => mailbox.active);
   const createRoute = useCreateSupportEmailRoute(workspaceId);
   const disableRoute = useDisableSupportEmailRoute(workspaceId);
 
@@ -113,20 +114,20 @@ export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string
                   <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Team Inboxes
                   </span>
-                  {mailboxes.length > 0 && (
+                  {activeMailboxes.length > 0 && (
                     <span className="text-[11px] text-muted-foreground">
-                      {mailboxes.length} inbox{mailboxes.length !== 1 ? 'es' : ''}
+                      {activeMailboxes.length} inbox{activeMailboxes.length !== 1 ? 'es' : ''}
                     </span>
                   )}
                 </div>
 
-                {mailboxes.length === 0 ? (
+                {activeMailboxes.length === 0 ? (
                   <div className="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">
                     Create a Team Inbox to get private forwarding addresses like billing@ or vip@.
                   </div>
                 ) : (
                   <div className="divide-y divide-border/50">
-                    {mailboxes.map((mailbox) => (
+                    {activeMailboxes.map((mailbox) => (
                       <MailboxEmailRouteRow
                         key={mailbox.id}
                         mailbox={mailbox}

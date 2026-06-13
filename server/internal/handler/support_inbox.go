@@ -703,6 +703,24 @@ func (h *SupportInboxHandler) SetDefaultEmailSender(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, sender)
 }
 
+func (h *SupportInboxHandler) UpdateEmailSender(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	senderID := chi.URLParam(r, "senderId")
+
+	var req model.UpdateSupportEmailSenderRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	sender, err := h.supportService.UpdateEmailSender(r.Context(), workspaceID, senderID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sender)
+}
+
 func (h *SupportInboxHandler) DisableEmailSender(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	senderID := chi.URLParam(r, "senderId")

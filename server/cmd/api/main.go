@@ -219,6 +219,7 @@ func main() {
 			&model.SupportTriageRule{},
 			&model.SupportEmailRoute{},
 			&model.SupportEmailSender{},
+			&model.SupportEmailSenderMailbox{},
 			&model.SupportEmailSenderDomain{},
 			&model.SupportMessage{},
 			&model.SupportEmailLog{},

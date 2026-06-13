@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArchiveIcon, ArrowDown01Icon, DragDropVerticalIcon, InboxIcon, PencilEdit01Icon, PlusSignIcon, Settings02Icon } from '@/lib/icons';
+import { ArchiveIcon, ArrowDown01Icon, DragDropVerticalIcon, InboxIcon, InformationCircleIcon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, UndoIcon } from '@/lib/icons';
 import {
   DndContext,
   closestCenter,
@@ -38,13 +38,18 @@ import {
   useChatSettings,
   useMailboxMembers,
   useReorderMailboxes,
+  useSupportEmailRoutes,
+  useSupportEmailSenders,
   useSupportRoutingUsage,
   useSupportMailboxes,
   useSupportTriageRules,
   useUpdateChatSettings,
+  useUpdateMailbox,
 } from '@/hooks/queries/useSupport';
 import type {
   SupportInboxSettings,
+  SupportEmailRoute,
+  SupportEmailSender,
   SupportMailbox,
   SupportMailboxMember,
   SupportTriageRule,
@@ -285,16 +290,17 @@ function getMailboxRuleSummary(mailboxRules: SupportTriageRule[]) {
 function getRuleConditionLines(rule: SupportTriageRule) {
   const lines: string[] = [];
   const textValues = rule.conditions.phrase_contains ?? [];
-  const emailValues = [
-    ...(rule.conditions.sender_email_contains ?? []),
-    ...(rule.conditions.email_domain_equals ?? []),
-  ];
+  const emailValues = rule.conditions.sender_email_contains ?? [];
+  const domainValues = rule.conditions.email_domain_equals ?? [];
 
   if (textValues.length > 0) {
     lines.push(`Text contains: ${textValues.join(' OR ')}`);
   }
   if (emailValues.length > 0) {
     lines.push(`Email ID contains: ${emailValues.join(' OR ')}`);
+  }
+  if (domainValues.length > 0) {
+    lines.push(`Email domain is: ${domainValues.join(' OR ')}`);
   }
 
   return lines;
@@ -374,6 +380,41 @@ function AIFallbackBadge({ mailbox }: { mailbox: SupportMailbox }) {
   );
 }
 
+function InboxEmailForwardingStatus({ mailbox, route }: { mailbox: SupportMailbox; route?: SupportEmailRoute | null }) {
+  if (!mailbox.active) return <span className="text-xs text-muted-foreground">Disabled</span>;
+  if (route?.active) {
+    return <Badge variant="secondary" className="h-5 bg-emerald-100 px-2 text-[11px] text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300">On</Badge>;
+  }
+  return (
+    <a href="./inboxes-routing?tab=email" className="text-xs font-medium text-primary underline-offset-4 hover:underline">
+      Configure
+    </a>
+  );
+}
+
+function InboxSenderStatus({ mailbox, sender }: { mailbox: SupportMailbox; sender?: SupportEmailSender | null }) {
+  if (!mailbox.active) return <span className="text-xs text-muted-foreground">Disabled</span>;
+  if (sender?.active) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex max-w-full cursor-default">
+            <Badge variant="secondary" className="h-5 max-w-full bg-emerald-100 px-2 text-[11px] text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300">
+              <span className="truncate">{sender.email}</span>
+            </Badge>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{sender.email}</TooltipContent>
+      </Tooltip>
+    );
+  }
+  return (
+    <a href="./inboxes-routing?tab=senders" className="text-xs font-medium text-primary underline-offset-4 hover:underline">
+      Configure
+    </a>
+  );
+}
+
 function InboxMembersCell({ mailbox }: { mailbox: SupportMailbox }) {
   const { data: members = [] } = useMailboxMembers(mailbox.workspace_id, mailbox.id);
   const memberCount = members.length || mailbox.member_count || 0;
@@ -439,18 +480,27 @@ function InboxMemberAvatar({ member, className }: { member: SupportMailboxMember
 function SortableInboxRoutingRow({
   mailbox,
   mailboxRules,
+  emailRoute,
+  emailSender,
   onEdit,
   onArchive,
+  onRestore,
   isArchiving,
+  isRestoring,
 }: {
   mailbox: SupportMailbox;
   mailboxRules: SupportTriageRule[];
+  emailRoute?: SupportEmailRoute | null;
+  emailSender?: SupportEmailSender | null;
   onEdit: (mailbox: SupportMailbox) => void;
   onArchive: (mailbox: SupportMailbox) => void;
+  onRestore: (mailbox: SupportMailbox) => void;
   isArchiving: boolean;
+  isRestoring: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: mailbox.id,
+    disabled: !mailbox.active,
   });
   const MailboxIcon = ICON_MAP[mailbox.icon] ?? ICON_MAP.inbox;
 
@@ -459,59 +509,128 @@ function SortableInboxRoutingRow({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        'grid items-center gap-3 border-b px-6 py-3 last:border-b-0 lg:grid-cols-[minmax(240px,1fr)_120px_120px_120px_120px_80px]',
+        'grid items-center gap-3 border-b px-6 py-3 last:border-b-0 lg:grid-cols-[minmax(240px,1.15fr)_108px_120px_minmax(135px,0.95fr)_120px_108px_80px]',
+        !mailbox.active && 'bg-muted/20 opacity-60',
         isDragging && 'opacity-50',
       )}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <button
-          type="button"
-          className="flex h-5 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
-          aria-label={`Reorder ${mailbox.name}`}
-          {...attributes}
-          {...listeners}
-        >
-          <DragDropVerticalIcon className="h-4 w-4" />
-        </button>
+        {mailbox.active ? (
+          <button
+            type="button"
+            className="flex h-5 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
+            aria-label={`Reorder ${mailbox.name}`}
+            {...attributes}
+            {...listeners}
+          >
+            <DragDropVerticalIcon className="h-4 w-4" />
+          </button>
+        ) : (
+          <span className="h-5 w-5 shrink-0" />
+        )}
         {MailboxIcon ? <MailboxIcon className="h-4 w-4 shrink-0 text-muted-foreground" /> : null}
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-foreground">{mailbox.name}</p>
-          <p className="mt-1 truncate text-xs text-muted-foreground">
-            #{mailbox.handle}
-            {mailbox.linked_team_name ? ` · ${mailbox.linked_team_name}` : ''}
-          </p>
+          <div className="flex items-center gap-2">
+            <InboxNameWithDescription mailbox={mailbox} />
+            {!mailbox.active && <Badge variant="outline" className="h-5 px-2 text-[11px]">Archived</Badge>}
+          </div>
         </div>
       </div>
       <div>
-        <InboxMembersCell mailbox={mailbox} />
+        {mailbox.active ? <InboxMembersCell mailbox={mailbox} /> : <span className="text-xs text-muted-foreground">Disabled</span>}
       </div>
       <div>
-        <Badge variant="secondary" className="h-5 px-2 text-[11px]">
-          {mailbox.assignment_mode === 'round_robin' ? 'Round robin' : 'Manual'}
-        </Badge>
+        <InboxEmailForwardingStatus mailbox={mailbox} route={emailRoute} />
       </div>
       <div>
-        <ManualRuleBadge mailboxRules={mailboxRules} />
+        <InboxSenderStatus mailbox={mailbox} sender={emailSender} />
       </div>
       <div>
-        <AIFallbackBadge mailbox={mailbox} />
+        {mailbox.active ? <ManualRuleBadge mailboxRules={mailboxRules} /> : <span className="text-xs text-muted-foreground">Disabled</span>}
+      </div>
+      <div>
+        {mailbox.active ? <AIFallbackBadge mailbox={mailbox} /> : <span className="text-xs text-muted-foreground">Disabled</span>}
       </div>
       <div className="flex items-center justify-start gap-1 lg:justify-end">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(mailbox)} aria-label={`Edit ${mailbox.name}`}>
-          <PencilEdit01Icon className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          disabled={!mailbox.active || isArchiving}
-          onClick={() => onArchive(mailbox)}
-          aria-label={`Archive ${mailbox.name}`}
-        >
-          <ArchiveIcon className="h-3.5 w-3.5" />
-        </Button>
+        <IconButtonTooltip label="Edit">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(mailbox)} aria-label={`Edit ${mailbox.name}`}>
+            <PencilEdit01Icon className="h-3.5 w-3.5" />
+          </Button>
+        </IconButtonTooltip>
+        {mailbox.active ? (
+          <IconButtonTooltip label="Archive">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              disabled={isArchiving}
+              onClick={() => onArchive(mailbox)}
+              aria-label={`Archive ${mailbox.name}`}
+            >
+              <ArchiveIcon className="h-3.5 w-3.5 text-destructive" />
+            </Button>
+          </IconButtonTooltip>
+        ) : (
+          <IconButtonTooltip label="Restore">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              disabled={isRestoring}
+              onClick={() => onRestore(mailbox)}
+              aria-label={`Restore ${mailbox.name}`}
+            >
+              <UndoIcon className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+            </Button>
+          </IconButtonTooltip>
+        )}
       </div>
     </div>
+  );
+}
+
+function IconButtonTooltip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ColumnHeaderTooltip({ label, tooltip, className }: { label: string; tooltip?: string; className?: string }) {
+  if (!tooltip) return <span className={className}>{label}</span>;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={cn('inline-flex min-w-0 cursor-help items-center gap-1', className)}>
+          <span className="truncate">{label}</span>
+          <InformationCircleIcon className="h-3 w-3 shrink-0 text-muted-foreground/70" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-56">
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function InboxNameWithDescription({ mailbox }: { mailbox: SupportMailbox }) {
+  const description = mailbox.description?.trim() || mailbox.routing_prompt?.trim() || '';
+  const name = <span className="block truncate text-sm font-medium text-foreground">{mailbox.name}</span>;
+
+  if (!description) return name;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="min-w-0 cursor-default">{name}</span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-xs">
+        {description}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -524,12 +643,19 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
   const { data: routingUsage } = useSupportRoutingUsage(workspaceId);
   const { data: mailboxes = [] } = useSupportMailboxes(workspaceId);
   const { data: rules = [] } = useSupportTriageRules(workspaceId);
+  const { data: emailRoutes = [] } = useSupportEmailRoutes(workspaceId);
+  const { data: emailSenders = [] } = useSupportEmailSenders(workspaceId);
   const updateSettings = useUpdateChatSettings(workspaceId);
   const archiveMailbox = useArchiveMailbox(workspaceId);
+  const updateMailbox = useUpdateMailbox(workspaceId);
   const reorderMailboxes = useReorderMailboxes(workspaceId);
 
   const activeMailboxes = useMemo(
     () => mailboxes.filter((mailbox) => mailbox.active),
+    [mailboxes],
+  );
+  const archivedMailboxes = useMemo(
+    () => mailboxes.filter((mailbox) => !mailbox.active),
     [mailboxes],
   );
   const rulesByMailbox = useMemo(() => {
@@ -541,6 +667,23 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
     }
     return grouped;
   }, [rules]);
+  const emailRouteByMailbox = useMemo(() => {
+    const grouped = new Map<string, SupportEmailRoute>();
+    for (const route of emailRoutes) {
+      if (route.mailbox_id && route.active) grouped.set(route.mailbox_id, route);
+    }
+    return grouped;
+  }, [emailRoutes]);
+  const emailSenderByMailbox = useMemo(() => {
+    const grouped = new Map<string, SupportEmailSender>();
+    for (const sender of emailSenders) {
+      if (!sender.active || sender.default_scope !== 'mailbox') continue;
+      const mailboxIDs = [...(sender.mailbox_ids ?? [])];
+      if (sender.mailbox_id && !mailboxIDs.includes(sender.mailbox_id)) mailboxIDs.push(sender.mailbox_id);
+      for (const mailboxID of mailboxIDs) grouped.set(mailboxID, sender);
+    }
+    return grouped;
+  }, [emailSenders]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -574,6 +717,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
 
   useEffect(() => {
     if (installation?.settings) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- query data hydrates an editable settings draft.
       setDraft(buildRoutingDraft(installation.settings));
     }
   }, [installation?.settings]);
@@ -593,13 +737,19 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
   const handleArchiveMailbox = async (mailbox: SupportMailbox) => {
     const ok = await confirm({
       title: `Archive ${mailbox.name}?`,
-      description: 'This inbox will be archived. You can restore it later.',
+      description: 'This hides the inbox from active lists and stops routing to it. Conversations stay where they are.',
       confirmText: 'Archive',
       variant: 'destructive',
     });
     if (!ok) return;
     archiveMailbox.mutate(mailbox.id, {
       onSuccess: () => toast.success('Team inbox archived'),
+    });
+  };
+
+  const handleRestoreMailbox = (mailbox: SupportMailbox) => {
+    updateMailbox.mutate({ mailboxId: mailbox.id, payload: { active: true } }, {
+      onSuccess: () => toast.success('Team inbox restored'),
     });
   };
 
@@ -656,16 +806,17 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
           )}
         />
 
-        <div className="hidden grid-cols-[minmax(240px,1fr)_120px_120px_120px_120px_80px] gap-3 border-b bg-muted/25 px-6 py-2 text-xs font-medium text-muted-foreground lg:grid">
-          <span className="pl-[3.75rem]">Inbox</span>
-          <span>Members</span>
-          <span>Assignment</span>
-          <span>Manual rule</span>
-          <span>AI routing</span>
+        <div className="hidden grid-cols-[minmax(240px,1.15fr)_108px_120px_minmax(135px,0.95fr)_120px_108px_80px] gap-3 border-b bg-muted/25 px-6 py-2 text-xs font-medium text-muted-foreground lg:grid">
+          <ColumnHeaderTooltip label="Inbox" className="pl-[3.75rem]" tooltip="Team inbox shown in the support queue." />
+          <ColumnHeaderTooltip label="Members" tooltip="People who can access this inbox." />
+          <ColumnHeaderTooltip label="Email forwarding" tooltip="Shows whether forwarded emails can arrive in this inbox." />
+          <ColumnHeaderTooltip label="Sender address" tooltip="Email address used when this inbox sends replies." />
+          <ColumnHeaderTooltip label="Rule-based routing" tooltip="Manual rules checked before AI routing." />
+          <ColumnHeaderTooltip label="AI routing" tooltip="AI can route here when no manual rule matches." />
           <span className="text-right">Actions</span>
         </div>
 
-        {activeMailboxes.length === 0 ? (
+        {mailboxes.length === 0 ? (
           <div className="px-6 py-8 text-center">
             <p className="text-sm font-medium text-foreground">No team inboxes yet</p>
             <p className="mt-1 text-sm text-muted-foreground">Create an inbox for teams like Billing, Support, or VIP customers.</p>
@@ -683,9 +834,27 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
                     key={mailbox.id}
                     mailbox={mailbox}
                     mailboxRules={rulesByMailbox.get(mailbox.id) ?? []}
+                    emailRoute={emailRouteByMailbox.get(mailbox.id) ?? null}
+                    emailSender={emailSenderByMailbox.get(mailbox.id) ?? null}
                     onEdit={openEditMailbox}
                     onArchive={handleArchiveMailbox}
+                    onRestore={handleRestoreMailbox}
                     isArchiving={archiveMailbox.isPending}
+                    isRestoring={updateMailbox.isPending}
+                  />
+                ))}
+                {archivedMailboxes.map((mailbox) => (
+                  <SortableInboxRoutingRow
+                    key={mailbox.id}
+                    mailbox={mailbox}
+                    mailboxRules={rulesByMailbox.get(mailbox.id) ?? []}
+                    emailRoute={emailRouteByMailbox.get(mailbox.id) ?? null}
+                    emailSender={emailSenderByMailbox.get(mailbox.id) ?? null}
+                    onEdit={openEditMailbox}
+                    onArchive={handleArchiveMailbox}
+                    onRestore={handleRestoreMailbox}
+                    isArchiving={archiveMailbox.isPending}
+                    isRestoring={updateMailbox.isPending}
                   />
                 ))}
               </div>

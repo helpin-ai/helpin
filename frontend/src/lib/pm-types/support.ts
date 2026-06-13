@@ -210,6 +210,7 @@ export interface SupportEmailRoute {
   mailbox_name?: string | null;
   mailbox_handle?: string | null;
   mailbox_icon?: string | null;
+  mailbox_ids?: string[];
 }
 
 export interface CreateSupportEmailRouteRequest {
@@ -268,6 +269,14 @@ export interface CreateSupportEmailSenderRequest {
 export interface SetSupportEmailSenderDefaultRequest {
   default_scope: 'none' | 'workspace' | 'mailbox';
   mailbox_id?: string | null;
+  mailbox_ids?: string[];
+}
+
+export interface UpdateSupportEmailSenderRequest {
+  display_name?: string;
+  default_scope?: 'none' | 'workspace' | 'mailbox';
+  mailbox_id?: string | null;
+  mailbox_ids?: string[];
 }
 
 export interface SupportEmailSenderDomain {
@@ -322,6 +331,7 @@ export interface UpdateSupportMailboxRequest {
   linked_team_id?: string | null;
   workspace_member_ids?: string[];
   assignment_mode?: 'manual' | 'round_robin';
+  active?: boolean;
   import_linked_team?: boolean;
   reply_time_preset?: string;
   reply_time_custom_minutes?: number | null;

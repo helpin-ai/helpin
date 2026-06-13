@@ -429,6 +429,9 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 		}
 		mailbox.AssignmentMode = mode
 	}
+	if req.Active != nil {
+		mailbox.Active = *req.Active
+	}
 	if req.ClearReplyTimePreset != nil && *req.ClearReplyTimePreset {
 		mailbox.ReplyTimePreset = nil
 		mailbox.ReplyTimeCustomMinutes = nil

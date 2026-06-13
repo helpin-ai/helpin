@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ArchiveIcon, DragDropVerticalIcon, InboxIcon, PencilEdit01Icon, PlusSignIcon } from '@/lib/icons';
+import { useState, type ReactNode } from 'react';
+import { ArchiveIcon, DragDropVerticalIcon, InboxIcon, PencilEdit01Icon, PlusSignIcon, UndoIcon } from '@/lib/icons';
 import {
   DndContext,
   closestCenter,
@@ -24,8 +24,9 @@ import { TeamInboxDialog } from '@/components/support/TeamInboxDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ICON_MAP } from '@/components/ui/icon-picker';
-import { useArchiveMailbox, useReorderMailboxes, useSupportMailboxes } from '@/hooks/queries/useSupport';
+import { useArchiveMailbox, useReorderMailboxes, useSupportMailboxes, useUpdateMailbox } from '@/hooks/queries/useSupport';
 import type { SupportMailbox } from '@/lib/pmTypes';
 import { queryKeys } from '@/lib/queryKeys';
 
@@ -33,15 +34,20 @@ function SortableMailboxItem({
   mailbox,
   onEdit,
   onArchive,
+  onRestore,
   isArchiving,
+  isRestoring,
 }: {
   mailbox: SupportMailbox;
   onEdit: (mailbox: SupportMailbox) => void;
   onArchive: (mailbox: SupportMailbox) => void;
+  onRestore: (mailbox: SupportMailbox) => void;
   isArchiving: boolean;
+  isRestoring: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: mailbox.id,
+    disabled: !mailbox.active,
   });
 
   const style = {
@@ -55,17 +61,21 @@ function SortableMailboxItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center justify-between rounded-xl border bg-card px-4 py-3 ${isDragging ? 'opacity-50 shadow-lg' : ''}`}
+      className={`flex items-center justify-between rounded-xl border bg-card px-4 py-3 ${!mailbox.active ? 'opacity-60' : ''} ${isDragging ? 'opacity-50 shadow-lg' : ''}`}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <button
-          type="button"
-          className="flex h-5 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <DragDropVerticalIcon className="h-4 w-4" />
-        </button>
+        {mailbox.active ? (
+          <button
+            type="button"
+            className="flex h-5 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <DragDropVerticalIcon className="h-4 w-4" />
+          </button>
+        ) : (
+          <span className="h-5 w-5 shrink-0" />
+        )}
         {MailboxIcon ? <MailboxIcon className="h-4 w-4 text-muted-foreground" /> : null}
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -79,19 +89,47 @@ function SortableMailboxItem({
         </div>
       </div>
       <div className="flex items-center gap-1">
-        <Button variant="ghost" size="icon" onClick={() => onEdit(mailbox)}>
-          <PencilEdit01Icon className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          disabled={!mailbox.active || isArchiving}
-          onClick={() => onArchive(mailbox)}
-        >
-          <ArchiveIcon className="h-4 w-4" />
-        </Button>
+        <IconButtonTooltip label="Edit">
+          <Button variant="ghost" size="icon" onClick={() => onEdit(mailbox)} aria-label={`Edit ${mailbox.name}`}>
+            <PencilEdit01Icon className="h-4 w-4" />
+          </Button>
+        </IconButtonTooltip>
+        {mailbox.active ? (
+          <IconButtonTooltip label="Archive">
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={isArchiving}
+              onClick={() => onArchive(mailbox)}
+              aria-label={`Archive ${mailbox.name}`}
+            >
+              <ArchiveIcon className="h-4 w-4 text-destructive" />
+            </Button>
+          </IconButtonTooltip>
+        ) : (
+          <IconButtonTooltip label="Restore">
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={isRestoring}
+              onClick={() => onRestore(mailbox)}
+              aria-label={`Restore ${mailbox.name}`}
+            >
+              <UndoIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            </Button>
+          </IconButtonTooltip>
+        )}
       </div>
     </div>
+  );
+}
+
+function IconButtonTooltip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -102,7 +140,10 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
   const queryClient = useQueryClient();
   const { data: mailboxes = [], isLoading } = useSupportMailboxes(workspaceId);
   const archiveMailbox = useArchiveMailbox(workspaceId);
+  const updateMailbox = useUpdateMailbox(workspaceId);
   const reorderMailboxes = useReorderMailboxes(workspaceId);
+  const activeMailboxes = mailboxes.filter((mailbox) => mailbox.active);
+  const archivedMailboxes = mailboxes.filter((mailbox) => !mailbox.active);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -124,7 +165,7 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
   const handleArchive = async (mailbox: SupportMailbox) => {
     const ok = await confirm({
       title: `Archive ${mailbox.name}?`,
-      description: 'This inbox will be archived. You can restore it later.',
+      description: 'This hides the inbox from active lists. Conversations stay where they are.',
       confirmText: 'Archive',
       variant: 'destructive',
     });
@@ -134,20 +175,26 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
     });
   };
 
+  const handleRestore = (mailbox: SupportMailbox) => {
+    updateMailbox.mutate({ mailboxId: mailbox.id, payload: { active: true } }, {
+      onSuccess: () => toast.success('Team inbox restored'),
+    });
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = mailboxes.findIndex((m) => m.id === active.id);
-    const newIndex = mailboxes.findIndex((m) => m.id === over.id);
+    const oldIndex = activeMailboxes.findIndex((m) => m.id === active.id);
+    const newIndex = activeMailboxes.findIndex((m) => m.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
 
-    const reordered = arrayMove(mailboxes, oldIndex, newIndex);
+    const reordered = arrayMove(activeMailboxes, oldIndex, newIndex);
 
     // Optimistically update the cache so dnd-kit animates smoothly
     queryClient.setQueryData(
       queryKeys.support.mailboxes(workspaceId),
-      reordered,
+      [...reordered, ...archivedMailboxes],
     );
 
     // Persist in background — invalidation in onSuccess will reconcile
@@ -184,15 +231,28 @@ export function TeamInboxesTab({ workspaceId }: { workspaceId: string }) {
           )}
           {mailboxes.length > 0 && (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={mailboxes.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+              <SortableContext items={activeMailboxes.map((m) => m.id)} strategy={verticalListSortingStrategy}>
                 <div className="space-y-3">
-                  {mailboxes.map((mailbox) => (
+                  {activeMailboxes.map((mailbox) => (
                     <SortableMailboxItem
                       key={mailbox.id}
                       mailbox={mailbox}
                       onEdit={openEdit}
                       onArchive={handleArchive}
+                      onRestore={handleRestore}
                       isArchiving={archiveMailbox.isPending}
+                      isRestoring={updateMailbox.isPending}
+                    />
+                  ))}
+                  {archivedMailboxes.map((mailbox) => (
+                    <SortableMailboxItem
+                      key={mailbox.id}
+                      mailbox={mailbox}
+                      onEdit={openEdit}
+                      onArchive={handleArchive}
+                      onRestore={handleRestore}
+                      isArchiving={archiveMailbox.isPending}
+                      isRestoring={updateMailbox.isPending}
                     />
                   ))}
                 </div>

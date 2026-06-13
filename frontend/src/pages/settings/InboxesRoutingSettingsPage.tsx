@@ -5,7 +5,7 @@ import { SettingsPageFrame } from './SettingsPageFrame';
 const TABS = [
   { value: 'inboxes', label: 'Inboxes & Routing' },
   { value: 'email', label: 'Email Forwarding' },
-  { value: 'senders', label: 'Sender Addresses' },
+  { value: 'senders', label: 'Sending Domains' },
 ] as const;
 
 export type InboxesRoutingTab = (typeof TABS)[number]['value'];
@@ -19,7 +19,7 @@ export function InboxesRoutingSettingsPage({
 }) {
   return (
     <SettingsPageFrame section="inboxes-routing">
-      {({ workspaceId }) => (
+      {({ workspaceId, currentWorkspaceName, currentWorkspaceWebsiteUrl }) => (
         <Tabs value={tab} onValueChange={onTabChange}>
           <TabsList variant="line">
             {TABS.map(({ value, label }) => (
@@ -35,7 +35,7 @@ export function InboxesRoutingSettingsPage({
             <SupportEmailForwardingTab workspaceId={workspaceId} />
           </TabsContent>
           <TabsContent value="senders" className="mt-4">
-            <SupportEmailSendersTab workspaceId={workspaceId} />
+            <SupportEmailSendersTab workspaceId={workspaceId} workspaceName={currentWorkspaceName} workspaceWebsiteUrl={currentWorkspaceWebsiteUrl} />
           </TabsContent>
         </Tabs>
       )}

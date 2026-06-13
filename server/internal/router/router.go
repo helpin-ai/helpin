@@ -681,6 +681,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/email-senders", h.SupportInbox.ListEmailSenders)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders", h.SupportInbox.CreateEmailSender)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders/{senderId}/verify-dns", h.SupportInbox.VerifyEmailSender)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/email-senders/{senderId}", h.SupportInbox.UpdateEmailSender)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders/{senderId}/set-default", h.SupportInbox.SetDefaultEmailSender)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders/{senderId}/disable", h.SupportInbox.DisableEmailSender)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/email-sender-domains", h.SupportInbox.ListEmailSenderDomains)

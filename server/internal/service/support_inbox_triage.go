@@ -586,6 +586,26 @@ func (s *SupportInboxTriageService) evaluateRules(ctx context.Context, workspace
 		confidence := 1.0
 		reason := "Routing rule matched."
 		targetMailboxID := strings.TrimSpace(rule.TargetMailboxID)
+		if s.mailboxRepo != nil {
+			mailbox, err := s.mailboxRepo.GetByID(ctx, workspaceID, targetMailboxID)
+			if err != nil {
+				return nil, err
+			}
+			if mailbox == nil || !mailbox.Active {
+				slog.InfoContext(ctx, "support triage rule skipped archived target",
+					"workspace_id", workspaceID,
+					"conversation_id", derefString(func() *string {
+						if conversation == nil {
+							return nil
+						}
+						return &conversation.ID
+					}()),
+					"rule_id", rule.ID,
+					"target_mailbox_id", targetMailboxID,
+				)
+				continue
+			}
+		}
 		slog.InfoContext(ctx, "support triage rule matched",
 			"workspace_id", workspaceID,
 			"conversation_id", derefString(func() *string {

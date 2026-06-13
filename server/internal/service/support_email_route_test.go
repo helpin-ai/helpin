@@ -299,7 +299,7 @@ func TestSupportEmailSenderRepositorySetDefaultScopes(t *testing.T) {
 		t.Fatalf("expected workspace default sender, got %#v", defaultWorkspaceSender)
 	}
 
-	if err := senderRepo.SetDefault(ctx, workspaceID, mailboxSender.ID, "mailbox", &mailbox.ID); err != nil {
+	if err := senderRepo.SetDefault(ctx, workspaceID, mailboxSender.ID, "mailbox", []string{mailbox.ID}); err != nil {
 		t.Fatalf("set mailbox default: %v", err)
 	}
 	defaultMailboxSender, err := senderRepo.GetMailboxDefaultVerified(ctx, workspaceID, &mailbox.ID)
@@ -504,7 +504,7 @@ func TestSupportInboxServiceListEmailSendersBackfillsForwardingVerification(t *t
 	}
 }
 
-func TestSupportInboxServiceSetDefaultEmailSenderRequiresForwardingForMailboxOnly(t *testing.T) {
+func TestSupportInboxServiceSetDefaultEmailSenderRequiresVerifiedDNSOnly(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
 
@@ -541,18 +541,138 @@ func TestSupportInboxServiceSetDefaultEmailSenderRequiresForwardingForMailboxOnl
 	}
 
 	if _, err := svc.SetDefaultEmailSender(ctx, workspaceID, sender.ID, model.SetSupportEmailSenderDefaultRequest{DefaultScope: supportEmailSenderDefaultScopeWorkspace}); err != nil {
-		t.Fatalf("workspace default should not require forwarding verification: %v", err)
-	}
-	if _, err := svc.SetDefaultEmailSender(ctx, workspaceID, sender.ID, model.SetSupportEmailSenderDefaultRequest{DefaultScope: supportEmailSenderDefaultScopeMailbox, MailboxID: &mailbox.ID}); err == nil || !strings.Contains(err.Error(), "forwarding must be verified") {
-		t.Fatalf("expected mailbox default to require forwarding verification, got %v", err)
-	}
-
-	sender.ForwardingStatus = supportEmailSenderForwardingVerified
-	if err := senderRepo.Update(ctx, sender); err != nil {
-		t.Fatalf("mark sender forwarding verified: %v", err)
+		t.Fatalf("workspace default should only require verified DNS: %v", err)
 	}
 	if _, err := svc.SetDefaultEmailSender(ctx, workspaceID, sender.ID, model.SetSupportEmailSenderDefaultRequest{DefaultScope: supportEmailSenderDefaultScopeMailbox, MailboxID: &mailbox.ID}); err != nil {
-		t.Fatalf("mailbox default should pass after forwarding verification: %v", err)
+		t.Fatalf("mailbox default should only require verified DNS: %v", err)
+	}
+}
+
+func TestSupportInboxServiceUpdateEmailSenderUpdatesFromNameAndDefault(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	seedUser(t, db, actorID, "owner@example.com", "Owner", "hashed")
+	seedWorkspace(t, db, workspaceID, "Acme", "acme", actorID)
+
+	mailboxRepo := repository.NewSupportMailboxRepository(db)
+	senderRepo := repository.NewSupportEmailSenderRepository(db)
+	svc := NewSupportInboxService(nil, mailboxRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetEmailSenderRepository(senderRepo).
+		SetRouteDomain("on.helpin.email")
+
+	mailbox := &model.SupportMailbox{
+		WorkspaceID:    workspaceID,
+		Name:           "Billing",
+		Handle:         "billing",
+		Icon:           "credit-card",
+		TriageEligible: true,
+		VisibilityMode: "members_only",
+		AssignmentMode: "manual",
+		Active:         true,
+		CreatedByID:    actorID,
+	}
+	if err := mailboxRepo.Create(ctx, mailbox); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+
+	sender := verifiedSender(workspaceID, nil, "support@example.com", "none", actorID)
+	if err := senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	displayName := "Acme Support"
+	defaultScope := supportEmailSenderDefaultScopeMailbox
+	updated, err := svc.UpdateEmailSender(ctx, workspaceID, sender.ID, model.UpdateSupportEmailSenderRequest{
+		DisplayName:  &displayName,
+		DefaultScope: &defaultScope,
+		MailboxID:    &mailbox.ID,
+	})
+	if err != nil {
+		t.Fatalf("update sender: %v", err)
+	}
+	if updated.DisplayName != displayName {
+		t.Fatalf("display name = %q, want %q", updated.DisplayName, displayName)
+	}
+	if updated.DefaultScope != supportEmailSenderDefaultScopeMailbox || updated.MailboxID == nil || *updated.MailboxID != mailbox.ID || !updated.Active {
+		t.Fatalf("expected mailbox default sender, got scope=%q mailbox=%v active=%v", updated.DefaultScope, updated.MailboxID, updated.Active)
+	}
+}
+
+func TestSupportInboxServiceUpdateEmailSenderSupportsMultipleInboxDefaults(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	seedUser(t, db, actorID, "owner@example.com", "Owner", "hashed")
+	seedWorkspace(t, db, workspaceID, "Acme", "acme", actorID)
+
+	mailboxRepo := repository.NewSupportMailboxRepository(db)
+	senderRepo := repository.NewSupportEmailSenderRepository(db)
+	svc := NewSupportInboxService(nil, mailboxRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetEmailSenderRepository(senderRepo).
+		SetRouteDomain("on.helpin.email")
+
+	supportMailbox := &model.SupportMailbox{
+		WorkspaceID:    workspaceID,
+		Name:           "Support",
+		Handle:         "support",
+		Icon:           "headphones",
+		TriageEligible: true,
+		VisibilityMode: "members_only",
+		AssignmentMode: "manual",
+		Active:         true,
+		CreatedByID:    actorID,
+	}
+	successMailbox := &model.SupportMailbox{
+		WorkspaceID:    workspaceID,
+		Name:           "Success",
+		Handle:         "success",
+		Icon:           "sparkles",
+		TriageEligible: true,
+		VisibilityMode: "members_only",
+		AssignmentMode: "manual",
+		Active:         true,
+		CreatedByID:    actorID,
+	}
+	if err := mailboxRepo.Create(ctx, supportMailbox); err != nil {
+		t.Fatalf("create support mailbox: %v", err)
+	}
+	if err := mailboxRepo.Create(ctx, successMailbox); err != nil {
+		t.Fatalf("create success mailbox: %v", err)
+	}
+
+	sender := verifiedSender(workspaceID, nil, "support@example.com", "none", actorID)
+	if err := senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	defaultScope := supportEmailSenderDefaultScopeMailbox
+	updated, err := svc.UpdateEmailSender(ctx, workspaceID, sender.ID, model.UpdateSupportEmailSenderRequest{
+		DefaultScope: &defaultScope,
+		MailboxIDs:   []string{supportMailbox.ID, successMailbox.ID},
+	})
+	if err != nil {
+		t.Fatalf("update sender: %v", err)
+	}
+	if updated.DefaultScope != supportEmailSenderDefaultScopeMailbox || !updated.Active {
+		t.Fatalf("expected active inbox sender, got scope=%q active=%v", updated.DefaultScope, updated.Active)
+	}
+	if !sameStringSet(updated.MailboxIDs, []string{supportMailbox.ID, successMailbox.ID}) {
+		t.Fatalf("mailbox_ids = %#v, want both selected inboxes", updated.MailboxIDs)
+	}
+
+	for _, mailboxID := range []string{supportMailbox.ID, successMailbox.ID} {
+		result, err := svc.ResolveOutboundFromAddress(ctx, workspaceID, &mailboxID)
+		if err != nil {
+			t.Fatalf("resolve outbound sender for %s: %v", mailboxID, err)
+		}
+		if result.Email != "support@example.com" || result.Source != supportOutboundSenderSourceMailboxDefault {
+			t.Fatalf("resolved sender for %s = %#v, want selected sender", mailboxID, result)
+		}
 	}
 }
 
@@ -620,6 +740,70 @@ func TestSupportInboxServiceCreateEmailSenderReusesExistingPostmarkDomain(t *tes
 	}
 }
 
+func TestSupportInboxServiceCreateEmailSenderDomainReusesExistingPostmarkDomain(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	seedUser(t, db, actorID, "owner@example.com", "Owner", "hashed")
+	seedWorkspace(t, db, workspaceID, "Acme", "acme", actorID)
+
+	var postDomains, getDomains int
+	postmarkClient := email.NewDomainClient("account-token")
+	postmarkClient.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodPost && req.URL.Path == "/domains":
+			postDomains++
+			return &http.Response{
+				StatusCode: http.StatusUnprocessableEntity,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"ErrorCode":300,"Message":"Domain already exists"}`)),
+			}, nil
+		case req.Method == http.MethodGet && req.URL.Path == "/domains":
+			getDomains++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"TotalCount": 1,
+					"Domains": [{
+						"ID": 123,
+						"Name": "example.com",
+						"ReturnPathDomain": "pm-bounces.example.com",
+						"ReturnPathDomainCNAMEValue": "pm.mtasv.net",
+						"DKIMHost": "pm._domainkey.example.com",
+						"DKIMPendingTextValue": "k=rsa; p=test"
+					}]
+				}`)),
+			}, nil
+		default:
+			t.Fatalf("unexpected postmark request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		}
+	})})
+
+	domainRepo := repository.NewSupportEmailSenderDomainRepository(db)
+	svc := NewSupportInboxService(nil, repository.NewSupportMailboxRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetEmailSenderDomainRepository(domainRepo).
+		SetPostmarkDomainClient(postmarkClient).
+		SetRouteDomain("on.helpin.email")
+
+	senderDomain, err := svc.CreateEmailSenderDomain(ctx, workspaceID, model.CreateSupportEmailSenderDomainRequest{
+		Domain:        "example.com",
+		FromLocalPart: "support",
+	}, actorID)
+	if err != nil {
+		t.Fatalf("create sender domain should reuse existing postmark domain: %v", err)
+	}
+	if senderDomain.PostmarkDomainID == nil || *senderDomain.PostmarkDomainID != 123 {
+		t.Fatalf("expected existing postmark domain id 123, got %#v", senderDomain.PostmarkDomainID)
+	}
+	if postDomains != 1 || getDomains != 1 {
+		t.Fatalf("expected one create attempt and one lookup, got post=%d get=%d", postDomains, getDomains)
+	}
+}
+
 func TestInboundPayloadMentionsAddressMatchesExactEmailTokens(t *testing.T) {
 	payload := model.PostmarkInboundPayload{
 		To:      "Helpin Support <support@example.com>",
@@ -665,4 +849,21 @@ func verifiedSender(workspaceID string, mailboxID *string, emailAddress, default
 		Active:                      defaultScope != "none",
 		CreatedByID:                 actorID,
 	}
+}
+
+func sameStringSet(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	counts := make(map[string]int, len(got))
+	for _, value := range got {
+		counts[value]++
+	}
+	for _, value := range want {
+		if counts[value] == 0 {
+			return false
+		}
+		counts[value]--
+	}
+	return true
 }

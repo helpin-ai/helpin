@@ -10,6 +10,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 export type SettingsPageContext = {
   workspaceId: string;
   currentWorkspaceName: string;
+  currentWorkspaceWebsiteUrl?: string;
   organizationId?: string;
   settings: WorkspaceSettings;
   access: ReturnType<typeof useWorkspaceAccess>['data'];
@@ -77,6 +78,7 @@ export function SettingsPageFrame({ section, hideHeader, children }: SettingsPag
       {children({
         workspaceId: resolvedWorkspaceId,
         currentWorkspaceName,
+        currentWorkspaceWebsiteUrl: currentWorkspace?.website_url,
         organizationId,
         settings,
         access,

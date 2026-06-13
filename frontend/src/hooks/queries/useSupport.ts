@@ -41,6 +41,7 @@ import type {
   CreateSupportEmailRouteRequest,
   CreateSupportEmailSenderRequest,
   SetSupportEmailSenderDefaultRequest,
+  UpdateSupportEmailSenderRequest,
   SupportEmailSender,
   CreateSupportEmailSenderDomainRequest,
   SupportEmailSenderDomain,
@@ -52,6 +53,7 @@ import type {
   UpdateCannedResponseRequest,
   SupportMessage,
   SupportTag,
+  CreateConversationRequest,
   CreateConversationWithMessageRequest,
 } from '@/lib/pmTypes';
 
@@ -527,6 +529,20 @@ export function useSetDefaultSupportEmailSender(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to update sender default', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateSupportEmailSender(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ senderId, payload }: { senderId: string; payload: UpdateSupportEmailSenderRequest }) =>
+      supportService.updateEmailSender(workspaceId, senderId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenders(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update sender address', { description: error.message });
     },
   });
 }
@@ -1055,8 +1071,8 @@ export function useAssignConversationUser(workspaceId: string) {
 export function useCreateConversation(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { subject: string; priority?: string; customer_name?: string; customer_email?: string; mailbox_id?: string | null }) =>
-      supportService.createConversation(workspaceId, payload as any).then(unwrap),
+    mutationFn: (payload: CreateConversationRequest) =>
+      supportService.createConversation(workspaceId, payload).then(unwrap),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
