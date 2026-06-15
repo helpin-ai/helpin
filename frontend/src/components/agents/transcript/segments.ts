@@ -71,6 +71,10 @@ function isReviewDecisionMessage(message: CodingSessionTranscriptMessage): boole
   );
 }
 
+function normalizedAssistantContent(content: string): string {
+  return content.trim().replace(/\s+/g, ' ');
+}
+
 /** Identity key for deduping a persisted tool call against the turn timeline. */
 function toolCallTimelineKey(toolCall: CodingSessionLiveToolCall): string {
   return [
@@ -95,6 +99,7 @@ export function collectSegments(
 ): TranscriptSegment[] {
   const include = opts.include ?? ALL_SEGMENT_KINDS;
   const out: TranscriptSegment[] = [];
+  const persistedAssistantContent = new Set<string>();
 
   if (opts.leadingContext && include.has('context')) {
     out.push({ kind: 'context', id: `context:${opts.leadingContext.event_id}`, message: opts.leadingContext });
@@ -130,6 +135,7 @@ export function collectSegments(
         if (segment.kind === 'assistant_message') {
           const content = segment.assistant_message.content.trim();
           if (content && include.has('assistant')) {
+            persistedAssistantContent.add(normalizedAssistantContent(content));
             out.push({ kind: 'assistant', id: segment.segment_id, content });
           }
         } else if (segment.kind === 'tool_call' && !isToolName(segment.tool_call.tool_name, 'update_plan')) {
@@ -150,7 +156,9 @@ export function collectSegments(
     }
 
     if (message.content.trim() && include.has('assistant')) {
-      out.push({ kind: 'assistant', id: message.event_id, content: message.content.trim() });
+      const content = message.content.trim();
+      persistedAssistantContent.add(normalizedAssistantContent(content));
+      out.push({ kind: 'assistant', id: message.event_id, content });
     }
     if (include.has('tool')) {
       for (const toolCall of message.tool_calls ?? []) {
@@ -171,7 +179,7 @@ export function collectSegments(
     for (const segment of stream.live_turn_segments) {
       if (segment.kind === 'assistant_message') {
         const content = segment.assistant_message.content.trim();
-        if (content && include.has('assistant')) {
+        if (content && include.has('assistant') && !persistedAssistantContent.has(normalizedAssistantContent(content))) {
           out.push({
             kind: 'assistant',
             id: `live:${segment.segment_id}`,
