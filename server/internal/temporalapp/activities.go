@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"go.temporal.io/sdk/activity"
@@ -367,6 +368,54 @@ func recordActivityHeartbeatSafe(ctx context.Context, details ...interface{}) {
 	activity.RecordHeartbeat(ctx, details...)
 }
 
+func startActivityHeartbeatLoop(ctx context.Context, initialStage string, interval time.Duration) (func(string), func()) {
+	if interval <= 0 {
+		interval = 15 * time.Second
+	}
+	stage := strings.TrimSpace(initialStage)
+	if stage == "" {
+		stage = "running"
+	}
+	var stageMu sync.RWMutex
+	setStage := func(next string) {
+		stageMu.Lock()
+		defer stageMu.Unlock()
+		if trimmed := strings.TrimSpace(next); trimmed != "" {
+			stage = trimmed
+		}
+	}
+	getStage := func() string {
+		stageMu.RLock()
+		defer stageMu.RUnlock()
+		return stage
+	}
+
+	done := make(chan struct{})
+	var stopOnce sync.Once
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		recordActivityHeartbeatSafe(ctx, getStage())
+		for {
+			select {
+			case <-ticker.C:
+				recordActivityHeartbeatSafe(ctx, getStage())
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	stop := func() {
+		stopOnce.Do(func() {
+			close(done)
+		})
+	}
+	return setStage, stop
+}
+
 // PrepareRunActivity resolves repo state, snapshots delivery metadata, and creates the working branch if needed.
 func (a *AgentRunActivities) PrepareRunActivity(ctx context.Context, runID string) error {
 	state, err := a.loadRunState(ctx, runID)
@@ -419,6 +468,9 @@ func (a *AgentRunActivities) StartReadyCommandBarPlanStepsActivity(ctx context.C
 
 // ExecuteRunActivity executes the agent loop on a shared runner workspace.
 func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID string) (ExecuteRunResult, error) {
+	setActivityHeartbeatStage, stopActivityHeartbeat := startActivityHeartbeatLoop(ctx, "loading_run_state", 15*time.Second)
+	defer stopActivityHeartbeat()
+
 	state, err := a.loadRunState(ctx, runID)
 	if err != nil {
 		return ExecuteRunResult{}, err
@@ -480,6 +532,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
+	setActivityHeartbeatStage("building_runtime_context")
 	runtimeKind := executionRuntimeKind(state)
 	initialInstructions, err := a.buildInitialInstructions(ctx, state, planningInput)
 	if err != nil {
@@ -519,6 +572,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"run_id", state.run.ID,
 		"repo", repoFullName(state),
 	)
+	setActivityHeartbeatStage("preparing_workspace")
 	persistWorkspace := shouldPersistExecutionWorkspace(state.run, runtimeKind)
 	var (
 		workDir       string
@@ -608,6 +662,13 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		providerContinuation:      providerContinuation,
 		history:                   history,
 	})
+	if execCtx.Heartbeat != nil {
+		heartbeatWithStage := execCtx.Heartbeat
+		execCtx.Heartbeat = func(stage string) error {
+			setActivityHeartbeatStage(stage)
+			return heartbeatWithStage(stage)
+		}
+	}
 
 	adapter, err := a.runtimes.Get(runtimeKind)
 	if err != nil {
@@ -663,6 +724,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		}
 	}
 
+	setActivityHeartbeatStage(runtimeKind + "_starting")
 	err = adapter.Execute(execCtx, state.run)
 	if err != nil {
 		if persistWorkspace {
@@ -703,7 +765,9 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"run_id", state.run.ID,
 		"runtime_kind", runtimeKind,
 	)
+	setActivityHeartbeatStage(runtimeKind + "_completed")
 	if runtimeKind == "codex" {
+		setActivityHeartbeatStage("pushing_codex_changes")
 		if err := a.pushCodexLocalCommit(ctx, workDir, state, execCtx); err != nil {
 			if persistWorkspace {
 				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
@@ -713,6 +777,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			return ExecuteRunResult{}, nonRetryableRunError(err)
 		}
 	}
+	setActivityHeartbeatStage("persisting_assistant_message")
 	assistantMessage, err := a.persistAssistantRunMessage(ctx, state, execCtx)
 	if err != nil {
 		if persistWorkspace {
