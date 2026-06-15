@@ -4,6 +4,7 @@ import {
   buildCodingSessionStreamState,
   mergeCodingSessionStreamSnapshotSeed,
 } from '../codingSessionStream';
+import { isToolName } from '@/lib/toolNames';
 import type { CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
 
 function buildEvent(overrides: Partial<CodingSessionEvent> & Pick<CodingSessionEvent, 'id' | 'type' | 'sequence_no'>): CodingSessionEvent {
@@ -1107,7 +1108,7 @@ describe('buildCodingSessionStreamState', () => {
       ],
     });
     expect(state.live_turn_segments.every((segment) => (
-      segment.kind !== 'tool_call' || segment.tool_call.tool_name !== 'update_plan'
+      segment.kind !== 'tool_call' || !isToolName(segment.tool_call.tool_name, 'update_plan')
     ))).toBe(true);
   });
 

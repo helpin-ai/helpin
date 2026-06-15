@@ -57,7 +57,7 @@ const TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string }> = [
   { value: 'repository', label: 'Code repo' },
 ];
 
-const CUSTOM_RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'native_sdk'];
+const CUSTOM_RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'codex', 'native_sdk'];
 const DRAFT_PROGRESS_LABELS = [
   'Reading brief...',
   'Choosing targets...',

@@ -25,67 +25,70 @@ type executionContextSync struct {
 
 // ExecutionContext holds all state for a single agent run execution.
 type ExecutionContext struct {
-	Context                    context.Context
-	WorkDir                    string // path to cloned repo on disk
-	WorkspaceID                string
-	AgentID                    string
-	RunID                      string
-	TargetType                 string
-	TargetID                   string
-	TaskID                     string
-	ConversationID             string
-	Agent                      *model.Agent
-	Task                       *model.PMTask
-	Epic                       *model.PMEpic
-	EpicTasks                  []model.PMTask
-	Conversation               *model.SupportConversation
-	GitIntegration             *model.GitIntegration
-	GitAccessToken             string
-	Repo                       string // e.g. "owner/repo"
-	BaseBranch                 string
-	WorkingBranch              string
-	BranchSyncStatus           string
-	BranchSyncConflictFiles    []string
-	InitialInstructions        string
-	PhaseGuidance              string
-	RepairGuidance             string
-	RepairGuidanceSource       string
-	RepairGuidanceClass        string
-	PlanningStage              string
-	PlanningMethodology        string
-	PlanningSpecDocumentID     string
-	PlanningSpecVersionID      string
-	RunInput                   *model.AgentRunInputPayload
-	Config                     *WorkflowConfig
-	ResolvedProfile            ResolvedProfile
-	RuntimeSkillRefs           model.AgentSkillRefs
-	RuntimeSkillDefinitions    []SkillDefinition
-	ActiveRuntimeSkillRefs     model.AgentSkillRefs
-	ActiveSkillDefinitions     []SkillDefinition
-	ActiveSkillInstructions    string
-	SkillPolicy                SkillPolicy
-	NativeSelectivePathEnabled bool
-	AllowedTools               map[string]bool
-	Services                   *ServiceBridge
-	PendingSupportDraft        *SupportDraftReply
-	LatestPRMetadata           *PRMetadata
-	LocalGitCommit             *GitCommitMetadata
-	Heartbeat                  func(stage string) error
-	OnExecutionEvent           func(event ExecutionEvent)
-	OnGitPush                  func(branch, sha string) error
-	OnPROpen                   func(metadata PRMetadata, title string) error
-	HeartbeatStageProvider     func() string
-	HandleInteractivePause     func(result *ExecutionResult) (*LiveExecutionResumeSignal, error)
-	PlanningTurnKind           string
-	PlanningTurnAttempt        int
-	TurnLocalInstructions      string
-	RunFacts                   map[string]string
-	ArtifactContext            *ArtifactContext
-	ProviderContinuation       *ProviderContinuation
-	ConversationHistory        []ExecutionMessage
-	LastExecutionResult        *ExecutionResult
-	StagedRuntimeSkillRoot     string
-	ToolFileState              *ToolFileState
+	Context                 context.Context
+	WorkDir                 string // path to cloned repo on disk
+	WorkspaceID             string
+	AgentID                 string
+	RunID                   string
+	TargetType              string
+	TargetID                string
+	TaskID                  string
+	ConversationID          string
+	Agent                   *model.Agent
+	Task                    *model.PMTask
+	Epic                    *model.PMEpic
+	EpicTasks               []model.PMTask
+	Conversation            *model.SupportConversation
+	GitIntegration          *model.GitIntegration
+	GitAccessToken          string
+	Repo                    string // e.g. "owner/repo"
+	BaseBranch              string
+	WorkingBranch           string
+	BranchSyncStatus        string
+	BranchSyncConflictFiles []string
+	InitialInstructions     string
+	PhaseGuidance           string
+	RepairGuidance          string
+	RepairGuidanceSource    string
+	RepairGuidanceClass     string
+	PlanningStage           string
+	PlanningMethodology     string
+	PlanningSpecDocumentID  string
+	PlanningSpecVersionID   string
+	RunInput                *model.AgentRunInputPayload
+	Config                  *WorkflowConfig
+	ResolvedProfile         ResolvedProfile
+	RuntimeSkillRefs        model.AgentSkillRefs
+	RuntimeSkillDefinitions []SkillDefinition
+	ActiveRuntimeSkillRefs  model.AgentSkillRefs
+	ActiveSkillDefinitions  []SkillDefinition
+	ActiveSkillInstructions string
+	SkillPolicy             SkillPolicy
+	ContractActive          bool
+	ContractKey             string
+	AllowedTools            map[string]bool
+	MCPToolNames            map[string]bool
+	CallMCPTool             func(name string, input json.RawMessage) (string, error)
+	Services                *ServiceBridge
+	PendingSupportDraft     *SupportDraftReply
+	LatestPRMetadata        *PRMetadata
+	LocalGitCommit          *GitCommitMetadata
+	Heartbeat               func(stage string) error
+	OnExecutionEvent        func(event ExecutionEvent)
+	OnGitPush               func(branch, sha string) error
+	OnPROpen                func(metadata PRMetadata, title string) error
+	HeartbeatStageProvider  func() string
+	HandleInteractivePause  func(result *ExecutionResult) (*LiveExecutionResumeSignal, error)
+	PlanningTurnKind        string
+	PlanningTurnAttempt     int
+	TurnLocalInstructions   string
+	RunFacts                map[string]string
+	ArtifactContext         *ArtifactContext
+	ProviderContinuation    *ProviderContinuation
+	ConversationHistory     []ExecutionMessage
+	LastExecutionResult     *ExecutionResult
+	StagedRuntimeSkillRoot  string
+	ToolFileState           *ToolFileState
 	// syncPtr is *executionContextSync, accessed atomically. We use
 	// unsafe.Pointer (rather than atomic.Pointer[T]) because atomic.Pointer
 	// embeds a noCopy marker that go vet's copylocks analyzer flags when
@@ -168,7 +171,7 @@ func DefaultWorkflowConfig() *WorkflowConfig {
 }
 
 // DefaultWorkflowConfigForAgent returns runtime defaults, including higher
-// tool budgets for custom agents and native planners.
+// tool budgets for custom agents and contract-aware agents.
 func DefaultWorkflowConfigForAgent(agent *model.Agent) *WorkflowConfig {
 	maxIterations := defaultWorkflowMaxIterations
 	if isHighToolBudgetAgent(agent) {
@@ -188,10 +191,10 @@ func isHighToolBudgetAgent(agent *model.Agent) bool {
 	if !agent.IsSystem {
 		return true
 	}
-	return isHighToolBudgetNativePlanner(agent)
+	return isHighToolBudgetContractPlanner(agent)
 }
 
-func isHighToolBudgetNativePlanner(agent *model.Agent) bool {
+func isHighToolBudgetContractPlanner(agent *model.Agent) bool {
 	if agent == nil || strings.TrimSpace(agent.RuntimeKind) != "native_sdk" {
 		return false
 	}

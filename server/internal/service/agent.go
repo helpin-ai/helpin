@@ -1541,6 +1541,8 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	hasSkills := req.InstructionSkills != nil
 	if req.AvailableSkills != nil {
 		version.AvailableSkills = model.JSONBlob(mustJSONStringSlice(parseJSONStringSlice(req.AvailableSkills)))
+	} else {
+		version.AvailableSkills = model.JSONBlob(mustJSONStringSlice(filterAvailableSkillsForAllowedTools(basePreset.AvailableSkills, parseJSONStringSlice(version.AllowedTools))))
 	}
 	if version.SystemPrompt != nil {
 		// Raw system_prompt is the custom-version source of truth. Legacy
@@ -1620,6 +1622,39 @@ func workspacePresetCurrentDefinition(version *model.WorkspaceAgentPresetVersion
 		return model.AgentPresetDefinition{}, err
 	}
 	return workspacePresetDefinition(base, *version), nil
+}
+
+func filterAvailableSkillsForAllowedTools(availableSkills, allowedTools []string) []string {
+	if len(availableSkills) == 0 {
+		return nil
+	}
+	allowedSet := make(map[string]struct{}, len(allowedTools))
+	for _, toolName := range worker.NormalizeToolNames(allowedTools) {
+		allowedSet[toolName] = struct{}{}
+	}
+	filtered := make([]string, 0, len(availableSkills))
+	for _, skillKey := range availableSkills {
+		skillKey = strings.TrimSpace(skillKey)
+		if skillKey == "" {
+			continue
+		}
+		definition, ok := worker.GetBuiltInSkill(skillKey)
+		if !ok {
+			filtered = append(filtered, skillKey)
+			continue
+		}
+		supported := true
+		for _, requiredTool := range worker.NormalizeToolNames(definition.RequiredTools) {
+			if _, ok := allowedSet[requiredTool]; !ok {
+				supported = false
+				break
+			}
+		}
+		if supported {
+			filtered = append(filtered, skillKey)
+		}
+	}
+	return filtered
 }
 
 func (s *AgentService) ListAgentVersions(ctx context.Context, workspaceID, agentID string) ([]model.AgentVersion, error) {
@@ -2163,6 +2198,8 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 		availableSkills := slices.Clone(currentPreset.AvailableSkills)
 		if req.AvailableSkills != nil {
 			availableSkills = parseJSONStringSlice(req.AvailableSkills)
+		} else {
+			availableSkills = filterAvailableSkillsForAllowedTools(availableSkills, parseJSONStringSlice(version.AllowedTools))
 		}
 		version.AvailableSkills = model.JSONBlob(mustJSONStringSlice(availableSkills))
 		if req.SystemPrompt != nil {
@@ -2363,9 +2400,9 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	if role == "" {
 		role = "Custom Agent"
 	}
-	runtimeKind := strings.TrimSpace(stringOrDefault(req.RuntimeKind, "native_sdk"))
+	runtimeKind := strings.TrimSpace(stringOrDefault(req.RuntimeKind, "codex"))
 	if runtimeKind == "" {
-		runtimeKind = "native_sdk"
+		runtimeKind = "codex"
 	}
 	triggerMode := stringOrDefault(req.TriggerMode, "manual")
 	if triggerMode == "" {
@@ -5674,11 +5711,10 @@ func (s *AgentService) validateModelRouting(agent *model.Agent) error {
 	if err := validateModelProvider(provider); err != nil {
 		return err
 	}
-	if strings.TrimSpace(agent.RuntimeKind) == "codex" && provider == model.AgentModelProviderOpenAI {
-		if !s.isCodexOpenAIConfigured() {
-			return fmt.Errorf("provider openai is not configured for codex (requires OPENAI_API_KEY or Helpin-managed ChatGPT OAuth)")
-		}
-	} else if !s.isModelProviderConfigured(provider) {
+	if strings.TrimSpace(agent.RuntimeKind) == "codex" {
+		return nil
+	}
+	if !s.isModelProviderConfigured(provider) {
 		switch provider {
 		case model.AgentModelProviderAnthropic:
 			return fmt.Errorf("provider anthropic is not configured (missing ANTHROPIC_API_KEY)")
@@ -5699,28 +5735,17 @@ func (s *AgentService) validateRuntimeProviderCompatibility(agent *model.Agent) 
 	}
 
 	if agent.Provider == nil || strings.TrimSpace(*agent.Provider) == "" {
-		if !s.isCodexOpenAIConfigured() && strings.TrimSpace(s.openRouterAPIKey) == "" {
-			return fmt.Errorf("runtime_kind codex requires OPENAI_API_KEY, Helpin-managed ChatGPT OAuth, or OPENROUTER_API_KEY to be configured")
-		}
 		return nil
 	}
 
 	switch normalizeModelProvider(*agent.Provider) {
-	case model.AgentModelProviderOpenAI:
-		if !s.isCodexOpenAIConfigured() {
-			return fmt.Errorf("runtime_kind codex with provider openai requires OPENAI_API_KEY or Helpin-managed ChatGPT OAuth")
-		}
-	case model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
-		if strings.TrimSpace(s.openRouterAPIKey) == "" {
-			return fmt.Errorf("runtime_kind codex with provider openrouter requires OPENROUTER_API_KEY")
-		}
+	case model.AgentModelProviderOpenAI, model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
+		return nil
 	case model.AgentModelProviderAnthropic:
 		return fmt.Errorf("runtime_kind codex requires provider openai or openrouter")
 	default:
 		return fmt.Errorf("runtime_kind codex requires provider openai or openrouter")
 	}
-
-	return nil
 }
 
 func (s *AgentService) isCodexOpenAIConfigured() bool {

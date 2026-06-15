@@ -156,7 +156,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Epic Planner',
     default_role: 'Epic Planner',
     description: 'Interactive product planning for epics, PRDs, docs, and tasks.',
-    runtime_kind: 'native_sdk',
+    runtime_kind: 'codex',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -164,7 +164,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Coding Task Planner',
     default_role: 'Coding Task Planner',
     description: 'Interactive decomposition and refinement for tasks and execution plans.',
-    runtime_kind: 'native_sdk',
+    runtime_kind: 'codex',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -172,7 +172,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Coding Task Planner',
     default_role: 'Coding Task Planner',
     description: 'Interactive decomposition and refinement for tasks and execution plans.',
-    runtime_kind: 'native_sdk',
+    runtime_kind: 'codex',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -180,7 +180,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Beacon',
     default_role: 'CRM Operator',
     description: 'Cross-app CRM execution across deals, contacts, docs, and support context.',
-    runtime_kind: 'native_sdk',
+    runtime_kind: 'codex',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -188,7 +188,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Support Agent',
     default_role: 'Support Agent',
     description: 'Handles support conversations and drafts replies with review controls.',
-    runtime_kind: 'native_sdk',
+    runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -196,7 +196,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Quill',
     default_role: 'Documentation Agent',
     description: 'Keeps internal docs, public help docs, and API docs accurate and organized.',
-    runtime_kind: 'native_sdk',
+    runtime_kind: 'codex',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -232,7 +232,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Command Agent',
     default_role: 'Command Agent',
     description: 'One-shot command-bar agent: runs a single instruction with a narrowed tool set.',
-    runtime_kind: 'native_sdk',
+    runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -242,7 +242,7 @@ const PRESET_FALLBACK_DEFAULT: (typeof PRESET_FALLBACKS)[AgentPresetKey] = {
   label: 'Agent',
   default_role: 'Automation Agent',
   description: '',
-  runtime_kind: 'native_sdk',
+  runtime_kind: 'codex',
   default_invocation_mode: 'autonomous',
   supported_modes: ['autonomous', 'interactive'],
 };
@@ -557,7 +557,7 @@ function allowedRuntimeKindsForPreset(presetKey: AgentPresetKey): AgentRuntimeKi
     case 'review_agent':
       return ['opencode', 'codex', 'native_sdk'];
     default:
-      return ['native_sdk'];
+      return ['codex', 'native_sdk'];
   }
 }
 
@@ -809,7 +809,7 @@ function buildUpdatePayload(
   const preset = agent?.is_system ? presetMetaForSelection(form.preset_key, form.preset_version_key, presets) : null;
   const defaultRuntimeKind = agent?.is_system
     ? (preset?.runtime_kind ?? presetFallback(form.preset_key).runtime_kind)
-    : 'native_sdk';
+    : 'codex';
   const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
   const teamIds = form.teamAccessMode === 'specific_teams' ? normalizeTeamIdList(form.team_ids) : [];
   const advancedPayload: UpdateAgentRequest = advancedOpen
@@ -3552,7 +3552,7 @@ export function AgentsPage() {
       ? (selectedPreset?.allowed_target_types ?? form.allowed_targets)
       : (form.allowed_targets.length > 0 ? form.allowed_targets : ['task']);
   const supportedModes = form.supported_modes.length > 0 ? form.supported_modes : supportedModesForForm(form.runtime_kind);
-  const availableRuntimeKinds = editingSystemAgent ? allowedRuntimeKindsForPreset(form.preset_key) : (['opencode', 'native_sdk'] as AgentRuntimeKind[]);
+  const availableRuntimeKinds = editingSystemAgent ? allowedRuntimeKindsForPreset(form.preset_key) : (['opencode', 'codex', 'native_sdk'] as AgentRuntimeKind[]);
   const visibleProviderOptions = availableProvidersForRuntime(form.runtime_kind, providerOptions);
   const selectedProviderOption = visibleProviderOptions.find((option) => option.value === form.provider);
   const templateStarterFlow = templateDraft?.template.starter_flows?.find((flow) => flow.key === 'github_release_notes')

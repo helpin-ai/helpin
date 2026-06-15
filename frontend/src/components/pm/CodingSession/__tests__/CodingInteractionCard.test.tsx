@@ -254,7 +254,7 @@ describe('CodingInteractionCard', () => {
     );
   });
 
-  it('renders Codex user-input prompts as markdown without duplicating matching summaries', () => {
+  it('renders shared user-input prompts as markdown without duplicating matching summaries', () => {
     const prompt = [
       'The Sentry error indicates an object with keys `{message, errors}` is being rendered.',
       '',
@@ -286,6 +286,62 @@ describe('CodingInteractionCard', () => {
     expect(container.querySelector('pre code')?.textContent).toContain('setError(err.response.data.detail)');
     expect(container.textContent).not.toContain('`{message, errors}`');
     expect(container.textContent).not.toContain('```tsx');
+  });
+
+  it('renders canonical user-input questions regardless of stored schema version', () => {
+    const onResolve = vi.fn();
+
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'request_user_input',
+      request_schema_version: 'helpin.v1',
+      title: 'User input required',
+      summary: 'Metric scope: Which 3xx responses should this epic measure?',
+      request_payload: {
+        questions: [
+          {
+            id: 'metric_scope',
+            header: 'Metric scope',
+            question: 'Which 3xx responses should this epic measure?',
+            isOther: true,
+            options: [
+              {
+                label: 'All HTTP 3xx (Recommended)',
+                description: 'Track every redirect response class.',
+              },
+              {
+                label: 'Unexpected 3xx only',
+                description: 'Track only redirects considered anomalies.',
+              },
+            ],
+          },
+        ],
+      },
+    }));
+
+    expect(container.textContent).toContain('Which 3xx responses should this epic measure?');
+    expect(container.textContent).toContain('All HTTP 3xx (Recommended)');
+    expect(container.textContent).not.toContain('"questions"');
+    expect(container.textContent).not.toContain('"metric_scope"');
+
+    const option = Array.from(container.querySelectorAll('button')).find((candidate) => (
+      candidate.textContent?.includes('All HTTP 3xx (Recommended)')
+    ));
+    expect(option).toBeTruthy();
+    act(() => {
+      option!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    clickButton('Submit answers');
+
+    expect(onResolve).toHaveBeenCalledWith(
+      'interaction-1',
+      {
+        answers: {
+          metric_scope: {
+            answers: ['All HTTP 3xx (Recommended)'],
+          },
+        },
+      },
+    );
   });
 
   it('expands approval preview inline and exposes full preview from the approval header', () => {

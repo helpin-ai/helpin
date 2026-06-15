@@ -288,6 +288,9 @@ func BuiltInPresetSkillBundleForPreset(presetKey string) (PresetSkillBundle, boo
 	}
 	bundle.SkillKeys = append([]string(nil), bundle.SkillKeys...)
 	bundle.CoreSkillKeys = append([]string(nil), bundle.CoreSkillKeys...)
+	if len(bundle.AvailableSkillKeys) == 0 {
+		bundle.AvailableSkillKeys = bundle.SkillKeys
+	}
 	bundle.AvailableSkillKeys = append([]string(nil), bundle.AvailableSkillKeys...)
 	return bundle, true
 }
@@ -306,7 +309,7 @@ func CompileInstructionModules(moduleKeys []string) string {
 		if !ok {
 			continue
 		}
-		instructions := strings.TrimSpace(skill.Instructions)
+		instructions := RenderRuntimeToolNamesInInstructions(skill.Instructions)
 		if instructions == "" {
 			continue
 		}

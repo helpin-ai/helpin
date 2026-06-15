@@ -182,8 +182,8 @@ describe('CustomAgentCreatePanel', () => {
 
     expect(container?.textContent).toContain('Agent name');
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
-      approval_mode: 'never',
-      runtime_kind: 'native_sdk',
+      approval_mode: 'always',
+      runtime_kind: 'codex',
       default_invocation_mode: 'interactive',
     }));
   });
@@ -223,12 +223,14 @@ describe('CustomAgentCreatePanel', () => {
     click('Start blank');
     click('Advanced settings');
 
-    expect(container?.textContent).toContain('Native SDK');
+    expect(container?.textContent).toContain('Codex');
     expect(container?.textContent).toContain('Interactive');
-    expect(container?.textContent).toContain('Recommended for Helpin product tools and on-demand skill loading.');
+    expect(container?.textContent).toContain('Best for code and repository work.');
 
-    click('Native SDK');
+    click('Codex');
     expect(document.body.textContent).toContain('OpenCode');
+    expect(document.body.textContent).toContain('Codex');
+    expect(document.body.textContent).toContain('Native SDK');
 
     click('Interactive');
     expect(document.body.textContent).toContain('Autonomous');

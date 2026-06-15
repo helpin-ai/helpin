@@ -1099,6 +1099,15 @@ func main() {
 	commandBarService.SetInternalCommandService(commandService).
 		SetReadOnlyDataServices(docsDocumentService, crmDealService, crmContactService, crmCompanyService)
 	ruleEngine.SetCommandService(commandService)
+	agentToolGateway := service.NewAgentToolGateway(
+		agentRunRepo,
+		agentRepo,
+		agentRunArtifactRepo,
+		agentRunInteractionRepo,
+		commandService,
+		jwtManager,
+		wsPublisher,
+	)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
@@ -1241,6 +1250,7 @@ func main() {
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:               handler.NewAgentHandler(agentService),
+		AgentToolGateway:    handler.NewAgentToolGatewayHandler(agentToolGateway),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),

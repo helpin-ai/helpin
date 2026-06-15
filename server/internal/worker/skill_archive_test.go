@@ -103,7 +103,7 @@ func TestBuildAndLoadSkillArchiveRoundTrip(t *testing.T) {
 	if contract.Schema != "review_checkpoint_v1" {
 		t.Fatalf("expected review checkpoint schema to round-trip, got %q", contract.Schema)
 	}
-	if contract.Transports["native_sdk"].ToolName != "request_review_checkpoint" {
+	if contract.Transports["native_sdk"].ToolName != HelpinMCPRuntimeToolName(ToolRequestReviewCheckpoint) {
 		t.Fatalf("expected native_sdk tool transport to round-trip, got %+v", contract.Transports["native_sdk"])
 	}
 	if contract.Transports["codex"].BlockLabel != "helpin-review" {
@@ -116,7 +116,7 @@ func TestBuildAndLoadSkillArchiveRoundTrip(t *testing.T) {
 	if inputContract.Schema != "request_user_input_v1" {
 		t.Fatalf("expected request user input schema to round-trip, got %q", inputContract.Schema)
 	}
-	if inputContract.Transports["native_sdk"].ToolName != "request_user_input" {
+	if inputContract.Transports["native_sdk"].ToolName != HelpinMCPRuntimeToolName(ToolRequestUserInput) {
 		t.Fatalf("expected native_sdk request user input tool transport to round-trip, got %+v", inputContract.Transports["native_sdk"])
 	}
 	if inputContract.Transports["codex"].Type != InteractionTransportTypeRuntimeBridge {

@@ -15,21 +15,21 @@ func TestResolveNativeSystemPromptSuppressesResolvedSkillTextForSelectivePath(t 
 			PresetKey:                 model.AgentPresetEpicPlanner,
 			ResolvedSkillInstructions: "Full aggregated skill blob.",
 		},
-		Epic:                       &model.PMEpic{Name: "Billing refresh"},
-		NativeSelectivePathEnabled: true,
+		Epic:           &model.PMEpic{Name: "Billing refresh"},
+		ContractActive: true,
 	}, nil)
 
 	if includesResolvedSkillText {
-		t.Fatal("did not expect selective native system prompt to include resolved skill text")
+		t.Fatal("did not expect contract system prompt to include resolved skill text")
 	}
 	if strings.Contains(systemPrompt, "Full aggregated skill blob.") {
-		t.Fatalf("did not expect selective native system prompt to inline full resolved skill instructions\n%s", systemPrompt)
+		t.Fatalf("did not expect contract system prompt to inline full resolved skill instructions\n%s", systemPrompt)
 	}
 	if !strings.Contains(systemPrompt, "You are Atlas, the workspace epic planner.") {
-		t.Fatalf("expected selective native system prompt to preserve base preset identity\n%s", systemPrompt)
+		t.Fatalf("expected contract system prompt to preserve base preset identity\n%s", systemPrompt)
 	}
 	if !strings.Contains(systemPrompt, "## Current Epic") {
-		t.Fatalf("expected selective native system prompt to preserve target context\n%s", systemPrompt)
+		t.Fatalf("expected contract system prompt to preserve target context\n%s", systemPrompt)
 	}
 }
 
@@ -43,7 +43,6 @@ func TestResolveNativeSystemPromptGuidesSelectiveAvailableSkillTools(t *testing.
 			AllowedTools:              json.RawMessage(`["list_available_skills","search_available_skills","read_skill"]`),
 			ResolvedSkillInstructions: "Full campaign planning instructions.",
 		},
-		NativeSelectivePathEnabled: true,
 	}, nil)
 
 	if includesResolvedSkillText {
@@ -103,8 +102,8 @@ func TestResolveNativeSystemPromptKeepsResolvedSkillTextForLegacyAgentWithoutSki
 
 func TestResolveNativeInitialInstructionTransportMovesPlannerInstructionsToTurnLocalForSelectivePath(t *testing.T) {
 	userPromptInitialInstructions, turnLocalInstructions, transport := resolveNativeInitialInstructionTransport(&ExecutionContext{
-		PhaseGuidance:              "Run mode: interactive\nDraft the PRD first.",
-		NativeSelectivePathEnabled: true,
+		PhaseGuidance:  "Run mode: interactive\nDraft the PRD first.",
+		ContractActive: true,
 	})
 
 	if strings.TrimSpace(userPromptInitialInstructions) != "" {
@@ -139,8 +138,8 @@ func TestResolveNativeInitialInstructionTransportKeepsLegacyUserPromptBehavior(t
 
 func TestResolveNativeInitialInstructionTransportIgnoresLegacyFieldOnSelectivePath(t *testing.T) {
 	userPromptInitialInstructions, turnLocalInstructions, transport := resolveNativeInitialInstructionTransport(&ExecutionContext{
-		InitialInstructions:        "legacy planner blob",
-		NativeSelectivePathEnabled: true,
+		InitialInstructions: "legacy planner blob",
+		ContractActive:      true,
 	})
 
 	if strings.TrimSpace(userPromptInitialInstructions) != "" || strings.TrimSpace(turnLocalInstructions) != "" || transport != "none" {
@@ -152,9 +151,9 @@ func TestResolveNativeSupplementTransportMovesSupplementToTurnLocalForSelectiveP
 	systemPrompt, turnLocalInstructions, transport := resolveNativeSupplementTransport(
 		&model.AgentRun{InvocationMode: model.InvocationModeInteractive},
 		&ExecutionContext{
-			NativeSelectivePathEnabled: true,
-			TurnLocalInstructions:      "Existing turn-local contract.",
-			ActiveSkillInstructions:    "Use only the PRD-related contracts.",
+			ContractActive:          true,
+			TurnLocalInstructions:   "Existing turn-local contract.",
+			ActiveSkillInstructions: "Use only the PRD-related contracts.",
 			RunFacts: map[string]string{
 				"target_id": "epic-123",
 			},
@@ -221,10 +220,10 @@ func TestResolveNativeSupplementTransportKeepsSupplementInSystemPromptForLegacyP
 	}
 }
 
-func TestResolveNativeRepairGuidanceTransportMovesRepairToTurnLocalForSelectivePath(t *testing.T) {
+func TestResolveNativeRepairGuidanceTransportMovesRepairToTurnLocalForContractPath(t *testing.T) {
 	turnLocalInstructions, transport := resolveNativeRepairGuidanceTransport(&ExecutionContext{
-		RepairGuidance:             "Continue from your last assistant message and bind approval to a same-turn preview.",
-		NativeSelectivePathEnabled: true,
+		RepairGuidance: "Continue from your last assistant message and bind approval to a same-turn preview.",
+		ContractActive: true,
 	})
 
 	if transport != "turn_local" {

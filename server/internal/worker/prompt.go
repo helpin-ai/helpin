@@ -158,18 +158,44 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 			parts = append(parts, "- Use the provided tools to inspect the repository and search for relevant context. Keep repository interactions read-only.")
 		}
 		if (story != nil || epic != nil) && hasRepoAccess {
-			parts = append(parts, "- Start by locating the relevant code with list_directory, ripgrep, search_files, or list_symbols before reading large files.")
-			parts = append(parts, "- Prefer search-first, then narrow reads: use ripgrep/search_files/list_symbols to find exact files or symbols before any broad file read.")
-			parts = append(parts, "- read_file now returns a smaller bounded window by default; use offset_line to continue and use read_file_range for targeted spans.")
-			parts = append(parts, "- Prefer read_file_range once you know the relevant lines. Do not use read_files for broad repo exploration; reserve it for a few known files with small excerpts.")
+			parts = append(parts, fmt.Sprintf("- Start by locating the relevant code with `%s`, `%s`, `%s`, or `%s` before reading large files.",
+				RuntimeToolNameForPrompt("list_directory"),
+				RuntimeToolNameForPrompt("ripgrep"),
+				RuntimeToolNameForPrompt("search_files"),
+				RuntimeToolNameForPrompt("list_symbols"),
+			))
+			parts = append(parts, fmt.Sprintf("- Prefer search-first, then narrow reads: use `%s`, `%s`, or `%s` to find exact files or symbols before any broad file read.",
+				RuntimeToolNameForPrompt("ripgrep"),
+				RuntimeToolNameForPrompt("search_files"),
+				RuntimeToolNameForPrompt("list_symbols"),
+			))
+			parts = append(parts, fmt.Sprintf("- `%s` now returns a smaller bounded window by default; use offset_line to continue and use `%s` for targeted spans.",
+				RuntimeToolNameForPrompt("read_file"),
+				RuntimeToolNameForPrompt("read_file_range"),
+			))
+			parts = append(parts, fmt.Sprintf("- Prefer `%s` once you know the relevant lines. Do not use `%s` for broad repo exploration; reserve it for a few known files with small excerpts.",
+				RuntimeToolNameForPrompt("read_file_range"),
+				RuntimeToolNameForPrompt("read_files"),
+			))
 			if hasFileMutationTools {
-				parts = append(parts, "- Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.")
-				parts = append(parts, "- Use write_file for new files or full rewrites only after you have read the current file state.")
+				parts = append(parts, fmt.Sprintf("- Prefer `%s` for focused in-place changes and `%s` for coordinated multi-file edits.",
+					RuntimeToolNameForPrompt("edit_file"),
+					RuntimeToolNameForPrompt("apply_patch"),
+				))
+				parts = append(parts, fmt.Sprintf("- Use `%s` for new files or full rewrites only after you have read the current file state.",
+					RuntimeToolNameForPrompt("write_file"),
+				))
 				parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
 			} else {
 				parts = append(parts, "- This run is planning-only and read-only. Do not change code, create files, or alter git state.")
 			}
-			parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_task_plan, or publish_task_plan_doc.")
+			parts = append(parts, fmt.Sprintf("- When available, keep a short working execution checklist with `%s` instead of repeating plan status in prose. Do not use `%s` as a substitute for `%s`, `%s`, or `%s`.",
+				RuntimeToolNameForPrompt(ToolUpdatePlan),
+				RuntimeToolNameForPrompt(ToolUpdatePlan),
+				RuntimeToolNameForPrompt(ToolPublishPRDDraft),
+				RuntimeToolNameForPrompt(ToolPublishTaskPlan),
+				RuntimeToolNameForPrompt(ToolPublishTaskPlanDoc),
+			))
 		}
 		if options.IncludeResolvedSkillText && (toolSet["list_available_skills"] || toolSet["search_available_skills"] || toolSet["read_skill"]) {
 			parts = append(parts, "- Use list_available_skills or search_available_skills when specialized workflow guidance would materially improve the task, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default.")

@@ -17,11 +17,14 @@ import (
 
 // EinoExecutor runs the native agent path through Eino-backed chat models and tools.
 type EinoExecutor struct {
-	kind         string
-	modelFactory *EinoModelFactory
-	tools        *ToolRegistry
-	runRepo      *repository.AgentRunRepository
-	artifactRepo *repository.AgentRunArtifactRepository
+	kind                string
+	modelFactory        *EinoModelFactory
+	tools               *ToolRegistry
+	helpinAPIBaseURL    string
+	helpinTokenSecret   string
+	helpinMCPBridgePath string
+	runRepo             *repository.AgentRunRepository
+	artifactRepo        *repository.AgentRunArtifactRepository
 }
 
 type nativeToolPressureSummary struct {
@@ -52,7 +55,7 @@ func resolveNativeSystemPrompt(execCtx *ExecutionContext, config *WorkflowConfig
 		return BuildSystemPrompt(nil, nil, nil, nil, "", "", config), true
 	}
 	options := defaultSystemPromptOptions()
-	if execCtx.NativeSelectivePathEnabled || agentHasAvailableSkills(execCtx.Agent) {
+	if execCtx.ContractActive || agentHasAvailableSkills(execCtx.Agent) {
 		options.IncludeResolvedSkillText = false
 	}
 	return buildSystemPromptWithOptions(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config, options), options.IncludeResolvedSkillText
@@ -67,7 +70,7 @@ func resolveNativeInitialInstructionTransport(execCtx *ExecutionContext) (string
 	if initialInstructions == "" && phaseGuidance == "" {
 		return "", "", "none"
 	}
-	if execCtx.NativeSelectivePathEnabled {
+	if execCtx.ContractActive {
 		if phaseGuidance == "" {
 			return "", "", "none"
 		}
@@ -77,7 +80,7 @@ func resolveNativeInitialInstructionTransport(execCtx *ExecutionContext) (string
 }
 
 func resolveNativeRepairGuidanceTransport(execCtx *ExecutionContext) (string, string) {
-	if execCtx == nil || !execCtx.NativeSelectivePathEnabled {
+	if execCtx == nil || !execCtx.ContractActive {
 		return "", "none"
 	}
 	repairGuidance := strings.TrimSpace(execCtx.RepairGuidance)
@@ -99,7 +102,7 @@ func resolveNativeSupplementTransport(run *model.AgentRun, execCtx *ExecutionCon
 	}
 
 	supplement := BuildExecutionSupplementPrompt(run, executionContextRunFacts(execCtx), executionContextArtifactContext(execCtx))
-	if execCtx != nil && execCtx.NativeSelectivePathEnabled {
+	if execCtx != nil && execCtx.ContractActive {
 		if strings.TrimSpace(supplement) == "" {
 			if strings.TrimSpace(activeSkillInstructions) == "" {
 				return trimmedSystemPrompt, turnLocalInstructions, "none"
@@ -154,17 +157,23 @@ func NewEinoExecutor(
 	webSearch WebSearchClient,
 	exaSearch *ExaSearchClient,
 	webFetchProxyURLs string,
+	helpinAPIBaseURL string,
+	helpinTokenSecret string,
+	helpinMCPBridgePath string,
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 ) *EinoExecutor {
 	tools := NewToolRegistry(webSearch, exaSearch)
 	tools.SetWebFetchProxyURLs(webFetchProxyURLs)
 	return &EinoExecutor{
-		kind:         kind,
-		modelFactory: modelFactory,
-		tools:        tools,
-		runRepo:      runRepo,
-		artifactRepo: artifactRepo,
+		kind:                kind,
+		modelFactory:        modelFactory,
+		tools:               tools,
+		helpinAPIBaseURL:    strings.TrimSpace(helpinAPIBaseURL),
+		helpinTokenSecret:   strings.TrimSpace(helpinTokenSecret),
+		helpinMCPBridgePath: strings.TrimSpace(helpinMCPBridgePath),
+		runRepo:             runRepo,
+		artifactRepo:        artifactRepo,
 	}
 }
 
@@ -240,7 +249,37 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		}}
 	}
 	provider, modelName := resolveProviderAndModel(execCtx.Agent)
-	toolDefs := e.tools.DefinitionsFor(execCtx.AllowedTools)
+	toolDefs := helpinMCPRuntimeToolDefinitions(filterNativeDirectHelpinProductToolDefinitions(e.tools.DefinitionsFor(execCtx.AllowedTools)))
+	var mcpClient *helpinMCPClient
+	if bridgeConfig, ok := BuildHelpinMCPBridgeConfig(execCtx, e.helpinAPIBaseURL, e.helpinTokenSecret, e.helpinMCPBridgePath); ok {
+		client, err := newHelpinMCPClient(execCtx.Context, bridgeConfig)
+		if err != nil {
+			slog.WarnContext(execCtx.Context, "native runtime Helpin MCP bridge unavailable",
+				"workspace_id", execCtx.WorkspaceID,
+				"run_id", execCtx.RunID,
+				"error", err,
+			)
+		} else {
+			mcpDefs, mcpToolNames, err := client.ListTools()
+			if err != nil {
+				_ = client.Close()
+				slog.WarnContext(execCtx.Context, "native runtime Helpin MCP tool list failed",
+					"workspace_id", execCtx.WorkspaceID,
+					"run_id", execCtx.RunID,
+					"error", err,
+				)
+			} else {
+				mcpClient = client
+				toolDefs = filterNativeDirectMCPBackedToolDefinitions(toolDefs, mcpToolNames)
+				toolDefs = append(toolDefs, helpinMCPRuntimeToolDefinitions(mcpDefs)...)
+				execCtx.MCPToolNames = helpinMCPRuntimeToolNameSet(mcpToolNames)
+				execCtx.CallMCPTool = func(name string, input json.RawMessage) (string, error) {
+					return mcpClient.CallTool(CanonicalToolName(name), input)
+				}
+				defer func() { _ = mcpClient.Close() }()
+			}
+		}
+	}
 	trimmedTurnLocalInstructions := strings.TrimSpace(turnLocalInstructions)
 	trimmedActiveSkillInstructions := strings.TrimSpace(execCtx.ActiveSkillInstructions)
 	trimmedInitialInstructions := strings.TrimSpace(execCtx.InitialInstructions)
@@ -255,7 +294,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		"runtime_kind", e.kind,
 		"preset_key", strings.TrimSpace(execCtx.Agent.EffectivePresetKey()),
 		"target_type", strings.TrimSpace(execCtx.TargetType),
-		"native_selective_path_enabled", execCtx.NativeSelectivePathEnabled,
+		"contract_active", execCtx.ContractActive,
 		"system_prompt_includes_resolved_skill_text", includesResolvedSkillText,
 		"initial_instruction_transport", initialInstructionTransport,
 		"initial_instruction_chars", len([]rune(trimmedInitialInstructions)),
@@ -451,48 +490,6 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 			_ = e.runRepo.Update(ctx, run)
 			seqNo++
 			e.saveArtifact(ctx, run, "crm_deal_review_plan", "json", string(payload), seqNo)
-		}
-	}
-
-	if execCtx.TargetType == "epic" && execCtx.Epic != nil {
-		switch execCtx.PlanningStage {
-		case model.PlanningStageDraftSpec:
-			draft, err := extractProductSpecDraftFromResponseText(result.AssistantText)
-			if err != nil {
-				return err
-			}
-			payload, _ := json.Marshal(draft)
-			run.OutputSummary = payload
-			_ = e.runRepo.Update(ctx, run)
-
-			seqNo++
-			e.saveArtifact(ctx, run, "product_spec_draft", "json", string(payload), seqNo)
-		case model.PlanningStagePlanTasks:
-			proposal, err := extractPlanningProposalFromResponseText(result.AssistantText, execCtx.Epic.ID, execCtx.PlanningSpecVersionID, totalTokens)
-			if err != nil {
-				return err
-			}
-			payload, _ := json.Marshal(proposal)
-			run.OutputSummary = payload
-			_ = e.runRepo.Update(ctx, run)
-
-			seqNo++
-			e.saveArtifact(ctx, run, "task_plan_proposal", "json", string(payload), seqNo)
-			seqNo++
-			e.saveArtifact(ctx, run, "orchestration_proposal", "json", string(payload), seqNo)
-		case "":
-			// Direct epic planner runs manage phase state in the Temporal activity layer.
-		default:
-			proposal, err := extractPlanningProposalFromResponseText(result.AssistantText, execCtx.Epic.ID, "", totalTokens)
-			if err != nil {
-				return err
-			}
-			payload, _ := json.Marshal(proposal)
-			run.OutputSummary = payload
-			_ = e.runRepo.Update(ctx, run)
-
-			seqNo++
-			e.saveArtifact(ctx, run, "orchestration_proposal", "json", string(payload), seqNo)
 		}
 	}
 

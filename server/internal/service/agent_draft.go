@@ -204,10 +204,10 @@ func normalizeDraftApprovalMode(value string) string {
 
 func normalizeDraftRuntimeKind(value string) string {
 	switch strings.TrimSpace(value) {
-	case "opencode", "native_sdk":
+	case "opencode", "native_sdk", "codex":
 		return strings.TrimSpace(value)
 	default:
-		return "native_sdk"
+		return "codex"
 	}
 }
 

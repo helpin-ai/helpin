@@ -1,4 +1,5 @@
 import type { CodingSessionLiveToolCall } from '@/lib/pmTypes';
+import { canonicalToolName, displayToolName } from '@/lib/toolNames';
 
 export interface ToolCallPresentation {
   primaryLabel: string;
@@ -58,7 +59,7 @@ function domainChip(domains: string[]) {
 }
 
 export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallPresentation {
-  const toolName = toolCall.tool_name.toLowerCase();
+  const toolName = canonicalToolName(toolCall.tool_name).toLowerCase();
   const parsed = parseArgs(toolCall.args_text);
   const path = asString(parsed?.path) ?? asString(parsed?.file_path);
   const startLine = asNumber(parsed?.start_line);
@@ -72,7 +73,7 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     ? parsed?.paths.map((value) => asString(value)).filter((value): value is string => Boolean(value))
     : [];
 
-  const secondaryLabel = titleCaseToolName(toolCall.tool_name);
+  const secondaryLabel = titleCaseToolName(displayToolName(toolCall.tool_name));
 
   if (toolName === 'read_file_range' && path) {
     const primaryLabel = `Read ${path}${range ? `:${range}` : ''}`;

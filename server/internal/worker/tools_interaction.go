@@ -64,7 +64,9 @@ type HumanInputRequest struct {
 type HumanApprovalRequest = ApprovalRequest
 
 func CanonicalToolName(name string) string {
-	switch strings.TrimSpace(name) {
+	trimmed := strings.TrimSpace(name)
+	trimmed = strings.TrimPrefix(trimmed, HelpinMCPToolPrefix)
+	switch trimmed {
 	case ToolRequestHumanInput:
 		return ToolRequestUserInput
 	case ToolRequestHumanApproval:
@@ -82,7 +84,7 @@ func CanonicalToolName(name string) string {
 	case "run_gitleaks":
 		return ToolScanGitleaks
 	default:
-		return strings.TrimSpace(name)
+		return trimmed
 	}
 }
 
@@ -351,7 +353,7 @@ func convertLegacyHumanInputRequest(req *HumanInputRequest) UserInputRequest {
 }
 
 func IsHumanInteractionTool(name string) bool {
-	switch strings.TrimSpace(name) {
+	switch CanonicalToolName(name) {
 	case ToolRequestUserInput, ToolRequestApproval, ToolRequestReviewCheckpoint, ToolRequestHumanInput, ToolRequestHumanApproval:
 		return true
 	default:
@@ -362,7 +364,7 @@ func IsHumanInteractionTool(name string) bool {
 func ExtractLatestApprovalRequest(toolInvocations []appmodel.ToolInvocation) *appmodel.ApprovalRequest {
 	for i := len(toolInvocations) - 1; i >= 0; i-- {
 		invocation := toolInvocations[i]
-		switch strings.TrimSpace(invocation.ToolName) {
+		switch CanonicalToolName(invocation.ToolName) {
 		case ToolRequestApproval, ToolRequestHumanApproval:
 		default:
 			continue
@@ -390,7 +392,7 @@ func ExtractLatestApprovalRequest(toolInvocations []appmodel.ToolInvocation) *ap
 func ExtractLatestReviewCheckpointRequest(toolInvocations []appmodel.ToolInvocation) *appmodel.ReviewCheckpointRequest {
 	for i := len(toolInvocations) - 1; i >= 0; i-- {
 		invocation := toolInvocations[i]
-		if strings.TrimSpace(invocation.ToolName) != ToolRequestReviewCheckpoint {
+		if CanonicalToolName(invocation.ToolName) != ToolRequestReviewCheckpoint {
 			continue
 		}
 
@@ -420,17 +422,9 @@ func ExtractLatestReviewCheckpointRequest(toolInvocations []appmodel.ToolInvocat
 func ExtractLatestHumanInputRequest(toolInvocations []appmodel.ToolInvocation) *UserInputRequest {
 	for i := len(toolInvocations) - 1; i >= 0; i-- {
 		invocation := toolInvocations[i]
-		switch strings.TrimSpace(invocation.ToolName) {
-		case ToolRequestUserInput:
-			var req UserInputRequest
-			if err := json.Unmarshal(invocation.Input, &req); err != nil {
-				continue
-			}
-			if err := validateUserInputRequest(&req); err != nil {
-				continue
-			}
-			return &req
-		case ToolRequestHumanInput:
+		rawName := strings.TrimSpace(invocation.ToolName)
+		canonicalName := CanonicalToolName(rawName)
+		if rawName == ToolRequestHumanInput {
 			var legacy HumanInputRequest
 			if err := json.Unmarshal(invocation.Input, &legacy); err != nil {
 				continue
@@ -439,6 +433,17 @@ func ExtractLatestHumanInputRequest(toolInvocations []appmodel.ToolInvocation) *
 				continue
 			}
 			req := convertLegacyHumanInputRequest(&legacy)
+			return &req
+		}
+		switch canonicalName {
+		case ToolRequestUserInput:
+			var req UserInputRequest
+			if err := json.Unmarshal(invocation.Input, &req); err != nil {
+				continue
+			}
+			if err := validateUserInputRequest(&req); err != nil {
+				continue
+			}
 			return &req
 		}
 	}

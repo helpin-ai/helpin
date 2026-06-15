@@ -1,5 +1,5 @@
 package model
 
 const (
-	AgentRunArtifactTypeNativeTurnDebug = "native_turn_debug"
+	AgentRunArtifactTypeAgentTurnDebug = "agent_turn_debug"
 )

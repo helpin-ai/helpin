@@ -38,6 +38,11 @@ func TestCodexEventMapperTracksCachedInputTokens(t *testing.T) {
 		ThreadID: "thread-1",
 		TurnID:   "turn-1",
 		TokenUsage: codexThreadTokenUsage{
+			Total: codexTokenUsageBreakdown{
+				CachedInputTokens: 25,
+				InputTokens:       90,
+				OutputTokens:      18,
+			},
 			Last: codexTokenUsageBreakdown{
 				CachedInputTokens: 12,
 				InputTokens:       44,
@@ -57,7 +62,7 @@ func TestCodexEventMapperTracksCachedInputTokens(t *testing.T) {
 	if result == nil {
 		t.Fatal("expected execution result")
 	}
-	if result.Usage.CachedInputTokens != 12 || result.Usage.InputTokens != 44 || result.Usage.OutputTokens != 9 {
+	if result.Usage.CachedInputTokens != 25 || result.Usage.InputTokens != 90 || result.Usage.OutputTokens != 18 {
 		t.Fatalf("unexpected usage %+v", result.Usage)
 	}
 }
@@ -671,6 +676,7 @@ func TestBuildCodexConfigArtifactIncludesOpenAIExecutionConfig(t *testing.T) {
 		Model                string `toml:"model"`
 		ModelReasoningEffort string `toml:"model_reasoning_effort"`
 		ServiceTier          string `toml:"service_tier"`
+		WebSearch            string `toml:"web_search"`
 	}
 	if err := toml.Unmarshal([]byte(payload), &decoded); err != nil {
 		t.Fatalf("unmarshal config artifact: %v", err)
@@ -683,6 +689,67 @@ func TestBuildCodexConfigArtifactIncludesOpenAIExecutionConfig(t *testing.T) {
 	}
 	if decoded.ServiceTier != "fast" {
 		t.Fatalf("expected service tier to be preserved, got %q", decoded.ServiceTier)
+	}
+	if decoded.WebSearch != "live" {
+		t.Fatalf("expected Codex backend web search to default to live, got %q", decoded.WebSearch)
+	}
+}
+
+func TestBuildCodexConfigArtifactRequiresHelpinMCPServer(t *testing.T) {
+	bridgePath := filepath.Join(t.TempDir(), "helpin-mcp-bridge")
+	if err := os.WriteFile(bridgePath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write bridge executable: %v", err)
+	}
+	executor := NewCodexExecutor("codex", CodexRuntimeConfig{
+		DefaultModel:             "gpt-5-mini",
+		OpenAIAPIKey:             "openai-secret",
+		HelpinAPIBaseURL:         "http://helpin.local",
+		HelpinRunToolTokenSecret: "tool-secret",
+		HelpinMCPBridgePath:      bridgePath,
+	}, nil, nil, nil)
+	profile, err := executor.resolveRuntimeProfile(&model.Agent{})
+	if err != nil {
+		t.Fatalf("resolve runtime profile: %v", err)
+	}
+	payload, err := executor.buildConfigArtifact(&ExecutionContext{
+		RunID:       "run-1",
+		WorkspaceID: "ws-1",
+	}, profile, "on-request")
+	if err != nil {
+		t.Fatalf("build config artifact: %v", err)
+	}
+
+	var decoded struct {
+		MCPServers map[string]struct {
+			Command                  string            `toml:"command"`
+			Env                      map[string]string `toml:"env"`
+			Required                 bool              `toml:"required"`
+			StartupTimeoutSec        int               `toml:"startup_timeout_sec"`
+			ToolTimeoutSec           int               `toml:"tool_timeout_sec"`
+			DefaultToolsApprovalMode string            `toml:"default_tools_approval_mode"`
+		} `toml:"mcp_servers"`
+	}
+	if err := toml.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Fatalf("unmarshal config artifact: %v", err)
+	}
+	helpin, ok := decoded.MCPServers["helpin"]
+	if !ok {
+		t.Fatalf("expected helpin MCP server in config: %#v", decoded.MCPServers)
+	}
+	if helpin.Command != bridgePath {
+		t.Fatalf("expected bridge command, got %q", helpin.Command)
+	}
+	if !helpin.Required {
+		t.Fatal("expected Helpin MCP server to be required")
+	}
+	if helpin.StartupTimeoutSec != 15 || helpin.ToolTimeoutSec != 120 {
+		t.Fatalf("unexpected MCP timeouts: startup=%d tool=%d", helpin.StartupTimeoutSec, helpin.ToolTimeoutSec)
+	}
+	if helpin.DefaultToolsApprovalMode != "approve" {
+		t.Fatalf("expected approve default tool mode, got %q", helpin.DefaultToolsApprovalMode)
+	}
+	if helpin.Env["HELPIN_API_BASE_URL"] != "http://helpin.local/api" || helpin.Env["HELPIN_AGENT_RUN_TOOL_TOKEN"] == "" {
+		t.Fatalf("unexpected MCP env: %#v", helpin.Env)
 	}
 }
 

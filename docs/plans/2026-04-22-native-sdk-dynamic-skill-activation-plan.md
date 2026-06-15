@@ -1,5 +1,7 @@
 # Native SDK Dynamic Skill Activation Plan
 
+Historical note: this document describes the former native-only selective planner rollout. The current architecture treats planner behavior as a generic preset/tool contract shared by `native_sdk` and `codex`; see `docs/AGENTS_AND_AUTOMATION.md` and `docs/plans/planner-tool-contract-reference.md` for current behavior.
+
 ## Status
 
 In progress.
@@ -67,7 +69,7 @@ The core selective native planner path and planned Phase 5 extraction cleanup ha
 - transition coverage now covers the core apply/resume edges; additional provider/live-run monitoring remains useful
 - regression coverage is materially broader now, but final Phase 5 cleanup can still add targeted tests as new edge cases are found
 - live selective-path validation has enough small-sample evidence to close Phase 4
-- sampled eligible runs emitted `native_turn_debug` artifacts
+- sampled eligible runs emitted `agent_turn_debug` artifacts
 - Atlas/OpenRouter epic-planner validation completed successfully on a small sample
 - Scribe/OpenAI task-planner validation completed successfully on the post-fix sample
 - earlier sampled Scribe failures were traced to approval preview-panel binding edge cases and fixed
@@ -90,8 +92,8 @@ cd server && go run ./cmd/native-planner-rollout-report --since 2026-04-23T08:40
 
 Observed selective-path data:
 
-- Atlas / `openrouter` / `moonshotai/kimi-k2.6` / `epic_planner`: 3 eligible runs, 0 missing `native_turn_debug`, 2 completed, 1 cancelled, 0 failed; applied actions were `persist_prd=2` and `create_tasks=2`.
-- Scribe / `anthropic` / `task_planner`: 6 eligible runs, 0 missing `native_turn_debug`, 2 completed, 1 cancelled, 3 failed; the 2 post-fix completions each produced `approved_preview=1` and `approved_preview_applied=1` with `persist_task_doc`.
+- Atlas / `openrouter` / `moonshotai/kimi-k2.6` / `epic_planner`: 3 eligible runs, 0 missing `agent_turn_debug`, 2 completed, 1 cancelled, 0 failed; applied actions were `persist_prd=2` and `create_tasks=2`.
+- Scribe / `anthropic` / `task_planner`: 6 eligible runs, 0 missing `agent_turn_debug`, 2 completed, 1 cancelled, 3 failed; the 2 post-fix completions each produced `approved_preview=1` and `approved_preview_applied=1` with `persist_task_doc`.
 - The 3 Scribe failures occurred before the approval panel-key alias fix and had no `approved_preview` artifacts; they matched the fixed bug where `preview_panel_key="publish_task_plan_doc"` did not bind to the canonical `task_plan_doc` preview.
 
 Interpretation:
@@ -112,7 +114,7 @@ cd server && go run ./cmd/native-planner-rollout-report --since 2026-04-23T09:20
 
 Observed data:
 
-- `openai` / `task_planner`: 5 eligible runs, 0 missing `native_turn_debug`, 4 completed, 1 failed, 0 cancelled; applied actions were `persist_task_doc=4`.
+- `openai` / `task_planner`: 5 eligible runs, 0 missing `agent_turn_debug`, 4 completed, 1 failed, 0 cancelled; applied actions were `persist_task_doc=4`.
 - The single failed run was the pre-fix approval-binding failure where an unknown UUID-style `preview_panel_key` did not bind to the unique same-turn `task_plan_doc` preview.
 - The latest successful OpenAI Scribe run completed with `approved_preview=1`, `approved_preview_applied=1`, and no repeated final prose loop.
 
@@ -850,7 +852,7 @@ Requirements:
 
 ### Phase 4
 
-- use the native planner rollout-report tool to summarize native planner runs by provider/model/preset from persisted run and `native_turn_debug` artifacts
+- use the native planner rollout-report tool to summarize native planner runs by provider/model/preset from persisted run and `agent_turn_debug` artifacts
 - compare Anthropic vs OpenAI/OpenRouter planner reliability on long interactive runs
 - confirm Anthropic planner behavior does not regress under the selective native path
 - selective native planner activation is enabled by default for eligible native system planner runs; set `AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED=false` in the Temporal worker environment only as a temporary rollback
@@ -869,7 +871,7 @@ Rollout-report command:
 
 Status: complete for this rollout on small-sample live data. Continue monitoring provider reliability as normal rollout work.
 
-This phase is complete after the report has been run against live rollout data where eligible runs emit `native_turn_debug` artifacts and the results have been reviewed.
+This phase is complete after the report has been run against live rollout data where eligible runs emit `agent_turn_debug` artifacts and the results have been reviewed.
 
 ### Phase 5
 

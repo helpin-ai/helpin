@@ -16,6 +16,7 @@ import {
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { canonicalToolName, isToolName } from '@/lib/toolNames';
 import type { CodingSessionEvent, CodingSessionLiveToolCall, RunPlanArtifact } from '@/lib/pmTypes';
 import { codingSessionEventContent, formatCodingSessionRelative, prettyCodingSessionEventType } from './codingSessionUtils';
 import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
@@ -160,7 +161,7 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
   const [showReadOutput, setShowReadOutput] = useState(false);
   const isFailed = toolCall.status === 'failed';
 
-  if (toolCall.tool_name === 'update_plan') {
+  if (isToolName(toolCall.tool_name, 'update_plan')) {
     const plan = parsePlanForTimeline(toolCall.args_text);
     const completedCount = plan?.plan.filter((s) => s.status === 'completed').length ?? 0;
     const totalCount = plan?.plan.length ?? 0;
@@ -182,7 +183,7 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
   const { icon, iconClass } = toolChrome(toolCall.tool_name, isFailed);
   const argsText = toolCall.args_text.trim();
   const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
-  const readOutputText = !isFailed && (toolCall.tool_name === 'read_file' || toolCall.tool_name === 'read_file_range')
+  const readOutputText = !isFailed && (isToolName(toolCall.tool_name, 'read_file') || isToolName(toolCall.tool_name, 'read_file_range'))
     ? toolCall.result?.content?.trim() || ''
     : '';
   const readLineCount = readOutputText ? readOutputText.split('\n').length : null;
@@ -290,7 +291,7 @@ function toolChrome(toolName: string, isFailed: boolean): { icon: ReactNode; ico
       iconClass: 'bg-destructive/10 border-destructive/30 text-destructive',
     };
   }
-  const name = toolName.toLowerCase();
+  const name = canonicalToolName(toolName).toLowerCase();
   if (name.includes('web_search')) {
     return {
       icon: <Globe02Icon className="h-3.5 w-3.5" />,

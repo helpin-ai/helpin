@@ -1,4 +1,5 @@
 import type { AgentRunArtifact, AgentRunMessage } from '@/lib/pmTypes';
+import { canonicalToolName } from '@/lib/toolNames';
 
 export type PreviewFormat = 'markdown' | 'json';
 
@@ -23,7 +24,7 @@ const PREVIEW_TOOL_NAMES = new Set([
 ]);
 
 export function isPublishedPreviewToolName(value: unknown): boolean {
-  const normalized = asString(value);
+  const normalized = canonicalToolName(value);
   return normalized ? PREVIEW_TOOL_NAMES.has(normalized) : false;
 }
 
@@ -216,7 +217,7 @@ export function parseToolInvocationPublishedPreview(
   invocation: { tool_name?: unknown; input?: unknown },
   surroundingText = '',
 ): PublishedPreview | null {
-  const toolName = asString(invocation.tool_name);
+  const toolName = canonicalToolName(invocation.tool_name);
   const normalizedInput = toolName ? buildFixedToolPreviewInput(toolName, invocation.input) : invocation.input;
   return parsePreviewInput(normalizedInput, surroundingText);
 }

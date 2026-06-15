@@ -263,6 +263,19 @@ func TestInstructionTemplateVersionForPresetIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestBuiltInPresetBundleDefaultsAvailableSkills(t *testing.T) {
+	bundle, ok := BuiltInPresetSkillBundleForPreset(model.AgentPresetEpicPlanner)
+	if !ok {
+		t.Fatal("expected epic planner bundle")
+	}
+	if len(bundle.AvailableSkillKeys) == 0 {
+		t.Fatalf("expected available skill keys to default from skill keys, got %#v", bundle)
+	}
+	if got, want := strings.Join(bundle.AvailableSkillKeys, ","), strings.Join(bundle.SkillKeys, ","); got != want {
+		t.Fatalf("available skill keys = %q, want %q", got, want)
+	}
+}
+
 func TestTaskPlannerBundleUsesTaskPlanDocSkillStack(t *testing.T) {
 	bundle, ok := BuiltInPresetSkillBundleForPreset(model.AgentPresetTaskPlanner)
 	if !ok {
@@ -451,7 +464,7 @@ func TestReviewAgentSkillDeclaresCompletionInteractionPolicy(t *testing.T) {
 	if contract.Schema != "review_checkpoint_v1" {
 		t.Fatalf("expected review checkpoint schema, got %q", contract.Schema)
 	}
-	if contract.Transports["native_sdk"].ToolName != ToolRequestReviewCheckpoint {
+	if contract.Transports["native_sdk"].ToolName != HelpinMCPRuntimeToolName(ToolRequestReviewCheckpoint) {
 		t.Fatalf("expected native_sdk review checkpoint tool transport, got %+v", contract.Transports["native_sdk"])
 	}
 	if contract.Transports["codex"].BlockLabel != "helpin-review" {
@@ -464,7 +477,7 @@ func TestReviewAgentSkillDeclaresCompletionInteractionPolicy(t *testing.T) {
 	if inputContract.Schema != "request_user_input_v1" {
 		t.Fatalf("expected request user input schema, got %q", inputContract.Schema)
 	}
-	if inputContract.Transports["native_sdk"].ToolName != ToolRequestUserInput {
+	if inputContract.Transports["native_sdk"].ToolName != HelpinMCPRuntimeToolName(ToolRequestUserInput) {
 		t.Fatalf("expected native_sdk request_user_input tool transport, got %+v", inputContract.Transports["native_sdk"])
 	}
 	if inputContract.Transports["codex"].Type != InteractionTransportTypeRuntimeBridge {
@@ -487,14 +500,14 @@ func TestApprovalProtocolSkillDeclaresPlannerCompletionInteractionPolicy(t *test
 	if !ok {
 		t.Fatal("expected approval_request interaction contract")
 	}
-	if contract.Transports["native_sdk"].ToolName != ToolRequestApproval {
+	if contract.Transports["native_sdk"].ToolName != HelpinMCPRuntimeToolName(ToolRequestApproval) {
 		t.Fatalf("expected native_sdk approval request tool transport, got %+v", contract.Transports["native_sdk"])
 	}
 	inputContract, ok := skill.Policy.InteractionContract(InteractionKindRequestUserInput)
 	if !ok {
 		t.Fatal("expected request_user_input interaction contract")
 	}
-	if inputContract.Transports["native_sdk"].ToolName != ToolRequestUserInput {
+	if inputContract.Transports["native_sdk"].ToolName != HelpinMCPRuntimeToolName(ToolRequestUserInput) {
 		t.Fatalf("expected native_sdk request_user_input tool transport, got %+v", inputContract.Transports["native_sdk"])
 	}
 }

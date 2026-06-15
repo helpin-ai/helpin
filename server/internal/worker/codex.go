@@ -50,6 +50,9 @@ type CodexRuntimeConfig struct {
 	ChatGPTPlanType           string
 	OpenRouterAPIKey          string
 	OpenRouterBaseURL         string
+	HelpinAPIBaseURL          string
+	HelpinRunToolTokenSecret  string
+	HelpinMCPBridgePath       string
 }
 
 type codexResolvedRuntimeProfile struct {
@@ -77,6 +80,7 @@ type codexConfigArtifact struct {
 	Model                string                                  `toml:"model,omitempty"`
 	ModelReasoningEffort string                                  `toml:"model_reasoning_effort,omitempty"`
 	ServiceTier          string                                  `toml:"service_tier,omitempty"`
+	WebSearch            string                                  `toml:"web_search"`
 	ApprovalPolicy       string                                  `toml:"approval_policy"`
 	ApprovalsReviewer    string                                  `toml:"approvals_reviewer,omitempty"`
 	SandboxMode          string                                  `toml:"sandbox_mode"`
@@ -84,6 +88,7 @@ type codexConfigArtifact struct {
 	OpenAIBaseURL        string                                  `toml:"openai_base_url,omitempty"`
 	ForcedLoginMethod    string                                  `toml:"forced_login_method,omitempty"`
 	ModelProviders       map[string]codexConfigModelProviderInfo `toml:"model_providers,omitempty"`
+	MCPServers           map[string]codexConfigMCPServer         `toml:"mcp_servers,omitempty"`
 }
 
 type codexConfigModelProviderInfo struct {
@@ -94,24 +99,37 @@ type codexConfigModelProviderInfo struct {
 	SupportsWebsockets bool   `toml:"supports_websockets"`
 }
 
+type codexConfigMCPServer struct {
+	Command                  string            `toml:"command"`
+	Args                     []string          `toml:"args,omitempty"`
+	Env                      map[string]string `toml:"env,omitempty"`
+	Required                 bool              `toml:"required,omitempty"`
+	StartupTimeoutSec        int               `toml:"startup_timeout_sec,omitempty"`
+	ToolTimeoutSec           int               `toml:"tool_timeout_sec,omitempty"`
+	DefaultToolsApprovalMode string            `toml:"default_tools_approval_mode,omitempty"`
+}
+
 // CodexExecutor shells out to the codex CLI for autonomous coder and reviewer runs.
 type CodexExecutor struct {
-	kind             string
-	commandPath      string
-	defaultModel     string
-	sandboxMode      string
-	openAIAPIKey     string
-	openAIBaseURL    string
-	openAIAuthMode   string
-	chatGPTOAuth     bool
-	chatGPTToken     string
-	chatGPTAccountID string
-	chatGPTPlanType  string
-	openRouterAPIKey string
-	openRouterURL    string
-	runRepo          *repository.AgentRunRepository
-	artifactRepo     *repository.AgentRunArtifactRepository
-	workspaceAuth    *CodexWorkspaceAuthStore
+	kind                string
+	commandPath         string
+	defaultModel        string
+	sandboxMode         string
+	openAIAPIKey        string
+	openAIBaseURL       string
+	openAIAuthMode      string
+	chatGPTOAuth        bool
+	chatGPTToken        string
+	chatGPTAccountID    string
+	chatGPTPlanType     string
+	openRouterAPIKey    string
+	openRouterURL       string
+	helpinAPIBaseURL    string
+	helpinTokenSecret   string
+	helpinMCPBridgePath string
+	runRepo             *repository.AgentRunRepository
+	artifactRepo        *repository.AgentRunArtifactRepository
+	workspaceAuth       *CodexWorkspaceAuthStore
 }
 
 func NewCodexExecutor(
@@ -126,22 +144,25 @@ func NewCodexExecutor(
 		commandPath = "codex"
 	}
 	return &CodexExecutor{
-		kind:             kind,
-		commandPath:      commandPath,
-		defaultModel:     strings.TrimSpace(config.DefaultModel),
-		sandboxMode:      strings.TrimSpace(config.SandboxMode),
-		openAIAPIKey:     strings.TrimSpace(config.OpenAIAPIKey),
-		openAIBaseURL:    strings.TrimSpace(config.OpenAIBaseURL),
-		openAIAuthMode:   normalizeCodexOpenAIAuthMode(config.OpenAIAuthMode),
-		chatGPTOAuth:     config.EnableManagedChatGPTOAuth,
-		chatGPTToken:     strings.TrimSpace(config.ChatGPTAccessToken),
-		chatGPTAccountID: strings.TrimSpace(config.ChatGPTAccountID),
-		chatGPTPlanType:  strings.TrimSpace(config.ChatGPTPlanType),
-		openRouterAPIKey: strings.TrimSpace(config.OpenRouterAPIKey),
-		openRouterURL:    strings.TrimSpace(config.OpenRouterBaseURL),
-		runRepo:          runRepo,
-		artifactRepo:     artifactRepo,
-		workspaceAuth:    workspaceAuth,
+		kind:                kind,
+		commandPath:         commandPath,
+		defaultModel:        strings.TrimSpace(config.DefaultModel),
+		sandboxMode:         strings.TrimSpace(config.SandboxMode),
+		openAIAPIKey:        strings.TrimSpace(config.OpenAIAPIKey),
+		openAIBaseURL:       strings.TrimSpace(config.OpenAIBaseURL),
+		openAIAuthMode:      normalizeCodexOpenAIAuthMode(config.OpenAIAuthMode),
+		chatGPTOAuth:        config.EnableManagedChatGPTOAuth,
+		chatGPTToken:        strings.TrimSpace(config.ChatGPTAccessToken),
+		chatGPTAccountID:    strings.TrimSpace(config.ChatGPTAccountID),
+		chatGPTPlanType:     strings.TrimSpace(config.ChatGPTPlanType),
+		openRouterAPIKey:    strings.TrimSpace(config.OpenRouterAPIKey),
+		openRouterURL:       strings.TrimSpace(config.OpenRouterBaseURL),
+		helpinAPIBaseURL:    strings.TrimSpace(config.HelpinAPIBaseURL),
+		helpinTokenSecret:   strings.TrimSpace(config.HelpinRunToolTokenSecret),
+		helpinMCPBridgePath: strings.TrimSpace(config.HelpinMCPBridgePath),
+		runRepo:             runRepo,
+		artifactRepo:        artifactRepo,
+		workspaceAuth:       workspaceAuth,
 	}
 }
 
@@ -310,33 +331,6 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 	artifactWriter.Save(postRunCtx, "codex_response", "markdown", responseText, false)
 
 	switch {
-	case execCtx.TargetType == "epic" && execCtx.Epic != nil:
-		switch execCtx.PlanningStage {
-		case model.PlanningStageDraftSpec:
-			draft, err := extractProductSpecDraftFromResponseText(responseText)
-			if err != nil {
-				return normalizeCodexPostRunError(postRunCtx, err)
-			}
-			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "product_spec_draft", draft); err != nil {
-				return err
-			}
-		case model.PlanningStagePlanTasks:
-			proposal, err := extractPlanningProposalFromResponseText(responseText, execCtx.Epic.ID, execCtx.PlanningSpecVersionID, 0)
-			if err != nil {
-				return normalizeCodexPostRunError(postRunCtx, err)
-			}
-			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "task_plan_proposal", proposal); err != nil {
-				return err
-			}
-		default:
-			proposal, err := extractPlanningProposalFromResponseText(responseText, execCtx.Epic.ID, execCtx.PlanningSpecVersionID, 0)
-			if err != nil {
-				return normalizeCodexPostRunError(postRunCtx, err)
-			}
-			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "orchestration_proposal", proposal); err != nil {
-				return err
-			}
-		}
 	case execCtx.TargetType == "support_conversation" && execCtx.Conversation != nil:
 		summary, err := extractSupportRunSummaryFromResponseText(responseText)
 		if err != nil {
@@ -387,6 +381,20 @@ func buildCodexRuntimeInstructions(execCtx *ExecutionContext, run *model.AgentRu
 		}
 	}
 	reviewContractInstructions := reviewCheckpointRuntimeInstructions(execCtx.SkillPolicy, "codex")
+	if execCtx.ContractActive {
+		if phaseGuidance := strings.TrimSpace(execCtx.PhaseGuidance); phaseGuidance != "" {
+			parts = append(parts, "Current phase guidance for this turn:\n"+phaseGuidance)
+		}
+		if activeSkillInstructions := buildActiveSkillInstructionSection(execCtx.ActiveSkillInstructions); activeSkillInstructions != "" {
+			parts = append(parts, activeSkillInstructions)
+		}
+		if supplement := BuildExecutionSupplementPrompt(run, executionContextRunFacts(execCtx), executionContextArtifactContext(execCtx)); supplement != "" {
+			parts = append(parts, "Current run state:\n"+supplement)
+		}
+		if repairGuidance := strings.TrimSpace(execCtx.RepairGuidance); repairGuidance != "" {
+			parts = append(parts, "Repair guidance for this turn:\n"+repairGuidance)
+		}
+	}
 
 	switch strings.TrimSpace(runInvocationMode(run, execCtx)) {
 	case model.InvocationModeInteractive:
@@ -548,6 +556,7 @@ func (e *CodexExecutor) buildConfigArtifact(execCtx *ExecutionContext, profile c
 	config := codexConfigArtifact{
 		Model:                strings.TrimSpace(profile.Model),
 		ModelReasoningEffort: strings.TrimSpace(profile.ReasoningEffort),
+		WebSearch:            "live",
 		ApprovalPolicy:       strings.TrimSpace(approvalPolicy),
 		ApprovalsReviewer:    "user",
 		SandboxMode:          e.sandboxModeFor(execCtx),
@@ -571,11 +580,35 @@ func (e *CodexExecutor) buildConfigArtifact(execCtx *ExecutionContext, profile c
 			},
 		}
 	}
+	if mcpServer, ok := e.helpinMCPServerConfig(execCtx); ok {
+		if err := validateHelpinMCPBridgeCommand(mcpServer.Command); err != nil {
+			return "", err
+		}
+		config.MCPServers = map[string]codexConfigMCPServer{"helpin": mcpServer}
+	}
 	payload, err := toml.Marshal(config)
 	if err != nil {
 		return "", fmt.Errorf("marshal codex config.toml: %w", err)
 	}
 	return strings.TrimSpace(string(payload)) + "\n", nil
+}
+
+func (e *CodexExecutor) helpinMCPServerConfig(execCtx *ExecutionContext) (codexConfigMCPServer, bool) {
+	bridge, ok := BuildHelpinMCPBridgeConfig(execCtx, e.helpinAPIBaseURL, e.helpinTokenSecret, e.helpinMCPBridgePath)
+	if !ok {
+		return codexConfigMCPServer{}, false
+	}
+	return codexConfigMCPServer{
+		Command:                  bridge.Command,
+		Required:                 true,
+		StartupTimeoutSec:        15,
+		ToolTimeoutSec:           120,
+		DefaultToolsApprovalMode: "approve",
+		Env: map[string]string{
+			"HELPIN_API_BASE_URL":         bridge.BaseURL,
+			"HELPIN_AGENT_RUN_TOOL_TOKEN": bridge.Token,
+		},
+	}, true
 }
 
 func normalizeCodexOpenAIAuthMode(mode string) string {

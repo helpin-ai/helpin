@@ -23,6 +23,7 @@ type rolloutRunRow struct {
 	WorkspaceID string
 	Status      string
 	TargetType  string
+	RuntimeKind string
 	CreatedAt   time.Time
 	CompletedAt *time.Time
 	IsSystem    bool
@@ -37,7 +38,7 @@ type rolloutArtifactRow struct {
 	InlineContent *string
 }
 
-type nativeTurnDebugPayload struct {
+type agentTurnDebugPayload struct {
 	RuntimeKind           string   `json:"runtime_kind"`
 	PlanningStage         string   `json:"planning_stage,omitempty"`
 	ContinuationMode      string   `json:"continuation_mode"`
@@ -61,23 +62,24 @@ type rolloutSummary struct {
 }
 
 type rolloutProviderReport struct {
-	Provider                      string         `json:"provider"`
-	Model                         string         `json:"model,omitempty"`
-	PresetKey                     string         `json:"preset_key"`
-	RunCount                      int            `json:"run_count"`
-	CompletedRuns                 int            `json:"completed_runs"`
-	FailedRuns                    int            `json:"failed_runs"`
-	PausedRuns                    int            `json:"paused_runs"`
-	RunningRuns                   int            `json:"running_runs"`
-	CancelledRuns                 int            `json:"cancelled_runs"`
-	SelectiveEligibleRuns         int            `json:"selective_eligible_runs"`
-	SelectiveEligibleMissingDebug int            `json:"selective_eligible_missing_debug"`
-	SelectiveValidationStatus     string         `json:"selective_validation_status"`
-	AverageNativeDebugTurns       float64        `json:"average_native_debug_turns"`
-	RunsWithNativeDebugArtifacts  int            `json:"runs_with_native_debug_artifacts"`
-	RunsWithRepairGuidance        int            `json:"runs_with_repair_guidance"`
-	ContinuationModes             map[string]int `json:"continuation_modes,omitempty"`
-	AppliedActions                map[string]int `json:"applied_actions,omitempty"`
+	RuntimeKind                    string         `json:"runtime_kind"`
+	Provider                       string         `json:"provider"`
+	Model                          string         `json:"model,omitempty"`
+	PresetKey                      string         `json:"preset_key"`
+	RunCount                       int            `json:"run_count"`
+	CompletedRuns                  int            `json:"completed_runs"`
+	FailedRuns                     int            `json:"failed_runs"`
+	PausedRuns                     int            `json:"paused_runs"`
+	RunningRuns                    int            `json:"running_runs"`
+	CancelledRuns                  int            `json:"cancelled_runs"`
+	ContractEligibleRuns           int            `json:"contract_eligible_runs"`
+	ContractEligibleMissingDebug   int            `json:"contract_eligible_missing_debug"`
+	ContractValidationStatus       string         `json:"contract_validation_status"`
+	AverageContractDebugTurns      float64        `json:"average_contract_debug_turns"`
+	RunsWithContractDebugArtifacts int            `json:"runs_with_contract_debug_artifacts"`
+	RunsWithRepairGuidance         int            `json:"runs_with_repair_guidance"`
+	ContinuationModes              map[string]int `json:"continuation_modes,omitempty"`
+	AppliedActions                 map[string]int `json:"applied_actions,omitempty"`
 }
 
 type rolloutFilters struct {
@@ -89,37 +91,38 @@ type rolloutFilters struct {
 }
 
 type providerAggregateKey struct {
-	Provider  string
-	Model     string
-	PresetKey string
+	RuntimeKind string
+	Provider    string
+	Model       string
+	PresetKey   string
 }
 
 type providerAggregate struct {
-	key                           providerAggregateKey
-	runCount                      int
-	completedRuns                 int
-	failedRuns                    int
-	pausedRuns                    int
-	runningRuns                   int
-	cancelledRuns                 int
-	selectiveEligibleRuns         int
-	selectiveEligibleMissingDebug int
-	totalNativeDebugTurns         int
-	runsWithNativeDebugArtifacts  int
-	runsWithRepairGuidance        int
-	continuationModes             map[string]int
-	appliedActions                map[string]int
+	key                            providerAggregateKey
+	runCount                       int
+	completedRuns                  int
+	failedRuns                     int
+	pausedRuns                     int
+	runningRuns                    int
+	cancelledRuns                  int
+	contractEligibleRuns           int
+	contractEligibleMissingDebug   int
+	totalContractDebugTurns        int
+	runsWithContractDebugArtifacts int
+	runsWithRepairGuidance         int
+	continuationModes              map[string]int
+	appliedActions                 map[string]int
 }
 
 type runAggregate struct {
-	key               providerAggregateKey
-	status            string
-	selectiveEligible bool
-	nativeDebugTurns  int
-	hasNativeDebug    bool
-	hasRepairGuidance bool
-	continuationModes map[string]int
-	appliedActions    map[string]int
+	key                providerAggregateKey
+	status             string
+	contractEligible   bool
+	contractDebugTurns int
+	hasContractDebug   bool
+	hasRepairGuidance  bool
+	continuationModes  map[string]int
+	appliedActions     map[string]int
 }
 
 func main() {
@@ -169,9 +172,9 @@ func main() {
 func loadRolloutRows(ctx context.Context, db *gorm.DB, filters rolloutFilters) ([]rolloutRunRow, []rolloutArtifactRow, error) {
 	query := db.WithContext(ctx).
 		Table("agent_runs").
-		Select("agent_runs.id AS run_id, agent_runs.workspace_id, agent_runs.status, agent_runs.target_type, agent_runs.created_at, agent_runs.completed_at, agents.is_system, agents.provider, agents.model, agents.preset_key").
+		Select("agent_runs.id AS run_id, agent_runs.workspace_id, agent_runs.status, agent_runs.target_type, agent_runs.runtime_kind, agent_runs.created_at, agent_runs.completed_at, agents.is_system, agents.provider, agents.model, agents.preset_key").
 		Joins("JOIN agents ON agents.id = agent_runs.agent_id AND agents.workspace_id = agent_runs.workspace_id").
-		Where("agent_runs.runtime_kind = ?", "native_sdk").
+		Where("agent_runs.runtime_kind IN ?", []string{"native_sdk", "codex"}).
 		Where("agents.preset_key IN ?", []string{model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner})
 
 	if value := strings.TrimSpace(filters.WorkspaceID); value != "" {
@@ -216,7 +219,7 @@ func loadRolloutRows(ctx context.Context, db *gorm.DB, filters rolloutFilters) (
 		Table("agent_run_artifacts").
 		Select("run_id, artifact_type, inline_content").
 		Where("run_id IN ?", runIDs).
-		Where("artifact_type IN ?", []string{model.AgentRunArtifactTypeNativeTurnDebug, model.AgentRunArtifactTypeApprovedPreviewApplied}).
+		Where("artifact_type IN ?", []string{model.AgentRunArtifactTypeAgentTurnDebug, model.AgentRunArtifactTypeApprovedPreviewApplied}).
 		Order("sequence_no ASC, created_at ASC").
 		Scan(&artifacts).Error; err != nil {
 		return nil, nil, err
@@ -232,14 +235,15 @@ func buildRolloutSummary(filters rolloutFilters, runs []rolloutRunRow, artifacts
 
 	for _, run := range runs {
 		key := providerAggregateKey{
-			Provider:  normalizedProvider(run.Provider),
-			Model:     normalizedOptional(run.Model),
-			PresetKey: strings.TrimSpace(run.PresetKey),
+			RuntimeKind: strings.TrimSpace(run.RuntimeKind),
+			Provider:    normalizedProvider(run.Provider),
+			Model:       normalizedOptional(run.Model),
+			PresetKey:   strings.TrimSpace(run.PresetKey),
 		}
 		runState[run.RunID] = &runAggregate{
 			key:               key,
 			status:            strings.TrimSpace(run.Status),
-			selectiveEligible: rolloutRunWouldBeSelectiveEligible(run),
+			contractEligible:  rolloutRunWouldBeContractEligible(run),
 			continuationModes: make(map[string]int),
 			appliedActions:    make(map[string]int),
 		}
@@ -255,13 +259,13 @@ func buildRolloutSummary(filters rolloutFilters, runs []rolloutRunRow, artifacts
 			continue
 		}
 		switch strings.TrimSpace(artifact.ArtifactType) {
-		case model.AgentRunArtifactTypeNativeTurnDebug:
-			var payload nativeTurnDebugPayload
+		case model.AgentRunArtifactTypeAgentTurnDebug:
+			var payload agentTurnDebugPayload
 			if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
 				continue
 			}
-			state.hasNativeDebug = true
-			state.nativeDebugTurns++
+			state.hasContractDebug = true
+			state.contractDebugTurns++
 			mode := strings.TrimSpace(payload.ContinuationMode)
 			if mode == "" {
 				mode = "unknown"
@@ -307,19 +311,19 @@ func buildRolloutSummary(filters rolloutFilters, runs []rolloutRunRow, artifacts
 		case model.AgentRunStatusCancelled:
 			group.cancelledRuns++
 		}
-		if state.selectiveEligible {
-			group.selectiveEligibleRuns++
-			if !state.hasNativeDebug {
-				group.selectiveEligibleMissingDebug++
+		if state.contractEligible {
+			group.contractEligibleRuns++
+			if !state.hasContractDebug {
+				group.contractEligibleMissingDebug++
 			}
 		}
-		if state.hasNativeDebug {
-			group.runsWithNativeDebugArtifacts++
+		if state.hasContractDebug {
+			group.runsWithContractDebugArtifacts++
 		}
 		if state.hasRepairGuidance {
 			group.runsWithRepairGuidance++
 		}
-		group.totalNativeDebugTurns += state.nativeDebugTurns
+		group.totalContractDebugTurns += state.contractDebugTurns
 		for mode, count := range state.continuationModes {
 			group.continuationModes[mode] += count
 		}
@@ -335,23 +339,24 @@ func buildRolloutSummary(filters rolloutFilters, runs []rolloutRunRow, artifacts
 			continue
 		}
 		report := rolloutProviderReport{
-			Provider:                      key.Provider,
-			Model:                         key.Model,
-			PresetKey:                     key.PresetKey,
-			RunCount:                      group.runCount,
-			CompletedRuns:                 group.completedRuns,
-			FailedRuns:                    group.failedRuns,
-			PausedRuns:                    group.pausedRuns,
-			RunningRuns:                   group.runningRuns,
-			CancelledRuns:                 group.cancelledRuns,
-			SelectiveEligibleRuns:         group.selectiveEligibleRuns,
-			SelectiveEligibleMissingDebug: group.selectiveEligibleMissingDebug,
-			SelectiveValidationStatus:     selectiveValidationStatus(group),
-			AverageNativeDebugTurns:       float64(group.totalNativeDebugTurns) / float64(group.runCount),
-			RunsWithNativeDebugArtifacts:  group.runsWithNativeDebugArtifacts,
-			RunsWithRepairGuidance:        group.runsWithRepairGuidance,
-			ContinuationModes:             sortedIntMap(group.continuationModes),
-			AppliedActions:                sortedIntMap(group.appliedActions),
+			RuntimeKind:                    key.RuntimeKind,
+			Provider:                       key.Provider,
+			Model:                          key.Model,
+			PresetKey:                      key.PresetKey,
+			RunCount:                       group.runCount,
+			CompletedRuns:                  group.completedRuns,
+			FailedRuns:                     group.failedRuns,
+			PausedRuns:                     group.pausedRuns,
+			RunningRuns:                    group.runningRuns,
+			CancelledRuns:                  group.cancelledRuns,
+			ContractEligibleRuns:           group.contractEligibleRuns,
+			ContractEligibleMissingDebug:   group.contractEligibleMissingDebug,
+			ContractValidationStatus:       contractValidationStatus(group),
+			AverageContractDebugTurns:      float64(group.totalContractDebugTurns) / float64(group.runCount),
+			RunsWithContractDebugArtifacts: group.runsWithContractDebugArtifacts,
+			RunsWithRepairGuidance:         group.runsWithRepairGuidance,
+			ContinuationModes:              sortedIntMap(group.continuationModes),
+			AppliedActions:                 sortedIntMap(group.appliedActions),
 		}
 		reportGroups = append(reportGroups, report)
 	}
@@ -363,10 +368,7 @@ func buildRolloutSummary(filters rolloutFilters, runs []rolloutRunRow, artifacts
 	}
 }
 
-func rolloutRunWouldBeSelectiveEligible(run rolloutRunRow) bool {
-	if !run.IsSystem {
-		return false
-	}
+func rolloutRunWouldBeContractEligible(run rolloutRunRow) bool {
 	switch strings.TrimSpace(run.PresetKey) {
 	case model.AgentPresetEpicPlanner:
 		return strings.TrimSpace(run.TargetType) == "epic"
@@ -377,15 +379,15 @@ func rolloutRunWouldBeSelectiveEligible(run rolloutRunRow) bool {
 	}
 }
 
-func selectiveValidationStatus(group *providerAggregate) string {
-	if group == nil || group.selectiveEligibleRuns == 0 {
+func contractValidationStatus(group *providerAggregate) string {
+	if group == nil || group.contractEligibleRuns == 0 {
 		return "not_applicable"
 	}
-	if group.runsWithNativeDebugArtifacts == 0 {
-		return "not_validated_no_native_debug"
+	if group.runsWithContractDebugArtifacts == 0 {
+		return "not_validated_no_contract_debug"
 	}
-	if group.selectiveEligibleMissingDebug > 0 {
-		return "partial_missing_native_debug"
+	if group.contractEligibleMissingDebug > 0 {
+		return "partial_missing_contract_debug"
 	}
 	return "validated"
 }
@@ -432,21 +434,21 @@ func printRolloutSummary(summary rolloutSummary) {
 		)
 	}
 	if len(summary.Groups) == 0 {
-		fmt.Println("No matching native planner runs found.")
+		fmt.Println("No matching agent contract runs found.")
 		return
 	}
 	for _, group := range summary.Groups {
-		fmt.Printf("\nProvider=%s", group.Provider)
+		fmt.Printf("\nRuntime=%s provider=%s", group.RuntimeKind, group.Provider)
 		if group.Model != "" {
 			fmt.Printf(" model=%s", group.Model)
 		}
 		fmt.Printf(" preset=%s\n", group.PresetKey)
 		fmt.Printf("  runs: total=%d completed=%d failed=%d paused=%d running=%d cancelled=%d\n",
 			group.RunCount, group.CompletedRuns, group.FailedRuns, group.PausedRuns, group.RunningRuns, group.CancelledRuns)
-		fmt.Printf("  selective_path: eligible=%d missing_debug=%d status=%s\n",
-			group.SelectiveEligibleRuns, group.SelectiveEligibleMissingDebug, group.SelectiveValidationStatus)
-		fmt.Printf("  native_turn_debug: runs=%d avg_turns=%.2f repair_runs=%d\n",
-			group.RunsWithNativeDebugArtifacts, group.AverageNativeDebugTurns, group.RunsWithRepairGuidance)
+		fmt.Printf("  contract: eligible=%d missing_debug=%d status=%s\n",
+			group.ContractEligibleRuns, group.ContractEligibleMissingDebug, group.ContractValidationStatus)
+		fmt.Printf("  agent_turn_debug: runs=%d avg_turns=%.2f repair_runs=%d\n",
+			group.RunsWithContractDebugArtifacts, group.AverageContractDebugTurns, group.RunsWithRepairGuidance)
 		fmt.Printf("  continuation_modes: %s\n", formatIntMap(group.ContinuationModes))
 		fmt.Printf("  applied_actions: %s\n", formatIntMap(group.AppliedActions))
 	}

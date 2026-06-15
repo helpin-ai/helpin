@@ -92,7 +92,7 @@ func (r *AgentRepository) GetSystemByPreset(ctx context.Context, workspaceID, pr
 func (r *AgentRepository) Create(ctx context.Context, agent *model.Agent) error {
 	if err := r.db.WithContext(ctx).Create(agent).Error; err != nil {
 		if isMissingAgentActiveVersionColumn(err) {
-			if err := r.db.WithContext(ctx).Omit("ActiveVersionID").Create(agent).Error; err != nil {
+			if err := r.db.WithContext(ctx).Omit("ActiveVersionID", "active_version_id").Create(agent).Error; err != nil {
 				return fmt.Errorf("create agent: %w", err)
 			}
 		} else {
@@ -111,7 +111,7 @@ func (r *AgentRepository) Create(ctx context.Context, agent *model.Agent) error 
 func (r *AgentRepository) Update(ctx context.Context, agent *model.Agent) error {
 	if err := r.db.WithContext(ctx).Save(agent).Error; err != nil {
 		if isMissingAgentActiveVersionColumn(err) {
-			if err := r.db.WithContext(ctx).Omit("ActiveVersionID").Save(agent).Error; err != nil {
+			if err := r.db.WithContext(ctx).Omit("ActiveVersionID", "active_version_id").Save(agent).Error; err != nil {
 				return fmt.Errorf("update agent: %w", err)
 			}
 		} else {
@@ -767,7 +767,7 @@ func (r *AgentRunRepository) FindCompletedByTargetStage(ctx context.Context, wor
 func (r *AgentRunRepository) Create(ctx context.Context, run *model.AgentRun) error {
 	if err := r.db.WithContext(ctx).Create(run).Error; err != nil {
 		if isMissingAgentRunVersionColumn(err) {
-			if err := r.db.WithContext(ctx).Omit("AgentVersionID").Create(run).Error; err != nil {
+			if err := r.db.WithContext(ctx).Omit("AgentVersionID", "agent_version_id").Create(run).Error; err != nil {
 				return fmt.Errorf("create agent run: %w", err)
 			}
 			return nil
@@ -781,7 +781,7 @@ func (r *AgentRunRepository) Create(ctx context.Context, run *model.AgentRun) er
 func (r *AgentRunRepository) Update(ctx context.Context, run *model.AgentRun) error {
 	if err := r.db.WithContext(ctx).Save(run).Error; err != nil {
 		if isMissingAgentRunVersionColumn(err) {
-			if err := r.db.WithContext(ctx).Omit("AgentVersionID").Save(run).Error; err != nil {
+			if err := r.db.WithContext(ctx).Omit("AgentVersionID", "agent_version_id").Save(run).Error; err != nil {
 				return fmt.Errorf("update agent run: %w", err)
 			}
 		} else {

@@ -63,7 +63,7 @@ func (a *AgentRunActivities) buildTaskPlannerAssemblyState(ctx context.Context, 
 	if err != nil {
 		return taskPlannerAssemblyState{}, err
 	}
-	phaseName := strings.TrimSpace(nativeActiveSkillPlanningStage(state, input.Stage))
+	phaseName := strings.TrimSpace(contractSkillPlanningStage(state, input.Stage))
 	if phaseName == "" {
 		phaseName = model.PlanningStageTaskPlanDoc
 	}
@@ -115,7 +115,7 @@ func (a *AgentRunActivities) buildLegacyEpicPlannerFallbackSections(ctx context.
 	sections := buildLegacyEpicPlannerFallbackRuleSections(state.run)
 	sections = append(sections, assemblyState.contextSections...)
 	sections = append(sections, formatInteractivePlanningFacts(input, assemblyState.hasSpecContent, assemblyState.taskCount))
-	sections = append(sections, nativeEpicPlannerDerivedStateFacts(input, assemblyState.hasSpecContent, assemblyState.hasTasks))
+	sections = append(sections, epicPlannerDerivedStateFacts(input, assemblyState.hasSpecContent, assemblyState.hasTasks))
 	return sections, nil
 }
 

@@ -109,7 +109,7 @@ func (a *AgentRunActivities) persistHumanInteractionArtifacts(ctx context.Contex
 				return err
 			}
 		}
-		a.publishCodingSessionEvent(state.run, "activity.updated", map[string]any{
+		a.publishCodingSessionEvent(state.run, "plan.updated", map[string]any{
 			"content": runPlan,
 		})
 	}
