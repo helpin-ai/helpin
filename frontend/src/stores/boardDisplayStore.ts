@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 export const DISPLAY_PROPERTY_LABELS = {
+  task_id: 'ID',
   task_type: 'Task Type',
   priority: 'Priority',
   severity: 'Severity',
@@ -23,7 +24,7 @@ export const DISPLAY_PROPERTY_LABELS = {
 
 /** Keys shown in the Kanban board display menu */
 export const BOARD_PROPERTY_KEYS: DisplayPropertyKey[] = [
-  'task_type', 'priority', 'severity', 'agent', 'epic', 'sprint', 'labels',
+  'task_id', 'task_type', 'priority', 'severity', 'agent', 'epic', 'sprint', 'labels',
   'estimate', 'due_date', 'blocked', 'assignee',
 ];
 
@@ -38,6 +39,7 @@ export type DisplayPropertyKey = keyof typeof DISPLAY_PROPERTY_LABELS;
 export type DisplayProperties = Record<DisplayPropertyKey, boolean>;
 
 const ALL_ON: DisplayProperties = {
+  task_id: true,
   task_type: true,
   priority: true,
   severity: true,
