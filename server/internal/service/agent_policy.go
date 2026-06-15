@@ -152,13 +152,13 @@ func normalizeAgentRecord(agent *model.Agent) {
 		if hasPreset && preset.RuntimeKind != "" {
 			agent.RuntimeKind = preset.RuntimeKind
 		} else {
-			agent.RuntimeKind = "opencode"
+			agent.RuntimeKind = "codex"
 		}
 	} else if hasPreset && !runtimeAllowedForPreset(presetKey, agent.RuntimeKind) {
 		if hasPreset && preset.RuntimeKind != "" {
 			agent.RuntimeKind = preset.RuntimeKind
 		} else {
-			agent.RuntimeKind = "opencode"
+			agent.RuntimeKind = "codex"
 		}
 	}
 	if agent.Skills == nil {
@@ -424,12 +424,7 @@ func agentSupportsInteractive(agent *model.Agent) bool {
 	case "opencode":
 		return false
 	case "codex":
-		switch normalizePresetKey(agent.EffectivePresetKey()) {
-		case model.AgentPresetCodeBuilder, model.AgentPresetReviewAgent:
-			return true
-		default:
-			return false
-		}
+		return true
 	case "native_sdk":
 		return true
 	}
@@ -453,12 +448,6 @@ func validateRuntimeForAgentWithPreset(agent *model.Agent, presetOverride *model
 	presetKey := normalizePresetKey(agent.EffectivePresetKey())
 	if presetKey != "" && !runtimeAllowedForPreset(presetKey, agent.RuntimeKind) {
 		return fmt.Errorf("runtime_kind %q is not allowed for preset %q", strings.TrimSpace(agent.RuntimeKind), presetKey)
-	}
-	if strings.TrimSpace(agent.RuntimeKind) == "codex" {
-		if presetKey == "" {
-			return fmt.Errorf("runtime_kind codex requires a system preset agent")
-		}
-		return validateCodexAgentPolicy(agent, presetOverride)
 	}
 	return nil
 }

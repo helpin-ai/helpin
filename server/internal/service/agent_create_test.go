@@ -49,8 +49,8 @@ func TestCreateAgentDefaultsToCodeBuilderPreset(t *testing.T) {
 	if created.Role != "Custom Agent" {
 		t.Fatalf("expected default role Custom Agent, got %q", created.Role)
 	}
-	if created.RuntimeKind != "native_sdk" {
-		t.Fatalf("expected default runtime native_sdk, got %q", created.RuntimeKind)
+	if created.RuntimeKind != "codex" {
+		t.Fatalf("expected default runtime codex, got %q", created.RuntimeKind)
 	}
 }
 
@@ -251,7 +251,7 @@ func TestEnsureBuiltInTaskPlannerRefreshesLegacyPrompt(t *testing.T) {
 	if strings.Contains(*updated.SystemPrompt, "`publish_preview`") || strings.Contains(*updated.SystemPrompt, "`request_human_approval`") {
 		t.Fatalf("expected refreshed task planner prompt to remove legacy preview/approval tools, got %q", *updated.SystemPrompt)
 	}
-	if !strings.Contains(*updated.SystemPrompt, "`publish_task_plan_doc`") {
+	if !strings.Contains(*updated.SystemPrompt, "`"+worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc)+"`") {
 		t.Fatalf("expected refreshed task planner prompt to include publish_task_plan_doc, got %q", *updated.SystemPrompt)
 	}
 	if updated.Name != "Scribe" {
@@ -284,7 +284,9 @@ func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
 	if updated.PresetVersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent) {
 		t.Fatalf("expected review preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent), updated.PresetVersionKey)
 	}
-	if updated.SystemPrompt == nil || !strings.Contains(*updated.SystemPrompt, "`request_user_input`") || !strings.Contains(*updated.SystemPrompt, "`request_review_checkpoint`") {
+	if updated.SystemPrompt == nil ||
+		!strings.Contains(*updated.SystemPrompt, "`"+worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput)+"`") ||
+		!strings.Contains(*updated.SystemPrompt, "`"+worker.RuntimeToolNameForPrompt(worker.ToolRequestReviewCheckpoint)+"`") {
 		t.Fatalf("expected refreshed review prompt with interactive loop tools, got %+v", updated.SystemPrompt)
 	}
 	var tools []string
@@ -489,8 +491,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if docsAgent.Name != "Quill" {
 		t.Fatalf("expected documentation agent name, got %q", docsAgent.Name)
 	}
-	if docsAgent.RuntimeKind != "native_sdk" {
-		t.Fatalf("expected documentation runtime native_sdk, got %q", docsAgent.RuntimeKind)
+	if docsAgent.RuntimeKind != "codex" {
+		t.Fatalf("expected documentation runtime codex, got %q", docsAgent.RuntimeKind)
 	}
 	if docsAgent.DefaultInvocationMode != model.InvocationModeInteractive {
 		t.Fatalf("expected documentation default invocation mode interactive, got %q", docsAgent.DefaultInvocationMode)

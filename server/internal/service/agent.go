@@ -1827,9 +1827,9 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	if role == "" {
 		role = "Custom Agent"
 	}
-	runtimeKind := strings.TrimSpace(stringOrDefault(req.RuntimeKind, "native_sdk"))
+	runtimeKind := strings.TrimSpace(stringOrDefault(req.RuntimeKind, "codex"))
 	if runtimeKind == "" {
-		runtimeKind = "native_sdk"
+		runtimeKind = "codex"
 	}
 	triggerMode := stringOrDefault(req.TriggerMode, "manual")
 	if triggerMode == "" {
@@ -4967,11 +4967,10 @@ func (s *AgentService) validateModelRouting(agent *model.Agent) error {
 	if err := validateModelProvider(provider); err != nil {
 		return err
 	}
-	if strings.TrimSpace(agent.RuntimeKind) == "codex" && provider == model.AgentModelProviderOpenAI {
-		if !s.isCodexOpenAIConfigured() {
-			return fmt.Errorf("provider openai is not configured for codex (requires OPENAI_API_KEY or Helpin-managed ChatGPT OAuth)")
-		}
-	} else if !s.isModelProviderConfigured(provider) {
+	if strings.TrimSpace(agent.RuntimeKind) == "codex" {
+		return nil
+	}
+	if !s.isModelProviderConfigured(provider) {
 		switch provider {
 		case model.AgentModelProviderAnthropic:
 			return fmt.Errorf("provider anthropic is not configured (missing ANTHROPIC_API_KEY)")
@@ -4992,28 +4991,17 @@ func (s *AgentService) validateRuntimeProviderCompatibility(agent *model.Agent) 
 	}
 
 	if agent.Provider == nil || strings.TrimSpace(*agent.Provider) == "" {
-		if !s.isCodexOpenAIConfigured() && strings.TrimSpace(s.openRouterAPIKey) == "" {
-			return fmt.Errorf("runtime_kind codex requires OPENAI_API_KEY, Helpin-managed ChatGPT OAuth, or OPENROUTER_API_KEY to be configured")
-		}
 		return nil
 	}
 
 	switch normalizeModelProvider(*agent.Provider) {
-	case model.AgentModelProviderOpenAI:
-		if !s.isCodexOpenAIConfigured() {
-			return fmt.Errorf("runtime_kind codex with provider openai requires OPENAI_API_KEY or Helpin-managed ChatGPT OAuth")
-		}
-	case model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
-		if strings.TrimSpace(s.openRouterAPIKey) == "" {
-			return fmt.Errorf("runtime_kind codex with provider openrouter requires OPENROUTER_API_KEY")
-		}
+	case model.AgentModelProviderOpenAI, model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:
+		return nil
 	case model.AgentModelProviderAnthropic:
 		return fmt.Errorf("runtime_kind codex requires provider openai or openrouter")
 	default:
 		return fmt.Errorf("runtime_kind codex requires provider openai or openrouter")
 	}
-
-	return nil
 }
 
 func (s *AgentService) isCodexOpenAIConfigured() bool {

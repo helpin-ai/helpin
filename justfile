@@ -41,7 +41,8 @@ dev-tmux:
 build-server:
     cd server && go mod download && go build -o bin/api ./cmd/api
     cd server && go build -o bin/temporal-worker ./cmd/temporal-worker
-    @echo "✅ server built → server/bin/api"
+    cd server && go build -o bin/helpin-mcp-bridge ./cmd/helpin-mcp-bridge
+    @echo "✅ server built → server/bin/api, server/bin/temporal-worker, server/bin/helpin-mcp-bridge"
 
 build-frontend:
     pnpm build --filter frontend

@@ -13,6 +13,7 @@ const (
 	defaultCommandRouterLLMProvider                  = "openrouter"
 	defaultCommandRouterLLMModel                     = "google/gemini-3.1-flash-lite"
 	defaultCommandRouterOpenRouterProviderOptionsRaw = `{"order":["google-vertex/global"],"allow_fallbacks":false}`
+	defaultCodexHelpinMCPBridgePath                  = "/usr/local/bin/helpin-mcp-bridge"
 )
 
 // Config holds all application configuration loaded from environment variables.
@@ -39,28 +40,30 @@ type Config struct {
 	AWSPublicBaseURL   string // Optional public asset base URL (R2 custom domain / CDN)
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
-	AnthropicAPIKey         string
-	AnthropicBaseURL        string
-	OpenAIAPIKey            string
-	OpenAIBaseURL           string
-	OpenAIEmbeddingModel    string
-	OpenRouterAPIKey        string
-	OpenRouterBaseURL       string
-	OpenCodePath            string
-	CodexPath               string
-	CodexModel              string
-	CodexSandboxMode        string
-	CodexOpenAIAuthMode     string
-	CodexEnableChatGPTOAuth bool
-	CodexChatGPTAccessToken string
-	CodexChatGPTAccountID   string
-	CodexChatGPTPlanType    string
-	CodexAuthEncryptionKey  string
-	BraveSearchAPIKey       string
-	ExaSearchAPIKey         string
-	CloudflareAccountID     string
-	CloudflareAPIToken      string
-	CloudflareAPIBaseURL    string
+	AnthropicAPIKey          string
+	AnthropicBaseURL         string
+	OpenAIAPIKey             string
+	OpenAIBaseURL            string
+	OpenAIEmbeddingModel     string
+	OpenRouterAPIKey         string
+	OpenRouterBaseURL        string
+	OpenCodePath             string
+	CodexPath                string
+	CodexModel               string
+	CodexSandboxMode         string
+	CodexOpenAIAuthMode      string
+	CodexEnableChatGPTOAuth  bool
+	CodexChatGPTAccessToken  string
+	CodexChatGPTAccountID    string
+	CodexChatGPTPlanType     string
+	CodexAuthEncryptionKey   string
+	CodexHelpinAPIBaseURL    string
+	CodexHelpinMCPBridgePath string
+	BraveSearchAPIKey        string
+	ExaSearchAPIKey          string
+	CloudflareAccountID      string
+	CloudflareAPIToken       string
+	CloudflareAPIBaseURL     string
 
 	// Website content crawler (optional — controls crawl engine and proxy)
 	CrawlerMode      string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
@@ -227,6 +230,8 @@ func Load() (*Config, error) {
 		CodexChatGPTAccountID:                  strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCOUNT_ID")),
 		CodexChatGPTPlanType:                   strings.TrimSpace(os.Getenv("CODEX_CHATGPT_PLAN_TYPE")),
 		CodexAuthEncryptionKey:                 strings.TrimSpace(os.Getenv("CODEX_AUTH_ENCRYPTION_KEY")),
+		CodexHelpinAPIBaseURL:                  codexHelpinAPIBaseURL(os.Getenv("CODEX_HELPIN_API_BASE_URL"), port),
+		CodexHelpinMCPBridgePath:               codexHelpinMCPBridgePath(os.Getenv("CODEX_HELPIN_MCP_BRIDGE_PATH")),
 		BraveSearchAPIKey:                      strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
 		ExaSearchAPIKey:                        strings.TrimSpace(os.Getenv("EXA_API_KEY")),
 		CloudflareAccountID:                    strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
@@ -286,6 +291,36 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func codexHelpinMCPBridgePath(raw string) string {
+	raw = strings.TrimSpace(os.ExpandEnv(raw))
+	if raw != "" {
+		return raw
+	}
+	for _, candidate := range []string{
+		"bin/helpin-mcp-bridge",
+		"../bin/helpin-mcp-bridge",
+		"../../bin/helpin-mcp-bridge",
+		defaultCodexHelpinMCPBridgePath,
+	} {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return defaultCodexHelpinMCPBridgePath
+}
+
+func codexHelpinAPIBaseURL(raw, port string) string {
+	raw = strings.TrimRight(strings.TrimSpace(os.ExpandEnv(raw)), "/")
+	if raw != "" {
+		return raw
+	}
+	port = strings.TrimSpace(port)
+	if port == "" {
+		port = "8080"
+	}
+	return "http://127.0.0.1:" + port + "/api"
 }
 
 func parsePositiveIntEnv(value string, fallback int) int {

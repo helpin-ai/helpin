@@ -9,7 +9,6 @@ import {
   Calendar03Icon,
   ArrowRight01Icon,
   AttachmentIcon,
-  BotIcon,
   ChartColumnIcon,
   CheckListIcon,
   FavouriteIcon,
@@ -25,8 +24,10 @@ import {
   UserGroupIcon,
   ViewIcon,
   ArchiveRestoreIcon,
+  BotIcon,
   HashtagIcon,
   Layers01Icon,
+  LayoutTable01Icon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -73,6 +74,14 @@ import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
+import {
+  EPIC_DELIVERY_PANEL_ID,
+  EpicDeliveryRunsPanel,
+  EpicDeliveryStatusChip,
+} from '@/components/pm/EpicDeliveryRunsPanel';
+import { deliveryDotState } from '@/components/pm/epicDeliveryDag';
+import { useEpicDeliveryPlan } from '@/components/pm/useEpicDeliveryPlan';
+import { StatusDot } from '@/components/agents/dock/StatusDot';
 import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
 import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
@@ -238,6 +247,12 @@ export function EpicDetailPage() {
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
+
+  const delivery = useEpicDeliveryPlan(workspaceId ?? '', epicId);
+  const [tasksView, setTasksView] = useState<'list' | 'delivery'>('list');
+  // Delivery is an event, not a permanent projection — fall back to the task
+  // list whenever the epic has no delivery plan.
+  const effectiveTasksView = delivery.plan ? tasksView : 'list';
 
   const { teams, findTeamName } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
@@ -708,8 +723,51 @@ export function EpicDetailPage() {
     });
   };
 
+  const renderTasksViewSwitcher = () => {
+    if (!delivery.plan) return null;
+    return (
+      <span className="mr-1 inline-flex h-7 items-center gap-0.5 rounded-md border border-border/70 bg-muted/30 p-0.5">
+        <QuickTooltip label="Task list">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-pressed={effectiveTasksView === 'list'}
+            className={`h-6 w-6 rounded-sm ${
+              effectiveTasksView === 'list'
+                ? 'bg-background text-foreground shadow-sm hover:bg-background'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setTasksView('list')}
+          >
+            <LayoutTable01Icon className="h-3.5 w-3.5" />
+          </Button>
+        </QuickTooltip>
+        <QuickTooltip label="Delivery">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-pressed={effectiveTasksView === 'delivery'}
+            className={`relative h-6 w-6 rounded-sm ${
+              effectiveTasksView === 'delivery'
+                ? 'bg-background text-foreground shadow-sm hover:bg-background'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setTasksView('delivery')}
+          >
+            <BotIcon className="h-3.5 w-3.5" />
+            <StatusDot
+              state={deliveryDotState(delivery.plan, delivery.runsById)}
+              className="absolute -right-0.5 -top-0.5"
+            />
+          </Button>
+        </QuickTooltip>
+      </span>
+    );
+  };
+
   const renderTaskHeaderAddButton = () => (
     <div className="flex items-center gap-1.5">
+      {renderTasksViewSwitcher()}
       <Button
         type="button"
         variant="ghost"
@@ -991,7 +1049,17 @@ export function EpicDetailPage() {
               icon={CheckListIcon}
               meta={<div className="ml-auto">{renderTaskHeaderAddButton()}</div>}
             />
-            {tasks.length === 0 ? (
+            {effectiveTasksView === 'delivery' && delivery.plan && workspaceId ? (
+              <div className="mt-3">
+                <EpicDeliveryRunsPanel
+                  workspaceId={workspaceId}
+                  plan={delivery.plan}
+                  runsById={delivery.runsById}
+                  onReload={delivery.reload}
+                  canEdit={canEdit}
+                />
+              </div>
+            ) : tasks.length === 0 ? (
               <div className="mt-3 overflow-hidden rounded-lg border border-border/60 bg-card">
                 <div className="px-3 py-3">
                   <p className="text-sm text-muted-foreground">No tasks linked yet.</p>
@@ -1030,22 +1098,17 @@ export function EpicDetailPage() {
 
           <Separator className="my-6" />
 
-          {/* AI Planning */}
-          <div>
-            <TaskDetailSectionHeading title="AI Agents" icon={BotIcon} />
-            <div className="mt-3">
-              {workspaceId ? (
-                <EpicPlannerPanel
-                  workspaceId={workspaceId}
-                  epicId={epicId}
-                  epicTeamId={form.team_id || null}
-                  lastRunId={epic.epic.last_planning_run_id}
-                  canEdit={canEdit}
-                  onRunCompleted={handlePlannerRunCompleted}
-                />
-              ) : null}
-            </div>
-          </div>
+          {/* AI Agents */}
+          {workspaceId ? (
+            <EpicPlannerPanel
+              workspaceId={workspaceId}
+              epicId={epicId}
+              epicTeamId={form.team_id || null}
+              lastRunId={epic.epic.last_planning_run_id}
+              canEdit={canEdit}
+              onRunCompleted={handlePlannerRunCompleted}
+            />
+          ) : null}
 
           <div className={comments.length > 0 ? 'mt-10' : 'mt-8'}>
             {commentsLoading ? (
@@ -1128,6 +1191,22 @@ export function EpicDetailPage() {
               <span className="tabular-nums">{remainingTasks} remaining</span>
             </div>
           </section>
+
+          {delivery.plan ? (
+            <EpicDeliveryStatusChip
+              plan={delivery.plan}
+              runsById={delivery.runsById}
+              onClick={() => {
+                setTasksView('delivery');
+                // The panel mounts only after the view switches.
+                requestAnimationFrame(() => {
+                  document
+                    .getElementById(EPIC_DELIVERY_PANEL_ID)
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                });
+              }}
+            />
+          ) : null}
 
           <div className="mt-5 grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
             {/* State */}

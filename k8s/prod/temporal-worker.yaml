@@ -42,6 +42,8 @@ spec:
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-native-interactive
+            - name: CODEX_HELPIN_API_BASE_URL
+              value: http://helpin-server-svc:8080/api
           envFrom:
             - secretRef:
                 name: helpin-secrets
@@ -106,6 +108,8 @@ spec:
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-native-autonomous
+            - name: CODEX_HELPIN_API_BASE_URL
+              value: http://helpin-server-svc:8080/api
           envFrom:
             - secretRef:
                 name: helpin-secrets
@@ -172,6 +176,8 @@ spec:
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-opencode-autonomous
+            - name: CODEX_HELPIN_API_BASE_URL
+              value: http://helpin-server-svc:8080/api
           envFrom:
             - secretRef:
                 name: helpin-secrets
@@ -240,6 +246,8 @@ spec:
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-codex-autonomous
+            - name: CODEX_HELPIN_API_BASE_URL
+              value: http://helpin-server-svc:8080/api
             - name: CODEX_SANDBOX_MODE
               value: danger-full-access
           envFrom:
@@ -310,6 +318,8 @@ spec:
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-codex-interactive
+            - name: CODEX_HELPIN_API_BASE_URL
+              value: http://helpin-server-svc:8080/api
             - name: CODEX_SANDBOX_MODE
               value: danger-full-access
           envFrom:
@@ -378,6 +388,8 @@ spec:
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: automation-default
+            - name: CODEX_HELPIN_API_BASE_URL
+              value: http://helpin-server-svc:8080/api
           envFrom:
             - secretRef:
                 name: helpin-secrets

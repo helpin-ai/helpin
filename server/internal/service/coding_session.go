@@ -486,7 +486,10 @@ func resumeRequestForResolvedInteraction(interaction *model.AgentRunInteraction,
 	case model.AgentRunInteractionKindRequestUserInput:
 		content := requestUserInputResumeContent(interaction, responsePayload)
 		if strings.TrimSpace(content) == "" {
-			return model.ResumeAgentRunRequest{}, fmt.Errorf("request_user_input response is missing content")
+			content = strings.TrimSpace(followupMessage)
+		}
+		if strings.TrimSpace(content) == "" {
+			content = "User answered the pending input request. Continue with the selected answers."
 		}
 		return model.ResumeAgentRunRequest{
 			Intent:          model.AgentRunResumeIntentReply,
@@ -669,7 +672,9 @@ func requestUserInputResumeContent(interaction *model.AgentRunInteraction, respo
 			Content string `json:"content"`
 		}
 		if err := json.Unmarshal(responsePayload, &payload); err == nil {
-			return strings.TrimSpace(payload.Content)
+			if content := strings.TrimSpace(payload.Content); content != "" {
+				return content
+			}
 		}
 	}
 	if content := codexUserInputResumeContent(interaction.RequestPayload, responsePayload); content != "" {

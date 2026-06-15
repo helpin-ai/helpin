@@ -1,6 +1,7 @@
 import type { AgentRun, CommandBarPlanStep } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from '@/stores/commandBarStore';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
+import { isScaffoldingStep } from './planLayers';
 
 /**
  * Activity state used to drive the status dot and color tokens.
@@ -279,7 +280,11 @@ export function planSummaryText(
   const failed = runs.filter((r) => r.status === 'failed' || r.status === 'cancelled').length;
 
   if (plan.planKind === 'task_pipeline_fan_out') {
-    const groups = groupStepsByTarget(plan);
+    // Count only real task lanes — the epic-scaffolding group (epic branch /
+    // final PR) is a bookend, not a task.
+    const groups = groupStepsByTarget(plan).filter((g) =>
+      g.stepIndexes.some((i) => !isScaffoldingStep(plan.steps[i])),
+    );
     const taskCount = groups.length;
     let tasksDone = 0;
     let tasksActive = 0;

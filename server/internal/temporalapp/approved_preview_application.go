@@ -39,8 +39,10 @@ func (a *AgentRunActivities) applyApprovedInteractivePreview(ctx context.Context
 		return "", err
 	}
 
+	phase := canonicalApprovedPreviewPhase(approvedPreview.Phase, approvedPreview.PanelKey, approvedPreview.Format)
+
 	var appliedAction string
-	switch strings.ToLower(strings.TrimSpace(approvedPreview.Phase)) {
+	switch phase {
 	case "prd":
 		if state.epic == nil || state.run.TargetType != "epic" {
 			return "", fmt.Errorf("approved PRD preview requires an epic target")
@@ -71,7 +73,7 @@ func (a *AgentRunActivities) applyApprovedInteractivePreview(ctx context.Context
 
 	if _, err := a.appendRunArtifact(ctx, state.run, model.AgentRunArtifactTypeApprovedPreviewApplied, "json", model.AppliedApprovedRunPreview{
 		ApprovedArtifactID: approvedArtifact.ID,
-		Phase:              strings.TrimSpace(approvedPreview.Phase),
+		Phase:              phase,
 		Action:             appliedAction,
 		AppliedAt:          time.Now().UTC(),
 	}); err != nil {
@@ -117,13 +119,18 @@ func (a *AgentRunActivities) ensureApprovedPreviewFromResolvedInteraction(ctx co
 		return artifacts, err
 	}
 
+	phase := canonicalApprovedPreviewPhase(approval.Phase, preview.PanelKey, preview.Format)
+
 	content := append(json.RawMessage(nil), preview.Content...)
-	if strings.EqualFold(strings.TrimSpace(approval.Phase), "tasks") && strings.EqualFold(strings.TrimSpace(preview.Format), workerpkg.PreviewFormatJSON) {
+	if phase == "tasks" && strings.EqualFold(strings.TrimSpace(preview.Format), workerpkg.PreviewFormatJSON) {
 		normalizedContent, err := workerpkg.NormalizeTaskPlanPreviewContent(content)
 		if err != nil {
 			return artifacts, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}: %w", err)
 		}
 		content = normalizedContent
+	}
+	if existingApprovedPreviewForResolvedInteraction(artifacts, phase, preview, content, assistantSequenceNo) {
+		return artifacts, nil
 	}
 
 	approvedBy := ""
@@ -135,7 +142,7 @@ func (a *AgentRunActivities) ensureApprovedPreviewFromResolvedInteraction(ctx co
 		approvedAt = interaction.ResolvedAt.UTC()
 	}
 	artifact, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeApprovedPreview, "json", model.ApprovedRunPreview{
-		Phase:                      strings.TrimSpace(approval.Phase),
+		Phase:                      phase,
 		ApprovalTitle:              strings.TrimSpace(approval.Title),
 		ApprovalSummary:            strings.TrimSpace(approval.Summary),
 		PanelKey:                   strings.TrimSpace(preview.PanelKey),
@@ -150,6 +157,61 @@ func (a *AgentRunActivities) ensureApprovedPreviewFromResolvedInteraction(ctx co
 		return artifacts, err
 	}
 	return append(artifacts, *artifact), nil
+}
+
+func existingApprovedPreviewForResolvedInteraction(artifacts []model.AgentRunArtifact, phase string, preview *workerpkg.PublishedPreview, content json.RawMessage, assistantSequenceNo int) bool {
+	if preview == nil {
+		return false
+	}
+	phase = canonicalApprovedPreviewPhase(phase, preview.PanelKey, preview.Format)
+	panelKey := normalizeApprovalPreviewPanelKey(preview.PanelKey)
+	format := strings.TrimSpace(preview.Format)
+	normalizedContent := strings.TrimSpace(string(content))
+	for _, artifact := range artifacts {
+		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeApprovedPreview || artifact.InlineContent == nil {
+			continue
+		}
+		var existing model.ApprovedRunPreview
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &existing); err != nil {
+			continue
+		}
+		if canonicalApprovedPreviewPhase(existing.Phase, existing.PanelKey, existing.Format) != phase {
+			continue
+		}
+		if normalizeApprovalPreviewPanelKey(existing.PanelKey) != panelKey {
+			continue
+		}
+		if strings.TrimSpace(existing.Format) != format {
+			continue
+		}
+		if assistantSequenceNo > 0 && existing.AssistantMessageSequenceNo > 0 && existing.AssistantMessageSequenceNo != assistantSequenceNo {
+			continue
+		}
+		if strings.TrimSpace(string(existing.Content)) != normalizedContent {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func canonicalApprovedPreviewPhase(phase, panelKey, format string) string {
+	normalizedPhase := strings.ToLower(strings.TrimSpace(phase))
+	switch normalizedPhase {
+	case "prd", "tasks", "task_doc":
+		return normalizedPhase
+	}
+
+	switch normalizeApprovalPreviewPanelKey(panelKey) {
+	case "prd_draft":
+		return "prd"
+	case "task_plan":
+		return "tasks"
+	case "task_plan_doc":
+		return "task_doc"
+	default:
+		return normalizedPhase
+	}
 }
 
 func resolvedInteractionApproved(interaction *model.AgentRunInteraction) bool {
@@ -183,13 +245,51 @@ func latestRunPreviewForResolvedApproval(artifacts []model.AgentRunArtifact, ass
 			}
 			return preview, nil
 		}
-		return nil, nil
+		preview, _, err := latestRunPreviewForAnySequence(artifacts, targetKey)
+		return preview, err
 	}
 	preview, count, err := latestRunPreviewForAssistantSequence(artifacts, assistantSequenceNo, "")
 	if err != nil || count != 1 {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
+		preview, count, err = latestRunPreviewForAnySequence(artifacts, "")
+		if err != nil || count != 1 {
+			return nil, err
+		}
 	}
 	return preview, nil
+}
+
+func latestRunPreviewForAnySequence(artifacts []model.AgentRunArtifact, panelKey string) (*workerpkg.PublishedPreview, int, error) {
+	targetKey := normalizeApprovalPreviewPanelKey(panelKey)
+	matchCount := 0
+	var firstMatch *workerpkg.PublishedPreview
+	for i := len(artifacts) - 1; i >= 0; i-- {
+		artifact := artifacts[i]
+		if strings.TrimSpace(artifact.ArtifactType) != workerpkg.RunPreviewArtifactType || artifact.InlineContent == nil {
+			continue
+		}
+		var payload workerpkg.PublishedPreview
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
+			return nil, 0, fmt.Errorf("parse run preview artifact: %w", err)
+		}
+		if targetKey != "" && normalizeApprovalPreviewPanelKey(payload.PanelKey) != targetKey {
+			continue
+		}
+		matchCount++
+		if firstMatch == nil {
+			previewCopy := payload
+			firstMatch = &previewCopy
+		}
+		if targetKey != "" {
+			return firstMatch, matchCount, nil
+		}
+	}
+	if targetKey == "" && matchCount != 1 {
+		return nil, matchCount, nil
+	}
+	return firstMatch, matchCount, nil
 }
 
 func latestRunPreviewForAssistantSequence(artifacts []model.AgentRunArtifact, assistantSequenceNo int, panelKey string) (*workerpkg.PublishedPreview, int, error) {

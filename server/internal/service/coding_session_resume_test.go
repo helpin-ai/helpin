@@ -37,6 +37,59 @@ func TestRequestUserInputResumeContentUsesGenericQuestionAnswerFormatting(t *tes
 	}
 }
 
+func TestRequestUserInputResumeContentFallsBackToGenericAnswersForHelpinSchema(t *testing.T) {
+	interaction := &model.AgentRunInteraction{
+		RequestSchemaVersion: model.AgentRunInteractionSchemaVersionHelpinV1,
+		RequestPayload: json.RawMessage(`{
+			"questions": [
+				{
+					"id": "metric_scope",
+					"header": "Metric scope",
+					"question": "Which 3xx responses should this epic measure?"
+				}
+			]
+		}`),
+	}
+
+	responsePayload := json.RawMessage(`{
+		"answers": {
+			"metric_scope": {
+				"answers": ["All HTTP 3xx"]
+			}
+		}
+	}`)
+
+	got := requestUserInputResumeContent(interaction, responsePayload)
+	if !strings.Contains(got, "Which 3xx responses should this epic measure?") {
+		t.Fatalf("expected generic question text in resume content, got %q", got)
+	}
+	if !strings.Contains(got, "All HTTP 3xx") {
+		t.Fatalf("expected selected answer in resume content, got %q", got)
+	}
+}
+
+func TestResumeRequestForResolvedUserInputDoesNotFailOnEmptyPayload(t *testing.T) {
+	interaction := &model.AgentRunInteraction{
+		InteractionKind: model.AgentRunInteractionKindRequestUserInput,
+		RequestPayload: json.RawMessage(`{
+			"questions": [
+				{
+					"id": "metric_scope",
+					"question": "Which 3xx responses should this epic measure?"
+				}
+			]
+		}`),
+	}
+
+	req, err := resumeRequestForResolvedInteraction(interaction, nil, "")
+	if err != nil {
+		t.Fatalf("resumeRequestForResolvedInteraction returned error: %v", err)
+	}
+	if !strings.Contains(req.Content, "Continue with the selected answers") {
+		t.Fatalf("expected deterministic fallback content, got %q", req.Content)
+	}
+}
+
 func TestReviewCheckpointResumeContentUsesSelectedFindingsForApprove(t *testing.T) {
 	requestPayload, err := json.Marshal(model.ReviewCheckpointRequest{
 		Phase: "review",

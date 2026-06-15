@@ -11,11 +11,13 @@ import {
   Wrench01Icon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import type { CommandBarParseResponse, CommandBarPlan, CommandBarPlanStep } from '@/lib/pmTypes';
 import {
   buildTaskNodes,
   hasAnyDependencies,
   layerTasks,
+  scaffoldingStepIndexes,
   taskNounFor,
   type PlanLayer,
   type TaskNode,
@@ -43,6 +45,7 @@ export function PlanPreview({
 }: PlanPreviewProps) {
   const nodes = useMemo(() => buildTaskNodes(plan), [plan]);
   const layers = useMemo(() => layerTasks(nodes), [nodes]);
+  const scaffolding = useMemo(() => scaffoldingStepIndexes(plan), [plan]);
   const layered = layers.length > 1 || (layers.length === 1 && hasAnyDependencies(plan));
   const taskCount = nodes.length;
   const stepCount = plan.steps.length;
@@ -67,11 +70,17 @@ export function PlanPreview({
             <p className="mb-2 line-clamp-3 text-xs text-muted-foreground">{rationale}</p>
           ) : null}
           {plan.guardrails?.length ? <GuardrailList guardrails={plan.guardrails} /> : null}
+          {scaffolding.setup.length > 0 ? (
+            <ScaffoldRow label="Setup" plan={plan} stepIndexes={scaffolding.setup} />
+          ) : null}
           {layered ? (
             <LayeredBody plan={plan} layers={layers} noun={noun} />
           ) : (
             <FlatBody plan={plan} nodes={nodes} />
           )}
+          {scaffolding.finalize.length > 0 ? (
+            <ScaffoldRow label="Finalize" plan={plan} stepIndexes={scaffolding.finalize} />
+          ) : null}
         </>
       )}
       {plan.steps.length === 1 && plan.guardrails?.length ? (
@@ -327,15 +336,16 @@ function LayerHeading({
   taskCount: number;
   noun: { singular: string; plural: string };
 }) {
+  // Mirrors the run view's stage labels ("Stage 2 · 3 in parallel") so the
+  // approved plan reads as the same picture that later lights up with status.
   const text = (() => {
-    if (layerIndex === 0) {
-      if (totalLayers > 1) return 'blocker';
-      return 'starts now';
+    const base = `Stage ${layerIndex + 1}`;
+    if (taskCount > 1) {
+      const word = taskCount === 1 ? noun.singular : noun.plural;
+      return `${base} · ${taskCount} ${word} in parallel`;
     }
-    const word = taskCount === 1 ? noun.singular : noun.plural;
-    return taskCount > 1
-      ? `then ${taskCount} ${word} fan out in parallel`
-      : `then ${word} runs`;
+    if (layerIndex === 0 && totalLayers > 1) return `${base} · runs first`;
+    return base;
   })();
   return (
     <div className="flex items-center">
@@ -367,7 +377,7 @@ function FlatBody({ plan, nodes }: { plan: Plan; nodes: TaskNode[] }) {
   const noun = taskNounFor(nodes);
   const heading =
     nodes.length > 1
-      ? `${nodes.length} ${nodes.length === 1 ? noun.singular : noun.plural} fan out in parallel`
+      ? `${nodes.length} ${nodes.length === 1 ? noun.singular : noun.plural} in parallel`
       : null;
   return (
     <div className="relative">
@@ -444,21 +454,58 @@ function shortTaskKey(taskKey: string): string {
   return m ? m[1] : taskKey;
 }
 
+/**
+ * Slim bookend row for the pipeline's scaffolding steps (epic branch / final
+ * PR) — they run before and after the task work, not alongside it, mirroring
+ * the run view's Setup/Finalize rows.
+ */
+function ScaffoldRow({
+  label,
+  plan,
+  stepIndexes,
+}: {
+  label: string;
+  plan: Plan;
+  stepIndexes: number[];
+}) {
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <span aria-hidden className="block w-[14px] shrink-0" />
+      <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      <AgentChain plan={plan} stepIndexes={stepIndexes} />
+    </div>
+  );
+}
+
 function AgentChain({ plan, stepIndexes }: { plan: Plan; stepIndexes: number[] }) {
   return (
     <div className="flex shrink-0 items-center gap-1">
       {stepIndexes.map((i, idx) => {
         const step = plan.steps[i];
         const label = stepDisplayName(step);
-        const initial = label.trim().charAt(0).toUpperCase() || '·';
         return (
           <div key={i} className="flex items-center gap-1">
-            <span
-              title={label}
-              className="grid h-4 w-4 place-items-center rounded-full border border-border/70 bg-background text-[9px] font-semibold text-muted-foreground"
-            >
-              {initial}
-            </span>
+            {step.step_type ? (
+              // Scaffolding step (merge, final PR, …) — no agent persona.
+              <span
+                title={label}
+                className="grid h-4 place-items-center rounded-full border border-border/70 bg-background px-1.5 text-[9px] font-semibold text-muted-foreground"
+              >
+                {label}
+              </span>
+            ) : (
+              // Same persona avatar the run view shows for this agent, so the
+              // approved plan and the live delivery read as one picture.
+              <span title={label} className="inline-flex">
+                <AgentAvatar
+                  name={step.agent_name}
+                  className="h-4 w-4 shrink-0 rounded-none border-0 bg-transparent shadow-none"
+                  genericBare
+                />
+              </span>
+            )}
             {idx < stepIndexes.length - 1 ? (
               <span aria-hidden className="text-[10px] text-muted-foreground">
                 →

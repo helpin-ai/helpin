@@ -37,11 +37,13 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.245-rc.3
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.246-rc.2
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-native-interactive
+            - name: CODEX_HELPIN_API_BASE_URL
+              value: http://helpin-server-svc:8080/api
           envFrom:
             - secretRef:
                 name: helpin-secrets
@@ -101,11 +103,13 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.245-rc.3
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.246-rc.2
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-native-autonomous
+            - name: CODEX_HELPIN_API_BASE_URL
+              value: http://helpin-server-svc:8080/api
           envFrom:
             - secretRef:
                 name: helpin-secrets
@@ -167,11 +171,13 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.245-rc.3
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.246-rc.2
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-opencode-autonomous
+            - name: CODEX_HELPIN_API_BASE_URL
+              value: http://helpin-server-svc:8080/api
           envFrom:
             - secretRef:
                 name: helpin-secrets
@@ -235,11 +241,13 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.245-rc.3
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.246-rc.2
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-codex-autonomous
+            - name: CODEX_HELPIN_API_BASE_URL
+              value: http://helpin-server-svc:8080/api
             - name: CODEX_SANDBOX_MODE
               value: danger-full-access
           envFrom:
@@ -305,11 +313,13 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.245-rc.3
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.246-rc.2
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-codex-interactive
+            - name: CODEX_HELPIN_API_BASE_URL
+              value: http://helpin-server-svc:8080/api
             - name: CODEX_SANDBOX_MODE
               value: danger-full-access
           envFrom:
@@ -373,11 +383,13 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.245-rc.3
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.246-rc.2
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: automation-default
+            - name: CODEX_HELPIN_API_BASE_URL
+              value: http://helpin-server-svc:8080/api
           envFrom:
             - secretRef:
                 name: helpin-secrets

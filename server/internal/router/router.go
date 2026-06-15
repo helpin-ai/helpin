@@ -42,6 +42,7 @@ type Handlers struct {
 	Search              *handler.SearchHandler
 	CommandBar          *handler.CommandBarHandler
 	Agent               *handler.AgentHandler
+	AgentToolGateway    *handler.AgentToolGatewayHandler
 	SupportInbox        *handler.SupportInboxHandler
 	SupportInboxView    *handler.SupportInboxViewHandler
 	SupportTag          *handler.SupportTagHandler
@@ -347,6 +348,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Use(middleware.RequireInternalAPISecret)
 			r.Get("/widget-tokens", h.SupportInboxWidget.GetWidgetTokens)
 		})
+
+		if h.AgentToolGateway != nil {
+			r.Route("/agent-run-tools", func(r chi.Router) {
+				r.Get("/tools", h.AgentToolGateway.ListTools)
+				r.Post("/call", h.AgentToolGateway.CallTool)
+			})
+		}
 
 		// ---- Platform admin routes (audited before auth so denied attempts are logged) ----
 		r.Route("/admin", func(r chi.Router) {
@@ -838,6 +846,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/delivery-target", h.Git.UpdateEpicDeliveryTarget)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/command-bar-plans", h.CommandBar.ListEpicPlans)
 				// Sprints (PM) — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints", h.PMSprint.List)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/planning", h.PMSprint.PlanningWorkspace)

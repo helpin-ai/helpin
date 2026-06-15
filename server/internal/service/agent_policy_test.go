@@ -103,8 +103,8 @@ func TestNormalizeAgentRecordDefaultsToPreset(t *testing.T) {
 	if agent.SourcePresetVersionKey != "" {
 		t.Fatalf("expected blank custom agent source preset version to remain empty, got %q", agent.SourcePresetVersionKey)
 	}
-	if agent.RuntimeKind != "opencode" {
-		t.Fatalf("expected default runtime opencode, got %q", agent.RuntimeKind)
+	if agent.RuntimeKind != "codex" {
+		t.Fatalf("expected default runtime codex, got %q", agent.RuntimeKind)
 	}
 }
 
@@ -112,11 +112,11 @@ func TestAgentDefaultsDerivedFromPreset(t *testing.T) {
 	if got := defaultRoleForPresetKey(model.AgentPresetReviewAgent); got != "Review Agent" {
 		t.Fatalf("expected review preset role label, got %q", got)
 	}
-	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "native_sdk" {
-		t.Fatalf("expected planner runtime default native_sdk, got %q", got)
+	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "codex" {
+		t.Fatalf("expected planner runtime default codex, got %q", got)
 	}
-	if got := defaultRuntimeKindForPresetKey(model.AgentPresetSupportAgent); got != "native_sdk" {
-		t.Fatalf("expected support runtime default native_sdk, got %q", got)
+	if got := defaultRuntimeKindForPresetKey(model.AgentPresetSupportAgent); got != "codex" {
+		t.Fatalf("expected support runtime default codex, got %q", got)
 	}
 }
 
@@ -176,8 +176,8 @@ func TestListAgentPresetsIncludesEpicPlanner(t *testing.T) {
 		if !preset.IsDefaultVersion {
 			t.Fatal("expected epic planner catalog entry to be marked as default version")
 		}
-		if preset.RuntimeKind != "native_sdk" {
-			t.Fatalf("expected epic planner runtime native_sdk, got %q", preset.RuntimeKind)
+		if preset.RuntimeKind != "codex" {
+			t.Fatalf("expected epic planner runtime codex, got %q", preset.RuntimeKind)
 		}
 		if preset.DefaultInvocationMode != model.InvocationModeInteractive {
 			t.Fatalf("expected epic planner default mode interactive, got %q", preset.DefaultInvocationMode)
@@ -214,8 +214,8 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 		if preset.VersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetDocumentationAgent) {
 			t.Fatalf("expected documentation default version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetDocumentationAgent), preset.VersionKey)
 		}
-		if preset.RuntimeKind != "native_sdk" {
-			t.Fatalf("expected documentation runtime native_sdk, got %q", preset.RuntimeKind)
+		if preset.RuntimeKind != "codex" {
+			t.Fatalf("expected documentation runtime codex, got %q", preset.RuntimeKind)
 		}
 		if preset.DefaultInvocationMode != model.InvocationModeInteractive {
 			t.Fatalf("expected documentation default mode interactive, got %q", preset.DefaultInvocationMode)
@@ -381,7 +381,7 @@ func TestValidateRuntimeProviderCompatibilityAllowsCodexOpenAIWithManagedOAuth(t
 	}
 }
 
-func TestValidateRuntimeProviderCompatibilityRejectsCodexOpenAIWithoutManagedOAuth(t *testing.T) {
+func TestValidateRuntimeProviderCompatibilityAllowsCodexOpenAIWithoutManagedOAuth(t *testing.T) {
 	openAI := model.AgentModelProviderOpenAI
 	agent := &model.Agent{
 		PresetKey:   model.AgentPresetCodeBuilder,
@@ -393,8 +393,8 @@ func TestValidateRuntimeProviderCompatibilityRejectsCodexOpenAIWithoutManagedOAu
 		codexOpenAIAuthMode:      "chatgpt_oauth",
 		codexChatGPTOAuthEnabled: false,
 	}
-	if err := svc.validateRuntimeProviderCompatibility(agent); err == nil {
-		t.Fatal("expected codex openai provider without managed OAuth to be rejected")
+	if err := svc.validateRuntimeProviderCompatibility(agent); err != nil {
+		t.Fatalf("expected codex openai provider to be accepted without backend OAuth preflight, got %v", err)
 	}
 }
 
@@ -489,7 +489,7 @@ func TestValidateRuntimeForAgentAllowsReviewAgentCodexPreset(t *testing.T) {
 	}
 }
 
-func TestValidateRuntimeForAgentRejectsCustomCodexPolicy(t *testing.T) {
+func TestValidateRuntimeForAgentAllowsCustomCodexPolicy(t *testing.T) {
 	openAI := model.AgentModelProviderOpenAI
 	agent := &model.Agent{
 		IsSystem:              true,
@@ -503,8 +503,8 @@ func TestValidateRuntimeForAgentRejectsCustomCodexPolicy(t *testing.T) {
 		DefaultInvocationMode: model.InvocationModeAutonomous,
 	}
 
-	if err := validateRuntimeForAgent(agent); err == nil {
-		t.Fatal("expected custom codex tool policy to be rejected")
+	if err := validateRuntimeForAgent(agent); err != nil {
+		t.Fatalf("expected custom codex tool policy to be allowed, got %v", err)
 	}
 }
 

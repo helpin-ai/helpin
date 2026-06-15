@@ -1,7 +1,6 @@
 package temporalapp
 
 import (
-	"os"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/agentskills"
@@ -9,39 +8,26 @@ import (
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
-func nativeSelectivePlannerPathRolloutEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED"))) {
-	case "0", "false", "no", "off":
-		return false
-	default:
-		return true
-	}
-}
+const (
+	executionContractEpicPlanning = "epic_planning"
+	executionContractTaskPlanning = "task_planning"
+)
 
-func resolveNativeSelectivePlannerPathEnabled(run *model.AgentRun, agent *model.Agent) bool {
+func resolveExecutionContract(run *model.AgentRun, agent *model.Agent) string {
 	if run == nil || agent == nil {
-		return false
-	}
-	if !nativeSelectivePlannerPathRolloutEnabled() {
-		return false
-	}
-	if !agent.IsSystem {
-		return false
-	}
-	runtimeKind := firstNonEmptyString(strings.TrimSpace(run.RuntimeKind), strings.TrimSpace(agent.RuntimeKind))
-	if runtimeKind != "native_sdk" {
-		return false
+		return ""
 	}
 	switch strings.TrimSpace(agent.EffectivePresetKey()) {
 	case model.AgentPresetEpicPlanner:
-		return strings.TrimSpace(run.TargetType) == "epic"
+		if strings.TrimSpace(run.TargetType) == "epic" {
+			return executionContractEpicPlanning
+		}
 	case model.AgentPresetTaskPlanner:
-		return strings.TrimSpace(run.TargetType) == "task"
-	case model.AgentPresetDocumentationAgent:
-		return true
-	default:
-		return false
+		if strings.TrimSpace(run.TargetType) == "task" {
+			return executionContractTaskPlanning
+		}
 	}
+	return ""
 }
 
 func runtimeSkillRefKeys(refs model.AgentSkillRefs) []string {
@@ -59,18 +45,18 @@ func runtimeSkillRefKeys(refs model.AgentSkillRefs) []string {
 	return keys
 }
 
-func selectNativeActiveSkills(state *resolvedRunState, planningStage string) agentskills.NativeActiveSelection {
+func selectActiveContractSkills(state *resolvedRunState, planningStage string) agentskills.NativeActiveSelection {
 	if state == nil {
 		return agentskills.NativeActiveSelection{}
 	}
-	if !state.nativeSelectivePathEnabled {
+	if !state.executionContractActive {
 		return agentskills.NativeActiveSelection{
 			Refs:         append(model.AgentSkillRefs(nil), state.runtimeSkillRefs...),
 			Definitions:  append([]workerpkg.SkillDefinition(nil), state.runtimeSkillDefinitions...),
 			Instructions: agentskills.CompileInstructions(state.runtimeSkillDefinitions),
 		}
 	}
-	planningStage = nativeActiveSkillPlanningStage(state, planningStage)
+	planningStage = contractSkillPlanningStage(state, planningStage)
 	return agentskills.SelectNativeActiveSkills(state.runtimeSkillRefs, state.runtimeSkillDefinitions, agentskills.NativeActiveSelectionContext{
 		PresetKey:     strings.TrimSpace(state.agent.EffectivePresetKey()),
 		TargetType:    strings.TrimSpace(state.run.TargetType),
@@ -78,7 +64,7 @@ func selectNativeActiveSkills(state *resolvedRunState, planningStage string) age
 	})
 }
 
-func nativeActiveSkillPlanningStage(state *resolvedRunState, planningStage string) string {
+func contractSkillPlanningStage(state *resolvedRunState, planningStage string) string {
 	planningStage = strings.TrimSpace(planningStage)
 	if planningStage != "" || state == nil || state.run == nil {
 		return planningStage
@@ -112,7 +98,7 @@ func nativeActiveSkillPlanningStage(state *resolvedRunState, planningStage strin
 }
 
 func effectiveExecutionSkillPolicy(state *resolvedRunState, selection agentskills.NativeActiveSelection) workerpkg.SkillPolicy {
-	if state == nil || !state.nativeSelectivePathEnabled {
+	if state == nil || !state.executionContractActive {
 		if state == nil {
 			return workerpkg.SkillPolicy{}
 		}

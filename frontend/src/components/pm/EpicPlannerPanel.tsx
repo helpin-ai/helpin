@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
-import { ArrowDown01Icon, ArrowRight01Icon, Loading01Icon, MessagePreview01Icon, PlayIcon } from '@/lib/icons';
+import { ArrowDown01Icon, ArrowRight01Icon, BotIcon, Loading01Icon, MessagePreview01Icon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
@@ -15,12 +15,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 import { isAgentAvailableForTarget } from '@/lib/agentAccess';
 import { agentService } from '@/lib/services/agentService';
+import { cn } from '@/lib/utils';
 import { ACTIVE_RUN_STATUSES, STATUS_META, getAgentRunDisplayStatus } from './agentRunConstants';
+import {
+  HISTORY_VISIBLE_ROW_LIMIT,
+  groupHistoryRuns,
+  historyGroupTimeLabel,
+  isCommandBarRun,
+  isDecayedRun,
+  compactRelativeAge,
+  runResultSummary,
+  type HistoryRunGroup,
+} from './epicPlannerRunHistory';
 
 interface EpicPlannerPanelProps {
   workspaceId: string;
@@ -51,16 +61,6 @@ export function shouldShowRunsLoading(loadingRuns: boolean, refreshingRuns: bool
   return loadingRuns && !refreshingRuns && runs.length === 0;
 }
 
-type EpicPlannerPrimaryActionKind = 'start' | 'open';
-
-interface EpicPlannerPrimaryAction {
-  kind: EpicPlannerPrimaryActionKind;
-  label: string;
-  status: string;
-  runId: string | null;
-  secondaryActionLabel: string | null;
-}
-
 function displayAgentName(name: string | null | undefined) {
   const trimmed = name?.trim();
   return trimmed || 'AI planner';
@@ -71,111 +71,194 @@ function agentRunStatusLabel(run: Pick<AgentRun, 'status' | 'pause_reason' | 'ap
   return STATUS_META[displayStatus]?.label ?? displayStatus.replaceAll('_', ' ');
 }
 
-export function getEpicPlannerPrimaryAction({
-  selectedAgentName,
-  activeRun,
-  activeRunAgentName,
-  latestRun,
-  latestRunAgentName,
-  starting,
+export interface EpicPlannerFeaturedAction {
+  label: string;
+  runId: string;
+  emphasis: 'prominent' | 'quiet';
+}
+
+export function getEpicPlannerFeaturedAction(
+  run: Pick<AgentRun, 'id' | 'status' | 'pause_reason' | 'approval_state'>,
+  agentName: string | null | undefined,
+): EpicPlannerFeaturedAction {
+  const name = displayAgentName(agentName);
+  const displayStatus = getAgentRunDisplayStatus(run);
+  if (displayStatus === 'awaiting_input') {
+    return { label: `Reply to ${name}`, runId: run.id, emphasis: 'prominent' };
+  }
+  if (displayStatus === 'awaiting_approval') {
+    return { label: `Review ${name} request`, runId: run.id, emphasis: 'prominent' };
+  }
+  if (displayStatus === 'awaiting_auth') {
+    return { label: `Complete ${name} sign-in`, runId: run.id, emphasis: 'prominent' };
+  }
+  if (displayStatus === 'queued' || displayStatus === 'running') {
+    return { label: 'Open run', runId: run.id, emphasis: 'prominent' };
+  }
+  return { label: 'View run', runId: run.id, emphasis: 'quiet' };
+}
+
+function featuredRunTimeLabel(run: AgentRun) {
+  try {
+    return formatDistanceToNow(parseISO(run.created_at), { addSuffix: true });
+  } catch {
+    return '';
+  }
+}
+
+function FeaturedRunCard({
+  run,
+  agent,
+  agentName,
+  action,
+  onOpen,
 }: {
-  selectedAgentName: string | null | undefined;
-  activeRun: Pick<AgentRun, 'id' | 'status' | 'pause_reason' | 'approval_state'> | null | undefined;
-  activeRunAgentName?: string | null;
-  latestRun: Pick<AgentRun, 'id' | 'status' | 'pause_reason' | 'approval_state'> | null | undefined;
-  latestRunAgentName: string | null | undefined;
-  starting: boolean;
-}): EpicPlannerPrimaryAction {
-  const selectedName = displayAgentName(selectedAgentName);
+  run: AgentRun;
+  agent: Agent | null;
+  agentName: string;
+  action: EpicPlannerFeaturedAction;
+  onOpen: (runId: string) => void;
+}) {
+  const displayStatus = getAgentRunDisplayStatus(run);
+  const statusMeta = STATUS_META[displayStatus];
+  const summary = runResultSummary(run);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className="cursor-pointer rounded-md border border-border/60 bg-muted/30 px-3 py-2.5 transition-colors hover:bg-muted/60"
+      onClick={() => onOpen(run.id)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen(run.id);
+        }
+      }}
+    >
+      <div className="flex items-start gap-2.5">
+        {agent ? (
+          <AgentAvatar
+            agent={agent}
+            className="h-8 w-8 rounded-none border-0 bg-transparent shadow-none"
+            genericBare
+          />
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium">{agentName}</span>
+            <Badge variant={statusMeta?.variant ?? 'outline'} className={statusMeta?.className}>
+              {agentRunStatusLabel(run)}
+            </Badge>
+            {run.invocation_mode === 'interactive' ? (
+              <Badge variant="secondary" className="gap-1">
+                <MessagePreview01Icon className="h-3 w-3" />
+                Interactive
+              </Badge>
+            ) : null}
+            <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+              {featuredRunTimeLabel(run)}
+            </span>
+          </div>
+          {summary ? (
+            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{summary}</p>
+          ) : null}
+          <Button
+            size="sm"
+            variant={action.emphasis === 'prominent' ? 'default' : 'outline'}
+            className="mt-2 gap-1.5"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpen(action.runId);
+            }}
+          >
+            <MessagePreview01Icon className="h-3.5 w-3.5" />
+            {action.label}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  if (starting) {
-    return {
-      kind: 'start',
-      label: `Starting ${selectedName}...`,
-      status: `${selectedName} is starting a planning run.`,
-      runId: null,
-      secondaryActionLabel: null,
-    };
-  }
+function HistoryRunRow({
+  run,
+  agent,
+  agentName,
+  onClick,
+}: {
+  run: AgentRun;
+  agent: Agent | null;
+  agentName: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex h-7 w-full items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-accent',
+        isDecayedRun(run) && 'opacity-60',
+      )}
+    >
+      {agent ? (
+        <AgentAvatar
+          agent={agent}
+          className="h-4 w-4 shrink-0 rounded-none border-0 bg-transparent shadow-none"
+          genericBare
+        />
+      ) : null}
+      <span className="truncate text-xs font-medium">{agentName}</span>
+      <span
+        className={cn(
+          'shrink-0 text-[11px] text-muted-foreground',
+          run.status === 'failed' && 'text-destructive',
+        )}
+      >
+        {agentRunStatusLabel(run)}
+      </span>
+      <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/70">
+        {compactRelativeAge(run.created_at)} ago
+      </span>
+    </button>
+  );
+}
 
-  if (activeRun) {
-    const activeName = displayAgentName(activeRunAgentName ?? latestRunAgentName ?? selectedName);
-    const displayStatus = getAgentRunDisplayStatus(activeRun);
-    if (displayStatus === 'awaiting_input') {
-      return {
-        kind: 'open',
-        label: `Reply to ${activeName}`,
-        status: `${activeName} is waiting for input.`,
-        runId: activeRun.id,
-        secondaryActionLabel: null,
-      };
-    }
-    if (displayStatus === 'awaiting_approval') {
-      return {
-        kind: 'open',
-        label: `Review ${activeName} request`,
-        status: `${activeName} needs review before continuing.`,
-        runId: activeRun.id,
-        secondaryActionLabel: null,
-      };
-    }
-    if (displayStatus === 'awaiting_auth') {
-      return {
-        kind: 'open',
-        label: `Complete ${activeName} sign-in`,
-        status: `${activeName} needs sign-in before continuing.`,
-        runId: activeRun.id,
-        secondaryActionLabel: null,
-      };
-    }
-    const statusVerb = activeRun.status === 'queued' ? 'is queued' : 'is running';
-    return {
-      kind: 'open',
-      label: `Open ${activeName} run`,
-      status: `${activeName} ${statusVerb}.`,
-      runId: activeRun.id,
-      secondaryActionLabel: null,
-    };
-  }
-
-  if (latestRun) {
-    const latestName = displayAgentName(latestRunAgentName ?? selectedName);
-    if (latestRun.status === 'completed') {
-      return {
-        kind: 'open',
-        label: `View ${latestName} run`,
-        status: `${latestName} completed a planning run.`,
-        runId: latestRun.id,
-        secondaryActionLabel: `Run ${selectedName}`,
-      };
-    }
-    if (latestRun.status === 'failed') {
-      return {
-        kind: 'open',
-        label: `Open failed ${latestName} run`,
-        status: `${latestName} could not complete the last planning run.`,
-        runId: latestRun.id,
-        secondaryActionLabel: `Run ${selectedName}`,
-      };
-    }
-    if (latestRun.status === 'cancelled') {
-      return {
-        kind: 'open',
-        label: `Open cancelled ${latestName} run`,
-        status: `${latestName} was cancelled.`,
-        runId: latestRun.id,
-        secondaryActionLabel: `Run ${selectedName}`,
-      };
-    }
-  }
-
-  return {
-    kind: 'start',
-    label: `Run ${selectedName}`,
-    status: 'Choose an AI planning agent to plan this epic.',
-    runId: null,
-    secondaryActionLabel: null,
-  };
+function CollapsedGroupRow({
+  group,
+  agent,
+  agentName,
+  onExpand,
+}: {
+  group: HistoryRunGroup;
+  agent: Agent | null;
+  agentName: string;
+  onExpand: () => void;
+}) {
+  const allDecayed = group.runs.every((run) => isDecayedRun(run));
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      className={cn(
+        'flex h-7 w-full items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-accent',
+        allDecayed && 'opacity-60',
+      )}
+    >
+      <ArrowRight01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+      {agent ? (
+        <AgentAvatar
+          agent={agent}
+          className="h-4 w-4 shrink-0 rounded-none border-0 bg-transparent shadow-none"
+          genericBare
+        />
+      ) : null}
+      <span className="truncate text-xs font-medium">{agentName}</span>
+      <span className="shrink-0 text-[11px] text-muted-foreground">{group.runs.length} runs</span>
+      <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/70">
+        {historyGroupTimeLabel(group)}
+      </span>
+    </button>
+  );
 }
 
 export function EpicPlannerPanel({
@@ -196,6 +279,8 @@ export function EpicPlannerPanel({
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [refreshingRuns, setRefreshingRuns] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
   const lastReportedCompletedRunIdRef = useRef<string | null>(null);
   const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId);
   const accessibleTeamIds = useMemo(
@@ -221,7 +306,10 @@ export function EpicPlannerPanel({
     }
     try {
       const res = await agentService.listTargetRuns(workspaceId, 'epic', epicId);
-      const nextRuns = res.data ?? [];
+      // Command-bar / DAG orchestration runs target this epic but are not
+      // planner runs (no transcript of their own); they live in the Ask-agents
+      // dock, so keep them out of the planner list entirely.
+      const nextRuns = (res.data ?? []).filter((run) => !isCommandBarRun(run));
       setRuns(nextRuns);
       setSelectedRunId((current) => {
         if (current && nextRuns.some((run) => run.id === current)) return current;
@@ -360,23 +448,26 @@ export function EpicPlannerPanel({
     () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
     [agents],
   );
+  const agentById = useMemo(
+    () => Object.fromEntries(agents.map((agent) => [agent.id, agent])),
+    [agents],
+  );
 
   const latestRun = runs[0] ?? null;
   const activeRun = useMemo(
     () => runs.find((run) => ACTIVE_RUN_STATUSES.has(run.status)) ?? null,
     [runs],
   );
-  const activeRunAgentName = activeRun ? agentNameById[activeRun.agent_id] ?? null : null;
-  const latestRunAgentName = latestRun ? agentNameById[latestRun.agent_id] ?? null : null;
-  const selectedPlannerName = selectedPlanner?.name ?? preferredPlanner?.name ?? null;
-  const primaryAction = getEpicPlannerPrimaryAction({
-    selectedAgentName: selectedPlannerName,
-    activeRun,
-    activeRunAgentName,
-    latestRun,
-    latestRunAgentName,
-    starting,
-  });
+  const featuredRun = activeRun ?? latestRun;
+  const featuredAgentName = featuredRun ? agentNameById[featuredRun.agent_id] ?? 'Agent' : null;
+  const historyRuns = useMemo(
+    () => (featuredRun ? runs.filter((run) => run.id !== featuredRun.id) : runs),
+    [featuredRun, runs],
+  );
+  const historyGroups = useMemo(() => groupHistoryRuns(historyRuns), [historyRuns]);
+  const visibleGroups = showAllHistory
+    ? historyGroups
+    : historyGroups.slice(0, HISTORY_VISIBLE_ROW_LIMIT);
   const showVisibleRunsLoading = shouldShowRunsLoading(loadingRuns, refreshingRuns, runs);
   const plannerSelectionDisabled = !!activeRun || starting;
 
@@ -385,170 +476,178 @@ export function EpicPlannerPanel({
     setDrawerOpen(true);
   };
 
-  const handlePrimaryAction = () => {
-    if (primaryAction.kind === 'open' && primaryAction.runId) {
-      openRun(primaryAction.runId);
-      return;
-    }
-    void handleStart();
+  const expandGroup = (groupId: string) => {
+    setExpandedGroupIds((current) => {
+      const next = new Set(current);
+      next.add(groupId);
+      return next;
+    });
   };
 
+  const launcherDisabledReason = activeRun
+    ? 'A run is in progress.'
+    : !selectedAgentId
+      ? 'Choose an agent to run.'
+      : null;
+
   return (
-    <div className="space-y-4 rounded-lg border border-border/60 px-4 py-3">
+    <div className="overflow-hidden rounded-md border border-border/60 bg-card">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
+          Agent runs
+        </span>
+        {runs.length > 0 ? (
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/60 bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
+            {runs.length}
+          </span>
+        ) : null}
+      </div>
+
       {canEdit ? (
-        <div className="space-y-2.5">
-          <p className="text-xs text-muted-foreground">
-            {primaryAction.status}
-          </p>
-
-          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-            <div className="space-y-1">
-              <Select
-                value={selectedAgentId || '__none__'}
-                onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}
-                disabled={plannerSelectionDisabled}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select an AI planning agent..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">No agent selected</SelectItem>
-                  {plannerAgents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      <div className="flex items-center gap-2">
-                        <AgentAvatar agent={agent} className="h-5 w-5" />
-                        <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedPlanner && !selectedPlanner.system_prompt ? (
-                <p className="text-[11px] text-muted-foreground">
-                  This agent is missing system instructions.
-                </p>
-              ) : null}
-            </div>
-            <div className="flex flex-col gap-2 md:items-end">
-              <Button
-                onClick={handlePrimaryAction}
-                disabled={primaryAction.kind === 'start' && (!selectedAgentId || starting)}
-                className="w-full gap-1.5 md:w-auto md:min-w-44"
-              >
-                {starting ? (
-                  <Loading01Icon className="h-4 w-4 animate-spin" />
-                ) : primaryAction.kind === 'open' ? (
-                  <MessagePreview01Icon className="h-4 w-4" />
-                ) : (
-                  <PlayIcon className="h-4 w-4" />
-                )}
-                {primaryAction.label}
-              </Button>
-              {primaryAction.secondaryActionLabel ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void handleStart()}
-                  disabled={!selectedAgentId || starting}
-                  className="w-full gap-1.5 md:w-auto md:min-w-44"
-                >
-                  {starting ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <PlayIcon className="h-4 w-4" />}
-                  {primaryAction.secondaryActionLabel}
-                </Button>
-              ) : null}
-            </div>
+        <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-xs text-muted-foreground">Agent</span>
+            <Select
+              value={selectedAgentId || '__none__'}
+              onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}
+              disabled={plannerSelectionDisabled}
+            >
+              <SelectTrigger size="sm" className="h-7 w-auto min-w-0 gap-1.5 text-xs">
+                <SelectValue placeholder="Select agent" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__" className="text-xs">No agent selected</SelectItem>
+                {plannerAgents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id} className="text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
+                      <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-
-          {!activeRun ? (
-            <div className="space-y-2 pt-2">
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => setAdditionalContextOpen((open) => !open)}
-              >
-                {additionalContextOpen ? (
-                  <ArrowDown01Icon className="h-3.5 w-3.5" />
-                ) : (
-                  <ArrowRight01Icon className="h-3.5 w-3.5" />
-                )}
-                {additionalContext.trim() ? 'Edit special instructions' : 'Add special instructions'}
-              </button>
-
-              {additionalContextOpen ? (
-                <div className="space-y-1.5">
-                  <Textarea
-                    value={additionalContext}
-                    onChange={(event) => setAdditionalContext(event.target.value)}
-                    placeholder="Add anything not already captured in the epic description, such as constraints, priorities, or decisions the agent should account for."
-                    rows={3}
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Sent with the first message to help the agent scope the run.
-                  </p>
-                </div>
-              ) : null}
-            </div>
+          {launcherDisabledReason ? (
+            <p className="ml-auto min-w-0 truncate text-right text-[11px] text-muted-foreground">
+              {launcherDisabledReason}
+            </p>
           ) : null}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 px-2.5 text-xs"
+            onClick={() => void handleStart()}
+            disabled={!selectedAgentId || starting || !!activeRun}
+          >
+            {starting ? (
+              <Loading01Icon className="h-3 w-3 animate-spin" />
+            ) : (
+              <PlayIcon className="h-3 w-3" />
+            )}
+            {starting ? 'Starting...' : 'Run'}
+          </Button>
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">You do not have permission to start or reply to epic planner runs.</p>
+        <p className="border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">
+          You do not have permission to start or reply to epic planner runs.
+        </p>
       )}
 
-      <Separator className="my-1" />
+      {canEdit && selectedPlanner && !selectedPlanner.system_prompt ? (
+        <p className="border-t border-border/60 px-3 py-2 text-[11px] text-muted-foreground">
+          This agent is missing system instructions.
+        </p>
+      ) : null}
 
-      <div className="space-y-2.5 pt-5">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Agent runs</p>
-          {showVisibleRunsLoading ? (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <Loading01Icon className="h-3 w-3 animate-spin" />
-              Loading
-            </span>
+      {canEdit && !activeRun ? (
+        <div className="space-y-2 border-t border-border/60 px-3 py-2">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            onClick={() => setAdditionalContextOpen((open) => !open)}
+          >
+            {additionalContextOpen ? (
+              <ArrowDown01Icon className="h-3.5 w-3.5" />
+            ) : (
+              <ArrowRight01Icon className="h-3.5 w-3.5" />
+            )}
+            {additionalContext.trim() ? 'Edit special instructions' : 'Add special instructions'}
+          </button>
+
+          {additionalContextOpen ? (
+            <div className="space-y-1.5">
+              <Textarea
+                value={additionalContext}
+                onChange={(event) => setAdditionalContext(event.target.value)}
+                placeholder="Add anything not already captured in the epic description, such as constraints, priorities, or decisions the agent should account for."
+                rows={3}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Sent with the first message to help the agent scope the run.
+              </p>
+            </div>
           ) : null}
         </div>
+      ) : null}
 
-        {runs.length === 0 && !loadingRuns ? (
-          <div className="pb-14 pt-1">
-            <p className="text-sm text-muted-foreground">No runs yet.</p>
-          </div>
+      <div className="space-y-2 border-t border-border/60 px-3 py-2.5">
+        {showVisibleRunsLoading ? (
+          <p className="inline-flex items-center gap-1.5 py-1 text-xs text-muted-foreground">
+            <Loading01Icon className="h-3 w-3 animate-spin" />
+            Loading runs
+          </p>
+        ) : !featuredRun ? (
+          <p className="py-1 text-xs text-muted-foreground">No runs yet. Choose an agent and click Run.</p>
         ) : (
-          <div className="space-y-2">
-            {runs.map((run) => {
-              const agentName = agentNameById[run.agent_id] ?? 'Agent';
-              const agent = agents.find((candidate) => candidate.id === run.agent_id) ?? null;
-              return (
-                <button
-                  key={run.id}
-                  type="button"
-                  className="w-full rounded-lg border border-border/60 bg-input/50 px-3 py-2 text-left transition-colors hover:bg-accent"
-                  onClick={() => {
-                    setSelectedRunId(run.id);
-                    setDrawerOpen(true);
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        {agent ? <AgentAvatar agent={agent} className="h-6 w-6" /> : null}
-                        <p className="truncate text-sm font-medium">{agentName}</p>
-                        {run.invocation_mode === 'interactive' ? (
-                          <Badge variant="secondary" className="gap-1">
-                            <MessagePreview01Icon className="h-3 w-3" />
-                            Interactive
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {agentRunStatusLabel(run)} · {formatDistanceToNow(parseISO(run.created_at), { addSuffix: true })}
-                      </p>
-                    </div>
-                    <Badge variant="outline">{agentRunStatusLabel(run)}</Badge>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          <FeaturedRunCard
+            run={featuredRun}
+            agent={agentById[featuredRun.agent_id] ?? null}
+            agentName={featuredAgentName ?? 'Agent'}
+            action={getEpicPlannerFeaturedAction(featuredRun, featuredAgentName)}
+            onOpen={openRun}
+          />
         )}
+
+        {historyGroups.length > 0 ? (
+          <div className="space-y-0.5">
+            {visibleGroups.map((group) => {
+              const groupId = group.runs[0].id;
+              const agentName = agentNameById[group.agentId] ?? 'Agent';
+              const groupAgent = agentById[group.agentId] ?? null;
+              if (group.kind === 'collapsed' && !expandedGroupIds.has(groupId)) {
+                return (
+                  <CollapsedGroupRow
+                    key={groupId}
+                    group={group}
+                    agent={groupAgent}
+                    agentName={agentName}
+                    onExpand={() => expandGroup(groupId)}
+                  />
+                );
+              }
+              return group.runs.map((run) => (
+                <HistoryRunRow
+                  key={run.id}
+                  run={run}
+                  agent={agentById[run.agent_id] ?? null}
+                  agentName={agentName}
+                  onClick={() => openRun(run.id)}
+                />
+              ));
+            })}
+            {!showAllHistory && historyGroups.length > HISTORY_VISIBLE_ROW_LIMIT ? (
+              <button
+                type="button"
+                onClick={() => setShowAllHistory(true)}
+                className="px-2 pt-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Show all {historyRuns.length} runs
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <CodingSessionDrawer

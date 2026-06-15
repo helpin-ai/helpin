@@ -1,10 +1,10 @@
 package model
 
 const (
-	AgentRunArtifactTypeNativeRepairState = "native_repair_state"
+	AgentRunArtifactTypeAgentRepairState = "agent_repair_state"
 )
 
-type NativeRepairState struct {
+type AgentRepairState struct {
 	Source       string `json:"source"`
 	RepairClass  string `json:"repair_class"`
 	ToolName     string `json:"tool_name,omitempty"`

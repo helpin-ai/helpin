@@ -106,7 +106,7 @@ func CompileInstructionModules(moduleKeys []string) string {
 		if !ok {
 			continue
 		}
-		instructions := strings.TrimSpace(skill.Instructions)
+		instructions := RenderRuntimeToolNamesInInstructions(skill.Instructions)
 		if instructions == "" {
 			continue
 		}
