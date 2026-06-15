@@ -132,7 +132,9 @@ describe('CustomAgentCreatePanel', () => {
       },
     });
 
-    expect(container?.textContent).toContain('Edit Custom Agent');
+    expect(container?.textContent).toContain('Docs helper');
+    expect(container?.textContent).toContain('Custom agent');
+    expect(container?.textContent).not.toContain('Edit Custom Agent');
     expect(container?.textContent).toContain('Agent settings');
     expect(container?.textContent).toContain('Save changes');
     expect(container?.textContent).not.toContain('Describe the agent you want');
@@ -186,7 +188,7 @@ describe('CustomAgentCreatePanel', () => {
     }));
   });
 
-  it('shows all primary settings on one page and keeps approval and advanced collapsed', () => {
+  it('shows all primary settings on one page and keeps run mode visible and advanced collapsed', () => {
     renderPanel({ form: { ...createDefaultCustomAgentForm(), name: 'Planner' } });
 
     click('Start blank');
@@ -195,20 +197,21 @@ describe('CustomAgentCreatePanel', () => {
     expect(container?.textContent).toContain('Instructions');
     expect(container?.textContent).toContain('Access and work area');
     expect(container?.textContent).toContain('Capabilities');
-    expect(container?.textContent).toContain('Run approval');
+    expect(container?.textContent).toContain('Run mode');
+    expect(container?.textContent).not.toContain('Run approval');
     expect(container?.textContent).toContain('Advanced settings');
     expect(container?.textContent).not.toContain('Review new agent');
     expect(container?.textContent).not.toContain('AI Provider');
   });
 
-  it('exposes approval preference when expanded', () => {
+  it('shows run mode by default', () => {
     renderPanel({
       form: { ...createDefaultCustomAgentForm(), name: 'Planner' },
     });
 
     click('Start blank');
-    click('Run approval');
-    expect(container?.textContent).toContain('Require approval before each run');
+    expect(container?.textContent).toContain('Interactive');
+    expect(container?.textContent).toContain('Can ask follow-up questions or request approval.');
   });
 
   it('keeps runtime options aligned with the old custom-agent drawer', () => {
@@ -222,6 +225,7 @@ describe('CustomAgentCreatePanel', () => {
 
     expect(container?.textContent).toContain('Codex');
     expect(container?.textContent).toContain('Interactive');
+    expect(container?.textContent).toContain('Best for code and repository work.');
 
     click('Codex');
     expect(document.body.textContent).toContain('OpenCode');

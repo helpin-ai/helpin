@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, ty
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon } from '@/lib/icons';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon, ZapIcon } from '@/lib/icons';
 import { EmailDetailModal } from './EmailDetailModal';
 import { MessageActionsContextMenu, MessageActionsMenu } from './MessageActionsMenu';
 import { MessageDeleteDialog } from './MessageDeleteDialog';
@@ -455,9 +455,10 @@ export const MessageBubble = memo(function MessageBubble({
       'triage_dismissed',
       'ai_escalated',
       'customer_requested_human',
+      'reopened',
     ];
 
-    const stateEventTypes: ReadonlyArray<string> = ['resolved', 'reopened', 'closed'];
+    const stateEventTypes: ReadonlyArray<string> = ['resolved', 'closed'];
     const eventType = message.system_event_type;
 
     const ESCALATION_LABELS: Record<string, string> = {
@@ -466,6 +467,13 @@ export const MessageBubble = memo(function MessageBubble({
     };
     const isEscalationEvent = !!eventType && eventType in ESCALATION_LABELS;
     const escalationLabel = isEscalationEvent ? ESCALATION_LABELS[eventType] : null;
+    const isRuleRoutingEvent = eventType === 'triage_routed' && message.content.trim().toLowerCase().startsWith('routing rule ');
+    const isAIRoutingEvent = eventType === 'triage_routed' && !isRuleRoutingEvent;
+    const automatedEventIcon = isRuleRoutingEvent
+      ? { label: 'Routing rule', icon: <ZapIcon className="h-3 w-3" />, className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' }
+      : isAIRoutingEvent
+        ? { label: 'AI routing', icon: <BotIcon className="h-3 w-3" />, className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' }
+        : null;
     const escalationIcon = eventType === 'customer_requested_human'
       ? <UserIcon className="h-3 w-3" />
       : eventType === 'ai_escalated'
@@ -495,10 +503,34 @@ export const MessageBubble = memo(function MessageBubble({
       stateEventKind = resolved ? 'resolved' : reopened ? 'reopened' : closed ? 'closed' : null;
     }
 
-    const statusIcon = stateEventKind === 'resolved' ? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />
-      : stateEventKind === 'reopened' ? <RotateLeft01Icon className="h-3.5 w-3.5 shrink-0" />
-      : stateEventKind === 'closed' ? <CancelCircleIcon className="h-4 w-4 shrink-0" />
+    const statusIcon = stateEventKind === 'resolved' ? (
+      <span aria-label="Resolved" className="flex shrink-0 text-emerald-600 dark:text-emerald-300">
+        <CheckmarkCircle02Icon className="h-4 w-4" />
+      </span>
+    )
+      : stateEventKind === 'reopened' ? (
+        <span aria-label="Reopened" className="flex shrink-0">
+          <RotateLeft01Icon className="h-3.5 w-3.5" />
+        </span>
+      )
+        : stateEventKind === 'closed' ? (
+          <span aria-label="Closed" className="flex shrink-0">
+            <CancelCircleIcon className="h-4 w-4" />
+          </span>
+        )
       : null;
+    const statePillClass = stateEventKind === 'resolved'
+      ? 'rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200'
+      : 'rounded-full bg-slate-700 px-4 py-2 text-white shadow-sm';
+    const resolvedActorAvatar = stateEventKind === 'resolved' ? (
+      resolvedAvatarUrl ? (
+        <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-5 w-5 rounded-full object-cover" />
+      ) : (
+        <div aria-label={resolvedSenderName} className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold leading-none ${getAvatarColor(avatarSeed)}`}>
+          {getInitial(resolvedSenderName)}
+        </div>
+      )
+    ) : null;
 
     // Routing events use a neutral muted style with leading avatar; state
     // transitions keep the stronger slate pill so they stay visually distinct.
@@ -513,6 +545,10 @@ export const MessageBubble = memo(function MessageBubble({
                 {isEscalationEvent ? (
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                     {escalationIcon}
+                  </span>
+                ) : automatedEventIcon ? (
+                  <span aria-label={automatedEventIcon.label} className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${automatedEventIcon.className}`}>
+                    {automatedEventIcon.icon}
                   </span>
                 ) : resolvedAvatarUrl ? (
                   <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-5 w-5 rounded-full object-cover" />
@@ -536,9 +572,10 @@ export const MessageBubble = memo(function MessageBubble({
       <div className="my-5 flex items-center justify-center gap-2 animate-in fade-in duration-300">
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="flex items-center gap-2.5 rounded-full bg-slate-700 px-4 py-2 text-white shadow-sm" style={{ border: 'none' }}>
+            <div className={`flex items-center gap-2.5 ${statePillClass}`}>
               {statusIcon ?? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />}
-              <span className="text-sm font-medium">{message.content}</span>
+              {resolvedActorAvatar}
+              <span className={stateEventKind === 'resolved' ? 'font-medium' : 'text-sm font-medium'}>{message.content}</span>
             </div>
           </TooltipTrigger>
           <TooltipContent side="top">

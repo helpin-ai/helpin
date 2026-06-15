@@ -24,6 +24,7 @@ func TestInstallerInstallCreateAgentTemplateCreatesStampedAgentAndRule(t *testin
 		Name:        "Release Notes",
 		Inputs: map[string]any{
 			"repository_id":             "repo-1",
+			"destination_space_id":      "space-1",
 			"destination_collection_id": "collection-1",
 			"include_prerelease":        true,
 		},
@@ -63,6 +64,39 @@ func TestInstallerInstallCreateAgentTemplateCreatesStampedAgentAndRule(t *testin
 	assertTemplateActivity(t, db, result.Rule.ID, "template.installed", "release_notes_writer")
 }
 
+func TestInstallerInstallTemplateGeneratesContextualRuleMetadata(t *testing.T) {
+	db := setupInstallerTestDB(t)
+	installer := NewInstaller(db, mustTestRegistry(t))
+
+	result, err := installer.Install(context.Background(), InstallRequest{
+		WorkspaceID: "ws-1",
+		TemplateKey: "release_notes_writer",
+		ActorID:     "user-1",
+		Name:        "",
+		AgentName:   "",
+		Inputs: map[string]any{
+			"repository_id":             "repo-1",
+			"destination_space_id":      "space-1",
+			"destination_collection_id": "collection-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	if result.Rule == nil {
+		t.Fatal("expected created rule")
+	}
+	if result.Rule.Name != "Release notes for acme/api" {
+		t.Fatalf("rule name = %q, want contextual name", result.Rule.Name)
+	}
+	if result.Rule.Description == nil {
+		t.Fatal("expected generated rule description")
+	}
+	if got := *result.Rule.Description; !strings.Contains(got, "GitHub release") || !strings.Contains(got, "acme/api") || !strings.Contains(got, "Release Notes Writer agent") {
+		t.Fatalf("rule description = %q, want trigger, target, and agent context", got)
+	}
+}
+
 func TestInstallerInstallCreateAgentTemplateSuffixesDuplicateAgentName(t *testing.T) {
 	db := setupInstallerTestDB(t)
 	if err := db.Create(&model.Agent{
@@ -88,6 +122,7 @@ func TestInstallerInstallCreateAgentTemplateSuffixesDuplicateAgentName(t *testin
 		ActorID:     "user-1",
 		Inputs: map[string]any{
 			"repository_id":             "repo-1",
+			"destination_space_id":      "space-1",
 			"destination_collection_id": "collection-1",
 		},
 	})
@@ -158,6 +193,7 @@ func TestInstallerInstallCreateAgentTemplateAppliesAgentSetup(t *testing.T) {
 		AgentName:   "Release Docs Reviewer",
 		Inputs: map[string]any{
 			"repository_id":             "repo-1",
+			"destination_space_id":      "space-1",
 			"destination_collection_id": "collection-1",
 		},
 		AgentOverrides: &model.CreateAgentFromTemplateOverrides{
@@ -725,6 +761,7 @@ func TestUninstallerKeepCreatedAgentClearsTemplateFields(t *testing.T) {
 		ActorID:     "user-1",
 		Inputs: map[string]any{
 			"repository_id":             "repo-1",
+			"destination_space_id":      "space-1",
 			"destination_collection_id": "collection-1",
 		},
 	})
@@ -772,6 +809,7 @@ func TestUninstallerDeleteCreatedAgent(t *testing.T) {
 		ActorID:     "user-1",
 		Inputs: map[string]any{
 			"repository_id":             "repo-1",
+			"destination_space_id":      "space-1",
 			"destination_collection_id": "collection-1",
 		},
 	})
@@ -809,6 +847,7 @@ func TestUninstallerKeepsCreatedAgentWithRunHistory(t *testing.T) {
 		ActorID:     "user-1",
 		Inputs: map[string]any{
 			"repository_id":             "repo-1",
+			"destination_space_id":      "space-1",
 			"destination_collection_id": "collection-1",
 		},
 	})
@@ -851,6 +890,7 @@ func TestUninstallerDoesNotDeleteAgentReferencedByAnotherRule(t *testing.T) {
 		ActorID:     "user-1",
 		Inputs: map[string]any{
 			"repository_id":             "repo-1",
+			"destination_space_id":      "space-1",
 			"destination_collection_id": "collection-1",
 		},
 	})
@@ -913,6 +953,7 @@ func setupInstallerTestDB(t *testing.T) *gorm.DB {
 			template_key text,
 			template_instance_id text,
 			template_version integer,
+			active_version_id text,
 			role text,
 			status text NOT NULL DEFAULT 'idle',
 			runtime_kind text NOT NULL DEFAULT 'opencode',
@@ -947,6 +988,7 @@ func setupInstallerTestDB(t *testing.T) *gorm.DB {
 			id text PRIMARY KEY,
 			workspace_id text NOT NULL,
 			agent_id text NOT NULL,
+			agent_version_id text,
 			target_type text NOT NULL,
 			target_id text NOT NULL,
 			runtime_kind text NOT NULL DEFAULT 'native_sdk',
@@ -957,6 +999,7 @@ func setupInstallerTestDB(t *testing.T) *gorm.DB {
 			status text NOT NULL DEFAULT 'queued',
 			input text NOT NULL DEFAULT '{}',
 			output_summary text NOT NULL DEFAULT '{}',
+			tokens_used integer NOT NULL DEFAULT 0,
 			error_message text,
 			completed_at datetime,
 			created_at datetime,

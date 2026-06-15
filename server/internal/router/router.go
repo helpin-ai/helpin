@@ -515,6 +515,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMAdminAutomations)).Post("/", h.Automation.CreateFlow)
 					r.Route("/{id}", func(r chi.Router) {
 						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetFlow)
+						r.With(requirePerm(authorization.PermPMEdit)).Post("/run", h.Automation.RunFlowNow)
 						r.With(requirePerm(authorization.PermPMAdminAutomations)).Put("/", h.Automation.UpdateFlow)
 						r.With(requirePerm(authorization.PermPMAdminAutomations)).Delete("/", h.Automation.DeleteFlow)
 					})
@@ -558,6 +559,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requirePerm(authorization.PermPMEdit)).Put("/", h.Automation.UpdateAgent)
 						r.With(requirePerm(authorization.PermPMEdit)).Delete("/", h.Automation.DeleteAgent)
 						r.With(requirePerm(authorization.PermPMRead)).Get("/usage", h.Automation.GetAgentUsage)
+						r.With(requirePerm(authorization.PermPMRead)).Get("/analytics", h.Automation.GetAgentAnalytics)
+						r.With(requirePerm(authorization.PermPMRead)).Get("/versions", h.Automation.ListAgentVersions)
+						r.With(requirePerm(authorization.PermPMEdit)).Post("/versions", h.Automation.CreateAgentVersion)
+						r.With(requirePerm(authorization.PermPMEdit)).Put("/versions/{versionID}", h.Automation.UpdateAgentVersion)
+						r.With(requirePerm(authorization.PermPMEdit)).Post("/versions/{versionID}/activate", h.Automation.ActivateAgentVersion)
+						r.With(requirePerm(authorization.PermPMEdit)).Delete("/versions/{versionID}", h.Automation.DeleteAgentVersion)
 					})
 				})
 
@@ -682,6 +689,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/email-senders", h.SupportInbox.ListEmailSenders)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders", h.SupportInbox.CreateEmailSender)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders/{senderId}/verify-dns", h.SupportInbox.VerifyEmailSender)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/email-senders/{senderId}", h.SupportInbox.UpdateEmailSender)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders/{senderId}/set-default", h.SupportInbox.SetDefaultEmailSender)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders/{senderId}/disable", h.SupportInbox.DisableEmailSender)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/email-sender-domains", h.SupportInbox.ListEmailSenderDomains)
@@ -734,6 +742,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Installation settings
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/installations", h.SupportInbox.GetInstallation)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/routing-usage", h.SupportInbox.GetRoutingUsageStatus)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Patch("/inbox/installations", h.SupportInbox.UpdateInstallationSettings)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/regenerate-key", h.SupportInbox.RegenerateWidgetKey)
 
@@ -991,6 +1000,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Get("/tool-catalog", h.Agent.ListToolCatalog)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}", h.Agent.GetAgent)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/usage", h.Agent.GetAgentUsage)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/analytics", h.Agent.GetAgentAnalytics)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/versions", h.Agent.ListAgentVersions)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agents/{id}/versions", h.Agent.CreateAgentVersion)
+					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/versions/{versionID}", h.Agent.UpdateAgentVersion)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agents/{id}/versions/{versionID}/activate", h.Agent.ActivateAgentVersion)
+					r.With(requirePerm(authorization.PermPMEdit)).Delete("/agents/{id}/versions/{versionID}", h.Agent.DeleteAgentVersion)
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}", h.Agent.UpdateAgent)
 					r.With(requirePerm(authorization.PermPMEdit)).Delete("/agents/{id}", h.Agent.DeleteAgent)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/runs", h.Agent.ListAgentRuns)

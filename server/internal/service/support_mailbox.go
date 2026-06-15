@@ -429,6 +429,9 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 		}
 		mailbox.AssignmentMode = mode
 	}
+	if req.Active != nil {
+		mailbox.Active = *req.Active
+	}
 	if req.ClearReplyTimePreset != nil && *req.ClearReplyTimePreset {
 		mailbox.ReplyTimePreset = nil
 		mailbox.ReplyTimeCustomMinutes = nil
@@ -650,7 +653,7 @@ func (s *SupportInboxService) createMailboxMoveSystemMessage(ctx context.Context
 		SenderUserID:      &actorID,
 		SenderDisplayName: &displayName,
 		SenderAvatarURL:   avatarURL,
-		Content:           fmt.Sprintf("Moved to %s by %s", mailboxName, displayName),
+		Content:           fmt.Sprintf("%s moved to inbox '%s'.", supportSystemActorName(displayName, "Team member"), mailboxName),
 		IsInternal:        true,
 		MessageType:       "system",
 		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventMailboxMoved),

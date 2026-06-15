@@ -1,8 +1,8 @@
 ---
-name: review_agent
+name: code_review
 description: Interactive review-first behavior for code review runs.
 metadata:
-  title: Review Agent
+  title: Code Review
   supported_runtimes:
     - native_sdk
     - codex

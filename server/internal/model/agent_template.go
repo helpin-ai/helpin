@@ -6,8 +6,8 @@ const (
 	AgentTemplateRuntimeKindNativeSDK  = "native_sdk"
 	AgentTemplateTypeReleaseNotes      = "release_notes_writer"
 	AgentTemplateTypeCompetitiveIntel  = "competitive_intelligence_digest"
-	AgentTemplateTypeDependencyAuditor = "dependency_auditor"
-	AgentTemplateTypeSecurityTriage    = "security_triage"
+	AgentTemplateTypeDependencyAuditor = "engineering_dependency_auditor"
+	AgentTemplateTypeSecurityTriage    = "engineering_security_triage"
 )
 
 type AgentTemplate struct {

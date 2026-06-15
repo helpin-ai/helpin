@@ -11,6 +11,7 @@ export type AgentPersonaKey =
   | 'lens'
   | 'beacon'
   | 'quill'
+  | 'mira'
   | 'generic';
 
 interface AgentPersonaMeta {
@@ -28,16 +29,18 @@ const PRESET_PERSONA_MAP: Partial<Record<AgentPresetKey, AgentPersonaKey>> = {
   review_agent: 'lens',
   crm_operator: 'beacon',
   documentation_agent: 'quill',
+  marketer: 'mira',
 };
 
 const PERSONA_META: Record<AgentPersonaKey, AgentPersonaMeta> = {
   atlas: { key: 'atlas', label: 'Atlas', role: 'Epic planner' },
-  scribe: { key: 'scribe', label: 'Scribe', role: 'Task planner' },
+  scribe: { key: 'scribe', label: 'Scribe', role: 'Coding task planner' },
   forge: { key: 'forge', label: 'Forge', role: 'Coding agent' },
   echo: { key: 'echo', label: 'Echo', role: 'Help chat agent' },
-  lens: { key: 'lens', label: 'Lens', role: 'QA reviewer' },
+  lens: { key: 'lens', label: 'Lens', role: 'QA & code reviewer' },
   beacon: { key: 'beacon', label: 'Beacon', role: 'CRM operator' },
-  quill: { key: 'quill', label: 'Quill', role: 'Docs agent' },
+  quill: { key: 'quill', label: 'Quill', role: 'Documentation Agent' },
+  mira: { key: 'mira', label: 'Mira', role: 'Marketer' },
   generic: { key: 'generic', label: 'Agent', role: 'Automation agent' },
 };
 
@@ -61,6 +64,8 @@ function personaFromName(name?: string | null): AgentPersonaKey | null {
       return 'beacon';
     case 'quill':
       return 'quill';
+    case 'mira':
+      return 'mira';
     default:
       return null;
   }
@@ -255,6 +260,27 @@ function PersonaSvg({ persona, className, genericBare = false }: { persona: Agen
           <circle cx="52" cy="36" r="1.3" fill="#E6F1FB" />
           <path d="M32 51Q40 57 48 51" stroke="#E6F1FB" strokeWidth="2.6" strokeLinecap="round" />
           <rect x="26" y="58" width="28" height="3" rx="1.5" fill="#85B7EB" opacity=".75" />
+        </svg>
+      );
+    case 'mira':
+      return (
+        <svg className={className} viewBox="0 0 80 80" fill="none">
+          <circle cx="40" cy="42" r="29" fill="#E2554F" opacity=".12" />
+          <rect x="14" y="20" width="52" height="43" rx="17" fill="#E2554F" />
+          <path d="M24 20C29 12 38 8 48 10C54 11 59 14 62 19C54 18 47 21 42 26C36 20 30 18 24 20Z" fill="#FFB35C" />
+          <path d="M27 21C32 16 39 14 47 16C51 17 55 19 58 22C51 22 45 25 41 30C36 24 31 22 27 21Z" fill="#FFF1D5" opacity=".95" />
+          <circle cx="30" cy="38" r="7" fill="#FFF4EA" />
+          <circle cx="50" cy="38" r="7" fill="#FFF4EA" />
+          <circle cx="30" cy="38" r="3" fill="#4B1714" />
+          <circle cx="50" cy="38" r="3" fill="#4B1714" />
+          <circle cx="32" cy="36" r="1.3" fill="#FFF4EA" />
+          <circle cx="52" cy="36" r="1.3" fill="#FFF4EA" />
+          <path d="M33 51Q40 56 47 51" stroke="#FFF4EA" strokeWidth="2.6" strokeLinecap="round" />
+          <path d="M19 32L10 27" stroke="#FFB35C" strokeWidth="3" strokeLinecap="round" />
+          <path d="M61 32L70 27" stroke="#FFB35C" strokeWidth="3" strokeLinecap="round" />
+          <circle cx="10" cy="27" r="3" fill="#FFD48C" />
+          <circle cx="70" cy="27" r="3" fill="#FFD48C" />
+          <path d="M24 62C31 66 49 66 56 62" stroke="#FFB35C" strokeWidth="2.2" strokeLinecap="round" opacity=".8" />
         </svg>
       );
     default:

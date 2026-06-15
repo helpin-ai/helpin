@@ -1,8 +1,8 @@
 ---
-name: release_to_docs_update
-description: Updating internal docs, public help docs, and API docs from released product changes.
+name: post_release_docs_update
+description: Finds and updates internal, public help, and API documentation gaps created by shipped product changes.
 metadata:
-  title: Release To Docs Update
+  title: Post-release Docs Update
   supported_runtimes:
     - native_sdk
 ---

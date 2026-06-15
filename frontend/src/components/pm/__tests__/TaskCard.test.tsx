@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TaskCard } from '../TaskCard'
 import { BoardDataContext, BoardCallbacksContext, type BoardCallbacksContextValue } from '../KanbanBoard.contexts'
@@ -39,21 +39,31 @@ vi.mock('@/hooks/queries', () => ({
   }),
 }))
 
+const displayStoreMock = vi.hoisted(() => {
+  const defaultProperties = {
+    task_id: true,
+    task_type: true,
+    priority: true,
+    severity: true,
+    agent: true,
+    epic: true,
+    sprint: true,
+    labels: true,
+    estimate: true,
+    due_date: true,
+    blocked: true,
+    assignee: true,
+  }
+
+  return {
+    defaultProperties,
+    properties: { ...defaultProperties },
+  }
+})
+
 vi.mock('@/stores/boardDisplayStore', () => ({
   useBoardDisplayStore: (selector: (state: { properties: Record<string, boolean> }) => unknown) => selector({
-    properties: {
-      task_type: true,
-      priority: true,
-      severity: true,
-      agent: true,
-      epic: true,
-      sprint: true,
-      labels: true,
-      estimate: true,
-      due_date: true,
-      blocked: true,
-      assignee: true,
-    },
+    properties: displayStoreMock.properties,
   }),
 }))
 
@@ -169,6 +179,10 @@ function renderTaskCard(task: Task, props: { isOverlay?: boolean } = {}) {
 }
 
 describe('TaskCard', () => {
+  beforeEach(() => {
+    displayStoreMock.properties = { ...displayStoreMock.defaultProperties }
+  })
+
   it('uses the whole card as the drag activator without rendering a separate handle', () => {
     const { container, root } = renderTaskCard(buildTask())
 
@@ -211,6 +225,34 @@ describe('TaskCard', () => {
 
     expect(rect?.height).toBe(137)
     expect(rect?.width).toBe(280)
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('renders the task key before the title when ID display is enabled', () => {
+    const { container, root } = renderTaskCard(buildTask())
+    const title = container.querySelector('h4')
+
+    expect(title?.textContent).toBe('HLP-42: Ship fixed agent card row')
+    expect(title?.querySelector('span')?.className).toContain('font-mono')
+    expect(title?.querySelector('span')?.className).toContain('text-muted-foreground')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('hides the task key before the title when ID display is disabled', () => {
+    displayStoreMock.properties = { ...displayStoreMock.defaultProperties, task_id: false }
+    const { container, root } = renderTaskCard(buildTask())
+    const title = container.querySelector('h4')
+
+    expect(title?.textContent).toBe('Ship fixed agent card row')
+    expect(title?.textContent).not.toContain('HLP-42:')
 
     act(() => {
       root.unmount()
@@ -280,6 +322,21 @@ describe('TaskCard', () => {
     }))
 
     expect(container.textContent).toContain('Frontend')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('rerenders when the task key changes without an updated_at change', () => {
+    const { container, root, rerender } = renderTaskCard(buildTask())
+
+    expect(container.querySelector('h4')?.textContent).toBe('HLP-42: Ship fixed agent card row')
+
+    rerender(buildTask({ task_key: 'HLP-43', display_id: 43 }))
+
+    expect(container.querySelector('h4')?.textContent).toBe('HLP-43: Ship fixed agent card row')
 
     act(() => {
       root.unmount()

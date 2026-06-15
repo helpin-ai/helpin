@@ -196,6 +196,7 @@ func main() {
 			&model.AgentTeamAccess{},
 			&model.AgentTemplate{},
 			&model.WorkspaceAgentPresetVersion{},
+			&model.AgentVersion{},
 			&model.WorkspaceSkill{},
 			&model.AgentRun{},
 			&model.AgentTriggerExecution{},
@@ -218,6 +219,7 @@ func main() {
 			&model.SupportTriageRule{},
 			&model.SupportEmailRoute{},
 			&model.SupportEmailSender{},
+			&model.SupportEmailSenderMailbox{},
 			&model.SupportEmailSenderDomain{},
 			&model.SupportMessage{},
 			&model.SupportEmailLog{},
@@ -721,6 +723,7 @@ func main() {
 	supportInboxService.SetEmailSenderDomainRepository(supportEmailSenderDomainRepo)
 	supportInboxService.SetPostmarkDomainClient(postmarkDomainClient)
 	supportInboxService.SetEmailLogRepo(supportEmailLogRepo)
+	supportInboxService.SetTriageEventRepo(supportConversationTriageEventRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
 	supportInboxService.SetTaskService(pmTaskService)
 	supportInboxService.SetPresenceProvider(wsHub.Presence)
@@ -1161,7 +1164,7 @@ func main() {
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
 	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher).
 		SetGitRepositoryRepository(gitRepositoryRepo)
-	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRunRepo, agentRepo, pmTaskRepo, supportInstallRepo)
+	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRunRepo, agentRepo, workspaceRepo, pmTaskRepo, supportInstallRepo)
 	flowTemplateRegistry, err := flowtemplates.LoadSystemRegistry()
 	if err != nil {
 		fatalWithSentry("failed to load flow templates", err)

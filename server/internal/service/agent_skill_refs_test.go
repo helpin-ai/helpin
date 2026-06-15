@@ -19,14 +19,14 @@ func TestCreateAgentResolvesBuiltInSkillRefs(t *testing.T) {
 	svc := &AgentService{agentRepo: agentRepo, activitySvc: activitySvc}
 
 	req := modelCreateAgentRequest(nil)
-	req.Skills = model.AgentSkillRefs{{Key: "approval_protocol"}}
+	req.Skills = model.AgentSkillRefs{{Key: "prd_task_plan_approval"}}
 	req.AllowedTools = mustJSONStringSlice([]string{worker.ToolRequestApproval, worker.ToolPublishPRDDraft, worker.ToolPublishTaskPlan})
 
 	created, err := svc.CreateAgent(context.Background(), req, "user-1")
 	if err != nil {
 		t.Fatalf("CreateAgent returned error: %v", err)
 	}
-	if len(created.Skills) != 1 || created.Skills[0].Key != "approval_protocol" {
+	if len(created.Skills) != 1 || created.Skills[0].Key != "prd_task_plan_approval" {
 		t.Fatalf("expected canonical built-in skill ref, got %+v", created.Skills)
 	}
 	if created.ResolvedSkillInstructions == "" {

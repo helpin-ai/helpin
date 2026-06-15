@@ -241,6 +241,40 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"required": []string{"path"},
 	}, toolListSymbols)
 
+	// Skill tools
+	r.register(ToolListAvailableSkills, "List the skills available to this agent for the current run. Returns metadata only; use read_skill for instructions for one selected skill.", map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	}, toolListAvailableSkills)
+
+	r.register(ToolSearchAvailableSkills, "Search this agent's available skills by key, title, description, source, runtime, or required tools. Returns metadata only; use read_skill for instructions for one selected skill.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"query": map[string]interface{}{
+				"type":        "string",
+				"description": "Search query. Empty returns the first available skills.",
+			},
+			"limit": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of matching skills to return. Defaults to 10, max 50.",
+			},
+		},
+	}, toolSearchAvailableSkills)
+
+	r.register(ToolReadSkill, "Read the full instructions for one available skill selected by key or skill_id. Only skills available to this agent can be read.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"key": map[string]interface{}{
+				"type":        "string",
+				"description": "Available skill key to read.",
+			},
+			"skill_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Workspace skill ID to read when key is ambiguous.",
+			},
+		},
+	}, toolReadSkill)
+
 	// Command tools
 	r.register("run_command", "Run an allowlisted command in the workspace directory. Prefer program + args; shell syntax is not supported.", map[string]interface{}{
 		"type": "object",

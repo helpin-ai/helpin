@@ -72,6 +72,90 @@ describe('MessageBubble', () => {
     useAuthStore.setState({ user: null, loading: false, serverUnreachable: false })
   })
 
+  it('uses source-specific icon avatars for automated routing events', () => {
+    const ruleMessage: SupportMessage = {
+      id: 'msg-rule-route',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'ai',
+      sender_display_name: 'Routing',
+      content: "Routing rule moved to inbox 'Billing'.",
+      message_type: 'system',
+      system_event_type: 'triage_routed',
+      is_internal: true,
+      created_at: '2026-06-12T09:00:00.000Z',
+      updated_at: '2026-06-12T09:00:00.000Z',
+    }
+    const aiMessage: SupportMessage = {
+      ...ruleMessage,
+      id: 'msg-ai-route',
+      sender_display_name: 'Helpin AI',
+      content: "AI routing moved to inbox 'Billing'.",
+    }
+
+    const renderedRule = renderBubble(ruleMessage)
+    expect(renderedRule.container.querySelector('[aria-label="Routing rule"]')).toBeTruthy()
+    expect(renderedRule.container.textContent).not.toContain('RRouting rule')
+    renderedRule.cleanup()
+
+    const renderedAI = renderBubble(aiMessage)
+    expect(renderedAI.container.querySelector('[aria-label="AI routing"]')).toBeTruthy()
+    expect(renderedAI.container.textContent).not.toContain('HAI routing')
+    renderedAI.cleanup()
+  })
+
+  it('renders resolved system messages with a green check treatment', () => {
+    const message: SupportMessage = {
+      id: 'msg-resolved',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_user_id: 'agent-1',
+      sender_display_name: 'Sarah Khan',
+      content: 'Sarah resolved this conversation.',
+      message_type: 'system',
+      system_event_type: 'resolved',
+      is_internal: true,
+      created_at: '2026-06-12T09:00:00.000Z',
+      updated_at: '2026-06-12T09:00:00.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    const resolvedIcon = rendered.container.querySelector('[aria-label="Resolved"]')
+    expect(resolvedIcon).toBeTruthy()
+    expect(resolvedIcon?.className).toContain('text-emerald-600')
+    const actorAvatar = rendered.container.querySelector('img[alt="Sarah Khan"], [aria-label="Sarah Khan"]')
+    expect(actorAvatar).toBeTruthy()
+    expect(resolvedIcon?.compareDocumentPosition(actorAvatar as Node) ?? 0).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(rendered.container.querySelector('.px-3.py-1.text-xs')).toBeTruthy()
+    expect(rendered.container.querySelector('.text-sm')?.textContent).not.toBe('Sarah resolved this conversation.')
+    expect(rendered.container.textContent).toContain('Sarah resolved this conversation.')
+    rendered.cleanup()
+  })
+
+  it('renders reopened system messages like neutral routing timeline events', () => {
+    const message: SupportMessage = {
+      id: 'msg-reopened',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_user_id: 'agent-1',
+      sender_display_name: 'Sarah Khan',
+      content: 'Sarah reopened this conversation.',
+      message_type: 'system',
+      system_event_type: 'reopened',
+      is_internal: true,
+      created_at: '2026-06-12T09:00:00.000Z',
+      updated_at: '2026-06-12T09:00:00.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    expect(rendered.container.querySelector('.px-3.py-1.text-xs')).toBeTruthy()
+    expect(rendered.container.querySelector('[aria-label="Reopened"]')).toBeNull()
+    expect(rendered.container.textContent).toContain('Sarah reopened this conversation.')
+    rendered.cleanup()
+  })
+
   it('renders a long billing link message with wrapping-safe anchors and link previews', () => {
     const message: SupportMessage = {
       id: 'msg-1',

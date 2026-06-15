@@ -12,10 +12,11 @@ func (s *AgentService) resolveAgentSkills(ctx context.Context, agent *model.Agen
 	if agent == nil {
 		return agentskills.Resolution{}, nil
 	}
+	refs := agentskills.EffectiveRuntimeRefs(agent)
 	if s.workspaceSkillRepo == nil {
-		return agentskills.Resolve(ctx, agent.WorkspaceID, agent.Skills, nil)
+		return agentskills.Resolve(ctx, agent.WorkspaceID, refs, nil)
 	}
-	return agentskills.Resolve(ctx, agent.WorkspaceID, agent.Skills, s.workspaceSkillRepo)
+	return agentskills.Resolve(ctx, agent.WorkspaceID, refs, s.workspaceSkillRepo)
 }
 
 func (s *AgentService) validateAndMaterializeAgentSkills(ctx context.Context, agent *model.Agent) error {

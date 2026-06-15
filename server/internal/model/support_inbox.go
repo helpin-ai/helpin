@@ -400,12 +400,14 @@ type SupportConversationTriageEvent struct {
 func (SupportConversationTriageEvent) TableName() string { return "support_conversation_triage_events" }
 
 type SupportTriageRuleConditions struct {
-	PhraseContains    []string `json:"phrase_contains,omitempty"`
-	EmailDomainEquals []string `json:"email_domain_equals,omitempty"`
+	ConditionLogic      string   `json:"condition_logic,omitempty"`
+	PhraseContains      []string `json:"phrase_contains,omitempty"`
+	EmailDomainEquals   []string `json:"email_domain_equals,omitempty"`
+	SenderEmailContains []string `json:"sender_email_contains,omitempty"`
 }
 
 func (c SupportTriageRuleConditions) Value() (driver.Value, error) {
-	if len(c.PhraseContains) == 0 && len(c.EmailDomainEquals) == 0 {
+	if len(c.PhraseContains) == 0 && len(c.EmailDomainEquals) == 0 && len(c.SenderEmailContains) == 0 {
 		return "{}", nil
 	}
 	b, err := json.Marshal(c)
@@ -576,12 +578,24 @@ type SupportEmailSender struct {
 	CreatedAt                   time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt                   time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 
-	MailboxName   *string `json:"mailbox_name,omitempty" gorm:"->"`
-	MailboxHandle *string `json:"mailbox_handle,omitempty" gorm:"->"`
-	MailboxIcon   *string `json:"mailbox_icon,omitempty" gorm:"->"`
+	MailboxName   *string  `json:"mailbox_name,omitempty" gorm:"->"`
+	MailboxHandle *string  `json:"mailbox_handle,omitempty" gorm:"->"`
+	MailboxIcon   *string  `json:"mailbox_icon,omitempty" gorm:"->"`
+	MailboxIDs    []string `json:"mailbox_ids,omitempty" gorm:"-"`
 }
 
 func (SupportEmailSender) TableName() string { return "support_email_senders" }
+
+type SupportEmailSenderMailbox struct {
+	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	SenderID    string    `json:"sender_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_support_email_sender_mailbox_sender_mailbox"`
+	MailboxID   string    `json:"mailbox_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_support_email_sender_mailbox_sender_mailbox;uniqueIndex:idx_support_email_sender_mailbox_mailbox"`
+	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (SupportEmailSenderMailbox) TableName() string { return "support_email_sender_mailboxes" }
 
 type CreateSupportEmailSenderRequest struct {
 	Email       string  `json:"email"`
@@ -590,8 +604,16 @@ type CreateSupportEmailSenderRequest struct {
 }
 
 type SetSupportEmailSenderDefaultRequest struct {
-	DefaultScope string  `json:"default_scope"`
-	MailboxID    *string `json:"mailbox_id"`
+	DefaultScope string   `json:"default_scope"`
+	MailboxID    *string  `json:"mailbox_id"`
+	MailboxIDs   []string `json:"mailbox_ids,omitempty"`
+}
+
+type UpdateSupportEmailSenderRequest struct {
+	DisplayName  *string  `json:"display_name,omitempty"`
+	DefaultScope *string  `json:"default_scope,omitempty"`
+	MailboxID    *string  `json:"mailbox_id,omitempty"`
+	MailboxIDs   []string `json:"mailbox_ids,omitempty"`
 }
 
 type CreateSupportMailboxRequest struct {
@@ -617,6 +639,7 @@ type UpdateSupportMailboxRequest struct {
 	LinkedTeamID       *string  `json:"linked_team_id,omitempty"`
 	WorkspaceMemberIDs []string `json:"workspace_member_ids,omitempty"`
 	AssignmentMode     *string  `json:"assignment_mode,omitempty"`
+	Active             *bool    `json:"active,omitempty"`
 	ImportLinkedTeam   bool     `json:"import_linked_team,omitempty"`
 
 	// ReplyTimePreset overrides the workspace default for conversations in
@@ -1028,6 +1051,15 @@ type SupportInboxSettings struct {
 	ForceVisitorIdentity bool `json:"force_visitor_identity"`
 }
 
+type SupportRoutingUsageStatus struct {
+	TriageEnabled  bool      `json:"triage_enabled"`
+	DailyBudget    int       `json:"daily_budget"`
+	UsedToday      int       `json:"used_today"`
+	RemainingToday *int      `json:"remaining_today,omitempty"`
+	ResetAt        time.Time `json:"reset_at"`
+	Exhausted      bool      `json:"exhausted"`
+}
+
 // DefaultSupportInboxSettings returns settings with sensible defaults.
 func DefaultSupportInboxSettings() SupportInboxSettings {
 	return SupportInboxSettings{
@@ -1050,8 +1082,8 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		DefaultMailboxID:              nil,
 		AIHandoffMailboxID:            nil,
 		TriageEnabled:                 false,
-		TriageAutoMoveEnabled:         false,
-		TriageConfidenceThreshold:     0.9,
+		TriageAutoMoveEnabled:         true,
+		TriageConfidenceThreshold:     0.8,
 		TriageWidgetEnabled:           true,
 		TriageEmailEnabled:            true,
 		TriageInternalEnabled:         false,

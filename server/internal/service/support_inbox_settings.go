@@ -539,6 +539,49 @@ func (s *SupportInboxService) GetInstallation(ctx context.Context, workspaceID s
 	return inst, &settings, nil
 }
 
+func (s *SupportInboxService) GetRoutingUsageStatus(ctx context.Context, workspaceID string) (*model.SupportRoutingUsageStatus, error) {
+	_, settings, err := s.GetInstallation(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if settings == nil {
+		defaults := model.DefaultSupportInboxSettings()
+		settings = &defaults
+	}
+
+	now := time.Now().UTC()
+	startOfDay := now.Truncate(24 * time.Hour)
+	resetAt := startOfDay.Add(24 * time.Hour)
+	used := int64(0)
+	if s != nil && s.triageEventRepo != nil {
+		count, countErr := s.triageEventRepo.CountAIEvaluationsSince(ctx, workspaceID, startOfDay)
+		if countErr != nil {
+			return nil, countErr
+		}
+		used = count
+	}
+
+	var remaining *int
+	exhausted := false
+	if settings.TriageDailyBudget > 0 {
+		value := settings.TriageDailyBudget - int(used)
+		if value < 0 {
+			value = 0
+		}
+		remaining = &value
+		exhausted = int(used) >= settings.TriageDailyBudget
+	}
+
+	return &model.SupportRoutingUsageStatus{
+		TriageEnabled:  settings.TriageEnabled,
+		DailyBudget:    settings.TriageDailyBudget,
+		UsedToday:      int(used),
+		RemainingToday: remaining,
+		ResetAt:        resetAt,
+		Exhausted:      exhausted,
+	}, nil
+}
+
 // UpdateInstallationSettings merges, validates, and saves settings.
 func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, workspaceID string, req model.UpdateInstallationSettingsRequest) (*model.SupportWidgetInstallation, *model.SupportInboxSettings, error) {
 	inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)

@@ -1,22 +1,48 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowRight02Icon, Tick01Icon, ArrowLeft01Icon, HelpCircleIcon, Search01Icon } from '@/lib/icons';
+import { ArrowRight02Icon, Tick01Icon, ArrowLeft01Icon, HelpCircleIcon, PlusSignIcon, Cancel01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { ChipInput } from '@/components/ui/chip-input';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IconPicker } from '@/components/ui/icon-picker';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useWorkspaceModuleAccess } from '@/hooks/queries/useSettings';
 import { useAssignableMembers } from '@/hooks/queries/useWorkspaces';
-import { useCreateMailbox, useMailboxMembers, useUpdateMailbox } from '@/hooks/queries/useSupport';
+import {
+  useCreateMailbox,
+  useCreateSupportTriageRule,
+  useChatSettings,
+  useDeleteSupportTriageRule,
+  useMailboxMembers,
+  useSupportTriageRules,
+  useUpdateMailbox,
+  useUpdateSupportTriageRule,
+} from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
-import type { CreateSupportMailboxRequest, SupportMailbox, UpdateSupportMailboxRequest } from '@/lib/pmTypes';
+import { useAuthStore } from '@/stores/authStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import type {
+  CreateSupportMailboxRequest,
+  CreateSupportTriageRuleRequest,
+  SupportMailbox,
+  SupportTriageRule,
+  UpdateSupportMailboxRequest,
+} from '@/lib/pmTypes';
+import {
+  filterMembersOutsideLinkedTeam,
+  filterSupportAccessibleMembers,
+  filterSupportAccessibleTeams,
+  splitMailboxMembersBySelection,
+} from './teamInboxDialogMembers';
+import { getTeamInboxDialogSteps } from './teamInboxDialogFlow';
 
 type MailboxFormState = {
   name: string;
@@ -31,6 +57,21 @@ type MailboxFormState = {
   replyTimeOverride: boolean;
   replyTimePreset: string;
   replyTimeCustomMinutes: number | null;
+};
+
+type ManualRoutingConditionDraft = {
+  id: string;
+  type: 'message_contains' | 'sender_email_contains';
+  values: string[];
+  inputValue: string;
+};
+
+type ManualRoutingRuleDraft = {
+  persistedId?: string;
+  active: boolean;
+  priority: number;
+  conditionLogic: 'any' | 'all';
+  conditions: ManualRoutingConditionDraft[];
 };
 
 const DEFAULT_FORM: MailboxFormState = {
@@ -49,6 +90,59 @@ const DEFAULT_FORM: MailboxFormState = {
 };
 
 const EMPTY_MEMBERS: never[] = [];
+const DIALOG_STEPS = getTeamInboxDialogSteps();
+
+function createRoutingCondition(type: ManualRoutingConditionDraft['type'] = 'message_contains'): ManualRoutingConditionDraft {
+  return {
+    id: `condition-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    type,
+    values: [],
+    inputValue: '',
+  };
+}
+
+function createEmptyRoutingRuleDraft(priority: number): ManualRoutingRuleDraft {
+  return {
+    active: true,
+    priority,
+    conditionLogic: 'any',
+    conditions: [createRoutingCondition()],
+  };
+}
+
+function buildRoutingRuleDraft(rules: SupportTriageRule[]): ManualRoutingRuleDraft | null {
+  if (rules.length === 0) return null;
+  const sortedRules = [...rules].sort((a, b) => a.priority - b.priority);
+  const primaryRule = sortedRules[0];
+  const conditions = sortedRules.flatMap((rule) => [
+    ...(rule.conditions?.phrase_contains ?? []).map((value) => ({
+      id: `condition-${rule.id}-phrase-${value}`,
+      type: 'message_contains' as const,
+      values: [value],
+      inputValue: '',
+    })),
+    ...(rule.conditions?.email_domain_equals ?? []).map((value) => ({
+      id: `condition-${rule.id}-domain-${value}`,
+      type: 'sender_email_contains' as const,
+      values: [value],
+      inputValue: '',
+    })),
+    ...(rule.conditions?.sender_email_contains ?? []).map((value) => ({
+      id: `condition-${rule.id}-email-${value}`,
+      type: 'sender_email_contains' as const,
+      values: [value],
+      inputValue: '',
+    })),
+  ]);
+
+  return {
+    persistedId: primaryRule.id,
+    active: sortedRules.some((rule) => rule.active),
+    priority: primaryRule.priority,
+    conditionLogic: primaryRule.conditions?.condition_logic === 'any' ? 'any' : 'all',
+    conditions: conditions.length > 0 ? conditions : [createRoutingCondition()],
+  };
+}
 
 function normalizeHandle(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, '-');
@@ -108,26 +202,59 @@ export function TeamInboxDialog({
 }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [form, setForm] = useState<MailboxFormState>(DEFAULT_FORM);
-  const [memberSearch, setMemberSearch] = useState('');
+  const [memberPickerOpen, setMemberPickerOpen] = useState(false);
+  const [manualRuleDraft, setManualRuleDraft] = useState<ManualRoutingRuleDraft | null>(null);
+  const [deletedManualRuleIds, setDeletedManualRuleIds] = useState<string[]>([]);
 
+  const currentUserId = useAuthStore((state) => state.user?.id);
+  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug);
   const { data: members = [] } = useAssignableMembers(workspaceId);
-  const { teams } = useWorkspaceTeams(workspaceId);
+  const { teams, userMemberships } = useWorkspaceTeams(workspaceId);
+  const { data: moduleAccess } = useWorkspaceModuleAccess(workspaceId);
+  const { data: chatSettings } = useChatSettings(workspaceId);
+  const { data: triageRules = [] } = useSupportTriageRules(workspaceId);
   const { data: mailboxMembersData = EMPTY_MEMBERS } = useMailboxMembers(workspaceId, mailbox?.id);
   const mailboxMembers = Array.isArray(mailboxMembersData) ? mailboxMembersData : EMPTY_MEMBERS;
   const createMailbox = useCreateMailbox(workspaceId);
   const updateMailbox = useUpdateMailbox(workspaceId);
+  const createTriageRule = useCreateSupportTriageRule(workspaceId);
+  const updateTriageRule = useUpdateSupportTriageRule(workspaceId);
+  const deleteTriageRule = useDeleteSupportTriageRule(workspaceId);
+  const supportAccessHref = workspaceSlug ? `/w/${workspaceSlug}/settings/access` : '/workspaces';
+  const supportRoutingHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=inboxes` : '/workspaces';
+  const isRoutingOff = chatSettings ? !chatSettings.settings.triage_enabled : false;
 
   useEffect(() => {
     if (!open) {
       setForm(DEFAULT_FORM);
       setStep(1);
-      setMemberSearch('');
+      setMemberPickerOpen(false);
+      setManualRuleDraft(null);
+      setDeletedManualRuleIds([]);
       return;
     }
     setForm(buildFormState(mailbox));
     setStep(1);
-    setMemberSearch('');
+    setMemberPickerOpen(false);
+    setDeletedManualRuleIds([]);
   }, [open, mailbox]);
+
+  const mailboxRoutingRules = useMemo(
+    () => triageRules.filter((rule) => mailbox?.id && rule.target_mailbox_id === mailbox.id),
+    [mailbox?.id, triageRules],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    if (!mailbox) {
+      setManualRuleDraft(null);
+      return;
+    }
+    const draft = buildRoutingRuleDraft(mailboxRoutingRules);
+    const sortedRules = [...mailboxRoutingRules].sort((a, b) => a.priority - b.priority);
+    setManualRuleDraft(draft);
+    setDeletedManualRuleIds(sortedRules.slice(1).map((rule) => rule.id));
+  }, [mailbox, mailboxRoutingRules, open]);
 
   useEffect(() => {
     if (!mailbox) return;
@@ -142,15 +269,101 @@ export function TeamInboxDialog({
     [members],
   );
 
-  const filteredMembers = useMemo(() => {
-    if (!memberSearch) return activeMembers;
-    const q = memberSearch.toLowerCase();
-    return activeMembers.filter(
-      (member) =>
-        member.display_name?.toLowerCase().includes(q) ||
-        member.email?.toLowerCase().includes(q),
-    );
-  }, [activeMembers, memberSearch]);
+  const supportGrants = useMemo(
+    () => moduleAccess?.grants.filter((grant) => grant.module === 'support') ?? [],
+    [moduleAccess?.grants],
+  );
+
+  const supportAccessibleTeams = useMemo(
+    () => filterSupportAccessibleTeams(teams, supportGrants),
+    [supportGrants, teams],
+  );
+
+  const supportAccessibleMembers = useMemo(
+    () => filterSupportAccessibleMembers(activeMembers, supportGrants, userMemberships),
+    [activeMembers, supportGrants, userMemberships],
+  );
+
+  const currentWorkspaceMember = useMemo(
+    () => activeMembers.find((member) => member.user_id === currentUserId),
+    [activeMembers, currentUserId],
+  );
+
+  const supportAccessibleMemberIDs = useMemo(
+    () => new Set(supportAccessibleMembers.map((member) => member.id)),
+    [supportAccessibleMembers],
+  );
+
+  const additionalSupportMembers = useMemo(
+    () =>
+      filterMembersOutsideLinkedTeam(supportAccessibleMembers, form.linkedTeamId, userMemberships),
+    [form.linkedTeamId, supportAccessibleMembers, userMemberships],
+  );
+
+  const additionalSupportMemberIDs = useMemo(
+    () => new Set(additionalSupportMembers.map((member) => member.id)),
+    [additionalSupportMembers],
+  );
+
+  useEffect(() => {
+    if (!open || mailbox || !currentWorkspaceMember) return;
+    if (!additionalSupportMemberIDs.has(currentWorkspaceMember.id)) return;
+
+    setForm((current) => {
+      if (current.workspaceMemberIds.includes(currentWorkspaceMember.id)) return current;
+      return {
+        ...current,
+        workspaceMemberIds: [...current.workspaceMemberIds, currentWorkspaceMember.id],
+      };
+    });
+  }, [additionalSupportMemberIDs, currentWorkspaceMember, mailbox, open]);
+
+  const teamMemberCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const membership of userMemberships) {
+      counts.set(membership.team_id, (counts.get(membership.team_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [userMemberships]);
+
+  const supportedWorkspaceMemberIds = useMemo(
+    () => form.workspaceMemberIds.filter((id) => supportAccessibleMemberIDs.has(id)),
+    [form.workspaceMemberIds, supportAccessibleMemberIDs],
+  );
+
+  const supportedAdditionalWorkspaceMemberIds = useMemo(
+    () => supportedWorkspaceMemberIds.filter((id) => additionalSupportMemberIDs.has(id)),
+    [additionalSupportMemberIDs, supportedWorkspaceMemberIds],
+  );
+
+  const inaccessibleSelectedMemberCount = form.workspaceMemberIds.length - supportedWorkspaceMemberIds.length;
+  const linkedTeamSelectedMemberCount =
+    supportedWorkspaceMemberIds.length - supportedAdditionalWorkspaceMemberIds.length;
+  const selectedAdditionalMemberCount = supportedAdditionalWorkspaceMemberIds.length;
+
+  const selectedLinkedTeamHasSupportAccess =
+    form.linkedTeamId === 'none' || supportAccessibleTeams.some((team) => team.id === form.linkedTeamId);
+
+  const selectedInaccessibleLinkedTeam = useMemo(
+    () =>
+      form.linkedTeamId !== 'none' && !selectedLinkedTeamHasSupportAccess
+        ? teams.find((team) => team.id === form.linkedTeamId)
+        : undefined,
+    [form.linkedTeamId, selectedLinkedTeamHasSupportAccess, teams],
+  );
+
+  const inaccessibleTeamCount = Math.max(teams.length - supportAccessibleTeams.length, 0);
+  const inaccessibleMemberCount = Math.max(activeMembers.length - supportAccessibleMembers.length, 0);
+
+  const availableAdditionalMembers = useMemo(
+    () => splitMailboxMembersBySelection(additionalSupportMembers, supportedAdditionalWorkspaceMemberIds).available,
+    [additionalSupportMembers, supportedAdditionalWorkspaceMemberIds],
+  );
+
+  const selectedMembers = useMemo(
+    () => splitMailboxMembersBySelection(additionalSupportMembers, supportedAdditionalWorkspaceMemberIds).selected,
+    [additionalSupportMembers, supportedAdditionalWorkspaceMemberIds],
+  );
 
   const canProceedToStep2 = form.name.trim().length > 0 && form.handle.trim().length > 0;
 
@@ -161,6 +374,115 @@ export function TeamInboxDialog({
         ? [...current.workspaceMemberIds, memberId]
         : current.workspaceMemberIds.filter((id) => id !== memberId),
     }));
+  };
+
+  const nextManualRulePriority = () => {
+    const maxExisting = triageRules.reduce((max, rule) => Math.max(max, rule.priority), 0);
+    return Math.max(maxExisting, manualRuleDraft?.priority ?? 0) + 1;
+  };
+
+  const addManualCondition = () => {
+    setManualRuleDraft((current) => {
+      if (!current) return createEmptyRoutingRuleDraft(nextManualRulePriority());
+      const draft = current;
+      return {
+        ...draft,
+        conditions: [...draft.conditions, createRoutingCondition()],
+      };
+    });
+  };
+
+  const updateManualCondition = (conditionId: string, patch: Partial<ManualRoutingConditionDraft>) => {
+    setManualRuleDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        conditions: current.conditions.map((condition) =>
+          condition.id === conditionId ? { ...condition, ...patch } : condition,
+        ),
+      };
+    });
+  };
+
+  const removeManualCondition = (conditionId: string) => {
+    setManualRuleDraft((current) => {
+      if (!current) return current;
+      const nextConditions = current.conditions.filter((condition) => condition.id !== conditionId);
+      if (nextConditions.length > 0) {
+        return { ...current, conditions: nextConditions };
+      }
+      if (current.persistedId) {
+        setDeletedManualRuleIds((deleted) =>
+          deleted.includes(current.persistedId!) ? deleted : [...deleted, current.persistedId!],
+        );
+      }
+      return null;
+    });
+  };
+
+  const validateManualRules = () => {
+    if (!manualRuleDraft) return true;
+    const hasCondition = manualRuleDraft.conditions.some(
+      (condition) =>
+        condition.values.some((value) => value.trim()) || condition.inputValue.trim(),
+    );
+    if (!hasCondition) {
+      toast.error('Add at least one manual match');
+      return false;
+    }
+    return true;
+  };
+
+  const buildManualRulePayload = (
+    rule: ManualRoutingRuleDraft,
+    targetMailboxId: string,
+  ): CreateSupportTriageRuleRequest => ({
+    name: `Route to ${form.name.trim() || 'inbox'}`,
+    priority: rule.priority,
+    active: rule.active,
+    channels: [],
+    target_mailbox_id: targetMailboxId,
+    conditions: {
+      condition_logic: rule.conditionLogic,
+      phrase_contains: rule.conditions
+        .filter((condition) => condition.type === 'message_contains')
+        .flatMap((condition) => [
+          ...condition.values,
+          ...(condition.inputValue.trim() ? [condition.inputValue] : []),
+        ])
+        .map((value) => value.trim())
+        .filter(Boolean),
+      email_domain_equals: [],
+      sender_email_contains: rule.conditions
+        .filter((condition) => condition.type === 'sender_email_contains')
+        .flatMap((condition) => [
+          ...condition.values,
+          ...(condition.inputValue.trim() ? [condition.inputValue] : []),
+        ])
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean),
+    },
+  });
+
+  const syncManualRules = async (targetMailboxId: string) => {
+    for (const ruleId of deletedManualRuleIds) {
+      await deleteTriageRule.mutateAsync(ruleId);
+    }
+
+    if (!manualRuleDraft) return;
+
+    const payload = buildManualRulePayload(manualRuleDraft, targetMailboxId);
+    const hasConditions =
+      payload.conditions.phrase_contains.length > 0 ||
+      payload.conditions.email_domain_equals.length > 0 ||
+      (payload.conditions.sender_email_contains?.length ?? 0) > 0;
+    if (!hasConditions) return;
+
+    if (manualRuleDraft.persistedId) {
+      await updateTriageRule.mutateAsync({ ruleId: manualRuleDraft.persistedId, payload });
+    } else {
+      await createTriageRule.mutateAsync(payload);
+    }
   };
 
   const goToStep2 = () => {
@@ -184,6 +506,7 @@ export function TeamInboxDialog({
       toast.error('Inbox handle is required');
       return;
     }
+    if (!validateManualRules()) return;
 
     if (mailbox) {
       const payload: UpdateSupportMailboxRequest = {
@@ -193,9 +516,9 @@ export function TeamInboxDialog({
         description: form.description.trim() || null,
         routing_prompt: form.routingPrompt.trim() || null,
         triage_eligible: form.triageEligible,
-        linked_team_id: form.linkedTeamId === 'none' ? null : form.linkedTeamId,
+        linked_team_id: form.linkedTeamId === 'none' || !selectedLinkedTeamHasSupportAccess ? null : form.linkedTeamId,
         assignment_mode: form.assignmentMode,
-        workspace_member_ids: form.workspaceMemberIds,
+        workspace_member_ids: supportedAdditionalWorkspaceMemberIds,
       };
       if (form.replyTimeOverride) {
         payload.reply_time_preset = form.replyTimePreset;
@@ -206,6 +529,7 @@ export function TeamInboxDialog({
         payload.clear_reply_time_custom_minutes = true;
       }
       await updateMailbox.mutateAsync({ mailboxId: mailbox.id, payload });
+      await syncManualRules(mailbox.id);
       toast.success('Team inbox updated');
     } else {
       const payload: CreateSupportMailboxRequest = {
@@ -215,11 +539,12 @@ export function TeamInboxDialog({
         description: form.description.trim() || null,
         routing_prompt: form.routingPrompt.trim() || null,
         triage_eligible: form.triageEligible,
-        linked_team_id: form.linkedTeamId === 'none' ? null : form.linkedTeamId,
+        linked_team_id: form.linkedTeamId === 'none' || !selectedLinkedTeamHasSupportAccess ? null : form.linkedTeamId,
         assignment_mode: form.assignmentMode,
-        workspace_member_ids: form.workspaceMemberIds,
+        workspace_member_ids: supportedAdditionalWorkspaceMemberIds,
       };
-      await createMailbox.mutateAsync(payload);
+      const createdMailbox = await createMailbox.mutateAsync(payload);
+      await syncManualRules(createdMailbox.id);
       toast.success('Team inbox created');
     }
 
@@ -228,7 +553,7 @@ export function TeamInboxDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent className="overflow-hidden p-0 sm:max-w-2xl">
         <div className="flex items-center gap-0 border-b px-6 pb-4 pt-6">
           <button
             type="button"
@@ -238,7 +563,7 @@ export function TeamInboxDialog({
             <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === 1 ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'}`}>
               {step > 1 ? <Tick01Icon className="h-3.5 w-3.5" /> : '1'}
             </span>
-            <span className={step === 1 ? 'text-foreground' : 'text-muted-foreground'}>Details</span>
+            <span className={step === 1 ? 'text-foreground' : 'text-muted-foreground'}>{DIALOG_STEPS[0].label}</span>
           </button>
           <div className="mx-3 h-px w-8 bg-border" />
           <button
@@ -251,7 +576,7 @@ export function TeamInboxDialog({
             <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === 2 ? 'bg-primary text-primary-foreground' : step > 2 ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
               {step > 2 ? <Tick01Icon className="h-3.5 w-3.5" /> : '2'}
             </span>
-            <span className={step === 2 ? 'text-foreground' : 'text-muted-foreground'}>Members</span>
+            <span className={step === 2 ? 'text-foreground' : 'text-muted-foreground'}>{DIALOG_STEPS[1].label}</span>
           </button>
           <div className="mx-3 h-px w-8 bg-border" />
           <button
@@ -264,7 +589,7 @@ export function TeamInboxDialog({
             <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-colors ${step === 3 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
               3
             </span>
-            <span className={step === 3 ? 'text-foreground' : 'text-muted-foreground'}>Routing</span>
+            <span className={step === 3 ? 'text-foreground' : 'text-muted-foreground'}>{DIALOG_STEPS[2].label}</span>
           </button>
         </div>
 
@@ -272,7 +597,7 @@ export function TeamInboxDialog({
           <div className="px-6 pb-2">
             <DialogHeader className="mb-4">
               <DialogTitle>{mailbox ? 'Edit Team Inbox' : 'Create Team Inbox'}</DialogTitle>
-              <DialogDescription>Set up the inbox identity and team assignment.</DialogDescription>
+              <DialogDescription>{DIALOG_STEPS[0].description}</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
@@ -328,43 +653,7 @@ export function TeamInboxDialog({
                 />
               </div>
 
-              <div className="space-y-3 rounded-xl border bg-muted/20 p-3">
-                <div className="flex items-end gap-3">
-                  <div className="flex-1 space-y-1.5">
-                    <FieldLabel tip="Connect this inbox to an existing workspace team. Current members of that team get inbox access automatically, and you can still add extra individual members in the next step.">
-                      Linked Team
-                    </FieldLabel>
-                    <Select value={form.linkedTeamId} onValueChange={(value) => setForm((current) => ({ ...current, linkedTeamId: value }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No linked team</SelectItem>
-                        {teams.map((team) => (
-                          <SelectItem key={team.id} value={team.id}>
-                            {team.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex-1 space-y-1.5">
-                    <FieldLabel tip="How new conversations are assigned. &quot;Manual&quot; lets agents pick conversations themselves. &quot;Round robin&quot; automatically distributes conversations evenly across online members.">
-                      Assignment
-                    </FieldLabel>
-                    <Select value={form.assignmentMode} onValueChange={(value: 'manual' | 'round_robin') => setForm((current) => ({ ...current, assignmentMode: value }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="manual">Manual</SelectItem>
-                        <SelectItem value="round_robin">Round robin</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="border-t border-border/60 pt-3">
+              <div className="rounded-xl border bg-muted/20 p-3">
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-0.5">
                       <FieldLabel tip="Override the workspace reply-time expectation for conversations in this inbox. Leave off to use the workspace default; turn on to give this inbox its own SLA.">
@@ -418,7 +707,6 @@ export function TeamInboxDialog({
                       )}
                     </div>
                   )}
-                </div>
               </div>
             </div>
           </div>
@@ -427,69 +715,212 @@ export function TeamInboxDialog({
         {step === 2 && (
           <div className="px-6 pb-2">
             <DialogHeader className="mb-4">
-              <DialogTitle>Add Members</DialogTitle>
+              <DialogTitle>Members & Assignment</DialogTitle>
               <DialogDescription>
-                Choose who can see and respond to conversations in this inbox.
-                {form.linkedTeamId !== 'none' && (
-                  <span className="ml-1">Linked team members already have access automatically.</span>
-                )}
-                {form.workspaceMemberIds.length > 0 && (
-                  <span className="ml-1 font-medium text-foreground">{form.workspaceMemberIds.length} selected</span>
-                )}
+                Choose who can access this inbox and how conversations are assigned.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="relative mb-3">
-              <Search01Icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={memberSearch}
-                onChange={(e) => setMemberSearch(e.target.value)}
-                placeholder="Search members..."
-                className="pl-9"
-              />
+            <div className="mb-4 space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <FieldLabel tip="Choose the main team responsible for this inbox. Everyone in the team is included automatically, and you can add extra people below.">
+                    Responsible team
+                  </FieldLabel>
+                  <Select value={form.linkedTeamId} onValueChange={(value) => setForm((current) => ({ ...current, linkedTeamId: value }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No team</SelectItem>
+                      {selectedInaccessibleLinkedTeam && (
+                        <SelectItem value={selectedInaccessibleLinkedTeam.id} disabled>
+                          {selectedInaccessibleLinkedTeam.name} · {teamMemberCounts.get(selectedInaccessibleLinkedTeam.id) ?? 0} members · needs Support access
+                        </SelectItem>
+                      )}
+                      {supportAccessibleTeams.map((team) => (
+                        <SelectItem key={team.id} value={team.id}>
+                          {team.name} · {teamMemberCounts.get(team.id) ?? 0} members
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <FieldLabel tip="Choose whether conversations stay unassigned for agents to pick up, or are automatically distributed across inbox members.">
+                    Assignment
+                  </FieldLabel>
+                  <Select value={form.assignmentMode} onValueChange={(value: 'manual' | 'round_robin') => setForm((current) => ({ ...current, assignmentMode: value }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="manual">Manual</SelectItem>
+                      <SelectItem value="round_robin">Round robin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {(inaccessibleTeamCount > 0 || inaccessibleMemberCount > 0 || !selectedLinkedTeamHasSupportAccess || inaccessibleSelectedMemberCount > 0 || linkedTeamSelectedMemberCount > 0) && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+                  <span className="font-medium">Only teams and members with Support access are shown.</span>
+                  {(inaccessibleTeamCount > 0 || inaccessibleMemberCount > 0) && (
+                    <span className="ml-1">
+                      {inaccessibleTeamCount > 0 && `${inaccessibleTeamCount} ${inaccessibleTeamCount === 1 ? 'team is' : 'teams are'} hidden`}
+                      {inaccessibleTeamCount > 0 && inaccessibleMemberCount > 0 ? ' and ' : ''}
+                      {inaccessibleMemberCount > 0 && `${inaccessibleMemberCount} ${inaccessibleMemberCount === 1 ? 'member is' : 'members are'} hidden`}
+                      .
+                    </span>
+                  )}
+                  {!selectedLinkedTeamHasSupportAccess && (
+                    <span className="ml-1">
+                      The current team will be removed on save unless Support access is added first.
+                    </span>
+                  )}
+                  {inaccessibleSelectedMemberCount > 0 && (
+                    <span className="ml-1">
+                      {inaccessibleSelectedMemberCount} selected {inaccessibleSelectedMemberCount === 1 ? 'member no longer has' : 'members no longer have'} Support access and will be removed on save.
+                    </span>
+                  )}
+                  {linkedTeamSelectedMemberCount > 0 && (
+                    <span className="ml-1">
+                      {linkedTeamSelectedMemberCount} selected {linkedTeamSelectedMemberCount === 1 ? 'member is' : 'members are'} already included through the team and will not be saved separately.
+                    </span>
+                  )}
+                  <a
+                    href={supportAccessHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="ml-1 font-medium underline underline-offset-2"
+                  >
+                    Open Access settings
+                  </a>
+                </div>
+              )}
             </div>
 
-            <ScrollArea className="h-72 rounded-lg border">
-              <div className="p-1">
-                {filteredMembers.length === 0 && (
-                  <p className="py-8 text-center text-sm text-muted-foreground">No members found</p>
-                )}
-                {filteredMembers.map((member) => {
-                  const isSelected = form.workspaceMemberIds.includes(member.id);
-                  const displayName = member.display_name || member.email || 'Unknown';
-                  return (
-                    <label
-                      key={member.id}
-                      className={`flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 text-sm transition-colors ${
-                        isSelected ? 'bg-primary/5' : 'hover:bg-muted/60'
-                      }`}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-medium">
+                    Additional members outside team
+                    {selectedAdditionalMemberCount > 0 && (
+                      <span className="ml-1 text-muted-foreground">({selectedAdditionalMemberCount})</span>
+                    )}
+                  </h3>
+                </div>
+                <Popover open={memberPickerOpen} onOpenChange={setMemberPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-2"
+                      disabled={availableAdditionalMembers.length === 0}
                     >
-                      <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={(checked) => toggleMember(member.id, Boolean(checked))}
-                      />
-                      <UserAvatar
-                        name={displayName}
-                        avatarUrl={member.avatar_url}
-                        avatarStyle={member.avatar_style}
-                        avatarSeed={member.avatar_seed}
-                        avatarBackgroundMode={member.avatar_background_mode}
-                        avatarBackgroundColor={member.avatar_background_color}
-                        className="h-6 w-6 border-border/70"
-                        fallbackClassName="text-[10px]"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{displayName}</p>
-                        {member.email && member.display_name && (
-                          <p className="truncate text-xs text-muted-foreground">{member.email}</p>
-                        )}
-                      </div>
-                      {isSelected && <Tick01Icon className="h-4 w-4 shrink-0 text-primary" />}
-                    </label>
-                  );
-                })}
+                      <PlusSignIcon className="h-4 w-4" />
+                      Add member
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-80 p-0">
+                    <Command>
+                      <CommandInput placeholder="Search members..." />
+                      <CommandList>
+                        <CommandEmpty>No eligible members found.</CommandEmpty>
+                        <CommandGroup>
+                          {availableAdditionalMembers.map((member) => {
+                            const displayName = member.display_name || member.email || 'Unknown';
+                            return (
+                              <CommandItem
+                                key={member.id}
+                                value={`${displayName} ${member.email ?? ''}`}
+                                onSelect={() => {
+                                  toggleMember(member.id, true);
+                                  setMemberPickerOpen(false);
+                                }}
+                                className="gap-3"
+                              >
+                                <UserAvatar
+                                  name={displayName}
+                                  avatarUrl={member.avatar_url}
+                                  avatarStyle={member.avatar_style}
+                                  avatarSeed={member.avatar_seed}
+                                  avatarBackgroundMode={member.avatar_background_mode}
+                                  avatarBackgroundColor={member.avatar_background_color}
+                                  className="h-6 w-6 border-border/70"
+                                  fallbackClassName="text-[10px]"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate font-medium">{displayName}</p>
+                                  {member.email && member.display_name && (
+                                    <p className="truncate text-xs text-muted-foreground">{member.email}</p>
+                                  )}
+                                </div>
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
-            </ScrollArea>
+
+              <div className="min-h-32 rounded-lg border">
+                {selectedMembers.length === 0 ? (
+                  <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+                    No additional members
+                  </p>
+                ) : (
+                  <div className="divide-y divide-border/70">
+                    {selectedMembers.map((member) => {
+                      const displayName = member.display_name || member.email || 'Unknown';
+                      const isCurrentUser = member.id === currentWorkspaceMember?.id;
+                      return (
+                        <div key={member.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+                          <UserAvatar
+                            name={displayName}
+                            avatarUrl={member.avatar_url}
+                            avatarStyle={member.avatar_style}
+                            avatarSeed={member.avatar_seed}
+                            avatarBackgroundMode={member.avatar_background_mode}
+                            avatarBackgroundColor={member.avatar_background_color}
+                            className="h-7 w-7 border-border/70"
+                            fallbackClassName="text-[10px]"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <p className="truncate font-medium">{displayName}</p>
+                              {isCurrentUser && (
+                                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                  You
+                                </span>
+                              )}
+                            </div>
+                            {member.email && member.display_name && (
+                              <p className="truncate text-xs text-muted-foreground">{member.email}</p>
+                            )}
+                          </div>
+                          {!isCurrentUser && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => toggleMember(member.id, false)}
+                              aria-label={`Remove ${displayName}`}
+                            >
+                              <Cancel01Icon className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -498,50 +929,139 @@ export function TeamInboxDialog({
             <DialogHeader className="mb-4">
               <DialogTitle>Routing</DialogTitle>
               <DialogDescription>
-                Control how conversations get routed to this inbox. You can set up exact-match rules separately in Routing Settings.
+                Set how conversations reach this inbox using manual rules and AI routing.
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
-              <div className="rounded-lg border border-dashed border-border/80 bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">How it works:</span> When AI triage is enabled, the routing prompt below tells the AI what kind of conversations belong in this inbox. The AI reads all inbox prompts and picks the best match.
-              </div>
-
-              <div className="flex items-start justify-between gap-4 rounded-xl border bg-muted/20 p-3">
-                <div className="space-y-1">
-                  <FieldLabel tip="When enabled, AI triage can route conversations into this inbox. Disable to keep this inbox manual-only or rule-based only.">
-                    Eligible for AI Routing
-                  </FieldLabel>
-                  <p className="text-sm text-muted-foreground">
-                    Allow AI triage to suggest or auto-move conversations into this inbox.
-                  </p>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-medium">Rule-based routing</h3>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" className="shrink-0 gap-2" onClick={addManualCondition}>
+                    <PlusSignIcon className="h-4 w-4" />
+                    Add condition
+                  </Button>
                 </div>
-                <Switch
-                  checked={form.triageEligible}
-                  onCheckedChange={(checked) => setForm((current) => ({ ...current, triageEligible: checked }))}
-                />
+                <div className="space-y-2">
+                  {!manualRuleDraft || manualRuleDraft.conditions.length === 0 ? (
+                    <div className="rounded-lg border bg-muted/20 px-3 py-3 text-center text-sm text-muted-foreground">
+                      No manual rules yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={manualRuleDraft.conditionLogic}
+                          onValueChange={(value) =>
+                            setManualRuleDraft((current) =>
+                              current ? { ...current, conditionLogic: value as 'any' | 'all' } : current,
+                            )
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-52">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="any">Any condition matches</SelectItem>
+                            <SelectItem value="all">All conditions match</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {manualRuleDraft.conditions.map((condition, index) => (
+                        <div key={condition.id} className="space-y-2">
+                          {index > 0 && (
+                            <div className="flex items-center gap-2 px-1">
+                              <div className="h-px flex-1 bg-border" />
+                              <span className="text-[10px] font-semibold text-muted-foreground">
+                                {manualRuleDraft.conditionLogic === 'any' ? 'OR' : 'AND'}
+                              </span>
+                              <div className="h-px flex-1 bg-border" />
+                            </div>
+                          )}
+                          <div className="grid gap-2 rounded-lg border p-2 sm:grid-cols-[140px_minmax(0,1fr)_32px]">
+                            <Select
+                              value={condition.type}
+                              onValueChange={(value) =>
+                                updateManualCondition(condition.id, {
+                                  type: value as ManualRoutingConditionDraft['type'],
+                                  values: [],
+                                  inputValue: '',
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="message_contains">Text contains</SelectItem>
+                              <SelectItem value="sender_email_contains">Email ID contains</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <ChipInput
+                            value={condition.values}
+                            onValueChange={(values) => updateManualCondition(condition.id, { values })}
+                            inputValue={condition.inputValue}
+                            onInputValueChange={(inputValue) => updateManualCondition(condition.id, { inputValue })}
+                            placeholder={condition.type === 'sender_email_contains' ? '@example.com, billing@acme.com' : 'refund, cancel my plan, great work...'}
+                            normalize={condition.type === 'sender_email_contains' ? (value) => value.toLowerCase() : undefined}
+                            className="min-h-9 py-1.5"
+                          />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                              onClick={() => removeManualCondition(condition.id)}
+                              aria-label="Remove match"
+                            >
+                              <Cancel01Icon className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {form.triageEligible && (
-                <div className="space-y-1.5">
-                  <FieldLabel
-                    htmlFor="team-inbox-routing-prompt"
-                    tip="Describe the types of conversations this inbox should receive. The AI uses this to decide where each conversation belongs."
-                  >
-                    Routing Prompt
-                  </FieldLabel>
-                  <Textarea
-                    id="team-inbox-routing-prompt"
-                    value={form.routingPrompt}
-                    onChange={(event) => setForm((current) => ({ ...current, routingPrompt: event.target.value }))}
-                    placeholder="e.g. Billing questions, refund requests, payment issues, and subscription changes."
-                    rows={4}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium">AI routing</h3>
+                    <p className="text-xs text-muted-foreground">
+                      When manual rules do not match, AI uses this description to choose the best inbox.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.triageEligible}
+                    onCheckedChange={(checked) => setForm((current) => ({ ...current, triageEligible: checked }))}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Be specific — describe the topics, not the team. The AI compares this against all other inbox prompts to pick the best match.
-                  </p>
                 </div>
-              )}
+
+                {form.triageEligible && (
+                  <div className="space-y-3">
+                    {isRoutingOff && (
+                      <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                        <span>Routing is off. Enable it to use AI routing.</span>
+                        <Button asChild type="button" variant="outline" size="xs" className="h-7 w-fit border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100 dark:hover:bg-amber-900/40">
+                          <a href={supportRoutingHref} target="_blank" rel="noreferrer">
+                            Enable routing
+                          </a>
+                        </Button>
+                      </div>
+                    )}
+                    <Textarea
+                      id="team-inbox-routing-prompt"
+                      value={form.routingPrompt}
+                      onChange={(event) => setForm((current) => ({ ...current, routingPrompt: event.target.value }))}
+                      placeholder="Describe what AI should route to this inbox. Example: billing questions, refund requests, failed payments, invoice issues, subscription changes, and customers asking why they were charged."
+                      rows={6}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -578,7 +1098,13 @@ export function TeamInboxDialog({
               </Button>
               <Button
                 onClick={submit}
-                disabled={createMailbox.isPending || updateMailbox.isPending}
+                disabled={
+                  createMailbox.isPending ||
+                  updateMailbox.isPending ||
+                  createTriageRule.isPending ||
+                  updateTriageRule.isPending ||
+                  deleteTriageRule.isPending
+                }
               >
                 {mailbox ? 'Save Changes' : 'Create Inbox'}
               </Button>

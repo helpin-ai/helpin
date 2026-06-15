@@ -912,6 +912,29 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE support_email_sender_domains (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			domain TEXT NOT NULL,
+			from_local_part TEXT NOT NULL DEFAULT 'support',
+			postmark_domain_id INTEGER,
+			return_path_domain TEXT,
+			return_path_domain_cname_value TEXT,
+			return_path_domain_verified BOOLEAN NOT NULL DEFAULT 0,
+			dkim_host TEXT,
+			dkim_text_value TEXT,
+			dkim_pending_host TEXT,
+			dkim_pending_text_value TEXT,
+			dkim_verified BOOLEAN NOT NULL DEFAULT 0,
+			dkim_update_status TEXT,
+			status TEXT NOT NULL DEFAULT 'pending_dns',
+			active BOOLEAN NOT NULL DEFAULT 0,
+			last_checked_at DATETIME,
+			last_error TEXT,
+			created_by_id TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE support_email_senders (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
@@ -948,6 +971,14 @@ func newTestDB(t *testing.T) *gorm.DB {
 			last_checked_at DATETIME,
 			last_error TEXT,
 			created_by_id TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE support_email_sender_mailboxes (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			sender_id TEXT NOT NULL,
+			mailbox_id TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

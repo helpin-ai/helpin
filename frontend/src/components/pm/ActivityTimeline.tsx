@@ -60,6 +60,9 @@ const AGENT_RUN_ACTION_LABELS: Record<string, string> = {
   cancelled: 'cancelled',
   paused: 'paused',
   resumed: 'resumed',
+  approved: 'approved',
+  changes_requested: 'requested changes on',
+  note_added: 'added note to',
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -190,18 +193,20 @@ function ActivityTimelineEntry({
       </span>
     );
   } else if (activity.field_name === 'agent_run') {
-    const meta = activity.metadata as { agent_name?: string } | undefined;
+    const meta = activity.metadata as { agent_name?: string; note_snippet?: string } | undefined;
     const rawAction = activity.new_value ?? 'started';
     const actionLabel = AGENT_RUN_ACTION_LABELS[rawAction] ?? rawAction;
     const agentName = meta?.agent_name ?? 'agent';
+    const noteSnippet = typeof meta?.note_snippet === 'string' ? meta.note_snippet.trim() : '';
 
     richLabel = (
-      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground flex-wrap">
         {actionLabel} agent run
         <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:text-indigo-300">
           <AgentAvatar name={agentName} className="h-3 w-3 rounded-none border-0 bg-transparent shadow-none" genericBare />
           {agentName}
         </span>
+        {noteSnippet && <span className="max-w-[20rem] truncate text-[10px] text-muted-foreground/80">"{noteSnippet}"</span>}
       </span>
     );
   } else {

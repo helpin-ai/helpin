@@ -196,6 +196,7 @@ func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
 		template_key TEXT,
 		template_instance_id TEXT,
 		template_version INTEGER,
+		active_version_id TEXT,
 		trigger_mode TEXT NOT NULL DEFAULT 'manual',
 		approval_mode TEXT NOT NULL DEFAULT 'class_default',
 		is_system BOOLEAN NOT NULL DEFAULT 0,

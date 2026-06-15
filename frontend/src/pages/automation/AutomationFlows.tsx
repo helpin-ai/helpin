@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  ArrowRight01Icon,
   Clock03Icon,
   FilterIcon,
   GitBranchIcon,
@@ -18,6 +17,7 @@ import {
   ZapIcon,
 } from '@/lib/icons';
 import { toast } from 'sonner';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
 import { BASE_BRANCH_TOKEN, TASK_BRANCH_TOKEN, describeMergeInto, describeRunBranchOverrides } from '@/lib/branchLabels';
@@ -31,7 +31,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useAllDocsCollections, useAutomationFlowTemplates, useAutomationFlows, useAutomationOverview, useAutomationSkillCatalog, useAutomationToolCatalog, useAgents, useDocsSpaces, useInstallAutomationFlowTemplate, useUninstallAutomationFlowTemplate, useWorkflows } from '@/hooks/queries';
@@ -62,7 +62,6 @@ export type AutomationFlowsSearch = {
   show_trigger_title?: string;
   show_rule?: string;
   show_rule_title?: string;
-  create_event_rule?: boolean;
   trigger_type?: string;
   agent_id?: string;
   repo_full_name?: string;
@@ -199,6 +198,11 @@ type TemplateAgentSetup = {
   max_concurrent_runs: string;
 };
 
+type TemplateFlowSetup = {
+  name: string;
+  description: string;
+};
+
 type FlowTemplateInstallStep = 'inputs' | 'review';
 
 type TemplateSelectOption = {
@@ -208,11 +212,41 @@ type TemplateSelectOption = {
   indent?: number;
 };
 
+export const NO_REPOSITORY_VALUE = '__no_repository__';
+
+function isOptionalRepositoryInput(input: FlowTemplateInput) {
+  return input.type === 'repository' && !input.required;
+}
+
+export function templateSelectOptions(
+  input: FlowTemplateInput,
+  repositories: Pick<GitRepository, 'id' | 'full_name'>[],
+): TemplateSelectOption[] {
+  const options = repositories.map((repo) => ({ value: repo.id, label: repo.full_name }));
+  if (!isOptionalRepositoryInput(input)) return options;
+  return [
+    { value: NO_REPOSITORY_VALUE, label: 'No repository', description: 'Skip repository context' },
+    ...options,
+  ];
+}
+
+export function templateSelectValue(input: FlowTemplateInput, value: unknown) {
+  if (isOptionalRepositoryInput(input) && !stringValue(value)) return NO_REPOSITORY_VALUE;
+  return stringValue(value);
+}
+
+export function templateSelectChangeValue(input: FlowTemplateInput, value: string) {
+  if (isOptionalRepositoryInput(input) && value === NO_REPOSITORY_VALUE) return '';
+  return value;
+}
+
 type FlowLogicRow = {
   connector: string;
   text: string;
   tone?: 'muted' | 'strong' | 'warning';
 };
+
+type FlowComposerMode = 'create' | 'edit';
 
 const LEGACY_CRON_CATEGORY_TO_PRESET: Record<string, (typeof SCHEDULE_PRESET_OPTIONS)[number]['value']> = {
   workspace_hourly: 'hourly',
@@ -418,6 +452,64 @@ function describeScheduleExpression(expression: string) {
   return expression.trim();
 }
 
+function describeScheduleExpressionInTimeZone(expression: string, timezone: string) {
+  const resolvedTimeZone = normalizeTimeZone(timezone);
+  const parsedUTC = parseSimpleScheduleExpression(expression);
+  if (!parsedUTC) return describeScheduleExpression(expression);
+  return describeSimpleSchedule(utcScheduleToLocal(parsedUTC, resolvedTimeZone)).replace('UTC', resolvedTimeZone);
+}
+
+function daysInMonth(year: number, monthIndex: number) {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+function nextCronRunDate(schedule: ParsedSimpleSchedule, now = new Date()) {
+  const after = new Date(now.getTime() + 1000);
+  const minute = Number.parseInt(schedule.minute, 10);
+  const [hourText, minuteText] = normalizeScheduleTime(schedule.time).split(':');
+  const hour = Number.parseInt(hourText, 10);
+  const timeMinute = Number.parseInt(minuteText, 10);
+
+  if (schedule.frequency === 'hourly') {
+    const candidate = new Date(after);
+    candidate.setUTCSeconds(0, 0);
+    candidate.setUTCMinutes(minute);
+    if (candidate <= after) candidate.setUTCHours(candidate.getUTCHours() + 1);
+    return candidate;
+  }
+
+  if (schedule.frequency === 'daily') {
+    const candidate = new Date(Date.UTC(after.getUTCFullYear(), after.getUTCMonth(), after.getUTCDate(), hour, timeMinute));
+    if (candidate <= after) candidate.setUTCDate(candidate.getUTCDate() + 1);
+    return candidate;
+  }
+
+  if (schedule.frequency === 'weekly') {
+    const weekdays = normalizeScheduleWeekdays(schedule.weekdays);
+    let best: Date | null = null;
+    for (const weekday of weekdays) {
+      const daysUntil = (weekday - after.getUTCDay() + 7) % 7;
+      const candidate = new Date(Date.UTC(after.getUTCFullYear(), after.getUTCMonth(), after.getUTCDate() + daysUntil, hour, timeMinute));
+      if (candidate <= after) candidate.setUTCDate(candidate.getUTCDate() + 7);
+      if (!best || candidate < best) best = candidate;
+    }
+    return best;
+  }
+
+  const dayOfMonth = Number.parseInt(schedule.dayOfMonth, 10);
+  for (let monthOffset = 0; monthOffset <= 13; monthOffset += 1) {
+    const year = after.getUTCFullYear();
+    const month = after.getUTCMonth() + monthOffset;
+    const candidateYear = year + Math.floor(month / 12);
+    const candidateMonth = ((month % 12) + 12) % 12;
+    const day = Math.min(dayOfMonth, daysInMonth(candidateYear, candidateMonth));
+    const candidate = new Date(Date.UTC(candidateYear, candidateMonth, day, hour, timeMinute));
+    if (candidate > after) return candidate;
+  }
+
+  return null;
+}
+
 function normalizeTimeZone(timezone?: string) {
   const fallback = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const candidate = timezone?.trim() || fallback;
@@ -592,8 +684,8 @@ const TEMPLATE_DISPLAY_ORDER: Record<string, number> = {
   review_merged_prs: 10,
   triage_failing_checks: 20,
   release_notes_writer: 30,
-  security_triage: 40,
-  dependency_auditor: 50,
+  engineering_security_triage: 40,
+  engineering_dependency_auditor: 50,
   docs_freshness_sweep: 60,
   public_help_freshness_sweep: 70,
   api_docs_freshness_sweep: 80,
@@ -643,7 +735,11 @@ function normalizeTargetList(targets: AgentTargetType[]) {
   }, []);
 }
 
-function defaultTemplateInputs(template: FlowTemplateManifest, workspace?: Pick<Workspace, 'name' | 'website_url'> | null) {
+export function defaultTemplateInputs(
+  template: FlowTemplateManifest,
+  workspace?: Pick<Workspace, 'name' | 'website_url'> | null,
+  repositories: Pick<GitRepository, 'id'>[] = [],
+) {
   const inputs = Object.fromEntries(template.inputs.map((input) => [
     input.key,
     input.default ?? (
@@ -656,6 +752,13 @@ function defaultTemplateInputs(template: FlowTemplateManifest, workspace?: Pick<
             : ''
     ),
   ]));
+  if (repositories.length === 1) {
+    for (const input of template.inputs) {
+      if (input.type === 'repository' && !String(inputs[input.key] ?? '').trim()) {
+        inputs[input.key] = repositories[0].id;
+      }
+    }
+  }
   if (template.key === 'competitive_intelligence_digest') {
     if (!String(inputs.target_company ?? '').trim() && workspace?.name?.trim()) {
       inputs.target_company = workspace.name.trim();
@@ -700,6 +803,63 @@ function defaultTemplateAgentSetup(template: FlowTemplateManifest, inputs: Recor
   };
 }
 
+function buildTemplateRenderInputs(
+  template: FlowTemplateManifest,
+  inputs: Record<string, unknown>,
+  context: {
+    agents: Agent[];
+    workflows: WorkflowWithStates[];
+    repositories: GitRepository[];
+    spaces: DocsSpace[];
+    collections: DocsCollection[];
+    teams: WorkspaceTeam[];
+    timezone: string;
+  },
+  agentSetup?: TemplateAgentSetup | null,
+) {
+  const renderInputs: Record<string, unknown> = { ...inputs, template_name: template.name };
+  for (const input of template.inputs) {
+    renderInputs[`${input.key}_label`] = formatTemplateReviewValue(input, inputs[input.key], context);
+  }
+  const repositoryID = String(inputs.repository_id ?? inputs.source_repository_id ?? '').trim();
+  const repository = context.repositories.find((repo) => repo.id === repositoryID);
+  if (repository?.full_name) {
+    renderInputs.repo_full_name = repository.full_name;
+    renderInputs.repository_name = repository.full_name;
+  }
+  const pickedAgentID = String(inputs.agent_id ?? '').trim();
+  const pickedAgentName = context.agents.find((agent) => agent.id === pickedAgentID)?.name;
+  renderInputs.agent_name = agentSetup?.name?.trim() || pickedAgentName || 'the selected agent';
+  return renderInputs;
+}
+
+function defaultTemplateFlowSetup(
+  template: FlowTemplateManifest,
+  inputs: Record<string, unknown>,
+  context: {
+    agents: Agent[];
+    workflows: WorkflowWithStates[];
+    repositories: GitRepository[];
+    spaces: DocsSpace[];
+    collections: DocsCollection[];
+    teams: WorkspaceTeam[];
+    timezone: string;
+  },
+  agentSetup?: TemplateAgentSetup | null,
+): TemplateFlowSetup {
+  const renderInputs = buildTemplateRenderInputs(template, inputs, context, agentSetup);
+  const nameFromTemplate = template.flow.name_template?.trim()
+    ? renderTemplateText(template.flow.name_template, renderInputs)
+    : '';
+  const targetLabel = String(renderInputs.repo_full_name ?? '').trim();
+  const name = nameFromTemplate || (targetLabel ? `${template.name} - ${targetLabel}` : template.name);
+  const descriptionFromTemplate = template.flow.description_template?.trim()
+    ? renderTemplateText(template.flow.description_template, renderInputs)
+    : '';
+  const description = descriptionFromTemplate || template.short_description;
+  return { name, description };
+}
+
 function defaultTemplateRunContext(template: FlowTemplateManifest, inputs: Record<string, unknown>) {
   const context = template.flow.additional_context?.trim();
   if (context) return renderTemplateText(context, inputs);
@@ -707,7 +867,7 @@ function defaultTemplateRunContext(template: FlowTemplateManifest, inputs: Recor
 }
 
 function templateNeedsReviewStep(template: FlowTemplateManifest) {
-  return Boolean(template.agent.create || (template.agent.reuse_system && template.flow.additional_context?.trim()));
+  return Boolean(template.agent.create || template.agent.pick_existing || template.agent.reuse_system || template.flow.name_template || template.flow.description_template);
 }
 
 function normalizeTemplateMaxRuns(value: string) {
@@ -799,6 +959,10 @@ function templateAgentDisplayName(template: FlowTemplateManifest, values: Record
 
 function compactList(parts: Array<string | false | null | undefined>) {
   return parts.filter((part): part is string => Boolean(part && part.trim())).join(' · ');
+}
+
+function compactRows<T>(rows: Array<T | false | null | undefined>) {
+  return rows.filter((row): row is T => Boolean(row));
 }
 
 function templateLogicRows(
@@ -944,6 +1108,16 @@ function FlowSummaryParagraph({ rows }: { rows: FlowLogicRow[] }) {
   );
 }
 
+function skillRefIdentity(skill: Pick<SkillCatalogEntry, 'id' | 'key'> | AgentSkillRef) {
+  if ('id' in skill && skill.id) return skill.id;
+  if ('skill_id' in skill && skill.skill_id) return skill.skill_id;
+  return skill.key;
+}
+
+function skillRefDisplayName(skill: Pick<SkillCatalogEntry, 'title' | 'key'> | undefined, fallbackKey: string) {
+  return skill?.title?.trim() || fallbackKey;
+}
+
 function TemplateSkillPicker({
   open,
   onOpenChange,
@@ -957,8 +1131,8 @@ function TemplateSkillPicker({
   selectedSkills: AgentSkillRef[];
   onAddSkill: (skill: SkillCatalogEntry) => void;
 }) {
-  const selected = new Set(selectedSkills.map((skill) => skill.key));
-  const available = skills.filter((skill) => !selected.has(skill.key));
+  const selected = new Set(selectedSkills.map(skillRefIdentity));
+  const available = skills.filter((skill) => !selected.has(skillRefIdentity(skill)));
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -975,14 +1149,15 @@ function TemplateSkillPicker({
             <CommandGroup heading={`${available.length} available`}>
               {available.map((skill) => (
                 <CommandItem
-                  key={skill.key}
+                  key={skillRefIdentity(skill)}
                   value={`${skill.key} ${skill.title} ${skill.description}`}
                   onSelect={() => onAddSkill(skill)}
                   className="cursor-pointer items-start py-2"
                 >
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-foreground">{skill.key}</span>
+                      <span className="text-xs font-medium text-foreground">{skillRefDisplayName(skill, skill.key)}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">{skill.key}</span>
                       <Badge variant="outline" className="text-[10px]">{skill.source_kind === 'built_in' ? 'built-in' : skill.source_kind}</Badge>
                     </div>
                     <p className="text-xs leading-relaxed text-muted-foreground">{skill.description}</p>
@@ -1020,6 +1195,13 @@ function templateInputAllowsSpace(input: FlowTemplateInput, space: DocsSpace) {
   const requested = input.space_type?.trim() || 'internal';
   if (requested === 'any') return true;
   return space.type === requested;
+}
+
+function templateSpaceSelectLabel(input: FlowTemplateInput) {
+  const requested = input.space_type?.trim() || 'internal';
+  if (requested === 'external_capable') return 'Select public help space';
+  if (requested === 'any') return 'Select docs space';
+  return 'Select internal docs space';
 }
 
 function groupTemplateInputs(inputs: FlowTemplateInput[], values: Record<string, unknown>) {
@@ -1260,6 +1442,16 @@ function draftFromSearch(search: AutomationFlowsSearch, workflows: WorkflowWithS
   return draft;
 }
 
+export function filterAutomationFlowsForSearch(rules: AutomationRule[], search: Pick<AutomationFlowsSearch, 'show_rule' | 'show_trigger' | 'agent_id'>) {
+  const selectedAgentId = String(search.agent_id ?? '').trim();
+  return rules.filter((rule) => {
+    if (search.show_rule && rule.id !== search.show_rule) return false;
+    if (search.show_trigger && rule.trigger_type !== search.show_trigger) return false;
+    if (selectedAgentId && stringValue(rule.action_config?.agent_id) !== selectedAgentId) return false;
+    return true;
+  });
+}
+
 function draftFromRule(rule: AutomationRule, workflows: WorkflowWithStates[], timezone: string): FlowDraft {
   const draft = defaultDraft();
   draft.name = rule.name;
@@ -1379,14 +1571,13 @@ function validateDraft(draft: FlowDraft) {
   return null;
 }
 
-function flowMetadataPills(rule: AutomationRule, teamName?: string) {
+export function flowMetadataPills(rule: AutomationRule, teamName?: string, _timezone = 'UTC') {
   const pills: Array<{ key: string; label: string; tone?: 'default' | 'info' | 'team' }> = [];
   const repoFullName = stringValue(rule.trigger_config?.repo_full_name);
   const branch = stringValue(rule.trigger_config?.branch);
   const baseBranch = stringValue(rule.trigger_config?.base_branch);
   const tagName = stringValue(rule.trigger_config?.tag_name);
   const conclusion = stringValue(rule.trigger_config?.conclusion);
-  const schedule = scheduleExpressionFromConfig(rule.trigger_config);
   const targetType = stringValue(rule.action_config?.target_type);
   const branchOverrides = describeRunBranchOverrides(
     stringValue(rule.action_config?.base_branch),
@@ -1398,11 +1589,9 @@ function flowMetadataPills(rule: AutomationRule, teamName?: string) {
   if (baseBranch) pills.push({ key: 'base', label: `Base: ${baseBranch}` });
   if (tagName) pills.push({ key: 'tag', label: `Tag: ${tagName}` });
   if (conclusion) pills.push({ key: 'conclusion', label: `Conclusion: ${conclusion}` });
-  if (schedule) pills.push({ key: 'schedule', label: describeScheduleExpression(schedule), tone: 'info' });
   if (targetType && targetType !== 'event') pills.push({ key: 'target', label: `Target: ${TARGET_SHORT_LABELS[targetType as FlowDraft['targetMode']] ?? targetType.replaceAll('_', ' ')}` });
   if (branchOverrides) pills.push({ key: 'branches', label: branchOverrides.replace(/[()]/g, ''), tone: 'info' });
   if (teamName) pills.push({ key: 'team', label: teamName, tone: 'team' });
-  if (rule.template_instance_id) pills.push({ key: 'template', label: 'Template', tone: 'info' });
 
   return pills;
 }
@@ -1416,6 +1605,14 @@ function relativeTime(value?: string) {
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
+function futureRelativeTime(date: Date, now = new Date()) {
+  const diff = date.getTime() - now.getTime();
+  if (diff <= 60_000) return 'in <1m';
+  if (diff < 3_600_000) return `in ${Math.ceil(diff / 60_000)}m`;
+  if (diff < 86_400_000) return `in ${Math.ceil(diff / 3_600_000)}h`;
+  return `in ${Math.ceil(diff / 86_400_000)}d`;
 }
 
 function draftLogicRows(draft: FlowDraft, workflows: WorkflowWithStates[], statesById: Map<string, WorkflowState>, agents: Map<string, string>): FlowLogicRow[] {
@@ -1507,46 +1704,50 @@ function agentUnavailableReasonForFlow(agent: Agent, targetType: AgentTargetType
   return null;
 }
 
-function FlowTitle({
-  rule,
-  statesById,
-  agentNames,
-}: {
-  rule: AutomationRule;
-  statesById: Map<string, WorkflowState>;
-  agentNames: Map<string, string>;
-}) {
+type FlowSummary = {
+  label: string;
+  value?: string;
+  verb?: string;
+};
+
+export function flowTriggerSummary(rule: AutomationRule, statesById: Map<string, WorkflowState>, timezone = 'UTC'): FlowSummary {
   const triggerStateId = stringValue(rule.trigger_config?.state_id);
   const stateName = statesById.get(triggerStateId)?.name;
-  const targetStateId = stringValue(rule.action_config?.target_state_id);
-  const targetStateName = statesById.get(targetStateId)?.name;
-  const agentId = stringValue(rule.action_config?.agent_id);
-  const agentName = agentNames.get(agentId);
 
-  let triggerVerb = triggerLabel(rule.trigger_type);
+  let label = triggerLabel(rule.trigger_type);
   let triggerValue = '';
   if (rule.trigger_type === 'task.state_entered' && stateName) {
-    triggerVerb = 'Story enters';
+    label = 'Story enters';
     triggerValue = stateName;
   } else if (rule.trigger_type === 'agent_run.approved' && stateName) {
-    triggerVerb = 'Approved in';
+    label = 'Approved in';
     triggerValue = stateName;
   } else if (isPullRequestTrigger(rule.trigger_type)) {
-    triggerVerb = rule.trigger_type === 'github.pull_request_merged' || rule.trigger_type === 'gitlab.merge_request_merged' ? 'PR merged'
+    label = rule.trigger_type === 'github.pull_request_merged' || rule.trigger_type === 'gitlab.merge_request_merged' ? 'PR merged'
       : rule.trigger_type === 'github.pull_request_opened' || rule.trigger_type === 'gitlab.merge_request_opened' ? 'PR opened'
       : rule.trigger_type === 'github.pull_request_closed' || rule.trigger_type === 'gitlab.merge_request_closed' ? 'PR closed'
       : 'PR review requested';
     const baseBranch = stringValue(rule.trigger_config?.base_branch);
     triggerValue = baseBranch ? `base branch ${baseBranch}` : '';
   } else if (isPushTrigger(rule.trigger_type)) {
-    triggerVerb = 'Push arrives';
+    label = 'Push arrives';
   } else if (isReleaseTrigger(rule.trigger_type)) {
-    triggerVerb = 'Release published';
+    label = 'Release published';
   } else if (isPipelineTrigger(rule.trigger_type)) {
-    triggerVerb = rule.trigger_type === 'gitlab.pipeline_completed' ? 'Pipeline completes' : 'Check suite completes';
+    label = rule.trigger_type === 'gitlab.pipeline_completed' ? 'Pipeline completes' : 'Check suite completes';
   } else if (rule.trigger_type === 'cron') {
-    triggerVerb = 'Schedule ticks';
+    const schedule = scheduleExpressionFromConfig(rule.trigger_config);
+    label = schedule ? describeScheduleExpressionInTimeZone(schedule, timezone) : 'Schedule ticks';
   }
+
+  return { label, value: triggerValue };
+}
+
+export function flowActionSummary(rule: AutomationRule, statesById: Map<string, WorkflowState>, agentNames: Map<string, string>): FlowSummary {
+  const targetStateId = stringValue(rule.action_config?.target_state_id);
+  const targetStateName = statesById.get(targetStateId)?.name;
+  const agentId = stringValue(rule.action_config?.agent_id);
+  const agentName = agentNames.get(agentId);
 
   let actionVerb = rule.action_type.replaceAll('_', ' ');
   let actionValue = '';
@@ -1565,37 +1766,97 @@ function FlowTitle({
     actionValue = stringValue(rule.action_config?.target_branch) || BASE_BRANCH_TOKEN;
   }
 
-  return (
-    <p className="min-w-0 truncate text-sm text-foreground/90">
-      <span className="font-medium">{triggerVerb}</span>
-      {triggerValue ? <span className="font-semibold text-foreground"> {triggerValue}</span> : null}
-      <ArrowRight01Icon className="mx-1.5 inline h-3.5 w-3.5 align-[-2px] text-muted-foreground/60" />
-      <span className="font-medium">{actionVerb}</span>
-      {actionValue ? <span className="font-semibold text-foreground"> {actionValue}</span> : null}
-    </p>
-  );
+  return {
+    label: actionValue ? `${actionVerb} ${actionValue}` : actionVerb,
+    verb: actionVerb,
+    value: actionValue,
+  };
 }
 
-function flowHasError(rule: AutomationRule, agentNames: Map<string, string>) {
-  if (rule.action_type !== 'start_agent_run') return false;
+function flowIsIncomplete(rule: AutomationRule, agentNames: Map<string, string>) {
+  if (isWorkflowTrigger(rule.trigger_type)) {
+    if (!rule.workflow_id || !stringValue(rule.trigger_config?.state_id)) return true;
+  }
+  if (isPushTrigger(rule.trigger_type) && !stringValue(rule.trigger_config?.repo_full_name) && !stringValue(rule.trigger_config?.branch)) {
+    return true;
+  }
+  if (isPullRequestTrigger(rule.trigger_type) && !stringValue(rule.trigger_config?.repo_full_name) && !stringValue(rule.trigger_config?.base_branch)) {
+    return true;
+  }
+  if (isReleaseTrigger(rule.trigger_type) && !stringValue(rule.trigger_config?.repo_full_name) && !stringValue(rule.trigger_config?.tag_name)) {
+    return true;
+  }
+  if (
+    isPipelineTrigger(rule.trigger_type)
+    && !stringValue(rule.trigger_config?.repo_full_name)
+    && !stringValue(rule.trigger_config?.branch)
+    && !stringValue(rule.trigger_config?.conclusion)
+  ) {
+    return true;
+  }
+  if (rule.trigger_type === 'cron' && !scheduleExpressionFromConfig(rule.trigger_config)) {
+    return true;
+  }
+
+  if (rule.action_type === 'start_agent_run') {
+    const agentId = stringValue(rule.action_config?.agent_id);
+    const targetType = stringValue(rule.action_config?.target_type) || 'event';
+    if (!agentId || !agentNames.has(agentId)) return true;
+    if (requiresExplicitAgentTarget(rule.trigger_type) && targetType === 'event') return true;
+    if (targetType !== 'event' && targetType !== 'workspace' && !stringValue(rule.action_config?.target_id)) return true;
+  }
+  if (rule.action_type === 'move_to_state' && !stringValue(rule.action_config?.target_state_id)) {
+    return true;
+  }
+  if (rule.action_type === 'merge_branch' && !stringValue(rule.action_config?.target_branch)) {
+    return true;
+  }
+
+  return false;
+}
+
+function flowRunNowBlocker(rule: AutomationRule, agentNames: Map<string, string>) {
+  if (rule.trigger_type !== 'cron') return 'Run now is only available for scheduled flows. Event flows run when their trigger happens.';
+  if (rule.action_type !== 'start_agent_run') return 'Run now is only supported for agent flows.';
   const agentId = stringValue(rule.action_config?.agent_id);
-  return !agentId || !agentNames.has(agentId);
+  if (!agentId || !agentNames.has(agentId)) return 'Complete the flow setup before running it.';
+  const targetType = stringValue(rule.action_config?.target_type) || 'event';
+  const targetId = stringValue(rule.action_config?.target_id);
+  if (rule.trigger_type === 'cron' && targetType === 'event') return '';
+  if (targetType === 'workspace') return '';
+  if (targetType !== 'event' && targetId) return '';
+  return 'This flow needs an event to run.';
 }
 
-type FlowState = 'running' | 'paused' | 'error' | 'draft';
+function flowRunNowRuntimeBlocker(lastRunStatus?: string) {
+  const status = lastRunStatus?.trim().toLowerCase();
+  if (status === 'queued' || status === 'running') return 'Flow is already running.';
+  return '';
+}
 
-function deriveFlowState(rule: AutomationRule, healthItem?: AutomationInventoryItem): FlowState {
-  if (!rule.enabled) return 'paused';
+type FlowState = 'active' | 'paused' | 'error' | 'needs_review' | 'incomplete';
+
+function flowNeedsReview(healthItem?: AutomationInventoryItem) {
+  const metrics = (healthItem?.health.metrics ?? undefined) as Record<string, unknown> | undefined;
+  if ((readMetricNumber(metrics, ['pending_review_count', 'pending_approval_count', 'flagged_count']) ?? 0) > 0) {
+    return true;
+  }
+  return readMetricBoolean(metrics, ['needs_review', 'pending_review', 'requires_review', 'flagged']);
+}
+
+function deriveFlowState(rule: AutomationRule, agentNames: Map<string, string>, healthItem?: AutomationInventoryItem): FlowState {
+  if (flowIsIncomplete(rule, agentNames)) return 'incomplete';
   if (healthItem?.health.last_error_at) return 'error';
-  if (healthItem?.health.last_success_at || healthItem?.health.last_seen_at) return 'running';
-  return 'draft';
+  if (flowNeedsReview(healthItem)) return 'needs_review';
+  if (!rule.enabled) return 'paused';
+  return 'active';
 }
 
 const FLOW_STATE_STYLES: Record<FlowState, { pill: string; dot: string; label: string }> = {
-  running: {
-    pill: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400',
+  active: {
+    pill: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
     dot: 'bg-current',
-    label: 'Running',
+    label: 'Active',
   },
   paused: {
     pill: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
@@ -1607,10 +1868,15 @@ const FLOW_STATE_STYLES: Record<FlowState, { pill: string; dot: string; label: s
     dot: 'bg-rose-500',
     label: 'Error',
   },
-  draft: {
+  needs_review: {
+    pill: 'border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-400',
+    dot: 'bg-violet-500',
+    label: 'Needs review',
+  },
+  incomplete: {
     pill: 'border-border/60 bg-muted/40 text-muted-foreground',
     dot: 'bg-muted-foreground/40',
-    label: 'Draft',
+    label: 'Incomplete',
   },
 };
 
@@ -1634,6 +1900,30 @@ function readMetricNumber(metrics: Record<string, unknown> | undefined, keys: st
   return undefined;
 }
 
+function readMetricString(metrics: Record<string, unknown> | undefined, keys: string[]): string | undefined {
+  if (!metrics) return undefined;
+  for (const key of keys) {
+    const value = metrics[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function readMetricBoolean(metrics: Record<string, unknown> | undefined, keys: string[]) {
+  if (!metrics) return false;
+  for (const key of keys) {
+    const value = metrics[key];
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return value > 0;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['true', 'yes', '1'].includes(normalized)) return true;
+      if (['false', 'no', '0', ''].includes(normalized)) return false;
+    }
+  }
+  return false;
+}
+
 function FlowStat({ value, label, sub, tone = 'neutral' }: { value: number | undefined; label: string; sub?: string; tone?: 'neutral' | 'warn' }) {
   return (
     <div>
@@ -1644,6 +1934,145 @@ function FlowStat({ value, label, sub, tone = 'neutral' }: { value: number | und
       {sub && <div className="font-mono text-[10px] text-muted-foreground/70">{sub}</div>}
     </div>
   );
+}
+
+type FlowDetailsSection = {
+  title: string;
+  rows: Array<{ label: string; value: string }>;
+};
+
+function flowLastRunLabel(healthItem?: AutomationInventoryItem) {
+  if (healthItem?.health.last_success_at) return relativeTime(healthItem.health.last_success_at);
+  if (healthItem?.health.last_error_at) return relativeTime(healthItem.health.last_error_at);
+  if (healthItem?.health.last_seen_at) return relativeTime(healthItem.health.last_seen_at);
+  return 'never';
+}
+
+function flowHasRunActivity(healthItem?: AutomationInventoryItem) {
+  return Boolean(healthItem?.health.last_success_at || healthItem?.health.last_seen_at || healthItem?.health.last_error_at);
+}
+
+export function flowNextRunLabel(rule: AutomationRule, now = new Date()) {
+  if (rule.trigger_type !== 'cron') return null;
+  const schedule = scheduleExpressionFromConfig(rule.trigger_config);
+  if (!schedule) return 'Not scheduled';
+  const parsed = parseSimpleScheduleExpression(schedule);
+  if (!parsed) return 'Custom schedule';
+  const nextRun = nextCronRunDate(parsed, now);
+  return nextRun ? futureRelativeTime(nextRun, now) : 'Not scheduled';
+}
+
+function flowMetricValues(healthItem?: AutomationInventoryItem) {
+  const metrics = (healthItem?.health.metrics ?? undefined) as Record<string, unknown> | undefined;
+  return {
+    totalRuns: readMetricNumber(metrics, ['total_runs', 'runs_total', 'handled_total']),
+    lastRunId: readMetricString(metrics, ['last_run_id', 'run_id']),
+    lastExecutionId: readMetricString(metrics, ['last_execution_id', 'execution_id']),
+    lastRunStatus: readMetricString(metrics, ['last_run_status', 'run_status', 'status']),
+  };
+}
+
+function flowCurrentRunLabel(lastRunStatus?: string) {
+  switch (lastRunStatus?.trim().toLowerCase()) {
+    case 'running':
+      return 'Running now';
+    case 'queued':
+      return 'Run queued';
+    default:
+      return null;
+  }
+}
+
+function flowActivityBlockerLabel(flowState: FlowState) {
+  if (flowState === 'paused') return 'Flow paused';
+  if (flowState === 'incomplete') return 'Setup incomplete';
+  return null;
+}
+
+export function flowDetailsSections({
+  rule,
+  workflows = [],
+  statesById,
+  agentNames,
+  teamName,
+  healthItem,
+  timezone = 'UTC',
+}: {
+  rule: AutomationRule;
+  workflows?: WorkflowWithStates[];
+  statesById: Map<string, WorkflowState>;
+  agentNames: Map<string, string>;
+  teamName?: string;
+  healthItem?: AutomationInventoryItem;
+  timezone?: string;
+}): FlowDetailsSection[] {
+  const flowState = deriveFlowState(rule, agentNames, healthItem);
+  const draft = draftFromRule(rule, workflows, timezone);
+  const workflowName = workflows.find((workflow) => workflow.workflow.id === draft.workflowId)?.workflow.name;
+  const triggerStateName = statesById.get(draft.triggerStateId)?.name;
+  const destinationStateName = statesById.get(draft.targetStateId)?.name;
+  const agentName = agentNames.get(draft.agentId);
+  const additionalContext = stringValue(rule.action_config?.additional_context).trim();
+  const nextRunLabel = flowNextRunLabel(rule);
+  const lastError = healthItem?.health.last_error_message?.trim();
+  const storedSchedule = scheduleExpressionFromConfig(rule.trigger_config);
+  const branchOverrides = describeRunBranchOverrides(draft.runBaseBranch.trim(), draft.runWorkingBranch.trim());
+
+  const sections: FlowDetailsSection[] = [
+    {
+      title: 'Flow setup',
+      rows: compactRows([
+        { label: 'Name', value: draft.name },
+        draft.description.trim() ? { label: 'Internal description', value: draft.description.trim() } : null,
+        teamName ? { label: 'Team', value: teamName } : null,
+        { label: 'Status', value: FLOW_STATE_STYLES[flowState].label },
+      ]),
+    },
+    {
+      title: 'Trigger setup',
+      rows: compactRows([
+        { label: 'Trigger', value: triggerLabel(draft.triggerType) },
+        workflowName ? { label: 'Workflow', value: workflowName } : null,
+        triggerStateName ? { label: 'State', value: triggerStateName } : null,
+        draft.repoFullName.trim() ? { label: 'Repository', value: draft.repoFullName.trim() } : null,
+        draft.branch.trim() ? { label: 'Branch', value: draft.branch.trim() } : null,
+        draft.baseBranch.trim() && isPullRequestTrigger(draft.triggerType) ? { label: 'Base branch', value: draft.baseBranch.trim() } : null,
+        draft.tagName.trim() ? { label: 'Tag', value: draft.tagName.trim() } : null,
+        draft.conclusion.trim() ? { label: 'Conclusion', value: draft.conclusion.trim() } : null,
+        draft.triggerType === 'cron' && storedSchedule ? { label: 'Schedule', value: describeScheduleExpressionInTimeZone(storedSchedule, timezone) } : null,
+        nextRunLabel ? { label: 'Next run', value: nextRunLabel } : null,
+      ]),
+    },
+    {
+      title: 'Action setup',
+      rows: compactRows([
+        { label: 'Action', value: ACTION_LABELS[draft.actionType] ?? draft.actionType.replaceAll('_', ' ') },
+        agentName ? { label: 'Agent', value: agentName } : null,
+        draft.actionType === 'start_agent_run' ? { label: 'Run on', value: TARGET_LABELS[draft.targetMode] ?? draft.targetMode } : null,
+        draft.targetId.trim() ? { label: 'Target ID', value: draft.targetId.trim() } : null,
+        destinationStateName ? { label: 'Destination state', value: destinationStateName } : null,
+        draft.targetBranch.trim() ? { label: 'Merge target', value: describeMergeInto(draft.targetBranch.trim()) } : null,
+        branchOverrides ? { label: 'Branch overrides', value: branchOverrides.replace(/[()]/g, '') } : null,
+      ]),
+    },
+  ];
+
+  if (additionalContext) {
+    sections.push({
+      title: 'Instructions',
+      rows: [{ label: 'Run context', value: additionalContext }],
+    });
+  }
+
+  sections.push({
+    title: 'Diagnostics',
+    rows: compactRows([
+      { label: 'Last run', value: flowLastRunLabel(healthItem) },
+      lastError ? { label: 'Last error', value: lastError } : null,
+    ]),
+  });
+
+  return sections;
 }
 
 function FlowFilterBar({
@@ -1677,19 +2106,71 @@ function FlowFilterBar({
   );
 }
 
-function FlowRow({
+function TruncatedTextWithTooltip({
+  children,
+  className,
+  testId,
+}: {
+  children: string;
+  className?: string;
+  testId: string;
+}) {
+  const textRef = useRef<HTMLParagraphElement | null>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+  const measure = useCallback(() => {
+    const element = textRef.current;
+    if (!element) return;
+    setIsTruncated(element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight);
+  }, []);
+
+  useEffect(() => {
+    measure();
+    const element = textRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [children, measure]);
+
+  const text = (
+    <p
+      ref={textRef}
+      className={className}
+      data-testid={testId}
+      data-tooltip-enabled={isTruncated ? 'true' : 'false'}
+    >
+      {children}
+    </p>
+  );
+
+  if (!isTruncated) return text;
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{text}</TooltipTrigger>
+        <TooltipContent side="top" align="start" className="max-w-md whitespace-pre-wrap break-words text-xs leading-relaxed">
+          {children}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+export function FlowRow({
   rule,
   statesById,
   agentNames,
-  teamName,
   healthItem,
   workspaceSlug,
+  timezone = 'UTC',
   canEdit,
+  canRunNowAction,
   onEdit,
   onToggle,
+  onRunNow,
   onDelete,
-  onUninstallTemplate,
-  agentReferencedElsewhere,
+  runningNow,
 }: {
   rule: AutomationRule;
   statesById: Map<string, WorkflowState>;
@@ -1697,151 +2178,266 @@ function FlowRow({
   teamName?: string;
   healthItem?: AutomationInventoryItem;
   workspaceSlug?: string;
+  timezone?: string;
   canEdit: boolean;
+  canRunNowAction: boolean;
   onEdit: (rule: AutomationRule) => void;
   onToggle: (rule: AutomationRule) => void;
+  onRunNow: (rule: AutomationRule) => void;
   onDelete: (rule: AutomationRule) => void;
-  onUninstallTemplate: (rule: AutomationRule, agentReferencedElsewhere: boolean) => void;
-  agentReferencedElsewhere: boolean;
+  runningNow?: boolean;
 }) {
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const hasError = flowHasError(rule, agentNames);
-  const metadataPills = flowMetadataPills(rule, teamName);
+  const isIncomplete = flowIsIncomplete(rule, agentNames);
   const agentId = stringValue(rule.action_config?.agent_id);
+  const agentName = agentNames.get(agentId);
   const agentMissing = rule.action_type === 'start_agent_run' && (!agentId || !agentNames.has(agentId));
-
-  const lastRunLabel = (() => {
-    if (healthItem?.health.last_success_at) return `Last run ${relativeTime(healthItem.health.last_success_at)}`;
-    if (healthItem?.health.last_seen_at) return `Last run ${relativeTime(healthItem.health.last_seen_at)}`;
-    return 'Last run never';
-  })();
-
-  const flowState = deriveFlowState(rule, healthItem);
-  const metrics = (healthItem?.health.metrics ?? undefined) as Record<string, unknown> | undefined;
-  const handled = readMetricNumber(metrics, ['handled_week', 'runs_week', 'runs_7d', 'handled', 'handled_count']);
-  const flagged = readMetricNumber(metrics, ['flagged_week', 'flagged', 'needs_review', 'flagged_count']);
+  const flowState = deriveFlowState(rule, agentNames, healthItem);
+  const { totalRuns, lastRunId, lastExecutionId, lastRunStatus } = flowMetricValues(healthItem);
+  const trigger = flowTriggerSummary(rule, statesById, timezone);
+  const action = flowActionSummary(rule, statesById, agentNames);
+  const lastRunLabel = flowLastRunLabel(healthItem);
+  const hasRunActivity = flowHasRunActivity(healthItem);
+  const nextRunLabel = flowNextRunLabel(rule);
   const lastErrorMessage = healthItem?.health.last_error_message?.trim();
+  const currentRunLabel = flowCurrentRunLabel(lastRunStatus);
+  const blockerLabel = flowActivityBlockerLabel(flowState);
+  const activitySearch = { page: 1, source: 'automation_rule', reference_id: rule.id };
+  const lastRunPath = workspaceSlug && lastRunId
+    ? buildAutomationActivityPath(workspaceSlug, { ...activitySearch, run_id: lastRunId }, 'trigger-executions')
+    : null;
+  const lastExecutionPath = workspaceSlug && lastExecutionId
+    ? buildAutomationActivityPath(workspaceSlug, { ...activitySearch, execution_id: lastExecutionId }, 'trigger-executions')
+    : null;
+  const runNowBlocker = flowRunNowRuntimeBlocker(lastRunStatus) || flowRunNowBlocker(rule, agentNames);
+  const supportsRunNow = rule.trigger_type === 'cron';
+  const showRunNow = canRunNowAction;
+  const canRunNow = showRunNow && supportsRunNow && !runNowBlocker;
 
   return (
-    <div
-      className={cn(
-        'group rounded-lg border bg-card transition-colors',
-        hasError || flowState === 'error'
-          ? 'border-destructive/40 bg-destructive/[0.03]'
-          : 'border-border/60 hover:border-border',
-      )}
-    >
-      <div className="grid gap-4 px-4 py-3 md:grid-cols-[minmax(0,1fr)_280px]">
-        {/* LEFT — title / trigger sentence */}
-        <div className="min-w-0 space-y-2">
-          <div className="flex items-center gap-2">
-            <FlowStatePill state={flowState} />
-            <FlowTitle rule={rule} statesById={statesById} agentNames={agentNames} />
-            {agentMissing && (
-              <Badge variant="destructive" className="text-xs">Missing agent</Badge>
-            )}
-            <span className="flex-1" />
-            {canEdit && (
-              <div className="flex shrink-0 items-center gap-1">
-                <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={cn(
-                      'h-7 px-2 text-xs',
-                      rule.enabled
-                        ? 'text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300'
-                        : 'text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300',
-                    )}
-                    onClick={() => onToggle(rule)}
+    <>
+      <div
+        className={cn(
+          'group rounded-lg border bg-card px-4 py-3 transition-colors hover:border-border hover:bg-muted/10',
+          isIncomplete || flowState === 'error' ? 'border-destructive/35 bg-destructive/[0.025]' : 'border-border/70',
+        )}
+      >
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1 space-y-1.5" data-testid="flow-row-title-area">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <FlowStatePill state={flowState} />
+              <TruncatedTextWithTooltip
+                testId="flow-row-name-text"
+                className="min-w-0 max-w-full truncate text-sm font-semibold text-foreground"
+              >
+                {rule.name}
+              </TruncatedTextWithTooltip>
+              {agentMissing && (
+                <Badge variant="destructive" className="shrink-0 text-xs">Missing agent</Badge>
+              )}
+            </div>
+            {rule.description?.trim() ? (
+              <TruncatedTextWithTooltip
+                testId="flow-row-description-text"
+                className="line-clamp-2 text-xs leading-relaxed text-muted-foreground"
+              >
+                {rule.description.trim()}
+              </TruncatedTextWithTooltip>
+            ) : null}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1">
+            {showRunNow ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className={cn(
+                        'inline-flex opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100',
+                        canRunNow && !runningNow ? 'cursor-pointer' : 'cursor-not-allowed',
+                      )}
+                    >
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!canRunNow || runningNow}
+                        className={cn(
+                          'h-7 gap-1.5 px-2 text-xs',
+                          canRunNow && !runningNow ? 'cursor-pointer' : 'pointer-events-none cursor-not-allowed',
+                        )}
+                        onClick={() => onRunNow(rule)}
+                      >
+                        <ZapIcon className="h-3.5 w-3.5" />
+                        {runningNow ? 'Running…' : 'Run now'}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {runNowBlocker ? <TooltipContent>{runNowBlocker}</TooltipContent> : null}
+                </Tooltip>
+              </TooltipProvider>
+            ) : null}
+
+            <DropdownMenu onOpenChange={(open) => {
+              if (!open) {
+                window.requestAnimationFrame(() => {
+                  menuTriggerRef.current?.blur();
+                });
+              }
+            }}>
+              <DropdownMenuTrigger asChild>
+                <Button ref={menuTriggerRef} variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  <MoreHorizontalIcon className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                onCloseAutoFocus={(event) => {
+                  event.preventDefault();
+                  menuTriggerRef.current?.blur();
+                }}
+              >
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => onEdit(rule)}>
+                    Edit
+                  </DropdownMenuItem>
+                )}
+                {workspaceSlug && (
+                  <DropdownMenuItem asChild>
+                    <a href={buildAutomationActivityPath(workspaceSlug, activitySearch, 'trigger-executions')}>
+                      View runs
+                    </a>
+                  </DropdownMenuItem>
+                )}
+                {lastRunPath && (
+                  <DropdownMenuItem asChild>
+                    <a href={lastRunPath}>
+                      Open last run
+                    </a>
+                  </DropdownMenuItem>
+                )}
+                {!lastRunPath && lastExecutionPath && (
+                  <DropdownMenuItem asChild>
+                    <a href={lastExecutionPath}>
+                      View last run
+                    </a>
+                  </DropdownMenuItem>
+                )}
+                {showRunNow && (
+                  <DropdownMenuItem
+                    disabled={!canRunNow || runningNow}
+                    onClick={() => onRunNow(rule)}
                   >
-                    {rule.enabled ? 'Disable' : 'Enable'}
-                  </Button>
-                </div>
-                <DropdownMenu onOpenChange={(open) => {
-                  if (!open) {
-                    window.requestAnimationFrame(() => {
-                      menuTriggerRef.current?.blur();
-                    });
-                  }
-                }}>
-                  <DropdownMenuTrigger asChild>
-                    <Button ref={menuTriggerRef} variant="ghost" size="sm" className="h-7 w-7 p-0">
-                      <MoreHorizontalIcon className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    onCloseAutoFocus={(event) => {
-                      event.preventDefault();
-                      menuTriggerRef.current?.blur();
-                    }}
-                  >
-                    <DropdownMenuItem onClick={() => onEdit(rule)}>
-                      Edit
+                    {runningNow ? 'Running…' : 'Run now'}
+                  </DropdownMenuItem>
+                )}
+                {canEdit && (
+                  <>
+                    <DropdownMenuItem onClick={() => onToggle(rule)}>
+                      {rule.enabled ? 'Disable' : 'Enable'}
                     </DropdownMenuItem>
-                    {workspaceSlug && (
-                      <DropdownMenuItem asChild>
-                        <a href={buildAutomationActivityPath(workspaceSlug, { page: 1, source: 'automation_rule', reference_id: rule.id }, 'trigger-executions')}>
-                          Activity
-                        </a>
-                      </DropdownMenuItem>
-                    )}
-                    {rule.template_instance_id && (
-                      <DropdownMenuItem onClick={() => onUninstallTemplate(rule, agentReferencedElsewhere)}>
-                        Uninstall template
-                      </DropdownMenuItem>
-                    )}
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
                       onClick={() => onDelete(rule)}
                     >
                       Delete
                     </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            )}
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
+          <div className="min-w-0 space-y-1.5 text-xs">
+            <p className="truncate text-muted-foreground">
+              <span className="font-medium text-foreground">Trigger</span>{' '}
+              {trigger.value ? `${trigger.label} ${trigger.value}` : trigger.label}
+            </p>
+            <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+              <span className="shrink-0 font-medium leading-5 text-foreground">Action</span>
+              {rule.action_type === 'start_agent_run' && agentName ? (
+                <span className="inline-flex min-w-0 items-center gap-1.5 leading-5" data-testid="flow-row-action-agent">
+                  <span className="shrink-0 leading-5" data-testid="flow-row-action-verb">{action.verb}</span>
+                  <span className="truncate font-medium leading-5 text-foreground" data-testid="flow-row-action-agent-name">{action.value}</span>
+                  <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center" data-testid="flow-row-action-agent-avatar">
+                    <AgentAvatar
+                      name={agentName}
+                      className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none"
+                      genericBare
+                    />
+                  </span>
+                </span>
+              ) : (
+                <span className="truncate">{action.label}</span>
+              )}
+            </div>
           </div>
 
-          {metadataPills.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {metadataPills.map((pill) => (
-                <Badge
-                  key={pill.key}
-                  variant="outline"
-                  className={cn(
-                    'max-w-[22rem] truncate text-xs font-normal',
-                    pill.tone === 'info' && 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-400',
-                    pill.tone === 'team' && 'border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-400',
+          <div className="grid gap-2 rounded-md border border-border/50 bg-muted/20 px-3 py-2">
+            {totalRuns !== undefined ? (
+              <FlowStat value={totalRuns} label="Total runs" />
+            ) : null}
+            <div className={cn('text-[11px] text-muted-foreground', totalRuns !== undefined && 'border-t border-border/60 pt-1.5')}>
+              {currentRunLabel ? (
+                <span className="font-medium text-foreground/80">{currentRunLabel}</span>
+              ) : hasRunActivity ? (
+                <span className="inline-flex items-baseline gap-1">
+                  <span>Last run</span>
+                  {lastRunPath ? (
+                    <a
+                      href={lastRunPath}
+                      className="font-mono text-foreground/80 underline decoration-border underline-offset-2 hover:text-foreground hover:decoration-foreground"
+                    >
+                      {lastRunLabel}
+                    </a>
+                  ) : lastExecutionPath ? (
+                    <a
+                      href={lastExecutionPath}
+                      className="font-mono text-foreground/80 underline decoration-border underline-offset-2 hover:text-foreground hover:decoration-foreground"
+                    >
+                      {lastRunLabel}
+                    </a>
+                  ) : (
+                    <span className="font-mono text-foreground/80">{lastRunLabel}</span>
                   )}
-                >
-                  {pill.label}
-                </Badge>
-              ))}
+                </span>
+              ) : (
+                <span className="font-medium text-foreground/80">No runs yet</span>
+              )}
             </div>
-          ) : null}
-
-          {flowState === 'error' && lastErrorMessage && (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] text-destructive">
-              ⚠ {lastErrorMessage}
-            </div>
-          )}
-        </div>
-
-        {/* RIGHT — outcome strip */}
-        <div className="grid grid-cols-2 gap-3 border-t border-border/60 pt-3 md:border-l md:border-t-0 md:pl-4 md:pt-0">
-          <FlowStat value={handled} label="Runs" sub="last 7 days" />
-          <FlowStat value={flagged} label="Needs review" sub="last 7 days" tone="warn" />
-          <div className="col-span-2 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
-            <span>
-              Last run:{' '}
-              <span className="font-mono text-foreground/80">{lastRunLabel.replace('Last run ', '')}</span>
-            </span>
+            {!currentRunLabel && hasRunActivity && blockerLabel ? (
+              <div className="text-[11px] font-medium text-foreground/80">{blockerLabel}</div>
+            ) : !currentRunLabel && hasRunActivity && nextRunLabel && !blockerLabel ? (
+              <div className="text-[11px] text-muted-foreground">
+                <span className="inline-flex items-baseline gap-1">
+                  <span>Next run</span>
+                  <span className="font-mono text-foreground/80">{nextRunLabel}</span>
+                </span>
+              </div>
+            ) : !currentRunLabel && !hasRunActivity && blockerLabel ? (
+              <div className="text-[11px] font-medium text-foreground/80">{blockerLabel}</div>
+            ) : !currentRunLabel && !hasRunActivity && nextRunLabel ? (
+              <div className="text-[11px] text-muted-foreground">
+                <span className="inline-flex items-baseline gap-1">
+                  <span>Next run</span>
+                  <span className="font-mono text-foreground/80">{nextRunLabel}</span>
+                </span>
+              </div>
+            ) : !currentRunLabel && !hasRunActivity ? (
+              <div className="text-[11px] text-muted-foreground">Waiting for trigger</div>
+            ) : null}
           </div>
         </div>
+
+        {flowState === 'error' && lastErrorMessage && (
+          <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
+            ⚠ {lastErrorMessage}
+          </div>
+        )}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1967,7 +2563,7 @@ function FlowComposer({
 }: {
   workspaceId: string;
   open: boolean;
-  mode: 'create' | 'edit';
+  mode: FlowComposerMode;
   draft: FlowDraft;
   workflows: WorkflowWithStates[];
   statesById: Map<string, WorkflowState>;
@@ -2049,7 +2645,12 @@ function FlowComposer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent
+        className="max-h-[90vh] overflow-y-auto sm:max-w-3xl"
+        onOpenAutoFocus={(event) => {
+          if (mode !== 'create') event.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{mode === 'create' ? 'Create flow' : 'Edit flow'}</DialogTitle>
           <DialogDescription className="text-xs">
@@ -2059,20 +2660,26 @@ function FlowComposer({
 
         <div className="space-y-5">
           <div className="space-y-2">
-            <Input
-              value={draft.name}
-              onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
-              placeholder="Flow name (e.g. Review merged PRs)"
-              className="h-10 text-base font-medium"
-              autoFocus={mode === 'create'}
-            />
-            <Textarea
-              rows={2}
-              value={draft.description}
-              onChange={(event) => updateDraft((current) => ({ ...current, description: event.target.value }))}
-              placeholder="Optional description — what is this flow for?"
-              className="resize-none text-sm"
-            />
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Flow name</label>
+              <Input
+                value={draft.name}
+                onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Review merged PRs"
+                className="h-10 text-base font-medium"
+                autoFocus={mode === 'create'}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Internal description</label>
+              <Textarea
+                rows={2}
+                value={draft.description}
+                onChange={(event) => updateDraft((current) => ({ ...current, description: event.target.value }))}
+                placeholder="What this flow is for, who owns it, or what it should do."
+                className="resize-none text-sm"
+              />
+            </div>
           </div>
 
           <div className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-4">
@@ -2748,6 +3355,7 @@ function FlowTemplateInstallDialog({
   onOpenChange,
   template,
   values,
+  flowSetup,
   agentSetup,
   additionalInstructions,
   agents,
@@ -2763,6 +3371,7 @@ function FlowTemplateInstallDialog({
   canEdit,
   onBack,
   onValueChange,
+  onFlowSetupChange,
   onAgentSetupChange,
   onAgentInstructionsEdited,
   onAdditionalInstructionsChange,
@@ -2772,6 +3381,7 @@ function FlowTemplateInstallDialog({
   onOpenChange: (open: boolean) => void;
   template: FlowTemplateManifest | null;
   values: Record<string, unknown>;
+  flowSetup: TemplateFlowSetup | null;
   agentSetup: TemplateAgentSetup | null;
   additionalInstructions: string;
   agents: Agent[];
@@ -2787,6 +3397,7 @@ function FlowTemplateInstallDialog({
   canEdit: boolean;
   onBack: () => void;
   onValueChange: (key: string, value: unknown) => void;
+  onFlowSetupChange: (setup: TemplateFlowSetup | null) => void;
   onAgentSetupChange: (setup: TemplateAgentSetup | null) => void;
   onAgentInstructionsEdited: () => void;
   onAdditionalInstructionsChange: (value: string) => void;
@@ -2813,12 +3424,13 @@ function FlowTemplateInstallDialog({
 
   const reviewValidation = useMemo(() => {
     if (!template) return null;
+    if (!flowSetup?.name.trim()) return 'Flow name is required';
     if (template.agent.create) {
       if (!agentSetup?.name.trim()) return 'Agent name is required';
       if (!agentSetup.allowed_targets.length) return 'Choose at least one place this agent can run';
     }
     return null;
-  }, [agentSetup, template]);
+  }, [agentSetup, flowSetup, template]);
   const validation = step === 'inputs' ? inputValidation : reviewValidation;
 
   if (!template) return null;
@@ -2833,6 +3445,11 @@ function FlowTemplateInstallDialog({
   const setAgentSetup = (updates: Partial<TemplateAgentSetup>) => {
     if (!agentSetup) return;
     onAgentSetupChange({ ...agentSetup, ...updates });
+  };
+
+  const setFlowSetup = (updates: Partial<TemplateFlowSetup>) => {
+    if (!flowSetup) return;
+    onFlowSetupChange({ ...flowSetup, ...updates });
   };
 
   const toggleTarget = (target: AgentTargetType) => {
@@ -2863,7 +3480,7 @@ function FlowTemplateInstallDialog({
 
   const addSkill = (entry: SkillCatalogEntry) => {
     if (!agentSetup) return;
-    if (agentSetup.skills.some((skill) => skill.key === entry.key)) return;
+    if (agentSetup.skills.some((skill) => skillRefIdentity(skill) === skillRefIdentity(entry))) return;
     const ref: AgentSkillRef = { key: entry.key };
     if (entry.id) ref.skill_id = entry.id;
     const missingTools = (entry.required_tools ?? []).filter((tool) => !agentSetup.allowed_tools.includes(tool));
@@ -2874,9 +3491,9 @@ function FlowTemplateInstallDialog({
     setSkillPickerOpen(false);
   };
 
-  const removeSkill = (key: string) => {
+  const removeSkill = (identity: string) => {
     if (!agentSetup) return;
-    setAgentSetup({ skills: agentSetup.skills.filter((skill) => skill.key !== key) });
+    setAgentSetup({ skills: agentSetup.skills.filter((skill) => skillRefIdentity(skill) !== identity) });
   };
 
   return (
@@ -2922,19 +3539,49 @@ function FlowTemplateInstallDialog({
               ))}
             </div>
           ) : (
-            <TemplateLogicSummary
-              template={template}
-              values={values}
-              context={{
-                agents,
-                workflows,
-                repositories,
-                spaces,
-                collections,
-                teams,
-                timezone,
-              }}
-            />
+            <div className="space-y-5">
+              {flowSetup && (
+                <section className="space-y-3">
+                  <div>
+                    <h3 className="text-sm font-medium">Flow details</h3>
+                    <p className="text-xs text-muted-foreground">
+                      This is how the installed flow will appear in the automation list.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Flow name</label>
+                    <Input
+                      className="rounded-lg border-border bg-background"
+                      value={flowSetup.name}
+                      onChange={(event) => setFlowSetup({ name: event.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Internal description</label>
+                    <Textarea
+                      value={flowSetup.description}
+                      rows={3}
+                      placeholder="What this flow is for, who owns it, or what it should do."
+                      className="min-h-24 resize-y rounded-lg border-border bg-background"
+                      onChange={(event) => setFlowSetup({ description: event.target.value })}
+                    />
+                  </div>
+                </section>
+              )}
+              <TemplateLogicSummary
+                template={template}
+                values={values}
+                context={{
+                  agents,
+                  workflows,
+                  repositories,
+                  spaces,
+                  collections,
+                  teams,
+                  timezone,
+                }}
+              />
+            </div>
           )}
 
           {step === 'review' && agentSetup && template.agent.create && (
@@ -3049,20 +3696,24 @@ function FlowTemplateInstallDialog({
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {agentSetup.skills.length > 0 ? (
-                        agentSetup.skills.map((ref) => (
-                          <Badge key={ref.key} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
-                            <BookOpen01Icon className="h-3 w-3 text-muted-foreground" />
-                            {ref.key}
-                            <button
-                              type="button"
-                              className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                              onClick={() => removeSkill(ref.key)}
-                              aria-label={`Remove ${ref.key}`}
-                            >
-                              <Cancel01Icon className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))
+                        agentSetup.skills.map((ref) => {
+                          const entry = skillCatalog.find((skill) => skillRefIdentity(skill) === skillRefIdentity(ref));
+                          return (
+                            <Badge key={skillRefIdentity(ref)} variant="secondary" className="gap-1 pr-1 text-[11px]">
+                              <BookOpen01Icon className="h-3 w-3 text-muted-foreground" />
+                              <span>{skillRefDisplayName(entry, ref.key)}</span>
+                              <span className="font-mono text-[9px] text-muted-foreground/70">{ref.key}</span>
+                              <button
+                                type="button"
+                                className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                                onClick={() => removeSkill(skillRefIdentity(ref))}
+                                aria-label={`Remove ${skillRefDisplayName(entry, ref.key)}`}
+                              >
+                                <Cancel01Icon className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          );
+                        })
                       ) : (
                         <p className="text-xs text-muted-foreground">No skills selected.</p>
                       )}
@@ -3137,7 +3788,7 @@ function FlowTemplateInstallDialog({
   );
 }
 
-function UninstallTemplateDialog({
+function DeleteFlowDialog({
   rule,
   open,
   onOpenChange,
@@ -3157,29 +3808,29 @@ function UninstallTemplateDialog({
   onConfirm: () => void;
 }) {
   if (!rule) return null;
-  const hasCreatedAgent = !!rule.action_config?.agent_id;
+  const hasTemplateCreatedAgent = !!rule.template_instance_id && !!rule.action_config?.agent_id;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Uninstall template?</DialogTitle>
+          <DialogTitle>Delete flow?</DialogTitle>
           <DialogDescription>
-            The flow will be removed. Any edits made to this flow will be lost.
+            <span className="font-medium text-foreground">{rule.name}</span> will be removed. This cannot be undone.
           </DialogDescription>
         </DialogHeader>
 
-        {hasCreatedAgent && (
+        {hasTemplateCreatedAgent && (
           <div className="space-y-3 rounded-lg border border-border/60 p-3 text-sm">
             {agentReferencedElsewhere ? (
-              <p className="text-muted-foreground">The agent is used by another flow, so it will be kept.</p>
+              <p className="text-muted-foreground">The agent created with this flow is used by another flow, so it will be kept.</p>
             ) : (
               <>
                 <label className="flex items-start gap-3">
                   <Checkbox checked={!deleteCreatedAgent} onCheckedChange={() => onDeleteCreatedAgentChange(false)} />
                   <span>
-                    <span className="block font-medium">Keep the agent</span>
-                    <span className="text-muted-foreground">It will become a regular custom agent.</span>
+                    <span className="block font-medium">Delete flow only</span>
+                    <span className="text-muted-foreground">Keep the agent as a regular custom agent.</span>
                   </span>
                 </label>
                 <label className="flex items-start gap-3">
@@ -3197,7 +3848,7 @@ function UninstallTemplateDialog({
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button type="button" variant="destructive" onClick={onConfirm} disabled={saving}>
-            {saving ? 'Uninstalling…' : 'Uninstall'}
+            {saving ? 'Deleting…' : 'Delete flow'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -3347,12 +3998,11 @@ function TemplateInputControl({
           })
           .map((agent) => ({ value: agent.id, label: agent.name }));
       case 'repository':
-        return repositories.map((repo) => ({ value: repo.id, label: repo.full_name }));
+        return templateSelectOptions(input, repositories);
       case 'space':
         return spaces.filter((space) => templateInputAllowsSpace(input, space)).map((space) => ({
           value: space.id,
           label: space.name,
-          description: space.type === 'external_capable' ? 'Public help space' : 'Internal docs space',
         }));
       case 'collection':
         return collections
@@ -3381,7 +4031,8 @@ function TemplateInputControl({
   })();
 
   if (selectOptions) {
-    const selectedOption = selectOptions.find((option) => option.value === stringValue(value));
+    const selectValue = templateSelectValue(input, value);
+    const selectedOption = selectOptions.find((option) => option.value === selectValue);
     const richDestinationSelect = input.type === 'space' || input.type === 'collection';
     const disabledUntilDependencySelected = (input.type === 'collection' || input.type === 'workflow_state') && Boolean(input.depends_on) && !dependentValue;
     const dependencyPlaceholder = input.type === 'collection'
@@ -3392,7 +4043,7 @@ function TemplateInputControl({
     return (
       <div className="space-y-1.5">
         {label}
-        <Select value={stringValue(value)} onValueChange={onChange} disabled={disabledUntilDependencySelected}>
+        <Select value={selectValue} onValueChange={(nextValue) => onChange(templateSelectChangeValue(input, nextValue))} disabled={disabledUntilDependencySelected}>
           <SelectTrigger className="w-full justify-between rounded-lg border-border bg-background">
             <SelectValue placeholder={disabledUntilDependencySelected ? dependencyPlaceholder : `Select ${input.label.toLowerCase()}`}>
               {selectedOption?.label}
@@ -3401,11 +4052,11 @@ function TemplateInputControl({
           <SelectContent className={cn(richDestinationSelect && 'min-w-[20rem]')}>
             <SelectGroup>
               {richDestinationSelect && (
-                <SelectLabel>{input.type === 'space' ? 'Select space' : 'Select collection'}</SelectLabel>
+                <SelectLabel>{input.type === 'space' ? templateSpaceSelectLabel(input) : 'Select collection'}</SelectLabel>
               )}
               {selectOptions.map((option) => (
                 <SelectItem key={option.value} value={option.value} textValue={option.label}>
-                  {richDestinationSelect ? (
+                  {richDestinationSelect || option.description ? (
                     <span className="flex min-w-0 flex-col items-start gap-0.5 py-0.5" style={{ paddingLeft: `${(option.indent ?? 0) * 12}px` }}>
                       <span className="max-w-[18rem] truncate text-sm font-medium">{option.label}</span>
                       {option.description && <span className="max-w-[18rem] truncate text-xs text-muted-foreground">{option.description}</span>}
@@ -3626,15 +4277,20 @@ export function AutomationFlowsPage({
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<FlowTemplateManifest | null>(null);
   const [templateInputs, setTemplateInputs] = useState<Record<string, unknown>>({});
+  const [templateFlowSetup, setTemplateFlowSetup] = useState<TemplateFlowSetup | null>(null);
+  const [templateFlowSetupEdited, setTemplateFlowSetupEdited] = useState(false);
   const [templateAgentSetup, setTemplateAgentSetup] = useState<TemplateAgentSetup | null>(null);
   const [templateAgentInstructionsEdited, setTemplateAgentInstructionsEdited] = useState(false);
   const [templateAdditionalInstructions, setTemplateAdditionalInstructions] = useState('');
-  const [uninstallRule, setUninstallRule] = useState<AutomationRule | null>(null);
-  const [uninstallDeleteAgent, setUninstallDeleteAgent] = useState(false);
-  const [uninstallAgentReferencedElsewhere, setUninstallAgentReferencedElsewhere] = useState(false);
+  const [deleteRule, setDeleteRule] = useState<AutomationRule | null>(null);
+  const [deleteCreatedAgent, setDeleteCreatedAgent] = useState(false);
+  const [deleteAgentReferencedElsewhere, setDeleteAgentReferencedElsewhere] = useState(false);
+  const [deletingFlow, setDeletingFlow] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [composerMode, setComposerMode] = useState<FlowComposerMode>('create');
   const [draft, setDraft] = useState<FlowDraft>(defaultDraft());
   const [saving, setSaving] = useState(false);
+  const [runningFlowId, setRunningFlowId] = useState<string | null>(null);
   const searchSignature = useMemo(() => JSON.stringify(search), [search]);
   const [appliedSearchSignature, setAppliedSearchSignature] = useState('');
 
@@ -3654,12 +4310,8 @@ export function AutomationFlowsPage({
     return map;
   }, [inventoryQuery.data?.items]);
   const highlightedFlows = useMemo(
-    () => {
-      if (search.show_rule) return authoredFlows.filter((rule) => rule.id === search.show_rule);
-      if (search.show_trigger) return authoredFlows.filter((rule) => rule.trigger_type === search.show_trigger);
-      return authoredFlows;
-    },
-    [authoredFlows, search.show_rule, search.show_trigger],
+    () => filterAutomationFlowsForSearch(authoredFlows, search),
+    [authoredFlows, search],
   );
   const teamNamesById = useMemo(() => new Map(teams.map((t) => [t.id, t.name])), [teams]);
   const [activeTab, setActiveTab] = useState<string>('all');
@@ -3697,9 +4349,12 @@ export function AutomationFlowsPage({
     if (search.show_trigger) {
       return search.show_trigger_title || triggerLabel(search.show_trigger);
     }
+    if (search.agent_id) {
+      return agentNames.get(search.agent_id) ?? search.agent_id;
+    }
     return '';
-  }, [authoredFlows, search.show_rule, search.show_rule_title, search.show_trigger, search.show_trigger_title]);
-  const hasFlowFilter = Boolean(search.show_rule || search.show_trigger);
+  }, [agentNames, authoredFlows, search.agent_id, search.show_rule, search.show_rule_title, search.show_trigger, search.show_trigger_title]);
+  const hasFlowFilter = Boolean(search.show_rule || search.show_trigger || search.agent_id);
 
   const loading = settingsQuery.isLoading || inventoryQuery.isLoading || rulesQuery.isLoading || tasksQuery.isLoading || epicsQuery.isLoading || repositoriesQuery.isLoading;
 
@@ -3711,7 +4366,7 @@ export function AutomationFlowsPage({
   }, [inventoryQuery, rulesQuery]);
 
   const resetComposerSearch = useCallback(() => {
-    if (search.template || search.trigger_type || search.create_event_rule || search.workflow || search.show_trigger || search.show_trigger_title || search.show_rule || search.show_rule_title || search.template_title || search.template_description || search.agent_id || search.repo_full_name || search.branch || search.base_branch || search.tag_name || search.conclusion || search.target_mode || search.target_id) {
+    if (search.template || search.trigger_type || search.workflow || search.show_trigger || search.show_trigger_title || search.show_rule || search.show_rule_title || search.template_title || search.template_description || search.agent_id || search.repo_full_name || search.branch || search.base_branch || search.tag_name || search.conclusion || search.target_mode || search.target_id) {
       onSearchChange({
         workflow: undefined,
         template: undefined,
@@ -3721,7 +4376,6 @@ export function AutomationFlowsPage({
         show_trigger_title: search.show_trigger_title,
         show_rule: search.show_rule,
         show_rule_title: search.show_rule_title,
-        create_event_rule: undefined,
         trigger_type: undefined,
         agent_id: undefined,
         repo_full_name: undefined,
@@ -3741,6 +4395,7 @@ export function AutomationFlowsPage({
       show_rule_title: undefined,
       show_trigger: undefined,
       show_trigger_title: undefined,
+      agent_id: undefined,
     });
   }, [onSearchChange]);
 
@@ -3750,12 +4405,14 @@ export function AutomationFlowsPage({
     if (!prefilledDraft) return;
     setDraft(prefilledDraft);
     setEditingRuleId(null);
+    setComposerMode('create');
     setComposerOpen(true);
     setAppliedSearchSignature(searchSignature);
   }, [appliedSearchSignature, loading, search, searchSignature, workflows]);
 
   const openCreateComposer = () => {
     setEditingRuleId(null);
+    setComposerMode('create');
     setDraft(defaultDraft());
     setGalleryOpen(true);
   };
@@ -3767,13 +4424,18 @@ export function AutomationFlowsPage({
       const next = defaultDraft();
       applyTriggerDefaults(next, workflows);
       setDraft(next);
+      setComposerMode('create');
       setComposerOpen(true);
       return;
     }
     setSelectedTemplate(template);
-    const inputs = defaultTemplateInputs(template, workspace);
+    const inputs = defaultTemplateInputs(template, workspace, repositories);
+    const agentSetup = defaultTemplateAgentSetup(template, inputs);
+    const templateContext = { agents, workflows, repositories, spaces: docsSpaces, collections: docsCollections, teams, timezone: scheduleTimezone };
     setTemplateInputs(inputs);
-    setTemplateAgentSetup(defaultTemplateAgentSetup(template, inputs));
+    setTemplateAgentSetup(agentSetup);
+    setTemplateFlowSetup(defaultTemplateFlowSetup(template, inputs, templateContext, agentSetup));
+    setTemplateFlowSetupEdited(false);
     setTemplateAgentInstructionsEdited(false);
     setTemplateAdditionalInstructions('');
   };
@@ -3781,6 +4443,8 @@ export function AutomationFlowsPage({
   const backToGallery = () => {
     setComposerOpen(false);
     setSelectedTemplate(null);
+    setTemplateFlowSetup(null);
+    setTemplateFlowSetupEdited(false);
     setTemplateAgentSetup(null);
     setTemplateAgentInstructionsEdited(false);
     setTemplateAdditionalInstructions('');
@@ -3796,6 +4460,17 @@ export function AutomationFlowsPage({
       }
     }
     setTemplateInputs(nextInputs);
+    if (!templateFlowSetupEdited) {
+      const nextAgentSetup = !templateAgentInstructionsEdited && selectedTemplate.agent.create
+        ? defaultTemplateAgentSetup(selectedTemplate, nextInputs)
+        : templateAgentSetup;
+      setTemplateFlowSetup(defaultTemplateFlowSetup(
+        selectedTemplate,
+        nextInputs,
+        { agents, workflows, repositories, spaces: docsSpaces, collections: docsCollections, teams, timezone: scheduleTimezone },
+        nextAgentSetup,
+      ));
+    }
     if (!templateAgentInstructionsEdited && selectedTemplate.agent.create) {
       setTemplateAgentSetup((current) => current
         ? { ...current, system_prompt: defaultTemplateAgentInstructions(selectedTemplate, nextInputs) }
@@ -3805,6 +4480,7 @@ export function AutomationFlowsPage({
 
   const openEditComposer = (rule: AutomationRule) => {
     setEditingRuleId(rule.id);
+    setComposerMode('edit');
     setDraft(draftFromRule(rule, workflows, scheduleTimezone));
     setComposerOpen(true);
   };
@@ -3818,20 +4494,31 @@ export function AutomationFlowsPage({
     await refreshAll();
   };
 
-  const handleDelete = async (rule: AutomationRule) => {
-    const res = await automationService.deleteFlow(workspaceId, rule.id);
+  const handleRunNow = async (rule: AutomationRule) => {
+    const blocker = flowRunNowBlocker(rule, agentNames);
+    if (blocker) {
+      toast.error(blocker);
+      return;
+    }
+    setRunningFlowId(rule.id);
+    const res = await automationService.runFlowNow(workspaceId, rule.id);
+    setRunningFlowId(null);
     if (res.error) {
       toast.error(res.error);
       return;
     }
-    toast.success('Flow removed');
+    toast.success('Flow run started');
     await refreshAll();
   };
 
-  const openUninstallTemplate = (rule: AutomationRule, agentReferencedElsewhere: boolean) => {
-    setUninstallRule(rule);
-    setUninstallDeleteAgent(false);
-    setUninstallAgentReferencedElsewhere(agentReferencedElsewhere);
+  const openDeleteFlow = (rule: AutomationRule) => {
+    const agentId = stringValue(rule.action_config?.agent_id);
+    setDeleteRule(rule);
+    setDeleteCreatedAgent(false);
+    setDeleteAgentReferencedElsewhere(
+      !!agentId
+      && authoredFlows.some((other) => other.id !== rule.id && stringValue(other.action_config?.agent_id) === agentId),
+    );
   };
 
   const handleSave = async () => {
@@ -3842,7 +4529,7 @@ export function AutomationFlowsPage({
     }
     setSaving(true);
     const payload = serializeDraft(draft, workspaceId, scheduleTimezone);
-    const res = editingRuleId
+    const res = editingRuleId && composerMode === 'edit'
       ? await automationService.updateFlow(workspaceId, editingRuleId, payload)
       : await automationService.createFlow(workspaceId, { workspace_id: workspaceId, ...payload, position: authoredFlows.length });
     setSaving(false);
@@ -3850,9 +4537,10 @@ export function AutomationFlowsPage({
       toast.error(res.error);
       return;
     }
-    toast.success(editingRuleId ? 'Flow updated' : 'Flow created');
+    toast.success(editingRuleId && composerMode === 'edit' ? 'Flow updated' : 'Flow created');
     setComposerOpen(false);
     setEditingRuleId(null);
+    setComposerMode('create');
     await refreshAll();
     resetComposerSearch();
   };
@@ -3869,7 +4557,8 @@ export function AutomationFlowsPage({
       const result = await installFlowTemplate.mutateAsync({
         templateKey: selectedTemplate.key,
         payload: {
-          name: selectedTemplate.name,
+          name: templateFlowSetup?.name.trim() || selectedTemplate.name,
+          description: templateFlowSetup?.description.trim() || undefined,
           agent_name: templateAgentSetup?.name.trim() || undefined,
           inputs: installInputs,
           agent_overrides: templateAgentSetup && selectedTemplate.agent.create
@@ -3889,6 +4578,8 @@ export function AutomationFlowsPage({
       });
       toast.success(`${result.template.name} installed`);
       setSelectedTemplate(null);
+      setTemplateFlowSetup(null);
+      setTemplateFlowSetupEdited(false);
       setTemplateAgentSetup(null);
       setTemplateAgentInstructionsEdited(false);
       setTemplateAdditionalInstructions('');
@@ -3904,24 +4595,38 @@ export function AutomationFlowsPage({
     }
   };
 
-  const handleUninstallTemplate = async () => {
-    if (!uninstallRule?.template_instance_id) return;
-    try {
-      const result = await uninstallFlowTemplate.mutateAsync({
-        instanceId: uninstallRule.template_instance_id,
-        payload: { delete_created_agent: uninstallDeleteAgent && !uninstallAgentReferencedElsewhere },
-      });
-      const suffix = result.agent_action === 'deleted'
-        ? ' and deleted the agent'
-        : result.agent_action === 'kept'
-          ? ' and kept the agent'
-          : '';
-      toast.success(`Template uninstalled${suffix}`);
-      setUninstallRule(null);
-      await refreshAll();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to uninstall template');
+  const handleConfirmDeleteFlow = async () => {
+    if (!deleteRule) return;
+    if (deleteRule.template_instance_id) {
+      try {
+        const result = await uninstallFlowTemplate.mutateAsync({
+          instanceId: deleteRule.template_instance_id,
+          payload: { delete_created_agent: deleteCreatedAgent && !deleteAgentReferencedElsewhere },
+        });
+        const suffix = result.agent_action === 'deleted'
+          ? ' and deleted the agent'
+          : result.agent_action === 'kept'
+            ? ' and kept the agent'
+            : '';
+        toast.success(`Flow deleted${suffix}`);
+        setDeleteRule(null);
+        await refreshAll();
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to delete flow');
+      }
+      return;
     }
+
+    setDeletingFlow(true);
+    const res = await automationService.deleteFlow(workspaceId, deleteRule.id);
+    setDeletingFlow(false);
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success('Flow deleted');
+    setDeleteRule(null);
+    await refreshAll();
   };
 
   if (!workspaceId) {
@@ -3929,7 +4634,7 @@ export function AutomationFlowsPage({
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-20">
+    <div className="mx-auto max-w-7xl space-y-6 pb-20">
       <FlowTemplateGallery
         open={galleryOpen}
         onOpenChange={(open) => {
@@ -3946,6 +4651,8 @@ export function AutomationFlowsPage({
         onOpenChange={(open) => {
           if (!open) {
             setSelectedTemplate(null);
+            setTemplateFlowSetup(null);
+            setTemplateFlowSetupEdited(false);
             setTemplateAgentSetup(null);
             setTemplateAgentInstructionsEdited(false);
             setTemplateAdditionalInstructions('');
@@ -3953,6 +4660,7 @@ export function AutomationFlowsPage({
         }}
         template={selectedTemplate}
         values={templateInputs}
+        flowSetup={templateFlowSetup}
         agentSetup={templateAgentSetup}
         additionalInstructions={templateAdditionalInstructions}
         agents={agents}
@@ -3968,33 +4676,43 @@ export function AutomationFlowsPage({
         canEdit={permissions.canAdminAutomations}
         onBack={() => {
           setSelectedTemplate(null);
+          setTemplateFlowSetup(null);
+          setTemplateFlowSetupEdited(false);
           setTemplateAgentSetup(null);
           setTemplateAgentInstructionsEdited(false);
           setTemplateAdditionalInstructions('');
           setGalleryOpen(true);
         }}
         onValueChange={updateTemplateInput}
+        onFlowSetupChange={(setup) => {
+          setTemplateFlowSetup(setup);
+          setTemplateFlowSetupEdited(true);
+        }}
         onAgentSetupChange={setTemplateAgentSetup}
         onAgentInstructionsEdited={() => setTemplateAgentInstructionsEdited(true)}
         onAdditionalInstructionsChange={setTemplateAdditionalInstructions}
         onInstall={() => void handleInstallTemplate()}
       />
-      <UninstallTemplateDialog
-        rule={uninstallRule}
-        open={!!uninstallRule}
+      <DeleteFlowDialog
+        rule={deleteRule}
+        open={!!deleteRule}
         onOpenChange={(open) => {
-          if (!open) setUninstallRule(null);
+          if (!open) {
+            setDeleteRule(null);
+            setDeleteCreatedAgent(false);
+            setDeleteAgentReferencedElsewhere(false);
+          }
         }}
-        agentReferencedElsewhere={uninstallAgentReferencedElsewhere}
-        deleteCreatedAgent={uninstallDeleteAgent}
-        onDeleteCreatedAgentChange={setUninstallDeleteAgent}
-        saving={uninstallFlowTemplate.isPending}
-        onConfirm={() => void handleUninstallTemplate()}
+        agentReferencedElsewhere={deleteAgentReferencedElsewhere}
+        deleteCreatedAgent={deleteCreatedAgent}
+        onDeleteCreatedAgentChange={setDeleteCreatedAgent}
+        saving={uninstallFlowTemplate.isPending || deletingFlow}
+        onConfirm={() => void handleConfirmDeleteFlow()}
       />
       <FlowComposer
         workspaceId={workspaceId}
         open={composerOpen}
-        mode={editingRuleId ? 'edit' : 'create'}
+        mode={composerMode}
         draft={draft}
         workflows={workflows}
         statesById={statesById}
@@ -4013,7 +4731,7 @@ export function AutomationFlowsPage({
             resetComposerSearch();
           }
         }}
-        onBack={editingRuleId ? undefined : backToGallery}
+        onBack={composerMode === 'create' ? backToGallery : undefined}
         onDraftChange={setDraft}
         onSave={handleSave}
       />
@@ -4021,12 +4739,13 @@ export function AutomationFlowsPage({
       {/* Page header */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Automation flows</h1>
-          <p className="text-sm text-muted-foreground">Event-driven automations that trigger agents and workflow actions.</p>
+          <h1 className="text-xl font-semibold">Automation flows</h1>
+          <p className="text-sm text-muted-foreground">Event-driven and time-based automations that trigger agents and workflow actions.</p>
         </div>
         {permissions.canAdminAutomations && (
-          <Button size="sm" variant="outline" onClick={openCreateComposer}>
-            + New flow
+          <Button size="sm" onClick={openCreateComposer}>
+            <PlusSignIcon className="mr-1.5 h-4 w-4" />
+            New flow
           </Button>
         )}
       </div>
@@ -4109,27 +4828,30 @@ export function AutomationFlowsPage({
           </div>
 
           {/* Flow list */}
-          <div className="space-y-2">
-            {filteredFlows.length > 0 ? filteredFlows.map((rule) => (
-              <FlowRow
-                key={rule.id}
-                rule={rule}
-                statesById={statesById}
-                agentNames={agentNames}
-                teamName={rule.team_id ? teamNamesById.get(rule.team_id) : undefined}
-                healthItem={flowHealth.get(rule.id)}
-                workspaceSlug={workspaceSlug}
-                canEdit={permissions.canAdminAutomations}
-                onEdit={openEditComposer}
-                onToggle={handleToggle}
-                onDelete={handleDelete}
-                onUninstallTemplate={openUninstallTemplate}
-                agentReferencedElsewhere={
-                  !!rule.action_config?.agent_id
-                  && authoredFlows.some((other) => other.id !== rule.id && stringValue(other.action_config?.agent_id) === stringValue(rule.action_config?.agent_id))
-                }
-              />
-            )) : (
+          <div>
+            {filteredFlows.length > 0 ? (
+              <div className="space-y-2">
+                {filteredFlows.map((rule) => (
+                  <FlowRow
+                    key={rule.id}
+                    rule={rule}
+                    statesById={statesById}
+                    agentNames={agentNames}
+                    teamName={rule.team_id ? teamNamesById.get(rule.team_id) : undefined}
+                    healthItem={flowHealth.get(rule.id)}
+                    workspaceSlug={workspaceSlug}
+                    timezone={scheduleTimezone}
+                    canEdit={permissions.canAdminAutomations}
+                    canRunNowAction={permissions.canEdit}
+                    onEdit={openEditComposer}
+                    onToggle={handleToggle}
+                    onRunNow={handleRunNow}
+                    onDelete={openDeleteFlow}
+                    runningNow={runningFlowId === rule.id}
+                  />
+                ))}
+              </div>
+            ) : (
               <div className="rounded-lg border border-dashed border-border/70 px-6 py-12 text-center">
                 <PlayIcon className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
                 <p className="text-sm font-medium">{hasFlowFilter ? 'No flows match this filter' : 'No automation flows yet'}</p>

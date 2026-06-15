@@ -71,7 +71,7 @@ func TestTaskPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 	}
 
 	for _, snippet := range []string{
-		"Run a single interactive planning conversation for one task.",
+		"You are Scribe, the workspace task planner. You run a focused planning conversation for one task or work item.",
 		"`" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc) + "`",
 		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput) + "`",
 		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval) + "`",
@@ -97,7 +97,7 @@ func TestReviewAgentSystemPromptIncludesInteractiveLoop(t *testing.T) {
 		t.Fatal("expected review prompt")
 	}
 	for _, snippet := range []string{
-		"You are Review Agent.",
+		"You are Lens, the workspace reviewer.",
 		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput) + "`",
 		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestReviewCheckpoint) + "`",
 		"Treat review as an interactive loop, not a one-shot report.",
@@ -117,7 +117,7 @@ func TestCodeBuilderSystemPromptIncludesGenericExecutionContextGuidance(t *testi
 		t.Fatal("expected code builder prompt")
 	}
 	for _, snippet := range []string{
-		"You are Code Builder.",
+		"You are Forge, the workspace code builder.",
 		"Implement the requested story or task directly in the repository",
 		"Finish with a local commit only",
 	} {

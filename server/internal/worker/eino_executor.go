@@ -55,7 +55,7 @@ func resolveNativeSystemPrompt(execCtx *ExecutionContext, config *WorkflowConfig
 		return BuildSystemPrompt(nil, nil, nil, nil, "", "", config), true
 	}
 	options := defaultSystemPromptOptions()
-	if execCtx.ContractActive {
+	if execCtx.ContractActive || agentHasAvailableSkills(execCtx.Agent) {
 		options.IncludeResolvedSkillText = false
 	}
 	return buildSystemPromptWithOptions(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config, options), options.IncludeResolvedSkillText

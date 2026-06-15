@@ -2,6 +2,7 @@ import type { AutomationTriggerExecutionSearchPreset, WorkflowRuleSearchPreset }
 
 export type AutomationActivitySearch = Partial<AutomationTriggerExecutionSearchPreset> & {
   page?: number;
+  execution_id?: string;
   run_id?: string;
   fired_after?: string;
   fired_before?: string;
@@ -17,7 +18,6 @@ export type AutomationFlowsSearch = {
   show_trigger_title?: string;
   show_rule?: string;
   show_rule_title?: string;
-  create_event_rule?: boolean;
   trigger_type?: string;
   agent_id?: string;
   repo_full_name?: string;
@@ -34,6 +34,7 @@ function buildPathWithSearch(base: string, search?: Record<string, string | numb
   if (search) {
     for (const [key, value] of Object.entries(search)) {
       if (value === undefined || value === '') continue;
+      if (key === 'page' && Number(value) <= 1) continue;
       if (typeof value === 'boolean') {
         if (value) params.set(key, '1');
         continue;
@@ -56,7 +57,7 @@ export function buildAutomationActivityPath(slug: string | undefined, search?: A
 }
 
 export function buildAutomationLibraryPath(slug: string | undefined, hash?: string) {
-  const base = slug ? `/w/${slug}/automation/library` : '/automation/library';
+  const base = slug ? `/w/${slug}/automation/triggers` : '/automation/triggers';
   return buildPathWithSearch(base, undefined, hash);
 }
 

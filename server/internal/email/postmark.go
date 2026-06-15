@@ -100,6 +100,19 @@ func IsSenderSignatureError(err error) bool {
 		strings.Contains(msg, "sender signature")
 }
 
+// IsDomainAlreadyExistsError reports whether Postmark rejected a sender domain
+// create request because that domain already exists in the account.
+func IsDomainAlreadyExistsError(err error) bool {
+	var apiErr *PostmarkAPIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	msg := strings.ToLower(apiErr.Message)
+	return apiErr.StatusCode == http.StatusUnprocessableEntity &&
+		strings.Contains(msg, "domain") &&
+		strings.Contains(msg, "already exists")
+}
+
 // SendEmail sends an email via the Postmark API.
 func (c *Client) SendEmail(to, subject, htmlBody, textBody string) error {
 	payload := postmarkRequest{

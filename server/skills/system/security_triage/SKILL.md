@@ -1,6 +1,10 @@
 ---
 name: security_triage
 description: Triage security scanner output from repository scans, suppress false positives, and create actionable remediation tasks for applicable medium-or-higher findings.
+metadata:
+  title: Security Triage
+  supported_runtimes:
+    - native_sdk
 ---
 
 # Security Triage

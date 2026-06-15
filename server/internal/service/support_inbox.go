@@ -60,6 +60,7 @@ type SupportInboxService struct {
 	presence                websocket.PresenceProvider
 	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
 	emailLogRepo            *repository.SupportEmailLogRepository
+	triageEventRepo         *repository.SupportConversationTriageEventRepository
 	postmarkDomainClient    *email.DomainClient
 	triageService           *SupportInboxTriageService
 	taskService             *PMTaskService
@@ -240,6 +241,14 @@ func (s *SupportInboxService) SetEmailLogRepo(repo *repository.SupportEmailLogRe
 		return nil
 	}
 	s.emailLogRepo = repo
+	return s
+}
+
+func (s *SupportInboxService) SetTriageEventRepo(repo *repository.SupportConversationTriageEventRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.triageEventRepo = repo
 	return s
 }
 
@@ -1449,11 +1458,20 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 		// Resolve actor display name and avatar.
 		var senderDisplayName *string
 		var senderAvatarURL *string
+		actorName := ""
 		if actorID != "" && s.userRepo != nil {
 			user, _ := s.userRepo.GetByID(ctx, actorID)
 			if user != nil {
 				senderDisplayName = &user.FullName
 				senderAvatarURL = user.AvatarURL
+				actorName = user.FullName
+			}
+		}
+		if firstName := supportSystemFirstName(actorName); firstName != "" {
+			if status == model.SupportConversationStatusOpen && oldStatus == model.SupportConversationStatusResolved {
+				label = firstName + " reopened this conversation."
+			} else {
+				label = firstName + " resolved this conversation."
 			}
 		}
 		senderUserID := &actorID
@@ -3790,24 +3808,25 @@ func assignmentTargetSystemEventType(target assignmentTargetKind, actorUserID, t
 // assignment system message. It handles self-assignment, auto-assignment
 // (no actor), and unassignment so the thread reads naturally.
 func formatAssignmentSystemMessage(target assignmentTargetKind, actorName, targetName, actorUserID, targetUserID string) string {
-	actor := strings.TrimSpace(actorName)
-	name := strings.TrimSpace(targetName)
+	actor := supportSystemFirstName(actorName)
+	name := supportSystemFirstName(targetName)
 
 	switch target {
 	case assignmentTargetUnassign:
 		if actor != "" {
-			return fmt.Sprintf("%s moved this conversation to unassigned", actor)
+			return fmt.Sprintf("%s moved this conversation to unassigned.", actor)
 		}
-		return "Moved to unassigned"
+		return "Moved to unassigned."
 
 	case assignmentTargetAgent:
+		name = strings.TrimSpace(targetName)
 		if name == "" {
 			name = "an AI agent"
 		}
 		if actor != "" {
-			return fmt.Sprintf("%s assigned this conversation to %s", actor, name)
+			return fmt.Sprintf("%s assigned this conversation to %s.", actor, name)
 		}
-		return fmt.Sprintf("Assigned to %s", name)
+		return fmt.Sprintf("Assigned to %s.", name)
 
 	case assignmentTargetUser:
 		if name == "" {
@@ -3817,12 +3836,12 @@ func formatAssignmentSystemMessage(target assignmentTargetKind, actorName, targe
 			if actor == "" {
 				actor = name
 			}
-			return fmt.Sprintf("%s took this conversation", actor)
+			return fmt.Sprintf("%s took this conversation.", actor)
 		}
 		if actor != "" {
-			return fmt.Sprintf("%s assigned this conversation to %s", actor, name)
+			return fmt.Sprintf("%s assigned this conversation to %s.", actor, name)
 		}
-		return fmt.Sprintf("Assigned to %s", name)
+		return fmt.Sprintf("Assigned to %s.", name)
 	}
 	return ""
 }
@@ -3865,7 +3884,7 @@ func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context
 		avatarURL = s.lookupUserAvatar(ctx, senderUserID)
 	}
 
-	content := fmt.Sprintf("%s joined the conversation", name)
+	content := fmt.Sprintf("%s joined the conversation.", supportSystemActorName(name, "A teammate"))
 	userID := senderUserID
 	msg := &model.SupportMessage{
 		WorkspaceID:       workspaceID,

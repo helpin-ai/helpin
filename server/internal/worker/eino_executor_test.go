@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -24,7 +25,7 @@ func TestResolveNativeSystemPromptSuppressesResolvedSkillTextForSelectivePath(t 
 	if strings.Contains(systemPrompt, "Full aggregated skill blob.") {
 		t.Fatalf("did not expect contract system prompt to inline full resolved skill instructions\n%s", systemPrompt)
 	}
-	if !strings.Contains(systemPrompt, "You are Epic Planner.") {
+	if !strings.Contains(systemPrompt, "You are Atlas, the workspace epic planner.") {
 		t.Fatalf("expected contract system prompt to preserve base preset identity\n%s", systemPrompt)
 	}
 	if !strings.Contains(systemPrompt, "## Current Epic") {
@@ -32,11 +33,61 @@ func TestResolveNativeSystemPromptSuppressesResolvedSkillTextForSelectivePath(t 
 	}
 }
 
-func TestResolveNativeSystemPromptKeepsResolvedSkillTextForLegacyPath(t *testing.T) {
+func TestResolveNativeSystemPromptGuidesSelectiveAvailableSkillTools(t *testing.T) {
 	systemPrompt, includesResolvedSkillText := resolveNativeSystemPrompt(&ExecutionContext{
 		Agent: &model.Agent{
-			Name:                      "Planner",
-			PresetKey:                 model.AgentPresetEpicPlanner,
+			Name:                      "Mira",
+			PresetKey:                 model.AgentPresetMarketer,
+			RuntimeKind:               "native_sdk",
+			Skills:                    model.AgentSkillRefs{{Key: "campaign_planning"}},
+			AllowedTools:              json.RawMessage(`["list_available_skills","search_available_skills","read_skill"]`),
+			ResolvedSkillInstructions: "Full campaign planning instructions.",
+		},
+	}, nil)
+
+	if includesResolvedSkillText {
+		t.Fatal("did not expect selective native system prompt to include resolved skill text")
+	}
+	if strings.Contains(systemPrompt, "Full campaign planning instructions.") {
+		t.Fatalf("did not expect selective native system prompt to inline full skill instructions\n%s", systemPrompt)
+	}
+	for _, snippet := range []string{
+		"Use list_available_skills or search_available_skills",
+		"read only the specific skill instructions you need with read_skill",
+		"Do not load every available skill by default.",
+	} {
+		if !strings.Contains(systemPrompt, snippet) {
+			t.Fatalf("expected selective native prompt to include %q\n%s", snippet, systemPrompt)
+		}
+	}
+}
+
+func TestResolveNativeSystemPromptSuppressesResolvedSkillTextForSkillAgentWithoutSelectivePath(t *testing.T) {
+	systemPrompt, includesResolvedSkillText := resolveNativeSystemPrompt(&ExecutionContext{
+		Agent: &model.Agent{
+			Name:                      "Mira",
+			PresetKey:                 model.AgentPresetMarketer,
+			RuntimeKind:               "native_sdk",
+			Skills:                    model.AgentSkillRefs{{Key: "marketing_plan"}},
+			ResolvedSkillInstructions: "Full aggregated skill blob.",
+		},
+	}, nil)
+
+	if includesResolvedSkillText {
+		t.Fatal("did not expect native skill agent prompt to include resolved skill text")
+	}
+	if strings.Contains(systemPrompt, "Full aggregated skill blob.") {
+		t.Fatalf("did not expect native skill agent prompt to keep resolved skill instructions\n%s", systemPrompt)
+	}
+	if !strings.Contains(systemPrompt, "## Available Skills") {
+		t.Fatalf("expected native skill agent prompt to describe available skills\n%s", systemPrompt)
+	}
+}
+
+func TestResolveNativeSystemPromptKeepsResolvedSkillTextForLegacyAgentWithoutSkills(t *testing.T) {
+	systemPrompt, includesResolvedSkillText := resolveNativeSystemPrompt(&ExecutionContext{
+		Agent: &model.Agent{
+			Name:                      "Plain Agent",
 			ResolvedSkillInstructions: "Full aggregated skill blob.",
 		},
 	}, nil)

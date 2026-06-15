@@ -256,9 +256,11 @@ export function SupportRailNav({
                     )}
                     {canManageSettings && (
                       <DropdownMenu onOpenChange={(open) => setOpenMenuId(open ? mailbox.id : null)}>
-                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenuTrigger asChild>
                           <span
                             role="button"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => event.stopPropagation()}
                             className={`${trailingMenuButtonClassName} ${
                               isMenuOpen
                                 ? 'opacity-100'
@@ -271,13 +273,21 @@ export function SupportRailNav({
                           </span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent side="right" align="start" className="w-36">
-                          <DropdownMenuItem onClick={() => onEditMailbox(mailbox.id)}>
+                          <DropdownMenuItem
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onEditMailbox(mailbox.id);
+                            }}
+                          >
                             <PencilEdit01Icon className="mr-2 h-3.5 w-3.5" />
                             Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
-                            onClick={() => onArchiveMailbox(mailbox.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onArchiveMailbox(mailbox.id);
+                            }}
                           >
                             <ArchiveIcon className="mr-2 h-3.5 w-3.5" />
                             Archive
@@ -337,9 +347,11 @@ export function SupportRailNav({
                       )}
                       {canModifyView && (
                         <DropdownMenu onOpenChange={(open) => setOpenMenuId(open ? view.id : null)}>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuTrigger asChild>
                             <span
                               role="button"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => event.stopPropagation()}
                               className={`${trailingMenuButtonClassName} ${
                                 isMenuOpen
                                   ? 'opacity-100'
@@ -352,13 +364,21 @@ export function SupportRailNav({
                             </span>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent side="right" align="start" className="w-36">
-                            <DropdownMenuItem onClick={() => onEditCustomView(view)}>
+                            <DropdownMenuItem
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onEditCustomView(view);
+                              }}
+                            >
                               <PencilEdit01Icon className="mr-2 h-3.5 w-3.5" />
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
-                              onClick={() => onDeleteCustomView(view)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onDeleteCustomView(view);
+                              }}
                             >
                               <Delete01Icon className="mr-2 h-3.5 w-3.5" />
                               Delete

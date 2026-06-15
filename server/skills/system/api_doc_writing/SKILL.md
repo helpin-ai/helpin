@@ -1,8 +1,8 @@
 ---
-name: api_doc_writing
+name: api_reference_doc_writing
 description: Writing new API reference docs and API guides.
 metadata:
-  title: API Doc Writing
+  title: API Reference Doc Writing
   supported_runtimes:
     - native_sdk
 ---

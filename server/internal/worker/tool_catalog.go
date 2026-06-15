@@ -20,6 +20,11 @@ var toolCategory = map[string]string{
 	"grep":         "Code Analysis",
 	"list_symbols": "Code Analysis",
 
+	// Skills
+	ToolListAvailableSkills:   "Skills",
+	ToolSearchAvailableSkills: "Skills",
+	ToolReadSkill:             "Skills",
+
 	// Commands
 	"run_command": "Commands",
 
@@ -85,18 +90,19 @@ var toolCategory = map[string]string{
 }
 
 var categoryOrder = []string{
+	"Workspace",
+	"PM / Tasks",
+	"Docs",
+	"CRM",
+	"Support",
+	"Skills",
+	"Interaction",
+	"Web Search",
+	"Git",
 	"Filesystem",
 	"Code Analysis",
 	"Commands",
 	"Security",
-	"Web Search",
-	"Git",
-	"Interaction",
-	"PM / Tasks",
-	"Workspace",
-	"Support",
-	"CRM",
-	"Docs",
 }
 
 var hiddenToolCatalogAliases = map[string]bool{

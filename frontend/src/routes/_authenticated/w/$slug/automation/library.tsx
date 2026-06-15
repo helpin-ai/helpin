@@ -1,14 +1,12 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { AutomationLibraryPage } from '@/pages/automation/AutomationLibrary';
+import { Navigate, createFileRoute } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_authenticated/w/$slug/automation/library')({
   component: AutomationLibraryRoute,
 });
 
 function AutomationLibraryRoute() {
+  const { slug } = Route.useParams();
   return (
-    <div className="h-full overflow-auto p-4 md:p-6">
-      <AutomationLibraryPage />
-    </div>
+    <Navigate to="/w/$slug/automation/triggers" params={{ slug }} replace />
   );
 }

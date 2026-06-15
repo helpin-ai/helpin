@@ -1,8 +1,8 @@
 ---
-name: task_planner_context
-description: Task-level planning framing and task-plan document contract.
+name: coding_task_planning
+description: Creates task-level coding plans with implementation context, open questions, risks, and a reviewable task-plan document.
 metadata:
-  title: Task Planner Context
+  title: Coding Task Planning
   required_tools:
     - publish_task_plan_doc
     - request_user_input

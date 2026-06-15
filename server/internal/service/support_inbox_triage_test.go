@@ -210,7 +210,9 @@ func TestSupportInboxTriageEvaluateAndRoute_RuleSuggestion(t *testing.T) {
 	fakeLLM := &scriptedSupportTriageLLM{
 		response: `{"intent":"marketing_guest_post","target_mailbox_handle":"marketing","confidence":0.95,"reason":"guest post outreach"}`,
 	}
-	fixture := newSupportTriageTestFixture(t, fakeLLM, nil)
+	fixture := newSupportTriageTestFixture(t, fakeLLM, func(settings *model.SupportInboxSettings) {
+		settings.TriageAutoMoveEnabled = false
+	})
 	marketing := fixture.createMailbox(t, "Marketing", "marketing", true)
 
 	if _, err := fixture.triageSvc.CreateRule(fixture.ctx, fixture.workspaceID, fixture.actorID, model.CreateSupportTriageRuleRequest{
@@ -238,6 +240,9 @@ func TestSupportInboxTriageEvaluateAndRoute_RuleSuggestion(t *testing.T) {
 	}
 	if triage.ClassifierSource != model.SupportConversationTriageSourceRule {
 		t.Fatalf("source = %q, want %q", triage.ClassifierSource, model.SupportConversationTriageSourceRule)
+	}
+	if derefString(triage.Reason) != "Routing rule matched." {
+		t.Fatalf("reason = %q, want generic rule reason", derefString(triage.Reason))
 	}
 	if derefString(triage.SuggestedMailboxID) != marketing.ID {
 		t.Fatalf("suggested_mailbox_id = %q, want %q", derefString(triage.SuggestedMailboxID), marketing.ID)
@@ -277,6 +282,9 @@ func TestSupportInboxTriageEvaluateAndRoute_AISuggestion(t *testing.T) {
 	}
 	if triage.ClassifierSource != model.SupportConversationTriageSourceAI {
 		t.Fatalf("source = %q, want %q", triage.ClassifierSource, model.SupportConversationTriageSourceAI)
+	}
+	if derefString(triage.Reason) != "pricing request" {
+		t.Fatalf("reason = %q, want AI reason", derefString(triage.Reason))
 	}
 	if derefString(triage.SuggestedMailboxID) != sales.ID {
 		t.Fatalf("suggested_mailbox_id = %q, want %q", derefString(triage.SuggestedMailboxID), sales.ID)
@@ -341,8 +349,89 @@ func TestSupportInboxTriageEvaluateAndRoute_AutoMovesHighConfidenceRule(t *testi
 	if !systemMessages[len(systemMessages)-1].IsInternal {
 		t.Fatal("expected auto-move system message to be internal")
 	}
-	if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Conversation moved to Billing by routing rule") {
+	if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Routing rule moved to inbox 'Billing'.") {
 		t.Fatalf("unexpected system message %q", systemMessages[len(systemMessages)-1].Content)
+	}
+}
+
+func TestSupportInboxTriageEvaluateAndRoute_AutoMovesHighConfidenceSenderEmailContainsRule(t *testing.T) {
+	fixture := newSupportTriageTestFixture(t, nil, func(settings *model.SupportInboxSettings) {
+		settings.TriageAutoMoveEnabled = true
+		settings.TriageConfidenceThreshold = 0.9
+	})
+	billing := fixture.createMailbox(t, "Billing", "billing", true)
+
+	if _, err := fixture.triageSvc.CreateRule(fixture.ctx, fixture.workspaceID, fixture.actorID, model.CreateSupportTriageRuleRequest{
+		Name:            "VIP sender",
+		Priority:        1,
+		Channels:        []string{"widget"},
+		Conditions:      model.SupportTriageRuleConditions{SenderEmailContains: []string{"vip@"}},
+		TargetMailboxID: billing.ID,
+	}); err != nil {
+		t.Fatalf("create triage rule: %v", err)
+	}
+
+	conversation := fixture.createConversation(t, "Question", "vip@acme.com", nil)
+	message := fixture.createCustomerReply(t, conversation.ID, "Can you help me?")
+
+	triage, err := fixture.triageSvc.EvaluateAndRoute(fixture.ctx, fixture.workspaceID, conversation.ID, message.ID)
+	if err != nil {
+		t.Fatalf("EvaluateAndRoute: %v", err)
+	}
+	if triage == nil {
+		t.Fatal("expected triage result")
+	}
+	if triage.Status != model.SupportConversationTriageStatusAutoMoved {
+		t.Fatalf("status = %q, want %q", triage.Status, model.SupportConversationTriageStatusAutoMoved)
+	}
+
+	updatedConversation, err := fixture.conversationRepo.GetByID(fixture.ctx, fixture.workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("load conversation: %v", err)
+	}
+	if derefString(updatedConversation.MailboxID) != billing.ID {
+		t.Fatalf("mailbox_id = %q, want %q", derefString(updatedConversation.MailboxID), billing.ID)
+	}
+}
+
+func TestSupportInboxTriageEvaluateAndRoute_AutoMovesHighConfidenceAnyConditionRule(t *testing.T) {
+	fixture := newSupportTriageTestFixture(t, nil, func(settings *model.SupportInboxSettings) {
+		settings.TriageAutoMoveEnabled = true
+		settings.TriageConfidenceThreshold = 0.9
+	})
+	billing := fixture.createMailbox(t, "Billing", "billing", true)
+
+	if _, err := fixture.triageSvc.CreateRule(fixture.ctx, fixture.workspaceID, fixture.actorID, model.CreateSupportTriageRuleRequest{
+		Name:     "Billing text or sender",
+		Priority: 1,
+		Channels: []string{"widget"},
+		Conditions: model.SupportTriageRuleConditions{
+			ConditionLogic:      "any",
+			PhraseContains:      []string{"billing"},
+			SenderEmailContains: []string{"billing@"},
+		},
+		TargetMailboxID: billing.ID,
+	}); err != nil {
+		t.Fatalf("create triage rule: %v", err)
+	}
+
+	conversation := fixture.createConversation(t, "Question", "billing@acme.com", nil)
+	message := fixture.createCustomerReply(t, conversation.ID, "Can you help me?")
+
+	triage, err := fixture.triageSvc.EvaluateAndRoute(fixture.ctx, fixture.workspaceID, conversation.ID, message.ID)
+	if err != nil {
+		t.Fatalf("EvaluateAndRoute: %v", err)
+	}
+	if triage == nil {
+		t.Fatal("expected triage result")
+	}
+
+	updatedConversation, err := fixture.conversationRepo.GetByID(fixture.ctx, fixture.workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("load conversation: %v", err)
+	}
+	if derefString(updatedConversation.MailboxID) != billing.ID {
+		t.Fatalf("mailbox_id = %q, want %q", derefString(updatedConversation.MailboxID), billing.ID)
 	}
 }
 
@@ -434,7 +523,7 @@ func TestSupportInboxTriageDismissConversation(t *testing.T) {
 	if len(systemMessages) == 0 {
 		t.Fatal("expected dismissal system message")
 	}
-	if systemMessages[len(systemMessages)-1].Content != "Routing suggestion dismissed" {
+	if systemMessages[len(systemMessages)-1].Content != "Support dismissed the routing suggestion." {
 		t.Fatalf("unexpected system message %q", systemMessages[len(systemMessages)-1].Content)
 	}
 }
@@ -485,7 +574,7 @@ func TestSupportInboxTriageManualMoveFeedback(t *testing.T) {
 		if len(systemMessages) == 0 {
 			t.Fatal("expected manual move system message")
 		}
-		if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Moved to Sales by Support Owner") {
+		if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Support moved to inbox 'Sales'.") {
 			t.Fatalf("unexpected system message %q", systemMessages[len(systemMessages)-1].Content)
 		}
 	})
@@ -531,7 +620,7 @@ func TestSupportInboxTriageManualMoveFeedback(t *testing.T) {
 		if len(systemMessages) == 0 {
 			t.Fatal("expected manual move system message")
 		}
-		if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Moved to Billing by Support Owner") {
+		if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Support moved to inbox 'Billing'.") {
 			t.Fatalf("unexpected system message %q", systemMessages[len(systemMessages)-1].Content)
 		}
 	})

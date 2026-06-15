@@ -136,7 +136,7 @@ func TestImportWorkspaceSkillPreservesArchiveAndAppearsInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListSkillCatalog returned error: %v", err)
 	}
-	if !catalogHasSkill(catalog, "approval_protocol", "built_in") {
+	if !catalogHasSkill(catalog, "prd_task_plan_approval", "built_in") {
 		t.Fatalf("expected built-in skill in merged catalog, got %+v", catalog.Skills)
 	}
 	if !catalogHasSkill(catalog, "external_review", model.WorkspaceSkillSourceImported) {

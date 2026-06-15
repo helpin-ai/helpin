@@ -43,6 +43,9 @@ func (r *AgentRepository) List(ctx context.Context, workspaceID string) ([]model
 	if err := r.LoadTeamAccess(ctx, agents); err != nil {
 		return nil, err
 	}
+	if err := r.LoadTokenTotals(ctx, agents); err != nil {
+		return nil, err
+	}
 	return agents, nil
 }
 
@@ -59,15 +62,22 @@ func (r *AgentRepository) GetByID(ctx context.Context, workspaceID, id string) (
 	if err := r.LoadTeamAccess(ctx, agents); err != nil {
 		return nil, err
 	}
+	if err := r.LoadTokenTotals(ctx, agents); err != nil {
+		return nil, err
+	}
 	agent = agents[0]
 	return &agent, nil
 }
 
 // GetSystemByPreset returns the first system agent for a preset within a workspace.
 func (r *AgentRepository) GetSystemByPreset(ctx context.Context, workspaceID, presetKey string) (*model.Agent, error) {
+	presetKeys := []string{presetKey}
+	if presetKey == model.AgentPresetCommandAgent {
+		presetKeys = append(presetKeys, model.AgentPresetResearcher)
+	}
 	var agent model.Agent
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND is_system = ? AND preset_key = ?", workspaceID, true, presetKey).
+		Where("workspace_id = ? AND is_system = ? AND preset_key IN ?", workspaceID, true, presetKeys).
 		Order("created_at ASC").
 		First(&agent).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -81,7 +91,13 @@ func (r *AgentRepository) GetSystemByPreset(ctx context.Context, workspaceID, pr
 // Create creates a new agent.
 func (r *AgentRepository) Create(ctx context.Context, agent *model.Agent) error {
 	if err := r.db.WithContext(ctx).Create(agent).Error; err != nil {
-		return fmt.Errorf("create agent: %w", err)
+		if isMissingAgentActiveVersionColumn(err) {
+			if err := r.db.WithContext(ctx).Omit("ActiveVersionID", "active_version_id").Create(agent).Error; err != nil {
+				return fmt.Errorf("create agent: %w", err)
+			}
+		} else {
+			return fmt.Errorf("create agent: %w", err)
+		}
 	}
 	if len(normalizeAgentTeamIDs(agent.TeamIDs)) > 0 {
 		if err := r.ReplaceTeamAccess(ctx, agent.ID, agent.TeamIDs); err != nil {
@@ -94,11 +110,22 @@ func (r *AgentRepository) Create(ctx context.Context, agent *model.Agent) error 
 // Update saves an agent.
 func (r *AgentRepository) Update(ctx context.Context, agent *model.Agent) error {
 	if err := r.db.WithContext(ctx).Save(agent).Error; err != nil {
-		return fmt.Errorf("update agent: %w", err)
+		if isMissingAgentActiveVersionColumn(err) {
+			if err := r.db.WithContext(ctx).Omit("ActiveVersionID", "active_version_id").Save(agent).Error; err != nil {
+				return fmt.Errorf("update agent: %w", err)
+			}
+		} else {
+			return fmt.Errorf("update agent: %w", err)
+		}
 	}
 	if err := r.ReplaceTeamAccess(ctx, agent.ID, agent.TeamIDs); err != nil {
 		return err
 	}
+	agents := []model.Agent{*agent}
+	if err := r.LoadTokenTotals(ctx, agents); err != nil {
+		return err
+	}
+	agent.TokensUsedTotal = agents[0].TokensUsedTotal
 	return nil
 }
 
@@ -185,6 +212,72 @@ func isMissingAgentTeamAccessTable(err error) bool {
 		strings.Contains(msg, `relation "agent_team_access" does not exist`)
 }
 
+func (r *AgentRepository) LoadTokenTotals(ctx context.Context, agents []model.Agent) error {
+	if len(agents) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(agents))
+	indexByID := make(map[string]int, len(agents))
+	for idx := range agents {
+		ids = append(ids, agents[idx].ID)
+		indexByID[agents[idx].ID] = idx
+		agents[idx].TokensUsedTotal = 0
+	}
+	type tokenTotalRow struct {
+		AgentID         string
+		TokensUsedTotal int
+	}
+	var rows []tokenTotalRow
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Select("agent_id, COALESCE(SUM(tokens_used), 0) AS tokens_used_total").
+		Where("agent_id IN ?", ids).
+		Group("agent_id").
+		Scan(&rows).Error; err != nil {
+		if isMissingAgentRunsTable(err) {
+			return nil
+		}
+		return fmt.Errorf("load agent token totals: %w", err)
+	}
+	for _, row := range rows {
+		idx, ok := indexByID[row.AgentID]
+		if !ok {
+			continue
+		}
+		agents[idx].TokensUsedTotal = row.TokensUsedTotal
+	}
+	return nil
+}
+
+func isMissingAgentRunsTable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such table: agent_runs") ||
+		strings.Contains(msg, `relation "agent_runs" does not exist`)
+}
+
+func isMissingAgentActiveVersionColumn(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no column named active_version_id") ||
+		strings.Contains(msg, "no such column: active_version_id") ||
+		strings.Contains(msg, `column "active_version_id" of relation "agents" does not exist`)
+}
+
+func isMissingAgentRunVersionColumn(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no column named agent_version_id") ||
+		strings.Contains(msg, "no such column: agent_version_id") ||
+		strings.Contains(msg, `column "agent_version_id" of relation "agent_runs" does not exist`)
+}
+
 func normalizeAgentTeamIDs(teamIDs []string) []string {
 	seen := make(map[string]struct{}, len(teamIDs))
 	normalized := make([]string, 0, len(teamIDs))
@@ -265,6 +358,18 @@ func (r *AgentRunRepository) ListByAgent(ctx context.Context, workspaceID, agent
 	return runs, total, nil
 }
 
+// ListByAgentSince returns all runs for an agent created at or after the given time.
+func (r *AgentRunRepository) ListByAgentSince(ctx context.Context, workspaceID, agentID string, since time.Time) ([]model.AgentRun, error) {
+	var runs []model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND agent_id = ? AND created_at >= ?", workspaceID, agentID, since).
+		Order("created_at ASC").
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list agent runs since: %w", err)
+	}
+	return runs, nil
+}
+
 // ListByWorkspace returns runs in a workspace with pagination.
 func (r *AgentRunRepository) ListByWorkspace(ctx context.Context, workspaceID string, pagination model.PMPagination) ([]model.AgentRun, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.AgentRun{}).Where("workspace_id = ?", workspaceID)
@@ -302,25 +407,32 @@ func (r *AgentRunRepository) ListWorkspaceRunsWithoutTriggerExecutions(ctx conte
 	if workspaceID == "" {
 		return []model.AgentRun{}, 0, nil
 	}
-	bindingKind := ""
+	bindingKinds := splitCSVFilter(filters.BindingKind)
 	if filters.BindingKind != nil {
-		bindingKind = strings.TrimSpace(*filters.BindingKind)
-		if bindingKind != "" && bindingKind != "agent_run" && bindingKind != model.AgentRunTriggerSourceCommandBar && bindingKind != model.AgentRunTriggerSourceManual {
+		if len(bindingKinds) > 0 && !csvFilterIncludes(bindingKinds, "agent_run") && !csvFilterIncludes(bindingKinds, model.AgentRunTriggerSourceCommandBar) && !csvFilterIncludes(bindingKinds, model.AgentRunTriggerSourceManual) {
 			return []model.AgentRun{}, 0, nil
 		}
 	}
 	bindingID := ""
+	bindingIDs := splitCSVFilter(filters.BindingID)
 	if filters.BindingID != nil && strings.TrimSpace(*filters.BindingID) != "" {
 		bindingID = strings.TrimSpace(*filters.BindingID)
-		if bindingID != "agent_run.run" && bindingID != "agent_run.child_run" && bindingID != "command_bar.run" && manualRunTargetTypeForBindingID(bindingID) == "" {
+		if len(bindingIDs) == 1 {
+			bindingID = bindingIDs[0]
+		}
+		hasRunnableBindingID := false
+		for _, value := range bindingIDs {
+			if value == "agent_run.run" || value == "agent_run.child_run" || value == "command_bar.run" || manualRunTargetTypeForBindingID(value) != "" {
+				hasRunnableBindingID = true
+				break
+			}
+		}
+		if len(bindingIDs) > 0 && !hasRunnableBindingID {
 			return []model.AgentRun{}, 0, nil
 		}
 	}
-	triggerType := ""
-	if filters.TriggerType != nil && strings.TrimSpace(*filters.TriggerType) != "" {
-		triggerType = strings.TrimSpace(*filters.TriggerType)
-	}
-	if triggerType != "" && triggerType != model.AgentRunTriggerTypeCommandBar && triggerType != model.AgentRunTriggerTypeManual {
+	triggerTypes := splitCSVFilter(filters.TriggerType)
+	if len(triggerTypes) > 0 && !csvFilterIncludes(triggerTypes, model.AgentRunTriggerTypeCommandBar) && !csvFilterIncludes(triggerTypes, model.AgentRunTriggerTypeManual) {
 		return []model.AgentRun{}, 0, nil
 	}
 	if filters.ReferenceID != nil && strings.TrimSpace(*filters.ReferenceID) != "" {
@@ -331,17 +443,17 @@ func (r *AgentRunRepository) ListWorkspaceRunsWithoutTriggerExecutions(ctx conte
 		Model(&model.AgentRun{}).
 		Joins("LEFT JOIN agent_trigger_executions ON agent_trigger_executions.workspace_id = agent_runs.workspace_id AND agent_trigger_executions.run_id = agent_runs.id").
 		Where("agent_runs.workspace_id = ? AND agent_trigger_executions.id IS NULL", workspaceID)
-	if filters.AgentID != nil && strings.TrimSpace(*filters.AgentID) != "" {
-		query = query.Where("agent_runs.agent_id = ?", strings.TrimSpace(*filters.AgentID))
+	if values := splitCSVFilter(filters.AgentID); len(values) > 0 {
+		query = query.Where("agent_runs.agent_id IN ?", values)
 	}
-	if filters.Status != nil && strings.TrimSpace(*filters.Status) != "" {
-		query = query.Where("agent_runs.status = ?", strings.TrimSpace(*filters.Status))
+	if values := splitCSVFilter(filters.Status); len(values) > 0 {
+		query = query.Where("agent_runs.status IN ?", values)
 	}
-	if bindingKind == model.AgentRunTriggerSourceCommandBar || bindingID == "command_bar.run" || triggerType == model.AgentRunTriggerTypeCommandBar {
+	if csvFilterIncludes(bindingKinds, model.AgentRunTriggerSourceCommandBar) || csvFilterIncludes(bindingIDs, "command_bar.run") || csvFilterIncludes(triggerTypes, model.AgentRunTriggerTypeCommandBar) {
 		query = query.Where(agentRunInputTriggerStringPredicate(r.db, "source"), model.AgentRunTriggerSourceCommandBar)
 	}
 	manualTargetType := manualRunTargetTypeForBindingID(bindingID)
-	if bindingKind == model.AgentRunTriggerSourceManual || triggerType == model.AgentRunTriggerTypeManual || manualTargetType != "" {
+	if csvFilterIncludes(bindingKinds, model.AgentRunTriggerSourceManual) || csvFilterIncludes(triggerTypes, model.AgentRunTriggerTypeManual) || manualTargetType != "" {
 		query = query.Where(agentRunInputManualTriggerPredicate(r.db), model.AgentRunTriggerSourceManual)
 	}
 	if manualTargetType != "" {
@@ -410,6 +522,39 @@ func manualRunTargetTypeForBindingID(bindingID string) string {
 	default:
 		return ""
 	}
+}
+
+func splitCSVFilter(value *string) []string {
+	if value == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	values := make([]string, 0)
+	for _, part := range strings.Split(*value, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		values = append(values, part)
+	}
+	return values
+}
+
+func csvFilterIncludes(values []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 // ListRecentForActor returns the most recent runs triggered by the given user
@@ -621,6 +766,12 @@ func (r *AgentRunRepository) FindCompletedByTargetStage(ctx context.Context, wor
 // Create creates a new run.
 func (r *AgentRunRepository) Create(ctx context.Context, run *model.AgentRun) error {
 	if err := r.db.WithContext(ctx).Create(run).Error; err != nil {
+		if isMissingAgentRunVersionColumn(err) {
+			if err := r.db.WithContext(ctx).Omit("AgentVersionID", "agent_version_id").Create(run).Error; err != nil {
+				return fmt.Errorf("create agent run: %w", err)
+			}
+			return nil
+		}
 		return fmt.Errorf("create agent run: %w", err)
 	}
 	return nil
@@ -629,7 +780,13 @@ func (r *AgentRunRepository) Create(ctx context.Context, run *model.AgentRun) er
 // Update saves a run.
 func (r *AgentRunRepository) Update(ctx context.Context, run *model.AgentRun) error {
 	if err := r.db.WithContext(ctx).Save(run).Error; err != nil {
-		return fmt.Errorf("update agent run: %w", err)
+		if isMissingAgentRunVersionColumn(err) {
+			if err := r.db.WithContext(ctx).Omit("AgentVersionID", "agent_version_id").Save(run).Error; err != nil {
+				return fmt.Errorf("update agent run: %w", err)
+			}
+		} else {
+			return fmt.Errorf("update agent run: %w", err)
+		}
 	}
 	if r.triggerExecutionRepo != nil {
 		_ = r.triggerExecutionRepo.SyncRunStatus(ctx, run)
@@ -758,6 +915,38 @@ func (r *AgentTriggerExecutionRepository) ListLatestAutomationRuleExecutions(ctx
 	return result, nil
 }
 
+// CountAutomationRuleExecutions returns the lifetime trigger execution count
+// for each automation rule reference in the workspace.
+func (r *AgentTriggerExecutionRepository) CountAutomationRuleExecutions(ctx context.Context, workspaceID string, ruleIDs []string) (map[string]int64, error) {
+	if len(ruleIDs) == 0 {
+		return map[string]int64{}, nil
+	}
+
+	type countRow struct {
+		ReferenceID string
+		Count       int64
+	}
+	var rows []countRow
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentTriggerExecution{}).
+		Select("reference_id, COUNT(*) AS count").
+		Where("workspace_id = ? AND binding_kind = ? AND reference_type = ? AND reference_id IN ?", workspaceID, "automation_rule", "automation_rule", ruleIDs).
+		Group("reference_id").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("count automation rule executions: %w", err)
+	}
+
+	counts := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		refID := strings.TrimSpace(row.ReferenceID)
+		if refID == "" {
+			continue
+		}
+		counts[refID] = row.Count
+	}
+	return counts, nil
+}
+
 // ListByWorkspace returns recent trigger executions in a workspace with
 // optional filters and pagination.
 func (r *AgentTriggerExecutionRepository) ListByWorkspace(
@@ -768,23 +957,26 @@ func (r *AgentTriggerExecutionRepository) ListByWorkspace(
 ) ([]model.AgentTriggerExecution, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.AgentTriggerExecution{}).Where("workspace_id = ?", workspaceID)
 
-	if filters.AgentID != nil && strings.TrimSpace(*filters.AgentID) != "" {
-		query = query.Where("agent_id = ?", strings.TrimSpace(*filters.AgentID))
+	if filters.ExecutionID != nil && strings.TrimSpace(*filters.ExecutionID) != "" {
+		query = query.Where("id = ?", strings.TrimSpace(*filters.ExecutionID))
 	}
-	if filters.BindingID != nil && strings.TrimSpace(*filters.BindingID) != "" {
-		query = query.Where("binding_id = ?", strings.TrimSpace(*filters.BindingID))
+	if values := splitCSVFilter(filters.AgentID); len(values) > 0 {
+		query = query.Where("agent_id IN ?", values)
 	}
-	if filters.TriggerType != nil && strings.TrimSpace(*filters.TriggerType) != "" {
-		query = query.Where("trigger_type = ?", strings.TrimSpace(*filters.TriggerType))
+	if values := splitCSVFilter(filters.BindingID); len(values) > 0 {
+		query = query.Where("binding_id IN ?", values)
 	}
-	if filters.BindingKind != nil && strings.TrimSpace(*filters.BindingKind) != "" {
-		query = query.Where("binding_kind = ?", strings.TrimSpace(*filters.BindingKind))
+	if values := splitCSVFilter(filters.TriggerType); len(values) > 0 {
+		query = query.Where("trigger_type IN ?", values)
 	}
-	if filters.Status != nil && strings.TrimSpace(*filters.Status) != "" {
-		query = query.Where("status = ?", strings.TrimSpace(*filters.Status))
+	if values := splitCSVFilter(filters.BindingKind); len(values) > 0 {
+		query = query.Where("binding_kind IN ?", values)
 	}
-	if filters.ReferenceID != nil && strings.TrimSpace(*filters.ReferenceID) != "" {
-		query = query.Where("reference_id = ?", strings.TrimSpace(*filters.ReferenceID))
+	if values := splitCSVFilter(filters.Status); len(values) > 0 {
+		query = query.Where("status IN ?", values)
+	}
+	if values := splitCSVFilter(filters.ReferenceID); len(values) > 0 {
+		query = query.Where("reference_id IN ?", values)
 	}
 	if filters.RunID != nil && strings.TrimSpace(*filters.RunID) != "" {
 		query = query.Where("run_id = ?", strings.TrimSpace(*filters.RunID))

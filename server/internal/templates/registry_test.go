@@ -158,15 +158,15 @@ func TestEmbeddedSystemRegistryLoads(t *testing.T) {
 		"api_docs_freshness_sweep",
 		"buying_signal_to_task",
 		"competitive_intelligence_digest",
-		"dependency_auditor",
 		"docs_freshness_sweep",
+		"engineering_dependency_auditor",
+		"engineering_security_triage",
 		"merge_when_done",
 		"public_help_freshness_sweep",
 		"release_notes_writer",
 		"review_merged_prs",
 		"run_on_a_schedule",
 		"run_on_release",
-		"security_triage",
 		"stale_task_escalation",
 		"triage_failing_checks",
 	}
@@ -183,11 +183,11 @@ func TestEmbeddedReportTemplatesUseStandardTitlePattern(t *testing.T) {
 	reportTemplates := []string{
 		"api_docs_freshness_sweep",
 		"competitive_intelligence_digest",
-		"dependency_auditor",
+		"engineering_dependency_auditor",
 		"docs_freshness_sweep",
 		"public_help_freshness_sweep",
 		"review_merged_prs",
-		"security_triage",
+		"engineering_security_triage",
 		"triage_failing_checks",
 	}
 	for _, key := range reportTemplates {
@@ -235,6 +235,40 @@ func TestReleaseNotesWriterExplainsPrereleaseOption(t *testing.T) {
 	}
 	if !strings.Contains(tmpl.Agent.Create.SystemPrompt, "If include_prerelease is false") {
 		t.Fatalf("release notes writer prompt does not explain include_prerelease behavior:\n%s", tmpl.Agent.Create.SystemPrompt)
+	}
+}
+
+func TestReleaseNotesWriterCollectionDependsOnDestinationSpace(t *testing.T) {
+	registry, err := LoadSystemRegistry()
+	if err != nil {
+		t.Fatalf("LoadSystemRegistry returned error: %v", err)
+	}
+	tmpl, ok := registry.Get("release_notes_writer")
+	if !ok {
+		t.Fatal("release_notes_writer template not found")
+	}
+
+	var spaceInput *Input
+	var collectionInput *Input
+	for i := range tmpl.Inputs {
+		switch tmpl.Inputs[i].Key {
+		case "destination_space_id":
+			spaceInput = &tmpl.Inputs[i]
+		case "destination_collection_id":
+			collectionInput = &tmpl.Inputs[i]
+		}
+	}
+	if spaceInput == nil {
+		t.Fatal("destination_space_id input not found")
+	}
+	if spaceInput.Type != "space" {
+		t.Fatalf("destination_space_id type = %q, want space", spaceInput.Type)
+	}
+	if collectionInput == nil {
+		t.Fatal("destination_collection_id input not found")
+	}
+	if collectionInput.DependsOn != "destination_space_id" {
+		t.Fatalf("destination_collection_id depends_on = %q, want destination_space_id", collectionInput.DependsOn)
 	}
 }
 

@@ -1,8 +1,8 @@
 ---
-name: dependency_auditor
+name: dependency_audit
 description: Audits direct package dependencies in repository manifests and creates verified update tasks.
 metadata:
-  title: Dependency Auditor
+  title: Dependency Audit
   supported_runtimes:
     - native_sdk
 ---

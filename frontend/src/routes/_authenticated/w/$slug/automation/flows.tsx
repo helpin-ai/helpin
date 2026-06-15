@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { AutomationFlowsPage, type AutomationFlowsSearch } from '@/pages/automation/AutomationFlows';
 
@@ -15,10 +16,6 @@ export const Route = createFileRoute('/_authenticated/w/$slug/automation/flows')
     show_trigger_title: typeof search.show_trigger_title === 'string' ? search.show_trigger_title : undefined,
     show_rule: typeof search.show_rule === 'string' ? search.show_rule : undefined,
     show_rule_title: typeof search.show_rule_title === 'string' ? search.show_rule_title : undefined,
-    create_event_rule:
-      search.create_event_rule === true
-      || search.create_event_rule === 'true'
-      || search.create_event_rule === '1',
     trigger_type: typeof search.trigger_type === 'string' ? search.trigger_type : undefined,
     agent_id: typeof search.agent_id === 'string' ? search.agent_id : undefined,
     repo_full_name: typeof search.repo_full_name === 'string' ? search.repo_full_name : undefined,
@@ -38,12 +35,19 @@ function AutomationFlowsRoute() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!new URLSearchParams(window.location.search).has('create_event_rule')) return;
+    navigate({ search, replace: true });
+  }, [navigate, search]);
+
   const handleSearchChange = (updates: Partial<AutomationFlowsSearch>) => {
+    const nextSearch: AutomationFlowsSearch = {
+      ...search,
+      ...updates,
+    };
     navigate({
-      search: {
-        ...search,
-        ...updates,
-      },
+      search: nextSearch,
       replace: true,
     });
   };

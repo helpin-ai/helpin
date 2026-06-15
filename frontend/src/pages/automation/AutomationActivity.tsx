@@ -1,30 +1,41 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ArrowReloadHorizontalIcon,
   ArrowUpRight01Icon,
+  ArrowLeft02Icon,
   BotIcon,
   Calendar03Icon,
   Cancel01Icon,
+  FilterHorizontalIcon,
   Loading01Icon,
-  Search01Icon,
+  Tick01Icon,
   ZapIcon,
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AutomationShell } from '@/components/automation/AutomationShell';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
+import { openEpicRoute } from '@/components/pm/epic-detail/epicRouteNavigation';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useAgents, useAutomationActivity, useAutomationOverview, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAgents, useAutomationActivity, useAutomationOverview, useAutomationTriggerCatalog, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useTitle } from '@/hooks/useTitle';
 import { buildAutomationFlowsPath } from '@/lib/automationUi';
 import { queryKeys } from '@/lib/queryKeys';
@@ -32,6 +43,7 @@ import { unwrap } from '@/lib/queryUtils';
 import { automationService } from '@/lib/services/automationService';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 import type {
+  AutomationInventoryItem,
   AutomationTriggerExecutionFilters,
   AutomationTriggerExecutionListItem,
 } from '@/lib/types';
@@ -39,7 +51,8 @@ import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 export type AutomationActivitySearch = {
-  page: number;
+  page?: number;
+  execution_id?: string;
   agent_id?: string;
   binding_id?: string;
   trigger_type?: string;
@@ -91,6 +104,279 @@ const STATUS_DOT_STYLES: Record<string, string> = {
   cancelled: 'text-muted-foreground',
   skipped: 'text-muted-foreground',
 };
+
+const STATUS_FILTER_OPTIONS = [
+  { value: 'queued', label: 'Queued' },
+  { value: 'running', label: 'Running' },
+  { value: 'paused', label: 'Paused' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'skipped', label: 'Skipped' },
+];
+
+const SOURCE_FILTER_OPTIONS = [
+  { value: 'automation_rule', label: 'Flow' },
+  { value: 'manual', label: 'Manual' },
+  { value: 'schedule', label: 'Schedule' },
+  { value: 'support_widget', label: 'Support' },
+  { value: 'task_assignment', label: 'Task assignment' },
+];
+
+const DATE_FILTER_OPTIONS = [
+  { value: 'all', label: 'All time' },
+  { value: '24h', label: 'Last 24h' },
+  { value: '7d', label: 'Last 7d' },
+  { value: '30d', label: 'Last 30d' },
+  { value: '90d', label: 'Last 90d' },
+  { value: '180d', label: 'Last 6 months' },
+  { value: '365d', label: 'Last 12 months' },
+];
+
+type ActivityFilterKey = 'status' | 'reference_id' | 'agent_id' | 'source' | 'trigger_type' | 'binding_id' | 'date';
+type ActivityFilterState = Partial<Record<ActivityFilterKey, string[]>>;
+
+interface ActivityFilterOption {
+  value: string;
+  label: string;
+  icon?: ReactNode;
+}
+
+interface ActivityFilterDefinition {
+  key: ActivityFilterKey;
+  label: string;
+  options: ActivityFilterOption[];
+  searchableValues?: boolean;
+  singleSelect?: boolean;
+}
+
+function ActivityFilterValueSelect({
+  definition,
+  selected,
+  onToggle,
+}: {
+  definition: ActivityFilterDefinition;
+  selected: string[];
+  onToggle: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedLabels = selected.map((value) =>
+    definition.options.find((option) => option.value === value)?.label ?? value,
+  );
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="inline-flex max-w-[180px] items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs transition-colors hover:bg-accent">
+          <span className="truncate">
+            {selectedLabels.length === 0
+              ? 'Choose value'
+              : selectedLabels.length === 1
+                ? selectedLabels[0]
+                : `${selectedLabels.length} selected`}
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className={`${definition.searchableValues ? 'w-80' : 'w-56'} p-0`} align="start">
+        <Command>
+          {definition.searchableValues ? (
+            <CommandInput placeholder={`Search ${definition.label.toLowerCase()}...`} />
+          ) : null}
+          <CommandList>
+            <CommandEmpty>No results.</CommandEmpty>
+            <CommandGroup>
+              {definition.options.map((option) => {
+                const isSelected = selected.includes(option.value);
+                return (
+                  <CommandItem
+                    key={option.value}
+                    value={option.label}
+                    onSelect={() => {
+                      onToggle(option.value);
+                      if (definition.singleSelect) setOpen(false);
+                    }}
+                  >
+                    <div className={cn(
+                      'mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border',
+                      isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40',
+                    )}>
+                      {isSelected ? <Tick01Icon className="h-3 w-3" /> : null}
+                    </div>
+                    {option.icon ? <span className="mr-1.5 shrink-0">{option.icon}</span> : null}
+                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function ActivityFilterPill({
+  definition,
+  selected,
+  onToggle,
+  onRemove,
+}: {
+  definition: ActivityFilterDefinition;
+  selected: string[];
+  onToggle: (value: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
+      <span className="font-medium text-muted-foreground">{definition.label}</span>
+      <span className="text-muted-foreground/60">is</span>
+      <ActivityFilterValueSelect definition={definition} selected={selected} onToggle={onToggle} />
+      <button
+        type="button"
+        onClick={onRemove}
+        className="ml-0.5 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+        aria-label={`Remove ${definition.label} filter`}
+      >
+        <Cancel01Icon className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
+function ActivityFilterTrigger({
+  definitions,
+  filterState,
+  visibleKeys,
+  activeCount,
+  onAdd,
+  onToggle,
+}: {
+  definitions: ActivityFilterDefinition[];
+  filterState: ActivityFilterState;
+  visibleKeys: ActivityFilterKey[];
+  activeCount: number;
+  onAdd: (key: ActivityFilterKey) => void;
+  onToggle: (key: ActivityFilterKey, value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<ActivityFilterKey | null>(null);
+  const visible = new Set(visibleKeys);
+  const available = definitions.filter((definition) => !visible.has(definition.key) && definition.options.length > 0);
+  const selectedDefinition = selectedKey
+    ? definitions.find((definition) => definition.key === selectedKey)
+    : undefined;
+  const canChooseFilter = available.length > 0 || Boolean(selectedDefinition);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) setSelectedKey(null);
+  };
+
+  return canChooseFilter ? (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <FilterHorizontalIcon className="h-3.5 w-3.5" />
+            Filters
+          </span>
+          <Badge
+            variant="secondary"
+            className={cn('rounded-full px-1.5 py-0 text-[10px] transition-opacity', activeCount > 0 ? 'opacity-100' : 'opacity-0')}
+          >
+            {activeCount || 0}
+          </Badge>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className={`${selectedDefinition ? (selectedDefinition.searchableValues ? 'w-80' : 'w-56') : 'w-48'} p-0`}
+        align="start"
+      >
+        {selectedDefinition ? (
+          <Command>
+            <div className="flex items-center gap-1 border-b border-border/70 px-1.5 py-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                aria-label="Back to filter fields"
+                onClick={() => setSelectedKey(null)}
+              >
+                <ArrowLeft02Icon className="h-3.5 w-3.5" />
+              </Button>
+              <span className="truncate text-xs font-medium">{selectedDefinition.label}</span>
+            </div>
+            {selectedDefinition.searchableValues ? (
+              <CommandInput placeholder={`Search ${selectedDefinition.label.toLowerCase()}...`} />
+            ) : null}
+            <CommandList>
+              <CommandEmpty>No results.</CommandEmpty>
+              <CommandGroup>
+                {selectedDefinition.options.map((option) => {
+                  const isSelected = filterState[selectedDefinition.key]?.includes(option.value) ?? false;
+                  return (
+                    <CommandItem
+                      key={option.value}
+                      value={option.label}
+                      onSelect={() => {
+                        onToggle(selectedDefinition.key, option.value);
+                        if (selectedDefinition.singleSelect) {
+                          setOpen(false);
+                          setSelectedKey(null);
+                        }
+                      }}
+                    >
+                      <div className={cn(
+                        'mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border',
+                        isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40',
+                      )}>
+                        {isSelected ? <Tick01Icon className="h-3 w-3" /> : null}
+                      </div>
+                      {option.icon ? <span className="mr-1.5 shrink-0">{option.icon}</span> : null}
+                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        ) : (
+          <Command>
+            <CommandInput placeholder="Filter by..." />
+            <CommandList>
+              <CommandEmpty>No filters.</CommandEmpty>
+              <CommandGroup>
+                {available.map((definition) => (
+                  <CommandItem
+                    key={definition.key}
+                    value={definition.label}
+                    onSelect={() => {
+                      onAdd(definition.key);
+                      setSelectedKey(definition.key);
+                    }}
+                  >
+                    {definition.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        )}
+      </PopoverContent>
+    </Popover>
+  ) : (
+    <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground" disabled>
+      <span className="inline-flex items-center gap-1">
+        <FilterHorizontalIcon className="h-3.5 w-3.5" />
+        Filters
+      </span>
+      <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 py-0 text-[10px]">
+        {activeCount}
+      </Badge>
+    </Button>
+  );
+}
 
 function relativeTime(isoString?: string): string {
   if (!isoString) return '';
@@ -196,12 +482,43 @@ function getTimeFilterDate(value?: string) {
   return undefined;
 }
 
+function singleFilterValue(values: string[]) {
+  return values.length > 0 ? values[values.length - 1] : undefined;
+}
+
+function multiFilterValues(value?: string) {
+  return value?.split(',').map((item) => item.trim()).filter(Boolean) ?? [];
+}
+
+function multiFilterValue(values: string[]) {
+  const unique = Array.from(new Set(values.map((item) => item.trim()).filter(Boolean)));
+  return unique.length > 0 ? unique.join(',') : undefined;
+}
+
+function dateFilterValue(search: AutomationActivitySearch) {
+  if (!search.fired_after || search.fired_before) return undefined;
+  const firedAfter = search.fired_after.trim();
+  for (const option of DATE_FILTER_OPTIONS) {
+    if (option.value !== 'all' && firedAfter === getTimeFilterDate(option.value)) {
+      return option.value;
+    }
+  }
+  return undefined;
+}
+
+function flowIdFromInventoryItem(item: AutomationInventoryItem) {
+  if (item.kind !== 'automation_rule') return null;
+  const marker = 'automation_rule:rule:';
+  if (item.inventory_id.startsWith(marker)) return item.inventory_id.slice(marker.length);
+  return item.scope_type === 'workspace' ? item.scope_id : null;
+}
+
 function sourceLabel(value?: string) {
   switch (value) {
     case 'manual':
       return 'Manual';
     case 'automation_rule':
-      return 'Rule';
+      return 'Flow';
     case 'schedule':
       return 'Scheduled';
     case 'support_widget':
@@ -218,15 +535,30 @@ function sourceLabel(value?: string) {
 }
 
 function buildExecutionTriggerLabel(item: AutomationTriggerExecutionListItem) {
+  if (item.binding_kind === 'automation_rule' && item.trigger_type === 'manual') return 'Run now';
+  if (item.trigger_type === 'cron' || item.binding_id === 'automation_rule.cron') return 'Cron';
   if (item.binding_kind === 'manual') return 'Manual';
+  if (item.binding_kind === 'automation_rule') return item.trigger_title || sourceLabel(item.binding_kind);
   return item.trigger_title || item.binding_title || sourceLabel(item.binding_kind);
 }
 
+function buildExecutionPrimaryLabel(item: AutomationTriggerExecutionListItem) {
+  if (item.binding_kind === 'automation_rule') {
+    return item.reference_title?.trim() || item.binding_title?.trim() || 'Flow run';
+  }
+  return buildExecutionTargetLabel(item);
+}
+
 function buildExecutionTargetLabel(item: AutomationTriggerExecutionListItem) {
-  if (item.reference_title?.trim()) return item.reference_title.trim();
   if (item.target_type && item.target_id) return `${item.target_type.replace(/_/g, ' ')} · ${truncateMiddle(item.target_id, 8, 4)}`;
+  if (item.reference_type === 'automation_rule') return 'Workspace event';
+  if (item.reference_title?.trim()) return item.reference_title.trim();
   if (item.reference_type && item.reference_id) return `${item.reference_type.replace(/_/g, ' ')} · ${truncateMiddle(item.reference_id, 8, 4)}`;
   return 'Workspace event';
+}
+
+function normalTargetType(value?: string | null) {
+  return value?.trim().toLowerCase().replace(/^pm_/, '') ?? '';
 }
 
 function buildExecutionFlowHref(item: AutomationTriggerExecutionListItem, workspaceSlug?: string) {
@@ -283,70 +615,6 @@ function runBlockingCopy(run: AgentRun, agent?: Agent) {
     default:
       return `${agentName} is waiting for more context to continue`;
   }
-}
-
-function parseSmartFilter(input: string, agents: Agent[]) {
-  const tokens = input.split(/\s+/).filter(Boolean);
-  const updates: Partial<AutomationActivitySearch> = {
-    agent_id: undefined,
-    status: undefined,
-    source: undefined,
-    fired_after: undefined,
-    fired_before: undefined,
-    page: 1,
-  };
-
-  for (const token of tokens) {
-    const [rawKey, ...rest] = token.split(':');
-    const key = rawKey.toLowerCase();
-    const value = rest.join(':').trim();
-    if (!value) continue;
-
-    if (key === 'agent') {
-      const match = agents.find((agent) => agent.name.toLowerCase() === value.toLowerCase())
-        ?? agents.find((agent) => agent.name.toLowerCase().includes(value.toLowerCase()));
-      if (match) updates.agent_id = match.id;
-      continue;
-    }
-
-    if (key === 'status') {
-      updates.status = value.toLowerCase().replace(/\s+/g, '_');
-      continue;
-    }
-
-    if (key === 'trigger' || key === 'source') {
-      const normalized = value.toLowerCase().replace(/\s+/g, '_');
-      if (['manual', 'automation_rule', 'schedule', 'support_widget', 'task_assignment'].includes(normalized)) {
-        updates.source = normalized;
-      }
-      continue;
-    }
-
-    if (key === 'last') {
-      updates.fired_after = getTimeFilterDate(value);
-    }
-  }
-
-  return updates;
-}
-
-function buildSmartFilterValue(search: AutomationActivitySearch, agents: Agent[]) {
-  const tokens: string[] = [];
-  if (search.agent_id) {
-    const agentName = agents.find((agent) => agent.id === search.agent_id)?.name;
-    if (agentName) tokens.push(`agent:${agentName}`);
-  }
-  if (search.status) tokens.push(`status:${search.status}`);
-  if (search.source) tokens.push(`source:${search.source}`);
-  if (search.fired_after) {
-    const days = Math.round((Date.now() - new Date(search.fired_after).getTime()) / 86_400_000);
-    if (days <= 1) {
-      tokens.push('last:24h');
-    } else {
-      tokens.push(`last:${days}d`);
-    }
-  }
-  return tokens.join(' ');
 }
 
 function SparkBars({ values, tone = 'neutral' }: { values: number[]; tone?: 'neutral' | 'good' | 'warn' | 'bad' }) {
@@ -467,67 +735,6 @@ function TriggerKindChip({ kind }: { kind: string }) {
   );
 }
 
-function SmartFilterInput({
-  value,
-  onChange,
-  onApply,
-  onClear,
-  disabled,
-  autoFocus,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  onApply: () => void;
-  onClear: () => void;
-  disabled?: boolean;
-  autoFocus?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-2 md:flex-row md:items-center">
-      <div className="relative flex-1">
-        <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              onApply();
-            }
-          }}
-          placeholder="agent:Lens status:failed last:24h"
-          className="h-8 pl-8 font-mono text-xs"
-          disabled={disabled}
-          autoFocus={autoFocus}
-        />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              tabIndex={-1}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono text-muted-foreground/60 hover:text-muted-foreground"
-              aria-label="Filter syntax help"
-            >
-              ?
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" align="end" className="max-w-xs font-mono text-[11px]">
-            Supports <code>agent:</code>, <code>status:</code>, <code>source:</code>, <code>last:24h|7d|30d</code>.
-          </TooltipContent>
-        </Tooltip>
-      </div>
-      <div className="flex items-center gap-2">
-        <Button type="button" size="sm" variant="ghost" onClick={onClear} disabled={disabled} className="h-8 px-2 text-xs text-muted-foreground">
-          Clear
-        </Button>
-        <Button type="button" size="sm" onClick={onApply} disabled={disabled} className="h-8 px-3 text-xs">
-          Apply
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function NeedActionCard({
   run,
   agent,
@@ -594,17 +801,25 @@ function TimelineRow({
   workspaceSlug,
   onOpenRun,
   onOpenFlow,
+  onOpenTarget,
 }: {
   item: AutomationTriggerExecutionListItem;
   agent?: Agent;
   workspaceSlug?: string;
   onOpenRun: (runId: string) => void;
   onOpenFlow: (href: string) => void;
+  onOpenTarget: (item: AutomationTriggerExecutionListItem) => void;
 }) {
   const duration = formatDuration(item.started_at, item.completed_at);
+  const primaryLabel = buildExecutionPrimaryLabel(item);
   const targetLabel = buildExecutionTargetLabel(item);
   const triggerLabel = buildExecutionTriggerLabel(item);
+  const sourceKindLabel = sourceLabel(item.binding_kind);
   const flowHref = buildExecutionFlowHref(item, workspaceSlug);
+  const showTargetMeta = targetLabel !== primaryLabel;
+  const showSourceKind = sourceKindLabel.trim().toLowerCase() !== triggerLabel.trim().toLowerCase();
+  const targetType = normalTargetType(item.target_type);
+  const canOpenTarget = Boolean(item.target_id && ['task', 'epic', 'support_conversation'].includes(targetType));
   const canOpenRun = Boolean(item.run_id);
 
   const handleRowActivate = canOpenRun ? () => onOpenRun(item.run_id!) : undefined;
@@ -612,7 +827,7 @@ function TimelineRow({
   return (
     <div
       className={cn(
-        'grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 px-4 py-3 transition-colors',
+        'group grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 px-4 py-3 transition-colors',
         canOpenRun && 'cursor-pointer hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none',
       )}
       role={canOpenRun ? 'button' : undefined}
@@ -638,38 +853,52 @@ function TimelineRow({
       </div>
 
       <div className="min-w-0 space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <StatusBadge status={item.status} />
-          <TriggerKindChip kind={item.binding_kind} />
-          <span className="text-sm font-medium text-foreground">{targetLabel}</span>
+          {showSourceKind ? <TriggerKindChip kind={item.binding_kind} /> : null}
+          {flowHref && item.binding_kind === 'automation_rule' ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenFlow(flowHref);
+              }}
+              className="inline-flex min-w-0 items-center gap-1 text-sm font-medium text-foreground underline decoration-border underline-offset-4 hover:text-primary"
+            >
+              <span className="truncate">{primaryLabel}</span>
+              <ArrowUpRight01Icon className="h-3 w-3 shrink-0" />
+            </button>
+          ) : (
+            <span className="min-w-0 truncate text-sm font-medium text-foreground">{primaryLabel}</span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <span>{triggerLabel}</span>
-          {item.binding_title && (
+          <span className="text-muted-foreground/60">Trigger</span>
+          <span className="text-foreground">{triggerLabel}</span>
+          {showTargetMeta ? (
             <>
-              <span className="text-muted-foreground/60">via</span>
-              {flowHref ? (
+              <span className="text-muted-foreground/40">·</span>
+              <span className="text-muted-foreground/60">Target</span>
+              {canOpenTarget ? (
                 <button
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
-                    onOpenFlow(flowHref);
+                    onOpenTarget(item);
                   }}
-                  className="inline-flex items-center gap-1 text-foreground underline decoration-border underline-offset-4 hover:text-primary"
+                  className="text-foreground underline decoration-border underline-offset-4 hover:text-primary"
                 >
-                  {item.binding_title}
-                  <ArrowUpRight01Icon className="h-3 w-3" />
+                  {targetLabel}
                 </button>
               ) : (
-                <span className="text-foreground">{item.binding_title}</span>
+                <span className="text-foreground">{targetLabel}</span>
               )}
             </>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-          <div className="flex min-w-0 items-center gap-2">
+          ) : null}
+          <span className="text-muted-foreground/40">·</span>
+          <span className="text-muted-foreground/60">Agent</span>
+          <div className="flex min-w-0 items-center gap-1.5">
             {agent?.is_system ? (
               <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
             ) : (
@@ -677,36 +906,42 @@ function TimelineRow({
                 <BotIcon className="h-3 w-3" />
               </span>
             )}
-            <span>{item.agent_name}</span>
+            <span className="text-foreground">{item.agent_name}</span>
           </div>
-          <span className="font-mono">{relativeTime(item.fired_at)}</span>
-          <span className="font-mono">{duration}</span>
-          {item.error_message ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="max-w-[28rem] truncate text-rose-600 dark:text-rose-400">{item.error_message}</span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" align="start" className="max-w-md whitespace-pre-wrap break-words text-xs">
-                {item.error_message}
-              </TooltipContent>
-            </Tooltip>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <span>Ran <span className="font-mono text-foreground/80">{relativeTime(item.fired_at)}</span></span>
+          <span className="text-muted-foreground/40">·</span>
+          <span>Duration <span className="font-mono text-foreground/80">{duration}</span></span>
+          {item.actor_name ? (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <span>Ran by <span className="font-medium text-foreground/80">{item.actor_name}</span></span>
+            </>
           ) : null}
         </div>
+
+        {item.error_message ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
+            ⚠ {item.error_message}
+          </div>
+        ) : null}
       </div>
 
-      <div className="flex items-start justify-end">
+      <div className="flex h-full flex-col items-end justify-center gap-2">
         {canOpenRun ? (
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="h-8 px-2.5 text-xs"
+            className="pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
             onClick={(event) => {
               event.stopPropagation();
               onOpenRun(item.run_id!);
             }}
           >
-            Open
+            View run
           </Button>
         ) : null}
       </div>
@@ -719,22 +954,25 @@ export function AutomationActivityPage({
   onSearchChange,
 }: {
   search: AutomationActivitySearch;
-  onSearchChange: (updates: Partial<AutomationActivitySearch>) => void;
+  onSearchChange: (updates: Partial<AutomationActivitySearch>, options?: { preserveScroll?: boolean }) => void;
 }) {
   useTitle('Automation Activity');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
   const navigate = useNavigate();
+  const location = useLocation();
   const { data: access } = useWorkspaceAccess(workspaceId);
   const permissions = usePermissions(access);
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [approvingRunId, setApprovingRunId] = useState<string | null>(null);
-  const [smartFilter, setSmartFilter] = useState('');
-  const [searchExpanded, setSearchExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<'timeline' | 'needs_you' | null>(null);
+  const [visibleActivityFilterKeys, setVisibleActivityFilterKeys] = useState<ActivityFilterKey[]>([]);
+  const [loadedExecutionPages, setLoadedExecutionPages] = useState(() => Math.max(1, search.page ?? 1));
   const hasActiveFilter = Boolean(
-    search.agent_id
+    search.execution_id
+      || search.agent_id
       || search.binding_id
       || search.trigger_type
       || search.status
@@ -744,13 +982,11 @@ export function AutomationActivityPage({
       || search.fired_after
       || search.fired_before,
   );
-  const showSearchInput = searchExpanded || hasActiveFilter;
 
   const openRun = useCallback((runId: string) => {
     setSelectedRunId(runId);
     setDrawerOpen(true);
-    onSearchChange({ run_id: runId });
-  }, [onSearchChange]);
+  }, []);
 
   useEffect(() => {
     const runId = trimFilterValue(search.run_id);
@@ -763,17 +999,35 @@ export function AutomationActivityPage({
     void navigate({ to: href });
   }, [navigate]);
 
+  const openTarget = useCallback((item: AutomationTriggerExecutionListItem) => {
+    const slug = workspace?.slug;
+    const targetID = item.target_id?.trim();
+    if (!slug || !targetID) return;
+
+    switch (normalTargetType(item.target_type)) {
+      case 'task':
+        openTaskRoute(navigate as never, { pathname: location.pathname } as never, slug, targetID);
+        return;
+      case 'epic':
+        openEpicRoute(navigate as never, { pathname: location.pathname } as never, slug, targetID);
+        return;
+      case 'support_conversation':
+        void navigate({
+          to: '/w/$slug/support/$conversationId' as string,
+          params: { slug, conversationId: targetID },
+        });
+        return;
+      default:
+        return;
+    }
+  }, [location.pathname, navigate, workspace?.slug]);
+
   const { data: agents = [] } = useAgents(workspaceId);
   const overviewQuery = useAutomationOverview(workspaceId, true);
-
-  useEffect(() => {
-    setSmartFilter(buildSmartFilterValue(search, Array.isArray(agents) ? agents : []));
-  }, [agents, search]);
-
-  const executionFilters = useMemo<AutomationTriggerExecutionFilters>(
-    () => ({
-      page: search.page,
-      per_page: EXECUTIONS_PER_PAGE,
+  const triggerCatalogQuery = useAutomationTriggerCatalog(workspaceId, permissions.canManageSettings);
+  const activityFilterSignature = useMemo(
+    () => JSON.stringify({
+      execution_id: trimFilterValue(search.execution_id),
       agent_id: trimFilterValue(search.agent_id),
       binding_id: trimFilterValue(search.binding_id),
       trigger_type: trimFilterValue(search.trigger_type),
@@ -784,7 +1038,40 @@ export function AutomationActivityPage({
       fired_after: trimFilterValue(search.fired_after),
       fired_before: trimFilterValue(search.fired_before),
     }),
-    [search],
+    [
+      search.agent_id,
+      search.binding_id,
+      search.execution_id,
+      search.fired_after,
+      search.fired_before,
+      search.reference_id,
+      search.run_id,
+      search.source,
+      search.status,
+      search.trigger_type,
+    ],
+  );
+
+  useEffect(() => {
+    setLoadedExecutionPages(Math.max(1, search.page ?? 1));
+  }, [activityFilterSignature, search.page]);
+
+  const executionFilters = useMemo<AutomationTriggerExecutionFilters>(
+    () => ({
+      page: 1,
+      per_page: EXECUTIONS_PER_PAGE * loadedExecutionPages,
+      execution_id: trimFilterValue(search.execution_id),
+      agent_id: trimFilterValue(search.agent_id),
+      binding_id: trimFilterValue(search.binding_id),
+      trigger_type: trimFilterValue(search.trigger_type),
+      status: trimFilterValue(search.status),
+      source: trimFilterValue(search.source),
+      reference_id: trimFilterValue(search.reference_id),
+      run_id: trimFilterValue(search.run_id),
+      fired_after: trimFilterValue(search.fired_after),
+      fired_before: trimFilterValue(search.fired_before),
+    }),
+    [loadedExecutionPages, search],
   );
 
   const executionsQuery = useAutomationActivity(workspaceId, executionFilters, permissions.canManageSettings);
@@ -804,6 +1091,7 @@ export function AutomationActivityPage({
     staleTime: 15_000,
     refetchInterval: 30_000,
   });
+  const isRefreshing = runsQuery.isFetching || executionsQuery.isFetching || overviewQuery.isFetching;
 
   useEffect(() => {
     const handler = () => {
@@ -826,10 +1114,155 @@ export function AutomationActivityPage({
   const pausedRuns = useMemo(() => workspaceRuns.filter((run) => ACTIVE_RUN_STATUSES.has(run.status) && isPausedAgentRun(run)), [workspaceRuns]);
   const rawExecutions = executionsQuery.data?.data;
   const executions = Array.isArray(rawExecutions) ? rawExecutions : [];
-  const executionPage = executionsQuery.data?.page ?? search.page;
-  const executionTotalPages = executionsQuery.data?.total_pages ?? 0;
+  const executionTotal = executionsQuery.data?.total ?? 0;
+  const hasMoreExecutions = executions.length < executionTotal;
   const rawItems = overviewQuery.data?.items;
   const items = Array.isArray(rawItems) ? rawItems : [];
+  const agentFilterOptions = useMemo(
+    () => agentList.map((agent) => ({
+      value: agent.id,
+      label: agent.name,
+      icon: <AgentAvatar agent={agent} className="h-4 w-4" />,
+    })),
+    [agentList],
+  );
+  const triggerTypeFilterOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return (triggerCatalogQuery.data ?? [])
+      .filter((trigger) => {
+        if (!trigger.trigger_type || seen.has(trigger.trigger_type)) return false;
+        seen.add(trigger.trigger_type);
+        return true;
+      })
+      .map((trigger) => ({
+        value: trigger.trigger_type,
+        label: trigger.title || trigger.trigger_type,
+      }));
+  }, [triggerCatalogQuery.data]);
+  const triggerSurfaceFilterOptions = useMemo(
+    () => (triggerCatalogQuery.data ?? []).map((trigger) => ({
+      value: trigger.id,
+      label: trigger.title || trigger.id,
+    })),
+    [triggerCatalogQuery.data],
+  );
+  const flowFilterOptions = useMemo(
+    () => items
+      .map((item) => {
+        const id = flowIdFromInventoryItem(item);
+        return id ? { value: id, label: item.title || id } : null;
+      })
+      .filter((item): item is { value: string; label: string } => Boolean(item)),
+    [items],
+  );
+  const selectedDateFilter = dateFilterValue(search);
+  const activityFilterDefinitions = useMemo<ActivityFilterDefinition[]>(
+    () => [
+      { key: 'status', label: 'Status', options: STATUS_FILTER_OPTIONS },
+      { key: 'reference_id', label: 'Flow', options: flowFilterOptions, searchableValues: true },
+      { key: 'agent_id', label: 'Agent', options: agentFilterOptions, searchableValues: true },
+      { key: 'trigger_type', label: 'Trigger', options: triggerTypeFilterOptions, searchableValues: true },
+      { key: 'binding_id', label: 'Surface', options: triggerSurfaceFilterOptions, searchableValues: true },
+      { key: 'source', label: 'Source', options: SOURCE_FILTER_OPTIONS },
+      { key: 'date', label: 'Date', options: DATE_FILTER_OPTIONS, singleSelect: true },
+    ],
+    [agentFilterOptions, flowFilterOptions, triggerSurfaceFilterOptions, triggerTypeFilterOptions],
+  );
+  const activityFilterState = useMemo<ActivityFilterState>(() => ({
+    status: multiFilterValues(search.status),
+    reference_id: multiFilterValues(search.reference_id),
+    agent_id: multiFilterValues(search.agent_id),
+    trigger_type: multiFilterValues(search.trigger_type),
+    binding_id: multiFilterValues(search.binding_id),
+    source: search.source && !(multiFilterValues(search.source).includes('automation_rule') && search.reference_id)
+      ? multiFilterValues(search.source)
+      : [],
+    date: selectedDateFilter ? [selectedDateFilter] : [],
+  }), [search.agent_id, search.binding_id, search.reference_id, search.source, search.status, search.trigger_type, selectedDateFilter]);
+  const activeActivityFilterKeys = useMemo<ActivityFilterKey[]>(
+    () => activityFilterDefinitions
+      .map((definition) => definition.key)
+      .filter((key) => (activityFilterState[key]?.length ?? 0) > 0),
+    [activityFilterDefinitions, activityFilterState],
+  );
+
+  useEffect(() => {
+    if (activeActivityFilterKeys.length === 0) return;
+    setVisibleActivityFilterKeys((current) => {
+      const next = [...current];
+      for (const key of activeActivityFilterKeys) {
+        if (!next.includes(key)) next.push(key);
+      }
+      return next.length === current.length ? current : next;
+    });
+  }, [activeActivityFilterKeys]);
+
+  const setMultiFilter = useCallback((key: 'status' | 'agent_id' | 'source' | 'reference_id' | 'trigger_type' | 'binding_id', values: string[]) => {
+    const value = multiFilterValue(values);
+    if (key === 'reference_id') {
+      onSearchChange({
+        reference_id: value,
+        source: value ? 'automation_rule' : undefined,
+        execution_id: undefined,
+        run_id: undefined,
+        page: undefined,
+      });
+      return;
+    }
+    if (key === 'source') {
+      const sourceValues = multiFilterValues(value);
+      onSearchChange({
+        source: value,
+        reference_id: sourceValues.includes('automation_rule') ? search.reference_id : undefined,
+        execution_id: undefined,
+        run_id: undefined,
+        page: undefined,
+      });
+      return;
+    }
+    onSearchChange({
+      [key]: value,
+      execution_id: undefined,
+      run_id: undefined,
+      page: undefined,
+    });
+  }, [onSearchChange, search.reference_id]);
+
+  const setDateFilter = useCallback((values: string[]) => {
+    const value = singleFilterValue(values);
+    onSearchChange({
+      fired_after: value && value !== 'all' ? getTimeFilterDate(value) : undefined,
+      fired_before: undefined,
+      execution_id: undefined,
+      run_id: undefined,
+      page: undefined,
+    });
+  }, [onSearchChange]);
+
+  const handleActivityFilterAdd = useCallback((key: ActivityFilterKey) => {
+    setVisibleActivityFilterKeys((current) => current.includes(key) ? current : [...current, key]);
+  }, []);
+
+  const handleActivityFilterToggle = useCallback((key: ActivityFilterKey, value: string) => {
+    const current = activityFilterState[key] ?? [];
+    const next = current.includes(value)
+      ? current.filter((item) => item !== value)
+      : [...current, value];
+    if (key === 'date') {
+      setDateFilter(current.includes(value) ? [] : [value]);
+      return;
+    }
+    setMultiFilter(key, next);
+  }, [activityFilterState, setDateFilter, setMultiFilter]);
+
+  const handleActivityFilterRemove = useCallback((key: ActivityFilterKey) => {
+    setVisibleActivityFilterKeys((current) => current.filter((item) => item !== key));
+    if (key === 'date') {
+      setDateFilter([]);
+      return;
+    }
+    setMultiFilter(key, []);
+  }, [setDateFilter, setMultiFilter]);
 
   const groupedExecutions = useMemo(() => {
     const groups = new Map<string, AutomationTriggerExecutionListItem[]>();
@@ -896,24 +1329,51 @@ export function AutomationActivityPage({
     return formatDuration(oldest.created_at, new Date().toISOString());
   }, [pausedRuns]);
 
-  const handleApplySmartFilter = useCallback(() => {
-    onSearchChange(parseSmartFilter(smartFilter, Array.isArray(agents) ? agents : []));
-  }, [agents, onSearchChange, smartFilter]);
-
-  const handleClearSmartFilter = useCallback(() => {
-    setSmartFilter('');
+  const handleClearFilters = useCallback(() => {
     onSearchChange({
-      page: 1,
+      page: undefined,
+      execution_id: undefined,
       agent_id: undefined,
       binding_id: undefined,
       trigger_type: undefined,
       status: undefined,
       source: undefined,
       reference_id: undefined,
+      run_id: undefined,
       fired_after: undefined,
       fired_before: undefined,
     });
   }, [onSearchChange]);
+
+  const handleActivityClearFilters = useCallback(() => {
+    setVisibleActivityFilterKeys([]);
+    handleClearFilters();
+  }, [handleClearFilters]);
+
+  const applyAllRunsShortcut = useCallback((updates: Partial<AutomationActivitySearch>, visibleKeys: ActivityFilterKey[]) => {
+    setActiveTab('timeline');
+    setVisibleActivityFilterKeys(visibleKeys);
+    onSearchChange({
+      page: undefined,
+      execution_id: undefined,
+      agent_id: undefined,
+      binding_id: undefined,
+      trigger_type: undefined,
+      status: undefined,
+      source: undefined,
+      reference_id: undefined,
+      run_id: undefined,
+      fired_after: undefined,
+      fired_before: undefined,
+      ...updates,
+    });
+  }, [onSearchChange]);
+
+  const openNeedsYouShortcut = useCallback(() => {
+    setActiveTab('needs_you');
+    setVisibleActivityFilterKeys([]);
+    handleClearFilters();
+  }, [handleClearFilters]);
 
   const handleApproveRun = useCallback(async (runId: string) => {
     if (!workspaceId) return;
@@ -930,6 +1390,8 @@ export function AutomationActivityPage({
     }
     setApprovingRunId(null);
   }, [executionsQuery, runsQuery, workspaceId]);
+
+  const selectedActivityTab = activeTab ?? (pausedRuns.length > 0 && !hasActiveFilter ? 'needs_you' : 'timeline');
 
   if (!workspaceId) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
@@ -955,8 +1417,15 @@ export function AutomationActivityPage({
       title="Activity"
       description="Answer the operator question first: what needs a human, what is healthy, and where the failures are clustering."
       actions={(
-        <Button variant="outline" size="sm" onClick={() => void Promise.all([runsQuery.refetch(), executionsQuery.refetch()])}>
-          <ArrowReloadHorizontalIcon className="mr-1.5 h-3.5 w-3.5" />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={isRefreshing}
+          onClick={() => void Promise.all([runsQuery.refetch(), executionsQuery.refetch(), overviewQuery.refetch()])}
+        >
+          {isRefreshing
+            ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            : <ArrowReloadHorizontalIcon className="mr-1.5 h-3.5 w-3.5" />}
           Refresh
         </Button>
       )}
@@ -969,6 +1438,7 @@ export function AutomationActivityPage({
             sublabel={pausedRuns.length > 0 ? `Oldest blocked ${oldestBlocked ?? '\u2014'}` : 'No paused runs waiting on a human'}
             tone={pausedRuns.length > 0 ? 'warn' : 'neutral'}
             spark={needsYouBars}
+            onClick={openNeedsYouShortcut}
           />
           <SummaryCard
             label="Runs · 24h"
@@ -976,6 +1446,7 @@ export function AutomationActivityPage({
             sublabel={recent24hRuns.length > 0 ? `${recent24hRuns.filter((run) => run.status === 'completed').length} completed in the latest day` : 'No recent runs'}
             tone="neutral"
             spark={recentStatusBars}
+            onClick={() => applyAllRunsShortcut({ fired_after: getTimeFilterDate('24h') }, ['date'])}
           />
           <SummaryCard
             label="Failed · 24h"
@@ -983,16 +1454,7 @@ export function AutomationActivityPage({
             sublabel={recent24hRuns.filter((run) => run.status === 'failed').length > 0 ? 'Investigate repeated failures and flaky flows' : 'No recent failures'}
             tone={recent24hRuns.some((run) => run.status === 'failed') ? 'bad' : 'neutral'}
             spark={recentFailureBars}
-            onClick={
-              recent24hRuns.some((run) => run.status === 'failed')
-                ? () =>
-                    onSearchChange({
-                      status: 'failed',
-                      fired_after: getTimeFilterDate('24h'),
-                      page: 1,
-                    })
-                : undefined
-            }
+            onClick={() => applyAllRunsShortcut({ status: 'failed', fired_after: getTimeFilterDate('24h') }, ['status', 'date'])}
           />
           <SummaryCard
             label="Fleet Health"
@@ -1033,95 +1495,97 @@ export function AutomationActivityPage({
           />
         </div>
 
-        {pausedRuns.length > 0 && (
-          <section className="space-y-3">
-            <h2 className="text-sm font-medium">Needs you</h2>
-            <div className="space-y-3">
-              {pausedRuns.map((run) => (
-                <NeedActionCard
-                  key={run.id}
-                  run={run}
-                  agent={agentById.get(run.agent_id)}
-                  onOpenRun={openRun}
-                  onApprove={handleApproveRun}
-                  approving={approvingRunId === run.id}
-                />
-              ))}
-            </div>
-          </section>
-        )}
+        <Tabs value={selectedActivityTab} onValueChange={(value) => setActiveTab(value as 'timeline' | 'needs_you')} className="space-y-3">
+          <div className="flex items-center justify-between">
+            <TabsList variant="line">
+              <TabsTrigger value="timeline">
+                All runs
+              </TabsTrigger>
+              <TabsTrigger value="needs_you">
+                Needs you
+                {pausedRuns.length > 0 ? (
+                  <Badge className="ml-1 h-5 rounded-full border-amber-500/30 bg-amber-500/15 px-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                    {pausedRuns.length}
+                  </Badge>
+                ) : null}
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-        <section className="space-y-3">
-          <div className="space-y-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-sm font-medium">Timeline</h2>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    'h-8 w-8 shrink-0 text-muted-foreground',
-                    showSearchInput && 'bg-muted text-foreground',
-                  )}
-                  aria-label={showSearchInput ? 'Close search' : 'Open search'}
-                  aria-pressed={showSearchInput}
-                  onClick={() => {
-                    if (showSearchInput) {
-                      setSmartFilter('');
-                      setSearchExpanded(false);
-                    } else {
-                      setSearchExpanded(true);
-                    }
-                  }}
-                >
-                  <Search01Icon className="h-3.5 w-3.5" />
-                </Button>
-                <Tabs
-                  value={search.status ?? 'all'}
-                  onValueChange={(value) =>
-                    onSearchChange({ status: value === 'all' ? undefined : value, page: 1 })
-                  }
-                >
-                  <TabsList>
-                    <TabsTrigger value="all">All</TabsTrigger>
-                    <TabsTrigger value="running">Running</TabsTrigger>
-                    <TabsTrigger value="completed">Completed</TabsTrigger>
-                    <TabsTrigger value="failed">Failed</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-            </div>
-
-            {showSearchInput && (
-              <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <SmartFilterInput
-                    value={smartFilter}
-                    onChange={setSmartFilter}
-                    onApply={handleApplySmartFilter}
-                    onClear={handleClearSmartFilter}
-                    disabled={executionsQuery.isLoading}
-                    autoFocus
+          <TabsContent value="needs_you" className="mt-0 space-y-3">
+            {pausedRuns.length > 0 ? (
+              <div className="space-y-3">
+                {pausedRuns.map((run) => (
+                  <NeedActionCard
+                    key={run.id}
+                    run={run}
+                    agent={agentById.get(run.agent_id)}
+                    onOpenRun={openRun}
+                    onApprove={handleApproveRun}
+                    approving={approvingRunId === run.id}
                   />
-                </div>
-                {!hasActiveFilter && (
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-border/70 px-6 py-10 text-center text-sm text-muted-foreground">
+                No runs need your attention.
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="timeline" className="mt-0 space-y-3">
+            <div className="flex flex-col gap-2">
+              <div className="flex justify-start">
+                <ActivityFilterTrigger
+                  definitions={activityFilterDefinitions}
+                  filterState={activityFilterState}
+                  visibleKeys={visibleActivityFilterKeys}
+                  activeCount={activeActivityFilterKeys.length}
+                  onAdd={handleActivityFilterAdd}
+                  onToggle={handleActivityFilterToggle}
+                />
+              </div>
+              {visibleActivityFilterKeys.length > 0 ? (
+                <div className="ui-divider-bottom-fade flex flex-wrap items-center justify-start gap-1.5 pb-2">
+                  {activityFilterDefinitions
+                    .filter((definition) => visibleActivityFilterKeys.includes(definition.key))
+                    .map((definition) => (
+                      <ActivityFilterPill
+                        key={definition.key}
+                        definition={definition}
+                        selected={activityFilterState[definition.key] ?? []}
+                        onToggle={(value) => handleActivityFilterToggle(definition.key, value)}
+                        onRemove={() => handleActivityFilterRemove(definition.key)}
+                      />
+                    ))}
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0 text-muted-foreground"
-                    aria-label="Close search"
-                    onClick={() => {
-                      setSmartFilter('');
-                      setSearchExpanded(false);
-                    }}
+                    size="sm"
+                    className="h-6 px-2 text-[10px] text-muted-foreground"
+                    onClick={handleActivityClearFilters}
                   >
-                    <Cancel01Icon className="h-3.5 w-3.5" />
+                    Clear all
                   </Button>
-                )}
-              </div>
-            )}
+                </div>
+              ) : null}
+              {search.execution_id || search.run_id ? (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    Showing a linked run. Clear filters to return to the full timeline.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[10px] text-muted-foreground"
+                    onClick={handleActivityClearFilters}
+                  >
+                    Clear all
+                  </Button>
+                </div>
+              ) : null}
+            </div>
 
             {executionsQuery.isLoading ? (
               <div className="space-y-3">
@@ -1141,9 +1605,8 @@ export function AutomationActivityPage({
                       <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{group.label}</p>
                     </div>
                     <div className="rounded-2xl border border-border/70 bg-card/80">
-                      <div className="relative pl-3">
-                        <div className="absolute bottom-3 left-[1.08rem] top-3 border-l border-dashed border-border/80" />
-                        <div className="relative divide-y divide-border/60">
+                      <div className="pl-3">
+                        <div className="divide-y divide-border/60">
                           {group.rows.map((item) => (
                             <TimelineRow
                               key={item.execution_id}
@@ -1152,6 +1615,7 @@ export function AutomationActivityPage({
                               workspaceSlug={workspace?.slug}
                               onOpenRun={openRun}
                               onOpenFlow={openFlow}
+                              onOpenTarget={openTarget}
                             />
                           ))}
                         </div>
@@ -1166,33 +1630,26 @@ export function AutomationActivityPage({
               </div>
             )}
 
-            {executionTotalPages > 1 && (
-              <div className="flex items-center justify-between">
+            {executionTotal > 0 && (
+              <div className="flex flex-col items-center gap-2 pt-1">
                 <p className="text-xs text-muted-foreground">
-                  Page {executionPage} of {executionTotalPages}
+                  Showing {executions.length} of {executionTotal} runs
                 </p>
-                <div className="flex items-center gap-2">
+                {hasMoreExecutions ? (
                   <Button
+                    type="button"
                     variant="outline"
                     size="sm"
-                    disabled={executionPage <= 1}
-                    onClick={() => onSearchChange({ page: Math.max(1, executionPage - 1) })}
+                    disabled={executionsQuery.isFetching}
+                    onClick={() => setLoadedExecutionPages((current) => current + 1)}
                   >
-                    Previous
+                    {executionsQuery.isFetching ? 'Loading…' : 'Load older runs'}
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={executionPage >= executionTotalPages}
-                    onClick={() => onSearchChange({ page: executionPage + 1 })}
-                  >
-                    Next
-                  </Button>
-                </div>
+                ) : null}
               </div>
             )}
-          </div>
-        </section>
+          </TabsContent>
+        </Tabs>
       </div>
 
       <CodingSessionDrawer
@@ -1201,7 +1658,7 @@ export function AutomationActivityPage({
         onOpenChange={(open) => {
           setDrawerOpen(open);
           if (!open && search.run_id) {
-            onSearchChange({ run_id: undefined });
+            onSearchChange({ run_id: undefined }, { preserveScroll: true });
           }
         }}
         title="Agent Run"

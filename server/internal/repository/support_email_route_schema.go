@@ -39,6 +39,10 @@ func MigrateSupportEmailRouteSchema(db *gorm.DB) error {
 		WHERE active = true AND default_scope = 'mailbox' AND mailbox_id IS NOT NULL
 		`,
 		`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_sesm_mailbox
+		ON support_email_sender_mailboxes(mailbox_id)
+		`,
+		`
 		CREATE INDEX IF NOT EXISTS idx_sel_rfc_message_id
 		ON support_email_logs(workspace_id, rfc_message_id)
 		WHERE rfc_message_id IS NOT NULL AND rfc_message_id <> ''

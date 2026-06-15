@@ -113,7 +113,7 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, 
       {
         label: 'Catalog',
         items: [
-          { link: `/w/${wsSlug}/automation/library`, label: 'Triggers', icon: BotIcon },
+          { link: `/w/${wsSlug}/automation/triggers`, label: 'Triggers', icon: BotIcon },
           { link: `/w/${wsSlug}/automation/tools`, label: 'Tools', icon: Wrench01Icon },
           { link: `/w/${wsSlug}/automation/skills`, label: 'Skills', icon: BookOpen01Icon },
         ],
