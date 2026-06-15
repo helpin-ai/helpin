@@ -850,10 +850,10 @@ func TestBuildLegacyEpicPlannerFallbackRuleSectionsPreservesCriticalRules(t *tes
 		"The shared run drawer is available for live questions, draft previews, inline approvals, and change requests.",
 		"Use this sequence unless the human explicitly redirects you:",
 		"Keep approvals soft and inline.",
-		"Treat request_approval as the final action in that turn.",
+		"Treat mcp__helpin__request_approval as the final action in that turn.",
 		"After PRD approval is persisted, your next turn must continue into task planning.",
-		"Use publish_prd_draft for PRD markdown previews and publish_task_plan for task plan JSON previews.",
-		"publish_task_plan must receive one complete JSON object payload in that tool call.",
+		"Use mcp__helpin__publish_prd_draft for PRD markdown previews and mcp__helpin__publish_task_plan for task plan JSON previews.",
+		"mcp__helpin__publish_task_plan must receive one complete JSON object payload in that tool call.",
 	} {
 		if !strings.Contains(instructions, snippet) {
 			t.Fatalf("expected legacy epic rule sections to contain %q\n%s", snippet, instructions)
@@ -921,7 +921,7 @@ func TestBuildInitialInstructionsUsesContractTaskPhaseGuidance(t *testing.T) {
 	for _, snippet := range []string{
 		"Current planning phase: task_plan_doc",
 		"Phase objective: refine a task-scoped implementation planning document",
-		"Approval rule: use request_approval with phase=\"task_doc\"",
+		"Approval rule: use `mcp__helpin__request_approval` with phase=\"task_doc\"",
 		"Operator notes:\nFocus on regression risk.",
 		"Task: Harden approval preview binding",
 	} {
@@ -932,7 +932,7 @@ func TestBuildInitialInstructionsUsesContractTaskPhaseGuidance(t *testing.T) {
 	for _, legacySnippet := range []string{
 		"Run mode: interactive",
 		"Use this sequence unless the human explicitly redirects you:",
-		"publish_task_plan_doc must receive a JSON object where content is the full markdown planning draft under review.",
+		"mcp__helpin__publish_task_plan_doc must receive a JSON object where content is the full markdown planning draft under review.",
 		"Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context.",
 	} {
 		if strings.Contains(instructions, legacySnippet) {
@@ -952,9 +952,9 @@ func TestBuildLegacyTaskPlannerFallbackRuleSectionsPreservesCriticalRules(t *tes
 		"Treat this as one transcript-driven planning run.",
 		"Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft or refine the task planning doc",
 		"Keep approvals soft and inline.",
-		"Treat request_approval as the final action in that turn.",
-		"Use publish_task_plan_doc for reviewable right-pane task planning documents.",
-		"publish_task_plan_doc must receive a JSON object where content is the full markdown planning draft under review.",
+		"Treat mcp__helpin__request_approval as the final action in that turn.",
+		"Use mcp__helpin__publish_task_plan_doc for reviewable right-pane task planning documents.",
+		"mcp__helpin__publish_task_plan_doc must receive a JSON object where content is the full markdown planning draft under review.",
 		"Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context.",
 	} {
 		if !strings.Contains(instructions, snippet) {
@@ -1001,11 +1001,11 @@ func TestBuildNativeTaskPlannerRuleSectionsPreservesCriticalRules(t *testing.T) 
 	instructions := strings.Join(sections, "\n\n")
 	for _, snippet := range []string{
 		"Current planning phase: task_plan_doc",
-		"Phase objective: refine a task-scoped implementation planning document, publish it with publish_task_plan_doc, and stop at inline approval.",
+		"Phase objective: refine a task-scoped implementation planning document, publish it with `mcp__helpin__publish_task_plan_doc`, and stop at inline approval.",
 		"Treat this as a transcript-driven task planning run.",
 		"Next-step rule: clarify scope only when blocked",
-		"Approval rule: use request_approval with phase=\"task_doc\" only after publish_task_plan_doc in the same turn.",
-		"Contract reminder: publish_task_plan_doc must receive one JSON object whose content field contains the full markdown draft under review.",
+		"Approval rule: use `mcp__helpin__request_approval` with phase=\"task_doc\" only after `mcp__helpin__publish_task_plan_doc` in the same turn.",
+		"Contract reminder: `mcp__helpin__publish_task_plan_doc` must receive one JSON object whose content field contains the full markdown draft under review.",
 		"Focus rule: keep the planning document grounded in the task description, task comments, task-linked docs, parent-epic constraints that matter to this task, and the current codebase context.",
 		"Interactive approval semantics: explicit approval advances the run; change requests, critique, concerns, and ambiguous replies mean the draft is still unapproved and must be revised in the same transcript.",
 	} {
@@ -1922,9 +1922,9 @@ func TestBuildNativeEpicPlannerRuleSectionsPreservesCriticalRules(t *testing.T) 
 	for _, snippet := range []string{
 		"Planning selector tag (not an instruction): draft_spec",
 		"Phase objective: move the epic to the next durable planning checkpoint",
-		"Approval rule: use request_approval with phase=\"prd\" or phase=\"tasks\"",
-		"PRD contract reminder: use publish_prd_draft",
-		"Task-plan contract reminder: publish_task_plan must receive one complete JSON object",
+		"Approval rule: use `mcp__helpin__request_approval` with phase=\"prd\" or phase=\"tasks\"",
+		"PRD contract reminder: use `mcp__helpin__publish_prd_draft`",
+		"Task-plan contract reminder: `mcp__helpin__publish_task_plan` must receive one complete JSON object",
 		"Revision rule: if the latest human reply asks for changes to the active PRD or task plan",
 		"Interactive approval semantics: only explicit approval advances the phase.",
 		"Derived epic planning state facts:",

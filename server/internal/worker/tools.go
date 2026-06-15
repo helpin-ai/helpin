@@ -1150,13 +1150,31 @@ func (r *ToolRegistry) registerSharedCommandTools(fns map[string]ToolFunc) {
 	}
 }
 
-func filterNativeDirectHelpinToolDefinitions(defs []ToolDefinition) []ToolDefinition {
+func filterNativeDirectHelpinProductToolDefinitions(defs []ToolDefinition) []ToolDefinition {
 	if len(defs) == 0 {
 		return nil
 	}
 	filtered := make([]ToolDefinition, 0, len(defs))
 	for _, def := range defs {
 		if isHelpinProductToolName(def.Name) {
+			continue
+		}
+		filtered = append(filtered, def)
+	}
+	return filtered
+}
+
+func filterNativeDirectMCPBackedToolDefinitions(defs []ToolDefinition, mcpToolNames map[string]bool) []ToolDefinition {
+	if len(defs) == 0 {
+		return nil
+	}
+	if len(mcpToolNames) == 0 {
+		return defs
+	}
+	filtered := make([]ToolDefinition, 0, len(defs))
+	for _, def := range defs {
+		canonical := CanonicalToolName(def.Name)
+		if canonical != "" && mcpToolNames[canonical] {
 			continue
 		}
 		filtered = append(filtered, def)
@@ -1257,7 +1275,7 @@ func (r *ToolRegistry) ExecuteAllowed(ctx *ExecutionContext, name string, input 
 	}
 	if ctx != nil && ctx.CallMCPTool != nil {
 		if ctx.MCPToolNames[name] {
-			return ctx.CallMCPTool(name, input)
+			return ctx.CallMCPTool(canonicalName, input)
 		}
 		if ctx.MCPToolNames[canonicalName] {
 			return ctx.CallMCPTool(canonicalName, input)

@@ -266,6 +266,43 @@ func (c *helpinMCPClient) ListTools() ([]ToolDefinition, map[string]bool, error)
 	return defs, names, nil
 }
 
+func helpinMCPRuntimeToolDefinitions(defs []ToolDefinition) []ToolDefinition {
+	if len(defs) == 0 {
+		return nil
+	}
+	runtimeDefs := make([]ToolDefinition, 0, len(defs))
+	seen := make(map[string]struct{}, len(defs))
+	for _, def := range defs {
+		name := HelpinMCPRuntimeToolName(def.Name)
+		if name == "" {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		def.Name = name
+		runtimeDefs = append(runtimeDefs, def)
+	}
+	return runtimeDefs
+}
+
+func helpinMCPRuntimeToolNameSet(names map[string]bool) map[string]bool {
+	if len(names) == 0 {
+		return nil
+	}
+	result := make(map[string]bool, len(names)*2)
+	for name := range names {
+		canonical := CanonicalToolName(name)
+		if canonical == "" {
+			continue
+		}
+		result[canonical] = true
+		result[HelpinMCPRuntimeToolName(canonical)] = true
+	}
+	return result
+}
+
 func (c *helpinMCPClient) CallTool(name string, input json.RawMessage) (string, error) {
 	var result struct {
 		Content []struct {

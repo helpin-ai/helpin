@@ -18,6 +18,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { canonicalToolName, isToolName } from '@/lib/toolNames';
 import { cn } from '@/lib/utils';
 import type {
   AgentRunArtifact,
@@ -53,7 +54,7 @@ const TOOL_GROUP_COLLAPSE_THRESHOLD = 2;
 type ToolCategory = 'read' | 'search' | 'command' | 'write' | 'other';
 
 function categorizeToolCall(toolName: string): ToolCategory {
-  const name = toolName.toLowerCase();
+  const name = canonicalToolName(toolName).toLowerCase();
   if (name.includes('read')) return 'read';
   if (name === 'grep' || name === 'glob' || name === 'find' || name.includes('search') || name.includes('grep')) return 'search';
   if (name === 'run_command' || name === 'bash' || name.includes('shell') || name.includes('exec')) return 'command';
@@ -143,7 +144,7 @@ export function CodingTranscriptPane({
     if (segment.kind === 'assistant_message') {
       return segment.assistant_message.content.trim().length > 0;
     }
-    return segment.tool_call.tool_name !== 'update_plan';
+    return !isToolName(segment.tool_call.tool_name, 'update_plan');
   });
   const showLivePlaceholder = visibleLiveSegments.length === 0 && liveAssistantMessage?.status === 'streaming';
   const promptMessage = useMemo<CodingSessionTranscriptMessage | null>(() => {
@@ -770,10 +771,10 @@ function TranscriptEntry({
   actor?: CodingSessionActor | null;
 }) {
   const isAssistant = message.role === 'assistant';
-  const visibleToolCalls = (message.tool_calls ?? []).filter((tc) => tc.tool_name !== 'update_plan');
+  const visibleToolCalls = (message.tool_calls ?? []).filter((tc) => !isToolName(tc.tool_name, 'update_plan'));
   const visibleTurnSegments = isAssistant
     ? (message.turn_segments ?? []).filter((segment) => (
-        segment.kind !== 'tool_call' || segment.tool_call.tool_name !== 'update_plan'
+        segment.kind !== 'tool_call' || !isToolName(segment.tool_call.tool_name, 'update_plan')
       ))
     : [];
   const hasSegmentTimeline = visibleTurnSegments.length > 0;
@@ -978,7 +979,7 @@ function ReviewDecisionTranscriptCard({
 
 function toolCallTimelineKey(toolCall: CodingSessionLiveToolCall) {
   return [
-    toolCall.tool_name.trim().toLowerCase(),
+    canonicalToolName(toolCall.tool_name).toLowerCase(),
     toolCall.args_text.trim(),
     toolCall.result?.output_summary?.trim() ?? '',
     toolCall.result?.content?.trim() ?? '',
@@ -1189,7 +1190,7 @@ function toolChrome(toolName: string, isFailed: boolean, isRunning: boolean): { 
       iconClass: 'bg-primary/10 border-primary/30 text-primary',
     };
   }
-  const name = toolName.toLowerCase();
+  const name = canonicalToolName(toolName).toLowerCase();
   if (name.includes('web_search')) {
     return {
       icon: <Globe02Icon className="h-3.5 w-3.5" />,
@@ -1282,7 +1283,7 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
   const isFailed = toolCall.status === 'failed';
   const isRunning = toolCall.status === 'running';
   const { icon, iconClass } = toolChrome(toolCall.tool_name, isFailed, isRunning);
-  const isApplyPatch = toolCall.tool_name === 'apply_patch';
+  const isApplyPatch = isToolName(toolCall.tool_name, 'apply_patch');
   const argsText = toolCall.args_text.trim();
   const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
   const publishedPreviewCard = !isFailed && !isApplyPatch && argsText ? (

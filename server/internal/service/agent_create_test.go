@@ -251,7 +251,7 @@ func TestEnsureBuiltInTaskPlannerRefreshesLegacyPrompt(t *testing.T) {
 	if strings.Contains(*updated.SystemPrompt, "`publish_preview`") || strings.Contains(*updated.SystemPrompt, "`request_human_approval`") {
 		t.Fatalf("expected refreshed task planner prompt to remove legacy preview/approval tools, got %q", *updated.SystemPrompt)
 	}
-	if !strings.Contains(*updated.SystemPrompt, "`publish_task_plan_doc`") {
+	if !strings.Contains(*updated.SystemPrompt, "`"+worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc)+"`") {
 		t.Fatalf("expected refreshed task planner prompt to include publish_task_plan_doc, got %q", *updated.SystemPrompt)
 	}
 	if updated.Name != "Scribe" {
@@ -284,7 +284,9 @@ func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
 	if updated.PresetVersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent) {
 		t.Fatalf("expected review preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent), updated.PresetVersionKey)
 	}
-	if updated.SystemPrompt == nil || !strings.Contains(*updated.SystemPrompt, "`request_user_input`") || !strings.Contains(*updated.SystemPrompt, "`request_review_checkpoint`") {
+	if updated.SystemPrompt == nil ||
+		!strings.Contains(*updated.SystemPrompt, "`"+worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput)+"`") ||
+		!strings.Contains(*updated.SystemPrompt, "`"+worker.RuntimeToolNameForPrompt(worker.ToolRequestReviewCheckpoint)+"`") {
 		t.Fatalf("expected refreshed review prompt with interactive loop tools, got %+v", updated.SystemPrompt)
 	}
 	var tools []string

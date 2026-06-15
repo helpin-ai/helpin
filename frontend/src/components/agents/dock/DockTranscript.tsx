@@ -1,6 +1,7 @@
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
 import { Cancel01Icon, Loading01Icon, Tick01Icon } from '@/lib/icons';
+import { isToolName } from '@/lib/toolNames';
 import { cn } from '@/lib/utils';
 import type {
   CodingSessionLiveToolCall,
@@ -35,7 +36,7 @@ function collectDockSegments(
         if (segment.kind === 'assistant_message') {
           const content = segment.assistant_message.content.trim();
           if (content) out.push({ kind: 'assistant', id: segment.segment_id, content });
-        } else if (segment.kind === 'tool_call' && segment.tool_call.tool_name !== 'update_plan') {
+        } else if (segment.kind === 'tool_call' && !isToolName(segment.tool_call.tool_name, 'update_plan')) {
           out.push({ kind: 'tool', id: segment.segment_id, toolCall: segment.tool_call });
         }
       }
@@ -45,7 +46,7 @@ function collectDockSegments(
       out.push({ kind: 'assistant', id: message.event_id, content: message.content.trim() });
     }
     for (const toolCall of message.tool_calls ?? []) {
-      if (toolCall.tool_name === 'update_plan') continue;
+      if (isToolName(toolCall.tool_name, 'update_plan')) continue;
       out.push({ kind: 'tool', id: toolCall.tool_call_id, toolCall });
     }
   }
@@ -62,7 +63,7 @@ function collectDockSegments(
             streaming: segment.assistant_message.status === 'streaming',
           });
         }
-      } else if (segment.kind === 'tool_call' && segment.tool_call.tool_name !== 'update_plan') {
+      } else if (segment.kind === 'tool_call' && !isToolName(segment.tool_call.tool_name, 'update_plan')) {
         out.push({ kind: 'tool', id: `live-${segment.segment_id}`, toolCall: segment.tool_call });
       }
     }

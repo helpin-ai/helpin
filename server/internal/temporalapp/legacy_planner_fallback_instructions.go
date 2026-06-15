@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func (a *AgentRunActivities) buildLegacyTaskPlannerFallbackInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
@@ -41,7 +42,8 @@ func buildLegacyTaskPlannerFallbackRuleSections(run *model.AgentRun) []string {
 		"Treat parent epic details, the epic PRD, and epic-linked docs as background context only. Use them to understand constraints, inherited requirements, and non-goals, but do not copy them wholesale into the task planning document unless they directly affect this task's implementation.",
 		"Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context. Keep the output focused on this task's implementation plan.",
 	)
-	sections = append(sections, codexMCPPlannerToolGuidance(run)...)
+	sections = renderPlanningRuntimeToolNames(sections)
+	sections = append(sections, helpinMCPPlannerToolGuidance()...)
 	return sections
 }
 
@@ -82,6 +84,34 @@ func buildLegacyEpicPlannerFallbackRuleSections(run *model.AgentRun) []string {
 		"proposed_tasks must be an array of full task objects. Never send arrays of strings, refs, placeholders, key names, or partial fragments. If publish_task_plan fails validation, correct the payload and retry with one complete valid task-plan object before requesting approval.",
 		"Before approval, keep drafts in chat-backed preview artifacts only. After approval, the platform applies the approved artifact; do not replay approved PRDs or task plans through mutation tools.",
 	)
-	sections = append(sections, codexMCPPlannerToolGuidance(run)...)
+	sections = renderPlanningRuntimeToolNames(sections)
+	sections = append(sections, helpinMCPPlannerToolGuidance()...)
 	return sections
+}
+
+func renderPlanningRuntimeToolNames(sections []string) []string {
+	if len(sections) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(sections))
+	for _, section := range sections {
+		rendered := section
+		aliases := workerpkg.HelpinMCPToolAliases()
+		for i, alias := range aliases {
+			runtimeName := workerpkg.HelpinMCPRuntimeToolName(alias)
+			if runtimeName == "" || runtimeName == alias {
+				continue
+			}
+			rendered = strings.ReplaceAll(rendered, alias, fmt.Sprintf("\x00helpin_tool_%d\x00", i))
+		}
+		for i, alias := range aliases {
+			runtimeName := workerpkg.HelpinMCPRuntimeToolName(alias)
+			if runtimeName == "" || runtimeName == alias {
+				continue
+			}
+			rendered = strings.ReplaceAll(rendered, fmt.Sprintf("\x00helpin_tool_%d\x00", i), runtimeName)
+		}
+		out = append(out, rendered)
+	}
+	return out
 }

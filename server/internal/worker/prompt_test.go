@@ -478,12 +478,12 @@ func TestBuildSystemPromptStoryIncludesSearchFirstAndGuardedEditGuidance(t *test
 	)
 
 	for _, expected := range []string{
-		"Start by locating the relevant code with list_directory, ripgrep, search_files, or list_symbols before reading large files.",
-		"Prefer search-first, then narrow reads: use ripgrep/search_files/list_symbols to find exact files or symbols before any broad file read.",
-		"read_file now returns a smaller bounded window by default; use offset_line to continue and use read_file_range for targeted spans.",
-		"Prefer read_file_range once you know the relevant lines. Do not use read_files for broad repo exploration; reserve it for a few known files with small excerpts.",
-		"Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.",
-		"Use write_file for new files or full rewrites only after you have read the current file state.",
+		"Start by locating the relevant code with `list_directory`, `ripgrep`, `search_files`, or `list_symbols` before reading large files.",
+		"Prefer search-first, then narrow reads: use `ripgrep`, `search_files`, or `list_symbols` to find exact files or symbols before any broad file read.",
+		"`read_file` now returns a smaller bounded window by default; use offset_line to continue and use `read_file_range` for targeted spans.",
+		"Prefer `read_file_range` once you know the relevant lines. Do not use `read_files` for broad repo exploration; reserve it for a few known files with small excerpts.",
+		"Prefer `edit_file` for focused in-place changes and `apply_patch` for coordinated multi-file edits.",
+		"Use `write_file` for new files or full rewrites only after you have read the current file state.",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("expected prompt to contain %q\n%s", expected, prompt)

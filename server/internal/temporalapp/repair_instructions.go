@@ -72,7 +72,7 @@ func classifyToolFailureRepair(state *resolvedRunState, failure *workerpkg.Execu
 	if state == nil || !state.executionContractActive || failure == nil {
 		return repairInstruction{}
 	}
-	toolName := strings.TrimSpace(failure.ToolName)
+	toolName := workerpkg.CanonicalToolName(failure.ToolName)
 	output := strings.TrimSpace(failure.Output)
 	if toolName == "" || output == "" {
 		return repairInstruction{}

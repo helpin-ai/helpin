@@ -249,7 +249,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		}}
 	}
 	provider, modelName := resolveProviderAndModel(execCtx.Agent)
-	toolDefs := filterNativeDirectHelpinToolDefinitions(e.tools.DefinitionsFor(execCtx.AllowedTools))
+	toolDefs := helpinMCPRuntimeToolDefinitions(filterNativeDirectHelpinProductToolDefinitions(e.tools.DefinitionsFor(execCtx.AllowedTools)))
 	var mcpClient *helpinMCPClient
 	if bridgeConfig, ok := BuildHelpinMCPBridgeConfig(execCtx, e.helpinAPIBaseURL, e.helpinTokenSecret, e.helpinMCPBridgePath); ok {
 		client, err := newHelpinMCPClient(execCtx.Context, bridgeConfig)
@@ -270,10 +270,11 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 				)
 			} else {
 				mcpClient = client
-				toolDefs = append(toolDefs, mcpDefs...)
-				execCtx.MCPToolNames = mcpToolNames
+				toolDefs = filterNativeDirectMCPBackedToolDefinitions(toolDefs, mcpToolNames)
+				toolDefs = append(toolDefs, helpinMCPRuntimeToolDefinitions(mcpDefs)...)
+				execCtx.MCPToolNames = helpinMCPRuntimeToolNameSet(mcpToolNames)
 				execCtx.CallMCPTool = func(name string, input json.RawMessage) (string, error) {
-					return mcpClient.CallTool(name, input)
+					return mcpClient.CallTool(CanonicalToolName(name), input)
 				}
 				defer func() { _ = mcpClient.Close() }()
 			}

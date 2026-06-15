@@ -73,7 +73,7 @@ func (g *AgentToolGateway) CallTool(ctx context.Context, token string, req model
 	if err != nil {
 		return nil, err
 	}
-	toolName := strings.TrimSpace(req.ToolName)
+	toolName := worker.CanonicalToolName(req.ToolName)
 	if toolName == "" {
 		return nil, fmt.Errorf("tool_name is required")
 	}
