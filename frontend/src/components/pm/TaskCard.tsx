@@ -380,7 +380,7 @@ function TaskCardComponent({
     <>
       {shouldShowTaskKey ? (
         <>
-          <span className="font-mono text-muted-foreground">{task.task_key}:</span>{' '}
+          <span className="font-mono text-[13px] text-muted-foreground">{task.task_key}:</span>{' '}
         </>
       ) : null}
       {task.name}
