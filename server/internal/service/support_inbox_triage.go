@@ -404,7 +404,7 @@ func (s *SupportInboxTriageService) DismissConversationTriage(ctx context.Contex
 		return nil, err
 	}
 
-	s.createSystemMessage(ctx, workspaceID, conversationID, &actorUserID, "user", "", "Routing suggestion dismissed", true, model.SystemEventTriageDismissed)
+	s.createSystemMessage(ctx, workspaceID, conversationID, &actorUserID, "user", "", "Dismissed the routing suggestion.", true, model.SystemEventTriageDismissed)
 	s.publishConversationUpdated(workspaceID, conversationID, actorUserID)
 	return triage, nil
 }
@@ -522,7 +522,7 @@ func (s *SupportInboxTriageService) validateRuleModel(ctx context.Context, works
 	if strings.TrimSpace(rule.TargetMailboxID) == "" {
 		return fmt.Errorf("target_mailbox_id is required")
 	}
-	if len(rule.Conditions.PhraseContains) == 0 && len(rule.Conditions.EmailDomainEquals) == 0 {
+	if len(rule.Conditions.PhraseContains) == 0 && len(rule.Conditions.EmailDomainEquals) == 0 && len(rule.Conditions.SenderEmailContains) == 0 {
 		return fmt.Errorf("at least one triage rule condition is required")
 	}
 	if rule.Priority < 0 {
@@ -557,6 +557,7 @@ func (s *SupportInboxTriageService) evaluateRules(ctx context.Context, workspace
 
 	channel := supportConversationChannel(conversation)
 	combinedText := strings.ToLower(strings.TrimSpace(strings.Join([]string{conversation.Subject, inputContent}, "\n")))
+	senderEmail := strings.ToLower(strings.TrimSpace(derefString(conversation.CustomerEmail)))
 	emailDomain := supportEmailDomain(conversation.CustomerEmail)
 	slog.InfoContext(ctx, "support triage rules evaluating",
 		"workspace_id", workspaceID,
@@ -568,6 +569,7 @@ func (s *SupportInboxTriageService) evaluateRules(ctx context.Context, workspace
 		}()),
 		"channel", channel,
 		"active_rule_count", len(rules),
+		"sender_email", senderEmail,
 		"email_domain", emailDomain,
 		"combined_text_preview", safeLogPreview(combinedText, 160),
 	)
@@ -576,14 +578,34 @@ func (s *SupportInboxTriageService) evaluateRules(ctx context.Context, workspace
 		if len(rule.Channels) > 0 && !containsTriageChannel(rule.Channels, channel) {
 			continue
 		}
-		if !triageConditionsMatch(rule.Conditions, combinedText, emailDomain) {
+		if !triageConditionsMatch(rule.Conditions, combinedText, senderEmail, emailDomain) {
 			continue
 		}
 
 		intent := normalizeSupportTriageIntent(rule.Name)
 		confidence := 1.0
-		reason := fmt.Sprintf("Matched rule %q", rule.Name)
+		reason := "Routing rule matched."
 		targetMailboxID := strings.TrimSpace(rule.TargetMailboxID)
+		if s.mailboxRepo != nil {
+			mailbox, err := s.mailboxRepo.GetByID(ctx, workspaceID, targetMailboxID)
+			if err != nil {
+				return nil, err
+			}
+			if mailbox == nil || !mailbox.Active {
+				slog.InfoContext(ctx, "support triage rule skipped archived target",
+					"workspace_id", workspaceID,
+					"conversation_id", derefString(func() *string {
+						if conversation == nil {
+							return nil
+						}
+						return &conversation.ID
+					}()),
+					"rule_id", rule.ID,
+					"target_mailbox_id", targetMailboxID,
+				)
+				continue
+			}
+		}
 		slog.InfoContext(ctx, "support triage rule matched",
 			"workspace_id", workspaceID,
 			"conversation_id", derefString(func() *string {
@@ -1064,6 +1086,12 @@ func (s *SupportInboxTriageService) createSystemMessage(ctx context.Context, wor
 	if displayName == "" {
 		displayName = "Routing"
 	}
+	messageContent := strings.TrimSpace(content)
+	if eventType == model.SystemEventTriageDismissed && actorUserID != nil {
+		if firstName := supportSystemFirstName(displayName); firstName != "" {
+			messageContent = fmt.Sprintf("%s dismissed the routing suggestion.", firstName)
+		}
+	}
 
 	msg := &model.SupportMessage{
 		WorkspaceID:       workspaceID,
@@ -1072,7 +1100,7 @@ func (s *SupportInboxTriageService) createSystemMessage(ctx context.Context, wor
 		SenderUserID:      actorUserID,
 		SenderDisplayName: &displayName,
 		SenderAvatarURL:   avatarURL,
-		Content:           strings.TrimSpace(content),
+		Content:           messageContent,
 		IsInternal:        isInternal,
 		MessageType:       "system",
 		SystemEventType:   model.SupportSystemEventTypeStrPtr(eventType),
@@ -1163,8 +1191,12 @@ func mailboxIsSharedOrDefault(currentMailboxID, defaultMailboxID *string) bool {
 	return strings.TrimSpace(*currentMailboxID) == strings.TrimSpace(*defaultMailboxID)
 }
 
-func triageConditionsMatch(conditions model.SupportTriageRuleConditions, combinedText, emailDomain string) bool {
+func triageConditionsMatch(conditions model.SupportTriageRuleConditions, combinedText, senderEmail, emailDomain string) bool {
+	groupCount := 0
+	matchedGroups := 0
+
 	if len(conditions.PhraseContains) > 0 {
+		groupCount++
 		phraseMatched := false
 		for _, phrase := range conditions.PhraseContains {
 			trimmed := strings.ToLower(strings.TrimSpace(phrase))
@@ -1173,12 +1205,15 @@ func triageConditionsMatch(conditions model.SupportTriageRuleConditions, combine
 				break
 			}
 		}
-		if !phraseMatched {
+		if phraseMatched {
+			matchedGroups++
+		} else if normalizeTriageConditionLogic(conditions.ConditionLogic) == "all" {
 			return false
 		}
 	}
 
 	if len(conditions.EmailDomainEquals) > 0 {
+		groupCount++
 		domainMatched := false
 		for _, domain := range conditions.EmailDomainEquals {
 			if strings.EqualFold(strings.TrimSpace(domain), emailDomain) {
@@ -1186,12 +1221,44 @@ func triageConditionsMatch(conditions model.SupportTriageRuleConditions, combine
 				break
 			}
 		}
-		if !domainMatched {
+		if domainMatched {
+			matchedGroups++
+		} else if normalizeTriageConditionLogic(conditions.ConditionLogic) == "all" {
 			return false
 		}
 	}
 
-	return true
+	if len(conditions.SenderEmailContains) > 0 {
+		groupCount++
+		emailMatched := false
+		for _, value := range conditions.SenderEmailContains {
+			trimmed := strings.ToLower(strings.TrimSpace(value))
+			if trimmed != "" && strings.Contains(senderEmail, trimmed) {
+				emailMatched = true
+				break
+			}
+		}
+		if emailMatched {
+			matchedGroups++
+		} else if normalizeTriageConditionLogic(conditions.ConditionLogic) == "all" {
+			return false
+		}
+	}
+
+	if groupCount == 0 {
+		return true
+	}
+	if normalizeTriageConditionLogic(conditions.ConditionLogic) == "any" {
+		return matchedGroups > 0
+	}
+	return matchedGroups == groupCount
+}
+
+func normalizeTriageConditionLogic(logic string) string {
+	if strings.EqualFold(strings.TrimSpace(logic), "any") {
+		return "any"
+	}
+	return "all"
 }
 
 func normalizeTriageChannels(channels []string) model.DocsStringArray {
@@ -1216,8 +1283,10 @@ func normalizeTriageChannels(channels []string) model.DocsStringArray {
 
 func normalizeTriageConditions(conditions model.SupportTriageRuleConditions) model.SupportTriageRuleConditions {
 	return model.SupportTriageRuleConditions{
-		PhraseContains:    normalizeTriageStringList(conditions.PhraseContains, false),
-		EmailDomainEquals: normalizeTriageStringList(conditions.EmailDomainEquals, true),
+		ConditionLogic:      normalizeTriageConditionLogic(conditions.ConditionLogic),
+		PhraseContains:      normalizeTriageStringList(conditions.PhraseContains, false),
+		EmailDomainEquals:   normalizeTriageStringList(conditions.EmailDomainEquals, true),
+		SenderEmailContains: normalizeTriageStringList(conditions.SenderEmailContains, true),
 	}
 }
 
@@ -1354,9 +1423,9 @@ func sameMailboxID(left, right *string) bool {
 func autoMoveMessage(source string, mailboxID *string, mailboxName string) string {
 	switch source {
 	case model.SupportConversationTriageSourceRule:
-		return fmt.Sprintf("Conversation moved to %s by routing rule", mailboxName)
+		return fmt.Sprintf("Routing rule moved to inbox '%s'.", mailboxName)
 	default:
-		return fmt.Sprintf("Conversation moved to %s by AI triage", mailboxName)
+		return fmt.Sprintf("AI routing moved to inbox '%s'.", mailboxName)
 	}
 }
 
@@ -1369,7 +1438,7 @@ Rules:
 - Do not invent mailbox handles.
 - If none of the provided mailboxes is a clear fit, return "shared".
 - Confidence must be between 0 and 1.
-- Reason must be short and concrete.`
+- Reason must be one short, concrete sentence.`
 
 func supportTriageJSONSchema() map[string]any {
 	return map[string]any{
@@ -1385,7 +1454,8 @@ func supportTriageJSONSchema() map[string]any {
 				"type": "number",
 			},
 			"reason": map[string]any{
-				"type": "string",
+				"type":        "string",
+				"description": "One short, concrete sentence.",
 			},
 		},
 		"required":             []string{"intent", "target_mailbox_handle", "confidence", "reason"},
@@ -1418,6 +1488,6 @@ Return this JSON shape:
   "intent": "short_snake_case_label",
   "target_mailbox_handle": "one_of_the_handles_or_shared",
   "confidence": 0.0,
-  "reason": "short reason"
+  "reason": "one short, concrete sentence"
 }`, strings.TrimSpace(conversation.Subject), strings.TrimSpace(inputContent), supportConversationChannel(conversation), emailValue, domain, strings.Join(mailboxLines, "\n"))
 }

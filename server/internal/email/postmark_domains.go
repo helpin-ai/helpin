@@ -33,6 +33,11 @@ type postmarkCreateDomainRequest struct {
 	ReturnPathDomain string `json:"ReturnPathDomain,omitempty"`
 }
 
+type postmarkListDomainsResponse struct {
+	TotalCount int              `json:"TotalCount"`
+	Domains    []PostmarkDomain `json:"Domains"`
+}
+
 // NewDomainClient creates an Account API client. It returns nil when the token
 // is empty so callers can treat custom domains as disabled.
 func NewDomainClient(accountToken string) *DomainClient {
@@ -60,6 +65,28 @@ func (c *DomainClient) CreateDomain(name, returnPathDomain string) (*PostmarkDom
 		return nil, err
 	}
 	return &domain, nil
+}
+
+func (c *DomainClient) FindDomainByName(name string) (*PostmarkDomain, error) {
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return nil, nil
+	}
+	const pageSize = 500
+	for offset := 0; ; offset += pageSize {
+		var response postmarkListDomainsResponse
+		if err := c.do("GET", fmt.Sprintf("https://api.postmarkapp.com/domains?count=%d&offset=%d", pageSize, offset), nil, &response); err != nil {
+			return nil, err
+		}
+		for i := range response.Domains {
+			if strings.EqualFold(strings.TrimSpace(response.Domains[i].Name), name) {
+				return &response.Domains[i], nil
+			}
+		}
+		if len(response.Domains) < pageSize || offset+len(response.Domains) >= response.TotalCount {
+			return nil, nil
+		}
+	}
 }
 
 func (c *DomainClient) VerifyDKIM(domainID int) (*PostmarkDomain, error) {

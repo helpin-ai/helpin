@@ -1,8 +1,8 @@
 ---
-name: release_notes_writer
+name: release_notes_writing
 description: Turns GitHub release diffs, matched tasks, and linked docs into structured release notes documents.
 metadata:
-  title: Release Notes Writer
+  title: Release Notes Writing
   supported_runtimes:
     - native_sdk
 ---

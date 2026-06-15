@@ -2934,9 +2934,25 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		closedAt = &now
 	}
 
+	routeMailboxID := route.MailboxID
+	var (
+		mailbox    *model.SupportMailbox
+		mailboxErr error
+	)
+	if status != model.SupportConversationStatusSpam && route.MailboxID != nil && strings.TrimSpace(*route.MailboxID) != "" && s.supportInboxService.mailboxRepo != nil {
+		mailbox, mailboxErr = s.supportInboxService.mailboxRepo.GetByID(ctx, route.WorkspaceID, strings.TrimSpace(*route.MailboxID))
+		if mailboxErr != nil {
+			return mailboxErr
+		}
+		if mailbox == nil || !mailbox.Active {
+			routeMailboxID = nil
+			mailbox = nil
+		}
+	}
+
 	conversation := &model.SupportConversation{
 		WorkspaceID:   route.WorkspaceID,
-		MailboxID:     route.MailboxID,
+		MailboxID:     routeMailboxID,
 		Subject:       subject,
 		Status:        status,
 		ClosedAt:      closedAt,
@@ -2954,16 +2970,6 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		}
 	}
 
-	var (
-		mailbox    *model.SupportMailbox
-		mailboxErr error
-	)
-	if conversation.Status != model.SupportConversationStatusSpam && route.MailboxID != nil && strings.TrimSpace(*route.MailboxID) != "" && s.supportInboxService.mailboxRepo != nil {
-		mailbox, mailboxErr = s.supportInboxService.mailboxRepo.GetByID(ctx, route.WorkspaceID, strings.TrimSpace(*route.MailboxID))
-		if mailboxErr != nil {
-			return mailboxErr
-		}
-	}
 	if mailbox != nil {
 		ownerID, flowState, ownerErr := s.supportInboxService.determineMailboxOwner(ctx, route.WorkspaceID, mailbox, nil)
 		if ownerErr != nil {
@@ -3292,7 +3298,7 @@ func createEmailReopenedSystemMessage(ctx context.Context, msgRepo *repository.S
 		WorkspaceID:     conv.WorkspaceID,
 		ConversationID:  conv.ID,
 		SenderType:      "user",
-		Content:         "Reopened conversation",
+		Content:         "Customer reply reopened this conversation.",
 		MessageType:     "system",
 		SystemEventType: model.SupportSystemEventTypeStrPtr(model.SystemEventReopened),
 		IsInternal:      true,

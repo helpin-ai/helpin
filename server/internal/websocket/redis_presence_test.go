@@ -70,6 +70,34 @@ func TestRedisPresence_SetViewing_ClearViewing_GetViewers(t *testing.T) {
 	}
 }
 
+func TestRedisPresence_GetViewers_PrunesExpiredViewingConnections(t *testing.T) {
+	p, mr := setupRedisPresence(t)
+	defer mr.Close()
+	ctx := context.Background()
+
+	if _, err := p.SetViewing(ctx, "ws-1", "conv-1", "user-1", "conn-1"); err != nil {
+		t.Fatalf("SetViewing: %v", err)
+	}
+
+	mr.FastForward(viewingConnTTL + time.Second)
+
+	viewers, err := p.GetViewers(ctx, "ws-1", "conv-1")
+	if err != nil {
+		t.Fatalf("GetViewers: %v", err)
+	}
+	if len(viewers) != 0 {
+		t.Fatalf("expected expired viewer to be omitted, got %v", viewers)
+	}
+
+	isMember, err := p.rdb.SIsMember(ctx, viewingSetKey("ws-1", "conv-1"), "user-1").Result()
+	if err != nil {
+		t.Fatalf("SIsMember: %v", err)
+	}
+	if isMember {
+		t.Fatal("expected expired viewer to be pruned from aggregate set")
+	}
+}
+
 func TestRedisPresence_SetViewing_MultipleConnsSameUser(t *testing.T) {
 	p, mr := setupRedisPresence(t)
 	defer mr.Close()

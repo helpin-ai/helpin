@@ -466,6 +466,7 @@ export interface AutomationInventoryResponse {
 }
 
 export interface AutomationTriggerExecutionFilters {
+  execution_id?: string;
   agent_id?: string;
   binding_id?: string;
   trigger_type?: string;
@@ -512,6 +513,8 @@ export interface AutomationTriggerExecutionListItem {
   execution_id: string;
   agent_id: string;
   agent_name: string;
+  actor_id?: string;
+  actor_name?: string;
   binding_id: string;
   binding_kind: string;
   binding_title: string;

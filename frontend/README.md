@@ -1,4 +1,33 @@
-# React + TypeScript + Vite
+# Helpin Frontend
+
+React + TypeScript + Vite app for Helpin.
+
+## Local Development
+
+```bash
+npm install
+VITE_API_URL=http://localhost:8080/api npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+If someone opens the frontend from another machine or via the dev box network URL,
+`VITE_API_URL` must use that same reachable host. Do not use `localhost` in that case,
+because it points at the browser user's machine and causes "unable to reach the server".
+
+Example for a network preview:
+
+```bash
+VITE_API_URL=http://91.98.85.12:8080/api npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+Before sharing the preview URL, verify both endpoints from the same host the user will
+use:
+
+```bash
+curl http://91.98.85.12:8080/api/health
+curl -I http://91.98.85.12:5173/
+```
+
+## Vite Notes
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

@@ -88,6 +88,9 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 			return "manual.doc_run", "manual", true
 		}
 	case model.AgentRunTriggerSourceAutomationRule:
+		if triggerType == model.AgentRunTriggerTypeManual {
+			return "automation_rule.manual_run", "automation_rule", true
+		}
 		if triggerType == model.TriggerCron {
 			return "automation_rule.cron", "automation_rule", true
 		}
@@ -207,8 +210,8 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			category:         "manual",
 			triggerType:      model.AgentRunTriggerTypeManual,
 			title:            "Manual Task Run",
-			description:      "A human starts an agent from a task.",
-			sourceSurface:    "Task detail and task list run actions",
+			description:      "Runs an agent against a selected task.",
+			sourceSurface:    "Task detail and task list",
 			configSurface:    agentsPath,
 			supportsAgentRun: true,
 		},
@@ -218,8 +221,8 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			category:         "manual",
 			triggerType:      model.AgentRunTriggerTypeManual,
 			title:            "Manual Epic Run",
-			description:      "A human starts an agent from an epic.",
-			sourceSurface:    "Epic detail planning and run actions",
+			description:      "Runs an agent against a selected epic.",
+			sourceSurface:    "Epic detail",
 			configSurface:    agentsPath,
 			supportsAgentRun: true,
 		},
@@ -229,8 +232,8 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			category:         "manual",
 			triggerType:      model.AgentRunTriggerTypeManual,
 			title:            "Manual Support Run",
-			description:      "A human starts the assigned support agent from a conversation.",
-			sourceSurface:    "Support inbox run-agent actions",
+			description:      "Runs the assigned support agent against a conversation.",
+			sourceSurface:    "Support inbox",
 			configSurface:    agentsPath,
 			supportsAgentRun: true,
 		},
@@ -240,8 +243,8 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			category:         "manual",
 			triggerType:      model.AgentRunTriggerTypeManual,
 			title:            "Manual Repository Run",
-			description:      "A human starts an agent directly against a repository.",
-			sourceSurface:    "Agents page run-now actions",
+			description:      "Runs an agent against a selected repository.",
+			sourceSurface:    "Agents run-now",
 			configSurface:    agentsPath,
 			supportsAgentRun: true,
 		},
@@ -251,8 +254,8 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			category:         "manual",
 			triggerType:      model.AgentRunTriggerTypeManual,
 			title:            "Manual Workspace Run",
-			description:      "A human starts a custom agent directly from the workspace.",
-			sourceSurface:    "Agents page run-now actions",
+			description:      "Runs a custom agent from the workspace.",
+			sourceSurface:    "Agents run-now",
 			configSurface:    agentsPath,
 			supportsAgentRun: true,
 		},
@@ -262,8 +265,8 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			category:         "manual",
 			triggerType:      model.AgentRunTriggerTypeManual,
 			title:            "Manual Doc Run",
-			description:      "A human starts an agent directly against a document.",
-			sourceSurface:    "Docs document actions",
+			description:      "Runs an agent against a selected document.",
+			sourceSurface:    "Document actions",
 			configSurface:    agentsPath,
 			supportsAgentRun: true,
 		},

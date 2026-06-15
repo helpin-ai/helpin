@@ -35,7 +35,7 @@ func (s *stageTestStore) GetObject(_ context.Context, key string) ([]byte, error
 func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	agent := &model.Agent{
 		RuntimeKind: "codex",
-		Skills:      model.AgentSkillRefs{{Key: "approval_protocol"}},
+		Skills:      model.AgentSkillRefs{{Key: "prd_task_plan_approval"}},
 	}
 	destRoot := filepath.Join(t.TempDir(), "skills")
 
@@ -43,14 +43,14 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stage skills: %v", err)
 	}
-	if len(resolution.Definitions) != 1 || resolution.Definitions[0].Key != "approval_protocol" {
-		t.Fatalf("expected approval_protocol definition, got %#v", resolution.Definitions)
+	if len(resolution.Definitions) != 1 || resolution.Definitions[0].Key != "prd_task_plan_approval" {
+		t.Fatalf("expected prd_task_plan_approval definition, got %#v", resolution.Definitions)
 	}
-	payload, err := os.ReadFile(filepath.Join(destRoot, "01-approval_protocol", "SKILL.md"))
+	payload, err := os.ReadFile(filepath.Join(destRoot, "01-prd_task_plan_approval", "SKILL.md"))
 	if err != nil {
 		t.Fatalf("read staged SKILL.md: %v", err)
 	}
-	if !strings.Contains(string(payload), "approval_protocol") {
+	if !strings.Contains(string(payload), "prd_task_plan_approval") {
 		t.Fatalf("expected staged skill markdown to contain skill key, got %q", string(payload))
 	}
 	if !strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval)+"`") {
@@ -61,10 +61,55 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	}
 }
 
+func TestEffectiveRuntimeRefsFallsBackForBuiltInDefaultVersion(t *testing.T) {
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetMarketer,
+		PresetVersionKey: "marketer_default",
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) == 0 {
+		t.Fatal("expected default system agent to fall back to built-in available skills")
+	}
+	if refs[0].Key != "marketing_context_setup" {
+		t.Fatalf("expected first fallback skill %q, got %q", "marketing_context_setup", refs[0].Key)
+	}
+}
+
+func TestEffectiveRuntimeRefsFallsBackToCoreSkillsForCoreOnlyBuiltInPreset(t *testing.T) {
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetEpicPlanner,
+		PresetVersionKey: "epic_planner_default",
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) == 0 {
+		t.Fatal("expected default system agent to fall back to built-in runtime skills")
+	}
+	if refs[0].Key != "prd_task_plan_approval" {
+		t.Fatalf("expected first fallback skill %q, got %q", "prd_task_plan_approval", refs[0].Key)
+	}
+}
+
+func TestEffectiveRuntimeRefsDoesNotFallbackForWorkspaceVersion(t *testing.T) {
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetMarketer,
+		PresetVersionKey: "marketer_workspace_123",
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) != 0 {
+		t.Fatalf("expected workspace version with explicit empty skills to stay empty, got %v", refs)
+	}
+}
+
 func TestStageIntoStagesBuiltInSkillPackageReferences(t *testing.T) {
 	agent := &model.Agent{
 		RuntimeKind: "native_sdk",
-		Skills:      model.AgentSkillRefs{{Key: "dependency_auditor"}},
+		Skills:      model.AgentSkillRefs{{Key: "dependency_audit"}},
 	}
 	destRoot := filepath.Join(t.TempDir(), "skills")
 
@@ -84,17 +129,17 @@ func TestStageIntoStagesBuiltInSkillPackageReferences(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stage dependency auditor skill: %v", err)
 	}
-	if len(resolution.Definitions) != 1 || resolution.Definitions[0].Key != "dependency_auditor" {
-		t.Fatalf("expected dependency_auditor definition, got %#v", resolution.Definitions)
+	if len(resolution.Definitions) != 1 || resolution.Definitions[0].Key != "dependency_audit" {
+		t.Fatalf("expected dependency_audit definition, got %#v", resolution.Definitions)
 	}
 	for _, rel := range []string{
-		filepath.Join("01-dependency_auditor", "SKILL.md"),
-		filepath.Join("01-dependency_auditor", "ecosystems", "go.md"),
-		filepath.Join("01-dependency_auditor", "ecosystems", "rust.md"),
-		filepath.Join("01-dependency_auditor", "ecosystems", "python.md"),
-		filepath.Join("01-dependency_auditor", "ecosystems", "node.md"),
-		filepath.Join("01-dependency_auditor", "ecosystems", "java.md"),
-		filepath.Join("01-dependency_auditor", "verification.md"),
+		filepath.Join("01-dependency_audit", "SKILL.md"),
+		filepath.Join("01-dependency_audit", "ecosystems", "go.md"),
+		filepath.Join("01-dependency_audit", "ecosystems", "rust.md"),
+		filepath.Join("01-dependency_audit", "ecosystems", "python.md"),
+		filepath.Join("01-dependency_audit", "ecosystems", "node.md"),
+		filepath.Join("01-dependency_audit", "ecosystems", "java.md"),
+		filepath.Join("01-dependency_audit", "verification.md"),
 	} {
 		if _, err := os.Stat(filepath.Join(destRoot, rel)); err != nil {
 			t.Fatalf("expected staged dependency auditor file %s: %v", rel, err)

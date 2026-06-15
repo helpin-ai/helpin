@@ -416,6 +416,7 @@ func openRepositoryHydrationTestDB(t *testing.T) *gorm.DB {
 			workflow_run_id TEXT,
 			task_queue TEXT,
 			runner_pool TEXT,
+			agent_version_id TEXT,
 			repository_id TEXT,
 			repo_full_name TEXT,
 			base_branch TEXT,
@@ -564,20 +565,20 @@ func TestSelectNativeActiveSkillsRequiresSelectivePathGate(t *testing.T) {
 			PresetKey: model.AgentPresetEpicPlanner,
 		},
 		runtimeSkillRefs: model.AgentSkillRefs{
-			{Key: "approval_protocol"},
-			{Key: "prd_authorship"},
-			{Key: "task_decomposition"},
+			{Key: "prd_task_plan_approval"},
+			{Key: "product_prd_authorship"},
+			{Key: "coding_task_decomposition"},
 		},
 		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
-			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
-			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
-			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "product_prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "coding_task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
 		},
 		executionContractActive: false,
 	}
 
 	selection := selectActiveContractSkills(state, model.PlanningStageDraftSpec)
-	if got := testAgentSkillRefKeys(selection.Refs); len(got) != 3 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "task_decomposition" {
+	if got := testAgentSkillRefKeys(selection.Refs); len(got) != 3 || got[0] != "prd_task_plan_approval" || got[1] != "product_prd_authorship" || got[2] != "coding_task_decomposition" {
 		t.Fatalf("expected full skill set when selective path is disabled, got %#v", got)
 	}
 }
@@ -646,18 +647,18 @@ func TestSelectNativeActiveSkillsTransitionsEpicFromPRDToTaskPlanning(t *testing
 			PresetKey: model.AgentPresetEpicPlanner,
 		},
 		runtimeSkillRefs: model.AgentSkillRefs{
-			{Key: "approval_protocol"},
-			{Key: "prd_authorship"},
-			{Key: "task_decomposition"},
-			{Key: "epic_state_routing"},
-			{Key: "general_agent_behavior"},
+			{Key: "prd_task_plan_approval"},
+			{Key: "product_prd_authorship"},
+			{Key: "coding_task_decomposition"},
+			{Key: "epic_planning_state_routing"},
+			{Key: "engineering_planner_operating_rules"},
 		},
 		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
-			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
-			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
-			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
-			{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
-			{Key: "general_agent_behavior", SourceKind: "built_in", Instructions: "general"},
+			{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "product_prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "coding_task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "epic_planning_state_routing", SourceKind: "built_in", Instructions: "routing"},
+			{Key: "engineering_planner_operating_rules", SourceKind: "built_in", Instructions: "general"},
 		},
 		executionContractActive: true,
 	}
@@ -667,7 +668,7 @@ func TestSelectNativeActiveSkillsTransitionsEpicFromPRDToTaskPlanning(t *testing
 		state.epic = &model.PMEpic{PlanningState: model.EpicPlanningStateAwaitingSpecApproval}
 
 		selection := selectActiveContractSkills(&state, "")
-		if got := testAgentSkillRefKeys(selection.Refs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+		if got := testAgentSkillRefKeys(selection.Refs); len(got) != 4 || got[0] != "prd_task_plan_approval" || got[1] != "product_prd_authorship" || got[2] != "epic_planning_state_routing" || got[3] != "engineering_planner_operating_rules" {
 			t.Fatalf("unexpected active refs before approval %#v", got)
 		}
 	})
@@ -677,7 +678,7 @@ func TestSelectNativeActiveSkillsTransitionsEpicFromPRDToTaskPlanning(t *testing
 		state.epic = &model.PMEpic{ApprovedSpecVersionID: strPtr("spec-v1")}
 
 		selection := selectActiveContractSkills(&state, "")
-		if got := testAgentSkillRefKeys(selection.Refs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "task_decomposition" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+		if got := testAgentSkillRefKeys(selection.Refs); len(got) != 4 || got[0] != "prd_task_plan_approval" || got[1] != "coding_task_decomposition" || got[2] != "epic_planning_state_routing" || got[3] != "engineering_planner_operating_rules" {
 			t.Fatalf("unexpected active refs after approval %#v", got)
 		}
 	})
@@ -690,7 +691,7 @@ func TestSelectNativeActiveSkillsTransitionsEpicFromPRDToTaskPlanning(t *testing
 		}
 
 		selection := selectActiveContractSkills(&state, "")
-		if got := testAgentSkillRefKeys(selection.Refs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+		if got := testAgentSkillRefKeys(selection.Refs); len(got) != 4 || got[0] != "prd_task_plan_approval" || got[1] != "product_prd_authorship" || got[2] != "epic_planning_state_routing" || got[3] != "engineering_planner_operating_rules" {
 			t.Fatalf("unexpected active refs after request changes %#v", got)
 		}
 	})
@@ -706,18 +707,18 @@ func TestSelectNativeActiveSkillsMatchesExplicitAndInferredPlannerStage(t *testi
 			ApprovedSpecVersionID: strPtr("spec-v1"),
 		},
 		runtimeSkillRefs: model.AgentSkillRefs{
-			{Key: "approval_protocol"},
-			{Key: "prd_authorship"},
-			{Key: "task_decomposition"},
-			{Key: "epic_state_routing"},
-			{Key: "general_agent_behavior"},
+			{Key: "prd_task_plan_approval"},
+			{Key: "product_prd_authorship"},
+			{Key: "coding_task_decomposition"},
+			{Key: "epic_planning_state_routing"},
+			{Key: "engineering_planner_operating_rules"},
 		},
 		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
-			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
-			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
-			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
-			{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
-			{Key: "general_agent_behavior", SourceKind: "built_in", Instructions: "general"},
+			{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "product_prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "coding_task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "epic_planning_state_routing", SourceKind: "built_in", Instructions: "routing"},
+			{Key: "engineering_planner_operating_rules", SourceKind: "built_in", Instructions: "general"},
 		},
 		executionContractActive: true,
 	}
@@ -2780,14 +2781,14 @@ func TestEffectiveExecutionSkillPolicyUsesActiveSelectionForSelectivePath(t *tes
 		},
 		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
 			{
-				Key:        "approval_protocol",
+				Key:        "prd_task_plan_approval",
 				SourceKind: "built_in",
 				Policy: workerpkg.SkillPolicy{
 					CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindApprovalRequest},
 				},
 			},
 			{
-				Key:        "task_decomposition",
+				Key:        "coding_task_decomposition",
 				SourceKind: "built_in",
 				Policy: workerpkg.SkillPolicy{
 					CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindReviewCheckpoint},
@@ -2799,7 +2800,7 @@ func TestEffectiveExecutionSkillPolicyUsesActiveSelectionForSelectivePath(t *tes
 	policy := effectiveExecutionSkillPolicy(state, agentskills.NativeActiveSelection{
 		Definitions: []workerpkg.SkillDefinition{
 			{
-				Key:        "approval_protocol",
+				Key:        "prd_task_plan_approval",
 				SourceKind: "built_in",
 				Policy: workerpkg.SkillPolicy{
 					CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindApprovalRequest},
@@ -2829,7 +2830,7 @@ func TestEffectiveExecutionSkillPolicyKeepsFullPolicyWhenSelectivePathDisabled(t
 	policy := effectiveExecutionSkillPolicy(state, agentskills.NativeActiveSelection{
 		Definitions: []workerpkg.SkillDefinition{
 			{
-				Key:        "approval_protocol",
+				Key:        "prd_task_plan_approval",
 				SourceKind: "built_in",
 				Policy: workerpkg.SkillPolicy{
 					CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindApprovalRequest},
@@ -3120,16 +3121,16 @@ func TestApplyApprovedInteractivePreviewCreatesTasksFromApprovedTaskPlanAndCompl
 		epic:                    epic,
 		executionContractActive: true,
 		runtimeSkillRefs: model.AgentSkillRefs{
-			{Key: "approval_protocol"},
-			{Key: "prd_authorship"},
-			{Key: "task_decomposition"},
-			{Key: "epic_state_routing"},
+			{Key: "prd_task_plan_approval"},
+			{Key: "product_prd_authorship"},
+			{Key: "coding_task_decomposition"},
+			{Key: "epic_planning_state_routing"},
 		},
 		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
-			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
-			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
-			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
-			{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
+			{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "product_prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "coding_task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "epic_planning_state_routing", SourceKind: "built_in", Instructions: "routing"},
 		},
 		skillPolicy: workerpkg.SkillPolicy{},
 	}
@@ -3902,6 +3903,7 @@ func TestRecordPushAndEnsureDeliveryPRMarksPRFailedWhenPROpenFails(t *testing.T)
 			workflow_run_id TEXT,
 			task_queue TEXT,
 			runner_pool TEXT,
+			agent_version_id TEXT,
 			repository_id TEXT,
 			repo_full_name TEXT,
 			base_branch TEXT,
@@ -4075,6 +4077,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			template_key TEXT,
 			template_instance_id TEXT,
 			template_version INTEGER,
+			active_version_id TEXT,
 			role TEXT,
 			status TEXT NOT NULL DEFAULT 'idle',
 			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
@@ -4120,6 +4123,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			workflow_run_id TEXT,
 			task_queue TEXT,
 			runner_pool TEXT,
+			agent_version_id TEXT,
 			repository_id TEXT,
 			repo_full_name TEXT,
 			base_branch TEXT,
@@ -5085,6 +5089,7 @@ func TestHandleLiveCodexInteractivePauseIgnoresOlderRepliesWhenNoAssistantMessag
 			workflow_run_id TEXT,
 			task_queue TEXT,
 			runner_pool TEXT,
+			agent_version_id TEXT,
 			repository_id TEXT,
 			repo_full_name TEXT,
 			base_branch TEXT,
@@ -5262,6 +5267,7 @@ func TestWaitForLiveCodexResumeSignalPrefersResolvedInteractionPayload(t *testin
 			workflow_run_id TEXT,
 			task_queue TEXT,
 			runner_pool TEXT,
+			agent_version_id TEXT,
 			repository_id TEXT,
 			repo_full_name TEXT,
 			base_branch TEXT,
@@ -6445,12 +6451,12 @@ func TestPersistAssistantRunMessagePersistsAgentTurnDebugArtifact(t *testing.T) 
 			ResponseID: "resp_123",
 		},
 		RuntimeSkillRefs: model.AgentSkillRefs{
-			{Key: "general_agent_behavior"},
-			{Key: "approval_protocol"},
+			{Key: "engineering_planner_operating_rules"},
+			{Key: "prd_task_plan_approval"},
 			{SkillID: strPtr("workspace-skill-1")},
 		},
 		ActiveRuntimeSkillRefs: model.AgentSkillRefs{
-			{Key: "approval_protocol"},
+			{Key: "prd_task_plan_approval"},
 			{SkillID: strPtr("workspace-skill-1")},
 		},
 		SkillPolicy: workerpkg.SkillPolicy{
@@ -6503,10 +6509,10 @@ func TestPersistAssistantRunMessagePersistsAgentTurnDebugArtifact(t *testing.T) 
 		if payload.ContinuationMode != "response_id" {
 			t.Fatalf("expected continuation mode response_id, got %q", payload.ContinuationMode)
 		}
-		if got := strings.Join(payload.RuntimeSkillRefs, ","); got != "general_agent_behavior,approval_protocol,workspace:workspace-skill-1" {
+		if got := strings.Join(payload.RuntimeSkillRefs, ","); got != "engineering_planner_operating_rules,prd_task_plan_approval,workspace:workspace-skill-1" {
 			t.Fatalf("unexpected runtime skill refs: %v", payload.RuntimeSkillRefs)
 		}
-		if got := strings.Join(payload.ActiveSkillRefs, ","); got != "approval_protocol,workspace:workspace-skill-1" {
+		if got := strings.Join(payload.ActiveSkillRefs, ","); got != "prd_task_plan_approval,workspace:workspace-skill-1" {
 			t.Fatalf("unexpected active skill refs: %v", payload.ActiveSkillRefs)
 		}
 		if got := strings.Join(payload.RequiredInteractions, ","); got != model.AgentRunInteractionKindApprovalRequest+","+model.AgentRunInteractionKindReviewCheckpoint {
@@ -7358,16 +7364,16 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 		epic:                    epic,
 		executionContractActive: true,
 		runtimeSkillRefs: model.AgentSkillRefs{
-			{Key: "approval_protocol"},
-			{Key: "prd_authorship"},
-			{Key: "task_decomposition"},
-			{Key: "epic_state_routing"},
+			{Key: "prd_task_plan_approval"},
+			{Key: "product_prd_authorship"},
+			{Key: "coding_task_decomposition"},
+			{Key: "epic_planning_state_routing"},
 		},
 		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
-			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
-			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
-			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
-			{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
+			{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "product_prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "coding_task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "epic_planning_state_routing", SourceKind: "built_in", Instructions: "routing"},
 		},
 	}
 	input := planningRunInput{}
@@ -7407,7 +7413,7 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 	}
 
 	selection := selectActiveContractSkills(state, "")
-	if got := testAgentSkillRefKeys(selection.Refs); len(got) != 3 || got[0] != "approval_protocol" || got[1] != "task_decomposition" || got[2] != "epic_state_routing" {
+	if got := testAgentSkillRefKeys(selection.Refs); len(got) != 3 || got[0] != "prd_task_plan_approval" || got[1] != "coding_task_decomposition" || got[2] != "epic_planning_state_routing" {
 		t.Fatalf("expected approved PRD application to re-anchor next turn on task decomposition, got %#v", got)
 	}
 }
@@ -8543,7 +8549,7 @@ func TestExecuteRunActivityPausesContractPlannerForReviewCheckpoint(t *testing.T
 	if len(capturedRuntimeSkillRefs) == 0 {
 		t.Fatal("expected runtime skill refs to be threaded into execution context")
 	}
-	if got := testAgentSkillRefKeys(capturedActiveRuntimeSkillRefs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+	if got := testAgentSkillRefKeys(capturedActiveRuntimeSkillRefs); len(got) != 4 || got[0] != "prd_task_plan_approval" || got[1] != "product_prd_authorship" || got[2] != "epic_planning_state_routing" || got[3] != "engineering_planner_operating_rules" {
 		t.Fatalf("unexpected active runtime skill refs %#v", got)
 	}
 	if strings.TrimSpace(capturedActiveSkillInstructions) == "" {

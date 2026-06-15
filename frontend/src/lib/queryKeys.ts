@@ -146,6 +146,7 @@ export const queryKeys = {
     messageEmail: (wsId: string, messageId: string) => ['support', wsId, 'messages', messageId, 'email'] as const,
     messageInfo: (wsId: string, conversationId: string, messageId: string) => ['support', wsId, 'conversations', conversationId, 'messages', messageId, 'info'] as const,
     installation: (wsId: string) => ['support', wsId, 'installation'] as const,
+    routingUsage: (wsId: string) => ['support', wsId, 'routing-usage'] as const,
     inboxViews: (wsId: string) => ['support', wsId, 'inbox-views'] as const,
     inboxViewCounts: (wsId: string) => ['support', wsId, 'inbox-view-counts'] as const,
     builtinInboxViews: (wsId: string) => ['support', wsId, 'builtin-inbox-views'] as const,

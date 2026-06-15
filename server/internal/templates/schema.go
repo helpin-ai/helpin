@@ -105,11 +105,13 @@ type Option struct {
 }
 
 type FlowSpec struct {
-	Action            string                 `yaml:"action" json:"action"`
-	Target            map[string]string      `yaml:"target,omitempty" json:"target,omitempty"`
-	Conditions        []map[string]string    `yaml:"conditions,omitempty" json:"conditions,omitempty"`
-	Parameters        map[string]interface{} `yaml:"parameters,omitempty" json:"parameters,omitempty"`
-	AdditionalContext string                 `yaml:"additional_context,omitempty" json:"additional_context,omitempty"`
+	Action              string                 `yaml:"action" json:"action"`
+	NameTemplate        string                 `yaml:"name_template,omitempty" json:"name_template,omitempty"`
+	DescriptionTemplate string                 `yaml:"description_template,omitempty" json:"description_template,omitempty"`
+	Target              map[string]string      `yaml:"target,omitempty" json:"target,omitempty"`
+	Conditions          []map[string]string    `yaml:"conditions,omitempty" json:"conditions,omitempty"`
+	Parameters          map[string]interface{} `yaml:"parameters,omitempty" json:"parameters,omitempty"`
+	AdditionalContext   string                 `yaml:"additional_context,omitempty" json:"additional_context,omitempty"`
 }
 
 func (t Template) Validate() error {
@@ -239,8 +241,10 @@ func knownSystemPreset(preset string) bool {
 		model.AgentPresetCRMOperator,
 		model.AgentPresetSupportAgent,
 		model.AgentPresetDocumentationAgent,
+		model.AgentPresetMarketer,
 		model.AgentPresetCodeBuilder,
 		model.AgentPresetReviewAgent,
+		model.AgentPresetCommandAgent,
 		model.AgentPresetResearcher:
 		return true
 	default:

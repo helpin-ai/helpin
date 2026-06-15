@@ -1,5 +1,5 @@
-import { type ReactNode, useCallback, useState } from 'react';
-import { ArrowDown01Icon, ArrowRight01Icon, Copy01Icon, InboxIcon, MailAdd01Icon, Delete01Icon } from '@/lib/icons';
+import { type ReactNode, useCallback } from 'react';
+import { Copy01Icon, InboxIcon, MailAdd01Icon, Delete01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -21,9 +21,9 @@ import {
 import type { SupportEmailRoute, SupportMailbox } from '@/lib/pmTypes';
 
 export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string }) {
-  const [showHowItWorks, setShowHowItWorks] = useState(false);
   const { data: mailboxes = [], isLoading: mailboxesLoading } = useSupportMailboxes(workspaceId);
   const { data: routes = [], isLoading: routesLoading } = useSupportEmailRoutes(workspaceId);
+  const activeMailboxes = mailboxes.filter((mailbox) => mailbox.active);
   const createRoute = useCreateSupportEmailRoute(workspaceId);
   const disableRoute = useDisableSupportEmailRoute(workspaceId);
 
@@ -65,30 +65,21 @@ export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <button
-            type="button"
-            onClick={() => setShowHowItWorks((v) => !v)}
-            className="mt-2 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {showHowItWorks ? <ArrowDown01Icon className="h-3.5 w-3.5" /> : <ArrowRight01Icon className="h-3.5 w-3.5" />}
-            How it works
-          </button>
-          {showHowItWorks && (
-            <ol className="mt-3 space-y-2 text-sm text-muted-foreground">
-              <li className="flex items-start gap-2.5">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">1</span>
-                <span>Enable forwarding for Shared Inbox or a Team Inbox below.</span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">2</span>
-                <span>Copy the generated Helpin address and set it as the forwarding target in Gmail, Zoho, Outlook, or any provider.</span>
-              </li>
-              <li className="flex items-start gap-2.5">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">3</span>
-                <span>The status updates here once the first forwarded email arrives.</span>
-              </li>
-            </ol>
-          )}
+          <p className="text-sm font-medium text-foreground">How it works</p>
+          <ol className="mt-3 space-y-2 text-sm text-muted-foreground">
+            <li className="flex items-start gap-2.5">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">1</span>
+              <span>Enable forwarding for Shared Inbox or a Team Inbox.</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">2</span>
+              <span>Copy the Helpin address into your email provider as the forwarding address.</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">3</span>
+              <span>If your provider asks for confirmation, open the email in this inbox and use the code or link there.</span>
+            </li>
+          </ol>
         </CardHeader>
 
         <CardContent className="space-y-4">
@@ -123,20 +114,20 @@ export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string
                   <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Team Inboxes
                   </span>
-                  {mailboxes.length > 0 && (
+                  {activeMailboxes.length > 0 && (
                     <span className="text-[11px] text-muted-foreground">
-                      {mailboxes.length} inbox{mailboxes.length !== 1 ? 'es' : ''}
+                      {activeMailboxes.length} inbox{activeMailboxes.length !== 1 ? 'es' : ''}
                     </span>
                   )}
                 </div>
 
-                {mailboxes.length === 0 ? (
+                {activeMailboxes.length === 0 ? (
                   <div className="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">
                     Create a Team Inbox to get private forwarding addresses like billing@ or vip@.
                   </div>
                 ) : (
                   <div className="divide-y divide-border/50">
-                    {mailboxes.map((mailbox) => (
+                    {activeMailboxes.map((mailbox) => (
                       <MailboxEmailRouteRow
                         key={mailbox.id}
                         mailbox={mailbox}

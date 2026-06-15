@@ -142,7 +142,7 @@ Raw configuration:
 			"description":       "Runs on the selected cadence against a repository and creates one task per verified outdated direct dependency.",
 			"trigger_type":      model.TriggerCron,
 			"default_enabled":   true,
-			"config_schema_key": "dependency_auditor_cron",
+			"config_schema_key": "engineering_dependency_auditor_cron",
 			"output_type":       "task",
 			"fields": []map[string]any{
 				{
@@ -237,12 +237,12 @@ Raw configuration:
 {{raw_configuration_json}}`
 	securityTriageStarterFlows := model.JSONBlob(mustJSONValue([]map[string]any{
 		{
-			"key":               "security_triage_cron",
+			"key":               "engineering_security_triage_cron",
 			"label":             "Run Sentinel on a schedule",
 			"description":       "Runs security scanners against a repository, triages findings, and creates remediation tasks for applicable medium-or-higher issues.",
 			"trigger_type":      model.TriggerCron,
 			"default_enabled":   true,
-			"config_schema_key": "security_triage_cron",
+			"config_schema_key": "engineering_security_triage_cron",
 			"output_type":       "task",
 			"fields": []map[string]any{
 				{
@@ -327,7 +327,7 @@ Raw configuration:
 			RuntimeKind: model.AgentTemplateRuntimeKindNativeSDK,
 			DefaultRole: "Release Notes Writer",
 			Skills: model.AgentSkillRefs{
-				{Key: model.AgentTemplateTypeReleaseNotes},
+				{Key: "release_notes_writing"},
 			},
 			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
 				"get_release_context",
@@ -384,7 +384,7 @@ Raw configuration:
 			RuntimeKind:  model.AgentTemplateRuntimeKindNativeSDK,
 			DefaultRole:  "Dependency Auditor",
 			Skills: model.AgentSkillRefs{
-				{Key: model.AgentTemplateTypeDependencyAuditor},
+				{Key: "dependency_audit"},
 			},
 			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
 				"update_plan",
@@ -441,7 +441,7 @@ Raw configuration:
 			RuntimeKind:  model.AgentTemplateRuntimeKindNativeSDK,
 			DefaultRole:  "Security Triage Analyst",
 			Skills: model.AgentSkillRefs{
-				{Key: model.AgentTemplateTypeSecurityTriage},
+				{Key: "security_triage"},
 			},
 			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
 				"update_plan",
@@ -1380,7 +1380,7 @@ func securityTriageInputFromTemplateFlow(flow *model.CreateAgentFromTemplateFlow
 		return securityTriageStarterFlowInput{}, fmt.Errorf("flow configuration is required when create_flow is true")
 	}
 	flowKey := strings.TrimSpace(flow.FlowKey)
-	if flowKey != "" && flowKey != "security_triage_cron" {
+	if flowKey != "" && flowKey != "engineering_security_triage_cron" {
 		return securityTriageStarterFlowInput{}, fmt.Errorf("unsupported security triage flow_key %q", flowKey)
 	}
 	if len(flow.FlowInput) == 0 || strings.TrimSpace(string(flow.FlowInput)) == "" || strings.TrimSpace(string(flow.FlowInput)) == "null" {

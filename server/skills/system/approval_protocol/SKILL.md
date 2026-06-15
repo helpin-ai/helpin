@@ -1,8 +1,8 @@
 ---
-name: approval_protocol
-description: Inline approval and review-checkpoint contract for planner-style runs.
+name: prd_task_plan_approval
+description: Inline approval contract for PRD, task plan, and coding task planning artifacts.
 metadata:
-  title: Approval Protocol
+  title: PRD and Task Plan Approval
   required_tools:
     - request_approval
   supported_runtimes:

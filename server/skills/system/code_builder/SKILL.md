@@ -1,8 +1,8 @@
 ---
-name: code_builder
+name: code_implementation
 description: Repository-writing implementation behavior for coding agents.
 metadata:
-  title: Code Builder
+  title: Code Implementation
   supported_runtimes:
     - native_sdk
     - codex

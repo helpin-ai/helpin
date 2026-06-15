@@ -1,8 +1,8 @@
 ---
-name: support_gap_to_docs
+name: support_gap_docs_update
 description: Converting support coverage gaps into missing, weak, or stale documentation work.
 metadata:
-  title: Support Gap To Docs
+  title: Support Gap Docs Update
   supported_runtimes:
     - native_sdk
 ---

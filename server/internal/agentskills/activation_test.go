@@ -10,18 +10,18 @@ import (
 
 func TestSelectNativeActiveSkillsEpicDraftSpecSelectsPRDSkills(t *testing.T) {
 	refs := model.AgentSkillRefs{
-		{Key: "approval_protocol"},
-		{Key: "prd_authorship"},
-		{Key: "task_decomposition"},
-		{Key: "epic_state_routing"},
-		{Key: "general_agent_behavior"},
+		{Key: "prd_task_plan_approval"},
+		{Key: "product_prd_authorship"},
+		{Key: "coding_task_decomposition"},
+		{Key: "epic_planning_state_routing"},
+		{Key: "engineering_planner_operating_rules"},
 	}
 	definitions := []worker.SkillDefinition{
-		{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
-		{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
-		{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
-		{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
-		{Key: "general_agent_behavior", SourceKind: "built_in", Instructions: "general"},
+		{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
+		{Key: "product_prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+		{Key: "coding_task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+		{Key: "epic_planning_state_routing", SourceKind: "built_in", Instructions: "routing"},
+		{Key: "engineering_planner_operating_rules", SourceKind: "built_in", Instructions: "general"},
 	}
 
 	selection := SelectNativeActiveSkills(refs, definitions, NativeActiveSelectionContext{
@@ -30,7 +30,7 @@ func TestSelectNativeActiveSkillsEpicDraftSpecSelectsPRDSkills(t *testing.T) {
 		PlanningStage: model.PlanningStageDraftSpec,
 	})
 
-	if got := testSkillKeys(selection.Refs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+	if got := testSkillKeys(selection.Refs); len(got) != 4 || got[0] != "prd_task_plan_approval" || got[1] != "product_prd_authorship" || got[2] != "epic_planning_state_routing" || got[3] != "engineering_planner_operating_rules" {
 		t.Fatalf("unexpected active refs %#v", got)
 	}
 	if selection.Instructions != "approval\n\nprd\n\nrouting\n\ngeneral" {
@@ -40,16 +40,16 @@ func TestSelectNativeActiveSkillsEpicDraftSpecSelectsPRDSkills(t *testing.T) {
 
 func TestSelectNativeActiveSkillsEpicPlanTasksSelectsTaskSkills(t *testing.T) {
 	refs := model.AgentSkillRefs{
-		{Key: "approval_protocol"},
-		{Key: "prd_authorship"},
-		{Key: "task_decomposition"},
-		{Key: "epic_state_routing"},
+		{Key: "prd_task_plan_approval"},
+		{Key: "product_prd_authorship"},
+		{Key: "coding_task_decomposition"},
+		{Key: "epic_planning_state_routing"},
 	}
 	definitions := []worker.SkillDefinition{
-		{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
-		{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
-		{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
-		{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
+		{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
+		{Key: "product_prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+		{Key: "coding_task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+		{Key: "epic_planning_state_routing", SourceKind: "built_in", Instructions: "routing"},
 	}
 
 	selection := SelectNativeActiveSkills(refs, definitions, NativeActiveSelectionContext{
@@ -58,7 +58,7 @@ func TestSelectNativeActiveSkillsEpicPlanTasksSelectsTaskSkills(t *testing.T) {
 		PlanningStage: model.PlanningStagePlanTasks,
 	})
 
-	if got := testSkillKeys(selection.Refs); len(got) != 3 || got[0] != "approval_protocol" || got[1] != "task_decomposition" || got[2] != "epic_state_routing" {
+	if got := testSkillKeys(selection.Refs); len(got) != 3 || got[0] != "prd_task_plan_approval" || got[1] != "coding_task_decomposition" || got[2] != "epic_planning_state_routing" {
 		t.Fatalf("unexpected active refs %#v", got)
 	}
 }
@@ -66,11 +66,11 @@ func TestSelectNativeActiveSkillsEpicPlanTasksSelectsTaskSkills(t *testing.T) {
 func TestSelectNativeActiveSkillsKeepsWorkspaceSkillsDefaultActive(t *testing.T) {
 	skillID := "skill-123"
 	refs := model.AgentSkillRefs{
-		{Key: "approval_protocol"},
+		{Key: "prd_task_plan_approval"},
 		{SkillID: &skillID, Key: "workspace_planner_extension"},
 	}
 	definitions := []worker.SkillDefinition{
-		{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
+		{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
 		{Key: "workspace_planner_extension", SourceKind: model.WorkspaceSkillSourceWorkspace, Instructions: "workspace"},
 	}
 
@@ -80,33 +80,31 @@ func TestSelectNativeActiveSkillsKeepsWorkspaceSkillsDefaultActive(t *testing.T)
 		PlanningStage: model.PlanningStageTaskPlanDoc,
 	})
 
-	if got := testSkillKeys(selection.Refs); len(got) != 2 || got[0] != "approval_protocol" || got[1] != "workspace_planner_extension" {
+	if got := testSkillKeys(selection.Refs); len(got) != 2 || got[0] != "prd_task_plan_approval" || got[1] != "workspace_planner_extension" {
 		t.Fatalf("unexpected active refs %#v", got)
 	}
 }
 
 func TestSelectNativeActiveSkillsDocumentationSupportTargetSelectsSupportGapSkills(t *testing.T) {
 	refs := model.AgentSkillRefs{
-		{Key: "docs_information_architecture"},
-		{Key: "external_help_doc_writing"},
-		{Key: "api_doc_writing"},
+		{Key: "docs_architecture_review"},
+		{Key: "public_help_doc_writing"},
+		{Key: "api_reference_doc_writing"},
 		{Key: "internal_docs_maintenance"},
 		{Key: "public_help_docs_maintenance"},
 		{Key: "api_docs_maintenance"},
-		{Key: "release_to_docs_update"},
-		{Key: "support_gap_to_docs"},
-		{Key: "general_agent_behavior"},
+		{Key: "post_release_docs_update"},
+		{Key: "support_gap_docs_update"},
 	}
 	definitions := []worker.SkillDefinition{
-		{Key: "docs_information_architecture", SourceKind: "built_in", Instructions: "ia"},
-		{Key: "external_help_doc_writing", SourceKind: "built_in", Instructions: "help-writing"},
-		{Key: "api_doc_writing", SourceKind: "built_in", Instructions: "api-writing"},
+		{Key: "docs_architecture_review", SourceKind: "built_in", Instructions: "ia"},
+		{Key: "public_help_doc_writing", SourceKind: "built_in", Instructions: "help-writing"},
+		{Key: "api_reference_doc_writing", SourceKind: "built_in", Instructions: "api-writing"},
 		{Key: "internal_docs_maintenance", SourceKind: "built_in", Instructions: "internal"},
 		{Key: "public_help_docs_maintenance", SourceKind: "built_in", Instructions: "public"},
 		{Key: "api_docs_maintenance", SourceKind: "built_in", Instructions: "api-maintenance"},
-		{Key: "release_to_docs_update", SourceKind: "built_in", Instructions: "release"},
-		{Key: "support_gap_to_docs", SourceKind: "built_in", Instructions: "gap"},
-		{Key: "general_agent_behavior", SourceKind: "built_in", Instructions: "general"},
+		{Key: "post_release_docs_update", SourceKind: "built_in", Instructions: "release"},
+		{Key: "support_gap_docs_update", SourceKind: "built_in", Instructions: "gap"},
 	}
 
 	selection := SelectNativeActiveSkills(refs, definitions, NativeActiveSelectionContext{
@@ -114,7 +112,7 @@ func TestSelectNativeActiveSkillsDocumentationSupportTargetSelectsSupportGapSkil
 		TargetType: "support_conversation",
 	})
 
-	if got := testSkillKeys(selection.Refs); strings.Join(got, ",") != "docs_information_architecture,external_help_doc_writing,public_help_docs_maintenance,support_gap_to_docs,general_agent_behavior" {
+	if got := testSkillKeys(selection.Refs); strings.Join(got, ",") != "docs_architecture_review,public_help_doc_writing,public_help_docs_maintenance,support_gap_docs_update" {
 		t.Fatalf("unexpected active refs %#v", got)
 	}
 	if strings.Contains(selection.Instructions, "api-writing") || strings.Contains(selection.Instructions, "release") {
@@ -124,12 +122,12 @@ func TestSelectNativeActiveSkillsDocumentationSupportTargetSelectsSupportGapSkil
 
 func TestSelectNativeActiveSkillsFallsBackToFullSetForUnknownStage(t *testing.T) {
 	refs := model.AgentSkillRefs{
-		{Key: "approval_protocol"},
-		{Key: "prd_authorship"},
+		{Key: "prd_task_plan_approval"},
+		{Key: "product_prd_authorship"},
 	}
 	definitions := []worker.SkillDefinition{
-		{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
-		{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+		{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
+		{Key: "product_prd_authorship", SourceKind: "built_in", Instructions: "prd"},
 	}
 
 	selection := SelectNativeActiveSkills(refs, definitions, NativeActiveSelectionContext{
@@ -138,7 +136,7 @@ func TestSelectNativeActiveSkillsFallsBackToFullSetForUnknownStage(t *testing.T)
 		PlanningStage: "unknown_phase",
 	})
 
-	if got := testSkillKeys(selection.Refs); len(got) != 2 || got[0] != "approval_protocol" || got[1] != "prd_authorship" {
+	if got := testSkillKeys(selection.Refs); len(got) != 2 || got[0] != "prd_task_plan_approval" || got[1] != "product_prd_authorship" {
 		t.Fatalf("unexpected fallback refs %#v", got)
 	}
 }

@@ -40,6 +40,7 @@ type InstallRequest struct {
 	TemplateKey    string
 	ActorID        string
 	Name           string
+	Description    string
 	AgentName      string
 	Inputs         map[string]any
 	AgentOverrides *model.CreateAgentFromTemplateOverrides
@@ -89,11 +90,6 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (*InstallRe
 
 	instanceID := newTemplateInstanceID()
 	templateVersion := tmpl.Version
-	templateName := strings.TrimSpace(req.Name)
-	if templateName == "" {
-		templateName = tmpl.Name
-	}
-
 	var result InstallResult
 	err := i.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result.Template = tmpl
@@ -103,7 +99,7 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (*InstallRe
 		}
 		result.Agent = agent
 
-		rule, err := buildRule(ctx, tx, tmpl, workspaceID, actorID, templateName, instanceID, templateVersion, req.Inputs, agent)
+		rule, err := buildRule(ctx, tx, tmpl, workspaceID, actorID, req.Name, req.Description, instanceID, templateVersion, req.Inputs, agent)
 		if err != nil {
 			return err
 		}
@@ -290,7 +286,7 @@ func uniqueTemplateAgentName(ctx context.Context, tx *gorm.DB, workspaceID, base
 	return fmt.Sprintf("%s (%s)", baseName, newTemplateInstanceID()[:8]), nil
 }
 
-func buildRule(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID, actorID, name, instanceID string, templateVersion int, inputs map[string]any, agent *model.Agent) (*model.AutomationRule, error) {
+func buildRule(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID, actorID, name, description, instanceID string, templateVersion int, inputs map[string]any, agent *model.Agent) (*model.AutomationRule, error) {
 	triggerConfig, err := buildTriggerConfig(ctx, tx, tmpl, workspaceID, inputs)
 	if err != nil {
 		return nil, err
@@ -303,10 +299,15 @@ func buildRule(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID, act
 	if triggerType == "" && tmpl.Trigger.Type == model.TriggerCron {
 		triggerType = model.TriggerCron
 	}
+	ruleName, ruleDescription, err := buildRuleMetadata(ctx, tx, tmpl, workspaceID, strings.TrimSpace(name), strings.TrimSpace(description), inputs, agent, triggerType)
+	if err != nil {
+		return nil, err
+	}
 	return &model.AutomationRule{
 		ID:                 newTemplateInstanceID(),
 		WorkspaceID:        workspaceID,
-		Name:               name,
+		Name:               ruleName,
+		Description:        nilIfBlank(ruleDescription),
 		Enabled:            true,
 		WorkflowID:         nilIfBlank(stringInput(inputs, "workflow_id")),
 		TriggerType:        triggerType,
@@ -318,6 +319,87 @@ func buildRule(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID, act
 		TemplateInstanceID: strPtr(instanceID),
 		TemplateVersion:    &templateVersion,
 	}, nil
+}
+
+func buildRuleMetadata(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID, requestedName, requestedDescription string, inputs map[string]any, agent *model.Agent, triggerType string) (string, string, error) {
+	renderInputs, err := templateMetadataInputs(ctx, tx, tmpl, workspaceID, inputs, agent)
+	if err != nil {
+		return "", "", err
+	}
+
+	name := requestedName
+	if name == "" && strings.TrimSpace(tmpl.Flow.NameTemplate) != "" {
+		name = renderTemplateText(tmpl.Flow.NameTemplate, renderInputs)
+	}
+	if name == "" {
+		if target := strings.TrimSpace(stringInput(renderInputs, "repo_full_name")); target != "" {
+			name = fmt.Sprintf("%s - %s", tmpl.Name, target)
+		} else {
+			name = tmpl.Name
+		}
+	}
+
+	description := requestedDescription
+	if description == "" && strings.TrimSpace(tmpl.Flow.DescriptionTemplate) != "" {
+		description = renderTemplateText(tmpl.Flow.DescriptionTemplate, renderInputs)
+	}
+	if description == "" {
+		description = defaultRuleDescription(tmpl, triggerType, renderInputs)
+	}
+	return strings.TrimSpace(name), strings.TrimSpace(description), nil
+}
+
+func templateMetadataInputs(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID string, inputs map[string]any, agent *model.Agent) (map[string]any, error) {
+	renderInputs := map[string]any{}
+	for key, value := range inputs {
+		renderInputs[key] = value
+	}
+	renderInputs["template_name"] = tmpl.Name
+	if agent != nil {
+		renderInputs["agent_name"] = agent.Name
+	}
+	if repoFullName, err := triggerRepoFullName(ctx, tx, tmpl, workspaceID, inputs); err != nil {
+		return nil, err
+	} else if repoFullName != "" {
+		renderInputs["repo_full_name"] = repoFullName
+		renderInputs["repository_name"] = repoFullName
+	}
+	return renderInputs, nil
+}
+
+func defaultRuleDescription(tmpl Template, triggerType string, inputs map[string]any) string {
+	trigger := describeTemplateTrigger(triggerType)
+	agentName := strings.TrimSpace(stringInput(inputs, "agent_name"))
+	target := firstNonEmpty(stringInput(inputs, "repo_full_name"), stringInput(inputs, "repository_name"))
+	if agentName != "" && target != "" {
+		return fmt.Sprintf("When %s for %s, run %s.", trigger, target, agentName)
+	}
+	if target != "" {
+		return fmt.Sprintf("When %s for %s, run this flow.", trigger, target)
+	}
+	if strings.TrimSpace(tmpl.ShortDescription) != "" {
+		return strings.TrimSpace(tmpl.ShortDescription)
+	}
+	return fmt.Sprintf("When %s, run this flow.", trigger)
+}
+
+func describeTemplateTrigger(triggerType string) string {
+	switch triggerType {
+	case model.TriggerGitHubReleasePub:
+		return "a GitHub release is published"
+	case model.TriggerGitHubPRMerged:
+		return "a GitHub pull request is merged"
+	case model.TriggerGitHubCheckSuite:
+		return "a GitHub check suite completes"
+	case model.TriggerTaskStateEntered:
+		return "a task enters the selected workflow state"
+	case model.TriggerAgentRunApproved:
+		return "an interactive agent run is approved"
+	case model.TriggerCron:
+		return "the schedule ticks"
+	default:
+		return strings.ReplaceAll(triggerType, "_", " ")
+	}
 }
 
 func buildTriggerConfig(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID string, inputs map[string]any) (json.RawMessage, error) {

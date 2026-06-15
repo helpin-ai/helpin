@@ -923,6 +923,117 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 	return nil
 }
 
+// ExecuteManualRule starts a flow from an explicit user action while preserving
+// the automation-rule attribution used by the activity timeline.
+func (e *AutomationRuleEngine) ExecuteManualRule(ctx context.Context, workspaceID, ruleID, actorID string) (*model.AgentRun, error) {
+	if e == nil || e.ruleRepo == nil {
+		return nil, fmt.Errorf("automation rule engine is not configured")
+	}
+	if e.agentService == nil {
+		return nil, fmt.Errorf("agent service not configured")
+	}
+
+	rule, err := e.ruleRepo.GetByID(ctx, workspaceID, ruleID)
+	if err != nil {
+		return nil, err
+	}
+	if rule == nil {
+		return nil, fmt.Errorf("flow not found")
+	}
+	if rule.TriggerType != model.TriggerCron {
+		return nil, fmt.Errorf("run now is only supported for scheduled flows")
+	}
+	if rule.ActionType != model.ActionStartAgentRun {
+		return nil, fmt.Errorf("run now is only supported for agent flows")
+	}
+
+	var actionCfg model.ActionConfigRunAgent
+	if err := json.Unmarshal(rule.ActionConfig, &actionCfg); err != nil {
+		return nil, fmt.Errorf("parse start_agent_run config: %w", err)
+	}
+	if strings.TrimSpace(actionCfg.AgentID) == "" {
+		return nil, fmt.Errorf("complete the flow setup before running it")
+	}
+
+	targetType := strings.TrimSpace(actionCfg.TargetType)
+	targetID := strings.TrimSpace(actionCfg.TargetID)
+	if (targetType == "" || targetType == "event") && targetID == "" {
+		targetType = "workspace"
+		targetID = workspaceID
+	}
+	if targetType == "story" {
+		targetType = "task"
+	}
+	if targetType == "workspace" && targetID == "" {
+		targetID = workspaceID
+	}
+	if targetType == "" || targetID == "" {
+		return nil, fmt.Errorf("this flow needs an event to run")
+	}
+
+	now := time.Now().UTC()
+	actor := strings.TrimSpace(actorID)
+	trigger := &model.AgentRunTriggerContext{
+		Source:      model.AgentRunTriggerSourceAutomationRule,
+		TriggerType: model.AgentRunTriggerTypeManual,
+		RuleID:      &rule.ID,
+		ActorID:     nilIfEmpty(actor),
+		FiredAt:     &now,
+	}
+	event := model.AutomationEvent{
+		WorkspaceID: workspaceID,
+		TriggerType: model.AgentRunTriggerTypeManual,
+		TargetType:  targetType,
+		TargetID:    targetID,
+	}
+	if rule.TeamID != nil {
+		event.TeamID = strings.TrimSpace(*rule.TeamID)
+	}
+	eventContext := &model.AgentRunEventContext{
+		TeamID: nilIfEmpty(event.TeamID),
+		Reason: strPtr(fmt.Sprintf("manual run of automation flow %q", rule.Name)),
+	}
+
+	outputContext, err := deriveRunOutputContext(event, actionCfg.Output)
+	if err != nil {
+		return nil, err
+	}
+	baseBranch, workingBranch, err := e.resolveRunBranchOverrides(ctx, event, nil, actionCfg)
+	if err != nil {
+		return nil, fmt.Errorf("resolve branch overrides: %w", err)
+	}
+
+	run, err := e.agentService.startTargetRun(ctx, workspaceID, targetType, targetID, model.StartAgentRunRequest{
+		AgentID:           actionCfg.AgentID,
+		AdditionalContext: actionCfg.AdditionalContext,
+		BaseBranch:        nilIfEmpty(baseBranch),
+		WorkingBranch:     nilIfEmpty(workingBranch),
+		Output:            outputContext,
+	}, nilIfEmpty(actor), trigger, eventContext, nil)
+	if err != nil {
+		e.observeFailure(ctx, workspaceID, rule.ID, err)
+		return nil, fmt.Errorf("start agent run: %w", err)
+	}
+	e.observeSuccess(ctx, workspaceID, rule.ID)
+
+	if e.activitySvc != nil {
+		_ = e.activitySvc.Log(ctx, workspaceID, targetType, targetID, nilIfEmpty(actor),
+			fmt.Sprintf("automation flow '%s' was run manually", rule.Name),
+			nil, nil, nil, nil)
+	}
+	if e.wsPublisher != nil {
+		e.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      targetType,
+			EntityID:    targetID,
+			WorkspaceID: workspaceID,
+			ActorID:     actor,
+		})
+	}
+
+	return run, nil
+}
+
 // --- CRUD methods ---
 
 // CreateRule creates a new automation rule with validation.

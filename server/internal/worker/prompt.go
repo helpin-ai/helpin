@@ -106,6 +106,12 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 	if skillInstructions != "" {
 		parts = append(parts, skillInstructions)
 	}
+	if !options.IncludeResolvedSkillText {
+		if guidance := availableSkillAccessGuidance(agent, toolSet); guidance != "" {
+			parts = append(parts, "\n## Available Skills")
+			parts = append(parts, guidance)
+		}
+	}
 
 	if options.IncludeTargetContext {
 		// Story context.
@@ -191,6 +197,9 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 				RuntimeToolNameForPrompt(ToolPublishTaskPlanDoc),
 			))
 		}
+		if options.IncludeResolvedSkillText && (toolSet["list_available_skills"] || toolSet["search_available_skills"] || toolSet["read_skill"]) {
+			parts = append(parts, "- Use list_available_skills or search_available_skills when specialized workflow guidance would materially improve the task, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default.")
+		}
 	}
 	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageTaskPlanDoc {
 		parts = append(parts, "- Run tests after making changes when possible.")
@@ -209,6 +218,16 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 	parts = append(parts, "- Leave Helpin artifacts and summaries in a state a human can review.")
 
 	return strings.Join(parts, "\n")
+}
+
+func availableSkillAccessGuidance(agent *model.Agent, toolSet map[string]bool) string {
+	if !agentHasAvailableSkills(agent) {
+		return ""
+	}
+	if toolSet["list_available_skills"] || toolSet["search_available_skills"] || toolSet["read_skill"] {
+		return "This agent has available skills it can choose to use when they are relevant to the task. Use list_available_skills or search_available_skills to inspect options, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default."
+	}
+	return "This agent has available skills it can use when they would help or are required for the task. Use the runtime's skill access mechanism to inspect and apply only the specific skill instructions the task needs. Do not load every available skill by default."
 }
 
 // BuildUserPrompt creates the initial user message for the run.

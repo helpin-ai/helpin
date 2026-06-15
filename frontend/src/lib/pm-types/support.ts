@@ -210,6 +210,7 @@ export interface SupportEmailRoute {
   mailbox_name?: string | null;
   mailbox_handle?: string | null;
   mailbox_icon?: string | null;
+  mailbox_ids?: string[];
 }
 
 export interface CreateSupportEmailRouteRequest {
@@ -257,6 +258,7 @@ export interface SupportEmailSender {
   mailbox_name?: string | null;
   mailbox_handle?: string | null;
   mailbox_icon?: string | null;
+  mailbox_ids?: string[];
 }
 
 export interface CreateSupportEmailSenderRequest {
@@ -268,6 +270,14 @@ export interface CreateSupportEmailSenderRequest {
 export interface SetSupportEmailSenderDefaultRequest {
   default_scope: 'none' | 'workspace' | 'mailbox';
   mailbox_id?: string | null;
+  mailbox_ids?: string[];
+}
+
+export interface UpdateSupportEmailSenderRequest {
+  display_name?: string;
+  default_scope?: 'none' | 'workspace' | 'mailbox';
+  mailbox_id?: string | null;
+  mailbox_ids?: string[];
 }
 
 export interface SupportEmailSenderDomain {
@@ -322,6 +332,7 @@ export interface UpdateSupportMailboxRequest {
   linked_team_id?: string | null;
   workspace_member_ids?: string[];
   assignment_mode?: 'manual' | 'round_robin';
+  active?: boolean;
   import_linked_team?: boolean;
   reply_time_preset?: string;
   reply_time_custom_minutes?: number | null;
@@ -330,8 +341,10 @@ export interface UpdateSupportMailboxRequest {
 }
 
 export interface SupportTriageRuleConditions {
+  condition_logic?: 'all' | 'any';
   phrase_contains: string[];
   email_domain_equals: string[];
+  sender_email_contains?: string[];
 }
 
 export interface SupportTriageRule {
@@ -930,6 +943,15 @@ export interface SupportInboxSettings {
   csat_enabled: boolean;
   file_uploads_enabled: boolean;
   force_visitor_identity: boolean;
+}
+
+export interface SupportRoutingUsageStatus {
+  triage_enabled: boolean;
+  daily_budget: number;
+  used_today: number;
+  remaining_today?: number | null;
+  reset_at: string;
+  exhausted: boolean;
 }
 
 export interface SupportInstallationResponse {

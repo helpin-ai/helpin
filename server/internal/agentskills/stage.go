@@ -23,10 +23,14 @@ func EffectiveRuntimeRefs(agent *model.Agent) model.AgentSkillRefs {
 	if agent == nil {
 		return nil
 	}
-	if agent.IsSystem {
+	if refs := agent.Skills.Normalize(); len(refs) > 0 {
+		return refs
+	}
+	if shouldUseBuiltInAvailableSkillFallback(agent) {
 		if bundle, ok := worker.BuiltInPresetSkillBundleForPreset(agent.EffectivePresetKey()); ok {
-			refs := make(model.AgentSkillRefs, 0, len(bundle.SkillKeys))
-			for _, key := range bundle.SkillKeys {
+			runtimeSkillKeys := worker.RuntimeSkillKeysForPresetBundle(bundle)
+			refs := make(model.AgentSkillRefs, 0, len(runtimeSkillKeys))
+			for _, key := range runtimeSkillKeys {
 				key = strings.TrimSpace(key)
 				if key == "" {
 					continue
@@ -37,6 +41,42 @@ func EffectiveRuntimeRefs(agent *model.Agent) model.AgentSkillRefs {
 		}
 	}
 	return agent.Skills.Normalize()
+}
+
+func shouldUseBuiltInAvailableSkillFallback(agent *model.Agent) bool {
+	if agent == nil || !agent.IsSystem {
+		return false
+	}
+	versionKey := strings.TrimSpace(agent.EffectivePresetVersionKey())
+	if versionKey == "" {
+		return true
+	}
+	return versionKey == defaultBuiltInPresetVersionKey(agent.EffectivePresetKey())
+}
+
+func defaultBuiltInPresetVersionKey(presetKey string) string {
+	switch strings.TrimSpace(presetKey) {
+	case model.AgentPresetEpicPlanner:
+		return "epic_planner_default"
+	case model.AgentPresetTaskPlanner:
+		return "task_planner_default"
+	case model.AgentPresetCRMOperator:
+		return "crm_operator_default"
+	case model.AgentPresetSupportAgent:
+		return "support_agent_default"
+	case model.AgentPresetDocumentationAgent:
+		return "documentation_agent_default"
+	case model.AgentPresetMarketer:
+		return "marketer_default"
+	case model.AgentPresetCodeBuilder:
+		return "code_builder_default"
+	case model.AgentPresetReviewAgent:
+		return "review_agent_default"
+	case model.AgentPresetCommandAgent:
+		return "command_agent_default"
+	default:
+		return ""
+	}
 }
 
 func StageInto(

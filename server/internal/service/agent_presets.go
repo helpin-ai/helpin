@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 
@@ -27,6 +28,7 @@ func builtInPresetKeys() []string {
 		model.AgentPresetCRMOperator,
 		model.AgentPresetSupportAgent,
 		model.AgentPresetDocumentationAgent,
+		model.AgentPresetMarketer,
 		model.AgentPresetCodeBuilder,
 		model.AgentPresetReviewAgent,
 		model.AgentPresetCommandAgent,
@@ -68,6 +70,8 @@ func normalizePresetKey(key string) string {
 		return model.AgentPresetSupportAgent
 	case "docs", "documentation", model.AgentPresetDocumentationAgent:
 		return model.AgentPresetDocumentationAgent
+	case "marketing", "mira", model.AgentPresetMarketer:
+		return model.AgentPresetMarketer
 	case "engineer", "coder", model.AgentPresetCodeBuilder:
 		return model.AgentPresetCodeBuilder
 	case "reviewer", model.AgentPresetReviewAgent:
@@ -80,7 +84,11 @@ func normalizePresetKey(key string) string {
 }
 
 func normalizePresetVersionKey(versionKey string) string {
-	return strings.TrimSpace(versionKey)
+	versionKey = strings.TrimSpace(versionKey)
+	if versionKey == "researcher_default" {
+		return "command_agent_default"
+	}
+	return versionKey
 }
 
 func defaultPresetKeyForAgent(isSystem bool) string {
@@ -102,12 +110,14 @@ func defaultPresetVersionKeyForPresetKey(presetKey string) string {
 		return "support_agent_default"
 	case model.AgentPresetDocumentationAgent:
 		return "documentation_agent_default"
+	case model.AgentPresetMarketer:
+		return "marketer_default"
 	case model.AgentPresetCodeBuilder:
 		return "code_builder_local_commit_delivery"
 	case model.AgentPresetReviewAgent:
 		return "review_agent_interactive_loop"
 	case model.AgentPresetCommandAgent:
-		return "researcher_default"
+		return "command_agent_default"
 	default:
 		return ""
 	}
@@ -138,7 +148,8 @@ func applyBuiltInPresetInstructionMetadata(presets []model.AgentPresetDefinition
 			continue
 		}
 		presets[idx].InstructionPreamble = bundle.Preamble
-		presets[idx].InstructionSkills = append([]string(nil), bundle.SkillKeys...)
+		presets[idx].InstructionSkills = append([]string(nil), bundle.CoreSkillKeys...)
+		presets[idx].AvailableSkills = append([]string(nil), bundle.AvailableSkillKeys...)
 		presets[idx].InstructionTemplateVersion = worker.BuiltInPresetInstructionTemplateVersion(presets[idx].Key)
 		if presets[idx].SystemPrompt == nil {
 			presets[idx].SystemPrompt = worker.BuiltInPresetPrompt(presets[idx].Key)
@@ -158,6 +169,8 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	definition.Scope = "workspace"
 	definition.WorkspaceID = &version.WorkspaceID
 	definition.SourceVersionKey = version.SourceVersionKey
+	definition.CreatedAt = &version.CreatedAt
+	definition.UpdatedAt = &version.UpdatedAt
 	if version.Provider != nil {
 		definition.Provider = trimPtr(version.Provider)
 	}
@@ -184,6 +197,13 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 			definition.InstructionSkills = []string{}
 		}
 	}
+	if len(version.AvailableSkills) > 0 && string(version.AvailableSkills) != "null" {
+		if skills := parseJSONStringSlice(json.RawMessage(version.AvailableSkills)); skills != nil {
+			definition.AvailableSkills = skills
+		} else {
+			definition.AvailableSkills = []string{}
+		}
+	}
 	if description := strings.TrimSpace(stringOrDefault(version.Description, "")); description != "" {
 		definition.Description = description
 	}
@@ -192,6 +212,13 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	}
 	if len(version.AllowedTools) > 0 {
 		definition.AllowedTools = worker.NormalizeToolNames(parseJSONStringSlice(version.AllowedTools))
+	}
+	if len(version.AllowedTargets) > 0 {
+		if targets := parseJSONStringSlice(version.AllowedTargets); targets != nil {
+			definition.AllowedTargetTypes = targets
+		} else {
+			definition.AllowedTargetTypes = []string{}
+		}
 	}
 	if len(version.SupportedModes) > 0 {
 		definition.SupportedModes = parseJSONStringSlice(version.SupportedModes)
@@ -256,7 +283,7 @@ func allowedRuntimeKindsForPresetKey(presetKey string) []string {
 	case model.AgentPresetReviewAgent:
 		// native_sdk remains available for compatibility with existing agents.
 		return []string{"opencode", "codex", "native_sdk"}
-	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator, model.AgentPresetSupportAgent, model.AgentPresetDocumentationAgent:
+	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator, model.AgentPresetSupportAgent, model.AgentPresetDocumentationAgent, model.AgentPresetMarketer:
 		return []string{"codex", "native_sdk"}
 	default:
 		if preset, ok := agentPresetDefinition(presetKey); ok && strings.TrimSpace(preset.RuntimeKind) != "" {
@@ -339,9 +366,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetTaskPlanner),
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
-			Label:                 "Task Planner",
+			Label:                 "Coding Task Planner",
 			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
-			DefaultRole:           "Task Planner",
+			DefaultRole:           "Coding Task Planner",
 			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
@@ -365,7 +392,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          []string{"list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"},
+			AllowedTools:          []string{worker.ToolListAvailableSkills, worker.ToolSearchAvailableSkills, worker.ToolReadSkill, "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"},
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
@@ -414,6 +441,58 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			SystemPrompt:          documentationPrompt,
 		},
 		{
+			Key:                 model.AgentPresetMarketer,
+			FamilyKey:           model.AgentPresetMarketer,
+			VersionKey:          defaultPresetVersionKeyForPresetKey(model.AgentPresetMarketer),
+			VersionLabel:        "Default",
+			IsDefaultVersion:    true,
+			Label:               "Mira",
+			Description:         "Marketing agent for growth plans, campaigns, copy, lifecycle messaging, content strategy, launches, and customer-signal synthesis.",
+			DefaultRole:         "Marketer",
+			RuntimeKind:         "codex",
+			DefaultTriggerMode:  "manual",
+			AllowedTriggerModes: []string{"manual"},
+			AllowedTools: []string{
+				worker.ToolListAvailableSkills,
+				worker.ToolSearchAvailableSkills,
+				worker.ToolReadSkill,
+				"update_plan",
+				"request_user_input",
+				"request_approval",
+				"request_review_checkpoint",
+				"list_documents",
+				"list_collections",
+				"read_document",
+				"get_document_blocks",
+				"search_documents",
+				"create_document",
+				"write_document_content",
+				"publish_document_change_proposal",
+				"link_document_to_object",
+				"list_tasks",
+				"create_task",
+				"add_task_comment",
+				"get_task_context",
+				"list_workspace_teams",
+				"list_team_workflows_with_stages",
+				"list_deals",
+				"list_contacts",
+				"list_buyer_signals",
+				"add_deal_note",
+				"web_search_exa",
+				"fetch_url",
+				"crawl_url",
+				"get_release_context",
+				"find_tasks_for_git_changes",
+			},
+			AllowedCommands:       []string{},
+			AllowedTargetTypes:    []string{"workspace", "document", "task", "crm_deal", "crm_contact"},
+			ApprovalMode:          "always",
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			SupportedModes:        supportedModesForRuntime("codex"),
+			SystemPrompt:          worker.BuiltInPresetPrompt(model.AgentPresetMarketer),
+		},
+		{
 			Key:                   model.AgentPresetCodeBuilder,
 			FamilyKey:             model.AgentPresetCodeBuilder,
 			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder),
@@ -445,9 +524,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Provider:              &reviewAgentProvider,
 			Model:                 &reviewAgentModel,
 			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
-			Label:                 "Review Agent",
+			Label:                 "QA & Code Reviewer",
 			Description:           "Review-first agent for validation, follow-up discussion, and agreed fixes in the same branch.",
-			DefaultRole:           "Review Agent",
+			DefaultRole:           "QA & Code Reviewer",
 			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual", "auto_on_assignment", "auto_on_event"},

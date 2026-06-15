@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAgents, useAutomationActivity, useAutomationOverview, useAutomationTriggerCatalog } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ArrowRight01Icon, DashboardSpeed01Icon, SecurityCheckIcon, BotIcon } from '@/lib/icons';
@@ -167,10 +168,34 @@ interface SubgroupDef {
   filter: (item: AutomationInventoryItem) => boolean;
 }
 
+interface TriggerGroupDef {
+  label: string;
+  helper: string;
+  filter: (item: AutomationTriggerCatalogEntry) => boolean;
+}
+
 const SUBGROUPS: SubgroupDef[] = [
   { label: 'CRM system intelligence', filter: (i) => i.module === 'crm' && i.kind === 'built_in_automation' },
   { label: 'PM built-in rules', filter: (i) => i.module === 'pm' && i.kind === 'built_in_automation' },
   { label: 'Automation rules', filter: (i) => i.kind === 'automation_rule' },
+];
+
+const TRIGGER_GROUPS: TriggerGroupDef[] = [
+  {
+    label: 'Manual triggers',
+    helper: 'Human-started agent runs from product surfaces.',
+    filter: (item) => item.category === 'manual',
+  },
+  {
+    label: 'Flow triggers',
+    helper: 'Event and schedule triggers used by automation flows.',
+    filter: (item) => item.binding_kind === 'automation_rule',
+  },
+  {
+    label: 'Built-in triggers',
+    helper: 'Product-owned triggers configured from feature settings.',
+    filter: (item) => item.category !== 'manual' && item.binding_kind !== 'automation_rule',
+  },
 ];
 
 function buildExecutionHistoryHref(
@@ -179,7 +204,7 @@ function buildExecutionHistoryHref(
   basePath?: string,
 ) {
   const base = basePath ?? buildAutomationActivityPath(slug);
-  const params = new URLSearchParams({ page: '1' });
+  const params = new URLSearchParams();
   if (filters.agent_id) params.set('agent_id', filters.agent_id);
   if (filters.binding_id) params.set('binding_id', filters.binding_id);
   if (filters.trigger_type) params.set('trigger_type', filters.trigger_type);
@@ -188,7 +213,8 @@ function buildExecutionHistoryHref(
   if (filters.status) params.set('status', filters.status);
   if (filters.fired_after) params.set('fired_after', filters.fired_after);
   if (filters.fired_before) params.set('fired_before', filters.fired_before);
-  return `${base}?${params.toString()}#trigger-executions`;
+  const query = params.toString();
+  return `${base}${query ? `?${query}` : ''}#trigger-executions`;
 }
 
 function buildWorkflowHref(slug: string | undefined, search?: WorkflowRuleSearchPreset, basePath?: string) {
@@ -213,6 +239,34 @@ function buildWorkflowHref(slug: string | undefined, search?: WorkflowRuleSearch
   if (search.target_mode) params.set('target_mode', search.target_mode);
   if (search.target_id) params.set('target_id', search.target_id);
   return `${workflowsBase}?${params.toString()}`;
+}
+
+function triggerCountTooltip(item: AutomationTriggerCatalogEntry) {
+  if (item.category === 'manual') {
+    return `${item.binding_count} agent${item.binding_count === 1 ? '' : 's'} can be started manually from this surface.`;
+  }
+  if (item.binding_kind === 'automation_rule') {
+    return `${item.binding_count} active flow${item.binding_count === 1 ? '' : 's'} use this trigger.`;
+  }
+  if (item.binding_kind === 'support_widget') {
+    return item.binding_count > 0
+      ? 'Support AI auto-replies are enabled with an assigned agent.'
+      : 'Support AI auto-replies are not currently enabled with an assigned agent.';
+  }
+  return `${item.binding_count} active setup${item.binding_count === 1 ? '' : 's'} use this trigger.`;
+}
+
+function triggerCountLabel(item: AutomationTriggerCatalogEntry) {
+  if (item.category === 'manual') {
+    return `${item.binding_count} runnable agent${item.binding_count === 1 ? '' : 's'}`;
+  }
+  if (item.binding_kind === 'automation_rule') {
+    return `${item.binding_count} active flow${item.binding_count === 1 ? '' : 's'}`;
+  }
+  if (item.binding_kind === 'support_widget') {
+    return item.binding_count > 0 ? 'Enabled' : 'Not enabled';
+  }
+  return `${item.binding_count} active setup${item.binding_count === 1 ? '' : 's'}`;
 }
 
 function AutomationRow({ item, slug }: { item: AutomationInventoryItem; slug?: string }) {
@@ -271,10 +325,8 @@ function TriggerRow({
   activityBasePath?: string;
   flowsBasePath?: string;
 }) {
-  const managePath = item.binding_kind === 'automation_rule'
-    ? flowsBasePath
-    : displayPath(item.config_surface, slug);
-  const countLabel = item.category === 'manual' ? 'agents' : 'active';
+  const countLabel = triggerCountLabel(item);
+  const countTooltip = triggerCountTooltip(item);
   const historyHref = item.execution_search ? buildExecutionHistoryHref(slug, item.execution_search, activityBasePath) : undefined;
   const createRuleHref = buildWorkflowHref(slug, item.create_rule_search, flowsBasePath);
   const showRulesHref = buildWorkflowHref(slug, item.show_rules_search, flowsBasePath);
@@ -284,32 +336,37 @@ function TriggerRow({
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{item.title}</span>
         <span className="block text-xs text-muted-foreground">{item.description}</span>
-        <span className="block text-[11px] text-muted-foreground/80">{item.source_surface}</span>
+        <span className="mt-1 inline-flex max-w-full items-center rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[11px] text-muted-foreground/90">
+          <span className="shrink-0 font-medium text-muted-foreground">Source:</span>
+          <span className="ml-1 truncate">{item.source_surface}</span>
+        </span>
       </span>
-      <Badge variant="outline" className="shrink-0 text-[10px]">
-        {item.binding_count} {countLabel}
-      </Badge>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="outline" className="shrink-0 cursor-help text-[10px]">
+              {countLabel}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-64 text-xs leading-relaxed">
+            {countTooltip}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       {createRuleHref && (
         <a href={createRuleHref} className="shrink-0 text-xs text-muted-foreground hover:text-foreground">
-          Create rule
+          Create flow
         </a>
       )}
       {showRulesHref && (
         <a href={showRulesHref} className="shrink-0 text-xs text-muted-foreground hover:text-foreground">
-          Show rules
+          View flows
         </a>
       )}
       {historyHref && (
         <a href={historyHref} className="shrink-0 text-xs text-muted-foreground hover:text-foreground">
-          History
+          View history
         </a>
-      )}
-      {managePath ? (
-        <a href={managePath} className="shrink-0 text-muted-foreground hover:text-foreground">
-          <ArrowRight01Icon className="h-4 w-4" />
-        </a>
-      ) : (
-        <span className="w-4 shrink-0" />
       )}
     </div>
   );
@@ -481,6 +538,12 @@ export function AutomationOverviewPanel({
   const slug = currentWorkspace?.slug;
   const items = needsOverview ? (overviewQuery.data?.items ?? []) : [];
   const triggerCatalog = triggerCatalogQuery.data ?? [];
+  const triggerGroups = useMemo(() => {
+    return TRIGGER_GROUPS.map((group) => ({
+      ...group,
+      items: triggerCatalog.filter(group.filter),
+    })).filter((group) => group.items.length > 0);
+  }, [triggerCatalog]);
 
   const triggerTypeOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -563,30 +626,39 @@ export function AutomationOverviewPanel({
       )}
 
       {showTriggerCatalog && triggerCatalog.length > 0 && (
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <BotIcon className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-base">Trigger Catalog</CardTitle>
-              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {triggerCatalog.length}
-              </span>
-            </div>
-          </CardHeader>
-          <CardContent className="px-0 pb-2">
-            <div className="divide-y divide-border/50">
-              {triggerCatalog.map((item) => (
-                <TriggerRow
-                  key={item.id}
-                  item={item}
-                  slug={slug}
-                  activityBasePath={pathOverrides?.activityBasePath}
-                  flowsBasePath={pathOverrides?.flowsBasePath}
-                />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="space-y-7">
+          {triggerGroups.map((group) => (
+            <section key={group.label} className="space-y-2">
+              <div className="px-1">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <h3 className="inline-flex cursor-help text-sm font-semibold text-foreground">
+                        {group.label} <span className="ml-1 text-muted-foreground">({group.items.length})</span>
+                      </h3>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" align="start" className="max-w-64 text-xs leading-relaxed">
+                      {group.helper}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">
+                <div className="divide-y divide-border/50">
+                  {group.items.map((item) => (
+                    <TriggerRow
+                      key={item.id}
+                      item={item}
+                      slug={slug}
+                      activityBasePath={pathOverrides?.activityBasePath}
+                      flowsBasePath={pathOverrides?.flowsBasePath}
+                    />
+                  ))}
+                </div>
+              </div>
+            </section>
+          ))}
+        </div>
       )}
 
       {showTriggerExecutions && (

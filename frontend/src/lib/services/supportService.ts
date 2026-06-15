@@ -17,6 +17,7 @@ import type {
   ConversationStatus,
   SupportInstallationResponse,
   SupportInboxSettings,
+  SupportRoutingUsageStatus,
   ConversationListResponse,
   UnreadStats,
   VisitorContextResponse,
@@ -39,6 +40,7 @@ import type {
   SupportEmailSender,
   CreateSupportEmailSenderRequest,
   SetSupportEmailSenderDefaultRequest,
+  UpdateSupportEmailSenderRequest,
   SupportEmailSenderDomain,
   CreateSupportEmailSenderDomainRequest,
   SupportTriageRule,
@@ -141,6 +143,8 @@ export const supportService = {
     api.post<SupportEmailSender>(`/support/inbox/email-senders/${senderId}/verify-dns${qs(workspaceId)}`, {}),
   setDefaultEmailSender: (workspaceId: string, senderId: string, payload: SetSupportEmailSenderDefaultRequest) =>
     api.post<SupportEmailSender>(`/support/inbox/email-senders/${senderId}/set-default${qs(workspaceId)}`, payload),
+  updateEmailSender: (workspaceId: string, senderId: string, payload: UpdateSupportEmailSenderRequest) =>
+    api.put<SupportEmailSender>(`/support/inbox/email-senders/${senderId}${qs(workspaceId)}`, payload),
   disableEmailSender: (workspaceId: string, senderId: string) =>
     api.post(`/support/inbox/email-senders/${senderId}/disable${qs(workspaceId)}`, {}),
   listEmailSenderDomains: (workspaceId: string) =>
@@ -260,6 +264,8 @@ export const supportService = {
   // Installation settings
   getInstallation: (workspaceId: string) =>
     api.get<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`),
+  getRoutingUsageStatus: (workspaceId: string) =>
+    api.get<SupportRoutingUsageStatus>(`/support/inbox/routing-usage${qs(workspaceId)}`),
   updateInstallationSettings: (workspaceId: string, settings: Partial<SupportInboxSettings>) =>
     api.patch<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`, settings),
   regenerateWidgetKey: (workspaceId: string) =>

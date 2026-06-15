@@ -67,15 +67,15 @@ func activeBuiltInSkillSet(ctx NativeActiveSelectionContext) (map[string]bool, b
 		switch planningStage {
 		case model.PlanningStageDraftSpec:
 			return map[string]bool{
-				"approval_protocol":  true,
-				"epic_state_routing": true,
-				"prd_authorship":     true,
+				"prd_task_plan_approval":      true,
+				"epic_planning_state_routing": true,
+				"product_prd_authorship":      true,
 			}, true
 		case model.PlanningStagePlanTasks:
 			return map[string]bool{
-				"approval_protocol":  true,
-				"epic_state_routing": true,
-				"task_decomposition": true,
+				"prd_task_plan_approval":      true,
+				"epic_planning_state_routing": true,
+				"coding_task_decomposition":   true,
 			}, true
 		default:
 			return nil, false
@@ -87,8 +87,8 @@ func activeBuiltInSkillSet(ctx NativeActiveSelectionContext) (map[string]bool, b
 		switch planningStage {
 		case model.PlanningStageTaskPlanDoc:
 			return map[string]bool{
-				"approval_protocol":    true,
-				"task_planner_context": true,
+				"prd_task_plan_approval": true,
+				"coding_task_planning":   true,
 			}, true
 		default:
 			return nil, false
@@ -102,8 +102,7 @@ func activeBuiltInSkillSet(ctx NativeActiveSelectionContext) (map[string]bool, b
 
 func documentationActiveBuiltInSkillSet(targetType string) map[string]bool {
 	active := map[string]bool{
-		"docs_information_architecture": true,
-		"general_agent_behavior":        true,
+		"docs_architecture_review": true,
 	}
 	switch strings.TrimSpace(targetType) {
 	case "document":
@@ -111,30 +110,30 @@ func documentationActiveBuiltInSkillSet(targetType string) map[string]bool {
 		active["public_help_docs_maintenance"] = true
 		active["api_docs_maintenance"] = true
 	case "support_conversation", "support_coverage_gap":
-		active["support_gap_to_docs"] = true
-		active["external_help_doc_writing"] = true
+		active["support_gap_docs_update"] = true
+		active["public_help_doc_writing"] = true
 		active["public_help_docs_maintenance"] = true
 	case "repository", "task", "epic":
-		active["release_to_docs_update"] = true
+		active["post_release_docs_update"] = true
 		active["internal_docs_maintenance"] = true
 		active["public_help_docs_maintenance"] = true
 		active["api_docs_maintenance"] = true
 	case "workspace":
-		active["external_help_doc_writing"] = true
-		active["api_doc_writing"] = true
+		active["public_help_doc_writing"] = true
+		active["api_reference_doc_writing"] = true
 		active["internal_docs_maintenance"] = true
 		active["public_help_docs_maintenance"] = true
 		active["api_docs_maintenance"] = true
-		active["release_to_docs_update"] = true
-		active["support_gap_to_docs"] = true
+		active["post_release_docs_update"] = true
+		active["support_gap_docs_update"] = true
 	default:
-		active["external_help_doc_writing"] = true
-		active["api_doc_writing"] = true
+		active["public_help_doc_writing"] = true
+		active["api_reference_doc_writing"] = true
 		active["internal_docs_maintenance"] = true
 		active["public_help_docs_maintenance"] = true
 		active["api_docs_maintenance"] = true
-		active["release_to_docs_update"] = true
-		active["support_gap_to_docs"] = true
+		active["post_release_docs_update"] = true
+		active["support_gap_docs_update"] = true
 	}
 	return active
 }
@@ -151,9 +150,9 @@ func shouldKeepActiveByDefault(ref model.AgentSkillRef, definition worker.SkillD
 
 func isPhaseSelectableBuiltInSkill(key string) bool {
 	switch strings.TrimSpace(key) {
-	case "approval_protocol", "prd_authorship", "task_decomposition", "epic_state_routing", "task_planner_context":
+	case "prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "coding_task_planning":
 		return true
-	case "docs_information_architecture", "external_help_doc_writing", "api_doc_writing", "internal_docs_maintenance", "public_help_docs_maintenance", "api_docs_maintenance", "release_to_docs_update", "support_gap_to_docs":
+	case "docs_architecture_review", "public_help_doc_writing", "api_reference_doc_writing", "internal_docs_maintenance", "public_help_docs_maintenance", "api_docs_maintenance", "post_release_docs_update", "support_gap_docs_update":
 		return true
 	default:
 		return false

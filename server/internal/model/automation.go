@@ -132,6 +132,7 @@ type WorkflowRuleSearchPreset struct {
 // TriggerExecutionListFilters defines server-side filtering for workspace
 // trigger execution history.
 type TriggerExecutionListFilters struct {
+	ExecutionID *string    `json:"execution_id,omitempty"`
 	AgentID     *string    `json:"agent_id,omitempty"`
 	BindingID   *string    `json:"binding_id,omitempty"`
 	TriggerType *string    `json:"trigger_type,omitempty"`
@@ -149,6 +150,8 @@ type AutomationTriggerExecutionListItem struct {
 	ExecutionID    string     `json:"execution_id"`
 	AgentID        string     `json:"agent_id"`
 	AgentName      string     `json:"agent_name"`
+	ActorID        *string    `json:"actor_id,omitempty"`
+	ActorName      *string    `json:"actor_name,omitempty"`
 	BindingID      string     `json:"binding_id"`
 	BindingKind    string     `json:"binding_kind"`
 	BindingTitle   string     `json:"binding_title"`

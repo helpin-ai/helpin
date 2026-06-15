@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { InboxesRoutingSettingsPage, type InboxesRoutingTab } from '@/pages/settings/InboxesRoutingSettingsPage';
 import { SettingsRouteViewport } from '@/pages/settings/SettingsRouteViewport';
 
-const VALID_TABS: InboxesRoutingTab[] = ['inboxes', 'email', 'senders', 'routing'];
+const VALID_TABS: InboxesRoutingTab[] = ['inboxes', 'email', 'senders'];
 
 type InboxesRoutingSearch = {
   tab: InboxesRoutingTab;

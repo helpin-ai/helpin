@@ -7,7 +7,9 @@ import type {
 } from '../types';
 import type {
   Agent,
+  AgentAnalyticsResponse,
   AgentTemplate,
+  AgentVersion,
   AgentRun,
   AgentRunArtifact,
   AgentRunMessage,
@@ -16,6 +18,7 @@ import type {
   ContinueAgentRunRequest,
   AutomationRule,
   CreateAgentRequest,
+  CreateAgentVersionRequest,
   CustomAgentDraftRequest,
   CustomAgentDraftResponse,
   CreateAgentFromTemplateRequest,
@@ -35,6 +38,7 @@ import type {
   SkillCatalogResponse,
   ToolCatalogResponse,
   UpdateAgentRequest,
+  UpdateAgentVersionRequest,
   UpdateAutomationRuleRequest,
   UpdateWorkspaceSkillRequest,
   WorkspaceSkillResponse,
@@ -44,6 +48,7 @@ const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspac
 
 const activityQS = (workspaceId: string, filters: AutomationTriggerExecutionFilters = {}) => {
   const params = new URLSearchParams({ workspace_id: workspaceId });
+  if (filters.execution_id) params.set('execution_id', filters.execution_id);
   if (filters.agent_id) params.set('agent_id', filters.agent_id);
   if (filters.binding_id) params.set('binding_id', filters.binding_id);
   if (filters.trigger_type) params.set('trigger_type', filters.trigger_type);
@@ -91,6 +96,9 @@ export const automationService = {
 
   updateFlow: (workspaceId: string, flowId: string, data: UpdateAutomationRuleRequest) =>
     api.put<AutomationRule>(`/automation/flows/${flowId}${qs(workspaceId)}`, data),
+
+  runFlowNow: (workspaceId: string, flowId: string) =>
+    api.post<AgentRun>(`/automation/flows/${flowId}/run${qs(workspaceId)}`, {}),
 
   deleteFlow: (workspaceId: string, flowId: string) =>
     api.del(`/automation/flows/${flowId}${qs(workspaceId)}`),
@@ -149,6 +157,9 @@ export const automationService = {
   getAgentUsage: (workspaceId: string, id: string) =>
     api.get<AgentTriggerUsageSummary>(`/automation/agents/${id}/usage${qs(workspaceId)}`),
 
+  getAgentAnalytics: (workspaceId: string, id: string, range: '7d' | '30d' | '90d' | '12m' = '30d') =>
+    api.get<AgentAnalyticsResponse>(`/automation/agents/${id}/analytics${qs(workspaceId)}&range=${encodeURIComponent(range)}`),
+
   createAgent: (workspaceId: string, payload: CreateAgentRequest) =>
     api.post<Agent>(`/automation/agents${qs(workspaceId)}`, payload),
 
@@ -160,6 +171,21 @@ export const automationService = {
 
   updateAgent: (workspaceId: string, id: string, payload: UpdateAgentRequest) =>
     api.put<Agent>(`/automation/agents/${id}${qs(workspaceId)}`, payload),
+
+  listAgentVersions: (workspaceId: string, id: string) =>
+    api.get<AgentVersion[]>(`/automation/agents/${id}/versions${qs(workspaceId)}`),
+
+  createAgentVersion: (workspaceId: string, id: string, payload: CreateAgentVersionRequest) =>
+    api.post<AgentVersion>(`/automation/agents/${id}/versions${qs(workspaceId)}`, payload),
+
+  updateAgentVersion: (workspaceId: string, id: string, versionId: string, payload: UpdateAgentVersionRequest) =>
+    api.put<AgentVersion>(`/automation/agents/${id}/versions/${versionId}${qs(workspaceId)}`, payload),
+
+  activateAgentVersion: (workspaceId: string, id: string, versionId: string) =>
+    api.post<Agent>(`/automation/agents/${id}/versions/${versionId}/activate${qs(workspaceId)}`, {}),
+
+  deleteAgentVersion: (workspaceId: string, id: string, versionId: string) =>
+    api.del<void>(`/automation/agents/${id}/versions/${versionId}${qs(workspaceId)}`),
 
   deleteAgent: (workspaceId: string, id: string) =>
     api.del(`/automation/agents/${id}${qs(workspaceId)}`),

@@ -259,6 +259,52 @@ func TestEnsureBuiltInTaskPlannerRefreshesLegacyPrompt(t *testing.T) {
 	}
 }
 
+func TestEnsureBuiltInCommandAgentReconcilesLegacyResearcherPreset(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := &AgentService{agentRepo: agentRepo}
+
+	now := time.Now().UTC()
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, preset_version_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets,
+		approval_mode, max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-command-legacy", "ws-test", true, "Command Agent", model.AgentPresetResearcher, "researcher_default", "Command Agent", "idle", "native_sdk",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeAutonomous, now, now,
+	).Error; err != nil {
+		t.Fatalf("insert legacy command agent: %v", err)
+	}
+
+	updated, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCommandAgent)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if updated.ID != "agent-command-legacy" {
+		t.Fatalf("expected legacy command agent to be reused, got %q", updated.ID)
+	}
+	if updated.PresetKey != model.AgentPresetCommandAgent {
+		t.Fatalf("expected canonical command agent preset key %q, got %q", model.AgentPresetCommandAgent, updated.PresetKey)
+	}
+	if updated.PresetVersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent) {
+		t.Fatalf("expected canonical command agent preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent), updated.PresetVersionKey)
+	}
+
+	agents, err := agentRepo.List(context.Background(), "ws-test")
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	var commandAgents []model.Agent
+	for _, agent := range agents {
+		if agent.IsSystem && normalizePresetKey(agent.PresetKey) == model.AgentPresetCommandAgent {
+			commandAgents = append(commandAgents, agent)
+		}
+	}
+	if len(commandAgents) != 1 {
+		t.Fatalf("expected exactly one command system agent after reconciliation, got %d", len(commandAgents))
+	}
+}
+
 func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -656,7 +702,7 @@ func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
 	if updated.ApprovalMode != "never" {
 		t.Fatalf("expected system agent approval mode never, got %q", updated.ApprovalMode)
 	}
-	// The workspace version's prompt must survive the update (not be replaced by the built-in family prompt).
+	// The custom version's prompt must survive the update (not be replaced by the built-in family prompt).
 	if updated.SystemPrompt == nil || !strings.Contains(*updated.SystemPrompt, "Workspace tuned code builder.") {
 		t.Fatalf("expected workspace preset prompt preserved after update, got %v", updated.SystemPrompt)
 	}
@@ -707,6 +753,48 @@ func TestUpdateAgent_ClearsSystemModelWhenBlankStringProvided(t *testing.T) {
 	}
 	if reloaded.Model != nil {
 		t.Fatalf("expected cleared model after reload, got %+v", reloaded.Model)
+	}
+}
+
+func TestUpdateAgent_AllowsSystemAgentMonthlyTokenBudgetUpdate(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:   agentRepo,
+		activitySvc: activitySvc,
+		wsPublisher: nil,
+	}
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+
+	budget := 250000
+	updated, err := svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
+		MonthlyTokenBudget: &budget,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateAgent returned error: %v", err)
+	}
+	if updated.MonthlyTokenBudget == nil || *updated.MonthlyTokenBudget != budget {
+		t.Fatalf("expected monthly token budget %d, got %+v", budget, updated.MonthlyTokenBudget)
+	}
+	if updated.PresetKey != model.AgentPresetCodeBuilder {
+		t.Fatalf("expected preset key to remain %q, got %q", model.AgentPresetCodeBuilder, updated.PresetKey)
+	}
+
+	clearBudget := 0
+	updated, err = svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
+		MonthlyTokenBudget: &clearBudget,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateAgent clear returned error: %v", err)
+	}
+	if updated.MonthlyTokenBudget != nil {
+		t.Fatalf("expected monthly token budget to clear, got %+v", updated.MonthlyTokenBudget)
 	}
 }
 
@@ -866,7 +954,7 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 		t.Fatalf("expected family key %q, got %q", model.AgentPresetCodeBuilder, version.FamilyKey)
 	}
 	if version.VersionKey == "" || version.VersionKey == defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder) {
-		t.Fatalf("expected a new workspace version key, got %q", version.VersionKey)
+		t.Fatalf("expected a new custom version key, got %q", version.VersionKey)
 	}
 	if version.Model == nil || *version.Model != "gpt-5-mini" {
 		t.Fatalf("expected persisted model override, got %+v", version.Model)
@@ -1081,7 +1169,7 @@ func TestUpdateWorkspacePresetVersion(t *testing.T) {
 		Model:             &blankModel,
 		AllowedTools:      mustJSONStringSlice([]string{"read_file"}),
 		SupportedModes:    mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
-		InstructionSkills: mustJSONStringSlice([]string{"system/general_agent_behavior"}),
+		InstructionSkills: mustJSONStringSlice([]string{"system/engineering_planner_operating_rules"}),
 	}
 	updated, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, updateReq, "user-2")
 	if err != nil {
@@ -1169,6 +1257,79 @@ func TestUpdateWorkspacePresetVersion_PersistsPromptOnlyEditAndExplicitEmptyList
 	}
 	if len(parseJSONStringSlice(stored.InstructionSkills)) != 0 {
 		t.Fatalf("expected stored instruction skills to be empty, got %v", parseJSONStringSlice(stored.InstructionSkills))
+	}
+}
+
+func TestCreateWorkspacePresetVersion_SystemPromptWinsOverInstructionMetadata(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+	}
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+
+	rawPrompt := "Use this exact custom system prompt."
+	legacyPreamble := "This legacy preamble must not replace the raw prompt."
+	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:           "ws-test",
+		FamilyKey:             model.AgentPresetEpicPlanner,
+		Label:                 "Workspace Atlas Raw Prompt",
+		SourceVersionKey:      agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner)),
+		SystemPrompt:          &rawPrompt,
+		InstructionPreamble:   &legacyPreamble,
+		InstructionSkills:     mustJSONStringSlice([]string{"engineering_planner_operating_rules"}),
+		AllowedTools:          mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
+		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeInteractive}),
+		DefaultInvocationMode: agentTestStringPtr(model.InvocationModeInteractive),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if created.SystemPrompt == nil || *created.SystemPrompt != rawPrompt {
+		t.Fatalf("expected raw system prompt %q, got %+v", rawPrompt, created.SystemPrompt)
+	}
+}
+
+func TestUpdateWorkspacePresetVersion_SystemPromptWinsOverInstructionMetadata(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+	}
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+
+	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:      "ws-test",
+		FamilyKey:        model.AgentPresetEpicPlanner,
+		Label:            "Workspace Atlas",
+		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner)),
+		SystemPrompt:     agentTestStringPtr("Workspace atlas v1"),
+		AllowedTools:     mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
+		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeInteractive}),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if created.ID == nil {
+		t.Fatal("expected workspace preset version id")
+	}
+
+	rawPrompt := "Use this exact updated system prompt."
+	legacyPreamble := "This update preamble must not replace the raw prompt."
+	updated, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, model.UpdateWorkspaceAgentPresetVersionRequest{
+		SystemPrompt:        &rawPrompt,
+		InstructionPreamble: &legacyPreamble,
+		InstructionSkills:   mustJSONStringSlice([]string{"engineering_planner_operating_rules"}),
+	}, "user-2")
+	if err != nil {
+		t.Fatalf("UpdateWorkspacePresetVersion returned error: %v", err)
+	}
+	if updated.SystemPrompt == nil || *updated.SystemPrompt != rawPrompt {
+		t.Fatalf("expected raw system prompt %q, got %+v", rawPrompt, updated.SystemPrompt)
 	}
 }
 
@@ -1501,6 +1662,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			template_key TEXT,
 			template_instance_id TEXT,
 			template_version INTEGER,
+			active_version_id TEXT,
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT NOT NULL,
@@ -1519,7 +1681,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			team_id TEXT,
 			allowed_tools BLOB NOT NULL DEFAULT '[]',
 			allowed_commands BLOB NOT NULL DEFAULT '[]',
-			allowed_targets BLOB NOT NULL DEFAULT '[]',
+			allowed_targets BLOB NOT NULL DEFAULT x'5b5d',
 			schedule TEXT,
 			target_selector TEXT,
 			trigger_events BLOB NOT NULL DEFAULT '[]',
@@ -1550,8 +1712,10 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			system_prompt TEXT,
 			instruction_preamble TEXT,
 			instruction_skills BLOB NOT NULL DEFAULT '[]',
+			available_skills BLOB NOT NULL DEFAULT '[]',
 			instruction_template_version TEXT NOT NULL DEFAULT '',
 			allowed_tools BLOB NOT NULL DEFAULT '[]',
+			allowed_targets BLOB NOT NULL DEFAULT '[]',
 			supported_modes BLOB NOT NULL DEFAULT '[]',
 			approval_mode TEXT NOT NULL DEFAULT 'preset_default',
 			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',

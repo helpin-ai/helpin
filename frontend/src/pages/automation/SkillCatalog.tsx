@@ -7,6 +7,7 @@ import {
   Upload01Icon,
   Delete01Icon,
   PencilEdit02Icon,
+  HelpCircleIcon,
 } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   useAutomationSkillCatalog,
   useCreateWorkspaceSkill,
@@ -58,6 +65,20 @@ function presetLabel(preset: string): string {
   return PRESET_STYLES[preset as AgentPresetKey]?.label ?? preset;
 }
 
+function displaySkillTitle(skill: Pick<SkillCatalogEntry, 'title' | 'key'>) {
+  return skill.title?.trim() || skill.key;
+}
+
+function skillKeyFromTitle(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 function skillMetaLine(skill: SkillCatalogEntry): string | null {
   const presets = skill.presets ?? [];
   if (presets.length > 0) {
@@ -67,6 +88,33 @@ function skillMetaLine(skill: SkillCatalogEntry): string | null {
   if (skill.source_kind === 'workspace') return 'Custom';
   if (skill.source_kind === 'imported') return 'Imported';
   return null;
+}
+
+function RequiredFieldLabel({
+  htmlFor,
+  children,
+  tooltip,
+}: {
+  htmlFor: string;
+  children: string;
+  tooltip: string;
+}) {
+  return (
+    <Label htmlFor={htmlFor} className="inline-flex items-center gap-1.5">
+      <span>{children}</span>
+      <span aria-hidden="true" className="text-destructive">*</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="rounded-sm text-muted-foreground/70 hover:text-foreground">
+            <HelpCircleIcon className="h-3.5 w-3.5" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="max-w-72 text-xs leading-relaxed">
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </Label>
+  );
 }
 
 function SkillCard({
@@ -84,14 +132,15 @@ function SkillCard({
   const isDeletable = skill.source_kind === 'workspace' || skill.source_kind === 'imported';
   const hasInstructions = !!skill.instructions?.trim();
   const meta = skillMetaLine(skill);
-  const toolCount = (skill.required_tools ?? []).length;
 
   return (
     <div className="group relative flex flex-col rounded-lg border border-border/70 bg-card px-4 py-3.5 transition-all hover:border-border hover:shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <code className="truncate font-mono text-sm font-medium tracking-tight text-foreground">
-          {skill.key}
-        </code>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium tracking-tight text-foreground">
+            {displaySkillTitle(skill)}
+          </p>
+        </div>
         {(isEditable || isDeletable) && (
           <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             {isEditable && onEdit && (
@@ -120,25 +169,20 @@ function SkillCard({
       <p className="mt-1.5 text-[13px] leading-snug text-muted-foreground line-clamp-2">
         {skill.description}
       </p>
-      {(meta || toolCount > 0 || hasInstructions) && (
-        <div className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
-          {meta && <span>{meta}</span>}
-          {meta && toolCount > 0 && <span aria-hidden>·</span>}
-          {toolCount > 0 && (
-            <span>{toolCount} {toolCount === 1 ? 'tool' : 'tools'}</span>
-          )}
+      {(meta || hasInstructions) && (
+        <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-muted-foreground/80">
+          <div className="min-w-0">
+            {meta && <span className="truncate">{meta}</span>}
+          </div>
           {hasInstructions && onPreview && (
-            <>
-              {(meta || toolCount > 0) && <span aria-hidden>·</span>}
-              <button
-                type="button"
-                className="inline-flex items-center gap-0.5 rounded-sm text-muted-foreground/80 transition-colors hover:text-foreground"
-                onClick={onPreview}
-              >
-                <ArrowRight01Icon className="h-3 w-3" />
-                View instructions
-              </button>
-            </>
+            <button
+              type="button"
+              className="ml-auto inline-flex shrink-0 items-center gap-0.5 rounded-sm text-muted-foreground/80 transition-colors hover:text-foreground"
+              onClick={onPreview}
+            >
+              <ArrowRight01Icon className="h-3 w-3" />
+              View details
+            </button>
           )}
         </div>
       )}
@@ -200,41 +244,21 @@ function PreviewSkillDialog({
   const instructions = skill.instructions?.trim() ?? '';
   const meta = skillMetaLine(skill);
   const tools = skill.required_tools ?? [];
-  const normalize = (v: string) => v.trim().toLowerCase().replace(/[\s_-]+/g, '_');
-  const hasTitle = !!skill.title && normalize(skill.title) !== normalize(skill.key);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl gap-0 p-0 sm:max-w-4xl">
         <DialogHeader className="space-y-2 border-b border-border/60 px-6 py-4">
-          {hasTitle ? (
-            <>
-              <div className="flex items-baseline gap-1.5 text-[11px] text-muted-foreground/80">
-                <code className="font-mono text-foreground/70">{skill.key}</code>
-                {meta && (
-                  <>
-                    <span aria-hidden>·</span>
-                    <span>{meta}</span>
-                  </>
-                )}
-              </div>
-              <DialogTitle className="text-base font-semibold">{skill.title}</DialogTitle>
-            </>
-          ) : (
-            <div className="flex flex-wrap items-baseline gap-2">
-              <DialogTitle asChild>
-                <code className="font-mono text-base font-semibold tracking-tight text-foreground">
-                  {skill.key}
-                </code>
-              </DialogTitle>
-              {meta && (
-                <span className="text-[11px] text-muted-foreground/80">
-                  <span aria-hidden className="mr-1.5">·</span>
-                  {meta}
-                </span>
-              )}
-            </div>
-          )}
+          <DialogTitle className="text-base font-semibold">{displaySkillTitle(skill)}</DialogTitle>
+          <div className="flex items-baseline gap-1.5 text-[11px] text-muted-foreground/80">
+            <code className="font-mono text-foreground/70">{skill.key}</code>
+            {meta && (
+              <>
+                <span aria-hidden>·</span>
+                <span>{meta}</span>
+              </>
+            )}
+          </div>
           <DialogDescription className="text-[13px] leading-snug">
             {skill.description}
           </DialogDescription>
@@ -293,11 +317,17 @@ function CreateSkillDialog({
     description: '',
     instructions: '',
   });
+  const generatedKey = skillKeyFromTitle(form.title ?? '');
 
   const handleCreate = async () => {
-    const key = form.key.toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, '');
+    const title = (form.title ?? '').trim();
+    const key = skillKeyFromTitle(title);
+    if (!title) {
+      toast.error('Title is required');
+      return;
+    }
     if (!key) {
-      toast.error('Skill key is required');
+      toast.error('Title must include letters or numbers');
       return;
     }
     if (!form.description.trim()) {
@@ -309,8 +339,8 @@ function CreateSkillDialog({
       return;
     }
     try {
-      await createMutation.mutateAsync({ ...form, key });
-      toast.success(`Skill "${key}" created`);
+      await createMutation.mutateAsync({ ...form, title, key });
+      toast.success(`Skill "${title}" created`);
       onOpenChange(false);
       setForm({ key: '', title: '', description: '', instructions: '' });
     } catch (e) {
@@ -319,66 +349,69 @@ function CreateSkillDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Create Workspace Skill</DialogTitle>
-          <DialogDescription>
-            Define a reusable behavioral instruction module for your agents.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="skill-key">Key</Label>
-            <Input
-              id="skill-key"
-              placeholder="my_custom_skill"
-              value={form.key}
-              onChange={(e) => setForm({ ...form, key: e.target.value })}
-            />
-            <p className="text-[11px] text-muted-foreground">Lowercase letters, numbers, and underscores only.</p>
+    <TooltipProvider>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="grid max-h-[88vh] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+          <DialogHeader>
+            <div className="space-y-1.5 border-b border-border/60 px-6 py-4">
+              <DialogTitle>Create Workspace Skill</DialogTitle>
+              <DialogDescription>
+                Define a reusable behavioral instruction module for your agents.
+              </DialogDescription>
+            </div>
+          </DialogHeader>
+          <div className="min-h-0 max-h-[calc(88vh-8.5rem)] space-y-4 overflow-y-auto px-6 py-5">
+            <div className="space-y-1.5">
+              <RequiredFieldLabel htmlFor="skill-title" tooltip="The human-readable name shown in skill cards, pickers, and selected skill pills.">
+                Title
+              </RequiredFieldLabel>
+              <Input
+                id="skill-title"
+                placeholder="My Custom Skill"
+                value={form.title ?? ''}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Key: <code className="font-mono">{generatedKey || 'generated_from_title'}</code>
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <RequiredFieldLabel htmlFor="skill-description" tooltip="A short summary used in the catalog, skill pickers, and available-skill search so agents can decide when this skill is relevant.">
+                Description
+              </RequiredFieldLabel>
+              <Textarea
+                id="skill-description"
+                placeholder="What this skill does..."
+                rows={2}
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <RequiredFieldLabel htmlFor="skill-instructions" tooltip="The full behavior guidance an agent reads when it chooses this skill during a run.">
+                Instructions
+              </RequiredFieldLabel>
+              <Textarea
+                id="skill-instructions"
+                placeholder="Behavioral instructions for agents using this skill..."
+                rows={18}
+                className="min-h-[22rem] resize-y font-mono text-xs leading-relaxed"
+                value={form.instructions}
+                onChange={(e) => setForm({ ...form, instructions: e.target.value })}
+              />
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="skill-title">Title</Label>
-            <Input
-              id="skill-title"
-              placeholder="My Custom Skill"
-              value={form.title ?? ''}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="skill-description">Description</Label>
-            <Textarea
-              id="skill-description"
-              placeholder="What this skill does..."
-              rows={2}
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="skill-instructions">Instructions</Label>
-            <Textarea
-              id="skill-instructions"
-              placeholder="Behavioral instructions for agents using this skill..."
-              rows={6}
-              className="font-mono text-xs"
-              value={form.instructions}
-              onChange={(e) => setForm({ ...form, instructions: e.target.value })}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline" size="sm">Cancel</Button>
-          </DialogClose>
-          <Button size="sm" onClick={handleCreate} disabled={createMutation.isPending}>
-            {createMutation.isPending ? 'Creating...' : 'Create'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter className="border-t border-border/60 px-6 py-3">
+            <DialogClose asChild>
+              <Button variant="outline" size="sm">Cancel</Button>
+            </DialogClose>
+            <Button size="sm" onClick={handleCreate} disabled={createMutation.isPending}>
+              {createMutation.isPending ? 'Creating...' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </TooltipProvider>
   );
 }
 
@@ -408,7 +441,7 @@ function EditSkillDialog({
     if (!skill.id) return;
     try {
       await updateMutation.mutateAsync({ skillId: skill.id, data: form });
-      toast.success(`Skill "${skill.key}" updated`);
+      toast.success(`Skill "${displaySkillTitle(skill)}" updated`);
       onOpenChange(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to update skill');
@@ -416,54 +449,62 @@ function EditSkillDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Edit Skill: {skill.key}</DialogTitle>
-          <DialogDescription>
-            Update the workspace skill configuration.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-skill-title">Title</Label>
-            <Input
-              id="edit-skill-title"
-              value={form.title ?? ''}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-            />
+    <TooltipProvider>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="grid max-h-[88vh] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+          <DialogHeader className="border-b border-border/60 px-6 py-4">
+            <DialogTitle>Edit Skill: {displaySkillTitle(skill)}</DialogTitle>
+            <DialogDescription>
+              Key: <code className="font-mono">{skill.key}</code>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 max-h-[calc(88vh-8.5rem)] space-y-4 overflow-y-auto px-6 py-5">
+            <div className="space-y-1.5">
+              <RequiredFieldLabel htmlFor="edit-skill-title" tooltip="The human-readable name shown in skill cards, pickers, and selected skill pills.">
+                Title
+              </RequiredFieldLabel>
+              <Input
+                id="edit-skill-title"
+                value={form.title ?? ''}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <RequiredFieldLabel htmlFor="edit-skill-description" tooltip="A short summary used in the catalog, skill pickers, and available-skill search so agents can decide when this skill is relevant.">
+                Description
+              </RequiredFieldLabel>
+              <Textarea
+                id="edit-skill-description"
+                rows={2}
+                value={form.description ?? ''}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <RequiredFieldLabel htmlFor="edit-skill-instructions" tooltip="The full behavior guidance an agent reads when it chooses this skill during a run. Leave empty only if you want to keep the current instructions unchanged.">
+                Instructions
+              </RequiredFieldLabel>
+              <Textarea
+                id="edit-skill-instructions"
+                rows={18}
+                className="min-h-[22rem] resize-y font-mono text-xs leading-relaxed"
+                placeholder="Leave empty to keep existing instructions"
+                value={form.instructions ?? ''}
+                onChange={(e) => setForm({ ...form, instructions: e.target.value })}
+              />
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-skill-description">Description</Label>
-            <Textarea
-              id="edit-skill-description"
-              rows={2}
-              value={form.description ?? ''}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-skill-instructions">Instructions</Label>
-            <Textarea
-              id="edit-skill-instructions"
-              rows={6}
-              className="font-mono text-xs"
-              placeholder="Leave empty to keep existing instructions"
-              value={form.instructions ?? ''}
-              onChange={(e) => setForm({ ...form, instructions: e.target.value })}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline" size="sm">Cancel</Button>
-          </DialogClose>
-          <Button size="sm" onClick={handleUpdate} disabled={updateMutation.isPending}>
-            {updateMutation.isPending ? 'Saving...' : 'Save'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter className="border-t border-border/60 px-6 py-3">
+            <DialogClose asChild>
+              <Button variant="outline" size="sm">Cancel</Button>
+            </DialogClose>
+            <Button size="sm" onClick={handleUpdate} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </TooltipProvider>
   );
 }
 
@@ -582,7 +623,7 @@ function DeleteSkillDialog({
     if (!skill?.id) return;
     try {
       await deleteMutation.mutateAsync(skill.id);
-      toast.success(`Skill "${skill.key}" deleted`);
+      toast.success(`Skill "${displaySkillTitle(skill)}" deleted`);
       onOpenChange(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to delete skill');
@@ -595,7 +636,7 @@ function DeleteSkillDialog({
         <DialogHeader>
           <DialogTitle>Delete Skill</DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete <code className="font-semibold">{skill?.key}</code>? Agents using this skill will lose access to it.
+            Are you sure you want to delete <span className="font-semibold">{skill ? displaySkillTitle(skill) : 'this skill'}</span>? Agents using this skill will lose access to it.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -677,7 +718,7 @@ export function SkillCatalogContent({
       {!embedded && (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
-            <h1 className="text-[22px] font-semibold tracking-tight">Skill Catalog</h1>
+            <h1 className="text-xl font-semibold">Skill Catalog</h1>
             <p className="text-[13px] text-muted-foreground">
               Reusable prompt fragments agents compose at runtime.
             </p>

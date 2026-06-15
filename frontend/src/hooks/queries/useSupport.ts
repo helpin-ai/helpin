@@ -41,6 +41,7 @@ import type {
   CreateSupportEmailRouteRequest,
   CreateSupportEmailSenderRequest,
   SetSupportEmailSenderDefaultRequest,
+  UpdateSupportEmailSenderRequest,
   SupportEmailSender,
   CreateSupportEmailSenderDomainRequest,
   SupportEmailSenderDomain,
@@ -52,6 +53,7 @@ import type {
   UpdateCannedResponseRequest,
   SupportMessage,
   SupportTag,
+  CreateConversationRequest,
   CreateConversationWithMessageRequest,
 } from '@/lib/pmTypes';
 
@@ -189,6 +191,16 @@ export function useChatSettings(workspaceId: string) {
   });
 }
 
+export function useSupportRoutingUsage(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.routingUsage(workspaceId),
+    queryFn: async () => unwrap(await supportService.getRoutingUsageStatus(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
 export function useUpdateChatSettings(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -196,6 +208,7 @@ export function useUpdateChatSettings(workspaceId: string) {
       supportService.updateInstallationSettings(workspaceId, settings).then(unwrap),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.installation(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.routingUsage(workspaceId) });
     },
     onError: (error: Error) => {
       toast.error('Failed to update chat settings', { description: error.message });
@@ -520,6 +533,20 @@ export function useSetDefaultSupportEmailSender(workspaceId: string) {
   });
 }
 
+export function useUpdateSupportEmailSender(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ senderId, payload }: { senderId: string; payload: UpdateSupportEmailSenderRequest }) =>
+      supportService.updateEmailSender(workspaceId, senderId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenders(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update sender address', { description: error.message });
+    },
+  });
+}
+
 export function useDisableSupportEmailSender(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -555,6 +582,7 @@ export function useVerifySupportEmailSenderDomain(workspaceId: string) {
       supportService.verifyEmailSenderDomain(workspaceId, domainId).then(unwrap),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenderDomains(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenders(workspaceId) });
     },
     onError: (error: Error) => {
       toast.error('Failed to verify sender domain', { description: error.message });
@@ -1044,8 +1072,8 @@ export function useAssignConversationUser(workspaceId: string) {
 export function useCreateConversation(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { subject: string; priority?: string; customer_name?: string; customer_email?: string; mailbox_id?: string | null }) =>
-      supportService.createConversation(workspaceId, payload as any).then(unwrap),
+    mutationFn: (payload: CreateConversationRequest) =>
+      supportService.createConversation(workspaceId, payload).then(unwrap),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });

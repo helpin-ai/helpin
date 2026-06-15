@@ -109,7 +109,7 @@ func TestNormalizeAgentRecordDefaultsToPreset(t *testing.T) {
 }
 
 func TestAgentDefaultsDerivedFromPreset(t *testing.T) {
-	if got := defaultRoleForPresetKey(model.AgentPresetReviewAgent); got != "Review Agent" {
+	if got := defaultRoleForPresetKey(model.AgentPresetReviewAgent); got != "QA & Code Reviewer" {
 		t.Fatalf("expected review preset role label, got %q", got)
 	}
 	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "codex" {
@@ -155,6 +155,32 @@ func TestPresetDefinitionForAgentFallsBackToFamilyDefaultVersion(t *testing.T) {
 	}
 	if preset.VersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetTaskPlanner) {
 		t.Fatalf("expected fallback version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetTaskPlanner), preset.VersionKey)
+	}
+}
+
+func TestCommandAgentPresetNormalizesLegacyResearcherKey(t *testing.T) {
+	preset, ok := agentPresetVersionDefinition(model.AgentPresetResearcher, "")
+	if !ok {
+		t.Fatal("expected legacy researcher preset key to resolve")
+	}
+	if preset.Key != model.AgentPresetCommandAgent {
+		t.Fatalf("expected legacy researcher key to resolve to %q, got %q", model.AgentPresetCommandAgent, preset.Key)
+	}
+	if preset.VersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent) {
+		t.Fatalf("expected command agent default version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent), preset.VersionKey)
+	}
+}
+
+func TestCommandAgentPresetNormalizesLegacyResearcherVersion(t *testing.T) {
+	preset, ok := agentPresetVersionDefinition(model.AgentPresetCommandAgent, "researcher_default")
+	if !ok {
+		t.Fatal("expected legacy researcher default version to resolve")
+	}
+	if preset.Key != model.AgentPresetCommandAgent {
+		t.Fatalf("expected command agent preset key %q, got %q", model.AgentPresetCommandAgent, preset.Key)
+	}
+	if preset.VersionKey != "command_agent_default" {
+		t.Fatalf("expected canonical command agent version, got %q", preset.VersionKey)
 	}
 }
 
@@ -539,7 +565,7 @@ func TestNormalizeAgentRecordRefreshesLegacyCodeBuilderPrompt(t *testing.T) {
 	if agent.SystemPrompt == nil {
 		t.Fatal("expected normalized system prompt")
 	}
-	if !strings.Contains(*agent.SystemPrompt, "You are Code Builder.") {
+	if !strings.Contains(*agent.SystemPrompt, "You are Forge, the workspace code builder.") {
 		t.Fatalf("expected code builder prompt refresh, got:\n%s", *agent.SystemPrompt)
 	}
 }

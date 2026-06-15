@@ -34,6 +34,26 @@ npm run dev
 ```
 Requires: `VITE_API_URL` (defaults to `http://localhost:8080/api`)
 
+### Local Browser Preview
+When starting the frontend for someone who will open it through the machine/network URL
+(for example `http://91.98.85.12:5173`), do not leave `VITE_API_URL` pointed at
+`localhost`. In that browser, `localhost` means the user's computer, not this dev box,
+and the app will show "unable to reach the server".
+
+Use the same reachable host for the API:
+```bash
+cd server
+set -a && . ./.env && set +a && GOCACHE=/tmp/go-build-cache go run ./cmd/api
+
+cd frontend
+VITE_API_URL=http://91.98.85.12:8080/api npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+If the user opens `http://localhost:5173` from the same machine running the server,
+`VITE_API_URL=http://localhost:8080/api` is fine. Before handing off a preview, check
+both `http://<host>:5173/` and `http://<host>:8080/api/health` from the same host the
+user will use.
+
 ### Docker
 ```bash
 docker compose up

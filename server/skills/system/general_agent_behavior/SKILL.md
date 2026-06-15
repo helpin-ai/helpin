@@ -1,8 +1,8 @@
 ---
-name: general_agent_behavior
-description: Shared planner behavior and repository-safety guidance.
+name: engineering_planner_operating_rules
+description: Operating rules for engineering planners that inspect repositories and documents without modifying code or git state.
 metadata:
-  title: General Agent Behavior
+  title: Engineering Planner Operating Rules
   supported_runtimes:
     - native_sdk
     - codex

@@ -1,8 +1,8 @@
 ---
-name: external_help_doc_writing
+name: public_help_doc_writing
 description: Writing new customer-facing public help center articles.
 metadata:
-  title: External Help Doc Writing
+  title: Public Help Doc Writing
   supported_runtimes:
     - native_sdk
 ---

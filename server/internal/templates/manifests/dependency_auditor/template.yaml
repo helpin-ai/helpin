@@ -1,4 +1,4 @@
-key: dependency_auditor
+key: engineering_dependency_auditor
 version: 1
 name: Dependency Auditor
 icon: package
@@ -9,7 +9,7 @@ agent:
     preset: code_builder
     runtime_kind: native_sdk
     name_template: "{{template_name}} agent"
-    skills: [dependency_auditor]
+    skills: [dependency_audit]
     system_prompt: |
       You are an autonomous dependency auditor for the selected repository.
 

@@ -56,6 +56,13 @@ type createdPlanningTask struct {
 	ImplementationBrief json.RawMessage           `json:"implementation_brief,omitempty"`
 }
 
+func nilIfEmptyString(value string) *string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return &value
+}
+
 // ApproveEpicSpec approves the current or specified spec version and clears any pending draft-spec run.
 func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID, actorID string, req model.ApproveEpicSpecRequest) (*model.ApprovedSpecSummary, error) {
 	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
@@ -68,6 +75,23 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 	epic := &epicWithStats.Epic
 	if epic.SpecDocumentID == nil || strings.TrimSpace(*epic.SpecDocumentID) == "" {
 		return nil, fmt.Errorf("epic does not have a product spec document yet")
+	}
+	existingApprovedVersionID := strings.TrimSpace(derefString(epic.ApprovedSpecVersionID))
+	requestedVersionID := strings.TrimSpace(derefString(req.VersionID))
+	if existingApprovedVersionID != "" && (requestedVersionID == "" || requestedVersionID == existingApprovedVersionID) {
+		version, err := s.docsVersionRepo.GetByID(ctx, existingApprovedVersionID)
+		if err != nil {
+			return nil, err
+		}
+		if version != nil && version.DocumentID == *epic.SpecDocumentID {
+			return &model.ApprovedSpecSummary{
+				Stage:               model.PlanningStageDraftSpec,
+				SpecDocumentID:      *epic.SpecDocumentID,
+				SpecVersionID:       version.ID,
+				Clarifications:      model.ParseSpecClarifications(epic.SpecClarifications),
+				PendingClarifyCount: 0,
+			}, nil
+		}
 	}
 
 	clarifications := model.ParseSpecClarifications(epic.SpecClarifications)
@@ -118,7 +142,7 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 		return nil, err
 	}
 
-	_ = s.activitySvc.Log(ctx, workspaceID, "epic", epicID, &actorID, "updated", strPtr("approved_spec_version_id"), nil, &version.ID, nil)
+	_ = s.activitySvc.Log(ctx, workspaceID, "epic", epicID, &actorID, "updated", strPtr("approved_spec_version_id"), nilIfEmptyString(existingApprovedVersionID), &version.ID, nil)
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
 		Entity:      "epic",

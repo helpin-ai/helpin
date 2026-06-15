@@ -51,7 +51,15 @@ func (s *SupportInboxService) CreateEmailSenderDomain(ctx context.Context, works
 
 	postmarkDomain, err := s.postmarkDomainClient.CreateDomain(domainName, "pm-bounces."+domainName)
 	if err != nil {
-		return nil, fmt.Errorf("create postmark sender domain: %w", err)
+		if email.IsDomainAlreadyExistsError(err) {
+			existingDomain, lookupErr := s.postmarkDomainClient.FindDomainByName(domainName)
+			if lookupErr != nil {
+				return nil, fmt.Errorf("create postmark sender domain: %w; lookup existing domain: %w", err, lookupErr)
+			}
+			postmarkDomain = existingDomain
+		} else {
+			return nil, fmt.Errorf("create postmark sender domain: %w", err)
+		}
 	}
 	senderDomain := supportEmailSenderDomainFromPostmark(postmarkDomain)
 	senderDomain.WorkspaceID = workspaceID
@@ -108,6 +116,11 @@ func (s *SupportInboxService) VerifyEmailSenderDomain(ctx context.Context, works
 	}
 	if err := s.emailSenderDomainRepo.Update(ctx, senderDomain); err != nil {
 		return nil, err
+	}
+	if s.emailSenderRepo != nil {
+		if err := s.emailSenderRepo.UpdateVerificationByDomain(ctx, workspaceID, senderDomain.Domain, senderDomain); err != nil {
+			return nil, err
+		}
 	}
 	return senderDomain, nil
 }
