@@ -133,6 +133,36 @@ describe('collectSegments', () => {
     expect(live[1]).toMatchObject({ kind: 'assistant', content: 'Live answer', streaming: true });
   });
 
+  it('does not repeat live assistant segments that are already persisted', () => {
+    const input = stream({
+      transcript_messages: [
+        message({
+          event_id: 'persisted-1',
+          content: 'The frontend build has started.',
+          timestamp: '2026-06-15T00:00:01Z',
+          sequence_no: 1,
+        }),
+        message({
+          event_id: 'persisted-2',
+          content: 'The prebuild step completed successfully.',
+          timestamp: '2026-06-15T00:00:02Z',
+          sequence_no: 2,
+        }),
+      ],
+      live_turn_segments: [
+        assistantSegment('live-1', 'The frontend build has started.'),
+        assistantSegment('live-2', 'The prebuild step completed successfully.'),
+      ],
+    });
+
+    const segments = collectSegments(input, { includeLive: true });
+
+    expect(segments.map((s) => (s.kind === 'assistant' ? s.content : s.kind))).toEqual([
+      'The frontend build has started.',
+      'The prebuild step completed successfully.',
+    ]);
+  });
+
   it('scopes kinds via the include set (dock = assistant + tool only)', () => {
     const input = stream({
       transcript_messages: [
