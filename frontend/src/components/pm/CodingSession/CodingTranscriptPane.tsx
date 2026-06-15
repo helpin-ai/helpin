@@ -1,25 +1,15 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
-  BotIcon,
-  SourceCodeIcon,
-  File01Icon,
-  Loading01Icon,
   ArrowUp02Icon,
-  TerminalIcon,
-  CancelCircleIcon,
+  Loading01Icon,
   LockKeyIcon,
-  RadioIcon,
-  Wrench01Icon,
-  Globe02Icon,
 } from '@/lib/icons';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { canonicalToolName, isToolName } from '@/lib/toolNames';
-import { cn } from '@/lib/utils';
+import { isToolName } from '@/lib/toolNames';
 import type {
   AgentRunArtifact,
   CodingSession,
@@ -27,67 +17,21 @@ import type {
   CodingSessionInteraction,
   CodingSessionLiveAssistantMessage,
   CodingSessionLiveReasoningMessage,
-  CodingSessionLiveToolCall,
   CodingSessionLiveTurnSegment,
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
-import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useWorkspaceMembers } from '@/hooks/queries';
-import { formatCodingSessionRelative } from './codingSessionUtils';
-import {
-  formatCodingSessionElapsed,
-  isStatusTranscriptMessage,
-} from './codingSessionPresentation';
+import { formatCodingSessionElapsed } from './codingSessionPresentation';
 import type { CodingSessionComposerState } from './codingSessionComposer';
-import { ApplyPatchDiff } from './ApplyPatchDiff';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { CodingReviewHistoryPanel, type CodingReviewHistoryItem } from './CodingReviewHistoryPanel';
-import { MarkdownContent } from './MarkdownContent';
-import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
-import { describeToolCall } from './toolCallPresentation';
-
-// ─── Tool call grouping ──────────────────────────────────────────────────────
-
-const TOOL_GROUP_COLLAPSE_THRESHOLD = 2;
-
-type ToolCategory = 'read' | 'search' | 'command' | 'write' | 'other';
-
-function categorizeToolCall(toolName: string): ToolCategory {
-  const name = canonicalToolName(toolName).toLowerCase();
-  if (name.includes('read')) return 'read';
-  if (name === 'grep' || name === 'glob' || name === 'find' || name.includes('search') || name.includes('grep')) return 'search';
-  if (name === 'run_command' || name === 'bash' || name.includes('shell') || name.includes('exec')) return 'command';
-  if (name === 'apply_patch' || name === 'write_file' || name === 'str_replace_editor' || name.includes('write') || name.includes('edit') || name.includes('patch')) return 'write';
-  return 'other';
-}
-
-type SegmentGroup =
-  | { kind: 'assistant'; segment: CodingSessionLiveTurnSegment }
-  | { kind: 'tool_group'; toolCalls: CodingSessionLiveToolCall[] };
-
-function partitionTurnSegments(segments: CodingSessionLiveTurnSegment[]): SegmentGroup[] {
-  const groups: SegmentGroup[] = [];
-  let pendingToolCalls: CodingSessionLiveToolCall[] = [];
-
-  for (const seg of segments) {
-    if (seg.kind === 'assistant_message') {
-      if (pendingToolCalls.length > 0) {
-        groups.push({ kind: 'tool_group', toolCalls: pendingToolCalls });
-        pendingToolCalls = [];
-      }
-      groups.push({ kind: 'assistant', segment: seg });
-    } else {
-      pendingToolCalls.push(seg.tool_call);
-    }
-  }
-
-  if (pendingToolCalls.length > 0) {
-    groups.push({ kind: 'tool_group', toolCalls: pendingToolCalls });
-  }
-
-  return groups;
-}
+import {
+  ALL_SEGMENT_KINDS,
+  collectSegments,
+  TranscriptSegmentView,
+  type TranscriptSegment,
+} from '@/components/agents/transcript';
 
 export function CodingTranscriptPane({
   promptArtifact,
@@ -175,14 +119,24 @@ export function CodingTranscriptPane({
     };
   }, [promptArtifact, session?.created_at, session?.run_id, session?.system_prompt]);
 
-  // Build a flat list of all renderable items for the virtualizer.
+  // Flatten the reconciled stream into one ordered segment list shared with the
+  // Ask Agents dock. The slider shows every kind and renders rows expandable.
+  const segments = useMemo(
+    () => collectSegments(
+      {
+        transcript_messages: transcriptMessages,
+        live_turn_segments: liveTurnSegments,
+        live_reasoning_message: liveReasoningMessage,
+      },
+      { includeLive: true, include: ALL_SEGMENT_KINDS, leadingContext: promptMessage },
+    ),
+    [transcriptMessages, liveTurnSegments, liveReasoningMessage, promptMessage],
+  );
+
+  // Build a flat list of virtual items: transcript segments plus the local
+  // scroll affordances (live placeholder, running row, empty state, spacer).
   type VirtualItem =
-    | { kind: 'context'; message: CodingSessionTranscriptMessage }
-    | { kind: 'transcript'; message: CodingSessionTranscriptMessage }
-    | { kind: 'status'; message: CodingSessionTranscriptMessage }
-    | { kind: 'thinking'; reasoning: CodingSessionLiveReasoningMessage }
-    | { kind: 'live-message'; segment: CodingSessionLiveTurnSegment }
-    | { kind: 'live-tool'; segment: CodingSessionLiveTurnSegment; isLast: boolean }
+    | { kind: 'segment'; segment: TranscriptSegment }
     | { kind: 'placeholder' }
     | { kind: 'running'; since: string }
     | { kind: 'empty' }
@@ -190,26 +144,8 @@ export function CodingTranscriptPane({
 
   const items = useMemo((): VirtualItem[] => {
     const list: VirtualItem[] = [];
-    if (promptMessage) {
-      list.push({ kind: 'context', message: promptMessage });
-    }
-    for (const message of transcriptMessages) {
-      if (isStatusTranscriptMessage(message)) {
-        list.push({ kind: 'status', message });
-      } else {
-        list.push({ kind: 'transcript', message });
-      }
-    }
-    if (liveReasoningMessage) {
-      list.push({ kind: 'thinking', reasoning: liveReasoningMessage });
-    }
-    for (let i = 0; i < visibleLiveSegments.length; i++) {
-      const segment = visibleLiveSegments[i];
-      if (segment.kind === 'assistant_message') {
-        list.push({ kind: 'live-message', segment });
-      } else {
-        list.push({ kind: 'live-tool', segment, isLast: i === visibleLiveSegments.length - 1 });
-      }
+    for (const segment of segments) {
+      list.push({ kind: 'segment', segment });
     }
     if (showLivePlaceholder) {
       list.push({ kind: 'placeholder' });
@@ -226,10 +162,7 @@ export function CodingTranscriptPane({
     }
     return list;
   }, [
-    promptMessage,
-    transcriptMessages,
-    liveReasoningMessage,
-    visibleLiveSegments,
+    segments,
     showLivePlaceholder,
     session?.status,
     session?.started_at,
@@ -343,56 +276,18 @@ export function CodingTranscriptPane({
 
   const renderItem = useCallback((item: VirtualItem) => {
     switch (item.kind) {
-      case 'transcript':
-        return <TranscriptEntry message={item.message} actor={actorForMessage(item.message)} />;
-      case 'context':
-        return <RunContextDisclosure message={item.message} />;
-      case 'status':
-        return <StatusTimelineRow message={item.message} />;
-      case 'thinking':
-        return <ThinkingStrip reasoning={item.reasoning} />;
-      case 'live-message': {
-        const seg = item.segment;
-        if (seg.kind !== 'assistant_message') return null;
+      case 'segment':
         return (
-          <TranscriptEntry
-            message={{
-              event_id: `live:${seg.segment_id}`,
-              message_id: seg.assistant_message.message_id,
-              role: 'assistant',
-              content: seg.assistant_message.content,
-              timestamp: seg.assistant_message.started_at ?? new Date().toISOString(),
-              sequence_no: Number.MAX_SAFE_INTEGER,
-            }}
-            live
-            streaming={seg.assistant_message.status === 'streaming'}
+          <TranscriptSegmentView
+            segment={item.segment}
+            options={{ expandable: true, resolveActor: actorForMessage }}
           />
         );
-      }
-      case 'live-tool': {
-        const seg = item.segment;
-        if (seg.kind !== 'tool_call') return null;
-        return (
-          <div className="w-full max-w-[90%]">
-            <ActivityToolCallRow toolCall={seg.tool_call} isLast={item.isLast} />
-          </div>
-        );
-      }
       case 'placeholder':
         return (
-          <TranscriptEntry
-            message={{
-              event_id: `live:${liveAssistantMessage?.message_id ?? 'assistant'}`,
-              message_id: liveAssistantMessage?.message_id,
-              role: 'assistant',
-              content: 'Preparing reply…',
-              timestamp: liveAssistantMessage?.started_at ?? new Date().toISOString(),
-              sequence_no: Number.MAX_SAFE_INTEGER,
-            }}
-            live
-            streaming
-            placeholder
-          />
+          <div className="text-[13px] leading-6 text-muted-foreground" data-coding-session-live-placeholder>
+            Preparing reply…
+          </div>
         );
       case 'running':
         return <RunningActivityRow since={item.since} />;
@@ -411,7 +306,7 @@ export function CodingTranscriptPane({
           />
         );
     }
-  }, [liveAssistantMessage, actorForMessage]);
+  }, [actorForMessage]);
 
   return (
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
@@ -719,396 +614,6 @@ function MessageInput({
   );
 }
 
-function RunContextDisclosure({ message }: { message: CodingSessionTranscriptMessage }) {
-  const label = message.message_type === 'system_prompt' ? 'System prompt' : 'Developer prompt';
-  return (
-    <details className="mb-3 rounded-lg border border-border/70 bg-muted/25 px-3 py-2">
-      <summary className="cursor-pointer list-none text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        Run context
-      </summary>
-      <div className="mt-2 border-t border-border/60 pt-2">
-        <div className="mb-1 text-[11px] font-medium text-muted-foreground">{label}</div>
-        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-foreground/80">
-          {message.content}
-        </pre>
-      </div>
-    </details>
-  );
-}
-
-function StatusTimelineRow({ message }: { message: CodingSessionTranscriptMessage }) {
-  return (
-    <div className="flex gap-3">
-      <div className="flex flex-col items-center">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted/60 text-muted-foreground">
-          <Loading01Icon className="h-3.5 w-3.5" />
-        </div>
-        <div className="mt-1 h-full min-h-[1rem] w-px bg-border/50" />
-      </div>
-      <div className="min-w-0 flex-1 pb-4">
-        <div className="mb-1 flex items-center gap-2">
-          <span className="text-xs font-medium text-muted-foreground">Status</span>
-          <span className="text-[11px] text-muted-foreground">{formatCodingSessionRelative(message.timestamp)}</span>
-        </div>
-        <p className="text-[13px] leading-6 text-muted-foreground">{message.content}</p>
-      </div>
-    </div>
-  );
-}
-
-/** Renders a single transcript turn (bubble + standalone tool calls below). */
-function TranscriptEntry({
-  message,
-  live = false,
-  streaming = false,
-  placeholder = false,
-  actor,
-}: {
-  message: CodingSessionTranscriptMessage;
-  live?: boolean;
-  streaming?: boolean;
-  placeholder?: boolean;
-  actor?: CodingSessionActor | null;
-}) {
-  const isAssistant = message.role === 'assistant';
-  const visibleToolCalls = (message.tool_calls ?? []).filter((tc) => !isToolName(tc.tool_name, 'update_plan'));
-  const visibleTurnSegments = isAssistant
-    ? (message.turn_segments ?? []).filter((segment) => (
-        segment.kind !== 'tool_call' || !isToolName(segment.tool_call.tool_name, 'update_plan')
-      ))
-    : [];
-  const hasSegmentTimeline = visibleTurnSegments.length > 0;
-  const segmentGroups = hasSegmentTimeline ? partitionTurnSegments(visibleTurnSegments) : [];
-  const toolCallTimelineKeys = hasSegmentTimeline
-    ? new Set(
-      visibleTurnSegments
-        .filter((segment): segment is Extract<typeof visibleTurnSegments[number], { kind: 'tool_call' }> => segment.kind === 'tool_call')
-        .map((segment) => toolCallTimelineKey(segment.tool_call)),
-    )
-    : null;
-  const fallbackToolCalls = hasSegmentTimeline && toolCallTimelineKeys
-    ? visibleToolCalls.filter((toolCall) => !toolCallTimelineKeys.has(toolCallTimelineKey(toolCall)))
-    : visibleToolCalls;
-
-  if (isAssistant) {
-    return (
-      <div className="w-full max-w-[90%]">
-        {hasSegmentTimeline ? (
-          <>
-            {segmentGroups.map((group, groupIdx) => {
-              const isLastGroup = groupIdx === segmentGroups.length - 1 && fallbackToolCalls.length === 0;
-              if (group.kind === 'assistant') {
-                const seg = group.segment;
-                if (seg.kind !== 'assistant_message') return null;
-                return (
-                  <AssistantTimelineRow
-                    key={seg.segment_id}
-                    content={seg.assistant_message.content}
-                    timestamp={seg.assistant_message.started_at ?? message.timestamp}
-                    live={live}
-                    streaming={seg.assistant_message.status === 'streaming'}
-                    isLast={isLastGroup}
-                  />
-                );
-              }
-              if (group.toolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD) {
-                return (
-                  <CollapsedToolCallGroup
-                    key={group.toolCalls[0].tool_call_id}
-                    toolCalls={group.toolCalls}
-                    isLast={isLastGroup}
-                  />
-                );
-              }
-              return (
-                <Fragment key={group.toolCalls[0].tool_call_id}>
-                  {group.toolCalls.map((tc, tcIdx) => (
-                    <ActivityToolCallRow
-                      key={tc.tool_call_id}
-                      toolCall={tc}
-                      isLast={isLastGroup && tcIdx === group.toolCalls.length - 1}
-                    />
-                  ))}
-                </Fragment>
-              );
-            })}
-
-            {fallbackToolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD ? (
-              <CollapsedToolCallGroup toolCalls={fallbackToolCalls} isLast />
-            ) : fallbackToolCalls.length > 0 ? (
-              fallbackToolCalls.map((tc, idx) => (
-                <ActivityToolCallRow
-                  key={tc.tool_call_id}
-                  toolCall={tc}
-                  isLast={idx === fallbackToolCalls.length - 1}
-                />
-              ))
-            ) : null}
-          </>
-        ) : (
-          <>
-            {message.content.trim() ? (
-              <AssistantTimelineRow
-                content={message.content}
-                timestamp={message.timestamp}
-                live={live}
-                streaming={streaming}
-                placeholder={placeholder}
-                isLast={visibleToolCalls.length === 0}
-              />
-            ) : null}
-
-            {visibleToolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD ? (
-              <CollapsedToolCallGroup toolCalls={visibleToolCalls} isLast />
-            ) : visibleToolCalls.length > 0 ? (
-              visibleToolCalls.map((tc, idx) => (
-                <ActivityToolCallRow
-                  key={tc.tool_call_id}
-                  toolCall={tc}
-                  isLast={idx === visibleToolCalls.length - 1}
-                />
-              ))
-            ) : null}
-          </>
-        )}
-      </div>
-    );
-  }
-
-  if (message.message_type === 'developer_prompt' || message.message_type === 'system_prompt') {
-    return (
-      <PromptTranscriptCard
-        content={message.content}
-        timestamp={message.timestamp}
-        label={message.message_type === 'system_prompt' ? 'System prompt' : 'Developer prompt'}
-      />
-    );
-  }
-
-  if (message.message_type === 'review_checkpoint_resolution' || message.message_type === 'approval_request_resolution') {
-    return <ReviewDecisionTranscriptCard content={message.content} timestamp={message.timestamp} actor={actor ?? null} />;
-  }
-
-  const actorLabel = actor?.full_name || actor?.email || 'User';
-
-  return (
-    <div className="flex flex-col items-end gap-2">
-      <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
-        <span>{formatCodingSessionRelative(message.timestamp)}</span>
-        <span className="font-medium">{actorLabel}</span>
-        <UserAvatar
-          name={actorLabel}
-          avatarUrl={actor?.avatar_url}
-          className="h-6 w-6"
-          fallbackClassName="text-[10px]"
-        />
-      </div>
-
-      {message.content.trim() ? (
-        <AssistantMessageBubble
-          content={message.content}
-          isAssistant={false}
-          placeholder={placeholder}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function PromptTranscriptCard({
-  content,
-  timestamp,
-  label,
-}: {
-  content: string;
-  timestamp: string;
-  label: string;
-}) {
-  return (
-    <div className="w-full max-w-[90%]">
-      <div className="mb-2 flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
-        <span>{formatCodingSessionRelative(timestamp)}</span>
-        <span className="font-medium">{label}</span>
-      </div>
-      <details className="rounded-xl border border-border/70 bg-muted/30 px-4 py-3">
-        <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </summary>
-        <pre className="mt-3 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-foreground">
-          {content}
-        </pre>
-      </details>
-    </div>
-  );
-}
-
-function ReviewDecisionTranscriptCard({
-  content,
-  timestamp,
-  actor,
-}: {
-  content: string;
-  timestamp: string;
-  actor: CodingSessionActor | null;
-}) {
-  const reviewerName = actor?.full_name || actor?.email || 'Reviewer';
-  const normalizedContent = content.trim().toLowerCase();
-  const decisionLabel = normalizedContent.startsWith('requested changes')
-    ? 'requested changes'
-    : normalizedContent.startsWith('approved')
-      ? 'approved'
-      : 'reviewed';
-  return (
-    <div className="ml-auto w-full max-w-[90%]">
-      <div className="mb-2 flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
-        <span>{formatCodingSessionRelative(timestamp)}</span>
-        <span className="font-medium">{reviewerName} {decisionLabel}</span>
-        <UserAvatar
-          name={reviewerName}
-          avatarUrl={actor?.avatar_url}
-          className="h-6 w-6"
-          fallbackClassName="text-[10px]"
-        />
-      </div>
-      <div className="rounded-2xl rounded-br-sm bg-blue-50 px-3.5 py-2.5 text-sm leading-relaxed text-foreground/85 shadow-sm dark:bg-blue-950/40 dark:text-foreground">
-        <MarkdownContent content={content} className="text-inherit" />
-      </div>
-    </div>
-  );
-}
-
-function toolCallTimelineKey(toolCall: CodingSessionLiveToolCall) {
-  return [
-    canonicalToolName(toolCall.tool_name).toLowerCase(),
-    toolCall.args_text.trim(),
-    toolCall.result?.output_summary?.trim() ?? '',
-    toolCall.result?.content?.trim() ?? '',
-  ].join('\n');
-}
-
-const CONTENT_COLLAPSE_CHAR_THRESHOLD = 600;
-
-function CollapsibleMarkdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
-
-  if (!isLong) {
-    return <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground/85 dark:text-foreground" streaming={streaming} />;
-  }
-
-  return (
-    <div>
-      <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
-        <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground/85 dark:text-foreground" streaming={streaming} />
-        {!expanded && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
-        )}
-      </div>
-      <button
-        type="button"
-        className="mt-1 text-[11px] font-medium text-primary hover:underline"
-        onClick={() => setExpanded((prev) => !prev)}
-      >
-        {expanded ? 'Show less' : 'Show more'}
-      </button>
-    </div>
-  );
-}
-
-function AssistantTimelineRow({
-  content,
-  isLast,
-  live = false,
-  streaming = false,
-  placeholder = false,
-}: {
-  content: string;
-  timestamp?: string;
-  isLast: boolean;
-  live?: boolean;
-  streaming?: boolean;
-  placeholder?: boolean;
-}) {
-  return (
-    <div className="flex gap-3">
-      <div className="flex flex-col items-center">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
-          {live && streaming ? <RadioIcon className="h-3.5 w-3.5 animate-pulse" /> : <BotIcon className="h-3.5 w-3.5" />}
-        </div>
-        {!isLast && <div className="mt-1 h-full min-h-[1rem] w-px bg-border/50" />}
-      </div>
-
-      <div className={cn('min-w-0 flex-1', isLast ? 'pb-0' : 'pb-4')}>
-        <div className="mb-1 flex items-center gap-2">
-          <span className="text-xs font-medium text-foreground">Assistant</span>
-          {live ? (
-            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-              {streaming ? 'Live' : 'Update'}
-            </Badge>
-          ) : null}
-        </div>
-
-        {placeholder ? (
-          <div className="whitespace-pre-wrap text-[13px] leading-6 text-muted-foreground">{content}</div>
-        ) : (
-          <CollapsibleMarkdown content={content} streaming={live && streaming} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AssistantMessageBubble({
-  content,
-  isAssistant = true,
-  placeholder = false,
-}: {
-  content: string;
-  isAssistant?: boolean;
-  placeholder?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
-
-  return (
-    <div className={cn(
-      'max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm',
-      isAssistant
-        ? 'rounded-bl-sm border border-border/60 bg-background text-foreground/85 dark:text-foreground'
-        : 'rounded-br-sm bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground',
-      placeholder && 'border-dashed text-muted-foreground',
-    )}>
-      {placeholder ? (
-        <div className="whitespace-pre-wrap">{content}</div>
-      ) : isLong ? (
-        <div>
-          <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
-            <MarkdownContent content={content} className={isAssistant ? undefined : 'text-inherit'} />
-            {!expanded && (
-              <div className={cn(
-                'pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t to-transparent',
-                isAssistant ? 'from-background' : 'from-blue-50 dark:from-blue-950/40',
-              )} />
-            )}
-          </div>
-          <button
-            type="button"
-            className={cn(
-              'mt-1 text-[11px] font-medium hover:underline',
-              isAssistant ? 'text-primary' : 'text-blue-700 dark:text-blue-200',
-            )}
-            onClick={() => setExpanded((prev) => !prev)}
-          >
-            {expanded ? 'Show less' : 'Show more'}
-          </button>
-        </div>
-      ) : (
-        <MarkdownContent content={content} className={isAssistant ? undefined : 'text-inherit'} />
-      )}
-    </div>
-  );
-}
-
 // ─── Running indicator ──────────────────────────────────────────────────────
 
 function formatElapsed(ms: number): string {
@@ -1172,354 +677,5 @@ function RunningActivityRow({ since }: { since: string }) {
         </div>
       </div>
     </div>
-  );
-}
-
-// ─── Activity-style tool call row ────────────────────────────────────────────
-
-function toolChrome(toolName: string, isFailed: boolean, isRunning: boolean): { icon: ReactNode; iconClass: string } {
-  if (isFailed) {
-    return {
-      icon: <CancelCircleIcon className="h-3.5 w-3.5" />,
-      iconClass: 'bg-destructive/10 border-destructive/30 text-destructive',
-    };
-  }
-  if (isRunning) {
-    return {
-      icon: <UnicodeSpinner name="braille" className="text-xs" />,
-      iconClass: 'bg-primary/10 border-primary/30 text-primary',
-    };
-  }
-  const name = canonicalToolName(toolName).toLowerCase();
-  if (name.includes('web_search')) {
-    return {
-      icon: <Globe02Icon className="h-3.5 w-3.5" />,
-      iconClass: 'bg-sky-50 border-sky-200 dark:bg-sky-950/20 dark:border-sky-900/50 text-sky-600 dark:text-sky-400',
-    };
-  }
-  if (name === 'run_command' || name === 'bash' || name.includes('shell') || name.includes('exec')) {
-    return {
-      icon: <TerminalIcon className="h-3.5 w-3.5" />,
-      iconClass: 'bg-slate-100 border-slate-300 dark:bg-slate-900 dark:border-slate-700 text-slate-600 dark:text-slate-400',
-    };
-  }
-  if (
-    name.startsWith('publish_')
-    || name.startsWith('preview_')
-    || name.includes('plan_doc')
-    || name.includes('draft')
-  ) {
-    return {
-      icon: <File01Icon className="h-3.5 w-3.5" />,
-      iconClass: 'bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900/50 text-blue-600 dark:text-blue-400',
-    };
-  }
-  if (
-    name === 'apply_patch'
-    || name === 'write_file'
-    || name === 'str_replace_editor'
-    || name.includes('file')
-    || name.includes('patch')
-    || name.includes('write')
-    || name.includes('edit')
-  ) {
-    return {
-      icon: <SourceCodeIcon className="h-3.5 w-3.5" />,
-      iconClass: 'bg-violet-50 border-violet-200 dark:bg-violet-950/20 dark:border-violet-900/50 text-violet-600 dark:text-violet-400',
-    };
-  }
-  return {
-    icon: <Wrench01Icon className="h-3.5 w-3.5" />,
-    iconClass: 'bg-muted/50 border-border text-muted-foreground',
-  };
-}
-
-const TOOL_COLLAPSED_LINES = 2;
-
-function extractFilePathsFromText(text: string): string[] {
-  const matches = text.match(/(?:^|\s)((?:\/|\.\.?\/)?[\w./-]+\.(?:ts|tsx|js|jsx|go|py|css|html|json|sql|md|yaml|yml|toml|sh))\b/g);
-  if (!matches) return [];
-  const unique = [...new Set(matches.map((m) => m.trim()))];
-  return unique.slice(0, 6);
-}
-
-function CollapsibleCodeBlock({ text, failed }: { text: string; failed?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const lines = text.split('\n');
-  const isLong = lines.length > TOOL_COLLAPSED_LINES;
-
-  return (
-    <div className="relative">
-      <pre className={cn(
-        'overflow-auto whitespace-pre-wrap break-all rounded-md border px-2.5 py-1.5 font-mono text-[11px] leading-5',
-        failed
-          ? 'border-destructive/20 bg-destructive/5 text-destructive dark:bg-destructive/10'
-          : 'border-border/60 bg-muted/50 text-foreground/80',
-        !expanded && isLong && 'max-h-[52px]',
-        expanded && 'max-h-60',
-      )}>
-        {expanded || !isLong ? text : lines.slice(0, TOOL_COLLAPSED_LINES).join('\n')}
-      </pre>
-      {isLong && !expanded && (
-        <div className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 h-6 rounded-b-md bg-gradient-to-t',
-          failed ? 'from-destructive/5 to-transparent' : 'from-muted/80 to-transparent',
-        )} />
-      )}
-      {isLong && (
-        <button
-          type="button"
-          className="mt-1 text-[11px] font-medium text-primary hover:underline"
-          onClick={() => setExpanded((prev) => !prev)}
-        >
-          {expanded ? 'Show less' : `Show more (${lines.length} lines)`}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLiveToolCall; isLast: boolean }) {
-  const isFailed = toolCall.status === 'failed';
-  const isRunning = toolCall.status === 'running';
-  const { icon, iconClass } = toolChrome(toolCall.tool_name, isFailed, isRunning);
-  const isApplyPatch = isToolName(toolCall.tool_name, 'apply_patch');
-  const argsText = toolCall.args_text.trim();
-  const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
-  const publishedPreviewCard = !isFailed && !isApplyPatch && argsText ? (
-    <PublishedToolPreviewCard toolName={toolCall.tool_name} argsText={argsText} resultText={resultText} />
-  ) : null;
-  const presentation = describeToolCall(toolCall);
-  const showSecondaryBadge = presentation.secondaryLabel.trim().toLowerCase() !== presentation.primaryLabel.trim().toLowerCase();
-  const filePaths = !isApplyPatch && !publishedPreviewCard && argsText ? extractFilePathsFromText(argsText) : [];
-  const chips = [...presentation.chips];
-  for (const filePath of filePaths) {
-    if (!chips.includes(filePath)) chips.push(filePath);
-  }
-
-  return (
-    <div className="flex gap-3">
-      {/* Icon + connector line */}
-      <div className="flex flex-col items-center">
-        <div className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-full border', iconClass)}>
-          {icon}
-        </div>
-        {!isLast && <div className="mt-1 h-full min-h-[1rem] w-px bg-border/50" />}
-      </div>
-
-      {/* Content */}
-      <div className={cn('min-w-0 flex-1', isLast ? 'pb-0' : 'pb-4')}>
-        <div className="mb-1 flex items-start justify-between gap-2">
-          <div className="min-w-0 space-y-1">
-            <p className="truncate text-xs font-medium text-foreground">{presentation.primaryLabel}</p>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {showSecondaryBadge ? (
-                <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium text-muted-foreground">
-                  {presentation.secondaryLabel}
-                </Badge>
-              ) : null}
-              {chips.map((chip) => (
-                <span key={chip} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                  {chip}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="space-y-1.5 text-xs text-muted-foreground">
-          {publishedPreviewCard ?? (
-            <>
-              {isApplyPatch
-                ? <ApplyPatchDiff argsText={argsText || resultText} />
-                : argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
-              {resultText && !isApplyPatch ? (
-                isFailed
-                  ? <CollapsibleCodeBlock text={resultText} failed />
-                  : <p className="text-[11px] text-muted-foreground">{resultText.length > 200 ? `${resultText.slice(0, 200)}…` : resultText}</p>
-              ) : null}
-              {isApplyPatch && isFailed && resultText ? (
-                <CollapsibleCodeBlock text={resultText} failed />
-              ) : null}
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Collapsed tool call group ──────────────────────────────────────────────
-
-function CollapsedToolCallGroup({
-  toolCalls,
-  isLast,
-}: {
-  toolCalls: CodingSessionLiveToolCall[];
-  isLast: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  const { chips, failedCount, durationLabel } = useMemo(() => {
-    const counts: Record<ToolCategory, number> = { read: 0, search: 0, command: 0, write: 0, other: 0 };
-    let failed = 0;
-    let durationMs = 0;
-
-    for (const tc of toolCalls) {
-      counts[categorizeToolCall(tc.tool_name)]++;
-      if (tc.duration_ms) durationMs += tc.duration_ms;
-      if (tc.status === 'failed') failed++;
-    }
-
-    const parts: string[] = [];
-    if (counts.read > 0) parts.push(`${counts.read} read${counts.read !== 1 ? 's' : ''}`);
-    if (counts.search > 0) parts.push(`${counts.search} search${counts.search !== 1 ? 'es' : ''}`);
-    if (counts.command > 0) parts.push(`${counts.command} command${counts.command !== 1 ? 's' : ''}`);
-    if (counts.write > 0) parts.push(`${counts.write} write${counts.write !== 1 ? 's' : ''}`);
-    if (counts.other > 0) parts.push(`${counts.other} other`);
-
-    const label = durationMs >= 1000
-      ? `${Math.round(durationMs / 1000)}s`
-      : durationMs > 0 ? `${durationMs}ms` : null;
-
-    return { chips: parts, failedCount: failed, durationLabel: label };
-  }, [toolCalls]);
-
-  return (
-    <div className="flex gap-3">
-      {/* Timeline connector */}
-      <div className="flex flex-col items-center">
-        <div className={cn(
-          'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border',
-          failedCount > 0
-            ? 'border-destructive/30 bg-destructive/10 text-destructive'
-            : 'border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-400',
-        )}>
-          <Wrench01Icon className="h-3.5 w-3.5" />
-        </div>
-        {!isLast && (
-          <div className="mt-1 h-full min-h-[1rem] w-px border-l border-dashed border-border/60" />
-        )}
-      </div>
-
-      {/* Content */}
-      <div className={cn('min-w-0 flex-1', isLast ? 'pb-0' : 'pb-4')}>
-        <button
-          type="button"
-          className={cn(
-            'w-full rounded-lg border px-3 py-2 text-left transition-colors',
-            'border-border/60 bg-muted/25 hover:bg-muted/40',
-            expanded && 'rounded-b-none border-b-0',
-          )}
-          onClick={() => setExpanded((prev) => !prev)}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-foreground">
-                Performed {toolCalls.length} tool calls
-              </span>
-              {failedCount > 0 && (
-                <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-                  <CancelCircleIcon className="h-3 w-3" />
-                  {failedCount} failed
-                </span>
-              )}
-            </div>
-            <span className="text-[11px] font-medium text-primary">
-              {expanded ? '▾ Hide' : '▸ Show'}
-            </span>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            {chips.map((chip) => (
-              <span key={chip} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                {chip}
-              </span>
-            ))}
-            {durationLabel && (
-              <span className="text-[10px] text-muted-foreground">· {durationLabel}</span>
-            )}
-          </div>
-        </button>
-
-        {expanded && (
-          <div className="rounded-b-lg border border-t-0 border-border/60 bg-muted/15 py-1">
-            {toolCalls.map((tc) => (
-              <CompactToolCallRow key={tc.tool_call_id} toolCall={tc} />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CompactToolCallRow({ toolCall }: { toolCall: CodingSessionLiveToolCall }) {
-  const isFailed = toolCall.status === 'failed';
-  const { icon, iconClass } = toolChrome(toolCall.tool_name, isFailed, false);
-  const presentation = describeToolCall(toolCall);
-
-  return (
-    <div className={cn(
-      'flex items-center gap-2 px-3 py-1.5',
-      isFailed && 'bg-destructive/5',
-    )}>
-      <div className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full border', iconClass)}>
-        <span className="flex scale-75 items-center justify-center">{icon}</span>
-      </div>
-      <span className={cn(
-        'min-w-0 truncate text-[11px]',
-        isFailed ? 'font-medium text-destructive' : 'text-foreground/80',
-      )}>
-        {presentation.primaryLabel}
-      </span>
-      {presentation.chips.length > 0 && (
-        <span className="shrink-0 text-[10px] text-muted-foreground">
-          {presentation.chips[0]}
-        </span>
-      )}
-      {isFailed && (
-        <CancelCircleIcon className="ml-auto h-3 w-3 shrink-0 text-destructive" />
-      )}
-    </div>
-  );
-}
-
-function ThinkingStrip({
-  reasoning,
-}: {
-  reasoning: CodingSessionLiveReasoningMessage;
-}) {
-  const hasVisibleContent = reasoning.content.trim().length > 0;
-
-  return (
-    <details className="rounded-xl border border-border bg-muted/25 px-4 py-3" open={reasoning.status === 'streaming'}>
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          <LockKeyIcon className="h-3.5 w-3.5" />
-          Thinking
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-[10px]">
-            {reasoning.status === 'streaming' ? 'Live' : 'Captured'}
-          </Badge>
-        </div>
-      </summary>
-
-      <div className="mt-3 border-t border-border pt-3 text-sm text-muted-foreground">
-        {hasVisibleContent ? (
-          <div className="whitespace-pre-wrap leading-6">{reasoning.content}</div>
-        ) : (
-          <div className="rounded-lg border border-border bg-card px-3 py-2 text-muted-foreground">
-            Reasoning is being tracked separately from the assistant reply.
-          </div>
-        )}
-
-        {reasoning.encrypted_value ? (
-          <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
-            <LockKeyIcon className="h-3.5 w-3.5" />
-            Encrypted reasoning payload attached.
-          </div>
-        ) : null}
-      </div>
-    </details>
   );
 }
