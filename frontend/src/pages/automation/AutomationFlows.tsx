@@ -1442,6 +1442,16 @@ function draftFromSearch(search: AutomationFlowsSearch, workflows: WorkflowWithS
   return draft;
 }
 
+export function filterAutomationFlowsForSearch(rules: AutomationRule[], search: Pick<AutomationFlowsSearch, 'show_rule' | 'show_trigger' | 'agent_id'>) {
+  const selectedAgentId = String(search.agent_id ?? '').trim();
+  return rules.filter((rule) => {
+    if (search.show_rule && rule.id !== search.show_rule) return false;
+    if (search.show_trigger && rule.trigger_type !== search.show_trigger) return false;
+    if (selectedAgentId && stringValue(rule.action_config?.agent_id) !== selectedAgentId) return false;
+    return true;
+  });
+}
+
 function draftFromRule(rule: AutomationRule, workflows: WorkflowWithStates[], timezone: string): FlowDraft {
   const draft = defaultDraft();
   draft.name = rule.name;
@@ -4300,12 +4310,8 @@ export function AutomationFlowsPage({
     return map;
   }, [inventoryQuery.data?.items]);
   const highlightedFlows = useMemo(
-    () => {
-      if (search.show_rule) return authoredFlows.filter((rule) => rule.id === search.show_rule);
-      if (search.show_trigger) return authoredFlows.filter((rule) => rule.trigger_type === search.show_trigger);
-      return authoredFlows;
-    },
-    [authoredFlows, search.show_rule, search.show_trigger],
+    () => filterAutomationFlowsForSearch(authoredFlows, search),
+    [authoredFlows, search],
   );
   const teamNamesById = useMemo(() => new Map(teams.map((t) => [t.id, t.name])), [teams]);
   const [activeTab, setActiveTab] = useState<string>('all');
@@ -4343,9 +4349,12 @@ export function AutomationFlowsPage({
     if (search.show_trigger) {
       return search.show_trigger_title || triggerLabel(search.show_trigger);
     }
+    if (search.agent_id) {
+      return agentNames.get(search.agent_id) ?? search.agent_id;
+    }
     return '';
-  }, [authoredFlows, search.show_rule, search.show_rule_title, search.show_trigger, search.show_trigger_title]);
-  const hasFlowFilter = Boolean(search.show_rule || search.show_trigger);
+  }, [agentNames, authoredFlows, search.agent_id, search.show_rule, search.show_rule_title, search.show_trigger, search.show_trigger_title]);
+  const hasFlowFilter = Boolean(search.show_rule || search.show_trigger || search.agent_id);
 
   const loading = settingsQuery.isLoading || inventoryQuery.isLoading || rulesQuery.isLoading || tasksQuery.isLoading || epicsQuery.isLoading || repositoriesQuery.isLoading;
 
@@ -4386,6 +4395,7 @@ export function AutomationFlowsPage({
       show_rule_title: undefined,
       show_trigger: undefined,
       show_trigger_title: undefined,
+      agent_id: undefined,
     });
   }, [onSearchChange]);
 

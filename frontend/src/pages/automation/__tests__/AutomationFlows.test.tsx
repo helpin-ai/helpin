@@ -8,6 +8,7 @@ import {
   FlowRow,
   flowActionSummary,
   flowDetailsSections,
+  filterAutomationFlowsForSearch,
   flowMetadataPills,
   flowTriggerSummary,
   templateSelectChangeValue,
@@ -277,6 +278,19 @@ describe('FlowRow', () => {
       container?.remove();
       container = null;
     }
+  });
+});
+
+describe('filterAutomationFlowsForSearch', () => {
+  it('filters flows by selected agent id', () => {
+    const otherRule = {
+      ...baseRule,
+      id: 'rule-2',
+      name: 'Other agent flow',
+      action_config: { agent_id: 'agent-2' },
+    } satisfies AutomationRule;
+
+    expect(filterAutomationFlowsForSearch([baseRule, otherRule], { agent_id: 'agent-1' })).toEqual([baseRule]);
   });
 });
 

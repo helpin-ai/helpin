@@ -581,6 +581,31 @@ function availableProvidersForRuntime(
   return providerOptions.filter((provider) => provider.value === 'openai' || provider.value === 'openrouter');
 }
 
+const CODEX_PROVIDER_MISSING_MESSAGE = 'Add OpenAI, OpenRouter, or enable Codex ChatGPT auth.';
+const PROVIDER_REQUIRED_MODEL_MESSAGE = 'Select a compatible AI provider first.';
+
+export function getAgentProviderConfigState(
+  runtimeKind: AgentRuntimeKind,
+  provider: AgentModelProvider,
+  providerOptions: AgentModelProviderOption[],
+) {
+  const visibleProviderOptions = availableProvidersForRuntime(runtimeKind, providerOptions);
+  const selectedProviderOption = visibleProviderOptions.find((option) => option.value === provider);
+  const hasCompatibleProvider = visibleProviderOptions.length > 0;
+  const modelDisabled = !selectedProviderOption;
+  return {
+    providerOptions: visibleProviderOptions,
+    selectedProviderOption,
+    hasCompatibleProvider,
+    providerDisabled: !hasCompatibleProvider,
+    modelDisabled,
+    providerMessage: !hasCompatibleProvider && runtimeKind === 'codex'
+      ? CODEX_PROVIDER_MISSING_MESSAGE
+      : '',
+    modelMessage: modelDisabled ? PROVIDER_REQUIRED_MODEL_MESSAGE : '',
+  };
+}
+
 function fallbackPresetKey(agent?: Pick<Agent, 'preset_key' | 'is_system'> | null): AgentPresetKey {
   if (agent?.preset_key) return agent.preset_key;
   if (agent?.is_system) return 'epic_planner';
@@ -1665,21 +1690,38 @@ function AgentStatusBadge({
 
 function FlowRefs({
   usage,
+  workspaceSlug,
+  agentId,
 }: {
   usage?: AgentTriggerUsageSummary | null;
+  workspaceSlug?: string;
+  agentId: string;
 }) {
   const items = usage?.items ?? [];
   const count = items.length;
+  const flowsPath = buildAutomationFlowsPath(workspaceSlug, { agent_id: agentId });
   if (items.length === 0) {
-    return <span className="text-xs text-muted-foreground">0 flows</span>;
+    return (
+      <a
+        href={flowsPath}
+        className="inline-flex w-fit rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+        onClick={(event) => event.stopPropagation()}
+      >
+        0 flows
+      </a>
+    );
   }
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex w-fit items-center rounded-md px-1.5 py-0.5 text-xs font-medium text-foreground hover:bg-muted">
+        <a
+          href={flowsPath}
+          className="inline-flex w-fit items-center rounded-md px-1.5 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
+          onClick={(event) => event.stopPropagation()}
+        >
           {count} {count === 1 ? 'flow' : 'flows'}
-        </span>
+        </a>
       </TooltipTrigger>
       <TooltipContent
         side="top"
@@ -1939,7 +1981,7 @@ function AgentCard({
 
         <div className="space-y-1">
           <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Used in flows</p>
-          <FlowRefs usage={usage} />
+          <FlowRefs usage={usage} workspaceSlug={workspaceSlug} agentId={agent.id} />
         </div>
 
         {canEdit ? (
@@ -2000,7 +2042,7 @@ function AgentCard({
 // ---------------------------------------------------------------------------
 
 const AGENTS_LIST_GRID_CLASS =
-  'lg:grid-cols-[minmax(12rem,1.6fr)_7.25rem_6rem_6.5rem_8.25rem_6.75rem_9rem] xl:grid-cols-[minmax(15rem,1.7fr)_8.5rem_6.75rem_7rem_9rem_8rem_9.5rem]';
+  'lg:grid-cols-[minmax(12rem,1.6fr)_10rem_6.5rem_8.25rem_6.75rem_9rem] xl:grid-cols-[minmax(15rem,1.7fr)_12rem_7rem_9rem_8rem_9.5rem]';
 
 export function AgentsListTable({ children }: { children: ReactNode }) {
   return (
@@ -2019,8 +2061,7 @@ export function AgentsListHeader() {
       )}
     >
       <div>Agent</div>
-      <div>Model</div>
-      <div>Mode</div>
+      <div>Config</div>
       <div>Runs · 7d</div>
       <div>Last run</div>
       <div>Used in flows</div>
@@ -2141,6 +2182,10 @@ export function AgentActions({
   );
 }
 
+export function canEditWorkspacePresetVersionDescription(preset: Pick<AgentPresetDefinition, 'id' | 'scope'> | null | undefined) {
+  return preset?.scope === 'workspace' && Boolean(preset.id);
+}
+
 function AgentRow({
   agent,
   stats,
@@ -2177,9 +2222,8 @@ function AgentRow({
         attention && 'bg-amber-500/[0.03]',
       )}
       onClick={() => onOpen(agent)}
-      title={purpose}
     >
-      <div className="min-w-0">
+      <div className="min-w-0" title={purpose}>
         <div className="flex items-center gap-3">
           <AgentAvatar agent={agent} className="h-8 w-8 rounded-none border-0 bg-transparent shadow-none" genericBare />
           <div className="min-w-0 flex-1">
@@ -2194,14 +2238,11 @@ function AgentRow({
         </div>
       </div>
 
-      <div className="space-y-1">
-        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Model</p>
+      <div className="min-w-0 space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Config</p>
+        <p className="truncate text-sm font-medium text-foreground">{AGENT_RUNTIME_LABELS[agent.runtime_kind]}</p>
         <AgentModelPill provider={agent.provider} model={agent.model} />
-      </div>
-
-      <div className="space-y-1">
-        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Mode</p>
-        <span className="text-sm text-muted-foreground">{invocationLabel}</span>
+        <p className="truncate text-xs text-muted-foreground">{invocationLabel}</p>
       </div>
 
       <div className="min-w-0 space-y-1">
@@ -2226,7 +2267,7 @@ function AgentRow({
 
       <div className="space-y-1">
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Used in flows</p>
-        <FlowRefs usage={usage} />
+        <FlowRefs usage={usage} workspaceSlug={workspaceSlug} agentId={agent.id} />
       </div>
 
       <AgentActions
@@ -3517,6 +3558,7 @@ export function AgentsPage() {
   const canSetSelectedVersionActive = editingSystemAgent
     ? hasPendingSystemVersionSelection
     : Boolean(selectedCustomVersionID && selectedCustomVersionID !== editingAgent?.active_version_id);
+  const canEditSelectedVersionDescription = editingSystemAgent && canEditWorkspacePresetVersionDescription(selectedPreset);
   const isEditingWorkspaceVersion = editingSystemAgent && !versionDraftOpen && selectedPreset?.scope === 'workspace' && Boolean(selectedPreset?.id);
   const isEditingCustomVersion = editingCustomAgent && !versionDraftOpen && Boolean(selectedCustomVersion);
   const systemVersionReadOnly = editingSystemAgent && !versionDraftOpen && !isEditingWorkspaceVersion;
@@ -3553,8 +3595,9 @@ export function AgentsPage() {
       : (form.allowed_targets.length > 0 ? form.allowed_targets : ['task']);
   const supportedModes = form.supported_modes.length > 0 ? form.supported_modes : supportedModesForForm(form.runtime_kind);
   const availableRuntimeKinds = editingSystemAgent ? allowedRuntimeKindsForPreset(form.preset_key) : (['opencode', 'codex', 'native_sdk'] as AgentRuntimeKind[]);
-  const visibleProviderOptions = availableProvidersForRuntime(form.runtime_kind, providerOptions);
-  const selectedProviderOption = visibleProviderOptions.find((option) => option.value === form.provider);
+  const providerConfigState = getAgentProviderConfigState(form.runtime_kind, form.provider, providerOptions);
+  const visibleProviderOptions = providerConfigState.providerOptions;
+  const selectedProviderOption = providerConfigState.selectedProviderOption;
   const templateStarterFlow = templateDraft?.template.starter_flows?.find((flow) => flow.key === 'github_release_notes')
     ?? templateDraft?.template.starter_flows?.[0];
   const supportsReasoningEffort = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_reasoning_effort);
@@ -3579,6 +3622,9 @@ export function AgentsPage() {
     const missing: string[] = [];
     if (!form.name.trim()) {
       missing.push('agent name');
+    }
+    if (!providerConfigState.selectedProviderOption) {
+      missing.push('compatible AI provider');
     }
     if (starterFlowEnabled && templateDraft?.template.key === 'release_notes_writer') {
       if (!templateForm.repository_id) missing.push('repository');
@@ -4248,7 +4294,6 @@ export function AgentsPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-sm font-medium">Monthly token limit</h3>
-                      <p className="mt-1 text-xs text-muted-foreground">Set to zero or leave blank for no monthly limit.</p>
                     </div>
                     {hasAgentSettingsChanges && (
                       <Button type="button" size="sm" disabled={saving} onClick={handleSaveAgentSettings}>
@@ -4532,8 +4577,30 @@ export function AgentsPage() {
                           <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400">Active</Badge>
                         ) : null}
                       </div>
-                      {selectedVersionDescription && (
-                        <p className="text-sm text-muted-foreground">{selectedVersionDescription}</p>
+                      {(selectedVersionDescription || canEditSelectedVersionDescription) && (
+                        <div className="group/description flex flex-wrap items-center gap-2">
+                          <p className={cn(
+                            'min-w-0 flex-1 whitespace-normal break-words text-sm text-muted-foreground',
+                            !selectedVersionDescription && 'italic',
+                          )}>
+                            {selectedVersionDescription || 'No description'}
+                          </p>
+                          {canEditSelectedVersionDescription && selectedPreset?.id ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-xs opacity-0 transition-opacity group-hover/description:opacity-100 group-focus-within/description:opacity-100 focus-visible:opacity-100"
+                              onClick={() => {
+                                setWorkspaceVersionBeingRenamed(selectedPreset);
+                                setRenameLabelDraft(selectedPreset.version_label);
+                                setRenameDescriptionDraft(selectedPreset.description ?? '');
+                              }}
+                            >
+                              Edit
+                            </Button>
+                          ) : null}
+                        </div>
                       )}
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
@@ -5032,8 +5099,8 @@ export function AgentsPage() {
                           <div className="space-y-2">
                             <FieldLabel>AI Provider</FieldLabel>
                             <Select
-                              value={form.provider}
-                              disabled={versionReadOnly}
+                              value={selectedProviderOption ? form.provider : undefined}
+                              disabled={versionReadOnly || providerConfigState.providerDisabled}
                               onValueChange={(value) =>
                                 setForm((current) => {
                                   const provider = normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider);
@@ -5046,7 +5113,7 @@ export function AgentsPage() {
                               }
                             >
                               <SelectTrigger className="h-9">
-                                <SelectValue />
+                                <SelectValue placeholder={providerConfigState.providerDisabled ? 'No compatible provider configured' : 'Select provider'} />
                               </SelectTrigger>
                               <SelectContent>
                                 {visibleProviderOptions.map((provider) => (
@@ -5059,7 +5126,12 @@ export function AgentsPage() {
                                 ))}
                               </SelectContent>
                             </Select>
-                            <p className="text-[11px] leading-relaxed text-muted-foreground">LLM vendor powering this engine.</p>
+                            <p className={cn(
+                              'text-[11px] leading-relaxed',
+                              providerConfigState.providerMessage ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
+                            )}>
+                              {providerConfigState.providerMessage || 'LLM vendor powering this engine.'}
+                            </p>
                           </div>
                         </div>
 
@@ -5071,12 +5143,14 @@ export function AgentsPage() {
                             <Input
                               id="system-agent-model"
                               value={form.model}
-                              disabled={versionReadOnly}
+                              disabled={versionReadOnly || providerConfigState.modelDisabled}
                               onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                              placeholder={selectedProviderOption?.model_placeholder ?? 'Auto'}
+                              placeholder={selectedProviderOption?.model_placeholder ?? 'Select provider first'}
                               className="h-9"
                             />
-                            <p className="text-[11px] leading-relaxed text-muted-foreground">The language model that powers this agent.</p>
+                            <p className="text-[11px] leading-relaxed text-muted-foreground">
+                              {providerConfigState.modelMessage || 'The language model that powers this agent.'}
+                            </p>
                           </div>
 
                           {supportsReasoningEffort && (
@@ -5155,6 +5229,8 @@ export function AgentsPage() {
             <div className="text-xs text-muted-foreground">
               {versionDraftOpen
                 ? 'Create the new version in the dialog.'
+                : !providerConfigState.selectedProviderOption
+                  ? 'Select a compatible AI provider before saving.'
 	                : isEditingWorkspaceVersion || isEditingCustomVersion
 	                  ? (hasVersionChanges ? `Editing ${selectedVersionLabel ?? 'version'}. Save changes to apply.` : 'No changes to save.')
 	                  : 'No changes to save.'}
@@ -5165,7 +5241,7 @@ export function AgentsPage() {
               </Button>
               <Button
                 size="sm"
-	                disabled={saving || !(isEditingWorkspaceVersion || isEditingCustomVersion) || !hasVersionChanges}
+	                disabled={saving || !(isEditingWorkspaceVersion || isEditingCustomVersion) || !hasVersionChanges || !providerConfigState.selectedProviderOption}
                 onClick={() => handleSaveWorkspaceVersion()}
               >
                 {saving ? 'Saving…' : 'Save'}
@@ -6671,7 +6747,8 @@ export function AgentsPage() {
                 <div className="space-y-2">
                   <FieldLabel tooltip="The AI service that powers this agent.">AI Provider</FieldLabel>
                   <Select
-                    value={form.provider}
+                    value={selectedProviderOption ? form.provider : undefined}
+                    disabled={providerConfigState.providerDisabled}
                     onValueChange={(value) =>
                       setForm((current) => {
                         const provider = normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider);
@@ -6684,7 +6761,7 @@ export function AgentsPage() {
                     }
                   >
                     <SelectTrigger className="h-9">
-                      <SelectValue />
+                      <SelectValue placeholder={providerConfigState.providerDisabled ? 'No compatible provider configured' : 'Select provider'} />
                     </SelectTrigger>
                     <SelectContent>
                       {visibleProviderOptions.map((provider) => (
@@ -6697,7 +6774,12 @@ export function AgentsPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">LLM vendor powering this engine.</p>
+                  <p className={cn(
+                    'text-[11px] leading-relaxed',
+                    providerConfigState.providerMessage ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
+                  )}>
+                    {providerConfigState.providerMessage || 'LLM vendor powering this engine.'}
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <FieldLabel
@@ -6710,10 +6792,13 @@ export function AgentsPage() {
                     id="agent-model"
                     value={form.model}
                     onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                    placeholder={selectedProviderOption?.model_placeholder ?? 'Auto'}
+                    placeholder={selectedProviderOption?.model_placeholder ?? 'Select provider first'}
+                    disabled={providerConfigState.modelDisabled}
                     className="h-9"
                   />
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">The language model that powers this agent.</p>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    {providerConfigState.modelMessage || 'The language model that powers this agent.'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -7147,7 +7232,7 @@ export function AgentsPage() {
       >
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>Rename custom version</DialogTitle>
+            <DialogTitle>Edit custom version</DialogTitle>
             <DialogDescription>
               Update the label or description for this custom version. Changes apply immediately.
             </DialogDescription>
