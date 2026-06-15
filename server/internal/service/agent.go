@@ -5002,8 +5002,6 @@ func (s *AgentService) validateRuntimeProviderCompatibility(agent *model.Agent) 
 	default:
 		return fmt.Errorf("runtime_kind codex requires provider openai or openrouter")
 	}
-
-	return nil
 }
 
 func (s *AgentService) isCodexOpenAIConfigured() bool {
