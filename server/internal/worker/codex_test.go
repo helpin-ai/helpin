@@ -671,6 +671,7 @@ func TestBuildCodexConfigArtifactIncludesOpenAIExecutionConfig(t *testing.T) {
 		Model                string `toml:"model"`
 		ModelReasoningEffort string `toml:"model_reasoning_effort"`
 		ServiceTier          string `toml:"service_tier"`
+		WebSearch            string `toml:"web_search"`
 	}
 	if err := toml.Unmarshal([]byte(payload), &decoded); err != nil {
 		t.Fatalf("unmarshal config artifact: %v", err)
@@ -683,6 +684,9 @@ func TestBuildCodexConfigArtifactIncludesOpenAIExecutionConfig(t *testing.T) {
 	}
 	if decoded.ServiceTier != "fast" {
 		t.Fatalf("expected service tier to be preserved, got %q", decoded.ServiceTier)
+	}
+	if decoded.WebSearch != "live" {
+		t.Fatalf("expected Codex backend web search to default to live, got %q", decoded.WebSearch)
 	}
 }
 

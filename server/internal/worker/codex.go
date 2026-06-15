@@ -80,6 +80,7 @@ type codexConfigArtifact struct {
 	Model                string                                  `toml:"model,omitempty"`
 	ModelReasoningEffort string                                  `toml:"model_reasoning_effort,omitempty"`
 	ServiceTier          string                                  `toml:"service_tier,omitempty"`
+	WebSearch            string                                  `toml:"web_search"`
 	ApprovalPolicy       string                                  `toml:"approval_policy"`
 	ApprovalsReviewer    string                                  `toml:"approvals_reviewer,omitempty"`
 	SandboxMode          string                                  `toml:"sandbox_mode"`
@@ -555,6 +556,7 @@ func (e *CodexExecutor) buildConfigArtifact(execCtx *ExecutionContext, profile c
 	config := codexConfigArtifact{
 		Model:                strings.TrimSpace(profile.Model),
 		ModelReasoningEffort: strings.TrimSpace(profile.ReasoningEffort),
+		WebSearch:            "live",
 		ApprovalPolicy:       strings.TrimSpace(approvalPolicy),
 		ApprovalsReviewer:    "user",
 		SandboxMode:          e.sandboxModeFor(execCtx),
