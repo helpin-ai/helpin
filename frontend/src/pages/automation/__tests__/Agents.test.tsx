@@ -8,6 +8,7 @@ import {
   AgentsListHeader,
   AgentsListTable,
   canEditWorkspacePresetVersionDescription,
+  getAgentAnalyticsSummary,
   getAgentProviderConfigState,
 } from '../Agents';
 import type { Agent, AgentModelProviderOption, AgentPresetDefinition } from '@/lib/pmTypes';
@@ -55,6 +56,28 @@ describe('Agents list header', () => {
 
     expect(container?.firstElementChild?.className).toContain('overflow-x-auto');
     expect(container?.firstElementChild?.className).not.toContain('overflow-hidden');
+  });
+});
+
+describe('getAgentAnalyticsSummary', () => {
+  it('summarizes the selected analytics range for drawer cards', () => {
+    const summary = getAgentAnalyticsSummary({
+      range: '30d',
+      bucket: 'day',
+      series: [
+        { period: '2026-06-05', runs: 3, completed: 0, failed: 2, needs_attention: 0, tokens: 155_724 },
+        { period: '2026-06-08', runs: 1, completed: 1, failed: 0, needs_attention: 1, tokens: 672_096 },
+      ],
+    });
+
+    expect(summary.rangeLabel).toBe('30d');
+    expect(summary.runs).toBe(4);
+    expect(summary.completed).toBe(1);
+    expect(summary.failed).toBe(2);
+    expect(summary.needsAttention).toBe(1);
+    expect(summary.tokens).toBe(827_820);
+    expect(summary.successRate).toBe('25%');
+    expect(summary.avgTokensPerRun).toBe(206_955);
   });
 });
 

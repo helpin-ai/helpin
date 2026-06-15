@@ -27,6 +27,7 @@ import {
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -1781,6 +1782,26 @@ const AGENT_ANALYTICS_RANGES: Array<{ value: AgentAnalyticsRange; label: string 
   { value: '12m', label: '12m' },
 ];
 
+export function getAgentAnalyticsSummary(analytics?: AgentAnalyticsResponse | null, fallbackRange = '30d') {
+  const series = analytics?.series ?? [];
+  const runs = series.reduce((sum, point) => sum + point.runs, 0);
+  const completed = series.reduce((sum, point) => sum + point.completed, 0);
+  const failed = series.reduce((sum, point) => sum + point.failed, 0);
+  const needsAttention = series.reduce((sum, point) => sum + point.needs_attention, 0);
+  const tokens = series.reduce((sum, point) => sum + point.tokens, 0);
+
+  return {
+    rangeLabel: analytics?.range || fallbackRange,
+    runs,
+    completed,
+    failed,
+    needsAttention,
+    tokens,
+    successRate: formatRate(completed, runs),
+    avgTokensPerRun: runs > 0 ? Math.round(tokens / runs) : 0,
+  };
+}
+
 function AgentRunsTrendChart({ analytics }: { analytics?: AgentAnalyticsResponse | null }) {
   const series = analytics?.series ?? [];
   const width = 720;
@@ -2407,6 +2428,8 @@ export function AgentsPage() {
   const [runNowBaseBranch, setRunNowBaseBranch] = useState('');
   const [runNowRepositoriesLoading, setRunNowRepositoriesLoading] = useState(false);
   const [runNowSubmitting, setRunNowSubmitting] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [runDrawerOpen, setRunDrawerOpen] = useState(false);
 
   const loadAgents = useCallback(async () => {
     if (!workspaceId) return;
@@ -2535,6 +2558,7 @@ export function AgentsPage() {
   const loadAgentAnalytics = useCallback(async (agentId: string, range: AgentAnalyticsRange) => {
     if (!workspaceId) return;
     setAgentAnalyticsLoading(true);
+    setAgentAnalytics(null);
     const res = await automationService.getAgentAnalytics(workspaceId, agentId, range);
     if (!res.error) {
       setAgentAnalytics(res.data ?? null);
@@ -2648,10 +2672,9 @@ export function AgentsPage() {
   ]);
 
   const openRunDetails = useCallback((runId: string) => {
-    void navigate({
-      to: buildAutomationActivityPath(workspace?.slug, { run_id: runId }),
-    });
-  }, [navigate, workspace?.slug]);
+    setSelectedRunId(runId);
+    setRunDrawerOpen(true);
+  }, []);
 
   useEffect(() => {
     loadAgents();
@@ -3545,8 +3568,7 @@ export function AgentsPage() {
   const monthlyTokenPercent = monthlyTokenLimit > 0 ? Math.min(100, Math.round((monthlyTokensUsed / monthlyTokenLimit) * 100)) : 0;
   const monthlyLimitMatchesPreset = MONTHLY_TOKEN_LIMIT_PRESETS.some((preset) => preset.value === monthlyTokenLimit);
   const showCustomTokenLimitInput = tokenLimitMode === 'custom' || !monthlyLimitMatchesPreset;
-  const recentRunSuccessRate = formatRate(selectedAgentStats?.recentCompleted ?? 0, selectedAgentStats?.recentRuns ?? 0);
-  const avgTokensPerRecentRun = selectedAgentStats?.recentRuns ? Math.round((selectedAgentStats.recentTokens ?? 0) / selectedAgentStats.recentRuns) : 0;
+  const analyticsSummary = getAgentAnalyticsSummary(agentAnalytics, agentAnalyticsRange);
   const recentRunItems = selectedAgentStats?.recentRunItems ?? [];
   const selectedVersionLabel = editingSystemAgent ? selectedPreset?.version_label : selectedCustomVersion?.label;
   const selectedVersionDescription = editingSystemAgent ? selectedPreset?.description : selectedCustomVersion?.description;
@@ -4139,49 +4161,10 @@ export function AgentsPage() {
             <TabsContent value="analytics" className="mt-0 min-h-0 overflow-y-auto px-6 pb-12 pt-6">
               <div className="mx-auto w-full max-w-6xl space-y-6">
                 <section className="space-y-3">
-                  <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agent analytics</h3>
                       <p className="mt-1 text-sm text-muted-foreground">Usage and run health for this agent.</p>
-                    </div>
-                    {editingAgent && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => window.open(resolveTriggerHistoryPath(workspace?.slug, editingAgent.id), '_blank')}
-                      >
-                        View runs
-                      </Button>
-                    )}
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-lg border border-border/60 bg-card p-4">
-                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Runs · 7d</p>
-                      <p className="mt-2 text-2xl font-semibold">{selectedAgentStats?.recentRuns ?? 0}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {(selectedAgentStats?.recentCompleted ?? 0).toLocaleString()} completed · {(selectedAgentStats?.recentFailed ?? 0).toLocaleString()} failed
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-border/60 bg-card p-4">
-                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Success rate · 7d</p>
-                      <p className="mt-2 text-2xl font-semibold">{recentRunSuccessRate}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{selectedAgentStats?.attentionRunCount ?? 0} runs need attention</p>
-                    </div>
-                    <div className="rounded-lg border border-border/60 bg-card p-4">
-                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Avg tokens / run · 7d</p>
-                      <p className="mt-2 text-2xl font-semibold">{avgTokensPerRecentRun > 0 ? avgTokensPerRecentRun.toLocaleString() : '-'}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">Efficiency signal across recent runs</p>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-medium">Run trends</h3>
-                      <p className="mt-1 text-xs text-muted-foreground">Runs, completions, failures, and paused runs over time.</p>
                     </div>
                     <div className="flex rounded-md border border-border p-0.5">
                       {AGENT_ANALYTICS_RANGES.map((range) => (
@@ -4199,6 +4182,35 @@ export function AgentsPage() {
                           {range.label}
                         </button>
                       ))}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg border border-border/60 bg-card p-4">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Runs · {analyticsSummary.rangeLabel}</p>
+                      <p className="mt-2 text-2xl font-semibold">{analyticsSummary.runs.toLocaleString()}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {analyticsSummary.completed.toLocaleString()} completed · {analyticsSummary.failed.toLocaleString()} failed
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-card p-4">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Success rate · {analyticsSummary.rangeLabel}</p>
+                      <p className="mt-2 text-2xl font-semibold">{analyticsSummary.successRate}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{analyticsSummary.needsAttention.toLocaleString()} runs need attention</p>
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-card p-4">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Avg tokens / run · {analyticsSummary.rangeLabel}</p>
+                      <p className="mt-2 text-2xl font-semibold">{analyticsSummary.avgTokensPerRun > 0 ? analyticsSummary.avgTokensPerRun.toLocaleString() : '-'}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Efficiency signal across recent runs</p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-medium">Run trends</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">Runs, completions, failures, and paused runs over time.</p>
                     </div>
                   </div>
                   {agentAnalyticsLoading ? (
@@ -7281,6 +7293,17 @@ export function AgentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CodingSessionDrawer
+        sessionId={selectedRunId}
+        open={runDrawerOpen && !!selectedRunId}
+        onOpenChange={(open) => {
+          setRunDrawerOpen(open);
+          if (!open) setSelectedRunId(null);
+        }}
+        title="Agent Run"
+        description="Interactive transcript, approvals, artifacts, and session details."
+      />
     </div>
   );
 }
