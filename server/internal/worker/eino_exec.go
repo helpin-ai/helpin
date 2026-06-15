@@ -1646,7 +1646,7 @@ func canExecuteToolCallsInParallel(toolCalls []ExecutionBlock) bool {
 }
 
 func isParallelSafeTool(name string) bool {
-	switch strings.TrimSpace(name) {
+	switch CanonicalToolName(name) {
 	case "read_file", "read_files", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols",
 		"web_search_brave", "web_search_exa", "fetch_url", "crawl_url",
 		"list_task_checklist", "list_workspace_teams", "list_team_workflows_with_stages", "list_conversation_messages",

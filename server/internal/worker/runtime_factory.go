@@ -32,6 +32,17 @@ func NewDefaultRuntimeRegistry(
 	codexAdapter := NewCodexExecutor("codex", codexConfig, runRepo, artifactRepo, workspaceAuth)
 	// native_sdk is the only in-process SDK-backed runtime exposed today.
 	// A real terminal-backed claude_code runtime can be added later as a distinct adapter.
-	nativeAdapter := NewEinoExecutor("native_sdk", modelFactory, braveSearchClient, exaSearchClient, crawlerProxyURLs, runRepo, artifactRepo)
+	nativeAdapter := NewEinoExecutor(
+		"native_sdk",
+		modelFactory,
+		braveSearchClient,
+		exaSearchClient,
+		crawlerProxyURLs,
+		codexConfig.HelpinAPIBaseURL,
+		codexConfig.HelpinRunToolTokenSecret,
+		codexConfig.HelpinMCPBridgePath,
+		runRepo,
+		artifactRepo,
+	)
 	return NewRuntimeRegistry(opencodeAdapter, codexAdapter, nativeAdapter)
 }

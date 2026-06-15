@@ -48,7 +48,7 @@ func Resolve(ctx context.Context, workspaceID string, refs model.AgentSkillRefs,
 func CompileInstructions(definitions []worker.SkillDefinition) string {
 	sections := make([]string, 0, len(definitions))
 	for _, definition := range definitions {
-		instructions := strings.TrimSpace(definition.Instructions)
+		instructions := worker.RenderRuntimeToolNamesInInstructions(definition.Instructions)
 		if instructions == "" {
 			continue
 		}
@@ -94,7 +94,7 @@ func ValidateRuntimeAndTools(runtimeKind string, allowedTools []string, definiti
 		allowedSet[toolName] = struct{}{}
 	}
 	for _, definition := range definitions {
-		if len(definition.SupportedRuntimes) > 0 && runtimeKind != "" && !contains(definition.SupportedRuntimes, runtimeKind) {
+		if len(definition.SupportedRuntimes) > 0 && runtimeKind != "" && !runtimeSupportedBySkill(definition.SupportedRuntimes, runtimeKind) {
 			return fmt.Errorf("skill %q does not support runtime %q", definition.Key, runtimeKind)
 		}
 		for _, toolName := range worker.NormalizeToolNames(definition.RequiredTools) {
@@ -104,6 +104,16 @@ func ValidateRuntimeAndTools(runtimeKind string, allowedTools []string, definiti
 		}
 	}
 	return nil
+}
+
+func runtimeSupportedBySkill(supported []string, runtimeKind string) bool {
+	if contains(supported, runtimeKind) {
+		return true
+	}
+	// Migration compatibility: existing workspace skills were authored for the
+	// in-process native runtime, but Codex now stages and uses the same skill
+	// contract for default agent execution.
+	return runtimeKind == "codex" && contains(supported, "native_sdk")
 }
 
 func resolveOne(ctx context.Context, workspaceID string, ref model.AgentSkillRef, lookup WorkspaceSkillLookup) (model.AgentSkillRef, worker.SkillDefinition, string, error) {

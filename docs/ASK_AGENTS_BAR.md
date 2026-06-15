@@ -248,6 +248,18 @@ scheduling enforces a bound on simultaneously-runnable steps; dependency cycles 
 rejected at validation time. If Temporal is not configured, dag/pipeline dispatch
 marks the plan failed instead of silently degrading.
 
+Dispatch does not choose a separate system-agent or custom-agent runtime. Every
+durable step starts a normal `agent_run`; the agent record supplies prompt,
+skills, allowed tools, targets, and `runtime_kind`. The runtime backend is then
+selected by `runtime_kind` (`native_sdk`, `codex`, or `opencode` where
+configured).
+
+For model-facing Helpin product tools, both `native_sdk` and `codex` use the
+run-scoped Helpin MCP bridge with names such as `mcp__helpin__update_plan` and
+`mcp__helpin__request_user_input`. Backend policy and command-bar step
+validation continue to use canonical bare aliases such as `update_plan` after
+normalization.
+
 ---
 
 ## Temporal DAG orchestration
@@ -419,6 +431,8 @@ no separate custom-agent runtime exists.
   execution is needed.
 - Durable work always becomes one or more `agent_run` records, grouped under a
   `command_bar_plans` row when more than one run is involved.
+- System agents, custom agents, and one-shot Command Agent runs all dispatch
+  through the same `agent_run` execution path.
 - The `requireCommandBarRead` (parse/chat) vs `requireCommandBarEdit` (dispatch)
   boundary is the execution gate — classification is read, execution is edit.
 - `dag` / `task_pipeline_fan_out` require Temporal; if it is unavailable, fail the plan

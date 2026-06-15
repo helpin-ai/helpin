@@ -64,10 +64,10 @@ func (a *AgentRunActivities) persistAssistantRunMessage(ctx context.Context, sta
 	if err := a.persistHumanInteractionArtifacts(ctx, state, result, assistantMessage); err != nil {
 		return nil, err
 	}
-	if err := a.persistNativeTurnDebugArtifact(ctx, state, execCtx, assistantMessage); err != nil {
+	if err := a.persistAgentTurnDebugArtifact(ctx, state, execCtx, assistantMessage); err != nil {
 		return nil, err
 	}
-	if err := a.persistNativeRepairStateArtifact(ctx, state, execCtx, assistantMessage); err != nil {
+	if err := a.persistAgentRepairStateArtifact(ctx, state, execCtx, assistantMessage); err != nil {
 		return nil, err
 	}
 

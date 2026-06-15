@@ -85,7 +85,7 @@ func ValidateRunPlanArtifactForContext(plan *RunPlanArtifact) error {
 func ExtractLatestRunPlan(toolInvocations []appmodel.ToolInvocation) *RunPlanArtifact {
 	for i := len(toolInvocations) - 1; i >= 0; i-- {
 		invocation := toolInvocations[i]
-		if strings.TrimSpace(invocation.ToolName) != ToolUpdatePlan {
+		if CanonicalToolName(invocation.ToolName) != ToolUpdatePlan {
 			continue
 		}
 		var plan RunPlanArtifact

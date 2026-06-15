@@ -281,25 +281,26 @@ func (a *AgentRunActivities) evaluateRunCompletedRules(ctx context.Context, run 
 }
 
 type resolvedRunState struct {
-	run                        *model.AgentRun
-	agent                      *model.Agent
-	runtimeSkillRefs           model.AgentSkillRefs
-	runtimeSkillDefinitions    []workerpkg.SkillDefinition
-	skillPolicy                workerpkg.SkillPolicy
-	nativeSelectivePathEnabled bool
-	task                       *model.PMTask
-	workspaceKey               string
-	epic                       *model.PMEpic
-	epicTasks                  []model.PMTask
-	conversation               *model.SupportConversation
-	resolved                   workerpkg.ResolvedProfile // merged class+agent overrides — use this for decisions
-	deliveryTarget             *model.TaskDeliveryTarget
-	repository                 *model.GitRepository
-	integration                *model.GitIntegration
-	teamDefault                *model.PMTeamRepoDefault
-	accessToken                string
-	gitIdentity                workerpkg.GitIdentity
-	branchSync                 branchSyncState
+	run                     *model.AgentRun
+	agent                   *model.Agent
+	runtimeSkillRefs        model.AgentSkillRefs
+	runtimeSkillDefinitions []workerpkg.SkillDefinition
+	skillPolicy             workerpkg.SkillPolicy
+	executionContractActive bool
+	executionContractKey    string
+	task                    *model.PMTask
+	workspaceKey            string
+	epic                    *model.PMEpic
+	epicTasks               []model.PMTask
+	conversation            *model.SupportConversation
+	resolved                workerpkg.ResolvedProfile // merged class+agent overrides — use this for decisions
+	deliveryTarget          *model.TaskDeliveryTarget
+	repository              *model.GitRepository
+	integration             *model.GitIntegration
+	teamDefault             *model.PMTeamRepoDefault
+	accessToken             string
+	gitIdentity             workerpkg.GitIdentity
+	branchSync              branchSyncState
 }
 
 type branchSyncState struct {
@@ -331,7 +332,7 @@ func shouldPersistExecutionWorkspace(run *model.AgentRun, runtimeKind string) bo
 }
 
 func replayMessagesForExecution(state *resolvedRunState, messages []model.AgentRunMessage) []model.AgentRunMessage {
-	if state == nil || !state.nativeSelectivePathEnabled {
+	if state == nil || !state.executionContractActive {
 		return messages
 	}
 	filtered := make([]model.AgentRunMessage, 0, len(messages))
@@ -485,7 +486,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
-	legacyInitialInstructions, phaseGuidance := splitNativePhaseGuidance(runtimeKind, state, initialInstructions)
+	legacyInitialInstructions, phaseGuidance := splitContractPhaseGuidance(runtimeKind, state, initialInstructions)
 
 	now := time.Now()
 	state.run.Status = "running"
@@ -590,7 +591,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	}
 
 	allowedTools := effectiveToolSet(state.resolved, planningInput.AllowedTools)
-	activeSkillSelection := selectNativeActiveSkills(state, planningInput.Stage)
+	activeSkillSelection := selectActiveContractSkills(state, planningInput.Stage)
 	state.skillPolicy = effectiveExecutionSkillPolicy(state, activeSkillSelection)
 
 	execCtx := a.buildRuntimeExecutionContext(ctx, state, runtimeExecutionContextInput{
@@ -624,7 +625,8 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"work_dir", workDir,
 		"preset_key", strings.TrimSpace(state.agent.EffectivePresetKey()),
 		"target_type", strings.TrimSpace(state.run.TargetType),
-		"native_selective_path_enabled", state.nativeSelectivePathEnabled,
+		"contract_active", state.executionContractActive,
+		"contract_key", state.executionContractKey,
 		"continuation_mode", providerContinuationMode(providerContinuation),
 		"runtime_skill_refs", runtimeSkillRefKeys(state.runtimeSkillRefs),
 		"active_skill_refs", runtimeSkillRefKeys(activeSkillSelection.Refs),
@@ -731,6 +733,19 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	reviewRequest := latestExecutionReviewCheckpointRequest(execCtx)
 	humanInputRequest := latestExecutionHumanInputRequest(execCtx)
 	authRequest := latestExecutionCodexAuthState(execCtx)
+	if approvalRequest == nil && reviewRequest == nil && humanInputRequest == nil {
+		gatewayApproval, gatewayReview, gatewayInput, err := a.latestPendingGatewayInteractionRequest(ctx, state)
+		if err != nil {
+			if persistWorkspace {
+				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+			}
+			_ = a.failRun(ctx, state, err.Error())
+			return ExecuteRunResult{}, nonRetryableRunError(err)
+		}
+		approvalRequest = gatewayApproval
+		reviewRequest = gatewayReview
+		humanInputRequest = gatewayInput
+	}
 	if approvalRequest == nil && reviewRequest == nil && humanInputRequest == nil && authRequest == nil {
 		synthesizedReview, synthesizedInput, err := a.synthesizeCompletionInteractionFallback(ctx, state, assistantMessage)
 		if err != nil {
@@ -962,6 +977,46 @@ func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg
 		return waitForApproval, false, false
 	}
 	return waitForApproval, false, false
+}
+
+func (a *AgentRunActivities) latestPendingGatewayInteractionRequest(ctx context.Context, state *resolvedRunState) (*model.ApprovalRequest, *model.ReviewCheckpointRequest, *workerpkg.UserInputRequest, error) {
+	if a == nil || a.interactionRepo == nil || state == nil || state.run == nil {
+		return nil, nil, nil, nil
+	}
+	interaction, err := a.interactionRepo.GetLatestPendingByRun(ctx, state.run.WorkspaceID, state.run.ID)
+	if err != nil || interaction == nil {
+		return nil, nil, nil, err
+	}
+	var metadata struct {
+		Source string `json:"source"`
+	}
+	_ = json.Unmarshal(interaction.RuntimeMetadata, &metadata)
+	if strings.TrimSpace(metadata.Source) != "agent_tool_gateway" {
+		return nil, nil, nil, nil
+	}
+
+	switch strings.TrimSpace(interaction.InteractionKind) {
+	case model.AgentRunInteractionKindApprovalRequest:
+		var req model.ApprovalRequest
+		if err := json.Unmarshal(interaction.RequestPayload, &req); err != nil {
+			return nil, nil, nil, fmt.Errorf("parse pending approval request: %w", err)
+		}
+		return &req, nil, nil, nil
+	case model.AgentRunInteractionKindReviewCheckpoint:
+		var req model.ReviewCheckpointRequest
+		if err := json.Unmarshal(interaction.RequestPayload, &req); err != nil {
+			return nil, nil, nil, fmt.Errorf("parse pending review checkpoint request: %w", err)
+		}
+		return nil, &req, nil, nil
+	case model.AgentRunInteractionKindRequestUserInput:
+		var req workerpkg.UserInputRequest
+		if err := json.Unmarshal(interaction.RequestPayload, &req); err != nil {
+			return nil, nil, nil, fmt.Errorf("parse pending input request: %w", err)
+		}
+		return nil, nil, &req, nil
+	default:
+		return nil, nil, nil, nil
+	}
 }
 
 func normalizeApprovalStateAfterExecution(run *model.AgentRun, waitForApproval bool) {
@@ -1432,15 +1487,17 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		}
 	}
 
-	nativeSelectivePathEnabled := resolveNativeSelectivePlannerPathEnabled(run, agent)
+	executionContractKey := resolveExecutionContract(run, agent)
+	executionContractActive := executionContractKey != ""
 	state := &resolvedRunState{
-		run:                        run,
-		agent:                      agent,
-		runtimeSkillRefs:           skillResolution.Refs,
-		runtimeSkillDefinitions:    skillResolution.Definitions,
-		skillPolicy:                agentskills.AggregatePolicy(skillResolution.Definitions),
-		nativeSelectivePathEnabled: nativeSelectivePathEnabled,
-		resolved:                   resolved,
+		run:                     run,
+		agent:                   agent,
+		runtimeSkillRefs:        skillResolution.Refs,
+		runtimeSkillDefinitions: skillResolution.Definitions,
+		skillPolicy:             agentskills.AggregatePolicy(skillResolution.Definitions),
+		executionContractActive: executionContractActive,
+		executionContractKey:    executionContractKey,
+		resolved:                resolved,
 	}
 	slog.InfoContext(ctx, "resolved run state",
 		"workspace_id", run.WorkspaceID,
@@ -1449,7 +1506,8 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		"runtime_kind", executionRuntimeKind(state),
 		"preset_key", strings.TrimSpace(agent.EffectivePresetKey()),
 		"target_type", strings.TrimSpace(run.TargetType),
-		"native_selective_path_enabled", nativeSelectivePathEnabled,
+		"contract_active", executionContractActive,
+		"contract_key", executionContractKey,
 		"runtime_skill_refs", runtimeSkillRefKeys(skillResolution.Refs),
 	)
 

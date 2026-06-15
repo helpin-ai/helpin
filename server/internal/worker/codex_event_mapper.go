@@ -68,9 +68,9 @@ func (m *codexEventMapper) HandleNotification(ctx context.Context, method string
 			return err
 		}
 		m.result.Usage = ExecutionUsage{
-			CachedInputTokens: int(payload.TokenUsage.Last.CachedInputTokens),
-			InputTokens:       int(payload.TokenUsage.Last.InputTokens),
-			OutputTokens:      int(payload.TokenUsage.Last.OutputTokens),
+			CachedInputTokens: int(payload.TokenUsage.Total.CachedInputTokens),
+			InputTokens:       int(payload.TokenUsage.Total.InputTokens),
+			OutputTokens:      int(payload.TokenUsage.Total.OutputTokens),
 		}
 	case "turn/diff/updated":
 		var payload codexTurnDiffUpdatedNotification

@@ -299,7 +299,7 @@ func ExtractPublishedPreviews(toolInvocations []appmodel.ToolInvocation) []Publi
 }
 
 func isPreviewToolName(toolName string) bool {
-	switch strings.TrimSpace(toolName) {
+	switch CanonicalToolName(toolName) {
 	case ToolPublishPreview, ToolPreviewMarkdown, ToolPreviewJSON, ToolPublishPRDDraft, ToolPublishTaskPlan, ToolPublishTaskPlanDoc:
 		return true
 	default:
@@ -308,7 +308,7 @@ func isPreviewToolName(toolName string) bool {
 }
 
 func previewFromToolInvocation(invocation appmodel.ToolInvocation) (*PublishedPreview, error) {
-	switch strings.TrimSpace(invocation.ToolName) {
+	switch CanonicalToolName(invocation.ToolName) {
 	case ToolPreviewMarkdown:
 		req, err := buildSlotPreviewRequest(invocation.Input, PreviewFormatMarkdown)
 		if err != nil {

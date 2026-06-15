@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testing.T) {
@@ -24,10 +25,10 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"If an approved spec exists and no tasks exist yet:",
 		"If no approved spec exists but a draft PRD already exists:",
 		"If approved PRD persistence is already complete:",
-		"`request_user_input`",
-		"`request_approval`",
-		"`publish_prd_draft`",
-		"`publish_task_plan`",
+		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput) + "`",
+		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval) + "`",
+		"`" + worker.RuntimeToolNameForPrompt(worker.ToolPublishPRDDraft) + "`",
+		"`" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlan) + "`",
 		"Use `isOther: true` instead of adding an explicit Other option.",
 		"`files_to_modify` must be an array of objects",
 		"\"name\": \"Add tracking helper\"",
@@ -37,7 +38,7 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"The value of `content` must be a JSON object.",
 		"Inside `proposed_tasks`, use the canonical field names `name` and `task_type`.",
 		"Use `dependency_refs` only for refs that appear elsewhere in the same `proposed_tasks` array.",
-		"`list_workspace_teams`",
+		"`" + worker.RuntimeToolNameForPrompt("list_workspace_teams") + "`",
 		"platform will persist the approved PRD artifact",
 		"platform will apply the approved task plan artifact and create the tasks",
 		"Only treat the phase as approved when the human gives a clear, explicit approval.",
@@ -71,15 +72,15 @@ func TestTaskPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 
 	for _, snippet := range []string{
 		"Run a single interactive planning conversation for one task.",
-		"`publish_task_plan_doc`",
-		"`request_user_input`",
-		"`request_approval`",
-		"call `publish_task_plan_doc`, then call `request_approval` with `phase=\"task_doc\"`, then stop.",
+		"`" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc) + "`",
+		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput) + "`",
+		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval) + "`",
+		"call `" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc) + "`, then call `" + worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval) + "` with `phase=\"task_doc\"`, then stop.",
 		"\"phase\": \"prd|tasks|task_doc\"",
 		"`content` is required and must contain the full current markdown draft being reviewed.",
 		"Never call the tool with only `title` or with empty `content`.",
 		"platform will persist and link the approved preview",
-		"Revise the active planning document, republish the full replacement draft with `publish_task_plan_doc`, and request another approval request with `phase=\"task_doc\"` when the revision is ready.",
+		"Revise the active planning document, republish the full replacement draft with `" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc) + "`, and request another approval request with `phase=\"task_doc\"` when the revision is ready.",
 		"Produce a planning document, not code.",
 		"keep repository interactions read-only",
 		"Do not modify code, create files, apply patches, or change git state in this run.",
@@ -97,8 +98,8 @@ func TestReviewAgentSystemPromptIncludesInteractiveLoop(t *testing.T) {
 	}
 	for _, snippet := range []string{
 		"You are Review Agent.",
-		"`request_user_input`",
-		"`request_review_checkpoint`",
+		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput) + "`",
+		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestReviewCheckpoint) + "`",
 		"Treat review as an interactive loop, not a one-shot report.",
 		"After the initial findings pass, produce a `review_checkpoint` handoff and stop.",
 		"Do not finish immediately after posting findings unless the latest human reply clearly says the review is done",

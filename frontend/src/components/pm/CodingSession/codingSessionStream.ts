@@ -9,6 +9,7 @@ import type {
   CodingSessionTranscriptMessage,
   RunPlanArtifact,
 } from '@/lib/pmTypes';
+import { canonicalToolName, isToolName } from '@/lib/toolNames';
 import { sortCodingSessionEvents } from './codingSessionUtils';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -670,7 +671,7 @@ function extractPlanFromLiveTurnSegments(
   let currentPlan: RunPlanArtifact | null = null;
   for (const segment of segments) {
     if (segment.kind !== 'tool_call') continue;
-    if (segment.tool_call.tool_name !== 'update_plan') continue;
+    if (!isToolName(segment.tool_call.tool_name, 'update_plan')) continue;
     if (!segment.tool_call.args_text) continue;
     const parsed = parsePlanArtifact(segment.tool_call.args_text);
     if (parsed) currentPlan = parsed;
@@ -733,7 +734,7 @@ function reconcileObservedPlanState(
   const completedToolNames = new Set(
     toolCalls
       .filter((toolCall) => toolCall.status === 'completed')
-      .map((toolCall) => toolCall.tool_name.toLowerCase()),
+      .map((toolCall) => canonicalToolName(toolCall.tool_name).toLowerCase()),
   );
 
   const publishedTaskPlanDoc = [...TASK_PLAN_DOC_PUBLISH_TOOLS].some((toolName) => completedToolNames.has(toolName));
@@ -788,7 +789,7 @@ function extractPlanAndToolCalls(
   // Extract latest plan
   let currentPlan: RunPlanArtifact | null = null;
   for (const tc of deduped) {
-    if (tc.tool_name === 'update_plan' && tc.args_text) {
+    if (isToolName(tc.tool_name, 'update_plan') && tc.args_text) {
       const parsed = parsePlanArtifact(tc.args_text);
       if (parsed) currentPlan = parsed;
     }
@@ -797,7 +798,7 @@ function extractPlanAndToolCalls(
 
   // Collect completed non-plan tool calls sorted by completion time
   const completedToolCalls = deduped
-    .filter((tc) => tc.tool_name !== 'update_plan' && (tc.status === 'completed' || tc.status === 'failed'))
+    .filter((tc) => !isToolName(tc.tool_name, 'update_plan') && (tc.status === 'completed' || tc.status === 'failed'))
     .sort((a, b) => {
       const ta = a.completed_at ?? a.started_at ?? '';
       const tb = b.completed_at ?? b.started_at ?? '';
@@ -1104,7 +1105,7 @@ export function buildCodingSessionStreamState(
     live_assistant_message: liveAssistantMessage,
     live_reasoning_message: liveReasoningMessage,
     live_turn_segments: liveTurnSegments.filter((segment) => (
-      segment.kind !== 'tool_call' || segment.tool_call.tool_name !== 'update_plan'
+      segment.kind !== 'tool_call' || !isToolName(segment.tool_call.tool_name, 'update_plan')
     )),
     activity_events: activityEvents,
     current_plan: reconciledPlan,

@@ -43,9 +43,9 @@ export function createDefaultCustomAgentForm(): CustomAgentFormData {
     name: '',
     preset_key: 'code_builder',
     preset_version_key: 'code_builder_default',
-    runtime_kind: 'native_sdk',
+    runtime_kind: 'codex',
     supported_modes: ['autonomous', 'interactive'],
-    provider: 'anthropic',
+    provider: 'openai',
     model: '',
     reasoning_effort: '',
     service_tier: '',
@@ -114,7 +114,7 @@ export function buildCustomAgentCreatePayload(
   form: CustomAgentFormData,
   advancedOpen: boolean,
 ): CreateAgentRequest {
-  const defaultRuntimeKind: AgentRuntimeKind = 'native_sdk';
+  const defaultRuntimeKind: AgentRuntimeKind = 'codex';
   const teamIds = form.teamAccessMode === 'specific_teams' ? normalizeStringList(form.team_ids) : [];
   return {
     workspace_id: workspaceId,

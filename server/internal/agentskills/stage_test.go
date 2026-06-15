@@ -53,6 +53,12 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	if !strings.Contains(string(payload), "approval_protocol") {
 		t.Fatalf("expected staged skill markdown to contain skill key, got %q", string(payload))
 	}
+	if !strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval)+"`") {
+		t.Fatalf("expected staged skill markdown to use runtime approval tool name, got %q", string(payload))
+	}
+	if strings.Contains(string(payload), "`"+worker.ToolRequestApproval+"`") {
+		t.Fatalf("expected staged skill markdown not to expose bare approval tool name, got %q", string(payload))
+	}
 }
 
 func TestStageIntoStagesBuiltInSkillPackageReferences(t *testing.T) {
@@ -126,7 +132,8 @@ func TestStageIntoStagesSecurityTriageBuiltInSkillPackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read staged security triage SKILL.md: %v", err)
 	}
-	if !strings.Contains(string(payload), "`scan_gitleaks`") || !strings.Contains(string(payload), "`ensure_task_label`") {
+	if !strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt("scan_gitleaks")+"`") ||
+		!strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt("ensure_task_label")+"`") {
 		t.Fatalf("expected staged security triage skill to contain scanner and label tools, got %q", string(payload))
 	}
 	if _, err := os.Stat(filepath.Join(destRoot, "01-security_triage", "semgrep", "helpin-security.yml")); err != nil {
@@ -139,7 +146,7 @@ func TestStageIntoStagesWorkspaceSkillArchive(t *testing.T) {
 		Key:          "workspace_review",
 		Title:        "Workspace Review",
 		Description:  "Review changes for the workspace.",
-		Instructions: "Inspect the repo and produce a review summary.",
+		Instructions: "Inspect the repo, call `update_plan`, and produce a review summary.",
 		SourceKind:   model.WorkspaceSkillSourceWorkspace,
 	}
 	archive, checksum, filename, err := worker.BuildSkillArchive(definition)
@@ -186,5 +193,11 @@ func TestStageIntoStagesWorkspaceSkillArchive(t *testing.T) {
 	}
 	if !strings.Contains(string(payload), definition.Description) {
 		t.Fatalf("expected staged workspace skill markdown to contain description, got %q", string(payload))
+	}
+	if !strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt(worker.ToolUpdatePlan)+"`") {
+		t.Fatalf("expected staged workspace skill markdown to use runtime update_plan tool name, got %q", string(payload))
+	}
+	if strings.Contains(string(payload), "`"+worker.ToolUpdatePlan+"`") {
+		t.Fatalf("expected staged workspace skill markdown not to expose bare update_plan tool name, got %q", string(payload))
 	}
 }

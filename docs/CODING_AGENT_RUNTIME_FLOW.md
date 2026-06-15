@@ -9,6 +9,9 @@ This document explains the current repository-execution flow for coding agents, 
 - commit / push / PR ownership
 - recovery and failure paths
 
+For the broader generic agent executor model, see `docs/AGENTS_AND_AUTOMATION.md`.
+This document is specifically about repository-backed coding delivery.
+
 Use this doc when changing:
 
 - `server/internal/temporalapp/activities.go`
@@ -63,9 +66,9 @@ Key files:
 There are three important runtime families in the backend:
 
 - `native_sdk`
-  - tool-driven backend runtime
-  - used by planners and other non-repo system agents
-  - system epic/task planners use per-turn selective skill activation and dynamic phase guidance; this document does not cover that planner-only flow
+  - Eino/model-loop backend runtime
+  - used for generic agents where the product chooses the native backend
+  - can consume the same Helpin MCP product tools and planner contracts as Codex
 - `codex`
   - Codex CLI / app-server runtime
   - used by Forge / Code Builder system agents
@@ -79,6 +82,17 @@ Current Code Builder default:
 - preset family: `code_builder`
 - default preset version: `code_builder_local_commit_delivery`
 - runtime kind: `codex`
+
+Runtime kind selects the backend adapter, not a separate product behavior path.
+System agents, custom agents, and one-shot command agents still execute as
+normal `agent_run` records. Planner/review/support behavior is expressed
+through prompts, skills, allowed tools, targets, and artifact contracts, not a
+separate native planner controller.
+
+Helpin product and interaction tools are model-facing through the run-scoped
+Helpin MCP bridge using names such as `mcp__helpin__update_plan` and
+`mcp__helpin__request_user_input`. Backend policy and persistence normalize
+those calls back to canonical bare aliases.
 
 ## High-level lifecycle
 

@@ -10,6 +10,7 @@ Use it when adding or changing:
 - runtime tools in `server/internal/worker/tools.go`
 - tool implementations in `server/internal/worker/tools_*.go`
 - tool catalog metadata in `server/internal/worker/tool_catalog.go`
+- Helpin MCP runtime naming in `server/internal/worker/tool_names.go`
 - runtime allowlists in `server/internal/worker/runtime_profiles.go`
 - prompt examples or docs that depend on exact tool JSON
 
@@ -18,6 +19,7 @@ Current model:
 1. tools are the main model-facing contract
 2. some business-mutation tools are backed by internal commands internally
 3. runtime-local tools stay tool-only
+4. Helpin product and interaction tools are exposed to model backends through MCP runtime names such as `mcp__helpin__create_task` and `mcp__helpin__request_user_input`
 
 In practice, optimize for the tool contract first. Internal command backing is an implementation detail except for shared business mutations.
 
@@ -77,6 +79,32 @@ Use an agent-facing runtime tool when:
 
 The model-facing contract is the source of truth for prompts and skills. The internal command, if any, is backend reuse.
 
+### Canonical Alias vs Runtime MCP Name
+
+Helpin product and interaction tools have two names:
+
+- canonical alias: prefix-free backend name such as `create_task`, `update_plan`, or `request_user_input`
+- runtime MCP name: model-facing MCP name such as `mcp__helpin__create_task`, `mcp__helpin__update_plan`, or `mcp__helpin__request_user_input`
+
+Use canonical aliases for:
+
+- runtime profile allowlists
+- backend policy and authorization
+- tool catalog categories
+- artifact extraction and approved-preview application
+- test fixtures that are not specifically about provider tool names
+
+Use runtime MCP names in:
+
+- model-facing prompt snippets
+- staged skill markdown
+- provider tool definitions
+- docs that tell an agent which tool to call
+
+Runtime dispatch strips the `mcp__helpin__` prefix before policy checks and execution. Frontend transcript surfaces accept either form and display the prefix-free alias.
+
+Repo-local backend tools such as filesystem reads, patching, and shell execution may still be provided directly by a runtime. Helpin product and interaction tools should be available through the Helpin MCP bridge for both `native_sdk` and `codex`.
+
 ### Runtime Exposure
 
 Adding a tool implementation is not enough to make it usable. Exposure is controlled by:
@@ -84,7 +112,8 @@ Adding a tool implementation is not enough to make it usable. Exposure is contro
 - `server/internal/worker/runtime_profiles.go` for preset/runtime defaults
 - `agent.allowed_tools` overrides, resolved by `ResolveAgentProfile`
 - `ExecutionContext.AllowedTools`, which is enforced by `ToolRegistry.ExecuteAllowed`
-- selective native skill activation, which can make the model see only the skills and policies active for the current turn
+- active skill and prompt selection, which can make the model see only the skills and policies active for the current turn
+- Helpin MCP discovery, which exposes available Helpin product/interaction tools with `mcp__helpin__*` runtime names
 - tool catalog metadata in `server/internal/worker/tool_catalog.go` and `server/internal/commandtools/metadata.go`
 
 This means a tool can exist in the registry but still be unavailable to a specific agent run.
@@ -144,10 +173,10 @@ Runtime Tools
 |   +-- web search
 |
 +-- Interaction tools
-|   +-- request_user_input
-|   +-- request_approval
-|   +-- request_review_checkpoint
-|   +-- preview / publish tools
+|   +-- request_user_input / mcp__helpin__request_user_input
+|   +-- request_approval / mcp__helpin__request_approval
+|   +-- request_review_checkpoint / mcp__helpin__request_review_checkpoint
+|   +-- preview / publish tools, for example mcp__helpin__publish_task_plan
 |
 +-- Product tools
     +-- reads
@@ -213,7 +242,8 @@ Think of each tool contract as this shape:
 
 ```text
 Tool Name
-  -> snake_case action
+  -> canonical snake_case action
+  -> runtime MCP name when a Helpin product tool is model-facing
 
 Input Schema
   -> JSON object
@@ -283,12 +313,22 @@ If a field does not fit one of those patterns, document why it needs to exist.
 
 ### Tool names
 
-Use `snake_case` action names:
+Use `snake_case` action names for canonical aliases:
 
 - `read_file`
 - `list_documents`
 - `update_task_state`
 - `request_user_input`
+
+For model-facing Helpin product or interaction tools, the runtime name is
+prefixed with the MCP server name:
+
+- `mcp__helpin__list_documents`
+- `mcp__helpin__update_task_state`
+- `mcp__helpin__request_user_input`
+
+Do not save the prefixed name in backend allowlists or policy constants unless
+the code is specifically testing runtime tool-name exposure.
 
 ### Field names
 
@@ -453,6 +493,7 @@ Current examples:
 - canonical task creation input: `tasks`
 - accepted task-plan input alias: `proposed_tasks`
 - legacy aliases such as `request_human_input` and `request_human_approval` are decode/runtime compatibility only; do not use them in new prompt examples
+- prefixed runtime names such as `mcp__helpin__request_user_input` canonicalize to prefix-free aliases before execution
 
 ## Adding New Capabilities
 
@@ -509,7 +550,7 @@ Steps:
 6. Keep a service fallback only when existing tests or runtime paths still require it.
 7. Add or update `server/internal/worker/tools_command_backed_test.go` or a domain-specific worker test.
 8. Add or update runtime profile allowlists and catalog metadata.
-9. Update skill instructions or prompt docs only with the agent-facing alias, not the internal command name.
+9. Update skill instructions or prompt docs with the runtime MCP name for Helpin product tools, not the internal command name.
 
 ### Add Planner-Specific Tool Behavior
 
@@ -518,12 +559,13 @@ Planner tools need extra care because approval, preview, and completion policies
 Steps:
 
 1. Update the tool schema and decode/validation logic.
-2. Update `docs/plans/planner-tool-contract-reference.md`.
+2. Update this tool contract reference with any model-facing schema or sequence changes.
 3. Update active skill instructions if the model must use a new sequence.
 4. Update completion or approval-preview policy tests if the tool affects handoff requirements.
-5. Verify native selective planner runs still derive active policy from the same active skill subset that provides the prompt contract.
+5. Verify planner runs derive active policy from the same active skill/tool subset that provides the prompt contract, regardless of backend runtime.
 
-For planner-specific payload details, use `docs/plans/planner-tool-contract-reference.md`.
+Keep planner-specific payload details in this document unless a separate
+runtime-owned reference is introduced outside `docs/plans`.
 
 ## Quick Decision Rules
 
