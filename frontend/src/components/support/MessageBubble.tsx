@@ -58,6 +58,26 @@ function containsMarkdownTable(content: string): boolean {
   return /\|(?:[^\n|]+\|){1,}[^\n]*\n\|(?:\s*[-:]+\s*\|){1,}/m.test(content) || /<table[\s>]/i.test(content);
 }
 
+function firstDisplayNamePart(name?: string | null): string {
+  return name?.trim().split(/\s+/)[0] ?? '';
+}
+
+function supportSystemEventDisplayContent(eventType: string | undefined, content: string, senderName: string): string {
+  const actor = firstDisplayNamePart(senderName);
+  switch (eventType) {
+    case 'assigned':
+      return actor ? `${actor} assigned this conversation.` : 'Conversation assigned.';
+    case 'agent_assigned':
+      return actor ? `${actor} assigned this conversation to an AI agent.` : 'Assigned to an AI agent.';
+    case 'unassigned':
+      return actor ? `${actor} moved this conversation to unassigned.` : 'Moved to unassigned.';
+    case 'took':
+      return actor ? `${actor} took this conversation.` : 'A teammate took this conversation.';
+    default:
+      return content;
+  }
+}
+
 const markdownComponents = {
   a: ({ href, children }: ComponentPropsWithoutRef<'a'>) => (
     <a
@@ -479,6 +499,7 @@ export const MessageBubble = memo(function MessageBubble({
       : eventType === 'ai_escalated'
         ? <BotIcon className="h-3 w-3" />
         : null;
+    const systemDisplayContent = escalationLabel ?? supportSystemEventDisplayContent(eventType, message.content, resolvedSenderName);
 
     let isRoutingEvent: boolean;
     let stateEventKind: 'resolved' | 'reopened' | 'closed' | null;
@@ -557,7 +578,7 @@ export const MessageBubble = memo(function MessageBubble({
                     {getInitial(resolvedSenderName)}
                   </div>
                 )}
-                <span>{escalationLabel ?? message.content}</span>
+                <span>{systemDisplayContent}</span>
               </div>
             </TooltipTrigger>
             <TooltipContent side="top">
@@ -575,7 +596,7 @@ export const MessageBubble = memo(function MessageBubble({
             <div className={`flex items-center gap-2.5 ${statePillClass}`}>
               {statusIcon ?? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />}
               {resolvedActorAvatar}
-              <span className={stateEventKind === 'resolved' ? 'font-medium' : 'text-sm font-medium'}>{message.content}</span>
+              <span className={stateEventKind === 'resolved' ? 'font-medium' : 'text-sm font-medium'}>{systemDisplayContent}</span>
             </div>
           </TooltipTrigger>
           <TooltipContent side="top">

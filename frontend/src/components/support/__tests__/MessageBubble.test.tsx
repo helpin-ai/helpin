@@ -156,6 +156,48 @@ describe('MessageBubble', () => {
     rendered.cleanup()
   })
 
+  it('uses canonical copy for historical assignment system events', () => {
+    const message: SupportMessage = {
+      id: 'msg-assigned-legacy',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_display_name: 'Sarah Khan',
+      content: 'Assigned to Support Agent by Sarah Khan.',
+      message_type: 'system',
+      system_event_type: 'assigned',
+      is_internal: true,
+      created_at: '2026-06-12T09:00:00.000Z',
+      updated_at: '2026-06-12T09:00:00.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    expect(rendered.container.textContent).toContain('Sarah assigned this conversation.')
+    expect(rendered.container.textContent).not.toContain('Assigned to Support Agent by Sarah Khan.')
+    rendered.cleanup()
+  })
+
+  it('uses canonical copy for historical AI escalation system events', () => {
+    const message: SupportMessage = {
+      id: 'msg-ai-escalated-legacy',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'agent',
+      sender_display_name: 'Helpin AI',
+      content: 'Let me connect you with a team member who can help.',
+      message_type: 'system',
+      system_event_type: 'ai_escalated',
+      is_internal: true,
+      created_at: '2026-06-12T09:00:00.000Z',
+      updated_at: '2026-06-12T09:00:00.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    expect(rendered.container.textContent).toContain('AI escalated to a human')
+    expect(rendered.container.textContent).not.toContain('Let me connect you with a team member who can help.')
+    rendered.cleanup()
+  })
+
   it('renders a long billing link message with wrapping-safe anchors and link previews', () => {
     const message: SupportMessage = {
       id: 'msg-1',
