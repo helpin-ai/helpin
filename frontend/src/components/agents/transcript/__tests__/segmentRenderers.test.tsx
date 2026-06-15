@@ -52,30 +52,49 @@ const failedToolSegment: TranscriptSegment = {
   },
 };
 
+const applyPatchSegment: TranscriptSegment = {
+  kind: 'tool',
+  id: 'tool-3',
+  toolCall: {
+    tool_call_id: 'tc-3',
+    tool_name: 'apply_patch',
+    args_text: ['*** Begin Patch', '*** Update File: a.ts', '@@', '-old', '+new', '*** End Patch'].join('\n'),
+    status: 'completed',
+  },
+};
+
 describe('TranscriptSegmentView — tool', () => {
-  it('renders the action in a one-line label and keeps the body collapsed until clicked', () => {
+  it('renders a successful tool with no further info as a flat, non-expandable one-liner', () => {
     render(toolSegment, true);
 
-    // The command itself is conveyed by the header label.
     expect(container.textContent).toContain('Run go build ./...');
-    const body = container.querySelector('div.hidden');
-    expect(body).not.toBeNull();
-
-    const toggle = container.querySelector('button');
-    act(() => toggle?.click());
+    expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('div.hidden')).toBeNull();
   });
 
-  it('opens a failed tool by default and reveals its args + error output', () => {
+  it('makes a failed tool expandable but collapsed by default', () => {
     render(failedToolSegment, true);
 
+    // Has a chevron/toggle, but the body is hidden until opened.
+    const toggle = container.querySelector('button');
+    expect(toggle).not.toBeNull();
+    expect(container.querySelector('div.hidden')).not.toBeNull();
+
+    act(() => toggle?.click());
     expect(container.querySelector('div.hidden')).toBeNull();
-    expect(container.textContent).toContain('go build ./...');
     expect(container.textContent).toContain('build failed: undefined symbol');
   });
 
+  it('expands a successful apply_patch by default and shows the diff', () => {
+    render(applyPatchSegment, true);
+
+    expect(container.querySelector('button')).not.toBeNull();
+    expect(container.querySelector('div.hidden')).toBeNull();
+    expect(container.textContent).toContain('a.ts');
+  });
+
   it('renders no expandable body and no toggle when expandable is false (dock)', () => {
-    render(toolSegment, false);
+    render(failedToolSegment, false);
 
     expect(container.textContent).toContain('Run go build ./...');
     expect(container.querySelector('button')).toBeNull();

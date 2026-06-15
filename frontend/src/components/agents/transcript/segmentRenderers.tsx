@@ -10,6 +10,7 @@ import type {
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
 import { ApplyPatchDiff } from '@/components/pm/CodingSession/ApplyPatchDiff';
+import { isPublishedPreviewToolName } from '@/components/pm/runPreviews';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import { PublishedToolPreviewCard } from '@/components/pm/CodingSession/PublishedToolPreviewCard';
 import { describeToolCall, type ToolCallPresentation } from '@/components/pm/CodingSession/toolCallPresentation';
@@ -74,9 +75,20 @@ function AssistantSegment({
 
 function ToolSegment({ toolCall, expandable }: { toolCall: CodingSessionLiveToolCall; expandable: boolean }) {
   const failed = toolCall.status === 'failed';
+  const isApplyPatch = isToolName(toolCall.tool_name, 'apply_patch');
+  const hasPublishedPreview = !failed
+    && !isApplyPatch
+    && toolCall.args_text.trim().length > 0
+    && isPublishedPreviewToolName(toolCall.tool_name);
+  // A tool row earns a chevron only when it has a body worth opening:
+  // failures (args + error output), apply_patch diffs, or a published-preview
+  // card. Plain successful tools stay as flat one-liners. apply_patch opens by
+  // default; failures stay collapsed.
+  const hasBody = failed || isApplyPatch || hasPublishedPreview;
+  const rowExpandable = expandable && hasBody;
   const { icon, className } = toolStatusChrome(toolCall.status);
   const presentation = describeToolCall(toolCall);
-  const durationLabel = expandable ? formatToolDuration(toolCall.duration_ms) : undefined;
+  const durationLabel = rowExpandable ? formatToolDuration(toolCall.duration_ms) : undefined;
 
   return (
     <TranscriptRow
@@ -85,10 +97,10 @@ function ToolSegment({ toolCall, expandable }: { toolCall: CodingSessionLiveTool
       label={presentation.primaryLabel}
       tone={failed ? 'failed' : 'muted'}
       meta={durationLabel}
-      expandable={expandable}
-      defaultOpen={failed}
+      expandable={rowExpandable}
+      defaultOpen={isApplyPatch && !failed}
     >
-      {expandable ? <ToolBody toolCall={toolCall} presentation={presentation} /> : null}
+      {rowExpandable ? <ToolBody toolCall={toolCall} presentation={presentation} /> : null}
     </TranscriptRow>
   );
 }
