@@ -213,6 +213,7 @@ function TaskCardComponent({
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId ?? '', task.team_id);
   const displayProps = useBoardDisplayStore((s) => s.properties);
   const vis = useMemo(() => ({
+    task_id: displayProps.task_id,
     task_type: fieldVis.task_type && displayProps.task_type,
     priority: fieldVis.priority && displayProps.priority,
     severity: fieldVis.severity && displayProps.severity,
@@ -372,7 +373,19 @@ function TaskCardComponent({
     [workspaceId, task.id, task.estimate, onTaskPatched, onEstimateChanged],
   );
 
-  const titleIsLong = task.name.length > 60;
+  const shouldShowTaskKey = vis.task_id && !!task.task_key;
+  const taskTitleText = shouldShowTaskKey ? `${task.task_key}: ${task.name}` : task.name;
+  const titleIsLong = taskTitleText.length > 60;
+  const taskTitleContent = (
+    <>
+      {shouldShowTaskKey ? (
+        <>
+          <span className="font-mono text-muted-foreground">{task.task_key}:</span>{' '}
+        </>
+      ) : null}
+      {task.name}
+    </>
+  );
 
   return (
     <article
@@ -437,14 +450,14 @@ function TaskCardComponent({
           <Tooltip>
             <TooltipTrigger asChild>
               <h4 className="m-0 flex-1 line-clamp-2 text-sm font-medium leading-snug text-foreground">
-                {task.name}
+                {taskTitleContent}
               </h4>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-[300px]">{task.name}</TooltipContent>
+            <TooltipContent side="bottom" className="max-w-[300px]">{taskTitleText}</TooltipContent>
           </Tooltip>
         ) : (
           <h4 className="m-0 flex-1 line-clamp-2 text-sm font-medium leading-snug text-foreground">
-            {task.name}
+            {taskTitleContent}
           </h4>
         )}
         {vis.task_type && (
@@ -817,6 +830,8 @@ function renderedTaskFieldsEqual(prev: Task, next: Task) {
 
   return prev.id === next.id
     && prev.updated_at === next.updated_at
+    && prev.display_id === next.display_id
+    && prev.task_key === next.task_key
     && prev.name === next.name
     && prev.task_type === next.task_type
     && prev.deadline === next.deadline
