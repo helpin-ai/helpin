@@ -8,9 +8,9 @@ This is the current backend reference for:
 - agent runs
 - built-in automations
 
-Use this doc for runtime and model truth. For the product-facing mental model, see [AUTOMATION_PRODUCT_MODEL.md](/root/teampulse/docs/AUTOMATION_PRODUCT_MODEL.md).
+Use this doc for runtime and model truth. For the product-facing mental model, see `AUTOMATION_PRODUCT_MODEL.md` if present in the checkout.
 
-For repository-backed coding-agent execution, see [CODING_AGENT_RUNTIME_FLOW.md](/root/teampulse/docs/CODING_AGENT_RUNTIME_FLOW.md).
+For repository-backed coding-agent execution, see `CODING_AGENT_RUNTIME_FLOW.md` if present in the checkout.
 
 ## Core model
 
@@ -221,6 +221,75 @@ The product surfaces are:
 - `Runs` for execution details
 - `Activity` for automation-layer history involving those agents
 
+## Executor architecture
+
+The current execution architecture is intentionally generic:
+
+```text
+agent record
+  -> agent_run
+  -> AgentRunWorkflow
+  -> generic execution context
+  -> backend adapter: native_sdk | codex | opencode
+  -> messages, tool calls, interactions, artifacts
+```
+
+`runtime_kind` chooses the backend adapter. It does not choose a product-specific
+agent type. System agents and custom agents both create normal `agent_run` records
+and both flow through the same workflow, interaction, artifact, and transcript
+surfaces.
+
+The backend adapters are responsible for execution mechanics only:
+
+- `native_sdk` runs the Eino/model-loop backend.
+- `codex` runs the Codex app-server backend.
+- `opencode` remains a supported backend where configured.
+
+Product behavior is expressed through agent configuration:
+
+- prompt / preset preamble
+- skills
+- allowed tools
+- allowed targets
+- invocation mode
+- approval mode
+- trigger or flow configuration
+
+There is no separate native planner controller. Planner behavior is a preset plus
+skills plus Helpin MCP tools. The same planner contract is available through
+`native_sdk` and `codex`.
+
+## Tool contract
+
+Helpin product and interaction tools are exposed to model backends through the
+run-scoped Helpin MCP bridge. Model-facing Helpin MCP tool names use Codex-style
+server prefixes:
+
+```text
+mcp__helpin__update_plan
+mcp__helpin__request_user_input
+mcp__helpin__request_approval
+mcp__helpin__publish_prd_draft
+mcp__helpin__publish_task_plan
+mcp__helpin__publish_task_plan_doc
+mcp__helpin__list_tasks
+```
+
+The backend keeps canonical tool aliases without the prefix (`update_plan`,
+`request_user_input`, `publish_task_plan`, and so on) for policy, validation,
+artifact application, and storage. Runtime code canonicalizes tool calls by
+stripping `mcp__helpin__` before dispatch. Frontend run surfaces do the inverse
+for display: they accept either form but hide the prefix in user-facing labels.
+
+Repo-local execution tools such as file reads, patching, and shell commands may
+still be provided directly by a backend where appropriate. Helpin product tools
+should go through MCP for both `native_sdk` and `codex`.
+
+When writing prompts, skill markdown, or planner guidance, use the runtime-facing
+tool name from the prompt renderer, for example `mcp__helpin__update_plan`, not
+the bare alias. When writing backend tests, policies, or artifact decoders, use
+canonical aliases unless the test is specifically about runtime tool naming.
+
 ## Ask Agents
 
 Ask Agents is the orchestration chat layer over the agent system.
@@ -332,13 +401,14 @@ built-in automation
   -> may create trigger execution and/or agent_run depending on behavior
 ```
 
-## Agent categories
+## Agent ownership and defaults
 
-The code still has two practical categories:
+The code still records two ownership styles. They are not separate execution
+paths.
 
 ### System agents
 
-Product-owned, preset-backed agents.
+Product-owned, usually preset-backed agents.
 
 Examples:
 
@@ -353,15 +423,15 @@ Examples:
 Characteristics:
 
 - `is_system = true`
-- preset-bound
-- backend-owned defaults and guardrails
-- may still have some product-specific launch or context-loading behavior
+- usually preset-bound
+- backend-owned defaults, prompt/skill bundles, allowed tools, and guardrails
+- may have product-owned launch buttons, default targets, or seed behavior
 
 Preset contract behavior:
 
 - presets are configuration contracts, not separate execution paths
 - `epic_planner` on epic targets and `task_planner` on task targets use planner tool/artifact contracts regardless of whether the backend is `native_sdk` or `codex`
-- phase guidance, active skill contracts, repair instructions, and active skill policy are assembled per execution turn from durable run state and preset/target context
+- phase guidance, active skill contracts, repair instructions, and active skill policy are prompt/tool-contract inputs to a generic run, not a separate planner controller
 - canonical mutations such as approved PRD persistence, task creation, task-plan-doc persistence, and replay protection remain backend-owned and runtime-neutral
 - backend-specific code should only handle execution mechanics such as Codex sessions/auth/workspace handling or native model-loop/provider configuration
 
@@ -374,7 +444,7 @@ Current truth:
 - `is_system = false`
 - not preset-backed
 - generic executor model
-- not on a special system-agent execution path
+- not on a special custom-agent execution path
 
 Simplified creation behavior:
 
@@ -388,7 +458,7 @@ Direction:
 - keep custom execution generic
 - prefer minimal trigger payloads
 - let agents gather additional context through tools instead of bespoke backend orchestration
-- if custom agents need planner-like behavior, configure it through preset/skills/tool contracts instead of runtime branching
+- if custom agents need planner-like behavior, configure it through prompt, skills, and allowed MCP tools instead of runtime branching
 
 ### Agent team access
 
@@ -423,6 +493,12 @@ Current queue mapping:
 - `codex + autonomous` -> `agent-codex-autonomous`
 - non-agent background automations -> `automation-default`
 
+Runtime differences should remain below the generic executor boundary. A new
+feature should not add one path for "system agents" and another for "custom
+agents" unless it is a true product-owned exception such as support ingestion.
+Prefer adding a tool, skill, prompt rule, or target contract that both backends
+can consume.
+
 ## Main architectural rules
 
 - treat `Flow` as the primary product abstraction
@@ -430,12 +506,18 @@ Current queue mapping:
 - keep `Trigger Execution` and `Agent Run` as distinct records
 - built-in automations and user-authored flows should share the same ecosystem, but not be modeled as the same object
 - frontend should render backend-owned normalized trigger metadata instead of rebuilding trigger meaning locally
+- treat `agent_run` as the only durable execution primitive
+- treat `runtime_kind` as backend selection, not product behavior selection
+- express planner/review/support behavior through prompts, skills, tools, targets, and artifact contracts
+- expose Helpin product tools to model backends through MCP with `mcp__helpin__*` runtime names
+- keep canonical backend tool aliases prefix-free for validation, policy, and persistence
 
 ## Current known limitations
 
 - some legacy PM and settings routes still exist as redirects or compatibility aliases
 - some backend package and model names still use older PM-era terminology
 - some product-owned automations still have domain-specific orchestration paths, especially in support
+- some historical design docs still describe native-only planner paths or bare model-facing tool names; treat this file and `docs/internal-tools-framework.md` as the current contract
 
 Those do not change the current product direction:
 

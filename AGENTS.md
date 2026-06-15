@@ -289,19 +289,26 @@ Use this taxonomy when working on backend agent features:
 - `agent_run` is the durable execution primitive
 - run input now carries explicit `trigger` / `target` / `event` metadata while preserving legacy fields
 
-The backend already behaves as two practical agent categories:
+The backend records two agent ownership styles. They are not separate execution
+paths:
 
 - `system agents`
   - `is_system = true`
   - product-owned
-  - preset-bound
-  - for `native_sdk`, share the same core run machinery as custom agents
-  - differ mainly in preset/default ownership plus some target-aware launch and context-loading paths
+  - usually preset-bound
+  - differ mainly in backend-owned defaults, prompt/skill bundles, allowed tools, and product launch surfaces
 - `custom agents`
   - `is_system = false`
   - generic executors
-  - current product direction is `native_sdk` only
+  - use the same `agent_run` executor path as system agents
   - should gather most context through tools after receiving a minimal trigger payload
+
+Current executor model:
+
+- `agent_run` is the durable execution primitive for system agents, custom agents, and one-shot command agents
+- `runtime_kind` selects the backend adapter (`native_sdk`, `codex`, or `opencode` where configured), not a separate product behavior path
+- planner/review/support behavior is expressed through prompt, skills, allowed tools, targets, and artifact contracts
+- Helpin product and interaction tools are model-facing through MCP runtime names such as `mcp__helpin__update_plan` and `mcp__helpin__request_user_input`; backend policy and persistence still use canonical bare aliases
 
 Current trigger surfaces in code:
 
@@ -312,13 +319,12 @@ Current trigger surfaces in code:
 
 Current limitation to keep in mind:
 
-- agent execution is generic
-- agent launch paths are still partially target-specific
-- native planning instructions are selected from effective tools plus target
+- agent execution is generic, but some launch paths are still target-specific
+- active planning/review/support instructions are selected from effective skills, tools, target, and durable run state
 - generic target launching exists for direct runs and automation-rule `start_agent_run`
 - automation-rule `start_agent_run` now uses the generic target contract, with event-target defaulting and explicit targets required for cron
 
-Proposed direction for custom agents:
+Direction:
 
 - keep genuine special-case orchestration only for real product exceptions like support flow
 - keep automation rules as the event and cron trigger layer
