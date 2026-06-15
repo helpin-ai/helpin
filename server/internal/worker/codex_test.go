@@ -38,6 +38,11 @@ func TestCodexEventMapperTracksCachedInputTokens(t *testing.T) {
 		ThreadID: "thread-1",
 		TurnID:   "turn-1",
 		TokenUsage: codexThreadTokenUsage{
+			Total: codexTokenUsageBreakdown{
+				CachedInputTokens: 25,
+				InputTokens:       90,
+				OutputTokens:      18,
+			},
 			Last: codexTokenUsageBreakdown{
 				CachedInputTokens: 12,
 				InputTokens:       44,
@@ -57,7 +62,7 @@ func TestCodexEventMapperTracksCachedInputTokens(t *testing.T) {
 	if result == nil {
 		t.Fatal("expected execution result")
 	}
-	if result.Usage.CachedInputTokens != 12 || result.Usage.InputTokens != 44 || result.Usage.OutputTokens != 9 {
+	if result.Usage.CachedInputTokens != 25 || result.Usage.InputTokens != 90 || result.Usage.OutputTokens != 18 {
 		t.Fatalf("unexpected usage %+v", result.Usage)
 	}
 }
