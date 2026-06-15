@@ -331,33 +331,6 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	run.TokensUsed = streamCollector.TokensUsed()
 
 	switch {
-	case execCtx.TargetType == "epic" && execCtx.Epic != nil:
-		switch execCtx.PlanningStage {
-		case model.PlanningStageDraftSpec:
-			draft, err := extractProductSpecDraftFromResponseText(responseText)
-			if err != nil {
-				return normalizeOpenCodePostRunError(postRunCtx, err)
-			}
-			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "product_spec_draft", draft); err != nil {
-				return err
-			}
-		case model.PlanningStagePlanTasks:
-			proposal, err := extractPlanningProposalFromResponseText(responseText, execCtx.Epic.ID, execCtx.PlanningSpecVersionID, run.TokensUsed)
-			if err != nil {
-				return normalizeOpenCodePostRunError(postRunCtx, err)
-			}
-			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "task_plan_proposal", proposal); err != nil {
-				return err
-			}
-		default:
-			proposal, err := extractPlanningProposalFromResponseText(responseText, execCtx.Epic.ID, execCtx.PlanningSpecVersionID, run.TokensUsed)
-			if err != nil {
-				return normalizeOpenCodePostRunError(postRunCtx, err)
-			}
-			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "orchestration_proposal", proposal); err != nil {
-				return err
-			}
-		}
 	case execCtx.TargetType == "support_conversation" && execCtx.Conversation != nil:
 		summary, err := extractSupportRunSummaryFromResponseText(responseText)
 		if err != nil {

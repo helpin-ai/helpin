@@ -13,6 +13,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/server ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/temporal-worker ./cmd/temporal-worker
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/helpin-mcp-bridge ./cmd/helpin-mcp-bridge
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/migrate ./cmd/migrate
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/reconcile-git-pr-status ./cmd/reconcile-git-pr-status
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/recover-missed-support-emails ./cmd/recover-missed-support-emails
@@ -38,6 +39,7 @@ RUN apk add --no-cache \
     && npm i -g @openai/codex
 
 COPY --from=builder /app/server .
+COPY --from=builder /app/helpin-mcp-bridge /usr/local/bin/helpin-mcp-bridge
 COPY --from=builder /app/reconcile-git-pr-status .
 COPY --from=builder /app/recover-missed-support-emails .
 COPY --from=builder /app/reindex-helpcenter-search .
@@ -101,6 +103,7 @@ RUN apk add --no-cache \
 WORKDIR /app
 
 COPY --from=builder /app/temporal-worker .
+COPY --from=builder /app/helpin-mcp-bridge /usr/local/bin/helpin-mcp-bridge
 COPY skills/system/security_triage/semgrep /app/security-rules/semgrep
 RUN chown -R app:app /app
 

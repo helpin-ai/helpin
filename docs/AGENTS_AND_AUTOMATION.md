@@ -357,12 +357,13 @@ Characteristics:
 - backend-owned defaults and guardrails
 - may still have some product-specific launch or context-loading behavior
 
-Native system selective behavior:
+Preset contract behavior:
 
-- `epic_planner` on epic targets, `task_planner` on task targets, and `documentation_agent` on supported documentation targets use selective native skill activation by default when running on `native_sdk`
-- planner or documentation phase guidance, active skill contracts, repair instructions, and active skill policy are assembled per execution turn from durable run state
-- canonical mutations such as approved PRD persistence, task creation, task-plan-doc persistence, and replay protection remain backend-owned
-- Codex/OpenCode staged-skill behavior is unchanged by native system selective activation
+- presets are configuration contracts, not separate execution paths
+- `epic_planner` on epic targets and `task_planner` on task targets use planner tool/artifact contracts regardless of whether the backend is `native_sdk` or `codex`
+- phase guidance, active skill contracts, repair instructions, and active skill policy are assembled per execution turn from durable run state and preset/target context
+- canonical mutations such as approved PRD persistence, task creation, task-plan-doc persistence, and replay protection remain backend-owned and runtime-neutral
+- backend-specific code should only handle execution mechanics such as Codex sessions/auth/workspace handling or native model-loop/provider configuration
 
 ### Custom agents
 
@@ -373,7 +374,7 @@ Current truth:
 - `is_system = false`
 - not preset-backed
 - generic executor model
-- not on the system selective activation path
+- not on a special system-agent execution path
 
 Simplified creation behavior:
 
@@ -387,7 +388,7 @@ Direction:
 - keep custom execution generic
 - prefer minimal trigger payloads
 - let agents gather additional context through tools instead of bespoke backend orchestration
-- if custom agents later need selective skill activation, add explicit skill applicability metadata instead of reusing system-agent routing rules
+- if custom agents need planner-like behavior, configure it through preset/skills/tool contracts instead of runtime branching
 
 ### Agent team access
 

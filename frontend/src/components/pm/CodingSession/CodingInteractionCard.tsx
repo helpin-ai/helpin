@@ -55,14 +55,14 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
   const requestPayload = interaction.request_payload ?? {};
 
   if (interaction.interaction_kind === 'request_user_input') {
-    const codexQuestions = parseCodexUserInputQuestions(requestPayload);
-    if (interaction.request_schema_version === 'codex.v2' && codexQuestions.length > 0) {
-      const allAnswered = codexQuestions.every((question) => isCodexQuestionAnswered(question, questionAnswers[question.id]));
-      const showStepper = compact && codexQuestions.length > 1;
-      const visibleQuestions = showStepper ? [codexQuestions[Math.min(currentQuestionIndex, codexQuestions.length - 1)]] : codexQuestions;
-      const currentQuestion = codexQuestions[Math.min(currentQuestionIndex, codexQuestions.length - 1)];
-      const currentAnswered = currentQuestion ? isCodexQuestionAnswered(currentQuestion, questionAnswers[currentQuestion.id]) : false;
-      const summary = dedupePromptSummary(interaction.summary, codexQuestions.map((question) => question.question));
+    const sharedQuestions = parseSharedUserInputQuestions(requestPayload);
+    if (sharedQuestions.length > 0) {
+      const allAnswered = sharedQuestions.every((question) => isSharedUserInputQuestionAnswered(question, questionAnswers[question.id]));
+      const showStepper = compact && sharedQuestions.length > 1;
+      const visibleQuestions = showStepper ? [sharedQuestions[Math.min(currentQuestionIndex, sharedQuestions.length - 1)]] : sharedQuestions;
+      const currentQuestion = sharedQuestions[Math.min(currentQuestionIndex, sharedQuestions.length - 1)];
+      const currentAnswered = currentQuestion ? isSharedUserInputQuestionAnswered(currentQuestion, questionAnswers[currentQuestion.id]) : false;
+      const summary = dedupePromptSummary(interaction.summary, sharedQuestions.map((question) => question.question));
 
       return (
         <InteractionShell compact={compact}
@@ -73,7 +73,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
         >
           {showStepper ? (
             <div className="mb-3 flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>Question {currentQuestionIndex + 1} of {codexQuestions.length}</span>
+              <span>Question {currentQuestionIndex + 1} of {sharedQuestions.length}</span>
               <span>{Object.values(questionAnswers).filter((answer) => Boolean(answer?.value || answer?.freetext?.trim())).length} answered</span>
             </div>
           ) : null}
@@ -169,11 +169,11 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
                 Back
               </Button>
             ) : null}
-            {showStepper && currentQuestionIndex < codexQuestions.length - 1 ? (
+            {showStepper && currentQuestionIndex < sharedQuestions.length - 1 ? (
               <Button
                 size="sm"
                 disabled={!currentAnswered || isBusy}
-                onClick={() => setCurrentQuestionIndex((current) => Math.min(codexQuestions.length - 1, current + 1))}
+                onClick={() => setCurrentQuestionIndex((current) => Math.min(sharedQuestions.length - 1, current + 1))}
               >
                 Next
               </Button>
@@ -181,7 +181,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
               <Button
                 size="sm"
                 disabled={!allAnswered || isBusy}
-                onClick={() => onResolve(interaction.interaction_id, buildCodexUserInputResponsePayload(codexQuestions, questionAnswers))}
+                onClick={() => onResolve(interaction.interaction_id, buildSharedUserInputResponsePayload(sharedQuestions, questionAnswers))}
               >
                 Submit answers
               </Button>
@@ -843,8 +843,8 @@ function dedupePromptSummary(summary: string | undefined, prompts: string[]) {
   return duplicatesPrompt ? undefined : summary;
 }
 
-function isCodexQuestionAnswered(
-  question: ReturnType<typeof parseCodexUserInputQuestions>[number],
+function isSharedUserInputQuestionAnswered(
+  question: ReturnType<typeof parseSharedUserInputQuestions>[number],
   answer?: QuestionAnswerState,
 ) {
   if (!answer) return false;
@@ -854,7 +854,7 @@ function isCodexQuestionAnswered(
   return Boolean(answer.value?.trim());
 }
 
-function parseCodexUserInputQuestions(payload: Record<string, unknown>) {
+function parseSharedUserInputQuestions(payload: Record<string, unknown>) {
   const questions = Array.isArray(payload.questions) ? payload.questions : [];
   return questions.flatMap((rawQuestion) => {
     if (!rawQuestion || typeof rawQuestion !== 'object' || Array.isArray(rawQuestion)) return [];
@@ -883,8 +883,8 @@ function parseCodexUserInputQuestions(payload: Record<string, unknown>) {
   });
 }
 
-function buildCodexUserInputResponsePayload(
-  questions: ReturnType<typeof parseCodexUserInputQuestions>,
+function buildSharedUserInputResponsePayload(
+  questions: ReturnType<typeof parseSharedUserInputQuestions>,
   answers: Record<string, QuestionAnswerState>,
 ) {
   const payload: Record<string, { answers: string[] }> = {};

@@ -8,25 +8,25 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-func (a *AgentRunActivities) buildNativeTaskPlannerSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
+func (a *AgentRunActivities) buildTaskPlannerSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
 	assemblyState, err := a.buildTaskPlannerAssemblyState(ctx, state, input)
 	if err != nil {
 		return nil, err
 	}
-	sections := buildNativeTaskPlannerRuleSections(state.run, assemblyState.phaseName)
+	sections := buildTaskPlannerRuleSections(state.run, assemblyState.phaseName)
 	sections = append(sections, assemblyState.contextSections...)
 	return sections, nil
 }
 
-func (a *AgentRunActivities) buildNativeTaskPlannerPhaseGuidance(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
-	sections, err := a.buildNativeTaskPlannerSections(ctx, state, input)
+func (a *AgentRunActivities) buildTaskPlannerPhaseGuidance(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	sections, err := a.buildTaskPlannerSections(ctx, state, input)
 	if err != nil {
 		return "", err
 	}
 	return strings.Join(sections, "\n\n"), nil
 }
 
-func buildNativeTaskPlannerRuleSections(run *model.AgentRun, phaseName string) []string {
+func buildTaskPlannerRuleSections(run *model.AgentRun, phaseName string) []string {
 	sections := []string{
 		fmt.Sprintf("Current planning phase: %s", phaseName),
 		"Phase objective: refine a task-scoped implementation planning document, publish it with publish_task_plan_doc, and stop at inline approval.",
@@ -40,22 +40,23 @@ func buildNativeTaskPlannerRuleSections(run *model.AgentRun, phaseName string) [
 	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
 		sections = append(sections, "Interactive approval semantics: explicit approval advances the run; change requests, critique, concerns, and ambiguous replies mean the draft is still unapproved and must be revised in the same transcript.")
 	}
+	sections = append(sections, codexMCPPlannerToolGuidance(run)...)
 	return sections
 }
 
-func (a *AgentRunActivities) buildNativeEpicPlannerSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
+func (a *AgentRunActivities) buildEpicPlannerSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
 	assemblyState, err := a.buildEpicPlannerAssemblyState(ctx, state, input)
 	if err != nil {
 		return nil, err
 	}
-	phaseName := nativeEpicPlannerPhaseName(input, assemblyState.hasSpecContent, assemblyState.hasTasks)
-	sections := buildNativeEpicPlannerRuleSections(state.run, input, phaseName, assemblyState.hasSpecContent, assemblyState.hasTasks)
+	phaseName := epicPlannerPhaseName(input, assemblyState.hasSpecContent, assemblyState.hasTasks)
+	sections := buildEpicPlannerRuleSections(state.run, input, phaseName, assemblyState.hasSpecContent, assemblyState.hasTasks)
 	sections = append(sections, formatInteractivePlanningFacts(input, assemblyState.hasSpecContent, assemblyState.taskCount))
 	sections = append(sections, assemblyState.contextSections...)
 	return sections, nil
 }
 
-func nativeEpicPlannerPhaseName(input planningRunInput, hasSpecContent bool, hasTasks bool) string {
+func epicPlannerPhaseName(input planningRunInput, hasSpecContent bool, hasTasks bool) string {
 	hasApprovedSpec := input.SpecVersionID != ""
 	hasSpecDoc := input.SpecDocumentID != ""
 	switch {
@@ -70,7 +71,7 @@ func nativeEpicPlannerPhaseName(input planningRunInput, hasSpecContent bool, has
 	}
 }
 
-func nativeEpicPlannerDerivedStateFacts(input planningRunInput, hasSpecContent bool, hasTasks bool) string {
+func epicPlannerDerivedStateFacts(input planningRunInput, hasSpecContent bool, hasTasks bool) string {
 	hasApprovedSpec := input.SpecVersionID != ""
 	hasSpecDoc := input.SpecDocumentID != ""
 	lines := []string{
@@ -107,15 +108,15 @@ func formatInteractivePlanningFacts(input planningRunInput, hasDraftSpec bool, t
 	return "Current durable planning facts:\n" + strings.Join(facts, "\n")
 }
 
-func (a *AgentRunActivities) buildNativeEpicPlannerPhaseGuidance(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
-	sections, err := a.buildNativeEpicPlannerSections(ctx, state, input)
+func (a *AgentRunActivities) buildEpicPlannerPhaseGuidance(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	sections, err := a.buildEpicPlannerSections(ctx, state, input)
 	if err != nil {
 		return "", err
 	}
 	return strings.Join(sections, "\n\n"), nil
 }
 
-func buildNativeEpicPlannerRuleSections(run *model.AgentRun, input planningRunInput, phaseName string, hasSpecContent bool, hasTasks bool) []string {
+func buildEpicPlannerRuleSections(run *model.AgentRun, input planningRunInput, phaseName string, hasSpecContent bool, hasTasks bool) []string {
 	sections := []string{
 		fmt.Sprintf("Planning selector tag (not an instruction): %s", phaseName),
 		"Phase objective: move the epic to the next durable planning checkpoint using the current transcript, approved artifacts, linked context, and repository evidence.",
@@ -129,6 +130,18 @@ func buildNativeEpicPlannerRuleSections(run *model.AgentRun, input planningRunIn
 	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
 		sections = append(sections, "Interactive approval semantics: only explicit approval advances the phase. Change requests, critique, concerns, and ambiguous replies keep the current phase active.")
 	}
-	sections = append(sections, nativeEpicPlannerDerivedStateFacts(input, hasSpecContent, hasTasks))
+	sections = append(sections, codexMCPPlannerToolGuidance(run)...)
+	sections = append(sections, epicPlannerDerivedStateFacts(input, hasSpecContent, hasTasks))
 	return sections
+}
+
+func codexMCPPlannerToolGuidance(run *model.AgentRun) []string {
+	if run == nil || strings.TrimSpace(run.RuntimeKind) != "codex" {
+		return nil
+	}
+	return []string{
+		"Codex MCP tool naming: Helpin artifact and interaction tools are exposed through the Helpin MCP server, not as local filesystem artifacts.",
+		"Use the Helpin MCP tool namespace for update_plan, publish_prd_draft, publish_task_plan, publish_task_plan_doc, request_user_input, and request_approval. Depending on the Codex surface, this may appear as functions such as mcp__helpin__publish_task_plan or as a mcp__helpin__ namespace with those function names.",
+		"Do not create local task-plan or PRD files as substitutes for publishing artifacts through the Helpin MCP tools.",
+	}
 }

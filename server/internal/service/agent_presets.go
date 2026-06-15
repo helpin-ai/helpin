@@ -257,12 +257,12 @@ func allowedRuntimeKindsForPresetKey(presetKey string) []string {
 		// native_sdk remains available for compatibility with existing agents.
 		return []string{"opencode", "codex", "native_sdk"}
 	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator, model.AgentPresetSupportAgent, model.AgentPresetDocumentationAgent:
-		return []string{"native_sdk"}
+		return []string{"codex", "native_sdk"}
 	default:
 		if preset, ok := agentPresetDefinition(presetKey); ok && strings.TrimSpace(preset.RuntimeKind) != "" {
-			return []string{preset.RuntimeKind}
+			return []string{"codex", preset.RuntimeKind}
 		}
-		return []string{"opencode"}
+		return []string{"codex"}
 	}
 }
 
@@ -322,7 +322,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Epic Planner",
 			Description:           "Interactive product planning for epics, PRDs, documents, and story creation.",
 			DefaultRole:           "Epic Planner",
-			RuntimeKind:           productPlannerProfile.RuntimeKind,
+			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          epicPlannerTools,
@@ -330,7 +330,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    slices.Clone(productPlannerProfile.AllowedTargetTypes),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
+			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          epicPlannerPrompt,
 		},
 		{
@@ -342,7 +342,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Task Planner",
 			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
 			DefaultRole:           "Task Planner",
-			RuntimeKind:           productPlannerProfile.RuntimeKind,
+			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          taskPlannerTools,
@@ -350,7 +350,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    []string{"task", "epic", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
+			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          taskPlannerPrompt,
 		},
 		{
@@ -362,7 +362,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "CRM Operator",
 			Description:           "Cross-app CRM execution with deal, contact, support, and doc context.",
 			DefaultRole:           "CRM Operator",
-			RuntimeKind:           productPlannerProfile.RuntimeKind,
+			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          []string{"list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"},
@@ -370,7 +370,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
+			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          crmOperatorPrompt,
 		},
 		{
@@ -382,7 +382,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Support Agent",
 			Description:           "Support conversation triage and reply drafting with review by default.",
 			DefaultRole:           "Support Agent",
-			RuntimeKind:           supportProfile.RuntimeKind,
+			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(supportProfile.AllowedTools),
@@ -390,7 +390,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    slices.Clone(supportProfile.AllowedTargetTypes),
 			ApprovalMode:          "always",
 			DefaultInvocationMode: model.InvocationModeAutonomous,
-			SupportedModes:        supportedModesForRuntime(supportProfile.RuntimeKind),
+			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          supportPrompt,
 		},
 		{
@@ -402,7 +402,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Documentation Agent",
 			Description:           "Keeps internal docs, public help docs, and API docs accurate, organized, and current.",
 			DefaultRole:           "Documentation Agent",
-			RuntimeKind:           documentationProfile.RuntimeKind,
+			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(documentationProfile.AllowedTools),
@@ -410,7 +410,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    slices.Clone(documentationProfile.AllowedTargetTypes),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime(documentationProfile.RuntimeKind),
+			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          documentationPrompt,
 		},
 		{
@@ -468,7 +468,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Command Agent",
 			Description:           "One-shot workspace operator for command-bar intents that do not fit narrower saved agents.",
 			DefaultRole:           "Command Agent",
-			RuntimeKind:           productPlannerProfile.RuntimeKind,
+			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          []string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "list_spaces", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"},
@@ -476,7 +476,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    []string{"workspace", "document", "task", "epic", "crm_deal", "crm_contact", "repository"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
+			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          &commandAgentPrompt,
 		},
 	}

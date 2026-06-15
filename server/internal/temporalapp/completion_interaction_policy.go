@@ -473,24 +473,23 @@ func (a *AgentRunActivities) retryInvalidCompletionTurn(ctx context.Context, sta
 	if _, err := a.createRunMessage(ctx, state.run, "user", "policy_retry", instruction, nil, nil, nil, nil); err != nil {
 		return false, err
 	}
-	if err := a.persistNativeCompletionRetryRepairState(ctx, state, assistantMessage, cause, retryInstruction); err != nil {
+	if err := a.persistCompletionRetryRepairState(ctx, state, assistantMessage, cause, retryInstruction); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-func (a *AgentRunActivities) persistNativeCompletionRetryRepairState(ctx context.Context, state *resolvedRunState, assistantMessage *model.AgentRunMessage, cause error, repairInstruction nativeRepairInstruction) error {
+func (a *AgentRunActivities) persistCompletionRetryRepairState(ctx context.Context, state *resolvedRunState, assistantMessage *model.AgentRunMessage, cause error, repairInstruction repairInstruction) error {
 	if a == nil || a.artifactRepo == nil || state == nil || state.run == nil || assistantMessage == nil || cause == nil {
 		return nil
 	}
-	runtimeKind := executionRuntimeKind(state)
-	if !state.nativeSelectivePathEnabled || strings.TrimSpace(runtimeKind) != "native_sdk" {
+	if !state.executionContractActive {
 		return nil
 	}
 	if strings.TrimSpace(repairInstruction.Class) == "" || strings.TrimSpace(repairInstruction.Instructions) == "" {
 		return nil
 	}
-	payload := model.NativeRepairState{
+	payload := model.AgentRepairState{
 		Source:       "completion_retry",
 		RepairClass:  strings.TrimSpace(repairInstruction.Class),
 		RepairHint:   strings.TrimSpace(repairInstruction.Instructions),
@@ -499,7 +498,7 @@ func (a *AgentRunActivities) persistNativeCompletionRetryRepairState(ctx context
 	_, err := a.appendRunArtifactWithMetadata(
 		ctx,
 		state.run,
-		model.AgentRunArtifactTypeNativeRepairState,
+		model.AgentRunArtifactTypeAgentRepairState,
 		"json",
 		payload,
 		buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo),

@@ -41,6 +41,7 @@ func buildLegacyTaskPlannerFallbackRuleSections(run *model.AgentRun) []string {
 		"Treat parent epic details, the epic PRD, and epic-linked docs as background context only. Use them to understand constraints, inherited requirements, and non-goals, but do not copy them wholesale into the task planning document unless they directly affect this task's implementation.",
 		"Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context. Keep the output focused on this task's implementation plan.",
 	)
+	sections = append(sections, codexMCPPlannerToolGuidance(run)...)
 	return sections
 }
 
@@ -81,5 +82,6 @@ func buildLegacyEpicPlannerFallbackRuleSections(run *model.AgentRun) []string {
 		"proposed_tasks must be an array of full task objects. Never send arrays of strings, refs, placeholders, key names, or partial fragments. If publish_task_plan fails validation, correct the payload and retry with one complete valid task-plan object before requesting approval.",
 		"Before approval, keep drafts in chat-backed preview artifacts only. After approval, the platform applies the approved artifact; do not replay approved PRDs or task plans through mutation tools.",
 	)
+	sections = append(sections, codexMCPPlannerToolGuidance(run)...)
 	return sections
 }

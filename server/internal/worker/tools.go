@@ -3,6 +3,7 @@ package worker
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 )
@@ -1149,6 +1150,70 @@ func (r *ToolRegistry) registerSharedCommandTools(fns map[string]ToolFunc) {
 	}
 }
 
+func filterNativeDirectHelpinToolDefinitions(defs []ToolDefinition) []ToolDefinition {
+	if len(defs) == 0 {
+		return nil
+	}
+	filtered := make([]ToolDefinition, 0, len(defs))
+	for _, def := range defs {
+		if isHelpinProductToolName(def.Name) {
+			continue
+		}
+		filtered = append(filtered, def)
+	}
+	return filtered
+}
+
+func isHelpinProductToolName(name string) bool {
+	switch strings.TrimSpace(name) {
+	case "list_workspace_teams",
+		"list_team_workflows_with_stages",
+		"list_tasks",
+		"create_task",
+		"create_task_batch",
+		"assign_task_agent",
+		"set_task_dependencies",
+		"ensure_task_label",
+		"add_task_comment",
+		"update_task_state",
+		"list_task_checklist",
+		"list_epic_tasks",
+		"approve_epic_spec",
+		"ensure_epic_spec_doc",
+		"ensure_task_plan_doc",
+		"list_spaces",
+		"list_documents",
+		"list_collections",
+		"read_document",
+		"get_document_blocks",
+		"search_documents",
+		"create_document",
+		"write_document_content",
+		"update_document_block",
+		"link_document_to_object",
+		"publish_document_change_proposal",
+		"publish_ai_section_candidate",
+		"list_deals",
+		"list_contacts",
+		"list_buyer_signals",
+		"update_deal_stage",
+		"add_deal_note",
+		"ensure_crm_contact_company",
+		"enrich_crm_contact",
+		"enrich_crm_company",
+		"list_conversation_messages",
+		"draft_support_reply",
+		"update_conversation_status",
+		"get_release_context",
+		"find_tasks_for_git_changes",
+		"get_task_context",
+		"list_repositories":
+		return true
+	default:
+		return false
+	}
+}
+
 // Definitions returns all tool definitions for the Claude API.
 func (r *ToolRegistry) Definitions() []ToolDefinition {
 	return r.defs
@@ -1189,6 +1254,14 @@ func (r *ToolRegistry) ExecuteAllowed(ctx *ExecutionContext, name string, input 
 			return "", fmt.Errorf("tool %q is not allowed for agent %q", name, ctx.Agent.Name)
 		}
 		return "", fmt.Errorf("tool %q is not allowed for the current agent policy", name)
+	}
+	if ctx != nil && ctx.CallMCPTool != nil {
+		if ctx.MCPToolNames[name] {
+			return ctx.CallMCPTool(name, input)
+		}
+		if ctx.MCPToolNames[canonicalName] {
+			return ctx.CallMCPTool(canonicalName, input)
+		}
 	}
 	if _, ok := r.tools[name]; ok {
 		return r.Execute(ctx, name, input)

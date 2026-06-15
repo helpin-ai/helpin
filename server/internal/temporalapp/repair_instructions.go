@@ -9,13 +9,13 @@ import (
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
-type nativeRepairInstruction struct {
+type repairInstruction struct {
 	Source       string
 	Class        string
 	Instructions string
 }
 
-func latestUnresolvedNativeToolFailure(messages []model.AgentRunMessage) *workerpkg.ExecutionBlock {
+func latestUnresolvedToolFailure(messages []model.AgentRunMessage) *workerpkg.ExecutionBlock {
 	if len(messages) == 0 {
 		return nil
 	}
@@ -68,14 +68,14 @@ func parsePersistedExecutionBlocks(raw json.RawMessage) []workerpkg.ExecutionBlo
 	return workerpkg.NormalizeExecutionBlocks(blocks)
 }
 
-func classifyNativeToolFailureRepair(state *resolvedRunState, failure *workerpkg.ExecutionBlock) nativeRepairInstruction {
-	if state == nil || !state.nativeSelectivePathEnabled || failure == nil {
-		return nativeRepairInstruction{}
+func classifyToolFailureRepair(state *resolvedRunState, failure *workerpkg.ExecutionBlock) repairInstruction {
+	if state == nil || !state.executionContractActive || failure == nil {
+		return repairInstruction{}
 	}
 	toolName := strings.TrimSpace(failure.ToolName)
 	output := strings.TrimSpace(failure.Output)
 	if toolName == "" || output == "" {
-		return nativeRepairInstruction{}
+		return repairInstruction{}
 	}
 
 	switch toolName {
@@ -84,14 +84,14 @@ func classifyNativeToolFailureRepair(state *resolvedRunState, failure *workerpkg
 	case workerpkg.ToolPublishTaskPlanDoc, workerpkg.ToolPublishPRDDraft:
 		return classifyMarkdownPreviewRepair(toolName, output)
 	default:
-		return nativeRepairInstruction{}
+		return repairInstruction{}
 	}
 }
 
-func classifyPublishTaskPlanRepair(output string) nativeRepairInstruction {
+func classifyPublishTaskPlanRepair(output string) repairInstruction {
 	switch {
 	case strings.Contains(output, "publish_task_plan content must be a JSON object with summary and proposed_tasks"):
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Class: "publish_task_plan_object_shape",
 			Instructions: strings.Join([]string{
 				"Your previous publish_task_plan call failed validation because content was not a structured JSON object.",
@@ -101,7 +101,7 @@ func classifyPublishTaskPlanRepair(output string) nativeRepairInstruction {
 			}, "\n"),
 		}
 	case strings.Contains(output, "publish_task_plan requires content.proposed_tasks to be an array of task objects"):
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Class: "publish_task_plan_task_array_shape",
 			Instructions: strings.Join([]string{
 				"Your previous publish_task_plan call failed validation because proposed_tasks was not an array of task objects.",
@@ -110,7 +110,7 @@ func classifyPublishTaskPlanRepair(output string) nativeRepairInstruction {
 			}, "\n"),
 		}
 	case strings.Contains(output, `publish_task_plan is missing content; include the task plan JSON object in "content"`):
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Class: "publish_task_plan_missing_content",
 			Instructions: strings.Join([]string{
 				"Your previous publish_task_plan call failed validation because the content field was missing.",
@@ -119,7 +119,7 @@ func classifyPublishTaskPlanRepair(output string) nativeRepairInstruction {
 			}, "\n"),
 		}
 	case strings.Contains(output, "publish_task_plan input must be a JSON object with structured fields; do not send a raw string wrapper"):
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Class: "publish_task_plan_raw_wrapper",
 			Instructions: strings.Join([]string{
 				"Your previous publish_task_plan call failed validation because the tool arguments arrived as raw text instead of a complete structured JSON object.",
@@ -130,11 +130,11 @@ func classifyPublishTaskPlanRepair(output string) nativeRepairInstruction {
 			}, "\n"),
 		}
 	default:
-		return nativeRepairInstruction{}
+		return repairInstruction{}
 	}
 }
 
-func classifyMarkdownPreviewRepair(toolName, output string) nativeRepairInstruction {
+func classifyMarkdownPreviewRepair(toolName, output string) repairInstruction {
 	toolName = strings.TrimSpace(toolName)
 	contentLabel := "full markdown draft"
 	switch toolName {
@@ -146,7 +146,7 @@ func classifyMarkdownPreviewRepair(toolName, output string) nativeRepairInstruct
 
 	switch {
 	case strings.Contains(output, fmt.Sprintf(`%s is missing content; include markdown in "content"`, toolName)):
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Class: toolName + "_missing_content",
 			Instructions: strings.Join([]string{
 				fmt.Sprintf("Your previous %s call failed validation because the content field was missing.", toolName),
@@ -155,7 +155,7 @@ func classifyMarkdownPreviewRepair(toolName, output string) nativeRepairInstruct
 			}, "\n"),
 		}
 	case strings.Contains(output, fmt.Sprintf(`%s content must be a markdown string in "content"`, toolName)):
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Class: toolName + "_markdown_type",
 			Instructions: strings.Join([]string{
 				fmt.Sprintf("Your previous %s call failed validation because content was not a markdown string.", toolName),
@@ -164,7 +164,7 @@ func classifyMarkdownPreviewRepair(toolName, output string) nativeRepairInstruct
 			}, "\n"),
 		}
 	default:
-		return nativeRepairInstruction{}
+		return repairInstruction{}
 	}
 }
 
@@ -187,18 +187,18 @@ func latestUnresolvedPolicyRetryMessage(messages []model.AgentRunMessage) *model
 	return nil
 }
 
-func classifyNativeRepairInstruction(state *resolvedRunState, message *model.AgentRunMessage) nativeRepairInstruction {
-	if state == nil || !state.nativeSelectivePathEnabled || message == nil {
-		return nativeRepairInstruction{}
+func classifyRepairInstruction(state *resolvedRunState, message *model.AgentRunMessage) repairInstruction {
+	if state == nil || !state.executionContractActive || message == nil {
+		return repairInstruction{}
 	}
 	content := strings.TrimSpace(message.Content)
 	if content == "" {
-		return nativeRepairInstruction{}
+		return repairInstruction{}
 	}
 
 	switch {
 	case strings.Contains(content, "multiple same-turn previews") && strings.Contains(content, "preview_panel_key"):
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Source: "policy_retry",
 			Class:  "approval_preview_panel_key_required",
 			Instructions: strings.Join([]string{
@@ -222,13 +222,13 @@ func classifyNativeRepairInstruction(state *resolvedRunState, message *model.Age
 			lines = append(lines, "Include preview_panel_key when needed so the approval request binds to the intended preview.")
 		}
 		lines = append(lines, "Treat request_approval or request_review_checkpoint as the final action in that turn.")
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Source:       "policy_retry",
 			Class:        "approval_specific_preview_required",
 			Instructions: strings.Join(lines, "\n"),
 		}
 	case strings.Contains(content, "same-turn preview") || strings.Contains(content, "preview_panel_key"):
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Source: "policy_retry",
 			Class:  "approval_preview_binding",
 			Instructions: strings.Join([]string{
@@ -239,7 +239,7 @@ func classifyNativeRepairInstruction(state *resolvedRunState, message *model.Age
 			}, "\n"),
 		}
 	case strings.Contains(content, "review_checkpoint handoff"):
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Source: "policy_retry",
 			Class:  "review_checkpoint_handoff",
 			Instructions: strings.Join([]string{
@@ -255,7 +255,7 @@ func classifyNativeRepairInstruction(state *resolvedRunState, message *model.Age
 		if len(requiredKinds) > 0 {
 			requiredKindsText = fmt.Sprintf("one of the required interaction handoffs [%s]", strings.Join(requiredKinds, ", "))
 		}
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Source: "policy_retry",
 			Class:  "required_interaction_handoff",
 			Instructions: strings.Join([]string{
@@ -271,12 +271,12 @@ func extractRequiredSameTurnPreviewKey(content string) string {
 	return extractPreviewKeyAfterMarker(content, "required same-turn ", " preview")
 }
 
-func latestNativeRepairInstruction(state *resolvedRunState, messages []model.AgentRunMessage) nativeRepairInstruction {
-	if state == nil || !state.nativeSelectivePathEnabled {
-		return nativeRepairInstruction{}
+func latestRepairInstruction(state *resolvedRunState, messages []model.AgentRunMessage) repairInstruction {
+	if state == nil || !state.executionContractActive {
+		return repairInstruction{}
 	}
-	if failure := latestUnresolvedNativeToolFailure(messages); failure != nil {
-		if instruction := classifyNativeToolFailureRepair(state, failure); strings.TrimSpace(instruction.Instructions) != "" {
+	if failure := latestUnresolvedToolFailure(messages); failure != nil {
+		if instruction := classifyToolFailureRepair(state, failure); strings.TrimSpace(instruction.Instructions) != "" {
 			if strings.TrimSpace(instruction.Source) == "" {
 				instruction.Source = "tool_result_history"
 			}
@@ -285,25 +285,25 @@ func latestNativeRepairInstruction(state *resolvedRunState, messages []model.Age
 	}
 	message := latestUnresolvedPolicyRetryMessage(messages)
 	if message == nil {
-		return nativeRepairInstruction{}
+		return repairInstruction{}
 	}
-	instruction := classifyNativeRepairInstruction(state, message)
+	instruction := classifyRepairInstruction(state, message)
 	if strings.TrimSpace(instruction.Instructions) != "" {
 		if strings.TrimSpace(instruction.Source) == "" {
 			instruction.Source = "policy_retry"
 		}
 		return instruction
 	}
-	return nativeRepairInstruction{
+	return repairInstruction{
 		Source:       "policy_retry",
 		Class:        "raw_policy_retry",
 		Instructions: strings.TrimSpace(message.Content),
 	}
 }
 
-func latestNativeRepairInstructionFromArtifacts(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) nativeRepairInstruction {
+func latestRepairInstructionFromArtifacts(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) repairInstruction {
 	if len(messages) == 0 || len(artifacts) == 0 {
-		return nativeRepairInstruction{}
+		return repairInstruction{}
 	}
 	latestAssistantSeq := 0
 	for i := len(messages) - 1; i >= 0; i-- {
@@ -314,17 +314,17 @@ func latestNativeRepairInstructionFromArtifacts(messages []model.AgentRunMessage
 		break
 	}
 	if latestAssistantSeq <= 0 {
-		return nativeRepairInstruction{}
+		return repairInstruction{}
 	}
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
-		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeNativeRepairState || artifact.InlineContent == nil {
+		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeAgentRepairState || artifact.InlineContent == nil {
 			continue
 		}
 		if artifactAssistantMessageSequenceNo(artifact) != latestAssistantSeq {
 			continue
 		}
-		var payload model.NativeRepairState
+		var payload model.AgentRepairState
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
 			continue
 		}
@@ -332,37 +332,37 @@ func latestNativeRepairInstructionFromArtifacts(messages []model.AgentRunMessage
 		if hint == "" {
 			continue
 		}
-		return nativeRepairInstruction{
-			Source:       nativeRepairArtifactSource(payload.Source),
+		return repairInstruction{
+			Source:       repairArtifactSource(payload.Source),
 			Class:        strings.TrimSpace(payload.RepairClass),
 			Instructions: hint,
 		}
 	}
-	return nativeRepairInstruction{}
+	return repairInstruction{}
 }
 
-func nativeRepairArtifactSource(source string) string {
+func repairArtifactSource(source string) string {
 	source = strings.TrimSpace(source)
 	if source == "" {
-		return "native_repair_state"
+		return "agent_repair_state"
 	}
-	return "native_repair_state:" + source
+	return "agent_repair_state:" + source
 }
 
-func resolveLatestNativeRepairInstruction(state *resolvedRunState, messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) nativeRepairInstruction {
-	if instruction := latestNativeRepairInstructionFromArtifacts(messages, artifacts); strings.TrimSpace(instruction.Instructions) != "" {
+func resolveLatestRepairInstruction(state *resolvedRunState, messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) repairInstruction {
+	if instruction := latestRepairInstructionFromArtifacts(messages, artifacts); strings.TrimSpace(instruction.Instructions) != "" {
 		return instruction
 	}
-	return latestNativeRepairInstruction(state, messages)
+	return latestRepairInstruction(state, messages)
 }
 
-func normalizedCompletionRetryInstruction(state *resolvedRunState, cause error) nativeRepairInstruction {
+func normalizedCompletionRetryInstruction(state *resolvedRunState, cause error) repairInstruction {
 	if cause == nil || strings.TrimSpace(cause.Error()) == "" {
-		return nativeRepairInstruction{}
+		return repairInstruction{}
 	}
 	causeText := strings.TrimSpace(cause.Error())
 	if state != nil && state.agent != nil && strings.TrimSpace(state.agent.EffectivePresetKey()) == model.AgentPresetReviewAgent {
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Source:       "completion_retry",
 			Class:        "review_checkpoint_handoff",
 			Instructions: "System correction: the previous review turn ended without the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. In this next turn, emit a review_checkpoint handoff using the runtime-appropriate mechanism, or emit request_user_input only if the human explicitly closed the review or asked a blocking follow-up.",
@@ -370,19 +370,19 @@ func normalizedCompletionRetryInstruction(state *resolvedRunState, cause error) 
 	}
 	switch {
 	case strings.Contains(causeText, "requires preview_panel_key when multiple same-turn previews exist"):
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Source:       "completion_retry",
 			Class:        "approval_preview_panel_key_required",
 			Instructions: approvalPreviewRetryInstruction(causeText),
 		}
 	case strings.Contains(causeText, "requires a same-turn ") && strings.Contains(causeText, " preview before requesting approval"):
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Source:       "completion_retry",
 			Class:        "approval_specific_preview_required",
 			Instructions: approvalPreviewRetryInstruction(causeText),
 		}
 	case strings.Contains(causeText, "same-turn") || strings.Contains(causeText, "preview_panel_key"):
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Source:       "completion_retry",
 			Class:        "approval_preview_binding",
 			Instructions: "System correction: the previous turn requested approval without binding it to a same-turn preview. Continue from your last assistant message instead of restarting. Do not end with prose only. If you emit request_approval or request_review_checkpoint, first publish the preview in the same turn. When multiple previews exist in that turn, include preview_panel_key so it binds to the correct preview.",
@@ -397,7 +397,7 @@ func normalizedCompletionRetryInstruction(state *resolvedRunState, cause error) 
 		if len(requiredKinds) > 0 {
 			instruction = instruction + " Required interaction kinds for this turn: " + strings.Join(requiredKinds, ", ") + "."
 		}
-		return nativeRepairInstruction{
+		return repairInstruction{
 			Source:       "completion_retry",
 			Class:        "required_interaction_handoff",
 			Instructions: instruction,

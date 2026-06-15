@@ -49,8 +49,8 @@ func TestCreateAgentDefaultsToCodeBuilderPreset(t *testing.T) {
 	if created.Role != "Custom Agent" {
 		t.Fatalf("expected default role Custom Agent, got %q", created.Role)
 	}
-	if created.RuntimeKind != "native_sdk" {
-		t.Fatalf("expected default runtime native_sdk, got %q", created.RuntimeKind)
+	if created.RuntimeKind != "codex" {
+		t.Fatalf("expected default runtime codex, got %q", created.RuntimeKind)
 	}
 }
 
@@ -489,8 +489,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if docsAgent.Name != "Quill" {
 		t.Fatalf("expected documentation agent name, got %q", docsAgent.Name)
 	}
-	if docsAgent.RuntimeKind != "native_sdk" {
-		t.Fatalf("expected documentation runtime native_sdk, got %q", docsAgent.RuntimeKind)
+	if docsAgent.RuntimeKind != "codex" {
+		t.Fatalf("expected documentation runtime codex, got %q", docsAgent.RuntimeKind)
 	}
 	if docsAgent.DefaultInvocationMode != model.InvocationModeInteractive {
 		t.Fatalf("expected documentation default invocation mode interactive, got %q", docsAgent.DefaultInvocationMode)

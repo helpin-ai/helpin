@@ -8,61 +8,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-func extractProductSpecDraft(messages []Message) (*model.ProductSpecDraft, error) {
-	responseText := latestAssistantText(messages)
-	return extractProductSpecDraftFromResponseText(responseText)
-}
-
-func extractProductSpecDraftFromResponseText(responseText string) (*model.ProductSpecDraft, error) {
-	if strings.TrimSpace(responseText) == "" {
-		return nil, fmt.Errorf("product planner returned no spec draft")
-	}
-
-	var draft model.ProductSpecDraft
-	if err := unmarshalLatestJSON(responseText, &draft); err != nil {
-		return nil, fmt.Errorf("failed to parse product spec draft: %w", err)
-	}
-	if strings.TrimSpace(draft.Title) == "" {
-		return nil, fmt.Errorf("product spec draft is missing a title")
-	}
-	if strings.TrimSpace(draft.SpecMarkdown) == "" {
-		return nil, fmt.Errorf("product spec draft is missing spec_markdown")
-	}
-	return &draft, nil
-}
-
-func extractPlanningProposal(messages []Message, epicID, specVersionID string, tokensUsed int) (*model.OrchestrationProposal, error) {
-	responseText := latestAssistantText(messages)
-	return extractPlanningProposalFromResponseText(responseText, epicID, specVersionID, tokensUsed)
-}
-
-func extractPlanningProposalFromResponseText(responseText, epicID, specVersionID string, tokensUsed int) (*model.OrchestrationProposal, error) {
-	if strings.TrimSpace(responseText) == "" {
-		return nil, fmt.Errorf("product planner returned no planning proposal text")
-	}
-
-	var proposal model.OrchestrationProposal
-	if err := unmarshalLatestJSON(responseText, &proposal); err != nil {
-		return nil, fmt.Errorf("failed to parse planning proposal: %w", err)
-	}
-
-	proposal.EpicID = epicID
-	proposal.SpecVersionID = strings.TrimSpace(firstNonEmpty(proposal.SpecVersionID, specVersionID))
-	proposal.TokensUsed = tokensUsed
-	if len(proposal.ProposedTasks) == 0 {
-		return nil, fmt.Errorf("planning proposal did not include any tasks")
-	}
-	for idx, story := range proposal.ProposedTasks {
-		if strings.TrimSpace(story.Name) == "" {
-			return nil, fmt.Errorf("planning proposal task %d is missing a name", idx+1)
-		}
-		if strings.TrimSpace(story.Ref) == "" {
-			proposal.ProposedTasks[idx].Ref = fmt.Sprintf("task_%d", idx+1)
-		}
-	}
-	return &proposal, nil
-}
-
 func NormalizeTaskPlanPreviewContent(raw json.RawMessage) (json.RawMessage, error) {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" || trimmed == "null" {
@@ -135,11 +80,6 @@ func normalizeCanonicalTaskPlanPreviewPayload(payload map[string]any) (map[strin
 	payload["summary"] = summary
 	payload["proposed_tasks"] = tasks
 	return payload, nil
-}
-
-func extractOrchestrationProposal(messages []Message, epicID string, tokensUsed int) (*model.OrchestrationProposal, error) {
-	responseText := latestAssistantText(messages)
-	return extractPlanningProposalFromResponseText(responseText, epicID, "", tokensUsed)
 }
 
 func extractTaskCompletionAssessmentFromResponseText(responseText string) (*model.TaskCompletionAssessment, error) {

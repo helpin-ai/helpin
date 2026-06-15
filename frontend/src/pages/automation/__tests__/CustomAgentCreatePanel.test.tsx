@@ -181,7 +181,7 @@ describe('CustomAgentCreatePanel', () => {
     expect(container?.textContent).toContain('Agent name');
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       approval_mode: 'always',
-      runtime_kind: 'native_sdk',
+      runtime_kind: 'codex',
       default_invocation_mode: 'interactive',
     }));
   });
@@ -220,11 +220,13 @@ describe('CustomAgentCreatePanel', () => {
     click('Start blank');
     click('Advanced settings');
 
-    expect(container?.textContent).toContain('Native SDK');
+    expect(container?.textContent).toContain('Codex');
     expect(container?.textContent).toContain('Interactive');
 
-    click('Native SDK');
+    click('Codex');
     expect(document.body.textContent).toContain('OpenCode');
+    expect(document.body.textContent).toContain('Codex');
+    expect(document.body.textContent).toContain('Native SDK');
 
     click('Interactive');
     expect(document.body.textContent).toContain('Autonomous');

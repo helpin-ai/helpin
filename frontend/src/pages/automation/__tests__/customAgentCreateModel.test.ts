@@ -12,7 +12,7 @@ describe('custom agent create model', () => {
     const form = createDefaultCustomAgentForm();
 
     expect(form.name).toBe('');
-    expect(form.runtime_kind).toBe('native_sdk');
+    expect(form.runtime_kind).toBe('codex');
     expect(form.default_invocation_mode).toBe('interactive');
     expect(form.supported_modes).toEqual(['autonomous', 'interactive']);
     expect(form.allowed_targets).toEqual(['task']);
@@ -71,7 +71,7 @@ describe('custom agent create model', () => {
     expect(payload).toMatchObject({
       workspace_id: 'workspace-1',
       name: 'Support Helper',
-      provider: 'anthropic',
+      provider: 'openai',
       system_prompt: 'Help triage support conversations.',
       trigger_mode: 'manual',
       team_ids: ['team-1', 'team-2'],
@@ -124,7 +124,7 @@ describe('custom agent create model', () => {
 
     const advancedOpen = { ...base, monthly_token_budget: '5000' };
     expect(buildCustomAgentCreatePayload('workspace-1', advancedOpen, true)).toMatchObject({
-      runtime_kind: 'native_sdk',
+      runtime_kind: 'codex',
     });
     expect(buildCustomAgentCreatePayload('workspace-1', advancedOpen, true)).not.toHaveProperty('monthly_token_budget');
   });

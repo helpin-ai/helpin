@@ -60,7 +60,7 @@ func (a *AgentRunActivities) prepareTaskDelivery(ctx context.Context, state *res
 	}
 
 	if state.resolved.RequiresRepo && effectiveWorkingBranch != "" {
-		if err := a.ensureRemoteBranch(ctx, state.integration, state.accessToken, state.repository.FullName, effectiveBaseBranch, effectiveWorkingBranch); err != nil {
+		if err := a.ensureRemoteBranchForTaskDelivery(ctx, state, effectiveBaseBranch, effectiveWorkingBranch); err != nil {
 			return err
 		}
 	}
@@ -109,6 +109,11 @@ func (a *AgentRunActivities) checkoutRunRef(ctx context.Context, workDir string,
 	}
 	baseRefName, err := a.fetchRemoteTrackingBranch(ctx, workDir, state.integration, state.accessToken, baseBranch)
 	if err != nil {
+		if repairErr := a.materializeMissingEpicBaseBranchInCheckout(ctx, workDir, state, baseBranch); repairErr == nil {
+			baseRefName, err = a.fetchRemoteTrackingBranch(ctx, workDir, state.integration, state.accessToken, baseBranch)
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("fetch base branch: %w", err)
 	}
 	if workingBranch != "" {
@@ -121,6 +126,113 @@ func (a *AgentRunActivities) checkoutRunRef(ctx context.Context, workDir string,
 		return fmt.Errorf("checkout base branch: %w", err)
 	}
 	return nil
+}
+
+func (a *AgentRunActivities) ensureRemoteBranchForTaskDelivery(ctx context.Context, state *resolvedRunState, baseBranch, workingBranch string) error {
+	if state == nil || state.repository == nil {
+		return fmt.Errorf("task delivery repository is not available")
+	}
+	err := a.ensureRemoteBranch(ctx, state.integration, state.accessToken, state.repository.FullName, baseBranch, workingBranch)
+	if err == nil {
+		return nil
+	}
+	if !isEpicSourcedTaskBaseBranch(state, baseBranch) {
+		return err
+	}
+	if repairErr := a.materializeMissingEpicBaseBranch(ctx, state, baseBranch); repairErr != nil {
+		return err
+	}
+	return a.ensureRemoteBranch(ctx, state.integration, state.accessToken, state.repository.FullName, baseBranch, workingBranch)
+}
+
+func (a *AgentRunActivities) materializeMissingEpicBaseBranch(ctx context.Context, state *resolvedRunState, baseBranch string) error {
+	if state == nil || state.repository == nil {
+		return fmt.Errorf("task delivery repository is not available")
+	}
+	workDir, err := workerpkg.PrepareWorkspace(ctx, state.integration, state.repository.FullName, state.accessToken)
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(workDir)
+	return a.materializeMissingEpicBaseBranchInCheckout(ctx, workDir, state, baseBranch)
+}
+
+func (a *AgentRunActivities) materializeMissingEpicBaseBranchInCheckout(ctx context.Context, workDir string, state *resolvedRunState, baseBranch string) error {
+	baseBranch = strings.TrimSpace(baseBranch)
+	if !isEpicSourcedTaskBaseBranch(state, baseBranch) {
+		return fmt.Errorf("base branch %q is not an epic-sourced task base", baseBranch)
+	}
+	if _, err := a.fetchRemoteTrackingBranch(ctx, workDir, state.integration, state.accessToken, baseBranch); err == nil {
+		return nil
+	}
+	fallbackBase := epicSourcedTaskFallbackBaseBranch(state)
+	if fallbackBase == "" || fallbackBase == baseBranch {
+		return fmt.Errorf("no fallback base branch available for missing epic branch %q", baseBranch)
+	}
+	fallbackRef, err := a.fetchRemoteTrackingBranch(ctx, workDir, state.integration, state.accessToken, fallbackBase)
+	if err != nil {
+		return fmt.Errorf("fetch fallback base branch %q for missing epic branch %q: %w", fallbackBase, baseBranch, err)
+	}
+	if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "checkout", "-B", baseBranch, fallbackRef); err != nil {
+		return fmt.Errorf("create missing epic branch %q from %q: %w", baseBranch, fallbackBase, err)
+	}
+	if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "push", "-u", "origin", baseBranch); err != nil {
+		return fmt.Errorf("push missing epic branch %q: %w", baseBranch, err)
+	}
+	slog.InfoContext(ctx, "materialized missing epic task base branch",
+		"workspace_id", safeRunWorkspaceID(state),
+		"run_id", safeRunID(state),
+		"base_branch", baseBranch,
+		"fallback_base_branch", fallbackBase,
+	)
+	return nil
+}
+
+func isEpicSourcedTaskBaseBranch(state *resolvedRunState, baseBranch string) bool {
+	if state == nil || state.deliveryTarget == nil {
+		return false
+	}
+	if model.NormalizeTaskDeliveryTargetSource(state.deliveryTarget.TargetSource) != model.TaskDeliveryTargetSourceEpic {
+		return false
+	}
+	baseBranch = strings.TrimSpace(baseBranch)
+	if baseBranch == "" {
+		return false
+	}
+	if state.deliveryTarget.SourceEpicID == nil || strings.TrimSpace(*state.deliveryTarget.SourceEpicID) == "" {
+		return false
+	}
+	if strings.TrimSpace(derefString(state.deliveryTarget.BaseBranch)) == baseBranch {
+		return true
+	}
+	return state.run != nil && strings.TrimSpace(derefString(state.run.BaseBranch)) == baseBranch
+}
+
+func epicSourcedTaskFallbackBaseBranch(state *resolvedRunState) string {
+	if state == nil || state.repository == nil {
+		return ""
+	}
+	if state.teamDefault != nil && strings.TrimSpace(state.teamDefault.BaseBranch) != "" {
+		if state.deliveryTarget == nil || state.deliveryTarget.RepositoryID == nil || strings.TrimSpace(*state.deliveryTarget.RepositoryID) == "" ||
+			strings.TrimSpace(state.teamDefault.RepositoryID) == strings.TrimSpace(*state.deliveryTarget.RepositoryID) {
+			return strings.TrimSpace(state.teamDefault.BaseBranch)
+		}
+	}
+	return defaultString(state.repository.DefaultBranch, "main")
+}
+
+func safeRunWorkspaceID(state *resolvedRunState) string {
+	if state == nil || state.run == nil {
+		return ""
+	}
+	return state.run.WorkspaceID
+}
+
+func safeRunID(state *resolvedRunState) string {
+	if state == nil || state.run == nil {
+		return ""
+	}
+	return state.run.ID
 }
 
 func (a *AgentRunActivities) syncBaseIntoWorkingBranch(ctx context.Context, workDir string, state *resolvedRunState) error {
@@ -992,20 +1104,6 @@ func splitRepoFullName(repoFullName string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid repository full name %q", repoFullName)
 	}
 	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), nil
-}
-
-func safeRunWorkspaceID(state *resolvedRunState) string {
-	if state == nil || state.run == nil {
-		return ""
-	}
-	return state.run.WorkspaceID
-}
-
-func safeRunID(state *resolvedRunState) string {
-	if state == nil || state.run == nil {
-		return ""
-	}
-	return state.run.ID
 }
 
 func (a *AgentRunActivities) recordPR(ctx context.Context, state *resolvedRunState, metadata workerpkg.PRMetadata, title string) error {

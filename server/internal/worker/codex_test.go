@@ -686,6 +686,64 @@ func TestBuildCodexConfigArtifactIncludesOpenAIExecutionConfig(t *testing.T) {
 	}
 }
 
+func TestBuildCodexConfigArtifactRequiresHelpinMCPServer(t *testing.T) {
+	bridgePath := filepath.Join(t.TempDir(), "helpin-mcp-bridge")
+	if err := os.WriteFile(bridgePath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write bridge executable: %v", err)
+	}
+	executor := NewCodexExecutor("codex", CodexRuntimeConfig{
+		DefaultModel:             "gpt-5-mini",
+		OpenAIAPIKey:             "openai-secret",
+		HelpinAPIBaseURL:         "http://helpin.local",
+		HelpinRunToolTokenSecret: "tool-secret",
+		HelpinMCPBridgePath:      bridgePath,
+	}, nil, nil, nil)
+	profile, err := executor.resolveRuntimeProfile(&model.Agent{})
+	if err != nil {
+		t.Fatalf("resolve runtime profile: %v", err)
+	}
+	payload, err := executor.buildConfigArtifact(&ExecutionContext{
+		RunID:       "run-1",
+		WorkspaceID: "ws-1",
+	}, profile, "on-request")
+	if err != nil {
+		t.Fatalf("build config artifact: %v", err)
+	}
+
+	var decoded struct {
+		MCPServers map[string]struct {
+			Command                  string            `toml:"command"`
+			Env                      map[string]string `toml:"env"`
+			Required                 bool              `toml:"required"`
+			StartupTimeoutSec        int               `toml:"startup_timeout_sec"`
+			ToolTimeoutSec           int               `toml:"tool_timeout_sec"`
+			DefaultToolsApprovalMode string            `toml:"default_tools_approval_mode"`
+		} `toml:"mcp_servers"`
+	}
+	if err := toml.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Fatalf("unmarshal config artifact: %v", err)
+	}
+	helpin, ok := decoded.MCPServers["helpin"]
+	if !ok {
+		t.Fatalf("expected helpin MCP server in config: %#v", decoded.MCPServers)
+	}
+	if helpin.Command != bridgePath {
+		t.Fatalf("expected bridge command, got %q", helpin.Command)
+	}
+	if !helpin.Required {
+		t.Fatal("expected Helpin MCP server to be required")
+	}
+	if helpin.StartupTimeoutSec != 15 || helpin.ToolTimeoutSec != 120 {
+		t.Fatalf("unexpected MCP timeouts: startup=%d tool=%d", helpin.StartupTimeoutSec, helpin.ToolTimeoutSec)
+	}
+	if helpin.DefaultToolsApprovalMode != "approve" {
+		t.Fatalf("expected approve default tool mode, got %q", helpin.DefaultToolsApprovalMode)
+	}
+	if helpin.Env["HELPIN_API_BASE_URL"] != "http://helpin.local/api" || helpin.Env["HELPIN_AGENT_RUN_TOOL_TOKEN"] == "" {
+		t.Fatalf("unexpected MCP env: %#v", helpin.Env)
+	}
+}
+
 func TestNormalizeCodexSandboxMode(t *testing.T) {
 	cases := map[string]string{
 		"":                    "",

@@ -68,8 +68,8 @@ func TestValidateCustomAgentDraftDropsUnknownCatalogValuesAndAddsRequiredSkillTo
 	if draft.ApprovalMode != "always" {
 		t.Fatalf("expected safe approval default, got %q", draft.ApprovalMode)
 	}
-	if draft.RuntimeKind != "native_sdk" {
-		t.Fatalf("expected native runtime default, got %q", draft.RuntimeKind)
+	if draft.RuntimeKind != "codex" {
+		t.Fatalf("expected codex runtime default, got %q", draft.RuntimeKind)
 	}
 	if draft.Provider != "anthropic" {
 		t.Fatalf("expected provider fallback, got %q", draft.Provider)
