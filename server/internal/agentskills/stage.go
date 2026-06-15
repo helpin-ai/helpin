@@ -28,8 +28,9 @@ func EffectiveRuntimeRefs(agent *model.Agent) model.AgentSkillRefs {
 	}
 	if shouldUseBuiltInAvailableSkillFallback(agent) {
 		if bundle, ok := worker.BuiltInPresetSkillBundleForPreset(agent.EffectivePresetKey()); ok {
-			refs := make(model.AgentSkillRefs, 0, len(bundle.AvailableSkillKeys))
-			for _, key := range bundle.AvailableSkillKeys {
+			runtimeSkillKeys := worker.RuntimeSkillKeysForPresetBundle(bundle)
+			refs := make(model.AgentSkillRefs, 0, len(runtimeSkillKeys))
+			for _, key := range runtimeSkillKeys {
 				key = strings.TrimSpace(key)
 				if key == "" {
 					continue

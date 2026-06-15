@@ -263,16 +263,18 @@ func TestInstructionTemplateVersionForPresetIsDeterministic(t *testing.T) {
 	}
 }
 
-func TestBuiltInPresetBundleDefaultsAvailableSkills(t *testing.T) {
+func TestBuiltInPresetBundleDoesNotDefaultCoreSkillsIntoAvailableSkills(t *testing.T) {
 	bundle, ok := BuiltInPresetSkillBundleForPreset(model.AgentPresetEpicPlanner)
 	if !ok {
 		t.Fatal("expected epic planner bundle")
 	}
-	if len(bundle.AvailableSkillKeys) == 0 {
-		t.Fatalf("expected available skill keys to default from skill keys, got %#v", bundle)
+	if len(bundle.CoreSkillKeys) == 0 {
+		t.Fatalf("expected core skill keys, got %#v", bundle)
 	}
-	if got, want := strings.Join(bundle.AvailableSkillKeys, ","), strings.Join(bundle.SkillKeys, ","); got != want {
-		t.Fatalf("available skill keys = %q, want %q", got, want)
+	for _, coreKey := range bundle.CoreSkillKeys {
+		if containsString(bundle.AvailableSkillKeys, coreKey) {
+			t.Fatalf("core skill %q should not be advertised as available, got %v", coreKey, bundle.AvailableSkillKeys)
+		}
 	}
 }
 

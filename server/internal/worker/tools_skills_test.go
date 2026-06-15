@@ -92,6 +92,28 @@ func TestToolReadSkillReturnsInstructionsOnlyForAvailableSkill(t *testing.T) {
 	}
 }
 
+func TestAvailableSkillToolsHideActiveCoreSkills(t *testing.T) {
+	ctx := availableSkillsTestContext()
+	ctx.ActiveRuntimeSkillRefs = model.AgentSkillRefs{{Key: "campaign_planning"}}
+	ctx.ActiveSkillDefinitions = []SkillDefinition{ctx.RuntimeSkillDefinitions[0]}
+	ctx.ActiveSkillInstructions = "Plan campaigns in phases."
+
+	output, err := toolListAvailableSkills(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("toolListAvailableSkills returned error: %v", err)
+	}
+	if strings.Contains(output, `"key":"campaign_planning"`) {
+		t.Fatalf("active core skill should not be listed as available, got %s", output)
+	}
+	if !strings.Contains(output, `"key":"lifecycle_email"`) {
+		t.Fatalf("non-active skill should remain available, got %s", output)
+	}
+
+	if _, err := toolReadSkill(ctx, json.RawMessage(`{"key":"campaign_planning"}`)); err == nil || !strings.Contains(err.Error(), "not available") {
+		t.Fatalf("expected active core skill to be unavailable through read_skill, got %v", err)
+	}
+}
+
 func TestToolReadSkillRequiresSkillIDForAmbiguousKey(t *testing.T) {
 	workspaceSkillID := "workspace-skill-override"
 	ctx := &ExecutionContext{

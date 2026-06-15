@@ -140,12 +140,16 @@ func availableRuntimeSkillEntries(ctx *ExecutionContext, includeInstructions boo
 	definitions := ctx.RuntimeSkillDefinitions
 	entries := make([]availableSkillToolEntry, 0, maxInt(len(refs), len(definitions)))
 	seen := make(map[string]struct{}, maxInt(len(refs), len(definitions)))
+	active := activeRuntimeSkillIdentities(ctx)
 
 	if len(definitions) > 0 {
 		for idx, definition := range definitions {
 			var ref model.AgentSkillRef
 			if idx < len(refs) {
 				ref = refs[idx]
+			}
+			if active[runtimeSkillIdentity(ref, definition.Key)] {
+				continue
 			}
 			entry := availableSkillEntryFromDefinition(ref, definition, includeInstructions)
 			appendAvailableSkillEntry(&entries, seen, entry)
@@ -154,6 +158,9 @@ func availableRuntimeSkillEntries(ctx *ExecutionContext, includeInstructions boo
 	}
 
 	for _, ref := range refs {
+		if active[runtimeSkillIdentity(ref, ref.Key)] {
+			continue
+		}
 		if definition, ok := GetBuiltInSkill(ref.Key); ok {
 			entry := availableSkillEntryFromDefinition(ref, definition, includeInstructions)
 			appendAvailableSkillEntry(&entries, seen, entry)
@@ -170,6 +177,31 @@ func availableRuntimeSkillEntries(ctx *ExecutionContext, includeInstructions boo
 		appendAvailableSkillEntry(&entries, seen, entry)
 	}
 	return entries
+}
+
+func activeRuntimeSkillIdentities(ctx *ExecutionContext) map[string]bool {
+	active := make(map[string]bool)
+	if ctx == nil {
+		return active
+	}
+	for idx, ref := range ctx.ActiveRuntimeSkillRefs.Normalize() {
+		key := ref.Key
+		if key == "" && idx < len(ctx.ActiveSkillDefinitions) {
+			key = ctx.ActiveSkillDefinitions[idx].Key
+		}
+		active[runtimeSkillIdentity(ref, key)] = true
+	}
+	return active
+}
+
+func runtimeSkillIdentity(ref model.AgentSkillRef, fallbackKey string) string {
+	if ref.SkillID != nil && strings.TrimSpace(*ref.SkillID) != "" {
+		return "id:" + strings.TrimSpace(*ref.SkillID)
+	}
+	if strings.TrimSpace(ref.Key) != "" {
+		return "key:" + strings.TrimSpace(ref.Key)
+	}
+	return "key:" + strings.TrimSpace(fallbackKey)
 }
 
 func availableSkillEntryFromDefinition(ref model.AgentSkillRef, definition SkillDefinition, includeInstructions bool) availableSkillToolEntry {

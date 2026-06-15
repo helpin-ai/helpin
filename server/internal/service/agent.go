@@ -1539,10 +1539,14 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	}
 	hasPreamble := req.InstructionPreamble != nil
 	hasSkills := req.InstructionSkills != nil
+	instructionSkillsForAvailable := basePreset.InstructionSkills
+	if hasSkills {
+		instructionSkillsForAvailable = parseJSONStringSlice(req.InstructionSkills)
+	}
 	if req.AvailableSkills != nil {
-		version.AvailableSkills = model.JSONBlob(mustJSONStringSlice(parseJSONStringSlice(req.AvailableSkills)))
+		version.AvailableSkills = model.JSONBlob(mustJSONStringSlice(filterAvailableSkillsForAllowedTools(parseJSONStringSlice(req.AvailableSkills), parseJSONStringSlice(version.AllowedTools), instructionSkillsForAvailable)))
 	} else {
-		version.AvailableSkills = model.JSONBlob(mustJSONStringSlice(filterAvailableSkillsForAllowedTools(basePreset.AvailableSkills, parseJSONStringSlice(version.AllowedTools))))
+		version.AvailableSkills = model.JSONBlob(mustJSONStringSlice(filterAvailableSkillsForAllowedTools(basePreset.AvailableSkills, parseJSONStringSlice(version.AllowedTools), instructionSkillsForAvailable)))
 	}
 	if version.SystemPrompt != nil {
 		// Raw system_prompt is the custom-version source of truth. Legacy
@@ -1552,7 +1556,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		if hasSkills {
 			version.InstructionSkills = mustJSONStringSlice(parseJSONStringSlice(req.InstructionSkills))
 		} else {
-			version.InstructionSkills = mustJSONStringSlice(basePreset.InstructionSkills)
+			version.InstructionSkills = mustJSONStringSlice(nil)
 		}
 		version.InstructionTemplateVersion = ""
 	} else if hasPreamble || hasSkills {
@@ -1624,9 +1628,16 @@ func workspacePresetCurrentDefinition(version *model.WorkspaceAgentPresetVersion
 	return workspacePresetDefinition(base, *version), nil
 }
 
-func filterAvailableSkillsForAllowedTools(availableSkills, allowedTools []string) []string {
+func filterAvailableSkillsForAllowedTools(availableSkills, allowedTools, instructionSkills []string) []string {
 	if len(availableSkills) == 0 {
 		return nil
+	}
+	instructionSet := make(map[string]struct{}, len(instructionSkills))
+	for _, skillKey := range instructionSkills {
+		skillKey = worker.CanonicalBuiltInSkillKey(skillKey)
+		if skillKey != "" {
+			instructionSet[skillKey] = struct{}{}
+		}
 	}
 	allowedSet := make(map[string]struct{}, len(allowedTools))
 	for _, toolName := range worker.NormalizeToolNames(allowedTools) {
@@ -1636,6 +1647,9 @@ func filterAvailableSkillsForAllowedTools(availableSkills, allowedTools []string
 	for _, skillKey := range availableSkills {
 		skillKey = strings.TrimSpace(skillKey)
 		if skillKey == "" {
+			continue
+		}
+		if _, ok := instructionSet[worker.CanonicalBuiltInSkillKey(skillKey)]; ok {
 			continue
 		}
 		definition, ok := worker.GetBuiltInSkill(skillKey)
@@ -2009,7 +2023,7 @@ func (s *AgentService) applyPresetToSystemAgent(agent *model.Agent, preset model
 	agent.AllowedTools = normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools))
 	agent.AllowedCommands = mustJSONStringSlice(preset.AllowedCommands)
 	agent.AllowedTargets = mustJSONStringSlice(preset.AllowedTargetTypes)
-	agent.Skills = skillRefsFromKeys(preset.AvailableSkills)
+	agent.Skills = skillRefsFromKeys(runtimeSkillKeysForPreset(preset))
 	agent.TeamID = nil
 	agent.TeamIDs = nil
 	agent.ApprovalMode = "never"
@@ -2195,11 +2209,15 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 
 		hasPreamble := req.InstructionPreamble != nil
 		hasSkills := req.InstructionSkills != nil
+		instructionSkillsForAvailable := slices.Clone(currentPreset.InstructionSkills)
+		if hasSkills {
+			instructionSkillsForAvailable = parseJSONStringSlice(req.InstructionSkills)
+		}
 		availableSkills := slices.Clone(currentPreset.AvailableSkills)
 		if req.AvailableSkills != nil {
-			availableSkills = parseJSONStringSlice(req.AvailableSkills)
+			availableSkills = filterAvailableSkillsForAllowedTools(parseJSONStringSlice(req.AvailableSkills), parseJSONStringSlice(version.AllowedTools), instructionSkillsForAvailable)
 		} else {
-			availableSkills = filterAvailableSkillsForAllowedTools(availableSkills, parseJSONStringSlice(version.AllowedTools))
+			availableSkills = filterAvailableSkillsForAllowedTools(availableSkills, parseJSONStringSlice(version.AllowedTools), instructionSkillsForAvailable)
 		}
 		version.AvailableSkills = model.JSONBlob(mustJSONStringSlice(availableSkills))
 		if req.SystemPrompt != nil {
@@ -2210,7 +2228,7 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 			if hasSkills {
 				version.InstructionSkills = mustJSONStringSlice(parseJSONStringSlice(req.InstructionSkills))
 			} else {
-				version.InstructionSkills = mustJSONStringSlice(currentPreset.InstructionSkills)
+				version.InstructionSkills = mustJSONStringSlice(nil)
 			}
 		} else if hasPreamble || hasSkills {
 			preamble := currentPreset.InstructionPreamble
@@ -3198,6 +3216,13 @@ func skillRefsFromKeys(keys []string) model.AgentSkillRefs {
 		refs = append(refs, model.AgentSkillRef{Key: key})
 	}
 	return refs.Normalize()
+}
+
+func runtimeSkillKeysForPreset(preset model.AgentPresetDefinition) []string {
+	keys := make([]string, 0, len(preset.InstructionSkills)+len(preset.AvailableSkills))
+	keys = append(keys, preset.InstructionSkills...)
+	keys = append(keys, preset.AvailableSkills...)
+	return keys
 }
 
 func supportCoverageGapAgentInstructions(detail *model.SupportCoverageGapDetail) string {

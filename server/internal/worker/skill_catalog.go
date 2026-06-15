@@ -260,12 +260,21 @@ func mustLoadBuiltInSkillDefinitions() map[string]SkillDefinition {
 }
 
 func GetBuiltInSkill(key string) (SkillDefinition, bool) {
-	normalized := strings.TrimSpace(key)
+	normalized := CanonicalBuiltInSkillKey(key)
 	if canonical, ok := builtInSkillAliases[normalized]; ok {
 		normalized = canonical
 	}
 	skill, ok := builtInSkillDefinitions[normalized]
 	return skill, ok
+}
+
+func CanonicalBuiltInSkillKey(key string) string {
+	normalized := strings.TrimSpace(key)
+	normalized = strings.TrimPrefix(normalized, "system/")
+	if canonical, ok := builtInSkillAliases[normalized]; ok {
+		return canonical
+	}
+	return normalized
 }
 
 func ListBuiltInSkills() []SkillDefinition {
@@ -289,10 +298,62 @@ func BuiltInPresetSkillBundleForPreset(presetKey string) (PresetSkillBundle, boo
 	bundle.SkillKeys = append([]string(nil), bundle.SkillKeys...)
 	bundle.CoreSkillKeys = append([]string(nil), bundle.CoreSkillKeys...)
 	if len(bundle.AvailableSkillKeys) == 0 {
-		bundle.AvailableSkillKeys = bundle.SkillKeys
+		bundle.AvailableSkillKeys = skillKeysWithoutCore(bundle.SkillKeys, bundle.CoreSkillKeys)
 	}
 	bundle.AvailableSkillKeys = append([]string(nil), bundle.AvailableSkillKeys...)
 	return bundle, true
+}
+
+func skillKeysWithoutCore(skillKeys, coreSkillKeys []string) []string {
+	if len(skillKeys) == 0 {
+		return nil
+	}
+	core := make(map[string]struct{}, len(coreSkillKeys))
+	for _, key := range coreSkillKeys {
+		key = CanonicalBuiltInSkillKey(key)
+		if key != "" {
+			core[key] = struct{}{}
+		}
+	}
+	filtered := make([]string, 0, len(skillKeys))
+	for _, key := range skillKeys {
+		key = CanonicalBuiltInSkillKey(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := core[key]; ok {
+			continue
+		}
+		filtered = append(filtered, key)
+	}
+	return filtered
+}
+
+func RuntimeSkillKeysForPresetBundle(bundle PresetSkillBundle) []string {
+	keys := make([]string, 0, len(bundle.CoreSkillKeys)+len(bundle.AvailableSkillKeys))
+	keys = append(keys, bundle.CoreSkillKeys...)
+	keys = append(keys, bundle.AvailableSkillKeys...)
+	return uniqueSkillKeys(keys)
+}
+
+func uniqueSkillKeys(keys []string) []string {
+	if len(keys) == 0 {
+		return nil
+	}
+	unique := make([]string, 0, len(keys))
+	seen := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, key)
+	}
+	return unique
 }
 
 func coreSkillKeysForPresetBundle(bundle PresetSkillBundle) []string {
