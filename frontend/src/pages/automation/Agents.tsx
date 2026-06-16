@@ -1089,10 +1089,92 @@ function formatRate(numerator: number, denominator: number) {
   return `${Math.round((numerator / denominator) * 100)}%`;
 }
 
-function runTargetLabel(run: AgentRun) {
-  if (run.target_info?.task_key) return run.target_info.task_key;
-  if (run.target_info?.title) return run.target_info.title;
-  return run.target_type.replace(/_/g, ' ');
+const AGENT_RUN_TARGET_LABELS: Partial<Record<AgentTargetType, string>> = {
+  task: 'Task',
+  support_conversation: 'Support conversation',
+  support_coverage_gap: 'Coverage gap',
+  epic: 'Epic',
+  document: 'Document',
+  crm_deal: 'Deal',
+  repository: 'Repository',
+  workspace: 'Workspace',
+};
+
+function titleCaseWords(value: string) {
+  return value
+    .replace(/_/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function agentRunTargetTypeLabel(targetType: string) {
+  return AGENT_RUN_TARGET_LABELS[targetType as AgentTargetType] ?? titleCaseWords(targetType);
+}
+
+function readNestedString(value: unknown, path: string[]) {
+  let current = value;
+  for (const key of path) {
+    if (!current || typeof current !== 'object') return '';
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === 'string' ? current.trim() : '';
+}
+
+function agentRunTriggerLabel(run: AgentRun) {
+  const trigger = run.input?.trigger;
+  const triggerType = readNestedString(trigger, ['trigger_type']);
+  const source = readNestedString(trigger, ['source']);
+
+  if (triggerType === 'task.state_entered' || triggerType === 'story.state_entered') return 'State changed';
+  if (triggerType === 'agent_run.approved') return 'Run approved';
+  if (triggerType === 'cron' || source === 'cron') return 'Scheduled run';
+  if (triggerType === 'command_bar' || source === 'command_bar') return 'Command bar';
+  if (triggerType === 'manual' || source === 'manual') return 'Manual run';
+  if (triggerType === 'github.pull_request_merged' || triggerType === 'gitlab.merge_request_merged') return 'PR merged';
+  if (triggerType === 'github.pull_request_opened' || triggerType === 'gitlab.merge_request_opened') return 'PR opened';
+  if (triggerType === 'github.pull_request_closed' || triggerType === 'gitlab.merge_request_closed') return 'PR closed';
+  if (triggerType === 'github.pull_request_review_requested') return 'PR review requested';
+  if (triggerType === 'github.push' || triggerType === 'gitlab.push') return 'Push';
+  if (triggerType === 'github.release_published' || triggerType === 'gitlab.release_published') return 'Release published';
+  if (triggerType === 'github.check_suite_completed') return 'Check suite completed';
+  if (triggerType === 'gitlab.pipeline_completed') return 'Pipeline completed';
+  if (source === 'automation_rule') return 'Automation flow';
+  return run.invocation_mode === 'autonomous' ? 'Autonomous run' : 'Interactive run';
+}
+
+function compactUniqueText(parts: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const part of parts) {
+    const normalized = part.trim();
+    const key = normalized.toLowerCase();
+    if (!normalized || seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+  }
+  return result;
+}
+
+export function getAgentRecentRunSummary(run: AgentRun) {
+  const targetTypeLabel = agentRunTargetTypeLabel(run.target_type);
+  const taskKey = run.target_info?.task_key?.trim();
+  const targetTitle = run.target_info?.title?.trim();
+  const repoTitle = run.repo_full_name?.trim();
+  const fallbackTitle = `${targetTypeLabel} run`;
+  const title = taskKey && targetTitle
+    ? `${taskKey} · ${targetTitle}`
+    : taskKey || targetTitle || repoTitle || fallbackTitle;
+  const branch = run.base_branch?.trim() || run.working_branch?.trim();
+  const subtitleParts = compactUniqueText([
+    title.toLowerCase() === targetTypeLabel.toLowerCase() ? '' : targetTypeLabel,
+    agentRunTriggerLabel(run),
+    branch && run.target_type === 'repository' ? branch : '',
+  ]);
+  const subtitle = subtitleParts.join(' · ') || agentRunTriggerLabel(run);
+
+  return { title, subtitle };
 }
 
 function normalizePositiveIntegerFormValue(value: string, fallback: number) {
@@ -1806,6 +1888,18 @@ export function getAgentAnalyticsSummary(analytics?: AgentAnalyticsResponse | nu
     tokens,
     successRate: formatRate(completed, runs),
     avgTokensPerRun: runs > 0 ? Math.round(tokens / runs) : 0,
+  };
+}
+
+export function getAgentTokenUsageSummary(agent?: Agent | null) {
+  const monthlyTokensUsed = agent?.tokens_used_this_month ?? 0;
+  const recordedTotalTokens = agent?.tokens_used_total ?? 0;
+  const totalTokensUsed = Math.max(recordedTotalTokens, monthlyTokensUsed);
+
+  return {
+    monthlyTokensUsed,
+    totalTokensUsed,
+    totalTokensAdjusted: totalTokensUsed !== recordedTotalTokens,
   };
 }
 
@@ -3564,8 +3658,9 @@ export function AgentsPage() {
     normalizeTokenBudgetFormValue(form.monthly_token_budget) !== normalizeTokenBudgetFormValue(editingAgent.monthly_token_budget?.toString() ?? '')
   ));
   const selectedAgentStats = editingAgent ? runStats[editingAgent.id] : undefined;
+  const tokenUsageSummary = getAgentTokenUsageSummary(editingAgent);
   const monthlyTokenLimit = normalizeTokenBudgetFormValue(form.monthly_token_budget);
-  const monthlyTokensUsed = editingAgent?.tokens_used_this_month ?? 0;
+  const monthlyTokensUsed = tokenUsageSummary.monthlyTokensUsed;
   const monthlyTokenPercent = monthlyTokenLimit > 0 ? Math.min(100, Math.round((monthlyTokensUsed / monthlyTokenLimit) * 100)) : 0;
   const monthlyLimitMatchesPreset = MONTHLY_TOKEN_LIMIT_PRESETS.some((preset) => preset.value === monthlyTokenLimit);
   const showCustomTokenLimitInput = tokenLimitMode === 'custom' || !monthlyLimitMatchesPreset;
@@ -4243,32 +4338,35 @@ export function AgentsPage() {
                   </div>
                   {recentRunItems.length > 0 ? (
                     <div className="divide-y divide-border/60">
-                      {recentRunItems.map((run) => (
-                        <button
-                          key={run.id}
-                          type="button"
-                          onClick={() => openRunDetails(run.id)}
-                          className="grid w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 sm:grid-cols-[8rem_minmax(0,1fr)_8rem_8rem]"
-                        >
-                          <div>
-                            <Badge variant="outline" className={cn('h-5 px-1.5 text-[10px]', lastRunStatusClass(run))}>
-                              {lastRunStatusLabel(run)}
-                            </Badge>
-                          </div>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{runTargetLabel(run)}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{run.target_type.replace(/_/g, ' ')}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tokens</p>
-                            <p className="font-mono text-sm">{(run.tokens_used ?? 0).toLocaleString()}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">When</p>
-                            <p className="text-sm text-muted-foreground">{formatLastRunTime(run)}</p>
-                          </div>
-                        </button>
-                      ))}
+                      {recentRunItems.map((run) => {
+                        const summary = getAgentRecentRunSummary(run);
+                        return (
+                          <button
+                            key={run.id}
+                            type="button"
+                            onClick={() => openRunDetails(run.id)}
+                            className="grid w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 sm:grid-cols-[8rem_minmax(0,1fr)_8rem_8rem]"
+                          >
+                            <div>
+                              <Badge variant="outline" className={cn('h-5 px-1.5 text-[10px]', lastRunStatusClass(run))}>
+                                {lastRunStatusLabel(run)}
+                              </Badge>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium" title={summary.title}>{summary.title}</p>
+                              <p className="mt-0.5 truncate text-xs text-muted-foreground" title={summary.subtitle}>{summary.subtitle}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tokens</p>
+                              <p className="font-mono text-sm">{(run.tokens_used ?? 0).toLocaleString()}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">When</p>
+                              <p className="text-sm text-muted-foreground">{formatLastRunTime(run)}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="px-4 py-6 text-sm text-muted-foreground">No runs yet.</p>
@@ -4297,8 +4395,10 @@ export function AgentsPage() {
                     </div>
                     <div className="rounded-lg border border-border/60 bg-card p-4">
                       <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Total tokens</p>
-                      <p className="mt-2 text-2xl font-semibold">{(editingAgent?.tokens_used_total ?? 0).toLocaleString()}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">Across all recorded runs.</p>
+                      <p className="mt-2 text-2xl font-semibold">{tokenUsageSummary.totalTokensUsed.toLocaleString()}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {tokenUsageSummary.totalTokensAdjusted ? 'At least this many tokens used.' : 'Across all recorded runs.'}
+                      </p>
                     </div>
                   </div>
                 </section>

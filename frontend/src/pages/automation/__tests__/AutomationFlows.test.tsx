@@ -11,6 +11,7 @@ import {
   filterAutomationFlowsForSearch,
   flowMetadataPills,
   flowTriggerSummary,
+  templateMatchesSearch,
   templateSelectChangeValue,
   templateSelectOptions,
   templateSelectValue,
@@ -232,6 +233,27 @@ describe('FlowRow', () => {
     expect(lastRunLink?.getAttribute('href')).toBe('/w/test-docs/automation/activity?source=automation_rule&reference_id=rule-1&execution_id=exec-123#trigger-executions');
   });
 
+  it('shows a visible view runs action when the workspace slug is available', () => {
+    render(
+      <FlowRow
+        rule={baseRule}
+        statesById={new Map()}
+        agentNames={new Map([['agent-1', 'Release Notes Writer agent']])}
+        workspaceSlug="test-docs"
+        canEdit={false}
+        canRunNowAction={false}
+        onEdit={() => {}}
+        onRunNow={() => {}}
+        onToggle={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    const viewRunsLink = Array.from(container?.querySelectorAll('a') ?? [])
+      .find((link) => link.textContent?.includes('View runs'));
+    expect(viewRunsLink?.getAttribute('href')).toBe('/w/test-docs/automation/activity?source=automation_rule&reference_id=rule-1#trigger-executions');
+  });
+
   it('prioritizes running, paused, incomplete, next run, and waiting activity states', () => {
     const agentNames = new Map([['agent-1', 'Release Notes Writer agent']]);
     const cases: Array<{ rule: AutomationRule; healthItem?: AutomationInventoryItem; expected: string[]; absent?: string }> = [
@@ -247,7 +269,7 @@ describe('FlowRow', () => {
         rule: { ...baseRule, trigger_type: 'cron', trigger_config: { schedule: '0 * * * *' } },
         expected: ['No runs yet', 'Next run'],
       },
-      { rule: baseRule, expected: ['No runs yet', 'Waiting for trigger'] },
+      { rule: baseRule, expected: ['No runs yet', 'Runs when triggered'] },
     ];
 
     for (const item of cases) {
@@ -278,6 +300,26 @@ describe('FlowRow', () => {
       container?.remove();
       container = null;
     }
+  });
+
+  it('shows trigger-driven scheduling text alongside last run activity', () => {
+    render(
+      <FlowRow
+        rule={baseRule}
+        statesById={new Map()}
+        agentNames={new Map([['agent-1', 'Release Notes Writer agent']])}
+        healthItem={healthItem({ last_seen_at: '2026-06-08T01:00:00Z' })}
+        canEdit={false}
+        canRunNowAction={false}
+        onEdit={() => {}}
+        onRunNow={() => {}}
+        onToggle={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    expect(container?.textContent).toContain('Last run');
+    expect(container?.textContent).toContain('Runs when triggered');
   });
 });
 
@@ -391,6 +433,31 @@ describe('template repository select helpers', () => {
 
     expect(templateSelectValue(input, '')).toBe(NO_REPOSITORY_VALUE);
     expect(templateSelectChangeValue(input, NO_REPOSITORY_VALUE)).toBe('');
+  });
+});
+
+describe('templateMatchesSearch', () => {
+  const template: FlowTemplateManifest = {
+    key: 'run_on_release',
+    version: 1,
+    name: 'Run on release',
+    icon: 'tag',
+    short_description: 'Runs an agent when a release is published.',
+    categories: ['engineering'],
+    agent: { pick_existing: { required: true, constraints: { targets: ['repository'] } } },
+    trigger: { type: 'event', event: 'github.release_published' },
+    inputs: [],
+    flow: { action: 'start_agent_run' },
+  };
+
+  it('matches template names, descriptions, categories, keys, and trigger metadata', () => {
+    expect(templateMatchesSearch(template, '')).toBe(true);
+    expect(templateMatchesSearch(template, 'release')).toBe(true);
+    expect(templateMatchesSearch(template, 'agent')).toBe(true);
+    expect(templateMatchesSearch(template, 'engineering')).toBe(true);
+    expect(templateMatchesSearch(template, 'run_on')).toBe(true);
+    expect(templateMatchesSearch(template, 'github')).toBe(true);
+    expect(templateMatchesSearch(template, 'billing')).toBe(false);
   });
 });
 

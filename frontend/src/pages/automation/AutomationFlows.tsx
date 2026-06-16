@@ -11,6 +11,7 @@ import {
   MoreHorizontalIcon,
   PlayIcon,
   PlusSignIcon,
+  Search01Icon,
   SourceCodeIcon,
   SparklesIcon,
   Tag01Icon,
@@ -712,6 +713,24 @@ function compareTemplatesForDisplay(a: FlowTemplateManifest, b: FlowTemplateMani
   const orderB = TEMPLATE_DISPLAY_ORDER[b.key] ?? 10_000;
   if (orderA !== orderB) return orderA - orderB;
   return a.name.localeCompare(b.name);
+}
+
+export function templateMatchesSearch(template: FlowTemplateManifest, search: string) {
+  const query = search.trim().toLowerCase();
+  if (!query) return true;
+
+  const searchableParts = [
+    template.key,
+    template.name,
+    template.short_description,
+    template.description_ref,
+    template.trigger.type,
+    template.trigger.event,
+    ...template.categories,
+    ...template.categories.map((category) => TEMPLATE_CATEGORY_LABELS[category]),
+  ];
+
+  return searchableParts.some((part) => String(part ?? '').toLowerCase().includes(query));
 }
 
 function normalizeToolList(tools: string[]) {
@@ -1962,6 +1981,10 @@ export function flowNextRunLabel(rule: AutomationRule, now = new Date()) {
   return nextRun ? futureRelativeTime(nextRun, now) : 'Not scheduled';
 }
 
+function flowTriggerRunLabel(rule: AutomationRule) {
+  return rule.trigger_type === 'cron' ? null : 'Runs when triggered';
+}
+
 function flowMetricValues(healthItem?: AutomationInventoryItem) {
   const metrics = (healthItem?.health.metrics ?? undefined) as Record<string, unknown> | undefined;
   return {
@@ -2014,6 +2037,7 @@ export function flowDetailsSections({
   const agentName = agentNames.get(draft.agentId);
   const additionalContext = stringValue(rule.action_config?.additional_context).trim();
   const nextRunLabel = flowNextRunLabel(rule);
+  const triggerRunLabel = flowTriggerRunLabel(rule);
   const lastError = healthItem?.health.last_error_message?.trim();
   const storedSchedule = scheduleExpressionFromConfig(rule.trigger_config);
   const branchOverrides = describeRunBranchOverrides(draft.runBaseBranch.trim(), draft.runWorkingBranch.trim());
@@ -2041,6 +2065,7 @@ export function flowDetailsSections({
         draft.conclusion.trim() ? { label: 'Conclusion', value: draft.conclusion.trim() } : null,
         draft.triggerType === 'cron' && storedSchedule ? { label: 'Schedule', value: describeScheduleExpressionInTimeZone(storedSchedule, timezone) } : null,
         nextRunLabel ? { label: 'Next run', value: nextRunLabel } : null,
+        triggerRunLabel ? { label: 'Run timing', value: triggerRunLabel } : null,
       ]),
     },
     {
@@ -2199,6 +2224,7 @@ export function FlowRow({
   const lastRunLabel = flowLastRunLabel(healthItem);
   const hasRunActivity = flowHasRunActivity(healthItem);
   const nextRunLabel = flowNextRunLabel(rule);
+  const triggerRunLabel = flowTriggerRunLabel(rule);
   const lastErrorMessage = healthItem?.health.last_error_message?.trim();
   const currentRunLabel = flowCurrentRunLabel(lastRunStatus);
   const blockerLabel = flowActivityBlockerLabel(flowState);
@@ -2247,6 +2273,15 @@ export function FlowRow({
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
+            {workspaceSlug ? (
+              <Button asChild variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs">
+                <a href={buildAutomationActivityPath(workspaceSlug, activitySearch, 'trigger-executions')}>
+                  <Clock03Icon className="h-3.5 w-3.5" />
+                  View runs
+                </a>
+              </Button>
+            ) : null}
+
             {showRunNow ? (
               <TooltipProvider>
                 <Tooltip>
@@ -2416,6 +2451,8 @@ export function FlowRow({
                   <span className="font-mono text-foreground/80">{nextRunLabel}</span>
                 </span>
               </div>
+            ) : !currentRunLabel && hasRunActivity && triggerRunLabel && !blockerLabel ? (
+              <div className="text-[11px] text-muted-foreground">{triggerRunLabel}</div>
             ) : !currentRunLabel && !hasRunActivity && blockerLabel ? (
               <div className="text-[11px] font-medium text-foreground/80">{blockerLabel}</div>
             ) : !currentRunLabel && !hasRunActivity && nextRunLabel ? (
@@ -2425,6 +2462,8 @@ export function FlowRow({
                   <span className="font-mono text-foreground/80">{nextRunLabel}</span>
                 </span>
               </div>
+            ) : !currentRunLabel && !hasRunActivity && triggerRunLabel ? (
+              <div className="text-[11px] text-muted-foreground">{triggerRunLabel}</div>
             ) : !currentRunLabel && !hasRunActivity ? (
               <div className="text-[11px] text-muted-foreground">Waiting for trigger</div>
             ) : null}
@@ -3243,6 +3282,8 @@ function FlowTemplateGallery({
   error: string | null;
 }) {
   const [category, setCategory] = useState('all');
+  const [search, setSearch] = useState('');
+  const trimmedSearch = search.trim();
   const categories = useMemo(() => {
     const keys = new Set<string>();
     for (const template of templates) {
@@ -3251,10 +3292,12 @@ function FlowTemplateGallery({
     return Array.from(keys).sort((a, b) => (TEMPLATE_CATEGORY_LABELS[a] ?? a).localeCompare(TEMPLATE_CATEGORY_LABELS[b] ?? b));
   }, [templates]);
   const visibleTemplates = useMemo(
-    () => (category === 'all' ? templates : templates.filter((template) => template.categories?.includes(category)))
+    () => templates
+      .filter((template) => category === 'all' || template.categories?.includes(category))
+      .filter((template) => templateMatchesSearch(template, trimmedSearch))
       .slice()
       .sort(compareTemplatesForDisplay),
-    [category, templates],
+    [category, templates, trimmedSearch],
   );
 
   return (
@@ -3264,6 +3307,17 @@ function FlowTemplateGallery({
           <DialogTitle>Create a flow</DialogTitle>
           <DialogDescription>Install a ready-made automation, or build a custom flow.</DialogDescription>
         </DialogHeader>
+
+        <div className="relative">
+          <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label="Search flow templates"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search templates..."
+            className="h-9 pl-9"
+          />
+        </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap gap-2">
@@ -3311,7 +3365,7 @@ function FlowTemplateGallery({
             <div className="rounded-lg border border-border/60 bg-muted/20 p-4 text-sm sm:col-span-2 md:col-span-3">
               <p className="font-medium">No templates available</p>
               <p className="mt-1 text-muted-foreground">
-                {category === 'all' ? 'No flow templates are available in this workspace yet.' : 'No templates match this category.'}
+                {trimmedSearch ? 'No templates match this search.' : category === 'all' ? 'No flow templates are available in this workspace yet.' : 'No templates match this category.'}
               </p>
             </div>
           )}
