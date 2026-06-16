@@ -1533,6 +1533,13 @@ function needsAttention(agent: Agent, stats?: AgentRunStats) {
   return needsModelConfiguration(agent) || Boolean(stats?.attentionRunCount) || isUnusedAgent(stats) || isFailingAgent(stats);
 }
 
+export function sortAgentsForDisplay(agents: Agent[]) {
+  return [...agents].sort((left, right) => {
+    if (left.is_system !== right.is_system) return left.is_system ? -1 : 1;
+    return left.name.localeCompare(right.name);
+  });
+}
+
 function formatLastRunTime(run?: AgentRun) {
   if (!run) return 'Never';
   const date = run.completed_at || run.started_at || run.created_at;
@@ -3522,13 +3529,7 @@ export function AgentsPage() {
     }
     return accessibleTeamIds.has(agent.team_id);
   });
-  const sortedAgents = [...visibleAgents].sort((left, right) => {
-    if (left.is_system !== right.is_system) return left.is_system ? -1 : 1;
-    const leftAttention = needsAttention(left, runStats[left.id]) ? 1 : 0;
-    const rightAttention = needsAttention(right, runStats[right.id]) ? 1 : 0;
-    if (leftAttention !== rightAttention) return rightAttention - leftAttention;
-    return left.name.localeCompare(right.name);
-  });
+  const sortedAgents = sortAgentsForDisplay(visibleAgents);
   const deleteAgentFlows = editingAgent ? agentFlowUsages(agentUsageMap[editingAgent.id]) : [];
   const deleteAgentFlowCount = deleteAgentFlows.length;
   const runNowTargets = runNowTargetOptions(runNowAgent);

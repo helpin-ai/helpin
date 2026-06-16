@@ -10,6 +10,7 @@ import {
   canEditWorkspacePresetVersionDescription,
   getAgentAnalyticsSummary,
   getAgentProviderConfigState,
+  sortAgentsForDisplay,
 } from '../Agents';
 import type { Agent, AgentModelProviderOption, AgentPresetDefinition } from '@/lib/pmTypes';
 
@@ -116,6 +117,24 @@ describe('AgentActions', () => {
     );
 
     expect(container?.querySelector('[aria-label="More agent actions"]')).not.toBeNull();
+  });
+});
+
+describe('sortAgentsForDisplay', () => {
+  it('keeps system agents first and sorts each group alphabetically', () => {
+    const agents = [
+      { ...baseAgent, id: 'custom-zeta', is_system: false, name: 'Zeta' },
+      { ...baseAgent, id: 'system-beta', is_system: true, name: 'Beta' },
+      { ...baseAgent, id: 'custom-alpha', is_system: false, name: 'Alpha' },
+      { ...baseAgent, id: 'system-alpha', is_system: true, name: 'Alpha' },
+    ];
+
+    expect(sortAgentsForDisplay(agents).map((agent) => agent.id)).toEqual([
+      'system-alpha',
+      'system-beta',
+      'custom-alpha',
+      'custom-zeta',
+    ]);
   });
 });
 
