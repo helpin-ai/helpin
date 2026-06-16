@@ -1081,7 +1081,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		HandoffTeamID:                 nil,
 		DefaultMailboxID:              nil,
 		AIHandoffMailboxID:            nil,
-		TriageEnabled:                 false,
+		TriageEnabled:                 true,
 		TriageAutoMoveEnabled:         true,
 		TriageConfidenceThreshold:     0.8,
 		TriageWidgetEnabled:           true,

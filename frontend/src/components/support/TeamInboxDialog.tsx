@@ -934,6 +934,19 @@ export function TeamInboxDialog({
             </DialogHeader>
 
             <div className="space-y-4">
+              {isRoutingOff && (
+                <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                  <span>
+                    Automated routing is off. You can save rule-based conditions and AI routing prompts, but they will not run until Automated routing is enabled in settings.
+                  </span>
+                  <Button asChild type="button" variant="outline" size="xs" className="h-7 w-fit shrink-0 border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100 dark:hover:bg-amber-900/40">
+                    <a href={supportRoutingHref} target="_blank" rel="noreferrer">
+                      Open settings
+                    </a>
+                  </Button>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -1042,16 +1055,6 @@ export function TeamInboxDialog({
 
                 {form.triageEligible && (
                   <div className="space-y-3">
-                    {isRoutingOff && (
-                      <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-                        <span>Routing is off. Enable it to use AI routing.</span>
-                        <Button asChild type="button" variant="outline" size="xs" className="h-7 w-fit border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100 dark:hover:bg-amber-900/40">
-                          <a href={supportRoutingHref} target="_blank" rel="noreferrer">
-                            Enable routing
-                          </a>
-                        </Button>
-                      </div>
-                    )}
                     <Textarea
                       id="team-inbox-routing-prompt"
                       value={form.routingPrompt}

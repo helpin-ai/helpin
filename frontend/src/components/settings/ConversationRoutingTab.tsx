@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArchiveIcon, ArrowDown01Icon, DragDropVerticalIcon, InboxIcon, InformationCircleIcon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, UndoIcon } from '@/lib/icons';
+import { Alert01Icon, ArchiveIcon, ArrowDown01Icon, DragDropVerticalIcon, InboxIcon, InformationCircleIcon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, UndoIcon } from '@/lib/icons';
 import {
   DndContext,
   closestCenter,
@@ -29,9 +29,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ICON_MAP } from '@/components/ui/icon-picker';
 import { cn } from '@/lib/utils';
 import { queryKeys } from '@/lib/queryKeys';
+import { useWorkspaceModuleAccess } from '@/hooks/queries/useSettings';
+import { useAssignableMembers } from '@/hooks/queries/useWorkspaces';
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { filterSupportAccessibleMembers } from '@/components/support/teamInboxDialogMembers';
 
 import {
   useArchiveMailbox,
@@ -70,8 +73,8 @@ type RoutingSettingsDraft = Pick<
   | 'triage_deduplicate_first_message'
 >;
 
-const DEFAULT_ROUTING_SETTINGS: RoutingSettingsDraft = {
-  triage_enabled: false,
+export const DEFAULT_ROUTING_SETTINGS: RoutingSettingsDraft = {
+  triage_enabled: true,
   triage_auto_move_enabled: true,
   triage_confidence_threshold: 0.8,
   triage_widget_enabled: true,
@@ -84,7 +87,46 @@ const DEFAULT_ROUTING_SETTINGS: RoutingSettingsDraft = {
   triage_deduplicate_first_message: true,
 };
 
-function buildRoutingDraft(settings?: SupportInboxSettings | null): RoutingSettingsDraft {
+export const CONFIGURE_ROUTING_LINK_CLASS = 'text-xs font-medium text-amber-700 underline-offset-4 hover:underline dark:text-amber-300';
+
+export function getDisabledRoutingWarning(
+  label: 'AI routing' | 'Rule-based routing',
+  configured: boolean,
+  automatedRoutingEnabled: boolean,
+) {
+  if (!configured || automatedRoutingEnabled) return null;
+  return `${label} is configured for this inbox, but it is not running because Automated routing is off globally.`;
+}
+
+export function getRoutingTooltipLines(disabledWarning: string | null, details: string[]) {
+  return disabledWarning ? [disabledWarning] : details;
+}
+
+export function getSharedEmailRoute<T extends Pick<SupportEmailRoute, 'mailbox_id' | 'active'>>(routes: T[]) {
+  return routes.find((route) => !route.mailbox_id && route.active) ?? routes.find((route) => !route.mailbox_id) ?? null;
+}
+
+export function getWorkspaceDefaultSender<T extends Pick<SupportEmailSender, 'default_scope' | 'active'>>(senders: T[]) {
+  return senders.find((sender) => sender.active && sender.default_scope === 'workspace') ?? null;
+}
+
+export function getEmailForwardingStatus(route: Pick<SupportEmailRoute, 'active' | 'last_inbound_at'> | null | undefined) {
+  if (!route?.active) return null;
+  if (!route.last_inbound_at) {
+    return {
+      label: 'Awaiting email',
+      tone: 'warning' as const,
+      tooltip: 'Forwarding is enabled. Send or forward a test email to finish verification.',
+    };
+  }
+  return {
+    label: 'On',
+    tone: 'success' as const,
+    tooltip: null,
+  };
+}
+
+export function buildRoutingDraft(settings?: SupportInboxSettings | null): RoutingSettingsDraft {
   if (!settings) return DEFAULT_ROUTING_SETTINGS;
   return {
     triage_enabled: settings.triage_enabled,
@@ -306,13 +348,44 @@ function getRuleConditionLines(rule: SupportTriageRule) {
   return lines;
 }
 
-function ManualRuleBadge({ mailboxRules }: { mailboxRules: SupportTriageRule[] }) {
+function RoutingTooltipLines({
+  lines,
+  warning,
+}: {
+  lines: string[];
+  warning: string | null;
+}) {
+  return (
+    <>
+      {getRoutingTooltipLines(warning, lines).map((line) => (
+        <p key={line} className={cn('text-xs', warning && 'text-amber-200')}>
+          {line}
+        </p>
+      ))}
+    </>
+  );
+}
+
+function RoutingWarningIcon({ warning }: { warning: string | null }) {
+  if (!warning) return null;
+  return <Alert01Icon className="ml-1 h-3 w-3 text-amber-600 dark:text-amber-300" />;
+}
+
+function ManualRuleBadge({
+  mailboxRules,
+  automatedRoutingEnabled,
+}: {
+  mailboxRules: SupportTriageRule[];
+  automatedRoutingEnabled: boolean;
+}) {
   const activeRules = mailboxRules.filter((rule) => rule.active);
   const ruleSummary = getMailboxRuleSummary(mailboxRules);
+  const disabledWarning = getDisabledRoutingWarning('Rule-based routing', activeRules.length > 0, automatedRoutingEnabled);
 
   const badge = (
     <Badge variant={ruleSummary === 'No rule' ? 'destructive' : 'secondary'} className="h-5 px-2 text-[11px]">
       {ruleSummary}
+      <RoutingWarningIcon warning={disabledWarning} />
     </Badge>
   );
 
@@ -325,22 +398,18 @@ function ManualRuleBadge({ mailboxRules }: { mailboxRules: SupportTriageRule[] }
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-xs p-2">
         <div className="space-y-2">
-          {activeRules.map((rule) => {
-            const lines = getRuleConditionLines(rule);
-            return (
-              <div key={rule.id} className="space-y-1">
-                {lines.length > 0 ? (
-                  lines.map((line) => (
-                    <p key={line} className="text-xs">
-                      {line}
-                    </p>
-                  ))
-                ) : (
-                  <p className="text-xs">No conditions</p>
-                )}
-              </div>
-            );
-          })}
+          {disabledWarning ? (
+            <RoutingTooltipLines lines={[]} warning={disabledWarning} />
+          ) : (
+            activeRules.map((rule) => {
+              const lines = getRuleConditionLines(rule);
+              return (
+                <div key={rule.id} className="space-y-1">
+                  <RoutingTooltipLines lines={lines.length > 0 ? lines : ['No conditions']} warning={null} />
+                </div>
+              );
+            })
+          )}
         </div>
       </TooltipContent>
     </Tooltip>
@@ -351,8 +420,16 @@ function getAIRoutingDescription(mailbox: SupportMailbox) {
   return mailbox.routing_prompt?.trim() || mailbox.description?.trim() || '';
 }
 
-function AIFallbackBadge({ mailbox }: { mailbox: SupportMailbox }) {
+function AIFallbackBadge({
+  mailbox,
+  automatedRoutingEnabled,
+}: {
+  mailbox: SupportMailbox;
+  automatedRoutingEnabled: boolean;
+}) {
   const description = getAIRoutingDescription(mailbox);
+  const isConfigured = mailbox.triage_eligible && Boolean(description);
+  const disabledWarning = getDisabledRoutingWarning('AI routing', isConfigured, automatedRoutingEnabled);
 
   const badge = (
     <Badge
@@ -363,6 +440,7 @@ function AIFallbackBadge({ mailbox }: { mailbox: SupportMailbox }) {
       )}
     >
       {mailbox.triage_eligible ? (description ? 'On' : 'Needs text') : 'Off'}
+      <RoutingWarningIcon warning={disabledWarning} />
     </Badge>
   );
 
@@ -374,32 +452,57 @@ function AIFallbackBadge({ mailbox }: { mailbox: SupportMailbox }) {
         <span className="inline-flex cursor-default">{badge}</span>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-xs p-2">
-        <p className="text-xs">{description}</p>
+        <div className="space-y-2">
+          <RoutingTooltipLines lines={[description]} warning={disabledWarning} />
+        </div>
       </TooltipContent>
     </Tooltip>
   );
 }
 
-function InboxEmailForwardingStatus({ mailbox, route }: { mailbox: SupportMailbox; route?: SupportEmailRoute | null }) {
+const ACTIVE_INBOX_STATUS = { active: true };
+
+function InboxEmailForwardingStatus({ mailbox, route }: { mailbox: Pick<SupportMailbox, 'active'>; route?: SupportEmailRoute | null }) {
   if (!mailbox.active) return <span className="text-xs text-muted-foreground">Disabled</span>;
-  if (route?.active) {
-    return <Badge variant="secondary" className="h-5 bg-emerald-100 px-2 text-[11px] text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300">On</Badge>;
+  const status = getEmailForwardingStatus(route);
+  if (status) {
+    const badge = (
+      <Badge
+        variant="secondary"
+        className={cn(
+          'h-5 px-2 text-[11px]',
+          status.tone === 'success' && 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300',
+          status.tone === 'warning' && 'bg-amber-100 text-amber-800 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-200',
+        )}
+      >
+        {status.label}
+      </Badge>
+    );
+    if (!status.tooltip) return badge;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex cursor-default">{badge}</span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs">{status.tooltip}</TooltipContent>
+      </Tooltip>
+    );
   }
   return (
-    <a href="./inboxes-routing?tab=email" className="text-xs font-medium text-primary underline-offset-4 hover:underline">
+    <a href="./inboxes-routing?tab=email" className={CONFIGURE_ROUTING_LINK_CLASS}>
       Configure
     </a>
   );
 }
 
-function InboxSenderStatus({ mailbox, sender }: { mailbox: SupportMailbox; sender?: SupportEmailSender | null }) {
+function InboxSenderStatus({ mailbox, sender }: { mailbox: Pick<SupportMailbox, 'active'>; sender?: SupportEmailSender | null }) {
   if (!mailbox.active) return <span className="text-xs text-muted-foreground">Disabled</span>;
   if (sender?.active) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="inline-flex max-w-full cursor-default">
-            <Badge variant="secondary" className="h-5 max-w-full bg-emerald-100 px-2 text-[11px] text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300">
+            <Badge variant="secondary" className="h-5 max-w-full px-2 text-[11px]">
               <span className="truncate">{sender.email}</span>
             </Badge>
           </span>
@@ -409,10 +512,14 @@ function InboxSenderStatus({ mailbox, sender }: { mailbox: SupportMailbox; sende
     );
   }
   return (
-    <a href="./inboxes-routing?tab=senders" className="text-xs font-medium text-primary underline-offset-4 hover:underline">
+    <a href="./inboxes-routing?tab=senders" className={CONFIGURE_ROUTING_LINK_CLASS}>
       Configure
     </a>
   );
+}
+
+function NotApplicableCell() {
+  return <span className="text-xs text-muted-foreground">N/A</span>;
 }
 
 function InboxMembersCell({ mailbox }: { mailbox: SupportMailbox }) {
@@ -477,6 +584,81 @@ function InboxMemberAvatar({ member, className }: { member: SupportMailboxMember
   );
 }
 
+function SharedInboxRoutingRow({
+  emailRoute,
+  emailSender,
+  supportMembers,
+}: {
+  emailRoute?: SupportEmailRoute | null;
+  emailSender?: SupportEmailSender | null;
+  supportMembers: SupportMailboxMember[];
+}) {
+  return (
+    <div className="grid items-center gap-3 border-b px-6 py-3 last:border-b-0 lg:grid-cols-[minmax(240px,1.15fr)_108px_120px_minmax(110px,0.72fr)_120px_108px_80px]">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="h-5 w-5 shrink-0" />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="block truncate text-sm font-medium text-foreground">Shared inbox</span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <InboxMembersSummary members={supportMembers} />
+      </div>
+      <div>
+        <InboxEmailForwardingStatus mailbox={ACTIVE_INBOX_STATUS} route={emailRoute} />
+      </div>
+      <div>
+        <InboxSenderStatus mailbox={ACTIVE_INBOX_STATUS} sender={emailSender} />
+      </div>
+      <div>
+        <NotApplicableCell />
+      </div>
+      <div>
+        <NotApplicableCell />
+      </div>
+      <div className="flex items-center justify-center">
+        <NotApplicableCell />
+      </div>
+    </div>
+  );
+}
+
+function InboxMembersSummary({ members }: { members: SupportMailboxMember[] }) {
+  if (members.length === 0) return <span className="text-xs text-muted-foreground">No access</span>;
+  const memberCount = members.length;
+  const visibleMembers = members.slice(0, 4);
+  const avatarStack = (
+    <div className="flex items-center gap-1.5">
+      <div className="flex -space-x-1.5">
+        {visibleMembers.map((member) => (
+          <InboxMemberAvatar key={member.workspace_member_id} member={member} />
+        ))}
+      </div>
+      <span className="text-xs text-muted-foreground">{memberCount}</span>
+    </div>
+  );
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="inline-flex cursor-default">{avatarStack}</div>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="p-2">
+        <div className="space-y-1.5">
+          {members.map((member) => (
+            <div key={member.workspace_member_id} className="flex items-center gap-2">
+              <InboxMemberAvatar member={member} className="h-5 w-5" />
+              <span className="text-xs">{member.display_name || member.email}</span>
+            </div>
+          ))}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function SortableInboxRoutingRow({
   mailbox,
   mailboxRules,
@@ -487,6 +669,7 @@ function SortableInboxRoutingRow({
   onRestore,
   isArchiving,
   isRestoring,
+  automatedRoutingEnabled,
 }: {
   mailbox: SupportMailbox;
   mailboxRules: SupportTriageRule[];
@@ -497,19 +680,19 @@ function SortableInboxRoutingRow({
   onRestore: (mailbox: SupportMailbox) => void;
   isArchiving: boolean;
   isRestoring: boolean;
+  automatedRoutingEnabled: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: mailbox.id,
     disabled: !mailbox.active,
   });
-  const MailboxIcon = ICON_MAP[mailbox.icon] ?? ICON_MAP.inbox;
 
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        'grid items-center gap-3 border-b px-6 py-3 last:border-b-0 lg:grid-cols-[minmax(240px,1.15fr)_108px_120px_minmax(135px,0.95fr)_120px_108px_80px]',
+        'grid items-center gap-3 border-b px-6 py-3 last:border-b-0 lg:grid-cols-[minmax(240px,1.15fr)_108px_120px_minmax(110px,0.72fr)_120px_108px_80px]',
         !mailbox.active && 'bg-muted/20 opacity-60',
         isDragging && 'opacity-50',
       )}
@@ -528,7 +711,6 @@ function SortableInboxRoutingRow({
         ) : (
           <span className="h-5 w-5 shrink-0" />
         )}
-        {MailboxIcon ? <MailboxIcon className="h-4 w-4 shrink-0 text-muted-foreground" /> : null}
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <InboxNameWithDescription mailbox={mailbox} />
@@ -546,10 +728,10 @@ function SortableInboxRoutingRow({
         <InboxSenderStatus mailbox={mailbox} sender={emailSender} />
       </div>
       <div>
-        {mailbox.active ? <ManualRuleBadge mailboxRules={mailboxRules} /> : <span className="text-xs text-muted-foreground">Disabled</span>}
+        {mailbox.active ? <ManualRuleBadge mailboxRules={mailboxRules} automatedRoutingEnabled={automatedRoutingEnabled} /> : <span className="text-xs text-muted-foreground">Disabled</span>}
       </div>
       <div>
-        {mailbox.active ? <AIFallbackBadge mailbox={mailbox} /> : <span className="text-xs text-muted-foreground">Disabled</span>}
+        {mailbox.active ? <AIFallbackBadge mailbox={mailbox} automatedRoutingEnabled={automatedRoutingEnabled} /> : <span className="text-xs text-muted-foreground">Disabled</span>}
       </div>
       <div className="flex items-center justify-start gap-1 lg:justify-end">
         <IconButtonTooltip label="Edit">
@@ -617,21 +799,7 @@ function ColumnHeaderTooltip({ label, tooltip, className }: { label: string; too
 }
 
 function InboxNameWithDescription({ mailbox }: { mailbox: SupportMailbox }) {
-  const description = mailbox.description?.trim() || mailbox.routing_prompt?.trim() || '';
-  const name = <span className="block truncate text-sm font-medium text-foreground">{mailbox.name}</span>;
-
-  if (!description) return name;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="min-w-0 cursor-default">{name}</span>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-xs">
-        {description}
-      </TooltipContent>
-    </Tooltip>
-  );
+  return <span className="block truncate text-sm font-medium text-foreground">{mailbox.name}</span>;
 }
 
 /* ── Main component ──────────────────────────────────────────────────── */
@@ -645,6 +813,9 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
   const { data: rules = [] } = useSupportTriageRules(workspaceId);
   const { data: emailRoutes = [] } = useSupportEmailRoutes(workspaceId);
   const { data: emailSenders = [] } = useSupportEmailSenders(workspaceId);
+  const { data: members = [] } = useAssignableMembers(workspaceId);
+  const { data: moduleAccess } = useWorkspaceModuleAccess(workspaceId);
+  const { userMemberships } = useWorkspaceTeams(workspaceId);
   const updateSettings = useUpdateChatSettings(workspaceId);
   const archiveMailbox = useArchiveMailbox(workspaceId);
   const updateMailbox = useUpdateMailbox(workspaceId);
@@ -674,6 +845,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
     }
     return grouped;
   }, [emailRoutes]);
+  const sharedEmailRoute = useMemo(() => getSharedEmailRoute(emailRoutes), [emailRoutes]);
   const emailSenderByMailbox = useMemo(() => {
     const grouped = new Map<string, SupportEmailSender>();
     for (const sender of emailSenders) {
@@ -684,6 +856,36 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
     }
     return grouped;
   }, [emailSenders]);
+  const workspaceDefaultSender = useMemo(() => getWorkspaceDefaultSender(emailSenders), [emailSenders]);
+  const automatedRoutingEnabled = installation?.settings.triage_enabled ?? DEFAULT_ROUTING_SETTINGS.triage_enabled;
+  const activeMembers = useMemo(
+    () => members.filter((member) => member.status === 'active'),
+    [members],
+  );
+  const supportGrants = useMemo(
+    () => moduleAccess?.grants.filter((grant) => grant.module === 'support') ?? [],
+    [moduleAccess?.grants],
+  );
+  const supportAccessibleMembers = useMemo(
+    () => filterSupportAccessibleMembers(activeMembers, supportGrants, userMemberships),
+    [activeMembers, supportGrants, userMemberships],
+  );
+  const sharedInboxMembers = useMemo<SupportMailboxMember[]>(
+    () =>
+      supportAccessibleMembers.map((member) => ({
+        workspace_member_id: member.id,
+        user_id: member.user_id,
+        email: member.email,
+        display_name: member.display_name || member.email,
+        avatar_url: member.avatar_url,
+        avatar_style: member.avatar_style,
+        avatar_seed: member.avatar_seed,
+        avatar_background_mode: member.avatar_background_mode,
+        avatar_background_color: member.avatar_background_color,
+        role: member.role,
+      })),
+    [supportAccessibleMembers],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -796,7 +998,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         <RoutingCardHeader
           title="Inboxes"
-          description="Create destinations for teams, topics, or workflows that need their own queue."
+          description="Route conversations to the main inbox or dedicated team queues."
           icon={<InboxIcon className="h-4 w-4" />}
           action={(
             <Button size="sm" onClick={openCreateMailbox} className="shrink-0">
@@ -806,27 +1008,31 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
           )}
         />
 
-        <div className="hidden grid-cols-[minmax(240px,1.15fr)_108px_120px_minmax(135px,0.95fr)_120px_108px_80px] gap-3 border-b bg-muted/25 px-6 py-2 text-xs font-medium text-muted-foreground lg:grid">
-          <ColumnHeaderTooltip label="Inbox" className="pl-[3.75rem]" tooltip="Team inbox shown in the support queue." />
+        <div className="hidden grid-cols-[minmax(240px,1.15fr)_108px_120px_minmax(110px,0.72fr)_120px_108px_80px] gap-3 border-b bg-muted/25 px-6 py-2 text-xs font-medium text-muted-foreground lg:grid">
+          <ColumnHeaderTooltip label="Inbox" className="pl-8" tooltip="Inbox shown in the support queue." />
           <ColumnHeaderTooltip label="Members" tooltip="People who can access this inbox." />
           <ColumnHeaderTooltip label="Email forwarding" tooltip="Shows whether email forwarding is set up to receive emails in this inbox." />
           <ColumnHeaderTooltip label="Sender address" tooltip="Email address used when this inbox sends replies." />
           <ColumnHeaderTooltip label="Rule-based routing" tooltip="Manual rules checked before AI routing." />
           <ColumnHeaderTooltip label="AI routing" tooltip="AI can route here when no manual rule matches." />
-          <span className="text-right">Actions</span>
+          <span className="text-center">Actions</span>
         </div>
 
         {mailboxes.length === 0 ? (
-          <div className="px-6 py-8 text-center">
-            <p className="text-sm font-medium text-foreground">No team inboxes yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">Create an inbox for teams like Billing, Support, or VIP customers.</p>
-            <Button className="mt-4" variant="outline" size="sm" onClick={openCreateMailbox}>
-              <PlusSignIcon className="mr-1.5 h-3.5 w-3.5" />
-              Add inbox
-            </Button>
+          <div>
+            <SharedInboxRoutingRow emailRoute={sharedEmailRoute} emailSender={workspaceDefaultSender} supportMembers={sharedInboxMembers} />
+            <div className="px-6 py-8 text-center">
+              <p className="text-sm font-medium text-foreground">No team inboxes yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">Create an inbox for teams like Billing, Support, or VIP customers.</p>
+              <Button className="mt-4" variant="outline" size="sm" onClick={openCreateMailbox}>
+                <PlusSignIcon className="mr-1.5 h-3.5 w-3.5" />
+                Add inbox
+              </Button>
+            </div>
           </div>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SharedInboxRoutingRow emailRoute={sharedEmailRoute} emailSender={workspaceDefaultSender} supportMembers={sharedInboxMembers} />
             <SortableContext items={activeMailboxes.map((mailbox) => mailbox.id)} strategy={verticalListSortingStrategy}>
               <div>
                 {activeMailboxes.map((mailbox) => (
@@ -841,6 +1047,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
                     onRestore={handleRestoreMailbox}
                     isArchiving={archiveMailbox.isPending}
                     isRestoring={updateMailbox.isPending}
+                    automatedRoutingEnabled={automatedRoutingEnabled}
                   />
                 ))}
                 {archivedMailboxes.map((mailbox) => (
@@ -855,6 +1062,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
                     onRestore={handleRestoreMailbox}
                     isArchiving={archiveMailbox.isPending}
                     isRestoring={updateMailbox.isPending}
+                    automatedRoutingEnabled={automatedRoutingEnabled}
                   />
                 ))}
               </div>

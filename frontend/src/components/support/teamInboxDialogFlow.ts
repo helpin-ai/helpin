@@ -18,8 +18,8 @@ export function getTeamInboxDialogSteps(): TeamInboxDialogStep[] {
     },
     {
       label: 'Routing',
-      description: 'Control how conversations get routed to this inbox.',
-      fields: ['ai_routing_prompt'],
+      description: 'Control how Automated routing sends conversations to this inbox.',
+      fields: ['automated_routing_notice', 'manual_routing_rules', 'ai_routing_prompt'],
     },
   ];
 }
