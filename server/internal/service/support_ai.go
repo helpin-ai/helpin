@@ -1021,6 +1021,23 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			escalationContent = settings.EscalationMessage
 		}
 
+		createSystemEventFirst := systemEventForEscalationReason(reason) == model.SystemEventCustomerRequestedHuman
+		if createSystemEventFirst {
+			escalationSystemMsg = &model.SupportMessage{
+				WorkspaceID:       workspaceID,
+				ConversationID:    conversationID,
+				SenderType:        "agent",
+				MessageType:       "system",
+				SystemEventType:   model.SupportSystemEventTypeStrPtr(systemEventForEscalationReason(reason)),
+				SenderDisplayName: strPtr(helpinAIDisplayName),
+				Content:           "",
+				IsInternal:        true,
+			}
+			if err := s.messageRepo.Create(ctx, escalationSystemMsg); err != nil {
+				return fmt.Errorf("create escalation system event: %w", err)
+			}
+		}
+
 		replyMsg = &model.SupportMessage{
 			WorkspaceID:       workspaceID,
 			ConversationID:    conversationID,
@@ -1033,18 +1050,20 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			return fmt.Errorf("create escalation reply: %w", err)
 		}
 
-		escalationSystemMsg = &model.SupportMessage{
-			WorkspaceID:       workspaceID,
-			ConversationID:    conversationID,
-			SenderType:        "agent",
-			MessageType:       "system",
-			SystemEventType:   model.SupportSystemEventTypeStrPtr(systemEventForEscalationReason(reason)),
-			SenderDisplayName: strPtr(helpinAIDisplayName),
-			Content:           "",
-			IsInternal:        true,
-		}
-		if err := s.messageRepo.Create(ctx, escalationSystemMsg); err != nil {
-			return fmt.Errorf("create escalation system event: %w", err)
+		if !createSystemEventFirst {
+			escalationSystemMsg = &model.SupportMessage{
+				WorkspaceID:       workspaceID,
+				ConversationID:    conversationID,
+				SenderType:        "agent",
+				MessageType:       "system",
+				SystemEventType:   model.SupportSystemEventTypeStrPtr(systemEventForEscalationReason(reason)),
+				SenderDisplayName: strPtr(helpinAIDisplayName),
+				Content:           "",
+				IsInternal:        true,
+			}
+			if err := s.messageRepo.Create(ctx, escalationSystemMsg); err != nil {
+				return fmt.Errorf("create escalation system event: %w", err)
+			}
 		}
 	} else {
 		slog.InfoContext(ctx, "support escalation system message skipped — already present",
@@ -1154,16 +1173,15 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	s.recordSupportEvent(handoffEvent)
 
 	// 4. Broadcast events
-	// Publish the customer-facing reply first — SupportMessageEvent only
-	// attaches Data for non-internal messages, so this is the row that
-	// actually carries payload to widget and admin clients.
+	// Publish in persisted order so inbox clients that refetch on either signal
+	// render the same sequence as a later full reload.
+	if escalationSystemMsg != nil && systemEventForEscalationReason(reason) == model.SystemEventCustomerRequestedHuman {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, escalationSystemMsg, "ai:escalation"))
+	}
 	if replyMsg != nil {
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, replyMsg, "ai:escalation"))
 	}
-	// Then publish the internal system event so the inbox renders the
-	// handoff pill. The websocket factory strips Data for internal rows;
-	// inbox clients refetch on this signal.
-	if escalationSystemMsg != nil {
+	if escalationSystemMsg != nil && systemEventForEscalationReason(reason) != model.SystemEventCustomerRequestedHuman {
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, escalationSystemMsg, "ai:escalation"))
 	}
 	s.wsPublisher.Publish(websocket.Event{

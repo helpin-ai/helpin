@@ -82,6 +82,7 @@ describe('ConversationList presence resync', () => {
         ],
       },
       isLoading: false,
+      isFetching: false,
       isFetchingNextPage: false,
       hasNextPage: false,
       fetchNextPage: vi.fn(),
@@ -149,6 +150,63 @@ describe('ConversationList presence resync', () => {
     })
 
     expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-2')
+    expect(useSupportInboxStore.getState().activePanel).toBe('thread')
+
+    act(() => root.unmount())
+  })
+
+  it('shows a loader while an empty inbox switch is fetching, then selects the first loaded row', () => {
+    mockUseInfiniteConversations.mockReturnValue({
+      data: {
+        pages: [
+          {
+            data: [],
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: true,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      error: null,
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    expect(container.textContent).not.toContain('Inbox is clear')
+    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0)
+    expect(useSupportInboxStore.getState().selectedConversationId).toBeNull()
+
+    mockUseInfiniteConversations.mockReturnValue({
+      data: {
+        pages: [
+          {
+            data: [
+              { id: 'conv-loaded', status: 'open', updated_at: '2026-03-27T20:02:00Z' },
+            ],
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: false,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      error: null,
+    })
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-loaded')
     expect(useSupportInboxStore.getState().activePanel).toBe('thread')
 
     act(() => root.unmount())

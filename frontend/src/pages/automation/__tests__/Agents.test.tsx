@@ -9,9 +9,12 @@ import {
   AgentsListTable,
   canEditWorkspacePresetVersionDescription,
   getAgentAnalyticsSummary,
+  getAgentRecentRunSummary,
+  getAgentTokenUsageSummary,
   getAgentProviderConfigState,
+  sortAgentsForDisplay,
 } from '../Agents';
-import type { Agent, AgentModelProviderOption, AgentPresetDefinition } from '@/lib/pmTypes';
+import type { Agent, AgentModelProviderOption, AgentPresetDefinition, AgentRun } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -81,6 +84,114 @@ describe('getAgentAnalyticsSummary', () => {
   });
 });
 
+const baseRun: AgentRun = {
+  id: 'run-1234567890',
+  workspace_id: 'workspace-1',
+  agent_id: 'agent-1',
+  target_type: 'task',
+  target_id: 'task-1',
+  runtime_kind: 'native_sdk',
+  invocation_mode: 'interactive',
+  approval_state: 'not_required',
+  pause_reason: 'none',
+  status: 'completed',
+  input: {},
+  output_summary: {},
+  cached_input_tokens: 0,
+  input_tokens: 0,
+  output_tokens: 0,
+  tokens_used: 42,
+  created_at: '2026-06-08T00:00:00Z',
+  updated_at: '2026-06-08T00:00:00Z',
+};
+
+describe('getAgentRecentRunSummary', () => {
+  it('uses task keys and titles together when both are available', () => {
+    const summary = getAgentRecentRunSummary({
+      ...baseRun,
+      target_info: {
+        target_type: 'task',
+        target_id: 'task-1',
+        task_key: 'HELP-42',
+        title: 'Fix inbox selection after empty queue',
+      },
+      input: { trigger: { source: 'automation_rule', trigger_type: 'task.state_entered' } },
+    });
+
+    expect(summary.title).toBe('HELP-42 · Fix inbox selection after empty queue');
+    expect(summary.subtitle).toBe('Task · State changed');
+  });
+
+  it('falls back to useful copy instead of repeating the target type', () => {
+    const summary = getAgentRecentRunSummary({
+      ...baseRun,
+      target_info: undefined,
+      input: {},
+    });
+
+    expect(summary.title).toBe('Task run');
+    expect(summary.subtitle).toBe('Task · Interactive run');
+    expect(summary.subtitle.toLowerCase()).not.toBe(summary.title.toLowerCase());
+  });
+
+  it('summarizes repository runs with repository and trigger context', () => {
+    const summary = getAgentRecentRunSummary({
+      ...baseRun,
+      target_type: 'repository',
+      target_id: 'repo-1',
+      repo_full_name: 'helpin-ai/helpin',
+      base_branch: 'main',
+      input: { trigger: { source: 'automation_rule', trigger_type: 'github.pull_request_merged' } },
+    });
+
+    expect(summary.title).toBe('helpin-ai/helpin');
+    expect(summary.subtitle).toBe('Repository · PR merged · main');
+  });
+
+  it('uses document titles when available', () => {
+    const summary = getAgentRecentRunSummary({
+      ...baseRun,
+      target_type: 'document',
+      target_id: 'doc-1',
+      target_info: {
+        target_type: 'document',
+        target_id: 'doc-1',
+        title: 'Q3 launch plan',
+      },
+      input: { trigger: { source: 'manual', trigger_type: 'manual' } },
+    });
+
+    expect(summary.title).toBe('Q3 launch plan');
+    expect(summary.subtitle).toBe('Document · Manual run');
+  });
+});
+
+describe('getAgentTokenUsageSummary', () => {
+  it('does not show a lifetime total below the current month usage', () => {
+    expect(getAgentTokenUsageSummary({
+      ...baseAgent,
+      tokens_used_this_month: 401_677,
+      tokens_used_total: 286_294,
+    })).toEqual({
+      monthlyTokensUsed: 401_677,
+      totalTokensUsed: 401_677,
+      totalTokensAdjusted: true,
+    });
+  });
+
+  it('uses the recorded lifetime total when it is higher than monthly usage', () => {
+    expect(getAgentTokenUsageSummary({
+      ...baseAgent,
+      tokens_used_this_month: 10_000,
+      tokens_used_total: 286_294,
+    })).toEqual({
+      monthlyTokensUsed: 10_000,
+      totalTokensUsed: 286_294,
+      totalTokensAdjusted: false,
+    });
+  });
+});
+
 const baseAgent: Agent = {
   id: 'agent-1',
   workspace_id: 'workspace-1',
@@ -116,6 +227,24 @@ describe('AgentActions', () => {
     );
 
     expect(container?.querySelector('[aria-label="More agent actions"]')).not.toBeNull();
+  });
+});
+
+describe('sortAgentsForDisplay', () => {
+  it('keeps system agents first and sorts each group alphabetically', () => {
+    const agents = [
+      { ...baseAgent, id: 'custom-zeta', is_system: false, name: 'Zeta' },
+      { ...baseAgent, id: 'system-beta', is_system: true, name: 'Beta' },
+      { ...baseAgent, id: 'custom-alpha', is_system: false, name: 'Alpha' },
+      { ...baseAgent, id: 'system-alpha', is_system: true, name: 'Alpha' },
+    ];
+
+    expect(sortAgentsForDisplay(agents).map((agent) => agent.id)).toEqual([
+      'system-alpha',
+      'system-beta',
+      'custom-alpha',
+      'custom-zeta',
+    ]);
   });
 });
 

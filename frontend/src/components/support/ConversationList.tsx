@@ -287,6 +287,7 @@ export function ConversationList({
   const {
     data: response,
     isLoading,
+    isFetching,
     isFetchingNextPage,
     hasNextPage,
     fetchNextPage,
@@ -373,7 +374,9 @@ export function ConversationList({
   const activeFilterCount = activeCustomViewId ? (customViewDirty ? Math.max(1, customFilterChangeCount) : 0) : builtinFilterChangeCount;
   const canSaveCurrentView = activeCustomViewId ? customViewDirty : builtinFilterChangeCount > 0;
   const canUpdateCurrentView = activeCustomViewId ? customViewDirty : builtinFilterChangeCount > 0;
-  const shouldShowEmptyState = !isLoading && filteredConversations.length === 0 && !error && !hasNextPage;
+  const isSwitchingEmptyList = !!isFetching && !isFetchingNextPage && filteredConversations.length === 0;
+  const shouldShowListSkeleton = isLoading || isSwitchingEmptyList;
+  const shouldShowEmptyState = !shouldShowListSkeleton && filteredConversations.length === 0 && !error && !hasNextPage;
   const shouldShowOnboardingEmptyState =
     shouldShowEmptyState &&
     navFilter === 'inbox' &&
@@ -385,10 +388,10 @@ export function ConversationList({
   }, [onOnboardingEmptyChange, shouldShowOnboardingEmptyState]);
 
   useEffect(() => {
-    if (selectedConversationId || isLoading || error || filteredConversations.length === 0) return;
+    if (selectedConversationId || shouldShowListSkeleton || error || filteredConversations.length === 0) return;
     const firstConversation = filteredConversations[0];
     handleSelect(firstConversation.id, firstConversation.unread_count);
-  }, [error, filteredConversations, handleSelect, isLoading, selectedConversationId]);
+  }, [error, filteredConversations, handleSelect, selectedConversationId, shouldShowListSkeleton]);
 
   useEffect(() => {
     if (!wsSend || !wsConnected || filteredConversations.length === 0) return;
@@ -849,7 +852,7 @@ export function ConversationList({
         data-support-conversation-scroll
         onScroll={handleListScroll}
       >
-        {isLoading && (
+        {shouldShowListSkeleton && (
           <div>
             <SkeletonRow />
             <SkeletonRow />
