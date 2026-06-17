@@ -21,6 +21,10 @@ func NewSupportCoverageAnalysisRepository(db *gorm.DB) *SupportCoverageAnalysisR
 	return &SupportCoverageAnalysisRepository{db: db}
 }
 
+func (r *SupportCoverageAnalysisRepository) WithTx(tx *gorm.DB) *SupportCoverageAnalysisRepository {
+	return &SupportCoverageAnalysisRepository{db: tx}
+}
+
 func (r *SupportCoverageAnalysisRepository) CreateRun(ctx context.Context, run *model.SupportCoverageAnalysisRun) (*model.SupportCoverageAnalysisRun, error) {
 	if run.WorkspaceID == "" || run.WindowStart.IsZero() || run.WindowEnd.IsZero() {
 		return nil, fmt.Errorf("workspace_id, window_start, and window_end are required")
@@ -178,6 +182,48 @@ func (r *SupportCoverageAnalysisRepository) SetConversationAnalysisGap(ctx conte
 		Where("id = ?", analysisID).
 		Updates(updates).Error; err != nil {
 		return fmt.Errorf("set conversation analysis gap: %w", err)
+	}
+	return nil
+}
+
+func (r *SupportCoverageAnalysisRepository) ListUnmaterializedGapAnalysesForRun(ctx context.Context, workspaceID, runID string, limit int) ([]model.SupportCoverageConversationAnalysis, error) {
+	if workspaceID == "" || runID == "" {
+		return nil, fmt.Errorf("workspace_id and run_id are required")
+	}
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	var analyses []model.SupportCoverageConversationAnalysis
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND run_id = ? AND has_gap = ? AND gap_id IS NULL AND status = ?",
+			workspaceID, runID, true, model.SupportCoverageConversationAnalysisStatusAnalyzed).
+		Order("created_at ASC, id ASC").
+		Limit(limit).
+		Find(&analyses).Error; err != nil {
+		return nil, fmt.Errorf("list unmaterialized gap analyses: %w", err)
+	}
+	return analyses, nil
+}
+
+func (r *SupportCoverageAnalysisRepository) UpdateAnalysisEmbedding(ctx context.Context, analysisID string, embedding string, provider string, modelName string, version string, dimensions int, textHash string, updatedAt time.Time) error {
+	if analysisID == "" {
+		return fmt.Errorf("analysis_id is required")
+	}
+	updates := map[string]interface{}{
+		"embedding":            embedding,
+		"embedding_provider":   provider,
+		"embedding_model":      modelName,
+		"embedding_version":    version,
+		"embedding_dimensions": dimensions,
+		"embedding_text_hash":  textHash,
+		"embedding_updated_at": updatedAt,
+		"updated_at":           time.Now(),
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageConversationAnalysis{}).
+		Where("id = ?", analysisID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update analysis embedding: %w", err)
 	}
 	return nil
 }

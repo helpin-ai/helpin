@@ -235,6 +235,65 @@ func TestSupportCoverageAnalysisRepository_RecordConversationAnalysisIdempotentB
 	}
 }
 
+func TestSupportCoverageAnalysisRepository_ListUnmaterializedGapAnalysesForRun(t *testing.T) {
+	db := setupSupportCoverageAnalysisTestDB(t)
+	repo := NewSupportCoverageAnalysisRepository(db)
+	ctx := context.Background()
+	gapID := "gap-1"
+
+	seeds := []*model.SupportCoverageConversationAnalysis{
+		{
+			ID:              "analysis-open",
+			WorkspaceID:     "ws-1",
+			RunID:           "run-1",
+			ConversationID:  "conversation-1",
+			Status:          model.SupportCoverageConversationAnalysisStatusAnalyzed,
+			HasGap:          true,
+			TranscriptHash:  "hash-1",
+			AnalyzerVersion: "v1",
+			CustomerNeed:    "Customers need password reset emails.",
+			RawOutput:       json.RawMessage(`{}`),
+		},
+		{
+			ID:              "analysis-materialized",
+			WorkspaceID:     "ws-1",
+			RunID:           "run-1",
+			ConversationID:  "conversation-2",
+			Status:          model.SupportCoverageConversationAnalysisStatusAnalyzed,
+			HasGap:          true,
+			GapID:           &gapID,
+			TranscriptHash:  "hash-2",
+			AnalyzerVersion: "v1",
+			CustomerNeed:    "Customers need password reset emails.",
+			RawOutput:       json.RawMessage(`{}`),
+		},
+		{
+			ID:              "analysis-no-gap",
+			WorkspaceID:     "ws-1",
+			RunID:           "run-1",
+			ConversationID:  "conversation-3",
+			Status:          model.SupportCoverageConversationAnalysisStatusAnalyzed,
+			HasGap:          false,
+			TranscriptHash:  "hash-3",
+			AnalyzerVersion: "v1",
+			RawOutput:       json.RawMessage(`{}`),
+		},
+	}
+	for _, seed := range seeds {
+		if err := repo.RecordConversationAnalysis(ctx, seed); err != nil {
+			t.Fatalf("RecordConversationAnalysis %s: %v", seed.ID, err)
+		}
+	}
+
+	items, err := repo.ListUnmaterializedGapAnalysesForRun(ctx, "ws-1", "run-1", 50)
+	if err != nil {
+		t.Fatalf("ListUnmaterializedGapAnalysesForRun: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "analysis-open" {
+		t.Fatalf("unexpected unmaterialized analyses: %+v", items)
+	}
+}
+
 func TestSupportCoverageAnalysisRepository_UpsertAndListRetrievalTraces(t *testing.T) {
 	db := setupSupportCoverageAnalysisTestDB(t)
 	repo := NewSupportCoverageAnalysisRepository(db)

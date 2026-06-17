@@ -280,6 +280,52 @@ func TestSupportCoverageRepository_UpsertGap(t *testing.T) {
 	}
 }
 
+func TestSupportCoverageRepository_UpsertOpenGapByDedupeKeyNoBump(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	gap := &model.SupportCoverageGap{
+		ID:          "gap-no-bump",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "semantic:refunds",
+		Title:       "Refund policy missing",
+		Status:      model.SupportCoverageGapStatusOpen,
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	}
+
+	created, isNew, err := repo.UpsertOpenGapByDedupeKeyNoBump(ctx, gap)
+	if err != nil {
+		t.Fatalf("UpsertOpenGapByDedupeKeyNoBump: %v", err)
+	}
+	if !isNew {
+		t.Fatal("expected new gap")
+	}
+	if created.EvidenceCount != 0 {
+		t.Fatalf("new gap evidence_count=%d, want 0", created.EvidenceCount)
+	}
+
+	again, isNew, err := repo.UpsertOpenGapByDedupeKeyNoBump(ctx, &model.SupportCoverageGap{
+		WorkspaceID: "ws-1",
+		DedupeKey:   "semantic:refunds",
+		LastSeenAt:  now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("UpsertOpenGapByDedupeKeyNoBump again: %v", err)
+	}
+	if isNew {
+		t.Fatal("expected existing gap")
+	}
+	if again.ID != created.ID {
+		t.Fatalf("existing gap ID=%q, want %q", again.ID, created.ID)
+	}
+	if again.EvidenceCount != 0 {
+		t.Fatalf("existing gap evidence_count=%d, want 0", again.EvidenceCount)
+	}
+}
+
 func TestSupportCoverageRepository_CreateEvidence(t *testing.T) {
 	db := setupSupportCoverageTestDB(t)
 	repo := NewSupportCoverageRepository(db)
@@ -296,6 +342,98 @@ func TestSupportCoverageRepository_CreateEvidence(t *testing.T) {
 	}
 	if err := repo.CreateEvidence(ctx, evidence); err != nil {
 		t.Fatalf("CreateEvidence: %v", err)
+	}
+}
+
+func TestSupportCoverageRepository_CreateEvidenceIfAbsentBySourceKey(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	inserted, err := repo.CreateEvidenceIfAbsent(ctx, &model.SupportGapEvidence{
+		ID:           "ev-1",
+		GapID:        "gap-1",
+		WorkspaceID:  "ws-1",
+		SourceKey:    "coverage_analysis:analysis-1",
+		EvidenceType: model.SupportCoverageGapSourceDailyConversationAnalysis,
+		SourceSignal: model.SupportCoverageGapSourceDailyConversationAnalysis,
+		CreatedAt:    now,
+	})
+	if err != nil {
+		t.Fatalf("CreateEvidenceIfAbsent first: %v", err)
+	}
+	if !inserted {
+		t.Fatal("expected first evidence insert")
+	}
+
+	inserted, err = repo.CreateEvidenceIfAbsent(ctx, &model.SupportGapEvidence{
+		ID:           "ev-duplicate",
+		GapID:        "gap-1",
+		WorkspaceID:  "ws-1",
+		SourceKey:    "coverage_analysis:analysis-1",
+		EvidenceType: model.SupportCoverageGapSourceDailyConversationAnalysis,
+		SourceSignal: model.SupportCoverageGapSourceDailyConversationAnalysis,
+		CreatedAt:    now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("CreateEvidenceIfAbsent duplicate: %v", err)
+	}
+	if inserted {
+		t.Fatal("expected duplicate source_key to be ignored")
+	}
+
+	var count int64
+	if err := db.Model(&model.SupportGapEvidence{}).Where("workspace_id = ? AND source_key = ?", "ws-1", "coverage_analysis:analysis-1").Count(&count).Error; err != nil {
+		t.Fatalf("count evidence: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("evidence count=%d, want 1", count)
+	}
+}
+
+func TestSupportCoverageRepository_UpdateGapEmbedding(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	if _, _, err := repo.UpsertOpenGapByDedupeKeyNoBump(ctx, &model.SupportCoverageGap{
+		ID:          "gap-embedding",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "semantic:embedding",
+		Title:       "Embedding test",
+		Status:      model.SupportCoverageGapStatusOpen,
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	}); err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+
+	if err := repo.UpdateGapEmbedding(ctx, "gap-embedding", "[0.1,0.2]", "openai", "text-embedding-3-small", "coverage-gap-canonical-v1", 1536, "hash-1", now); err != nil {
+		t.Fatalf("UpdateGapEmbedding: %v", err)
+	}
+
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap, "id = ?", "gap-embedding").Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.Embedding != "[0.1,0.2]" || gap.EmbeddingModel != "text-embedding-3-small" || gap.EmbeddingTextHash != "hash-1" {
+		t.Fatalf("embedding fields not persisted: %+v", gap)
+	}
+}
+
+func TestSupportCoverageRepository_FindNearestOpenGapsByEmbeddingSQLiteReturnsEmpty(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+
+	items, err := repo.FindNearestOpenGapsByEmbedding(ctx, "ws-1", "[0.1,0.2]", "openai", "text-embedding-3-small", "coverage-gap-canonical-v1", 1536, 10)
+	if err != nil {
+		t.Fatalf("FindNearestOpenGapsByEmbedding: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("items=%d, want 0 on sqlite", len(items))
 	}
 }
 

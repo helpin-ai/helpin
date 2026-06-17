@@ -15,6 +15,13 @@ type DocsChunkRepository struct {
 	db *gorm.DB
 }
 
+const (
+	defaultChunkEmbeddingProvider   = "openai"
+	defaultChunkEmbeddingModel      = "text-embedding-3-small"
+	defaultChunkEmbeddingVersion    = "content-chunk-v1"
+	defaultChunkEmbeddingDimensions = 1536
+)
+
 // DocsChunkSearchResult is a chunk-level retrieval result.
 type DocsChunkSearchResult struct {
 	ID            string  `json:"id"`
@@ -47,7 +54,9 @@ func (r *DocsChunkRepository) ReplaceDocumentChunks(ctx context.Context, documen
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "document_id"}, {Name: "chunk_index"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"block_id", "block_range", "title", "content", "content_hash", "embedding", "updated_at",
+				"block_id", "block_range", "title", "content", "content_hash", "embedding",
+				"embedding_provider", "embedding_model", "embedding_version", "embedding_dimensions",
+				"updated_at",
 			}),
 		}).Create(&chunks).Error; err != nil {
 			return fmt.Errorf("upsert document chunks: %w", err)
@@ -201,11 +210,15 @@ func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID stri
 		  AND d.status = 'published'
 		  AND d.deleted_at IS NULL
 		  AND ha.public_published_at IS NOT NULL
+		  AND c.embedding_provider = ?
+		  AND c.embedding_model = ?
+		  AND c.embedding_version = ?
+		  AND c.embedding_dimensions = ?
 		ORDER BY c.embedding <=> CAST(? AS vector) ASC, c.updated_at DESC
 		LIMIT ?
 	`
 	var results []DocsChunkSearchResult
-	if err := r.db.WithContext(ctx).Raw(sql, queryEmbedding, workspaceID, spaceIDs, queryEmbedding, limit).Scan(&results).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(sql, queryEmbedding, workspaceID, spaceIDs, defaultChunkEmbeddingProvider, defaultChunkEmbeddingModel, defaultChunkEmbeddingVersion, defaultChunkEmbeddingDimensions, queryEmbedding, limit).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("vector chunk search: %w", err)
 	}
 	return results, nil

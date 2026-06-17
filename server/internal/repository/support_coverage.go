@@ -26,6 +26,10 @@ func NewSupportCoverageRepository(db *gorm.DB) *SupportCoverageRepository {
 	return &SupportCoverageRepository{db: db}
 }
 
+func (r *SupportCoverageRepository) WithTx(tx *gorm.DB) *SupportCoverageRepository {
+	return &SupportCoverageRepository{db: tx}
+}
+
 func (r *SupportCoverageRepository) ListGapsByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.SupportCoverageGap, error) {
 	if len(ids) == 0 {
 		return []model.SupportCoverageGap{}, nil
@@ -70,6 +74,77 @@ func (r *SupportCoverageRepository) ListOpenGapsForClusterRebuild(ctx context.Co
 		Find(&items).Error
 	if err != nil {
 		return nil, fmt.Errorf("list open gaps for cluster rebuild: %w", err)
+	}
+	return items, nil
+}
+
+func (r *SupportCoverageRepository) FindNearestOpenGapsByEmbedding(ctx context.Context, workspaceID, embedding, provider, modelName, version string, dimensions int, limit int) ([]model.SupportCoverageGapListItem, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if embedding == "" || r.db.Dialector.Name() != "postgres" {
+		return []model.SupportCoverageGapListItem{}, nil
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	return r.findNearestGapsByEmbedding(ctx, workspaceID, embedding, provider, modelName, version, dimensions, model.SupportCoverageGapStatusOpen, nil, limit)
+}
+
+func (r *SupportCoverageRepository) FindNearestRecentClosedGapsByEmbedding(ctx context.Context, workspaceID, embedding, provider, modelName, version string, dimensions int, since time.Time, limit int) ([]model.SupportCoverageGapListItem, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if embedding == "" || r.db.Dialector.Name() != "postgres" {
+		return []model.SupportCoverageGapListItem{}, nil
+	}
+	if since.IsZero() {
+		return []model.SupportCoverageGapListItem{}, nil
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	return r.findNearestGapsByEmbedding(ctx, workspaceID, embedding, provider, modelName, version, dimensions, model.SupportCoverageGapStatusDone, &since, limit)
+}
+
+func (r *SupportCoverageRepository) findNearestGapsByEmbedding(ctx context.Context, workspaceID, embedding, provider, modelName, version string, dimensions int, status string, closedSince *time.Time, limit int) ([]model.SupportCoverageGapListItem, error) {
+	evidenceCutoff := time.Now().AddDate(0, 0, -30)
+	customerNeedExpr := "COALESCE(latest_evidence.metadata ->> 'customer_need', '')"
+	baseSQL := `
+		SELECT g.*,
+		       COALESCE(t.title, '') AS topic_title,
+		       COALESCE(t.canonical_title, t.title, '') AS canonical_title,
+		       COALESCE(latest_evidence.excerpt, '') AS evidence_text,
+		       ` + customerNeedExpr + ` AS customer_need_text,
+		       (SELECT COUNT(*) FROM support_gap_suggestions s WHERE s.gap_id = g.id) AS suggestion_count,
+		       (SELECT ga.document_id FROM support_coverage_gap_articles ga WHERE ga.gap_id = g.id LIMIT 1) AS related_article_id,
+		       (SELECT COUNT(DISTINCT COALESCE(e.conversation_id, e.id)) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d
+		FROM support_coverage_gaps g
+		LEFT JOIN support_coverage_topics t ON t.id = g.topic_id
+		LEFT JOIN support_gap_evidence latest_evidence ON latest_evidence.id = (
+			SELECT e2.id FROM support_gap_evidence e2 WHERE e2.gap_id = g.id ORDER BY e2.created_at DESC LIMIT 1
+		)
+		WHERE g.workspace_id = ?
+		  AND g.status = ?
+		  AND g.embedding IS NOT NULL
+		  AND g.embedding_provider = ?
+		  AND g.embedding_model = ?
+		  AND g.embedding_version = ?
+		  AND g.embedding_dimensions = ?
+	`
+	args := []interface{}{evidenceCutoff, workspaceID, status, provider, modelName, version, dimensions}
+	if closedSince != nil {
+		baseSQL += " AND g.closed_at >= ?"
+		args = append(args, *closedSince)
+	}
+	baseSQL += `
+		ORDER BY g.embedding <=> CAST(? AS vector) ASC, g.last_seen_at DESC
+		LIMIT ?
+	`
+	args = append(args, embedding, limit)
+	var items []model.SupportCoverageGapListItem
+	if err := r.db.WithContext(ctx).Raw(baseSQL, args...).Scan(&items).Error; err != nil {
+		return nil, fmt.Errorf("find nearest coverage gaps by embedding: %w", err)
 	}
 	return items, nil
 }
@@ -265,6 +340,62 @@ func (r *SupportCoverageRepository) UpsertOpenGapByTopic(ctx context.Context, ga
 	return gap, true, nil
 }
 
+func (r *SupportCoverageRepository) UpsertOpenGapByDedupeKeyNoBump(ctx context.Context, gap *model.SupportCoverageGap) (*model.SupportCoverageGap, bool, error) {
+	if gap.WorkspaceID == "" || gap.DedupeKey == "" {
+		return nil, false, fmt.Errorf("workspace_id and dedupe_key are required")
+	}
+
+	var existing model.SupportCoverageGap
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND dedupe_key = ? AND status = ?", gap.WorkspaceID, gap.DedupeKey, model.SupportCoverageGapStatusOpen).
+		First(&existing).Error
+	if err == nil {
+		updates := map[string]interface{}{
+			"last_seen_at": gap.LastSeenAt,
+			"updated_at":   time.Now(),
+		}
+		if gap.LastSeenAt.IsZero() {
+			delete(updates, "last_seen_at")
+		}
+		if len(updates) > 1 {
+			if err := r.db.WithContext(ctx).Model(&existing).Updates(updates).Error; err != nil {
+				return nil, false, fmt.Errorf("touch open dedupe gap: %w", err)
+			}
+			if !gap.LastSeenAt.IsZero() {
+				existing.LastSeenAt = gap.LastSeenAt
+			}
+		}
+		return &existing, false, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return nil, false, fmt.Errorf("lookup open dedupe gap: %w", err)
+	}
+
+	if gap.ID == "" {
+		gap.ID = uuid.New().String()
+	}
+	if gap.Status == "" {
+		gap.Status = model.SupportCoverageGapStatusOpen
+	}
+	if gap.GapKind == "" {
+		gap.GapKind = "content"
+	}
+	gap.EvidenceCount = 0
+	if gap.Metadata == nil {
+		gap.Metadata = []byte("{}")
+	}
+	if err := r.db.WithContext(ctx).Create(gap).Error; err != nil {
+		var raceExisting model.SupportCoverageGap
+		if findErr := r.db.WithContext(ctx).
+			Where("workspace_id = ? AND dedupe_key = ? AND status = ?", gap.WorkspaceID, gap.DedupeKey, model.SupportCoverageGapStatusOpen).
+			First(&raceExisting).Error; findErr == nil {
+			return &raceExisting, false, nil
+		}
+		return nil, false, fmt.Errorf("create open dedupe gap: %w", err)
+	}
+	return gap, true, nil
+}
+
 func (r *SupportCoverageRepository) IncrementOpenGapEvidence(ctx context.Context, workspaceID, gapID string, lastSeenAt time.Time) (*model.SupportCoverageGap, error) {
 	if workspaceID == "" || gapID == "" {
 		return nil, fmt.Errorf("workspace_id and gap_id are required")
@@ -300,6 +431,87 @@ func (r *SupportCoverageRepository) CreateEvidence(ctx context.Context, evidence
 	}
 	if err := r.db.WithContext(ctx).Create(evidence).Error; err != nil {
 		return fmt.Errorf("create gap evidence: %w", err)
+	}
+	return nil
+}
+
+func (r *SupportCoverageRepository) CreateEvidenceIfAbsent(ctx context.Context, evidence *model.SupportGapEvidence) (bool, error) {
+	if evidence.GapID == "" || evidence.WorkspaceID == "" {
+		return false, fmt.Errorf("gap_id and workspace_id are required")
+	}
+	if evidence.ID == "" {
+		evidence.ID = uuid.New().String()
+	}
+	if evidence.Metadata == nil {
+		evidence.Metadata = []byte("{}")
+	}
+	if evidence.SourceKey != "" && r.db.Dialector.Name() == "sqlite" {
+		var count int64
+		if err := r.db.WithContext(ctx).
+			Model(&model.SupportGapEvidence{}).
+			Where("workspace_id = ? AND source_key = ?", evidence.WorkspaceID, evidence.SourceKey).
+			Count(&count).Error; err != nil {
+			return false, fmt.Errorf("lookup gap evidence source key: %w", err)
+		}
+		if count > 0 {
+			return false, nil
+		}
+	}
+	tx := r.db.WithContext(ctx)
+	if evidence.SourceKey != "" {
+		tx = tx.Clauses(clause.OnConflict{DoNothing: true})
+	}
+	result := tx.Create(evidence)
+	if result.Error != nil {
+		return false, fmt.Errorf("create gap evidence if absent: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
+}
+
+func (r *SupportCoverageRepository) IncrementGapEvidenceAfterInsert(ctx context.Context, workspaceID, gapID string, lastSeenAt time.Time) error {
+	if workspaceID == "" || gapID == "" {
+		return fmt.Errorf("workspace_id and gap_id are required")
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageGap{}).
+		Where("id = ? AND workspace_id = ?", gapID, workspaceID).
+		Updates(map[string]interface{}{
+			"evidence_count": gorm.Expr("evidence_count + 1"),
+			"last_seen_at":   lastSeenAt,
+			"updated_at":     time.Now(),
+		})
+	if result.Error != nil {
+		return fmt.Errorf("increment gap evidence after insert: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("gap not found")
+	}
+	return nil
+}
+
+func (r *SupportCoverageRepository) UpdateGapEmbedding(ctx context.Context, gapID string, embedding string, provider string, modelName string, version string, dimensions int, textHash string, updatedAt time.Time) error {
+	if gapID == "" {
+		return fmt.Errorf("gap_id is required")
+	}
+	updates := map[string]interface{}{
+		"embedding":            embedding,
+		"embedding_provider":   provider,
+		"embedding_model":      modelName,
+		"embedding_version":    version,
+		"embedding_dimensions": dimensions,
+		"embedding_text_hash":  textHash,
+		"embedding_updated_at": updatedAt,
+		"updated_at":           time.Now(),
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageGap{}).
+		Where("id = ?", gapID).
+		Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("update gap embedding: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("gap not found")
 	}
 	return nil
 }

@@ -45,7 +45,9 @@ func (r *SupportContentChunkRepository) ReplacePageChunks(ctx context.Context, p
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "page_id"}, {Name: "chunk_index"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"title", "url", "content", "content_hash", "embedding", "updated_at",
+				"title", "url", "content", "content_hash", "embedding",
+				"embedding_provider", "embedding_model", "embedding_version", "embedding_dimensions",
+				"updated_at",
 			}),
 		}).Create(&chunks).Error; err != nil {
 			return fmt.Errorf("upsert content page chunks: %w", err)
@@ -166,11 +168,15 @@ func (r *SupportContentChunkRepository) vectorSearch(ctx context.Context, worksp
 		FROM support_content_chunks c
 		WHERE c.workspace_id = ?
 		  AND c.content_source_id IN ?
+		  AND c.embedding_provider = ?
+		  AND c.embedding_model = ?
+		  AND c.embedding_version = ?
+		  AND c.embedding_dimensions = ?
 		ORDER BY c.embedding <=> CAST(? AS vector) ASC, c.updated_at DESC
 		LIMIT ?
 	`
 	var results []SupportContentChunkSearchResult
-	if err := r.db.WithContext(ctx).Raw(sql, queryEmbedding, workspaceID, sourceIDs, queryEmbedding, limit).Scan(&results).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(sql, queryEmbedding, workspaceID, sourceIDs, defaultChunkEmbeddingProvider, defaultChunkEmbeddingModel, defaultChunkEmbeddingVersion, defaultChunkEmbeddingDimensions, queryEmbedding, limit).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("vector content chunk search: %w", err)
 	}
 	return results, nil
