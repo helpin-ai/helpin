@@ -496,7 +496,8 @@ export function filterSupportConversations(
     }
   }
 
-  if (aiStates) {
+  const shouldApplyAIStateFilter = !!aiStates && (aiStates.length > 0 || navFilter === 'inbox');
+  if (shouldApplyAIStateFilter) {
     result = result.filter((conversation) => {
       if (!hasAnyAIState(conversation)) return true;
       return aiStates.some((aiState) => matchesAIState(conversation, aiState));
