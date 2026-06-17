@@ -101,6 +101,28 @@ describe('filterSupportConversations', () => {
     }).map((conversation) => conversation.id)).toEqual(['spam']);
   });
 
+  it('does not hide AI handoff conversations in Waiting when no AI filter is selected', () => {
+    const conversations = [
+      buildConversation({
+        id: 'waiting-ai-handoff',
+        status: 'waiting_on_customer',
+        flow_state: 'assigned_to_human',
+        ai_state: 'escalated',
+        ai_escalated_at: '2026-04-28T05:27:47.595736Z',
+      }),
+    ];
+
+    const result = filterSupportConversations(conversations, {
+      navFilter: 'waiting',
+      mailboxScope: 'all',
+      userId: 'user-1',
+      searchQuery: '',
+      aiStates: [],
+    });
+
+    expect(result.map((conversation) => conversation.id)).toEqual(['waiting-ai-handoff']);
+  });
+
   it('keeps AI views separate', () => {
     const conversations = [
       buildConversation({ id: 'human' }),

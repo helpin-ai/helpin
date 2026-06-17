@@ -322,6 +322,7 @@ type SupportWidgetSession struct {
 	CountryName    *string    `json:"country_name,omitempty" gorm:"size:128"`
 	RegionName     *string    `json:"region_name,omitempty" gorm:"size:128"`
 	CityName       *string    `json:"city_name,omitempty" gorm:"size:128"`
+	LastActiveAt   *time.Time `json:"last_active_at,omitempty" gorm:"type:timestamptz;index"`
 	RevokedAt      *time.Time `json:"-" gorm:"index"`
 	ExpiresAt      time.Time  `json:"expires_at" gorm:"not null"`
 	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
@@ -1454,6 +1455,8 @@ type VisitorContextResponse struct {
 	OtherConversations []VisitorOtherConversation `json:"other_conversations"`
 	TotalConversations int                        `json:"total_conversations"`
 	SessionCreatedAt   *string                    `json:"session_created_at,omitempty"`
+	LastActiveAt       *string                    `json:"last_active_at,omitempty"`
+	LastActiveSource   *string                    `json:"last_active_source,omitempty"`
 }
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.

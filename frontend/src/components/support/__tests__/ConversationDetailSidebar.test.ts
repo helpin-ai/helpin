@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import type { SupportMessage } from '@/lib/pmTypes'
-import { getLatestEmailRecipients } from '../ConversationDetailSidebar'
+import {
+  getLatestEmailRecipients,
+  getLastActiveTooltipLabel,
+  shouldShowLastActiveIndicator,
+} from '../ConversationDetailSidebar'
 
 const baseMessage: SupportMessage = {
   id: 'msg-1',
@@ -57,5 +61,21 @@ describe('getLatestEmailRecipients', () => {
     ])
 
     expect(recipients).toBeNull()
+  })
+})
+
+describe('last active presence helpers', () => {
+  it('shows the amber indicator only for offline visitors with known activity', () => {
+    expect(shouldShowLastActiveIndicator(false, '2026-06-16T10:00:00Z')).toBe(true)
+    expect(shouldShowLastActiveIndicator(true, '2026-06-16T10:00:00Z')).toBe(false)
+    expect(shouldShowLastActiveIndicator(false, null)).toBe(false)
+  })
+
+  it('labels CRM-contact scoped activity as contact-level activity', () => {
+    const label = getLastActiveTooltipLabel('2026-06-16T10:00:00Z', 'crm_contact', new Date('2026-06-16T10:12:00Z'))
+
+    expect(label).toContain('Last active')
+    expect(label).toContain('12 minutes ago')
+    expect(label).toContain('across this contact')
   })
 })

@@ -1083,6 +1083,11 @@ func (s *SupportInboxService) MarkConversationReadByVisitor(ctx context.Context,
 	if err := s.conversationRepo.MarkContactRead(ctx, conversationID); err != nil {
 		return err
 	}
+	if s.sessionRepo != nil {
+		if err := s.sessionRepo.TouchActivityByAnonymousID(ctx, workspaceID, anonymousID); err != nil {
+			slog.WarnContext(ctx, "failed to touch visitor activity after read", "error", err, "workspace_id", workspaceID, "anonymous_id", anonymousID)
+		}
+	}
 
 	// Push authoritative conversations:listed refresh to all visitor widget sessions
 	s.pushVisitorConversationsRefresh(ctx, workspaceID, anonymousID)

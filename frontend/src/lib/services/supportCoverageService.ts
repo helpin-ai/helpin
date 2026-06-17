@@ -2,6 +2,9 @@ import { api } from '../api'
 import type {
   SupportCoverageGapListResponse,
   SupportCoverageGapDetail,
+  SupportCoverageClusterRebuildResult,
+  SupportCoverageClusterRebuildRun,
+  SupportCoverageGapMergeSuggestion,
   SupportCoverageSummary,
   SupportConversationCoverageState,
   SupportGapSuggestion,
@@ -60,4 +63,19 @@ export const supportCoverageService = {
 
   triggerReanalysis: (wsId: string) =>
     api.post<{ status: string }>(`/support/coverage/reanalyze${qs(wsId)}`, {}),
+
+  rebuildClusters: (wsId: string) =>
+    api.post<SupportCoverageClusterRebuildResult>(`/support/coverage/clusters/rebuild${qs(wsId)}`, {}),
+
+  getLatestClusterRebuild: (wsId: string) =>
+    api.get<SupportCoverageClusterRebuildRun | null>(`/support/coverage/clusters/rebuild/latest${qs(wsId)}`),
+
+  listMergeSuggestions: (wsId: string, gapId: string) =>
+    api.get<SupportCoverageGapMergeSuggestion[]>(`/support/coverage/gaps/${gapId}/merge-suggestions${qs(wsId)}`),
+
+  applyMergeSuggestion: (wsId: string, suggestionId: string) =>
+    api.post(`/support/coverage/merge-suggestions/${suggestionId}/apply${qs(wsId)}`, {}),
+
+  dismissMergeSuggestion: (wsId: string, suggestionId: string) =>
+    api.post(`/support/coverage/merge-suggestions/${suggestionId}/dismiss${qs(wsId)}`, {}),
 }

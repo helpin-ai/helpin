@@ -20,6 +20,7 @@ type WidgetService interface {
 	CreateWidgetSession(ctx context.Context, widgetKey string, anonymousID string, customerName, customerEmail *string, userAgent, pageURL, timezone, locale *string) (*model.SupportWidgetSession, error)
 	UpdateSessionPageURL(ctx context.Context, sessionToken, url string) error
 	GetWidgetSession(ctx context.Context, token string) (*model.SupportWidgetSession, error)
+	TouchWidgetSessionActivity(ctx context.Context, sessionToken string) error
 	GetVisitorConversations(ctx context.Context, workspaceID, anonymousID string) ([]model.SupportConversation, error)
 	ListConversationMessages(ctx context.Context, workspaceID, conversationID string, includeInternal bool) ([]model.SupportMessage, error)
 	WidgetCreateMessage(ctx context.Context, sessionToken, content string, attachmentIDs []string) (*model.SupportMessage, error)
@@ -157,6 +158,9 @@ func (h *WidgetHandler) serveLegacy(ctx context.Context, w http.ResponseWriter, 
 		})
 	}
 	defer func() {
+		if err := h.service.TouchWidgetSessionActivity(ctx, session.SessionToken); err != nil {
+			slog.Warn("widget ws: touch activity on disconnect failed", "error", err)
+		}
 		h.hub.Unregister(client)
 		if session.AnonymousID != "" {
 			h.hub.SetVisitorOffline(session.WorkspaceID, session.AnonymousID)
@@ -364,6 +368,9 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 		})
 	}
 	defer func() {
+		if err := h.service.TouchWidgetSessionActivity(ctx, session.SessionToken); err != nil {
+			slog.Warn("widget ws: touch activity on disconnect failed", "error", err)
+		}
 		h.hub.Unregister(client)
 		if session.AnonymousID != "" {
 			h.hub.SetVisitorOffline(session.WorkspaceID, session.AnonymousID)

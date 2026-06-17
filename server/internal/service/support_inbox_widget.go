@@ -83,7 +83,22 @@ func (s *SupportInboxService) GetWidgetSession(ctx context.Context, token string
 		return nil, fmt.Errorf("session expired")
 	}
 	s.refreshWidgetSessionGeo(ctx, session)
+	s.touchWidgetSessionActivity(ctx, session.SessionToken)
 	return session, nil
+}
+
+// TouchWidgetSessionActivity records a direct widget session activity signal.
+func (s *SupportInboxService) TouchWidgetSessionActivity(ctx context.Context, sessionToken string) error {
+	if s.sessionRepo == nil {
+		return nil
+	}
+	return s.sessionRepo.TouchActivityByToken(ctx, sessionToken)
+}
+
+func (s *SupportInboxService) touchWidgetSessionActivity(ctx context.Context, sessionToken string) {
+	if err := s.TouchWidgetSessionActivity(ctx, sessionToken); err != nil {
+		slog.WarnContext(ctx, "widget session activity touch failed", "error", err)
+	}
 }
 
 // GetVisitorConversations returns all conversations for a visitor by anonymous_id.

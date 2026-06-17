@@ -129,6 +129,55 @@ export interface SupportCoverageGapDetail {
   related_articles: { id: string; gap_id: string; document_id: string; article_title: string }[]
 }
 
+export interface SupportCoverageClusterRebuildRun {
+  id: string
+  workspace_id: string
+  status: 'running' | 'completed' | 'failed' | string
+  gaps_scanned: number
+  clusters_found: number
+  auto_merged: number
+  suggestions_created: number
+  skipped: number
+  error_message: string | null
+  started_at: string
+  completed_at: string | null
+}
+
+export interface SupportCoverageClusterRebuildResult {
+  run_id: string
+  status: string
+  gaps_scanned: number
+  clusters_found: number
+  auto_merged: number
+  suggestions_created: number
+  skipped: number
+  started_at: string
+  completed_at?: string | null
+}
+
+export interface SupportCoverageGapMergeSuggestion {
+  id: string
+  workspace_id: string
+  run_id: string | null
+  source_gap_id: string
+  target_gap_id: string
+  status: 'pending' | 'applied' | 'dismissed' | string
+  similarity_score: number
+  reason: string
+  combined_evidence_count: number
+  source_gap?: {
+    id: string
+    title: string
+    evidence_count: number
+  } | null
+  target_gap?: {
+    id: string
+    title: string
+    evidence_count: number
+  } | null
+  created_at: string
+}
+
 export interface SupportCoverageSummary {
   new_gaps_this_week: number
   top_recurring_gaps: number

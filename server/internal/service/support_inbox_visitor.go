@@ -60,6 +60,29 @@ func (s *SupportInboxService) GetVisitorContext(ctx context.Context, workspaceID
 		}
 	}
 
+	if conversation.CRMContactID != nil && *conversation.CRMContactID != "" {
+		lastActiveAt, err := s.sessionRepo.GetLatestActivityByContactID(ctx, workspaceID, *conversation.CRMContactID)
+		if err != nil {
+			slog.ErrorContext(ctx, "visitor context: get latest contact activity failed", "error", err, "contact_id", *conversation.CRMContactID)
+		} else if lastActiveAt != nil {
+			formatted := lastActiveAt.UTC().Format(time.RFC3339)
+			source := "crm_contact"
+			resp.LastActiveAt = &formatted
+			resp.LastActiveSource = &source
+		}
+	}
+	if resp.LastActiveAt == nil && conversation.AnonymousID != nil && *conversation.AnonymousID != "" {
+		lastActiveAt, err := s.sessionRepo.GetLatestActivityByAnonymousID(ctx, workspaceID, *conversation.AnonymousID)
+		if err != nil {
+			slog.ErrorContext(ctx, "visitor context: get latest anonymous activity failed", "error", err, "anonymous_id", *conversation.AnonymousID)
+		} else if lastActiveAt != nil {
+			formatted := lastActiveAt.UTC().Format(time.RFC3339)
+			source := "anonymous_id"
+			resp.LastActiveAt = &formatted
+			resp.LastActiveSource = &source
+		}
+	}
+
 	// CRM contact data
 	if conversation.CRMContactID != nil && *conversation.CRMContactID != "" {
 		contact, err := s.contactRepo.GetByID(ctx, *conversation.CRMContactID)
