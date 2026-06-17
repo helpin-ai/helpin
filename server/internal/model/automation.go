@@ -163,6 +163,8 @@ type AutomationTriggerExecutionListItem struct {
 	ManagePath     *string    `json:"manage_path,omitempty"`
 	TargetType     *string    `json:"target_type,omitempty"`
 	TargetID       *string    `json:"target_id,omitempty"`
+	TargetTitle    *string    `json:"target_title,omitempty"`
+	TargetKey      *string    `json:"target_key,omitempty"`
 	RunID          *string    `json:"run_id,omitempty"`
 	Status         string     `json:"status"`
 	ErrorMessage   *string    `json:"error_message,omitempty"`

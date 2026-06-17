@@ -253,6 +253,20 @@ func (r *GitRepositoryRepository) ListAll(ctx context.Context, workspaceID strin
 	return repos, nil
 }
 
+func (r *GitRepositoryRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.GitRepository, error) {
+	if len(ids) == 0 {
+		return []model.GitRepository{}, nil
+	}
+	var repos []model.GitRepository
+	if err := r.db.WithContext(ctx).
+		Select("id", "full_name").
+		Where("workspace_id = ? AND id IN ? AND deleted_at IS NULL", workspaceID, ids).
+		Find(&repos).Error; err != nil {
+		return nil, fmt.Errorf("list git repositories by ids: %w", err)
+	}
+	return repos, nil
+}
+
 // GetByID loads a repository by ID.
 func (r *GitRepositoryRepository) GetByID(ctx context.Context, workspaceID, id string) (*model.GitRepository, error) {
 	var repo model.GitRepository

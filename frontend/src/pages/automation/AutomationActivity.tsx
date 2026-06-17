@@ -527,7 +527,7 @@ function sourceLabel(value?: string) {
 }
 
 function buildExecutionTriggerLabel(item: AutomationTriggerExecutionListItem) {
-  if (item.binding_kind === 'automation_rule' && item.trigger_type === 'manual') return 'Run now';
+  if (item.binding_kind === 'automation_rule' && item.trigger_type === 'manual') return 'Manual run';
   if (item.trigger_type === 'cron' || item.binding_id === 'automation_rule.cron') return 'Cron';
   if (item.binding_kind === 'manual') return 'Manual';
   if (item.binding_kind === 'automation_rule') return item.trigger_title || sourceLabel(item.binding_kind);

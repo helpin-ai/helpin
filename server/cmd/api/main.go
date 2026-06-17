@@ -1164,7 +1164,8 @@ func main() {
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
 	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher).
 		SetGitRepositoryRepository(gitRepositoryRepo)
-	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRunRepo, agentRepo, workspaceRepo, pmTaskRepo, supportInstallRepo)
+	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRunRepo, agentRepo, workspaceRepo, pmTaskRepo, supportInstallRepo).
+		SetTargetResolvers(pmEpicRepo, docsDocumentRepo, supportConversationRepo, crmContactRepo, crmDealRepo, gitRepositoryRepo, supportCoverageRepo)
 	flowTemplateRegistry, err := flowtemplates.LoadSystemRegistry()
 	if err != nil {
 		fatalWithSentry("failed to load flow templates", err)
