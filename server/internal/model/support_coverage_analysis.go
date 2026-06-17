@@ -69,6 +69,7 @@ type SupportCoverageConversationAnalysis struct {
 	PrimaryRecommendationType string          `json:"primary_recommendation_type" gorm:"not null;default:''"`
 	TranscriptHash            string          `json:"transcript_hash" gorm:"not null;default:''"`
 	AnalyzerVersion           string          `json:"analyzer_version" gorm:"not null;default:'v1'"`
+	CanonicalTitle            string          `json:"canonical_title" gorm:"type:text;not null;default:''"`
 	CustomerNeed              string          `json:"customer_need" gorm:"type:text;not null;default:''"`
 	AIFailure                 string          `json:"ai_failure" gorm:"type:text;not null;default:''"`
 	HumanResolution           string          `json:"human_resolution" gorm:"type:text;not null;default:''"`
@@ -79,6 +80,14 @@ type SupportCoverageConversationAnalysis struct {
 	ClassificationReason      string          `json:"classification_reason" gorm:"type:text;not null;default:''"`
 	ErrorMessage              *string         `json:"error_message"`
 	RawOutput                 json.RawMessage `json:"raw_output" gorm:"type:jsonb;not null;default:'{}'"`
+	Embedding                 string          `json:"-" gorm:"type:vector(1536)"`
+	EmbeddingProvider         string          `json:"embedding_provider" gorm:"not null;default:''"`
+	EmbeddingModel            string          `json:"embedding_model" gorm:"not null;default:''"`
+	EmbeddingVersion          string          `json:"embedding_version" gorm:"not null;default:''"`
+	EmbeddingDimensions       int             `json:"embedding_dimensions" gorm:"not null;default:0"`
+	EmbeddingTextHash         string          `json:"embedding_text_hash" gorm:"not null;default:''"`
+	EmbeddingUpdatedAt        *time.Time      `json:"embedding_updated_at"`
+	MaterializationMetadata   json.RawMessage `json:"materialization_metadata" gorm:"type:jsonb;not null;default:'{}'"`
 	CreatedAt                 time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt                 time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }

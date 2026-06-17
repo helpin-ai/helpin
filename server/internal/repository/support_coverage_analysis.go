@@ -145,6 +145,9 @@ func (r *SupportCoverageAnalysisRepository) RecordConversationAnalysis(ctx conte
 	if analysis.RawOutput == nil {
 		analysis.RawOutput = []byte("{}")
 	}
+	if analysis.MaterializationMetadata == nil {
+		analysis.MaterializationMetadata = []byte("{}")
+	}
 
 	if err := r.db.WithContext(ctx).Create(analysis).Error; err != nil {
 		var raceExisting model.SupportCoverageConversationAnalysis

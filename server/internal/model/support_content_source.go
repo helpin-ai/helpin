@@ -87,18 +87,22 @@ func (SupportContentPage) TableName() string { return "support_content_pages" }
 
 // SupportContentChunk stores chunked crawled content and its vector embedding.
 type SupportContentChunk struct {
-	ID              string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID     string    `json:"workspace_id" gorm:"type:uuid;not null;index:idx_support_content_chunk_ws_source_page,priority:1"`
-	ContentSourceID string    `json:"content_source_id" gorm:"type:uuid;not null;index:idx_support_content_chunk_ws_source_page,priority:2;index"`
-	PageID          string    `json:"page_id" gorm:"type:uuid;not null;index:idx_support_content_chunk_ws_source_page,priority:3;uniqueIndex:idx_support_content_chunk_page_order,priority:1"`
-	ChunkIndex      int       `json:"chunk_index" gorm:"not null;uniqueIndex:idx_support_content_chunk_page_order,priority:2"`
-	Title           string    `json:"title" gorm:"not null"`
-	URL             string    `json:"url" gorm:"type:text;not null"`
-	Content         string    `json:"content" gorm:"type:text;not null"`
-	ContentHash     string    `json:"content_hash" gorm:"size:64;not null;index"`
-	Embedding       string    `json:"-" gorm:"type:vector(1536);not null"`
-	CreatedAt       time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt       time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                  string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID         string    `json:"workspace_id" gorm:"type:uuid;not null;index:idx_support_content_chunk_ws_source_page,priority:1"`
+	ContentSourceID     string    `json:"content_source_id" gorm:"type:uuid;not null;index:idx_support_content_chunk_ws_source_page,priority:2;index"`
+	PageID              string    `json:"page_id" gorm:"type:uuid;not null;index:idx_support_content_chunk_ws_source_page,priority:3;uniqueIndex:idx_support_content_chunk_page_order,priority:1"`
+	ChunkIndex          int       `json:"chunk_index" gorm:"not null;uniqueIndex:idx_support_content_chunk_page_order,priority:2"`
+	Title               string    `json:"title" gorm:"not null"`
+	URL                 string    `json:"url" gorm:"type:text;not null"`
+	Content             string    `json:"content" gorm:"type:text;not null"`
+	ContentHash         string    `json:"content_hash" gorm:"size:64;not null;index"`
+	Embedding           string    `json:"-" gorm:"type:vector(1536);not null"`
+	EmbeddingProvider   string    `json:"embedding_provider" gorm:"not null;default:'openai'"`
+	EmbeddingModel      string    `json:"embedding_model" gorm:"not null;default:'text-embedding-3-small'"`
+	EmbeddingVersion    string    `json:"embedding_version" gorm:"not null;default:'content-chunk-v1'"`
+	EmbeddingDimensions int       `json:"embedding_dimensions" gorm:"not null;default:1536"`
+	CreatedAt           time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt           time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportContentChunk) TableName() string { return "support_content_chunks" }

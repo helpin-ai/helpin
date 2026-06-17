@@ -56,6 +56,12 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			status_changed_by TEXT, status_changed_at DATETIME, issue_resolved BOOLEAN,
 			closed_at DATETIME, closed_evidence_count INTEGER, result_document_id TEXT,
 			rejection_reason TEXT,
+			embedding TEXT, embedding_provider TEXT NOT NULL DEFAULT '',
+			embedding_model TEXT NOT NULL DEFAULT '', embedding_version TEXT NOT NULL DEFAULT '',
+			embedding_dimensions INTEGER NOT NULL DEFAULT 0, embedding_text_hash TEXT NOT NULL DEFAULT '',
+			embedding_updated_at DATETIME, nearest_content_score REAL NOT NULL DEFAULT 0,
+			nearest_content_document_id TEXT, nearest_content_title TEXT NOT NULL DEFAULT '',
+			nearest_content_checked_at DATETIME, impact_score REAL NOT NULL DEFAULT 0,
 			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE UNIQUE INDEX idx_support_coverage_gaps_workspace_topic_open
@@ -65,7 +71,8 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			id TEXT PRIMARY KEY, gap_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
 			evidence_type TEXT NOT NULL, conversation_id TEXT, message_id TEXT,
 			widget_session_id TEXT, document_id TEXT, article_public_id TEXT,
-			source_signal TEXT NOT NULL DEFAULT '', excerpt TEXT NOT NULL DEFAULT '',
+			source_signal TEXT NOT NULL DEFAULT '', source_key TEXT NOT NULL DEFAULT '',
+			excerpt TEXT NOT NULL DEFAULT '',
 			metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME
 		)`,
 		`CREATE TABLE support_messages (

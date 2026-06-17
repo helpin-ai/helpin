@@ -137,34 +137,46 @@ func (SupportCoverageTopic) TableName() string { return "support_coverage_topics
 // SupportCoverageGap represents a durable blocker preventing
 // autonomous resolution. V1 exposes only docs-related gap types.
 type SupportCoverageGap struct {
-	ID                  string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID         string          `json:"workspace_id" gorm:"type:uuid;not null;index:idx_support_coverage_gaps_workspace_status_seen,priority:1"`
-	TopicID             *string         `json:"topic_id" gorm:"type:uuid"`
-	DedupeKey           string          `json:"dedupe_key" gorm:"not null"`
-	GapKind             string          `json:"gap_kind" gorm:"not null;default:'content'"`
-	GapCategory         string          `json:"gap_category" gorm:"not null;default:'unknown'"`
-	V1GapType           string          `json:"v1_gap_type" gorm:"not null;default:'needs_review'"`
-	Title               string          `json:"title" gorm:"not null;default:''"`
-	IssueKey            string          `json:"issue_key" gorm:"not null;default:''"`
-	Status              string          `json:"status" gorm:"not null;default:'open';index:idx_support_coverage_gaps_workspace_status_seen,priority:2"`
-	Confidence          float64         `json:"confidence" gorm:"not null;default:0"`
-	EvidenceCount       int             `json:"evidence_count" gorm:"not null;default:0"`
-	FailureMode         string          `json:"failure_mode" gorm:"not null;default:''"`
-	SourceSignal        string          `json:"source_signal" gorm:"not null;default:''"`
-	CanAnswer           *string         `json:"can_answer"`
-	CanResolve          *string         `json:"can_resolve"`
-	Metadata            json.RawMessage `json:"metadata" gorm:"type:jsonb;not null;default:'{}'"`
-	FirstSeenAt         time.Time       `json:"first_seen_at" gorm:"not null"`
-	LastSeenAt          time.Time       `json:"last_seen_at" gorm:"not null;index:idx_support_coverage_gaps_workspace_status_seen,priority:3,sort:desc"`
-	StatusChangedBy     *string         `json:"status_changed_by" gorm:"type:uuid"`
-	StatusChangedAt     *time.Time      `json:"status_changed_at"`
-	IssueResolved       *bool           `json:"issue_resolved"`
-	ClosedAt            *time.Time      `json:"closed_at"`
-	ClosedEvidenceCount *int            `json:"closed_evidence_count"`
-	ResultDocumentID    *string         `json:"result_document_id" gorm:"type:uuid"`
-	RejectionReason     *string         `json:"rejection_reason"`
-	CreatedAt           time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt           time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                       string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID              string          `json:"workspace_id" gorm:"type:uuid;not null;index:idx_support_coverage_gaps_workspace_status_seen,priority:1"`
+	TopicID                  *string         `json:"topic_id" gorm:"type:uuid"`
+	DedupeKey                string          `json:"dedupe_key" gorm:"not null"`
+	GapKind                  string          `json:"gap_kind" gorm:"not null;default:'content'"`
+	GapCategory              string          `json:"gap_category" gorm:"not null;default:'unknown'"`
+	V1GapType                string          `json:"v1_gap_type" gorm:"not null;default:'needs_review'"`
+	Title                    string          `json:"title" gorm:"not null;default:''"`
+	IssueKey                 string          `json:"issue_key" gorm:"not null;default:''"`
+	Status                   string          `json:"status" gorm:"not null;default:'open';index:idx_support_coverage_gaps_workspace_status_seen,priority:2"`
+	Confidence               float64         `json:"confidence" gorm:"not null;default:0"`
+	EvidenceCount            int             `json:"evidence_count" gorm:"not null;default:0"`
+	FailureMode              string          `json:"failure_mode" gorm:"not null;default:''"`
+	SourceSignal             string          `json:"source_signal" gorm:"not null;default:''"`
+	CanAnswer                *string         `json:"can_answer"`
+	CanResolve               *string         `json:"can_resolve"`
+	Metadata                 json.RawMessage `json:"metadata" gorm:"type:jsonb;not null;default:'{}'"`
+	FirstSeenAt              time.Time       `json:"first_seen_at" gorm:"not null"`
+	LastSeenAt               time.Time       `json:"last_seen_at" gorm:"not null;index:idx_support_coverage_gaps_workspace_status_seen,priority:3,sort:desc"`
+	StatusChangedBy          *string         `json:"status_changed_by" gorm:"type:uuid"`
+	StatusChangedAt          *time.Time      `json:"status_changed_at"`
+	IssueResolved            *bool           `json:"issue_resolved"`
+	ClosedAt                 *time.Time      `json:"closed_at"`
+	ClosedEvidenceCount      *int            `json:"closed_evidence_count"`
+	ResultDocumentID         *string         `json:"result_document_id" gorm:"type:uuid"`
+	RejectionReason          *string         `json:"rejection_reason"`
+	Embedding                string          `json:"-" gorm:"type:vector(1536)"`
+	EmbeddingProvider        string          `json:"embedding_provider" gorm:"not null;default:''"`
+	EmbeddingModel           string          `json:"embedding_model" gorm:"not null;default:''"`
+	EmbeddingVersion         string          `json:"embedding_version" gorm:"not null;default:''"`
+	EmbeddingDimensions      int             `json:"embedding_dimensions" gorm:"not null;default:0"`
+	EmbeddingTextHash        string          `json:"embedding_text_hash" gorm:"not null;default:''"`
+	EmbeddingUpdatedAt       *time.Time      `json:"embedding_updated_at"`
+	NearestContentScore      float64         `json:"nearest_content_score" gorm:"not null;default:0"`
+	NearestContentDocumentID *string         `json:"nearest_content_document_id" gorm:"type:uuid"`
+	NearestContentTitle      string          `json:"nearest_content_title" gorm:"not null;default:''"`
+	NearestContentCheckedAt  *time.Time      `json:"nearest_content_checked_at"`
+	ImpactScore              float64         `json:"impact_score" gorm:"not null;default:0"`
+	CreatedAt                time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportCoverageGap) TableName() string { return "support_coverage_gaps" }
@@ -182,6 +194,7 @@ type SupportGapEvidence struct {
 	DocumentID      *string         `json:"document_id" gorm:"type:uuid"`
 	ArticlePublicID *string         `json:"article_public_id"`
 	SourceSignal    string          `json:"source_signal" gorm:"not null;default:''"`
+	SourceKey       string          `json:"source_key" gorm:"not null;default:''"`
 	Excerpt         string          `json:"excerpt" gorm:"type:text;not null;default:''"`
 	Metadata        json.RawMessage `json:"metadata" gorm:"type:jsonb;not null;default:'{}'"`
 	CreatedAt       time.Time       `json:"created_at" gorm:"not null;index:idx_support_gap_evidence_gap,priority:2,sort:desc"`
@@ -331,14 +344,18 @@ type SupportCoverageGapFilter struct {
 // SupportCoverageGapListItem is a row in the gap inbox table.
 type SupportCoverageGapListItem struct {
 	SupportCoverageGap
-	TopicTitle       string  `json:"topic_title"`
-	CanonicalTitle   string  `json:"canonical_title"`
-	EvidenceText     string  `json:"evidence_text" gorm:"column:evidence_text"`
-	CustomerNeedText string  `json:"customer_need_text" gorm:"column:customer_need_text"`
-	SuggestionCount  int     `json:"suggestion_count"`
-	RelatedArticleID *string `json:"related_article_id"`
-	Evidence30d      int     `json:"evidence_30d" gorm:"column:evidence_30d"`
-	ImpactTier       string  `json:"impact_tier" gorm:"-"`
+	TopicTitle           string  `json:"topic_title"`
+	CanonicalTitle       string  `json:"canonical_title"`
+	EvidenceText         string  `json:"evidence_text" gorm:"column:evidence_text"`
+	CustomerNeedText     string  `json:"customer_need_text" gorm:"column:customer_need_text"`
+	SuggestionCount      int     `json:"suggestion_count"`
+	RelatedArticleID     *string `json:"related_article_id"`
+	Evidence30d          int     `json:"evidence_30d" gorm:"column:evidence_30d"`
+	ImpactTier           string  `json:"impact_tier" gorm:"-"`
+	DistinctCustomers30d int     `json:"distinct_customers_30d" gorm:"column:distinct_customers_30d"`
+	DistinctCustomersAll int     `json:"distinct_customers_all" gorm:"column:distinct_customers_all"`
+	EvidenceAll          int     `json:"evidence_all" gorm:"column:evidence_all"`
+	ImpactExplanation    string  `json:"impact_explanation" gorm:"-"`
 }
 
 // SupportCoverageGapDetail is the full gap detail with evidence
