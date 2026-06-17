@@ -20,6 +20,7 @@ const (
 	coverageClusterLexicalAutoMerge      = 0.82
 	coverageClusterEmbeddingSuggest      = 0.72
 	coverageClusterEmbeddingAutoMerge    = 0.88
+	coverageClusterCreationDedupeLimit   = 200
 	coverageClusterEmbeddingProviderName = "openai"
 	coverageClusterDefaultEmbeddingModel = "text-embedding-3-small"
 )
@@ -168,11 +169,12 @@ func (s *SupportCoverageClusterRebuildService) RebuildWorkspace(ctx context.Cont
 				continue
 			}
 			duplicate := candidates[idx].Gap
-			score := coverageClusterBestPairScore(primaryIndex, idx, pairs)
+			directScore := coverageClusterBestPairScore(primaryIndex, idx, pairs)
+			score := directScore
 			if score == 0 {
 				score = coverageClusterBestGroupScore(idx, group, pairs)
 			}
-			if score >= coverageClusterAutoMergeThresholdFor(candidates[primaryIndex], candidates[idx]) {
+			if directScore >= coverageClusterAutoMergeThresholdFor(candidates[primaryIndex], candidates[idx]) && coverageClusterAutoMergeAllowed(primary, duplicate) {
 				if err := s.coverageRepo.MergeGaps(ctx, workspaceID, duplicate.ID, primary.ID); err != nil {
 					result.Skipped++
 					continue
@@ -284,12 +286,23 @@ func (s *SupportCoverageClusterRebuildService) addEmbeddings(ctx context.Context
 
 func coverageClusterComparisonText(gap model.SupportCoverageGapListItem) string {
 	return strings.Join([]string{
-		gap.CustomerNeedText,
-		gap.EvidenceText,
-		gap.CanonicalTitle,
-		gap.Title,
-		gap.TopicTitle,
+		coverageClusterTextPart(gap.CustomerNeedText, 300),
+		coverageClusterTextPart(gap.CanonicalTitle, 180),
+		coverageClusterTextPart(gap.Title, 180),
+		coverageClusterTextPart(gap.TopicTitle, 180),
+		coverageClusterTextPart(gap.EvidenceText, 180),
 	}, " ")
+}
+
+func coverageClusterTextPart(value string, maxLen int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if maxLen > 0 {
+		runes := []rune(value)
+		if len(runes) > maxLen {
+			value = string(runes[:maxLen])
+		}
+	}
+	return value
 }
 
 func coverageClusterCompatible(a, b model.SupportCoverageGapListItem) bool {
@@ -301,6 +314,15 @@ func coverageClusterCompatible(a, b model.SupportCoverageGapListItem) bool {
 
 func coverageClusterStrongTargetMatch(a, b model.SupportCoverageGapListItem) bool {
 	return a.RelatedArticleID != nil && b.RelatedArticleID != nil && *a.RelatedArticleID == *b.RelatedArticleID
+}
+
+func coverageClusterAutoMergeAllowed(a, b model.SupportCoverageGapListItem) bool {
+	if coverageClusterStrongTargetMatch(a, b) {
+		return true
+	}
+	aNeed := normalizeForCluster(a.CustomerNeedText)
+	bNeed := normalizeForCluster(b.CustomerNeedText)
+	return aNeed != "" && aNeed == bNeed
 }
 
 func coverageDisplayGapKind(kind string) string {

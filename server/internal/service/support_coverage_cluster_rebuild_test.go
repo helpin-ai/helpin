@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestSupportCoverageClusterRebuildAutoMergesVerySimilarGaps(t *testing.T) {
+func TestSupportCoverageClusterRebuildSuggestsVerySimilarTitleOnlyGaps(t *testing.T) {
 	_, _, db := setupCoverageTestEnv(t)
 	repo := repository.NewSupportCoverageRepository(db)
 	svc := NewSupportCoverageClusterRebuildService(repo, nil, "")
@@ -52,34 +52,34 @@ func TestSupportCoverageClusterRebuildAutoMergesVerySimilarGaps(t *testing.T) {
 	if result.GapsScanned != 2 {
 		t.Fatalf("GapsScanned=%d, want 2", result.GapsScanned)
 	}
-	if result.SuggestionsCreated != 0 {
-		t.Fatalf("SuggestionsCreated=%d, want 0", result.SuggestionsCreated)
+	if result.SuggestionsCreated != 1 {
+		t.Fatalf("SuggestionsCreated=%d, want 1", result.SuggestionsCreated)
 	}
-	if result.AutoMerged != 1 {
-		t.Fatalf("AutoMerged=%d, want 1", result.AutoMerged)
+	if result.AutoMerged != 0 {
+		t.Fatalf("AutoMerged=%d, want 0", result.AutoMerged)
 	}
 
 	var target model.SupportCoverageGap
 	if err := db.First(&target, "id = ?", "gap-reset").Error; err != nil {
 		t.Fatalf("load target gap: %v", err)
 	}
-	if target.EvidenceCount != 5 {
-		t.Fatalf("EvidenceCount=%d, want 5", target.EvidenceCount)
+	if target.EvidenceCount != 3 {
+		t.Fatalf("EvidenceCount=%d, want 3", target.EvidenceCount)
 	}
 	var source model.SupportCoverageGap
 	if err := db.First(&source, "id = ?", "gap-password").Error; err != nil {
 		t.Fatalf("load source gap: %v", err)
 	}
-	if source.Status != model.SupportCoverageGapStatusMerged {
-		t.Fatalf("source status=%q, want merged", source.Status)
+	if source.Status != model.SupportCoverageGapStatusOpen {
+		t.Fatalf("source status=%q, want open", source.Status)
 	}
 
 	suggestions, err := repo.ListMergeSuggestionsForGap(ctx, "ws-1", "gap-reset")
 	if err != nil {
 		t.Fatalf("ListMergeSuggestionsForGap: %v", err)
 	}
-	if len(suggestions) != 0 {
-		t.Fatalf("suggestions=%d, want 0", len(suggestions))
+	if len(suggestions) != 1 {
+		t.Fatalf("suggestions=%d, want 1", len(suggestions))
 	}
 }
 
@@ -185,6 +185,9 @@ func TestSupportCoverageClusterRebuildUsesTransitiveClusters(t *testing.T) {
 	}
 	if result.ClustersFound != 1 {
 		t.Fatalf("ClustersFound=%d, want 1 transitive cluster", result.ClustersFound)
+	}
+	if result.AutoMerged != 0 {
+		t.Fatalf("AutoMerged=%d, want 0 for transitive title-only cluster", result.AutoMerged)
 	}
 }
 

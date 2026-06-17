@@ -795,7 +795,7 @@ func TestSupportCoverageDailyAnalyzer_UpsertFindingDedupesAndPreservesAcceptedRe
 	}
 }
 
-func TestSupportCoverageDailyAnalyzer_UpsertFindingAttachesSemanticallySimilarGap(t *testing.T) {
+func TestSupportCoverageDailyAnalyzer_UpsertFindingAttachesSimilarGap(t *testing.T) {
 	db := setupCoverageFindingUpsertTestDB(t)
 	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	coverageRepo := repository.NewSupportCoverageRepository(db)
@@ -853,7 +853,7 @@ func TestSupportCoverageDailyAnalyzer_UpsertFindingAttachesSemanticallySimilarGa
 		t.Fatalf("second UpsertFinding: %v", err)
 	}
 	if second.ID != first.ID {
-		t.Fatalf("expected semantic duplicate to attach to %q, got %q", first.ID, second.ID)
+		t.Fatalf("expected similar duplicate to attach to %q, got %q", first.ID, second.ID)
 	}
 
 	var gapCount int64

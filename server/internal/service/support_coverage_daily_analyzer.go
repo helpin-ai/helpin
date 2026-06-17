@@ -935,17 +935,16 @@ func (s *SupportCoverageDailyAnalyzer) UpsertFinding(ctx context.Context, input 
 		return nil, err
 	}
 	if upserted == nil {
-		topic, err := s.coverageRepo.UpsertTopicByClusterKey(ctx, input.WorkspaceID, clusterKey, title)
+		var topic *model.SupportCoverageTopic
+		topic, err = s.coverageRepo.UpsertTopicByClusterKey(ctx, input.WorkspaceID, clusterKey, title)
 		if err != nil {
 			return nil, fmt.Errorf("upsert analysis topic: %w", err)
 		}
 		gap.TopicID = &topic.ID
-		var created bool
-		upserted, created, err = s.coverageRepo.UpsertOpenGapByTopic(ctx, gap)
-		_ = created
-	}
-	if err != nil {
-		return nil, fmt.Errorf("upsert analysis gap: %w", err)
+		upserted, _, err = s.coverageRepo.UpsertOpenGapByTopic(ctx, gap)
+		if err != nil {
+			return nil, fmt.Errorf("upsert analysis gap: %w", err)
+		}
 	}
 
 	evidenceMetadata, err := json.Marshal(map[string]any{
@@ -995,9 +994,9 @@ func (s *SupportCoverageDailyAnalyzer) UpsertFinding(ctx context.Context, input 
 }
 
 func (s *SupportCoverageDailyAnalyzer) attachFindingToSimilarGap(ctx context.Context, input CoverageFindingUpsertInput, result CoverageConversationAnalysisResult, gap *model.SupportCoverageGap, now time.Time) (*model.SupportCoverageGap, error) {
-	items, err := s.coverageRepo.ListOpenGapsForClusterRebuild(ctx, input.WorkspaceID, coverageClusterRebuildLimit)
+	items, err := s.coverageRepo.ListOpenGapsForClusterRebuild(ctx, input.WorkspaceID, coverageClusterCreationDedupeLimit)
 	if err != nil {
-		return nil, fmt.Errorf("list open gaps for semantic dedupe: %w", err)
+		return nil, fmt.Errorf("list open gaps for similar-gap dedupe: %w", err)
 	}
 	if len(items) == 0 {
 		return nil, nil
