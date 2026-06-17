@@ -786,6 +786,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/conversations/{conversationId}/state", h.SupportCoverage.GetConversationState)
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/conversations/{conversationId}/docs-issue", h.SupportCoverage.SubmitDocsIssueFeedback)
 						r.With(requirePerm(authorization.PermSettingsManage)).Post("/reanalyze", h.SupportCoverage.TriggerReanalysis)
+						// Cluster rebuild endpoints compare existing gaps and surface merge suggestions.
 						r.With(requirePerm(authorization.PermSettingsManage)).Post("/clusters/rebuild", h.SupportCoverage.RebuildClusters)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/clusters/rebuild/latest", h.SupportCoverage.GetLatestClusterRebuild)
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/merge-suggestions/{suggestionId}/apply", h.SupportCoverage.ApplyMergeSuggestion)
