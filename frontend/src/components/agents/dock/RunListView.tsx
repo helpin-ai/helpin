@@ -1,9 +1,8 @@
 import { useMemo } from 'react';
-import { format, formatDistanceToNow } from 'date-fns';
 import type { AgentRun } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from '@/stores/commandBarStore';
 import { Cancel01Icon, Loading01Icon, PlayIcon, RotateLeft01Icon } from '@/lib/icons';
-import { cn } from '@/lib/utils';
+import { cn, timeAgo } from '@/lib/utils';
 import { StatusDot, type DotKind } from './StatusDot';
 import { PipelineRail } from './PipelineRail';
 import { FanOutRail } from './FanOutRail';
@@ -274,7 +273,7 @@ function ListRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
           <span className="truncate text-sm font-medium text-foreground">{title}</span>
-          <span className="shrink-0 text-[11px] text-muted-foreground">{sinceOrTime(ts)}</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">{timeAgo(ts)}</span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
           <span
@@ -346,10 +345,4 @@ function ListRow({
       </div>
     </div>
   );
-}
-
-function sinceOrTime(when: Date): string {
-  const diffHours = (Date.now() - when.getTime()) / 3_600_000;
-  if (diffHours < 24) return formatDistanceToNow(when, { addSuffix: true });
-  return format(when, 'HH:mm');
 }
