@@ -129,7 +129,7 @@ export function DockInput({
   const placeholder =
     mode === 'list'
       ? 'Search runs or ask something new…'
-      : 'Ask an agent, or press / to focus';
+      : 'Run Atlas, Forge, Lens, or any agent';
 
   // Hide the workspace-level chip — it just restates the current workspace
   // (already visible in the sidebar) and provides no scoping signal. Keep it
@@ -166,7 +166,7 @@ export function DockInput({
             ) : null}
           </div>
           <span className="shrink-0 text-[11px] text-muted-foreground">
-            <kbd className="rounded border bg-muted px-1 py-0 font-mono text-[10px]">/</kbd> to focus
+            Press <kbd className="rounded border bg-muted px-1 py-0 font-mono text-[10px]">/</kbd> to open
           </span>
         </div>
       ) : null}

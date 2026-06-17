@@ -441,7 +441,7 @@ export function AskAgentsDock() {
     };
   }, [refreshRun]);
 
-  // "/" focuses the dock when no other input is focused.
+  // "/" opens and focuses the dock when no other input is focused.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '/') return;

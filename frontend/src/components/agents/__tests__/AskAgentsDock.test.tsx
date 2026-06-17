@@ -156,11 +156,12 @@ async function clickSend() {
 }
 
 describe('AskAgentsDock chat', () => {
-  it('describes slash as a focus shortcut instead of an agent command', async () => {
+  it('describes agent instructions without implying slash commands', async () => {
     await renderDock();
 
     const textarea = document.body.querySelector<HTMLTextAreaElement>('textarea');
-    expect(textarea?.placeholder).toBe('Ask an agent, or press / to focus');
+    expect(textarea?.placeholder).toBe('Run Atlas, Forge, Lens, or any agent');
+    expect(textarea?.placeholder).not.toContain('/');
   });
 
   it('removes document context from the dock without leaving the page', async () => {
