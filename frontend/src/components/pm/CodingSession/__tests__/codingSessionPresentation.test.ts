@@ -59,5 +59,6 @@ describe('coding session presentation helpers', () => {
     expect(formatCodingSessionElapsed(9_000)).toBe('9s');
     expect(formatCodingSessionElapsed(67_000)).toBe('1m 07s');
     expect(formatCodingSessionElapsed(3_671_000)).toBe('1h 1m');
+    expect(formatCodingSessionElapsed(183_660_000)).toBe('2d 3h');
   });
 });

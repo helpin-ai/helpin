@@ -51,6 +51,20 @@ func (r *PMEpicRepository) List(ctx context.Context, workspaceID string, filters
 	return epics, nil
 }
 
+// ListByIDs returns epics by ID for a workspace.
+func (r *PMEpicRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMEpic, error) {
+	if len(ids) == 0 {
+		return []model.PMEpic{}, nil
+	}
+	var epics []model.PMEpic
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Find(&epics).Error; err != nil {
+		return nil, fmt.Errorf("list epics by ids: %w", err)
+	}
+	return epics, nil
+}
+
 // GetByID returns an epic with labels and computed stats.
 func (r *PMEpicRepository) GetByID(ctx context.Context, id string) (*model.EpicWithStats, error) {
 	return r.GetWithStats(ctx, id)

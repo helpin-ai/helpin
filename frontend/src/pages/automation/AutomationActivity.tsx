@@ -7,12 +7,10 @@ import {
   ArrowUpRight01Icon,
   ArrowLeft02Icon,
   BotIcon,
-  Calendar03Icon,
   Cancel01Icon,
   FilterHorizontalIcon,
   Loading01Icon,
   Tick01Icon,
-  ZapIcon,
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AutomationShell } from '@/components/automation/AutomationShell';
@@ -35,6 +33,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAgents, useAutomationActivity, useAutomationOverview, useAutomationTriggerCatalog, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useTitle } from '@/hooks/useTitle';
 import { buildAutomationFlowsPath } from '@/lib/automationUi';
@@ -49,6 +48,14 @@ import type {
 } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import {
+  buildActivityTargetPresentation,
+  buildExecutionMetadataPresentation,
+  buildExecutionTargetPresentation,
+  formatAttentionWaitDuration,
+  normalizeActivityTargetType,
+  type ActivityTargetPresentation,
+} from './automationActivityRunPresentation';
 
 export type AutomationActivitySearch = {
   page?: number;
@@ -418,24 +425,9 @@ function formatDuration(startIso?: string, endIso?: string) {
   return `${hours}h ${remMins.toString().padStart(2, '0')}m`;
 }
 
-function truncateMiddle(value?: string, start = 8, end = 6) {
-  if (!value) return '';
-  if (value.length <= start + end + 3) return value;
-  return `${value.slice(0, start)}\u2026${value.slice(-end)}`;
-}
-
 function trimFilterValue(value?: string) {
   const trimmed = value?.trim();
   return trimmed || undefined;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function asNonEmptyString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 function startOfDay(isoString?: string) {
@@ -542,25 +534,6 @@ function buildExecutionTriggerLabel(item: AutomationTriggerExecutionListItem) {
   return item.trigger_title || item.binding_title || sourceLabel(item.binding_kind);
 }
 
-function buildExecutionPrimaryLabel(item: AutomationTriggerExecutionListItem) {
-  if (item.binding_kind === 'automation_rule') {
-    return item.reference_title?.trim() || item.binding_title?.trim() || 'Flow run';
-  }
-  return buildExecutionTargetLabel(item);
-}
-
-function buildExecutionTargetLabel(item: AutomationTriggerExecutionListItem) {
-  if (item.target_type && item.target_id) return `${item.target_type.replace(/_/g, ' ')} · ${truncateMiddle(item.target_id, 8, 4)}`;
-  if (item.reference_type === 'automation_rule') return 'Workspace event';
-  if (item.reference_title?.trim()) return item.reference_title.trim();
-  if (item.reference_type && item.reference_id) return `${item.reference_type.replace(/_/g, ' ')} · ${truncateMiddle(item.reference_id, 8, 4)}`;
-  return 'Workspace event';
-}
-
-function normalTargetType(value?: string | null) {
-  return value?.trim().toLowerCase().replace(/^pm_/, '') ?? '';
-}
-
 function buildExecutionFlowHref(item: AutomationTriggerExecutionListItem, workspaceSlug?: string) {
   if (item.reference_type === 'automation_rule' && item.reference_id) {
     return buildAutomationFlowsPath(workspaceSlug, {
@@ -575,23 +548,6 @@ function buildExecutionFlowHref(item: AutomationTriggerExecutionListItem, worksp
   return undefined;
 }
 
-function runTargetLabel(run: AgentRun) {
-  const resolved = run.target_info?.title?.trim();
-  if (resolved) return resolved;
-  const input = asRecord(run.input);
-  const target = asRecord(input?.target);
-  const title =
-    asNonEmptyString(target?.title) ||
-    asNonEmptyString(input?.reference_title) ||
-    asNonEmptyString(input?.title);
-  if (title) return title;
-  return `${run.target_type.replace(/_/g, ' ')} · ${truncateMiddle(run.target_id, 8, 4)}`;
-}
-
-function runTargetKey(run: AgentRun) {
-  return run.target_info?.task_key?.trim() || '';
-}
-
 function runBlockingLabel(run: AgentRun) {
   const status = getAgentRunDisplayStatus(run);
   switch (status) {
@@ -602,6 +558,57 @@ function runBlockingLabel(run: AgentRun) {
     default:
       return 'Needs your input';
   }
+}
+
+function TargetSummaryButton({
+  target,
+  onOpen,
+  className,
+}: {
+  target: ActivityTargetPresentation;
+  onOpen: () => void;
+  className?: string;
+}) {
+  const openTitle = `Open ${target.typeLabel.toLowerCase()}`;
+  const showTypePill = Boolean(target.targetType) && target.targetType !== 'workspace';
+  const titleClasses = cn(
+    'min-w-0 truncate text-left text-sm font-medium text-foreground',
+    target.clickable && 'underline decoration-border underline-offset-4 hover:text-primary',
+  );
+  const content = (
+    <>
+      {showTypePill ? (
+        <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-border/70 bg-muted/40 px-2 text-[10px] font-medium uppercase leading-none tracking-normal text-muted-foreground">
+          {target.typeLabel}
+        </span>
+      ) : null}
+      {target.clickable ? (
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpen();
+              }}
+              className={titleClasses}
+              aria-label={openTitle}
+            >
+              {target.primary}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">{openTitle}</TooltipContent>
+        </Tooltip>
+      ) : (
+        <span className={titleClasses}>{target.primary}</span>
+      )}
+    </>
+  );
+  return (
+    <span className={cn('inline-flex min-w-0 items-center gap-2', className)}>
+      {content}
+    </span>
+  );
 }
 
 function runBlockingCopy(run: AgentRun, agent?: Agent) {
@@ -719,62 +726,54 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function TriggerKindChip({ kind }: { kind: string }) {
-  const label = sourceLabel(kind);
-  const icon = kind === 'automation_rule'
-    ? <ZapIcon className="h-3 w-3" />
-    : kind === 'schedule'
-      ? <Calendar03Icon className="h-3 w-3" />
-      : <BotIcon className="h-3 w-3" />;
-
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-      {icon}
-      {label}
-    </span>
-  );
-}
-
 function NeedActionCard({
   run,
   agent,
   onOpenRun,
+  onOpenTarget,
   onApprove,
   approving,
 }: {
   run: AgentRun;
   agent?: Agent;
   onOpenRun: (runId: string) => void;
+  onOpenTarget: (targetType: string, targetId: string) => void;
   onApprove: (runId: string) => Promise<void>;
   approving: boolean;
 }) {
   const displayStatus = getAgentRunDisplayStatus(run);
-  const waitTime = formatDuration(run.created_at, new Date().toISOString());
+  const waitTime = formatAttentionWaitDuration(run.created_at, new Date().toISOString());
   const needsApproval = displayStatus === 'awaiting_approval';
   const subtitle = runBlockingCopy(run, agent);
-  const targetTitle = runTargetLabel(run);
-  const targetKey = runTargetKey(run);
+  const target = buildActivityTargetPresentation({ run });
 
   return (
     <div className="grid gap-4 rounded-2xl border border-border/70 bg-card/80 p-4 md:grid-cols-[1fr_auto] md:items-center">
       <div className="min-w-0 space-y-2 border-l-2 border-amber-500 pl-3">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Badge variant="outline" className="rounded-full border-amber-500/40 bg-amber-500/10 text-[11px] font-medium text-amber-700 dark:text-amber-400">
             {runBlockingLabel(run)}
           </Badge>
-          <span className="font-mono text-[11px] text-muted-foreground">blocked for {waitTime}</span>
+          <TargetSummaryButton
+            target={target}
+            onOpen={() => onOpenTarget(target.targetType, target.targetId)}
+            className="flex-1 text-[15px]"
+          />
         </div>
-        <p className="truncate text-sm font-medium">
-          {targetKey ? <span className="mr-2 font-mono text-muted-foreground">{targetKey}</span> : null}
-          {targetTitle}
-        </p>
-        <p className="text-xs text-muted-foreground">{subtitle}</p>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {agent ? <AgentAvatar agent={agent} className="h-6 w-6 rounded-none border-0 bg-transparent shadow-none" genericBare /> : null}
           <span>{agent?.name ?? 'Agent'}</span>
           <span className="text-muted-foreground/60">·</span>
+          <span>blocked for <span className="font-mono text-foreground/80">{waitTime}</span></span>
+          <span className="text-muted-foreground/60">·</span>
           <span className="font-mono">{formatShortDate(run.created_at)}</span>
         </div>
+        <p className="text-xs text-muted-foreground">{subtitle}</p>
+        {run.error_message ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
+            {run.error_message}
+          </div>
+        ) : null}
       </div>
       <div className="flex items-center gap-2">
         <Button type="button" variant="outline" size="sm" onClick={() => onOpenRun(run.id)}>
@@ -798,6 +797,7 @@ function NeedActionCard({
 function TimelineRow({
   item,
   agent,
+  run,
   workspaceSlug,
   onOpenRun,
   onOpenFlow,
@@ -805,21 +805,19 @@ function TimelineRow({
 }: {
   item: AutomationTriggerExecutionListItem;
   agent?: Agent;
+  run?: AgentRun;
   workspaceSlug?: string;
   onOpenRun: (runId: string) => void;
   onOpenFlow: (href: string) => void;
   onOpenTarget: (item: AutomationTriggerExecutionListItem) => void;
 }) {
   const duration = formatDuration(item.started_at, item.completed_at);
-  const primaryLabel = buildExecutionPrimaryLabel(item);
-  const targetLabel = buildExecutionTargetLabel(item);
-  const triggerLabel = buildExecutionTriggerLabel(item);
-  const sourceKindLabel = sourceLabel(item.binding_kind);
+  const target = buildExecutionTargetPresentation(item, run);
+  const metadata = buildExecutionMetadataPresentation({
+    ...item,
+    trigger_title: buildExecutionTriggerLabel(item),
+  });
   const flowHref = buildExecutionFlowHref(item, workspaceSlug);
-  const showTargetMeta = targetLabel !== primaryLabel;
-  const showSourceKind = sourceKindLabel.trim().toLowerCase() !== triggerLabel.trim().toLowerCase();
-  const targetType = normalTargetType(item.target_type);
-  const canOpenTarget = Boolean(item.target_id && ['task', 'epic', 'support_conversation'].includes(targetType));
   const canOpenRun = Boolean(item.run_id);
 
   const handleRowActivate = canOpenRun ? () => onOpenRun(item.run_id!) : undefined;
@@ -855,49 +853,14 @@ function TimelineRow({
       <div className="min-w-0 space-y-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <StatusBadge status={item.status} />
-          {showSourceKind ? <TriggerKindChip kind={item.binding_kind} /> : null}
-          {flowHref && item.binding_kind === 'automation_rule' ? (
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpenFlow(flowHref);
-              }}
-              className="inline-flex min-w-0 items-center gap-1 text-sm font-medium text-foreground underline decoration-border underline-offset-4 hover:text-primary"
-            >
-              <span className="truncate">{primaryLabel}</span>
-              <ArrowUpRight01Icon className="h-3 w-3 shrink-0" />
-            </button>
-          ) : (
-            <span className="min-w-0 truncate text-sm font-medium text-foreground">{primaryLabel}</span>
-          )}
+          <TargetSummaryButton
+            target={target}
+            onOpen={() => onOpenTarget(item)}
+            className="flex-1 text-[15px]"
+          />
         </div>
 
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <span className="text-muted-foreground/60">Trigger</span>
-          <span className="text-foreground">{triggerLabel}</span>
-          {showTargetMeta ? (
-            <>
-              <span className="text-muted-foreground/40">·</span>
-              <span className="text-muted-foreground/60">Target</span>
-              {canOpenTarget ? (
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenTarget(item);
-                  }}
-                  className="text-foreground underline decoration-border underline-offset-4 hover:text-primary"
-                >
-                  {targetLabel}
-                </button>
-              ) : (
-                <span className="text-foreground">{targetLabel}</span>
-              )}
-            </>
-          ) : null}
-          <span className="text-muted-foreground/40">·</span>
-          <span className="text-muted-foreground/60">Agent</span>
           <div className="flex min-w-0 items-center gap-1.5">
             {agent?.is_system ? (
               <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
@@ -906,18 +869,54 @@ function TimelineRow({
                 <BotIcon className="h-3 w-3" />
               </span>
             )}
-            <span className="text-foreground">{item.agent_name}</span>
+            <span className="text-foreground">{metadata.subject}</span>
           </div>
+          {metadata.sourceLabel ? (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              {flowHref && metadata.sourceIsFlow ? (
+                <Tooltip delayDuration={0}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenFlow(flowHref);
+                      }}
+                      className="inline-flex min-w-0 items-center gap-1 text-foreground underline decoration-border underline-offset-4 hover:text-primary"
+                      aria-label="Open flow"
+                    >
+                      <ArrowReloadHorizontalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{metadata.sourceLabel}</span>
+                      <ArrowUpRight01Icon className="h-3 w-3 shrink-0" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Open flow</TooltipContent>
+                </Tooltip>
+              ) : (
+                <span className="inline-flex min-w-0 items-center gap-1 text-foreground">
+                  {metadata.sourceIsFlow ? <ArrowReloadHorizontalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+                  <span className="truncate">{metadata.sourceLabel}</span>
+                </span>
+              )}
+            </>
+          ) : null}
+          {metadata.triggerLabel ? (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <span className="text-foreground">{metadata.triggerLabel}</span>
+            </>
+          ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-          <span>Ran <span className="font-mono text-foreground/80">{relativeTime(item.fired_at)}</span></span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+          <span className="font-mono text-foreground/80">{relativeTime(item.fired_at)}</span>
           <span className="text-muted-foreground/40">·</span>
           <span>Duration <span className="font-mono text-foreground/80">{duration}</span></span>
           {item.actor_name ? (
             <>
               <span className="text-muted-foreground/40">·</span>
-              <span>Ran by <span className="font-medium text-foreground/80">{item.actor_name}</span></span>
+              <span>By <span className="font-medium text-foreground/80">{item.actor_name}</span></span>
             </>
           ) : null}
         </div>
@@ -999,17 +998,23 @@ export function AutomationActivityPage({
     void navigate({ to: href });
   }, [navigate]);
 
-  const openTarget = useCallback((item: AutomationTriggerExecutionListItem) => {
+  const openTargetByType = useCallback((targetTypeValue?: string | null, targetIdValue?: string | null) => {
     const slug = workspace?.slug;
-    const targetID = item.target_id?.trim();
+    const targetID = targetIdValue?.trim();
     if (!slug || !targetID) return;
 
-    switch (normalTargetType(item.target_type)) {
+    switch (normalizeActivityTargetType(targetTypeValue)) {
       case 'task':
         openTaskRoute(navigate as never, { pathname: location.pathname } as never, slug, targetID);
         return;
       case 'epic':
         openEpicRoute(navigate as never, { pathname: location.pathname } as never, slug, targetID);
+        return;
+      case 'document':
+        void navigate({
+          to: '/w/$slug/docs/documents/$docId' as string,
+          params: { slug, docId: targetID },
+        });
         return;
       case 'support_conversation':
         void navigate({
@@ -1017,10 +1022,26 @@ export function AutomationActivityPage({
           params: { slug, conversationId: targetID },
         });
         return;
+      case 'crm_contact':
+        void navigate({
+          to: '/w/$slug/crm/contacts/$contactId' as string,
+          params: { slug, contactId: targetID },
+        });
+        return;
+      case 'crm_deal':
+        void navigate({
+          to: '/w/$slug/crm/deals/$dealId' as string,
+          params: { slug, dealId: targetID },
+        });
+        return;
       default:
         return;
     }
   }, [location.pathname, navigate, workspace?.slug]);
+
+  const openTarget = useCallback((item: AutomationTriggerExecutionListItem) => {
+    openTargetByType(item.target_type, item.target_id);
+  }, [openTargetByType]);
 
   const { data: agents = [] } = useAgents(workspaceId);
   const overviewQuery = useAutomationOverview(workspaceId, true);
@@ -1111,6 +1132,7 @@ export function AutomationActivityPage({
   const agentById = useMemo(() => new Map(agentList.map((agent) => [agent.id, agent])), [agentList]);
   const rawWorkspaceRuns = runsQuery.data?.data;
   const workspaceRuns = Array.isArray(rawWorkspaceRuns) ? rawWorkspaceRuns : [];
+  const runById = useMemo(() => new Map(workspaceRuns.map((run) => [run.id, run])), [workspaceRuns]);
   const pausedRuns = useMemo(() => workspaceRuns.filter((run) => ACTIVE_RUN_STATUSES.has(run.status) && isPausedAgentRun(run)), [workspaceRuns]);
   const rawExecutions = executionsQuery.data?.data;
   const executions = Array.isArray(rawExecutions) ? rawExecutions : [];
@@ -1521,6 +1543,7 @@ export function AutomationActivityPage({
                     run={run}
                     agent={agentById.get(run.agent_id)}
                     onOpenRun={openRun}
+                    onOpenTarget={openTargetByType}
                     onApprove={handleApproveRun}
                     approving={approvingRunId === run.id}
                   />
@@ -1612,6 +1635,7 @@ export function AutomationActivityPage({
                               key={item.execution_id}
                               item={item}
                               agent={agentById.get(item.agent_id)}
+                              run={item.run_id ? runById.get(item.run_id) : undefined}
                               workspaceSlug={workspace?.slug}
                               onOpenRun={openRun}
                               onOpenFlow={openFlow}

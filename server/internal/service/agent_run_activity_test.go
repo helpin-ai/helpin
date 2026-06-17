@@ -18,11 +18,17 @@ func setupAgentRunActivityTest(t *testing.T) (*AgentService, *gormTestDB) {
 	db := newTestDB(t)
 	createAgentRunActivityTables(t, db)
 	svc := &AgentService{
-		agentRepo:      repository.NewAgentRepository(db),
-		runRepo:        repository.NewAgentRunRepository(db),
-		runMessageRepo: repository.NewAgentRunMessageRepository(db),
-		activitySvc:    NewPMActivityService(repository.NewPMActivityRepository(db)),
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:        repository.NewAgentRepository(db),
+		runRepo:          repository.NewAgentRunRepository(db),
+		runMessageRepo:   repository.NewAgentRunMessageRepository(db),
+		taskRepo:         repository.NewPMTaskRepository(db),
+		epicRepo:         repository.NewPMEpicRepository(db),
+		conversationRepo: repository.NewSupportConversationRepository(db),
+		docsDocumentRepo: repository.NewDocsDocumentRepository(db),
+		crmContactRepo:   repository.NewCRMContactRepository(db),
+		crmDealRepo:      repository.NewCRMDealRepository(db),
+		activitySvc:      NewPMActivityService(repository.NewPMActivityRepository(db)),
+		runEngine:        &temporalapp.RunEngine{},
 	}
 	return svc, &gormTestDB{DB: db}
 }
@@ -127,10 +133,278 @@ func createAgentRunActivityTables(t *testing.T, db *gorm.DB) {
 			sequence_no INTEGER NOT NULL DEFAULT 0,
 			created_at DATETIME
 		)`,
+		`CREATE TABLE IF NOT EXISTS pm_tasks (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			display_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			task_type TEXT NOT NULL DEFAULT 'feature',
+			workflow_id TEXT NOT NULL,
+			workflow_state_id TEXT NOT NULL,
+			priority TEXT NOT NULL DEFAULT 'none',
+			severity TEXT NOT NULL DEFAULT 'none',
+			position INTEGER NOT NULL DEFAULT 0,
+			started BOOLEAN NOT NULL DEFAULT 0,
+			completed BOOLEAN NOT NULL DEFAULT 0,
+			blocked BOOLEAN NOT NULL DEFAULT 0,
+			archived BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS docs_documents (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			space_id TEXT NOT NULL,
+			collection_id TEXT,
+			title TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'draft',
+			visibility TEXT NOT NULL DEFAULT 'workspace_wide',
+			owner_id TEXT,
+			team_id TEXT,
+			template_key TEXT,
+			excerpt TEXT,
+			icon TEXT,
+			tags BLOB,
+			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
+			is_pinned BOOLEAN NOT NULL DEFAULT 0,
+			is_publicly_shared BOOLEAN NOT NULL DEFAULT 0,
+			share_token TEXT,
+			is_locked BOOLEAN NOT NULL DEFAULT 0,
+			locked_by TEXT,
+			last_reviewed_at DATETIME,
+			next_review_at DATETIME,
+			published_at DATETIME,
+			created_by TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS pm_epics (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			position INTEGER NOT NULL DEFAULT 0,
+			health TEXT NOT NULL DEFAULT 'no_health',
+			archived BOOLEAN NOT NULL DEFAULT 0,
+			planning_state TEXT NOT NULL DEFAULT 'not_started',
+			spec_clarifications BLOB NOT NULL DEFAULT '[]',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS support_conversations (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			display_id INTEGER NOT NULL,
+			subject TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'open',
+			priority TEXT NOT NULL DEFAULT 'medium',
+			channel TEXT NOT NULL DEFAULT 'widget',
+			source TEXT NOT NULL DEFAULT 'internal',
+			email_unsubscribed BOOLEAN NOT NULL DEFAULT 0,
+			ai_turn_count INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS crm_contacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			display_id TEXT NOT NULL,
+			first_name TEXT NOT NULL,
+			last_name TEXT,
+			email TEXT,
+			lifecycle_stage TEXT NOT NULL DEFAULT 'subscriber',
+			lead_status TEXT NOT NULL DEFAULT 'new',
+			custom_properties BLOB NOT NULL DEFAULT '{}',
+			email_status TEXT NOT NULL DEFAULT 'valid',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS crm_deals (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			display_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			pipeline_id TEXT NOT NULL,
+			stage_id TEXT NOT NULL,
+			amount REAL,
+			currency TEXT NOT NULL DEFAULT 'USD',
+			close_date DATETIME,
+			owner_member_id TEXT,
+			probability INTEGER,
+			custom_properties BLOB NOT NULL DEFAULT '{}',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 	}
 	for _, table := range tables {
 		if err := db.Exec(table).Error; err != nil {
 			t.Fatalf("create agent run activity test table: %v", err)
+		}
+	}
+}
+
+func TestEnrichRunTargetsResolvesTaskTargetInfo(t *testing.T) {
+	svc, testDB := setupAgentRunActivityTest(t)
+	ctx := context.Background()
+	workspaceID := "ws-agent-activity"
+	taskID := "task-1"
+	now := time.Now()
+	if err := testDB.Create(&model.PMTask{
+		ID:              taskID,
+		WorkspaceID:     workspaceID,
+		DisplayID:       239,
+		Name:            "Fix shared run link",
+		TaskType:        model.PMTaskTypeFeature,
+		WorkflowID:      "workflow-1",
+		WorkflowStateID: "state-1",
+		Priority:        model.PMTaskPriorityNone,
+		Severity:        model.PMTaskSeverityNone,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	runs := []model.AgentRun{{
+		ID:          "run-task",
+		WorkspaceID: workspaceID,
+		TargetType:  "task",
+		TargetID:    taskID,
+	}}
+
+	svc.enrichRunTargets(ctx, workspaceID, runs)
+
+	if runs[0].TargetInfo == nil {
+		t.Fatal("expected task target info")
+	}
+	if runs[0].TargetInfo.Title != "Fix shared run link" {
+		t.Fatalf("target title = %q", runs[0].TargetInfo.Title)
+	}
+}
+
+func TestEnrichRunTargetsResolvesDocumentTargetInfo(t *testing.T) {
+	svc, testDB := setupAgentRunActivityTest(t)
+	ctx := context.Background()
+	workspaceID := "ws-agent-activity"
+	documentID := "doc-1"
+	now := time.Now()
+	if err := testDB.Create(&model.DocsDocument{
+		ID:          documentID,
+		WorkspaceID: workspaceID,
+		SpaceID:     "space-1",
+		Title:       "API setup guide",
+		Status:      model.DocStatusDraft,
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		SortKey:     "~",
+		CreatedBy:   "user-1",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	runs := []model.AgentRun{{
+		ID:          "run-document",
+		WorkspaceID: workspaceID,
+		TargetType:  "document",
+		TargetID:    documentID,
+	}}
+
+	svc.enrichRunTargets(ctx, workspaceID, runs)
+
+	if runs[0].TargetInfo == nil {
+		t.Fatal("expected document target info")
+	}
+	if runs[0].TargetInfo.Title != "API setup guide" {
+		t.Fatalf("target title = %q", runs[0].TargetInfo.Title)
+	}
+}
+
+func TestEnrichRunTargetsResolvesLinkedTargetTitles(t *testing.T) {
+	svc, testDB := setupAgentRunActivityTest(t)
+	ctx := context.Background()
+	workspaceID := "ws-agent-activity"
+	now := time.Now()
+	if err := testDB.Create(&model.PMEpic{
+		ID:                 "epic-1",
+		WorkspaceID:        workspaceID,
+		Name:               "Billing automation cleanup",
+		Health:             model.PMEpicHealthNone,
+		PlanningState:      "not_started",
+		SpecClarifications: json.RawMessage(`[]`),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}).Error; err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+	if err := testDB.Create(&model.SupportConversation{
+		ID:          "conversation-1",
+		WorkspaceID: workspaceID,
+		DisplayID:   42,
+		Subject:     "Cannot connect custom domain",
+		Status:      model.SupportConversationStatusOpen,
+		Priority:    "medium",
+		Channel:     "email",
+		Source:      "email",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}).Error; err != nil {
+		t.Fatalf("create support conversation: %v", err)
+	}
+	lastName := "Case"
+	email := "annie@example.com"
+	if err := testDB.Create(&model.CRMContact{
+		ID:               "contact-1",
+		WorkspaceID:      workspaceID,
+		DisplayID:        "CON-1",
+		FirstName:        "Annie",
+		LastName:         &lastName,
+		Email:            &email,
+		LifecycleStage:   model.CRMLifecycleLead,
+		LeadStatus:       model.CRMLeadStatusNew,
+		CustomProperties: model.JSONB{},
+		EmailStatus:      model.CRMContactEmailStatusValid,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}).Error; err != nil {
+		t.Fatalf("create crm contact: %v", err)
+	}
+	if err := testDB.Create(&model.CRMDeal{
+		ID:               "deal-1",
+		WorkspaceID:      workspaceID,
+		DisplayID:        "DEAL-1",
+		Name:             "Enterprise renewal",
+		PipelineID:       "pipeline-1",
+		StageID:          "stage-1",
+		Currency:         "USD",
+		CustomProperties: model.JSONB{},
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}).Error; err != nil {
+		t.Fatalf("create crm deal: %v", err)
+	}
+
+	runs := []model.AgentRun{
+		{ID: "run-epic", WorkspaceID: workspaceID, TargetType: "epic", TargetID: "epic-1"},
+		{ID: "run-support", WorkspaceID: workspaceID, TargetType: "support_conversation", TargetID: "conversation-1"},
+		{ID: "run-contact", WorkspaceID: workspaceID, TargetType: "crm_contact", TargetID: "contact-1"},
+		{ID: "run-deal", WorkspaceID: workspaceID, TargetType: "crm_deal", TargetID: "deal-1"},
+	}
+
+	svc.enrichRunTargets(ctx, workspaceID, runs)
+
+	expectedTitles := map[string]string{
+		"run-epic":    "Billing automation cleanup",
+		"run-support": "Cannot connect custom domain",
+		"run-contact": "Annie Case",
+		"run-deal":    "Enterprise renewal",
+	}
+	for idx := range runs {
+		run := runs[idx]
+		if run.TargetInfo == nil {
+			t.Fatalf("%s target info is nil", run.ID)
+		}
+		if run.TargetInfo.Title != expectedTitles[run.ID] {
+			t.Fatalf("%s target title = %q, want %q", run.ID, run.TargetInfo.Title, expectedTitles[run.ID])
 		}
 	}
 }

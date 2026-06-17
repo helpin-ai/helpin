@@ -167,6 +167,20 @@ func (r *CRMDealRepository) List(ctx context.Context, workspaceID string, filter
 	return deals, total, nil
 }
 
+// ListByIDs returns deals by ID for a workspace.
+func (r *CRMDealRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.CRMDeal, error) {
+	if len(ids) == 0 {
+		return []model.CRMDeal{}, nil
+	}
+	var deals []model.CRMDeal
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Find(&deals).Error; err != nil {
+		return nil, fmt.Errorf("list deals by ids: %w", err)
+	}
+	return deals, nil
+}
+
 // GetByID returns a deal by ID with pipeline and stage.
 func (r *CRMDealRepository) GetByID(ctx context.Context, id string) (*model.CRMDeal, error) {
 	var deal model.CRMDeal

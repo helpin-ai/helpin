@@ -96,6 +96,20 @@ func (r *CRMContactRepository) GetByID(ctx context.Context, id string) (*model.C
 	return &contact, nil
 }
 
+// ListByIDs returns contacts by ID for a workspace.
+func (r *CRMContactRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.CRMContact, error) {
+	if len(ids) == 0 {
+		return []model.CRMContact{}, nil
+	}
+	var contacts []model.CRMContact
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Find(&contacts).Error; err != nil {
+		return nil, fmt.Errorf("list contacts by ids: %w", err)
+	}
+	return contacts, nil
+}
+
 // Create inserts a contact.
 func (r *CRMContactRepository) Create(ctx context.Context, contact *model.CRMContact) error {
 	if err := r.db.WithContext(ctx).Create(contact).Error; err != nil {

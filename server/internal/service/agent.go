@@ -5525,57 +5525,192 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 	}
 
 	taskIDs := make([]string, 0, len(runs))
+	epicIDs := make([]string, 0, len(runs))
+	documentIDs := make([]string, 0, len(runs))
+	conversationIDs := make([]string, 0, len(runs))
+	contactIDs := make([]string, 0, len(runs))
+	dealIDs := make([]string, 0, len(runs))
 	seen := make(map[string]struct{}, len(runs))
 	for _, run := range runs {
-		if run.TargetType != "pm_task" || run.TargetID == "" {
+		targetID := strings.TrimSpace(run.TargetID)
+		if targetID == "" {
 			continue
 		}
-		if _, ok := seen[run.TargetID]; ok {
+		targetType := normalizeRunTargetType(run.TargetType)
+		seenKey := targetType + ":" + targetID
+		if _, ok := seen[seenKey]; ok {
 			continue
 		}
-		seen[run.TargetID] = struct{}{}
-		taskIDs = append(taskIDs, run.TargetID)
+		seen[seenKey] = struct{}{}
+		switch targetType {
+		case "task":
+			taskIDs = append(taskIDs, targetID)
+		case "epic":
+			epicIDs = append(epicIDs, targetID)
+		case "document":
+			documentIDs = append(documentIDs, targetID)
+		case "support_conversation":
+			conversationIDs = append(conversationIDs, targetID)
+		case "crm_contact":
+			contactIDs = append(contactIDs, targetID)
+		case "crm_deal":
+			dealIDs = append(dealIDs, targetID)
+		}
 	}
 
-	if len(taskIDs) == 0 || s.taskRepo == nil {
-		return
-	}
-
-	tasks, err := s.taskRepo.ListByIDs(ctx, workspaceID, taskIDs)
-	if err != nil {
-		slog.WarnContext(ctx, "enrich run targets: list tasks failed", "error", err, "workspace_id", workspaceID)
-		return
-	}
-
-	byID := make(map[string]model.PMTask, len(tasks))
-	for _, task := range tasks {
-		byID[task.ID] = task
-	}
-
+	tasksByID := map[string]model.PMTask{}
 	var workspaceKey string
-	if s.taskService != nil && len(byID) > 0 {
-		workspaceKey = s.taskService.GetWorkspaceKey(ctx, workspaceID)
+	if len(taskIDs) > 0 && s.taskRepo != nil {
+		tasks, err := s.taskRepo.ListByIDs(ctx, workspaceID, taskIDs)
+		if err != nil {
+			slog.WarnContext(ctx, "enrich run targets: list tasks failed", "error", err, "workspace_id", workspaceID)
+		} else {
+			tasksByID = make(map[string]model.PMTask, len(tasks))
+			for _, task := range tasks {
+				tasksByID[task.ID] = task
+			}
+			if s.taskService != nil && len(tasksByID) > 0 {
+				workspaceKey = s.taskService.GetWorkspaceKey(ctx, workspaceID)
+			}
+		}
+	}
+
+	epicsByID := map[string]model.PMEpic{}
+	if len(epicIDs) > 0 && s.epicRepo != nil {
+		epics, err := s.epicRepo.ListByIDs(ctx, workspaceID, epicIDs)
+		if err != nil {
+			slog.WarnContext(ctx, "enrich run targets: list epics failed", "error", err, "workspace_id", workspaceID)
+		} else {
+			epicsByID = make(map[string]model.PMEpic, len(epics))
+			for _, epic := range epics {
+				epicsByID[epic.ID] = epic
+			}
+		}
+	}
+
+	documentsByID := map[string]model.DocsDocument{}
+	if len(documentIDs) > 0 && s.docsDocumentRepo != nil {
+		docs, err := s.docsDocumentRepo.ListByIDs(ctx, workspaceID, documentIDs)
+		if err != nil {
+			slog.WarnContext(ctx, "enrich run targets: list documents failed", "error", err, "workspace_id", workspaceID)
+		} else {
+			documentsByID = make(map[string]model.DocsDocument, len(docs))
+			for _, doc := range docs {
+				documentsByID[doc.ID] = doc
+			}
+		}
+	}
+
+	conversationsByID := map[string]model.SupportConversation{}
+	if len(conversationIDs) > 0 && s.conversationRepo != nil {
+		conversations, err := s.conversationRepo.ListByIDs(ctx, workspaceID, conversationIDs, "", model.RoleOwner)
+		if err != nil {
+			slog.WarnContext(ctx, "enrich run targets: list support conversations failed", "error", err, "workspace_id", workspaceID)
+		} else {
+			conversationsByID = make(map[string]model.SupportConversation, len(conversations))
+			for _, conversation := range conversations {
+				conversationsByID[conversation.ID] = conversation
+			}
+		}
+	}
+
+	contactsByID := map[string]model.CRMContact{}
+	if len(contactIDs) > 0 && s.crmContactRepo != nil {
+		contacts, err := s.crmContactRepo.ListByIDs(ctx, workspaceID, contactIDs)
+		if err != nil {
+			slog.WarnContext(ctx, "enrich run targets: list crm contacts failed", "error", err, "workspace_id", workspaceID)
+		} else {
+			contactsByID = make(map[string]model.CRMContact, len(contacts))
+			for _, contact := range contacts {
+				contactsByID[contact.ID] = contact
+			}
+		}
+	}
+
+	dealsByID := map[string]model.CRMDeal{}
+	if len(dealIDs) > 0 && s.crmDealRepo != nil {
+		deals, err := s.crmDealRepo.ListByIDs(ctx, workspaceID, dealIDs)
+		if err != nil {
+			slog.WarnContext(ctx, "enrich run targets: list crm deals failed", "error", err, "workspace_id", workspaceID)
+		} else {
+			dealsByID = make(map[string]model.CRMDeal, len(deals))
+			for _, deal := range deals {
+				dealsByID[deal.ID] = deal
+			}
+		}
 	}
 
 	for idx := range runs {
 		run := &runs[idx]
-		if run.TargetType != "pm_task" {
-			continue
-		}
-		task, ok := byID[run.TargetID]
-		if !ok {
+		targetType := normalizeRunTargetType(run.TargetType)
+		targetID := strings.TrimSpace(run.TargetID)
+		if targetID == "" {
 			continue
 		}
 		info := &model.AgentRunTarget{
 			TargetType: run.TargetType,
 			TargetID:   run.TargetID,
-			Title:      task.Name,
 		}
-		if workspaceKey != "" {
-			info.TaskKey = model.FormatTaskKey(workspaceKey, task.DisplayID)
+		switch targetType {
+		case "task":
+			task, ok := tasksByID[targetID]
+			if !ok {
+				continue
+			}
+			info.Title = task.Name
+			if workspaceKey != "" {
+				info.TaskKey = model.FormatTaskKey(workspaceKey, task.DisplayID)
+			}
+		case "epic":
+			epic, ok := epicsByID[targetID]
+			if !ok {
+				continue
+			}
+			info.Title = epic.Name
+		case "document":
+			doc, ok := documentsByID[targetID]
+			if !ok {
+				continue
+			}
+			info.Title = doc.Title
+		case "support_conversation":
+			conversation, ok := conversationsByID[targetID]
+			if !ok {
+				continue
+			}
+			info.Title = conversation.Subject
+		case "crm_contact":
+			contact, ok := contactsByID[targetID]
+			if !ok {
+				continue
+			}
+			info.Title = crmContactDisplayName(&contact)
+		case "crm_deal":
+			deal, ok := dealsByID[targetID]
+			if !ok {
+				continue
+			}
+			info.Title = deal.Name
+		default:
+			continue
 		}
 		run.TargetInfo = info
 	}
+}
+
+func normalizeRunTargetType(targetType string) string {
+	switch strings.TrimSpace(targetType) {
+	case "task", "pm_task", "story":
+		return "task"
+	case "doc":
+		return "document"
+	default:
+		return strings.TrimSpace(targetType)
+	}
+}
+
+func isTaskRunTargetType(targetType string) bool {
+	return normalizeRunTargetType(targetType) == "task"
 }
 
 func validateRuntimeKind(runtimeKind string) error {
