@@ -26,7 +26,7 @@ export function getInitials(nameOrEmail?: string | null): string {
  * - < 1 min: "Just now"
  * - < 60 min: "Xm ago"
  * - < 24 hours: "Xh ago"
- * - < 7 days: "Xd ago"
+ * - < 30 days: "X days ago"
  * - Same year: "Mar 8, 2:30 PM"
  * - Older: "Mar 8, 2025"
  */
@@ -49,7 +49,7 @@ export function timeAgo(isoOrDate: string | Date): string {
   const hours = differenceInHours(now, date);
   if (hours < 24) return `${hours}h ago`;
   const days = differenceInDays(now, date);
-  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
   if (isThisYear(date)) return format(date, 'MMM d, h:mm a');
   return format(date, 'MMM d, yyyy');
 }
