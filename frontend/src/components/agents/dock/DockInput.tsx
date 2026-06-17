@@ -11,6 +11,7 @@ import {
   RecordIcon,
   Search01Icon,
   Tick01Icon,
+  Cancel01Icon,
   UserIcon,
 } from '@/lib/icons';
 import type { CommandBarPageContext } from '@/lib/pmTypes';
@@ -87,6 +88,7 @@ export interface DockInputProps {
   contextOptions?: PageContextScopeOption[];
   activeContextKey?: string | null;
   onContextKeyChange?: (key: string) => void;
+  onClearContext?: () => void;
   busy?: boolean;
   disabled?: boolean;
   autoFocus?: boolean;
@@ -104,6 +106,7 @@ export function DockInput({
   contextOptions = [],
   activeContextKey,
   onContextKeyChange,
+  onClearContext,
   busy,
   disabled,
   autoFocus,
@@ -126,7 +129,7 @@ export function DockInput({
   const placeholder =
     mode === 'list'
       ? 'Search runs or ask something new…'
-      : 'Ask, or type / to run an agent or pipeline';
+      : 'Run Atlas, Forge, Lens, or any agent';
 
   // Hide the workspace-level chip — it just restates the current workspace
   // (already visible in the sidebar) and provides no scoping signal. Keep it
@@ -148,6 +151,7 @@ export function DockInput({
                 options={contextOptions}
                 activeKey={activeContextKey}
                 onChange={onContextKeyChange}
+                onClear={onClearContext}
               />
             ) : null}
             {onAddContext ? (
@@ -162,7 +166,7 @@ export function DockInput({
             ) : null}
           </div>
           <span className="shrink-0 text-[11px] text-muted-foreground">
-            <kbd className="rounded border bg-muted px-1 py-0 font-mono text-[10px]">/</kbd> for agents
+            Press <kbd className="rounded border bg-muted px-1 py-0 font-mono text-[10px]">/</kbd> to open
           </span>
         </div>
       ) : null}
@@ -215,11 +219,13 @@ function ContextChip({
   options,
   activeKey,
   onChange,
+  onClear,
 }: {
   context: CommandBarPageContext;
   options: PageContextScopeOption[];
   activeKey?: string | null;
   onChange?: (key: string) => void;
+  onClear?: () => void;
 }) {
   const Icon = chipIcon(context.entity_type);
   const blockScoped = isBlockScopedDocument(context);
@@ -227,6 +233,7 @@ function ContextChip({
   const title = contextTitle(context);
   const label = contextScopeLabel(context);
   const hasOptions = options.length > 1 && !!onChange;
+  const canClear = context.entity_type === 'document' && !!onClear;
   const chipClassName = cn(
     'inline-flex max-w-[300px] items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] text-foreground transition',
     blockScoped || allTasks ? 'border-orange-500/30 bg-orange-500/10' : 'border-border/70 bg-muted/30',
@@ -248,6 +255,21 @@ function ContextChip({
       {hasOptions ? <ArrowDown01Icon className="h-3 w-3 shrink-0 text-muted-foreground" /> : null}
     </>
   );
+  const clearButton = canClear ? (
+    <button
+      type="button"
+      aria-label="Remove document context"
+      title="Remove document context"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClear?.();
+      }}
+      className="-mr-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-background hover:text-foreground"
+    >
+      <Cancel01Icon className="h-3 w-3" />
+    </button>
+  ) : null;
 
   if (!hasOptions) {
     return (
@@ -256,11 +278,12 @@ function ContextChip({
         className={chipClassName}
       >
         {body}
+        {clearButton}
       </span>
     );
   }
 
-  return (
+  const dropdown = (
     <DropdownMenu>
       <DropdownMenuTrigger
         type="button"
@@ -292,5 +315,14 @@ function ContextChip({
         })}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+
+  if (!clearButton) return dropdown;
+
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1">
+      {dropdown}
+      {clearButton}
+    </span>
   );
 }

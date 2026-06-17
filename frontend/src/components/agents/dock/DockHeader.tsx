@@ -1,4 +1,4 @@
-import { ArrowLeft02Icon, Cancel01Icon, Clock03Icon, Loading01Icon, PauseIcon, PlusSignIcon } from '@/lib/icons';
+import { ArrowLeft02Icon, Clock03Icon, Loading01Icon, Minimize01Icon, PauseIcon, PlusSignIcon } from '@/lib/icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -73,8 +73,8 @@ export function DockHeader({
           <PlusSignIcon className="h-3.5 w-3.5" />
           <span className="text-[11px] font-medium">New</span>
         </HeaderButton>
-        <HeaderButton tip="Hide dock" onClick={onClose}>
-          <Cancel01Icon className="h-3.5 w-3.5" />
+        <HeaderButton tip="Minimize dock" onClick={onClose}>
+          <Minimize01Icon className="h-3.5 w-3.5" />
         </HeaderButton>
       </div>
     </div>

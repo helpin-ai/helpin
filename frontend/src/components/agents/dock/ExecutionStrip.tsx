@@ -5,6 +5,7 @@ import type { CommandBarRunPlan } from '@/stores/commandBarStore';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import {
   ArrowDown01Icon,
+  ArrowReloadHorizontalIcon,
   ArrowUpRight01Icon,
   Bookmark01Icon,
   Cancel01Icon,
@@ -331,10 +332,11 @@ function PlanStrip({
       {onAction && (state === 'attention' || state === 'cancelled') ? (
         <ChipRow>
           <ActionChip
-            icon={busy ? Loading01Icon : RotateLeft01Icon}
+            icon={busy ? Loading01Icon : ArrowReloadHorizontalIcon}
             label={busy ? 'Retrying…' : 'Retry'}
             onClick={() => onAction('retry')}
             disabled={busy}
+            retry
           />
           {hasTranscript ? null : (
             <ActionChip
@@ -359,6 +361,7 @@ function PlanStrip({
             label="Cancel"
             onClick={() => onAction('cancel')}
             disabled={busy}
+            danger
           />
           {hasTranscript ? null : (
             <ActionChip
@@ -406,7 +409,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
       {/* Primary output: the agent's full transcript, rendered inline so a
           one-shot run's result is readable in the bar. Falls back to the live
           plan / terse summary only until transcript segments arrive. */}
-      {hasTranscript ? (
+      {expanded && hasTranscript ? (
         <div className="space-y-2 pl-4">
           {open && targetLabel(run) ? (
             <p className="text-[11px] text-muted-foreground">{targetLabel(run)}</p>
@@ -416,7 +419,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
             <p className="rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">{run.error_message}</p>
           ) : null}
         </div>
-      ) : open ? (
+      ) : expanded ? (
         <div className="space-y-2 pl-4 text-xs leading-snug">
           {targetLabel(run) ? (
             <p className="text-[11px] text-muted-foreground">{targetLabel(run)}</p>
@@ -451,7 +454,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
         </div>
       ) : null}
 
-      {stream.pendingInteraction ? (
+      {expanded && stream.pendingInteraction ? (
         <PendingInteractionCard
           workspaceId={workspaceId}
           runId={run.id}
@@ -464,9 +467,9 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
         />
       ) : null}
 
-      {hasTranscript ? null : resultSlot}
+      {expanded && !hasTranscript ? resultSlot : null}
 
-      {onAction ? (
+      {expanded && onAction ? (
         <ChipRow
           // When the inline approval card already provides the primary action,
           // demote Cancel/Open to a right-aligned meta row so the user's eye
@@ -485,10 +488,11 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
           ) : null}
           {(state === 'attention' || state === 'cancelled') && !awaitingApproval ? (
             <ActionChip
-              icon={busy ? Loading01Icon : RotateLeft01Icon}
+              icon={busy ? Loading01Icon : ArrowReloadHorizontalIcon}
               label={busy ? 'Retrying…' : 'Retry'}
               onClick={() => onAction('retry')}
               disabled={busy}
+              retry
             />
           ) : null}
           {awaitingApproval && !stream.pendingInteraction ? (
@@ -502,18 +506,16 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
           ) : null}
           {canCancel ? (
             <ActionChip
-              icon={Loading01Icon}
-              label="Cancel"
+              icon={busy ? Loading01Icon : Cancel01Icon}
+              label={busy ? 'Cancelling…' : 'Cancel'}
               onClick={() => onAction('cancel')}
               disabled={busy}
-              subtle
+              danger
             />
           ) : null}
           {/* Output is inline once the transcript is present, so the prominent
               "Open the session sheet" chip is only offered as a fallback. */}
-          {hasTranscript ? null : (
-            <ActionChip icon={ArrowUpRight01Icon} label="Open" onClick={() => onAction('open')} />
-          )}
+          <ActionChip icon={ArrowUpRight01Icon} label="Open" onClick={() => onAction('open')} />
         </ChipRow>
       ) : null}
     </div>
@@ -608,6 +610,8 @@ function ActionChip({
   disabled,
   accent,
   subtle,
+  danger,
+  retry,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -616,6 +620,8 @@ function ActionChip({
   accent?: boolean;
   /** Borderless, transparent variant for low-emphasis meta actions. */
   subtle?: boolean;
+  danger?: boolean;
+  retry?: boolean;
 }) {
   return (
     <button
@@ -626,13 +632,17 @@ function ActionChip({
         'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition',
         accent
           ? 'border border-orange-500/40 bg-orange-500/10 text-orange-700 hover:bg-orange-500/15 dark:text-orange-300'
-          : subtle
-            ? 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-            : 'border border-border/70 bg-background/80 text-foreground hover:border-foreground/30 hover:bg-muted/60',
+          : danger
+            ? 'border border-destructive/30 bg-transparent text-destructive hover:bg-destructive/10 hover:text-destructive'
+            : retry
+              ? 'border border-orange-500/30 bg-transparent text-orange-700 hover:bg-orange-500/10 dark:text-orange-300'
+              : subtle
+                ? 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                : 'border border-border/70 bg-background/80 text-foreground hover:border-foreground/30 hover:bg-muted/60',
         disabled && 'cursor-not-allowed opacity-60',
       )}
     >
-      <Icon className={cn('h-3 w-3', label === 'Retrying…' || label === 'Approving…' ? 'animate-spin' : null)} />
+      <Icon className={cn('h-3 w-3', label.endsWith('…') ? 'animate-spin' : null)} />
       {label}
     </button>
   );
