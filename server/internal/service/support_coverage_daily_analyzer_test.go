@@ -795,6 +795,90 @@ func TestSupportCoverageDailyAnalyzer_UpsertFindingDedupesAndPreservesAcceptedRe
 	}
 }
 
+func TestSupportCoverageDailyAnalyzer_UpsertFindingAttachesSemanticallySimilarGap(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo)
+	ctx := context.Background()
+
+	first, err := analyzer.UpsertFinding(ctx, CoverageFindingUpsertInput{
+		WorkspaceID:    "ws-1",
+		ConversationID: "conversation-1",
+		AnalysisID:     "analysis-1",
+		Result: CoverageConversationAnalysisResult{
+			HasGap:          true,
+			GapKind:         "action",
+			GapCategory:     model.SupportCoverageGapCategoryAction,
+			CanonicalTitle:  "Cancel subscription action unavailable",
+			CustomerNeed:    "Customer needed to cancel their subscription from account settings.",
+			AIFailure:       "AI could explain policy but could not cancel the subscription.",
+			HumanResolution: "Agent cancelled the subscription manually.",
+			RecommendedFixes: []CoverageRecommendedFix{{
+				Type:       model.SupportCoverageFixAddAction,
+				TargetType: "tool_action",
+				Priority:   model.SupportCoverageRecommendationPriorityPrimary,
+				Rationale:  "AI needs a guarded cancel action.",
+			}},
+			Confidence: 0.88,
+		},
+	})
+	if err != nil {
+		t.Fatalf("first UpsertFinding: %v", err)
+	}
+
+	second, err := analyzer.UpsertFinding(ctx, CoverageFindingUpsertInput{
+		WorkspaceID:    "ws-1",
+		ConversationID: "conversation-2",
+		AnalysisID:     "analysis-2",
+		Result: CoverageConversationAnalysisResult{
+			HasGap:          true,
+			GapKind:         "content",
+			GapCategory:     model.SupportCoverageGapCategoryKnowledge,
+			CanonicalTitle:  "Subscription cancellation instructions missing",
+			CustomerNeed:    "Customer needed to cancel their subscription from account settings.",
+			AIFailure:       "AI did not know the cancellation path.",
+			HumanResolution: "Agent explained and completed the cancellation.",
+			RecommendedFixes: []CoverageRecommendedFix{{
+				Type:       model.SupportCoverageFixCreateArticle,
+				TargetType: "docs",
+				Priority:   model.SupportCoverageRecommendationPriorityPrimary,
+				Rationale:  "Customers ask how to cancel.",
+			}},
+			Confidence: 0.84,
+		},
+	})
+	if err != nil {
+		t.Fatalf("second UpsertFinding: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("expected semantic duplicate to attach to %q, got %q", first.ID, second.ID)
+	}
+
+	var gapCount int64
+	if err := db.Model(&model.SupportCoverageGap{}).Where("workspace_id = ?", "ws-1").Count(&gapCount).Error; err != nil {
+		t.Fatalf("count gaps: %v", err)
+	}
+	if gapCount != 1 {
+		t.Fatalf("gap count=%d, want 1", gapCount)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap, "id = ?", first.ID).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.EvidenceCount != 2 {
+		t.Fatalf("EvidenceCount=%d, want 2", gap.EvidenceCount)
+	}
+	var evidenceCount int64
+	if err := db.Model(&model.SupportGapEvidence{}).Where("gap_id = ?", first.ID).Count(&evidenceCount).Error; err != nil {
+		t.Fatalf("count evidence: %v", err)
+	}
+	if evidenceCount != 2 {
+		t.Fatalf("evidence count=%d, want 2", evidenceCount)
+	}
+}
+
 func TestSupportCoverageDailyAnalyzer_GenerateKnowledgeSuggestion(t *testing.T) {
 	cases := []struct {
 		name    string

@@ -45,16 +45,25 @@ func (r *SupportCoverageRepository) ListOpenGapsForClusterRebuild(ctx context.Co
 		limit = 1000
 	}
 	evidenceCutoff := time.Now().AddDate(0, 0, -30)
+	customerNeedExpr := "''"
+	if r.db.Dialector.Name() == "postgres" {
+		customerNeedExpr = "COALESCE(latest_evidence.metadata ->> 'customer_need', '')"
+	} else if r.db.Dialector.Name() == "sqlite" {
+		customerNeedExpr = "COALESCE(json_extract(latest_evidence.metadata, '$.customer_need'), '')"
+	}
 	var items []model.SupportCoverageGapListItem
 	err := r.db.WithContext(ctx).
 		Table("support_coverage_gaps g").
 		Select(`g.*,
 			COALESCE(t.title, '') AS topic_title,
 			COALESCE(t.canonical_title, t.title, '') AS canonical_title,
+			COALESCE(latest_evidence.excerpt, '') AS evidence_text,
+			`+customerNeedExpr+` AS customer_need_text,
 			(SELECT COUNT(*) FROM support_gap_suggestions s WHERE s.gap_id = g.id) AS suggestion_count,
 			(SELECT ga.document_id FROM support_coverage_gap_articles ga WHERE ga.gap_id = g.id LIMIT 1) AS related_article_id,
 			(SELECT COUNT(DISTINCT COALESCE(e.conversation_id, e.id)) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d`, evidenceCutoff).
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
+		Joins("LEFT JOIN support_gap_evidence latest_evidence ON latest_evidence.id = (SELECT e2.id FROM support_gap_evidence e2 WHERE e2.gap_id = g.id ORDER BY e2.created_at DESC LIMIT 1)").
 		Where("g.workspace_id = ? AND g.status = ?", workspaceID, model.SupportCoverageGapStatusOpen).
 		Order("g.evidence_count DESC, g.last_seen_at DESC").
 		Limit(limit).
@@ -254,6 +263,28 @@ func (r *SupportCoverageRepository) UpsertOpenGapByTopic(ctx context.Context, ga
 		return nil, false, fmt.Errorf("create open topic gap: %w", err)
 	}
 	return gap, true, nil
+}
+
+func (r *SupportCoverageRepository) IncrementOpenGapEvidence(ctx context.Context, workspaceID, gapID string, lastSeenAt time.Time) (*model.SupportCoverageGap, error) {
+	if workspaceID == "" || gapID == "" {
+		return nil, fmt.Errorf("workspace_id and gap_id are required")
+	}
+	var gap model.SupportCoverageGap
+	if err := r.db.WithContext(ctx).
+		Where("id = ? AND workspace_id = ? AND status = ?", gapID, workspaceID, model.SupportCoverageGapStatusOpen).
+		First(&gap).Error; err != nil {
+		return nil, fmt.Errorf("lookup open gap: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Model(&gap).Updates(map[string]interface{}{
+		"evidence_count": gorm.Expr("evidence_count + 1"),
+		"last_seen_at":   lastSeenAt,
+		"updated_at":     time.Now(),
+	}).Error; err != nil {
+		return nil, fmt.Errorf("increment open gap evidence: %w", err)
+	}
+	gap.EvidenceCount++
+	gap.LastSeenAt = lastSeenAt
+	return &gap, nil
 }
 
 // CreateEvidence links a gap to evidence (conversation, search, feedback).

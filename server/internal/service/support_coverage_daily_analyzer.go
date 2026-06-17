@@ -914,14 +914,8 @@ func (s *SupportCoverageDailyAnalyzer) UpsertFinding(ctx context.Context, input 
 		result.CanonicalTitle+" "+result.CustomerNeed,
 	)
 
-	topic, err := s.coverageRepo.UpsertTopicByClusterKey(ctx, input.WorkspaceID, clusterKey, title)
-	if err != nil {
-		return nil, fmt.Errorf("upsert analysis topic: %w", err)
-	}
-
 	gap := &model.SupportCoverageGap{
 		WorkspaceID:  input.WorkspaceID,
-		TopicID:      &topic.ID,
 		DedupeKey:    clusterKey,
 		GapKind:      firstNonEmptyCoverageString(result.GapKind, "content"),
 		GapCategory:  firstNonEmptyCoverageString(result.GapCategory, model.SupportCoverageGapCategoryUnknown),
@@ -935,7 +929,21 @@ func (s *SupportCoverageDailyAnalyzer) UpsertFinding(ctx context.Context, input 
 		LastSeenAt:   now,
 		Metadata:     []byte(`{"source":"daily_conversation_analysis"}`),
 	}
-	upserted, _, err := s.coverageRepo.UpsertOpenGapByTopic(ctx, gap)
+
+	upserted, err := s.attachFindingToSimilarGap(ctx, input, result, gap, now)
+	if err != nil {
+		return nil, err
+	}
+	if upserted == nil {
+		topic, err := s.coverageRepo.UpsertTopicByClusterKey(ctx, input.WorkspaceID, clusterKey, title)
+		if err != nil {
+			return nil, fmt.Errorf("upsert analysis topic: %w", err)
+		}
+		gap.TopicID = &topic.ID
+		var created bool
+		upserted, created, err = s.coverageRepo.UpsertOpenGapByTopic(ctx, gap)
+		_ = created
+	}
 	if err != nil {
 		return nil, fmt.Errorf("upsert analysis gap: %w", err)
 	}
@@ -984,6 +992,55 @@ func (s *SupportCoverageDailyAnalyzer) UpsertFinding(ctx context.Context, input 
 		}
 	}
 	return upserted, nil
+}
+
+func (s *SupportCoverageDailyAnalyzer) attachFindingToSimilarGap(ctx context.Context, input CoverageFindingUpsertInput, result CoverageConversationAnalysisResult, gap *model.SupportCoverageGap, now time.Time) (*model.SupportCoverageGap, error) {
+	items, err := s.coverageRepo.ListOpenGapsForClusterRebuild(ctx, input.WorkspaceID, coverageClusterRebuildLimit)
+	if err != nil {
+		return nil, fmt.Errorf("list open gaps for semantic dedupe: %w", err)
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+	incoming := coverageClusterCandidate{
+		Gap: model.SupportCoverageGapListItem{
+			SupportCoverageGap: *gap,
+			CanonicalTitle:     result.CanonicalTitle,
+			CustomerNeedText:   result.CustomerNeed,
+			EvidenceText:       firstNonEmptyCoverageString(result.CustomerNeed, result.DecisionReason, result.HumanResolution, gap.Title),
+		},
+	}
+	incoming.Text = coverageClusterComparisonText(incoming.Gap)
+	incoming.Tokens = coverageClusterTokens(incoming.Text)
+
+	var best *model.SupportCoverageGapListItem
+	bestScore := 0.0
+	for _, item := range items {
+		if !coverageClusterCompatible(incoming.Gap, item) {
+			continue
+		}
+		candidate := coverageClusterCandidate{
+			Gap: item,
+		}
+		candidate.Text = coverageClusterComparisonText(item)
+		candidate.Tokens = coverageClusterTokens(candidate.Text)
+		score := coverageClusterSimilarity(incoming, candidate)
+		if score > bestScore {
+			bestScore = score
+			itemCopy := item
+			best = &itemCopy
+		}
+	}
+	if best == nil {
+		return nil, nil
+	}
+	bestCandidate := coverageClusterCandidate{Gap: *best}
+	bestCandidate.Text = coverageClusterComparisonText(*best)
+	bestCandidate.Tokens = coverageClusterTokens(bestCandidate.Text)
+	if bestScore < coverageClusterAutoMergeThresholdFor(incoming, bestCandidate) {
+		return nil, nil
+	}
+	return s.coverageRepo.IncrementOpenGapEvidence(ctx, input.WorkspaceID, best.ID, now)
 }
 
 func (s *SupportCoverageDailyAnalyzer) recommendationRowsForFinding(ctx context.Context, input CoverageFindingUpsertInput, gapID string, now time.Time) ([]model.SupportCoverageRecommendation, error) {

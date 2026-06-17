@@ -333,6 +333,8 @@ type SupportCoverageGapListItem struct {
 	SupportCoverageGap
 	TopicTitle       string  `json:"topic_title"`
 	CanonicalTitle   string  `json:"canonical_title"`
+	EvidenceText     string  `json:"evidence_text" gorm:"column:evidence_text"`
+	CustomerNeedText string  `json:"customer_need_text" gorm:"column:customer_need_text"`
 	SuggestionCount  int     `json:"suggestion_count"`
 	RelatedArticleID *string `json:"related_article_id"`
 	Evidence30d      int     `json:"evidence_30d" gorm:"column:evidence_30d"`
