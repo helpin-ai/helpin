@@ -380,7 +380,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
   const state = classifyRun(run);
   const dot: DotKind = activityToDot(state, state === 'running');
   const isActive = ACTIVE_RUN_STATUSES.has(run.status);
-  const expanded = !compact || open;
+  const expanded = open;
   // Stream while the run is active, and also once after it finishes whenever the
   // row is expanded, so the agent's full output renders inline in the dock
   // instead of only behind the session sheet. Don't poll terminal runs.
@@ -569,8 +569,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
 
       {/* Grid-rows trick: animates intrinsic content height between 0fr and
           1fr without measuring. Wrapper stays mounted through the transition
-          so the pending-interaction card animates instead of popping. For
-          non-compact runs the wrapper is always 1fr — no animation needed. */}
+          so the pending-interaction card animates instead of popping. */}
       <div
         className={cn(
           'grid transition-[grid-template-rows,margin-top,opacity] duration-200 ease-out',

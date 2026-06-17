@@ -102,7 +102,10 @@ function RegisteredPageContext({ context }: { context: CommandBarPageContext }) 
   return null;
 }
 
-async function renderDock(context?: CommandBarPageContext) {
+async function renderDock(context?: CommandBarPageContext, options: { preserveStorage?: boolean } = {}) {
+  if (!options.preserveStorage) {
+    localStorage.setItem('helpin:ask-agents-dock-collapsed', '0');
+  }
   await act(async () => {
     root.render(
       <TooltipProvider>
@@ -156,11 +159,19 @@ async function clickSend() {
 }
 
 describe('AskAgentsDock chat', () => {
+  it('starts collapsed when no dock preference is saved', async () => {
+    await renderDock(undefined, { preserveStorage: true });
+
+    expect(document.body.textContent).toContain('Ask agents');
+    expect(document.body.querySelector('textarea')).toBeNull();
+    expect(localStorage.getItem('helpin:ask-agents-dock-collapsed')).toBe('1');
+  });
+
   it('describes agent instructions without implying slash commands', async () => {
     await renderDock();
 
     const textarea = document.body.querySelector<HTMLTextAreaElement>('textarea');
-    expect(textarea?.placeholder).toBe('Run Atlas, Forge, Lens, or any agent');
+    expect(textarea?.placeholder).toBe('Tell Atlas, Forge, Lens, or any agent what to do');
     expect(textarea?.placeholder).not.toContain('/');
   });
 
