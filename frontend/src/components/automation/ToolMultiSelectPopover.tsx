@@ -13,6 +13,7 @@ type ToolMultiSelectPopoverProps = {
   tools: ToolCatalogEntry[];
   selectedTools: string[];
   disabled?: boolean;
+  disabledReason?: string;
   onToggleTool: (toolName: string) => void;
 };
 
@@ -22,6 +23,7 @@ export function ToolMultiSelectPopover({
   tools,
   selectedTools,
   disabled,
+  disabledReason,
   onToggleTool,
 }: ToolMultiSelectPopoverProps) {
   const selected = new Set(selectedTools);
@@ -55,6 +57,7 @@ export function ToolMultiSelectPopover({
           size="sm"
           className="h-8 gap-1.5 px-2 text-[11px]"
           disabled={tools.length === 0 || disabled}
+          aria-label={disabled && disabledReason ? `Select tools. ${disabledReason}` : 'Select tools'}
         >
           <PlusSignIcon className="h-3.5 w-3.5" />
           Select tools

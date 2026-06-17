@@ -12,6 +12,7 @@ import {
   getAgentRecentRunSummary,
   getAgentTokenUsageSummary,
   getAgentProviderConfigState,
+  getVersionToolEditingState,
   sortAgentsForDisplay,
 } from '../Agents';
 import type { Agent, AgentModelProviderOption, AgentPresetDefinition, AgentRun } from '@/lib/pmTypes';
@@ -262,6 +263,22 @@ describe('canEditWorkspacePresetVersionDescription', () => {
     expect(canEditWorkspacePresetVersionDescription(workspaceVersion)).toBe(true);
     expect(canEditWorkspacePresetVersionDescription(productVersion)).toBe(false);
     expect(canEditWorkspacePresetVersionDescription(null)).toBe(false);
+  });
+});
+
+describe('getVersionToolEditingState', () => {
+  it('allows editing tools for editable Codex custom versions', () => {
+    expect(getVersionToolEditingState({ versionReadOnly: false, runtimeKind: 'codex' })).toEqual({
+      canEdit: true,
+      disabledReason: '',
+    });
+  });
+
+  it('explains why product-owned preset versions cannot edit tools directly', () => {
+    expect(getVersionToolEditingState({ versionReadOnly: true, runtimeKind: 'codex' })).toEqual({
+      canEdit: false,
+      disabledReason: 'Duplicate this version to edit tools.',
+    });
   });
 });
 

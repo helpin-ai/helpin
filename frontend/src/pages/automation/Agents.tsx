@@ -2308,6 +2308,28 @@ export function canEditWorkspacePresetVersionDescription(preset: Pick<AgentPrese
   return preset?.scope === 'workspace' && Boolean(preset.id);
 }
 
+export function getVersionToolEditingState({
+  versionReadOnly,
+}: {
+  versionReadOnly: boolean;
+  runtimeKind: AgentRuntimeKind;
+}) {
+  if (versionReadOnly) {
+    return {
+      canEdit: false,
+      disabledReason: 'Duplicate this version to edit tools.',
+    };
+  }
+  return {
+    canEdit: true,
+    disabledReason: '',
+  };
+}
+
+function versionReadOnlyHelperText(area: string) {
+  return `Duplicate this version to edit ${area}.`;
+}
+
 function AgentRow({
   agent,
   stats,
@@ -3720,7 +3742,7 @@ export function AgentsPage() {
     ?? templateDraft?.template.starter_flows?.[0];
   const supportsReasoningEffort = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_reasoning_effort);
   const supportsServiceTier = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_service_tier);
-  const codexUsesPresetCapabilities = form.runtime_kind === 'codex';
+  const versionToolEditingState = getVersionToolEditingState({ versionReadOnly, runtimeKind: form.runtime_kind });
   const isBlankCustomCreate = !editingAgent && !templateDraft;
   const isCustomEdit = Boolean(editingAgent && !editingAgent.is_system && !templateDraft);
   const isTemplateCreate = Boolean(templateDraft && !editingAgent);
@@ -4876,7 +4898,7 @@ export function AgentsPage() {
                             )}
                           </button>
                         </Collapsible.Trigger>
-                        {versionSkillsOpen && !versionReadOnly && (
+                        {versionSkillsOpen && (
                           <Popover open={skillPickerOpen} onOpenChange={setSkillPickerOpen}>
                             <PopoverTrigger asChild>
                               <Button
@@ -4884,7 +4906,7 @@ export function AgentsPage() {
                                 variant="outline"
                                 size="sm"
                                 className="h-8 gap-1.5 px-2 text-[11px]"
-                                disabled={availableVersionSkillEntries.length === 0}
+                                disabled={versionReadOnly || availableVersionSkillEntries.length === 0}
                               >
                                 <PlusSignIcon className="h-3.5 w-3.5" />
                                 Add skill
@@ -4931,6 +4953,9 @@ export function AgentsPage() {
                         <p className="text-xs text-muted-foreground">
                           These are skills the agent can choose to use when they are relevant to the task.
                         </p>
+                        {versionReadOnly ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-400">{versionReadOnlyHelperText('skills')}</p>
+                        ) : null}
                         <div className="space-y-2">
                           {versionSkillItems.map((skill, idx) => {
                             const entry = skillCatalogEntries.find((s) => (
@@ -4986,13 +5011,14 @@ export function AgentsPage() {
                           )}
                         </button>
                       </Collapsible.Trigger>
-                      {versionToolsOpen && !versionReadOnly && (
+                      {versionToolsOpen && (
                         <ToolMultiSelectPopover
                           open={toolPickerOpen}
                           onOpenChange={setToolPickerOpen}
                           tools={toolCatalogEntries}
                           selectedTools={form.allowed_tools}
-                          disabled={codexUsesPresetCapabilities}
+                          disabled={!versionToolEditingState.canEdit}
+                          disabledReason={versionToolEditingState.disabledReason}
                           onToggleTool={toggleTool}
                         />
                       )}
@@ -5002,6 +5028,9 @@ export function AgentsPage() {
                         <p className="text-xs text-muted-foreground">
                           Allowed tools are the runtime actions and data sources this version may call. Skills can guide when to use tools, but tools control what the agent can actually do.
                         </p>
+                        {versionToolEditingState.disabledReason ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-400">{versionToolEditingState.disabledReason}</p>
+                        ) : null}
                         {form.allowed_tools.length > 0 ? (
                           <div className="space-y-3">
                             {(toolCatalog?.categories ?? []).map((category) => {
@@ -5018,7 +5047,7 @@ export function AgentsPage() {
                                       <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
                                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
                                         <span>{tool}</span>
-                                        {!versionReadOnly && !codexUsesPresetCapabilities && (
+                                        {versionToolEditingState.canEdit && (
                                           <button
                                             type="button"
                                             className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
@@ -5048,7 +5077,7 @@ export function AgentsPage() {
                                     <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
                                       <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
                                       <span>{tool}</span>
-                                      {!versionReadOnly && !codexUsesPresetCapabilities && (
+                                      {versionToolEditingState.canEdit && (
                                         <button
                                           type="button"
                                           className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
@@ -5085,6 +5114,9 @@ export function AgentsPage() {
                         <p className="text-xs text-muted-foreground">
                           Working areas control where this agent appears as a runnable option.
                         </p>
+                        {versionReadOnly ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-400">{versionReadOnlyHelperText('working areas')}</p>
+                        ) : null}
                         <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
                           {CUSTOM_AGENT_TARGET_OPTIONS.map((target) => {
                             const active = form.allowed_targets.includes(target.value);
@@ -5150,6 +5182,9 @@ export function AgentsPage() {
                             ? 'Can ask follow-up questions or request approval.'
                             : 'Runs autonomously end-to-end.'}
                         </p>
+                        {versionReadOnly ? (
+                          <p className="text-xs text-amber-700 dark:text-amber-400">{versionReadOnlyHelperText('run mode')}</p>
+                        ) : null}
                       </div>
                     </Collapsible.Content>
                   </Collapsible.Root>
@@ -5207,6 +5242,9 @@ export function AgentsPage() {
                               </SelectContent>
                             </Select>
                             <p className="text-[11px] leading-relaxed text-muted-foreground">{AGENT_RUNTIME_HELP_TEXT[form.runtime_kind]}</p>
+                            {versionReadOnly ? (
+                              <p className="text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">{versionReadOnlyHelperText('the execution engine')}</p>
+                            ) : null}
                           </div>
 
                           <div className="space-y-2">
@@ -5241,9 +5279,11 @@ export function AgentsPage() {
                             </Select>
                             <p className={cn(
                               'text-[11px] leading-relaxed',
-                              providerConfigState.providerMessage ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
+                              providerConfigState.providerMessage || versionReadOnly ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
                             )}>
-                              {providerConfigState.providerMessage || 'LLM vendor powering this engine.'}
+                              {versionReadOnly
+                                ? versionReadOnlyHelperText('the AI provider')
+                                : providerConfigState.providerMessage || 'LLM vendor powering this engine.'}
                             </p>
                           </div>
                         </div>
@@ -5261,8 +5301,13 @@ export function AgentsPage() {
                               placeholder={selectedProviderOption?.model_placeholder ?? 'Select provider first'}
                               className="h-9"
                             />
-                            <p className="text-[11px] leading-relaxed text-muted-foreground">
-                              {providerConfigState.modelMessage || 'The language model that powers this agent.'}
+                            <p className={cn(
+                              'text-[11px] leading-relaxed',
+                              versionReadOnly ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
+                            )}>
+                              {versionReadOnly
+                                ? versionReadOnlyHelperText('the model')
+                                : providerConfigState.modelMessage || 'The language model that powers this agent.'}
                             </p>
                           </div>
 
@@ -5291,7 +5336,12 @@ export function AgentsPage() {
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <p className="text-[11px] leading-relaxed text-muted-foreground">How hard the model thinks before responding.</p>
+                              <p className={cn(
+                                'text-[11px] leading-relaxed',
+                                versionReadOnly ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
+                              )}>
+                                {versionReadOnly ? versionReadOnlyHelperText('reasoning effort') : 'How hard the model thinks before responding.'}
+                              </p>
                             </div>
                           )}
 
@@ -5320,7 +5370,12 @@ export function AgentsPage() {
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <p className="text-[11px] leading-relaxed text-muted-foreground">Fast lanes prioritize latency over cost.</p>
+                              <p className={cn(
+                                'text-[11px] leading-relaxed',
+                                versionReadOnly ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
+                              )}>
+                                {versionReadOnly ? versionReadOnlyHelperText('service tier') : 'Fast lanes prioritize latency over cost.'}
+                              </p>
                             </div>
                           )}
                         </div>
@@ -6970,14 +7025,11 @@ export function AgentsPage() {
                         onOpenChange={setToolPickerOpen}
                         tools={toolCatalogEntries}
                         selectedTools={form.allowed_tools}
-                        disabled={codexUsesPresetCapabilities}
                         onToggleTool={toggleTool}
                       />
                     </div>
                     <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      {codexUsesPresetCapabilities
-                        ? 'Codex currently uses the preset capability set as-is. Custom tool overrides are disabled for this runtime.'
-                        : 'Choose from the workspace tool catalog. Selected tools become this agent&apos;s allowed tool list.'}
+                      Choose from the workspace tool catalog. Selected tools become this agent&apos;s allowed tool list.
                     </p>
                     <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-border/50 bg-muted/20 p-2.5">
                       {form.allowed_tools.length > 0 ? form.allowed_tools.map((tool) => (
@@ -6987,7 +7039,6 @@ export function AgentsPage() {
                             type="button"
                             className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                             onClick={() => removeTool(tool)}
-                            disabled={codexUsesPresetCapabilities}
                             aria-label={`Remove ${tool}`}
                           >
                             <Cancel01Icon className="h-3 w-3" />
