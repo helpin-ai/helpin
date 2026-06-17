@@ -168,6 +168,8 @@ type SupportCoverageDailyAnalyzer struct {
 	llmProvider       llm.Provider
 	providerName      string
 	modelName         string
+	embeddingProvider llm.EmbeddingProvider
+	embeddingModel    string
 	coverageRepo      *repository.SupportCoverageRepository
 	analysisRepo      *repository.SupportCoverageAnalysisRepository
 	conversationRepo  *repository.SupportConversationRepository
@@ -192,6 +194,15 @@ func (s *SupportCoverageDailyAnalyzer) SetCoverageRepositories(coverageRepo *rep
 	}
 	s.coverageRepo = coverageRepo
 	s.analysisRepo = analysisRepo
+	return s
+}
+
+func (s *SupportCoverageDailyAnalyzer) SetEmbeddingProvider(provider llm.EmbeddingProvider, modelName string) *SupportCoverageDailyAnalyzer {
+	if s == nil {
+		return nil
+	}
+	s.embeddingProvider = provider
+	s.embeddingModel = coverageEmbeddingModel(modelName)
 	return s
 }
 
