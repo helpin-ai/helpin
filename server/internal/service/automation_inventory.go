@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +33,13 @@ type AutomationInventoryService struct {
 	agentRepo            *repository.AgentRepository
 	workspaceRepo        *repository.WorkspaceRepository
 	taskRepo             *repository.PMTaskRepository
+	epicRepo             *repository.PMEpicRepository
+	docsDocumentRepo     *repository.DocsDocumentRepository
+	conversationRepo     *repository.SupportConversationRepository
+	crmContactRepo       *repository.CRMContactRepository
+	crmDealRepo          *repository.CRMDealRepository
+	gitRepo              *repository.GitRepositoryRepository
+	supportCoverageRepo  *repository.SupportCoverageRepository
 	installationRepo     *repository.SupportInboxInstallationRepository
 }
 
@@ -61,6 +69,25 @@ func NewAutomationInventoryService(
 		taskRepo:             taskRepo,
 		installationRepo:     installationRepo,
 	}
+}
+
+func (s *AutomationInventoryService) SetTargetResolvers(
+	epicRepo *repository.PMEpicRepository,
+	docsDocumentRepo *repository.DocsDocumentRepository,
+	conversationRepo *repository.SupportConversationRepository,
+	crmContactRepo *repository.CRMContactRepository,
+	crmDealRepo *repository.CRMDealRepository,
+	gitRepo *repository.GitRepositoryRepository,
+	supportCoverageRepo *repository.SupportCoverageRepository,
+) *AutomationInventoryService {
+	s.epicRepo = epicRepo
+	s.docsDocumentRepo = docsDocumentRepo
+	s.conversationRepo = conversationRepo
+	s.crmContactRepo = crmContactRepo
+	s.crmDealRepo = crmDealRepo
+	s.gitRepo = gitRepo
+	s.supportCoverageRepo = supportCoverageRepo
+	return s
 }
 
 func (s *AutomationInventoryService) GetWorkspaceInventory(ctx context.Context, workspaceID string) (*model.AutomationInventoryResponse, error) {
@@ -486,6 +513,9 @@ func (s *AutomationInventoryService) ListTriggerExecutions(
 			items = append(items, automationActivityItemForRun(run, agentNames))
 		}
 	}
+	if err := s.enrichActivityTargets(ctx, workspaceID, items); err != nil {
+		return nil, err
+	}
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].FiredAt.Equal(items[j].FiredAt) {
 			return strings.TrimSpace(items[i].ExecutionID) > strings.TrimSpace(items[j].ExecutionID)
@@ -515,6 +545,162 @@ func (s *AutomationInventoryService) ListTriggerExecutions(
 		PerPage:    pagination.PerPage,
 		TotalPages: totalPages,
 	}, nil
+}
+
+type automationActivityTargetInfo struct {
+	title string
+	key   string
+}
+
+func (s *AutomationInventoryService) enrichActivityTargets(ctx context.Context, workspaceID string, items []model.AutomationTriggerExecutionListItem) error {
+	if len(items) == 0 || strings.TrimSpace(workspaceID) == "" {
+		return nil
+	}
+
+	idsByType := make(map[string][]string)
+	seen := make(map[string]struct{})
+	for _, item := range items {
+		targetType := normalizeRunTargetType(derefString(item.TargetType))
+		targetID := strings.TrimSpace(derefString(item.TargetID))
+		if targetType == "" || targetID == "" {
+			continue
+		}
+		key := targetType + ":" + targetID
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		idsByType[targetType] = append(idsByType[targetType], targetID)
+	}
+	if len(idsByType) == 0 {
+		return nil
+	}
+
+	targets := make(map[string]automationActivityTargetInfo)
+	addTarget := func(targetType, targetID, title, key string) {
+		title = strings.TrimSpace(title)
+		key = strings.TrimSpace(key)
+		if title == "" && key == "" {
+			return
+		}
+		targets[normalizeRunTargetType(targetType)+":"+strings.TrimSpace(targetID)] = automationActivityTargetInfo{
+			title: title,
+			key:   key,
+		}
+	}
+
+	if ids := idsByType["task"]; len(ids) > 0 && s.taskRepo != nil {
+		tasks, err := s.taskRepo.ListByIDs(ctx, workspaceID, ids)
+		if err != nil {
+			return fmt.Errorf("resolve activity task targets: %w", err)
+		}
+		workspaceKey := ""
+		if s.workspaceRepo != nil {
+			ws, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+			if err != nil {
+				return fmt.Errorf("resolve activity workspace key: %w", err)
+			}
+			if ws != nil {
+				workspaceKey = strings.TrimSpace(ws.WorkspaceKey)
+			}
+		}
+		for _, task := range tasks {
+			taskKey := strconv.Itoa(task.DisplayID)
+			if workspaceKey != "" {
+				taskKey = model.FormatTaskKey(workspaceKey, task.DisplayID)
+			}
+			addTarget("task", task.ID, task.Name, taskKey)
+		}
+	}
+	if ids := idsByType["epic"]; len(ids) > 0 && s.epicRepo != nil {
+		epics, err := s.epicRepo.ListByIDs(ctx, workspaceID, ids)
+		if err != nil {
+			return fmt.Errorf("resolve activity epic targets: %w", err)
+		}
+		for _, epic := range epics {
+			addTarget("epic", epic.ID, epic.Name, "")
+		}
+	}
+	if ids := idsByType["document"]; len(ids) > 0 && s.docsDocumentRepo != nil {
+		docs, err := s.docsDocumentRepo.ListByIDs(ctx, workspaceID, ids)
+		if err != nil {
+			return fmt.Errorf("resolve activity document targets: %w", err)
+		}
+		for _, doc := range docs {
+			addTarget("document", doc.ID, doc.Title, "")
+		}
+	}
+	if ids := idsByType["support_conversation"]; len(ids) > 0 && s.conversationRepo != nil {
+		conversations, err := s.conversationRepo.ListTitlesByIDs(ctx, workspaceID, ids)
+		if err != nil {
+			return fmt.Errorf("resolve activity support conversation targets: %w", err)
+		}
+		for _, conversation := range conversations {
+			addTarget("support_conversation", conversation.ID, conversation.Subject, "")
+		}
+	}
+	if ids := idsByType["crm_contact"]; len(ids) > 0 && s.crmContactRepo != nil {
+		contacts, err := s.crmContactRepo.ListByIDs(ctx, workspaceID, ids)
+		if err != nil {
+			return fmt.Errorf("resolve activity crm contact targets: %w", err)
+		}
+		for _, contact := range contacts {
+			addTarget("crm_contact", contact.ID, crmContactDisplayName(&contact), "")
+		}
+	}
+	if ids := idsByType["crm_deal"]; len(ids) > 0 && s.crmDealRepo != nil {
+		deals, err := s.crmDealRepo.ListByIDs(ctx, workspaceID, ids)
+		if err != nil {
+			return fmt.Errorf("resolve activity crm deal targets: %w", err)
+		}
+		for _, deal := range deals {
+			addTarget("crm_deal", deal.ID, deal.Name, "")
+		}
+	}
+	if ids := idsByType["repository"]; len(ids) > 0 && s.gitRepo != nil {
+		repos, err := s.gitRepo.ListByIDs(ctx, workspaceID, ids)
+		if err != nil {
+			return fmt.Errorf("resolve activity repository targets: %w", err)
+		}
+		for _, repo := range repos {
+			addTarget("repository", repo.ID, repo.FullName, "")
+		}
+	}
+	if ids := idsByType["workspace"]; len(ids) > 0 && s.workspaceRepo != nil {
+		for _, id := range ids {
+			ws, err := s.workspaceRepo.GetByID(ctx, id)
+			if err != nil {
+				return fmt.Errorf("resolve activity workspace targets: %w", err)
+			}
+			if ws != nil && ws.ID == workspaceID {
+				addTarget("workspace", ws.ID, ws.Name, "")
+			}
+		}
+	}
+	if ids := idsByType["support_coverage_gap"]; len(ids) > 0 && s.supportCoverageRepo != nil {
+		gaps, err := s.supportCoverageRepo.ListGapsByIDs(ctx, workspaceID, ids)
+		if err != nil {
+			return fmt.Errorf("resolve activity coverage gap targets: %w", err)
+		}
+		for _, gap := range gaps {
+			addTarget("support_coverage_gap", gap.ID, gap.Title, "")
+		}
+	}
+
+	for idx := range items {
+		item := &items[idx]
+		info, ok := targets[normalizeRunTargetType(derefString(item.TargetType))+":"+strings.TrimSpace(derefString(item.TargetID))]
+		if !ok {
+			continue
+		}
+		if info.title != "" {
+			item.TargetTitle = strPtr(info.title)
+		}
+		if info.key != "" {
+			item.TargetKey = strPtr(info.key)
+		}
+	}
+	return nil
 }
 
 func automationActivityItemForRun(run model.AgentRun, agentNames map[string]string) model.AutomationTriggerExecutionListItem {

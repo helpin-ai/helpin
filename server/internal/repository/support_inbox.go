@@ -1251,6 +1251,20 @@ func (r *SupportConversationRepository) ListByIDs(ctx context.Context, workspace
 	return conversations, nil
 }
 
+func (r *SupportConversationRepository) ListTitlesByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.SupportConversation, error) {
+	if len(ids) == 0 {
+		return []model.SupportConversation{}, nil
+	}
+	var conversations []model.SupportConversation
+	if err := r.db.WithContext(ctx).
+		Select("id", "subject").
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Find(&conversations).Error; err != nil {
+		return nil, fmt.Errorf("list support conversation titles by ids: %w", err)
+	}
+	return conversations, nil
+}
+
 // ListByLinkedStoryIDs returns conversations linked to any of the provided tasks.
 func (r *SupportConversationRepository) ListByLinkedStoryIDs(ctx context.Context, workspaceID string, storyIDs []string) ([]model.SupportConversation, error) {
 	if len(storyIDs) == 0 {

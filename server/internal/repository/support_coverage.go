@@ -26,6 +26,20 @@ func NewSupportCoverageRepository(db *gorm.DB) *SupportCoverageRepository {
 	return &SupportCoverageRepository{db: db}
 }
 
+func (r *SupportCoverageRepository) ListGapsByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.SupportCoverageGap, error) {
+	if len(ids) == 0 {
+		return []model.SupportCoverageGap{}, nil
+	}
+	var gaps []model.SupportCoverageGap
+	if err := r.db.WithContext(ctx).
+		Select("id", "title").
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Find(&gaps).Error; err != nil {
+		return nil, fmt.Errorf("list coverage gaps by ids: %w", err)
+	}
+	return gaps, nil
+}
+
 // UpsertTopicByIssueKey returns an existing topic or creates one.
 func (r *SupportCoverageRepository) UpsertTopicByIssueKey(ctx context.Context, workspaceID, issueKey, title string) (*model.SupportCoverageTopic, error) {
 	if workspaceID == "" || issueKey == "" {

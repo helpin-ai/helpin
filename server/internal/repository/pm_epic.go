@@ -58,6 +58,7 @@ func (r *PMEpicRepository) ListByIDs(ctx context.Context, workspaceID string, id
 	}
 	var epics []model.PMEpic
 	if err := r.db.WithContext(ctx).
+		Select("id", "workspace_id", "name").
 		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
 		Find(&epics).Error; err != nil {
 		return nil, fmt.Errorf("list epics by ids: %w", err)

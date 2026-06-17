@@ -526,6 +526,8 @@ export interface AutomationTriggerExecutionListItem {
   manage_path?: string;
   target_type?: string;
   target_id?: string;
+  target_title?: string;
+  target_key?: string;
   run_id?: string;
   status: string;
   error_message?: string;

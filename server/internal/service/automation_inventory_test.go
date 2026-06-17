@@ -627,6 +627,301 @@ func TestAutomationActivityIncludesRunsWithoutTriggerExecutions(t *testing.T) {
 	}
 }
 
+func TestAutomationActivityResolvesTargetDisplayInfo(t *testing.T) {
+	dbName := fmt.Sprintf("file:automation-activity-targets-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+
+	stmts := []string{
+		`CREATE TABLE agents (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			is_system BOOLEAN NOT NULL DEFAULT 0,
+			name TEXT NOT NULL,
+			status TEXT NOT NULL,
+			runtime_kind TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE agent_trigger_executions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			actor_id TEXT,
+			binding_id TEXT NOT NULL,
+			binding_kind TEXT NOT NULL,
+			trigger_type TEXT,
+			reference_id TEXT,
+			reference_type TEXT,
+			target_type TEXT,
+			target_id TEXT,
+			run_id TEXT,
+			status TEXT NOT NULL,
+			error_message TEXT,
+			fired_at DATETIME NOT NULL,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE pm_tasks (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			display_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			task_type TEXT NOT NULL DEFAULT 'feature',
+			workflow_id TEXT NOT NULL DEFAULT 'workflow-1',
+			workflow_state_id TEXT NOT NULL DEFAULT 'state-1',
+			priority TEXT NOT NULL DEFAULT 'none',
+			severity TEXT NOT NULL DEFAULT 'none',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE pm_epics (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			health TEXT NOT NULL DEFAULT 'none',
+			planning_state TEXT NOT NULL DEFAULT 'not_started',
+			spec_clarifications TEXT NOT NULL DEFAULT '[]',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE docs_documents (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			space_id TEXT NOT NULL,
+			title TEXT NOT NULL,
+			status TEXT NOT NULL,
+			visibility TEXT NOT NULL,
+			sort_key TEXT NOT NULL,
+			created_by TEXT NOT NULL,
+			deleted_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE support_conversations (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			display_id INTEGER NOT NULL,
+			subject TEXT,
+			status TEXT NOT NULL,
+			priority TEXT NOT NULL,
+			channel TEXT NOT NULL,
+			source TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE crm_contacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			display_id TEXT NOT NULL,
+			first_name TEXT NOT NULL,
+			last_name TEXT,
+			email TEXT,
+			lifecycle_stage TEXT NOT NULL,
+			lead_status TEXT NOT NULL,
+			custom_properties TEXT,
+			email_status TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE crm_deals (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			display_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			pipeline_id TEXT NOT NULL,
+			stage_id TEXT NOT NULL,
+			currency TEXT NOT NULL,
+			custom_properties TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE workspaces (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			slug TEXT NOT NULL,
+			display_name TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE users (
+			id TEXT PRIMARY KEY,
+			email TEXT,
+			full_name TEXT,
+			totp_verified BOOLEAN NOT NULL DEFAULT 0,
+			avatar_url TEXT,
+			avatar_style TEXT,
+			avatar_seed TEXT,
+			avatar_background_mode TEXT,
+			avatar_background_color TEXT
+		)`,
+		`CREATE TABLE workspace_members (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			user_id TEXT,
+			email TEXT NOT NULL,
+			display_name TEXT NOT NULL,
+			role TEXT NOT NULL,
+			status TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE git_repositories (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			full_name TEXT NOT NULL,
+			deleted_at DATETIME,
+			active BOOLEAN NOT NULL DEFAULT 1
+		)`,
+		`CREATE TABLE support_coverage_gaps (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			dedupe_key TEXT NOT NULL,
+			gap_kind TEXT NOT NULL DEFAULT 'content',
+			gap_category TEXT NOT NULL DEFAULT 'unknown',
+			v1_gap_type TEXT NOT NULL DEFAULT 'needs_review',
+			title TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'open',
+			confidence REAL NOT NULL DEFAULT 0,
+			evidence_count INTEGER NOT NULL DEFAULT 0,
+			failure_mode TEXT NOT NULL DEFAULT '',
+			source_signal TEXT NOT NULL DEFAULT '',
+			metadata TEXT NOT NULL DEFAULT '{}',
+			first_seen_at DATETIME,
+			last_seen_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	}
+	for _, stmt := range stmts {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create test table: %v", err)
+		}
+	}
+
+	ctx := context.Background()
+	workspaceID := "ws-activity-targets"
+	now := time.Now().UTC()
+	if err := db.Exec(`INSERT INTO workspaces (id, name, slug, display_name, created_at, updated_at) VALUES (?, 'TeamPulse', 'teampulse', 'TeamPulse Workspace', ?, ?)`, workspaceID, now, now).Error; err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO agents (id, workspace_id, name, status, runtime_kind, created_at, updated_at) VALUES ('agent-1', ?, 'Agent One', 'idle', 'native_sdk', ?, ?)`, workspaceID, now, now).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO pm_tasks (id, workspace_id, display_id, name, created_at, updated_at) VALUES ('task-1', ?, 42, 'Fix activity labels', ?, ?)`, workspaceID, now, now).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO pm_epics (id, workspace_id, name, created_at, updated_at) VALUES ('epic-1', ?, 'Launch reliability work', ?, ?)`, workspaceID, now, now).Error; err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, sort_key, created_by, created_at, updated_at) VALUES ('doc-1', ?, 'space-1', 'Runbook', 'draft', 'workspace_wide', '~', 'user-1', ?, ?)`, workspaceID, now, now).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, display_id, subject, status, priority, channel, source, created_at, updated_at) VALUES ('conversation-1', ?, 7, 'Billing question', 'open', 'medium', 'email', 'email', ?, ?)`, workspaceID, now, now).Error; err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO crm_contacts (id, workspace_id, display_id, first_name, last_name, email, lifecycle_stage, lead_status, custom_properties, email_status, created_at, updated_at) VALUES ('contact-1', ?, 'CON-1', 'Ada', 'Lovelace', 'ada@example.com', 'lead', 'new', '{}', 'valid', ?, ?)`, workspaceID, now, now).Error; err != nil {
+		t.Fatalf("create contact: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO crm_deals (id, workspace_id, display_id, name, pipeline_id, stage_id, currency, custom_properties, created_at, updated_at) VALUES ('deal-1', ?, 'DEAL-1', 'Enterprise rollout', 'pipeline-1', 'stage-1', 'USD', '{}', ?, ?)`, workspaceID, now, now).Error; err != nil {
+		t.Fatalf("create deal: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO git_repositories (id, workspace_id, full_name, active) VALUES ('repo-1', ?, 'acme/api', 1)`, workspaceID).Error; err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO support_coverage_gaps (id, workspace_id, dedupe_key, title, first_seen_at, last_seen_at, created_at, updated_at) VALUES ('gap-1', ?, 'gap-key', 'Refund policy gap', ?, ?, ?, ?)`, workspaceID, now, now, now, now).Error; err != nil {
+		t.Fatalf("create coverage gap: %v", err)
+	}
+
+	targets := []struct {
+		id         string
+		targetType string
+		targetID   string
+		wantTitle  string
+		wantKey    string
+	}{
+		{"exec-task", "task", "task-1", "Fix activity labels", "42"},
+		{"exec-epic", "epic", "epic-1", "Launch reliability work", ""},
+		{"exec-doc", "document", "doc-1", "Runbook", ""},
+		{"exec-support", "support_conversation", "conversation-1", "Billing question", ""},
+		{"exec-contact", "crm_contact", "contact-1", "Ada Lovelace", ""},
+		{"exec-deal", "crm_deal", "deal-1", "Enterprise rollout", ""},
+		{"exec-repo", "repository", "repo-1", "acme/api", ""},
+		{"exec-workspace", "workspace", workspaceID, "TeamPulse", ""},
+		{"exec-gap", "support_coverage_gap", "gap-1", "Refund policy gap", ""},
+	}
+	for idx, target := range targets {
+		firedAt := now.Add(time.Duration(idx) * time.Minute)
+		if err := db.Create(&model.AgentTriggerExecution{
+			ID:          target.id,
+			WorkspaceID: workspaceID,
+			AgentID:     "agent-1",
+			BindingID:   "manual." + target.targetType,
+			BindingKind: model.AgentRunTriggerSourceManual,
+			TargetType:  &target.targetType,
+			TargetID:    &target.targetID,
+			Status:      model.AgentTriggerExecutionStatusCompleted,
+			FiredAt:     firedAt,
+		}).Error; err != nil {
+			t.Fatalf("create execution %s: %v", target.id, err)
+		}
+	}
+
+	svc := NewAutomationInventoryService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewAgentTriggerExecutionRepository(db),
+		nil,
+		repository.NewAgentRepository(db),
+		repository.NewWorkspaceRepository(db),
+		repository.NewPMTaskRepository(db),
+		nil,
+	).SetTargetResolvers(
+		repository.NewPMEpicRepository(db),
+		repository.NewDocsDocumentRepository(db),
+		repository.NewSupportConversationRepository(db),
+		repository.NewCRMContactRepository(db),
+		repository.NewCRMDealRepository(db),
+		repository.NewGitRepositoryRepository(db),
+		repository.NewSupportCoverageRepository(db),
+	)
+
+	result, err := svc.ListTriggerExecutions(ctx, workspaceID, model.TriggerExecutionListFilters{}, model.PMPagination{Page: 1, PerPage: 25})
+	if err != nil {
+		t.Fatalf("list activity: %v", err)
+	}
+
+	byID := make(map[string]model.AutomationTriggerExecutionListItem, len(result.Data))
+	for _, item := range result.Data {
+		byID[item.ExecutionID] = item
+	}
+	for _, target := range targets {
+		item, ok := byID[target.id]
+		if !ok {
+			t.Fatalf("missing activity row %s", target.id)
+		}
+		if item.TargetTitle == nil || *item.TargetTitle != target.wantTitle {
+			t.Fatalf("%s target title = %#v, want %q", target.id, item.TargetTitle, target.wantTitle)
+		}
+		if target.wantKey == "" {
+			if item.TargetKey != nil {
+				t.Fatalf("%s target key = %#v, want nil", target.id, *item.TargetKey)
+			}
+			continue
+		}
+		if item.TargetKey == nil || *item.TargetKey != target.wantKey {
+			t.Fatalf("%s target key = %#v, want %q", target.id, item.TargetKey, target.wantKey)
+		}
+	}
+}
+
 func intPtr(value int) *int {
 	return &value
 }
