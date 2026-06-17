@@ -405,37 +405,9 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		analysisStatus = model.SupportCoverageConversationAnalysisStatusSkipped
 	}
 
-	analysis := &model.SupportCoverageConversationAnalysis{
-		WorkspaceID:               workspaceID,
-		RunID:                     runID,
-		ConversationID:            conversation.ID,
-		Status:                    analysisStatus,
-		HasGap:                    result.HasGap,
-		GapKind:                   result.GapKind,
-		GapCategory:               result.GapCategory,
-		PrimaryRecommendationType: primaryRecommendationType(result.RecommendedFixes),
-		TranscriptHash:            input.TranscriptHash,
-		AnalyzerVersion:           coverageAnalyzerVersion,
-		IsSupportQuery:            result.IsSupportQuery,
-		ConversationType:          result.ConversationType,
-		ClassificationReason:      result.ClassificationReason,
-		CustomerNeed:              result.CustomerNeed,
-		AIFailure:                 result.AIFailure,
-		HumanResolution:           result.HumanResolution,
-		DecisionReason:            result.DecisionReason,
-		Confidence:                result.Confidence,
-		RawOutput:                 raw,
-	}
-	if err := s.analysisRepo.RecordConversationAnalysis(ctx, analysis); err != nil {
-		return false, err
-	}
-	if !result.HasGap {
-		return false, nil
-	}
-
 	matchedKnowledge := coverageKnowledgeCandidatesFromTraceInput(input.RetrievalTraces)
 	recommendationDecisionReason := result.DecisionReason
-	if result.ShouldRunRetrieval {
+	if result.HasGap && result.ShouldRunRetrieval {
 		currentMatches, err := s.matchCurrentKnowledgeForAnalysis(ctx, workspaceID, *result)
 		if err != nil {
 			return false, err
@@ -459,23 +431,57 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 			}
 		}
 	}
-	gap, err := s.UpsertFinding(ctx, CoverageFindingUpsertInput{
-		WorkspaceID:                  workspaceID,
-		ConversationID:               conversation.ID,
-		AnalysisID:                   analysis.ID,
-		Result:                       *result,
-		MatchedKnowledgeCandidates:   matchedKnowledge,
-		RecommendationDecisionReason: recommendationDecisionReason,
-		SegmentID:                    input.SegmentID,
-		SegmentStartMessageID:        input.SegmentStartMessageID,
-		SegmentEndMessageID:          input.SegmentEndMessageID,
-		SegmentResolved:              input.SegmentResolved,
-		HasHumanReply:                input.HasHumanReply,
-	})
-	if err != nil {
+
+	if result.HasGap {
+		raw, err = json.Marshal(result)
+		if err != nil {
+			return false, fmt.Errorf("marshal final analyzer result: %w", err)
+		}
+	}
+	materializationMetadata := json.RawMessage(`{}`)
+	if result.HasGap {
+		payload, err := json.Marshal(map[string]any{
+			"matched_knowledge_candidates":   matchedKnowledge,
+			"recommendation_decision_reason": recommendationDecisionReason,
+			"segment_id":                     input.SegmentID,
+			"segment_start_message_id":       input.SegmentStartMessageID,
+			"segment_end_message_id":         input.SegmentEndMessageID,
+			"segment_resolved":               input.SegmentResolved,
+			"has_human_reply":                input.HasHumanReply,
+		})
+		if err != nil {
+			return false, fmt.Errorf("marshal materialization metadata: %w", err)
+		}
+		materializationMetadata = payload
+	}
+
+	analysis := &model.SupportCoverageConversationAnalysis{
+		WorkspaceID:               workspaceID,
+		RunID:                     runID,
+		ConversationID:            conversation.ID,
+		Status:                    analysisStatus,
+		HasGap:                    result.HasGap,
+		GapKind:                   result.GapKind,
+		GapCategory:               result.GapCategory,
+		PrimaryRecommendationType: primaryRecommendationType(result.RecommendedFixes),
+		TranscriptHash:            input.TranscriptHash,
+		AnalyzerVersion:           coverageAnalyzerVersion,
+		CanonicalTitle:            result.CanonicalTitle,
+		IsSupportQuery:            result.IsSupportQuery,
+		ConversationType:          result.ConversationType,
+		ClassificationReason:      result.ClassificationReason,
+		CustomerNeed:              result.CustomerNeed,
+		AIFailure:                 result.AIFailure,
+		HumanResolution:           result.HumanResolution,
+		DecisionReason:            result.DecisionReason,
+		Confidence:                result.Confidence,
+		RawOutput:                 raw,
+		MaterializationMetadata:   materializationMetadata,
+	}
+	if err := s.analysisRepo.RecordConversationAnalysis(ctx, analysis); err != nil {
 		return false, err
 	}
-	return gap != nil, nil
+	return result.HasGap, nil
 }
 
 func BuildCoverageConversationAnalysisInput(conversation model.SupportConversation, messages []model.SupportMessage, traces []model.SupportAIRetrievalTrace) (CoverageConversationAnalysisInput, error) {

@@ -596,15 +596,28 @@ func TestSupportCoverageDailyAnalyzer_RunOverridesHumanResolutionInStoredRawOutp
 		t.Fatalf("runConversationCoverageAnalysis: %v", err)
 	}
 	if !created {
-		t.Fatal("expected gap to be created")
+		t.Fatal("expected gap finding to be staged")
 	}
 
 	var analysis model.SupportCoverageConversationAnalysis
 	if err := db.First(&analysis, "conversation_id = ?", "conversation-no-human").Error; err != nil {
 		t.Fatalf("load analysis: %v", err)
 	}
+	if analysis.GapID != nil {
+		t.Fatalf("expected analysis gap_id to remain nil before materialization, got %q", *analysis.GapID)
+	}
+	if analysis.CanonicalTitle != "Billing update steps" {
+		t.Fatalf("canonical_title = %q, want Billing update steps", analysis.CanonicalTitle)
+	}
 	if analysis.HumanResolution != "No human response observed" {
 		t.Fatalf("stored human_resolution = %q", analysis.HumanResolution)
+	}
+	var materialization map[string]any
+	if err := json.Unmarshal(analysis.MaterializationMetadata, &materialization); err != nil {
+		t.Fatalf("unmarshal materialization metadata: %v", err)
+	}
+	if materialization["has_human_reply"] != false {
+		t.Fatalf("has_human_reply metadata = %v, want false", materialization["has_human_reply"])
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(analysis.RawOutput, &raw); err != nil {
@@ -619,6 +632,13 @@ func TestSupportCoverageDailyAnalyzer_RunOverridesHumanResolutionInStoredRawOutp
 	}
 	if suggestionCount != 0 {
 		t.Fatalf("expected no auto-generated suggestion without human reply, got %d", suggestionCount)
+	}
+	var gapCount int64
+	if err := db.Model(&model.SupportCoverageGap{}).Count(&gapCount).Error; err != nil {
+		t.Fatalf("count gaps: %v", err)
+	}
+	if gapCount != 0 {
+		t.Fatalf("expected no gap before materialization, got %d", gapCount)
 	}
 }
 
