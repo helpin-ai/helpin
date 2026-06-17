@@ -4933,6 +4933,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, activeRun, nil)
 			return activeRun, nil
 		}
+		if params.targetType == "workspace" {
+			activeRun = nil
+		}
+	}
+	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {
 		err := fmt.Errorf("an agent run is already active for this %s", params.targetType)
 		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
 		return nil, err

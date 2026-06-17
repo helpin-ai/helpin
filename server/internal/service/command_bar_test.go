@@ -1339,6 +1339,170 @@ func TestCreateRunAllowsConflictChildWhenActiveRunIsParent(t *testing.T) {
 	}
 }
 
+func TestCreateRunAllowsDifferentAgentsOnWorkspaceTarget(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	service := &AgentService{runRepo: runRepo, agentRepo: agentRepo}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	existingAgentID := "22222222-2222-2222-2222-222222222222"
+	nextAgent := &model.Agent{
+		ID:                    "33333333-3333-3333-3333-333333333333",
+		WorkspaceID:           workspaceID,
+		Name:                  "Competitive Intelligence Digest",
+		RuntimeKind:           "native_sdk",
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}
+
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             "44444444-4444-4444-4444-444444444444",
+		WorkspaceID:    workspaceID,
+		AgentID:        existingAgentID,
+		TargetType:     "workspace",
+		TargetID:       workspaceID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeAutonomous,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonHumanInput,
+		Status:         model.AgentRunStatusPaused,
+		Input:          json.RawMessage("{}"),
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create existing workspace run: %v", err)
+	}
+
+	_, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          nextAgent,
+		targetType:     "workspace",
+		targetID:       workspaceID,
+		input:          []byte("{}"),
+		invocationMode: model.InvocationModeAutonomous,
+	})
+	if err == nil || strings.Contains(err.Error(), "already active") {
+		t.Fatalf("expected different workspace agent to bypass duplicate-run guard, got %v", err)
+	}
+
+	runs, err := runRepo.ListByTarget(ctx, workspaceID, "workspace", workspaceID)
+	if err != nil {
+		t.Fatalf("list workspace runs: %v", err)
+	}
+	foundNextAgentRun := false
+	for _, run := range runs {
+		if run.AgentID == nextAgent.ID {
+			foundNextAgentRun = true
+			break
+		}
+	}
+	if !foundNextAgentRun {
+		t.Fatalf("expected new workspace run for agent %q to be created alongside existing run, got %#v", nextAgent.ID, runs)
+	}
+}
+
+func TestCreateRunDedupesSameAgentOnWorkspaceTarget(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	service := &AgentService{runRepo: runRepo, agentRepo: agentRepo}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	agent := &model.Agent{
+		ID:                    "22222222-2222-2222-2222-222222222222",
+		WorkspaceID:           workspaceID,
+		Name:                  "Competitive Intelligence Digest",
+		RuntimeKind:           "native_sdk",
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}
+	existingRunID := "33333333-3333-3333-3333-333333333333"
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             existingRunID,
+		WorkspaceID:    workspaceID,
+		AgentID:        agent.ID,
+		TargetType:     "workspace",
+		TargetID:       workspaceID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeAutonomous,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonHumanInput,
+		Status:         model.AgentRunStatusPaused,
+		Input:          json.RawMessage("{}"),
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create existing workspace run: %v", err)
+	}
+
+	run, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          agent,
+		targetType:     "workspace",
+		targetID:       workspaceID,
+		input:          []byte("{}"),
+		invocationMode: model.InvocationModeAutonomous,
+	})
+	if err != nil {
+		t.Fatalf("expected same workspace agent to reuse existing active run, got error %v", err)
+	}
+	if run == nil || run.ID != existingRunID {
+		t.Fatalf("expected existing workspace run %q, got %#v", existingRunID, run)
+	}
+}
+
+func TestCreateRunStillBlocksDifferentAgentsOnTaskTarget(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	service := &AgentService{runRepo: runRepo, agentRepo: agentRepo}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	taskID := "22222222-2222-2222-2222-222222222222"
+	nextAgent := &model.Agent{
+		ID:                    "33333333-3333-3333-3333-333333333333",
+		WorkspaceID:           workspaceID,
+		Name:                  "Forge",
+		RuntimeKind:           "native_sdk",
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             "44444444-4444-4444-4444-444444444444",
+		WorkspaceID:    workspaceID,
+		AgentID:        "55555555-5555-5555-5555-555555555555",
+		TargetType:     "task",
+		TargetID:       taskID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeAutonomous,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage("{}"),
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create existing task run: %v", err)
+	}
+
+	_, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          nextAgent,
+		targetType:     "task",
+		targetID:       taskID,
+		taskID:         &taskID,
+		input:          []byte("{}"),
+		invocationMode: model.InvocationModeAutonomous,
+	})
+	if err == nil || !strings.Contains(err.Error(), "already active") {
+		t.Fatalf("expected different task agent to remain blocked by duplicate-run guard, got %v", err)
+	}
+}
+
 func TestParseOneShotCommandIntentRejectsUnsupportedMutation(t *testing.T) {
 	pageContext := model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}
 	candidates := []model.CommandBarAgent{
