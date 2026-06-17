@@ -93,9 +93,39 @@ export function planUpdatedAt(
  */
 export function targetLabel(run: AgentRun): string {
   const t = run.target_info;
-  if (t?.title) return t.title;
-  if (t?.task_key) return t.task_key;
-  return '';
+  const type = t?.target_type || run.target_type;
+  const name = type === 'task'
+    ? (t?.task_key || t?.title)
+    : (t?.title || t?.task_key);
+  if (!name) return '';
+  return `${targetTypeLabel(type)} · ${name}`;
+}
+
+function targetTypeLabel(type: string | undefined): string {
+  switch (type) {
+    case 'task':
+    case 'story':
+      return 'Task';
+    case 'epic':
+      return 'Epic';
+    case 'document':
+    case 'doc':
+      return 'Doc';
+    case 'repository':
+      return 'Repository';
+    case 'support_conversation':
+      return 'Conversation';
+    case 'support_coverage_gap':
+      return 'Coverage gap';
+    case 'crm_contact':
+      return 'Contact';
+    case 'crm_deal':
+      return 'Deal';
+    case 'workspace':
+      return 'Workspace';
+    default:
+      return 'Target';
+  }
 }
 
 export function planKindLabel(
