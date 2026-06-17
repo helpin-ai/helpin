@@ -73,6 +73,7 @@ describe('ExecutionStrip actions', () => {
           kind="run"
           workspaceId="ws-1"
           run={run({ status: 'running' })}
+          defaultOpen
           onAction={vi.fn()}
         />,
       );
@@ -82,6 +83,39 @@ describe('ExecutionStrip actions', () => {
     expect(buttonNamed('Cancel').className).toContain('border-destructive/30');
   });
 
+  it('starts a running run collapsed until the user expands it', () => {
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="run"
+          workspaceId="ws-1"
+          run={run({
+            status: 'running',
+            target_info: {
+              target_type: 'task',
+              target_id: 'task-1',
+              task_key: 'HLP-123',
+              title: 'Clarify billing copy',
+            },
+          })}
+          onAction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).not.toContain('Task · HLP-123');
+    expect(container.textContent).not.toContain('Cancel');
+
+    const toggle = container.querySelector<HTMLButtonElement>('button');
+    if (!toggle) throw new Error('toggle not found');
+    act(() => {
+      toggle.click();
+    });
+
+    expect(container.textContent).toContain('Task · HLP-123');
+    expect(container.textContent).toContain('Cancel');
+  });
+
   it('renders retry with a distinct retry treatment', () => {
     act(() => {
       root.render(
@@ -89,6 +123,7 @@ describe('ExecutionStrip actions', () => {
           kind="run"
           workspaceId="ws-1"
           run={run({ status: 'failed', error_message: 'Failed' })}
+          defaultOpen
           onAction={vi.fn()}
         />,
       );
@@ -155,5 +190,39 @@ describe('ExecutionStrip actions', () => {
 
     expect(buttonNamed('Cancel')).toBeTruthy();
     expect(buttonNamed('Open')).toBeTruthy();
+  });
+
+  it('collapses all running run details when the chevron is toggled', () => {
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="run"
+          workspaceId="ws-1"
+          run={run({
+            status: 'running',
+            target_info: {
+              target_type: 'task',
+              target_id: 'task-1',
+              task_key: 'HLP-123',
+              title: 'Clarify billing copy',
+            },
+          })}
+          defaultOpen
+          onAction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Task · HLP-123');
+    expect(container.textContent).toContain('Cancel');
+
+    const toggle = container.querySelector<HTMLButtonElement>('button');
+    if (!toggle) throw new Error('toggle not found');
+    act(() => {
+      toggle.click();
+    });
+
+    expect(container.textContent).not.toContain('Task · HLP-123');
+    expect(container.textContent).not.toContain('Cancel');
   });
 });
