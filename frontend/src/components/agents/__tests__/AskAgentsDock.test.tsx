@@ -5,9 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AskAgentsDock } from '../AskAgentsDock';
 import { PageContextProvider } from '@/components/command-bar/pageContext';
+import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCommandBarRunStore } from '@/stores/commandBarStore';
+import type { CommandBarPageContext } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -95,11 +97,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function renderDock() {
+function RegisteredPageContext({ context }: { context: CommandBarPageContext }) {
+  useRegisterPageContext(context);
+  return null;
+}
+
+async function renderDock(context?: CommandBarPageContext) {
   await act(async () => {
     root.render(
       <TooltipProvider>
         <PageContextProvider>
+          {context ? <RegisteredPageContext context={context} /> : null}
           <AskAgentsDock />
         </PageContextProvider>
       </TooltipProvider>,
@@ -148,6 +156,78 @@ async function clickSend() {
 }
 
 describe('AskAgentsDock chat', () => {
+  it('describes slash as a focus shortcut instead of an agent command', async () => {
+    await renderDock();
+
+    const textarea = document.body.querySelector<HTMLTextAreaElement>('textarea');
+    expect(textarea?.placeholder).toBe('Ask an agent, or press / to focus');
+  });
+
+  it('removes document context from the dock without leaving the page', async () => {
+    const docContext = {
+      entity_type: 'document',
+      entity_id: 'doc-1',
+      display_title: 'API Guide',
+    } satisfies CommandBarPageContext;
+    mocks.chatTurn.mockResolvedValue({
+      data: {
+        thread: {
+          id: 'thread-1',
+          workspace_id: 'ws-1',
+          title: 'Docs',
+          status: 'open',
+          created_at: '2026-05-15T00:00:00Z',
+          updated_at: '2026-05-15T00:00:01Z',
+        },
+        user_message: {
+          id: 'user-msg',
+          thread_id: 'thread-1',
+          role: 'user',
+          content: 'summarize',
+          created_at: '2026-05-15T00:00:00Z',
+        },
+        assistant_message: {
+          id: 'assistant-msg',
+          thread_id: 'thread-1',
+          role: 'assistant',
+          content: 'Workspace answer.',
+          created_at: '2026-05-15T00:00:01Z',
+        },
+      },
+      error: null,
+    });
+
+    await renderDock(docContext);
+    await waitForText('API Guide');
+
+    const remove = document.body.querySelector<HTMLButtonElement>('button[aria-label="Remove document context"]');
+    expect(remove).toBeTruthy();
+    await act(async () => {
+      remove?.click();
+    });
+
+    expect(document.body.textContent).not.toContain('API Guide');
+
+    await act(async () => {
+      setTextareaValue('summarize');
+    });
+    await clickSend();
+
+    expect(mocks.chatTurn).toHaveBeenCalledWith('ws-1', expect.objectContaining({
+      page_context: expect.objectContaining({
+        entity_type: 'workspace',
+        entity_id: 'ws-1',
+      }),
+    }));
+  });
+
+  it('labels the top-right collapse control as minimize', async () => {
+    await renderDock();
+
+    expect(document.body.querySelector('button[aria-label="Minimize dock"]')).toBeTruthy();
+    expect(document.body.querySelector('button[aria-label="Hide dock"]')).toBeNull();
+  });
+
   it('does not show active runs from the previous workspace after switching workspaces', async () => {
     mocks.listRecentRuns
       .mockResolvedValueOnce({

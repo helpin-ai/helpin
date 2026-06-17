@@ -18,6 +18,7 @@ import type {
   CommandBarProposal,
   CommandBarPlanStep,
   CommandBarParseResponse,
+  CommandBarPageContext,
 } from '@/lib/pmTypes';
 import { DockHeader } from './dock/DockHeader';
 import { DockInput } from './dock/DockInput';
@@ -106,6 +107,15 @@ function runMatchesRestoredThread(run: AgentRun, messages: ThreadMessage[]): boo
   );
 }
 
+function pageContextKey(context: CommandBarPageContext | null | undefined): string {
+  if (!context) return '';
+  return JSON.stringify({
+    entity_type: context.entity_type,
+    entity_id: context.entity_id,
+    metadata: context.metadata ?? null,
+  });
+}
+
 export function AskAgentsDock() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
@@ -142,6 +152,7 @@ export function AskAgentsDock() {
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
   const [busyPlanId, setBusyPlanId] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [clearedContextKey, setClearedContextKey] = useState<string | null>(null);
   // When the dock first opens with pending approvals, auto-expand the first
   // one so the user lands on something actionable. Pressing "New" resets this
   // to false — pending work stays visible as collapsed one-liners above the
@@ -156,6 +167,24 @@ export function AskAgentsDock() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const responseRef = useRef<HTMLDivElement | null>(null);
   const planRefetchTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const rawPageContextKey = pageContextKey(pageContext);
+  const dockPageContext = useMemo<CommandBarPageContext | null>(() => {
+    if (!workspace) return null;
+    if (rawPageContextKey && rawPageContextKey === clearedContextKey) {
+      return {
+        entity_type: 'workspace',
+        entity_id: workspace.id,
+        display_title: workspace.name,
+      };
+    }
+    return pageContext ?? {
+      entity_type: 'workspace',
+      entity_id: workspace.id,
+      display_title: workspace.name,
+    };
+  }, [clearedContextKey, pageContext, rawPageContextKey, workspace]);
+  const dockScopeOptions = rawPageContextKey && rawPageContextKey === clearedContextKey ? [] : scopeOptions;
+  const dockActiveScopeKey = rawPageContextKey && rawPageContextKey === clearedContextKey ? null : activeScopeKey;
 
   const runs = useMemo(
     () => runIds.map((id) => runsById[id]).filter(Boolean),
@@ -274,6 +303,7 @@ export function AskAgentsDock() {
 
   useEffect(() => {
     clearRuns();
+    setClearedContextKey(null);
     setChatThreadId(null);
     setMessages([]);
     setSessionPlanIds(new Set());
@@ -495,7 +525,7 @@ export function AskAgentsDock() {
   const submit = useCallback(
     async (override?: string) => {
       const text = (override ?? value).trim();
-      if (!workspace?.id || !pageContext || !text) return;
+      if (!workspace?.id || !dockPageContext || !text) return;
       // List-mode submit: if any rows match, treat as filter; otherwise dispatch a new run.
       if (viewMode === 'list') {
         setViewMode('conversation');
@@ -506,7 +536,7 @@ export function AskAgentsDock() {
         const res = await commandBarService.chatTurn(workspace.id, {
           thread_id: chatThreadId ?? undefined,
           text,
-          page_context: pageContext,
+          page_context: dockPageContext,
         });
         if (res.error || !res.data) {
           toast.error(res.error ?? 'Failed to ask agents');
@@ -546,16 +576,16 @@ export function AskAgentsDock() {
         setParsing(false);
       }
     },
-    [chatThreadId, pageContext, value, viewMode, setViewMode, workspace?.id],
+    [chatThreadId, dockPageContext, value, viewMode, setViewMode, workspace?.id],
   );
 
   const confirmPlan = useCallback(async () => {
-    if (!workspace?.id || !pageContext || !intentResult || intentResult.status !== 'plan') return;
+    if (!workspace?.id || !dockPageContext || !intentResult || intentResult.status !== 'plan') return;
     setDispatching(true);
     try {
       const res = await commandBarService.dispatchPlan(workspace.id, {
         text: trimmed,
-        page_context: pageContext,
+        page_context: dockPageContext,
         steps: intentResult.plan.steps,
       });
       if (res.error || !res.data) {
@@ -596,7 +626,7 @@ export function AskAgentsDock() {
     } finally {
       setDispatching(false);
     }
-  }, [addPlan, addRuns, intentResult, pageContext, trimmed, workspace?.id]);
+  }, [addPlan, addRuns, dockPageContext, intentResult, trimmed, workspace?.id]);
 
   // ⌘↵ confirms a pending plan from anywhere in the dock.
   useEffect(() => {
@@ -1083,10 +1113,11 @@ export function AskAgentsDock() {
               }
             }}
             onFocusChange={setIsFocused}
-            pageContext={pageContext ?? null}
-            contextOptions={scopeOptions}
-            activeContextKey={activeScopeKey}
+            pageContext={dockPageContext}
+            contextOptions={dockScopeOptions}
+            activeContextKey={dockActiveScopeKey}
             onContextKeyChange={setActiveScopeKey}
+            onClearContext={() => setClearedContextKey(rawPageContextKey)}
             busy={parsing || dispatching}
             textareaRef={textareaRef}
           />
