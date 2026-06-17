@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Alert01Icon, ArchiveIcon, ArrowDown01Icon, DragDropVerticalIcon, InboxIcon, InformationCircleIcon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, UndoIcon } from '@/lib/icons';
+import { Alert01Icon, ArchiveIcon, ArrowDown01Icon, DragDropVerticalIcon, InboxIcon, InformationCircleIcon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, UndoIcon, UserGroupIcon } from '@/lib/icons';
 import {
   DndContext,
   closestCenter,
@@ -461,6 +461,7 @@ function AIFallbackBadge({
 }
 
 const ACTIVE_INBOX_STATUS = { active: true };
+const INBOX_MEMBER_PREVIEW_LIMIT = 4;
 
 function InboxEmailForwardingStatus({ mailbox, route }: { mailbox: Pick<SupportMailbox, 'active'>; route?: SupportEmailRoute | null }) {
   if (!mailbox.active) return <span className="text-xs text-muted-foreground">Disabled</span>;
@@ -526,28 +527,42 @@ function InboxMembersCell({ mailbox }: { mailbox: SupportMailbox }) {
   const { data: members = [] } = useMailboxMembers(mailbox.workspace_id, mailbox.id);
   const memberCount = members.length || mailbox.member_count || 0;
 
-  if (memberCount === 0) {
+  return <InboxMembersPreview members={members} memberCount={memberCount} />;
+}
+
+function InboxMembersPreview({
+  members,
+  memberCount,
+}: {
+  members: SupportMailboxMember[];
+  memberCount?: number;
+}) {
+  const resolvedMemberCount = memberCount ?? members.length;
+  if (resolvedMemberCount === 0) {
     return <span className="text-xs text-muted-foreground/50">-</span>;
   }
 
-  const visibleMembers = members.slice(0, 4);
+  const visibleMembers = members.slice(0, INBOX_MEMBER_PREVIEW_LIMIT);
+  const hiddenCount = Math.max(0, resolvedMemberCount - visibleMembers.length);
+  const countLabel = `${resolvedMemberCount} ${resolvedMemberCount === 1 ? 'person' : 'people'} with access`;
   const avatarStack = (
-    <div className="flex items-center gap-1.5">
-      <div className="flex -space-x-1.5">
-        {visibleMembers.map((member) => (
-          <InboxMemberAvatar key={member.workspace_member_id} member={member} />
-        ))}
-      </div>
-      {memberCount > 4 ? (
-        <span className="text-xs text-muted-foreground">+{memberCount - 4}</span>
-      ) : null}
-      {members.length === 0 ? (
-        <span className="text-xs text-muted-foreground">{memberCount}</span>
+    <div className="flex items-center gap-1.5" aria-label={countLabel}>
+      {visibleMembers.length > 0 ? (
+        <div className="flex -space-x-1.5">
+          {visibleMembers.map((member) => (
+            <InboxMemberAvatar key={member.workspace_member_id} member={member} />
+          ))}
+        </div>
+      ) : (
+        <span className="flex h-5 w-5 items-center justify-center rounded-full border bg-muted text-muted-foreground">
+          <UserGroupIcon className="h-3.5 w-3.5" />
+        </span>
+      )}
+      {hiddenCount > 0 ? (
+        <span className="text-xs text-muted-foreground">+{hiddenCount}</span>
       ) : null}
     </div>
   );
-
-  if (members.length === 0) return avatarStack;
 
   return (
     <Tooltip>
@@ -556,12 +571,15 @@ function InboxMembersCell({ mailbox }: { mailbox: SupportMailbox }) {
       </TooltipTrigger>
       <TooltipContent side="bottom" className="p-2">
         <div className="space-y-1.5">
-          {members.map((member) => (
-            <div key={member.workspace_member_id} className="flex items-center gap-2">
-              <InboxMemberAvatar member={member} className="h-5 w-5" />
-              <span className="text-xs">{member.display_name || member.email}</span>
-            </div>
-          ))}
+          <p className="text-xs font-medium">{countLabel}</p>
+          {members.length > 0 ? (
+            members.map((member) => (
+              <div key={member.workspace_member_id} className="flex items-center gap-2">
+                <InboxMemberAvatar member={member} className="h-5 w-5" />
+                <span className="text-xs">{member.display_name || member.email}</span>
+              </div>
+            ))
+          ) : null}
         </div>
       </TooltipContent>
     </Tooltip>
@@ -604,7 +622,7 @@ function SharedInboxRoutingRow({
         </div>
       </div>
       <div>
-        <InboxMembersSummary members={supportMembers} />
+        <InboxMembersPreview members={supportMembers} />
       </div>
       <div>
         <InboxEmailForwardingStatus mailbox={ACTIVE_INBOX_STATUS} route={emailRoute} />
@@ -622,40 +640,6 @@ function SharedInboxRoutingRow({
         <NotApplicableCell />
       </div>
     </div>
-  );
-}
-
-function InboxMembersSummary({ members }: { members: SupportMailboxMember[] }) {
-  if (members.length === 0) return <span className="text-xs text-muted-foreground">No access</span>;
-  const memberCount = members.length;
-  const visibleMembers = members.slice(0, 4);
-  const avatarStack = (
-    <div className="flex items-center gap-1.5">
-      <div className="flex -space-x-1.5">
-        {visibleMembers.map((member) => (
-          <InboxMemberAvatar key={member.workspace_member_id} member={member} />
-        ))}
-      </div>
-      <span className="text-xs text-muted-foreground">{memberCount}</span>
-    </div>
-  );
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div className="inline-flex cursor-default">{avatarStack}</div>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="p-2">
-        <div className="space-y-1.5">
-          {members.map((member) => (
-            <div key={member.workspace_member_id} className="flex items-center gap-2">
-              <InboxMemberAvatar member={member} className="h-5 w-5" />
-              <span className="text-xs">{member.display_name || member.email}</span>
-            </div>
-          ))}
-        </div>
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
