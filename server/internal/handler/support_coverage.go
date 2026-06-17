@@ -103,15 +103,7 @@ func (h *SupportCoverageHandler) GetSummary(w http.ResponseWriter, r *http.Reque
 // ListGaps handles GET /api/support/coverage/gaps.
 func (h *SupportCoverageHandler) ListGaps(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
-	filter := model.SupportCoverageGapFilter{
-		Status:      r.URL.Query().Get("status"),
-		GapKind:     r.URL.Query().Get("gap_kind"),
-		GapCategory: r.URL.Query().Get("gap_category"),
-		V1GapType:   r.URL.Query().Get("v1_gap_type"),
-		IssueKey:    r.URL.Query().Get("issue_key"),
-		Search:      r.URL.Query().Get("search"),
-		ShowRaw:     r.URL.Query().Get("show_raw") == "true",
-	}
+	filter := supportCoverageGapFilterFromRequest(r)
 	gaps, total, err := h.coverageSvc.ListGaps(r.Context(), wsID, filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -121,6 +113,20 @@ func (h *SupportCoverageHandler) ListGaps(w http.ResponseWriter, r *http.Request
 		"items": gaps,
 		"total": total,
 	})
+}
+
+func supportCoverageGapFilterFromRequest(r *http.Request) model.SupportCoverageGapFilter {
+	return model.SupportCoverageGapFilter{
+		Status:      r.URL.Query().Get("status"),
+		GapKind:     r.URL.Query().Get("gap_kind"),
+		GapCategory: r.URL.Query().Get("gap_category"),
+		V1GapType:   r.URL.Query().Get("v1_gap_type"),
+		IssueKey:    r.URL.Query().Get("issue_key"),
+		Search:      r.URL.Query().Get("search"),
+		ShowRaw:     r.URL.Query().Get("show_raw") == "true",
+		Page:        queryInt(r, "page", 1),
+		PerPage:     queryInt(r, "per_page", 25),
+	}
 }
 
 // GetGap handles GET /api/support/coverage/gaps/{gapId}.

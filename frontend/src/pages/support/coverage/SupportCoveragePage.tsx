@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
 import { GapList } from '@/components/support/coverage/GapList'
 import { useAgents } from '@/hooks/queries/useAgents'
@@ -17,11 +17,19 @@ import type {
   SupportCoverageGapListItem,
   SupportCoverageSummary,
 } from '@/lib/supportCoverageTypes'
-import { GAP_STATUS_LABELS, GAP_KIND_DESCRIPTIONS, GAP_KIND_COLORS } from '@/lib/supportCoverageTypes'
-import { timeAgo } from '@/lib/utils'
+import { GAP_STATUS_LABELS, GAP_KIND_COLORS } from '@/lib/supportCoverageTypes'
+import { cn, timeAgo } from '@/lib/utils'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 
 const STATUS_FILTERS = ['open', 'done', 'rejected'] as const
+const GAP_PAGE_SIZE = 50
+const KIND_TABS = [
+  { value: 'all', label: 'All', dot: 'bg-muted-foreground/50', active: 'data-active:bg-muted/70' },
+  { value: 'content', label: 'Content', dot: GAP_KIND_COLORS.content.dot, active: 'data-active:bg-blue-50 data-active:text-blue-800 dark:data-active:bg-blue-950/30 dark:data-active:text-blue-300' },
+  { value: 'data', label: 'Data', dot: GAP_KIND_COLORS.data.dot, active: 'data-active:bg-amber-50 data-active:text-amber-800 dark:data-active:bg-amber-950/30 dark:data-active:text-amber-300' },
+  { value: 'action', label: 'Action', dot: GAP_KIND_COLORS.action.dot, active: 'data-active:bg-purple-50 data-active:text-purple-800 dark:data-active:bg-purple-950/30 dark:data-active:text-purple-300' },
+] as const
+type KindTabValue = (typeof KIND_TABS)[number]['value']
 
 export function SupportCoveragePage() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
@@ -30,12 +38,14 @@ export function SupportCoveragePage() {
 
   const [summary, setSummary] = useState<SupportCoverageSummary | null>(null)
   const [gaps, setGaps] = useState<SupportCoverageGapListItem[]>([])
-  const [, setTotal] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [loadedPage, setLoadedPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [selectedGap, setSelectedGap] = useState<SupportCoverageGapDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('open')
-  const [kindFilter, setKindFilter] = useState('all')
+  const [kindFilter, setKindFilter] = useState<KindTabValue>('all')
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [targetSpaceId, setTargetSpaceId] = useState('')
@@ -57,6 +67,16 @@ export function SupportCoveragePage() {
   const canReanalyze = has('settings.manage')
   const [reanalyzing, setReanalyzing] = useState(false)
   const reanalyzeBaselineRef = useRef<string | null>(null)
+
+  const listFilters = useCallback(
+    (page: number) => ({
+      status: statusFilter,
+      page: String(page),
+      per_page: String(GAP_PAGE_SIZE),
+      ...(kindFilter !== 'all' && { gap_kind: kindFilter }),
+    }),
+    [statusFilter, kindFilter],
+  )
 
   const handleReanalyze = useCallback(async () => {
     if (!wsId || reanalyzing) return
@@ -88,16 +108,17 @@ export function SupportCoveragePage() {
         reanalyzeBaselineRef.current = null
         setSummary(data)
         // Refresh gap list with new data.
-        const gapsRes = await supportCoverageService.listGaps(wsId, { status: statusFilter })
+        const gapsRes = await supportCoverageService.listGaps(wsId, listFilters(1))
         if (gapsRes.data) {
           setGaps(gapsRes.data.items || [])
           setTotal(gapsRes.data.total || 0)
+          setLoadedPage(1)
         }
         toast.success('Reanalysis complete.')
       }
     }, 30_000)
     return () => clearInterval(interval)
-  }, [reanalyzing, wsId, statusFilter])
+  }, [reanalyzing, wsId, listFilters])
   const externalSpaces = spaces?.filter((space) => space.type === 'external_capable') ?? []
   const documentationAgent = agents.find(
     (agent) =>
@@ -119,13 +140,14 @@ export function SupportCoveragePage() {
       setSelectedGap(null)
       const [summaryRes, gapsRes] = await Promise.all([
         supportCoverageService.getSummary(wsId),
-        supportCoverageService.listGaps(wsId, { status: statusFilter, ...(kindFilter !== 'all' && { gap_kind: kindFilter }) }),
+        supportCoverageService.listGaps(wsId, listFilters(1)),
       ])
       if (cancelled) return
       if (summaryRes.data) setSummary(summaryRes.data)
       if (gapsRes.data) {
         setGaps(gapsRes.data.items || [])
         setTotal(gapsRes.data.total || 0)
+        setLoadedPage(1)
       }
       setLoading(false)
     }
@@ -134,7 +156,7 @@ export function SupportCoveragePage() {
     return () => {
       cancelled = true
     }
-  }, [wsId, statusFilter, kindFilter])
+  }, [wsId, listFilters])
 
   const refreshGap = async (gapId: string) => {
     const { data } = await supportCoverageService.getGap(wsId, gapId)
@@ -142,10 +164,28 @@ export function SupportCoveragePage() {
   }
 
   const refreshList = async () => {
-    const { data } = await supportCoverageService.listGaps(wsId, { status: statusFilter, ...(kindFilter !== 'all' && { gap_kind: kindFilter }) })
+    const { data } = await supportCoverageService.listGaps(wsId, listFilters(1))
     if (data) {
       setGaps(data.items || [])
       setTotal(data.total || 0)
+      setLoadedPage(1)
+    }
+  }
+
+  const handleLoadMore = async () => {
+    if (loadingMore || gaps.length >= total) return
+    const nextPage = loadedPage + 1
+    setLoadingMore(true)
+    const { data, error } = await supportCoverageService.listGaps(wsId, listFilters(nextPage))
+    setLoadingMore(false)
+    if (error) {
+      toast.error(error || 'Failed to load more gaps')
+      return
+    }
+    if (data) {
+      setGaps((current) => [...current, ...(data.items || [])])
+      setTotal(data.total || 0)
+      setLoadedPage(nextPage)
     }
   }
 
@@ -314,35 +354,23 @@ export function SupportCoveragePage() {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Select value={kindFilter} onValueChange={setKindFilter}>
-          <SelectTrigger className="h-8 w-[150px] text-xs">
-            <SelectValue>
-              {kindFilter === 'all' ? (
-                'All types'
-              ) : (
-                <span className="flex items-center gap-1.5">
-                  <span className={`inline-block h-2.5 w-2.5 rounded-full ${GAP_KIND_COLORS[kindFilter]?.dot}`} />
-                  {kindFilter.charAt(0).toUpperCase() + kindFilter.slice(1)} gaps
-                </span>
-              )}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            {(['content', 'data', 'action'] as const).map((kind) => {
-              const colors = GAP_KIND_COLORS[kind]
-              return (
-                <SelectItem key={kind} value={kind}>
-                  <span className="flex items-center gap-1.5">
-                    <span className={`inline-block h-2.5 w-2.5 rounded-full ${colors.dot}`} />
-                    <span className="font-medium">{kind.charAt(0).toUpperCase() + kind.slice(1)} gaps</span>
-                    <span className="text-muted-foreground">— {GAP_KIND_DESCRIPTIONS[kind]}</span>
-                  </span>
-                </SelectItem>
-              )
-            })}
-          </SelectContent>
-        </Select>
+        <Tabs value={kindFilter} onValueChange={(value) => setKindFilter(value as KindTabValue)}>
+          <TabsList variant="line" className="h-9 rounded-lg bg-transparent p-0.5">
+            {KIND_TABS.map((tab) => (
+              <TabsTrigger
+                key={tab.value}
+                value={tab.value}
+                className={cn(
+                  'h-8 rounded-md px-3 text-xs data-active:shadow-sm after:hidden',
+                  tab.active,
+                )}
+              >
+                <span className={cn('h-2 w-2 rounded-full', tab.dot)} />
+                <span>{tab.label}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
         <div className="ml-auto flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
           {STATUS_FILTERS.map((status) => (
             <button
@@ -369,6 +397,24 @@ export function SupportCoveragePage() {
             onSelect={openDetail}
             compact={!!selectedGap}
           />
+          {gaps.length > 0 && (
+            <div className="flex items-center justify-between px-1 pt-3">
+              <span className="text-xs text-muted-foreground">
+                Showing {gaps.length} of {total} gaps
+              </span>
+              {gaps.length < total && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={loadingMore}
+                  onClick={handleLoadMore}
+                >
+                  {loadingMore ? 'Loading…' : 'Load more'}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
         {selectedGap && (
