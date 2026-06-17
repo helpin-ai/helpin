@@ -136,8 +136,8 @@ export function AskAgentsDock() {
   const clearRuns = useCommandBarRunStore((s) => s.clear);
 
   const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem(COLLAPSED_KEY) === '1';
+    if (typeof window === 'undefined') return true;
+    return localStorage.getItem(COLLAPSED_KEY) !== '0';
   });
   const [hiddenByModal, setHiddenByModal] = useState(false);
   const [isFocused, setIsFocused] = useState(false);

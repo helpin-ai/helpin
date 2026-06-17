@@ -129,7 +129,7 @@ export function DockInput({
   const placeholder =
     mode === 'list'
       ? 'Search runs or ask something new…'
-      : 'Run Atlas, Forge, Lens, or any agent';
+      : 'Tell Atlas, Forge, Lens, or any agent what to do';
 
   // Hide the workspace-level chip — it just restates the current workspace
   // (already visible in the sidebar) and provides no scoping signal. Keep it
