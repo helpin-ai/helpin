@@ -7,6 +7,7 @@ import { AskAgentsDock } from '../AskAgentsDock';
 import { PageContextProvider } from '@/components/command-bar/pageContext';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useCommandBarRunStore } from '@/stores/commandBarStore';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -69,6 +70,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   localStorage.clear();
+  useCommandBarRunStore.getState().clear();
   useWorkspaceStore.setState({
     currentWorkspace: { id: 'ws-1', name: 'Acme' } as never,
   });
@@ -89,6 +91,7 @@ afterEach(() => {
   container.remove();
   document.body.innerHTML = '';
   useWorkspaceStore.setState({ currentWorkspace: null });
+  useCommandBarRunStore.getState().clear();
   vi.clearAllMocks();
 });
 
@@ -145,6 +148,50 @@ async function clickSend() {
 }
 
 describe('AskAgentsDock chat', () => {
+  it('does not show active runs from the previous workspace after switching workspaces', async () => {
+    mocks.listRecentRuns
+      .mockResolvedValueOnce({
+        data: {
+          runs: [{
+            id: 'run-ws-1',
+            workspace_id: 'ws-1',
+            agent_id: 'agent-command',
+            target_type: 'workspace',
+            target_id: 'ws-1',
+            runtime_kind: 'native_sdk',
+            invocation_mode: 'autonomous',
+            approval_state: 'approved',
+            pause_reason: 'none',
+            status: 'running',
+            input: { text: 'summarize workspace one' },
+            output_summary: {},
+            cached_input_tokens: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            tokens_used: 0,
+            created_at: '2026-05-15T00:00:05Z',
+            updated_at: '2026-05-15T00:01:00Z',
+            target_info: { target_type: 'workspace', target_id: 'ws-1', title: 'Acme' },
+          }],
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: { runs: [] }, error: null });
+
+    await renderDock();
+    await waitForText('1 running');
+
+    await act(async () => {
+      useWorkspaceStore.setState({
+        currentWorkspace: { id: 'ws-2', name: 'Beta' } as never,
+      });
+    });
+    await flush();
+
+    expect(document.body.textContent).not.toContain('1 running');
+    expect(document.body.textContent).not.toContain('summarize workspace one');
+  });
+
   it('smoothly hides while a dialog is open', async () => {
     await renderDock();
     expect(document.body.querySelector('[data-helpin-dock="true"]')).toBeTruthy();

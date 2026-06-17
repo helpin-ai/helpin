@@ -123,6 +123,7 @@ export function AskAgentsDock() {
   const setViewMode = useCommandBarRunStore((s) => s.setViewMode);
   const listFilter = useCommandBarRunStore((s) => s.listFilter);
   const setListFilter = useCommandBarRunStore((s) => s.setListFilter);
+  const clearRuns = useCommandBarRunStore((s) => s.clear);
 
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -272,10 +273,14 @@ export function AskAgentsDock() {
   }, [value]);
 
   useEffect(() => {
+    clearRuns();
     setChatThreadId(null);
     setMessages([]);
+    setSessionPlanIds(new Set());
+    setSessionRunIds(new Set());
+    setSelectedRunId(null);
     setIntentResult(null);
-  }, [workspace?.id]);
+  }, [clearRuns, workspace?.id]);
 
   // Auto-scroll on new content.
   useEffect(() => {
