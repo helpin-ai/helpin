@@ -95,6 +95,18 @@ const (
 	SupportCoverageSuggestionStatusRejected = "rejected"
 )
 
+// ─── Cluster rebuild statuses ─────────────────────────────────────────────
+
+const (
+	SupportCoverageClusterRebuildStatusRunning   = "running"
+	SupportCoverageClusterRebuildStatusCompleted = "completed"
+	SupportCoverageClusterRebuildStatusFailed    = "failed"
+
+	SupportCoverageMergeSuggestionStatusPending   = "pending"
+	SupportCoverageMergeSuggestionStatusApplied   = "applied"
+	SupportCoverageMergeSuggestionStatusDismissed = "dismissed"
+)
+
 // ─── Can-answer / can-resolve tristate ─────────────────────────────────────
 
 const (
@@ -252,6 +264,53 @@ type SupportCoverageDigestDelivery struct {
 
 func (SupportCoverageDigestDelivery) TableName() string {
 	return "support_coverage_digest_deliveries"
+}
+
+// SupportCoverageClusterRebuildRun records a workspace-wide gap clustering pass.
+type SupportCoverageClusterRebuildRun struct {
+	ID                 string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID        string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Status             string          `json:"status" gorm:"not null;default:'running'"`
+	GapsScanned        int             `json:"gaps_scanned" gorm:"not null;default:0"`
+	ClustersFound      int             `json:"clusters_found" gorm:"not null;default:0"`
+	AutoMerged         int             `json:"auto_merged" gorm:"not null;default:0"`
+	SuggestionsCreated int             `json:"suggestions_created" gorm:"not null;default:0"`
+	Skipped            int             `json:"skipped" gorm:"not null;default:0"`
+	ErrorMessage       *string         `json:"error_message"`
+	StartedAt          time.Time       `json:"started_at" gorm:"not null"`
+	CompletedAt        *time.Time      `json:"completed_at"`
+	Metadata           json.RawMessage `json:"metadata" gorm:"type:jsonb;not null;default:'{}'"`
+	CreatedAt          time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt          time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (SupportCoverageClusterRebuildRun) TableName() string {
+	return "support_coverage_cluster_rebuild_runs"
+}
+
+// SupportCoverageGapMergeSuggestion records a reviewed or pending duplicate-gap merge.
+type SupportCoverageGapMergeSuggestion struct {
+	ID                    string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID           string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	RunID                 *string         `json:"run_id" gorm:"type:uuid"`
+	SourceGapID           string          `json:"source_gap_id" gorm:"type:uuid;not null;index"`
+	TargetGapID           string          `json:"target_gap_id" gorm:"type:uuid;not null;index"`
+	Status                string          `json:"status" gorm:"not null;default:'pending'"`
+	SimilarityScore       float64         `json:"similarity_score" gorm:"not null;default:0"`
+	Reason                string          `json:"reason" gorm:"type:text;not null;default:''"`
+	CombinedEvidenceCount int             `json:"combined_evidence_count" gorm:"not null;default:0"`
+	ReviewedBy            *string         `json:"reviewed_by" gorm:"type:uuid"`
+	ReviewedAt            *time.Time      `json:"reviewed_at"`
+	Metadata              json.RawMessage `json:"metadata" gorm:"type:jsonb;not null;default:'{}'"`
+	CreatedAt             time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt             time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+
+	SourceGap *SupportCoverageGap `json:"source_gap,omitempty" gorm:"foreignKey:SourceGapID"`
+	TargetGap *SupportCoverageGap `json:"target_gap,omitempty" gorm:"foreignKey:TargetGapID"`
+}
+
+func (SupportCoverageGapMergeSuggestion) TableName() string {
+	return "support_coverage_gap_merge_suggestions"
 }
 
 // ─── DTOs ──────────────────────────────────────────────────────────────────
