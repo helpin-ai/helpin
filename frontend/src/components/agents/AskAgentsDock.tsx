@@ -436,7 +436,8 @@ export function AskAgentsDock() {
     return () => clearTimeout(timer);
   }, [collapsed, parsing, dispatching, intentResult, value, isFocused]);
 
-  // Hide while a centered modal dialog is open. Sheets pass through.
+  // Hide while modal surfaces are open so the dock does not compete with
+  // dialogs or drawers. Keep it mounted so CSS can animate the exit.
   useEffect(() => {
     const update = () => {
       const open = document.querySelectorAll(
@@ -444,7 +445,6 @@ export function AskAgentsDock() {
       );
       let blocking = false;
       open.forEach((el) => {
-        if (el.hasAttribute('data-side')) return;
         if (el.closest('[data-helpin-dock]')) return;
         blocking = true;
       });
@@ -832,19 +832,29 @@ export function AskAgentsDock() {
   );
 
   if (!workspace) return null;
-  if (hiddenByModal) return null;
+  const dockVisibilityClass = hiddenByModal
+    ? 'translate-y-4 opacity-0'
+    : 'translate-y-0 opacity-100';
+  const dockInteractionClass = hiddenByModal ? 'pointer-events-none' : 'pointer-events-auto';
 
   if (collapsed) {
     if (typeof document === 'undefined') return null;
     return createPortal(
       <div
         data-helpin-dock="true"
-        className="pointer-events-none fixed inset-x-0 bottom-8 z-[60] flex justify-center"
+        aria-hidden={hiddenByModal}
+        className={cn(
+          'pointer-events-none fixed inset-x-0 bottom-8 z-[60] flex justify-center transition-[opacity,transform] duration-200 ease-out',
+          dockVisibilityClass,
+        )}
       >
         <button
           type="button"
           onClick={() => setCollapsed(false)}
-          className="pointer-events-auto group inline-flex items-center gap-2.5 rounded-full border border-border/70 bg-background/95 px-4 py-2.5 text-sm font-medium text-muted-foreground shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_24px_-8px_rgba(15,23,42,0.22)] backdrop-blur transition hover:border-foreground/30 hover:bg-background hover:text-foreground"
+          className={cn(
+            'group inline-flex items-center gap-2.5 rounded-full border border-border/70 bg-background/95 px-4 py-2.5 text-sm font-medium text-muted-foreground shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_24px_-8px_rgba(15,23,42,0.22)] backdrop-blur transition hover:border-foreground/30 hover:bg-background hover:text-foreground',
+            dockInteractionClass,
+          )}
         >
           <AiMagicIcon className="h-4 w-4" />
           Ask agents
@@ -883,9 +893,18 @@ export function AskAgentsDock() {
   return createPortal(
     <div
       data-helpin-dock="true"
-      className="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex justify-center px-4"
+      aria-hidden={hiddenByModal}
+      className={cn(
+        'pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex justify-center px-4 transition-[opacity,transform] duration-200 ease-out',
+        dockVisibilityClass,
+      )}
     >
-      <div className="pointer-events-auto flex w-full max-w-2xl flex-col rounded-2xl border border-border/70 bg-background/95 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_24px_-12px_rgba(15,23,42,0.18),0_24px_64px_-28px_rgba(15,23,42,0.28)] ring-1 ring-black/[0.02] backdrop-blur transition-shadow focus-within:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_32px_-12px_rgba(15,23,42,0.22),0_32px_80px_-32px_rgba(15,23,42,0.34)] dark:ring-white/[0.04] animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200 ease-out">
+      <div
+        className={cn(
+          'flex w-full max-w-2xl flex-col rounded-2xl border border-border/70 bg-background/95 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_24px_-12px_rgba(15,23,42,0.18),0_24px_64px_-28px_rgba(15,23,42,0.28)] ring-1 ring-black/[0.02] backdrop-blur transition-shadow focus-within:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_32px_-12px_rgba(15,23,42,0.22),0_32px_80px_-32px_rgba(15,23,42,0.34)] dark:ring-white/[0.04] animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200 ease-out',
+          dockInteractionClass,
+        )}
+      >
         <div className="border-b border-border/60">
           <DockHeader
             mode={viewMode}

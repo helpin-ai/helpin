@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { TaskDetailPanel } from '@/components/pm/TaskDetailPanel';
+import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import {
   closeTaskRoute,
   getActiveTaskRoute,
@@ -40,6 +41,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
   const activeTaskId = activeTaskRoute?.taskId ?? contextualTaskId;
 
   const [loadedTask, setLoadedTask] = useState<LoadedTaskState | null>(null);
+  const [fallbackRunId, setFallbackRunId] = useState<string | null>(null);
   const presentation = useMemo(
     () => getTaskOverlayPresentationState(activeTaskId, loadedTask),
     [activeTaskId, loadedTask],
@@ -96,6 +98,19 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     closeTaskRoute(navigateRef.current as never, locationRef.current, workspaceSlug);
   }, [workspaceSlug]);
 
+  const handleFallbackRunClose = useCallback(() => {
+    setFallbackRunId(null);
+    navigateRef.current({
+      to: '.',
+      search: (prev: Record<string, unknown>) => {
+        const next = { ...prev };
+        delete next.run;
+        return next;
+      },
+      replace: true,
+    } as never);
+  }, []);
+
   useEffect(() => {
     if (activeTaskRoute && contextualTaskId) {
       closeContextualTask();
@@ -136,17 +151,33 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
   // canonical task route so the panel opens with content immediately.
   // This also handles shared my-work URLs by redirecting to /pm/tasks/.
   useEffect(() => {
-    if (activeTaskId || !workspaceId || !workspaceSlug) return;
+    if (activeTaskId || !workspaceId || !workspaceSlug) {
+      setFallbackRunId(null);
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
     const maybeRun = params.get('run');
-    if (!maybeRun || params.has('task')) return; // ?task= handler takes precedence
+    if (!maybeRun || params.has('task')) {
+      setFallbackRunId(null);
+      return; // ?task= handler takes precedence
+    }
 
     let cancelled = false;
     (async () => {
-      const runRes = await agentService.getRun(workspaceId, maybeRun);
+      let runRes: Awaited<ReturnType<typeof agentService.getRun>>;
+      try {
+        runRes = await agentService.getRun(workspaceId, maybeRun);
+      } catch {
+        if (!cancelled) setFallbackRunId(maybeRun);
+        return;
+      }
       if (cancelled) return;
       if (new URLSearchParams(window.location.search).get('run') !== maybeRun) return;
-      if (!runRes.data || runRes.data.target_type !== 'task' || !runRes.data.target_id) return;
+      if (!runRes.data || runRes.data.target_type !== 'task' || !runRes.data.target_id) {
+        setFallbackRunId(maybeRun);
+        return;
+      }
+      setFallbackRunId(null);
 
       const taskId = runRes.data.target_id;
 
@@ -292,19 +323,28 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
   );
 
   return (
-    <TaskDetailPanel
-      workspaceId={workspaceId}
-      open={presentation.open}
-      loading={presentation.loading}
-      taskDetail={presentation.taskDetail}
-      states={presentation.states}
-      initialRecurringSummary={presentation.recurringSummary}
-      onOpenChange={(isOpen) => {
-        if (!isOpen) handleClose();
-      }}
-      onTaskUpdated={handleStoryUpdated}
-      onTaskOpened={handleTaskOpened}
-      onTaskArchived={handleStoryArchived}
-    />
+    <>
+      <TaskDetailPanel
+        workspaceId={workspaceId}
+        open={presentation.open}
+        loading={presentation.loading}
+        taskDetail={presentation.taskDetail}
+        states={presentation.states}
+        initialRecurringSummary={presentation.recurringSummary}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) handleClose();
+        }}
+        onTaskUpdated={handleStoryUpdated}
+        onTaskOpened={handleTaskOpened}
+        onTaskArchived={handleStoryArchived}
+      />
+      <CodingSessionDrawer
+        sessionId={fallbackRunId}
+        open={!!fallbackRunId}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) handleFallbackRunClose();
+        }}
+      />
+    </>
   );
 }

@@ -119,6 +119,15 @@ async function waitForText(text: string) {
   throw new Error(`Missing text: ${text}`);
 }
 
+async function waitForDockClass(className: string) {
+  for (let i = 0; i < 10; i += 1) {
+    const dock = document.body.querySelector('[data-helpin-dock="true"]');
+    if (dock?.classList.contains(className)) return dock;
+    await flush();
+  }
+  throw new Error(`Missing dock class: ${className}`);
+}
+
 function setTextareaValue(value: string) {
   const textarea = document.body.querySelector('textarea');
   if (!textarea) throw new Error('textarea not found');
@@ -136,6 +145,38 @@ async function clickSend() {
 }
 
 describe('AskAgentsDock chat', () => {
+  it('smoothly hides while a dialog is open', async () => {
+    await renderDock();
+    expect(document.body.querySelector('[data-helpin-dock="true"]')).toBeTruthy();
+
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('data-state', 'open');
+    dialog.setAttribute('data-slot', 'dialog-content');
+    document.body.appendChild(dialog);
+
+    const dock = await waitForDockClass('opacity-0');
+    expect(dock.classList.contains('pointer-events-none')).toBe(true);
+    expect(dock.classList.contains('translate-y-4')).toBe(true);
+    expect(document.body.querySelector('textarea')).toBeTruthy();
+  });
+
+  it('smoothly hides while a sheet drawer is open', async () => {
+    await renderDock();
+
+    const sheet = document.createElement('div');
+    sheet.setAttribute('role', 'dialog');
+    sheet.setAttribute('data-state', 'open');
+    sheet.setAttribute('data-slot', 'sheet-content');
+    sheet.setAttribute('data-side', 'right');
+    document.body.appendChild(sheet);
+
+    const dock = await waitForDockClass('opacity-0');
+    expect(dock.classList.contains('pointer-events-none')).toBe(true);
+    expect(dock.classList.contains('translate-y-4')).toBe(true);
+    expect(document.body.querySelector('textarea')).toBeTruthy();
+  });
+
   it('hydrates the latest chat thread', async () => {
     mocks.listChatThreads.mockResolvedValue({
       data: {
