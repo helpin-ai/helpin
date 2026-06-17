@@ -12,6 +12,10 @@ import { Loading01Icon } from '@/lib/icons'
 import { isAgentAvailableForTarget } from '@/lib/agentAccess'
 import { agentService } from '@/lib/services/agentService'
 import { supportCoverageService } from '@/lib/services/supportCoverageService'
+import {
+  formatClusterRebuildSuccess,
+  isClusterRebuildResult,
+} from '@/lib/supportCoverageClusterRebuild'
 import type {
   SupportCoverageClusterRebuildRun,
   SupportCoverageGapDetail,
@@ -90,10 +94,10 @@ export function SupportCoveragePage() {
       const { data, error } = await supportCoverageService.rebuildClusters(wsId)
       if (error) {
         toast.error('Failed to rebuild gap clusters')
+      } else if (!isClusterRebuildResult(data)) {
+        toast.error('Failed to rebuild gap clusters')
       } else {
-        toast.success(
-          `Cluster rebuild complete: ${data?.auto_merged ?? 0} merged, ${data?.suggestions_created ?? 0} for review.`,
-        )
+        toast.success(formatClusterRebuildSuccess(data))
         const [summaryRes, gapsRes, latestRes] = await Promise.all([
           supportCoverageService.getSummary(wsId),
           supportCoverageService.listGaps(wsId, listFilters(1)),
