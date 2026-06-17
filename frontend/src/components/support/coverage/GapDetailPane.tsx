@@ -20,7 +20,7 @@ import {
   Loading01Icon,
   MagicWand01Icon,
 } from '@/lib/icons'
-import type { SupportCoverageGapDetail } from '@/lib/supportCoverageTypes'
+import type { SupportCoverageGapDetail, SupportCoverageGapMergeSuggestion } from '@/lib/supportCoverageTypes'
 import { GAP_STATUS_LABELS, V1_GAP_TYPE_LABELS } from '@/lib/supportCoverageTypes'
 import { timeAgo } from '@/lib/utils'
 import { EvidenceConversationCard } from './EvidenceConversationCard'
@@ -159,6 +159,9 @@ export function GapDetailPane({
   generateError,
   applying,
   confirmSuggestionId,
+  mergeSuggestions,
+  canReviewMergeSuggestions,
+  mergeActionSuggestionId,
   onClose,
   onTargetSpaceChange,
   onTargetCollectionChange,
@@ -168,6 +171,8 @@ export function GapDetailPane({
   onApplySuggestion,
   onDiscardSuggestion,
   onSetConfirmSuggestion,
+  onApplyMergeSuggestion,
+  onDismissMergeSuggestion,
   onStatusUpdate,
   onRegenerate,
 }: {
@@ -185,6 +190,9 @@ export function GapDetailPane({
   generateError: string | null
   applying: boolean
   confirmSuggestionId: string | null
+  mergeSuggestions: SupportCoverageGapMergeSuggestion[]
+  canReviewMergeSuggestions: boolean
+  mergeActionSuggestionId: string | null
   onClose: () => void
   onTargetSpaceChange: (spaceId: string) => void
   onTargetCollectionChange: (collectionId: string) => void
@@ -194,6 +202,8 @@ export function GapDetailPane({
   onApplySuggestion: (suggestionId: string, override?: { route?: GapAddRoute; target_document_id?: string }) => void
   onDiscardSuggestion: (suggestionId: string) => void
   onSetConfirmSuggestion: (suggestionId: string | null) => void
+  onApplyMergeSuggestion: (suggestionId: string) => void
+  onDismissMergeSuggestion: (suggestionId: string) => void
   onStatusUpdate: (gapId: string, status: string) => void
   onRegenerate: (gapId: string) => void
 }) {
@@ -242,6 +252,7 @@ export function GapDetailPane({
     gap.status === 'open' &&
     (canSuggestImprovements || canDraftNewArticle)
   const quickDraftButtonLabel = canSuggestImprovements ? 'Quick improvement draft' : 'Quick article draft'
+  const pendingMergeSuggestions = mergeSuggestions.filter((suggestion) => suggestion.status === 'pending')
 
   const handleRegenerate = () => {
     setRegenerateLockedUntil(Date.now() + 30_000)
@@ -508,6 +519,62 @@ export function GapDetailPane({
                 <span className="break-words">{explanation.decision_reason}</span>
               </p>
             )}
+          </div>
+        </div>
+      )}
+
+      {pendingMergeSuggestions.length > 0 && (
+        <div className="p-4">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Similar gaps
+          </h4>
+          <div className="space-y-2">
+            {pendingMergeSuggestions.map((suggestion) => {
+              const otherGap =
+                suggestion.source_gap_id === gap.id ? suggestion.target_gap : suggestion.source_gap
+              const isMerging = mergeActionSuggestionId === suggestion.id
+              return (
+                <div key={suggestion.id} className="rounded-md border border-border/40 bg-muted/20 p-3 text-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold leading-tight">
+                        {otherGap?.title || 'Related coverage gap'}
+                      </p>
+                      <p className="mt-1 text-muted-foreground">
+                        {Math.round(suggestion.similarity_score * 100)}% match · {suggestion.combined_evidence_count} evidence items after merge
+                      </p>
+                    </div>
+                    <Badge variant="secondary" className="shrink-0 text-[10px] uppercase tracking-wide">
+                      Cluster
+                    </Badge>
+                  </div>
+                  {suggestion.reason && (
+                    <p className="mt-2 leading-relaxed text-muted-foreground">{suggestion.reason}</p>
+                  )}
+                  {canReviewMergeSuggestions && (
+                    <div className="mt-3 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        disabled={isMerging}
+                        onClick={() => onDismissMergeSuggestion(suggestion.id)}
+                        className="rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-background disabled:opacity-50"
+                      >
+                        Keep separate
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isMerging}
+                        onClick={() => onApplyMergeSuggestion(suggestion.id)}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {isMerging && <Loading01Icon className="h-3.5 w-3.5 animate-spin" />}
+                        Merge
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

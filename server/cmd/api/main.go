@@ -243,6 +243,8 @@ func main() {
 			&model.SupportCoverageConversationAnalysis{},
 			&model.SupportAIRetrievalTrace{},
 			&model.SupportCoverageRecommendation{},
+			&model.SupportCoverageClusterRebuildRun{},
+			&model.SupportCoverageGapMergeSuggestion{},
 			&model.GitIntegration{},
 			&model.GitCredential{},
 			&model.GitRepository{},
@@ -1140,6 +1142,7 @@ func main() {
 	supportCoverageService.SetDocsBlockService(docsBlockService)
 	supportCoverageService.SetTemporalClient(temporalClient)
 	supportCoverageKnowledgeMatcher := service.NewCoverageKnowledgeMatcher(docsChunkRepo, supportContentChunkRepo, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel)
+	supportCoverageClusterRebuildService := service.NewSupportCoverageClusterRebuildService(supportCoverageRepo, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel)
 	supportCoverageDailyAnalyzer := service.NewSupportCoverageDailyAnalyzer(llmProvider, cfg.CRMLLMProvider, cfg.CRMLLMModel).
 		SetCoverageRepositories(supportCoverageRepo, supportCoverageAnalysisRepo).
 		SetConversationRepositories(supportConversationRepo, supportMessageRepo).
@@ -1314,6 +1317,7 @@ func main() {
 			supportCoverageService,
 			supportEventService,
 			service.NewSupportCoverageDraftService(supportCoverageRepo, docsDocumentService, docsContentService, docsVersionService, llmProvider),
+			supportCoverageClusterRebuildService,
 		),
 	}
 

@@ -773,6 +773,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/summary", h.SupportCoverage.GetSummary)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/gaps", h.SupportCoverage.ListGaps)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/gaps/{gapId}", h.SupportCoverage.GetGap)
+						r.With(requirePerm(authorization.PermSupportRead)).Get("/gaps/{gapId}/merge-suggestions", h.SupportCoverage.ListMergeSuggestions)
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/gaps/{gapId}/regenerate", h.SupportCoverage.RegenerateGap)
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/gaps/{gapId}/status", h.SupportCoverage.UpdateGapStatus)
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/gaps/{gapId}/reclassify", h.SupportCoverage.ReclassifyGap)
@@ -785,6 +786,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/conversations/{conversationId}/state", h.SupportCoverage.GetConversationState)
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/conversations/{conversationId}/docs-issue", h.SupportCoverage.SubmitDocsIssueFeedback)
 						r.With(requirePerm(authorization.PermSettingsManage)).Post("/reanalyze", h.SupportCoverage.TriggerReanalysis)
+						r.With(requirePerm(authorization.PermSettingsManage)).Post("/clusters/rebuild", h.SupportCoverage.RebuildClusters)
+						r.With(requirePerm(authorization.PermSupportRead)).Get("/clusters/rebuild/latest", h.SupportCoverage.GetLatestClusterRebuild)
+						r.With(requirePerm(authorization.PermSupportEdit)).Post("/merge-suggestions/{suggestionId}/apply", h.SupportCoverage.ApplyMergeSuggestion)
+						r.With(requirePerm(authorization.PermSupportEdit)).Post("/merge-suggestions/{suggestionId}/dismiss", h.SupportCoverage.DismissMergeSuggestion)
 					})
 				}
 			})

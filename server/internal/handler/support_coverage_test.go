@@ -7,7 +7,7 @@ import (
 )
 
 func TestSupportCoverageHandlerAllowRegenerateDebouncesPerUserGap(t *testing.T) {
-	h := NewSupportCoverageHandler(nil, nil, nil)
+	h := NewSupportCoverageHandler(nil, nil, nil, nil)
 
 	if !h.allowRegenerate("user-1", "gap-1", 30*time.Second) {
 		t.Fatal("first regenerate should be allowed")

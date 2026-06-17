@@ -40,6 +40,31 @@ func (r *SupportCoverageRepository) ListGapsByIDs(ctx context.Context, workspace
 	return gaps, nil
 }
 
+func (r *SupportCoverageRepository) ListOpenGapsForClusterRebuild(ctx context.Context, workspaceID string, limit int) ([]model.SupportCoverageGapListItem, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	evidenceCutoff := time.Now().AddDate(0, 0, -30)
+	var items []model.SupportCoverageGapListItem
+	err := r.db.WithContext(ctx).
+		Table("support_coverage_gaps g").
+		Select(`g.*,
+			COALESCE(t.title, '') AS topic_title,
+			COALESCE(t.canonical_title, t.title, '') AS canonical_title,
+			(SELECT COUNT(*) FROM support_gap_suggestions s WHERE s.gap_id = g.id) AS suggestion_count,
+			(SELECT ga.document_id FROM support_coverage_gap_articles ga WHERE ga.gap_id = g.id LIMIT 1) AS related_article_id,
+			(SELECT COUNT(DISTINCT COALESCE(e.conversation_id, e.id)) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d`, evidenceCutoff).
+		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
+		Where("g.workspace_id = ? AND g.status = ?", workspaceID, model.SupportCoverageGapStatusOpen).
+		Order("g.evidence_count DESC, g.last_seen_at DESC").
+		Limit(limit).
+		Find(&items).Error
+	if err != nil {
+		return nil, fmt.Errorf("list open gaps for cluster rebuild: %w", err)
+	}
+	return items, nil
+}
+
 // UpsertTopicByIssueKey returns an existing topic or creates one.
 func (r *SupportCoverageRepository) UpsertTopicByIssueKey(ctx context.Context, workspaceID, issueKey, title string) (*model.SupportCoverageTopic, error) {
 	if workspaceID == "" || issueKey == "" {
@@ -908,6 +933,159 @@ func (r *SupportCoverageRepository) HasCompletedAnalysisRun(ctx context.Context,
 		return false, fmt.Errorf("check completed analysis run: %w", err)
 	}
 	return count > 0, nil
+}
+
+func (r *SupportCoverageRepository) CreateClusterRebuildRun(ctx context.Context, run *model.SupportCoverageClusterRebuildRun) error {
+	if run.ID == "" {
+		run.ID = uuid.New().String()
+	}
+	if run.Status == "" {
+		run.Status = model.SupportCoverageClusterRebuildStatusRunning
+	}
+	if run.StartedAt.IsZero() {
+		run.StartedAt = time.Now().UTC()
+	}
+	if len(run.Metadata) == 0 {
+		run.Metadata = []byte("{}")
+	}
+	if err := r.db.WithContext(ctx).Create(run).Error; err != nil {
+		return fmt.Errorf("create cluster rebuild run: %w", err)
+	}
+	return nil
+}
+
+func (r *SupportCoverageRepository) CompleteClusterRebuildRun(ctx context.Context, runID string, gapsScanned, clustersFound, autoMerged, suggestionsCreated, skipped int) error {
+	now := time.Now().UTC()
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageClusterRebuildRun{}).
+		Where("id = ?", runID).
+		Updates(map[string]any{
+			"status":              model.SupportCoverageClusterRebuildStatusCompleted,
+			"gaps_scanned":        gapsScanned,
+			"clusters_found":      clustersFound,
+			"auto_merged":         autoMerged,
+			"suggestions_created": suggestionsCreated,
+			"skipped":             skipped,
+			"completed_at":        &now,
+		}).Error; err != nil {
+		return fmt.Errorf("complete cluster rebuild run: %w", err)
+	}
+	return nil
+}
+
+func (r *SupportCoverageRepository) FailClusterRebuildRun(ctx context.Context, runID string, cause error) error {
+	now := time.Now().UTC()
+	msg := ""
+	if cause != nil {
+		msg = cause.Error()
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageClusterRebuildRun{}).
+		Where("id = ?", runID).
+		Updates(map[string]any{
+			"status":        model.SupportCoverageClusterRebuildStatusFailed,
+			"error_message": &msg,
+			"completed_at":  &now,
+		}).Error; err != nil {
+		return fmt.Errorf("fail cluster rebuild run: %w", err)
+	}
+	return nil
+}
+
+func (r *SupportCoverageRepository) LatestClusterRebuildRun(ctx context.Context, workspaceID string) (*model.SupportCoverageClusterRebuildRun, error) {
+	var run model.SupportCoverageClusterRebuildRun
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Order("started_at DESC").
+		First(&run).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("latest cluster rebuild run: %w", err)
+	}
+	return &run, nil
+}
+
+func (r *SupportCoverageRepository) UpsertMergeSuggestion(ctx context.Context, suggestion *model.SupportCoverageGapMergeSuggestion) (bool, error) {
+	if suggestion.ID == "" {
+		suggestion.ID = uuid.New().String()
+	}
+	if suggestion.Status == "" {
+		suggestion.Status = model.SupportCoverageMergeSuggestionStatusPending
+	}
+	if len(suggestion.Metadata) == 0 {
+		suggestion.Metadata = []byte("{}")
+	}
+	var existing model.SupportCoverageGapMergeSuggestion
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND status = ? AND source_gap_id = ? AND target_gap_id = ?",
+			suggestion.WorkspaceID,
+			model.SupportCoverageMergeSuggestionStatusPending,
+			suggestion.SourceGapID,
+			suggestion.TargetGapID,
+		).
+		First(&existing).Error
+	if err == nil {
+		return false, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, fmt.Errorf("lookup merge suggestion: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Create(suggestion).Error; err != nil {
+		return false, fmt.Errorf("create merge suggestion: %w", err)
+	}
+	return true, nil
+}
+
+func (r *SupportCoverageRepository) ListMergeSuggestionsForGap(ctx context.Context, workspaceID, gapID string) ([]model.SupportCoverageGapMergeSuggestion, error) {
+	var suggestions []model.SupportCoverageGapMergeSuggestion
+	if err := r.db.WithContext(ctx).
+		Preload("SourceGap").
+		Preload("TargetGap").
+		Where("workspace_id = ? AND status = ? AND (source_gap_id = ? OR target_gap_id = ?)",
+			workspaceID,
+			model.SupportCoverageMergeSuggestionStatusPending,
+			gapID,
+			gapID,
+		).
+		Order("similarity_score DESC, created_at DESC").
+		Find(&suggestions).Error; err != nil {
+		return nil, fmt.Errorf("list merge suggestions for gap: %w", err)
+	}
+	return suggestions, nil
+}
+
+func (r *SupportCoverageRepository) GetMergeSuggestion(ctx context.Context, workspaceID, suggestionID string) (*model.SupportCoverageGapMergeSuggestion, error) {
+	var suggestion model.SupportCoverageGapMergeSuggestion
+	if err := r.db.WithContext(ctx).
+		Where("id = ? AND workspace_id = ?", suggestionID, workspaceID).
+		First(&suggestion).Error; err != nil {
+		return nil, fmt.Errorf("get merge suggestion: %w", err)
+	}
+	return &suggestion, nil
+}
+
+func (r *SupportCoverageRepository) MarkMergeSuggestionReviewed(ctx context.Context, workspaceID, suggestionID, status, userID string) error {
+	now := time.Now().UTC()
+	updates := map[string]any{
+		"status":      status,
+		"reviewed_at": &now,
+	}
+	if userID != "" {
+		updates["reviewed_by"] = userID
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageGapMergeSuggestion{}).
+		Where("id = ? AND workspace_id = ?", suggestionID, workspaceID).
+		Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("mark merge suggestion reviewed: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("merge suggestion not found")
+	}
+	return nil
 }
 
 // CreateSnapshot stores a pre-computed coverage snapshot.

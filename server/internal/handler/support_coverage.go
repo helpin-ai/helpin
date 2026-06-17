@@ -18,11 +18,12 @@ import (
 
 // SupportCoverageHandler handles docs coverage HTTP endpoints.
 type SupportCoverageHandler struct {
-	coverageSvc *service.SupportCoverageService
-	eventSvc    *service.SupportEventService
-	draftSvc    *service.SupportCoverageDraftService
-	debounceMu  sync.Mutex
-	debounce    map[string]time.Time
+	coverageSvc       *service.SupportCoverageService
+	eventSvc          *service.SupportEventService
+	draftSvc          *service.SupportCoverageDraftService
+	clusterRebuildSvc *service.SupportCoverageClusterRebuildService
+	debounceMu        sync.Mutex
+	debounce          map[string]time.Time
 }
 
 // NewSupportCoverageHandler creates a new SupportCoverageHandler.
@@ -30,12 +31,14 @@ func NewSupportCoverageHandler(
 	coverageSvc *service.SupportCoverageService,
 	eventSvc *service.SupportEventService,
 	draftSvc *service.SupportCoverageDraftService,
+	clusterRebuildSvc *service.SupportCoverageClusterRebuildService,
 ) *SupportCoverageHandler {
 	return &SupportCoverageHandler{
-		coverageSvc: coverageSvc,
-		eventSvc:    eventSvc,
-		draftSvc:    draftSvc,
-		debounce:    map[string]time.Time{},
+		coverageSvc:       coverageSvc,
+		eventSvc:          eventSvc,
+		draftSvc:          draftSvc,
+		clusterRebuildSvc: clusterRebuildSvc,
+		debounce:          map[string]time.Time{},
 	}
 }
 
@@ -454,4 +457,83 @@ func (h *SupportCoverageHandler) TriggerReanalysis(w http.ResponseWriter, r *htt
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "started"})
+}
+
+// RebuildClusters rebuilds coverage gap clusters for existing open gaps.
+func (h *SupportCoverageHandler) RebuildClusters(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	if h.clusterRebuildSvc == nil {
+		writeError(w, http.StatusServiceUnavailable, "cluster rebuild service is not configured")
+		return
+	}
+	result, err := h.clusterRebuildSvc.RebuildWorkspace(r.Context(), wsID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "rebuild coverage gap clusters", "error", err, "workspace_id", wsID)
+		writeError(w, http.StatusInternalServerError, "failed to rebuild gap clusters")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// GetLatestClusterRebuild returns the latest cluster rebuild run.
+func (h *SupportCoverageHandler) GetLatestClusterRebuild(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	if h.clusterRebuildSvc == nil {
+		writeJSON(w, http.StatusOK, nil)
+		return
+	}
+	run, err := h.clusterRebuildSvc.LatestRun(r.Context(), wsID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
+// ListMergeSuggestions returns pending duplicate-gap suggestions for a gap.
+func (h *SupportCoverageHandler) ListMergeSuggestions(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	gapID := chi.URLParam(r, "gapId")
+	if h.clusterRebuildSvc == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	suggestions, err := h.clusterRebuildSvc.ListMergeSuggestionsForGap(r.Context(), wsID, gapID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, suggestions)
+}
+
+// ApplyMergeSuggestion applies a pending duplicate-gap suggestion.
+func (h *SupportCoverageHandler) ApplyMergeSuggestion(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	suggestionID := chi.URLParam(r, "suggestionId")
+	if h.clusterRebuildSvc == nil {
+		writeError(w, http.StatusServiceUnavailable, "cluster rebuild service is not configured")
+		return
+	}
+	if err := h.clusterRebuildSvc.ApplyMergeSuggestion(r.Context(), wsID, suggestionID, userID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// DismissMergeSuggestion dismisses a pending duplicate-gap suggestion.
+func (h *SupportCoverageHandler) DismissMergeSuggestion(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	suggestionID := chi.URLParam(r, "suggestionId")
+	if h.clusterRebuildSvc == nil {
+		writeError(w, http.StatusServiceUnavailable, "cluster rebuild service is not configured")
+		return
+	}
+	if err := h.clusterRebuildSvc.DismissMergeSuggestion(r.Context(), wsID, suggestionID, userID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

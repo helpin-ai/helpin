@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,8 +13,10 @@ import { isAgentAvailableForTarget } from '@/lib/agentAccess'
 import { agentService } from '@/lib/services/agentService'
 import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import type {
+  SupportCoverageClusterRebuildRun,
   SupportCoverageGapDetail,
   SupportCoverageGapListItem,
+  SupportCoverageGapMergeSuggestion,
   SupportCoverageSummary,
 } from '@/lib/supportCoverageTypes'
 import { GAP_STATUS_LABELS, GAP_KIND_COLORS } from '@/lib/supportCoverageTypes'
@@ -64,9 +66,12 @@ export function SupportCoveragePage() {
     [access?.team_memberships],
   )
   const canGenerate = has('support.edit') && has('docs.edit')
-  const canReanalyze = has('settings.manage')
-  const [reanalyzing, setReanalyzing] = useState(false)
-  const reanalyzeBaselineRef = useRef<string | null>(null)
+  const canRebuildClusters = has('settings.manage')
+  const canReviewMergeSuggestions = has('support.edit')
+  const [rebuildingClusters, setRebuildingClusters] = useState(false)
+  const [latestClusterRun, setLatestClusterRun] = useState<SupportCoverageClusterRebuildRun | null>(null)
+  const [mergeSuggestions, setMergeSuggestions] = useState<SupportCoverageGapMergeSuggestion[]>([])
+  const [mergeActionSuggestionId, setMergeActionSuggestionId] = useState<string | null>(null)
 
   const listFilters = useCallback(
     (page: number) => ({
@@ -78,47 +83,36 @@ export function SupportCoveragePage() {
     [statusFilter, kindFilter],
   )
 
-  const handleReanalyze = useCallback(async () => {
-    if (!wsId || reanalyzing) return
-    setReanalyzing(true)
-    reanalyzeBaselineRef.current = summary?.last_analyzed_at ?? null
+  const handleRebuildClusters = useCallback(async () => {
+    if (!wsId || rebuildingClusters) return
+    setRebuildingClusters(true)
     try {
-      const { error } = await supportCoverageService.triggerReanalysis(wsId)
+      const { data, error } = await supportCoverageService.rebuildClusters(wsId)
       if (error) {
-        toast.error(error === 'reanalysis already in progress' ? 'Reanalysis is already running' : 'Failed to start reanalysis')
-        setReanalyzing(false)
-        reanalyzeBaselineRef.current = null
+        toast.error('Failed to rebuild gap clusters')
       } else {
-        toast.success('Reanalysis started — the page will refresh automatically when complete.')
-      }
-    } catch {
-      toast.error('Failed to start reanalysis')
-      setReanalyzing(false)
-      reanalyzeBaselineRef.current = null
-    }
-  }, [wsId, reanalyzing, summary?.last_analyzed_at])
-
-  // Poll summary while reanalyzing to detect completion.
-  useEffect(() => {
-    if (!reanalyzing || !wsId) return
-    const interval = setInterval(async () => {
-      const { data } = await supportCoverageService.getSummary(wsId)
-      if (data?.last_analyzed_at && data.last_analyzed_at !== reanalyzeBaselineRef.current) {
-        setReanalyzing(false)
-        reanalyzeBaselineRef.current = null
-        setSummary(data)
-        // Refresh gap list with new data.
-        const gapsRes = await supportCoverageService.listGaps(wsId, listFilters(1))
+        toast.success(
+          `Cluster rebuild complete: ${data?.auto_merged ?? 0} merged, ${data?.suggestions_created ?? 0} for review.`,
+        )
+        const [summaryRes, gapsRes, latestRes] = await Promise.all([
+          supportCoverageService.getSummary(wsId),
+          supportCoverageService.listGaps(wsId, listFilters(1)),
+          supportCoverageService.getLatestClusterRebuild(wsId),
+        ])
+        if (summaryRes.data) setSummary(summaryRes.data)
         if (gapsRes.data) {
           setGaps(gapsRes.data.items || [])
           setTotal(gapsRes.data.total || 0)
           setLoadedPage(1)
         }
-        toast.success('Reanalysis complete.')
+        if (latestRes.data) setLatestClusterRun(latestRes.data)
       }
-    }, 30_000)
-    return () => clearInterval(interval)
-  }, [reanalyzing, wsId, listFilters])
+    } catch {
+      toast.error('Failed to rebuild gap clusters')
+    } finally {
+      setRebuildingClusters(false)
+    }
+  }, [wsId, rebuildingClusters, listFilters])
   const externalSpaces = spaces?.filter((space) => space.type === 'external_capable') ?? []
   const documentationAgent = agents.find(
     (agent) =>
@@ -138,12 +132,14 @@ export function SupportCoveragePage() {
     async function loadCoverage() {
       setLoading(true)
       setSelectedGap(null)
-      const [summaryRes, gapsRes] = await Promise.all([
+      const [summaryRes, gapsRes, latestClusterRes] = await Promise.all([
         supportCoverageService.getSummary(wsId),
         supportCoverageService.listGaps(wsId, listFilters(1)),
+        supportCoverageService.getLatestClusterRebuild(wsId),
       ])
       if (cancelled) return
       if (summaryRes.data) setSummary(summaryRes.data)
+      setLatestClusterRun(latestClusterRes.data ?? null)
       if (gapsRes.data) {
         setGaps(gapsRes.data.items || [])
         setTotal(gapsRes.data.total || 0)
@@ -159,8 +155,12 @@ export function SupportCoveragePage() {
   }, [wsId, listFilters])
 
   const refreshGap = async (gapId: string) => {
-    const { data } = await supportCoverageService.getGap(wsId, gapId)
+    const [{ data }, suggestionsRes] = await Promise.all([
+      supportCoverageService.getGap(wsId, gapId),
+      supportCoverageService.listMergeSuggestions(wsId, gapId),
+    ])
     if (data) setSelectedGap(data)
+    if (suggestionsRes.data) setMergeSuggestions(suggestionsRes.data)
   }
 
   const refreshList = async () => {
@@ -195,15 +195,47 @@ export function SupportCoveragePage() {
     setConfirmSuggestionId(null)
     setTargetSpaceId('')
     setTargetCollectionId('')
-    const { data } = await supportCoverageService.getGap(wsId, gapId)
+    setMergeSuggestions([])
+    const [{ data }, suggestionsRes] = await Promise.all([
+      supportCoverageService.getGap(wsId, gapId),
+      supportCoverageService.listMergeSuggestions(wsId, gapId),
+    ])
     if (data) setSelectedGap(data)
+    if (suggestionsRes.data) setMergeSuggestions(suggestionsRes.data)
     setDetailLoading(false)
   }
 
   const handleStatusUpdate = async (gapId: string, status: string) => {
     await supportCoverageService.updateGapStatus(wsId, gapId, status)
     setSelectedGap(null)
+    setMergeSuggestions([])
     await refreshList()
+  }
+
+  const handleApplyMergeSuggestion = async (suggestionId: string) => {
+    if (!selectedGap || mergeActionSuggestionId) return
+    setMergeActionSuggestionId(suggestionId)
+    const { error } = await supportCoverageService.applyMergeSuggestion(wsId, suggestionId)
+    setMergeActionSuggestionId(null)
+    if (error) {
+      toast.error(error || 'Failed to merge gaps')
+      return
+    }
+    toast.success('Gaps merged')
+    await refreshGap(selectedGap.id)
+    await refreshList()
+  }
+
+  const handleDismissMergeSuggestion = async (suggestionId: string) => {
+    if (!selectedGap || mergeActionSuggestionId) return
+    setMergeActionSuggestionId(suggestionId)
+    const { error } = await supportCoverageService.dismissMergeSuggestion(wsId, suggestionId)
+    setMergeActionSuggestionId(null)
+    if (error) {
+      toast.error(error || 'Failed to dismiss suggestion')
+      return
+    }
+    setMergeSuggestions((current) => current.filter((suggestion) => suggestion.id !== suggestionId))
   }
 
   const handleSuggestImprovements = async () => {
@@ -298,15 +330,20 @@ export function SupportCoveragePage() {
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
-          {canReanalyze && (
+          {canRebuildClusters && (
             <Button
               variant="outline"
               size="sm"
-              disabled={reanalyzing}
-              onClick={handleReanalyze}
+              disabled={rebuildingClusters}
+              onClick={handleRebuildClusters}
             >
-              {reanalyzing ? 'Reanalyzing…' : 'Reanalyze'}
+              {rebuildingClusters ? 'Rebuilding…' : 'Rebuild gap clusters'}
             </Button>
+          )}
+          {latestClusterRun?.completed_at && (
+            <span className="text-[11px] text-muted-foreground/60">
+              Last clustered {timeAgo(latestClusterRun.completed_at)} · {latestClusterRun.auto_merged} merged · {latestClusterRun.suggestions_created} review
+            </span>
           )}
           {summary?.last_analyzed_at && (
             <span className="text-[11px] text-muted-foreground/60">
@@ -434,6 +471,9 @@ export function SupportCoveragePage() {
               generateError={generateError}
               applying={applying}
               confirmSuggestionId={confirmSuggestionId}
+              mergeSuggestions={mergeSuggestions}
+              canReviewMergeSuggestions={canReviewMergeSuggestions}
+              mergeActionSuggestionId={mergeActionSuggestionId}
               onClose={() => setSelectedGap(null)}
               onTargetSpaceChange={setTargetSpaceId}
               onTargetCollectionChange={setTargetCollectionId}
@@ -443,6 +483,8 @@ export function SupportCoveragePage() {
               onApplySuggestion={handleApplySuggestion}
               onDiscardSuggestion={handleDiscardSuggestion}
               onSetConfirmSuggestion={setConfirmSuggestionId}
+              onApplyMergeSuggestion={handleApplyMergeSuggestion}
+              onDismissMergeSuggestion={handleDismissMergeSuggestion}
               onStatusUpdate={handleStatusUpdate}
               onRegenerate={handleRegenerate}
             />

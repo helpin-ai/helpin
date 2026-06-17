@@ -114,6 +114,38 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE support_coverage_cluster_rebuild_runs (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'running',
+			gaps_scanned INTEGER NOT NULL DEFAULT 0,
+			clusters_found INTEGER NOT NULL DEFAULT 0,
+			auto_merged INTEGER NOT NULL DEFAULT 0,
+			suggestions_created INTEGER NOT NULL DEFAULT 0,
+			skipped INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT,
+			started_at DATETIME NOT NULL,
+			completed_at DATETIME,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE support_coverage_gap_merge_suggestions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT,
+			source_gap_id TEXT NOT NULL,
+			target_gap_id TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			similarity_score REAL NOT NULL DEFAULT 0,
+			reason TEXT NOT NULL DEFAULT '',
+			combined_evidence_count INTEGER NOT NULL DEFAULT 0,
+			reviewed_by TEXT,
+			reviewed_at DATETIME,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 	for _, stmt := range tables {
 		if err := db.Exec(stmt).Error; err != nil {
