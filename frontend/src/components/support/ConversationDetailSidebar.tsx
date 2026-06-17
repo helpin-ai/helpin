@@ -1,4 +1,5 @@
 import { memo, type JSX, type SVGProps } from 'react';
+import { format, formatDistance } from 'date-fns';
 import * as Flags from 'country-flag-icons/react/3x2';
 import { Link } from '@tanstack/react-router';
 import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, Mail01Icon, Message01Icon, Tag01Icon, UserIcon } from '@/lib/icons';
@@ -18,6 +19,8 @@ import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportMessage } from '@/lib/pmTypes';
 import { getInitial, getAvatarColor } from './helpers';
+
+type LastActiveSource = 'anonymous_id' | 'crm_contact' | string | null | undefined;
 
 interface ConversationDetailSidebarProps {
   workspaceId: string;
@@ -60,6 +63,43 @@ const DetailCountryFlag = memo(function DetailCountryFlag({
     </Tooltip>
   );
 });
+
+export function shouldShowLastActiveIndicator(isVisitorOnline: boolean, lastActiveAt?: string | null): boolean {
+  return !isVisitorOnline && Boolean(lastActiveAt);
+}
+
+export function getLastActiveTooltipLabel(lastActiveAt: string, source?: LastActiveSource, now = new Date()): string {
+  const date = new Date(lastActiveAt);
+  if (Number.isNaN(date.getTime())) {
+    return 'Last active time unavailable';
+  }
+
+  const relative = formatDistance(date, now, { addSuffix: true });
+  const scope = source === 'crm_contact' ? ' across this contact' : '';
+  return `Last active ${relative}${scope} · ${format(date, 'PPp')}`;
+}
+
+function VisitorLastActiveDot({
+  lastActiveAt,
+  source,
+}: {
+  lastActiveAt: string;
+  source?: LastActiveSource;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          aria-label={getLastActiveTooltipLabel(lastActiveAt, source)}
+          className="absolute -left-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-background shadow-sm"
+        />
+      </TooltipTrigger>
+      <TooltipContent side="left">
+        <span className="text-xs">{getLastActiveTooltipLabel(lastActiveAt, source)}</span>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export interface EmailRecipientsSummary {
   to?: string;
@@ -171,6 +211,12 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
               </div>
               {isVisitorOnline && (
                 <span className="absolute -left-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background shadow-sm" />
+              )}
+              {shouldShowLastActiveIndicator(isVisitorOnline, visitorContext?.last_active_at) && visitorContext?.last_active_at && (
+                <VisitorLastActiveDot
+                  lastActiveAt={visitorContext.last_active_at}
+                  source={visitorContext.last_active_source}
+                />
               )}
               <DetailCountryFlag countryCode={countryCode} countryName={countryName} />
             </div>

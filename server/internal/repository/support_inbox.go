@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -317,6 +318,10 @@ func (r *SupportInboxSessionRepository) GetByToken(ctx context.Context, token st
 
 // Create creates a new session.
 func (r *SupportInboxSessionRepository) Create(ctx context.Context, session *model.SupportWidgetSession) error {
+	if session.LastActiveAt == nil {
+		now := time.Now().UTC()
+		session.LastActiveAt = &now
+	}
 	values := map[string]interface{}{
 		"workspace_id":    session.WorkspaceID,
 		"conversation_id": session.ConversationID,
@@ -335,6 +340,7 @@ func (r *SupportInboxSessionRepository) Create(ctx context.Context, session *mod
 		"country_name":    session.CountryName,
 		"region_name":     session.RegionName,
 		"city_name":       session.CityName,
+		"last_active_at":  session.LastActiveAt,
 		"revoked_at":      session.RevokedAt,
 		"expires_at":      session.ExpiresAt,
 	}
@@ -368,16 +374,70 @@ func (r *SupportInboxSessionRepository) Update(ctx context.Context, session *mod
 	return nil
 }
 
-// UpdatePageURL updates only the last_page_url on a session by token in a single query.
+// UpdatePageURL updates the page URL and marks visitor activity.
 func (r *SupportInboxSessionRepository) UpdatePageURL(ctx context.Context, sessionToken, url string) error {
 	result := r.db.WithContext(ctx).
 		Model(&model.SupportWidgetSession{}).
 		Where("session_token = ? AND revoked_at IS NULL", sessionToken).
-		Update("last_page_url", url)
+		Updates(map[string]any{
+			"last_page_url":  url,
+			"last_active_at": time.Now().UTC(),
+		})
 	if result.Error != nil {
 		return fmt.Errorf("update session page url: %w", result.Error)
 	}
 	return nil
+}
+
+// TouchActivityByToken records that a widget visitor was active.
+func (r *SupportInboxSessionRepository) TouchActivityByToken(ctx context.Context, sessionToken string) error {
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportWidgetSession{}).
+		Where("session_token = ? AND revoked_at IS NULL", sessionToken).
+		Update("last_active_at", time.Now().UTC())
+	if result.Error != nil {
+		return fmt.Errorf("touch session activity: %w", result.Error)
+	}
+	return nil
+}
+
+// TouchActivityByAnonymousID records activity across the visitor's current anonymous sessions.
+func (r *SupportInboxSessionRepository) TouchActivityByAnonymousID(ctx context.Context, workspaceID, anonymousID string) error {
+	if strings.TrimSpace(anonymousID) == "" {
+		return nil
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportWidgetSession{}).
+		Where("workspace_id = ? AND anonymous_id = ? AND revoked_at IS NULL", workspaceID, anonymousID).
+		Update("last_active_at", time.Now().UTC())
+	if result.Error != nil {
+		return fmt.Errorf("touch anonymous session activity: %w", result.Error)
+	}
+	return nil
+}
+
+func scanNullableTime(value sql.NullString) (*time.Time, error) {
+	if !value.Valid || strings.TrimSpace(value.String) == "" {
+		return nil, nil
+	}
+	raw := strings.TrimSpace(value.String)
+	formats := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999Z07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05-07:00",
+		"2006-01-02 15:04:05Z07:00",
+		"2006-01-02 15:04:05",
+	}
+	for _, format := range formats {
+		if parsed, err := time.Parse(format, raw); err == nil {
+			utc := parsed.UTC()
+			return &utc, nil
+		}
+	}
+	return nil, fmt.Errorf("parse timestamp %q", raw)
 }
 
 // GetLatestByConversation returns the most recent session for a conversation.
@@ -408,6 +468,52 @@ func (r *SupportInboxSessionRepository) GetLatestByAnonymousID(ctx context.Conte
 		return nil, fmt.Errorf("get latest session by anonymous_id: %w", err)
 	}
 	return &session, nil
+}
+
+// GetLatestActivityByAnonymousID returns the latest known visitor activity across all sessions for an anonymous_id.
+func (r *SupportInboxSessionRepository) GetLatestActivityByAnonymousID(ctx context.Context, workspaceID, anonymousID string) (*time.Time, error) {
+	var raw sql.NullString
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportWidgetSession{}).
+		Where("workspace_id = ? AND anonymous_id = ? AND last_active_at IS NOT NULL", workspaceID, anonymousID).
+		Select("MAX(last_active_at)").
+		Scan(&raw).Error; err != nil {
+		return nil, fmt.Errorf("get latest activity by anonymous_id: %w", err)
+	}
+	lastActiveAt, err := scanNullableTime(raw)
+	if err != nil {
+		return nil, fmt.Errorf("get latest activity by anonymous_id: %w", err)
+	}
+	return lastActiveAt, nil
+}
+
+// GetLatestActivityByContactID returns the latest known widget activity across sessions linked to a CRM contact.
+func (r *SupportInboxSessionRepository) GetLatestActivityByContactID(ctx context.Context, workspaceID, contactID string) (*time.Time, error) {
+	var raw sql.NullString
+	if err := r.db.WithContext(ctx).
+		Table("support_widget_sessions sws").
+		Where("sws.workspace_id = ? AND sws.last_active_at IS NOT NULL", workspaceID).
+		Where(`
+			EXISTS (
+				SELECT 1
+				FROM support_conversations sc
+				WHERE sc.workspace_id = sws.workspace_id
+				  AND sc.crm_contact_id = ?
+				  AND (
+					sc.id = sws.conversation_id
+					OR (sc.anonymous_id IS NOT NULL AND sc.anonymous_id <> '' AND sc.anonymous_id = sws.anonymous_id)
+				  )
+			)
+		`, contactID).
+		Select("MAX(sws.last_active_at)").
+		Scan(&raw).Error; err != nil {
+		return nil, fmt.Errorf("get latest activity by contact_id: %w", err)
+	}
+	lastActiveAt, err := scanNullableTime(raw)
+	if err != nil {
+		return nil, fmt.Errorf("get latest activity by contact_id: %w", err)
+	}
+	return lastActiveAt, nil
 }
 
 // ListGeoBackfillCandidates returns recent sessions that have an IP address but no country metadata yet.

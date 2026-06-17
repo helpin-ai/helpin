@@ -1046,6 +1046,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			country_name TEXT,
 			region_name TEXT,
 			city_name TEXT,
+			last_active_at DATETIME,
 			revoked_at DATETIME,
 			expires_at DATETIME NOT NULL,
 			created_at DATETIME,

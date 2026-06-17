@@ -2648,6 +2648,151 @@ func TestWidgetSessionRepository(t *testing.T) {
 			t.Error("expected conversation_id to be set after update")
 		}
 	})
+
+	t.Run("GetLatestActivityByAnonymousID uses last_active_at across sessions", func(t *testing.T) {
+		older := time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)
+		newer := older.Add(45 * time.Minute)
+		for _, session := range []*model.SupportWidgetSession{
+			{
+				WorkspaceID:  workspaceID,
+				SessionToken: "token_activity_old",
+				AnonymousID:  "anon-activity",
+				LastActiveAt: &older,
+				ExpiresAt:    time.Now().Add(24 * time.Hour),
+			},
+			{
+				WorkspaceID:  workspaceID,
+				SessionToken: "token_activity_new",
+				AnonymousID:  "anon-activity",
+				LastActiveAt: &newer,
+				ExpiresAt:    time.Now().Add(24 * time.Hour),
+			},
+		} {
+			if err := repo.Create(ctx, session); err != nil {
+				t.Fatalf("create activity session: %v", err)
+			}
+		}
+
+		got, err := repo.GetLatestActivityByAnonymousID(ctx, workspaceID, "anon-activity")
+		if err != nil {
+			t.Fatalf("get latest activity by anonymous id: %v", err)
+		}
+		if got == nil || !got.Equal(newer) {
+			t.Fatalf("latest activity = %v, want %v", got, newer)
+		}
+	})
+}
+
+func TestSupportInboxServiceVisitorContextLastActivity(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-visitor-activity"
+	seedWorkspace(t, db, workspaceID, "Visitor Activity WS", "visitor-activity-ws", "user-123")
+
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	svc := NewSupportInboxService(
+		conversationRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		sessionRepo,
+		nil,
+		nil,
+		nil,
+		contactRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	contactID := "contact-visitor-activity"
+	if err := db.Exec(
+		`INSERT INTO crm_contacts (id, workspace_id, display_id, first_name, email, lifecycle_stage, lead_status, custom_properties, email_status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		contactID,
+		workspaceID,
+		"CON-activity",
+		"Ada",
+		"ada@example.com",
+		"lead",
+		"new",
+		"{}",
+		"valid",
+		time.Now(),
+		time.Now(),
+	).Error; err != nil {
+		t.Fatalf("insert contact: %v", err)
+	}
+
+	selected := &model.SupportConversation{
+		WorkspaceID:  workspaceID,
+		Subject:      "Selected conversation",
+		Status:       model.SupportConversationStatusOpen,
+		Priority:     "medium",
+		Channel:      "widget",
+		AnonymousID:  strPtr("anon-selected-activity"),
+		CRMContactID: &contactID,
+	}
+	other := &model.SupportConversation{
+		WorkspaceID:  workspaceID,
+		Subject:      "Other contact conversation",
+		Status:       model.SupportConversationStatusOpen,
+		Priority:     "medium",
+		Channel:      "widget",
+		AnonymousID:  strPtr("anon-other-activity"),
+		CRMContactID: &contactID,
+	}
+	if err := conversationRepo.Create(ctx, selected); err != nil {
+		t.Fatalf("create selected conversation: %v", err)
+	}
+	if err := conversationRepo.Create(ctx, other); err != nil {
+		t.Fatalf("create other conversation: %v", err)
+	}
+
+	selectedActivity := time.Date(2026, 6, 16, 9, 30, 0, 0, time.UTC)
+	contactActivity := selectedActivity.Add(2 * time.Hour)
+	for _, session := range []*model.SupportWidgetSession{
+		{
+			WorkspaceID:    workspaceID,
+			ConversationID: &selected.ID,
+			SessionToken:   "token_selected_activity",
+			AnonymousID:    "anon-selected-activity",
+			LastActiveAt:   &selectedActivity,
+			ExpiresAt:      time.Now().Add(24 * time.Hour),
+		},
+		{
+			WorkspaceID:    workspaceID,
+			ConversationID: &other.ID,
+			SessionToken:   "token_contact_activity",
+			AnonymousID:    "anon-other-activity",
+			LastActiveAt:   &contactActivity,
+			ExpiresAt:      time.Now().Add(24 * time.Hour),
+		},
+	} {
+		if err := sessionRepo.Create(ctx, session); err != nil {
+			t.Fatalf("create widget session: %v", err)
+		}
+	}
+
+	resp, err := svc.GetVisitorContext(ctx, workspaceID, selected.ID)
+	if err != nil {
+		t.Fatalf("get visitor context: %v", err)
+	}
+	if resp.LastActiveAt == nil {
+		t.Fatal("expected last_active_at")
+	}
+	if *resp.LastActiveAt != contactActivity.Format(time.RFC3339) {
+		t.Fatalf("last_active_at = %q, want %q", *resp.LastActiveAt, contactActivity.Format(time.RFC3339))
+	}
+	if resp.LastActiveSource == nil || *resp.LastActiveSource != "crm_contact" {
+		t.Fatalf("last_active_source = %v, want crm_contact", resp.LastActiveSource)
+	}
 }
 
 // ---------------------------------------------------------------------------

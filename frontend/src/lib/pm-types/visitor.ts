@@ -45,4 +45,6 @@ export interface VisitorContextResponse {
   other_conversations: VisitorOtherConversation[];
   total_conversations: number;
   session_created_at: string | null;
+  last_active_at?: string | null;
+  last_active_source?: 'anonymous_id' | 'crm_contact' | string | null;
 }
