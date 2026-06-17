@@ -335,6 +335,14 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 		_ = s.analysisRepo.FailRun(ctx, run.ID, err)
 		return err
 	}
+	materialized, err := s.materializeRunFindings(ctx, workspaceID, run.ID)
+	if err != nil {
+		_ = s.analysisRepo.FailRun(ctx, run.ID, err)
+		return err
+	}
+	if materialized != nil {
+		gapCount = materialized.EvidenceInserted
+	}
 	return s.analysisRepo.CompleteRun(ctx, run.ID, len(conversations), gapCount)
 }
 
