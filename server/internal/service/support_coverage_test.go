@@ -159,6 +159,7 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			run_id TEXT,
 			source_gap_id TEXT NOT NULL,
 			target_gap_id TEXT NOT NULL,
+			pair_key TEXT NOT NULL DEFAULT '',
 			status TEXT NOT NULL DEFAULT 'pending',
 			similarity_score REAL NOT NULL DEFAULT 0,
 			reason TEXT NOT NULL DEFAULT '',
@@ -168,6 +169,25 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			metadata TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE UNIQUE INDEX idx_support_coverage_gap_merge_suggestions_pending_pair_key
+			ON support_coverage_gap_merge_suggestions(workspace_id, pair_key)
+			WHERE status = 'pending'`,
+		`CREATE TABLE support_coverage_gap_pair_decisions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			pair_key TEXT NOT NULL,
+			gap_a_id TEXT NOT NULL,
+			gap_b_id TEXT NOT NULL,
+			decision TEXT NOT NULL DEFAULT 'keep_separate',
+			decided_by TEXT,
+			decided_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			similarity_at_decision REAL NOT NULL DEFAULT 0,
+			gap_a_text_hash TEXT NOT NULL DEFAULT '',
+			gap_b_text_hash TEXT NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(workspace_id, pair_key)
 		)`,
 	}
 	for _, stmt := range tables {

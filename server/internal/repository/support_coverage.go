@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,6 +22,15 @@ type SupportCoverageRepository struct {
 }
 
 var ErrGapAlreadyClosed = errors.New("gap is no longer open")
+
+func CoverageGapPairKey(leftGapID, rightGapID string) string {
+	ids := []string{strings.TrimSpace(leftGapID), strings.TrimSpace(rightGapID)}
+	sort.Strings(ids)
+	if ids[0] == "" || ids[1] == "" {
+		return ""
+	}
+	return ids[0] + ":" + ids[1]
+}
 
 // NewSupportCoverageRepository creates a new SupportCoverageRepository.
 func NewSupportCoverageRepository(db *gorm.DB) *SupportCoverageRepository {
@@ -1472,6 +1482,10 @@ func (r *SupportCoverageRepository) UpsertMergeSuggestion(ctx context.Context, s
 	if suggestion.ID == "" {
 		suggestion.ID = uuid.New().String()
 	}
+	suggestion.PairKey = CoverageGapPairKey(suggestion.SourceGapID, suggestion.TargetGapID)
+	if suggestion.PairKey == "" {
+		return false, fmt.Errorf("merge suggestion pair key is required")
+	}
 	if suggestion.Status == "" {
 		suggestion.Status = model.SupportCoverageMergeSuggestionStatusPending
 	}
@@ -1480,11 +1494,10 @@ func (r *SupportCoverageRepository) UpsertMergeSuggestion(ctx context.Context, s
 	}
 	var existing model.SupportCoverageGapMergeSuggestion
 	err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND status = ? AND source_gap_id = ? AND target_gap_id = ?",
+		Where("workspace_id = ? AND status = ? AND pair_key = ?",
 			suggestion.WorkspaceID,
 			model.SupportCoverageMergeSuggestionStatusPending,
-			suggestion.SourceGapID,
-			suggestion.TargetGapID,
+			suggestion.PairKey,
 		).
 		First(&existing).Error
 	if err == nil {
@@ -1547,6 +1560,114 @@ func (r *SupportCoverageRepository) MarkMergeSuggestionReviewed(ctx context.Cont
 		return fmt.Errorf("merge suggestion not found")
 	}
 	return nil
+}
+
+func (r *SupportCoverageRepository) KeepSeparateMergeSuggestion(ctx context.Context, workspaceID, suggestionID, userID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txRepo := r.WithTx(tx)
+		suggestion, err := txRepo.GetMergeSuggestion(ctx, workspaceID, suggestionID)
+		if err != nil {
+			return err
+		}
+		if suggestion.Status != model.SupportCoverageMergeSuggestionStatusPending {
+			return fmt.Errorf("merge suggestion is no longer pending")
+		}
+		leftHash, rightHash, err := txRepo.GetGapPairHashes(ctx, workspaceID, suggestion.SourceGapID, suggestion.TargetGapID)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		var decidedBy *string
+		if strings.TrimSpace(userID) != "" {
+			decidedBy = &userID
+		}
+		if err := txRepo.UpsertGapPairDecision(ctx, &model.SupportCoverageGapPairDecision{
+			WorkspaceID:          workspaceID,
+			GapAID:               suggestion.SourceGapID,
+			GapBID:               suggestion.TargetGapID,
+			Decision:             "keep_separate",
+			DecidedBy:            decidedBy,
+			DecidedAt:            now,
+			SimilarityAtDecision: suggestion.SimilarityScore,
+			GapATextHash:         leftHash,
+			GapBTextHash:         rightHash,
+		}); err != nil {
+			return err
+		}
+		return txRepo.MarkMergeSuggestionReviewed(ctx, workspaceID, suggestionID, model.SupportCoverageMergeSuggestionStatusDismissed, userID)
+	})
+}
+
+func (r *SupportCoverageRepository) UpsertGapPairDecision(ctx context.Context, decision *model.SupportCoverageGapPairDecision) error {
+	if decision.ID == "" {
+		decision.ID = uuid.New().String()
+	}
+	decision.PairKey = CoverageGapPairKey(decision.GapAID, decision.GapBID)
+	if decision.PairKey == "" {
+		return fmt.Errorf("gap pair decision pair key is required")
+	}
+	if decision.Decision == "" {
+		decision.Decision = "keep_separate"
+	}
+	if decision.DecidedAt.IsZero() {
+		decision.DecidedAt = time.Now().UTC()
+	}
+	ids := []string{decision.GapAID, decision.GapBID}
+	sort.Strings(ids)
+	decision.GapAID = ids[0]
+	decision.GapBID = ids[1]
+	if err := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "workspace_id"}, {Name: "pair_key"}},
+			DoUpdates: clause.Assignments(map[string]any{
+				"gap_a_id":               decision.GapAID,
+				"gap_b_id":               decision.GapBID,
+				"decision":               decision.Decision,
+				"decided_by":             decision.DecidedBy,
+				"decided_at":             decision.DecidedAt,
+				"similarity_at_decision": decision.SimilarityAtDecision,
+				"gap_a_text_hash":        decision.GapATextHash,
+				"gap_b_text_hash":        decision.GapBTextHash,
+				"updated_at":             time.Now().UTC(),
+			}),
+		}).
+		Create(decision).Error; err != nil {
+		return fmt.Errorf("upsert gap pair decision: %w", err)
+	}
+	return nil
+}
+
+func (r *SupportCoverageRepository) ListKeepSeparatePairDecisions(ctx context.Context, workspaceID string) ([]model.SupportCoverageGapPairDecision, error) {
+	var decisions []model.SupportCoverageGapPairDecision
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND decision = ?", workspaceID, "keep_separate").
+		Find(&decisions).Error; err != nil {
+		return nil, fmt.Errorf("list keep separate pair decisions: %w", err)
+	}
+	return decisions, nil
+}
+
+func (r *SupportCoverageRepository) GetGapPairHashes(ctx context.Context, workspaceID, leftGapID, rightGapID string) (string, string, error) {
+	ids := []string{leftGapID, rightGapID}
+	sort.Strings(ids)
+	var gaps []model.SupportCoverageGap
+	if err := r.db.WithContext(ctx).
+		Select("id", "embedding_text_hash").
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Find(&gaps).Error; err != nil {
+		return "", "", fmt.Errorf("get gap pair hashes: %w", err)
+	}
+	hashes := map[string]string{}
+	for _, gap := range gaps {
+		hashes[gap.ID] = gap.EmbeddingTextHash
+	}
+	if _, ok := hashes[ids[0]]; !ok {
+		return "", "", fmt.Errorf("gap %s not found", ids[0])
+	}
+	if _, ok := hashes[ids[1]]; !ok {
+		return "", "", fmt.Errorf("gap %s not found", ids[1])
+	}
+	return hashes[ids[0]], hashes[ids[1]], nil
 }
 
 // CreateSnapshot stores a pre-computed coverage snapshot.

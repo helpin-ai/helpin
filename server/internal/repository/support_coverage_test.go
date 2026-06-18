@@ -168,6 +168,58 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(gap_id, document_id)
 		)`,
+		`CREATE TABLE support_coverage_cluster_rebuild_runs (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'running',
+			gaps_scanned INTEGER NOT NULL DEFAULT 0,
+			clusters_found INTEGER NOT NULL DEFAULT 0,
+			auto_merged INTEGER NOT NULL DEFAULT 0,
+			suggestions_created INTEGER NOT NULL DEFAULT 0,
+			skipped INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT,
+			started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			completed_at DATETIME,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE support_coverage_gap_merge_suggestions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT,
+			source_gap_id TEXT NOT NULL,
+			target_gap_id TEXT NOT NULL,
+			pair_key TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'pending',
+			similarity_score REAL NOT NULL DEFAULT 0,
+			reason TEXT NOT NULL DEFAULT '',
+			combined_evidence_count INTEGER NOT NULL DEFAULT 0,
+			reviewed_by TEXT,
+			reviewed_at DATETIME,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE UNIQUE INDEX idx_support_coverage_gap_merge_suggestions_pending_pair_key
+			ON support_coverage_gap_merge_suggestions(workspace_id, pair_key)
+			WHERE status = 'pending'`,
+		`CREATE TABLE support_coverage_gap_pair_decisions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			pair_key TEXT NOT NULL,
+			gap_a_id TEXT NOT NULL,
+			gap_b_id TEXT NOT NULL,
+			decision TEXT NOT NULL DEFAULT 'keep_separate',
+			decided_by TEXT,
+			decided_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			similarity_at_decision REAL NOT NULL DEFAULT 0,
+			gap_a_text_hash TEXT NOT NULL DEFAULT '',
+			gap_b_text_hash TEXT NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(workspace_id, pair_key)
+		)`,
 		`CREATE TABLE support_coverage_snapshots (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -444,6 +496,48 @@ func TestSupportCoverageRepository_FindNearestOpenGapsByEmbeddingSQLiteReturnsEm
 	}
 	if len(items) != 0 {
 		t.Fatalf("items=%d, want 0 on sqlite", len(items))
+	}
+}
+
+func TestSupportCoverageRepository_UpsertMergeSuggestionUsesOrderIndependentPairKey(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+
+	created, err := repo.UpsertMergeSuggestion(ctx, &model.SupportCoverageGapMergeSuggestion{
+		WorkspaceID:           "ws-1",
+		SourceGapID:           "gap-a",
+		TargetGapID:           "gap-b",
+		SimilarityScore:       0.81,
+		CombinedEvidenceCount: 3,
+	})
+	if err != nil {
+		t.Fatalf("UpsertMergeSuggestion first: %v", err)
+	}
+	if !created {
+		t.Fatal("expected first suggestion to be created")
+	}
+
+	created, err = repo.UpsertMergeSuggestion(ctx, &model.SupportCoverageGapMergeSuggestion{
+		WorkspaceID:           "ws-1",
+		SourceGapID:           "gap-b",
+		TargetGapID:           "gap-a",
+		SimilarityScore:       0.82,
+		CombinedEvidenceCount: 3,
+	})
+	if err != nil {
+		t.Fatalf("UpsertMergeSuggestion reversed: %v", err)
+	}
+	if created {
+		t.Fatal("expected reversed pair to reuse existing pending suggestion")
+	}
+
+	var count int64
+	if err := db.Model(&model.SupportCoverageGapMergeSuggestion{}).Where("workspace_id = ? AND status = ?", "ws-1", model.SupportCoverageMergeSuggestionStatusPending).Count(&count).Error; err != nil {
+		t.Fatalf("count suggestions: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("pending suggestions=%d, want 1", count)
 	}
 }
 

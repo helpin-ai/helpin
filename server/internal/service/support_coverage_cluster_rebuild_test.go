@@ -204,6 +204,154 @@ func TestSupportCoverageClusterRebuildUsesTransitiveClusters(t *testing.T) {
 	}
 }
 
+func TestSupportCoverageClusterRebuildDoesNotRecreateDismissedMergeSuggestion(t *testing.T) {
+	_, _, db := setupCoverageTestEnv(t)
+	repo := repository.NewSupportCoverageRepository(db)
+	svc := NewSupportCoverageClusterRebuildService(repo, &fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}, {0.8, 0.6, 0}}}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	seedCoverageGapForRebuild(t, db, model.SupportCoverageGap{
+		ID:            "gap-reset",
+		WorkspaceID:   "ws-1",
+		DedupeKey:     "reset",
+		GapKind:       "content",
+		GapCategory:   model.SupportCoverageGapCategoryKnowledge,
+		Title:         "Users cannot reset passwords",
+		Status:        model.SupportCoverageGapStatusOpen,
+		Confidence:    0.86,
+		EvidenceCount: 3,
+		FirstSeenAt:   now.Add(-2 * time.Hour),
+		LastSeenAt:    now.Add(-1 * time.Hour),
+	})
+	seedCoverageGapForRebuild(t, db, model.SupportCoverageGap{
+		ID:            "gap-password",
+		WorkspaceID:   "ws-1",
+		DedupeKey:     "password",
+		GapKind:       "content",
+		GapCategory:   model.SupportCoverageGapCategoryKnowledge,
+		Title:         "Password recovery article is missing",
+		Status:        model.SupportCoverageGapStatusOpen,
+		Confidence:    0.82,
+		EvidenceCount: 2,
+		FirstSeenAt:   now.Add(-90 * time.Minute),
+		LastSeenAt:    now.Add(-30 * time.Minute),
+	})
+
+	result, err := svc.RebuildWorkspace(ctx, "ws-1")
+	if err != nil {
+		t.Fatalf("first RebuildWorkspace: %v", err)
+	}
+	if result.SuggestionsCreated != 1 {
+		t.Fatalf("first SuggestionsCreated=%d, want 1", result.SuggestionsCreated)
+	}
+	suggestions, err := repo.ListMergeSuggestionsForGap(ctx, "ws-1", "gap-reset")
+	if err != nil {
+		t.Fatalf("ListMergeSuggestionsForGap: %v", err)
+	}
+	if len(suggestions) != 1 {
+		t.Fatalf("suggestions=%d, want 1", len(suggestions))
+	}
+	if err := svc.DismissMergeSuggestion(ctx, "ws-1", suggestions[0].ID, "user-1"); err != nil {
+		t.Fatalf("DismissMergeSuggestion: %v", err)
+	}
+
+	result, err = svc.RebuildWorkspace(ctx, "ws-1")
+	if err != nil {
+		t.Fatalf("second RebuildWorkspace: %v", err)
+	}
+	if result.SuggestionsCreated != 0 {
+		t.Fatalf("second SuggestionsCreated=%d, want 0 after keep separate", result.SuggestionsCreated)
+	}
+	suggestions, err = repo.ListMergeSuggestionsForGap(ctx, "ws-1", "gap-reset")
+	if err != nil {
+		t.Fatalf("ListMergeSuggestionsForGap after rebuild: %v", err)
+	}
+	if len(suggestions) != 0 {
+		t.Fatalf("pending suggestions=%d, want 0 after keep separate", len(suggestions))
+	}
+}
+
+func TestSupportCoverageClusterRebuildCannotLinkPreventsTransitiveSuggestion(t *testing.T) {
+	_, _, db := setupCoverageTestEnv(t)
+	repo := repository.NewSupportCoverageRepository(db)
+	svc := NewSupportCoverageClusterRebuildService(repo, &fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}, {0.8, 0.6, 0}}}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	seedCoverageGapForRebuild(t, db, model.SupportCoverageGap{
+		ID:            "gap-a",
+		WorkspaceID:   "ws-1",
+		DedupeKey:     "a",
+		GapKind:       "content",
+		GapCategory:   model.SupportCoverageGapCategoryKnowledge,
+		Title:         "Reset password email never arrives",
+		Status:        model.SupportCoverageGapStatusOpen,
+		Confidence:    0.9,
+		EvidenceCount: 2,
+		FirstSeenAt:   now.Add(-3 * time.Hour),
+		LastSeenAt:    now.Add(-3 * time.Hour),
+	})
+	seedCoverageGapForRebuild(t, db, model.SupportCoverageGap{
+		ID:            "gap-b",
+		WorkspaceID:   "ws-1",
+		DedupeKey:     "b",
+		GapKind:       "content",
+		GapCategory:   model.SupportCoverageGapCategoryKnowledge,
+		Title:         "Login recovery instructions are missing",
+		Status:        model.SupportCoverageGapStatusOpen,
+		Confidence:    0.9,
+		EvidenceCount: 1,
+		FirstSeenAt:   now.Add(-2 * time.Hour),
+		LastSeenAt:    now.Add(-2 * time.Hour),
+	})
+
+	if _, err := svc.RebuildWorkspace(ctx, "ws-1"); err != nil {
+		t.Fatalf("first RebuildWorkspace: %v", err)
+	}
+	suggestions, err := repo.ListMergeSuggestionsForGap(ctx, "ws-1", "gap-a")
+	if err != nil {
+		t.Fatalf("ListMergeSuggestionsForGap: %v", err)
+	}
+	if len(suggestions) != 1 {
+		t.Fatalf("suggestions=%d, want 1", len(suggestions))
+	}
+	if err := svc.DismissMergeSuggestion(ctx, "ws-1", suggestions[0].ID, "user-1"); err != nil {
+		t.Fatalf("DismissMergeSuggestion: %v", err)
+	}
+
+	seedCoverageGapForRebuild(t, db, model.SupportCoverageGap{
+		ID:            "gap-c",
+		WorkspaceID:   "ws-1",
+		DedupeKey:     "c",
+		GapKind:       "content",
+		GapCategory:   model.SupportCoverageGapCategoryKnowledge,
+		Title:         "Account access recovery docs missing",
+		Status:        model.SupportCoverageGapStatusOpen,
+		Confidence:    0.9,
+		EvidenceCount: 10,
+		FirstSeenAt:   now.Add(-1 * time.Hour),
+		LastSeenAt:    now.Add(-1 * time.Hour),
+	})
+	svc = NewSupportCoverageClusterRebuildService(repo, &fakeCoverageEmbeddingProvider{vectors: [][]float32{{0.949, 0.316, 0}}}, "")
+
+	result, err := svc.RebuildWorkspace(ctx, "ws-1")
+	if err != nil {
+		t.Fatalf("second RebuildWorkspace: %v", err)
+	}
+	if result.SuggestionsCreated != 1 {
+		t.Fatalf("SuggestionsCreated=%d, want exactly 1 because gap-a and gap-b are kept separate", result.SuggestionsCreated)
+	}
+
+	suggestions, err = repo.ListMergeSuggestionsForGap(ctx, "ws-1", "gap-b")
+	if err != nil {
+		t.Fatalf("ListMergeSuggestionsForGap for gap-b: %v", err)
+	}
+	if len(suggestions) != 0 {
+		t.Fatalf("gap-b pending suggestions=%d, want 0 because it is kept separate from gap-a", len(suggestions))
+	}
+}
+
 func TestSupportCoverageClusterRebuildBackfillsMissingGapEmbeddings(t *testing.T) {
 	_, _, db := setupCoverageTestEnv(t)
 	repo := repository.NewSupportCoverageRepository(db)
