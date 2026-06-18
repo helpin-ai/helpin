@@ -30,11 +30,11 @@ import { storeCoverageHandoffContent } from './coverageHandoff'
 import { buildCoverageCollectionOptions } from './coverageCollectionOptions'
 import {
   EVIDENCE_TYPE_LABELS,
-  coverageKbSignal,
   coverageConfidenceLabel,
+  coverageDiagnosis,
+  coverageImpactTier,
   coverageSuggestionPreview,
   coverageTopicLabel,
-  formatCoverageImpact,
 } from './coverageUi'
 
 const GAP_TYPE_BADGE_CLASS = 'bg-muted/60 text-muted-foreground border border-border/40'
@@ -43,6 +43,12 @@ const STATUS_COLORS: Record<string, string> = {
   open: 'bg-amber-100 text-amber-700',
   done: 'bg-green-100 text-green-700',
   rejected: 'bg-muted text-muted-foreground/60',
+}
+
+const IMPACT_TIERS: Record<'low' | 'medium' | 'high', { label: string; text: string; dot: string }> = {
+  high: { label: 'High', text: 'text-red-600', dot: 'bg-red-500' },
+  medium: { label: 'Medium', text: 'text-amber-600', dot: 'bg-amber-500' },
+  low: { label: 'Low', text: 'text-muted-foreground', dot: 'bg-muted-foreground/40' },
 }
 
 const RECOMMENDATION_TYPE_LABELS: Record<string, string> = {
@@ -247,14 +253,15 @@ export function GapDetailPane({
   const explanation = gap.analysis_explanation
   const recommendations = gap.recommendations ?? []
   const docsAgentAction = documentationAgentAction(gap)
-  const impact = formatCoverageImpact(gap)
-  const kbSignal = coverageKbSignal(gap)
-  const embeddingStatus = gap.embedding_updated_at
-    ? `Semantic identity updated ${timeAgo(gap.embedding_updated_at)}`
-    : 'Semantic identity pending'
+  const diagnosis = coverageDiagnosis(gap)
+  const impactTier = IMPACT_TIERS[coverageImpactTier(gap.evidence_30d)]
+  const conversationCount = gap.evidence_all ?? gap.evidence_count ?? 0
+  const customerCount = gap.distinct_customers_30d ?? gap.distinct_customers_all ?? 0
+  const recentCount = gap.evidence_30d ?? 0
+  const resolutionSeed = explanation?.human_resolution?.trim() || ''
   const reviewSignals = [
-    gap.split_review_needed ? 'Review split: evidence may cover separate needs' : '',
-    gap.recurrence_reopened ? 'Reopened after new post-close evidence' : '',
+    gap.split_review_needed ? 'Evidence may cover separate needs — review split' : '',
+    gap.recurrence_reopened ? 'Reopened after new evidence arrived post-fix' : '',
   ].filter(Boolean)
   const canQuickDraft =
     canGenerate &&
@@ -305,6 +312,35 @@ export function GapDetailPane({
           </button>
         </div>
 
+        {diagnosis && (
+          <p className="mt-3 text-sm leading-relaxed text-foreground">{diagnosis}</p>
+        )}
+
+        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+          <span className={`inline-flex items-center gap-1.5 font-medium ${impactTier.text}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${impactTier.dot}`} />
+            {impactTier.label} impact
+          </span>
+          <span className="text-muted-foreground/50">·</span>
+          <span className="text-muted-foreground">
+            {conversationCount} {conversationCount === 1 ? 'conversation' : 'conversations'}
+          </span>
+          {customerCount > 0 && (
+            <>
+              <span className="text-muted-foreground/50">·</span>
+              <span className="text-muted-foreground">
+                {customerCount} {customerCount === 1 ? 'customer' : 'customers'}
+              </span>
+            </>
+          )}
+          {recentCount > 0 && (
+            <>
+              <span className="text-muted-foreground/50">·</span>
+              <span className="text-muted-foreground">{recentCount} in last 30 days</span>
+            </>
+          )}
+        </div>
+
         <dl className="mt-3 grid grid-cols-3 gap-3 text-xs">
           <div>
             <dt className="text-muted-foreground">Topic</dt>
@@ -315,24 +351,17 @@ export function GapDetailPane({
             <dd className="mt-0.5 font-medium">{timeAgo(gap.first_seen_at)}</dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Evidence</dt>
-            <dd className="mt-0.5 font-medium">
-              {gap.evidence_count} item{gap.evidence_count !== 1 ? 's' : ''}
-            </dd>
+            <dt className="text-muted-foreground">Last seen</dt>
+            <dd className="mt-0.5 font-medium">{timeAgo(gap.last_seen_at)}</dd>
           </div>
         </dl>
 
-        <div className="mt-3 space-y-1.5 rounded-md bg-muted/25 p-3 text-xs">
-          <p className="font-medium text-foreground">Ranked by impact</p>
-          <p className="leading-relaxed text-muted-foreground">{impact}</p>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
-            <span>{kbSignal}</span>
-            <span>{embeddingStatus}</span>
+        {reviewSignals.length > 0 && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs leading-relaxed text-amber-800">
+            <AlertCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>{reviewSignals.join(' · ')}</span>
           </div>
-          {reviewSignals.length > 0 && (
-            <p className="leading-relaxed font-medium text-amber-700">{reviewSignals.join(' · ')}</p>
-          )}
-        </div>
+        )}
 
         {gap.status !== 'open' && gap.status_changed_at && (
           <p className="mt-3 text-xs text-muted-foreground">
@@ -401,6 +430,18 @@ export function GapDetailPane({
                 </button>
               )}
             </div>
+
+            {resolutionSeed && (
+              <div className="rounded-md border border-border/50 bg-background/70 p-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Resolution seed
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-foreground/90">{resolutionSeed}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  How your team resolved it — the draft starts here.
+                </p>
+              </div>
+            )}
 
             {canQuickDraft && (
               <div className="border-t border-border/50 pt-3">
@@ -850,7 +891,7 @@ export function GapDetailPane({
           className="inline-flex items-center gap-1 rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
         >
           <ArrowReloadHorizontalIcon className="h-3 w-3" />
-          {regenerateDisabled ? `Regenerate in ${regenerateSeconds}s` : 'Regenerate'}
+          {regenerateDisabled ? `Regenerate in ${regenerateSeconds}s` : 'Regenerate suggestion'}
         </button>
         <div className="flex-1" />
         {gap.status === 'open' && (

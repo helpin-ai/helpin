@@ -57,10 +57,67 @@ export function formatCoverageImpact(gap: Partial<SupportCoverageGapListItem | S
   if (gap.impact_explanation) return gap.impact_explanation
   const conversations = gap.evidence_all ?? gap.evidence_count ?? 0
   const customers = gap.distinct_customers_30d ?? gap.distinct_customers_all ?? 0
-  const parts = [`${conversations} conversations`]
-  if (customers > 0) parts.push(`${customers} customers this month`)
+  const parts = [`${conversations} ${conversations === 1 ? 'conversation' : 'conversations'}`]
+  if (customers > 0) parts.push(`${customers} ${customers === 1 ? 'customer' : 'customers'} this month`)
   parts.push(coverageKbSignal(gap))
   return parts.join(', ')
+}
+
+// Mirrors the backend ImpactTier(evidence30d) cutoffs so the detail drawer can show a
+// tier without a dedicated payload field (the detail response omits impact_tier).
+export function coverageImpactTier(evidence30d?: number): 'low' | 'medium' | 'high' {
+  const recent = evidence30d ?? 0
+  if (recent >= 10) return 'high'
+  if (recent >= 3) return 'medium'
+  return 'low'
+}
+
+// Plain-language diagnosis driven by the failure classification. Returns null when the gap
+// is genuinely unclassified (needs_review with no KB signal) so the UI can omit the line
+// rather than assert something it can't back up.
+export function coverageDiagnosis(
+  gap: Pick<
+    SupportCoverageGapDetail,
+    'failure_mode' | 'gap_kind' | 'v1_gap_type' | 'nearest_content_title'
+  >,
+): string | null {
+  const article = gap.nearest_content_title?.trim()
+  const quoted = article ? `“${article}”` : ''
+
+  if (gap.gap_kind === 'data') {
+    return 'The AI lacked the customer or account data needed to answer this.'
+  }
+  if (gap.gap_kind === 'action' || gap.gap_kind === 'policy') {
+    return 'The AI couldn’t perform the action this request needs.'
+  }
+
+  switch (gap.failure_mode) {
+    case 'missing_content':
+      return 'No article in your knowledge base covers this yet.'
+    case 'no_retrieval':
+      return article
+        ? `${quoted} likely answers this, but the AI didn’t surface it.`
+        : 'Relevant content may exist, but the AI didn’t retrieve it.'
+    case 'weak_retrieval':
+      return article
+        ? `${quoted} is close but doesn’t fully answer this.`
+        : 'The closest content isn’t strong enough to resolve this.'
+  }
+
+  switch (gap.v1_gap_type) {
+    case 'missing_article':
+      return 'No article in your knowledge base covers this yet.'
+    case 'weak_article':
+      return article
+        ? `${quoted} is close but doesn’t fully answer this.`
+        : 'The closest article doesn’t fully cover this.'
+    case 'outdated_or_conflicting_article':
+      return article
+        ? `${quoted} may be outdated or conflicting.`
+        : 'Existing guidance may be outdated or conflicting.'
+  }
+
+  return null
 }
 
 export function coverageKbSignal(gap: Partial<SupportCoverageGapListItem | SupportCoverageGapDetail>): string {
