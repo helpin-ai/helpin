@@ -9,6 +9,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"gorm.io/gorm"
 )
 
 type fakeCoverageEmbeddingProvider struct {
@@ -169,6 +170,55 @@ func TestCoverageMaterializerAttachesHighConfidenceFindingToExistingGap(t *testi
 	}
 }
 
+func TestCoverageMaterializerReclassifiesStrongKBMatchAsRetrievalFailure(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	seedMaterializerDocsSpace(t, db, "space-public", "ws-1")
+	if err := db.Create(&model.DocsChunk{
+		ID:          "doc-chunk-reset",
+		WorkspaceID: "ws-1",
+		SpaceID:     "space-public",
+		DocumentID:  "doc-reset",
+		ChunkIndex:  0,
+		Title:       "Password reset email troubleshooting",
+		Content:     "Customers can resend password reset emails from account settings and should check spam folders.",
+		UpdatedAt:   time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("seed docs chunk: %v", err)
+	}
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}}}, "").
+		SetKnowledgeMatcher(
+			NewCoverageKnowledgeMatcher(repository.NewDocsChunkRepository(db), nil, nil, ""),
+			repository.NewDocsSpaceRepository(db),
+			nil,
+		)
+	ctx := context.Background()
+	now := time.Now()
+
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need password reset emails that arrive.", "Password reset email troubleshooting", now)
+
+	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	if err != nil {
+		t.Fatalf("materializeRunFindings: %v", err)
+	}
+	if result.NewGapsCreated != 1 {
+		t.Fatalf("NewGapsCreated=%d, want 1", result.NewGapsCreated)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.FailureMode != model.SupportCoverageFailureNoRetrieval {
+		t.Fatalf("FailureMode=%q, want %q", gap.FailureMode, model.SupportCoverageFailureNoRetrieval)
+	}
+	if gap.NearestContentScore <= 0 || gap.NearestContentDocumentID == nil || *gap.NearestContentDocumentID != "doc-reset" {
+		t.Fatalf("nearest content not persisted: score=%f document=%v title=%q", gap.NearestContentScore, gap.NearestContentDocumentID, gap.NearestContentTitle)
+	}
+}
+
 func seedMaterializerAnalysis(t *testing.T, repo *repository.SupportCoverageAnalysisRepository, id, runID, conversationID, customerNeed, canonicalTitle string, createdAt time.Time) {
 	t.Helper()
 	raw, _ := json.Marshal(map[string]any{"has_gap": true, "customer_need": customerNeed, "canonical_title": canonicalTitle})
@@ -192,5 +242,59 @@ func seedMaterializerAnalysis(t *testing.T, repo *repository.SupportCoverageAnal
 		UpdatedAt:       createdAt,
 	}); err != nil {
 		t.Fatalf("seed analysis %s: %v", id, err)
+	}
+}
+
+func seedMaterializerDocsSpace(t *testing.T, db *gorm.DB, id, workspaceID string) {
+	t.Helper()
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_spaces (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		team_id TEXT,
+		name TEXT NOT NULL,
+		slug TEXT NOT NULL,
+		icon TEXT,
+		visibility TEXT NOT NULL DEFAULT 'workspace_wide',
+		type TEXT NOT NULL DEFAULT 'external',
+		default_review_days INTEGER,
+		is_system BOOLEAN NOT NULL DEFAULT false,
+		position INTEGER NOT NULL DEFAULT 0,
+		created_by TEXT NOT NULL DEFAULT '',
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create docs_spaces: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_chunks (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		space_id TEXT NOT NULL,
+		document_id TEXT NOT NULL,
+		block_id TEXT,
+		chunk_index INTEGER NOT NULL,
+		block_range TEXT,
+		title TEXT NOT NULL,
+		content TEXT NOT NULL,
+		content_hash TEXT NOT NULL DEFAULT '',
+		embedding TEXT NOT NULL DEFAULT '',
+		embedding_provider TEXT NOT NULL DEFAULT 'openai',
+		embedding_model TEXT NOT NULL DEFAULT 'text-embedding-3-small',
+		embedding_version TEXT NOT NULL DEFAULT 'content-chunk-v1',
+		embedding_dimensions INTEGER NOT NULL DEFAULT 1536,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`).Error; err != nil {
+		t.Fatalf("create docs_chunks: %v", err)
+	}
+	if err := db.Create(&model.DocsSpace{
+		ID:          id,
+		WorkspaceID: workspaceID,
+		Name:        "Help center",
+		Slug:        "help-center",
+		Type:        model.SpaceTypeExternalCapable,
+		CreatedBy:   "user-1",
+	}).Error; err != nil {
+		t.Fatalf("seed docs space: %v", err)
 	}
 }

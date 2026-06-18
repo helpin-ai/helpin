@@ -59,6 +59,9 @@ func (s *SupportCoverageDailyAnalyzer) materializeRunFindings(ctx context.Contex
 			remaining = append(remaining, finding)
 			continue
 		}
+		if err := s.applyMaterializedGapKnowledgeMatch(ctx, workspaceID, existing.ID, finding, now); err != nil {
+			return nil, err
+		}
 		inserted, err := s.insertMaterializedEvidence(ctx, workspaceID, existing.ID, finding, now)
 		if err != nil {
 			return nil, err
@@ -82,6 +85,9 @@ func (s *SupportCoverageDailyAnalyzer) materializeRunFindings(ctx context.Contex
 		}
 		if created {
 			result.NewGapsCreated++
+		}
+		if err := s.applyMaterializedGapKnowledgeMatch(ctx, workspaceID, gap.ID, primary, now); err != nil {
+			return nil, err
 		}
 		if len(group) > 1 {
 			result.SameRunFindingsMerged += len(group) - 1
@@ -287,6 +293,49 @@ func (s *SupportCoverageDailyAnalyzer) createMaterializedGap(ctx context.Context
 		EmbeddingUpdatedAt:  &now,
 	}
 	return s.coverageRepo.UpsertOpenGapByDedupeKeyNoBump(ctx, gap)
+}
+
+func (s *SupportCoverageDailyAnalyzer) applyMaterializedGapKnowledgeMatch(ctx context.Context, workspaceID, gapID string, finding coverageMaterializedFinding, now time.Time) error {
+	if s == nil || s.knowledgeMatcher == nil || gapID == "" {
+		return nil
+	}
+	spaceIDs, err := s.externalDocsSpaceIDs(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	contentSourceIDs, err := s.supportContentSourceIDs(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	if len(spaceIDs) == 0 && len(contentSourceIDs) == 0 {
+		return nil
+	}
+	query := firstNonEmptyCoverageString(finding.Text, finding.Analysis.CustomerNeed, finding.Analysis.CanonicalTitle)
+	if query == "" {
+		return nil
+	}
+	candidates, err := s.knowledgeMatcher.MatchGapKnowledge(ctx, workspaceID, spaceIDs, contentSourceIDs, query, coverageVectorLiteral(finding.Vector), 5)
+	if err != nil {
+		return err
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	best := candidates[0]
+	documentID := emptyToNil(best.DocumentID)
+	failureMode := model.SupportCoverageFailureWeakRetrieval
+	if documentID != nil {
+		failureMode = model.SupportCoverageFailureNoRetrieval
+	}
+	if err := s.coverageRepo.UpdateGapKnowledgeMatch(ctx, workspaceID, gapID, failureMode, best.CombinedScore, documentID, best.Title, now); err != nil {
+		return err
+	}
+	if documentID != nil {
+		if err := s.coverageRepo.LinkGapArticle(ctx, gapID, *documentID, workspaceID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *SupportCoverageDailyAnalyzer) insertMaterializedEvidence(ctx context.Context, workspaceID, gapID string, finding coverageMaterializedFinding, now time.Time) (bool, error) {

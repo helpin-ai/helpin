@@ -516,6 +516,33 @@ func (r *SupportCoverageRepository) UpdateGapEmbedding(ctx context.Context, gapI
 	return nil
 }
 
+func (r *SupportCoverageRepository) UpdateGapKnowledgeMatch(ctx context.Context, workspaceID, gapID string, failureMode string, score float64, documentID *string, title string, checkedAt time.Time) error {
+	if workspaceID == "" || gapID == "" {
+		return fmt.Errorf("workspace_id and gap_id are required")
+	}
+	updates := map[string]interface{}{
+		"nearest_content_score":       score,
+		"nearest_content_document_id": documentID,
+		"nearest_content_title":       title,
+		"nearest_content_checked_at":  checkedAt,
+		"updated_at":                  time.Now(),
+	}
+	if failureMode != "" {
+		updates["failure_mode"] = failureMode
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageGap{}).
+		Where("id = ? AND workspace_id = ?", gapID, workspaceID).
+		Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("update gap knowledge match: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("gap not found")
+	}
+	return nil
+}
+
 func (r *SupportCoverageRepository) CountEvidenceSince(ctx context.Context, gapID string, since time.Time) (int64, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).

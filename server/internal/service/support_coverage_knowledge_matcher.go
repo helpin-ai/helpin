@@ -65,6 +65,24 @@ func (m *CoverageKnowledgeMatcher) MatchKnowledge(ctx context.Context, workspace
 		}
 	}
 
+	return m.matchKnowledge(ctx, workspaceID, spaceIDs, contentSourceIDs, query, queryEmbedding, limit)
+}
+
+func (m *CoverageKnowledgeMatcher) MatchGapKnowledge(ctx context.Context, workspaceID string, spaceIDs []string, contentSourceIDs []string, query string, queryEmbedding string, limit int) ([]CoverageKnowledgeCandidate, error) {
+	if m == nil {
+		return nil, nil
+	}
+	query = strings.TrimSpace(query)
+	if workspaceID == "" || query == "" {
+		return []CoverageKnowledgeCandidate{}, nil
+	}
+	if limit <= 0 {
+		limit = 8
+	}
+	return m.matchKnowledge(ctx, workspaceID, spaceIDs, contentSourceIDs, query, strings.TrimSpace(queryEmbedding), limit)
+}
+
+func (m *CoverageKnowledgeMatcher) matchKnowledge(ctx context.Context, workspaceID string, spaceIDs []string, contentSourceIDs []string, query string, queryEmbedding string, limit int) ([]CoverageKnowledgeCandidate, error) {
 	candidates := make([]CoverageKnowledgeCandidate, 0, limit)
 	if m.docsChunkRepo != nil && len(spaceIDs) > 0 {
 		results, err := m.docsChunkRepo.HybridSearch(ctx, workspaceID, spaceIDs, query, queryEmbedding, limit)
