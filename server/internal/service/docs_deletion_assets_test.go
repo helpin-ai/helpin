@@ -180,6 +180,10 @@ func setupDocsDeletionTestDB(t *testing.T) *gorm.DB {
 			content TEXT,
 			content_hash TEXT,
 			embedding TEXT,
+			embedding_provider TEXT NOT NULL DEFAULT 'openai',
+			embedding_model TEXT NOT NULL DEFAULT 'text-embedding-3-small',
+			embedding_version TEXT NOT NULL DEFAULT 'content-chunk-v1',
+			embedding_dimensions INTEGER NOT NULL DEFAULT 1536,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	defaultDocsEmbeddingModel = "text-embedding-3-small"
-	docsEmbeddingDimensions   = 1536
-	chunkSizeChars            = 1200
-	chunkOverlapChars         = 200
+	defaultDocsEmbeddingModel    = "text-embedding-3-small"
+	contentChunkEmbeddingVersion = "content-chunk-v1"
+	docsEmbeddingDimensions      = 1536
+	chunkSizeChars               = 1200
+	chunkOverlapChars            = 200
 )
 
 // DocsEmbeddingService keeps pgvector-backed help-center chunks in sync.
@@ -226,15 +227,19 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 		rows := make([]model.DocsChunk, 0, len(chunks))
 		for chunkIndex, chunk := range chunks {
 			rows = append(rows, model.DocsChunk{
-				WorkspaceID: workspaceID,
-				SpaceID:     spaceID,
-				DocumentID:  doc.ID,
-				BlockID:     blockIDs[chunkIndex],
-				ChunkIndex:  chunkIndex,
-				Title:       doc.Title,
-				Content:     chunk,
-				ContentHash: hashChunk(doc.Title, chunk),
-				Embedding:   formatVector(resp.Vectors[chunkIndex]),
+				WorkspaceID:         workspaceID,
+				SpaceID:             spaceID,
+				DocumentID:          doc.ID,
+				BlockID:             blockIDs[chunkIndex],
+				ChunkIndex:          chunkIndex,
+				Title:               doc.Title,
+				Content:             chunk,
+				ContentHash:         hashChunk(doc.Title, chunk),
+				Embedding:           formatVector(resp.Vectors[chunkIndex]),
+				EmbeddingProvider:   "openai",
+				EmbeddingModel:      s.embeddingModel,
+				EmbeddingVersion:    contentChunkEmbeddingVersion,
+				EmbeddingDimensions: docsEmbeddingDimensions,
 			})
 		}
 		if err := s.chunkRepo.ReplaceDocumentChunks(ctx, doc.ID, rows); err != nil {

@@ -56,6 +56,12 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			status_changed_by TEXT, status_changed_at DATETIME, issue_resolved BOOLEAN,
 			closed_at DATETIME, closed_evidence_count INTEGER, result_document_id TEXT,
 			rejection_reason TEXT,
+			embedding TEXT, embedding_provider TEXT NOT NULL DEFAULT '',
+			embedding_model TEXT NOT NULL DEFAULT '', embedding_version TEXT NOT NULL DEFAULT '',
+			embedding_dimensions INTEGER NOT NULL DEFAULT 0, embedding_text_hash TEXT NOT NULL DEFAULT '',
+			embedding_updated_at DATETIME, nearest_content_score REAL NOT NULL DEFAULT 0,
+			nearest_content_document_id TEXT, nearest_content_title TEXT NOT NULL DEFAULT '',
+			nearest_content_checked_at DATETIME, impact_score REAL NOT NULL DEFAULT 0,
 			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE UNIQUE INDEX idx_support_coverage_gaps_workspace_topic_open
@@ -65,7 +71,8 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			id TEXT PRIMARY KEY, gap_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
 			evidence_type TEXT NOT NULL, conversation_id TEXT, message_id TEXT,
 			widget_session_id TEXT, document_id TEXT, article_public_id TEXT,
-			source_signal TEXT NOT NULL DEFAULT '', excerpt TEXT NOT NULL DEFAULT '',
+			source_signal TEXT NOT NULL DEFAULT '', source_key TEXT NOT NULL DEFAULT '',
+			excerpt TEXT NOT NULL DEFAULT '',
 			metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME
 		)`,
 		`CREATE TABLE support_messages (
@@ -74,6 +81,12 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			content TEXT NOT NULL DEFAULT '', is_internal BOOLEAN NOT NULL DEFAULT 0,
 			deleted_at DATETIME, created_at DATETIME, updated_at DATETIME
 		)`,
+		`CREATE TABLE support_conversations (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
+			customer_email TEXT NOT NULL DEFAULT '', crm_contact_id TEXT, anonymous_id TEXT,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
 		`CREATE TABLE support_gap_suggestions (
 			id TEXT PRIMARY KEY, gap_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
 			suggestion_type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
@@ -81,6 +94,16 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			target_space_id TEXT, target_collection_id TEXT, target_document_id TEXT,
 			result_document_id TEXT, result_article_id TEXT, applied_at DATETIME,
 			is_active BOOLEAN NOT NULL DEFAULT 1, superseded_at DATETIME,
+			metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE support_coverage_recommendations (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, gap_id TEXT NOT NULL,
+			analysis_id TEXT, recommendation_type TEXT NOT NULL,
+			target_type TEXT NOT NULL DEFAULT '', target_id TEXT,
+			target_title TEXT NOT NULL DEFAULT '', target_url TEXT NOT NULL DEFAULT '',
+			priority TEXT NOT NULL DEFAULT 'secondary', status TEXT NOT NULL DEFAULT 'open',
+			rationale TEXT NOT NULL DEFAULT '', suggested_change TEXT NOT NULL DEFAULT '',
+			implementation_notes TEXT NOT NULL DEFAULT '', suggestion_id TEXT,
 			metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE support_coverage_gap_articles (
@@ -663,6 +686,66 @@ func TestSupportCoverage_HumanReplyAfterAI_AttachesToExistingGap(t *testing.T) {
 	}
 	if humanEvidence.ConversationID == nil || *humanEvidence.ConversationID != convID {
 		t.Errorf("human reply evidence conversation_id mismatch")
+	}
+}
+
+func TestSupportCoverage_HumanReplyAfterAI_ReplayedEventDoesNotDoubleCount(t *testing.T) {
+	eventSvc, coverageSvc, db := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	convID := "conv-hr-retry"
+
+	if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventAIHandoffTriggered,
+		ConversationID: &convID,
+		IssueKey:       "login_issue",
+		IssueSummary:   "Cannot log in with SSO",
+		FailureMode:    model.SupportCoverageFailureNoRetrieval,
+		SourceSignal:   model.SupportCoverageSourceAIHandoff,
+	}); err != nil {
+		t.Fatalf("RecordEvent (handoff): %v", err)
+	}
+
+	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
+	if err != nil {
+		t.Fatalf("ListGaps after handoff: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected 1 gap after handoff, got %d", total)
+	}
+	gapID := gaps[0].ID
+	messageID := "msg-human-retry"
+	event := &model.SupportEvent{
+		ID:             "event-human-retry",
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventHumanReplyAfterAI,
+		ConversationID: &convID,
+		MessageID:      &messageID,
+		IssueSummary:   "Agent resolved: SSO cert was expired",
+		SourceSignal:   model.SupportCoverageSourceHumanReply,
+		OccurredAt:     time.Now(),
+	}
+
+	if err := coverageSvc.ProcessSupportEvent(ctx, event); err != nil {
+		t.Fatalf("first ProcessSupportEvent: %v", err)
+	}
+	if err := coverageSvc.ProcessSupportEvent(ctx, event); err != nil {
+		t.Fatalf("replayed ProcessSupportEvent: %v", err)
+	}
+
+	var evidenceCount int64
+	if err := db.Model(&model.SupportGapEvidence{}).Where("gap_id = ?", gapID).Count(&evidenceCount).Error; err != nil {
+		t.Fatalf("count evidence: %v", err)
+	}
+	if evidenceCount != 2 {
+		t.Fatalf("evidence rows=%d, want 2", evidenceCount)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap, "id = ?", gapID).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.EvidenceCount != 2 {
+		t.Fatalf("evidence_count=%d, want 2", gap.EvidenceCount)
 	}
 }
 

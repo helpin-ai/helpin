@@ -414,6 +414,18 @@ func setupCoverageFindingUpsertTestDB(t *testing.T) *gorm.DB {
 			closed_evidence_count INTEGER,
 			result_document_id TEXT,
 			rejection_reason TEXT,
+			embedding TEXT,
+			embedding_provider TEXT NOT NULL DEFAULT '',
+			embedding_model TEXT NOT NULL DEFAULT '',
+			embedding_version TEXT NOT NULL DEFAULT '',
+			embedding_dimensions INTEGER NOT NULL DEFAULT 0,
+			embedding_text_hash TEXT NOT NULL DEFAULT '',
+			embedding_updated_at DATETIME,
+			nearest_content_score REAL NOT NULL DEFAULT 0,
+			nearest_content_document_id TEXT,
+			nearest_content_title TEXT NOT NULL DEFAULT '',
+			nearest_content_checked_at DATETIME,
+			impact_score REAL NOT NULL DEFAULT 0,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -428,6 +440,7 @@ func setupCoverageFindingUpsertTestDB(t *testing.T) *gorm.DB {
 			document_id TEXT,
 			article_public_id TEXT,
 			source_signal TEXT NOT NULL DEFAULT '',
+			source_key TEXT NOT NULL DEFAULT '',
 			excerpt TEXT NOT NULL DEFAULT '',
 			metadata TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -474,6 +487,7 @@ func setupCoverageFindingUpsertTestDB(t *testing.T) *gorm.DB {
 			primary_recommendation_type TEXT NOT NULL DEFAULT '',
 			transcript_hash TEXT NOT NULL DEFAULT '',
 			analyzer_version TEXT NOT NULL DEFAULT 'v1',
+			canonical_title TEXT NOT NULL DEFAULT '',
 			customer_need TEXT NOT NULL DEFAULT '',
 			ai_failure TEXT NOT NULL DEFAULT '',
 			human_resolution TEXT NOT NULL DEFAULT '',
@@ -484,6 +498,14 @@ func setupCoverageFindingUpsertTestDB(t *testing.T) *gorm.DB {
 			classification_reason TEXT NOT NULL DEFAULT '',
 			error_message TEXT,
 			raw_output TEXT NOT NULL DEFAULT '{}',
+			embedding TEXT,
+			embedding_provider TEXT NOT NULL DEFAULT '',
+			embedding_model TEXT NOT NULL DEFAULT '',
+			embedding_version TEXT NOT NULL DEFAULT '',
+			embedding_dimensions INTEGER NOT NULL DEFAULT 0,
+			embedding_text_hash TEXT NOT NULL DEFAULT '',
+			embedding_updated_at DATETIME,
+			materialization_metadata TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -574,15 +596,28 @@ func TestSupportCoverageDailyAnalyzer_RunOverridesHumanResolutionInStoredRawOutp
 		t.Fatalf("runConversationCoverageAnalysis: %v", err)
 	}
 	if !created {
-		t.Fatal("expected gap to be created")
+		t.Fatal("expected gap finding to be staged")
 	}
 
 	var analysis model.SupportCoverageConversationAnalysis
 	if err := db.First(&analysis, "conversation_id = ?", "conversation-no-human").Error; err != nil {
 		t.Fatalf("load analysis: %v", err)
 	}
+	if analysis.GapID != nil {
+		t.Fatalf("expected analysis gap_id to remain nil before materialization, got %q", *analysis.GapID)
+	}
+	if analysis.CanonicalTitle != "Billing update steps" {
+		t.Fatalf("canonical_title = %q, want Billing update steps", analysis.CanonicalTitle)
+	}
 	if analysis.HumanResolution != "No human response observed" {
 		t.Fatalf("stored human_resolution = %q", analysis.HumanResolution)
+	}
+	var materialization map[string]any
+	if err := json.Unmarshal(analysis.MaterializationMetadata, &materialization); err != nil {
+		t.Fatalf("unmarshal materialization metadata: %v", err)
+	}
+	if materialization["has_human_reply"] != false {
+		t.Fatalf("has_human_reply metadata = %v, want false", materialization["has_human_reply"])
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(analysis.RawOutput, &raw); err != nil {
@@ -597,6 +632,13 @@ func TestSupportCoverageDailyAnalyzer_RunOverridesHumanResolutionInStoredRawOutp
 	}
 	if suggestionCount != 0 {
 		t.Fatalf("expected no auto-generated suggestion without human reply, got %d", suggestionCount)
+	}
+	var gapCount int64
+	if err := db.Model(&model.SupportCoverageGap{}).Count(&gapCount).Error; err != nil {
+		t.Fatalf("count gaps: %v", err)
+	}
+	if gapCount != 0 {
+		t.Fatalf("expected no gap before materialization, got %d", gapCount)
 	}
 }
 
@@ -792,6 +834,105 @@ func TestSupportCoverageDailyAnalyzer_UpsertFindingDedupesAndPreservesAcceptedRe
 	}
 	if accepted.Status != model.SupportCoverageRecommendationStatusAccepted {
 		t.Fatalf("accepted recommendation status changed: %+v", accepted)
+	}
+}
+
+func TestSupportCoverageDailyAnalyzer_UpsertFindingAttachesSimilarGap(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}, {0.99, 0.01, 0}}}, "")
+	ctx := context.Background()
+
+	first, err := analyzer.UpsertFinding(ctx, CoverageFindingUpsertInput{
+		WorkspaceID:    "ws-1",
+		ConversationID: "conversation-1",
+		AnalysisID:     "analysis-1",
+		Result: CoverageConversationAnalysisResult{
+			HasGap:          true,
+			GapKind:         "action",
+			GapCategory:     model.SupportCoverageGapCategoryAction,
+			CanonicalTitle:  "Cancel subscription action unavailable",
+			CustomerNeed:    "Customer needed to cancel their subscription from account settings.",
+			AIFailure:       "AI could explain policy but could not cancel the subscription.",
+			HumanResolution: "Agent cancelled the subscription manually.",
+			RecommendedFixes: []CoverageRecommendedFix{{
+				Type:       model.SupportCoverageFixAddAction,
+				TargetType: "tool_action",
+				Priority:   model.SupportCoverageRecommendationPriorityPrimary,
+				Rationale:  "AI needs a guarded cancel action.",
+			}},
+			Confidence: 0.88,
+		},
+	})
+	if err != nil {
+		t.Fatalf("first UpsertFinding: %v", err)
+	}
+	var seeded model.SupportCoverageGap
+	if err := db.First(&seeded, "id = ?", first.ID).Error; err != nil {
+		t.Fatalf("load first gap: %v", err)
+	}
+	if seeded.Embedding == "" {
+		t.Fatalf("first gap embedding was not stored")
+	}
+	listed, err := coverageRepo.ListOpenGapsForClusterRebuild(ctx, "ws-1", 10)
+	if err != nil {
+		t.Fatalf("list open gaps: %v", err)
+	}
+	if len(listed) != 1 || listed[0].Embedding == "" {
+		t.Fatalf("listed gaps did not include stored embedding: %+v", listed)
+	}
+
+	second, err := analyzer.UpsertFinding(ctx, CoverageFindingUpsertInput{
+		WorkspaceID:    "ws-1",
+		ConversationID: "conversation-2",
+		AnalysisID:     "analysis-2",
+		Result: CoverageConversationAnalysisResult{
+			HasGap:          true,
+			GapKind:         "content",
+			GapCategory:     model.SupportCoverageGapCategoryKnowledge,
+			CanonicalTitle:  "Subscription cancellation instructions missing",
+			CustomerNeed:    "Customer needed to cancel their subscription from account settings.",
+			AIFailure:       "AI did not know the cancellation path.",
+			HumanResolution: "Agent explained and completed the cancellation.",
+			RecommendedFixes: []CoverageRecommendedFix{{
+				Type:       model.SupportCoverageFixCreateArticle,
+				TargetType: "docs",
+				Priority:   model.SupportCoverageRecommendationPriorityPrimary,
+				Rationale:  "Customers ask how to cancel.",
+			}},
+			Confidence: 0.84,
+		},
+	})
+	if err != nil {
+		t.Fatalf("second UpsertFinding: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("expected similar duplicate to attach to %q, got %q", first.ID, second.ID)
+	}
+
+	var gapCount int64
+	if err := db.Model(&model.SupportCoverageGap{}).Where("workspace_id = ?", "ws-1").Count(&gapCount).Error; err != nil {
+		t.Fatalf("count gaps: %v", err)
+	}
+	if gapCount != 1 {
+		t.Fatalf("gap count=%d, want 1", gapCount)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap, "id = ?", first.ID).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.EvidenceCount != 2 {
+		t.Fatalf("EvidenceCount=%d, want 2", gap.EvidenceCount)
+	}
+	var evidenceCount int64
+	if err := db.Model(&model.SupportGapEvidence{}).Where("gap_id = ?", first.ID).Count(&evidenceCount).Error; err != nil {
+		t.Fatalf("count evidence: %v", err)
+	}
+	if evidenceCount != 2 {
+		t.Fatalf("evidence count=%d, want 2", evidenceCount)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,6 +88,18 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			closed_evidence_count INTEGER,
 			result_document_id TEXT,
 			rejection_reason TEXT,
+			embedding TEXT,
+			embedding_provider TEXT NOT NULL DEFAULT '',
+			embedding_model TEXT NOT NULL DEFAULT '',
+			embedding_version TEXT NOT NULL DEFAULT '',
+			embedding_dimensions INTEGER NOT NULL DEFAULT 0,
+			embedding_text_hash TEXT NOT NULL DEFAULT '',
+			embedding_updated_at DATETIME,
+			nearest_content_score REAL NOT NULL DEFAULT 0,
+			nearest_content_document_id TEXT,
+			nearest_content_title TEXT NOT NULL DEFAULT '',
+			nearest_content_checked_at DATETIME,
+			impact_score REAL NOT NULL DEFAULT 0,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -101,6 +114,7 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			document_id TEXT,
 			article_public_id TEXT,
 			source_signal TEXT NOT NULL DEFAULT '',
+			source_key TEXT NOT NULL DEFAULT '',
 			excerpt TEXT NOT NULL DEFAULT '',
 			metadata TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -168,6 +182,15 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			sender_type TEXT NOT NULL DEFAULT '',
 			content TEXT NOT NULL DEFAULT '',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE support_conversations (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			customer_email TEXT NOT NULL DEFAULT '',
+			crm_contact_id TEXT,
+			anonymous_id TEXT,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE support_coverage_digest_deliveries (
 			id TEXT PRIMARY KEY,
@@ -267,6 +290,52 @@ func TestSupportCoverageRepository_UpsertGap(t *testing.T) {
 	}
 }
 
+func TestSupportCoverageRepository_UpsertOpenGapByDedupeKeyNoBump(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	gap := &model.SupportCoverageGap{
+		ID:          "gap-no-bump",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "semantic:refunds",
+		Title:       "Refund policy missing",
+		Status:      model.SupportCoverageGapStatusOpen,
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	}
+
+	created, isNew, err := repo.UpsertOpenGapByDedupeKeyNoBump(ctx, gap)
+	if err != nil {
+		t.Fatalf("UpsertOpenGapByDedupeKeyNoBump: %v", err)
+	}
+	if !isNew {
+		t.Fatal("expected new gap")
+	}
+	if created.EvidenceCount != 0 {
+		t.Fatalf("new gap evidence_count=%d, want 0", created.EvidenceCount)
+	}
+
+	again, isNew, err := repo.UpsertOpenGapByDedupeKeyNoBump(ctx, &model.SupportCoverageGap{
+		WorkspaceID: "ws-1",
+		DedupeKey:   "semantic:refunds",
+		LastSeenAt:  now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("UpsertOpenGapByDedupeKeyNoBump again: %v", err)
+	}
+	if isNew {
+		t.Fatal("expected existing gap")
+	}
+	if again.ID != created.ID {
+		t.Fatalf("existing gap ID=%q, want %q", again.ID, created.ID)
+	}
+	if again.EvidenceCount != 0 {
+		t.Fatalf("existing gap evidence_count=%d, want 0", again.EvidenceCount)
+	}
+}
+
 func TestSupportCoverageRepository_CreateEvidence(t *testing.T) {
 	db := setupSupportCoverageTestDB(t)
 	repo := NewSupportCoverageRepository(db)
@@ -283,6 +352,98 @@ func TestSupportCoverageRepository_CreateEvidence(t *testing.T) {
 	}
 	if err := repo.CreateEvidence(ctx, evidence); err != nil {
 		t.Fatalf("CreateEvidence: %v", err)
+	}
+}
+
+func TestSupportCoverageRepository_CreateEvidenceIfAbsentBySourceKey(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	inserted, err := repo.CreateEvidenceIfAbsent(ctx, &model.SupportGapEvidence{
+		ID:           "ev-1",
+		GapID:        "gap-1",
+		WorkspaceID:  "ws-1",
+		SourceKey:    "coverage_analysis:analysis-1",
+		EvidenceType: model.SupportCoverageGapSourceDailyConversationAnalysis,
+		SourceSignal: model.SupportCoverageGapSourceDailyConversationAnalysis,
+		CreatedAt:    now,
+	})
+	if err != nil {
+		t.Fatalf("CreateEvidenceIfAbsent first: %v", err)
+	}
+	if !inserted {
+		t.Fatal("expected first evidence insert")
+	}
+
+	inserted, err = repo.CreateEvidenceIfAbsent(ctx, &model.SupportGapEvidence{
+		ID:           "ev-duplicate",
+		GapID:        "gap-1",
+		WorkspaceID:  "ws-1",
+		SourceKey:    "coverage_analysis:analysis-1",
+		EvidenceType: model.SupportCoverageGapSourceDailyConversationAnalysis,
+		SourceSignal: model.SupportCoverageGapSourceDailyConversationAnalysis,
+		CreatedAt:    now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("CreateEvidenceIfAbsent duplicate: %v", err)
+	}
+	if inserted {
+		t.Fatal("expected duplicate source_key to be ignored")
+	}
+
+	var count int64
+	if err := db.Model(&model.SupportGapEvidence{}).Where("workspace_id = ? AND source_key = ?", "ws-1", "coverage_analysis:analysis-1").Count(&count).Error; err != nil {
+		t.Fatalf("count evidence: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("evidence count=%d, want 1", count)
+	}
+}
+
+func TestSupportCoverageRepository_UpdateGapEmbedding(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	if _, _, err := repo.UpsertOpenGapByDedupeKeyNoBump(ctx, &model.SupportCoverageGap{
+		ID:          "gap-embedding",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "semantic:embedding",
+		Title:       "Embedding test",
+		Status:      model.SupportCoverageGapStatusOpen,
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	}); err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+
+	if err := repo.UpdateGapEmbedding(ctx, "gap-embedding", "[0.1,0.2]", "openai", "text-embedding-3-small", "coverage-gap-canonical-v1", 1536, "hash-1", now); err != nil {
+		t.Fatalf("UpdateGapEmbedding: %v", err)
+	}
+
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap, "id = ?", "gap-embedding").Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.Embedding != "[0.1,0.2]" || gap.EmbeddingModel != "text-embedding-3-small" || gap.EmbeddingTextHash != "hash-1" {
+		t.Fatalf("embedding fields not persisted: %+v", gap)
+	}
+}
+
+func TestSupportCoverageRepository_FindNearestOpenGapsByEmbeddingSQLiteReturnsEmpty(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+
+	items, err := repo.FindNearestOpenGapsByEmbedding(ctx, "ws-1", "[0.1,0.2]", "openai", "text-embedding-3-small", "coverage-gap-canonical-v1", 1536, 10)
+	if err != nil {
+		t.Fatalf("FindNearestOpenGapsByEmbedding: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("items=%d, want 0 on sqlite", len(items))
 	}
 }
 
@@ -368,6 +529,61 @@ func TestSupportCoverageRepository_ListGapsRanksByRecentEvidence(t *testing.T) {
 	}
 	if items[1].ID != "gap-low" || items[1].Evidence30d != 1 {
 		t.Fatalf("second item id=%s evidence_30d=%d, want gap-low/1", items[1].ID, items[1].Evidence30d)
+	}
+}
+
+func TestSupportCoverageRepositoryListGapsRanksByExplainableImpact(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	for _, gap := range []model.SupportCoverageGap{
+		{ID: "gap-noisy", WorkspaceID: "ws-1", DedupeKey: "noisy", Title: "One account repeats the same issue", Status: model.SupportCoverageGapStatusOpen, Confidence: 0.9, Metadata: json.RawMessage(`{}`), FirstSeenAt: now.Add(-2 * time.Hour), LastSeenAt: now.Add(-time.Hour)},
+		{ID: "gap-broad", WorkspaceID: "ws-1", DedupeKey: "broad", Title: "Several customers need missing setup docs", Status: model.SupportCoverageGapStatusOpen, Confidence: 0.9, Metadata: json.RawMessage(`{}`), FirstSeenAt: now.Add(-2 * time.Hour), LastSeenAt: now.Add(-90 * time.Minute)},
+	} {
+		if err := db.Create(&gap).Error; err != nil {
+			t.Fatalf("seed gap %s: %v", gap.ID, err)
+		}
+	}
+	for i := 0; i < 10; i++ {
+		convID := fmt.Sprintf("conv-noisy-%d", i)
+		if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, customer_email) VALUES (?, ?, ?)`, convID, "ws-1", "noisy@example.com").Error; err != nil {
+			t.Fatalf("seed noisy conversation: %v", err)
+		}
+		if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{GapID: "gap-noisy", WorkspaceID: "ws-1", ConversationID: &convID, EvidenceType: model.SupportEventDocsIssueFeedback, CreatedAt: now.Add(time.Duration(i) * time.Minute)}); err != nil {
+			t.Fatalf("seed noisy evidence: %v", err)
+		}
+	}
+	for i := 0; i < 4; i++ {
+		convID := fmt.Sprintf("conv-broad-%d", i)
+		email := fmt.Sprintf("customer-%d@example.com", i)
+		if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, customer_email) VALUES (?, ?, ?)`, convID, "ws-1", email).Error; err != nil {
+			t.Fatalf("seed broad conversation: %v", err)
+		}
+		if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{GapID: "gap-broad", WorkspaceID: "ws-1", ConversationID: &convID, EvidenceType: model.SupportEventDocsIssueFeedback, CreatedAt: now.Add(time.Duration(i) * time.Minute)}); err != nil {
+			t.Fatalf("seed broad evidence: %v", err)
+		}
+	}
+
+	items, total, err := repo.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("got total=%d len=%d, want 2", total, len(items))
+	}
+	if items[0].ID != "gap-broad" {
+		t.Fatalf("first item id=%s, want gap-broad; scores: %+v", items[0].ID, items)
+	}
+	if items[0].DistinctCustomers30d != 4 || items[0].Evidence30d != 4 || items[0].EvidenceAll != 4 {
+		t.Fatalf("impact components not populated: %+v", items[0])
+	}
+	if items[0].ImpactScore <= items[1].ImpactScore {
+		t.Fatalf("impact scores not ranked: first=%f second=%f", items[0].ImpactScore, items[1].ImpactScore)
+	}
+	if items[0].ImpactExplanation == "" || !strings.Contains(items[0].ImpactExplanation, "4 customers") || !strings.Contains(items[0].ImpactExplanation, "no nearby content") {
+		t.Fatalf("impact explanation missing components: %q", items[0].ImpactExplanation)
 	}
 }
 

@@ -53,6 +53,7 @@ func setupSupportCoverageAnalysisTestDB(t *testing.T) *gorm.DB {
 			primary_recommendation_type TEXT NOT NULL DEFAULT '',
 			transcript_hash TEXT NOT NULL DEFAULT '',
 			analyzer_version TEXT NOT NULL DEFAULT 'v1',
+			canonical_title TEXT NOT NULL DEFAULT '',
 			customer_need TEXT NOT NULL DEFAULT '',
 			ai_failure TEXT NOT NULL DEFAULT '',
 			human_resolution TEXT NOT NULL DEFAULT '',
@@ -63,6 +64,14 @@ func setupSupportCoverageAnalysisTestDB(t *testing.T) *gorm.DB {
 			classification_reason TEXT NOT NULL DEFAULT '',
 			error_message TEXT,
 			raw_output TEXT NOT NULL DEFAULT '{}',
+			embedding TEXT,
+			embedding_provider TEXT NOT NULL DEFAULT '',
+			embedding_model TEXT NOT NULL DEFAULT '',
+			embedding_version TEXT NOT NULL DEFAULT '',
+			embedding_dimensions INTEGER NOT NULL DEFAULT 0,
+			embedding_text_hash TEXT NOT NULL DEFAULT '',
+			embedding_updated_at DATETIME,
+			materialization_metadata TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(workspace_id, conversation_id, transcript_hash, analyzer_version)
@@ -223,6 +232,65 @@ func TestSupportCoverageAnalysisRepository_RecordConversationAnalysisIdempotentB
 	}
 	if count != 1 {
 		t.Fatalf("expected one analysis row, got %d", count)
+	}
+}
+
+func TestSupportCoverageAnalysisRepository_ListUnmaterializedGapAnalysesForRun(t *testing.T) {
+	db := setupSupportCoverageAnalysisTestDB(t)
+	repo := NewSupportCoverageAnalysisRepository(db)
+	ctx := context.Background()
+	gapID := "gap-1"
+
+	seeds := []*model.SupportCoverageConversationAnalysis{
+		{
+			ID:              "analysis-open",
+			WorkspaceID:     "ws-1",
+			RunID:           "run-1",
+			ConversationID:  "conversation-1",
+			Status:          model.SupportCoverageConversationAnalysisStatusAnalyzed,
+			HasGap:          true,
+			TranscriptHash:  "hash-1",
+			AnalyzerVersion: "v1",
+			CustomerNeed:    "Customers need password reset emails.",
+			RawOutput:       json.RawMessage(`{}`),
+		},
+		{
+			ID:              "analysis-materialized",
+			WorkspaceID:     "ws-1",
+			RunID:           "run-1",
+			ConversationID:  "conversation-2",
+			Status:          model.SupportCoverageConversationAnalysisStatusAnalyzed,
+			HasGap:          true,
+			GapID:           &gapID,
+			TranscriptHash:  "hash-2",
+			AnalyzerVersion: "v1",
+			CustomerNeed:    "Customers need password reset emails.",
+			RawOutput:       json.RawMessage(`{}`),
+		},
+		{
+			ID:              "analysis-no-gap",
+			WorkspaceID:     "ws-1",
+			RunID:           "run-1",
+			ConversationID:  "conversation-3",
+			Status:          model.SupportCoverageConversationAnalysisStatusAnalyzed,
+			HasGap:          false,
+			TranscriptHash:  "hash-3",
+			AnalyzerVersion: "v1",
+			RawOutput:       json.RawMessage(`{}`),
+		},
+	}
+	for _, seed := range seeds {
+		if err := repo.RecordConversationAnalysis(ctx, seed); err != nil {
+			t.Fatalf("RecordConversationAnalysis %s: %v", seed.ID, err)
+		}
+	}
+
+	items, err := repo.ListUnmaterializedGapAnalysesForRun(ctx, "ws-1", "run-1", 50)
+	if err != nil {
+		t.Fatalf("ListUnmaterializedGapAnalysesForRun: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "analysis-open" {
+		t.Fatalf("unexpected unmaterialized analyses: %+v", items)
 	}
 }
 

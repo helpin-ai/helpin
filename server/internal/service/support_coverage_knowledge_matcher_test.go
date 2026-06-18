@@ -32,6 +32,10 @@ func setupCoverageKnowledgeMatcherTestDB(t *testing.T) *gorm.DB {
 			content TEXT NOT NULL,
 			content_hash TEXT NOT NULL DEFAULT '',
 			embedding TEXT NOT NULL DEFAULT '',
+			embedding_provider TEXT NOT NULL DEFAULT 'openai',
+			embedding_model TEXT NOT NULL DEFAULT 'text-embedding-3-small',
+			embedding_version TEXT NOT NULL DEFAULT 'content-chunk-v1',
+			embedding_dimensions INTEGER NOT NULL DEFAULT 1536,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -46,6 +50,10 @@ func setupCoverageKnowledgeMatcherTestDB(t *testing.T) *gorm.DB {
 			content TEXT NOT NULL,
 			content_hash TEXT NOT NULL DEFAULT '',
 			embedding TEXT NOT NULL DEFAULT '',
+			embedding_provider TEXT NOT NULL DEFAULT 'openai',
+			embedding_model TEXT NOT NULL DEFAULT 'text-embedding-3-small',
+			embedding_version TEXT NOT NULL DEFAULT 'content-chunk-v1',
+			embedding_dimensions INTEGER NOT NULL DEFAULT 1536,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,

@@ -131,6 +131,45 @@ func TestSupportCoverageClusterer_UpsertTopicGapSecondCallReusesOpenGap(t *testi
 	}
 }
 
+func TestSupportCoverageClusterer_UpsertTopicGapReplayedEventDoesNotDoubleCount(t *testing.T) {
+	db := setupCoverageClustererTestDB(t)
+	c := NewSupportCoverageClusterer(repository.NewSupportCoverageRepository(db))
+	ctx := context.Background()
+	ev := &model.SupportEvent{
+		ID:           "event-1",
+		WorkspaceID:  "ws-1",
+		EventType:    model.SupportEventHumanReplyAfterAI,
+		IssueSummary: "How do I reset my password?",
+	}
+
+	g1, err := c.UpsertTopicGap(ctx, ev)
+	if err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+	g2, err := c.UpsertTopicGap(ctx, ev)
+	if err != nil {
+		t.Fatalf("replayed upsert: %v", err)
+	}
+
+	if g1.ID != g2.ID {
+		t.Fatalf("expected replay to return same gap, got %s vs %s", g1.ID, g2.ID)
+	}
+	var evidenceCount int64
+	if err := db.Model(&model.SupportGapEvidence{}).Where("gap_id = ?", g1.ID).Count(&evidenceCount).Error; err != nil {
+		t.Fatalf("count evidence: %v", err)
+	}
+	if evidenceCount != 1 {
+		t.Fatalf("evidence rows=%d, want 1", evidenceCount)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap, "id = ?", g1.ID).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.EvidenceCount != 1 {
+		t.Fatalf("evidence_count=%d, want 1", gap.EvidenceCount)
+	}
+}
+
 func TestSupportCoverageClusterer_UpsertTopicGapDoneGapDoesNotBlockNewOpen(t *testing.T) {
 	db := setupCoverageClustererTestDB(t)
 	repo := repository.NewSupportCoverageRepository(db)
@@ -214,6 +253,18 @@ func setupCoverageClustererTestDB(t *testing.T) *gorm.DB {
 			closed_evidence_count INTEGER,
 			result_document_id TEXT,
 			rejection_reason TEXT,
+			embedding TEXT,
+			embedding_provider TEXT NOT NULL DEFAULT '',
+			embedding_model TEXT NOT NULL DEFAULT '',
+			embedding_version TEXT NOT NULL DEFAULT '',
+			embedding_dimensions INTEGER NOT NULL DEFAULT 0,
+			embedding_text_hash TEXT NOT NULL DEFAULT '',
+			embedding_updated_at DATETIME,
+			nearest_content_score REAL NOT NULL DEFAULT 0,
+			nearest_content_document_id TEXT,
+			nearest_content_title TEXT NOT NULL DEFAULT '',
+			nearest_content_checked_at DATETIME,
+			impact_score REAL NOT NULL DEFAULT 0,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -231,6 +282,7 @@ func setupCoverageClustererTestDB(t *testing.T) *gorm.DB {
 			document_id TEXT,
 			article_public_id TEXT,
 			source_signal TEXT NOT NULL DEFAULT '',
+			source_key TEXT NOT NULL DEFAULT '',
 			excerpt TEXT NOT NULL DEFAULT '',
 			metadata TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP

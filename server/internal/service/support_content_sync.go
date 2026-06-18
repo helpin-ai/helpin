@@ -212,15 +212,19 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 			safeURL := strings.ToValidUTF8(savedPage.URL, "")
 			safeChunk := strings.ToValidUTF8(chunk, "")
 			rows = append(rows, model.SupportContentChunk{
-				WorkspaceID:     source.WorkspaceID,
-				ContentSourceID: source.ID,
-				PageID:          savedPage.ID,
-				ChunkIndex:      chunkIndex,
-				Title:           safeTitle,
-				URL:             safeURL,
-				Content:         safeChunk,
-				ContentHash:     hashChunk(safeTitle, safeChunk),
-				Embedding:       formatVector(resp.Vectors[chunkIndex]),
+				WorkspaceID:         source.WorkspaceID,
+				ContentSourceID:     source.ID,
+				PageID:              savedPage.ID,
+				ChunkIndex:          chunkIndex,
+				Title:               safeTitle,
+				URL:                 safeURL,
+				Content:             safeChunk,
+				ContentHash:         hashChunk(safeTitle, safeChunk),
+				Embedding:           formatVector(resp.Vectors[chunkIndex]),
+				EmbeddingProvider:   "openai",
+				EmbeddingModel:      s.embeddingModel,
+				EmbeddingVersion:    contentChunkEmbeddingVersion,
+				EmbeddingDimensions: docsEmbeddingDimensions,
 			})
 		}
 		if !validEmbeddings {
@@ -413,15 +417,19 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 			safeURL := strings.ToValidUTF8(page.URL, "")
 			safeChunk := strings.ToValidUTF8(chunk, "")
 			rows = append(rows, model.SupportContentChunk{
-				WorkspaceID:     source.WorkspaceID,
-				ContentSourceID: source.ID,
-				PageID:          page.ID,
-				ChunkIndex:      chunkIndex,
-				Title:           safeTitle,
-				URL:             safeURL,
-				Content:         safeChunk,
-				ContentHash:     hashChunk(safeTitle, safeChunk),
-				Embedding:       formatVector(resp.Vectors[chunkIndex]),
+				WorkspaceID:         source.WorkspaceID,
+				ContentSourceID:     source.ID,
+				PageID:              page.ID,
+				ChunkIndex:          chunkIndex,
+				Title:               safeTitle,
+				URL:                 safeURL,
+				Content:             safeChunk,
+				ContentHash:         hashChunk(safeTitle, safeChunk),
+				Embedding:           formatVector(resp.Vectors[chunkIndex]),
+				EmbeddingProvider:   "openai",
+				EmbeddingModel:      s.embeddingModel,
+				EmbeddingVersion:    contentChunkEmbeddingVersion,
+				EmbeddingDimensions: docsEmbeddingDimensions,
 			})
 		}
 		if !validEmbeddings {
