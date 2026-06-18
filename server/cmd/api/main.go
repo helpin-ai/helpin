@@ -245,6 +245,7 @@ func main() {
 			&model.SupportCoverageRecommendation{},
 			&model.SupportCoverageClusterRebuildRun{},
 			&model.SupportCoverageGapMergeSuggestion{},
+			&model.SupportCoverageGapPairDecision{},
 			&model.GitIntegration{},
 			&model.GitCredential{},
 			&model.GitRepository{},

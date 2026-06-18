@@ -309,6 +309,7 @@ type SupportCoverageGapMergeSuggestion struct {
 	RunID                 *string         `json:"run_id" gorm:"type:uuid"`
 	SourceGapID           string          `json:"source_gap_id" gorm:"type:uuid;not null;index"`
 	TargetGapID           string          `json:"target_gap_id" gorm:"type:uuid;not null;index"`
+	PairKey               string          `json:"pair_key" gorm:"not null;default:'';index"`
 	Status                string          `json:"status" gorm:"not null;default:'pending'"`
 	SimilarityScore       float64         `json:"similarity_score" gorm:"not null;default:0"`
 	Reason                string          `json:"reason" gorm:"type:text;not null;default:''"`
@@ -327,19 +328,42 @@ func (SupportCoverageGapMergeSuggestion) TableName() string {
 	return "support_coverage_gap_merge_suggestions"
 }
 
+// SupportCoverageGapPairDecision records durable human decisions about whether
+// two coverage gaps should be kept apart during future clustering.
+type SupportCoverageGapPairDecision struct {
+	ID                   string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID          string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	PairKey              string    `json:"pair_key" gorm:"not null;index"`
+	GapAID               string    `json:"gap_a_id" gorm:"type:uuid;not null;index"`
+	GapBID               string    `json:"gap_b_id" gorm:"type:uuid;not null;index"`
+	Decision             string    `json:"decision" gorm:"not null;default:'keep_separate'"`
+	DecidedBy            *string   `json:"decided_by" gorm:"type:uuid"`
+	DecidedAt            time.Time `json:"decided_at" gorm:"not null"`
+	SimilarityAtDecision float64   `json:"similarity_at_decision" gorm:"not null;default:0"`
+	GapATextHash         string    `json:"gap_a_text_hash" gorm:"not null;default:''"`
+	GapBTextHash         string    `json:"gap_b_text_hash" gorm:"not null;default:''"`
+	CreatedAt            time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt            time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (SupportCoverageGapPairDecision) TableName() string {
+	return "support_coverage_gap_pair_decisions"
+}
+
 // ─── DTOs ──────────────────────────────────────────────────────────────────
 
 // SupportCoverageGapFilter controls gap list queries.
 type SupportCoverageGapFilter struct {
-	Status      string `json:"status"`
-	GapKind     string `json:"gap_kind"`
-	GapCategory string `json:"gap_category"`
-	V1GapType   string `json:"v1_gap_type"`
-	IssueKey    string `json:"issue_key"`
-	Search      string `json:"search"`
-	ShowRaw     bool   `json:"show_raw"`
-	Page        int    `json:"page"`
-	PerPage     int    `json:"per_page"`
+	Status              string `json:"status"`
+	GapKind             string `json:"gap_kind"`
+	GapCategory         string `json:"gap_category"`
+	V1GapType           string `json:"v1_gap_type"`
+	IssueKey            string `json:"issue_key"`
+	Search              string `json:"search"`
+	HasMergeSuggestions bool   `json:"has_merge_suggestions"`
+	ShowRaw             bool   `json:"show_raw"`
+	Page                int    `json:"page"`
+	PerPage             int    `json:"per_page"`
 }
 
 // SupportCoverageGapListItem is a row in the gap inbox table.

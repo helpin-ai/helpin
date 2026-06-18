@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	coverageClusterRebuildLimit        = 1000
-	coverageClusterEmbeddingSuggest    = 0.72
-	coverageClusterEmbeddingAutoMerge  = 0.88
-	coverageClusterCreationDedupeLimit = 200
+	coverageClusterRebuildLimit           = 1000
+	coverageClusterEmbeddingSuggest       = 0.72
+	coverageClusterEmbeddingAutoMerge     = 0.88
+	coverageClusterCreationDedupeLimit    = 200
+	coverageClusterDecisionResurfaceDelta = 0.05
 )
 
 type SupportCoverageClusterRebuildService struct {
@@ -50,9 +51,10 @@ type coverageClusterCandidate struct {
 }
 
 type coverageClusterScoredPair struct {
-	left  int
-	right int
-	score float64
+	left    int
+	right   int
+	score   float64
+	pairKey string
 }
 
 type coverageClusterEmbeddingSummary struct {
@@ -149,20 +151,61 @@ func (s *SupportCoverageClusterRebuildService) RebuildWorkspace(ctx context.Cont
 		return nil, err
 	}
 
-	uf := newCoverageClusterUnionFind(len(candidates))
+	decisions, err := s.coverageRepo.ListKeepSeparatePairDecisions(ctx, workspaceID)
+	if err != nil {
+		metadata := coverageClusterRunMetadata(embeddingSummary)
+		_ = s.coverageRepo.FailClusterRebuildRunWithMetadata(ctx, run.ID, err, metadata)
+		return nil, err
+	}
+	decisionByPair := map[string]model.SupportCoverageGapPairDecision{}
+	for _, decision := range decisions {
+		decisionByPair[decision.PairKey] = decision
+	}
+	cannotLink := map[string]map[string]bool{}
 	pairs := []coverageClusterScoredPair{}
 	for i := 0; i < len(candidates); i++ {
 		for j := i + 1; j < len(candidates); j++ {
 			if !coverageClusterCompatible(candidates[i].Gap, candidates[j].Gap) {
 				continue
 			}
+			pairKey := repository.CoverageGapPairKey(candidates[i].Gap.ID, candidates[j].Gap.ID)
 			score := coverageClusterSimilarity(candidates[i], candidates[j])
+			if decision, ok := decisionByPair[pairKey]; ok && !coverageClusterDecisionIsStale(decision, candidates[i], candidates[j], score) {
+				coverageClusterAddCannotLink(cannotLink, candidates[i].Gap.ID, candidates[j].Gap.ID)
+				continue
+			}
 			if score < coverageClusterSuggestThresholdFor(candidates[i], candidates[j]) {
 				continue
 			}
-			uf.union(i, j)
-			pairs = append(pairs, coverageClusterScoredPair{left: i, right: j, score: score})
+			pairs = append(pairs, coverageClusterScoredPair{left: i, right: j, score: score, pairKey: pairKey})
 		}
+	}
+	sort.SliceStable(pairs, func(i, j int) bool {
+		if pairs[i].score == pairs[j].score {
+			return pairs[i].pairKey < pairs[j].pairKey
+		}
+		return pairs[i].score > pairs[j].score
+	})
+	uf := newCoverageClusterUnionFind(len(candidates))
+	members := make(map[int][]int, len(candidates))
+	for i := range candidates {
+		members[i] = []int{i}
+	}
+	for _, pair := range pairs {
+		leftRoot := uf.find(pair.left)
+		rightRoot := uf.find(pair.right)
+		if leftRoot == rightRoot {
+			continue
+		}
+		if len(members[leftRoot]) < len(members[rightRoot]) {
+			leftRoot, rightRoot = rightRoot, leftRoot
+		}
+		if !coverageClusterCanUnion(members[leftRoot], members[rightRoot], candidates, cannotLink) {
+			continue
+		}
+		uf.parent[rightRoot] = leftRoot
+		members[leftRoot] = append(members[leftRoot], members[rightRoot]...)
+		delete(members, rightRoot)
 	}
 	groups := map[int][]int{}
 	for i := range candidates {
@@ -265,7 +308,7 @@ func (s *SupportCoverageClusterRebuildService) DismissMergeSuggestion(ctx contex
 	if s == nil || s.coverageRepo == nil {
 		return fmt.Errorf("coverage cluster rebuild service is not configured")
 	}
-	return s.coverageRepo.MarkMergeSuggestionReviewed(ctx, workspaceID, suggestionID, model.SupportCoverageMergeSuggestionStatusDismissed, userID)
+	return s.coverageRepo.KeepSeparateMergeSuggestion(ctx, workspaceID, suggestionID, userID)
 }
 
 func (s *SupportCoverageClusterRebuildService) ensureGapEmbeddings(ctx context.Context, candidates []coverageClusterCandidate) (coverageClusterEmbeddingSummary, error) {
@@ -362,6 +405,58 @@ func (s *SupportCoverageClusterRebuildService) ensureGapEmbeddings(ctx context.C
 func coverageClusterCompatible(a, b model.SupportCoverageGapListItem) bool {
 	if a.RelatedArticleID != nil && b.RelatedArticleID != nil && *a.RelatedArticleID != *b.RelatedArticleID {
 		return false
+	}
+	return true
+}
+
+func coverageClusterDecisionIsStale(decision model.SupportCoverageGapPairDecision, a, b coverageClusterCandidate, score float64) bool {
+	currentHashes := map[string]string{
+		a.Gap.ID: a.Gap.EmbeddingTextHash,
+		b.Gap.ID: b.Gap.EmbeddingTextHash,
+	}
+	leftChanged := currentHashes[decision.GapAID] != decision.GapATextHash
+	rightChanged := currentHashes[decision.GapBID] != decision.GapBTextHash
+	if !leftChanged && !rightChanged {
+		return false
+	}
+	if score >= decision.SimilarityAtDecision+coverageClusterDecisionResurfaceDelta {
+		return true
+	}
+	autoThreshold := coverageClusterAutoMergeThresholdFor(a, b)
+	return score >= autoThreshold && decision.SimilarityAtDecision < autoThreshold
+}
+
+func coverageClusterAddCannotLink(cannotLink map[string]map[string]bool, leftID, rightID string) {
+	if cannotLink[leftID] == nil {
+		cannotLink[leftID] = map[string]bool{}
+	}
+	if cannotLink[rightID] == nil {
+		cannotLink[rightID] = map[string]bool{}
+	}
+	cannotLink[leftID][rightID] = true
+	cannotLink[rightID][leftID] = true
+}
+
+func coverageClusterCanUnion(leftMembers, rightMembers []int, candidates []coverageClusterCandidate, cannotLink map[string]map[string]bool) bool {
+	if len(leftMembers) == 0 || len(rightMembers) == 0 || len(cannotLink) == 0 {
+		return true
+	}
+	smaller := leftMembers
+	larger := rightMembers
+	if len(smaller) > len(larger) {
+		smaller, larger = larger, smaller
+	}
+	largerIDs := map[string]bool{}
+	for _, idx := range larger {
+		largerIDs[candidates[idx].Gap.ID] = true
+	}
+	for _, idx := range smaller {
+		leftID := candidates[idx].Gap.ID
+		for blockedID := range cannotLink[leftID] {
+			if largerIDs[blockedID] {
+				return false
+			}
+		}
 	}
 	return true
 }

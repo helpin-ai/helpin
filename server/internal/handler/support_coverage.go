@@ -120,15 +120,16 @@ func (h *SupportCoverageHandler) ListGaps(w http.ResponseWriter, r *http.Request
 
 func supportCoverageGapFilterFromRequest(r *http.Request) model.SupportCoverageGapFilter {
 	return model.SupportCoverageGapFilter{
-		Status:      r.URL.Query().Get("status"),
-		GapKind:     r.URL.Query().Get("gap_kind"),
-		GapCategory: r.URL.Query().Get("gap_category"),
-		V1GapType:   r.URL.Query().Get("v1_gap_type"),
-		IssueKey:    r.URL.Query().Get("issue_key"),
-		Search:      r.URL.Query().Get("search"),
-		ShowRaw:     r.URL.Query().Get("show_raw") == "true",
-		Page:        queryInt(r, "page", 1),
-		PerPage:     queryInt(r, "per_page", 25),
+		Status:              r.URL.Query().Get("status"),
+		GapKind:             r.URL.Query().Get("gap_kind"),
+		GapCategory:         r.URL.Query().Get("gap_category"),
+		V1GapType:           r.URL.Query().Get("v1_gap_type"),
+		IssueKey:            r.URL.Query().Get("issue_key"),
+		Search:              r.URL.Query().Get("search"),
+		HasMergeSuggestions: r.URL.Query().Get("has_merge_suggestions") == "true",
+		ShowRaw:             r.URL.Query().Get("show_raw") == "true",
+		Page:                queryInt(r, "page", 1),
+		PerPage:             queryInt(r, "per_page", 25),
 	}
 }
 
