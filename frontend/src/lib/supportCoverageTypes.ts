@@ -26,6 +26,11 @@ export interface SupportCoverageGapListItem {
   confidence: number
   evidence_count: number
   evidence_30d: number
+  evidence_all?: number
+  distinct_customers_30d?: number
+  distinct_customers_all?: number
+  impact_score?: number
+  impact_explanation?: string
   impact_tier: 'low' | 'medium' | 'high'
   gap_kind: string
   closed_at: string | null
@@ -40,6 +45,14 @@ export interface SupportCoverageGapListItem {
   canonical_title: string
   suggestion_count: number
   related_article_id: string | null
+  nearest_content_score?: number
+  nearest_content_title?: string
+  embedding_provider?: string
+  embedding_model?: string
+  embedding_version?: string
+  embedding_updated_at?: string | null
+  split_review_needed?: boolean
+  recurrence_reopened?: boolean
 }
 
 export interface SupportGapEvidence {
@@ -109,12 +122,26 @@ export interface SupportCoverageGapDetail {
   status: SupportCoverageGapStatus
   confidence: number
   evidence_count: number
+  evidence_30d?: number
+  evidence_all?: number
+  distinct_customers_30d?: number
+  distinct_customers_all?: number
+  impact_score?: number
+  impact_explanation?: string
   gap_kind: string
   closed_at: string | null
   closed_evidence_count: number | null
   result_document_id: string | null
   rejection_reason: string | null
   failure_mode: string
+  nearest_content_score?: number
+  nearest_content_title?: string
+  embedding_provider?: string
+  embedding_model?: string
+  embedding_version?: string
+  embedding_updated_at?: string | null
+  split_review_needed?: boolean
+  recurrence_reopened?: boolean
   first_seen_at: string
   last_seen_at: string
   status_changed_by: string | null
@@ -139,6 +166,7 @@ export interface SupportCoverageClusterRebuildRun {
   suggestions_created: number
   skipped: number
   error_message: string | null
+  metadata?: Record<string, unknown> | null
   started_at: string
   completed_at: string | null
 }
@@ -151,6 +179,10 @@ export interface SupportCoverageClusterRebuildResult {
   auto_merged: number
   suggestions_created: number
   skipped: number
+  embedding_status?: string
+  embedding_error?: string
+  embeddings_created?: number
+  missing_embeddings?: number
   started_at: string
   completed_at?: string | null
 }

@@ -3,6 +3,7 @@ import type { SupportCoverageGapListItem } from '@/lib/supportCoverageTypes'
 import { GAP_KIND_COLORS, V1_GAP_TYPE_LABELS, resolveGapKindDisplay } from '@/lib/supportCoverageTypes'
 import { cn, timeAgo } from '@/lib/utils'
 import { GapImpactBadge } from './GapImpactBadge'
+import { coverageKbSignal, formatCoverageImpact } from './coverageUi'
 
 const ROW_GRID_FULL =
   'grid w-full grid-cols-[minmax(0,1fr)_140px_100px_90px_90px] items-center gap-4 px-4 py-3 text-left'
@@ -60,6 +61,12 @@ export function GapList({
         {gaps.map((gap) => {
           const title = gap.canonical_title || gap.title
           const preview = gap.title !== title ? gap.title : gap.topic_title
+          const impact = formatCoverageImpact(gap)
+          const kbSignal = coverageKbSignal(gap)
+          const flags = [
+            gap.split_review_needed ? 'Review split' : '',
+            gap.recurrence_reopened ? 'Reopened' : '',
+          ].filter(Boolean)
           return (
             <button
               key={gap.id}
@@ -76,6 +83,16 @@ export function GapList({
                 {preview && (
                   <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{preview}</p>
                 )}
+                {!compact && (
+                  <p className="mt-1 line-clamp-1 text-xs text-muted-foreground/80">
+                    {impact}
+                  </p>
+                )}
+                {!compact && flags.length > 0 && (
+                  <p className="mt-1 line-clamp-1 text-[11px] font-medium text-amber-700">
+                    {flags.join(' · ')}
+                  </p>
+                )}
               </div>
 
               {!compact ? (
@@ -91,8 +108,9 @@ export function GapList({
               )}
 
               {!compact && (
-                <div className="flex justify-start">
+                <div className="flex flex-col items-start gap-1">
                   <GapImpactBadge tier={gap.impact_tier} />
+                  <span className="text-[11px] text-muted-foreground">{kbSignal}</span>
                 </div>
               )}
 

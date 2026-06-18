@@ -15,6 +15,13 @@ type DocsChunkRepository struct {
 	db *gorm.DB
 }
 
+const (
+	defaultChunkEmbeddingProvider   = "openai"
+	defaultChunkEmbeddingModel      = "text-embedding-3-small"
+	defaultChunkEmbeddingVersion    = "content-chunk-v1"
+	defaultChunkEmbeddingDimensions = 1536
+)
+
 // DocsChunkSearchResult is a chunk-level retrieval result.
 type DocsChunkSearchResult struct {
 	ID            string  `json:"id"`
@@ -47,7 +54,9 @@ func (r *DocsChunkRepository) ReplaceDocumentChunks(ctx context.Context, documen
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "document_id"}, {Name: "chunk_index"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"block_id", "block_range", "title", "content", "content_hash", "embedding", "updated_at",
+				"block_id", "block_range", "title", "content", "content_hash", "embedding",
+				"embedding_provider", "embedding_model", "embedding_version", "embedding_dimensions",
+				"updated_at",
 			}),
 		}).Create(&chunks).Error; err != nil {
 			return fmt.Errorf("upsert document chunks: %w", err)
@@ -101,11 +110,26 @@ func (r *DocsChunkRepository) HybridSearch(
 	queryEmbedding string,
 	limit int,
 ) ([]DocsChunkSearchResult, error) {
+	return r.HybridSearchWithEmbeddingModel(ctx, workspaceID, spaceIDs, query, queryEmbedding, defaultChunkEmbeddingModel, limit)
+}
+
+func (r *DocsChunkRepository) HybridSearchWithEmbeddingModel(
+	ctx context.Context,
+	workspaceID string,
+	spaceIDs []string,
+	query string,
+	queryEmbedding string,
+	embeddingModel string,
+	limit int,
+) ([]DocsChunkSearchResult, error) {
 	if limit <= 0 {
 		limit = 8
 	}
 	if len(spaceIDs) == 0 || query == "" {
 		return []DocsChunkSearchResult{}, nil
+	}
+	if embeddingModel == "" {
+		embeddingModel = defaultChunkEmbeddingModel
 	}
 
 	lexical, err := r.lexicalSearch(ctx, workspaceID, spaceIDs, query, max(limit*4, 12))
@@ -115,7 +139,7 @@ func (r *DocsChunkRepository) HybridSearch(
 
 	vector := []DocsChunkSearchResult{}
 	if queryEmbedding != "" && r.db.Dialector.Name() == "postgres" {
-		vector, err = r.vectorSearch(ctx, workspaceID, spaceIDs, queryEmbedding, max(limit*4, 12))
+		vector, err = r.vectorSearch(ctx, workspaceID, spaceIDs, queryEmbedding, embeddingModel, max(limit*4, 12))
 		if err != nil {
 			return nil, err
 		}
@@ -189,7 +213,10 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID str
 	return results, nil
 }
 
-func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID string, spaceIDs []string, queryEmbedding string, limit int) ([]DocsChunkSearchResult, error) {
+func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID string, spaceIDs []string, queryEmbedding string, embeddingModel string, limit int) ([]DocsChunkSearchResult, error) {
+	if embeddingModel == "" {
+		embeddingModel = defaultChunkEmbeddingModel
+	}
 	sql := `
 		SELECT c.id, c.workspace_id, c.space_id, c.document_id, c.block_id, c.chunk_index, c.title, c.content,
 		       GREATEST(0, 1 - (c.embedding <=> CAST(? AS vector))) AS vector_score
@@ -201,11 +228,15 @@ func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID stri
 		  AND d.status = 'published'
 		  AND d.deleted_at IS NULL
 		  AND ha.public_published_at IS NOT NULL
+		  AND c.embedding_provider = ?
+		  AND c.embedding_model = ?
+		  AND c.embedding_version = ?
+		  AND c.embedding_dimensions = ?
 		ORDER BY c.embedding <=> CAST(? AS vector) ASC, c.updated_at DESC
 		LIMIT ?
 	`
 	var results []DocsChunkSearchResult
-	if err := r.db.WithContext(ctx).Raw(sql, queryEmbedding, workspaceID, spaceIDs, queryEmbedding, limit).Scan(&results).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(sql, queryEmbedding, workspaceID, spaceIDs, defaultChunkEmbeddingProvider, embeddingModel, defaultChunkEmbeddingVersion, defaultChunkEmbeddingDimensions, queryEmbedding, limit).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("vector chunk search: %w", err)
 	}
 	return results, nil

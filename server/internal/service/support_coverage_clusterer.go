@@ -103,6 +103,16 @@ func (c *SupportCoverageClusterer) UpsertTopicGap(ctx context.Context, event *mo
 	}
 
 	now := c.now()
+	sourceKey := coverageEventEvidenceSourceKey(event.ID)
+	if sourceKey != "" {
+		existing, err := c.coverageRepo.FindGapByEvidenceSourceKey(ctx, event.WorkspaceID, sourceKey)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			return existing, nil
+		}
+	}
 	documentID := coverageDeref(event.DocumentID)
 	clusterKey := computeClusterKey(event.WorkspaceID, event.EventType, documentID, event.IssueKey, event.IssueSummary)
 	title := event.IssueSummary
@@ -150,10 +160,11 @@ func (c *SupportCoverageClusterer) UpsertTopicGap(ctx context.Context, event *mo
 		DocumentID:      event.DocumentID,
 		ArticlePublicID: event.ArticlePublicID,
 		SourceSignal:    event.SourceSignal,
+		SourceKey:       sourceKey,
 		Excerpt:         coverageTruncate(event.IssueSummary, 500),
 		CreatedAt:       now,
 	}
-	if err := c.coverageRepo.CreateEvidence(ctx, evidence); err != nil {
+	if _, err := c.coverageRepo.CreateEvidenceIfAbsent(ctx, evidence); err != nil {
 		return nil, err
 	}
 
