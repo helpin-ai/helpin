@@ -299,23 +299,23 @@ export function GapDetailPane({
       <div className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <h3 className="font-semibold leading-tight">{gap.title}</h3>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h3 className="font-semibold leading-tight">{gap.title}</h3>
+              <Badge variant="secondary" className={`text-xs ${GAP_TYPE_BADGE_CLASS}`}>
+                {V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}
+              </Badge>
+            </div>
             {showTopic && (
               <p className="mt-1 truncate text-xs text-muted-foreground">{topicLabel}</p>
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <Badge variant="secondary" className={`text-xs ${GAP_TYPE_BADGE_CLASS}`}>
-              {V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}
-            </Badge>
-            <button
-              type="button"
-              onClick={onClose}
-              className="-mr-1 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-            >
-              <Cancel01Icon className="h-4 w-4" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="-mr-1 -mt-1 shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          >
+            <Cancel01Icon className="h-4 w-4" />
+          </button>
         </div>
 
         {diagnosis && (
