@@ -96,6 +96,8 @@ export function SupportCoveragePage() {
         toast.error('Failed to rebuild gap clusters')
       } else if (!isClusterRebuildResult(data)) {
         toast.error('Failed to rebuild gap clusters')
+      } else if (data.status === 'failed' || data.embedding_status === 'failed') {
+        toast.error(formatClusterRebuildSuccess(data))
       } else {
         toast.success(formatClusterRebuildSuccess(data))
         const [summaryRes, gapsRes, latestRes] = await Promise.all([

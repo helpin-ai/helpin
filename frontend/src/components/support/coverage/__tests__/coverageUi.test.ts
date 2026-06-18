@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { SupportCoverageGapDetail, SupportGapSuggestion } from '@/lib/supportCoverageTypes'
 import {
   coverageConfidenceLabel,
+  coverageKbSignal,
   coveragePrimaryAddLabel,
   coverageSuggestionPreview,
+  formatCoverageImpact,
 } from '../coverageUi'
 
 describe('coverage UI helpers', () => {
@@ -35,5 +37,14 @@ describe('coverage UI helpers', () => {
     const suggestion = { suggestion_type: 'update_article' } as SupportGapSuggestion
 
     expect(coveragePrimaryAddLabel(gap, suggestion)).toBe('Add to "Billing FAQ"')
+  })
+
+  it('formats impact and KB proximity signals', () => {
+    expect(formatCoverageImpact({
+      impact_score: 18.4,
+      impact_explanation: '12 conversations, 5 customers this month, no nearby content',
+    })).toContain('5 customers')
+    expect(coverageKbSignal({ nearest_content_score: 0, failure_mode: '' })).toBe('No nearby content')
+    expect(coverageKbSignal({ nearest_content_score: 0.7, failure_mode: 'no_retrieval' })).toBe('Retrieval issue likely')
   })
 })

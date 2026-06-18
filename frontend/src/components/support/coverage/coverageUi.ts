@@ -1,4 +1,4 @@
-import type { SupportCoverageGapDetail, SupportGapSuggestion } from '@/lib/supportCoverageTypes'
+import type { SupportCoverageGapDetail, SupportCoverageGapListItem, SupportGapSuggestion } from '@/lib/supportCoverageTypes'
 
 export const EVIDENCE_TYPE_LABELS: Record<string, string> = {
   ai_handoff_triggered: 'AI Handoff',
@@ -51,6 +51,25 @@ export function coverageConfidenceLabel(confidence: number): { text: string; cla
 export function coverageTopicLabel(issueKey: string): string {
   if (!issueKey) return 'Unknown'
   return issueKey.replace(/[_-]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+export function formatCoverageImpact(gap: Partial<SupportCoverageGapListItem | SupportCoverageGapDetail>): string {
+  if (gap.impact_explanation) return gap.impact_explanation
+  const conversations = gap.evidence_all ?? gap.evidence_count ?? 0
+  const customers = gap.distinct_customers_30d ?? gap.distinct_customers_all ?? 0
+  const parts = [`${conversations} conversations`]
+  if (customers > 0) parts.push(`${customers} customers this month`)
+  parts.push(coverageKbSignal(gap))
+  return parts.join(', ')
+}
+
+export function coverageKbSignal(gap: Partial<SupportCoverageGapListItem | SupportCoverageGapDetail>): string {
+  const score = gap.nearest_content_score ?? 0
+  if (score <= 0) return 'No nearby content'
+  if (gap.failure_mode === 'no_retrieval' || gap.failure_mode === 'weak_retrieval') {
+    return 'Retrieval issue likely'
+  }
+  return 'Existing article nearby'
 }
 
 export function coveragePrimaryAddLabel(

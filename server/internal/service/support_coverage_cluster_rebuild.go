@@ -37,6 +37,8 @@ type SupportCoverageClusterRebuildResult struct {
 	Skipped            int        `json:"skipped"`
 	EmbeddingStatus    string     `json:"embedding_status"`
 	EmbeddingError     string     `json:"embedding_error,omitempty"`
+	EmbeddingsCreated  int        `json:"embeddings_created"`
+	MissingEmbeddings  int        `json:"missing_embeddings"`
 	StartedAt          time.Time  `json:"started_at"`
 	CompletedAt        *time.Time `json:"completed_at,omitempty"`
 }
@@ -139,6 +141,8 @@ func (s *SupportCoverageClusterRebuildService) RebuildWorkspace(ctx context.Cont
 	embeddingSummary, err := s.ensureGapEmbeddings(ctx, candidates)
 	result.EmbeddingStatus = embeddingSummary.status
 	result.EmbeddingError = embeddingSummary.errMessage
+	result.EmbeddingsCreated = embeddingSummary.created
+	result.MissingEmbeddings = embeddingSummary.missing
 	if err != nil {
 		metadata := coverageClusterRunMetadata(embeddingSummary)
 		_ = s.coverageRepo.FailClusterRebuildRunWithMetadata(ctx, run.ID, err, metadata)
