@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -281,6 +282,85 @@ func TestCoverageMaterializerFlagsRecurrenceAfterDoneGap(t *testing.T) {
 	}
 	if evidenceCount != 1 {
 		t.Fatalf("evidenceCount=%d, want 1", evidenceCount)
+	}
+}
+
+func TestCoverageMaterializerFlagsPotentialOverAttachment(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}}}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	existing, _, err := coverageRepo.UpsertOpenGapByDedupeKeyNoBump(ctx, &model.SupportCoverageGap{
+		ID:                  "gap-existing",
+		WorkspaceID:         "ws-1",
+		DedupeKey:           "semantic:existing",
+		Title:               "Account access problems",
+		Status:              model.SupportCoverageGapStatusOpen,
+		GapKind:             "content",
+		GapCategory:         model.SupportCoverageGapCategoryKnowledge,
+		Metadata:            json.RawMessage(`{}`),
+		FirstSeenAt:         now.Add(-time.Hour),
+		LastSeenAt:          now.Add(-time.Hour),
+		Embedding:           "[1,0,0]",
+		EmbeddingProvider:   coverageEmbeddingProviderName,
+		EmbeddingModel:      coverageDefaultEmbeddingModel,
+		EmbeddingVersion:    coverageGapEmbeddingVersion,
+		EmbeddingDimensions: 3,
+		EmbeddingTextHash:   "existing-hash",
+		EmbeddingUpdatedAt:  &now,
+	})
+	if err != nil {
+		t.Fatalf("seed existing gap: %v", err)
+	}
+	for i, vector := range []string{"[1,0,0]", "[0.99,0.01,0]", "[0.98,0.02,0]", "[0,1,0]", "[0.01,0.99,0]", "[0.02,0.98,0]"} {
+		gapID := existing.ID
+		analysis := model.SupportCoverageConversationAnalysis{
+			ID:                      fmt.Sprintf("seed-analysis-%d", i),
+			WorkspaceID:             "ws-1",
+			RunID:                   "old-run",
+			ConversationID:          fmt.Sprintf("old-conversation-%d", i),
+			Status:                  model.SupportCoverageConversationAnalysisStatusAnalyzed,
+			HasGap:                  true,
+			GapID:                   &gapID,
+			TranscriptHash:          fmt.Sprintf("old-hash-%d", i),
+			AnalyzerVersion:         coverageAnalyzerVersion,
+			CanonicalTitle:          "Account access problems",
+			CustomerNeed:            "Customers need account access help.",
+			Confidence:              0.9,
+			RawOutput:               json.RawMessage(`{}`),
+			MaterializationMetadata: json.RawMessage(`{}`),
+			Embedding:               vector,
+			EmbeddingProvider:       coverageEmbeddingProviderName,
+			EmbeddingModel:          coverageDefaultEmbeddingModel,
+			EmbeddingVersion:        coverageFindingEmbeddingVersion,
+			EmbeddingDimensions:     3,
+			EmbeddingTextHash:       fmt.Sprintf("hash-%d", i),
+			EmbeddingUpdatedAt:      &now,
+		}
+		if err := analysisRepo.RecordConversationAnalysis(ctx, &analysis); err != nil {
+			t.Fatalf("seed analysis %d: %v", i, err)
+		}
+	}
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-new", "run-1", "conversation-new", "Customers need account access help.", "Account access problems", now)
+
+	if _, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1"); err != nil {
+		t.Fatalf("materializeRunFindings: %v", err)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap, "id = ?", existing.ID).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(gap.Metadata, &metadata); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if metadata["split_review_needed"] != true {
+		t.Fatalf("split review not flagged: %+v", metadata)
 	}
 }
 

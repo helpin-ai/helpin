@@ -430,5 +430,66 @@ func (s *SupportCoverageDailyAnalyzer) insertMaterializedEvidence(ctx context.Co
 	if err := s.analysisRepo.SetConversationAnalysisGap(ctx, finding.Analysis.ID, gapID, finding.Analysis.PrimaryRecommendationType); err != nil {
 		return false, err
 	}
+	if inserted {
+		if err := s.flagPotentialOverAttachment(ctx, workspaceID, gapID); err != nil {
+			return false, err
+		}
+	}
 	return inserted, nil
+}
+
+func (s *SupportCoverageDailyAnalyzer) flagPotentialOverAttachment(ctx context.Context, workspaceID, gapID string) error {
+	if s == nil || s.analysisRepo == nil || s.coverageRepo == nil {
+		return nil
+	}
+	analyses, err := s.analysisRepo.ListGapAnalysisEmbeddings(ctx, workspaceID, gapID, 20)
+	if err != nil {
+		return err
+	}
+	if len(analyses) < 6 {
+		return nil
+	}
+	vectors := make([][]float32, 0, len(analyses))
+	for _, analysis := range analyses {
+		if analysis.EmbeddingProvider != coverageEmbeddingProviderName ||
+			analysis.EmbeddingModel != coverageEmbeddingModel(s.embeddingModel) ||
+			analysis.EmbeddingVersion != coverageFindingEmbeddingVersion ||
+			analysis.EmbeddingDimensions <= 0 {
+			continue
+		}
+		vector := coverageParseVectorLiteral(analysis.Embedding)
+		if len(vector) == analysis.EmbeddingDimensions {
+			vectors = append(vectors, vector)
+		}
+	}
+	if len(vectors) < 6 {
+		return nil
+	}
+	seedA := vectors[0]
+	seedB := vectors[0]
+	lowest := 1.0
+	for _, vector := range vectors[1:] {
+		score := coverageCosineSimilarity(seedA, vector)
+		if score < lowest {
+			lowest = score
+			seedB = vector
+		}
+	}
+	if lowest >= 0.55 {
+		return nil
+	}
+	nearA := 0
+	nearB := 0
+	for _, vector := range vectors {
+		if coverageCosineSimilarity(seedA, vector) >= 0.92 {
+			nearA++
+		}
+		if coverageCosineSimilarity(seedB, vector) >= 0.92 {
+			nearB++
+		}
+	}
+	if nearA >= 3 && nearB >= 3 {
+		return s.coverageRepo.MarkGapSplitReviewNeeded(ctx, workspaceID, gapID, "Evidence appears to contain two separate semantic clusters")
+	}
+	return nil
 }

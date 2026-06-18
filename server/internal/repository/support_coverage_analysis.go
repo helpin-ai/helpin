@@ -228,6 +228,24 @@ func (r *SupportCoverageAnalysisRepository) UpdateAnalysisEmbedding(ctx context.
 	return nil
 }
 
+func (r *SupportCoverageAnalysisRepository) ListGapAnalysisEmbeddings(ctx context.Context, workspaceID, gapID string, limit int) ([]model.SupportCoverageConversationAnalysis, error) {
+	if workspaceID == "" || gapID == "" {
+		return nil, fmt.Errorf("workspace_id and gap_id are required")
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	var analyses []model.SupportCoverageConversationAnalysis
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND gap_id = ? AND embedding <> ''", workspaceID, gapID).
+		Order("created_at DESC, id DESC").
+		Limit(limit).
+		Find(&analyses).Error; err != nil {
+		return nil, fmt.Errorf("list gap analysis embeddings: %w", err)
+	}
+	return analyses, nil
+}
+
 func (r *SupportCoverageAnalysisRepository) AlreadyAnalyzedConversation(ctx context.Context, workspaceID, conversationID, transcriptHash, analyzerVersion string) (bool, error) {
 	if workspaceID == "" || conversationID == "" || transcriptHash == "" {
 		return false, fmt.Errorf("workspace_id, conversation_id, and transcript_hash are required")

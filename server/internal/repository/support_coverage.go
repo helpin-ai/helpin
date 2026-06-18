@@ -609,6 +609,32 @@ func (r *SupportCoverageRepository) MarkGapRecurrenceWatch(ctx context.Context, 
 	return nil
 }
 
+func (r *SupportCoverageRepository) MarkGapSplitReviewNeeded(ctx context.Context, workspaceID, gapID, reason string) error {
+	if workspaceID == "" || gapID == "" {
+		return fmt.Errorf("workspace_id and gap_id are required")
+	}
+	var gap model.SupportCoverageGap
+	if err := r.db.WithContext(ctx).Where("id = ? AND workspace_id = ?", gapID, workspaceID).First(&gap).Error; err != nil {
+		return fmt.Errorf("load gap split metadata: %w", err)
+	}
+	metadata := map[string]any{}
+	if len(gap.Metadata) > 0 {
+		_ = json.Unmarshal(gap.Metadata, &metadata)
+	}
+	metadata["split_review_needed"] = true
+	metadata["split_review_reason"] = reason
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageGap{}).
+		Where("id = ? AND workspace_id = ?", gapID, workspaceID).
+		Updates(map[string]interface{}{
+			"metadata":   mustMarshalRawMessage(metadata),
+			"updated_at": time.Now(),
+		}).Error; err != nil {
+		return fmt.Errorf("mark gap split review needed: %w", err)
+	}
+	return nil
+}
+
 func (r *SupportCoverageRepository) CountEvidenceSince(ctx context.Context, gapID string, since time.Time) (int64, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).
