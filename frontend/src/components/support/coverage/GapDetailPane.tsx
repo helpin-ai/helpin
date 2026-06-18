@@ -30,9 +30,11 @@ import { storeCoverageHandoffContent } from './coverageHandoff'
 import { buildCoverageCollectionOptions } from './coverageCollectionOptions'
 import {
   EVIDENCE_TYPE_LABELS,
+  coverageKbSignal,
   coverageConfidenceLabel,
   coverageSuggestionPreview,
   coverageTopicLabel,
+  formatCoverageImpact,
 } from './coverageUi'
 
 const GAP_TYPE_BADGE_CLASS = 'bg-muted/60 text-muted-foreground border border-border/40'
@@ -245,6 +247,11 @@ export function GapDetailPane({
   const explanation = gap.analysis_explanation
   const recommendations = gap.recommendations ?? []
   const docsAgentAction = documentationAgentAction(gap)
+  const impact = formatCoverageImpact(gap)
+  const kbSignal = coverageKbSignal(gap)
+  const embeddingStatus = gap.embedding_updated_at
+    ? `Semantic identity updated ${timeAgo(gap.embedding_updated_at)}`
+    : 'Semantic identity pending'
   const canQuickDraft =
     canGenerate &&
     !draftSuggestion &&
@@ -310,6 +317,15 @@ export function GapDetailPane({
             </dd>
           </div>
         </dl>
+
+        <div className="mt-3 space-y-1.5 rounded-md bg-muted/25 p-3 text-xs">
+          <p className="font-medium text-foreground">Ranked by impact</p>
+          <p className="leading-relaxed text-muted-foreground">{impact}</p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+            <span>{kbSignal}</span>
+            <span>{embeddingStatus}</span>
+          </div>
+        </div>
 
         {gap.status !== 'open' && gap.status_changed_at && (
           <p className="mt-3 text-xs text-muted-foreground">
