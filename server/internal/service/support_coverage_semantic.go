@@ -92,31 +92,62 @@ func coverageNoSearchResultObject(title string) (string, bool) {
 func coverageSearchObjectsCompatible(a, b string) bool {
 	aTokens := coverageSearchObjectTokens(a)
 	bTokens := coverageSearchObjectTokens(b)
-	if len(aTokens) == 0 || len(bTokens) == 0 {
+	if len(aTokens.all) == 0 || len(bTokens.all) == 0 {
 		return false
 	}
-	for token := range aTokens {
-		if bTokens[token] {
+	for token := range aTokens.strong {
+		if bTokens.strong[token] {
+			return true
+		}
+	}
+	if len(aTokens.strong) > 0 || len(bTokens.strong) > 0 {
+		return false
+	}
+	for token := range aTokens.all {
+		if bTokens.all[token] {
 			return true
 		}
 	}
 	return false
 }
 
-func coverageSearchObjectTokens(value string) map[string]bool {
-	tokens := map[string]bool{}
+type coverageSearchObjectTokenSet struct {
+	all    map[string]bool
+	strong map[string]bool
+}
+
+func coverageSearchObjectTokens(value string) coverageSearchObjectTokenSet {
+	tokens := coverageSearchObjectTokenSet{
+		all:    map[string]bool{},
+		strong: map[string]bool{},
+	}
 	for _, token := range strings.Fields(normalizeForCluster(value)) {
 		if utf8.RuneCountInString(token) < 3 || coverageSearchObjectStopword(token) {
 			continue
 		}
-		tokens[token] = true
+		tokens.all[token] = true
+		if !coverageWeakSearchObjectToken(token) {
+			tokens.strong[token] = true
+		}
 	}
 	return tokens
 }
 
 func coverageSearchObjectStopword(token string) bool {
+	// Search-object stopwords are intentionally narrower than global cluster
+	// stopwords: they only filter no-search query objects, not all coverage
+	// gap normalization.
 	switch token {
 	case "the", "and", "for", "with", "how", "what", "why", "can", "use", "using", "into":
+		return true
+	default:
+		return false
+	}
+}
+
+func coverageWeakSearchObjectToken(token string) bool {
+	switch token {
+	case "page", "article", "doc", "docs", "help":
 		return true
 	default:
 		return false
