@@ -59,6 +59,70 @@ func coverageJoinEmbeddingParts(parts ...string) string {
 	return strings.Join(values, "\n")
 }
 
+func IsMeaningfulCoverageSearchQuery(query string) bool {
+	query = normalizeForCluster(query)
+	if utf8.RuneCountInString(query) < 3 {
+		return false
+	}
+	tokens := strings.Fields(query)
+	if len(tokens) == 0 {
+		return false
+	}
+	for _, token := range tokens {
+		if utf8.RuneCountInString(token) >= 3 && !coverageSearchObjectStopword(token) {
+			return true
+		}
+	}
+	return false
+}
+
+func coverageNoSearchResultObject(title string) (string, bool) {
+	const prefix = "no search results:"
+	normalized := strings.ToLower(strings.Join(strings.Fields(title), " "))
+	if !strings.HasPrefix(normalized, prefix) {
+		return "", false
+	}
+	object := strings.TrimSpace(strings.TrimPrefix(normalized, prefix))
+	if !IsMeaningfulCoverageSearchQuery(object) {
+		return "", true
+	}
+	return object, true
+}
+
+func coverageSearchObjectsCompatible(a, b string) bool {
+	aTokens := coverageSearchObjectTokens(a)
+	bTokens := coverageSearchObjectTokens(b)
+	if len(aTokens) == 0 || len(bTokens) == 0 {
+		return false
+	}
+	for token := range aTokens {
+		if bTokens[token] {
+			return true
+		}
+	}
+	return false
+}
+
+func coverageSearchObjectTokens(value string) map[string]bool {
+	tokens := map[string]bool{}
+	for _, token := range strings.Fields(normalizeForCluster(value)) {
+		if utf8.RuneCountInString(token) < 3 || coverageSearchObjectStopword(token) {
+			continue
+		}
+		tokens[token] = true
+	}
+	return tokens
+}
+
+func coverageSearchObjectStopword(token string) bool {
+	switch token {
+	case "the", "and", "for", "with", "how", "what", "why", "can", "use", "using", "into":
+		return true
+	default:
+		return false
+	}
+}
+
 func coverageEmbeddingTextHash(text string) string {
 	normalized := coverageNormalizeEmbeddingText(text)
 	if normalized == "" {

@@ -96,6 +96,57 @@ func TestSupportCoverageClusterRebuildSuggestsVerySimilarEmbeddedGaps(t *testing
 	}
 }
 
+func TestSupportCoverageClusterRebuildDoesNotSuggestDifferentNoSearchResultObjects(t *testing.T) {
+	_, _, db := setupCoverageTestEnv(t)
+	repo := repository.NewSupportCoverageRepository(db)
+	svc := NewSupportCoverageClusterRebuildService(repo, &fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}, {0.8, 0.6, 0}}}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	seedCoverageGapForRebuild(t, db, model.SupportCoverageGap{
+		ID:            "gap-analytics-search",
+		WorkspaceID:   "ws-1",
+		DedupeKey:     "analytics-search",
+		GapKind:       "content",
+		GapCategory:   model.SupportCoverageGapCategoryUnknown,
+		Title:         "No search results: analytics",
+		Status:        model.SupportCoverageGapStatusOpen,
+		Confidence:    0.3,
+		EvidenceCount: 1,
+		FirstSeenAt:   now.Add(-2 * time.Hour),
+		LastSeenAt:    now.Add(-1 * time.Hour),
+	})
+	seedCoverageGapForRebuild(t, db, model.SupportCoverageGap{
+		ID:            "gap-invoices-search",
+		WorkspaceID:   "ws-1",
+		DedupeKey:     "invoices-search",
+		GapKind:       "content",
+		GapCategory:   model.SupportCoverageGapCategoryUnknown,
+		Title:         "No search results: invoices",
+		Status:        model.SupportCoverageGapStatusOpen,
+		Confidence:    0.3,
+		EvidenceCount: 1,
+		FirstSeenAt:   now.Add(-90 * time.Minute),
+		LastSeenAt:    now.Add(-30 * time.Minute),
+	})
+
+	result, err := svc.RebuildWorkspace(ctx, "ws-1")
+	if err != nil {
+		t.Fatalf("RebuildWorkspace: %v", err)
+	}
+	if result.SuggestionsCreated != 0 {
+		t.Fatalf("SuggestionsCreated=%d, want 0", result.SuggestionsCreated)
+	}
+
+	suggestions, err := repo.ListMergeSuggestionsForGap(ctx, "ws-1", "gap-analytics-search")
+	if err != nil {
+		t.Fatalf("ListMergeSuggestionsForGap: %v", err)
+	}
+	if len(suggestions) != 0 {
+		t.Fatalf("suggestions=%d, want 0", len(suggestions))
+	}
+}
+
 func TestSupportCoverageClusterRebuildAutoMergesSemanticClusterWithoutRelatedArticle(t *testing.T) {
 	_, _, db := setupCoverageTestEnv(t)
 	repo := repository.NewSupportCoverageRepository(db)
