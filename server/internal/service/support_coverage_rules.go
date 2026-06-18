@@ -152,10 +152,14 @@ func classifyWidgetSearch(event *model.SupportEvent) *gapRule {
 			Confidence:  0.6,
 		}
 	}
+	query := strings.Join(strings.Fields(event.IssueSummary), " ")
+	if !IsMeaningfulCoverageSearchQuery(query) {
+		return nil
+	}
 	return &gapRule{
 		GapCategory: model.SupportCoverageGapCategoryUnknown,
 		V1GapType:   model.SupportCoverageV1GapNeedsReview,
-		Title:       "No search results: " + coverageTruncate(event.IssueSummary, 80),
+		Title:       "No search results: " + coverageTruncate(query, 80),
 		Confidence:  0.3,
 	}
 }

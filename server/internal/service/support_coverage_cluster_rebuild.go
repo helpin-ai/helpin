@@ -406,6 +406,11 @@ func coverageClusterCompatible(a, b model.SupportCoverageGapListItem) bool {
 	if a.RelatedArticleID != nil && b.RelatedArticleID != nil && *a.RelatedArticleID != *b.RelatedArticleID {
 		return false
 	}
+	aObject, aIsNoSearch := coverageNoSearchResultObject(a.Title)
+	bObject, bIsNoSearch := coverageNoSearchResultObject(b.Title)
+	if aIsNoSearch || bIsNoSearch {
+		return aIsNoSearch && bIsNoSearch && coverageSearchObjectsCompatible(aObject, bObject)
+	}
 	return true
 }
 

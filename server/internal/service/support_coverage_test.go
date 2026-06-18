@@ -391,6 +391,29 @@ func TestSupportCoverage_WidgetSearch_NoResults_NoIssueKey_NeedsReview(t *testin
 	}
 }
 
+func TestSupportCoverage_WidgetSearch_NoResults_IgnoresShortPartialQuery(t *testing.T) {
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	ctx := context.Background()
+
+	err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:  "ws-1",
+		EventType:    model.SupportEventWidgetSearchPerformed,
+		IssueSummary: "in",
+		SourceSignal: "no_results",
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent: %v", err)
+	}
+
+	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+	if total != 0 || len(gaps) != 0 {
+		t.Fatalf("short partial query created gaps: total=%d len=%d", total, len(gaps))
+	}
+}
+
 func TestSupportCoverage_DocsIssueFeedback_CreatesNeedsReview(t *testing.T) {
 	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
 	ctx := context.Background()
