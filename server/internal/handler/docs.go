@@ -2054,7 +2054,7 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 	}
 
 	searchSourceSignal := model.SupportCoverageSourceSelfService
-	if len(results) == 0 {
+	if len(results) == 0 && service.IsMeaningfulCoverageSearchQuery(query) {
 		searchSourceSignal = "no_results"
 	}
 	h.recordSupportEvent(service.SupportEventInput{
