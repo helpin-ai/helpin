@@ -484,7 +484,7 @@ export function SupportCoveragePage() {
             side="right"
             showCloseButton={false}
             overlayClassName="bg-black/20"
-            className="w-full overflow-y-auto border-l border-border/50 bg-card p-0 shadow-2xl sm:w-[min(920px,calc(100vw-32px))] sm:max-w-none"
+            className="overflow-y-auto border-l border-border/50 bg-card p-0 shadow-2xl data-[side=right]:w-full data-[side=right]:sm:w-[min(1000px,calc(100vw-24px))] data-[side=right]:sm:max-w-none"
           >
             <SheetTitle className="sr-only">Coverage gap details</SheetTitle>
             <SheetDescription className="sr-only">
