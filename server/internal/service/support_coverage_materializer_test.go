@@ -219,6 +219,71 @@ func TestCoverageMaterializerReclassifiesStrongKBMatchAsRetrievalFailure(t *test
 	}
 }
 
+func TestCoverageMaterializerFlagsRecurrenceAfterDoneGap(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}}}, "")
+	ctx := context.Background()
+	now := time.Now()
+	closedAt := now.Add(-24 * time.Hour)
+
+	seedCoverageGapForRebuild(t, db, model.SupportCoverageGap{
+		ID:                  "gap-done",
+		WorkspaceID:         "ws-1",
+		DedupeKey:           "done",
+		GapKind:             "content",
+		GapCategory:         model.SupportCoverageGapCategoryKnowledge,
+		Title:               "Password reset email troubleshooting",
+		Status:              model.SupportCoverageGapStatusDone,
+		Confidence:          0.9,
+		EvidenceCount:       3,
+		ClosedAt:            &closedAt,
+		Metadata:            json.RawMessage(`{}`),
+		FirstSeenAt:         now.Add(-48 * time.Hour),
+		LastSeenAt:          closedAt,
+		Embedding:           "[1,0,0]",
+		EmbeddingProvider:   coverageEmbeddingProviderName,
+		EmbeddingModel:      coverageDefaultEmbeddingModel,
+		EmbeddingVersion:    coverageGapEmbeddingVersion,
+		EmbeddingDimensions: 3,
+		EmbeddingTextHash:   "done-hash",
+		EmbeddingUpdatedAt:  &closedAt,
+	})
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need password reset emails that arrive.", "Password reset email troubleshooting", now)
+
+	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	if err != nil {
+		t.Fatalf("materializeRunFindings: %v", err)
+	}
+	if result.NewGapsCreated != 0 || result.ExistingGapAttached != 1 {
+		t.Fatalf("result=%+v, want recurrence evidence attached without new gap", result)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap, "id = ?", "gap-done").Error; err != nil {
+		t.Fatalf("load done gap: %v", err)
+	}
+	if gap.Status != model.SupportCoverageGapStatusDone {
+		t.Fatalf("status=%q, want done until recurrence threshold", gap.Status)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(gap.Metadata, &metadata); err != nil {
+		t.Fatalf("unmarshal gap metadata: %v", err)
+	}
+	if metadata["recurrence_watch"] != true || metadata["post_close_evidence_count"] != float64(1) {
+		t.Fatalf("recurrence metadata missing: %+v", metadata)
+	}
+	var evidenceCount int64
+	if err := db.Model(&model.SupportGapEvidence{}).Where("gap_id = ?", "gap-done").Count(&evidenceCount).Error; err != nil {
+		t.Fatalf("count evidence: %v", err)
+	}
+	if evidenceCount != 1 {
+		t.Fatalf("evidenceCount=%d, want 1", evidenceCount)
+	}
+}
+
 func seedMaterializerAnalysis(t *testing.T, repo *repository.SupportCoverageAnalysisRepository, id, runID, conversationID, customerNeed, canonicalTitle string, createdAt time.Time) {
 	t.Helper()
 	raw, _ := json.Marshal(map[string]any{"has_gap": true, "customer_need": customerNeed, "canonical_title": canonicalTitle})

@@ -56,7 +56,27 @@ func (s *SupportCoverageDailyAnalyzer) materializeRunFindings(ctx context.Contex
 			return nil, err
 		}
 		if existing == nil {
-			remaining = append(remaining, finding)
+			closed, err := s.matchRecentClosedMaterializedGap(ctx, workspaceID, finding)
+			if err != nil {
+				return nil, err
+			}
+			if closed == nil {
+				remaining = append(remaining, finding)
+				continue
+			}
+			inserted, err := s.insertMaterializedEvidence(ctx, workspaceID, closed.ID, finding, now)
+			if err != nil {
+				return nil, err
+			}
+			result.ExistingGapAttached++
+			if inserted {
+				result.EvidenceInserted++
+				if err := s.coverageRepo.MarkGapRecurrenceWatch(ctx, workspaceID, closed.ID, now); err != nil {
+					return nil, err
+				}
+			} else {
+				result.AlreadyMaterialized++
+			}
 			continue
 		}
 		if err := s.applyMaterializedGapKnowledgeMatch(ctx, workspaceID, existing.ID, finding, now); err != nil {
@@ -116,6 +136,44 @@ func (s *SupportCoverageDailyAnalyzer) matchExistingMaterializedGap(ctx context.
 	}
 	if len(candidates) == 0 {
 		items, err := s.coverageRepo.ListOpenGapsForClusterRebuild(ctx, workspaceID, 1000)
+		if err != nil {
+			return nil, err
+		}
+		candidates = items
+	}
+	var best *model.SupportCoverageGapListItem
+	bestScore := 0.0
+	for _, candidate := range candidates {
+		if candidate.Embedding == "" ||
+			candidate.EmbeddingProvider != coverageEmbeddingProviderName ||
+			candidate.EmbeddingModel != modelName ||
+			candidate.EmbeddingVersion != coverageGapEmbeddingVersion ||
+			candidate.EmbeddingDimensions != len(finding.Vector) {
+			continue
+		}
+		score := coverageCosineSimilarity(finding.Vector, coverageParseVectorLiteral(candidate.Embedding))
+		if score > bestScore {
+			candidateCopy := candidate
+			best = &candidateCopy
+			bestScore = score
+		}
+	}
+	if best == nil || bestScore < coverageSemanticAttachThreshold {
+		return nil, nil
+	}
+	return best, nil
+}
+
+func (s *SupportCoverageDailyAnalyzer) matchRecentClosedMaterializedGap(ctx context.Context, workspaceID string, finding coverageMaterializedFinding) (*model.SupportCoverageGapListItem, error) {
+	since := time.Now().AddDate(0, 0, -90)
+	vectorLiteral := coverageVectorLiteral(finding.Vector)
+	modelName := coverageEmbeddingModel(s.embeddingModel)
+	candidates, err := s.coverageRepo.FindNearestRecentClosedGapsByEmbedding(ctx, workspaceID, vectorLiteral, coverageEmbeddingProviderName, modelName, coverageGapEmbeddingVersion, len(finding.Vector), since, 10)
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		items, err := s.coverageRepo.ListRecentDoneGapsForRecurrence(ctx, workspaceID, since, 1000)
 		if err != nil {
 			return nil, err
 		}

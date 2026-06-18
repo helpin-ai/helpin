@@ -108,6 +108,30 @@ func (r *SupportCoverageRepository) FindNearestRecentClosedGapsByEmbedding(ctx c
 	return r.findNearestGapsByEmbedding(ctx, workspaceID, embedding, provider, modelName, version, dimensions, model.SupportCoverageGapStatusDone, &since, limit)
 }
 
+func (r *SupportCoverageRepository) ListRecentDoneGapsForRecurrence(ctx context.Context, workspaceID string, since time.Time, limit int) ([]model.SupportCoverageGapListItem, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	var items []model.SupportCoverageGapListItem
+	err := r.db.WithContext(ctx).
+		Table("support_coverage_gaps g").
+		Select(`g.*,
+			COALESCE(t.title, '') AS topic_title,
+			COALESCE(t.canonical_title, t.title, '') AS canonical_title`).
+		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
+		Where("g.workspace_id = ? AND g.status = ? AND g.closed_at >= ?", workspaceID, model.SupportCoverageGapStatusDone, since).
+		Order("g.closed_at DESC, g.last_seen_at DESC").
+		Limit(limit).
+		Find(&items).Error
+	if err != nil {
+		return nil, fmt.Errorf("list recent done gaps for recurrence: %w", err)
+	}
+	return items, nil
+}
+
 func (r *SupportCoverageRepository) findNearestGapsByEmbedding(ctx context.Context, workspaceID, embedding, provider, modelName, version string, dimensions int, status string, closedSince *time.Time, limit int) ([]model.SupportCoverageGapListItem, error) {
 	evidenceCutoff := time.Now().AddDate(0, 0, -30)
 	customerNeedExpr := "COALESCE(latest_evidence.metadata ->> 'customer_need', '')"
@@ -544,6 +568,47 @@ func (r *SupportCoverageRepository) UpdateGapKnowledgeMatch(ctx context.Context,
 	return nil
 }
 
+func (r *SupportCoverageRepository) MarkGapRecurrenceWatch(ctx context.Context, workspaceID, gapID string, occurredAt time.Time) error {
+	if workspaceID == "" || gapID == "" {
+		return fmt.Errorf("workspace_id and gap_id are required")
+	}
+	var gap model.SupportCoverageGap
+	if err := r.db.WithContext(ctx).Where("id = ? AND workspace_id = ?", gapID, workspaceID).First(&gap).Error; err != nil {
+		return fmt.Errorf("load gap recurrence metadata: %w", err)
+	}
+	metadata := map[string]any{}
+	if len(gap.Metadata) > 0 {
+		_ = json.Unmarshal(gap.Metadata, &metadata)
+	}
+	count := 0
+	switch value := metadata["post_close_evidence_count"].(type) {
+	case float64:
+		count = int(value)
+	case int:
+		count = value
+	}
+	count++
+	metadata["recurrence_watch"] = true
+	metadata["post_close_evidence_count"] = count
+	metadata["last_post_close_evidence_at"] = occurredAt.UTC().Format(time.RFC3339)
+	updates := map[string]interface{}{
+		"metadata":     mustMarshalRawMessage(metadata),
+		"last_seen_at": occurredAt,
+		"updated_at":   time.Now(),
+	}
+	if count >= 3 && gap.Status == model.SupportCoverageGapStatusDone {
+		updates["status"] = model.SupportCoverageGapStatusOpen
+		updates["closed_at"] = nil
+		updates["closed_evidence_count"] = nil
+		metadata["recurrence_reopened"] = true
+		updates["metadata"] = mustMarshalRawMessage(metadata)
+	}
+	if err := r.db.WithContext(ctx).Model(&model.SupportCoverageGap{}).Where("id = ? AND workspace_id = ?", gapID, workspaceID).Updates(updates).Error; err != nil {
+		return fmt.Errorf("mark gap recurrence watch: %w", err)
+	}
+	return nil
+}
+
 func (r *SupportCoverageRepository) CountEvidenceSince(ctx context.Context, gapID string, since time.Time) (int64, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).
@@ -694,6 +759,14 @@ func supportCoverageImpactExplanation(item model.SupportCoverageGapListItem) str
 		parts = append(parts, "no nearby content")
 	}
 	return strings.Join(parts, ", ")
+}
+
+func mustMarshalRawMessage(value any) json.RawMessage {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return data
 }
 
 func applyHideRawEventDetectionGaps(q *gorm.DB, tableAlias string) *gorm.DB {
