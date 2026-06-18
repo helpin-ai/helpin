@@ -131,6 +131,45 @@ func TestSupportCoverageClusterer_UpsertTopicGapSecondCallReusesOpenGap(t *testi
 	}
 }
 
+func TestSupportCoverageClusterer_UpsertTopicGapReplayedEventDoesNotDoubleCount(t *testing.T) {
+	db := setupCoverageClustererTestDB(t)
+	c := NewSupportCoverageClusterer(repository.NewSupportCoverageRepository(db))
+	ctx := context.Background()
+	ev := &model.SupportEvent{
+		ID:           "event-1",
+		WorkspaceID:  "ws-1",
+		EventType:    model.SupportEventHumanReplyAfterAI,
+		IssueSummary: "How do I reset my password?",
+	}
+
+	g1, err := c.UpsertTopicGap(ctx, ev)
+	if err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+	g2, err := c.UpsertTopicGap(ctx, ev)
+	if err != nil {
+		t.Fatalf("replayed upsert: %v", err)
+	}
+
+	if g1.ID != g2.ID {
+		t.Fatalf("expected replay to return same gap, got %s vs %s", g1.ID, g2.ID)
+	}
+	var evidenceCount int64
+	if err := db.Model(&model.SupportGapEvidence{}).Where("gap_id = ?", g1.ID).Count(&evidenceCount).Error; err != nil {
+		t.Fatalf("count evidence: %v", err)
+	}
+	if evidenceCount != 1 {
+		t.Fatalf("evidence rows=%d, want 1", evidenceCount)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap, "id = ?", g1.ID).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.EvidenceCount != 1 {
+		t.Fatalf("evidence_count=%d, want 1", gap.EvidenceCount)
+	}
+}
+
 func TestSupportCoverageClusterer_UpsertTopicGapDoneGapDoesNotBlockNewOpen(t *testing.T) {
 	db := setupCoverageClustererTestDB(t)
 	repo := repository.NewSupportCoverageRepository(db)

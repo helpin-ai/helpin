@@ -19,6 +19,7 @@ const (
 	coverageEmbeddingDimensions      = 1536
 	coverageDefaultEmbeddingModel    = "text-embedding-3-small"
 	coverageEvidenceSourceKeyPrefix  = "coverage_analysis:"
+	coverageEventEvidenceKeyPrefix   = "support_event:"
 	coverageSemanticAttachThreshold  = 0.90
 	coverageSemanticSuggestThreshold = 0.78
 	coverageSameRunClusterThreshold  = 0.88
@@ -110,6 +111,14 @@ func coverageEvidenceSourceKey(analysisID string) string {
 		return ""
 	}
 	return coverageEvidenceSourceKeyPrefix + analysisID
+}
+
+func coverageEventEvidenceSourceKey(eventID string) string {
+	eventID = strings.TrimSpace(eventID)
+	if eventID == "" {
+		return ""
+	}
+	return coverageEventEvidenceKeyPrefix + eventID
 }
 
 func coverageEmbeddingModel(configured string) string {

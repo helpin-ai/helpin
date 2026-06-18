@@ -689,6 +689,66 @@ func TestSupportCoverage_HumanReplyAfterAI_AttachesToExistingGap(t *testing.T) {
 	}
 }
 
+func TestSupportCoverage_HumanReplyAfterAI_ReplayedEventDoesNotDoubleCount(t *testing.T) {
+	eventSvc, coverageSvc, db := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	convID := "conv-hr-retry"
+
+	if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventAIHandoffTriggered,
+		ConversationID: &convID,
+		IssueKey:       "login_issue",
+		IssueSummary:   "Cannot log in with SSO",
+		FailureMode:    model.SupportCoverageFailureNoRetrieval,
+		SourceSignal:   model.SupportCoverageSourceAIHandoff,
+	}); err != nil {
+		t.Fatalf("RecordEvent (handoff): %v", err)
+	}
+
+	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
+	if err != nil {
+		t.Fatalf("ListGaps after handoff: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected 1 gap after handoff, got %d", total)
+	}
+	gapID := gaps[0].ID
+	messageID := "msg-human-retry"
+	event := &model.SupportEvent{
+		ID:             "event-human-retry",
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventHumanReplyAfterAI,
+		ConversationID: &convID,
+		MessageID:      &messageID,
+		IssueSummary:   "Agent resolved: SSO cert was expired",
+		SourceSignal:   model.SupportCoverageSourceHumanReply,
+		OccurredAt:     time.Now(),
+	}
+
+	if err := coverageSvc.ProcessSupportEvent(ctx, event); err != nil {
+		t.Fatalf("first ProcessSupportEvent: %v", err)
+	}
+	if err := coverageSvc.ProcessSupportEvent(ctx, event); err != nil {
+		t.Fatalf("replayed ProcessSupportEvent: %v", err)
+	}
+
+	var evidenceCount int64
+	if err := db.Model(&model.SupportGapEvidence{}).Where("gap_id = ?", gapID).Count(&evidenceCount).Error; err != nil {
+		t.Fatalf("count evidence: %v", err)
+	}
+	if evidenceCount != 2 {
+		t.Fatalf("evidence rows=%d, want 2", evidenceCount)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap, "id = ?", gapID).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.EvidenceCount != 2 {
+		t.Fatalf("evidence_count=%d, want 2", gap.EvidenceCount)
+	}
+}
+
 func TestSupportCoverage_HumanReplyAfterAI_NoExistingGap_CreatesNew(t *testing.T) {
 	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
 	ctx := context.Background()

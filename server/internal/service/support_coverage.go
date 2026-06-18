@@ -131,6 +131,16 @@ func (s *SupportCoverageService) ProcessSupportEvent(ctx context.Context, event 
 	isResolvedByHumanSignal := event.EventType == model.SupportEventConversationResolved &&
 		event.SourceSignal == model.SupportCoverageSourceConversationResolvedByHuman
 	if (event.EventType == model.SupportEventHumanReplyAfterAI || isResolvedByHumanSignal) && event.ConversationID != nil {
+		sourceKey := coverageEventEvidenceSourceKey(event.ID)
+		if sourceKey != "" {
+			alreadyLinked, err := s.coverageRepo.FindGapByEvidenceSourceKey(ctx, event.WorkspaceID, sourceKey)
+			if err != nil {
+				s.logger.WarnContext(ctx, "find gap by event evidence source key failed", "error", err, "workspace_id", event.WorkspaceID, "event_id", event.ID)
+			}
+			if alreadyLinked != nil {
+				return nil
+			}
+		}
 		existing, err := s.coverageRepo.FindOpenGapByConversation(ctx, event.WorkspaceID, *event.ConversationID)
 		if err != nil {
 			s.logger.WarnContext(ctx, "find gap by conversation failed", "error", err)
@@ -143,11 +153,19 @@ func (s *SupportCoverageService) ProcessSupportEvent(ctx context.Context, event 
 				ConversationID: event.ConversationID,
 				MessageID:      event.MessageID,
 				SourceSignal:   event.SourceSignal,
+				SourceKey:      sourceKey,
 				Excerpt:        coverageTruncate(event.IssueSummary, 500),
 				CreatedAt:      now,
 			}
-			if err := s.coverageRepo.CreateEvidence(ctx, evidence); err != nil {
+			inserted, err := s.coverageRepo.CreateEvidenceIfAbsent(ctx, evidence)
+			if err != nil {
 				s.logger.WarnContext(ctx, "attach human reply evidence failed", "error", err)
+				return nil
+			}
+			if inserted {
+				if err := s.coverageRepo.IncrementGapEvidenceAfterInsert(ctx, event.WorkspaceID, existing.ID, now); err != nil {
+					s.logger.WarnContext(ctx, "increment human reply evidence count failed", "error", err, "gap_id", existing.ID)
+				}
 			}
 			return nil // Evidence attached to existing gap, no new gap needed.
 		}

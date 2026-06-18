@@ -493,6 +493,28 @@ func (r *SupportCoverageRepository) CreateEvidenceIfAbsent(ctx context.Context, 
 	return result.RowsAffected > 0, nil
 }
 
+func (r *SupportCoverageRepository) FindGapByEvidenceSourceKey(ctx context.Context, workspaceID, sourceKey string) (*model.SupportCoverageGap, error) {
+	if workspaceID == "" || sourceKey == "" {
+		return nil, nil
+	}
+	var gap model.SupportCoverageGap
+	err := r.db.WithContext(ctx).
+		Table("support_coverage_gaps AS g").
+		Select("g.*").
+		Joins("JOIN support_gap_evidence e ON e.gap_id = g.id AND e.workspace_id = g.workspace_id").
+		Where("g.workspace_id = ? AND e.source_key = ?", workspaceID, sourceKey).
+		Order("e.created_at DESC").
+		Limit(1).
+		Scan(&gap).Error
+	if err != nil {
+		return nil, fmt.Errorf("find gap by evidence source key: %w", err)
+	}
+	if gap.ID == "" {
+		return nil, nil
+	}
+	return &gap, nil
+}
+
 func (r *SupportCoverageRepository) IncrementGapEvidenceAfterInsert(ctx context.Context, workspaceID, gapID string, lastSeenAt time.Time) error {
 	if workspaceID == "" || gapID == "" {
 		return fmt.Errorf("workspace_id and gap_id are required")
