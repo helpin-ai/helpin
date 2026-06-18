@@ -741,6 +741,15 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	if filter.Search != "" {
 		q = q.Where("g.title LIKE ?", "%"+filter.Search+"%")
 	}
+	if filter.HasMergeSuggestions {
+		q = q.Where(`EXISTS (
+			SELECT 1
+			FROM support_coverage_gap_merge_suggestions ms
+			WHERE ms.workspace_id = g.workspace_id
+			  AND ms.status = ?
+			  AND (ms.source_gap_id = g.id OR ms.target_gap_id = g.id)
+		)`, model.SupportCoverageMergeSuggestionStatusPending)
+	}
 
 	var total int64
 	countQ := r.db.WithContext(ctx).
@@ -770,6 +779,15 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	}
 	if filter.Search != "" {
 		countQ = countQ.Where("title LIKE ?", "%"+filter.Search+"%")
+	}
+	if filter.HasMergeSuggestions {
+		countQ = countQ.Where(`EXISTS (
+			SELECT 1
+			FROM support_coverage_gap_merge_suggestions ms
+			WHERE ms.workspace_id = support_coverage_gaps.workspace_id
+			  AND ms.status = ?
+			  AND (ms.source_gap_id = support_coverage_gaps.id OR ms.target_gap_id = support_coverage_gaps.id)
+		)`, model.SupportCoverageMergeSuggestionStatusPending)
 	}
 	if err := countQ.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count gaps: %w", err)

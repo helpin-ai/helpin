@@ -10,6 +10,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
 import { GapList } from '@/components/support/coverage/GapList'
 import { useAgents } from '@/hooks/queries/useAgents'
@@ -60,6 +61,8 @@ export function SupportCoveragePage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('open')
   const [kindFilter, setKindFilter] = useState<KindTabValue>('all')
+  const [showMergeSuggestionsOnly, setShowMergeSuggestionsOnly] = useState(false)
+  const [mergeSuggestionCount, setMergeSuggestionCount] = useState(0)
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [targetSpaceId, setTargetSpaceId] = useState('')
@@ -91,9 +94,21 @@ export function SupportCoveragePage() {
       page: String(page),
       per_page: String(GAP_PAGE_SIZE),
       ...(kindFilter !== 'all' && { gap_kind: kindFilter }),
+      ...(showMergeSuggestionsOnly && { has_merge_suggestions: 'true' }),
     }),
-    [statusFilter, kindFilter],
+    [statusFilter, kindFilter, showMergeSuggestionsOnly],
   )
+
+  const refreshMergeSuggestionCount = useCallback(async () => {
+    if (!wsId) return
+    const { data } = await supportCoverageService.listGaps(wsId, {
+      status: 'open',
+      page: '1',
+      per_page: '1',
+      has_merge_suggestions: 'true',
+    })
+    setMergeSuggestionCount(data?.total ?? 0)
+  }, [wsId])
 
   const handleRebuildClusters = useCallback(async () => {
     if (!wsId || rebuildingClusters) return
@@ -108,10 +123,16 @@ export function SupportCoveragePage() {
         toast.error(formatClusterRebuildSuccess(data))
       } else {
         toast.success(formatClusterRebuildSuccess(data))
-        const [summaryRes, gapsRes, latestRes] = await Promise.all([
+        const [summaryRes, gapsRes, latestRes, mergeSuggestionRes] = await Promise.all([
           supportCoverageService.getSummary(wsId),
           supportCoverageService.listGaps(wsId, listFilters(1)),
           supportCoverageService.getLatestClusterRebuild(wsId),
+          supportCoverageService.listGaps(wsId, {
+            status: 'open',
+            page: '1',
+            per_page: '1',
+            has_merge_suggestions: 'true',
+          }),
         ])
         if (summaryRes.data) setSummary(summaryRes.data)
         if (gapsRes.data) {
@@ -120,6 +141,7 @@ export function SupportCoveragePage() {
           setLoadedPage(1)
         }
         if (latestRes.data) setLatestClusterRun(latestRes.data)
+        setMergeSuggestionCount(mergeSuggestionRes.data?.total ?? 0)
       }
     } catch {
       toast.error('Failed to rebuild gap clusters')
@@ -147,10 +169,16 @@ export function SupportCoveragePage() {
       setLoading(true)
       setSelectedGapId(null)
       setSelectedGap(null)
-      const [summaryRes, gapsRes, latestClusterRes] = await Promise.all([
+      const [summaryRes, gapsRes, latestClusterRes, mergeSuggestionRes] = await Promise.all([
         supportCoverageService.getSummary(wsId),
         supportCoverageService.listGaps(wsId, listFilters(1)),
         supportCoverageService.getLatestClusterRebuild(wsId),
+        supportCoverageService.listGaps(wsId, {
+          status: 'open',
+          page: '1',
+          per_page: '1',
+          has_merge_suggestions: 'true',
+        }),
       ])
       if (cancelled) return
       if (summaryRes.data) setSummary(summaryRes.data)
@@ -160,6 +188,7 @@ export function SupportCoveragePage() {
         setTotal(gapsRes.data.total || 0)
         setLoadedPage(1)
       }
+      setMergeSuggestionCount(mergeSuggestionRes.data?.total ?? 0)
       setLoading(false)
     }
 
@@ -179,7 +208,10 @@ export function SupportCoveragePage() {
   }
 
   const refreshList = async () => {
-    const { data } = await supportCoverageService.listGaps(wsId, listFilters(1))
+    const [{ data }] = await Promise.all([
+      supportCoverageService.listGaps(wsId, listFilters(1)),
+      refreshMergeSuggestionCount(),
+    ])
     if (data) {
       setGaps(data.items || [])
       setTotal(data.total || 0)
@@ -262,6 +294,7 @@ export function SupportCoveragePage() {
       return
     }
     setMergeSuggestions((current) => current.filter((suggestion) => suggestion.id !== suggestionId))
+    await refreshList()
   }
 
   const handleSuggestImprovements = async () => {
@@ -357,14 +390,22 @@ export function SupportCoveragePage() {
         </div>
         <div className="flex flex-col items-end gap-1">
           {canRebuildClusters && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={rebuildingClusters}
-              onClick={handleRebuildClusters}
-            >
-              {rebuildingClusters ? 'Rebuilding…' : 'Rebuild gap clusters'}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={rebuildingClusters}
+                  onClick={handleRebuildClusters}
+                >
+                  {rebuildingClusters ? 'Rebuilding…' : 'Rebuild gap clusters'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end" className="max-w-[280px] text-xs leading-relaxed">
+                Rechecks existing open gaps for duplicates, merges only high-confidence matches, and
+                creates merge reviews for uncertain matches. It does not re-run the analyzer.
+              </TooltipContent>
+            </Tooltip>
           )}
           {latestClusterRun?.completed_at && (
             <span className="text-[11px] text-muted-foreground/60">
@@ -434,12 +475,36 @@ export function SupportCoveragePage() {
             ))}
           </TabsList>
         </Tabs>
+        {(mergeSuggestionCount > 0 || showMergeSuggestionsOnly) && (
+          <button
+            type="button"
+            onClick={() => {
+              const next = !showMergeSuggestionsOnly
+              setShowMergeSuggestionsOnly(next)
+              if (next) setStatusFilter('open')
+            }}
+            className={cn(
+              'inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors',
+              showMergeSuggestionsOnly
+                ? 'bg-amber-50 text-amber-800 shadow-sm dark:bg-amber-950/30 dark:text-amber-300'
+                : 'bg-muted/40 text-muted-foreground hover:bg-muted',
+            )}
+          >
+            <span>Merge suggestions</span>
+            <span className="rounded bg-background/70 px-1.5 py-0.5 text-[10px] tabular-nums">
+              {mergeSuggestionCount}
+            </span>
+          </button>
+        )}
         <div className="ml-auto flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
           {STATUS_FILTERS.map((status) => (
             <button
               key={status}
               type="button"
-              onClick={() => setStatusFilter(status)}
+              onClick={() => {
+                setStatusFilter(status)
+                if (status !== 'open') setShowMergeSuggestionsOnly(false)
+              }}
               className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 statusFilter === status
                   ? 'bg-background text-foreground shadow-sm'
@@ -458,6 +523,12 @@ export function SupportCoveragePage() {
             gaps={gaps}
             selectedGapId={selectedGapId ?? undefined}
             onSelect={openDetail}
+            emptyTitle={showMergeSuggestionsOnly ? 'No merge suggestions pending.' : undefined}
+            emptyDescription={
+              showMergeSuggestionsOnly
+                ? 'Rebuild gap clusters to find similar open gaps that need review.'
+                : undefined
+            }
           />
           {gaps.length > 0 && (
             <div className="flex items-center justify-between px-1 pt-3">

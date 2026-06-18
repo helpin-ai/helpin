@@ -541,6 +541,47 @@ func TestSupportCoverageRepository_UpsertMergeSuggestionUsesOrderIndependentPair
 	}
 }
 
+func TestSupportCoverageRepository_ListGapsFiltersPendingMergeSuggestions(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	for _, gap := range []model.SupportCoverageGap{
+		{ID: "gap-a", WorkspaceID: "ws-1", DedupeKey: "a", Title: "Reset docs missing", Status: model.SupportCoverageGapStatusOpen, Metadata: json.RawMessage(`{}`), FirstSeenAt: now, LastSeenAt: now},
+		{ID: "gap-b", WorkspaceID: "ws-1", DedupeKey: "b", Title: "Password docs missing", Status: model.SupportCoverageGapStatusOpen, Metadata: json.RawMessage(`{}`), FirstSeenAt: now, LastSeenAt: now},
+		{ID: "gap-c", WorkspaceID: "ws-1", DedupeKey: "c", Title: "Billing docs missing", Status: model.SupportCoverageGapStatusOpen, Metadata: json.RawMessage(`{}`), FirstSeenAt: now, LastSeenAt: now},
+	} {
+		if err := db.Create(&gap).Error; err != nil {
+			t.Fatalf("seed gap %s: %v", gap.ID, err)
+		}
+	}
+	if _, err := repo.UpsertMergeSuggestion(ctx, &model.SupportCoverageGapMergeSuggestion{
+		WorkspaceID:           "ws-1",
+		SourceGapID:           "gap-a",
+		TargetGapID:           "gap-b",
+		SimilarityScore:       0.8,
+		CombinedEvidenceCount: 2,
+	}); err != nil {
+		t.Fatalf("UpsertMergeSuggestion: %v", err)
+	}
+
+	items, total, err := repo.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{HasMergeSuggestions: true})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("got total=%d len=%d, want 2 gaps with merge suggestions", total, len(items))
+	}
+	got := map[string]bool{}
+	for _, item := range items {
+		got[item.ID] = true
+	}
+	if !got["gap-a"] || !got["gap-b"] || got["gap-c"] {
+		t.Fatalf("filtered gaps = %#v, want only gap-a and gap-b", got)
+	}
+}
+
 func TestSupportCoverageRepository_CreateSuggestion(t *testing.T) {
 	db := setupSupportCoverageTestDB(t)
 	repo := NewSupportCoverageRepository(db)
