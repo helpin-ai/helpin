@@ -81,6 +81,12 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			content TEXT NOT NULL DEFAULT '', is_internal BOOLEAN NOT NULL DEFAULT 0,
 			deleted_at DATETIME, created_at DATETIME, updated_at DATETIME
 		)`,
+		`CREATE TABLE support_conversations (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
+			customer_email TEXT NOT NULL DEFAULT '', crm_contact_id TEXT, anonymous_id TEXT,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
 		`CREATE TABLE support_gap_suggestions (
 			id TEXT PRIMARY KEY, gap_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
 			suggestion_type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
@@ -88,6 +94,16 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			target_space_id TEXT, target_collection_id TEXT, target_document_id TEXT,
 			result_document_id TEXT, result_article_id TEXT, applied_at DATETIME,
 			is_active BOOLEAN NOT NULL DEFAULT 1, superseded_at DATETIME,
+			metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE support_coverage_recommendations (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, gap_id TEXT NOT NULL,
+			analysis_id TEXT, recommendation_type TEXT NOT NULL,
+			target_type TEXT NOT NULL DEFAULT '', target_id TEXT,
+			target_title TEXT NOT NULL DEFAULT '', target_url TEXT NOT NULL DEFAULT '',
+			priority TEXT NOT NULL DEFAULT 'secondary', status TEXT NOT NULL DEFAULT 'open',
+			rationale TEXT NOT NULL DEFAULT '', suggested_change TEXT NOT NULL DEFAULT '',
+			implementation_notes TEXT NOT NULL DEFAULT '', suggestion_id TEXT,
 			metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE support_coverage_gap_articles (

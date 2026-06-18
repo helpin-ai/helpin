@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -563,14 +564,30 @@ func (r *SupportCoverageRepository) CountEvidence30d(ctx context.Context, gapID 
 // never scans support_events.
 func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID string, filter model.SupportCoverageGapFilter) ([]model.SupportCoverageGapListItem, int64, error) {
 	evidenceCutoff := time.Now().AddDate(0, 0, -30)
+	customerIdentityExpr := "COALESCE(NULLIF(sc.crm_contact_id, ''), NULLIF(LOWER(sc.customer_email), ''), NULLIF(sc.anonymous_id, ''), e.conversation_id, e.id)"
+	if r.db.Dialector.Name() == "postgres" {
+		customerIdentityExpr = "COALESCE(sc.crm_contact_id::text, NULLIF(LOWER(sc.customer_email), ''), NULLIF(sc.anonymous_id, ''), e.conversation_id::text, e.id::text)"
+	}
+	evidence30dExpr := "(SELECT COUNT(DISTINCT COALESCE(e.conversation_id, e.id)) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?)"
+	evidenceAllExpr := "(SELECT COUNT(*) FROM support_gap_evidence e WHERE e.gap_id = g.id)"
+	distinctCustomers30dExpr := fmt.Sprintf("(SELECT COUNT(DISTINCT %s) FROM support_gap_evidence e LEFT JOIN support_conversations sc ON sc.id = e.conversation_id WHERE e.gap_id = g.id AND e.created_at > ?)", customerIdentityExpr)
+	distinctCustomersAllExpr := fmt.Sprintf("(SELECT COUNT(DISTINCT %s) FROM support_gap_evidence e LEFT JOIN support_conversations sc ON sc.id = e.conversation_id WHERE e.gap_id = g.id)", customerIdentityExpr)
+	actionableBonusExpr := "CASE WHEN EXISTS(SELECT 1 FROM support_coverage_recommendations r WHERE r.gap_id = g.id AND r.status IN ('open', 'draft')) OR EXISTS(SELECT 1 FROM support_gap_suggestions sg WHERE sg.gap_id = g.id AND sg.is_active = 1) THEN 2 ELSE 0 END"
+	kbBonusExpr := "CASE WHEN g.nearest_content_score <= 0 THEN 2 WHEN g.failure_mode IN ('no_retrieval', 'weak_retrieval') AND g.nearest_content_score > 0 THEN 2 ELSE 0 END"
+	impactExpr := fmt.Sprintf("((%s) * 4 + (%s) * 12 + (%s) + COALESCE(g.confidence, 0) * 2 + %s + %s)", evidence30dExpr, distinctCustomers30dExpr, evidenceAllExpr, kbBonusExpr, actionableBonusExpr)
 	q := r.db.WithContext(ctx).
 		Table("support_coverage_gaps g").
-		Select(`g.*,
+		Select(fmt.Sprintf(`g.*,
 			COALESCE(t.title, '') AS topic_title,
 			COALESCE(t.canonical_title, t.title, '') AS canonical_title,
 			(SELECT COUNT(*) FROM support_gap_suggestions s WHERE s.gap_id = g.id) AS suggestion_count,
 			(SELECT ga.document_id FROM support_coverage_gap_articles ga WHERE ga.gap_id = g.id LIMIT 1) AS related_article_id,
-			(SELECT COUNT(DISTINCT COALESCE(e.conversation_id, e.id)) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d`, evidenceCutoff).
+			%s AS evidence_30d,
+			%s AS distinct_customers_30d,
+			%s AS distinct_customers_all,
+			%s AS evidence_all,
+			%s AS impact_score,
+			%s AS computed_impact_score`, evidence30dExpr, distinctCustomers30dExpr, distinctCustomersAllExpr, evidenceAllExpr, impactExpr, impactExpr), evidenceCutoff, evidenceCutoff, evidenceCutoff, evidenceCutoff, evidenceCutoff, evidenceCutoff).
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
 		Where("g.workspace_id = ?", workspaceID).
 		Where("g.status != ?", model.SupportCoverageGapStatusMerged)
@@ -643,7 +660,8 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 		perPage = 25
 	}
 
-	q = q.Order("evidence_30d DESC, g.last_seen_at DESC").
+	q = q.Order("computed_impact_score DESC").
+		Order("evidence_30d DESC, g.last_seen_at DESC").
 		Offset((page - 1) * perPage).
 		Limit(perPage)
 
@@ -651,7 +669,31 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	if err := q.Find(&items).Error; err != nil {
 		return nil, 0, fmt.Errorf("list gaps: %w", err)
 	}
+	for idx := range items {
+		items[idx].ImpactExplanation = supportCoverageImpactExplanation(items[idx])
+	}
 	return items, total, nil
+}
+
+func supportCoverageImpactExplanation(item model.SupportCoverageGapListItem) string {
+	conversations := item.EvidenceAll
+	if conversations == 0 {
+		conversations = item.EvidenceCount
+	}
+	customers := item.DistinctCustomers30d
+	if customers == 0 {
+		customers = item.DistinctCustomersAll
+	}
+	parts := []string{fmt.Sprintf("%d conversations", conversations)}
+	if customers > 0 {
+		parts = append(parts, fmt.Sprintf("%d customers this month", customers))
+	}
+	if item.NearestContentScore > 0 {
+		parts = append(parts, "existing content nearby")
+	} else {
+		parts = append(parts, "no nearby content")
+	}
+	return strings.Join(parts, ", ")
 }
 
 func applyHideRawEventDetectionGaps(q *gorm.DB, tableAlias string) *gorm.DB {

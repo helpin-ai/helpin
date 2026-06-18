@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -181,6 +182,15 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			sender_type TEXT NOT NULL DEFAULT '',
 			content TEXT NOT NULL DEFAULT '',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE support_conversations (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			customer_email TEXT NOT NULL DEFAULT '',
+			crm_contact_id TEXT,
+			anonymous_id TEXT,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE support_coverage_digest_deliveries (
 			id TEXT PRIMARY KEY,
@@ -519,6 +529,61 @@ func TestSupportCoverageRepository_ListGapsRanksByRecentEvidence(t *testing.T) {
 	}
 	if items[1].ID != "gap-low" || items[1].Evidence30d != 1 {
 		t.Fatalf("second item id=%s evidence_30d=%d, want gap-low/1", items[1].ID, items[1].Evidence30d)
+	}
+}
+
+func TestSupportCoverageRepositoryListGapsRanksByExplainableImpact(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	for _, gap := range []model.SupportCoverageGap{
+		{ID: "gap-noisy", WorkspaceID: "ws-1", DedupeKey: "noisy", Title: "One account repeats the same issue", Status: model.SupportCoverageGapStatusOpen, Confidence: 0.9, Metadata: json.RawMessage(`{}`), FirstSeenAt: now.Add(-2 * time.Hour), LastSeenAt: now.Add(-time.Hour)},
+		{ID: "gap-broad", WorkspaceID: "ws-1", DedupeKey: "broad", Title: "Several customers need missing setup docs", Status: model.SupportCoverageGapStatusOpen, Confidence: 0.9, Metadata: json.RawMessage(`{}`), FirstSeenAt: now.Add(-2 * time.Hour), LastSeenAt: now.Add(-90 * time.Minute)},
+	} {
+		if err := db.Create(&gap).Error; err != nil {
+			t.Fatalf("seed gap %s: %v", gap.ID, err)
+		}
+	}
+	for i := 0; i < 10; i++ {
+		convID := fmt.Sprintf("conv-noisy-%d", i)
+		if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, customer_email) VALUES (?, ?, ?)`, convID, "ws-1", "noisy@example.com").Error; err != nil {
+			t.Fatalf("seed noisy conversation: %v", err)
+		}
+		if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{GapID: "gap-noisy", WorkspaceID: "ws-1", ConversationID: &convID, EvidenceType: model.SupportEventDocsIssueFeedback, CreatedAt: now.Add(time.Duration(i) * time.Minute)}); err != nil {
+			t.Fatalf("seed noisy evidence: %v", err)
+		}
+	}
+	for i := 0; i < 4; i++ {
+		convID := fmt.Sprintf("conv-broad-%d", i)
+		email := fmt.Sprintf("customer-%d@example.com", i)
+		if err := db.Exec(`INSERT INTO support_conversations (id, workspace_id, customer_email) VALUES (?, ?, ?)`, convID, "ws-1", email).Error; err != nil {
+			t.Fatalf("seed broad conversation: %v", err)
+		}
+		if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{GapID: "gap-broad", WorkspaceID: "ws-1", ConversationID: &convID, EvidenceType: model.SupportEventDocsIssueFeedback, CreatedAt: now.Add(time.Duration(i) * time.Minute)}); err != nil {
+			t.Fatalf("seed broad evidence: %v", err)
+		}
+	}
+
+	items, total, err := repo.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("got total=%d len=%d, want 2", total, len(items))
+	}
+	if items[0].ID != "gap-broad" {
+		t.Fatalf("first item id=%s, want gap-broad; scores: %+v", items[0].ID, items)
+	}
+	if items[0].DistinctCustomers30d != 4 || items[0].Evidence30d != 4 || items[0].EvidenceAll != 4 {
+		t.Fatalf("impact components not populated: %+v", items[0])
+	}
+	if items[0].ImpactScore <= items[1].ImpactScore {
+		t.Fatalf("impact scores not ranked: first=%f second=%f", items[0].ImpactScore, items[1].ImpactScore)
+	}
+	if items[0].ImpactExplanation == "" || !strings.Contains(items[0].ImpactExplanation, "4 customers") || !strings.Contains(items[0].ImpactExplanation, "no nearby content") {
+		t.Fatalf("impact explanation missing components: %q", items[0].ImpactExplanation)
 	}
 }
 
