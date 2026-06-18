@@ -63,6 +63,10 @@ export function GapList({
           const preview = gap.title !== title ? gap.title : gap.topic_title
           const impact = formatCoverageImpact(gap)
           const kbSignal = coverageKbSignal(gap)
+          const flags = [
+            gap.split_review_needed ? 'Review split' : '',
+            gap.recurrence_reopened ? 'Reopened' : '',
+          ].filter(Boolean)
           return (
             <button
               key={gap.id}
@@ -82,6 +86,11 @@ export function GapList({
                 {!compact && (
                   <p className="mt-1 line-clamp-1 text-xs text-muted-foreground/80">
                     {impact}
+                  </p>
+                )}
+                {!compact && flags.length > 0 && (
+                  <p className="mt-1 line-clamp-1 text-[11px] font-medium text-amber-700">
+                    {flags.join(' · ')}
                   </p>
                 )}
               </div>

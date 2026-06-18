@@ -84,8 +84,12 @@ func (m *CoverageKnowledgeMatcher) MatchGapKnowledge(ctx context.Context, worksp
 
 func (m *CoverageKnowledgeMatcher) matchKnowledge(ctx context.Context, workspaceID string, spaceIDs []string, contentSourceIDs []string, query string, queryEmbedding string, limit int) ([]CoverageKnowledgeCandidate, error) {
 	candidates := make([]CoverageKnowledgeCandidate, 0, limit)
+	embeddingModel := strings.TrimSpace(m.embeddingModel)
+	if embeddingModel == "" {
+		embeddingModel = defaultDocsEmbeddingModel
+	}
 	if m.docsChunkRepo != nil && len(spaceIDs) > 0 {
-		results, err := m.docsChunkRepo.HybridSearch(ctx, workspaceID, spaceIDs, query, queryEmbedding, limit)
+		results, err := m.docsChunkRepo.HybridSearchWithEmbeddingModel(ctx, workspaceID, spaceIDs, query, queryEmbedding, embeddingModel, limit)
 		if err != nil {
 			return nil, fmt.Errorf("docs hybrid search: %w", err)
 		}
@@ -103,7 +107,7 @@ func (m *CoverageKnowledgeMatcher) matchKnowledge(ctx context.Context, workspace
 	}
 
 	if m.contentChunkRepo != nil && len(contentSourceIDs) > 0 {
-		results, err := m.contentChunkRepo.HybridSearch(ctx, workspaceID, contentSourceIDs, query, queryEmbedding, limit)
+		results, err := m.contentChunkRepo.HybridSearchWithEmbeddingModel(ctx, workspaceID, contentSourceIDs, query, queryEmbedding, embeddingModel, limit)
 		if err != nil {
 			return nil, fmt.Errorf("content hybrid search: %w", err)
 		}

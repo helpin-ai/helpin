@@ -252,6 +252,10 @@ export function GapDetailPane({
   const embeddingStatus = gap.embedding_updated_at
     ? `Semantic identity updated ${timeAgo(gap.embedding_updated_at)}`
     : 'Semantic identity pending'
+  const reviewSignals = [
+    gap.split_review_needed ? 'Review split: evidence may cover separate needs' : '',
+    gap.recurrence_reopened ? 'Reopened after new post-close evidence' : '',
+  ].filter(Boolean)
   const canQuickDraft =
     canGenerate &&
     !draftSuggestion &&
@@ -325,6 +329,9 @@ export function GapDetailPane({
             <span>{kbSignal}</span>
             <span>{embeddingStatus}</span>
           </div>
+          {reviewSignals.length > 0 && (
+            <p className="leading-relaxed font-medium text-amber-700">{reviewSignals.join(' · ')}</p>
+          )}
         </div>
 
         {gap.status !== 'open' && gap.status_changed_at && (

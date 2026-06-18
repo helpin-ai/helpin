@@ -51,6 +51,8 @@ export interface SupportCoverageGapListItem {
   embedding_model?: string
   embedding_version?: string
   embedding_updated_at?: string | null
+  split_review_needed?: boolean
+  recurrence_reopened?: boolean
 }
 
 export interface SupportGapEvidence {
@@ -138,6 +140,8 @@ export interface SupportCoverageGapDetail {
   embedding_model?: string
   embedding_version?: string
   embedding_updated_at?: string | null
+  split_review_needed?: boolean
+  recurrence_reopened?: boolean
   first_seen_at: string
   last_seen_at: string
   status_changed_by: string | null

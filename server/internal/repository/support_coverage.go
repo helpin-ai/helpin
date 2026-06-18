@@ -623,6 +623,7 @@ func (r *SupportCoverageRepository) MarkGapRecurrenceWatch(ctx context.Context, 
 		updates["closed_at"] = nil
 		updates["closed_evidence_count"] = nil
 		metadata["recurrence_reopened"] = true
+		metadata["post_close_evidence_count"] = 0
 		updates["metadata"] = mustMarshalRawMessage(metadata)
 	}
 	if err := r.db.WithContext(ctx).Model(&model.SupportCoverageGap{}).Where("id = ? AND workspace_id = ?", gapID, workspaceID).Updates(updates).Error; err != nil {
@@ -784,6 +785,7 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	}
 	for idx := range items {
 		items[idx].ImpactExplanation = supportCoverageImpactExplanation(items[idx])
+		items[idx].SplitReviewNeeded, items[idx].RecurrenceReopened = supportCoverageGapReviewFlags(items[idx].Metadata)
 	}
 	return items, total, nil
 }
@@ -815,6 +817,17 @@ func mustMarshalRawMessage(value any) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return data
+}
+
+func supportCoverageGapReviewFlags(raw json.RawMessage) (bool, bool) {
+	if len(raw) == 0 {
+		return false, false
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return false, false
+	}
+	return metadata["split_review_needed"] == true, metadata["recurrence_reopened"] == true
 }
 
 func applyHideRawEventDetectionGaps(q *gorm.DB, tableAlias string) *gorm.DB {
@@ -961,6 +974,7 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		}
 	}
 
+	splitReviewNeeded, recurrenceReopened := supportCoverageGapReviewFlags(gap.Metadata)
 	return &model.SupportCoverageGapDetail{
 		SupportCoverageGap:  gap,
 		TopicTitle:          topicTitle,
@@ -970,6 +984,8 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		Evidence:            evidence,
 		Suggestions:         suggestions,
 		RelatedArticles:     relatedArticles,
+		SplitReviewNeeded:   splitReviewNeeded,
+		RecurrenceReopened:  recurrenceReopened,
 	}, nil
 }
 

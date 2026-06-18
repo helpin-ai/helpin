@@ -110,11 +110,26 @@ func (r *DocsChunkRepository) HybridSearch(
 	queryEmbedding string,
 	limit int,
 ) ([]DocsChunkSearchResult, error) {
+	return r.HybridSearchWithEmbeddingModel(ctx, workspaceID, spaceIDs, query, queryEmbedding, defaultChunkEmbeddingModel, limit)
+}
+
+func (r *DocsChunkRepository) HybridSearchWithEmbeddingModel(
+	ctx context.Context,
+	workspaceID string,
+	spaceIDs []string,
+	query string,
+	queryEmbedding string,
+	embeddingModel string,
+	limit int,
+) ([]DocsChunkSearchResult, error) {
 	if limit <= 0 {
 		limit = 8
 	}
 	if len(spaceIDs) == 0 || query == "" {
 		return []DocsChunkSearchResult{}, nil
+	}
+	if embeddingModel == "" {
+		embeddingModel = defaultChunkEmbeddingModel
 	}
 
 	lexical, err := r.lexicalSearch(ctx, workspaceID, spaceIDs, query, max(limit*4, 12))
@@ -124,7 +139,7 @@ func (r *DocsChunkRepository) HybridSearch(
 
 	vector := []DocsChunkSearchResult{}
 	if queryEmbedding != "" && r.db.Dialector.Name() == "postgres" {
-		vector, err = r.vectorSearch(ctx, workspaceID, spaceIDs, queryEmbedding, max(limit*4, 12))
+		vector, err = r.vectorSearch(ctx, workspaceID, spaceIDs, queryEmbedding, embeddingModel, max(limit*4, 12))
 		if err != nil {
 			return nil, err
 		}
@@ -198,7 +213,10 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID str
 	return results, nil
 }
 
-func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID string, spaceIDs []string, queryEmbedding string, limit int) ([]DocsChunkSearchResult, error) {
+func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID string, spaceIDs []string, queryEmbedding string, embeddingModel string, limit int) ([]DocsChunkSearchResult, error) {
+	if embeddingModel == "" {
+		embeddingModel = defaultChunkEmbeddingModel
+	}
 	sql := `
 		SELECT c.id, c.workspace_id, c.space_id, c.document_id, c.block_id, c.chunk_index, c.title, c.content,
 		       GREATEST(0, 1 - (c.embedding <=> CAST(? AS vector))) AS vector_score
@@ -218,7 +236,7 @@ func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID stri
 		LIMIT ?
 	`
 	var results []DocsChunkSearchResult
-	if err := r.db.WithContext(ctx).Raw(sql, queryEmbedding, workspaceID, spaceIDs, defaultChunkEmbeddingProvider, defaultChunkEmbeddingModel, defaultChunkEmbeddingVersion, defaultChunkEmbeddingDimensions, queryEmbedding, limit).Scan(&results).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(sql, queryEmbedding, workspaceID, spaceIDs, defaultChunkEmbeddingProvider, embeddingModel, defaultChunkEmbeddingVersion, defaultChunkEmbeddingDimensions, queryEmbedding, limit).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("vector chunk search: %w", err)
 	}
 	return results, nil

@@ -65,6 +65,7 @@ export function formatCoverageImpact(gap: Partial<SupportCoverageGapListItem | S
 
 export function coverageKbSignal(gap: Partial<SupportCoverageGapListItem | SupportCoverageGapDetail>): string {
   const score = gap.nearest_content_score ?? 0
+  if (gap.failure_mode === 'missing_content') return 'No nearby content'
   if (score <= 0) return 'No nearby content'
   if (gap.failure_mode === 'no_retrieval' || gap.failure_mode === 'weak_retrieval') {
     return 'Retrieval issue likely'

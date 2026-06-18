@@ -50,6 +50,7 @@ func (s *SupportCoverageDailyAnalyzer) materializeRunFindings(ctx context.Contex
 	}
 	now := time.Now()
 	remaining := make([]coverageMaterializedFinding, 0, len(findings))
+	touchedOpenGapIDs := map[string]struct{}{}
 	for _, finding := range findings {
 		existing, err := s.matchExistingMaterializedGap(ctx, workspaceID, finding)
 		if err != nil {
@@ -89,6 +90,7 @@ func (s *SupportCoverageDailyAnalyzer) materializeRunFindings(ctx context.Contex
 		result.ExistingGapAttached++
 		if inserted {
 			result.EvidenceInserted++
+			touchedOpenGapIDs[existing.ID] = struct{}{}
 		} else {
 			result.AlreadyMaterialized++
 		}
@@ -119,9 +121,15 @@ func (s *SupportCoverageDailyAnalyzer) materializeRunFindings(ctx context.Contex
 			}
 			if inserted {
 				result.EvidenceInserted++
+				touchedOpenGapIDs[gap.ID] = struct{}{}
 			} else {
 				result.AlreadyMaterialized++
 			}
+		}
+	}
+	for gapID := range touchedOpenGapIDs {
+		if err := s.flagPotentialOverAttachment(ctx, workspaceID, gapID); err != nil {
+			return nil, err
 		}
 	}
 	return result, nil
@@ -377,9 +385,12 @@ func (s *SupportCoverageDailyAnalyzer) applyMaterializedGapKnowledgeMatch(ctx co
 		return err
 	}
 	if len(candidates) == 0 {
-		return nil
+		return s.coverageRepo.UpdateGapKnowledgeMatch(ctx, workspaceID, gapID, model.SupportCoverageFailureMissingContent, 0, nil, "", now)
 	}
 	best := candidates[0]
+	if best.CombinedScore < coverageKnowledgeMinRelevanceScore {
+		return s.coverageRepo.UpdateGapKnowledgeMatch(ctx, workspaceID, gapID, model.SupportCoverageFailureMissingContent, best.CombinedScore, nil, best.Title, now)
+	}
 	documentID := emptyToNil(best.DocumentID)
 	failureMode := model.SupportCoverageFailureWeakRetrieval
 	if documentID != nil {
@@ -429,11 +440,6 @@ func (s *SupportCoverageDailyAnalyzer) insertMaterializedEvidence(ctx context.Co
 	}
 	if err := s.analysisRepo.SetConversationAnalysisGap(ctx, finding.Analysis.ID, gapID, finding.Analysis.PrimaryRecommendationType); err != nil {
 		return false, err
-	}
-	if inserted {
-		if err := s.flagPotentialOverAttachment(ctx, workspaceID, gapID); err != nil {
-			return false, err
-		}
 	}
 	return inserted, nil
 }

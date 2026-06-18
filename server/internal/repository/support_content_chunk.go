@@ -78,11 +78,18 @@ func (r *SupportContentChunkRepository) DeleteByContentSourceExceptPages(ctx con
 }
 
 func (r *SupportContentChunkRepository) HybridSearch(ctx context.Context, workspaceID string, sourceIDs []string, query string, queryEmbedding string, limit int) ([]SupportContentChunkSearchResult, error) {
+	return r.HybridSearchWithEmbeddingModel(ctx, workspaceID, sourceIDs, query, queryEmbedding, defaultChunkEmbeddingModel, limit)
+}
+
+func (r *SupportContentChunkRepository) HybridSearchWithEmbeddingModel(ctx context.Context, workspaceID string, sourceIDs []string, query string, queryEmbedding string, embeddingModel string, limit int) ([]SupportContentChunkSearchResult, error) {
 	if limit <= 0 {
 		limit = 8
 	}
 	if len(sourceIDs) == 0 || query == "" {
 		return []SupportContentChunkSearchResult{}, nil
+	}
+	if embeddingModel == "" {
+		embeddingModel = defaultChunkEmbeddingModel
 	}
 
 	lexical, err := r.lexicalSearch(ctx, workspaceID, sourceIDs, query, max(limit*4, 12))
@@ -92,7 +99,7 @@ func (r *SupportContentChunkRepository) HybridSearch(ctx context.Context, worksp
 
 	vector := []SupportContentChunkSearchResult{}
 	if queryEmbedding != "" && r.db.Dialector.Name() == "postgres" {
-		vector, err = r.vectorSearch(ctx, workspaceID, sourceIDs, queryEmbedding, max(limit*4, 12))
+		vector, err = r.vectorSearch(ctx, workspaceID, sourceIDs, queryEmbedding, embeddingModel, max(limit*4, 12))
 		if err != nil {
 			return nil, err
 		}
@@ -161,7 +168,10 @@ func (r *SupportContentChunkRepository) lexicalSearch(ctx context.Context, works
 	return results, nil
 }
 
-func (r *SupportContentChunkRepository) vectorSearch(ctx context.Context, workspaceID string, sourceIDs []string, queryEmbedding string, limit int) ([]SupportContentChunkSearchResult, error) {
+func (r *SupportContentChunkRepository) vectorSearch(ctx context.Context, workspaceID string, sourceIDs []string, queryEmbedding string, embeddingModel string, limit int) ([]SupportContentChunkSearchResult, error) {
+	if embeddingModel == "" {
+		embeddingModel = defaultChunkEmbeddingModel
+	}
 	sql := `
 		SELECT c.id, c.workspace_id, c.content_source_id, c.page_id, c.chunk_index, c.title, c.url, c.content,
 		       GREATEST(0, 1 - (c.embedding <=> CAST(? AS vector))) AS vector_score
@@ -176,7 +186,7 @@ func (r *SupportContentChunkRepository) vectorSearch(ctx context.Context, worksp
 		LIMIT ?
 	`
 	var results []SupportContentChunkSearchResult
-	if err := r.db.WithContext(ctx).Raw(sql, queryEmbedding, workspaceID, sourceIDs, defaultChunkEmbeddingProvider, defaultChunkEmbeddingModel, defaultChunkEmbeddingVersion, defaultChunkEmbeddingDimensions, queryEmbedding, limit).Scan(&results).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(sql, queryEmbedding, workspaceID, sourceIDs, defaultChunkEmbeddingProvider, embeddingModel, defaultChunkEmbeddingVersion, defaultChunkEmbeddingDimensions, queryEmbedding, limit).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("vector content chunk search: %w", err)
 	}
 	return results, nil

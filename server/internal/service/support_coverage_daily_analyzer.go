@@ -36,7 +36,10 @@ const (
 	coverageAnalysisBootstrapWindow         = 30 * 24 * time.Hour
 	coverageAnalysisWorkspaceLimit          = 1000
 	coverageAnalysisConversationConcurrency = 4
-	coverageKnowledgeMinRelevanceScore      = 0.1
+	// Coverage knowledge matching uses reciprocal-rank fusion scores, not
+	// cosine scores. A top lexical-only hit is ~0.016 and a top lexical+vector
+	// hit is ~0.033, so keep this floor on that scale.
+	coverageKnowledgeMinRelevanceScore = 0.015
 )
 
 type CoverageConversationMessage struct {
@@ -309,7 +312,7 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 
 	conversations, err := s.conversationRepo.ListCoverageAnalysisCandidates(ctx, workspaceID, cursorStart, cursorEnd, coverageAnalysisWorkspaceLimit)
 	if err != nil {
-		_ = s.analysisRepo.FailRun(ctx, run.ID, err)
+		s.markCoverageAnalysisRunFailed(ctx, run.ID, err)
 		return err
 	}
 	gapCount := 0
@@ -332,18 +335,27 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 		})
 	}
 	if err := group.Wait(); err != nil {
-		_ = s.analysisRepo.FailRun(ctx, run.ID, err)
+		s.markCoverageAnalysisRunFailed(ctx, run.ID, err)
 		return err
 	}
 	materialized, err := s.materializeRunFindings(ctx, workspaceID, run.ID)
 	if err != nil {
-		_ = s.analysisRepo.FailRun(ctx, run.ID, err)
+		s.markCoverageAnalysisRunFailed(ctx, run.ID, err)
 		return err
 	}
-	if materialized != nil {
-		gapCount = materialized.EvidenceInserted
+	if materialized != nil && gapCount == 0 {
+		gapCount = materialized.FindingsScanned
 	}
 	return s.analysisRepo.CompleteRun(ctx, run.ID, len(conversations), gapCount)
+}
+
+func (s *SupportCoverageDailyAnalyzer) markCoverageAnalysisRunFailed(ctx context.Context, runID string, runErr error) {
+	if s == nil || s.analysisRepo == nil {
+		return
+	}
+	if err := s.analysisRepo.FailRun(ctx, runID, runErr); err != nil {
+		slog.WarnContext(ctx, "failed to mark coverage analysis run failed", "error", err, "run_id", runID)
+	}
 }
 
 func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx context.Context, workspaceID, runID string, conversation model.SupportConversation) (bool, error) {

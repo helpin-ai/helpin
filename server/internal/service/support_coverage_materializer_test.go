@@ -220,6 +220,39 @@ func TestCoverageMaterializerReclassifiesStrongKBMatchAsRetrievalFailure(t *test
 	}
 }
 
+func TestCoverageMaterializerMarksMissingContentWhenKBHasNoMatch(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	seedMaterializerDocsSpace(t, db, "space-public", "ws-1")
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}}}, "").
+		SetKnowledgeMatcher(
+			NewCoverageKnowledgeMatcher(repository.NewDocsChunkRepository(db), nil, nil, ""),
+			repository.NewDocsSpaceRepository(db),
+			nil,
+		)
+	ctx := context.Background()
+	now := time.Now()
+
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need tax exemption certificate upload steps.", "Tax exemption certificate uploads", now)
+
+	if _, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1"); err != nil {
+		t.Fatalf("materializeRunFindings: %v", err)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.FailureMode != model.SupportCoverageFailureMissingContent {
+		t.Fatalf("FailureMode=%q, want %q", gap.FailureMode, model.SupportCoverageFailureMissingContent)
+	}
+	if gap.NearestContentScore != 0 || gap.NearestContentDocumentID != nil {
+		t.Fatalf("nearest content should be empty for missing content: score=%f document=%v", gap.NearestContentScore, gap.NearestContentDocumentID)
+	}
+}
+
 func TestCoverageMaterializerFlagsRecurrenceAfterDoneGap(t *testing.T) {
 	db := setupCoverageFindingUpsertTestDB(t)
 	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)

@@ -31,6 +31,7 @@ const (
 // ─── Failure modes ─────────────────────────────────────────────────────────
 
 const (
+	SupportCoverageFailureMissingContent         = "missing_content"
 	SupportCoverageFailureNoRetrieval            = "no_retrieval"
 	SupportCoverageFailureWeakRetrieval          = "weak_retrieval"
 	SupportCoverageFailureLowConfidence          = "low_confidence"
@@ -356,6 +357,8 @@ type SupportCoverageGapListItem struct {
 	DistinctCustomersAll int     `json:"distinct_customers_all" gorm:"column:distinct_customers_all"`
 	EvidenceAll          int     `json:"evidence_all" gorm:"column:evidence_all"`
 	ImpactExplanation    string  `json:"impact_explanation" gorm:"-"`
+	SplitReviewNeeded    bool    `json:"split_review_needed" gorm:"-"`
+	RecurrenceReopened   bool    `json:"recurrence_reopened" gorm:"-"`
 }
 
 // SupportCoverageGapDetail is the full gap detail with evidence
@@ -369,6 +372,8 @@ type SupportCoverageGapDetail struct {
 	Evidence            []SupportGapEvidenceView            `json:"evidence"`
 	Suggestions         []SupportGapSuggestion              `json:"suggestions"`
 	RelatedArticles     []SupportCoverageGapArticle         `json:"related_articles"`
+	SplitReviewNeeded   bool                                `json:"split_review_needed"`
+	RecurrenceReopened  bool                                `json:"recurrence_reopened"`
 }
 
 type SupportCoverageAnalysisExplanation struct {
