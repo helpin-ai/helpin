@@ -2,6 +2,13 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
 import { GapList } from '@/components/support/coverage/GapList'
@@ -48,6 +55,7 @@ export function SupportCoveragePage() {
   const [loadedPage, setLoadedPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [selectedGapId, setSelectedGapId] = useState<string | null>(null)
   const [selectedGap, setSelectedGap] = useState<SupportCoverageGapDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('open')
@@ -137,6 +145,7 @@ export function SupportCoveragePage() {
 
     async function loadCoverage() {
       setLoading(true)
+      setSelectedGapId(null)
       setSelectedGap(null)
       const [summaryRes, gapsRes, latestClusterRes] = await Promise.all([
         supportCoverageService.getSummary(wsId),
@@ -196,6 +205,8 @@ export function SupportCoveragePage() {
   }
 
   const openDetail = async (gapId: string) => {
+    setSelectedGapId(gapId)
+    setSelectedGap(null)
     setDetailLoading(true)
     setGenerateError(null)
     setConfirmSuggestionId(null)
@@ -211,10 +222,19 @@ export function SupportCoveragePage() {
     setDetailLoading(false)
   }
 
+  const closeDetail = () => {
+    setSelectedGapId(null)
+    setSelectedGap(null)
+    setDetailLoading(false)
+    setGenerateError(null)
+    setConfirmSuggestionId(null)
+    setMergeSuggestions([])
+    setMergeActionSuggestionId(null)
+  }
+
   const handleStatusUpdate = async (gapId: string, status: string) => {
     await supportCoverageService.updateGapStatus(wsId, gapId, status)
-    setSelectedGap(null)
-    setMergeSuggestions([])
+    closeDetail()
     await refreshList()
   }
 
@@ -432,13 +452,12 @@ export function SupportCoveragePage() {
         </div>
       </div>
 
-      <div className="flex gap-4">
-        <div className={`${selectedGap ? 'w-1/2' : 'w-full'} space-y-1`}>
+      <div className="space-y-1">
+        <div>
           <GapList
             gaps={gaps}
-            selectedGapId={selectedGap?.id}
+            selectedGapId={selectedGapId ?? undefined}
             onSelect={openDetail}
-            compact={!!selectedGap}
           />
           {gaps.length > 0 && (
             <div className="flex items-center justify-between px-1 pt-3">
@@ -460,42 +479,67 @@ export function SupportCoveragePage() {
           )}
         </div>
 
-        {selectedGap && (
-          <div className="w-1/2 overflow-hidden rounded-lg border border-border/60 bg-card">
-            <GapDetailPane
-              gap={selectedGap}
-              wsSlug={wsSlug}
-              loading={detailLoading}
-              canGenerate={canGenerate}
-              canRunDocumentationAgent={canGenerate && Boolean(documentationAgent)}
-              startingDocumentationAgent={startingDocsAgentGapId === selectedGap.id}
-              externalSpaces={externalSpaces}
-              collections={collections}
-              targetSpaceId={targetSpaceId}
-              targetCollectionId={targetCollectionId}
-              generating={generating}
-              generateError={generateError}
-              applying={applying}
-              confirmSuggestionId={confirmSuggestionId}
-              mergeSuggestions={mergeSuggestions}
-              canReviewMergeSuggestions={canReviewMergeSuggestions}
-              mergeActionSuggestionId={mergeActionSuggestionId}
-              onClose={() => setSelectedGap(null)}
-              onTargetSpaceChange={setTargetSpaceId}
-              onTargetCollectionChange={setTargetCollectionId}
-              onSuggestImprovements={handleSuggestImprovements}
-              onDraftNewArticle={handleDraftNewArticle}
-              onRunDocumentationAgent={handleRunDocumentationAgent}
-              onApplySuggestion={handleApplySuggestion}
-              onDiscardSuggestion={handleDiscardSuggestion}
-              onSetConfirmSuggestion={setConfirmSuggestionId}
-              onApplyMergeSuggestion={handleApplyMergeSuggestion}
-              onDismissMergeSuggestion={handleDismissMergeSuggestion}
-              onStatusUpdate={handleStatusUpdate}
-              onRegenerate={handleRegenerate}
-            />
-          </div>
-        )}
+        <Sheet open={Boolean(selectedGapId)} onOpenChange={(open) => !open && closeDetail()}>
+          <SheetContent
+            side="right"
+            showCloseButton={false}
+            overlayClassName="bg-black/20"
+            className="w-full overflow-y-auto border-l border-border/50 bg-card p-0 shadow-2xl sm:w-[min(920px,calc(100vw-32px))] sm:max-w-none"
+          >
+            <SheetTitle className="sr-only">Coverage gap details</SheetTitle>
+            <SheetDescription className="sr-only">
+              Review evidence, recommendations, merge suggestions, and actions for the selected coverage gap.
+            </SheetDescription>
+            {selectedGap ? (
+              <GapDetailPane
+                gap={selectedGap}
+                wsSlug={wsSlug}
+                loading={detailLoading}
+                canGenerate={canGenerate}
+                canRunDocumentationAgent={canGenerate && Boolean(documentationAgent)}
+                startingDocumentationAgent={startingDocsAgentGapId === selectedGap.id}
+                externalSpaces={externalSpaces}
+                collections={collections}
+                targetSpaceId={targetSpaceId}
+                targetCollectionId={targetCollectionId}
+                generating={generating}
+                generateError={generateError}
+                applying={applying}
+                confirmSuggestionId={confirmSuggestionId}
+                mergeSuggestions={mergeSuggestions}
+                canReviewMergeSuggestions={canReviewMergeSuggestions}
+                mergeActionSuggestionId={mergeActionSuggestionId}
+                onClose={closeDetail}
+                onTargetSpaceChange={setTargetSpaceId}
+                onTargetCollectionChange={setTargetCollectionId}
+                onSuggestImprovements={handleSuggestImprovements}
+                onDraftNewArticle={handleDraftNewArticle}
+                onRunDocumentationAgent={handleRunDocumentationAgent}
+                onApplySuggestion={handleApplySuggestion}
+                onDiscardSuggestion={handleDiscardSuggestion}
+                onSetConfirmSuggestion={setConfirmSuggestionId}
+                onApplyMergeSuggestion={handleApplyMergeSuggestion}
+                onDismissMergeSuggestion={handleDismissMergeSuggestion}
+                onStatusUpdate={handleStatusUpdate}
+                onRegenerate={handleRegenerate}
+              />
+            ) : (
+              <div className="relative flex min-h-svh items-center justify-center">
+                <SheetClose asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="absolute right-4 top-4 text-muted-foreground"
+                  >
+                    x<span className="sr-only">Close</span>
+                  </Button>
+                </SheetClose>
+                <Loading01Icon className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+          </SheetContent>
+        </Sheet>
       </div>
     </div>
   )
