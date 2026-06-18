@@ -9,7 +9,13 @@ import {
   SheetDescription,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
 import { GapList } from '@/components/support/coverage/GapList'
@@ -37,13 +43,13 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 
 const STATUS_FILTERS = ['open', 'done', 'rejected'] as const
 const GAP_PAGE_SIZE = 50
-const KIND_TABS = [
-  { value: 'all', label: 'All', dot: 'bg-muted-foreground/50', active: 'data-active:bg-muted/70' },
-  { value: 'content', label: 'Content', dot: GAP_KIND_COLORS.content.dot, active: 'data-active:bg-blue-50 data-active:text-blue-800 dark:data-active:bg-blue-950/30 dark:data-active:text-blue-300' },
-  { value: 'data', label: 'Data', dot: GAP_KIND_COLORS.data.dot, active: 'data-active:bg-amber-50 data-active:text-amber-800 dark:data-active:bg-amber-950/30 dark:data-active:text-amber-300' },
-  { value: 'action', label: 'Action', dot: GAP_KIND_COLORS.action.dot, active: 'data-active:bg-purple-50 data-active:text-purple-800 dark:data-active:bg-purple-950/30 dark:data-active:text-purple-300' },
+const KIND_OPTIONS = [
+  { value: 'all', label: 'All gaps', dot: 'bg-muted-foreground/50' },
+  { value: 'content', label: 'Content gaps', dot: GAP_KIND_COLORS.content.dot },
+  { value: 'data', label: 'Data gaps', dot: GAP_KIND_COLORS.data.dot },
+  { value: 'action', label: 'Action gaps', dot: GAP_KIND_COLORS.action.dot },
 ] as const
-type KindTabValue = (typeof KIND_TABS)[number]['value']
+type KindFilterValue = (typeof KIND_OPTIONS)[number]['value']
 
 export function SupportCoveragePage() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
@@ -60,7 +66,7 @@ export function SupportCoveragePage() {
   const [selectedGap, setSelectedGap] = useState<SupportCoverageGapDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('open')
-  const [kindFilter, setKindFilter] = useState<KindTabValue>('all')
+  const [kindFilter, setKindFilter] = useState<KindFilterValue>('all')
   const [showMergeSuggestionsOnly, setShowMergeSuggestionsOnly] = useState(false)
   const [mergeSuggestionCount, setMergeSuggestionCount] = useState(0)
   const [generating, setGenerating] = useState(false)
@@ -387,6 +393,27 @@ export function SupportCoveragePage() {
           <p className="text-sm text-muted-foreground">
             Issues AI couldn't fully resolve — with recommended fixes to close each gap.
           </p>
+          {summary?.last_analyzed_at && (
+            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground/60">
+              <span>Last analyzed {timeAgo(summary.last_analyzed_at)}</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-medium text-muted-foreground/70 hover:bg-muted hover:text-foreground"
+                    aria-label="How coverage analysis works"
+                  >
+                    ?
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" align="start" className="max-w-[300px] text-xs leading-relaxed">
+                  Analysis runs from recent support conversations. It identifies unresolved customer
+                  needs, attaches new evidence to existing gaps when possible, and creates new gaps
+                  when AI support could not fully resolve an issue.
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          )}
         </div>
         <div className="flex flex-col items-end gap-1">
           {canRebuildClusters && (
@@ -410,11 +437,6 @@ export function SupportCoveragePage() {
           {latestClusterRun?.completed_at && (
             <span className="text-[11px] text-muted-foreground/60">
               Last clustered {timeAgo(latestClusterRun.completed_at)} · {latestClusterRun.auto_merged} merged · {latestClusterRun.suggestions_created} review
-            </span>
-          )}
-          {summary?.last_analyzed_at && (
-            <span className="text-[11px] text-muted-foreground/60">
-              Last analyzed {timeAgo(summary.last_analyzed_at)}
             </span>
           )}
         </div>
@@ -458,58 +480,56 @@ export function SupportCoveragePage() {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Tabs value={kindFilter} onValueChange={(value) => setKindFilter(value as KindTabValue)}>
-          <TabsList variant="line" className="h-9 rounded-lg bg-transparent p-0.5">
-            {KIND_TABS.map((tab) => (
-              <TabsTrigger
-                key={tab.value}
-                value={tab.value}
-                className={cn(
-                  'h-8 rounded-md px-3 text-xs data-active:shadow-sm after:hidden',
-                  tab.active,
-                )}
-              >
-                <span className={cn('h-2 w-2 rounded-full', tab.dot)} />
-                <span>{tab.label}</span>
-              </TabsTrigger>
+        <Select
+          size="sm"
+          value={kindFilter}
+          onValueChange={(value) => setKindFilter(value as KindFilterValue)}
+        >
+          <SelectTrigger size="sm" className="w-[150px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="start">
+            {KIND_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                <span className="flex items-center gap-2">
+                  <span className={cn('h-2 w-2 rounded-full', option.dot)} />
+                  <span>{option.label}</span>
+                </span>
+              </SelectItem>
             ))}
-          </TabsList>
-        </Tabs>
-        {(mergeSuggestionCount > 0 || showMergeSuggestionsOnly) && (
+          </SelectContent>
+        </Select>
+        {mergeSuggestionCount > 0 && !showMergeSuggestionsOnly && (
           <button
             type="button"
             onClick={() => {
-              const next = !showMergeSuggestionsOnly
-              setShowMergeSuggestionsOnly(next)
-              if (next) setStatusFilter('open')
+              setShowMergeSuggestionsOnly(true)
+              setStatusFilter('open')
             }}
-            className={cn(
-              'inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors',
-              showMergeSuggestionsOnly
-                ? 'bg-amber-50 text-amber-800 shadow-sm dark:bg-amber-950/30 dark:text-amber-300'
-                : 'bg-muted/40 text-muted-foreground hover:bg-muted',
-            )}
+            className="ml-auto text-xs font-medium text-amber-700 underline-offset-4 transition-colors hover:text-amber-800 hover:underline dark:text-amber-300 dark:hover:text-amber-200"
           >
-            <span>Merge suggestions</span>
-            <span className="rounded bg-background/70 px-1.5 py-0.5 text-[10px] tabular-nums">
-              {mergeSuggestionCount}
-            </span>
+            Show {mergeSuggestionCount} merge {mergeSuggestionCount === 1 ? 'suggestion' : 'suggestions'}
           </button>
         )}
-        <div className="ml-auto flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
+        <div className={cn(
+          'flex rounded-lg border border-border/60 bg-muted/30 p-0.5',
+          mergeSuggestionCount === 0 || showMergeSuggestionsOnly ? 'ml-auto' : '',
+        )}>
           {STATUS_FILTERS.map((status) => (
             <button
               key={status}
               type="button"
+              disabled={showMergeSuggestionsOnly && status !== 'open'}
               onClick={() => {
                 setStatusFilter(status)
                 if (status !== 'open') setShowMergeSuggestionsOnly(false)
               }}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40',
                 statusFilter === status
                   ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-muted'
-              }`}
+                  : 'text-muted-foreground hover:bg-muted',
+              )}
             >
               {GAP_STATUS_LABELS[status]}
             </button>
@@ -518,6 +538,20 @@ export function SupportCoveragePage() {
       </div>
 
       <div className="space-y-1">
+        {showMergeSuggestionsOnly && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+            <span>
+              Viewing merge suggestions for open gaps. Review similar gaps and merge or keep separate.
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowMergeSuggestionsOnly(false)}
+              className="font-medium underline-offset-4 hover:underline"
+            >
+              Back to all gaps
+            </button>
+          </div>
+        )}
         <div>
           <GapList
             gaps={gaps}
