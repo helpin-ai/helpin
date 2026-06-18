@@ -51,6 +51,8 @@ const IMPACT_TIERS: Record<'low' | 'medium' | 'high', { label: string; text: str
   low: { label: 'Low', text: 'text-muted-foreground', dot: 'bg-muted-foreground/40' },
 }
 
+const PILL_CLASS = 'inline-flex items-center rounded-full bg-muted/50 px-2 py-0.5 text-[11px] font-medium'
+
 const RECOMMENDATION_TYPE_LABELS: Record<string, string> = {
   create_article: 'Create article',
   update_article: 'Update article',
@@ -259,6 +261,8 @@ export function GapDetailPane({
   const customerCount = gap.distinct_customers_30d ?? gap.distinct_customers_all ?? 0
   const recentCount = gap.evidence_30d ?? 0
   const resolutionSeed = explanation?.human_resolution?.trim() || ''
+  const topicLabel = gap.topic_title || coverageTopicLabel(gap.issue_key)
+  const showTopic = Boolean(topicLabel) && topicLabel !== gap.title
   const reviewSignals = [
     gap.split_review_needed ? 'Evidence may cover separate needs — review split' : '',
     gap.recurrence_reopened ? 'Reopened after new evidence arrived post-fix' : '',
@@ -293,68 +297,53 @@ export function GapDetailPane({
   return (
     <div className="divide-y divide-border/40">
       <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <h3 className="font-semibold leading-tight">{gap.title}</h3>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              <Badge variant="secondary" className={`text-xs ${GAP_TYPE_BADGE_CLASS}`}>
-                {V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}
-              </Badge>
-              <span className={`text-xs ${confidence.className}`}>{confidence.text}</span>
-            </div>
+            {showTopic && (
+              <p className="mt-1 truncate text-xs text-muted-foreground">{topicLabel}</p>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-          >
-            <Cancel01Icon className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Badge variant="secondary" className={`text-xs ${GAP_TYPE_BADGE_CLASS}`}>
+              {V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}
+            </Badge>
+            <button
+              type="button"
+              onClick={onClose}
+              className="-mr-1 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            >
+              <Cancel01Icon className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {diagnosis && (
           <p className="mt-3 text-sm leading-relaxed text-foreground">{diagnosis}</p>
         )}
 
-        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-          <span className={`inline-flex items-center gap-1.5 font-medium ${impactTier.text}`}>
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className={`${PILL_CLASS} gap-1.5 ${impactTier.text}`}>
             <span className={`h-1.5 w-1.5 rounded-full ${impactTier.dot}`} />
             {impactTier.label} impact
           </span>
-          <span className="text-muted-foreground/50">·</span>
-          <span className="text-muted-foreground">
+          <span className={`${PILL_CLASS} text-muted-foreground`}>
             {conversationCount} {conversationCount === 1 ? 'conversation' : 'conversations'}
           </span>
           {customerCount > 0 && (
-            <>
-              <span className="text-muted-foreground/50">·</span>
-              <span className="text-muted-foreground">
-                {customerCount} {customerCount === 1 ? 'customer' : 'customers'}
-              </span>
-            </>
+            <span className={`${PILL_CLASS} text-muted-foreground`}>
+              {customerCount} {customerCount === 1 ? 'customer' : 'customers'}
+            </span>
           )}
           {recentCount > 0 && (
-            <>
-              <span className="text-muted-foreground/50">·</span>
-              <span className="text-muted-foreground">{recentCount} in last 30 days</span>
-            </>
+            <span className={`${PILL_CLASS} text-muted-foreground`}>{recentCount} in last 30 days</span>
           )}
+          <span className={`${PILL_CLASS} ${confidence.className}`}>{confidence.text}</span>
         </div>
 
-        <dl className="mt-3 grid grid-cols-3 gap-3 text-xs">
-          <div>
-            <dt className="text-muted-foreground">Topic</dt>
-            <dd className="mt-0.5 truncate font-medium">{gap.topic_title || coverageTopicLabel(gap.issue_key)}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">First seen</dt>
-            <dd className="mt-0.5 font-medium">{timeAgo(gap.first_seen_at)}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Last seen</dt>
-            <dd className="mt-0.5 font-medium">{timeAgo(gap.last_seen_at)}</dd>
-          </div>
-        </dl>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          First seen {timeAgo(gap.first_seen_at)} · Last seen {timeAgo(gap.last_seen_at)}
+        </p>
 
         {reviewSignals.length > 0 && (
           <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs leading-relaxed text-amber-800">
