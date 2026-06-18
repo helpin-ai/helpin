@@ -954,6 +954,9 @@ func (s *SupportCoverageDailyAnalyzer) UpsertFinding(ctx context.Context, input 
 		LastSeenAt:   now,
 		Metadata:     []byte(`{"source":"daily_conversation_analysis"}`),
 	}
+	if err := s.populateLegacyFindingGapEmbedding(ctx, gap, result); err != nil {
+		return nil, err
+	}
 
 	upserted, err := s.attachFindingToSimilarGap(ctx, input, result, gap, now)
 	if err != nil {
@@ -1031,11 +1034,10 @@ func (s *SupportCoverageDailyAnalyzer) attachFindingToSimilarGap(ctx context.Con
 			SupportCoverageGap: *gap,
 			CanonicalTitle:     result.CanonicalTitle,
 			CustomerNeedText:   result.CustomerNeed,
-			EvidenceText:       firstNonEmptyCoverageString(result.CustomerNeed, result.DecisionReason, result.HumanResolution, gap.Title),
 		},
+		Embedding: coverageParseVectorLiteral(gap.Embedding),
 	}
-	incoming.Text = coverageClusterComparisonText(incoming.Gap)
-	incoming.Tokens = coverageClusterTokens(incoming.Text)
+	incoming.Text = coverageGapEmbeddingText(incoming.Gap)
 
 	var best *model.SupportCoverageGapListItem
 	bestScore := 0.0
@@ -1044,10 +1046,10 @@ func (s *SupportCoverageDailyAnalyzer) attachFindingToSimilarGap(ctx context.Con
 			continue
 		}
 		candidate := coverageClusterCandidate{
-			Gap: item,
+			Gap:       item,
+			Embedding: coverageParseVectorLiteral(item.Embedding),
 		}
-		candidate.Text = coverageClusterComparisonText(item)
-		candidate.Tokens = coverageClusterTokens(candidate.Text)
+		candidate.Text = coverageGapEmbeddingText(item)
 		score := coverageClusterSimilarity(incoming, candidate)
 		if score > bestScore {
 			bestScore = score
@@ -1058,13 +1060,51 @@ func (s *SupportCoverageDailyAnalyzer) attachFindingToSimilarGap(ctx context.Con
 	if best == nil {
 		return nil, nil
 	}
-	bestCandidate := coverageClusterCandidate{Gap: *best}
-	bestCandidate.Text = coverageClusterComparisonText(*best)
-	bestCandidate.Tokens = coverageClusterTokens(bestCandidate.Text)
+	bestCandidate := coverageClusterCandidate{
+		Gap:       *best,
+		Text:      coverageGapEmbeddingText(*best),
+		Embedding: coverageParseVectorLiteral(best.Embedding),
+	}
 	if bestScore < coverageClusterAutoMergeThresholdFor(incoming, bestCandidate) {
 		return nil, nil
 	}
 	return s.coverageRepo.IncrementOpenGapEvidence(ctx, input.WorkspaceID, best.ID, now)
+}
+
+func (s *SupportCoverageDailyAnalyzer) populateLegacyFindingGapEmbedding(ctx context.Context, gap *model.SupportCoverageGap, result CoverageConversationAnalysisResult) error {
+	if s == nil || s.embeddingProvider == nil || gap == nil {
+		return nil
+	}
+	item := model.SupportCoverageGapListItem{
+		SupportCoverageGap: *gap,
+		CanonicalTitle:     result.CanonicalTitle,
+		CustomerNeedText:   result.CustomerNeed,
+	}
+	text := coverageGapEmbeddingText(item)
+	if text == "" {
+		return nil
+	}
+	modelName := coverageEmbeddingModel(s.embeddingModel)
+	resp, err := s.embeddingProvider.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+		Provider: coverageEmbeddingProviderName,
+		Model:    modelName,
+		Inputs:   []string{text},
+	})
+	if err != nil {
+		return fmt.Errorf("embed coverage finding gap: %w", err)
+	}
+	if resp == nil || len(resp.Vectors) != 1 || len(resp.Vectors[0]) == 0 {
+		return fmt.Errorf("embedding response did not include a gap vector")
+	}
+	now := time.Now().UTC()
+	gap.Embedding = coverageVectorLiteral(resp.Vectors[0])
+	gap.EmbeddingProvider = coverageEmbeddingProviderName
+	gap.EmbeddingModel = modelName
+	gap.EmbeddingVersion = coverageGapEmbeddingVersion
+	gap.EmbeddingDimensions = len(resp.Vectors[0])
+	gap.EmbeddingTextHash = coverageEmbeddingTextHash(text)
+	gap.EmbeddingUpdatedAt = &now
+	return nil
 }
 
 func (s *SupportCoverageDailyAnalyzer) recommendationRowsForFinding(ctx context.Context, input CoverageFindingUpsertInput, gapID string, now time.Time) ([]model.SupportCoverageRecommendation, error) {

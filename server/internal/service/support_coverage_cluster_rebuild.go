@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -15,14 +15,10 @@ import (
 )
 
 const (
-	coverageClusterRebuildLimit          = 1000
-	coverageClusterLexicalSuggest        = 0.45
-	coverageClusterLexicalAutoMerge      = 0.82
-	coverageClusterEmbeddingSuggest      = 0.72
-	coverageClusterEmbeddingAutoMerge    = 0.88
-	coverageClusterCreationDedupeLimit   = 200
-	coverageClusterEmbeddingProviderName = "openai"
-	coverageClusterDefaultEmbeddingModel = "text-embedding-3-small"
+	coverageClusterRebuildLimit        = 1000
+	coverageClusterEmbeddingSuggest    = 0.72
+	coverageClusterEmbeddingAutoMerge  = 0.88
+	coverageClusterCreationDedupeLimit = 200
 )
 
 type SupportCoverageClusterRebuildService struct {
@@ -48,7 +44,6 @@ type SupportCoverageClusterRebuildResult struct {
 type coverageClusterCandidate struct {
 	Gap       model.SupportCoverageGapListItem
 	Text      string
-	Tokens    map[string]struct{}
 	Embedding []float32
 }
 
@@ -56,6 +51,14 @@ type coverageClusterScoredPair struct {
 	left  int
 	right int
 	score float64
+}
+
+type coverageClusterEmbeddingSummary struct {
+	status         string
+	errMessage     string
+	created        int
+	missing        int
+	candidatesUsed int
 }
 
 type coverageClusterUnionFind struct {
@@ -126,16 +129,21 @@ func (s *SupportCoverageClusterRebuildService) RebuildWorkspace(ctx context.Cont
 	result.GapsScanned = len(items)
 	candidates := make([]coverageClusterCandidate, 0, len(items))
 	for _, item := range items {
-		text := coverageClusterComparisonText(item)
+		text := coverageGapEmbeddingText(item)
 		candidates = append(candidates, coverageClusterCandidate{
-			Gap:    item,
-			Text:   text,
-			Tokens: coverageClusterTokens(text),
+			Gap:       item,
+			Text:      text,
+			Embedding: coverageParseVectorLiteral(item.Embedding),
 		})
 	}
-	embeddingStatus, embeddingError := s.addEmbeddings(ctx, candidates)
-	result.EmbeddingStatus = embeddingStatus
-	result.EmbeddingError = embeddingError
+	embeddingSummary, err := s.ensureGapEmbeddings(ctx, candidates)
+	result.EmbeddingStatus = embeddingSummary.status
+	result.EmbeddingError = embeddingSummary.errMessage
+	if err != nil {
+		metadata := coverageClusterRunMetadata(embeddingSummary)
+		_ = s.coverageRepo.FailClusterRebuildRunWithMetadata(ctx, run.ID, err, metadata)
+		return nil, err
+	}
 
 	uf := newCoverageClusterUnionFind(len(candidates))
 	pairs := []coverageClusterScoredPair{}
@@ -211,7 +219,8 @@ func (s *SupportCoverageClusterRebuildService) RebuildWorkspace(ctx context.Cont
 	completedAt := time.Now().UTC()
 	result.CompletedAt = &completedAt
 	result.Status = model.SupportCoverageClusterRebuildStatusCompleted
-	if err := s.coverageRepo.CompleteClusterRebuildRun(ctx, run.ID, result.GapsScanned, result.ClustersFound, result.AutoMerged, result.SuggestionsCreated, result.Skipped); err != nil {
+	metadata := coverageClusterRunMetadata(embeddingSummary)
+	if err := s.coverageRepo.CompleteClusterRebuildRun(ctx, run.ID, result.GapsScanned, result.ClustersFound, result.AutoMerged, result.SuggestionsCreated, result.Skipped, metadata); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -255,54 +264,95 @@ func (s *SupportCoverageClusterRebuildService) DismissMergeSuggestion(ctx contex
 	return s.coverageRepo.MarkMergeSuggestionReviewed(ctx, workspaceID, suggestionID, model.SupportCoverageMergeSuggestionStatusDismissed, userID)
 }
 
-func (s *SupportCoverageClusterRebuildService) addEmbeddings(ctx context.Context, candidates []coverageClusterCandidate) (string, string) {
-	if s == nil || s.embedder == nil || len(candidates) == 0 {
-		return "unavailable", ""
+func (s *SupportCoverageClusterRebuildService) ensureGapEmbeddings(ctx context.Context, candidates []coverageClusterCandidate) (coverageClusterEmbeddingSummary, error) {
+	summary := coverageClusterEmbeddingSummary{
+		status:         "complete",
+		candidatesUsed: len(candidates),
 	}
-	modelName := s.embeddingModel
-	if modelName == "" {
-		modelName = coverageClusterDefaultEmbeddingModel
+	if len(candidates) == 0 {
+		return summary, nil
 	}
-	inputs := make([]string, 0, len(candidates))
-	for _, candidate := range candidates {
-		inputs = append(inputs, candidate.Text)
+	modelName := coverageEmbeddingModel(s.embeddingModel)
+	type pendingGapEmbedding struct {
+		index int
+		text  string
+		hash  string
+	}
+	pending := []pendingGapEmbedding{}
+	for idx := range candidates {
+		textHash := coverageEmbeddingTextHash(candidates[idx].Text)
+		if textHash == "" {
+			summary.missing++
+			continue
+		}
+		gap := candidates[idx].Gap.SupportCoverageGap
+		if gap.Embedding != "" &&
+			gap.EmbeddingProvider == coverageEmbeddingProviderName &&
+			gap.EmbeddingModel == modelName &&
+			gap.EmbeddingVersion == coverageGapEmbeddingVersion &&
+			gap.EmbeddingTextHash == textHash &&
+			gap.EmbeddingDimensions > 0 &&
+			len(candidates[idx].Embedding) == gap.EmbeddingDimensions {
+			continue
+		}
+		pending = append(pending, pendingGapEmbedding{index: idx, text: candidates[idx].Text, hash: textHash})
+	}
+	if len(pending) == 0 {
+		return summary, nil
+	}
+	if s == nil || s.embedder == nil {
+		summary.status = "failed"
+		summary.missing = len(pending)
+		summary.errMessage = "embedding provider is not configured"
+		return summary, errors.New(summary.errMessage)
+	}
+	inputs := make([]string, 0, len(pending))
+	for _, item := range pending {
+		inputs = append(inputs, item.text)
 	}
 	resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
-		Provider: coverageClusterEmbeddingProviderName,
+		Provider: coverageEmbeddingProviderName,
 		Model:    modelName,
 		Inputs:   inputs,
 	})
-	if err != nil || resp == nil || len(resp.Vectors) != len(candidates) {
-		if err != nil {
-			return "failed", err.Error()
+	if err != nil {
+		summary.status = "failed"
+		summary.missing = len(pending)
+		summary.errMessage = err.Error()
+		return summary, fmt.Errorf("embed coverage gaps for cluster rebuild: %w", err)
+	}
+	if resp == nil || len(resp.Vectors) != len(pending) {
+		summary.status = "failed"
+		summary.missing = len(pending)
+		summary.errMessage = "embedding response did not match candidate count"
+		return summary, errors.New(summary.errMessage)
+	}
+	now := time.Now().UTC()
+	for idx, item := range pending {
+		vector := resp.Vectors[idx]
+		if len(vector) == 0 {
+			summary.status = "failed"
+			summary.missing = len(pending) - summary.created
+			summary.errMessage = "embedding response contained an empty vector"
+			return summary, errors.New(summary.errMessage)
 		}
-		return "failed", "embedding response did not match candidate count"
-	}
-	for i := range candidates {
-		candidates[i].Embedding = resp.Vectors[i]
-	}
-	return "ok", ""
-}
-
-func coverageClusterComparisonText(gap model.SupportCoverageGapListItem) string {
-	return strings.Join([]string{
-		coverageClusterTextPart(gap.CustomerNeedText, 300),
-		coverageClusterTextPart(gap.CanonicalTitle, 180),
-		coverageClusterTextPart(gap.Title, 180),
-		coverageClusterTextPart(gap.TopicTitle, 180),
-		coverageClusterTextPart(gap.EvidenceText, 180),
-	}, " ")
-}
-
-func coverageClusterTextPart(value string, maxLen int) string {
-	value = strings.Join(strings.Fields(value), " ")
-	if maxLen > 0 {
-		runes := []rune(value)
-		if len(runes) > maxLen {
-			value = string(runes[:maxLen])
+		if err := s.coverageRepo.UpdateGapEmbedding(ctx, candidates[item.index].Gap.ID, coverageVectorLiteral(vector), coverageEmbeddingProviderName, modelName, coverageGapEmbeddingVersion, len(vector), item.hash, now); err != nil {
+			summary.status = "failed"
+			summary.missing = len(pending) - summary.created
+			summary.errMessage = err.Error()
+			return summary, err
 		}
+		candidates[item.index].Embedding = vector
+		candidates[item.index].Gap.Embedding = coverageVectorLiteral(vector)
+		candidates[item.index].Gap.EmbeddingProvider = coverageEmbeddingProviderName
+		candidates[item.index].Gap.EmbeddingModel = modelName
+		candidates[item.index].Gap.EmbeddingVersion = coverageGapEmbeddingVersion
+		candidates[item.index].Gap.EmbeddingDimensions = len(vector)
+		candidates[item.index].Gap.EmbeddingTextHash = item.hash
+		candidates[item.index].Gap.EmbeddingUpdatedAt = &now
+		summary.created++
 	}
-	return value
+	return summary, nil
 }
 
 func coverageClusterCompatible(a, b model.SupportCoverageGapListItem) bool {
@@ -342,79 +392,48 @@ func coverageClusterSimilarity(a, b coverageClusterCandidate) float64 {
 		return 1
 	}
 	if len(a.Embedding) > 0 && len(a.Embedding) == len(b.Embedding) {
-		return cosineSimilarity(a.Embedding, b.Embedding)
+		return coverageCosineSimilarity(a.Embedding, b.Embedding)
 	}
-	return lexicalCoverageSimilarity(a.Tokens, b.Tokens)
+	return 0
 }
 
 func coverageClusterSuggestThresholdFor(a, b coverageClusterCandidate) float64 {
 	if coverageClusterUsesEmbeddings(a, b) {
 		return coverageClusterEmbeddingSuggest
 	}
-	return coverageClusterLexicalSuggest
+	return 1.01
 }
 
 func coverageClusterAutoMergeThresholdFor(a, b coverageClusterCandidate) float64 {
 	if coverageClusterUsesEmbeddings(a, b) {
 		return coverageClusterEmbeddingAutoMerge
 	}
-	return coverageClusterLexicalAutoMerge
+	return 1.01
 }
 
 func coverageClusterUsesEmbeddings(a, b coverageClusterCandidate) bool {
 	return len(a.Embedding) > 0 && len(a.Embedding) == len(b.Embedding)
 }
 
-func cosineSimilarity(a, b []float32) float64 {
-	var dot, normA, normB float64
-	for i := range a {
-		av := float64(a[i])
-		bv := float64(b[i])
-		dot += av * bv
-		normA += av * av
-		normB += bv * bv
+func coverageClusterRunMetadata(summary coverageClusterEmbeddingSummary) json.RawMessage {
+	if summary.status == "" {
+		summary.status = "complete"
 	}
-	if normA == 0 || normB == 0 {
-		return 0
+	payload := map[string]any{
+		"embedding_status":          summary.status,
+		"embeddings_created":        summary.created,
+		"missing_embeddings":        summary.missing,
+		"vector_candidates_scanned": summary.candidatesUsed,
+		"auto_merge_policy":         "strict-v1",
 	}
-	return math.Max(0, dot/(math.Sqrt(normA)*math.Sqrt(normB)))
-}
-
-func lexicalCoverageSimilarity(a, b map[string]struct{}) float64 {
-	if len(a) == 0 || len(b) == 0 {
-		return 0
+	if summary.errMessage != "" {
+		payload["embedding_error"] = summary.errMessage
 	}
-	intersection := 0
-	for token := range a {
-		if _, ok := b[token]; ok {
-			intersection++
-		}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return json.RawMessage(`{}`)
 	}
-	containment := float64(intersection) / float64(min(len(a), len(b)))
-	jaccard := float64(intersection) / float64(len(a)+len(b)-intersection)
-	return (containment * 0.85) + (jaccard * 0.15)
-}
-
-func coverageClusterTokens(input string) map[string]struct{} {
-	normalized := normalizeForCluster(input)
-	tokens := map[string]struct{}{}
-	for _, token := range strings.Fields(normalized) {
-		token = strings.TrimSuffix(token, "s")
-		if token == "" || coverageClusterRebuildStopword(token) {
-			continue
-		}
-		tokens[token] = struct{}{}
-	}
-	return tokens
-}
-
-func coverageClusterRebuildStopword(token string) bool {
-	switch token {
-	case "article", "doc", "docs", "documentation", "guide", "instruction", "missing", "user", "customer", "cannot", "cant", "need", "needs":
-		return true
-	default:
-		return false
-	}
+	return data
 }
 
 func chooseCoverageClusterPrimary(a, b model.SupportCoverageGapListItem) (model.SupportCoverageGapListItem, model.SupportCoverageGapListItem) {

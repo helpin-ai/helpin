@@ -3,18 +3,31 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/gorm"
 )
 
-func TestSupportCoverageClusterRebuildSuggestsVerySimilarTitleOnlyGaps(t *testing.T) {
+type failingCoverageEmbeddingProvider struct {
+	err error
+}
+
+func (f failingCoverageEmbeddingProvider) CreateEmbeddings(ctx context.Context, req llm.EmbeddingRequest) (*llm.EmbeddingResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return nil, errors.New("embedding failed")
+}
+
+func TestSupportCoverageClusterRebuildSuggestsVerySimilarEmbeddedGaps(t *testing.T) {
 	_, _, db := setupCoverageTestEnv(t)
 	repo := repository.NewSupportCoverageRepository(db)
-	svc := NewSupportCoverageClusterRebuildService(repo, nil, "")
+	svc := NewSupportCoverageClusterRebuildService(repo, &fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}, {0.8, 0.6, 0}}}, "")
 	ctx := context.Background()
 	now := time.Now()
 
@@ -86,7 +99,7 @@ func TestSupportCoverageClusterRebuildSuggestsVerySimilarTitleOnlyGaps(t *testin
 func TestSupportCoverageClusterRebuildAutoMergesSemanticClusterWithoutRelatedArticle(t *testing.T) {
 	_, _, db := setupCoverageTestEnv(t)
 	repo := repository.NewSupportCoverageRepository(db)
-	svc := NewSupportCoverageClusterRebuildService(repo, nil, "")
+	svc := NewSupportCoverageClusterRebuildService(repo, &fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}, {0.99, 0.01, 0}}}, "")
 	ctx := context.Background()
 	now := time.Now()
 
@@ -166,7 +179,7 @@ func TestSupportCoverageClusterRebuildAutoMergesSemanticClusterWithoutRelatedArt
 func TestSupportCoverageClusterRebuildUsesTransitiveClusters(t *testing.T) {
 	_, _, db := setupCoverageTestEnv(t)
 	repo := repository.NewSupportCoverageRepository(db)
-	svc := NewSupportCoverageClusterRebuildService(repo, nil, "")
+	svc := NewSupportCoverageClusterRebuildService(repo, &fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}, {0.8, 0.6, 0}, {0.28, 0.96, 0}}}, "")
 	ctx := context.Background()
 	now := time.Now()
 
@@ -188,6 +201,119 @@ func TestSupportCoverageClusterRebuildUsesTransitiveClusters(t *testing.T) {
 	}
 	if result.AutoMerged != 0 {
 		t.Fatalf("AutoMerged=%d, want 0 for transitive title-only cluster", result.AutoMerged)
+	}
+}
+
+func TestSupportCoverageClusterRebuildBackfillsMissingGapEmbeddings(t *testing.T) {
+	_, _, db := setupCoverageTestEnv(t)
+	repo := repository.NewSupportCoverageRepository(db)
+	svc := NewSupportCoverageClusterRebuildService(repo, &fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}}}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	seedCoverageGapForRebuild(t, db, model.SupportCoverageGap{
+		ID:            "gap-reset",
+		WorkspaceID:   "ws-1",
+		DedupeKey:     "reset",
+		GapKind:       "content",
+		GapCategory:   model.SupportCoverageGapCategoryKnowledge,
+		Title:         "Reset email is not delivered",
+		Status:        model.SupportCoverageGapStatusOpen,
+		Confidence:    0.86,
+		EvidenceCount: 3,
+		FirstSeenAt:   now.Add(-2 * time.Hour),
+		LastSeenAt:    now.Add(-1 * time.Hour),
+	})
+
+	result, err := svc.RebuildWorkspace(ctx, "ws-1")
+	if err != nil {
+		t.Fatalf("RebuildWorkspace: %v", err)
+	}
+	if result.EmbeddingStatus != "complete" {
+		t.Fatalf("EmbeddingStatus=%q, want complete", result.EmbeddingStatus)
+	}
+
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap, "id = ?", "gap-reset").Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.Embedding == "" || gap.EmbeddingTextHash == "" || gap.EmbeddingVersion != coverageGapEmbeddingVersion || gap.EmbeddingDimensions != 3 {
+		t.Fatalf("gap embedding metadata not backfilled: embedding=%q version=%q dimensions=%d hash=%q", gap.Embedding, gap.EmbeddingVersion, gap.EmbeddingDimensions, gap.EmbeddingTextHash)
+	}
+
+	var run model.SupportCoverageClusterRebuildRun
+	if err := db.First(&run, "id = ?", result.RunID).Error; err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(run.Metadata, &metadata); err != nil {
+		t.Fatalf("unmarshal run metadata: %v", err)
+	}
+	if metadata["embeddings_created"] != float64(1) {
+		t.Fatalf("embeddings_created=%v, want 1", metadata["embeddings_created"])
+	}
+	if metadata["embedding_status"] != "complete" {
+		t.Fatalf("embedding_status=%v, want complete", metadata["embedding_status"])
+	}
+}
+
+func TestSupportCoverageClusterRebuildReportsEmbeddingFailureWithoutLexicalFallback(t *testing.T) {
+	_, _, db := setupCoverageTestEnv(t)
+	repo := repository.NewSupportCoverageRepository(db)
+	svc := NewSupportCoverageClusterRebuildService(repo, failingCoverageEmbeddingProvider{err: errors.New("provider down")}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	seedCoverageGapForRebuild(t, db, model.SupportCoverageGap{
+		ID:            "gap-reset",
+		WorkspaceID:   "ws-1",
+		DedupeKey:     "reset",
+		GapKind:       "content",
+		GapCategory:   model.SupportCoverageGapCategoryKnowledge,
+		Title:         "Users cannot reset passwords",
+		Status:        model.SupportCoverageGapStatusOpen,
+		Confidence:    0.86,
+		EvidenceCount: 3,
+		FirstSeenAt:   now.Add(-2 * time.Hour),
+		LastSeenAt:    now.Add(-1 * time.Hour),
+	})
+	seedCoverageGapForRebuild(t, db, model.SupportCoverageGap{
+		ID:            "gap-password",
+		WorkspaceID:   "ws-1",
+		DedupeKey:     "password",
+		GapKind:       "content",
+		GapCategory:   model.SupportCoverageGapCategoryKnowledge,
+		Title:         "Password reset instructions are missing",
+		Status:        model.SupportCoverageGapStatusOpen,
+		Confidence:    0.82,
+		EvidenceCount: 2,
+		FirstSeenAt:   now.Add(-90 * time.Minute),
+		LastSeenAt:    now.Add(-30 * time.Minute),
+	})
+
+	result, err := svc.RebuildWorkspace(ctx, "ws-1")
+	if err == nil {
+		t.Fatalf("RebuildWorkspace succeeded, want embedding failure")
+	}
+	if result != nil {
+		t.Fatalf("result=%+v, want nil on embedding failure", result)
+	}
+	var run model.SupportCoverageClusterRebuildRun
+	if err := db.First(&run, "workspace_id = ?", "ws-1").Error; err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if run.Status != model.SupportCoverageClusterRebuildStatusFailed {
+		t.Fatalf("run status=%q, want failed", run.Status)
+	}
+	if run.ErrorMessage == nil || *run.ErrorMessage == "" {
+		t.Fatalf("run error message missing")
+	}
+	var suggestionCount int64
+	if err := db.Model(&model.SupportCoverageGapMergeSuggestion{}).Count(&suggestionCount).Error; err != nil {
+		t.Fatalf("count suggestions: %v", err)
+	}
+	if suggestionCount != 0 {
+		t.Fatalf("suggestions=%d, want 0 when embeddings fail", suggestionCount)
 	}
 }
 

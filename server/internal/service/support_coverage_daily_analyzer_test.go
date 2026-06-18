@@ -842,7 +842,8 @@ func TestSupportCoverageDailyAnalyzer_UpsertFindingAttachesSimilarGap(t *testing
 	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	coverageRepo := repository.NewSupportCoverageRepository(db)
 	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
-		SetCoverageRepositories(coverageRepo, analysisRepo)
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}, {0.99, 0.01, 0}}}, "")
 	ctx := context.Background()
 
 	first, err := analyzer.UpsertFinding(ctx, CoverageFindingUpsertInput{
@@ -868,6 +869,20 @@ func TestSupportCoverageDailyAnalyzer_UpsertFindingAttachesSimilarGap(t *testing
 	})
 	if err != nil {
 		t.Fatalf("first UpsertFinding: %v", err)
+	}
+	var seeded model.SupportCoverageGap
+	if err := db.First(&seeded, "id = ?", first.ID).Error; err != nil {
+		t.Fatalf("load first gap: %v", err)
+	}
+	if seeded.Embedding == "" {
+		t.Fatalf("first gap embedding was not stored")
+	}
+	listed, err := coverageRepo.ListOpenGapsForClusterRebuild(ctx, "ws-1", 10)
+	if err != nil {
+		t.Fatalf("list open gaps: %v", err)
+	}
+	if len(listed) != 1 || listed[0].Embedding == "" {
+		t.Fatalf("listed gaps did not include stored embedding: %+v", listed)
 	}
 
 	second, err := analyzer.UpsertFinding(ctx, CoverageFindingUpsertInput{

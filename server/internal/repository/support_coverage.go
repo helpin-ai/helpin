@@ -1197,39 +1197,51 @@ func (r *SupportCoverageRepository) CreateClusterRebuildRun(ctx context.Context,
 	return nil
 }
 
-func (r *SupportCoverageRepository) CompleteClusterRebuildRun(ctx context.Context, runID string, gapsScanned, clustersFound, autoMerged, suggestionsCreated, skipped int) error {
+func (r *SupportCoverageRepository) CompleteClusterRebuildRun(ctx context.Context, runID string, gapsScanned, clustersFound, autoMerged, suggestionsCreated, skipped int, metadata json.RawMessage) error {
 	now := time.Now().UTC()
+	updates := map[string]any{
+		"status":              model.SupportCoverageClusterRebuildStatusCompleted,
+		"gaps_scanned":        gapsScanned,
+		"clusters_found":      clustersFound,
+		"auto_merged":         autoMerged,
+		"suggestions_created": suggestionsCreated,
+		"skipped":             skipped,
+		"completed_at":        &now,
+	}
+	if len(metadata) > 0 {
+		updates["metadata"] = metadata
+	}
 	if err := r.db.WithContext(ctx).
 		Model(&model.SupportCoverageClusterRebuildRun{}).
 		Where("id = ?", runID).
-		Updates(map[string]any{
-			"status":              model.SupportCoverageClusterRebuildStatusCompleted,
-			"gaps_scanned":        gapsScanned,
-			"clusters_found":      clustersFound,
-			"auto_merged":         autoMerged,
-			"suggestions_created": suggestionsCreated,
-			"skipped":             skipped,
-			"completed_at":        &now,
-		}).Error; err != nil {
+		Updates(updates).Error; err != nil {
 		return fmt.Errorf("complete cluster rebuild run: %w", err)
 	}
 	return nil
 }
 
 func (r *SupportCoverageRepository) FailClusterRebuildRun(ctx context.Context, runID string, cause error) error {
+	return r.FailClusterRebuildRunWithMetadata(ctx, runID, cause, nil)
+}
+
+func (r *SupportCoverageRepository) FailClusterRebuildRunWithMetadata(ctx context.Context, runID string, cause error, metadata json.RawMessage) error {
 	now := time.Now().UTC()
 	msg := ""
 	if cause != nil {
 		msg = cause.Error()
 	}
+	updates := map[string]any{
+		"status":        model.SupportCoverageClusterRebuildStatusFailed,
+		"error_message": &msg,
+		"completed_at":  &now,
+	}
+	if len(metadata) > 0 {
+		updates["metadata"] = metadata
+	}
 	if err := r.db.WithContext(ctx).
 		Model(&model.SupportCoverageClusterRebuildRun{}).
 		Where("id = ?", runID).
-		Updates(map[string]any{
-			"status":        model.SupportCoverageClusterRebuildStatusFailed,
-			"error_message": &msg,
-			"completed_at":  &now,
-		}).Error; err != nil {
+		Updates(updates).Error; err != nil {
 		return fmt.Errorf("fail cluster rebuild run: %w", err)
 	}
 	return nil
