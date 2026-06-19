@@ -25,6 +25,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/cache"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
@@ -156,6 +157,11 @@ func main() {
 			&model.WorkspaceMember{},
 			&model.WorkspaceModuleGrant{},
 			&model.WorkspaceSettings{},
+			&model.WorkspaceBilling{},
+			&model.BillingCreditLedgerEntry{},
+			&model.StripeWebhookEvent{},
+			&model.OrganizationBilling{},
+			&model.BillingPaymentMethod{},
 			&model.WorkspaceTeam{},
 			&model.TeamWorkspaceMembership{},
 			&model.WorkspaceManager{},
@@ -587,6 +593,7 @@ func main() {
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
+	billingRepo := repository.NewBillingRepository(db)
 	supportTagRepo := repository.NewSupportTagRepository(db)
 	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
@@ -1165,6 +1172,16 @@ func main() {
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
+	stripeGateway := billingstripe.New(cfg.StripeSecretKey, cfg.StripeCreditBlockPriceID)
+	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
+	billingService.SetPriceConfig(service.BillingPriceConfig{
+		StarterMonthly: cfg.StripeStarterMonthlyPriceID,
+		StarterAnnual:  cfg.StripeStarterAnnualPriceID,
+		GrowthMonthly:  cfg.StripeGrowthMonthlyPriceID,
+		GrowthAnnual:   cfg.StripeGrowthAnnualPriceID,
+	})
+	billingService.SetOrgRoleResolver(orgService)
+	workspaceService.SetBillingService(billingService)
 	workspaceService.SetPresenceProvider(wsHub.Presence)
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
 	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher).
@@ -1233,6 +1250,7 @@ func main() {
 		Passkey:             handler.NewPasskeyHandler(passkeyService),
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
+		Billing:             handler.NewBillingHandler(billingService, cfg.StripeWebhookSecret, cfg.AppBaseURL),
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
 		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller, flowTemplateUninstaller),
 		Invite:              handler.NewInviteHandler(inviteService),

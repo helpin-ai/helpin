@@ -21,6 +21,7 @@ type Handlers struct {
 	Passkey             *handler.PasskeyHandler
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
+	Billing             *handler.BillingHandler
 	Settings            *handler.SettingsHandler
 	Automation          *handler.AutomationHandler
 	Invite              *handler.InviteHandler
@@ -236,6 +237,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/webhooks/postmark/bounce", h.PostmarkInbound.PostmarkBounce)
 			r.Post("/webhooks/postmark/spam-complaint", h.PostmarkInbound.PostmarkSpamComplaint)
 		}
+		if h.Billing != nil {
+			r.Post("/webhooks/stripe", h.Billing.StripeWebhook)
+		}
 
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
 		r.Get("/crm/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
@@ -412,6 +416,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Put("/organizations/{id}/members/{userId}", h.Organization.UpdateMember)
 			r.Delete("/organizations/{id}/members/{userId}", h.Organization.RemoveMember)
 
+			// Organization billing (access gated in the service by the billing-manager predicate).
+			if h.Billing != nil {
+				r.Get("/organizations/{orgId}/billing", h.Billing.GetOrganizationBilling)
+				r.Get("/organizations/{orgId}/billing/cards", h.Billing.ListCards)
+				r.Post("/organizations/{orgId}/billing/cards/setup-intent", h.Billing.CreateCardSetupIntent)
+				r.Put("/organizations/{orgId}/billing/cards/{cardId}", h.Billing.UpdateCard)
+				r.Delete("/organizations/{orgId}/billing/cards/{cardId}", h.Billing.DeleteCard)
+				r.Get("/organizations/{orgId}/billing/invoices", h.Billing.ListInvoices)
+			}
+
 			// Workspaces — workspace-scoped routes with RBAC
 			r.Get("/workspaces", h.Workspace.List)
 			r.Post("/workspaces", h.Workspace.Create)
@@ -441,6 +455,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/logo", h.Workspace.UploadLogo)
 				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Delete("/logo", h.Workspace.DeleteLogo)
 				r.With(authorization.RequireOwner(authz)).Delete("/", h.Workspace.Delete)
+				if h.Billing != nil {
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/billing", h.Billing.Get)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/checkout", h.Billing.Checkout)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/portal", h.Billing.Portal)
+					r.With(requirePerm(authorization.PermSettingsManage)).Put("/billing/on-demand", h.Billing.SetOnDemand)
+					// Billing-manager-gated (org owner OR workspace billing owner) — checked in handler.
+					r.Get("/billing/usage", h.Billing.GetUsage)
+					r.Put("/billing/payment-method", h.Billing.LinkPaymentMethod)
+					r.Put("/billing/owner", h.Billing.SetBillingOwner)
+				}
 
 				// Import routes require pm.import
 				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/preview", h.PMImport.PreviewShortcut)

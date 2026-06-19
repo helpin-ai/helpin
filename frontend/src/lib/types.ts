@@ -89,6 +89,31 @@ export interface Workspace {
   updated_at: string;
 }
 
+export type BillingPlan = 'free' | 'starter' | 'growth';
+export type BillingStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'free';
+export type BillingInterval = 'monthly' | 'annual';
+
+export interface WorkspaceBillingSummary {
+  workspace_id: string;
+  plan: BillingPlan;
+  status: BillingStatus | string;
+  billing_interval: BillingInterval | string;
+  trialing: boolean;
+  trial_ends_at?: string;
+  current_period_start: string;
+  current_period_end: string;
+  included_credits: number;
+  credits_used: number;
+  credits_remaining: number;
+  on_demand_enabled: boolean;
+  on_demand_available: boolean;
+  stripe_customer_id?: string;
+  stripe_subscription_id?: string;
+  manage_billing_enabled: boolean;
+  warning?: string;
+  on_demand_blocks_invoiced: number;
+}
+
 export interface WorkspaceMember {
   id: string;
   workspace_id: string;

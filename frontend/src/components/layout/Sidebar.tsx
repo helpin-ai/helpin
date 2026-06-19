@@ -22,6 +22,7 @@ import {
   SidebarHeader,
 } from '@/components/ui/sidebar';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
+import { TrialBanner } from '@/components/layout/TrialBanner';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { useSupportTeammatePresence, useUpdateMySupportTeammatePresence } from '@/hooks/queries/useSupport';
 import { DocsSpacesNav } from './sidebar/DocsSpacesNav';
@@ -473,6 +474,7 @@ export function Sidebar() {
             )}
           </div>
         </div>
+        <TrialBanner />
       </SidebarContent>
     </ShellSidebar>
     <Dialog open={!!editingSupportView} onOpenChange={(open) => !open && setEditingSupportView(null)}>

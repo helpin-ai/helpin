@@ -59,6 +59,7 @@ import { Route as AuthenticatedWSlugSettingsCrmEmailRouteImport } from './routes
 import { Route as AuthenticatedWSlugSettingsCrmAutonomyRouteImport } from './routes/_authenticated/w/$slug/settings/crm-autonomy'
 import { Route as AuthenticatedWSlugSettingsCommandIntentsRouteImport } from './routes/_authenticated/w/$slug/settings/command-intents'
 import { Route as AuthenticatedWSlugSettingsChatGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/chat-general'
+import { Route as AuthenticatedWSlugSettingsBillingRouteImport } from './routes/_authenticated/w/$slug/settings/billing'
 import { Route as AuthenticatedWSlugSettingsAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/automations'
 import { Route as AuthenticatedWSlugSettingsAiAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/ai-automations'
 import { Route as AuthenticatedWSlugSettingsAccessRouteImport } from './routes/_authenticated/w/$slug/settings/access'
@@ -388,6 +389,12 @@ const AuthenticatedWSlugSettingsChatGeneralRoute =
     path: '/settings/chat-general',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSettingsBillingRoute =
+  AuthenticatedWSlugSettingsBillingRouteImport.update({
+    id: '/settings/billing',
+    path: '/settings/billing',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugSettingsAutomationsRoute =
   AuthenticatedWSlugSettingsAutomationsRouteImport.update({
     id: '/settings/automations',
@@ -708,6 +715,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/access': typeof AuthenticatedWSlugSettingsAccessRoute
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
+  '/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
@@ -799,6 +807,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/access': typeof AuthenticatedWSlugSettingsAccessRoute
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
+  '/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
@@ -897,6 +906,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/access': typeof AuthenticatedWSlugSettingsAccessRoute
   '/_authenticated/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/_authenticated/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
+  '/_authenticated/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/_authenticated/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/_authenticated/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/_authenticated/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
@@ -995,6 +1005,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/access'
     | '/w/$slug/settings/ai-automations'
     | '/w/$slug/settings/automations'
+    | '/w/$slug/settings/billing'
     | '/w/$slug/settings/chat-general'
     | '/w/$slug/settings/command-intents'
     | '/w/$slug/settings/crm-autonomy'
@@ -1086,6 +1097,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/access'
     | '/w/$slug/settings/ai-automations'
     | '/w/$slug/settings/automations'
+    | '/w/$slug/settings/billing'
     | '/w/$slug/settings/chat-general'
     | '/w/$slug/settings/command-intents'
     | '/w/$slug/settings/crm-autonomy'
@@ -1183,6 +1195,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/access'
     | '/_authenticated/w/$slug/settings/ai-automations'
     | '/_authenticated/w/$slug/settings/automations'
+    | '/_authenticated/w/$slug/settings/billing'
     | '/_authenticated/w/$slug/settings/chat-general'
     | '/_authenticated/w/$slug/settings/command-intents'
     | '/_authenticated/w/$slug/settings/crm-autonomy'
@@ -1593,6 +1606,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/chat-general'
       fullPath: '/w/$slug/settings/chat-general'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsChatGeneralRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/billing': {
+      id: '/_authenticated/w/$slug/settings/billing'
+      path: '/settings/billing'
+      fullPath: '/w/$slug/settings/billing'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsBillingRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/automations': {
@@ -2056,6 +2076,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsAccessRoute: typeof AuthenticatedWSlugSettingsAccessRoute
   AuthenticatedWSlugSettingsAiAutomationsRoute: typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   AuthenticatedWSlugSettingsAutomationsRoute: typeof AuthenticatedWSlugSettingsAutomationsRoute
+  AuthenticatedWSlugSettingsBillingRoute: typeof AuthenticatedWSlugSettingsBillingRoute
   AuthenticatedWSlugSettingsChatGeneralRoute: typeof AuthenticatedWSlugSettingsChatGeneralRoute
   AuthenticatedWSlugSettingsCommandIntentsRoute: typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   AuthenticatedWSlugSettingsCrmAutonomyRoute: typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
@@ -2119,6 +2140,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsAiAutomationsRoute,
   AuthenticatedWSlugSettingsAutomationsRoute:
     AuthenticatedWSlugSettingsAutomationsRoute,
+  AuthenticatedWSlugSettingsBillingRoute:
+    AuthenticatedWSlugSettingsBillingRoute,
   AuthenticatedWSlugSettingsChatGeneralRoute:
     AuthenticatedWSlugSettingsChatGeneralRoute,
   AuthenticatedWSlugSettingsCommandIntentsRoute:
