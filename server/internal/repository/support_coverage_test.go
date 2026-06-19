@@ -262,6 +262,17 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestSupportCoverageActionableBonusExprUsesPostgresBooleanLiteral(t *testing.T) {
+	expr := supportCoverageActionableBonusExpr("postgres")
+
+	if strings.Contains(expr, "sg.is_active = 1") {
+		t.Fatalf("postgres boolean predicate must not compare is_active to 1: %s", expr)
+	}
+	if !strings.Contains(expr, "sg.is_active = TRUE") {
+		t.Fatalf("expected postgres boolean predicate to use TRUE literal, got: %s", expr)
+	}
+}
+
 func TestSupportCoverageRepository_UpsertTopic(t *testing.T) {
 	db := setupSupportCoverageTestDB(t)
 	repo := NewSupportCoverageRepository(db)
