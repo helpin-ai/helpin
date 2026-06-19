@@ -696,7 +696,7 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	evidenceAllExpr := "(SELECT COUNT(*) FROM support_gap_evidence e WHERE e.gap_id = g.id)"
 	distinctCustomers30dExpr := fmt.Sprintf("(SELECT COUNT(DISTINCT %s) FROM support_gap_evidence e LEFT JOIN support_conversations sc ON sc.id = e.conversation_id WHERE e.gap_id = g.id AND e.created_at > ?)", customerIdentityExpr)
 	distinctCustomersAllExpr := fmt.Sprintf("(SELECT COUNT(DISTINCT %s) FROM support_gap_evidence e LEFT JOIN support_conversations sc ON sc.id = e.conversation_id WHERE e.gap_id = g.id)", customerIdentityExpr)
-	actionableBonusExpr := "CASE WHEN EXISTS(SELECT 1 FROM support_coverage_recommendations r WHERE r.gap_id = g.id AND r.status IN ('open', 'draft')) OR EXISTS(SELECT 1 FROM support_gap_suggestions sg WHERE sg.gap_id = g.id AND sg.is_active = 1) THEN 2 ELSE 0 END"
+	actionableBonusExpr := supportCoverageActionableBonusExpr(r.db.Dialector.Name())
 	kbBonusExpr := "CASE WHEN g.nearest_content_score <= 0 THEN 2 WHEN g.failure_mode IN ('no_retrieval', 'weak_retrieval') AND g.nearest_content_score > 0 THEN 2 ELSE 0 END"
 	impactExpr := fmt.Sprintf("((%s) * 4 + (%s) * 12 + (%s) + COALESCE(g.confidence, 0) * 2 + %s + %s)", evidence30dExpr, distinctCustomers30dExpr, evidenceAllExpr, kbBonusExpr, actionableBonusExpr)
 	q := r.db.WithContext(ctx).
@@ -816,6 +816,14 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 		items[idx].SplitReviewNeeded, items[idx].RecurrenceReopened = supportCoverageGapReviewFlags(items[idx].Metadata)
 	}
 	return items, total, nil
+}
+
+func supportCoverageActionableBonusExpr(dialect string) string {
+	activeSuggestionPredicate := "sg.is_active = 1"
+	if dialect == "postgres" {
+		activeSuggestionPredicate = "sg.is_active = TRUE"
+	}
+	return fmt.Sprintf("CASE WHEN EXISTS(SELECT 1 FROM support_coverage_recommendations r WHERE r.gap_id = g.id AND r.status IN ('open', 'draft')) OR EXISTS(SELECT 1 FROM support_gap_suggestions sg WHERE sg.gap_id = g.id AND %s) THEN 2 ELSE 0 END", activeSuggestionPredicate)
 }
 
 func supportCoverageImpactExplanation(item model.SupportCoverageGapListItem) string {
