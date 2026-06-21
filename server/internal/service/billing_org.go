@@ -93,6 +93,8 @@ type UsageSeriesPoint struct {
 // WorkspaceUsage is the response for GET /billing/usage.
 type WorkspaceUsage struct {
 	Period          string             `json:"period"`
+	PeriodStart     time.Time          `json:"period_start"`
+	PeriodEnd       time.Time          `json:"period_end"`
 	Mode            string             `json:"mode"`
 	IncludedCredits int                `json:"included_credits"`
 	CreditsUsed     int                `json:"credits_used"`
@@ -455,11 +457,11 @@ func (s *BillingService) ListInvoices(ctx context.Context, orgID string) ([]Stri
 }
 
 // GetWorkspaceUsage returns daily/cumulative usage for a workspace in a period.
-func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, period, mode string) (*WorkspaceUsage, error) {
+func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, period, mode, startParam, endParam string) (*WorkspaceUsage, error) {
 	if mode != "cumulative" {
 		mode = "daily"
 	}
-	start, end, err := parseBillingPeriod(period, s.now().UTC())
+	start, end, err := parseUsageWindow(period, startParam, endParam, s.now().UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -476,7 +478,7 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 	featureUsage := map[string]int{}
 	totalCredits := 0
 	dayIndex := map[string]int{}
-	var series []UsageSeriesPoint
+	series := make([]UsageSeriesPoint, 0)
 	for _, row := range rows {
 		featureCredits[row.FeatureKey] += row.Credits
 		featureUsage[row.FeatureKey] += row.Entries
@@ -508,6 +510,8 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 
 	return &WorkspaceUsage{
 		Period:          period,
+		PeriodStart:     start,
+		PeriodEnd:       end,
 		Mode:            mode,
 		IncludedCredits: summary.IncludedCredits,
 		CreditsUsed:     summary.CreditsUsed,
@@ -556,4 +560,29 @@ func parseBillingPeriod(period string, now time.Time) (time.Time, time.Time, err
 	}
 	start = time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, time.UTC)
 	return start, start.AddDate(0, 1, 0), nil
+}
+
+func parseUsageWindow(period, startParam, endParam string, now time.Time) (time.Time, time.Time, error) {
+	startParam = strings.TrimSpace(startParam)
+	endParam = strings.TrimSpace(endParam)
+	if startParam == "" && endParam == "" {
+		return parseBillingPeriod(period, now)
+	}
+	if startParam == "" || endParam == "" {
+		return time.Time{}, time.Time{}, fmt.Errorf("start and end must be provided together")
+	}
+	start, err := time.Parse(time.RFC3339, startParam)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid start %q (want RFC3339)", startParam)
+	}
+	end, err := time.Parse(time.RFC3339, endParam)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid end %q (want RFC3339)", endParam)
+	}
+	start = start.UTC()
+	end = end.UTC()
+	if !end.After(start) {
+		return time.Time{}, time.Time{}, fmt.Errorf("end must be after start")
+	}
+	return start, end, nil
 }

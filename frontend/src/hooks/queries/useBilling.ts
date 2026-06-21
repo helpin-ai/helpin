@@ -4,7 +4,9 @@ import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
 import type {
   CheckoutRequest,
+  ConfirmCheckoutRequest,
   LinkPaymentMethodRequest,
+  PlanChangeRequest,
   SetBillingOwnerRequest,
   UpdateCardRequest,
   UsageMode,
@@ -46,10 +48,16 @@ export function useBillingInvoices(orgId?: string) {
   });
 }
 
-export function useWorkspaceUsage(wsId?: string, period?: string, mode: UsageMode = 'daily') {
+export function useWorkspaceUsage(
+  wsId?: string,
+  period?: string,
+  mode: UsageMode = 'daily',
+  start?: string,
+  end?: string,
+) {
   return useQuery({
-    queryKey: queryKeys.billing.usage(wsId ?? '', period ?? '', mode),
-    queryFn: async () => unwrap(await billingService.getUsage(wsId!, period!, mode)),
+    queryKey: queryKeys.billing.usage(wsId ?? '', period ?? '', mode, start ?? '', end ?? ''),
+    queryFn: async () => unwrap(await billingService.getUsage(wsId!, period!, mode, start, end)),
     enabled: !!wsId && !!period,
     staleTime: 60_000,
   });
@@ -144,6 +152,17 @@ export function useBillingCheckout(boundWsId?: string) {
   });
 }
 
+export function useConfirmBillingCheckout(wsId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: ConfirmCheckoutRequest) =>
+      unwrap(await billingService.confirmCheckout(wsId!, data)),
+    onSuccess: (summary) => {
+      if (wsId) qc.setQueryData(queryKeys.billing.workspace(wsId), summary);
+    },
+  });
+}
+
 /**
  * Portal hook. Supports:
  *  - org page:      useBillingPortal(); mutate(wsId)
@@ -156,6 +175,34 @@ export function useBillingPortal(boundWsId?: string) {
       const wsId = boundWsId ?? arg!;
       const returnUrl = boundWsId ? arg : undefined;
       return unwrap(await billingService.portal(wsId, returnUrl));
+    },
+  });
+}
+
+export function useBillingPlanChange(wsId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: PlanChangeRequest) =>
+      unwrap(await billingService.changePlan(wsId!, data)),
+    onSuccess: () => {
+      if (wsId) qc.invalidateQueries({ queryKey: queryKeys.billing.workspace(wsId) });
+    },
+  });
+}
+
+export function useBillingPlanChangePreview(wsId?: string) {
+  return useMutation({
+    mutationFn: async (data: PlanChangeRequest) =>
+      unwrap(await billingService.previewPlanChange(wsId!, data)),
+  });
+}
+
+export function useResumeBillingSubscription(wsId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => unwrap(await billingService.resumeSubscription(wsId!)),
+    onSuccess: (summary) => {
+      if (wsId) qc.setQueryData(queryKeys.billing.workspace(wsId), summary);
     },
   });
 }

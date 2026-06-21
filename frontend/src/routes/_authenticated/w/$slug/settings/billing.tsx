@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import OrganizationBilling from '@/pages/OrganizationBilling';
+import { BillingSettingsPage } from '@/pages/settings/BillingSettingsPage';
 import { SettingsRouteViewport } from '@/pages/settings/SettingsRouteViewport';
 
 export const Route = createFileRoute('/_authenticated/w/$slug/settings/billing')({
@@ -9,7 +9,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/settings/billing')
 function BillingSettingsRoute() {
   return (
     <SettingsRouteViewport>
-      <OrganizationBilling />
+      <BillingSettingsPage />
     </SettingsRouteViewport>
   );
 }

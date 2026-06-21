@@ -8,6 +8,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"gorm.io/gorm"
 )
 
 // newInviteService is a test helper that wires up InviteService with real
@@ -43,6 +44,42 @@ func setupInviteTestData(t *testing.T, svc *InviteService) (ownerID, wsID string
 	// small trick: create the DB independently and pass it in.  Instead,
 	// let's just use the helper at test-call sites.
 	return "", ""
+}
+
+func createInviteBillingTable(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	mustExec(t, db, `CREATE TABLE workspace_billing (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL UNIQUE,
+		plan TEXT NOT NULL DEFAULT 'free',
+		status TEXT NOT NULL DEFAULT 'active',
+		stripe_customer_id TEXT,
+		stripe_subscription_id TEXT,
+		stripe_price_id TEXT,
+		billing_interval TEXT NOT NULL DEFAULT 'monthly',
+		included_credits INTEGER NOT NULL DEFAULT 1000,
+		credits_used INTEGER NOT NULL DEFAULT 0,
+		on_demand_enabled BOOLEAN NOT NULL DEFAULT 0,
+		on_demand_blocks_invoiced INTEGER NOT NULL DEFAULT 0,
+		current_period_start DATETIME NOT NULL,
+		current_period_end DATETIME NOT NULL,
+		trial_ends_at DATETIME,
+		pending_plan TEXT,
+		pending_billing_interval TEXT,
+		pending_change_at DATETIME,
+		cancel_at_period_end BOOLEAN NOT NULL DEFAULT 0,
+		canceled_at DATETIME,
+		billing_notice_type TEXT,
+		billing_notice_message TEXT,
+		billing_notice_at DATETIME,
+		payment_failed_at DATETIME,
+		trial_will_end_at DATETIME,
+		last_stripe_event_id TEXT,
+		payment_method_id TEXT,
+		billing_owner_user_id TEXT,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
 }
 
 func TestCreateInvitation(t *testing.T) {
@@ -103,6 +140,85 @@ func TestCreateInvitation(t *testing.T) {
 	}
 	if resp.WorkspaceMemberID == nil {
 		t.Error("WorkspaceMemberID should not be nil (pending member should be created)")
+	}
+}
+
+func TestCreateInvitation_FreePlanSeatLimitBlocksNewInvite(t *testing.T) {
+	db := newTestDB(t)
+	invitationRepo := repository.NewInvitationRepository(db)
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	userRepo := repository.NewUserRepository(db)
+	settingsRepo := repository.NewSettingsRepository(db)
+	billingRepo := repository.NewBillingRepository(db)
+	jwtManager := auth.NewJWTManager("test-secret")
+
+	createInviteBillingTable(t, db)
+
+	billingService := NewBillingService(billingRepo, nil, nil)
+	billingService.SetWorkspaceRepository(workspaceRepo)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc.SetBillingService(billingService)
+
+	ownerID := "owner-001"
+	memberID := "member-001"
+	wsID := "ws-001"
+
+	seedUser(t, db, ownerID, "owner@example.com", "Owner User", "hashed")
+	seedUser(t, db, memberID, "member@example.com", "Member User", "hashed")
+	seedWorkspace(t, db, wsID, "Test Workspace", "test-ws", ownerID)
+	seedWorkspaceMember(t, db, "wm-001", wsID, ownerID, "owner@example.com", "Owner User", "owner")
+	seedWorkspaceMember(t, db, "wm-002", wsID, memberID, "member@example.com", "Member User", "member")
+	mustExec(t, db, `INSERT INTO workspace_billing (id, workspace_id, plan, status, billing_interval, included_credits, credits_used, current_period_start, current_period_end, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, datetime('now', '+1 month'), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"billing-001", wsID, model.BillingPlanFree, model.BillingStatusActive, "monthly", 1000, 0)
+
+	_, err := svc.CreateInvitation(context.Background(), model.CreateInvitationRequest{
+		WorkspaceID: wsID,
+		Email:       "third@example.com",
+		Role:        "member",
+	}, ownerID)
+	if err == nil || !strings.Contains(err.Error(), "free plan includes 2 seats") {
+		t.Fatalf("CreateInvitation() error = %v, want free seat limit error", err)
+	}
+}
+
+func TestCreateInvitation_PaidPlanAllowsMoreThanFreeSeatLimit(t *testing.T) {
+	db := newTestDB(t)
+	invitationRepo := repository.NewInvitationRepository(db)
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	userRepo := repository.NewUserRepository(db)
+	settingsRepo := repository.NewSettingsRepository(db)
+	billingRepo := repository.NewBillingRepository(db)
+	jwtManager := auth.NewJWTManager("test-secret")
+
+	createInviteBillingTable(t, db)
+
+	billingService := NewBillingService(billingRepo, nil, nil)
+	billingService.SetWorkspaceRepository(workspaceRepo)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc.SetBillingService(billingService)
+
+	ownerID := "owner-001"
+	memberID := "member-001"
+	wsID := "ws-001"
+
+	seedUser(t, db, ownerID, "owner@example.com", "Owner User", "hashed")
+	seedUser(t, db, memberID, "member@example.com", "Member User", "hashed")
+	seedWorkspace(t, db, wsID, "Test Workspace", "test-ws", ownerID)
+	seedWorkspaceMember(t, db, "wm-001", wsID, ownerID, "owner@example.com", "Owner User", "owner")
+	seedWorkspaceMember(t, db, "wm-002", wsID, memberID, "member@example.com", "Member User", "member")
+	mustExec(t, db, `INSERT INTO workspace_billing (id, workspace_id, plan, status, billing_interval, included_credits, credits_used, current_period_start, current_period_end, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, datetime('now', '+1 month'), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"billing-001", wsID, model.BillingPlanStarter, model.BillingStatusActive, "monthly", 5000, 0)
+
+	resp, err := svc.CreateInvitation(context.Background(), model.CreateInvitationRequest{
+		WorkspaceID: wsID,
+		Email:       "third@example.com",
+		Role:        "member",
+	}, ownerID)
+	if err != nil {
+		t.Fatalf("CreateInvitation() error = %v", err)
+	}
+	if resp.Email != "third@example.com" {
+		t.Fatalf("Email = %q, want third@example.com", resp.Email)
 	}
 }
 

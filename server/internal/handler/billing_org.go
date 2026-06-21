@@ -139,7 +139,9 @@ func (h *BillingHandler) GetUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	period := r.URL.Query().Get("period")
 	mode := r.URL.Query().Get("mode")
-	usage, err := h.billingService.GetWorkspaceUsage(r.Context(), workspaceID, period, mode)
+	start := r.URL.Query().Get("start")
+	end := r.URL.Query().Get("end")
+	usage, err := h.billingService.GetWorkspaceUsage(r.Context(), workspaceID, period, mode, start, end)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

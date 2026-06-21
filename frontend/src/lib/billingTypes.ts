@@ -103,6 +103,9 @@ export interface UsageFeatureRow {
 
 export interface UsageResponse {
   period: string;
+  period_start: string;
+  period_end: string;
+  mode: UsageMode;
   included_credits: number;
   credits_used: number;
   series: UsageSeriesPoint[];
@@ -113,8 +116,39 @@ export interface CheckoutResponse {
   url: string;
 }
 
+export interface ConfirmCheckoutRequest {
+  session_id: string;
+}
+
 export interface PortalResponse {
   url: string;
+}
+
+export interface PlanChangePreviewLine {
+  description: string;
+  amount_cents: number;
+  proration: boolean;
+}
+
+export interface PlanChangePreview {
+  workspace_id: string;
+  current_plan: BillingPlan;
+  current_interval: BillingInterval;
+  target_plan: BillingPlan;
+  target_interval: BillingInterval;
+  effective: 'immediate' | string;
+  proration_date: number;
+  amount_due_cents: number;
+  subtotal_cents: number;
+  total_cents: number;
+  currency: string;
+  next_payment_attempt?: string;
+  current_period_end: string;
+  current_included_credits: number;
+  target_included_credits: number;
+  credits_used: number;
+  credits_remaining_after: number;
+  lines: PlanChangePreviewLine[];
 }
 
 // Request payloads
@@ -135,4 +169,10 @@ export interface CheckoutRequest {
   plan: Exclude<BillingPlan, 'free'>;
   interval: BillingInterval;
   return_url?: string;
+}
+
+export interface PlanChangeRequest {
+  plan: BillingPlan;
+  interval: BillingInterval;
+  proration_date?: number;
 }

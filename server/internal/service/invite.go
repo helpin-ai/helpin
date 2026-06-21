@@ -26,6 +26,7 @@ type InviteService struct {
 	appBaseURL       string
 	jwtManager       *auth.JWTManager
 	logger           *slog.Logger
+	billingService   *BillingService
 }
 
 // NewInviteService creates a new InviteService.
@@ -50,6 +51,10 @@ func NewInviteService(
 		jwtManager:       jwtManager,
 		logger:           slog.Default().With("service", "invite"),
 	}
+}
+
+func (s *InviteService) SetBillingService(billingService *BillingService) {
+	s.billingService = billingService
 }
 
 func generateToken() (string, error) {
@@ -88,6 +93,12 @@ func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateIn
 	}
 	if existing != nil {
 		return nil, fmt.Errorf("a pending invitation already exists for this email")
+	}
+
+	if s.billingService != nil {
+		if err := s.billingService.CanReserveWorkspaceSeat(ctx, req.WorkspaceID); err != nil {
+			return nil, err
+		}
 	}
 
 	pendingMember, err := s.workspaceRepo.UpsertPendingMember(ctx, req.WorkspaceID, req.Email, req.Role, inviterUserID)

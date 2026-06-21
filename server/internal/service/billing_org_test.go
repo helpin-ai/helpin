@@ -80,6 +80,61 @@ func TestParseBillingPeriod(t *testing.T) {
 	}
 }
 
+func TestParseUsageWindow(t *testing.T) {
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name      string
+		period    string
+		start     string
+		end       string
+		wantStart time.Time
+		wantEnd   time.Time
+		wantErr   bool
+	}{
+		{
+			name:      "explicit billing period dates",
+			start:     "2026-06-21T10:30:00Z",
+			end:       "2026-07-21T10:30:00Z",
+			wantStart: time.Date(2026, 6, 21, 10, 30, 0, 0, time.UTC),
+			wantEnd:   time.Date(2026, 7, 21, 10, 30, 0, 0, time.UTC),
+		},
+		{
+			name:      "month period fallback",
+			period:    "2026-03",
+			wantStart: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+			wantEnd:   time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:    "end must be after start",
+			start:   "2026-07-21T10:30:00Z",
+			end:     "2026-06-21T10:30:00Z",
+			wantErr: true,
+		},
+		{
+			name:    "start and end must be paired",
+			start:   "2026-06-21T10:30:00Z",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			start, end, err := parseUsageWindow(tt.period, tt.start, tt.end, now)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseUsageWindow() err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if !start.Equal(tt.wantStart) {
+				t.Errorf("start = %s, want %s", start, tt.wantStart)
+			}
+			if !end.Equal(tt.wantEnd) {
+				t.Errorf("end = %s, want %s", end, tt.wantEnd)
+			}
+		})
+	}
+}
+
 // TestBuildUsageFeatures verifies the per-feature aggregation, cost lookup, and
 // percentage math that GetWorkspaceUsage applies to grouped ledger rows.
 func TestBuildUsageFeatures(t *testing.T) {

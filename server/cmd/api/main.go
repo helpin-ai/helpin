@@ -1181,6 +1181,7 @@ func main() {
 		GrowthAnnual:   cfg.StripeGrowthAnnualPriceID,
 	})
 	billingService.SetOrgRoleResolver(orgService)
+	billingService.SetWorkspaceRepository(workspaceRepo)
 	workspaceService.SetBillingService(billingService)
 	workspaceService.SetPresenceProvider(wsHub.Presence)
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
@@ -1200,6 +1201,7 @@ func main() {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)
 	}
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, appEmailClient, cfg.AppBaseURL, jwtManager)
+	inviteService.SetBillingService(billingService)
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)

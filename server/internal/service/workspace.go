@@ -351,6 +351,12 @@ func (s *WorkspaceService) DeleteLogo(ctx context.Context, id string) (*model.Wo
 
 // Delete removes a workspace and all associated data including S3 attachments.
 func (s *WorkspaceService) Delete(ctx context.Context, id string) error {
+	if s.billingService != nil {
+		if err := s.billingService.CancelWorkspaceSubscriptionImmediately(ctx, id); err != nil {
+			s.logger.ErrorContext(ctx, "failed to cancel workspace subscription before delete", "error", err, "workspace_id", id)
+			return fmt.Errorf("cancel workspace subscription before delete: %w", err)
+		}
+	}
 	// Clean up S3 attachments before cascade-deleting DB records.
 	if s.attachmentRepo != nil && s.s3Client != nil {
 		attachments, _ := s.attachmentRepo.ListByWorkspace(ctx, id)

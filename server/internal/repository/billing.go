@@ -46,6 +46,18 @@ func (r *BillingRepository) GetByStripeSubscriptionID(ctx context.Context, subsc
 	return &billing, nil
 }
 
+func (r *BillingRepository) GetByStripeCustomerID(ctx context.Context, customerID string) (*model.WorkspaceBilling, error) {
+	var billing model.WorkspaceBilling
+	err := r.db.WithContext(ctx).Where("stripe_customer_id = ?", customerID).Order("updated_at DESC").First(&billing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get workspace billing by stripe customer: %w", err)
+	}
+	return &billing, nil
+}
+
 func (r *BillingRepository) InsertStripeWebhookEvent(ctx context.Context, eventID, eventType string) (bool, error) {
 	event := &model.StripeWebhookEvent{
 		ID:   eventID,
@@ -92,6 +104,16 @@ func (r *BillingRepository) UpsertWorkspaceBilling(ctx context.Context, billing 
 				"current_period_start",
 				"current_period_end",
 				"trial_ends_at",
+				"pending_plan",
+				"pending_billing_interval",
+				"pending_change_at",
+				"cancel_at_period_end",
+				"canceled_at",
+				"billing_notice_type",
+				"billing_notice_message",
+				"billing_notice_at",
+				"payment_failed_at",
+				"trial_will_end_at",
 				"last_stripe_event_id",
 				"updated_at",
 			}),

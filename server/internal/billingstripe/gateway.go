@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	stripe "github.com/stripe/stripe-go/v86"
 	portalsession "github.com/stripe/stripe-go/v86/billingportal/session"
@@ -14,6 +15,8 @@ import (
 	"github.com/stripe/stripe-go/v86/invoiceitem"
 	"github.com/stripe/stripe-go/v86/paymentmethod"
 	"github.com/stripe/stripe-go/v86/setupintent"
+	"github.com/stripe/stripe-go/v86/subscription"
+	"github.com/stripe/stripe-go/v86/subscriptionschedule"
 
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -106,8 +109,66 @@ func withBillingResult(rawURL, result string) string {
 	}
 	values := parsed.Query()
 	values.Set("billing", result)
+	if result == "success" {
+		values.Set("checkout_session_id", "{CHECKOUT_SESSION_ID}")
+	}
 	parsed.RawQuery = values.Encode()
+	if result == "success" {
+		parsed.RawQuery = strings.ReplaceAll(parsed.RawQuery, "%7BCHECKOUT_SESSION_ID%7D", "{CHECKOUT_SESSION_ID}")
+	}
 	return parsed.String()
+}
+
+func (g *Gateway) RetrieveCheckoutSession(ctx context.Context, sessionID string) (*service.BillingCheckoutSession, error) {
+	_ = ctx
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil, fmt.Errorf("checkout session ID is required")
+	}
+	session, err := checkoutsession.Get(sessionID, &stripe.CheckoutSessionParams{
+		Params: stripe.Params{
+			Expand: []*string{
+				stripe.String("subscription"),
+				stripe.String("customer"),
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("retrieve stripe checkout session: %w", err)
+	}
+	out := &service.BillingCheckoutSession{
+		ID:            session.ID,
+		WorkspaceID:   strings.TrimSpace(session.ClientReferenceID),
+		Plan:          session.Metadata["plan"],
+		Interval:      session.Metadata["interval"],
+		Status:        string(session.Status),
+		PaymentStatus: string(session.PaymentStatus),
+	}
+	if out.WorkspaceID == "" {
+		out.WorkspaceID = session.Metadata["workspace_id"]
+	}
+	if session.Customer != nil {
+		out.StripeCustomerID = session.Customer.ID
+	}
+	if session.Subscription != nil {
+		out.StripeSubscriptionID = session.Subscription.ID
+		out.SubscriptionStatus = string(session.Subscription.Status)
+		out.CancelAtPeriodEnd = session.Subscription.CancelAtPeriodEnd
+		if session.Subscription.Items != nil && len(session.Subscription.Items.Data) > 0 && session.Subscription.Items.Data[0] != nil && session.Subscription.Items.Data[0].Price != nil {
+			item := session.Subscription.Items.Data[0]
+			out.CurrentPeriodStart = timeFromStripeUnix(item.CurrentPeriodStart)
+			out.CurrentPeriodEnd = timeFromStripeUnix(item.CurrentPeriodEnd)
+			out.StripePriceID = item.Price.ID
+		}
+	}
+	return out, nil
+}
+
+func timeFromStripeUnix(value int64) time.Time {
+	if value <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(value, 0).UTC()
 }
 
 func (g *Gateway) CreatePortalSession(ctx context.Context, customerID, returnURL string) (string, error) {
@@ -121,6 +182,331 @@ func (g *Gateway) CreatePortalSession(ctx context.Context, customerID, returnURL
 		return "", fmt.Errorf("create stripe billing portal session: %w", err)
 	}
 	return session.URL, nil
+}
+
+func (g *Gateway) PreviewSubscriptionPriceChange(ctx context.Context, input service.BillingSubscriptionChangeInput) (*service.BillingStripeInvoicePreview, error) {
+	_ = ctx
+	if strings.TrimSpace(input.SubscriptionID) == "" {
+		return nil, fmt.Errorf("stripe subscription ID is required")
+	}
+	if strings.TrimSpace(input.PriceID) == "" {
+		return nil, fmt.Errorf("stripe price ID is required")
+	}
+	sub, err := subscription.Get(input.SubscriptionID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("retrieve stripe subscription: %w", err)
+	}
+	itemID := firstSubscriptionItemID(sub)
+	if itemID == "" {
+		return nil, fmt.Errorf("stripe subscription has no subscription item")
+	}
+	prorationDate := input.ProrationDate
+	if prorationDate <= 0 {
+		prorationDate = time.Now().UTC().Unix()
+	}
+	params := &stripe.InvoiceCreatePreviewParams{
+		Customer:     stripe.String(sub.Customer.ID),
+		Subscription: stripe.String(input.SubscriptionID),
+		SubscriptionDetails: &stripe.InvoiceCreatePreviewSubscriptionDetailsParams{
+			Items: []*stripe.InvoiceCreatePreviewSubscriptionDetailsItemParams{{
+				ID:       stripe.String(itemID),
+				Price:    stripe.String(input.PriceID),
+				Quantity: stripe.Int64(1),
+			}},
+			ProrationBehavior: stripe.String("always_invoice"),
+			ProrationDate:     stripe.Int64(prorationDate),
+		},
+	}
+	preview, err := invoice.CreatePreview(params)
+	if err != nil {
+		return nil, fmt.Errorf("preview stripe subscription price change: %w", err)
+	}
+	out := &service.BillingStripeInvoicePreview{
+		AmountDueCents:     preview.AmountDue,
+		SubtotalCents:      preview.Subtotal,
+		TotalCents:         preview.Total,
+		Currency:           string(preview.Currency),
+		NextPaymentAttempt: preview.NextPaymentAttempt,
+	}
+	if preview.PeriodStart > 0 {
+		out.PeriodStart = preview.PeriodStart
+	}
+	if preview.PeriodEnd > 0 {
+		out.PeriodEnd = preview.PeriodEnd
+	}
+	if preview.Lines != nil {
+		for _, line := range preview.Lines.Data {
+			if line == nil {
+				continue
+			}
+			out.Lines = append(out.Lines, service.BillingStripeInvoicePreviewLine{
+				Description: line.Description,
+				AmountCents: line.Amount,
+				Proration:   invoiceLineIsProration(line),
+			})
+		}
+	}
+	return out, nil
+}
+
+func (g *Gateway) UpdateSubscriptionPrice(ctx context.Context, input service.BillingSubscriptionChangeInput) error {
+	_ = ctx
+	if strings.TrimSpace(input.SubscriptionID) == "" {
+		return fmt.Errorf("stripe subscription ID is required")
+	}
+	if strings.TrimSpace(input.PriceID) == "" {
+		return fmt.Errorf("stripe price ID is required")
+	}
+	sub, err := subscription.Get(input.SubscriptionID, nil)
+	if err != nil {
+		return fmt.Errorf("retrieve stripe subscription: %w", err)
+	}
+	if err := releaseAttachedSubscriptionSchedule(sub); err != nil {
+		return err
+	}
+	if sub.CancelAtPeriodEnd {
+		if err := clearSubscriptionCancellation(input.SubscriptionID, input.WorkspaceID); err != nil {
+			return err
+		}
+	}
+	itemID := firstSubscriptionItemID(sub)
+	if itemID == "" {
+		return fmt.Errorf("stripe subscription has no subscription item")
+	}
+	params := &stripe.SubscriptionParams{
+		Items: []*stripe.SubscriptionItemsParams{{
+			ID:    stripe.String(itemID),
+			Price: stripe.String(input.PriceID),
+		}},
+		Metadata: map[string]string{
+			"workspace_id":  input.WorkspaceID,
+			"plan":          input.Plan,
+			"interval":      input.Interval,
+			"pending_plan":  "",
+			"pending_until": "",
+		},
+		PaymentBehavior:   stripe.String("pending_if_incomplete"),
+		ProrationBehavior: stripe.String("always_invoice"),
+	}
+	if input.ProrationDate > 0 {
+		params.ProrationDate = stripe.Int64(input.ProrationDate)
+	}
+	if _, err := subscription.Update(input.SubscriptionID, params); err != nil {
+		return fmt.Errorf("update stripe subscription price: %w", err)
+	}
+	return nil
+}
+
+func (g *Gateway) ScheduleSubscriptionPriceChange(ctx context.Context, input service.BillingSubscriptionChangeInput) error {
+	_ = ctx
+	if strings.TrimSpace(input.SubscriptionID) == "" {
+		return fmt.Errorf("stripe subscription ID is required")
+	}
+	if strings.TrimSpace(input.PriceID) == "" {
+		return fmt.Errorf("stripe price ID is required")
+	}
+	sub, err := subscription.Get(input.SubscriptionID, nil)
+	if err != nil {
+		return fmt.Errorf("retrieve stripe subscription: %w", err)
+	}
+	currentPriceID := strings.TrimSpace(input.CurrentPriceID)
+	if currentPriceID == "" {
+		currentPriceID = firstSubscriptionItemPriceID(sub)
+	}
+	if currentPriceID == "" {
+		return fmt.Errorf("current stripe price ID is required")
+	}
+	scheduleID := ""
+	if sub.Schedule != nil {
+		scheduleID = sub.Schedule.ID
+	}
+	if scheduleID == "" {
+		schedule, err := subscriptionschedule.New(&stripe.SubscriptionScheduleParams{
+			FromSubscription: stripe.String(input.SubscriptionID),
+		})
+		if err != nil {
+			return fmt.Errorf("create stripe subscription schedule: %w", err)
+		}
+		scheduleID = schedule.ID
+	}
+
+	currentStart := input.CurrentPeriodStart.Unix()
+	currentEnd := input.CurrentPeriodEnd.Unix()
+	if currentStart <= 0 || currentEnd <= 0 {
+		return fmt.Errorf("current period start and end are required")
+	}
+	params := &stripe.SubscriptionScheduleParams{
+		EndBehavior:       stripe.String("release"),
+		ProrationBehavior: stripe.String("none"),
+		Metadata: map[string]string{
+			"workspace_id":     input.WorkspaceID,
+			"pending_plan":     input.Plan,
+			"pending_interval": input.Interval,
+		},
+		Phases: []*stripe.SubscriptionSchedulePhaseParams{
+			{
+				StartDate: stripe.Int64(currentStart),
+				EndDate:   stripe.Int64(currentEnd),
+				Items: []*stripe.SubscriptionSchedulePhaseItemParams{{
+					Price:    stripe.String(currentPriceID),
+					Quantity: stripe.Int64(1),
+				}},
+				Metadata: map[string]string{
+					"workspace_id": input.WorkspaceID,
+					"plan":         input.CurrentPlan,
+					"interval":     input.CurrentInterval,
+				},
+				ProrationBehavior: stripe.String("none"),
+			},
+			{
+				StartDate: stripe.Int64(currentEnd),
+				Items: []*stripe.SubscriptionSchedulePhaseItemParams{{
+					Price:    stripe.String(input.PriceID),
+					Quantity: stripe.Int64(1),
+				}},
+				Metadata: map[string]string{
+					"workspace_id": input.WorkspaceID,
+					"plan":         input.Plan,
+					"interval":     input.Interval,
+				},
+				ProrationBehavior: stripe.String("none"),
+			},
+		},
+	}
+	if _, err := subscriptionschedule.Update(scheduleID, params); err != nil {
+		return fmt.Errorf("schedule stripe subscription price change: %w", err)
+	}
+	return nil
+}
+
+func (g *Gateway) CancelSubscriptionAtPeriodEnd(ctx context.Context, input service.BillingSubscriptionCancelInput) error {
+	_ = ctx
+	if strings.TrimSpace(input.SubscriptionID) == "" {
+		return fmt.Errorf("stripe subscription ID is required")
+	}
+	sub, err := subscription.Get(input.SubscriptionID, nil)
+	if err != nil {
+		return fmt.Errorf("retrieve stripe subscription: %w", err)
+	}
+	if err := releaseAttachedSubscriptionSchedule(sub); err != nil {
+		return err
+	}
+	params := &stripe.SubscriptionParams{
+		CancelAtPeriodEnd: stripe.Bool(true),
+		Metadata: map[string]string{
+			"workspace_id":  input.WorkspaceID,
+			"pending_plan":  "free",
+			"pending_until": "period_end",
+		},
+	}
+	if _, err := subscription.Update(input.SubscriptionID, params); err != nil {
+		return fmt.Errorf("schedule stripe subscription cancellation: %w", err)
+	}
+	return nil
+}
+
+func (g *Gateway) CancelSubscriptionImmediately(ctx context.Context, input service.BillingSubscriptionCancelInput) error {
+	_ = ctx
+	if strings.TrimSpace(input.SubscriptionID) == "" {
+		return fmt.Errorf("stripe subscription ID is required")
+	}
+	sub, err := subscription.Get(input.SubscriptionID, nil)
+	if err != nil {
+		return fmt.Errorf("retrieve stripe subscription: %w", err)
+	}
+	if err := releaseAttachedSubscriptionSchedule(sub); err != nil {
+		return err
+	}
+	params := &stripe.SubscriptionCancelParams{
+		InvoiceNow: stripe.Bool(false),
+		Prorate:    stripe.Bool(false),
+	}
+	if _, err := subscription.Cancel(input.SubscriptionID, params); err != nil {
+		return fmt.Errorf("cancel stripe subscription: %w", err)
+	}
+	return nil
+}
+
+func (g *Gateway) ResumeSubscription(ctx context.Context, input service.BillingSubscriptionCancelInput) error {
+	_ = ctx
+	if strings.TrimSpace(input.SubscriptionID) == "" {
+		return fmt.Errorf("stripe subscription ID is required")
+	}
+	sub, err := subscription.Get(input.SubscriptionID, nil)
+	if err != nil {
+		return fmt.Errorf("retrieve stripe subscription: %w", err)
+	}
+	if err := releaseAttachedSubscriptionSchedule(sub); err != nil {
+		return err
+	}
+	params := &stripe.SubscriptionParams{
+		CancelAtPeriodEnd: stripe.Bool(false),
+		Metadata: map[string]string{
+			"workspace_id":  input.WorkspaceID,
+			"pending_plan":  "",
+			"pending_until": "",
+			"resume_source": "helpin_billing",
+			"resume_action": "cancel_at_period_end_false",
+		},
+	}
+	if _, err := subscription.Update(input.SubscriptionID, params); err != nil {
+		return fmt.Errorf("resume stripe subscription: %w", err)
+	}
+	return nil
+}
+
+func clearSubscriptionCancellation(subscriptionID, workspaceID string) error {
+	params := &stripe.SubscriptionParams{
+		CancelAtPeriodEnd: stripe.Bool(false),
+		Metadata: map[string]string{
+			"workspace_id":  workspaceID,
+			"pending_plan":  "",
+			"pending_until": "",
+		},
+	}
+	if _, err := subscription.Update(subscriptionID, params); err != nil {
+		return fmt.Errorf("clear stripe subscription cancellation: %w", err)
+	}
+	return nil
+}
+
+func releaseAttachedSubscriptionSchedule(sub *stripe.Subscription) error {
+	if sub == nil || sub.Schedule == nil || strings.TrimSpace(sub.Schedule.ID) == "" {
+		return nil
+	}
+	if _, err := subscriptionschedule.Release(sub.Schedule.ID, &stripe.SubscriptionScheduleReleaseParams{
+		PreserveCancelDate: stripe.Bool(false),
+	}); err != nil {
+		return fmt.Errorf("release stripe subscription schedule: %w", err)
+	}
+	return nil
+}
+
+func firstSubscriptionItemID(sub *stripe.Subscription) string {
+	if sub == nil || sub.Items == nil || len(sub.Items.Data) == 0 || sub.Items.Data[0] == nil {
+		return ""
+	}
+	return sub.Items.Data[0].ID
+}
+
+func firstSubscriptionItemPriceID(sub *stripe.Subscription) string {
+	if sub == nil || sub.Items == nil || len(sub.Items.Data) == 0 || sub.Items.Data[0] == nil || sub.Items.Data[0].Price == nil {
+		return ""
+	}
+	return sub.Items.Data[0].Price.ID
+}
+
+func invoiceLineIsProration(line *stripe.InvoiceLineItem) bool {
+	if line == nil || line.Parent == nil {
+		return false
+	}
+	if line.Parent.InvoiceItemDetails != nil && line.Parent.InvoiceItemDetails.Proration {
+		return true
+	}
+	if line.Parent.SubscriptionItemDetails != nil && line.Parent.SubscriptionItemDetails.Proration {
+		return true
+	}
+	return false
 }
 
 func (g *Gateway) BillCreditBlock(ctx context.Context, input service.BillingCreditBlockCharge) error {

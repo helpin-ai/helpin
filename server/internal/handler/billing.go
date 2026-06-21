@@ -46,6 +46,16 @@ type billingCheckoutRequest struct {
 	ReturnURL string `json:"return_url"`
 }
 
+type billingPlanChangeRequest struct {
+	Plan          string `json:"plan"`
+	Interval      string `json:"interval"`
+	ProrationDate int64  `json:"proration_date,omitempty"`
+}
+
+type billingConfirmCheckoutRequest struct {
+	SessionID string `json:"session_id"`
+}
+
 func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
 	var req billingCheckoutRequest
@@ -66,6 +76,71 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"url": url})
+}
+
+func (h *BillingHandler) ConfirmCheckout(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	var req billingConfirmCheckoutRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	summary, err := h.billingService.ConfirmCheckoutSession(r.Context(), workspaceID, strings.TrimSpace(req.SessionID))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+func (h *BillingHandler) PreviewPlanChange(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	var req billingPlanChangeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	preview, err := h.billingService.PreviewWorkspacePlanChange(r.Context(), service.BillingPlanChangeRequest{
+		WorkspaceID:   workspaceID,
+		Plan:          req.Plan,
+		Interval:      req.Interval,
+		ProrationDate: req.ProrationDate,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+func (h *BillingHandler) ChangePlan(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	var req billingPlanChangeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	summary, err := h.billingService.ChangeWorkspacePlan(r.Context(), service.BillingPlanChangeRequest{
+		WorkspaceID:   workspaceID,
+		Plan:          req.Plan,
+		Interval:      req.Interval,
+		ProrationDate: req.ProrationDate,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+func (h *BillingHandler) ResumeSubscription(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	summary, err := h.billingService.ResumeWorkspaceSubscription(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
 }
 
 func (h *BillingHandler) Portal(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +203,21 @@ func (h *BillingHandler) StripeWebhook(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+	case "invoice.payment_failed":
+		if err := h.handleInvoicePaymentFailed(r, event); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	case "invoice.payment_succeeded":
+		if err := h.handleInvoicePaymentSucceeded(r, event); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	case "customer.subscription.trial_will_end":
+		if err := h.handleTrialWillEnd(r, event); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"received": true})
 }
@@ -150,6 +240,10 @@ func (h *BillingHandler) handleCheckoutCompleted(r *http.Request, event stripe.E
 		subscriptionID = session.Subscription.ID
 	}
 	now := time.Now().UTC()
+	periodEnd := now.AddDate(0, 1, 0)
+	if session.Metadata["interval"] == "annual" {
+		periodEnd = now.AddDate(1, 0, 0)
+	}
 	_, err := h.billingService.ApplyStripeSubscriptionUpdate(r.Context(), service.BillingStripeSubscriptionUpdate{
 		EventID:              event.ID,
 		EventType:            string(event.Type),
@@ -160,8 +254,27 @@ func (h *BillingHandler) handleCheckoutCompleted(r *http.Request, event stripe.E
 		StripeSubscriptionID: subscriptionID,
 		BillingInterval:      session.Metadata["interval"],
 		CurrentPeriodStart:   now,
-		CurrentPeriodEnd:     now.AddDate(0, 1, 0),
+		CurrentPeriodEnd:     periodEnd,
+		CancelAtPeriodEnd:    false,
 	})
+	return err
+}
+
+func (h *BillingHandler) handleInvoicePaymentFailed(r *http.Request, event stripe.Event) error {
+	invoiceEvent, err := parseStripeInvoiceEvent(event)
+	if err != nil {
+		return err
+	}
+	_, err = h.billingService.ApplyStripeInvoicePaymentFailed(r.Context(), invoiceEvent)
+	return err
+}
+
+func (h *BillingHandler) handleInvoicePaymentSucceeded(r *http.Request, event stripe.Event) error {
+	invoiceEvent, err := parseStripeInvoiceEvent(event)
+	if err != nil {
+		return err
+	}
+	_, err = h.billingService.ApplyStripeInvoicePaymentSucceeded(r.Context(), invoiceEvent)
 	return err
 }
 
@@ -201,6 +314,11 @@ func (h *BillingHandler) handleSubscriptionEvent(r *http.Request, event stripe.E
 	if subscription.Customer != nil {
 		customerID = subscription.Customer.ID
 	}
+	var canceledAt *time.Time
+	if subscription.CanceledAt > 0 {
+		t := time.Unix(subscription.CanceledAt, 0).UTC()
+		canceledAt = &t
+	}
 	_, err := h.billingService.ApplyStripeSubscriptionUpdate(r.Context(), service.BillingStripeSubscriptionUpdate{
 		EventID:              event.ID,
 		EventType:            string(event.Type),
@@ -213,8 +331,63 @@ func (h *BillingHandler) handleSubscriptionEvent(r *http.Request, event stripe.E
 		BillingInterval:      interval,
 		CurrentPeriodStart:   currentPeriodStart,
 		CurrentPeriodEnd:     currentPeriodEnd,
+		CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
+		CanceledAt:           canceledAt,
 	})
 	return err
+}
+
+func (h *BillingHandler) handleTrialWillEnd(r *http.Request, event stripe.Event) error {
+	var subscription stripe.Subscription
+	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
+		return err
+	}
+	customerID := ""
+	if subscription.Customer != nil {
+		customerID = subscription.Customer.ID
+	}
+	var trialEnd time.Time
+	if subscription.TrialEnd > 0 {
+		trialEnd = time.Unix(subscription.TrialEnd, 0).UTC()
+	}
+	_, err := h.billingService.ApplyStripeTrialWillEnd(r.Context(), service.BillingStripeTrialWillEndEvent{
+		EventID:        event.ID,
+		EventType:      string(event.Type),
+		SubscriptionID: subscription.ID,
+		CustomerID:     customerID,
+		TrialEndsAt:    trialEnd,
+	})
+	return err
+}
+
+func parseStripeInvoiceEvent(event stripe.Event) (service.BillingStripeInvoiceEvent, error) {
+	var invoice stripe.Invoice
+	if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
+		return service.BillingStripeInvoiceEvent{}, err
+	}
+	customerID := ""
+	if invoice.Customer != nil {
+		customerID = invoice.Customer.ID
+	}
+	subscriptionID := ""
+	if invoice.Parent != nil && invoice.Parent.SubscriptionDetails != nil && invoice.Parent.SubscriptionDetails.Subscription != nil {
+		subscriptionID = invoice.Parent.SubscriptionDetails.Subscription.ID
+	}
+	if subscriptionID == "" {
+		var legacy struct {
+			Subscription string `json:"subscription"`
+		}
+		if err := json.Unmarshal(event.Data.Raw, &legacy); err == nil {
+			subscriptionID = legacy.Subscription
+		}
+	}
+	return service.BillingStripeInvoiceEvent{
+		EventID:        event.ID,
+		EventType:      string(event.Type),
+		SubscriptionID: subscriptionID,
+		CustomerID:     customerID,
+		InvoiceID:      invoice.ID,
+	}, nil
 }
 
 func (h *BillingHandler) returnURL(requestURL, workspaceID string) string {

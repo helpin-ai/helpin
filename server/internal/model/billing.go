@@ -38,6 +38,16 @@ type WorkspaceBilling struct {
 	CurrentPeriodStart     time.Time  `json:"current_period_start" gorm:"not null"`
 	CurrentPeriodEnd       time.Time  `json:"current_period_end" gorm:"not null"`
 	TrialEndsAt            *time.Time `json:"trial_ends_at,omitempty"`
+	PendingPlan            *string    `json:"pending_plan,omitempty"`
+	PendingBillingInterval *string    `json:"pending_billing_interval,omitempty"`
+	PendingChangeAt        *time.Time `json:"pending_change_at,omitempty"`
+	CancelAtPeriodEnd      bool       `json:"cancel_at_period_end" gorm:"not null;default:false"`
+	CanceledAt             *time.Time `json:"canceled_at,omitempty"`
+	BillingNoticeType      *string    `json:"billing_notice_type,omitempty"`
+	BillingNoticeMessage   *string    `json:"billing_notice_message,omitempty"`
+	BillingNoticeAt        *time.Time `json:"billing_notice_at,omitempty"`
+	PaymentFailedAt        *time.Time `json:"payment_failed_at,omitempty"`
+	TrialWillEndAt         *time.Time `json:"trial_will_end_at,omitempty"`
 	LastStripeEventID      *string    `json:"last_stripe_event_id,omitempty"`
 	// PaymentMethodID links this workspace to a saved org card. Null means the
 	// org default card is used.

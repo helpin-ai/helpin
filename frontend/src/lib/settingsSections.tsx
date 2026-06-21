@@ -146,6 +146,14 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     group: 'Workspace',
   },
   {
+    id: 'billing',
+    label: 'Billing',
+    description: 'Manage this workspace plan, AI credits, payment methods, and invoices.',
+    icon: Billing,
+    group: 'Workspace',
+    requiresManageSettings: true,
+  },
+  {
     id: 'members',
     label: 'Members',
     description: '',
@@ -166,14 +174,6 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     icon: Access,
     group: 'Workspace',
     requiredPermission: 'module_access.manage',
-  },
-  {
-    id: 'billing',
-    label: 'Billing',
-    description: 'Manage plans, AI credits, payment cards, and invoices across all workspaces.',
-    icon: Billing,
-    group: 'Organization',
-    requiresManageSettings: true,
   },
   {
     id: 'repositories',

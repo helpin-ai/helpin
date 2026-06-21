@@ -16,19 +16,24 @@ import { useWorkspaceUsage } from '@/hooks/queries';
 
 interface Props {
   workspaceId: string;
+  periodStart?: string;
+  periodEnd?: string;
 }
 
-function buildChart(usage: UsageResponse, mode: UsageMode) {
+export function buildUsageChart(usage: UsageResponse, mode: UsageMode) {
+  const features = Array.isArray(usage.features) ? usage.features : [];
+  const series = Array.isArray(usage.series) ? usage.series : [];
   // Feature keys ordered by total credits desc (matches table order).
-  const featureKeys = usage.features.map((f) => f.feature_key);
-  const labelByKey = new Map(usage.features.map((f) => [f.feature_key, f.label]));
+  const featureKeys = features.map((f) => f.feature_key);
+  const labelByKey = new Map(features.map((f) => [f.feature_key, f.label]));
+  const apiAlreadyCumulative = usage.mode === 'cumulative';
 
   let running: Record<string, number> = {};
-  const points = usage.series.map((pt) => {
+  const points = series.map((pt) => {
     const segs = featureKeys.map((key, i) => {
-      const dayVal = pt.features[key] ?? 0;
-      const value = mode === 'cumulative' ? (running[key] ?? 0) + dayVal : dayVal;
-      if (mode === 'cumulative') running = { ...running, [key]: value };
+      const dayVal = pt.features?.[key] ?? 0;
+      const value = mode === 'cumulative' && !apiAlreadyCumulative ? (running[key] ?? 0) + dayVal : dayVal;
+      if (mode === 'cumulative' && !apiAlreadyCumulative) running = { ...running, [key]: value };
       return { key, label: labelByKey.get(key) ?? key, value, color: featureColor(i) };
     });
     const total = segs.reduce((s, x) => s + x.value, 0);
@@ -38,33 +43,31 @@ function buildChart(usage: UsageResponse, mode: UsageMode) {
   return { points, max, featureKeys, labelByKey };
 }
 
-export function UsageDetail({ workspaceId }: Props) {
+export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
   const [mode, setMode] = useState<UsageMode>('daily');
-  const period = useMemo(() => dayjs().format('YYYY-MM'), []);
-  const { data: usage, isLoading } = useWorkspaceUsage(workspaceId, period, mode);
+  const period = useMemo(() => {
+    if (periodStart && periodEnd) return `${periodStart}..${periodEnd}`;
+    return dayjs().format('YYYY-MM');
+  }, [periodEnd, periodStart]);
+  const { data: usage, isLoading } = useWorkspaceUsage(workspaceId, period, mode, periodStart, periodEnd);
 
   if (isLoading || !usage) {
     return <Skeleton className="h-64 w-full" />;
   }
 
-  const { points, max } = buildChart(usage, mode);
-  const usedPct = usage.included_credits
-    ? Math.min(100, Math.round((usage.credits_used / usage.included_credits) * 100))
-    : 0;
+  const { points, max } = buildUsageChart(usage, mode);
+  const features = Array.isArray(usage.features) ? usage.features : [];
+  const periodLabel = formatUsagePeriod(usage.period_start, usage.period_end);
 
   return (
     <div className="space-y-5">
       {/* Headline + mode switch */}
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="text-2xl font-semibold tabular-nums">
-            {formatNumber(usage.credits_used)}
-            <span className="text-base font-normal text-muted-foreground">
-              {' '}
-              / {formatNumber(usage.included_credits)} credits
-            </span>
+        <div className="space-y-1">
+          <div className="text-sm font-semibold">
+            {mode === 'cumulative' ? 'Cumulative credit usage' : 'Daily credit usage'}
           </div>
-          <div className="text-xs text-muted-foreground">{usedPct}% of included credits used</div>
+          <div className="text-xs text-muted-foreground">{periodLabel}</div>
         </div>
         <div className="flex items-center gap-1 rounded-lg bg-muted p-1 text-xs">
           {(['daily', 'cumulative'] as UsageMode[]).map((m) => (
@@ -111,7 +114,10 @@ export function UsageDetail({ workspaceId }: Props) {
         </div>
         {/* Legend */}
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-          {usage.features.map((f, i) => (
+          {features.length === 0 && (
+            <span className="text-[11px] text-muted-foreground">No credit usage recorded for this period.</span>
+          )}
+          {features.map((f, i) => (
             <div key={f.feature_key} className="flex items-center gap-1.5 text-[11px]">
               <span
                 className="inline-block size-2.5 rounded-sm"
@@ -135,7 +141,14 @@ export function UsageDetail({ workspaceId }: Props) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {usage.features.map((f, i) => (
+            {features.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                  No feature usage yet.
+                </TableCell>
+              </TableRow>
+            )}
+            {features.map((f, i) => (
               <TableRow key={f.feature_key}>
                 <TableCell>
                   <span className="inline-flex items-center gap-2">
@@ -161,4 +174,12 @@ export function UsageDetail({ workspaceId }: Props) {
       </div>
     </div>
   );
+}
+
+function formatUsagePeriod(start?: string, end?: string) {
+  if (!start || !end) return 'Current billing period';
+  const startDate = dayjs(start);
+  const endDate = dayjs(end).subtract(1, 'day');
+  if (!startDate.isValid() || !endDate.isValid()) return 'Current billing period';
+  return `${startDate.format('MMM D')} - ${endDate.format('MMM D, YYYY')}`;
 }

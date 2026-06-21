@@ -14,8 +14,8 @@ export const queryKeys = {
     org: (orgId: string) => ['billing', 'org', orgId] as const,
     cards: (orgId: string) => ['billing', 'org', orgId, 'cards'] as const,
     invoices: (orgId: string) => ['billing', 'org', orgId, 'invoices'] as const,
-    usage: (wsId: string, period: string, mode: string) =>
-      ['billing', 'workspace', wsId, 'usage', period, mode] as const,
+    usage: (wsId: string, period: string, mode: string, start = '', end = '') =>
+      ['billing', 'workspace', wsId, 'usage', period, mode, start, end] as const,
     workspace: (wsId: string) => ['billing', 'workspace', wsId] as const,
   },
 

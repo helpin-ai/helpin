@@ -458,6 +458,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				if h.Billing != nil {
 					r.With(requirePerm(authorization.PermSettingsRead)).Get("/billing", h.Billing.Get)
 					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/checkout", h.Billing.Checkout)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/confirm-checkout", h.Billing.ConfirmCheckout)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/preview-plan-change", h.Billing.PreviewPlanChange)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/change-plan", h.Billing.ChangePlan)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/resume-subscription", h.Billing.ResumeSubscription)
 					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/portal", h.Billing.Portal)
 					r.With(requirePerm(authorization.PermSettingsManage)).Put("/billing/on-demand", h.Billing.SetOnDemand)
 					// Billing-manager-gated (org owner OR workspace billing owner) — checked in handler.
