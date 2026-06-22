@@ -376,7 +376,20 @@ func aiSectionCandidateContentWithStatusForCurrent(raw, current json.RawMessage,
 }
 
 func (s *DocsAISectionService) generateCandidate(ctx context.Context, block *model.DocsBlock, prompt string, run *model.AgentRun, agent *model.Agent, sources []map[string]any) (json.RawMessage, string, error) {
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	runID := ""
+	if run != nil {
+		runID = run.ID
+	}
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    block.WorkspaceID,
+		FeatureKey:     BillingFeatureDocsAISectionGeneration,
+		IdempotencyKey: aiUsageIdempotencyKey(block.WorkspaceID, BillingFeatureDocsAISectionGeneration, block.DocumentID, block.ID, runID),
+		Metadata: map[string]interface{}{
+			"document_id":  block.DocumentID,
+			"block_id":     block.ID,
+			"agent_run_id": runID,
+		},
+	}), llm.ChatRequest{
 		Provider: normalizeModelProvider(derefString(agent.Provider)),
 		Model:    strings.TrimSpace(derefString(agent.Model)),
 		SystemPrompt: `You are the selected Helpin documentation agent. Regenerate one AI-owned documentation section.

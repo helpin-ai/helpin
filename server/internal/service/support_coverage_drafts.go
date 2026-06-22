@@ -321,7 +321,14 @@ func (s *SupportCoverageDraftService) generateDraftFromEvidence(ctx context.Cont
 	draftCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	resp, err := s.llmProvider.ChatCompletion(draftCtx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(draftCtx, AIUsageMeteringContext{
+		WorkspaceID:    detail.WorkspaceID,
+		FeatureKey:     BillingFeatureDocsArticleGeneration,
+		IdempotencyKey: aiUsageIdempotencyKey(detail.WorkspaceID, BillingFeatureDocsArticleGeneration, "gap_draft", detail.ID),
+		Metadata: map[string]interface{}{
+			"gap_id": detail.ID,
+		},
+	}), llm.ChatRequest{
 		SystemPrompt: "You are a technical writer creating help center articles. Write clear, concise documentation that answers the customer's question. Output JSON only.",
 		Messages: []llm.Message{
 			{Role: "user", Content: prompt},
@@ -355,7 +362,19 @@ func (s *SupportCoverageDraftService) generateUpdateFromEvidence(ctx context.Con
 	updateCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	resp, err := s.llmProvider.ChatCompletion(updateCtx, llm.ChatRequest{
+	targetDocumentID := ""
+	if existing != nil {
+		targetDocumentID = existing.DocumentID
+	}
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(updateCtx, AIUsageMeteringContext{
+		WorkspaceID:    detail.WorkspaceID,
+		FeatureKey:     BillingFeatureDocsArticleGeneration,
+		IdempotencyKey: aiUsageIdempotencyKey(detail.WorkspaceID, BillingFeatureDocsArticleGeneration, "gap_update", detail.ID, targetDocumentID),
+		Metadata: map[string]interface{}{
+			"gap_id":             detail.ID,
+			"target_document_id": targetDocumentID,
+		},
+	}), llm.ChatRequest{
 		SystemPrompt: "You are a technical writer improving existing help center articles. Suggest changes that address the customer questions. Output JSON only.",
 		Messages: []llm.Message{
 			{Role: "user", Content: prompt},

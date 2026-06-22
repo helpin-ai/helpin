@@ -7,7 +7,6 @@ import type {
   ConfirmCheckoutRequest,
   LinkPaymentMethodRequest,
   PlanChangeRequest,
-  SetBillingOwnerRequest,
   UpdateCardRequest,
   UsageMode,
 } from '@/lib/billingTypes';
@@ -72,12 +71,6 @@ function useInvalidateOrgBilling(orgId?: string) {
   };
 }
 
-export function useCreateSetupIntent(orgId?: string) {
-  return useMutation({
-    mutationFn: async () => unwrap(await billingService.createSetupIntent(orgId!)),
-  });
-}
-
 export function useUpdateCard(orgId?: string) {
   const invalidate = useInvalidateOrgBilling(orgId);
   return useMutation({
@@ -104,18 +97,6 @@ export function useLinkPaymentMethod(orgId?: string) {
   return useMutation({
     mutationFn: async ({ wsId, data }: { wsId: string; data: LinkPaymentMethodRequest }) => {
       const res = await billingService.linkPaymentMethod(wsId, data);
-      if (res.error) throw new Error(res.error);
-      return res.data;
-    },
-    onSuccess: invalidate,
-  });
-}
-
-export function useSetBillingOwner(orgId?: string) {
-  const invalidate = useInvalidateOrgBilling(orgId);
-  return useMutation({
-    mutationFn: async ({ wsId, data }: { wsId: string; data: SetBillingOwnerRequest }) => {
-      const res = await billingService.setBillingOwner(wsId, data);
       if (res.error) throw new Error(res.error);
       return res.data;
     },

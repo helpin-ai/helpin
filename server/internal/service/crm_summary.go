@@ -401,7 +401,15 @@ func (s *CRMSummaryService) generateContactSummary(ctx context.Context, workspac
 		BuyerSignals: signals,
 	}
 
-	output, err := s.generateSummaryLLM(ctx, payload)
+	output, err := s.generateSummaryLLM(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    workspaceID,
+		FeatureKey:     BillingFeatureCRMSummary,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureCRMSummary, model.CRMObjectContact, contactID),
+		Metadata: map[string]interface{}{
+			"entity_type": model.CRMObjectContact,
+			"entity_id":   contactID,
+		},
+	}), payload)
 	if err != nil {
 		return summaryGenerationOutput{}, nil, nil, nil, err
 	}
@@ -441,7 +449,15 @@ func (s *CRMSummaryService) generateDealSummary(ctx context.Context, workspaceID
 		BuyerSignals:   signals,
 	}
 
-	output, err := s.generateSummaryLLM(ctx, payload)
+	output, err := s.generateSummaryLLM(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    workspaceID,
+		FeatureKey:     BillingFeatureCRMSummary,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureCRMSummary, model.CRMObjectDeal, dealID),
+		Metadata: map[string]interface{}{
+			"entity_type": model.CRMObjectDeal,
+			"entity_id":   dealID,
+		},
+	}), payload)
 	if err != nil {
 		return summaryGenerationOutput{}, nil, nil, nil, err
 	}

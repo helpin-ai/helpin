@@ -28,6 +28,7 @@ type DocsHelpcenterTranslationService struct {
 	collectionRepo  *repository.DocsCollectionRepository
 	searchRepo      *repository.DocsHelpcenterSearchRepository
 	llmProvider     llm.Provider
+	entitlementSvc  *EntitlementService
 }
 
 // NewDocsHelpcenterTranslationService creates a new multilingual help-center service.
@@ -55,12 +56,38 @@ func NewDocsHelpcenterTranslationService(
 	}
 }
 
+func (s *DocsHelpcenterTranslationService) SetEntitlementService(entitlementSvc *EntitlementService) *DocsHelpcenterTranslationService {
+	s.entitlementSvc = entitlementSvc
+	return s
+}
+
 func (s *DocsHelpcenterTranslationService) SetSearchRepository(searchRepo *repository.DocsHelpcenterSearchRepository) {
 	s.searchRepo = searchRepo
 }
 
 func (s *DocsHelpcenterTranslationService) GetLocales(ctx context.Context, workspaceID string) (*model.DocsHelpcenterConfig, error) {
 	return s.hcRepo.GetConfig(ctx, workspaceID)
+}
+
+func (s *DocsHelpcenterTranslationService) requireMultilingualLocale(ctx context.Context, workspaceID string, cfg *model.DocsHelpcenterConfig, locale string) error {
+	if s.entitlementSvc == nil {
+		return nil
+	}
+	defaultLocale := "en"
+	if cfg != nil && strings.TrimSpace(cfg.DefaultLocale) != "" {
+		defaultLocale = strings.TrimSpace(strings.ToLower(cfg.DefaultLocale))
+	}
+	if strings.TrimSpace(strings.ToLower(locale)) == defaultLocale {
+		return nil
+	}
+	return s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureMultilingualHelpCenter)
+}
+
+func (s *DocsHelpcenterTranslationService) requireAIArticleTranslation(ctx context.Context, workspaceID string) error {
+	if s.entitlementSvc == nil {
+		return nil
+	}
+	return s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAIArticleTranslation)
 }
 
 func (s *DocsHelpcenterTranslationService) UpdateLocales(ctx context.Context, workspaceID string, req model.UpdateDocsHelpcenterLocalesRequest) (*model.DocsHelpcenterConfig, error) {
@@ -87,6 +114,11 @@ func (s *DocsHelpcenterTranslationService) UpdateLocales(ctx context.Context, wo
 	}
 	if _, ok := seen[defaultLocale]; !ok {
 		return nil, fmt.Errorf("default locale must be included in enabled locales")
+	}
+	if len(enabled) > 1 && s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureMultilingualHelpCenter); err != nil {
+			return nil, err
+		}
 	}
 
 	cfg, err := s.hcRepo.UpsertConfig(ctx, workspaceID, map[string]interface{}{
@@ -165,6 +197,9 @@ func (s *DocsHelpcenterTranslationService) UpsertSpaceTranslation(ctx context.Co
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireMultilingualLocale(ctx, space.WorkspaceID, cfg, locale); err != nil {
+		return nil, err
+	}
 
 	existing, err := s.translationRepo.GetSpaceTranslation(ctx, spaceID, locale)
 	if err != nil {
@@ -240,6 +275,9 @@ func (s *DocsHelpcenterTranslationService) UpsertCollectionTranslation(ctx conte
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireMultilingualLocale(ctx, collection.WorkspaceID, cfg, locale); err != nil {
+		return nil, err
+	}
 
 	existing, err := s.translationRepo.GetCollectionTranslation(ctx, collectionID, locale)
 	if err != nil {
@@ -291,6 +329,9 @@ func (s *DocsHelpcenterTranslationService) UpsertArticleTranslation(ctx context.
 	if doc == nil {
 		return nil, fmt.Errorf("document not found")
 	}
+	if err := s.requireAIArticleTranslation(ctx, doc.WorkspaceID); err != nil {
+		return nil, err
+	}
 
 	cfg, err := s.hcRepo.GetConfig(ctx, doc.WorkspaceID)
 	if err != nil {
@@ -315,6 +356,9 @@ func (s *DocsHelpcenterTranslationService) UpsertArticleTranslation(ctx context.
 
 	if !localeEnabled(cfg.EnabledLocales, locale) {
 		return nil, fmt.Errorf("locale %s is not enabled for this help center", locale)
+	}
+	if err := s.requireMultilingualLocale(ctx, doc.WorkspaceID, cfg, locale); err != nil {
+		return nil, err
 	}
 
 	existing, err := s.translationRepo.GetArticleTranslation(ctx, documentID, locale)
@@ -404,6 +448,9 @@ func (s *DocsHelpcenterTranslationService) GenerateArticleTranslationDraft(ctx c
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireMultilingualLocale(ctx, doc.WorkspaceID, cfg, locale); err != nil {
+		return nil, err
+	}
 
 	content, err := s.contentRepo.GetByDocumentID(ctx, documentID)
 	if err != nil {
@@ -448,7 +495,15 @@ func (s *DocsHelpcenterTranslationService) GenerateArticleTranslationDraft(ctx c
 		return nil, fmt.Errorf("marshal translation segment payload: %w", err)
 	}
 
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    doc.WorkspaceID,
+		FeatureKey:     BillingFeatureDocsArticleTranslation,
+		IdempotencyKey: aiUsageIdempotencyKey(doc.WorkspaceID, BillingFeatureDocsArticleTranslation, documentID, locale),
+		Metadata: map[string]interface{}{
+			"document_id": documentID,
+			"locale":      locale,
+		},
+	}), llm.ChatRequest{
 		SystemPrompt: `You translate structured help-center article segments for a requested locale.
 Return strict JSON with shape {"segments":[{"id":"...","translated_text":"..."}]}.
 Rules:
@@ -529,6 +584,9 @@ func (s *DocsHelpcenterTranslationService) PublishSpaceTranslation(ctx context.C
 	if translation == nil {
 		return nil, fmt.Errorf("space translation not found")
 	}
+	if err := s.requireMultilingualLocale(ctx, translation.WorkspaceID, nil, locale); err != nil {
+		return nil, err
+	}
 
 	space, err := s.spaceRepo.GetByID(ctx, spaceID)
 	if err != nil {
@@ -599,6 +657,9 @@ func (s *DocsHelpcenterTranslationService) PublishCollectionTranslation(ctx cont
 	}
 	if translation == nil {
 		return nil, fmt.Errorf("collection translation not found")
+	}
+	if err := s.requireMultilingualLocale(ctx, translation.WorkspaceID, nil, locale); err != nil {
+		return nil, err
 	}
 
 	spaceTranslation, err := s.translationRepo.GetSpaceTranslation(ctx, translation.SpaceID, locale)
@@ -999,6 +1060,12 @@ func (s *DocsHelpcenterTranslationService) GenerateSpaceTranslation(ctx context.
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireAIArticleTranslation(ctx, space.WorkspaceID); err != nil {
+		return nil, err
+	}
+	if err := s.requireMultilingualLocale(ctx, space.WorkspaceID, cfg, locale); err != nil {
+		return nil, err
+	}
 
 	payload, _ := json.Marshal(map[string]string{
 		"source_locale": cfg.DefaultLocale,
@@ -1007,7 +1074,15 @@ func (s *DocsHelpcenterTranslationService) GenerateSpaceTranslation(ctx context.
 		"name":          space.Name,
 	})
 
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    space.WorkspaceID,
+		FeatureKey:     BillingFeatureDocsArticleTranslation,
+		IdempotencyKey: aiUsageIdempotencyKey(space.WorkspaceID, BillingFeatureDocsArticleTranslation, "space", spaceID, locale),
+		Metadata: map[string]interface{}{
+			"space_id": spaceID,
+			"locale":   locale,
+		},
+	}), llm.ChatRequest{
 		SystemPrompt: `You translate metadata for a public help center / knowledge base.
 Return strict JSON with shape {"name":"...","description":"..."}.
 Rules:
@@ -1086,6 +1161,12 @@ func (s *DocsHelpcenterTranslationService) GenerateCollectionTranslation(ctx con
 	if err != nil {
 		return nil, err
 	}
+	if err := s.requireAIArticleTranslation(ctx, space.WorkspaceID); err != nil {
+		return nil, err
+	}
+	if err := s.requireMultilingualLocale(ctx, space.WorkspaceID, cfg, locale); err != nil {
+		return nil, err
+	}
 
 	description := ""
 	if collection.Description != nil {
@@ -1101,7 +1182,15 @@ func (s *DocsHelpcenterTranslationService) GenerateCollectionTranslation(ctx con
 		"space_name":    space.Name,
 	})
 
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    space.WorkspaceID,
+		FeatureKey:     BillingFeatureDocsArticleTranslation,
+		IdempotencyKey: aiUsageIdempotencyKey(space.WorkspaceID, BillingFeatureDocsArticleTranslation, "collection", collectionID, locale),
+		Metadata: map[string]interface{}{
+			"collection_id": collectionID,
+			"locale":        locale,
+		},
+	}), llm.ChatRequest{
 		SystemPrompt: `You translate metadata for a public help center / knowledge base.
 Return strict JSON with shape {"name":"...","description":"..."}.
 Rules:
@@ -1291,6 +1380,9 @@ func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context
 	if translation == nil {
 		return nil, fmt.Errorf("article translation not found")
 	}
+	if err := s.requireMultilingualLocale(ctx, translation.WorkspaceID, nil, locale); err != nil {
+		return nil, err
+	}
 
 	doc, err := s.docRepo.GetByID(ctx, documentID)
 	if err != nil {
@@ -1410,6 +1502,9 @@ func (s *DocsHelpcenterTranslationService) UpdateArticleTranslationSlug(ctx cont
 	}
 	if translation.WorkspaceID != workspaceID {
 		return fmt.Errorf("article translation not found")
+	}
+	if err := s.requireMultilingualLocale(ctx, workspaceID, nil, locale); err != nil {
+		return err
 	}
 	if translation.Slug == nil || strings.TrimSpace(*translation.Slug) == "" {
 		return fmt.Errorf("article translation has no published slug")

@@ -48,6 +48,7 @@ type WorkspaceBillingCard struct {
 	WorkspaceSlug     string            `json:"workspace_slug"`
 	Plan              string            `json:"plan"`
 	Status            string            `json:"status"`
+	Locked            bool              `json:"locked"`
 	Trialing          bool              `json:"trialing"`
 	TrialEndsAt       *time.Time        `json:"trial_ends_at,omitempty"`
 	CurrentPeriodEnd  time.Time         `json:"current_period_end"`
@@ -120,18 +121,9 @@ func PriceCentsForPlan(plan, interval string) int {
 	}
 }
 
-// billingFeatureLabels maps feature keys to display labels.
-var billingFeatureLabels = map[string]string{
-	BillingFeatureSupportAIReply: "Support AI reply",
-	BillingFeatureCRMAction:      "CRM / deal action",
-	BillingFeatureDocsGeneration: "Doc generation",
-	BillingFeaturePlanningRun:    "Planning run",
-	BillingFeatureCodingRun:      "Coding / review run",
-}
-
 func billingFeatureLabel(key string) string {
-	if label, ok := billingFeatureLabels[key]; ok {
-		return label
+	if feature, ok := AIUsageFeature(key); ok {
+		return feature.Label
 	}
 	if key == "" {
 		return "Other"
@@ -139,15 +131,18 @@ func billingFeatureLabel(key string) string {
 	return key
 }
 
-// CanManageWorkspaceBilling reports whether the user is the org owner or holds
-// the billing-owner assignment on the given workspace.
+// CanManageWorkspaceBilling reports whether the user is an owner for billing
+// purposes. Billing management is owner-only; admins and delegated billing
+// owners are intentionally excluded for now.
 func (s *BillingService) CanManageWorkspaceBilling(ctx context.Context, userID, workspaceID string) (bool, error) {
-	billing, err := s.repo.GetByWorkspaceID(ctx, workspaceID)
-	if err != nil {
-		return false, err
-	}
-	if billing != nil && billing.BillingOwnerUserID != nil && *billing.BillingOwnerUserID == userID {
-		return true, nil
+	if s.workspaceRepo != nil {
+		role, err := s.workspaceRepo.GetMemberRole(ctx, workspaceID, userID)
+		if err != nil {
+			return false, err
+		}
+		if role == model.RoleOwner {
+			return true, nil
+		}
 	}
 	orgID, err := s.repo.FindWorkspaceOrgID(ctx, workspaceID)
 	if err != nil {
@@ -159,26 +154,11 @@ func (s *BillingService) CanManageWorkspaceBilling(ctx context.Context, userID, 
 	return s.isOrgOwner(ctx, userID, orgID)
 }
 
-// CanManageOrgBilling reports whether the user may view org-level billing: org
-// owner, or a delegated billing owner on at least one workspace in the org.
+// CanManageOrgBilling reports whether the user may manage org-level billing.
+// This is owner-only; delegated workspace billing owners do not grant org
+// billing access.
 func (s *BillingService) CanManageOrgBilling(ctx context.Context, userID, orgID string) (bool, error) {
-	owner, err := s.isOrgOwner(ctx, userID, orgID)
-	if err != nil {
-		return false, err
-	}
-	if owner {
-		return true, nil
-	}
-	rows, err := s.repo.ListWorkspaceBillingsForOrg(ctx, orgID)
-	if err != nil {
-		return false, err
-	}
-	for i := range rows {
-		if rows[i].Billing.BillingOwnerUserID != nil && *rows[i].Billing.BillingOwnerUserID == userID {
-			return true, nil
-		}
-	}
-	return false, nil
+	return s.isOrgOwner(ctx, userID, orgID)
 }
 
 // IsOrgOwner reports whether the user is the organization owner.
@@ -233,7 +213,7 @@ func (s *BillingService) GetOrganizationBilling(ctx context.Context, userID, org
 		b := rows[i].Billing
 		plan := b.Plan
 		if plan == "" {
-			plan = model.BillingPlanFree
+			plan = model.BillingPlanGrowth
 		}
 		interval := b.BillingInterval
 		if interval == "" {
@@ -247,13 +227,14 @@ func (s *BillingService) GetOrganizationBilling(ctx context.Context, userID, org
 			WorkspaceSlug:     rows[i].WorkspaceSlug,
 			Plan:              plan,
 			Status:            b.Status,
+			Locked:            billingStatusLocked(b.Status),
 			Trialing:          trialing,
 			TrialEndsAt:       b.TrialEndsAt,
 			CurrentPeriodEnd:  b.CurrentPeriodEnd,
 			IncludedCredits:   b.IncludedCredits,
 			CreditsUsed:       b.CreditsUsed,
 			OnDemandEnabled:   b.OnDemandEnabled,
-			OnDemandAvailable: plan != model.BillingPlanFree && b.StripeCustomerID != nil && b.StripeSubscriptionID != nil,
+			OnDemandAvailable: b.Status == model.BillingStatusActive && b.StripeCustomerID != nil && b.StripeSubscriptionID != nil,
 			PriceCents:        price,
 			BillingInterval:   interval,
 		}
@@ -276,12 +257,12 @@ func (s *BillingService) GetOrganizationBilling(ctx context.Context, userID, org
 		if b.BillingOwnerUserID != nil {
 			card.BillingOwner = &BillingOwnerRef{UserID: *b.BillingOwnerUserID}
 		}
-		card.CanManage = orgOwner || (b.BillingOwnerUserID != nil && *b.BillingOwnerUserID == userID)
+		card.CanManage = orgOwner
 
 		if trialing {
 			summary.TrialingCount++
 		}
-		if plan != model.BillingPlanFree && b.Status == model.BillingStatusActive {
+		if b.Status == model.BillingStatusActive {
 			summary.PaidCount++
 			if interval == "annual" {
 				summary.TotalMonthlySpendCents += price / 12
@@ -320,19 +301,6 @@ func (s *BillingService) ListPaymentMethods(ctx context.Context, orgID string) (
 		})
 	}
 	return out, nil
-}
-
-// CreateSetupIntent ensures the org Stripe customer exists and returns a setup
-// intent client secret for adding a card.
-func (s *BillingService) CreateSetupIntent(ctx context.Context, orgID, email string) (string, error) {
-	if s.gateway == nil {
-		return "", fmt.Errorf("stripe billing is not configured")
-	}
-	customerID, err := s.ensureOrgCustomer(ctx, orgID, email)
-	if err != nil {
-		return "", err
-	}
-	return s.gateway.CreateSetupIntent(ctx, customerID)
 }
 
 func (s *BillingService) ensureOrgCustomer(ctx context.Context, orgID, email string) (string, error) {
@@ -430,14 +398,6 @@ func (s *BillingService) LinkWorkspacePaymentMethod(ctx context.Context, workspa
 		}
 	}
 	return s.repo.LinkWorkspacePaymentMethod(ctx, workspaceID, paymentMethodID)
-}
-
-// SetWorkspaceBillingOwner assigns or clears the delegated billing owner.
-func (s *BillingService) SetWorkspaceBillingOwner(ctx context.Context, workspaceID string, userID *string) error {
-	if _, err := s.GetWorkspaceBilling(ctx, workspaceID); err != nil {
-		return err
-	}
-	return s.repo.SetWorkspaceBillingOwner(ctx, workspaceID, userID)
 }
 
 // ListInvoices returns the org's Stripe invoices. Degrades to an empty list

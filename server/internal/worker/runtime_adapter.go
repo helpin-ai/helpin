@@ -17,6 +17,24 @@ type RuntimeRegistry struct {
 	adapters map[string]RuntimeAdapter
 }
 
+type usagePreflightRuntimeAdapter struct {
+	adapter     RuntimeAdapter
+	preflighter AgentRunUsagePreflighter
+}
+
+func (a usagePreflightRuntimeAdapter) Kind() string {
+	return a.adapter.Kind()
+}
+
+func (a usagePreflightRuntimeAdapter) Execute(execCtx *ExecutionContext, run *model.AgentRun) error {
+	if execCtx != nil {
+		if err := preflightAgentRunUsage(execCtx.Context, a.preflighter, run, execCtx.Agent); err != nil {
+			return err
+		}
+	}
+	return a.adapter.Execute(execCtx, run)
+}
+
 // NewRuntimeRegistry creates a registry for runtime adapters.
 func NewRuntimeRegistry(adapters ...RuntimeAdapter) *RuntimeRegistry {
 	registry := &RuntimeRegistry{adapters: make(map[string]RuntimeAdapter, len(adapters))}

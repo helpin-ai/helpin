@@ -17,7 +17,7 @@ import (
 )
 
 func TestOpenCodeResolveModelIDDefaultsToAnthropicSonnet(t *testing.T) {
-	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
+	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil, nil)
 
 	got := executor.resolveModelID(&model.Agent{})
 	want := "anthropic/claude-sonnet-4-6"
@@ -101,7 +101,7 @@ func TestBuildOpenCodeConfigContentUsesTeampulseAgentAndPermissions(t *testing.T
 }
 
 func TestOpenCodeResolveModelIDStripsProviderPrefixFromStoredModel(t *testing.T) {
-	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
+	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil, nil)
 	provider := model.AgentModelProviderOpenRouter
 	modelName := "openrouter/qwen/qwen3.5-122b-a10b"
 
@@ -220,7 +220,7 @@ func TestBuildOpenCodeConfigContentIncludesStagedSkillPath(t *testing.T) {
 }
 
 func TestOpenCodeBuildEnvUsesIsolatedHomeForRun(t *testing.T) {
-	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
+	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil, nil)
 	execCtx := &ExecutionContext{
 		RunID: "run-123",
 		Agent: &model.Agent{},
@@ -584,7 +584,7 @@ func TestPersistEngineerWorkspaceCommitsAndPushesChanges(t *testing.T) {
 	runGitCmd(t, workDir, "git", "checkout", "-b", "tp-123-implement")
 	writeTestFile(t, filepath.Join(workDir, "README.md"), "hello\nupdated\n")
 
-	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
+	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil, nil)
 	var pushedBranch string
 	var pushedSHA string
 	execCtx := &ExecutionContext{
@@ -696,7 +696,7 @@ func TestPersistEngineerWorkspacePushesExistingLocalCommit(t *testing.T) {
 	runGitCmd(t, workDir, "git", "commit", "-m", "agent created local commit")
 	localSHA := strings.TrimSpace(runGitCmd(t, workDir, "git", "rev-parse", "HEAD"))
 
-	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
+	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil, nil)
 	var pushedBranch string
 	var pushedSHA string
 	execCtx := &ExecutionContext{
@@ -754,7 +754,7 @@ func TestPersistEngineerWorkspaceAllowsAutonomousReviewRunWithoutRepoChanges(t *
 	configureGitIdentity(t, workDir)
 	runGitCmd(t, workDir, "git", "checkout", "-B", "task-branch", "origin/task-branch")
 
-	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
+	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil, nil)
 	execCtx := &ExecutionContext{
 		Context:       context.Background(),
 		WorkDir:       workDir,

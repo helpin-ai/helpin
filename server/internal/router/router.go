@@ -119,6 +119,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		return authorization.RequireModuleAccess(authz, module)
 	}
 	wsAccess := authorization.RequireWorkspaceAccess(authz)
+	wsActive := wsAccess
+	if h.Billing != nil {
+		wsActive = func(next http.Handler) http.Handler {
+			return wsAccess(h.Billing.RequireUnlockedWorkspace(next))
+		}
+	}
 
 	// Root endpoint — responds on bare domain requests.
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
@@ -416,14 +422,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Put("/organizations/{id}/members/{userId}", h.Organization.UpdateMember)
 			r.Delete("/organizations/{id}/members/{userId}", h.Organization.RemoveMember)
 
-			// Organization billing (access gated in the service by the billing-manager predicate).
+			// Organization billing is owner-only.
 			if h.Billing != nil {
-				r.Get("/organizations/{orgId}/billing", h.Billing.GetOrganizationBilling)
-				r.Get("/organizations/{orgId}/billing/cards", h.Billing.ListCards)
-				r.Post("/organizations/{orgId}/billing/cards/setup-intent", h.Billing.CreateCardSetupIntent)
-				r.Put("/organizations/{orgId}/billing/cards/{cardId}", h.Billing.UpdateCard)
-				r.Delete("/organizations/{orgId}/billing/cards/{cardId}", h.Billing.DeleteCard)
-				r.Get("/organizations/{orgId}/billing/invoices", h.Billing.ListInvoices)
+				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{orgId}/billing", h.Billing.GetOrganizationBilling)
+				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{orgId}/billing/cards", h.Billing.ListCards)
+				r.With(h.Billing.RequireOrgBillingOwner).Put("/organizations/{orgId}/billing/cards/{cardId}", h.Billing.UpdateCard)
+				r.With(h.Billing.RequireOrgBillingOwner).Delete("/organizations/{orgId}/billing/cards/{cardId}", h.Billing.DeleteCard)
+				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{orgId}/billing/invoices", h.Billing.ListInvoices)
 			}
 
 			// Workspaces — workspace-scoped routes with RBAC
@@ -438,7 +443,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 			r.Route("/workspaces/{id}", func(r chi.Router) {
 				r.Use(authorization.ExtractWorkspaceIDParam)
-				r.Use(wsAccess)
+				r.Use(wsActive)
 
 				r.Get("/my-role", h.Workspace.GetMyRole)
 				r.Get("/my-membership", h.Workspace.GetMyMembership)
@@ -457,17 +462,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(authorization.RequireOwner(authz)).Delete("/", h.Workspace.Delete)
 				if h.Billing != nil {
 					r.With(requirePerm(authorization.PermSettingsRead)).Get("/billing", h.Billing.Get)
-					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/checkout", h.Billing.Checkout)
-					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/confirm-checkout", h.Billing.ConfirmCheckout)
-					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/preview-plan-change", h.Billing.PreviewPlanChange)
-					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/change-plan", h.Billing.ChangePlan)
-					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/resume-subscription", h.Billing.ResumeSubscription)
-					r.With(requirePerm(authorization.PermSettingsManage)).Post("/billing/portal", h.Billing.Portal)
-					r.With(requirePerm(authorization.PermSettingsManage)).Put("/billing/on-demand", h.Billing.SetOnDemand)
-					// Billing-manager-gated (org owner OR workspace billing owner) — checked in handler.
-					r.Get("/billing/usage", h.Billing.GetUsage)
-					r.Put("/billing/payment-method", h.Billing.LinkPaymentMethod)
-					r.Put("/billing/owner", h.Billing.SetBillingOwner)
+					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/checkout", h.Billing.Checkout)
+					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/confirm-checkout", h.Billing.ConfirmCheckout)
+					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/preview-plan-change", h.Billing.PreviewPlanChange)
+					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/change-plan", h.Billing.ChangePlan)
+					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/resume-subscription", h.Billing.ResumeSubscription)
+					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/portal", h.Billing.Portal)
+					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Put("/billing/on-demand", h.Billing.SetOnDemand)
+					// Usage/payment-method management is owner-only and may be reached from org billing.
+					r.With(h.Billing.RequireWorkspaceBillingOwner).Get("/billing/usage", h.Billing.GetUsage)
+					r.With(h.Billing.RequireWorkspaceBillingOwner).Put("/billing/payment-method", h.Billing.LinkPaymentMethod)
 				}
 
 				// Import routes require pm.import
@@ -486,7 +490,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Settings — all routes require workspace access
 			r.Route("/settings", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
-				r.Use(wsAccess)
+				r.Use(wsActive)
 
 				// Read
 				r.With(requirePerm(authorization.PermSettingsRead)).Get("/", h.Settings.GetAll)
@@ -534,7 +538,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Automation — platform-wide automation API facade
 			r.Route("/automation", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
-				r.Use(wsAccess)
+				r.Use(wsActive)
 				r.Use(requireModule(model.ModuleAutomation))
 
 				r.With(requirePerm(authorization.PermSettingsManage)).Get("/overview", h.Automation.GetOverview)
@@ -620,15 +624,15 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/", h.Invite.List)
 
 				// Sending and managing invitations requires workspace context
-				r.With(middleware.RequireWorkspaceID, wsAccess, requirePerm(authorization.PermWorkspaceInvitesManage)).Post("/", h.Invite.Send)
-				r.With(middleware.RequireWorkspaceID, wsAccess, requirePerm(authorization.PermWorkspaceInvitesManage)).Post("/{id}/resend", h.Invite.Resend)
-				r.With(middleware.RequireWorkspaceID, wsAccess, requirePerm(authorization.PermWorkspaceInvitesManage)).Delete("/{id}", h.Invite.Revoke)
+				r.With(middleware.RequireWorkspaceID, wsActive, requirePerm(authorization.PermWorkspaceInvitesManage)).Post("/", h.Invite.Send)
+				r.With(middleware.RequireWorkspaceID, wsActive, requirePerm(authorization.PermWorkspaceInvitesManage)).Post("/{id}/resend", h.Invite.Resend)
+				r.With(middleware.RequireWorkspaceID, wsActive, requirePerm(authorization.PermWorkspaceInvitesManage)).Delete("/{id}", h.Invite.Revoke)
 			})
 
 			// Git integrations
 			r.Route("/git", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
-				r.Use(wsAccess)
+				r.Use(wsActive)
 				r.With(requirePerm(authorization.PermIntegrationsConnect)).Get("/github/install-url", h.Git.GetGitHubInstallURL)
 				r.With(requirePerm(authorization.PermSettingsRead)).Get("/integrations", h.Git.ListIntegrations)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/integrations", h.Git.CreateIntegration)
@@ -646,13 +650,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Search
 			r.Route("/search", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
-				r.Use(wsAccess)
+				r.Use(wsActive)
 				r.With(requirePerm(authorization.PermSearchRead)).Get("/", h.Search.Search)
 			})
 
 			r.Route("/command-bar", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
-				r.Use(wsAccess)
+				r.Use(wsActive)
 				r.With(requireCommandBarRead()).Post("/intents/parse", h.CommandBar.ParseIntent)
 				r.With(requireCommandBarRead()).Get("/chat/threads", h.CommandBar.ListChatThreads)
 				r.With(requireCommandBarRead()).Post("/chat/turns", h.CommandBar.ChatTurn)
@@ -674,7 +678,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Support module
 			r.Route("/support", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
-				r.Use(wsAccess)
+				r.Use(wsActive)
 				r.Use(requireModule(model.ModuleSupport))
 
 				// Legacy /tickets routes (backward compat)
@@ -826,7 +830,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// PM module
 			r.Route("/pm", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
-				r.Use(wsAccess)
+				r.Use(wsActive)
 
 				// Workflows — read: pm.read, write: pm.admin.workflows
 				r.With(requirePerm(authorization.PermPMRead)).Get("/workflows", h.PMWorkflow.List)
@@ -1085,7 +1089,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Notifications module
 			r.Route("/notifications", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
-				r.Use(wsAccess)
+				r.Use(wsActive)
 
 				// Inbox
 				r.With(requirePerm(authorization.PermNotificationsRead)).Get("/", h.Notification.List)
@@ -1106,7 +1110,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Followers (on PM entities)
 			r.Route("/pm/{entityType}/{entityId}/followers", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
-				r.Use(wsAccess)
+				r.Use(wsActive)
 
 				r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Notification.ListFollowers)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/check", h.Notification.IsFollowing)
@@ -1117,7 +1121,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Docs module
 			r.Route("/docs", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
-				r.Use(wsAccess)
+				r.Use(wsActive)
 				r.Use(handler.NoStoreOnWrites)
 
 				// Spaces — docs.read / docs.edit / docs.admin
@@ -1269,7 +1273,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// CRM module
 			r.Route("/crm", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
-				r.Use(wsAccess)
+				r.Use(wsActive)
 				r.Use(requireModule(model.ModuleCRM))
 
 				// Contacts — crm.read / crm.edit

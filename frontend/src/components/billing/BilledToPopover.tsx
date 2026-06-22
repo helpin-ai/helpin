@@ -90,7 +90,7 @@ export function BilledToPopover({ orgId, card, cards, onAddCard, disabled }: Pro
                 onAddCard();
               }}
             >
-              + Add new card
+              Manage cards in Stripe
             </Button>
           </div>
         )}

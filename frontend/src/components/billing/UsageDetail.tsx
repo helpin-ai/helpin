@@ -23,7 +23,7 @@ interface Props {
 export function buildUsageChart(usage: UsageResponse, mode: UsageMode) {
   const features = Array.isArray(usage.features) ? usage.features : [];
   const series = Array.isArray(usage.series) ? usage.series : [];
-  // Feature keys ordered by total credits desc (matches table order).
+  // Feature keys ordered by total usage desc (matches table order).
   const featureKeys = features.map((f) => f.feature_key);
   const labelByKey = new Map(features.map((f) => [f.feature_key, f.label]));
   const apiAlreadyCumulative = usage.mode === 'cumulative';
@@ -65,7 +65,7 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
           <div className="text-sm font-semibold">
-            {mode === 'cumulative' ? 'Cumulative credit usage' : 'Daily credit usage'}
+            {mode === 'cumulative' ? 'Cumulative AI usage' : 'Daily AI usage'}
           </div>
           <div className="text-xs text-muted-foreground">{periodLabel}</div>
         </div>
@@ -93,7 +93,7 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
             <div
               key={p.date}
               className="group relative flex flex-1 flex-col justify-end"
-              title={`${dayjs(p.date).format('MMM D')}: ${formatNumber(p.total)} credits`}
+              title={`${dayjs(p.date).format('MMM D')}: ${formatNumber(p.total)} usage units`}
             >
               <div className="flex w-full flex-col-reverse" style={{ height: `${(p.total / max) * 100}%` }}>
                 {p.segs
@@ -115,7 +115,7 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
         {/* Legend */}
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
           {features.length === 0 && (
-            <span className="text-[11px] text-muted-foreground">No credit usage recorded for this period.</span>
+            <span className="text-[11px] text-muted-foreground">No AI usage recorded for this period.</span>
           )}
           {features.map((f, i) => (
             <div key={f.feature_key} className="flex items-center gap-1.5 text-[11px]">
@@ -135,9 +135,9 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
           <TableHeader>
             <TableRow>
               <TableHead>Feature</TableHead>
-              <TableHead className="text-right">Cost</TableHead>
-              <TableHead className="text-right">Usage</TableHead>
-              <TableHead className="text-right">Total credits (%)</TableHead>
+              <TableHead className="text-right">Typical minimum</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="text-right">AI usage (%)</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -160,7 +160,7 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
                   </span>
                 </TableCell>
                 <TableCell className="text-right tabular-nums text-muted-foreground">
-                  {f.cost > 0 ? `${f.cost} / action` : 'variable'}
+                  {f.cost > 0 ? `${f.cost} units` : 'variable'}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{formatNumber(f.usage)}</TableCell>
                 <TableCell className="text-right tabular-nums">

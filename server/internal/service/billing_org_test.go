@@ -14,8 +14,8 @@ func TestPriceCentsForPlan(t *testing.T) {
 		interval string
 		want     int
 	}{
-		{name: "free monthly", plan: model.BillingPlanFree, interval: "monthly", want: 0},
-		{name: "free annual", plan: model.BillingPlanFree, interval: "annual", want: 0},
+		{name: "legacy no-charge monthly", plan: "free", interval: "monthly", want: 0},
+		{name: "legacy no-charge annual", plan: "free", interval: "annual", want: 0},
 		{name: "starter monthly", plan: model.BillingPlanStarter, interval: "monthly", want: 9900},
 		{name: "starter annual", plan: model.BillingPlanStarter, interval: "annual", want: 94800},
 		{name: "growth monthly", plan: model.BillingPlanGrowth, interval: "monthly", want: 29900},

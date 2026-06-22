@@ -12,12 +12,18 @@ import (
 
 // CRMContactService contains CRM contact business logic.
 type CRMContactService struct {
-	contactRepo *repository.CRMContactRepository
+	contactRepo    *repository.CRMContactRepository
+	entitlementSvc *EntitlementService
 }
 
 // NewCRMContactService creates a new CRMContactService.
 func NewCRMContactService(contactRepo *repository.CRMContactRepository) *CRMContactService {
 	return &CRMContactService{contactRepo: contactRepo}
+}
+
+func (s *CRMContactService) SetEntitlementService(entitlementSvc *EntitlementService) *CRMContactService {
+	s.entitlementSvc = entitlementSvc
+	return s
 }
 
 // List returns contacts with filters and pagination.
@@ -44,6 +50,15 @@ func (s *CRMContactService) GetByID(ctx context.Context, id string) (*model.CRMC
 func (s *CRMContactService) Create(ctx context.Context, req model.CreateCRMContactRequest) (*model.CRMContact, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.FirstName) == "" {
 		return nil, fmt.Errorf("workspace_id and first_name are required")
+	}
+	if s.entitlementSvc != nil {
+		count, err := s.contactRepo.CountByWorkspace(ctx, req.WorkspaceID)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.entitlementSvc.RequireLimitUsage(ctx, req.WorkspaceID, EntitlementLimitContacts, count, 1); err != nil {
+			return nil, err
+		}
 	}
 
 	displayID, err := s.contactRepo.GetNextDisplayID(ctx, req.WorkspaceID)
@@ -99,6 +114,11 @@ func (s *CRMContactService) Seed(ctx context.Context, req model.SeedCRMContactsR
 	existingCount, err := s.contactRepo.CountByWorkspace(ctx, req.WorkspaceID)
 	if err != nil {
 		return nil, err
+	}
+	if s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireLimitUsage(ctx, req.WorkspaceID, EntitlementLimitContacts, existingCount, int64(count)); err != nil {
+			return nil, err
+		}
 	}
 
 	now := time.Now().UTC()

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -20,10 +19,10 @@ const (
 	BillingFeaturePlanningRun    = "planning_run"
 	BillingFeatureCodingRun      = "coding_run"
 
-	billingTrialDays       = 14
-	billingCreditBlockSize = 5000
-	billingCreditBlockCost = 5000
-	billingFreeSeatLimit   = 2
+	billingTrialDays           = 14
+	billingCreditBlockSize     = 5000
+	billingCreditBlockCost     = 5000
+	billingStripeChargeTimeout = 5 * time.Second
 )
 
 type BillingStripeGateway interface {
@@ -32,13 +31,11 @@ type BillingStripeGateway interface {
 	CreatePortalSession(ctx context.Context, customerID, returnURL string) (string, error)
 	PreviewSubscriptionPriceChange(ctx context.Context, input BillingSubscriptionChangeInput) (*BillingStripeInvoicePreview, error)
 	UpdateSubscriptionPrice(ctx context.Context, input BillingSubscriptionChangeInput) error
-	ScheduleSubscriptionPriceChange(ctx context.Context, input BillingSubscriptionChangeInput) error
 	CancelSubscriptionAtPeriodEnd(ctx context.Context, input BillingSubscriptionCancelInput) error
 	CancelSubscriptionImmediately(ctx context.Context, input BillingSubscriptionCancelInput) error
 	ResumeSubscription(ctx context.Context, input BillingSubscriptionCancelInput) error
 	BillCreditBlock(ctx context.Context, input BillingCreditBlockCharge) error
 	EnsureCustomer(ctx context.Context, orgID, email string) (string, error)
-	CreateSetupIntent(ctx context.Context, customerID string) (string, error)
 	ListPaymentMethods(ctx context.Context, customerID string) ([]StripePaymentMethod, error)
 	DetachPaymentMethod(ctx context.Context, paymentMethodID string) error
 	SetDefaultPaymentMethod(ctx context.Context, customerID, paymentMethodID string) error
@@ -233,6 +230,12 @@ type BillingCreditConsumption struct {
 	Metadata       map[string]any
 }
 
+type BillingCreditPreflight struct {
+	WorkspaceID string
+	FeatureKey  string
+	Credits     int
+}
+
 type BillingSummary struct {
 	WorkspaceID            string     `json:"workspace_id"`
 	Plan                   string     `json:"plan"`
@@ -255,6 +258,7 @@ type BillingSummary struct {
 	PendingChangeAt        *time.Time `json:"pending_change_at,omitempty"`
 	CancelAtPeriodEnd      bool       `json:"cancel_at_period_end"`
 	CanceledAt             *time.Time `json:"canceled_at,omitempty"`
+	Locked                 bool       `json:"locked"`
 	BillingNoticeType      string     `json:"billing_notice_type,omitempty"`
 	BillingNoticeMessage   string     `json:"billing_notice_message,omitempty"`
 	BillingNoticeAt        *time.Time `json:"billing_notice_at,omitempty"`
@@ -342,18 +346,32 @@ func (s *BillingService) CanReserveWorkspaceSeat(ctx context.Context, workspaceI
 	if err != nil {
 		return err
 	}
-	if billing == nil || billing.Plan != model.BillingPlanFree {
+	if billing != nil && billingStatusLocked(billing.Status) {
+		return fmt.Errorf("workspace is locked; choose a plan to reactivate it")
+	}
+	return nil
+}
+
+func (s *BillingService) PreflightCredits(ctx context.Context, input BillingCreditPreflight) error {
+	if input.WorkspaceID == "" {
+		return fmt.Errorf("workspace_id is required")
+	}
+	if input.Credits <= 0 {
 		return nil
 	}
-	if s.workspaceRepo == nil {
-		return nil
-	}
-	count, err := s.workspaceRepo.CountBillableSeats(ctx, workspaceID)
+	summary, err := s.GetWorkspaceBilling(ctx, input.WorkspaceID)
 	if err != nil {
 		return err
 	}
-	if int(count) >= billingFreeSeatLimit {
-		return fmt.Errorf("free plan includes %d seats; upgrade to invite more people", billingFreeSeatLimit)
+	if summary.Locked {
+		return errors.New("workspace is locked; choose a plan to reactivate it")
+	}
+	nextUsed := summary.CreditsUsed + input.Credits
+	if nextUsed > summary.IncludedCredits && !summary.OnDemandEnabled {
+		return errors.New("AI usage exhausted")
+	}
+	if nextUsed > summary.IncludedCredits && !summary.OnDemandAvailable {
+		return errors.New("extra AI usage is not available")
 	}
 	return nil
 }
@@ -367,7 +385,7 @@ func (s *BillingService) SetOnDemandEnabled(ctx context.Context, workspaceID str
 		return nil, fmt.Errorf("workspace billing not found")
 	}
 	if enabled && !billingCanUseOnDemand(billing) {
-		return nil, fmt.Errorf("on-demand credits are available only on active paid workspaces")
+		return nil, fmt.Errorf("extra AI usage is available only on active paid workspaces")
 	}
 	billing.OnDemandEnabled = enabled
 	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
@@ -392,7 +410,7 @@ func (s *BillingService) CreateCheckoutSession(ctx context.Context, input Billin
 	if err != nil {
 		return "", err
 	}
-	if billing != nil && billing.StripeSubscriptionID != nil && billing.Plan != model.BillingPlanFree {
+	if billing != nil && billing.StripeSubscriptionID != nil {
 		return "", fmt.Errorf("workspace already has an active Stripe subscription; use plan change instead")
 	}
 	var customerID string
@@ -471,9 +489,6 @@ func (s *BillingService) ConfirmCheckoutSession(ctx context.Context, workspaceID
 func (s *BillingService) PreviewWorkspacePlanChange(ctx context.Context, input BillingPlanChangeRequest) (*BillingPlanChangePreview, error) {
 	if input.WorkspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
-	}
-	if input.Plan == model.BillingPlanFree {
-		return nil, fmt.Errorf("free plan changes are scheduled at renewal and do not need an invoice preview")
 	}
 	if s.gateway == nil {
 		return nil, fmt.Errorf("stripe billing is not configured")
@@ -561,12 +576,8 @@ func (s *BillingService) ChangeWorkspacePlan(ctx context.Context, input BillingP
 	if input.WorkspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	if input.Plan != model.BillingPlanFree {
-		if _, err := s.priceIDFor(input.Plan, input.Interval); err != nil {
-			return nil, err
-		}
-	} else if input.Interval == "" {
-		input.Interval = "monthly"
+	if _, err := s.priceIDFor(input.Plan, input.Interval); err != nil {
+		return nil, err
 	}
 	if s.gateway == nil {
 		return nil, fmt.Errorf("stripe billing is not configured")
@@ -587,26 +598,6 @@ func (s *BillingService) ChangeWorkspacePlan(ctx context.Context, input BillingP
 	}
 
 	now := s.now().UTC()
-	if input.Plan == model.BillingPlanFree {
-		if err := s.ensureCanMoveToFree(ctx, input.WorkspaceID); err != nil {
-			return nil, err
-		}
-		if err := s.gateway.CancelSubscriptionAtPeriodEnd(ctx, BillingSubscriptionCancelInput{
-			WorkspaceID:    input.WorkspaceID,
-			SubscriptionID: *billing.StripeSubscriptionID,
-		}); err != nil {
-			return nil, err
-		}
-		billing.PendingPlan = optionalBillingString(model.BillingPlanFree)
-		billing.PendingBillingInterval = optionalBillingString("monthly")
-		billing.PendingChangeAt = &billing.CurrentPeriodEnd
-		billing.CancelAtPeriodEnd = true
-		if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
-			return nil, err
-		}
-		return s.summaryWithEntitlements(ctx, billing)
-	}
-
 	priceID, err := s.priceIDFor(input.Plan, input.Interval)
 	if err != nil {
 		return nil, err
@@ -628,56 +619,28 @@ func (s *BillingService) ChangeWorkspacePlan(ctx context.Context, input BillingP
 		change.CurrentPriceID = *billing.StripePriceID
 	}
 
-	if billingPlanChangeIsDeferred(billing.Plan, billing.BillingInterval, input.Plan, input.Interval) {
-		if err := s.gateway.ScheduleSubscriptionPriceChange(ctx, change); err != nil {
-			return nil, err
-		}
-		billing.PendingPlan = optionalBillingString(input.Plan)
-		billing.PendingBillingInterval = optionalBillingString(input.Interval)
-		billing.PendingChangeAt = &billing.CurrentPeriodEnd
-		billing.CancelAtPeriodEnd = false
-	} else {
-		if err := s.gateway.UpdateSubscriptionPrice(ctx, change); err != nil {
-			return nil, err
-		}
-		billing.Plan = input.Plan
-		billing.BillingInterval = input.Interval
-		billing.StripePriceID = &priceID
-		billing.IncludedCredits = includedCreditsForPlan(input.Plan)
-		billing.TrialEndsAt = nil
-		billing.PendingPlan = nil
-		billing.PendingBillingInterval = nil
-		billing.PendingChangeAt = nil
-		billing.CancelAtPeriodEnd = false
-		if billing.Status == model.BillingStatusTrialing {
-			billing.Status = model.BillingStatusActive
-		}
-		if billing.CurrentPeriodStart.IsZero() {
-			billing.CurrentPeriodStart = now
-		}
+	if err := s.gateway.UpdateSubscriptionPrice(ctx, change); err != nil {
+		return nil, err
+	}
+	billing.Plan = input.Plan
+	billing.BillingInterval = input.Interval
+	billing.StripePriceID = &priceID
+	billing.IncludedCredits = includedCreditsForPlan(input.Plan)
+	billing.TrialEndsAt = nil
+	billing.PendingPlan = nil
+	billing.PendingBillingInterval = nil
+	billing.PendingChangeAt = nil
+	billing.CancelAtPeriodEnd = false
+	if billing.Status == model.BillingStatusTrialing {
+		billing.Status = model.BillingStatusActive
+	}
+	if billing.CurrentPeriodStart.IsZero() {
+		billing.CurrentPeriodStart = now
 	}
 	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
 		return nil, err
 	}
 	return s.summaryWithEntitlements(ctx, billing)
-}
-
-func (s *BillingService) ensureCanMoveToFree(ctx context.Context, workspaceID string) error {
-	if s.workspaceRepo == nil {
-		return nil
-	}
-	count, err := s.workspaceRepo.CountBillableSeats(ctx, workspaceID)
-	if err != nil {
-		return err
-	}
-	if int(count) > billingFreeSeatLimit {
-		return fmt.Errorf("Free includes %d seats. This workspace has %d seats. Remove %d members or stay on a paid plan.",
-			billingFreeSeatLimit,
-			count,
-			int(count)-billingFreeSeatLimit,
-		)
-	}
-	return nil
 }
 
 func (s *BillingService) ResumeWorkspaceSubscription(ctx context.Context, workspaceID string) (*BillingSummary, error) {
@@ -700,7 +663,7 @@ func (s *BillingService) ResumeWorkspaceSubscription(ctx context.Context, worksp
 	if billing.StripeSubscriptionID == nil || *billing.StripeSubscriptionID == "" {
 		return nil, fmt.Errorf("workspace has no active Stripe subscription")
 	}
-	if !billing.CancelAtPeriodEnd && !billingPendingFree(billing) {
+	if !billing.CancelAtPeriodEnd {
 		return s.summaryWithEntitlements(ctx, billing)
 	}
 	if err := s.gateway.ResumeSubscription(ctx, BillingSubscriptionCancelInput{
@@ -758,11 +721,11 @@ func (s *BillingService) CancelWorkspaceSubscriptionImmediately(ctx context.Cont
 		return err
 	}
 	now := s.now().UTC()
-	billing.Plan = model.BillingPlanFree
+	if billing.Plan == "" {
+		billing.Plan = model.BillingPlanGrowth
+	}
 	billing.Status = model.BillingStatusCanceled
-	billing.BillingInterval = "monthly"
-	billing.IncludedCredits = includedCreditsForPlan(model.BillingPlanFree)
-	billing.CreditsUsed = 0
+	billing.IncludedCredits = includedCreditsForPlan(billing.Plan)
 	billing.OnDemandEnabled = false
 	billing.OnDemandBlocksInvoiced = 0
 	billing.PendingPlan = nil
@@ -815,21 +778,25 @@ func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, upda
 	}
 	status := normalizeBillingStatus(update.Status)
 	if status == model.BillingStatusCanceled {
-		update.Plan = model.BillingPlanFree
-		update.BillingInterval = "monthly"
+		if update.Plan == "" {
+			update.Plan = billing.Plan
+		}
+		if update.BillingInterval == "" {
+			update.BillingInterval = billing.BillingInterval
+		}
 	}
 	periodAdvanced := previousPeriodStart.IsZero() || (!update.CurrentPeriodStart.IsZero() && update.CurrentPeriodStart.After(previousPeriodStart))
-	becameFreeOrCanceled := update.Plan == model.BillingPlanFree || status == model.BillingStatusCanceled
+	becameLockedOrCanceled := billingStatusLocked(status)
 
 	billing.Plan = update.Plan
 	billing.Status = status
 	billing.BillingInterval = update.BillingInterval
 	billing.IncludedCredits = includedCreditsForPlan(update.Plan)
-	if periodAdvanced || becameFreeOrCanceled {
+	if periodAdvanced {
 		billing.CreditsUsed = 0
 		billing.OnDemandBlocksInvoiced = 0
 	}
-	if becameFreeOrCanceled {
+	if becameLockedOrCanceled {
 		billing.OnDemandEnabled = false
 	}
 	billing.TrialEndsAt = nil
@@ -845,11 +812,6 @@ func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, upda
 		billing.TrialWillEndAt = nil
 	}
 	if billing.PendingPlan != nil && *billing.PendingPlan == update.Plan {
-		billing.PendingPlan = nil
-		billing.PendingBillingInterval = nil
-		billing.PendingChangeAt = nil
-	}
-	if !update.CancelAtPeriodEnd && billingPendingFree(billing) {
 		billing.PendingPlan = nil
 		billing.PendingBillingInterval = nil
 		billing.PendingChangeAt = nil
@@ -1044,13 +1006,6 @@ func (s *BillingService) planIntervalForPriceID(priceID string) (string, string)
 	}
 }
 
-func billingPlanChangeIsDeferred(currentPlan, currentInterval, targetPlan, targetInterval string) bool {
-	if targetPlan == model.BillingPlanFree {
-		return true
-	}
-	return false
-}
-
 func billingPlanRank(plan string) int {
 	switch plan {
 	case model.BillingPlanGrowth:
@@ -1067,7 +1022,7 @@ func (s *BillingService) ConsumeCredits(ctx context.Context, input BillingCredit
 		return nil, fmt.Errorf("workspace_id is required")
 	}
 	if input.Credits <= 0 {
-		return nil, fmt.Errorf("credits must be positive")
+		return nil, fmt.Errorf("AI usage units must be positive")
 	}
 	if input.IdempotencyKey == "" {
 		return nil, fmt.Errorf("idempotency_key is required")
@@ -1077,15 +1032,15 @@ func (s *BillingService) ConsumeCredits(ctx context.Context, input BillingCredit
 	if err != nil {
 		return nil, err
 	}
-	if summary.SeatOverLimit {
-		return nil, errors.New(summary.EntitlementWarning)
+	if summary.Locked {
+		return nil, errors.New("workspace is locked; choose a plan to reactivate it")
 	}
 	nextUsed := summary.CreditsUsed + input.Credits
 	if nextUsed > summary.IncludedCredits && !summary.OnDemandEnabled {
-		return nil, errors.New("billing credits exhausted")
+		return nil, errors.New("AI usage exhausted")
 	}
 	if nextUsed > summary.IncludedCredits && !summary.OnDemandAvailable {
-		return nil, errors.New("on-demand credits are not available")
+		return nil, errors.New("extra AI usage is not available")
 	}
 
 	metadata, err := json.Marshal(input.Metadata)
@@ -1100,66 +1055,46 @@ func (s *BillingService) ConsumeCredits(ctx context.Context, input BillingCredit
 		IdempotencyKey: input.IdempotencyKey,
 		Metadata:       model.JSONBlob(metadata),
 	}
-	result, err := s.repo.ConsumeCredits(ctx, input.WorkspaceID, input.Credits, entry)
+	result, err := s.repo.ConsumeCredits(ctx, input.WorkspaceID, input.Credits, entry, func(billing *model.WorkspaceBilling, requiredBlocks, newBlocks int) error {
+		return s.chargeOnDemandBlocks(ctx, billing, input.IdempotencyKey, requiredBlocks, newBlocks)
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	billing := result.Billing
-	if !result.AlreadyUsed {
-		if err := s.billOnDemandBlocksIfNeeded(ctx, billing, input.IdempotencyKey); err != nil {
-			return nil, err
-		}
-	}
-	return s.summaryWithEntitlements(ctx, billing)
+	return s.summaryWithEntitlements(ctx, result.Billing)
 }
 
-func (s *BillingService) billOnDemandBlocksIfNeeded(ctx context.Context, billing *model.WorkspaceBilling, idempotencyKey string) error {
-	if billing == nil || !billing.OnDemandEnabled || billing.CreditsUsed <= billing.IncludedCredits {
+func (s *BillingService) chargeOnDemandBlocks(ctx context.Context, billing *model.WorkspaceBilling, idempotencyKey string, requiredBlocks, newBlocks int) error {
+	if billing == nil || newBlocks <= 0 {
 		return nil
 	}
 	if billing.StripeCustomerID == nil || billing.StripeSubscriptionID == nil {
-		return errors.New("stripe customer and subscription are required for on-demand credits")
-	}
-	requiredBlocks := int(math.Ceil(float64(billing.CreditsUsed-billing.IncludedCredits) / float64(billingCreditBlockSize)))
-	newBlocks := requiredBlocks - billing.OnDemandBlocksInvoiced
-	if newBlocks <= 0 {
-		return nil
+		return errors.New("stripe customer and subscription are required for extra AI usage")
 	}
 	if s.gateway == nil {
 		return errors.New("billing gateway is not configured")
 	}
-	if err := s.gateway.BillCreditBlock(ctx, BillingCreditBlockCharge{
+	chargeCtx, cancel := context.WithTimeout(ctx, billingStripeChargeTimeout)
+	defer cancel()
+	return s.gateway.BillCreditBlock(chargeCtx, BillingCreditBlockCharge{
 		WorkspaceID:    billing.WorkspaceID,
 		CustomerID:     *billing.StripeCustomerID,
 		SubscriptionID: *billing.StripeSubscriptionID,
 		Blocks:         newBlocks,
 		AmountCents:    newBlocks * billingCreditBlockCost,
 		IdempotencyKey: fmt.Sprintf("%s:on_demand:%d", idempotencyKey, requiredBlocks),
-	}); err != nil {
-		return err
-	}
-	billing.OnDemandBlocksInvoiced += newBlocks
-	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
-		return err
-	}
-	return nil
+	})
 }
 
 func (s *BillingService) summarizeAndNormalize(ctx context.Context, billing *model.WorkspaceBilling) (*BillingSummary, error) {
 	now := s.now().UTC()
 	changed := false
 	if billing.Status == model.BillingStatusTrialing && billing.TrialEndsAt != nil && !billing.TrialEndsAt.After(now) && billing.StripeSubscriptionID == nil {
-		billing.Plan = model.BillingPlanFree
-		billing.Status = model.BillingStatusActive
-		billing.BillingInterval = "monthly"
-		billing.IncludedCredits = includedCreditsForPlan(model.BillingPlanFree)
-		billing.CreditsUsed = 0
+		billing.Status = model.BillingStatusTrialExpired
+		billing.IncludedCredits = includedCreditsForPlan(billing.Plan)
 		billing.OnDemandEnabled = false
 		billing.OnDemandBlocksInvoiced = 0
-		billing.CurrentPeriodStart = now
-		billing.CurrentPeriodEnd = now.AddDate(0, 1, 0)
-		billing.TrialEndsAt = nil
 		changed = true
 	}
 	expectedCredits := includedCreditsForPlan(billing.Plan)
@@ -1207,6 +1142,7 @@ func (s *BillingService) summary(billing *model.WorkspaceBilling) *BillingSummar
 		PendingChangeAt:        billing.PendingChangeAt,
 		CancelAtPeriodEnd:      billing.CancelAtPeriodEnd,
 		CanceledAt:             billing.CanceledAt,
+		Locked:                 billingStatusLocked(billing.Status),
 		BillingNoticeType:      billingStringValue(billing.BillingNoticeType),
 		BillingNoticeMessage:   billingStringValue(billing.BillingNoticeMessage),
 		BillingNoticeAt:        billing.BillingNoticeAt,
@@ -1234,18 +1170,6 @@ func (s *BillingService) addSeatEntitlements(ctx context.Context, summary *Billi
 		return err
 	}
 	summary.SeatUsage = int(count)
-	if summary.Plan != model.BillingPlanFree {
-		return nil
-	}
-	summary.SeatLimit = billingFreeSeatLimit
-	if summary.SeatUsage > summary.SeatLimit {
-		summary.SeatOverLimit = true
-		summary.EntitlementWarning = fmt.Sprintf(
-			"This workspace is over the Free plan seat limit: %d seats used, %d included. Remove members or upgrade to invite more people.",
-			summary.SeatUsage,
-			summary.SeatLimit,
-		)
-	}
 	return nil
 }
 
@@ -1253,8 +1177,7 @@ func billingCanUseOnDemand(billing *model.WorkspaceBilling) bool {
 	if billing == nil {
 		return false
 	}
-	return billing.Plan != model.BillingPlanFree &&
-		billing.Status != model.BillingStatusCanceled &&
+	return billing.Status == model.BillingStatusActive &&
 		billing.StripeCustomerID != nil &&
 		billing.StripeSubscriptionID != nil
 }
@@ -1266,22 +1189,18 @@ func includedCreditsForPlan(plan string) int {
 	case model.BillingPlanGrowth:
 		return 25000
 	default:
-		return 1000
+		return 0
 	}
-}
-
-func billingPendingFree(billing *model.WorkspaceBilling) bool {
-	return billing != nil && billing.PendingPlan != nil && *billing.PendingPlan == model.BillingPlanFree
 }
 
 func nextChargeCentsForBilling(billing *model.WorkspaceBilling) int {
 	if billing == nil {
 		return 0
 	}
-	if billing.Plan == model.BillingPlanFree || billing.Status == model.BillingStatusCanceled || billing.Status == model.BillingStatusTrialing {
+	if billing.Status == model.BillingStatusTrialing || billingStatusLocked(billing.Status) {
 		return 0
 	}
-	if billing.CancelAtPeriodEnd || billingPendingFree(billing) {
+	if billing.CancelAtPeriodEnd {
 		return 0
 	}
 	return PriceCentsForPlan(billing.Plan, billing.BillingInterval)
@@ -1298,13 +1217,21 @@ func normalizeBillingStatus(status string) string {
 	switch status {
 	case "trialing":
 		return model.BillingStatusTrialing
-	case "past_due", "unpaid", "incomplete", "incomplete_expired":
+	case "trial_expired":
+		return model.BillingStatusTrialExpired
+	case "past_due", "incomplete", "incomplete_expired":
 		return model.BillingStatusPastDue
+	case "unpaid":
+		return model.BillingStatusUnpaid
 	case "canceled":
 		return model.BillingStatusCanceled
 	default:
 		return model.BillingStatusActive
 	}
+}
+
+func billingStatusLocked(status string) bool {
+	return status == model.BillingStatusTrialExpired || status == model.BillingStatusUnpaid || status == model.BillingStatusCanceled
 }
 
 func optionalBillingString(value string) *string {
@@ -1322,18 +1249,8 @@ func billingStringValue(value *string) string {
 }
 
 func BillingCreditsForFeature(featureKey string) int {
-	switch featureKey {
-	case BillingFeatureSupportAIReply:
-		return 5
-	case BillingFeatureCRMAction:
-		return 10
-	case BillingFeatureDocsGeneration:
-		return 20
-	case BillingFeaturePlanningRun:
-		return 50
-	case BillingFeatureCodingRun:
-		return 100
-	default:
-		return 0
+	if feature, ok := AIUsageFeature(featureKey); ok && feature.Chargeable {
+		return feature.FloorUnits
 	}
+	return 0
 }

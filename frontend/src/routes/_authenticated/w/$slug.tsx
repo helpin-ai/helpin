@@ -1,9 +1,10 @@
 import { memo, useEffect, type CSSProperties } from 'react'
-import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router'
+import { createFileRoute, Navigate, Outlet, useLocation } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useWorkspaceBySlug } from '@/hooks/queries/useWorkspaces'
 import { useSession, useWorkspaceAccess } from '@/hooks/queries/useSession'
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
+import { useWorkspaceBilling } from '@/hooks/queries/useBilling'
 import { useOrganizations } from '@/hooks/queries/useOrganizations'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useOrganizationStore } from '@/stores/organizationStore'
@@ -37,7 +38,9 @@ function WorkspaceLayout() {
   const canLoadWorkspaceData = !!access && !mfaBlocked
   const { isLoading: sessionLoading } = useSession(wsId, { enabled: canLoadWorkspaceData })
   const { isLoading: settingsLoading } = useWorkspaceSettings(wsId, { enabled: canLoadWorkspaceData })
+  const { data: billing, isLoading: billingLoading } = useWorkspaceBilling(wsId)
   const queryClient = useQueryClient()
+  const location = useLocation()
 
   // Selection stores (Zustand) — sync from query data
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
@@ -58,6 +61,7 @@ function WorkspaceLayout() {
 
   const loading = wsLoading || orgsLoading
     || (!!wsId && (sessionLoading || accessLoading || settingsLoading))
+    || (!!wsId && billingLoading)
     || (!!workspace && currentWorkspace?.id !== workspace.id)
 
   if (loading) {
@@ -108,6 +112,10 @@ function WorkspaceLayout() {
         }}
       />
     )
+  }
+
+  if (billing?.locked && !location.pathname.endsWith('/settings/billing')) {
+    return <Navigate to="/w/$slug/settings/billing" params={{ slug }} replace />
   }
 
   return (

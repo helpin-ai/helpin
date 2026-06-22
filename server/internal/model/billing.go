@@ -3,14 +3,15 @@ package model
 import "time"
 
 const (
-	BillingPlanFree    = "free"
 	BillingPlanStarter = "starter"
 	BillingPlanGrowth  = "growth"
 
-	BillingStatusTrialing = "trialing"
-	BillingStatusActive   = "active"
-	BillingStatusPastDue  = "past_due"
-	BillingStatusCanceled = "canceled"
+	BillingStatusTrialing     = "trialing"
+	BillingStatusActive       = "active"
+	BillingStatusTrialExpired = "trial_expired"
+	BillingStatusPastDue      = "past_due"
+	BillingStatusUnpaid       = "unpaid"
+	BillingStatusCanceled     = "canceled"
 
 	BillingLedgerKindUsage        = "usage"
 	BillingLedgerKindReset        = "reset"
@@ -25,13 +26,13 @@ const (
 type WorkspaceBilling struct {
 	ID                     string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID            string     `json:"workspace_id" gorm:"type:uuid;not null;unique"`
-	Plan                   string     `json:"plan" gorm:"not null;default:'free';index:idx_workspace_billing_plan"`
-	Status                 string     `json:"status" gorm:"not null;default:'active';index:idx_workspace_billing_status"`
+	Plan                   string     `json:"plan" gorm:"not null;default:'growth';index:idx_workspace_billing_plan"`
+	Status                 string     `json:"status" gorm:"not null;default:'trialing';index:idx_workspace_billing_status"`
 	StripeCustomerID       *string    `json:"stripe_customer_id,omitempty" gorm:"index:idx_workspace_billing_stripe_customer"`
 	StripeSubscriptionID   *string    `json:"stripe_subscription_id,omitempty" gorm:"index:idx_workspace_billing_stripe_subscription"`
 	StripePriceID          *string    `json:"stripe_price_id,omitempty"`
 	BillingInterval        string     `json:"billing_interval" gorm:"not null;default:'monthly'"`
-	IncludedCredits        int        `json:"included_credits" gorm:"not null;default:1000"`
+	IncludedCredits        int        `json:"included_credits" gorm:"not null;default:25000"`
 	CreditsUsed            int        `json:"credits_used" gorm:"not null;default:0"`
 	OnDemandEnabled        bool       `json:"on_demand_enabled" gorm:"not null;default:false"`
 	OnDemandBlocksInvoiced int        `json:"on_demand_blocks_invoiced" gorm:"not null;default:0"`
@@ -52,7 +53,8 @@ type WorkspaceBilling struct {
 	// PaymentMethodID links this workspace to a saved org card. Null means the
 	// org default card is used.
 	PaymentMethodID *string `json:"payment_method_id,omitempty" gorm:"type:uuid;index:idx_workspace_billing_payment_method"`
-	// BillingOwnerUserID is the delegated billing owner for this workspace, if any.
+	// BillingOwnerUserID is legacy delegated-owner data. Billing management is
+	// owner-only in v1, so this field must not grant permissions.
 	BillingOwnerUserID *string   `json:"billing_owner_user_id,omitempty" gorm:"type:uuid"`
 	CreatedAt          time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt          time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -117,11 +119,6 @@ type UpdatePaymentMethodRequest struct {
 // LinkPaymentMethodRequest is the payload for PUT workspaces/{id}/billing/payment-method.
 type LinkPaymentMethodRequest struct {
 	PaymentMethodID *string `json:"payment_method_id"`
-}
-
-// SetBillingOwnerRequest is the payload for PUT workspaces/{id}/billing/owner.
-type SetBillingOwnerRequest struct {
-	UserID *string `json:"user_id"`
 }
 
 type BillingCreditLedgerEntry struct {

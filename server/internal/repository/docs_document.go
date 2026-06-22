@@ -78,6 +78,14 @@ func (r *DocsDocumentRepository) UpdateFields(ctx context.Context, id string, up
 		Updates(updates).Error
 }
 
+func (r *DocsDocumentRepository) CountByWorkspace(ctx context.Context, workspaceID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.DocsDocument{}).Where("workspace_id = ? AND deleted_at IS NULL", workspaceID).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count docs documents: %w", err)
+	}
+	return count, nil
+}
+
 // Create inserts a new document.
 func (r *DocsDocumentRepository) Create(ctx context.Context, doc *model.DocsDocument) (*model.DocsDocument, error) {
 	q := r.db.WithContext(ctx)

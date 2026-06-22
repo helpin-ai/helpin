@@ -28,7 +28,6 @@ export function formatDate(iso?: string | null): string {
 }
 
 export const PLAN_LABEL: Record<BillingPlan, string> = {
-  free: 'Free',
   starter: 'Starter',
   growth: 'Growth',
 };
@@ -39,7 +38,7 @@ export const INTERVAL_LABEL: Record<BillingInterval, string> = {
 };
 
 export interface PlanOption {
-  plan: Exclude<BillingPlan, 'free'>;
+  plan: BillingPlan;
   label: string;
   credits: number;
   monthlyCents: number;
@@ -67,7 +66,7 @@ export function statusBadgeVariant(
   status: BillingStatus,
   trialing: boolean,
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
-  if (status === 'past_due' || status === 'canceled') return 'destructive';
+  if (status === 'past_due' || status === 'unpaid' || status === 'canceled' || status === 'trial_expired') return 'destructive';
   if (trialing) return 'secondary';
   return 'default';
 }

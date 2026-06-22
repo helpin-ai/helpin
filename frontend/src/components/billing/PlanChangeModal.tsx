@@ -46,7 +46,7 @@ export function PlanChangeModal({
   cards,
   defaultCardId,
 }: Props) {
-  const [plan, setPlan] = useState<Exclude<BillingPlan, 'free'>>(
+  const [plan, setPlan] = useState<BillingPlan>(
     currentPlan === 'starter' ? 'starter' : 'growth',
   );
   const [interval, setInterval] = useState<BillingInterval>('monthly');
@@ -133,7 +133,7 @@ export function PlanChangeModal({
                     </div>
                   )}
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {formatNumber(opt.credits)} credits / mo
+                    {formatNumber(opt.credits)} AI usage / mo
                   </div>
                 </button>
               );

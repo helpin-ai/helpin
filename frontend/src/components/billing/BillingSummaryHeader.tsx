@@ -25,7 +25,7 @@ export function BillingSummaryHeader({ summary }: { summary: OrgBillingSummary }
           <Stat label="Paid workspaces" value={formatNumber(summary.paid_count)} />
           <Stat label="On trial" value={formatNumber(summary.trialing_count)} />
           <Stat
-            label="Credits used"
+            label="AI usage"
             value={formatNumber(summary.credits_used)}
             hint={`of ${formatNumber(summary.included_credits_total)} included`}
           />

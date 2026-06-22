@@ -91,14 +91,15 @@ export interface Workspace {
   billing?: WorkspaceBillingSummary;
 }
 
-export type BillingPlan = 'free' | 'starter' | 'growth';
-export type BillingStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'free';
+export type BillingPlan = 'starter' | 'growth';
+export type BillingStatus = 'trialing' | 'active' | 'trial_expired' | 'past_due' | 'unpaid' | 'canceled';
 export type BillingInterval = 'monthly' | 'annual';
 
 export interface WorkspaceBillingSummary {
   workspace_id: string;
   plan: BillingPlan;
   status: BillingStatus | string;
+  locked: boolean;
   billing_interval: BillingInterval | string;
   trialing: boolean;
   trial_ends_at?: string;

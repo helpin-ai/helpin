@@ -11,10 +11,11 @@ import (
 
 // CRMImportService contains CRM import business logic.
 type CRMImportService struct {
-	importRepo  *repository.CRMImportRepository
-	contactRepo *repository.CRMContactRepository
-	companyRepo *repository.CRMCompanyRepository
-	dealRepo    *repository.CRMDealRepository
+	importRepo     *repository.CRMImportRepository
+	contactRepo    *repository.CRMContactRepository
+	companyRepo    *repository.CRMCompanyRepository
+	dealRepo       *repository.CRMDealRepository
+	entitlementSvc *EntitlementService
 }
 
 // NewCRMImportService creates a new CRMImportService.
@@ -30,6 +31,11 @@ func NewCRMImportService(
 		companyRepo: companyRepo,
 		dealRepo:    dealRepo,
 	}
+}
+
+func (s *CRMImportService) SetEntitlementService(entitlementSvc *EntitlementService) *CRMImportService {
+	s.entitlementSvc = entitlementSvc
+	return s
 }
 
 // Create creates an import job.
@@ -166,6 +172,15 @@ func (s *CRMImportService) importContact(ctx context.Context, workspaceID string
 	firstName := fields["first_name"]
 	if firstName == "" {
 		return fmt.Errorf("first_name is required")
+	}
+	if s.entitlementSvc != nil {
+		count, err := s.contactRepo.CountByWorkspace(ctx, workspaceID)
+		if err != nil {
+			return err
+		}
+		if err := s.entitlementSvc.RequireLimitUsage(ctx, workspaceID, EntitlementLimitContacts, count, 1); err != nil {
+			return err
+		}
 	}
 
 	displayID, err := s.contactRepo.GetNextDisplayID(ctx, workspaceID)

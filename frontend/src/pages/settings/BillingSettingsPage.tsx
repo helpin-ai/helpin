@@ -40,7 +40,7 @@ import type { BillingInterval, BillingPlan, WorkspaceBillingSummary } from '@/li
 import { SettingsPageFrame } from './SettingsPageFrame';
 
 const PLAN_OPTIONS: Array<{
-  id: Exclude<BillingPlan, 'free'>;
+  id: BillingPlan;
   name: string;
   monthly: number;
   annual: number;
@@ -55,15 +55,16 @@ const PLAN_OPTIONS: Array<{
     monthly: 99,
     annual: 948,
     credits: 5_000,
-    description: 'For teams that need the full platform without limits on work.',
+    description: "For teams that want the full platform and Helpin's built-in AI out of the box.",
     features: [
-      'Everything in Free',
-      'Basic automations / built-in agents',
-      'Tasks & inbox custom views',
-      'Team inboxes',
-      'Connect email channels',
+      'Project management, support, CRM, and docs',
+      'Built-in AI agents',
+      'Shared + Team Inboxes',
+      '5,000 CRM contacts',
+      'Connect support email addresses',
+      'Public help center with custom domain',
+      'Internal docs',
       'GitHub integration',
-      'Custom help center domain',
     ],
   },
   {
@@ -72,16 +73,14 @@ const PLAN_OPTIONS: Array<{
     monthly: 299,
     annual: 2_868,
     credits: 25_000,
-    description: 'For growing teams that want custom AI agents and full control.',
+    description: 'For growing teams ready to automate their own processes with agents and flows.',
     popular: true,
     features: [
-      'Everything in Starter',
-      'Unlimited deals in CRM',
-      'Multilingual help center',
-      'AI article translation',
       'Custom AI agents',
-      'Advanced automations',
-      'Agent scheduling & cron',
+      'Automation flows',
+      'Scheduled agents & cron',
+      'AI conversation routing',
+      'Multilingual help center + AI translation',
       'Remove Helpin branding',
       'Priority support',
     ],
@@ -90,80 +89,62 @@ const PLAN_OPTIONS: Array<{
 
 type PaidPlanOption = (typeof PLAN_OPTIONS)[number];
 
-const FREE_PLAN = {
-  name: 'Free',
-  credits: 1_000,
-  description: 'For solo founders and small projects getting started.',
-  features: [
-    'All modules: PM, Support, Sales, Docs',
-    'Tasks, epics & board views',
-    'Live chat widget',
-    'Shared inbox',
-    'CRM with contacts & deals',
-    'Public help center',
-    'Built-in AI agents, limited',
-    'Import from other tools',
-  ],
-};
-
 const COMPARISON_FEATURES: Array<{
   name: string;
   category?: boolean;
-  free?: boolean | string;
   starter?: boolean | string;
   growth?: boolean | string;
 }> = [
-  { name: 'Users & Access', category: true },
-  { name: 'Users', free: '2', starter: 'Unlimited', growth: 'Unlimited' },
-  { name: 'Mobile access', free: true, starter: true, growth: true },
   { name: 'Project Management', category: true },
-  { name: 'Tasks & stories', free: true, starter: true, growth: true },
-  { name: 'Epics', free: true, starter: true, growth: true },
-  { name: 'Objectives', free: true, starter: true, growth: true },
-  { name: 'Sprints', free: true, starter: true, growth: true },
-  { name: 'Custom fields', free: false, starter: true, growth: true },
-  { name: 'Tasks custom views', free: false, starter: true, growth: true },
-  { name: 'Roadmap', free: false, starter: true, growth: true },
+  { name: 'Tasks & stories', starter: true, growth: true },
+  { name: 'Epics', starter: true, growth: true },
+  { name: 'Objectives', starter: true, growth: true },
+  { name: 'Sprints', starter: true, growth: true },
+  { name: 'Custom fields', starter: true, growth: true },
+  { name: 'Tasks custom views', starter: true, growth: true },
+  { name: 'Roadmap', starter: true, growth: true },
   { name: 'Support', category: true },
-  { name: 'Live chat widget', free: true, starter: true, growth: true },
-  { name: 'Shared inbox', free: true, starter: true, growth: true },
-  { name: 'Team inboxes', free: false, starter: true, growth: true },
-  { name: 'Inbox custom views', free: false, starter: true, growth: true },
-  { name: 'Inbox saved replies', free: false, starter: true, growth: true },
-  { name: 'Email forwarding', free: false, starter: true, growth: true },
-  { name: 'Sender addresses', free: false, starter: true, growth: true },
-  { name: 'Round robin assignment', free: false, starter: false, growth: true },
-  { name: 'SLA policies', free: false, starter: false, growth: true },
-  { name: 'AI conversation routing', free: false, starter: false, growth: true },
-  { name: 'Coverage gap detection', free: false, starter: false, growth: true },
-  { name: 'Sales / CRM', category: true },
-  { name: 'Contacts', free: true, starter: true, growth: true },
-  { name: 'Deals', free: true, starter: true, growth: 'Unlimited' },
-  { name: 'Gmail sync', free: false, starter: true, growth: true },
-  { name: 'Buyer signal detection', free: false, starter: true, growth: true },
-  { name: 'Deal automation', free: false, starter: false, growth: true },
+  { name: 'Live chat widget', starter: true, growth: true },
+  { name: 'Shared inbox', starter: true, growth: true },
+  { name: 'Team inboxes', starter: true, growth: true },
+  { name: 'Inbox custom views', starter: true, growth: true },
+  { name: 'Inbox saved replies', starter: true, growth: true },
+  { name: 'Email forwarding', starter: true, growth: true },
+  { name: 'Sender addresses', starter: true, growth: true },
+  { name: 'Round robin assignment', starter: false, growth: true },
+  { name: 'SLA policies', starter: false, growth: true },
+  { name: 'AI conversation routing', starter: false, growth: true },
+  { name: 'Coverage gap detection', starter: true, growth: true },
+  { name: 'Remove Helpin branding', starter: false, growth: true },
   { name: 'Docs / Knowledge', category: true },
-  { name: 'Documents', free: '200', starter: '1,000', growth: 'Unlimited' },
-  { name: 'Internal docs', free: true, starter: true, growth: true },
-  { name: 'Public help center', free: true, starter: true, growth: true },
-  { name: 'Custom domain', free: false, starter: true, growth: true },
-  { name: 'Help center redirects', free: false, starter: true, growth: true },
-  { name: 'Multilingual help center', free: false, starter: false, growth: true },
-  { name: 'AI article translation', free: false, starter: false, growth: true },
+  { name: 'Documents', starter: '1,000', growth: 'Unlimited' },
+  { name: 'Internal docs', starter: true, growth: true },
+  { name: 'Public help center', starter: true, growth: true },
+  { name: 'Custom domain', starter: true, growth: true },
+  { name: 'Help center redirects', starter: true, growth: true },
+  { name: 'Multilingual help center', starter: false, growth: true },
+  { name: 'AI article translation', starter: false, growth: true },
+  { name: 'Sales / CRM', category: true },
+  { name: 'Contacts', starter: '5,000', growth: 'Unlimited' },
+  { name: 'Deals', starter: true, growth: true },
+  { name: 'Gmail sync', starter: true, growth: true },
+  { name: 'Buyer signal detection', starter: true, growth: true },
+  { name: 'Deal automation', starter: false, growth: true },
   { name: 'AI Agents', category: true },
-  { name: 'AI credits/month', free: '1,000', starter: '5,000', growth: '25,000' },
-  { name: 'Built-in agents', free: 'Limited', starter: true, growth: true },
-  { name: 'Custom agents', free: false, starter: false, growth: true },
-  { name: 'Agent scheduling', free: false, starter: false, growth: true },
-  { name: 'On-demand credit blocks', free: false, starter: '$50 / 5,000', growth: '$50 / 5,000' },
+  { name: 'Monthly AI usage', starter: '5,000 units', growth: '25,000 units' },
+  { name: 'Built-in agents', starter: true, growth: true },
+  { name: 'Custom agents', starter: false, growth: true },
+  { name: 'Agent scheduling', starter: false, growth: true },
+  { name: 'Extra AI usage packs', starter: '$50 / 5,000 units', growth: '$50 / 5,000 units' },
   { name: 'Platform', category: true },
-  { name: 'GitHub integration', free: false, starter: true, growth: true },
-  { name: 'Basic automations', free: false, starter: true, growth: true },
-  { name: 'Advanced automations', free: false, starter: false, growth: true },
-  { name: 'Branding & Support', category: true },
-  { name: 'Widget branding', free: 'Helpin', starter: 'Helpin', growth: 'Removed' },
-  { name: 'Module access controls', free: true, starter: true, growth: true },
-  { name: 'Priority support', free: false, starter: false, growth: true },
+  { name: 'Users', starter: 'Unlimited', growth: 'Unlimited' },
+  { name: 'Teams', starter: '10', growth: 'Unlimited' },
+  { name: 'Mobile access', starter: true, growth: true },
+  { name: 'Module access controls', starter: true, growth: true },
+  { name: 'GitHub integration', starter: true, growth: true },
+  { name: 'Automation flows', starter: false, growth: true },
+  { name: 'Widget branding', starter: 'Helpin', growth: 'Removed' },
+  { name: 'Priority support', starter: false, growth: true },
 ];
 
 const INCLUDED_MODULES = [
@@ -179,25 +160,24 @@ const BILLING_FAQS = [
     a: 'No. Every plan includes PM, Support, Sales, and Docs. Paid plans unlock higher limits and advanced AI automation.',
   },
   {
-    q: 'What happens if I exceed my AI credit limit?',
-    a: 'Free workspaces pause AI usage until the next monthly refresh. Paid workspaces can enable on-demand credits at $50 per 5,000-credit block.',
+    q: 'What happens if I exceed my AI usage limit?',
+    a: 'Starter and Growth workspaces can enable extra AI usage at $50 per 5,000-unit pack.',
   },
   {
     q: 'Can I switch plans anytime?',
-    a: 'Yes. Paid plan and interval changes apply immediately with prorated billing. Moving to Free is scheduled for your next renewal date.',
+    a: 'Yes. Plan and interval changes apply immediately with prorated billing. Cancellations are handled through Stripe and take effect at the end of the billing period.',
   },
   {
-    q: 'Do unused credits roll over?',
-    a: 'No. Included AI credits reset each billing period so usage stays predictable.',
+    q: 'Does unused AI usage roll over?',
+    a: 'No. Included AI usage resets each billing period so usage stays predictable.',
   },
   {
-    q: 'Are seats really unlimited?',
-    a: 'Starter and Growth include unlimited seats. Free workspaces include 2 seats.',
+    q: 'Are seats included?',
+    a: 'Starter and Growth include unlimited seats.',
   },
 ];
 
 const PLAN_LABELS: Record<string, string> = {
-  free: 'Free',
   starter: 'Starter',
   growth: 'Growth',
 };
@@ -218,7 +198,6 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
   const [checkoutResult, setCheckoutResult] = useState<'success' | 'cancelled' | null>(null);
   const [checkoutConfirming, setCheckoutConfirming] = useState(false);
   const [checkoutConfirmationDelayed, setCheckoutConfirmationDelayed] = useState(false);
-  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [planPreview, setPlanPreview] = useState<PlanChangePreview | null>(null);
   const [pendingPlanAction, setPendingPlanAction] = useState<string | null>(null);
   const { data: billing, isLoading, refetch } = useWorkspaceBilling(workspaceId);
@@ -311,7 +290,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
     return Math.min(100, Math.round((billing.credits_used / billing.included_credits) * 100));
   }, [billing]);
 
-  const startCheckout = async (plan: Exclude<BillingPlan, 'free'>, interval: BillingInterval) => {
+  const startCheckout = async (plan: BillingPlan, interval: BillingInterval) => {
     const result = await checkout.mutateAsync({ plan, interval, return_url: window.location.href }).catch((error) => {
       toast.error(error instanceof Error ? error.message : 'Could not start checkout');
       return null;
@@ -321,10 +300,8 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
 
   const startPlanChange = async (plan: BillingPlan, interval: BillingInterval, prorationDate?: number) => {
     if (!billing) return;
-    if (billing.plan === 'free' || !billing.stripe_subscription_id) {
-      if (plan !== 'free') {
-        await startCheckout(plan, interval);
-      }
+    if (billing.locked || !billing.stripe_subscription_id) {
+      await startCheckout(plan, interval);
       return;
     }
     const result = await changePlan.mutateAsync({ plan, interval, proration_date: prorationDate }).catch((error) => {
@@ -332,18 +309,14 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
       return null;
     });
     if (!result) return;
-    if (result.pending_plan) {
-      toast.success(result.pending_plan === 'free' ? 'Cancellation scheduled' : 'Plan change scheduled');
-    } else {
-      toast.success('Plan updated');
-    }
+    toast.success(result.pending_plan ? 'Plan change scheduled' : 'Plan updated');
     setChoosingPlan(false);
   };
 
-  const beginPaidPlanChange = async (plan: Exclude<BillingPlan, 'free'>, interval: BillingInterval) => {
+  const beginPaidPlanChange = async (plan: BillingPlan, interval: BillingInterval) => {
     const actionKey = `${plan}:${interval}`;
     setPendingPlanAction(actionKey);
-    if (!billing || billing.plan === 'free' || !billing.stripe_subscription_id) {
+    if (!billing || billing.locked || !billing.stripe_subscription_id) {
       await startPlanChange(plan, interval).finally(() => setPendingPlanAction(null));
       return;
     }
@@ -371,8 +344,8 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
 
   const toggleOnDemand = async (enabled: boolean) => {
     await setOnDemand.mutateAsync(enabled).then(
-      () => toast.success(enabled ? 'On-demand credits enabled' : 'On-demand credits disabled'),
-      (error) => toast.error(error instanceof Error ? error.message : 'Could not update on-demand credits'),
+      () => toast.success(enabled ? 'Extra AI usage enabled' : 'Extra AI usage disabled'),
+      (error) => toast.error(error instanceof Error ? error.message : 'Could not update extra AI usage'),
     );
   };
 
@@ -389,7 +362,6 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
   const canUsePortal = editable && billing.manage_billing_enabled;
   const planLabel = billingOverviewPlanTitle(billing);
   const planStatusCopy = billingStatusCopy(billing);
-  const isPaid = billing.plan !== 'free';
   const annualNudge = annualBillingNudge(billing);
 
   if (choosingPlan) {
@@ -399,7 +371,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
           <div className="space-y-1">
             <h3 className="text-xl font-semibold tracking-normal">Choose a plan</h3>
             <p className="text-sm text-muted-foreground">
-              Compare Free, Starter, and Growth to choose the right workspace plan.
+              Compare Starter and Growth to choose the right workspace plan.
             </p>
           </div>
           <Button
@@ -469,14 +441,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
           </div>
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-3">
-          <FreePlanCard
-            billing={billing}
-            interval={selectedInterval}
-            editable={editable}
-            loading={changePlan.isPending}
-            onSelect={() => setCancelConfirmOpen(true)}
-          />
+        <div className="grid gap-3 md:grid-cols-2">
           {PLAN_OPTIONS.map((plan) => (
             <PlanChoiceCard
               key={plan.id}
@@ -493,15 +458,6 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
 
         <PlanComparison />
         <BillingFAQs />
-        <CancelSubscriptionDialog
-          billing={billing}
-          open={cancelConfirmOpen}
-          loading={changePlan.isPending}
-          onOpenChange={setCancelConfirmOpen}
-          onConfirm={() => {
-            void startPlanChange('free', 'monthly').finally(() => setCancelConfirmOpen(false));
-          }}
-        />
         <PlanChangePreviewDialog
           preview={planPreview}
           loading={changePlan.isPending}
@@ -528,7 +484,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-2xl font-semibold tracking-normal">{planLabel}</h3>
-                  {billing.plan !== 'free' && (
+              {!billing.locked && (
                     <Badge
                       variant={billing.status === 'past_due' ? 'destructive' : billing.trialing ? 'secondary' : 'outline'}
                       className={statusBadgeClassName(billing)}
@@ -539,7 +495,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
                 </div>
                 {planStatusCopy && <p className="text-sm text-muted-foreground">{planStatusCopy}</p>}
               </div>
-              {isPaid ? (
+              {!billing.locked ? (
                 <Button
                   onClick={() => setChoosingPlan(true)}
                   disabled={!editable}
@@ -561,7 +517,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
             <div className="grid border-t bg-muted/20 sm:grid-cols-3">
               <PlanMetric label="Billing period" value={periodCopy(billing)} />
               <PlanMetric label={nextChargeMetricLabel(billing)} value={nextChargeMetricValue(billing)} />
-              <PlanMetric label="Included credits" value={`${formatNumber(billing.included_credits)} / month`} />
+              <PlanMetric label="Monthly AI usage" value={`${formatNumber(billing.included_credits)} units / month`} />
             </div>
           </CardContent>
         </Card>
@@ -571,7 +527,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
             editable={editable}
             loading={changePlan.isPending}
             onSwitch={() => {
-              if (billing.plan !== 'free') void startPlanChange(billing.plan, 'annual');
+              void startPlanChange(billing.plan, 'annual');
             }}
           />
         )}
@@ -593,8 +549,8 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
 
       <section className="space-y-3">
         <SectionHeading
-          title="On-demand credits"
-          description="Allow extra AI credit blocks when included credits run out."
+          title="Extra AI usage"
+          description="Allow extra AI usage packs when included usage runs out."
         />
         <Card>
           <CardContent className="p-5">
@@ -603,7 +559,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
                 <p className="text-sm font-medium">{billing.on_demand_enabled ? 'Enabled' : 'Disabled'}</p>
                 <p className="text-sm text-muted-foreground">
                   {billing.on_demand_available
-                    ? '$50 per 5,000-credit block, added to your next invoice.'
+                    ? '$50 per 5,000-unit pack, added to your next invoice.'
                     : 'Available on Starter and Growth workspaces with an active subscription.'}
                 </p>
               </div>
@@ -619,14 +575,14 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
 
       <section className="space-y-3">
         <SectionHeading
-          title="Credit usage"
+          title="AI usage"
           description={`Current billing period resets on ${formatDate(billing.current_period_end)}.`}
         />
         <Card>
           <CardContent className="space-y-5 p-5">
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="font-medium">Included AI credits</span>
+                <span className="font-medium">Monthly AI usage</span>
                 <span className="text-muted-foreground">
                   {formatNumber(billing.credits_remaining)} remaining
                 </span>
@@ -677,7 +633,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
               icon={Ban}
               title="Cancel subscription"
               description="Manage cancellation for the current workspace subscription."
-              disabled={!canUsePortal || !isPaid || portal.isPending}
+              disabled={!canUsePortal || billing.locked || portal.isPending}
               loading={portal.isPending}
               danger
               onClick={() => void openPortal('subscription cancellation')}
@@ -863,10 +819,9 @@ function EntitlementNotice({ billing }: { billing: WorkspaceBillingSummary }) {
     <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
       <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
       <div>
-        <p className="font-medium">Workspace is over the Free limit</p>
+        <p className="font-medium">Workspace needs billing attention</p>
         <p className="mt-1">
-          {billing.entitlement_warning ||
-            `This workspace is over the Free plan seat limit: ${billing.seat_usage ?? 0} seats used, ${billing.seat_limit ?? 2} included. Remove members or upgrade to invite more people.`}
+          {billing.entitlement_warning || 'Choose a plan to keep this workspace active.'}
         </p>
       </div>
     </div>
@@ -913,11 +868,8 @@ function PendingBillingNotice({
   if (!billing.pending_plan || !billing.pending_change_at) return null;
   const pendingLabel = PLAN_LABELS[billing.pending_plan] ?? billing.pending_plan;
   const currentLabel = PLAN_LABELS[billing.plan] ?? billing.plan;
-  const isCancel = billing.pending_plan === 'free' || billing.cancel_at_period_end;
+  const isCancel = billing.cancel_at_period_end;
   const pendingCredits = includedCreditsForPlan(billing.pending_plan);
-  const seatCopy = billing.pending_plan === 'free' && billing.seat_usage && billing.seat_usage > 2
-    ? ` Free includes 2 seats; this workspace currently has ${billing.seat_usage}.`
-    : '';
   return (
     <div className="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex items-start gap-3">
@@ -928,11 +880,11 @@ function PendingBillingNotice({
         </p>
         <p className="mt-1">
           {isCancel
-            ? `This workspace will move to Free on ${formatDate(billing.pending_change_at)}. ${currentLabel} remains active until then.${seatCopy}`
+            ? `This workspace will lock on ${formatDate(billing.pending_change_at)}. ${currentLabel} remains active until then.`
             : `${pendingLabel} will begin on ${formatDate(billing.pending_change_at)}. ${currentLabel} remains active until then.`}
         </p>
         <p className="mt-1">
-          You have used {formatNumber(billing.credits_used)} of {formatNumber(billing.included_credits)} {currentLabel} credits. {pendingLabel} includes {formatNumber(pendingCredits)} credits per billing period.
+          You have used {formatNumber(billing.credits_used)} of {formatNumber(billing.included_credits)} {currentLabel} AI usage units. {pendingLabel} includes {formatNumber(pendingCredits)} units per billing period.
         </p>
         </div>
       </div>
@@ -943,87 +895,6 @@ function PendingBillingNotice({
         </Button>
       )}
     </div>
-  );
-}
-
-function FreePlanCard({
-  billing,
-  interval,
-  editable,
-  loading,
-  onSelect,
-}: {
-  billing: WorkspaceBillingSummary;
-  interval: BillingInterval;
-  editable: boolean;
-  loading: boolean;
-  onSelect: () => void;
-}) {
-  const isCurrent = billing.plan === 'free';
-  const isPending = billing.pending_plan === 'free';
-  const seatLimit = billing.seat_limit || 2;
-  const seatOverFreeLimit = (billing.seat_usage ?? 0) > seatLimit;
-  const actionLabel = isCurrent ? 'Current plan' : isPending ? 'Move to Free scheduled' : 'Move to Free at renewal';
-  const blockerCopy = seatOverFreeLimit
-    ? `Free includes ${seatLimit} seats. This workspace has ${billing.seat_usage} seats. Remove ${(billing.seat_usage ?? 0) - seatLimit} members or stay on a paid plan.`
-    : '';
-  return (
-    <Card className="h-full">
-      <CardHeader className="space-y-3 pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-base">{FREE_PLAN.name}</CardTitle>
-            <CardDescription className="mt-1">{FREE_PLAN.description}</CardDescription>
-          </div>
-          {isCurrent && <Badge variant="secondary">Current plan</Badge>}
-          {isPending && <Badge variant="outline">Scheduled</Badge>}
-        </div>
-        <div className="flex items-end gap-1">
-          <span className="text-3xl font-semibold tracking-normal">$0</span>
-          <span className="pb-1 text-sm text-muted-foreground">/month</span>
-        </div>
-        {interval === 'annual' && (
-          <p className="text-xs font-medium text-transparent" aria-hidden="true">
-            Billed annually
-          </p>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <Button
-          className="w-full"
-          variant={isCurrent || isPending ? 'outline' : 'destructive'}
-          disabled={!editable || loading || isCurrent || isPending || seatOverFreeLimit}
-          onClick={onSelect}
-          aria-label={`${actionLabel} Free`}
-        >
-          {loading && !isCurrent && !isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-          {actionLabel}
-        </Button>
-        {blockerCopy && (
-          <p className="text-xs leading-5 text-amber-700 dark:text-amber-300">{blockerCopy}</p>
-        )}
-
-        <div className="grid grid-cols-2 gap-3 border-y py-4 text-center">
-          <div>
-            <p className="text-sm font-semibold">2</p>
-            <p className="mt-0.5 text-[11px] uppercase text-muted-foreground">Seats</p>
-          </div>
-          <div>
-            <p className="text-sm font-semibold">{formatNumber(FREE_PLAN.credits)}/mo</p>
-            <p className="mt-0.5 text-[11px] uppercase text-muted-foreground">AI credits</p>
-          </div>
-        </div>
-
-        <ul className="space-y-2.5">
-          {FREE_PLAN.features.map((feature) => (
-            <li key={feature} className="flex items-start gap-2 text-sm">
-              <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              <span className="text-muted-foreground">{feature}</span>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -1091,21 +962,18 @@ function PlanChoiceCard({
             </div>
             <div>
               <p className="text-sm font-semibold">{formatNumber(plan.credits)}/mo</p>
-              <p className="mt-0.5 text-[11px] uppercase text-muted-foreground">AI credits</p>
+              <p className="mt-0.5 text-[11px] uppercase text-muted-foreground">AI usage</p>
             </div>
           </div>
 
+          {plan.id === 'growth' && (
+            <p className="text-sm font-medium text-foreground">Everything in Starter, plus</p>
+          )}
           <ul className="space-y-2.5">
-            {plan.features.map((feature, index) => (
+            {plan.features.map((feature) => (
               <li key={feature} className="flex items-start gap-2 text-sm">
-                {index === 0 ? (
-                  <span className="font-medium text-foreground">{feature}</span>
-                ) : (
-                  <>
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                    <span className="text-muted-foreground">{feature}</span>
-                  </>
-                )}
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <span className="text-muted-foreground">{feature}</span>
               </li>
             ))}
           </ul>
@@ -1119,18 +987,17 @@ function PlanComparison() {
     <section className="space-y-3">
       <SectionHeading
         title="Detailed comparison"
-        description="All plans include the full Helpin workspace. Paid plans increase limits and unlock advanced control."
+        description="Both plans include the full Helpin workspace. Growth adds advanced AI automation and control."
         align="center"
         size="lg"
       />
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
                 <tr className="border-b bg-muted/20">
                   <th className="px-5 py-3 font-medium text-muted-foreground">Feature</th>
-                  <th className="px-4 py-3 text-center font-semibold">Free</th>
                   <th className="px-4 py-3 text-center font-semibold">Starter</th>
                   <th className="px-4 py-3 text-center font-semibold text-primary">Growth</th>
                 </tr>
@@ -1140,7 +1007,7 @@ function PlanComparison() {
                   if (row.category) {
                     return (
                       <tr key={row.name}>
-                        <td colSpan={4} className="px-5 pb-2 pt-6 text-xs font-semibold uppercase text-muted-foreground">
+                        <td colSpan={3} className="px-5 pb-2 pt-6 text-xs font-semibold uppercase text-muted-foreground">
                           {row.name}
                         </td>
                       </tr>
@@ -1149,7 +1016,6 @@ function PlanComparison() {
                   return (
                     <tr key={row.name} className="border-t">
                       <td className="px-5 py-3 font-medium">{row.name}</td>
-                      <td className="px-4 py-3 text-center"><ComparisonValue value={row.free} /></td>
                       <td className="px-4 py-3 text-center"><ComparisonValue value={row.starter} /></td>
                       <td className="px-4 py-3 text-center"><ComparisonValue value={row.growth} /></td>
                     </tr>
@@ -1195,58 +1061,6 @@ function BillingFAQs() {
         </CardContent>
       </Card>
     </section>
-  );
-}
-
-function CancelSubscriptionDialog({
-  billing,
-  open,
-  loading,
-  onOpenChange,
-  onConfirm,
-}: {
-  billing: WorkspaceBillingSummary;
-  open: boolean;
-  loading: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
-}) {
-  const currentLabel = PLAN_LABELS[billing.plan] ?? billing.plan;
-  const renewalDate = formatDate(billing.current_period_end);
-  const seatCopy = billing.seat_usage && billing.seat_usage > 2
-    ? ` This workspace currently has ${billing.seat_usage} seats, so new invites will be blocked on Free until the workspace is back within the 2-seat limit.`
-    : '';
-
-  return (
-    <AlertDialog open={open} onOpenChange={(nextOpen) => {
-      if (!loading) onOpenChange(nextOpen);
-    }}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogMedia className="bg-destructive/10 text-destructive">
-            <Ban className="h-7 w-7" />
-          </AlertDialogMedia>
-          <AlertDialogTitle>Cancel subscription?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This will cancel the {currentLabel} subscription at renewal. The workspace stays on {currentLabel} until {renewalDate}, then moves to Free with 2 seats and 1,000 AI credits per month.{seatCopy}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={loading}>Keep current plan</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={loading}
-            onClick={(event) => {
-              event.preventDefault();
-              onConfirm();
-            }}
-          >
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Cancel at renewal
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }
 
@@ -1318,9 +1132,9 @@ function PlanChangePreviewDialog({
           </div>
 
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="font-medium">AI credits after change</p>
+            <p className="font-medium">AI usage after change</p>
             <p className="mt-1 text-muted-foreground">
-              {formatNumber(preview.target_included_credits)} credits per month. {formatNumber(preview.credits_used)} used this period, {formatNumber(preview.credits_remaining_after)} available after the change.
+              {formatNumber(preview.target_included_credits)} units per month. {formatNumber(preview.credits_used)} used this period, {formatNumber(preview.credits_remaining_after)} available after the change.
             </p>
           </div>
 
@@ -1424,7 +1238,7 @@ function PortalAction({
 
 function planActionState(
   billing: WorkspaceBillingSummary,
-  targetPlan: Exclude<BillingPlan, 'free'>,
+  targetPlan: BillingPlan,
   targetInterval: BillingInterval,
 ): { kind: 'current' | 'scheduled' | 'upgrade' | 'downgrade' | 'switch'; label: string } {
   if (billing.pending_plan === targetPlan && billing.pending_billing_interval === targetInterval) {
@@ -1433,36 +1247,19 @@ function planActionState(
   if (billing.plan === targetPlan && billing.billing_interval === targetInterval && !billing.pending_plan) {
     return { kind: 'current', label: 'Current plan' };
   }
-  if (billing.plan === 'free' || !billing.stripe_subscription_id) {
-    return { kind: 'upgrade', label: 'Upgrade' };
+  if (billing.locked || !billing.stripe_subscription_id) {
+    return { kind: 'upgrade', label: billing.locked ? 'Reactivate' : 'Upgrade' };
   }
-  if (planChangeIsDeferred(billing.plan, billing.billing_interval, targetPlan, targetInterval)) {
-    return {
-      kind: planRank(targetPlan) < planRank(billing.plan) ? 'downgrade' : 'switch',
-      label: planRank(targetPlan) < planRank(billing.plan) ? 'Downgrade at renewal' : 'Switch at renewal',
-    };
-  }
+  const targetRank = planRank(targetPlan);
+  const currentRank = planRank(billing.plan);
   return {
-    kind: planRank(targetPlan) > planRank(billing.plan) ? 'upgrade' : 'switch',
-    label: planRank(targetPlan) > planRank(billing.plan)
+    kind: targetRank > currentRank ? 'upgrade' : targetRank < currentRank ? 'downgrade' : 'switch',
+    label: targetRank > currentRank
       ? 'Upgrade now'
-      : planRank(targetPlan) < planRank(billing.plan)
+      : targetRank < currentRank
         ? 'Downgrade now'
         : 'Switch now',
   };
-}
-
-function planChangeIsDeferred(
-  currentPlan: BillingPlan | string,
-  currentInterval: BillingInterval | string,
-  targetPlan: BillingPlan,
-  targetInterval: BillingInterval,
-) {
-  if (targetPlan === 'free') return true;
-  void currentPlan;
-  void currentInterval;
-  void targetInterval;
-  return false;
 }
 
 function planRank(plan: BillingPlan | string): number {
@@ -1474,11 +1271,11 @@ function planRank(plan: BillingPlan | string): number {
 function includedCreditsForPlan(plan: BillingPlan | string): number {
   if (plan === 'growth') return 25_000;
   if (plan === 'starter') return 5_000;
-  return 1_000;
+  return 0;
 }
 
 function annualBillingNudge(billing: WorkspaceBillingSummary): AnnualBillingNudgeCopy | null {
-  if (billing.plan === 'free') return null;
+  if (billing.locked) return null;
   if (billing.billing_interval !== 'monthly') return null;
   if (billing.status !== 'active') return null;
   if (billing.trialing || billing.pending_plan || billing.cancel_at_period_end) return null;
@@ -1502,52 +1299,56 @@ function annualBillingNudge(billing: WorkspaceBillingSummary): AnnualBillingNudg
 
 function billingOverviewPlanTitle(billing: WorkspaceBillingSummary): string {
   const plan = PLAN_LABELS[billing.plan] ?? billing.plan;
-  if (billing.plan === 'free') return plan;
   const interval = billing.billing_interval === 'annual' ? 'Annual' : 'Monthly';
   return `${plan} ${interval}`;
 }
 
 function statusLabel(billing: WorkspaceBillingSummary): string {
   if (billing.status === 'past_due') return 'Past due';
+  if (billing.status === 'unpaid') return 'Payment overdue';
   if (billing.status === 'canceled') return 'Canceled';
+  if (billing.status === 'trial_expired') return 'Trial ended';
   if (hasScheduledCancellation(billing)) return `Active until ${formatDate(cancellationEffectiveDate(billing))}`;
   if (billing.trialing) return 'Trial';
-  if (billing.plan === 'free') return 'Free';
   return 'Active';
 }
 
 function billingStatusCopy(billing: WorkspaceBillingSummary): string {
   if (hasScheduledCancellation(billing)) {
-    return `Subscription cancellation scheduled. This workspace will move to Free on ${formatDate(cancellationEffectiveDate(billing))}.`;
+    return `Subscription cancellation scheduled. This workspace will lock on ${formatDate(cancellationEffectiveDate(billing))}.`;
   }
   if (billing.trialing && billing.trial_ends_at) {
     return `${PLAN_LABELS[billing.plan] ?? billing.plan} trial ends ${formatDate(billing.trial_ends_at)}`;
   }
+  if (billing.status === 'trial_expired') return 'Trial ended. Choose a plan to reactivate this workspace.';
+  if (billing.status === 'unpaid') return 'Payment overdue. Update payment in Stripe to reactivate this workspace.';
+  if (billing.status === 'canceled') return 'Subscription ended. Choose a plan to reactivate this workspace.';
   if (billing.status === 'past_due') return 'Payment requires attention';
-  if (billing.plan === 'free') return 'Free plan with monthly AI credits';
   return '';
 }
 
 function periodCopy(billing: WorkspaceBillingSummary): string {
-  if (billing.plan === 'free') return 'Free';
+  if (billing.locked) return 'Locked';
   return billing.billing_interval === 'annual' ? 'Annual' : 'Monthly';
 }
 
 function nextChargeMetricLabel(billing: WorkspaceBillingSummary): string {
   if (hasScheduledCancellation(billing)) return 'Ends on';
-  if (billing.plan === 'free' || billing.trialing) return 'Credit reset';
+  if (billing.locked) return 'Reactivate';
+  if (billing.trialing) return 'Trial ends';
   return 'Next charge';
 }
 
 function nextChargeMetricValue(billing: WorkspaceBillingSummary): string {
   if (hasScheduledCancellation(billing)) return formatDate(cancellationEffectiveDate(billing));
-  if (billing.plan === 'free' || billing.trialing) return formatDate(billing.current_period_end);
+  if (billing.locked) return 'Choose a plan';
+  if (billing.trialing) return formatDate(billing.current_period_end);
   const amount = billing.next_charge_cents > 0 ? formatMoney(billing.next_charge_cents, 'usd') : '$0';
   return `${amount} on ${formatDate(billing.current_period_end)}`;
 }
 
 function hasScheduledCancellation(billing: WorkspaceBillingSummary): boolean {
-  return billing.cancel_at_period_end || billing.pending_plan === 'free';
+  return billing.cancel_at_period_end;
 }
 
 function cancellationEffectiveDate(billing: WorkspaceBillingSummary): string | undefined {
@@ -1558,7 +1359,7 @@ function statusBadgeClassName(billing: WorkspaceBillingSummary): string | undefi
   if (hasScheduledCancellation(billing)) {
     return 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200';
   }
-  if (billing.status === 'active' && !billing.trialing && billing.plan !== 'free') {
+  if (billing.status === 'active' && !billing.trialing) {
     return 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200';
   }
   return undefined;

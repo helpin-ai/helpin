@@ -26,7 +26,7 @@ function billingBadge(billing?: WorkspaceBillingSummary | null): {
 } {
   if (!billing) {
     return {
-      label: 'Free',
+      label: 'Trial pending',
       className: 'bg-muted text-muted-foreground border-transparent',
     };
   }
@@ -38,10 +38,10 @@ function billingBadge(billing?: WorkspaceBillingSummary | null): {
     };
   }
 
-  if (billing.status === 'canceled') {
+  if (billing.locked || billing.status === 'trial_expired' || billing.status === 'canceled') {
     return {
-      label: 'Canceled',
-      className: 'bg-muted text-muted-foreground border-transparent',
+      label: billing.status === 'trial_expired' ? 'Trial ended' : 'Locked',
+      className: 'bg-destructive/10 text-destructive border-destructive/20',
     };
   }
 
@@ -56,10 +56,9 @@ function billingBadge(billing?: WorkspaceBillingSummary | null): {
 
   return {
     label: plan,
-    className:
-      billing.plan === 'free'
-        ? 'bg-muted text-muted-foreground border-transparent'
-        : 'bg-primary/10 text-primary border-primary/15',
+    className: billing.locked
+      ? 'bg-destructive/10 text-destructive border-destructive/20'
+      : 'bg-primary/10 text-primary border-primary/15',
   };
 }
 
@@ -142,7 +141,10 @@ function WorkspaceCard({
   const visibleMembers = members.slice(0, MAX_VISIBLE_AVATARS);
   const overflowCount = members.length - MAX_VISIBLE_AVATARS;
 
-  const openWorkspace = () => navigate({ to: `/w/${ws.slug}/pm/my-work` });
+  const openWorkspace = () =>
+    navigate({
+      to: billing?.locked ? `/w/${ws.slug}/settings/billing` : `/w/${ws.slug}/pm/my-work`,
+    });
   const openBilling = (event: React.MouseEvent) => {
     event.stopPropagation();
     navigate({ to: `/w/${ws.slug}/settings/billing` });

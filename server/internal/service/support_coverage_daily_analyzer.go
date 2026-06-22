@@ -445,7 +445,15 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		}
 		if len(currentMatches) > 0 {
 			matchedKnowledge = currentMatches
-			refined, err := s.RefineFixBundleWithKnowledge(ctx, *result, currentMatches)
+			refined, err := s.RefineFixBundleWithKnowledge(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+				WorkspaceID:    workspaceID,
+				FeatureKey:     BillingFeatureCoverageGapAnalysis,
+				IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureCoverageGapAnalysis, "refine", conversation.ID, input.TranscriptHash),
+				Metadata: map[string]interface{}{
+					"conversation_id": conversation.ID,
+					"action":          "refine",
+				},
+			}), *result, currentMatches)
 			if err != nil {
 				slog.WarnContext(ctx, "coverage fix-bundle refinement failed; using analyzer recommendations",
 					"error", err,
@@ -813,7 +821,15 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal analyzer input: %w", err)
 	}
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    input.WorkspaceID,
+		FeatureKey:     BillingFeatureCoverageGapAnalysis,
+		IdempotencyKey: aiUsageIdempotencyKey(input.WorkspaceID, BillingFeatureCoverageGapAnalysis, "analyze", input.ConversationID, input.TranscriptHash),
+		Metadata: map[string]interface{}{
+			"conversation_id": input.ConversationID,
+			"action":          "analyze",
+		},
+	}), llm.ChatRequest{
 		SystemPrompt: coverageConversationAnalysisSystemPrompt(),
 		Messages: []llm.Message{{
 			Role:    "user",
@@ -1177,7 +1193,17 @@ func (s *SupportCoverageDailyAnalyzer) createDocsSuggestionForFix(ctx context.Co
 	if fix.Type == model.SupportCoverageFixUpdateArticle {
 		suggestionType = model.SupportCoverageSuggestionUpdateArticle
 	}
-	title, content, err := s.GenerateKnowledgeSuggestion(ctx, input.Result, fix)
+	title, content, err := s.GenerateKnowledgeSuggestion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    input.WorkspaceID,
+		FeatureKey:     BillingFeatureDocsArticleGeneration,
+		IdempotencyKey: aiUsageIdempotencyKey(input.WorkspaceID, BillingFeatureDocsArticleGeneration, "coverage_suggestion", input.ConversationID, gapID, fix.Type, fix.TargetID),
+		Metadata: map[string]interface{}{
+			"conversation_id": input.ConversationID,
+			"gap_id":          gapID,
+			"fix_type":        fix.Type,
+			"target_id":       fix.TargetID,
+		},
+	}), input.Result, fix)
 	if err != nil {
 		return nil, err
 	}

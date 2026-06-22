@@ -11,8 +11,6 @@ import type {
   PlanChangeRequest,
   PlanChangePreview,
   PortalResponse,
-  SetBillingOwnerRequest,
-  SetupIntentResponse,
   UpdateCardRequest,
   UsageMode,
   UsageResponse,
@@ -25,9 +23,6 @@ export const billingService = {
 
   listCards: (orgId: string) =>
     api.get<PaymentMethod[]>(`/organizations/${orgId}/billing/cards`),
-
-  createSetupIntent: (orgId: string) =>
-    api.post<SetupIntentResponse>(`/organizations/${orgId}/billing/cards/setup-intent`, {}),
 
   updateCard: (orgId: string, cardId: string, data: UpdateCardRequest) =>
     api.put<PaymentMethod>(`/organizations/${orgId}/billing/cards/${cardId}`, data),
@@ -53,9 +48,6 @@ export const billingService = {
 
   linkPaymentMethod: (wsId: string, data: LinkPaymentMethodRequest) =>
     api.put(`/workspaces/${wsId}/billing/payment-method`, data),
-
-  setBillingOwner: (wsId: string, data: SetBillingOwnerRequest) =>
-    api.put(`/workspaces/${wsId}/billing/owner`, data),
 
   checkout: (wsId: string, data: CheckoutRequest) =>
     api.post<CheckoutResponse>(`/workspaces/${wsId}/billing/checkout`, data),

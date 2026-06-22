@@ -1,8 +1,8 @@
 // Billing types — match backend DTOs for the organization-billing feature.
 // See docs/superpowers/specs/2026-06-19-organization-billing-design.md
 
-export type BillingPlan = 'free' | 'starter' | 'growth';
-export type BillingStatus = 'trialing' | 'active' | 'past_due' | 'canceled';
+export type BillingPlan = 'starter' | 'growth';
+export type BillingStatus = 'trialing' | 'active' | 'trial_expired' | 'past_due' | 'unpaid' | 'canceled';
 export type BillingInterval = 'monthly' | 'annual';
 export type UsageMode = 'daily' | 'cumulative';
 
@@ -24,6 +24,7 @@ export interface WorkspaceBillingCard {
   workspace_slug: string;
   plan: BillingPlan;
   status: BillingStatus;
+  locked: boolean;
   trialing: boolean;
   trial_ends_at?: string;
   current_period_end: string;
@@ -67,11 +68,6 @@ export interface PaymentMethod {
   is_org_default: boolean;
   linked_workspace_count: number;
   linked_workspaces: LinkedWorkspaceRef[];
-}
-
-export interface SetupIntentResponse {
-  client_secret: string;
-  customer_id: string;
 }
 
 export interface Invoice {
@@ -161,12 +157,8 @@ export interface LinkPaymentMethodRequest {
   payment_method_id: string | null;
 }
 
-export interface SetBillingOwnerRequest {
-  user_id: string | null;
-}
-
 export interface CheckoutRequest {
-  plan: Exclude<BillingPlan, 'free'>;
+  plan: BillingPlan;
   interval: BillingInterval;
   return_url?: string;
 }

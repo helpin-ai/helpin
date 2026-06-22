@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -47,15 +48,19 @@ func (r *BillingRepository) GetByStripeSubscriptionID(ctx context.Context, subsc
 }
 
 func (r *BillingRepository) GetByStripeCustomerID(ctx context.Context, customerID string) (*model.WorkspaceBilling, error) {
-	var billing model.WorkspaceBilling
-	err := r.db.WithContext(ctx).Where("stripe_customer_id = ?", customerID).Order("updated_at DESC").First(&billing).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
+	var rows []model.WorkspaceBilling
+	err := r.db.WithContext(ctx).
+		Where("stripe_customer_id = ?", customerID).
+		Order("updated_at DESC").
+		Limit(2).
+		Find(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("get workspace billing by stripe customer: %w", err)
 	}
-	return &billing, nil
+	if len(rows) != 1 {
+		return nil, nil
+	}
+	return &rows[0], nil
 }
 
 func (r *BillingRepository) InsertStripeWebhookEvent(ctx context.Context, eventID, eventType string) (bool, error) {
@@ -68,7 +73,11 @@ func (r *BillingRepository) InsertStripeWebhookEvent(ctx context.Context, eventI
 		return true, nil
 	}
 	if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "UNIQUE constraint failed") {
-		return false, nil
+		var existing model.StripeWebhookEvent
+		if loadErr := r.db.WithContext(ctx).Where("id = ?", eventID).First(&existing).Error; loadErr != nil {
+			return false, fmt.Errorf("load stripe webhook event: %w", loadErr)
+		}
+		return !existing.Processed, nil
 	}
 	return false, fmt.Errorf("insert stripe webhook event: %w", err)
 }
@@ -136,7 +145,9 @@ type BillingConsumeResult struct {
 	AlreadyUsed bool
 }
 
-func (r *BillingRepository) ConsumeCredits(ctx context.Context, workspaceID string, credits int, entry model.BillingCreditLedgerEntry) (*BillingConsumeResult, error) {
+type BillingOnDemandChargeFunc func(billing *model.WorkspaceBilling, requiredBlocks, newBlocks int) error
+
+func (r *BillingRepository) ConsumeCredits(ctx context.Context, workspaceID string, credits int, entry model.BillingCreditLedgerEntry, chargeOnDemand BillingOnDemandChargeFunc) (*BillingConsumeResult, error) {
 	var result BillingConsumeResult
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing model.BillingCreditLedgerEntry
@@ -159,7 +170,35 @@ func (r *BillingRepository) ConsumeCredits(ctx context.Context, workspaceID stri
 			return fmt.Errorf("load workspace billing for usage: %w", err)
 		}
 
-		billing.CreditsUsed += credits
+		if billing.Status == model.BillingStatusTrialExpired || billing.Status == model.BillingStatusUnpaid || billing.Status == model.BillingStatusCanceled {
+			return fmt.Errorf("workspace is locked; choose a plan to reactivate it")
+		}
+		nextUsed := billing.CreditsUsed + credits
+		onDemandAvailable := billing.Status == model.BillingStatusActive &&
+			billing.StripeCustomerID != nil &&
+			billing.StripeSubscriptionID != nil
+		if nextUsed > billing.IncludedCredits && !billing.OnDemandEnabled {
+			return fmt.Errorf("AI usage exhausted")
+		}
+		if nextUsed > billing.IncludedCredits && !onDemandAvailable {
+			return fmt.Errorf("extra AI usage is not available")
+		}
+
+		if nextUsed > billing.IncludedCredits {
+			requiredBlocks := int(math.Ceil(float64(nextUsed-billing.IncludedCredits) / float64(5000)))
+			newBlocks := requiredBlocks - billing.OnDemandBlocksInvoiced
+			if newBlocks > 0 {
+				if chargeOnDemand == nil {
+					return fmt.Errorf("extra AI usage billing is not configured")
+				}
+				if err := chargeOnDemand(&billing, requiredBlocks, newBlocks); err != nil {
+					return err
+				}
+				billing.OnDemandBlocksInvoiced += newBlocks
+			}
+		}
+
+		billing.CreditsUsed = nextUsed
 		if err := tx.Save(&billing).Error; err != nil {
 			return fmt.Errorf("increment billing credits used: %w", err)
 		}
@@ -342,17 +381,6 @@ func (r *BillingRepository) LinkWorkspacePaymentMethod(ctx context.Context, work
 		Where("workspace_id = ?", workspaceID).
 		Update("payment_method_id", paymentMethodID).Error; err != nil {
 		return fmt.Errorf("link workspace payment method: %w", err)
-	}
-	return nil
-}
-
-// SetWorkspaceBillingOwner sets (or clears) the delegated billing owner.
-func (r *BillingRepository) SetWorkspaceBillingOwner(ctx context.Context, workspaceID string, userID *string) error {
-	if err := r.db.WithContext(ctx).
-		Model(&model.WorkspaceBilling{}).
-		Where("workspace_id = ?", workspaceID).
-		Update("billing_owner_user_id", userID).Error; err != nil {
-		return fmt.Errorf("set workspace billing owner: %w", err)
 	}
 	return nil
 }

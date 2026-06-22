@@ -828,7 +828,7 @@ func TestParseIntentWithLLMRoutesOneShotAndNarrowsTools(t *testing.T) {
 	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
 		SetLLMRouterConfig("openai", "gpt-5.5", 777, time.Second)
 
-	resp := service.parseIntentWithLLM(context.Background(), "how many tasks in engineering team needs attention?", pageContext, candidates)
+	resp := service.parseIntentWithLLM(context.Background(), "workspace-1", "how many tasks in engineering team needs attention?", pageContext, candidates)
 	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
 		t.Fatalf("expected one-shot plan, got %#v", resp)
 	}
@@ -881,7 +881,7 @@ func TestCommandBarRouterAttachesOpenRouterProviderOptions(t *testing.T) {
 		SetLLMRouterConfig(model.AgentModelProviderOpenRouter, "openai/gpt-5.5", 777, time.Second).
 		SetCommandRouterOpenRouterProviderOptions(json.RawMessage(`{"order":["openai"],"allow_fallbacks":false}`))
 
-	resp := service.parseIntentWithLLM(context.Background(), "how many open tasks?", pageContext, candidates)
+	resp := service.parseIntentWithLLM(context.Background(), "workspace-1", "how many open tasks?", pageContext, candidates)
 	if resp == nil || resp.Plan == nil {
 		t.Fatalf("expected one-shot plan, got %#v", resp)
 	}
@@ -905,7 +905,7 @@ func TestCommandBarRouterOmitsOpenRouterProviderOptionsForNonOpenRouter(t *testi
 		SetLLMRouterConfig(model.AgentModelProviderOpenAI, "gpt-5.5", 777, time.Second).
 		SetCommandRouterOpenRouterProviderOptions(json.RawMessage(`{"order":["openai"]}`))
 
-	_ = service.parseIntentWithLLM(context.Background(), "hello", pageContext, nil)
+	_ = service.parseIntentWithLLM(context.Background(), "workspace-1", "hello", pageContext, nil)
 	if len(fakeLLM.requests) != 1 {
 		t.Fatalf("expected one LLM request, got %d", len(fakeLLM.requests))
 	}
@@ -924,7 +924,7 @@ func TestCommandBarRouterUsesOpenRouterMinimumTimeout(t *testing.T) {
 	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
 		SetLLMRouterConfig(model.AgentModelProviderOpenRouter, "z-ai/glm-4.7", 777, time.Second)
 
-	_ = service.parseIntentWithLLM(context.Background(), "hello", model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}, nil)
+	_ = service.parseIntentWithLLM(context.Background(), "workspace-1", "hello", model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}, nil)
 	if len(fakeLLM.requests) != 1 {
 		t.Fatalf("expected one LLM request, got %d", len(fakeLLM.requests))
 	}
@@ -956,7 +956,7 @@ func TestCommandBarRouterPromptTellsOneShotToUseWebToolsForExternalEvidence(t *t
 	}`}
 	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM)
 
-	resp := service.parseIntentWithLLM(context.Background(), "is that relevant to the current trend? web search", pageContext, candidates)
+	resp := service.parseIntentWithLLM(context.Background(), "workspace-1", "is that relevant to the current trend? web search", pageContext, candidates)
 	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
 		t.Fatalf("expected one-shot plan, got %#v", resp)
 	}
@@ -1045,7 +1045,7 @@ func TestParseIntentWithLLMRoutesMultiStepSavedAgents(t *testing.T) {
 	}`}
 	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM)
 
-	resp := service.parseIntentWithLLM(context.Background(), "have Forge implement then Lens review", pageContext, candidates)
+	resp := service.parseIntentWithLLM(context.Background(), "workspace-1", "have Forge implement then Lens review", pageContext, candidates)
 	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 2 {
 		t.Fatalf("expected two-step saved-agent plan, got %#v", resp)
 	}
@@ -1092,7 +1092,7 @@ func TestParseIntentWithLLMRoutesDAG(t *testing.T) {
 	}`}
 	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM)
 
-	resp := service.parseIntentWithLLM(context.Background(), "find engineering tasks needing attention, then summarize next actions", pageContext, candidates)
+	resp := service.parseIntentWithLLM(context.Background(), "workspace-1", "find engineering tasks needing attention, then summarize next actions", pageContext, candidates)
 	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 2 {
 		t.Fatalf("expected DAG plan, got %#v", resp)
 	}

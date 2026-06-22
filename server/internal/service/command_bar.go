@@ -559,7 +559,14 @@ func (s *CommandBarService) classifyCommandBarChatIntent(ctx context.Context, wo
 	timeout := s.commandRouterTimeoutForRequest()
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	resp, err := s.llmProvider.ChatCompletion(callCtx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(callCtx, AIUsageMeteringContext{
+		WorkspaceID:    workspaceID,
+		FeatureKey:     BillingFeatureCommandBarAnswer,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureCommandBarAnswer, "chat_intent", aiUsageStableHash(text)),
+		Metadata: map[string]interface{}{
+			"action": "chat_intent",
+		},
+	}), llm.ChatRequest{
 		Provider: s.commandRouterLLMProvider,
 		Model:    s.commandRouterLLMModel,
 		SystemPrompt: `You are Helpin's Ask Agents chat intent classifier. Return strict JSON only. Do not answer the user.
@@ -628,7 +635,15 @@ func (s *CommandBarService) inlineReadOnlyAnswer(ctx context.Context, workspaceI
 	for i := 0; i < 4; i++ {
 		toolResultJSON, _ := json.Marshal(toolCalls)
 		workingContextJSON, _ := json.Marshal(commandBarWorkingContextWithToolCalls(historyWorkingContext, toolCalls))
-		resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+		resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+			WorkspaceID:    workspaceID,
+			FeatureKey:     BillingFeatureCommandBarAnswer,
+			IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureCommandBarAnswer, "inline_read_only", aiUsageStableHash(text), fmt.Sprintf("%d", i)),
+			Metadata: map[string]interface{}{
+				"action":  "inline_read_only",
+				"attempt": i,
+			},
+		}), llm.ChatRequest{
 			Provider: s.commandRouterLLMProvider,
 			Model:    s.commandRouterLLMModel,
 			SystemPrompt: `You are Helpin's Ask Agents chat assistant.
@@ -698,7 +713,14 @@ Tool results so far: %s`, text, string(contextJSON), string(historyJSON), string
 	finalContext := commandBarReadOnlyToolContextJSON(toolCalls, finalWorkingContext)
 	finalToolJSON, _ := json.Marshal(toolCalls)
 	finalWorkingContextJSON, _ := json.Marshal(finalWorkingContext)
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    workspaceID,
+		FeatureKey:     BillingFeatureCommandBarAnswer,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureCommandBarAnswer, "inline_read_only_final", aiUsageStableHash(text)),
+		Metadata: map[string]interface{}{
+			"action": "inline_read_only_final",
+		},
+	}), llm.ChatRequest{
 		Provider:     s.commandRouterLLMProvider,
 		Model:        s.commandRouterLLMModel,
 		SystemPrompt: `You are Helpin's Ask Agents chat assistant. Write the final concise answer from the provided read-only tool results. Do not request more tools. Return JSON only: {"type":"final","answer":"..."}.`,
@@ -2099,7 +2121,7 @@ func (s *CommandBarService) ParseIntent(ctx context.Context, workspaceID, actorI
 		return s.commandBarResolvePlanOrNoMatch(ctx, workspaceID, actorID, text, pageContext, parsed, agents, candidates), nil
 	}
 	var llmNoMatch *model.CommandBarParseResponse
-	if parsed := s.parseIntentWithLLM(ctx, text, pageContext, candidates); parsed != nil {
+	if parsed := s.parseIntentWithLLM(ctx, workspaceID, text, pageContext, candidates); parsed != nil {
 		if parsed.Status == model.CommandBarParseStatusPlan {
 			return s.commandBarResolvePlanOrNoMatch(ctx, workspaceID, actorID, text, pageContext, parsed, agents, candidates), nil
 		}
@@ -4535,7 +4557,7 @@ type commandBarPlannerOutput struct {
 	Confidence         float64                 `json:"confidence"`
 }
 
-func (s *CommandBarService) parseIntentWithLLM(ctx context.Context, text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
+func (s *CommandBarService) parseIntentWithLLM(ctx context.Context, workspaceID, text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
 	if s == nil || s.llmProvider == nil {
 		return nil
 	}
@@ -4552,7 +4574,15 @@ func (s *CommandBarService) parseIntentWithLLM(ctx context.Context, text string,
 	var validationFeedback string
 	for attempt := 0; attempt < 2; attempt++ {
 		callCtx, cancel := context.WithTimeout(ctx, timeout)
-		resp, err := s.llmProvider.ChatCompletion(callCtx, llm.ChatRequest{
+		resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(callCtx, AIUsageMeteringContext{
+			WorkspaceID:    workspaceID,
+			FeatureKey:     BillingFeatureCommandBarAnswer,
+			IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureCommandBarAnswer, "semantic_route", aiUsageStableHash(text), fmt.Sprintf("%d", attempt)),
+			Metadata: map[string]interface{}{
+				"action":  "semantic_route",
+				"attempt": attempt,
+			},
+		}), llm.ChatRequest{
 			Provider: s.commandRouterLLMProvider,
 			Model:    s.commandRouterLLMModel,
 			SystemPrompt: fmt.Sprintf(`You are Helpin's command-bar semantic router. Return strict JSON only.

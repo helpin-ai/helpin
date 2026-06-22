@@ -30,6 +30,47 @@ func NewBillingHandler(billingService *service.BillingService, webhookSecret, ap
 	}
 }
 
+func (h *BillingHandler) RequireUnlockedWorkspace(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h == nil || h.billingService == nil || billingLockAllowedRequest(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		workspaceID := middleware.GetWorkspaceID(r.Context())
+		if workspaceID == "" {
+			workspaceID = chi.URLParam(r, "id")
+		}
+		if workspaceID == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		summary, err := h.billingService.GetWorkspaceBilling(r.Context(), workspaceID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to resolve workspace billing")
+			return
+		}
+		if summary != nil && summary.Locked {
+			writeError(w, http.StatusPaymentRequired, "workspace is locked; choose a plan to reactivate it")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func billingLockAllowedRequest(r *http.Request) bool {
+	path := r.URL.Path
+	if strings.Contains(path, "/billing") {
+		return true
+	}
+	if r.Method == http.MethodGet && strings.HasSuffix(path, "/settings") {
+		return true
+	}
+	if r.Method == http.MethodGet && (strings.HasSuffix(path, "/me") || strings.HasSuffix(path, "/my-role") || strings.HasSuffix(path, "/my-membership")) {
+		return true
+	}
+	return false
+}
+
 func (h *BillingHandler) Get(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
 	summary, err := h.billingService.GetWorkspaceBilling(r.Context(), workspaceID)
@@ -58,6 +99,9 @@ type billingConfirmCheckoutRequest struct {
 
 func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
+	if !h.canManageWorkspace(w, r, workspaceID) {
+		return
+	}
 	var req billingCheckoutRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -80,6 +124,9 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 func (h *BillingHandler) ConfirmCheckout(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
+	if !h.canManageWorkspace(w, r, workspaceID) {
+		return
+	}
 	var req billingConfirmCheckoutRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -95,6 +142,9 @@ func (h *BillingHandler) ConfirmCheckout(w http.ResponseWriter, r *http.Request)
 
 func (h *BillingHandler) PreviewPlanChange(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
+	if !h.canManageWorkspace(w, r, workspaceID) {
+		return
+	}
 	var req billingPlanChangeRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -115,6 +165,9 @@ func (h *BillingHandler) PreviewPlanChange(w http.ResponseWriter, r *http.Reques
 
 func (h *BillingHandler) ChangePlan(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
+	if !h.canManageWorkspace(w, r, workspaceID) {
+		return
+	}
 	var req billingPlanChangeRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -135,6 +188,9 @@ func (h *BillingHandler) ChangePlan(w http.ResponseWriter, r *http.Request) {
 
 func (h *BillingHandler) ResumeSubscription(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
+	if !h.canManageWorkspace(w, r, workspaceID) {
+		return
+	}
 	summary, err := h.billingService.ResumeWorkspaceSubscription(r.Context(), workspaceID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -145,6 +201,9 @@ func (h *BillingHandler) ResumeSubscription(w http.ResponseWriter, r *http.Reque
 
 func (h *BillingHandler) Portal(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
+	if !h.canManageWorkspace(w, r, workspaceID) {
+		return
+	}
 	var req struct {
 		ReturnURL string `json:"return_url"`
 	}
@@ -163,6 +222,9 @@ type billingOnDemandRequest struct {
 
 func (h *BillingHandler) SetOnDemand(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
+	if !h.canManageWorkspace(w, r, workspaceID) {
+		return
+	}
 	var req billingOnDemandRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")

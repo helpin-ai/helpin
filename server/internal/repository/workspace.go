@@ -188,6 +188,9 @@ func (r *WorkspaceRepository) attachWorkspaceBillingSummaries(ctx context.Contex
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id IN ?", ids).
 		Find(&billings).Error; err != nil {
+		if isMissingWorkspaceBillingTableError(err) {
+			return nil
+		}
 		return fmt.Errorf("list workspace billing summaries: %w", err)
 	}
 
@@ -205,6 +208,15 @@ func (r *WorkspaceRepository) attachWorkspaceBillingSummaries(ctx context.Contex
 		workspaces[i].Billing = &summary
 	}
 	return nil
+}
+
+func isMissingWorkspaceBillingTableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such table: workspace_billing") ||
+		strings.Contains(msg, `relation "workspace_billing" does not exist`)
 }
 
 func workspaceBillingSummaryForList(billing model.WorkspaceBilling) model.WorkspaceBillingSummaryForList {
@@ -226,7 +238,8 @@ func workspaceBillingSummaryForList(billing model.WorkspaceBilling) model.Worksp
 		CreditsUsed:            billing.CreditsUsed,
 		CreditsRemaining:       remaining,
 		OnDemandEnabled:        billing.OnDemandEnabled,
-		OnDemandAvailable:      billing.Plan != model.BillingPlanFree && billing.StripeCustomerID != nil && billing.StripeSubscriptionID != nil,
+		OnDemandAvailable:      billing.Status == model.BillingStatusActive && billing.StripeCustomerID != nil && billing.StripeSubscriptionID != nil,
+		Locked:                 billing.Status == model.BillingStatusTrialExpired || billing.Status == model.BillingStatusUnpaid || billing.Status == model.BillingStatusCanceled,
 		ManageBillingEnabled:   billing.StripeCustomerID != nil,
 		OnDemandBlocksInvoiced: billing.OnDemandBlocksInvoiced,
 	}

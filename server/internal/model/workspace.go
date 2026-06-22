@@ -70,6 +70,7 @@ type WorkspaceBillingSummaryForList struct {
 	CreditsRemaining       int        `json:"credits_remaining"`
 	OnDemandEnabled        bool       `json:"on_demand_enabled"`
 	OnDemandAvailable      bool       `json:"on_demand_available"`
+	Locked                 bool       `json:"locked"`
 	ManageBillingEnabled   bool       `json:"manage_billing_enabled"`
 	OnDemandBlocksInvoiced int        `json:"on_demand_blocks_invoiced"`
 }

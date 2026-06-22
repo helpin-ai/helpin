@@ -14,13 +14,14 @@ import (
 
 // DealAutomationService handles autonomous deal creation and progression.
 type DealAutomationService struct {
-	llmProvider  llm.Provider
-	dealRepo     *repository.CRMDealRepository
-	signalRepo   *repository.CRMSignalRepository
+	llmProvider    llm.Provider
+	dealRepo       *repository.CRMDealRepository
+	signalRepo     *repository.CRMSignalRepository
 	suggestionRepo *repository.CRMSuggestionRepository
-	contactRepo  *repository.CRMContactRepository
-	assocRepo    *repository.CRMAssociationRepository
-	autonomyRepo *repository.CRMAutonomyRepository
+	contactRepo    *repository.CRMContactRepository
+	assocRepo      *repository.CRMAssociationRepository
+	autonomyRepo   *repository.CRMAutonomyRepository
+	entitlementSvc *EntitlementService
 }
 
 // NewDealAutomationService creates a new deal automation service.
@@ -44,6 +45,11 @@ func NewDealAutomationService(
 	}
 }
 
+func (s *DealAutomationService) SetEntitlementService(entitlementSvc *EntitlementService) *DealAutomationService {
+	s.entitlementSvc = entitlementSvc
+	return s
+}
+
 // GetAutonomySettings retrieves CRM autonomy settings for a workspace.
 func (s *DealAutomationService) GetAutonomySettings(ctx context.Context, workspaceID string) model.CRMAutonomySettings {
 	settings, err := s.autonomyRepo.GetByWorkspace(ctx, workspaceID)
@@ -55,6 +61,11 @@ func (s *DealAutomationService) GetAutonomySettings(ctx context.Context, workspa
 
 // UpdateAutonomySettings saves CRM autonomy settings.
 func (s *DealAutomationService) UpdateAutonomySettings(ctx context.Context, workspaceID string, req model.CRMAutonomySettings) error {
+	if s.entitlementSvc != nil && (req.Enabled || req.AutoCreateDeals || req.AutoProgressDeals) {
+		if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureDealAutomation); err != nil {
+			return err
+		}
+	}
 	req.WorkspaceID = workspaceID
 	return s.autonomyRepo.Upsert(ctx, &req)
 }
@@ -73,6 +84,11 @@ type DealCreationInference struct {
 func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, workspaceID string, signals []model.CRMBuyerSignal) error {
 	if s.llmProvider == nil || len(signals) == 0 {
 		return nil
+	}
+	if s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureDealAutomation); err != nil {
+			return nil
+		}
 	}
 
 	autonomy := s.GetAutonomySettings(ctx, workspaceID)
@@ -165,12 +181,12 @@ func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, worksp
 
 		// Build suggestion context
 		dealContext := map[string]interface{}{
-			"deal_name":   inference.DealName,
-			"pipeline_id": defaultPipeline.ID,
-			"stage_id":    firstStage.ID,
-			"contact_id":  contactID,
+			"deal_name":    inference.DealName,
+			"pipeline_id":  defaultPipeline.ID,
+			"stage_id":     firstStage.ID,
+			"contact_id":   contactID,
 			"contact_name": contact.FirstName,
-			"reasoning":   inference.Reasoning,
+			"reasoning":    inference.Reasoning,
 		}
 		if inference.EstimatedAmount != nil {
 			dealContext["amount"] = *inference.EstimatedAmount
@@ -231,6 +247,11 @@ func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, worksp
 func (s *DealAutomationService) EvaluateDealProgression(ctx context.Context, workspaceID string) error {
 	if s.llmProvider == nil {
 		return nil
+	}
+	if s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureDealAutomation); err != nil {
+			return nil
+		}
 	}
 
 	autonomy := s.GetAutonomySettings(ctx, workspaceID)
@@ -457,7 +478,15 @@ func (s *DealAutomationService) inferDealCreation(ctx context.Context, contact *
 		"signals": signalSummaries,
 	})
 
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    contact.WorkspaceID,
+		FeatureKey:     BillingFeatureDealAutomationInference,
+		IdempotencyKey: aiUsageIdempotencyKey(contact.WorkspaceID, BillingFeatureDealAutomationInference, "create_deal", contact.ID),
+		Metadata: map[string]interface{}{
+			"action":     "create_deal",
+			"contact_id": contact.ID,
+		},
+	}), llm.ChatRequest{
 		SystemPrompt: dealCreationSystemPrompt,
 		Messages:     []llm.Message{{Role: "user", Content: string(payload)}},
 		Temperature:  0.1,
@@ -507,7 +536,15 @@ func (s *DealAutomationService) inferDealProgression(ctx context.Context, deal *
 		"signals": signalSummaries,
 	})
 
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    deal.WorkspaceID,
+		FeatureKey:     BillingFeatureDealAutomationInference,
+		IdempotencyKey: aiUsageIdempotencyKey(deal.WorkspaceID, BillingFeatureDealAutomationInference, "progress_deal", deal.ID),
+		Metadata: map[string]interface{}{
+			"action":  "progress_deal",
+			"deal_id": deal.ID,
+		},
+	}), llm.ChatRequest{
 		SystemPrompt: dealProgressionSystemPrompt,
 		Messages:     []llm.Message{{Role: "user", Content: string(payload)}},
 		Temperature:  0.1,

@@ -148,7 +148,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   {
     id: 'billing',
     label: 'Billing',
-    description: 'Manage this workspace plan, AI credits, payment methods, and invoices.',
+    description: 'Manage this workspace plan, AI usage, payment methods, and invoices.',
     icon: Billing,
     group: 'Workspace',
     requiresManageSettings: true,

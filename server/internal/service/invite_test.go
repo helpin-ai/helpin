@@ -143,7 +143,7 @@ func TestCreateInvitation(t *testing.T) {
 	}
 }
 
-func TestCreateInvitation_FreePlanSeatLimitBlocksNewInvite(t *testing.T) {
+func TestCreateInvitation_LockedWorkspaceBlocksNewInvite(t *testing.T) {
 	db := newTestDB(t)
 	invitationRepo := repository.NewInvitationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
@@ -169,19 +169,19 @@ func TestCreateInvitation_FreePlanSeatLimitBlocksNewInvite(t *testing.T) {
 	seedWorkspaceMember(t, db, "wm-001", wsID, ownerID, "owner@example.com", "Owner User", "owner")
 	seedWorkspaceMember(t, db, "wm-002", wsID, memberID, "member@example.com", "Member User", "member")
 	mustExec(t, db, `INSERT INTO workspace_billing (id, workspace_id, plan, status, billing_interval, included_credits, credits_used, current_period_start, current_period_end, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, datetime('now', '+1 month'), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		"billing-001", wsID, model.BillingPlanFree, model.BillingStatusActive, "monthly", 1000, 0)
+		"billing-001", wsID, model.BillingPlanGrowth, model.BillingStatusTrialExpired, "monthly", 25000, 0)
 
 	_, err := svc.CreateInvitation(context.Background(), model.CreateInvitationRequest{
 		WorkspaceID: wsID,
 		Email:       "third@example.com",
 		Role:        "member",
 	}, ownerID)
-	if err == nil || !strings.Contains(err.Error(), "free plan includes 2 seats") {
-		t.Fatalf("CreateInvitation() error = %v, want free seat limit error", err)
+	if err == nil || !strings.Contains(err.Error(), "workspace is locked") {
+		t.Fatalf("CreateInvitation() error = %v, want locked workspace error", err)
 	}
 }
 
-func TestCreateInvitation_PaidPlanAllowsMoreThanFreeSeatLimit(t *testing.T) {
+func TestCreateInvitation_ActivePaidPlanAllowsAdditionalSeats(t *testing.T) {
 	db := newTestDB(t)
 	invitationRepo := repository.NewInvitationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)

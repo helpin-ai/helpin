@@ -36,6 +36,7 @@ type SupportInboxTriageService struct {
 	conversationRepo *repository.SupportConversationRepository
 	messageRepo      *repository.SupportMessageRepository
 	llmProvider      llm.Provider
+	entitlementSvc   *EntitlementService
 }
 
 type supportInboxTriageResult struct {
@@ -84,6 +85,11 @@ func NewSupportInboxTriageService(
 		messageRepo:      messageRepo,
 		llmProvider:      llmProvider,
 	}
+}
+
+func (s *SupportInboxTriageService) SetEntitlementService(entitlementSvc *EntitlementService) *SupportInboxTriageService {
+	s.entitlementSvc = entitlementSvc
+	return s
 }
 
 func (s *SupportInboxTriageService) HydrateConversation(ctx context.Context, conversation *model.SupportConversation) error {
@@ -135,6 +141,11 @@ func (s *SupportInboxTriageService) CreateRule(ctx context.Context, workspaceID,
 	if s == nil || s.ruleRepo == nil {
 		return nil, fmt.Errorf("support triage rules are unavailable")
 	}
+	if s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAIConversationRouting); err != nil {
+			return nil, err
+		}
+	}
 
 	rule, err := s.buildRuleModel(ctx, workspaceID, actorID, nil, req)
 	if err != nil {
@@ -150,6 +161,11 @@ func (s *SupportInboxTriageService) CreateRule(ctx context.Context, workspaceID,
 func (s *SupportInboxTriageService) UpdateRule(ctx context.Context, workspaceID, ruleID string, req model.UpdateSupportTriageRuleRequest) (*model.SupportTriageRule, error) {
 	if s == nil || s.ruleRepo == nil {
 		return nil, fmt.Errorf("support triage rules are unavailable")
+	}
+	if s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAIConversationRouting); err != nil {
+			return nil, err
+		}
 	}
 
 	existing, err := s.ruleRepo.GetByID(ctx, workspaceID, ruleID)
@@ -230,6 +246,12 @@ func (s *SupportInboxTriageService) EvaluateAndRoute(ctx context.Context, worksp
 			"email_enabled", settings.TriageEmailEnabled,
 		)
 		return nil, nil
+	}
+	if s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAIConversationRouting); err != nil {
+			slog.InfoContext(ctx, "support triage skipped due to billing entitlement", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
+			return nil, nil
+		}
 	}
 	if settings.TriageSkipSpamConversations && strings.EqualFold(strings.TrimSpace(conversation.Status), "spam") {
 		return nil, nil
@@ -713,7 +735,18 @@ func (s *SupportInboxTriageService) evaluateAI(ctx context.Context, workspaceID 
 	)
 
 	prompt := buildSupportTriagePrompt(conversation, inputContent, options)
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	conversationID := ""
+	if conversation != nil {
+		conversationID = conversation.ID
+	}
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    workspaceID,
+		FeatureKey:     BillingFeatureAIRouting,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureAIRouting, "triage", conversationID, aiUsageStableHash(inputContent)),
+		Metadata: map[string]interface{}{
+			"conversation_id": conversationID,
+		},
+	}), llm.ChatRequest{
 		Provider:     supportTriageProvider,
 		Model:        supportTriageModel,
 		SystemPrompt: supportTriageSystemPrompt,
