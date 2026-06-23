@@ -1625,7 +1625,7 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 	if err != nil {
 		return err
 	}
-	replyTo := supportConversationReplyTo(conversationID, s.replyDomain, workspaceName)
+	replyTo := s.resolveConversationReplyTo(ctx, conv, workspaceName)
 	unsubscribeEmail := s.unsubscribeAddress(conversationID)
 
 	subject, err := s.buildSubject(ctx, conv, pending)
@@ -2190,6 +2190,40 @@ func supportConversationReplyTo(conversationID, replyDomain, displayName string)
 		return address
 	}
 	return (&mail.Address{Name: displayName, Address: address}).String()
+}
+
+// supportRouteReplyTo formats a Reply-To header using a workspace's route-backed
+// inbound address with an optional friendly display name.
+func supportRouteReplyTo(inboundAddress, displayName string) string {
+	inboundAddress = strings.TrimSpace(inboundAddress)
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return inboundAddress
+	}
+	return (&mail.Address{Name: displayName, Address: inboundAddress}).String()
+}
+
+func (s *EmailFallbackService) resolveConversationReplyTo(ctx context.Context, conv *model.SupportConversation, displayName string) string {
+	if conv == nil {
+		return supportRouteReplyTo("", displayName)
+	}
+	legacy := supportConversationReplyTo(conv.ID, s.replyDomain, displayName)
+	if s.supportInboxService == nil || s.supportInboxService.emailRouteRepo == nil {
+		return legacy
+	}
+	route, err := s.supportInboxService.emailRouteRepo.GetActiveByMailbox(ctx, conv.WorkspaceID, conv.MailboxID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "resolve route reply-to failed, using legacy conv address",
+			"error", err,
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conv.ID,
+		)
+		return legacy
+	}
+	if route == nil || strings.TrimSpace(route.InboundAddress) == "" {
+		return legacy
+	}
+	return supportRouteReplyTo(route.InboundAddress, displayName)
 }
 
 func (s *EmailFallbackService) buildThreadHeaders(ctx context.Context, workspaceID, conversationID, nextMessageID string) ([]email.EmailHeader, error) {

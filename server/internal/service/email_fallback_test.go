@@ -533,6 +533,71 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	}
 }
 
+func TestSupportRouteReplyToFormatsDisplayName(t *testing.T) {
+	tests := []struct {
+		name           string
+		inboundAddress string
+		displayName    string
+		want           string
+	}{
+		{
+			name:           "with display name",
+			inboundAddress: "inbox@acme.on.helpin.email",
+			displayName:    "Acme Support",
+			want:           `"Acme Support" <inbox@acme.on.helpin.email>`,
+		},
+		{
+			name:           "without display name returns bare address",
+			inboundAddress: "inbox@acme.on.helpin.email",
+			displayName:    "  ",
+			want:           "inbox@acme.on.helpin.email",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := supportRouteReplyTo(tt.inboundAddress, tt.displayName); got != tt.want {
+				t.Errorf("supportRouteReplyTo() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveConversationReplyToPrefersRouteAddress(t *testing.T) {
+	env := setupEmailFallbackInboundTestEnv(t, model.SupportInboxSettings{})
+
+	conv := &model.SupportConversation{
+		ID:          "44444444-4444-4444-4444-444444444444",
+		WorkspaceID: "11111111-1111-1111-1111-111111111111",
+		Status:      model.SupportConversationStatusOpen,
+	}
+	if err := env.convRepo.Create(context.Background(), conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	gotLegacy := env.service.resolveConversationReplyTo(context.Background(), conv, "Acme Support")
+	wantLegacy := `"Acme Support" <conv-` + conv.ID + `@replies.helpin.ai>`
+	if gotLegacy != wantLegacy {
+		t.Fatalf("legacy reply-to = %q, want %q", gotLegacy, wantLegacy)
+	}
+
+	if err := env.routeRepo.Create(context.Background(), &model.SupportEmailRoute{
+		ID:             "55555555-5555-5555-5555-555555555555",
+		WorkspaceID:    conv.WorkspaceID,
+		RouteKey:       "route-44444444",
+		InboundAddress: "inbox@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+	}); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	got := env.service.resolveConversationReplyTo(context.Background(), conv, "Acme Support")
+	want := `"Acme Support" <inbox@acme.on.helpin.email>`
+	if got != want {
+		t.Errorf("route reply-to = %q, want %q", got, want)
+	}
+}
+
 func TestEmailFallbackFireEmailRetriesVerifiedSenderWhenBrandedSenderRejected(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
@@ -688,6 +753,17 @@ func TestEmailFallbackFireEmailUsesMailboxDefaultSenderAndLogsReplyContract(t *t
 	}); err != nil {
 		t.Fatalf("create sender: %v", err)
 	}
+	if err := env.routeRepo.Create(ctx, &model.SupportEmailRoute{
+		ID:             "77777777-7777-7777-7777-777777777777",
+		WorkspaceID:    workspaceID,
+		MailboxID:      &mailboxID,
+		RouteKey:       "route-mailbox-billing",
+		InboundAddress: "inbox@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+	}); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
 
 	customerEmail := "customer@example.com"
 	conv := &model.SupportConversation{
@@ -742,7 +818,7 @@ func TestEmailFallbackFireEmailUsesMailboxDefaultSenderAndLogsReplyContract(t *t
 		t.Fatalf("fire email: %v", err)
 	}
 
-	expectedReplyTo := `"Acme Support" <conv-` + conversationID + `@replies.helpin.ai>`
+	expectedReplyTo := `"Acme Support" <inbox@acme.on.helpin.email>`
 	if captured.From != "Arooj - Acme Support <billing@acme.test>" {
 		t.Fatalf("from = %q, want mailbox sender with agent and workspace display", captured.From)
 	}
