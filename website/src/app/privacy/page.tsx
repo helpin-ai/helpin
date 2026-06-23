@@ -2,9 +2,16 @@ export default function PrivacyPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 lg:px-8 py-20">
       <h1 className="text-3xl font-bold tracking-tight text-foreground mb-4">Privacy Policy</h1>
-      <p className="text-sm text-muted-foreground mb-12">Last updated: April 6, 2026</p>
+      <p className="text-sm text-muted-foreground mb-12">Last updated: June 23, 2026</p>
 
       <div className="prose prose-sm max-w-none text-muted-foreground space-y-8">
+        <section>
+          <h2 className="text-lg font-semibold text-foreground mb-3">Who We Are</h2>
+          <p className="leading-relaxed">
+            Helpin is operated by Usermaven Inc. When this policy says "Helpin," "we," "us," or "our," it refers to Usermaven Inc. and the Helpin service.
+          </p>
+        </section>
+
         <section>
           <h2 className="text-lg font-semibold text-foreground mb-3">1. Information We Collect</h2>
           <p className="leading-relaxed mb-3">When you use Helpin, we collect information you provide directly:</p>
@@ -13,6 +20,7 @@ export default function PrivacyPage() {
             <li>Workspace data (projects, tasks, documents, conversations)</li>
             <li>Usage data (feature interactions, agent runs, API calls)</li>
             <li>Communication data (support requests, feedback)</li>
+            <li>Billing information needed to manage your subscription, invoices, and payment status</li>
           </ul>
           <p className="leading-relaxed mt-3">We also collect technical data automatically: IP address, browser type, device information, and cookies for authentication and analytics.</p>
         </section>
@@ -25,6 +33,7 @@ export default function PrivacyPage() {
             <li>Power AI agents with your workspace context</li>
             <li>Send service-related communications</li>
             <li>Monitor and prevent security issues</li>
+            <li>Process subscriptions, invoices, upgrades, downgrades, and payment-related notices</li>
             <li>Comply with legal obligations</li>
           </ul>
         </section>
@@ -50,9 +59,12 @@ export default function PrivacyPage() {
           <p className="leading-relaxed mb-3">We do not sell your data. We share information only with:</p>
           <ul className="list-disc pl-5 space-y-1">
             <li>Infrastructure providers (hosting, storage) under strict data processing agreements</li>
+            <li>Payment processors, including Stripe, to process payments, manage subscriptions, prevent fraud, and provide invoices</li>
             <li>Analytics tools (Usermaven) for product improvement — anonymized where possible</li>
+            <li>AI model providers selected or configured for your workspace, only as needed to complete agent tasks</li>
             <li>Law enforcement when legally required</li>
           </ul>
+          <p className="leading-relaxed mt-3">We do not store full payment card numbers on our servers. Payment details are handled by our payment processor.</p>
         </section>
 
         <section>
@@ -74,7 +86,13 @@ export default function PrivacyPage() {
 
         <section>
           <h2 className="text-lg font-semibold text-foreground mb-3">8. Contact</h2>
-          <p className="leading-relaxed">For privacy-related questions, contact us at <a href="mailto:privacy@helpin.ai" className="text-foreground underline">privacy@helpin.ai</a>.</p>
+          <p className="leading-relaxed mb-3">For privacy-related questions, contact us at <a href="mailto:privacy@helpin.ai" className="text-foreground underline">privacy@helpin.ai</a>.</p>
+          <address className="not-italic leading-relaxed">
+            Usermaven Inc.<br />
+            16192 Coastal Highway<br />
+            Lewes, DE 19958<br />
+            United States
+          </address>
         </section>
       </div>
     </div>
