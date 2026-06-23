@@ -458,7 +458,8 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	if captured.To != customerEmail {
 		t.Fatalf("expected recipient %q, got %q", customerEmail, captured.To)
 	}
-	if captured.ReplyTo != "conv-"+conversationID+"@replies.helpin.ai" {
+	expectedReplyTo := `"Acme Support" <conv-` + conversationID + `@replies.helpin.ai>`
+	if captured.ReplyTo != expectedReplyTo {
 		t.Fatalf("unexpected reply-to: %q", captured.ReplyTo)
 	}
 	if captured.Subject != "Re: Pricing question (#1)" {
@@ -618,7 +619,7 @@ func TestEmailFallbackFireEmailRetriesVerifiedSenderWhenBrandedSenderRejected(t 
 	if !strings.Contains(attempts[1].From, "Alex Agent - Acme Support <noreply@example.com>") {
 		t.Fatalf("unexpected fallback from: %q", attempts[1].From)
 	}
-	expectedReplyTo := "conv-" + conversationID + "@replies.helpin.ai"
+	expectedReplyTo := `"Acme Support" <conv-` + conversationID + `@replies.helpin.ai>`
 	if attempts[0].ReplyTo != expectedReplyTo || attempts[1].ReplyTo != expectedReplyTo {
 		t.Fatalf("reply-to changed across retry: first=%q second=%q", attempts[0].ReplyTo, attempts[1].ReplyTo)
 	}
@@ -741,7 +742,7 @@ func TestEmailFallbackFireEmailUsesMailboxDefaultSenderAndLogsReplyContract(t *t
 		t.Fatalf("fire email: %v", err)
 	}
 
-	expectedReplyTo := "conv-" + conversationID + "@replies.helpin.ai"
+	expectedReplyTo := `"Acme Support" <conv-` + conversationID + `@replies.helpin.ai>`
 	if captured.From != "Arooj - Acme Support <billing@acme.test>" {
 		t.Fatalf("from = %q, want mailbox sender with agent and workspace display", captured.From)
 	}

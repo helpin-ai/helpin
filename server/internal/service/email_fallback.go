@@ -1625,7 +1625,7 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 	if err != nil {
 		return err
 	}
-	replyTo := fmt.Sprintf("conv-%s@%s", conversationID, s.replyDomain)
+	replyTo := supportConversationReplyTo(conversationID, s.replyDomain, workspaceName)
 	unsubscribeEmail := s.unsubscribeAddress(conversationID)
 
 	subject, err := s.buildSubject(ctx, conv, pending)
@@ -2181,6 +2181,15 @@ func (s *EmailFallbackService) acquireOrRenewNamedLease(ctx context.Context, key
 		return true, nil
 	}
 	return false, nil
+}
+
+func supportConversationReplyTo(conversationID, replyDomain, displayName string) string {
+	address := fmt.Sprintf("conv-%s@%s", strings.TrimSpace(conversationID), strings.TrimSpace(replyDomain))
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return address
+	}
+	return (&mail.Address{Name: displayName, Address: address}).String()
 }
 
 func (s *EmailFallbackService) buildThreadHeaders(ctx context.Context, workspaceID, conversationID, nextMessageID string) ([]email.EmailHeader, error) {
