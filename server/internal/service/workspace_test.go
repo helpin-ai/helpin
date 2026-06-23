@@ -112,6 +112,15 @@ func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE IF NOT EXISTS organization_billing (
+			id TEXT PRIMARY KEY,
+			organization_id TEXT NOT NULL UNIQUE,
+			stripe_customer_id TEXT,
+			default_payment_method_id TEXT,
+			founder_plan_enabled BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 	}
 	for _, stmt := range stubs {
 		if err := db.Exec(stmt).Error; err != nil {

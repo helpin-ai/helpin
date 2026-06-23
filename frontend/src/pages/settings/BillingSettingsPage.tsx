@@ -179,6 +179,7 @@ const BILLING_FAQS = [
 const PLAN_LABELS: Record<string, string> = {
   starter: 'Starter',
   growth: 'Growth',
+  founder: 'Founder',
 };
 
 const BILLING_TEST_SCENARIOS: Array<{
@@ -424,11 +425,12 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
   }
 
   const canUsePortal = editable && billing.manage_billing_enabled;
+  const isFounderPlan = billing.plan === 'founder';
   const planLabel = billingOverviewPlanTitle(billing);
   const planStatusCopy = billingStatusCopy(billing);
   const annualNudge = annualBillingNudge(billing);
 
-  if (choosingPlan) {
+  if (choosingPlan && !isFounderPlan) {
     return (
       <div className="mx-auto max-w-6xl space-y-8 pt-8">
         <div className="flex flex-col gap-4 pt-4 sm:flex-row sm:items-start sm:justify-between">
@@ -560,7 +562,9 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
                 </div>
                 {planStatusCopy && <p className="text-sm text-muted-foreground">{planStatusCopy}</p>}
               </div>
-              {!billing.locked ? (
+              {isFounderPlan ? (
+                <Badge variant="outline" className="shrink-0">Managed by Helpin</Badge>
+              ) : !billing.locked ? (
                 <Button
                   onClick={() => setChoosingPlan(true)}
                   disabled={!editable}
@@ -622,7 +626,9 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
               <div className="space-y-1">
                 <p className="text-sm font-medium">{billing.on_demand_enabled ? 'Enabled' : 'Disabled'}</p>
                 <p className="text-sm text-muted-foreground">
-                  {billing.on_demand_available
+                  {isFounderPlan
+                    ? 'Founder includes 100,000 AI usage units each month. Extra usage packs are not available on this plan.'
+                    : billing.on_demand_available
                     ? '$50 per 5,000-unit pack, added to your next invoice.'
                     : 'Available on Starter and Growth workspaces with an active subscription.'}
                 </p>
@@ -665,45 +671,65 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
       <section className="space-y-3">
         <SectionHeading
           title="Billing management"
-          description="Payment method, billing address, invoices, and cancellation are handled securely in Stripe."
+          description={isFounderPlan
+            ? 'Founder is managed by Helpin, so Stripe checkout and billing portal actions are disabled.'
+            : 'Payment method, billing address, invoices, and cancellation are handled securely in Stripe.'}
         />
-        <Card>
-          <CardContent className="divide-y p-0">
-            <PortalAction
-              icon={CreditCard}
-              title="Change payment method"
-              description="Update the card or payment method used for this workspace."
-              disabled={!canUsePortal || portal.isPending}
-              loading={portal.isPending}
-              onClick={() => void openPortal('payment method management')}
-            />
-            <PortalAction
-              icon={MapPin}
-              title="Update address details"
-              description="Edit billing address, tax information, and receipt details."
-              disabled={!canUsePortal || portal.isPending}
-              loading={portal.isPending}
-              onClick={() => void openPortal('billing details')}
-            />
-            <PortalAction
-              icon={ReceiptText}
-              title="View invoices"
-              description="Open Stripe to review receipts, invoices, and payment history."
-              disabled={!canUsePortal || portal.isPending}
-              loading={portal.isPending}
-              onClick={() => void openPortal('invoices')}
-            />
-            <PortalAction
-              icon={Ban}
-              title="Cancel subscription"
-              description="Manage cancellation for the current workspace subscription."
-              disabled={!canUsePortal || billing.locked || portal.isPending}
-              loading={portal.isPending}
-              danger
-              onClick={() => void openPortal('subscription cancellation')}
-            />
-          </CardContent>
-        </Card>
+        {isFounderPlan ? (
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border text-muted-foreground">
+                  <CreditCard className="h-4 w-4" />
+                </span>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">No payment method required</p>
+                  <p className="text-sm text-muted-foreground">
+                    This workspace is on the Founder plan. Plan changes, payment methods, invoices, and cancellation are not managed through Stripe.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="divide-y p-0">
+              <PortalAction
+                icon={CreditCard}
+                title="Change payment method"
+                description="Update the card or payment method used for this workspace."
+                disabled={!canUsePortal || portal.isPending}
+                loading={portal.isPending}
+                onClick={() => void openPortal('payment method management')}
+              />
+              <PortalAction
+                icon={MapPin}
+                title="Update address details"
+                description="Edit billing address, tax information, and receipt details."
+                disabled={!canUsePortal || portal.isPending}
+                loading={portal.isPending}
+                onClick={() => void openPortal('billing details')}
+              />
+              <PortalAction
+                icon={ReceiptText}
+                title="View invoices"
+                description="Open Stripe to review receipts, invoices, and payment history."
+                disabled={!canUsePortal || portal.isPending}
+                loading={portal.isPending}
+                onClick={() => void openPortal('invoices')}
+              />
+              <PortalAction
+                icon={Ban}
+                title="Cancel subscription"
+                description="Manage cancellation for the current workspace subscription."
+                disabled={!canUsePortal || billing.locked || portal.isPending}
+                loading={portal.isPending}
+                danger
+                onClick={() => void openPortal('subscription cancellation')}
+              />
+            </CardContent>
+          </Card>
+        )}
       </section>
 
       {import.meta.env.DEV && (
@@ -1401,12 +1427,14 @@ function planActionState(
 }
 
 function planRank(plan: BillingPlan | string): number {
+  if (plan === 'founder') return 3;
   if (plan === 'growth') return 2;
   if (plan === 'starter') return 1;
   return 0;
 }
 
 function includedCreditsForPlan(plan: BillingPlan | string): number {
+  if (plan === 'founder') return 100_000;
   if (plan === 'growth') return 25_000;
   if (plan === 'starter') return 5_000;
   return 0;
@@ -1436,6 +1464,7 @@ function annualBillingNudge(billing: WorkspaceBillingSummary): AnnualBillingNudg
 }
 
 function billingOverviewPlanTitle(billing: WorkspaceBillingSummary): string {
+  if (billing.plan === 'founder') return 'Founder plan';
   const plan = PLAN_LABELS[billing.plan] ?? billing.plan;
   const interval = billing.billing_interval === 'annual' ? 'Annual' : 'Monthly';
   return `${plan} ${interval}`;
@@ -1452,6 +1481,9 @@ function statusLabel(billing: WorkspaceBillingSummary): string {
 }
 
 function billingStatusCopy(billing: WorkspaceBillingSummary): string {
+  if (billing.plan === 'founder') {
+    return 'Founder includes all features and 100,000 AI usage units each month.';
+  }
   if (hasScheduledCancellation(billing)) {
     return `Subscription cancellation scheduled. This workspace will lock on ${formatDate(cancellationEffectiveDate(billing))}.`;
   }
@@ -1471,6 +1503,7 @@ function periodCopy(billing: WorkspaceBillingSummary): string {
 }
 
 function nextChargeMetricLabel(billing: WorkspaceBillingSummary): string {
+  if (billing.plan === 'founder') return 'Usage resets';
   if (hasScheduledCancellation(billing)) return 'Ends on';
   if (billing.locked) return 'Reactivate';
   if (billing.trialing) return 'Trial ends';
@@ -1478,6 +1511,7 @@ function nextChargeMetricLabel(billing: WorkspaceBillingSummary): string {
 }
 
 function nextChargeMetricValue(billing: WorkspaceBillingSummary): string {
+  if (billing.plan === 'founder') return formatDate(billing.current_period_end);
   if (hasScheduledCancellation(billing)) return formatDate(cancellationEffectiveDate(billing));
   if (billing.locked) return 'Choose a plan';
   if (billing.trialing) return formatDate(billing.current_period_end);

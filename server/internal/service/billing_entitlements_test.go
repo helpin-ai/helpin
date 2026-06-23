@@ -119,6 +119,28 @@ func TestEntitlementServiceRequiresGrowthForGrowthOnlyFeatures(t *testing.T) {
 	}
 }
 
+func TestEntitlementServiceTreatsFounderAsUnlimitedGrowthPlan(t *testing.T) {
+	db := newTestDB(t)
+	createEntitlementBillingTables(t, db)
+	entitlements := seedEntitlementBilling(t, db, "ws-founder", model.BillingPlanFounder, model.BillingStatusActive)
+
+	if err := entitlements.RequireFeature(context.Background(), "ws-founder", EntitlementFeatureCustomAgents); err != nil {
+		t.Fatalf("RequireFeature custom agents on Founder = %v, want nil", err)
+	}
+	if err := entitlements.RequireFeature(context.Background(), "ws-founder", EntitlementFeatureAutomationFlows); err != nil {
+		t.Fatalf("RequireFeature automation flows on Founder = %v, want nil", err)
+	}
+	if err := entitlements.RequireLimitUsage(context.Background(), "ws-founder", EntitlementLimitDocuments, 50000, 1); err != nil {
+		t.Fatalf("RequireLimitUsage documents on Founder = %v, want nil", err)
+	}
+	if err := entitlements.RequireLimitUsage(context.Background(), "ws-founder", EntitlementLimitContacts, 50000, 1); err != nil {
+		t.Fatalf("RequireLimitUsage contacts on Founder = %v, want nil", err)
+	}
+	if err := entitlements.RequireLimitUsage(context.Background(), "ws-founder", EntitlementLimitTeams, 500, 1); err != nil {
+		t.Fatalf("RequireLimitUsage teams on Founder = %v, want nil", err)
+	}
+}
+
 func TestSettingsServiceCreateTeamRejectsStarterTeamLimit(t *testing.T) {
 	db := newTestDB(t)
 	createEntitlementBillingTables(t, db)

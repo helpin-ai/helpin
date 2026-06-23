@@ -5,6 +5,7 @@ import "time"
 const (
 	BillingPlanStarter = "starter"
 	BillingPlanGrowth  = "growth"
+	BillingPlanFounder = "founder"
 
 	BillingStatusTrialing     = "trialing"
 	BillingStatusActive       = "active"
@@ -69,6 +70,7 @@ type OrganizationBilling struct {
 	OrganizationID         string    `json:"organization_id" gorm:"type:uuid;not null;unique"`
 	StripeCustomerID       *string   `json:"stripe_customer_id,omitempty"`
 	DefaultPaymentMethodID *string   `json:"default_payment_method_id,omitempty" gorm:"type:uuid"`
+	FounderPlanEnabled     bool      `json:"founder_plan_enabled" gorm:"not null;default:false"`
 	CreatedAt              time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt              time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }

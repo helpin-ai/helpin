@@ -146,6 +146,7 @@ func limitDefinition(limit EntitlementLimit) entitlementLimitDefinition {
 			byPlan: map[string]int64{
 				model.BillingPlanStarter: 10,
 				model.BillingPlanGrowth:  -1,
+				model.BillingPlanFounder: -1,
 			},
 		},
 		EntitlementLimitDocuments: {
@@ -154,6 +155,7 @@ func limitDefinition(limit EntitlementLimit) entitlementLimitDefinition {
 			byPlan: map[string]int64{
 				model.BillingPlanStarter: 500,
 				model.BillingPlanGrowth:  -1,
+				model.BillingPlanFounder: -1,
 			},
 		},
 		EntitlementLimitContacts: {
@@ -162,6 +164,7 @@ func limitDefinition(limit EntitlementLimit) entitlementLimitDefinition {
 			byPlan: map[string]int64{
 				model.BillingPlanStarter: 5000,
 				model.BillingPlanGrowth:  -1,
+				model.BillingPlanFounder: -1,
 			},
 		},
 	}

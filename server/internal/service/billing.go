@@ -20,6 +20,7 @@ const (
 	BillingFeatureCodingRun      = "coding_run"
 
 	billingTrialDays           = 14
+	billingFounderCredits      = 100000
 	billingCreditBlockSize     = 5000
 	billingCreditBlockCost     = 5000
 	billingStripeChargeTimeout = 5 * time.Second
@@ -307,6 +308,33 @@ func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceI
 	}
 
 	now := s.now().UTC()
+	founderOrg, err := s.repo.WorkspaceHasFounderPlanOrganization(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if founderOrg {
+		periodEnd := now.AddDate(0, 1, 0)
+		billing := &model.WorkspaceBilling{
+			WorkspaceID:        workspaceID,
+			Plan:               model.BillingPlanFounder,
+			Status:             model.BillingStatusActive,
+			BillingInterval:    "monthly",
+			IncludedCredits:    includedCreditsForPlan(model.BillingPlanFounder),
+			CreditsUsed:        0,
+			OnDemandEnabled:    false,
+			CurrentPeriodStart: now,
+			CurrentPeriodEnd:   periodEnd,
+		}
+		if err := s.repo.UpsertWorkspaceBilling(ctx, billing); err != nil {
+			return nil, err
+		}
+		summary := s.summary(billing)
+		if err := s.addSeatEntitlements(ctx, summary); err != nil {
+			return nil, err
+		}
+		return summary, nil
+	}
+
 	trialEnds := now.AddDate(0, 0, billingTrialDays)
 	billing := &model.WorkspaceBilling{
 		WorkspaceID:        workspaceID,
@@ -384,6 +412,9 @@ func (s *BillingService) SetOnDemandEnabled(ctx context.Context, workspaceID str
 	if billing == nil {
 		return nil, fmt.Errorf("workspace billing not found")
 	}
+	if billing.Plan == model.BillingPlanFounder && enabled {
+		return nil, fmt.Errorf("Founder plan includes monthly AI usage and does not support extra AI usage billing")
+	}
 	if enabled && !billingCanUseOnDemand(billing) {
 		return nil, fmt.Errorf("extra AI usage is available only on active paid workspaces")
 	}
@@ -402,11 +433,14 @@ func (s *BillingService) CreateCheckoutSession(ctx context.Context, input Billin
 	if s.gateway == nil {
 		return "", fmt.Errorf("stripe billing is not configured")
 	}
-	priceID, err := s.priceIDFor(input.Plan, input.Interval)
+	billing, err := s.repo.GetByWorkspaceID(ctx, input.WorkspaceID)
 	if err != nil {
 		return "", err
 	}
-	billing, err := s.repo.GetByWorkspaceID(ctx, input.WorkspaceID)
+	if input.Plan == model.BillingPlanFounder || (billing != nil && billing.Plan == model.BillingPlanFounder) {
+		return "", fmt.Errorf("Founder plan is managed by Helpin and cannot be changed in Stripe")
+	}
+	priceID, err := s.priceIDFor(input.Plan, input.Interval)
 	if err != nil {
 		return "", err
 	}
@@ -490,19 +524,22 @@ func (s *BillingService) PreviewWorkspacePlanChange(ctx context.Context, input B
 	if input.WorkspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	if s.gateway == nil {
-		return nil, fmt.Errorf("stripe billing is not configured")
-	}
-	priceID, err := s.priceIDFor(input.Plan, input.Interval)
-	if err != nil {
-		return nil, err
-	}
 	billing, err := s.repo.GetByWorkspaceID(ctx, input.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
 	if billing == nil {
 		return nil, fmt.Errorf("workspace billing not found")
+	}
+	if input.Plan == model.BillingPlanFounder || billing.Plan == model.BillingPlanFounder {
+		return nil, fmt.Errorf("Founder plan is managed by Helpin and cannot be changed in Stripe")
+	}
+	if s.gateway == nil {
+		return nil, fmt.Errorf("stripe billing is not configured")
+	}
+	priceID, err := s.priceIDFor(input.Plan, input.Interval)
+	if err != nil {
+		return nil, err
 	}
 	if billing.StripeSubscriptionID == nil || *billing.StripeSubscriptionID == "" {
 		return nil, fmt.Errorf("workspace has no active Stripe subscription")
@@ -576,9 +613,6 @@ func (s *BillingService) ChangeWorkspacePlan(ctx context.Context, input BillingP
 	if input.WorkspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	if _, err := s.priceIDFor(input.Plan, input.Interval); err != nil {
-		return nil, err
-	}
 	if s.gateway == nil {
 		return nil, fmt.Errorf("stripe billing is not configured")
 	}
@@ -589,6 +623,12 @@ func (s *BillingService) ChangeWorkspacePlan(ctx context.Context, input BillingP
 	}
 	if billing == nil {
 		return nil, fmt.Errorf("workspace billing not found")
+	}
+	if input.Plan == model.BillingPlanFounder || billing.Plan == model.BillingPlanFounder {
+		return nil, fmt.Errorf("Founder plan is managed by Helpin and cannot be changed in Stripe")
+	}
+	if _, err := s.priceIDFor(input.Plan, input.Interval); err != nil {
+		return nil, err
 	}
 	if billing.StripeSubscriptionID == nil || *billing.StripeSubscriptionID == "" {
 		return nil, fmt.Errorf("workspace has no active Stripe subscription")
@@ -657,6 +697,9 @@ func (s *BillingService) ResumeWorkspaceSubscription(ctx context.Context, worksp
 	if billing == nil {
 		return nil, fmt.Errorf("workspace billing not found")
 	}
+	if billing.Plan == model.BillingPlanFounder {
+		return nil, fmt.Errorf("Founder plan is managed by Helpin and cannot be changed in Stripe")
+	}
 	if billing.Status == model.BillingStatusCanceled {
 		return nil, fmt.Errorf("subscription is already canceled")
 	}
@@ -694,6 +737,9 @@ func (s *BillingService) CreatePortalSession(ctx context.Context, workspaceID, r
 	if billing == nil || billing.StripeCustomerID == nil {
 		return "", fmt.Errorf("workspace has no Stripe customer")
 	}
+	if billing.Plan == model.BillingPlanFounder {
+		return "", fmt.Errorf("Founder plan is managed by Helpin and does not use the Stripe billing portal")
+	}
 	return s.gateway.CreatePortalSession(ctx, *billing.StripeCustomerID, returnURL)
 }
 
@@ -709,6 +755,9 @@ func (s *BillingService) CancelWorkspaceSubscriptionImmediately(ctx context.Cont
 		return err
 	}
 	if billing == nil || billing.StripeSubscriptionID == nil || strings.TrimSpace(*billing.StripeSubscriptionID) == "" {
+		return nil
+	}
+	if billing.Plan == model.BillingPlanFounder {
 		return nil
 	}
 	if billing.Status == model.BillingStatusCanceled {
@@ -759,6 +808,14 @@ func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, upda
 	}
 	if billing == nil {
 		billing = &model.WorkspaceBilling{WorkspaceID: update.WorkspaceID}
+	}
+	if billing.Plan == model.BillingPlanFounder {
+		if update.EventID != "" {
+			if err := s.repo.MarkStripeWebhookProcessed(ctx, update.EventID); err != nil {
+				return nil, err
+			}
+		}
+		return s.summaryWithEntitlements(ctx, billing)
 	}
 	previousPeriodStart := billing.CurrentPeriodStart
 	if update.Plan == "" || update.BillingInterval == "" {
@@ -1008,6 +1065,8 @@ func (s *BillingService) planIntervalForPriceID(priceID string) (string, string)
 
 func billingPlanRank(plan string) int {
 	switch plan {
+	case model.BillingPlanFounder:
+		return 3
 	case model.BillingPlanGrowth:
 		return 2
 	case model.BillingPlanStarter:
@@ -1097,6 +1156,25 @@ func (s *BillingService) summarizeAndNormalize(ctx context.Context, billing *mod
 		billing.OnDemandBlocksInvoiced = 0
 		changed = true
 	}
+	if billing.Plan == model.BillingPlanFounder && billing.Status == model.BillingStatusActive && !billing.CurrentPeriodEnd.After(now) {
+		billing.CurrentPeriodStart = now
+		billing.CurrentPeriodEnd = now.AddDate(0, 1, 0)
+		billing.CreditsUsed = 0
+		billing.OnDemandEnabled = false
+		billing.OnDemandBlocksInvoiced = 0
+		billing.TrialEndsAt = nil
+		billing.PendingPlan = nil
+		billing.PendingBillingInterval = nil
+		billing.PendingChangeAt = nil
+		billing.CancelAtPeriodEnd = false
+		billing.CanceledAt = nil
+		billing.BillingNoticeType = nil
+		billing.BillingNoticeMessage = nil
+		billing.BillingNoticeAt = nil
+		billing.PaymentFailedAt = nil
+		billing.TrialWillEndAt = nil
+		changed = true
+	}
 	expectedCredits := includedCreditsForPlan(billing.Plan)
 	if billing.IncludedCredits != expectedCredits {
 		billing.IncludedCredits = expectedCredits
@@ -1148,7 +1226,7 @@ func (s *BillingService) summary(billing *model.WorkspaceBilling) *BillingSummar
 		BillingNoticeAt:        billing.BillingNoticeAt,
 		PaymentFailedAt:        billing.PaymentFailedAt,
 		TrialWillEndAt:         billing.TrialWillEndAt,
-		ManageBillingEnabled:   billing.StripeCustomerID != nil,
+		ManageBillingEnabled:   billing.Plan != model.BillingPlanFounder && billing.StripeCustomerID != nil,
 		OnDemandBlocksInvoiced: billing.OnDemandBlocksInvoiced,
 	}
 }
@@ -1177,6 +1255,9 @@ func billingCanUseOnDemand(billing *model.WorkspaceBilling) bool {
 	if billing == nil {
 		return false
 	}
+	if billing.Plan == model.BillingPlanFounder {
+		return false
+	}
 	return billing.Status == model.BillingStatusActive &&
 		billing.StripeCustomerID != nil &&
 		billing.StripeSubscriptionID != nil
@@ -1188,6 +1269,8 @@ func includedCreditsForPlan(plan string) int {
 		return 5000
 	case model.BillingPlanGrowth:
 		return 25000
+	case model.BillingPlanFounder:
+		return billingFounderCredits
 	default:
 		return 0
 	}

@@ -234,7 +234,7 @@ func (s *BillingService) GetOrganizationBilling(ctx context.Context, userID, org
 			IncludedCredits:   b.IncludedCredits,
 			CreditsUsed:       b.CreditsUsed,
 			OnDemandEnabled:   b.OnDemandEnabled,
-			OnDemandAvailable: b.Status == model.BillingStatusActive && b.StripeCustomerID != nil && b.StripeSubscriptionID != nil,
+			OnDemandAvailable: billingCanUseOnDemand(&b),
 			PriceCents:        price,
 			BillingInterval:   interval,
 		}
@@ -274,7 +274,7 @@ func (s *BillingService) GetOrganizationBilling(ctx context.Context, userID, org
 		summary.IncludedCreditsTotal += b.IncludedCredits
 		summary.Workspaces = append(summary.Workspaces, card)
 	}
-	summary.SetupComplete = ob != nil && ob.StripeCustomerID != nil && len(methods) > 0
+	summary.SetupComplete = ob != nil && (ob.FounderPlanEnabled || (ob.StripeCustomerID != nil && len(methods) > 0))
 	return summary, nil
 }
 

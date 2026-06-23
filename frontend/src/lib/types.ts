@@ -91,7 +91,7 @@ export interface Workspace {
   billing?: WorkspaceBillingSummary;
 }
 
-export type BillingPlan = 'starter' | 'growth';
+export type BillingPlan = 'starter' | 'growth' | 'founder';
 export type BillingStatus = 'trialing' | 'active' | 'trial_expired' | 'past_due' | 'unpaid' | 'canceled';
 export type BillingInterval = 'monthly' | 'annual';
 

@@ -30,6 +30,7 @@ export function formatDate(iso?: string | null): string {
 export const PLAN_LABEL: Record<BillingPlan, string> = {
   starter: 'Starter',
   growth: 'Growth',
+  founder: 'Founder',
 };
 
 export const INTERVAL_LABEL: Record<BillingInterval, string> = {

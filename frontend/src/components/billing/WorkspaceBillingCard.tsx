@@ -44,15 +44,16 @@ export function WorkspaceBillingCard({
   const portal = useBillingPortal();
 
   const isTrial = card.trialing;
+  const isFounderPlan = card.plan === 'founder';
   const isLocked = card.locked || card.status === 'trial_expired' || card.status === 'unpaid' || card.status === 'canceled';
   const isPastDue = card.status === 'past_due';
-  const isActivePaid = !isTrial && !isLocked && !isPastDue;
+  const isActivePaid = !isTrial && !isLocked && !isPastDue && !isFounderPlan;
 
   const usagePct = card.included_credits
     ? Math.min(100, Math.round((card.credits_used / card.included_credits) * 100))
     : 0;
 
-  const onDemandDisabled = isLocked || isTrial || !card.can_manage || setOnDemand.isPending;
+  const onDemandDisabled = isFounderPlan || isLocked || isTrial || !card.can_manage || setOnDemand.isPending || !card.on_demand_available;
 
   const handleOnDemand = (enabled: boolean) => {
     setOnDemand.mutate(
@@ -79,7 +80,7 @@ export function WorkspaceBillingCard({
     ? { label: 'Update payment', onClick: handlePortal }
     : isLocked || isTrial
       ? { label: isLocked ? 'Reactivate' : 'Upgrade', onClick: () => onChangePlan(card) }
-      : { label: 'Manage', onClick: () => onManage(card) };
+      : { label: isFounderPlan ? 'Usage' : 'Manage', onClick: () => onManage(card) };
 
   return (
     <div
@@ -137,10 +138,10 @@ export function WorkspaceBillingCard({
       {/* Plan */}
       <Row label="Plan">
         <span>
-          {PLAN_LABEL[card.plan]} · {INTERVAL_LABEL[card.billing_interval]}
+          {isFounderPlan ? 'Founder plan' : `${PLAN_LABEL[card.plan]} · ${INTERVAL_LABEL[card.billing_interval]}`}
         </span>
         <span className="text-xs text-muted-foreground">
-          {isTrial ? `ends ${formatDate(card.trial_ends_at)}` : `renews ${formatDate(card.current_period_end)}`}
+          {isFounderPlan ? `resets ${formatDate(card.current_period_end)}` : isTrial ? `ends ${formatDate(card.trial_ends_at)}` : `renews ${formatDate(card.current_period_end)}`}
         </span>
       </Row>
 
@@ -151,11 +152,13 @@ export function WorkspaceBillingCard({
             <span className="capitalize">
               {card.payment_method.brand} ···· {card.payment_method.last4}
             </span>
+          ) : isFounderPlan ? (
+            <span className="text-muted-foreground">No payment required</span>
           ) : (
             <span className="text-muted-foreground">Organization card</span>
           )}
         </span>
-        {card.can_manage && (
+        {card.can_manage && !isFounderPlan && (
           <BilledToPopover orgId={orgId} card={card} cards={cards} onAddCard={handlePortal} />
         )}
       </Row>
@@ -163,7 +166,7 @@ export function WorkspaceBillingCard({
       {/* On-demand */}
       <Row label="Extra AI usage">
         <span className="text-xs text-muted-foreground">
-          {isLocked || isTrial ? 'Available after activation' : 'Add usage past your plan limit'}
+          {isFounderPlan ? 'Not needed on Founder' : isLocked || isTrial ? 'Available after activation' : 'Add usage past your plan limit'}
         </span>
         <Switch
           checked={card.on_demand_enabled}

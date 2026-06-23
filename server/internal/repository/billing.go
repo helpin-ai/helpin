@@ -35,6 +35,18 @@ func (r *BillingRepository) GetByWorkspaceID(ctx context.Context, workspaceID st
 	return &billing, nil
 }
 
+func (r *BillingRepository) WorkspaceHasFounderPlanOrganization(ctx context.Context, workspaceID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Table("workspaces AS w").
+		Joins("JOIN organization_billing AS ob ON ob.organization_id = w.organization_id").
+		Where("w.id = ? AND ob.founder_plan_enabled = ?", workspaceID, true).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check founder plan organization: %w", err)
+	}
+	return count > 0, nil
+}
+
 func (r *BillingRepository) GetByStripeSubscriptionID(ctx context.Context, subscriptionID string) (*model.WorkspaceBilling, error) {
 	var billing model.WorkspaceBilling
 	err := r.db.WithContext(ctx).Where("stripe_subscription_id = ?", subscriptionID).First(&billing).Error

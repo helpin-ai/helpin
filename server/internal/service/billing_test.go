@@ -150,6 +150,24 @@ func newBillingTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE organization_billing (
+			id TEXT PRIMARY KEY,
+			organization_id TEXT NOT NULL UNIQUE,
+			stripe_customer_id TEXT,
+			default_payment_method_id TEXT,
+			founder_plan_enabled BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE workspaces (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			slug TEXT NOT NULL UNIQUE,
+			owner_id TEXT NOT NULL,
+			organization_id TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE billing_credit_ledger (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -175,6 +193,37 @@ func newBillingTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestBillingServiceEnsureTrialForFounderOrgStartsFounderPlan(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
+
+	if err := db.Exec(`INSERT INTO organization_billing (id, organization_id, founder_plan_enabled, created_at, updated_at) VALUES ('ob-1', 'org-1', 1, ?, ?)`, now, now).Error; err != nil {
+		t.Fatalf("seed org billing: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO workspaces (id, name, slug, owner_id, organization_id, created_at, updated_at) VALUES ('workspace-founder', 'Founder Workspace', 'founder-workspace', 'owner-1', 'org-1', ?, ?)`, now, now).Error; err != nil {
+		t.Fatalf("seed workspace: %v", err)
+	}
+
+	summary, err := svc.EnsureTrialForWorkspace(context.Background(), "workspace-founder")
+	if err != nil {
+		t.Fatalf("ensure founder billing: %v", err)
+	}
+	if summary.Plan != model.BillingPlanFounder || summary.Status != model.BillingStatusActive {
+		t.Fatalf("plan/status = %s/%s, want founder/active", summary.Plan, summary.Status)
+	}
+	if summary.Trialing || summary.TrialEndsAt != nil {
+		t.Fatalf("founder workspace should not be trialing: %#v", summary)
+	}
+	if summary.IncludedCredits != 100000 || summary.CreditsRemaining != 100000 {
+		t.Fatalf("credits = %d remaining %d, want 100000", summary.IncludedCredits, summary.CreditsRemaining)
+	}
+	if summary.ManageBillingEnabled || summary.OnDemandAvailable {
+		t.Fatalf("founder should not expose Stripe-managed actions: manage=%v on_demand=%v", summary.ManageBillingEnabled, summary.OnDemandAvailable)
+	}
+}
+
 func TestBillingServiceEnsureTrialForWorkspaceStartsGrowthTrial(t *testing.T) {
 	db := newBillingTestDB(t)
 	repo := repository.NewBillingRepository(db)
@@ -197,6 +246,82 @@ func TestBillingServiceEnsureTrialForWorkspaceStartsGrowthTrial(t *testing.T) {
 	}
 	if summary.IncludedCredits != 25000 || summary.CreditsRemaining != 25000 {
 		t.Fatalf("credits = %d remaining %d, want 25000", summary.IncludedCredits, summary.CreditsRemaining)
+	}
+}
+
+func TestBillingServiceRejectsStripeActionsForFounderPlan(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	gateway := &fakeBillingGateway{}
+	svc := NewBillingService(repo, gateway, func() time.Time { return now })
+	svc.SetPriceConfig(BillingPriceConfig{
+		StarterMonthly: "price_starter_monthly",
+		GrowthMonthly:  "price_growth_monthly",
+	})
+	customerID := "cus_founder"
+	subscriptionID := "sub_founder"
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
+		WorkspaceID:          "workspace-founder",
+		Plan:                 model.BillingPlanFounder,
+		Status:               model.BillingStatusActive,
+		BillingInterval:      "monthly",
+		IncludedCredits:      100000,
+		StripeCustomerID:     &customerID,
+		StripeSubscriptionID: &subscriptionID,
+		CurrentPeriodStart:   now.Add(-24 * time.Hour),
+		CurrentPeriodEnd:     now.AddDate(0, 1, 0),
+	}); err != nil {
+		t.Fatalf("seed billing: %v", err)
+	}
+
+	if _, err := svc.CreatePortalSession(context.Background(), "workspace-founder", "https://app.test/billing"); err == nil || !strings.Contains(err.Error(), "Founder") {
+		t.Fatalf("CreatePortalSession error = %v, want Founder rejection", err)
+	}
+	if _, err := svc.CreateCheckoutSession(context.Background(), BillingCheckoutRequest{
+		WorkspaceID: "workspace-founder",
+		Plan:        model.BillingPlanGrowth,
+		Interval:    "monthly",
+		ReturnURL:   "https://app.test/billing",
+	}); err == nil || !strings.Contains(err.Error(), "Founder") {
+		t.Fatalf("CreateCheckoutSession error = %v, want Founder rejection", err)
+	}
+	if _, err := svc.SetOnDemandEnabled(context.Background(), "workspace-founder", true); err == nil || !strings.Contains(err.Error(), "Founder") {
+		t.Fatalf("SetOnDemandEnabled error = %v, want Founder rejection", err)
+	}
+}
+
+func TestBillingServiceResetsFounderCreditsMonthly(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
+
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
+		WorkspaceID:        "workspace-founder",
+		Plan:               model.BillingPlanFounder,
+		Status:             model.BillingStatusActive,
+		BillingInterval:    "monthly",
+		IncludedCredits:    100000,
+		CreditsUsed:        72000,
+		CurrentPeriodStart: now.AddDate(0, -1, 0),
+		CurrentPeriodEnd:   now.Add(-time.Hour),
+	}); err != nil {
+		t.Fatalf("seed billing: %v", err)
+	}
+
+	summary, err := svc.GetWorkspaceBilling(context.Background(), "workspace-founder")
+	if err != nil {
+		t.Fatalf("get billing: %v", err)
+	}
+	if summary.CreditsUsed != 0 || summary.CreditsRemaining != 100000 {
+		t.Fatalf("credits after founder reset = used %d remaining %d, want 0/100000", summary.CreditsUsed, summary.CreditsRemaining)
+	}
+	if !summary.CurrentPeriodStart.Equal(now) {
+		t.Fatalf("period start = %s, want %s", summary.CurrentPeriodStart, now)
+	}
+	if !summary.CurrentPeriodEnd.Equal(now.AddDate(0, 1, 0)) {
+		t.Fatalf("period end = %s, want %s", summary.CurrentPeriodEnd, now.AddDate(0, 1, 0))
 	}
 }
 
@@ -538,7 +663,7 @@ func TestBillingServiceRejectsCheckoutForExistingPaidSubscription(t *testing.T) 
 
 func TestBillingServiceCanManageWorkspaceBillingRejectsDelegatedBillingOwner(t *testing.T) {
 	db := newBillingTestDB(t)
-	if err := db.Exec(`CREATE TABLE workspaces (
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS workspaces (
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
 		slug TEXT NOT NULL,
@@ -553,7 +678,7 @@ func TestBillingServiceCanManageWorkspaceBillingRejectsDelegatedBillingOwner(t *
 		"delegated-user": model.RoleAdmin,
 	}})
 
-	if err := db.Exec(`INSERT INTO workspaces (id, name, slug, organization_id) VALUES (?, ?, ?, ?)`, "workspace-1", "Workspace", "workspace", "org-1").Error; err != nil {
+	if err := db.Exec(`INSERT INTO workspaces (id, name, slug, owner_id, organization_id) VALUES (?, ?, ?, ?, ?)`, "workspace-1", "Workspace", "workspace", "owner-1", "org-1").Error; err != nil {
 		t.Fatalf("seed workspace: %v", err)
 	}
 	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
@@ -582,7 +707,7 @@ func TestBillingServiceCanManageWorkspaceBillingRejectsDelegatedBillingOwner(t *
 
 func TestBillingServiceCanManageOrgBillingRejectsDelegatedWorkspaceBillingOwner(t *testing.T) {
 	db := newBillingTestDB(t)
-	if err := db.Exec(`CREATE TABLE workspaces (
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS workspaces (
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
 		slug TEXT NOT NULL,
@@ -597,7 +722,7 @@ func TestBillingServiceCanManageOrgBillingRejectsDelegatedWorkspaceBillingOwner(
 		"delegated-user": model.RoleAdmin,
 	}})
 
-	if err := db.Exec(`INSERT INTO workspaces (id, name, slug, organization_id) VALUES (?, ?, ?, ?)`, "workspace-1", "Workspace", "workspace", "org-1").Error; err != nil {
+	if err := db.Exec(`INSERT INTO workspaces (id, name, slug, owner_id, organization_id) VALUES (?, ?, ?, ?, ?)`, "workspace-1", "Workspace", "workspace", "owner-1", "org-1").Error; err != nil {
 		t.Fatalf("seed workspace: %v", err)
 	}
 	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
