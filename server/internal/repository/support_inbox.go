@@ -1231,6 +1231,39 @@ func (r *SupportConversationRepository) ListWorkspacesForCoverageAnalysisCandida
 	return workspaceIDs, nil
 }
 
+// ListActiveByCustomerEmail returns active conversations for a customer email
+// within a workspace and optional mailbox, most-recently-updated first.
+func (r *SupportConversationRepository) ListActiveByCustomerEmail(ctx context.Context, workspaceID, customerEmail string, mailboxID *string, since time.Time, limit int) ([]model.SupportConversation, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	customerEmail = strings.TrimSpace(customerEmail)
+	if workspaceID == "" || customerEmail == "" {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 20 {
+		limit = 2
+	}
+
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Where("LOWER(customer_email) = LOWER(?)", customerEmail).
+		Where("status IN ?", []string{
+			model.SupportConversationStatusOpen,
+			model.SupportConversationStatusWaitingOnCustomer,
+		}).
+		Where("updated_at >= ?", since).
+		Order("updated_at DESC").
+		Limit(limit)
+	if mailboxID != nil && strings.TrimSpace(*mailboxID) != "" {
+		query = query.Where("mailbox_id = ?", strings.TrimSpace(*mailboxID))
+	}
+
+	var conversations []model.SupportConversation
+	if err := query.Find(&conversations).Error; err != nil {
+		return nil, fmt.Errorf("list active conversations by customer email: %w", err)
+	}
+	return conversations, nil
+}
+
 func (r *SupportConversationRepository) applyConversationSearch(query *gorm.DB, search string) *gorm.DB {
 	if search == "" {
 		return query

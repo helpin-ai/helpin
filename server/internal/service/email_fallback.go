@@ -283,12 +283,13 @@ func (signals postmarkInboundSpamSignals) messageMetadata() string {
 }
 
 const (
-	emailFallbackOutboxKey     = "email_fallback_outbox"
-	emailFallbackLockKey       = "email_fallback_lock"
-	emailFallbackReconcileKey  = "email_fallback_reconcile_lock"
-	emailFallbackMsgsKeyPrefix = "email_fallback_msgs:"
-	emailFallbackOnlineRetry   = 30 * time.Second
-	emailFallbackReconcileTick = time.Minute
+	emailFallbackOutboxKey       = "email_fallback_outbox"
+	emailFallbackLockKey         = "email_fallback_lock"
+	emailFallbackReconcileKey    = "email_fallback_reconcile_lock"
+	emailFallbackMsgsKeyPrefix   = "email_fallback_msgs:"
+	emailFallbackOnlineRetry     = 30 * time.Second
+	emailFallbackReconcileTick   = time.Minute
+	supportInboundFallbackWindow = 30 * 24 * time.Hour
 )
 
 const (
@@ -2859,10 +2860,19 @@ func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *m
 	if route == nil {
 		return nil
 	}
-	if threadedConversation, err := s.resolveInboundRouteConversation(ctx, route.WorkspaceID, payload); err != nil {
+
+	conversation, err := s.resolveInboundRouteConversation(ctx, route.WorkspaceID, payload)
+	if err != nil {
 		return err
-	} else if threadedConversation != nil {
-		return s.processInboundConversationReply(ctx, threadedConversation, route, payload, rawPayload)
+	}
+	if conversation == nil {
+		conversation, err = s.resolveInboundFallbackConversation(ctx, route, payload)
+		if err != nil {
+			return err
+		}
+	}
+	if conversation != nil {
+		return s.processInboundConversationReply(ctx, conversation, route, payload, rawPayload)
 	}
 
 	return s.createInboundConversationFromRoute(ctx, route, payload, rawPayload)
@@ -2892,6 +2902,30 @@ func (s *EmailFallbackService) resolveInboundRouteConversation(ctx context.Conte
 		return nil, nil
 	}
 	return s.findConversationByID(ctx, threadLog.ConversationID)
+}
+
+func (s *EmailFallbackService) resolveInboundFallbackConversation(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload) (*model.SupportConversation, error) {
+	if s == nil || s.convRepo == nil || route == nil {
+		return nil, nil
+	}
+	senderEmail := strings.TrimSpace(inboundEmailAddress(payload))
+	if senderEmail == "" {
+		return nil, nil
+	}
+	matches, err := s.convRepo.ListActiveByCustomerEmail(ctx, route.WorkspaceID, senderEmail, route.MailboxID, s.now().Add(-supportInboundFallbackWindow), 2)
+	if err != nil {
+		return nil, err
+	}
+	if len(matches) != 1 {
+		if len(matches) > 1 {
+			s.logger.InfoContext(ctx, "inbound fallback ambiguous, creating new conversation",
+				"workspace_id", route.WorkspaceID,
+				"match_count", len(matches),
+			)
+		}
+		return nil, nil
+	}
+	return &matches[0], nil
 }
 
 func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string) error {

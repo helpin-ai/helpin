@@ -3041,6 +3041,50 @@ func TestEmailFallbackProcessInboundEmailRouteThreadsReply(t *testing.T) {
 	}
 }
 
+func TestResolveInboundFallbackConversationIsConservative(t *testing.T) {
+	ctx := context.Background()
+	env := setupEmailFallbackInboundTestEnv(t, model.SupportInboxSettings{})
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	customerEmail := "buyer@example.com"
+	route := &model.SupportEmailRoute{
+		WorkspaceID:    workspaceID,
+		InboundAddress: "inbox@acme.on.helpin.email",
+	}
+	payload := model.PostmarkInboundPayload{
+		FromFull: model.PostmarkAddress{Email: customerEmail},
+	}
+
+	if conv, err := env.service.resolveInboundFallbackConversation(ctx, route, payload); err != nil || conv != nil {
+		t.Fatalf("no-match: got conv=%v err=%v, want nil/nil", conv, err)
+	}
+
+	conv1 := &model.SupportConversation{
+		ID:            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		WorkspaceID:   workspaceID,
+		Status:        model.SupportConversationStatusOpen,
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv1); err != nil {
+		t.Fatalf("create conv1: %v", err)
+	}
+	if conv, err := env.service.resolveInboundFallbackConversation(ctx, route, payload); err != nil || conv == nil || conv.ID != conv1.ID {
+		t.Fatalf("single-match: got conv=%v err=%v, want %s/nil", conv, err, conv1.ID)
+	}
+
+	conv2 := &model.SupportConversation{
+		ID:            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+		WorkspaceID:   workspaceID,
+		Status:        model.SupportConversationStatusWaitingOnCustomer,
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv2); err != nil {
+		t.Fatalf("create conv2: %v", err)
+	}
+	if conv, err := env.service.resolveInboundFallbackConversation(ctx, route, payload); err != nil || conv != nil {
+		t.Fatalf("ambiguous: got conv=%v err=%v, want nil/nil", conv, err)
+	}
+}
+
 func TestEmailFallbackProcessInboundEmailRouteThreadsForwardedReplyFromOriginalSender(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
