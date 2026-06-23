@@ -31,6 +31,9 @@ func (s *CRMContactService) List(ctx context.Context, workspaceID string, filter
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
+	if err := s.requireContactViewEntitlement(ctx, workspaceID); err != nil {
+		return nil, 0, err
+	}
 	return s.contactRepo.List(ctx, workspaceID, filters, pagination)
 }
 
@@ -43,7 +46,21 @@ func (s *CRMContactService) GetByID(ctx context.Context, id string) (*model.CRMC
 	if contact == nil {
 		return nil, fmt.Errorf("contact not found")
 	}
+	if err := s.requireContactViewEntitlement(ctx, contact.WorkspaceID); err != nil {
+		return nil, err
+	}
 	return contact, nil
+}
+
+func (s *CRMContactService) requireContactViewEntitlement(ctx context.Context, workspaceID string) error {
+	if s.entitlementSvc == nil {
+		return nil
+	}
+	count, err := s.contactRepo.CountByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	return s.entitlementSvc.RequireLimitUsage(ctx, workspaceID, EntitlementLimitContacts, count, 0)
 }
 
 // Create creates a contact.

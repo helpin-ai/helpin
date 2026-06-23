@@ -150,9 +150,9 @@ func limitDefinition(limit EntitlementLimit) entitlementLimitDefinition {
 		},
 		EntitlementLimitDocuments: {
 			label:        "documents",
-			displayLimit: "1,000",
+			displayLimit: "500",
 			byPlan: map[string]int64{
-				model.BillingPlanStarter: 1000,
+				model.BillingPlanStarter: 500,
 				model.BillingPlanGrowth:  -1,
 			},
 		},

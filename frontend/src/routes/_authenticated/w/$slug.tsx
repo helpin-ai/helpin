@@ -1,6 +1,7 @@
 import { memo, useEffect, type CSSProperties } from 'react'
-import { createFileRoute, Navigate, Outlet, useLocation } from '@tanstack/react-router'
+import { createFileRoute, Link, Navigate, Outlet, useLocation } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
+import { CalendarClock, CircleAlert } from 'lucide-react'
 import { useWorkspaceBySlug } from '@/hooks/queries/useWorkspaces'
 import { useSession, useWorkspaceAccess } from '@/hooks/queries/useSession'
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
@@ -18,8 +19,10 @@ import { PageContextProvider } from '@/components/command-bar/pageContext'
 import { AskAgentsDock } from '@/components/agents/AskAgentsDock'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { MFARequiredGate } from '@/components/auth/MFARequiredGate'
 import { queryKeys } from '@/lib/queryKeys'
+import type { WorkspaceBillingSummary } from '@/lib/types'
 
 export const Route = createFileRoute('/_authenticated/w/$slug')({
   component: WorkspaceLayout,
@@ -41,6 +44,7 @@ function WorkspaceLayout() {
   const { data: billing, isLoading: billingLoading } = useWorkspaceBilling(wsId)
   const queryClient = useQueryClient()
   const location = useLocation()
+  const isOwner = access?.membership?.role === 'owner'
 
   // Selection stores (Zustand) — sync from query data
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
@@ -129,6 +133,7 @@ function WorkspaceLayout() {
           <SidebarInset className="relative min-w-0 overflow-hidden bg-transparent before:absolute before:top-3 before:left-0 before:bottom-3 before:z-10 before:w-px before:bg-border/70 before:[mask-image:linear-gradient(to_bottom,transparent,black_24px,black_calc(100%-24px),transparent)] dark:before:bg-border/60">
             <PageContextProvider>
               <RouteAwareHeader />
+              <WorkspaceBillingNotice billing={billing} slug={slug} isOwner={isOwner} />
               <div className="flex min-h-0 flex-1 overflow-hidden">
                 <main className="relative min-h-0 flex-1 overflow-hidden">
                   <Outlet />
@@ -141,6 +146,58 @@ function WorkspaceLayout() {
             </PageContextProvider>
           </SidebarInset>
         </SidebarProvider>
+      </div>
+    </div>
+  )
+}
+
+function WorkspaceBillingNotice({
+  billing,
+  slug,
+  isOwner,
+}: {
+  billing?: WorkspaceBillingSummary | null
+  slug: string
+  isOwner: boolean
+}) {
+  const location = useLocation()
+  if (!billing || location.pathname.endsWith('/settings/billing')) return null
+
+  const isPaymentIssue = billing.status === 'past_due' || billing.status === 'unpaid' || billing.billing_notice_type === 'payment_failed'
+  const isTrialEnding = billing.billing_notice_type === 'trial_will_end'
+  if (!isPaymentIssue && !isTrialEnding) return null
+
+  const Icon = isPaymentIssue ? CircleAlert : CalendarClock
+  const title = isPaymentIssue ? 'Payment needs attention' : 'Trial ending soon'
+  const message = isPaymentIssue
+    ? billing.billing_notice_message || 'Update your payment method to keep this workspace active.'
+    : billing.billing_notice_message || 'Choose a plan to keep this workspace active after the trial.'
+  const ownerCTA = isPaymentIssue ? 'Update' : 'Upgrade'
+  const bannerClassName = isPaymentIssue
+    ? 'border-red-200 bg-red-50 text-red-900 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200'
+    : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200'
+
+  return (
+    <div className={`border-b px-4 py-2 text-sm ${bannerClassName}`}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2">
+          <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="min-w-0">
+            <p className="font-medium">{title}</p>
+            <p className="mt-0.5 text-xs sm:text-sm">{message}</p>
+          </div>
+        </div>
+        {isOwner ? (
+          <Button asChild size="sm" variant="destructive" className="h-7 shrink-0 px-3 text-xs">
+            <Link to="/w/$slug/settings/billing" params={{ slug }}>
+              {ownerCTA}
+            </Link>
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" className="h-7 shrink-0 bg-background px-3 text-xs" disabled>
+            Ask owner
+          </Button>
+        )}
       </div>
     </div>
   )

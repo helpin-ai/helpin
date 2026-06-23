@@ -2847,17 +2847,6 @@ func (s *SupportInboxService) matchOrCreateCRMContactIdentityTx(ctx context.Cont
 		firstName = "Unknown"
 	}
 	contactSource := "live_chat"
-	if s.entitlementSvc != nil {
-		count, err := contactRepo.CountByWorkspace(ctx, workspaceID)
-		if err != nil {
-			slog.ErrorContext(ctx, "count CRM contacts before support auto-create", "error", err, "workspace_id", workspaceID)
-			return nil
-		}
-		if err := s.entitlementSvc.RequireLimitUsage(ctx, workspaceID, EntitlementLimitContacts, count, 1); err != nil {
-			slog.InfoContext(ctx, "skipped support CRM contact auto-create due to billing limit", "workspace_id", workspaceID, "error", err)
-			return nil
-		}
-	}
 	contact := &model.CRMContact{
 		WorkspaceID:    workspaceID,
 		FirstName:      firstName,

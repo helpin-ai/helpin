@@ -2,9 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
 // writeJSON writes a JSON response with the given status code.
@@ -23,6 +26,27 @@ func writeError(w http.ResponseWriter, status int, message string) {
 
 func writeErrorCode(w http.ResponseWriter, status int, message, code string) {
 	writeJSON(w, status, model.APIError{Error: message, Code: code})
+}
+
+func writeBillingAwareError(w http.ResponseWriter, fallbackStatus int, err error) {
+	if err == nil {
+		return
+	}
+	message := err.Error()
+	var entitlementErr *service.EntitlementError
+	if errors.As(err, &entitlementErr) {
+		writeError(w, http.StatusPaymentRequired, message)
+		return
+	}
+	normalized := strings.ToLower(message)
+	if strings.Contains(normalized, "requires the growth plan") ||
+		strings.Contains(normalized, "ai usage exhausted") ||
+		strings.Contains(normalized, "workspace is locked") ||
+		strings.Contains(normalized, "extra ai usage is not available") {
+		writeError(w, http.StatusPaymentRequired, message)
+		return
+	}
+	writeError(w, fallbackStatus, message)
 }
 
 // decodeJSON decodes a JSON request body into the given target.

@@ -84,6 +84,30 @@ func createEntitlementBillingTables(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func createCRMImportEntitlementTables(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`CREATE TABLE crm_import_jobs (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		source TEXT NOT NULL DEFAULT 'csv',
+		status TEXT NOT NULL DEFAULT 'pending',
+		object_type TEXT NOT NULL,
+		file_url TEXT,
+		column_mapping TEXT NOT NULL DEFAULT '{}',
+		total_rows INTEGER NOT NULL DEFAULT 0,
+		processed_rows INTEGER NOT NULL DEFAULT 0,
+		created_rows INTEGER NOT NULL DEFAULT 0,
+		updated_rows INTEGER NOT NULL DEFAULT 0,
+		error_count INTEGER NOT NULL DEFAULT 0,
+		error_log TEXT NOT NULL DEFAULT '[]',
+		created_by TEXT,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create crm_import_jobs table: %v", err)
+	}
+}
+
 func TestEntitlementServiceRequiresGrowthForGrowthOnlyFeatures(t *testing.T) {
 	db := newTestDB(t)
 	createEntitlementBillingTables(t, db)
@@ -117,17 +141,35 @@ func TestSettingsServiceCreateTeamRejectsStarterTeamLimit(t *testing.T) {
 	}
 }
 
+func TestEntitlementServiceRejectsStarterDocumentLimit(t *testing.T) {
+	db := newTestDB(t)
+	createEntitlementBillingTables(t, db)
+	entitlements := seedEntitlementBilling(t, db, "ws-docs", model.BillingPlanStarter, model.BillingStatusActive)
+
+	err := entitlements.RequireLimitUsage(context.Background(), "ws-docs", EntitlementLimitDocuments, 500, 1)
+	if err == nil || !strings.Contains(err.Error(), "500 documents") {
+		t.Fatalf("RequireLimitUsage error = %v, want Starter document limit error", err)
+	}
+}
+
+func seedCRMContactsForEntitlement(t *testing.T, db *gorm.DB, workspaceID string, count int) {
+	t.Helper()
+
+	now := time.Now()
+	for i := 0; i < count; i++ {
+		if err := db.Exec(`INSERT INTO crm_contacts (id, workspace_id, display_id, first_name, lifecycle_stage, lead_status, custom_properties, created_at, updated_at) VALUES (?, ?, ?, ?, 'subscriber', 'new', '{}', ?, ?)`,
+			fmt.Sprintf("contact-%d", i), workspaceID, fmt.Sprintf("CON-%d", i+1), fmt.Sprintf("Contact %d", i), now, now).Error; err != nil {
+			t.Fatalf("seed contact %d: %v", i, err)
+		}
+	}
+}
+
 func TestCRMContactServiceCreateRejectsStarterContactLimit(t *testing.T) {
 	db := newTestDB(t)
 	createEntitlementBillingTables(t, db)
 	entitlements := seedEntitlementBilling(t, db, "ws-contacts", model.BillingPlanStarter, model.BillingStatusActive)
 
-	for i := 0; i < 5000; i++ {
-		if err := db.Exec(`INSERT INTO crm_contacts (id, workspace_id, display_id, first_name, lifecycle_stage, lead_status, custom_properties, created_at, updated_at) VALUES (?, ?, ?, ?, 'subscriber', 'new', '{}', ?, ?)`,
-			fmt.Sprintf("contact-%d", i), "ws-contacts", fmt.Sprintf("CON-%d", i+1), fmt.Sprintf("Contact %d", i), time.Now(), time.Now()).Error; err != nil {
-			t.Fatalf("seed contact: %v", err)
-		}
-	}
+	seedCRMContactsForEntitlement(t, db, "ws-contacts", 5000)
 
 	svc := NewCRMContactService(repository.NewCRMContactRepository(db)).SetEntitlementService(entitlements)
 	_, err := svc.Create(context.Background(), model.CreateCRMContactRequest{
@@ -136,6 +178,78 @@ func TestCRMContactServiceCreateRejectsStarterContactLimit(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "5,000 contacts") {
 		t.Fatalf("Create contact error = %v, want Starter contact limit error", err)
+	}
+}
+
+func TestCRMContactServiceBlocksViewingWhenStarterContactLimitExceeded(t *testing.T) {
+	db := newTestDB(t)
+	createEntitlementBillingTables(t, db)
+	entitlements := seedEntitlementBilling(t, db, "ws-contacts", model.BillingPlanStarter, model.BillingStatusActive)
+	seedCRMContactsForEntitlement(t, db, "ws-contacts", 5001)
+
+	svc := NewCRMContactService(repository.NewCRMContactRepository(db)).SetEntitlementService(entitlements)
+	_, _, err := svc.List(context.Background(), "ws-contacts", model.CRMContactListFilters{}, model.PMPagination{Page: 1, PerPage: 20})
+	if err == nil || !strings.Contains(err.Error(), "5,000 contacts") {
+		t.Fatalf("List contacts error = %v, want Starter contact limit error", err)
+	}
+	_, err = svc.GetByID(context.Background(), "contact-0")
+	if err == nil || !strings.Contains(err.Error(), "5,000 contacts") {
+		t.Fatalf("GetByID error = %v, want Starter contact limit error", err)
+	}
+}
+
+func TestCRMImportPreflightsStarterContactLimit(t *testing.T) {
+	db := newTestDB(t)
+	createEntitlementBillingTables(t, db)
+	createCRMImportEntitlementTables(t, db)
+	entitlements := seedEntitlementBilling(t, db, "ws-import", model.BillingPlanStarter, model.BillingStatusActive)
+	seedCRMContactsForEntitlement(t, db, "ws-import", 4999)
+
+	importRepo := repository.NewCRMImportRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	svc := NewCRMImportService(importRepo, contactRepo, nil, nil).SetEntitlementService(entitlements)
+	if err := db.Exec(`INSERT INTO crm_import_jobs (id, workspace_id, source, status, object_type, column_mapping, error_log, created_at, updated_at) VALUES (?, ?, 'csv', 'pending', 'contact', '{}', '{}', ?, ?)`,
+		"import-contacts", "ws-import", time.Now(), time.Now()).Error; err != nil {
+		t.Fatalf("seed import job: %v", err)
+	}
+
+	_, err := svc.Process(context.Background(), "import-contacts", model.ProcessCRMImportRequest{
+		ColumnMapping: []model.ImportColumnMapping{{CRMField: "first_name"}},
+		CSVData:       [][]string{{"Ada"}, {"Grace"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "5,000 contacts") {
+		t.Fatalf("Process import error = %v, want Starter contact limit error", err)
+	}
+	count, err := contactRepo.CountByWorkspace(context.Background(), "ws-import")
+	if err != nil {
+		t.Fatalf("count contacts: %v", err)
+	}
+	if count != 4999 {
+		t.Fatalf("contact count after rejected import = %d, want 4999", count)
+	}
+}
+
+func TestSupportInboxAutoCreatesCRMContactWhenStarterContactLimitReached(t *testing.T) {
+	db := newTestDB(t)
+	createEntitlementBillingTables(t, db)
+	entitlements := seedEntitlementBilling(t, db, "ws-support", model.BillingPlanStarter, model.BillingStatusActive)
+	seedCRMContactsForEntitlement(t, db, "ws-support", 5000)
+
+	contactRepo := repository.NewCRMContactRepository(db)
+	svc := (&SupportInboxService{contactRepo: contactRepo}).SetEntitlementService(entitlements)
+	email := "new-support-customer@example.com"
+	name := "New Support Customer"
+	contactID := svc.matchOrCreateCRMContact(context.Background(), "ws-support", &email, &name)
+	if contactID == nil || *contactID == "" {
+		t.Fatal("support auto-create contact ID is nil, want contact created beyond Starter CRM view limit")
+	}
+
+	count, err := contactRepo.CountByWorkspace(context.Background(), "ws-support")
+	if err != nil {
+		t.Fatalf("count contacts: %v", err)
+	}
+	if count != 5001 {
+		t.Fatalf("contact count = %d, want 5001", count)
 	}
 }
 

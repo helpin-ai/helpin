@@ -9,6 +9,7 @@ import { CodingReviewHistoryPanel } from '@/components/pm/CodingSession/CodingRe
 import { CodingSessionHeader } from '@/components/pm/CodingSession/CodingSessionHeader';
 import { CodingTranscriptPane } from '@/components/pm/CodingSession/CodingTranscriptPane';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { collectCodingSessionPreviews } from '@/components/pm/CodingSession/codingSessionPreviews';
 import {
@@ -36,6 +37,7 @@ import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { Button } from '@/components/ui/button';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 const STATUS_ICON = {
   queued: <Clock01Icon className="h-3.5 w-3.5" />,
@@ -70,6 +72,7 @@ export function CodingSessionSurface({
   const [handoffAgents, setHandoffAgents] = useState<Agent[] | null>(null);
   const [handoffRuns, setHandoffRuns] = useState<AgentRun[] | null>(null);
   const [handoffRunsTargetId, setHandoffRunsTargetId] = useState<string | null>(null);
+  const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const sequenceRef = useRef(0);
   const [streamSnapshotSeed, setStreamSnapshotSeed] = useState<CodingSessionStreamSnapshot | null>(null);
 
@@ -454,6 +457,11 @@ export function CodingSessionSurface({
     if (!session) return;
     const res = await agentService.runTask(workspaceId, session.target_id, { agent_id: agent.id });
     if (res.error) {
+      const reason = getUpgradeRequiredReason(res.error);
+      if (reason) {
+        setUpgradeDialogReason(reason);
+        return;
+      }
       toast.error(res.error);
       return;
     }
@@ -532,6 +540,13 @@ export function CodingSessionSurface({
           </div>
         </div>
       ) : null}
+      <UpgradeRequiredDialog
+        open={upgradeDialogReason !== null}
+        onOpenChange={(open) => {
+          if (!open) setUpgradeDialogReason(null);
+        }}
+        reason={upgradeDialogReason}
+      />
 
       <div className={cn(
         'grid min-h-0 flex-1 gap-4 xl:overflow-hidden',

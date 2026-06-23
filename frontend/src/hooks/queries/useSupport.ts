@@ -6,6 +6,7 @@ import { supportAttachmentService } from '@/lib/services/supportAttachmentServic
 import { agentService } from '@/lib/services/agentService';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
+import { isUpgradeRequiredError } from '@/lib/upgradeRequired';
 import {
   extractConversationListConversations,
   getConversationListUnreadCount,
@@ -918,6 +919,7 @@ export function useRewriteSupportDraft(workspaceId: string, conversationId: stri
         : supportService.rewriteNewDraft(workspaceId, payload)
       ).then(unwrap),
     onError: (error: Error) => {
+      if (isUpgradeRequiredError(error)) return;
       toast.error('Failed to rewrite draft', { description: error.message });
     },
   });
@@ -1117,6 +1119,7 @@ export function useRunConversationAgent(workspaceId: string) {
     mutationFn: (conversationId: string) =>
       supportService.runAgent(workspaceId, conversationId).then(unwrap),
     onError: (error: Error) => {
+      if (isUpgradeRequiredError(error)) return;
       toast.error('Failed to run agent', { description: error.message });
     },
   });

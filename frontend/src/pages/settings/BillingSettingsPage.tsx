@@ -34,8 +34,8 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { UsageDetail } from '@/components/billing/UsageDetail';
-import { useBillingCheckout, useBillingPlanChange, useBillingPlanChangePreview, useBillingPortal, useConfirmBillingCheckout, useResumeBillingSubscription, useSetBillingOnDemand, useWorkspaceBilling } from '@/hooks/queries';
-import type { PlanChangePreview } from '@/lib/billingTypes';
+import { useApplyBillingTestScenario, useBillingCheckout, useBillingPlanChange, useBillingPlanChangePreview, useBillingPortal, useConfirmBillingCheckout, useResumeBillingSubscription, useSetBillingOnDemand, useWorkspaceBilling } from '@/hooks/queries';
+import type { BillingTestScenarioID, PlanChangePreview } from '@/lib/billingTypes';
 import type { BillingInterval, BillingPlan, WorkspaceBillingSummary } from '@/lib/types';
 import { SettingsPageFrame } from './SettingsPageFrame';
 
@@ -60,7 +60,6 @@ const PLAN_OPTIONS: Array<{
       'Project management, support, CRM, and docs',
       'Built-in AI agents',
       'Shared + Team Inboxes',
-      '5,000 CRM contacts',
       'Connect support email addresses',
       'Public help center with custom domain',
       'Internal docs',
@@ -117,7 +116,7 @@ const COMPARISON_FEATURES: Array<{
   { name: 'Coverage gap detection', starter: true, growth: true },
   { name: 'Remove Helpin branding', starter: false, growth: true },
   { name: 'Docs / Knowledge', category: true },
-  { name: 'Documents', starter: '1,000', growth: 'Unlimited' },
+  { name: 'Documents', starter: '500', growth: 'Unlimited' },
   { name: 'Internal docs', starter: true, growth: true },
   { name: 'Public help center', starter: true, growth: true },
   { name: 'Custom domain', starter: true, growth: true },
@@ -182,6 +181,62 @@ const PLAN_LABELS: Record<string, string> = {
   growth: 'Growth',
 };
 
+const BILLING_TEST_SCENARIOS: Array<{
+  id: BillingTestScenarioID;
+  label: string;
+  description: string;
+  next: string[];
+}> = [
+  {
+    id: 'reset_starter',
+    label: 'Reset to Starter baseline',
+    description: 'Starter, active, zero AI usage, extra AI usage off, and billing-test docs/contacts removed.',
+    next: ['Confirm the page shows Starter with 5,000 AI units remaining.', 'Use this before switching to another scenario when you want clean test data.'],
+  },
+  {
+    id: 'trial_cap',
+    label: 'Trial AI cap reached',
+    description: 'Growth trial with the full 25,000 trial AI units already used.',
+    next: ['Try an AI action such as drafting a support reply or running an agent.', 'It should stop before the model call and ask you to upgrade.'],
+  },
+  {
+    id: 'past_due_grace',
+    label: 'Past-due grace',
+    description: 'Growth subscription marked past_due with a payment warning, but the workspace remains usable.',
+    next: ['Leave Billing Settings and open another module.', 'The workspace should still load, while billing shows an update-payment warning.'],
+  },
+  {
+    id: 'unpaid_locked',
+    label: 'Unpaid lock',
+    description: 'Growth subscription marked unpaid, which should lock non-billing workspace routes.',
+    next: ['Navigate to PM, Support, CRM, or Docs.', 'The API should block those routes with a billing lock; Billing Settings should remain reachable.'],
+  },
+  {
+    id: 'starter_ai_cap',
+    label: 'Starter AI cap reached',
+    description: 'Starter with all 5,000 included AI units used and extra AI usage disabled.',
+    next: ['Try an AI action.', 'It should fail before the model call and prompt for upgrade or extra AI usage.'],
+  },
+  {
+    id: 'starter_on_demand',
+    label: 'Starter near overage',
+    description: 'Starter with 4,995 AI units used, extra AI usage enabled, and fake Stripe IDs for overage-path testing.',
+    next: ['Run an AI action that costs more than 5 units.', 'With real Stripe test credentials this should bill one extra usage pack; with fake IDs, expect Stripe portal/charge calls to fail safely.'],
+  },
+  {
+    id: 'starter_docs_limit',
+    label: 'Starter docs limit',
+    description: 'Starter plus 500 billing-test documents in a test docs space.',
+    next: ['Go to Docs and try creating a document.', 'Creation should be blocked with an upgrade message.'],
+  },
+  {
+    id: 'starter_contacts_over_limit',
+    label: 'CRM contacts over limit',
+    description: 'Starter plus 5,001 billing-test contacts.',
+    next: ['Open CRM Contacts or a contact detail route.', 'Viewing should be blocked with an upgrade prompt; support automation can still auto-create contacts.'],
+  },
+];
+
 export function BillingSettingsPage() {
   return (
     <SettingsPageFrame section="billing">
@@ -200,6 +255,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
   const [checkoutConfirmationDelayed, setCheckoutConfirmationDelayed] = useState(false);
   const [planPreview, setPlanPreview] = useState<PlanChangePreview | null>(null);
   const [pendingPlanAction, setPendingPlanAction] = useState<string | null>(null);
+  const [selectedTestScenario, setSelectedTestScenario] = useState<BillingTestScenarioID>('reset_starter');
   const { data: billing, isLoading, refetch } = useWorkspaceBilling(workspaceId);
   const checkout = useBillingCheckout(workspaceId);
   const confirmCheckout = useConfirmBillingCheckout(workspaceId);
@@ -208,6 +264,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
   const resumeSubscription = useResumeBillingSubscription(workspaceId);
   const portal = useBillingPortal(workspaceId);
   const setOnDemand = useSetBillingOnDemand(workspaceId);
+  const applyTestScenario = useApplyBillingTestScenario(workspaceId);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -349,6 +406,13 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
     );
   };
 
+  const applySelectedTestScenario = async () => {
+    await applyTestScenario.mutateAsync(selectedTestScenario).then(
+      () => toast.success('Billing test scenario applied.'),
+      (error) => toast.error(error instanceof Error ? error.message : 'Could not apply test scenario'),
+    );
+  };
+
   if (isLoading || !billing) {
     return (
       <div className="mx-auto max-w-3xl space-y-4">
@@ -478,6 +542,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
     <div className="mx-auto max-w-3xl space-y-8">
       <section className="space-y-3">
         <CheckoutReturnNotice result={checkoutResult} confirming={checkoutConfirming} delayed={checkoutConfirmationDelayed} onRefresh={() => void refetch()} />
+        <BillingNoticeBanner billing={billing} onPortal={() => void openPortal('payment method management')} portalLoading={portal.isPending} />
         <Card className="overflow-hidden">
           <CardContent className="p-0">
             <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -531,7 +596,6 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
             }}
           />
         )}
-        <BillingNoticeBanner billing={billing} onPortal={() => void openPortal('payment method management')} portalLoading={portal.isPending} />
         <PendingBillingNotice
           billing={billing}
           editable={editable}
@@ -641,7 +705,81 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
           </CardContent>
         </Card>
       </section>
+
+      {import.meta.env.DEV && (
+        <BillingTestScenarioPanel
+          selected={selectedTestScenario}
+          onSelect={setSelectedTestScenario}
+          onApply={() => void applySelectedTestScenario()}
+          loading={applyTestScenario.isPending}
+          disabled={!editable}
+        />
+      )}
     </div>
+  );
+}
+
+function BillingTestScenarioPanel({
+  selected,
+  onSelect,
+  onApply,
+  loading,
+  disabled,
+}: {
+  selected: BillingTestScenarioID;
+  onSelect: (scenario: BillingTestScenarioID) => void;
+  onApply: () => void;
+  loading: boolean;
+  disabled: boolean;
+}) {
+  const scenario = BILLING_TEST_SCENARIOS.find((item) => item.id === selected) ?? BILLING_TEST_SCENARIOS[0];
+  return (
+    <section className="space-y-3">
+      <SectionHeading
+        title="Billing test scenarios"
+        description="Dev-only database states for testing billing, limits, locks, and upgrade prompts."
+      />
+      <Card>
+        <CardContent className="space-y-5 p-5">
+          <div className="grid gap-2 sm:grid-cols-2">
+            {BILLING_TEST_SCENARIOS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`rounded-md border px-3 py-3 text-left text-sm transition ${
+                  selected === item.id
+                    ? 'border-primary bg-primary/[0.06] text-foreground'
+                    : 'bg-background hover:bg-muted/40'
+                }`}
+                onClick={() => onSelect(item.id)}
+                disabled={loading}
+              >
+                <span className="block font-medium">{item.label}</span>
+                <span className="mt-1 block text-xs leading-5 text-muted-foreground">{item.description}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="rounded-md border bg-muted/20 p-4">
+            <p className="text-sm font-semibold">After enabling: {scenario.label}</p>
+            <ul className="mt-3 space-y-2">
+              {scenario.next.map((step) => (
+                <li key={step} className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <Button type="button" onClick={onApply} disabled={disabled || loading} className="w-full sm:w-auto">
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Enable selected case
+          </Button>
+          {disabled && <p className="text-xs text-muted-foreground">Only workspace owners can apply billing test scenarios.</p>}
+        </CardContent>
+      </Card>
+    </section>
   );
 }
 

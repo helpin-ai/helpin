@@ -5,6 +5,15 @@ export type BillingPlan = 'starter' | 'growth';
 export type BillingStatus = 'trialing' | 'active' | 'trial_expired' | 'past_due' | 'unpaid' | 'canceled';
 export type BillingInterval = 'monthly' | 'annual';
 export type UsageMode = 'daily' | 'cumulative';
+export type BillingTestScenarioID =
+  | 'reset_starter'
+  | 'trial_cap'
+  | 'past_due_grace'
+  | 'unpaid_locked'
+  | 'starter_ai_cap'
+  | 'starter_on_demand'
+  | 'starter_docs_limit'
+  | 'starter_contacts_over_limit';
 
 export interface BillingPaymentMethodRef {
   id: string;

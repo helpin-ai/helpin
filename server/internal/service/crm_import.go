@@ -98,6 +98,9 @@ func (s *CRMImportService) Process(ctx context.Context, id string, req model.Pro
 	if job.Status != model.CRMImportStatusPending {
 		return nil, fmt.Errorf("import job is not in pending status")
 	}
+	if err := s.preflightImportEntitlements(ctx, job, len(req.CSVData)); err != nil {
+		return nil, err
+	}
 
 	job.Status = model.CRMImportStatusProcessing
 	job.TotalRows = len(req.CSVData)
@@ -146,6 +149,17 @@ func (s *CRMImportService) Process(ctx context.Context, id string, req model.Pro
 	}
 
 	return job, nil
+}
+
+func (s *CRMImportService) preflightImportEntitlements(ctx context.Context, job *model.CRMImportJob, rowCount int) error {
+	if s.entitlementSvc == nil || job == nil || job.ObjectType != "contact" || rowCount <= 0 {
+		return nil
+	}
+	count, err := s.contactRepo.CountByWorkspace(ctx, job.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	return s.entitlementSvc.RequireLimitUsage(ctx, job.WorkspaceID, EntitlementLimitContacts, count, int64(rowCount))
 }
 
 func (s *CRMImportService) processRow(ctx context.Context, job *model.CRMImportJob, row []string, fieldMap map[int]string) error {

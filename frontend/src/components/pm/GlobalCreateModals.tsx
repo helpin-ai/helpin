@@ -26,6 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { CreateDocumentDialog } from '@/components/docs/CreateDocumentDialog';
@@ -68,6 +69,7 @@ import {
 import { showEntityCreatedToast, entityCreatedToastIcons } from '@/components/ui/entity-created-toast';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 import pdfIcon from '@/assets/attachment/pdf-icon.png';
 import csvIcon from '@/assets/attachment/csv-icon.png';
@@ -217,6 +219,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
   const [submitting, setSubmitting] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [showAttachments, setShowAttachments] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
@@ -306,6 +309,11 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
       });
 
       if (createError) {
+        const reason = getUpgradeRequiredReason(createError);
+        if (reason) {
+          setUpgradeDialogReason(reason);
+          return;
+        }
         setError(createError);
         return;
       }
@@ -345,11 +353,14 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
         }
       }
 
-      if (data?.agent_run_error) {
+      const agentRunUpgradeReason = getUpgradeRequiredReason(data?.agent_run_error);
+      if (agentRunUpgradeReason) {
+        setUpgradeDialogReason(agentRunUpgradeReason);
+      } else if (data?.agent_run_error) {
         toast.warning(`Epic created, but the agent did not start: ${data.agent_run_error}`);
       }
 
-      if (createdEpic) {
+      if (createdEpic && !agentRunUpgradeReason) {
         showEntityCreatedToast({
           entityLabel: 'Epic',
           title: createdEpic.name,
@@ -362,12 +373,17 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
               })
             : undefined,
         });
-      } else {
+      } else if (!agentRunUpgradeReason) {
         toast.success('Epic created');
       }
       window.dispatchEvent(new CustomEvent('epic-created'));
-      onClose();
+      if (!agentRunUpgradeReason) onClose();
     } catch (err) {
+      const reason = getUpgradeRequiredReason(err);
+      if (reason) {
+        setUpgradeDialogReason(reason);
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to create epic');
     } finally {
       setSubmitting(false);
@@ -746,6 +762,14 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
           </div>
         </div>
       </DialogContent>
+      <UpgradeRequiredDialog
+        open={upgradeDialogReason !== null}
+        onOpenChange={(open) => {
+          if (!open) setUpgradeDialogReason(null);
+        }}
+        onUpgrade={onClose}
+        reason={upgradeDialogReason}
+      />
     </Dialog>
   );
 }

@@ -21,6 +21,15 @@ func NewCRMContactHandler(contactService *service.CRMContactService) *CRMContact
 	return &CRMContactHandler{contactService: contactService}
 }
 
+func writeCRMContactError(w http.ResponseWriter, err error) {
+	var entitlementErr *service.EntitlementError
+	if errors.As(err, &entitlementErr) {
+		writeError(w, http.StatusPaymentRequired, entitlementErr.Error())
+		return
+	}
+	writeError(w, http.StatusInternalServerError, err.Error())
+}
+
 // List handles GET /api/crm/contacts.
 func (h *CRMContactHandler) List(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -49,7 +58,7 @@ func (h *CRMContactHandler) List(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, validationErr.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeCRMContactError(w, err)
 		return
 	}
 	if contacts == nil {
@@ -103,6 +112,11 @@ func (h *CRMContactHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	contact, err := h.contactService.GetByID(r.Context(), id)
 	if err != nil {
+		var entitlementErr *service.EntitlementError
+		if errors.As(err, &entitlementErr) {
+			writeError(w, http.StatusPaymentRequired, entitlementErr.Error())
+			return
+		}
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}

@@ -7,6 +7,7 @@ import type {
   ConfirmCheckoutRequest,
   LinkPaymentMethodRequest,
   PlanChangeRequest,
+  BillingTestScenarioID,
   UpdateCardRequest,
   UsageMode,
 } from '@/lib/billingTypes';
@@ -199,6 +200,21 @@ export function useSetBillingOnDemand(wsId?: string) {
     },
     onSuccess: () => {
       if (wsId) qc.invalidateQueries({ queryKey: queryKeys.billing.workspace(wsId) });
+    },
+  });
+}
+
+export function useApplyBillingTestScenario(wsId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (scenario: BillingTestScenarioID) =>
+      unwrap(await billingService.applyTestScenario(wsId!, scenario)),
+    onSuccess: (summary) => {
+      if (!wsId) return;
+      qc.setQueryData(queryKeys.billing.workspace(wsId), summary);
+      qc.invalidateQueries({ queryKey: ['billing', 'workspace', wsId] });
+      qc.invalidateQueries({ queryKey: ['crm', wsId] });
+      qc.invalidateQueries({ queryKey: ['docs', wsId] });
     },
   });
 }

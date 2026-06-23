@@ -11,6 +11,7 @@ import type {
   PlanChangeRequest,
   PlanChangePreview,
   PortalResponse,
+  BillingTestScenarioID,
   UpdateCardRequest,
   UsageMode,
   UsageResponse,
@@ -69,4 +70,7 @@ export const billingService = {
 
   setOnDemand: (wsId: string, enabled: boolean) =>
     api.put(`/workspaces/${wsId}/billing/on-demand`, { enabled }),
+
+  applyTestScenario: (wsId: string, scenario: BillingTestScenarioID) =>
+    api.post<WorkspaceBillingSummary>(`/workspaces/${wsId}/billing/test-scenario`, { scenario }),
 };

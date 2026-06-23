@@ -469,6 +469,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/resume-subscription", h.Billing.ResumeSubscription)
 					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/portal", h.Billing.Portal)
 					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Put("/billing/on-demand", h.Billing.SetOnDemand)
+					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/test-scenario", h.Billing.ApplyTestScenario)
 					// Usage/payment-method management is owner-only and may be reached from org billing.
 					r.With(h.Billing.RequireWorkspaceBillingOwner).Get("/billing/usage", h.Billing.GetUsage)
 					r.With(h.Billing.RequireWorkspaceBillingOwner).Put("/billing/payment-method", h.Billing.LinkPaymentMethod)

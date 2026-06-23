@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Message01Icon, BotIcon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,6 +40,7 @@ import { AgentRunsCard } from './AgentRunsCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
 import { getInitialThreadScrollTarget, isNearThreadBottom, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 interface MessageThreadProps {
   workspaceId: string;
@@ -249,6 +251,7 @@ export function MessageThread({
   const previousConversationIdRef = useRef<string | null>(conversationId);
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
   const isNearBottomRef = useRef(true);
+  const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const pendingInitialScrollRef = useRef(false);
   const threadScrollStateRef = useRef<{ conversationId: string | null; messageCount: number; lastMessageId: string | null }>({
     conversationId: null,
@@ -866,7 +869,12 @@ export function MessageThread({
                 variant="outline"
                 className="h-7 gap-1 text-xs"
                 disabled={runAgent.isPending}
-                onClick={() => runAgent.mutate(conversation.id)}
+                onClick={() => runAgent.mutate(conversation.id, {
+                  onError: (error) => {
+                    const reason = getUpgradeRequiredReason(error);
+                    if (reason) setUpgradeDialogReason(reason);
+                  },
+                })}
               >
                 {runAgent.isPending ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <BotIcon className="h-3 w-3" />}
                 Run
@@ -1058,6 +1066,7 @@ export function MessageThread({
           workspaceId={workspaceId}
           conversationId={conversationId}
           emailFallbackHint={emailFallbackHint}
+          onUpgradeRequired={setUpgradeDialogReason}
         />
       )}
 
@@ -1068,6 +1077,13 @@ export function MessageThread({
         defaultTeamId={access?.membership?.support_default_team_id ?? access?.team_memberships?.[0]?.team_id}
         isPending={createTaskFromConversation.isPending}
         onConfirm={handleCreateTaskConfirm}
+      />
+      <UpgradeRequiredDialog
+        open={upgradeDialogReason !== null}
+        onOpenChange={(open) => {
+          if (!open) setUpgradeDialogReason(null);
+        }}
+        reason={upgradeDialogReason}
       />
     </div>
   );

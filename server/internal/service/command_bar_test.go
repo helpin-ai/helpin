@@ -1403,6 +1403,52 @@ func TestCreateRunAllowsDifferentAgentsOnWorkspaceTarget(t *testing.T) {
 	}
 }
 
+func TestCreateRunPreflightsAICreditsBeforeQueueingRun(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	consumer := &recordingAIUsageConsumer{preflightErr: fmt.Errorf("AI usage exhausted")}
+	service := (&AgentService{runRepo: runRepo, agentRepo: agentRepo}).SetAIUsageMeter(NewAIUsageMeter(consumer))
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	taskID := "22222222-2222-2222-2222-222222222222"
+	agent := &model.Agent{
+		ID:                    "33333333-3333-3333-3333-333333333333",
+		WorkspaceID:           workspaceID,
+		Name:                  "Forge",
+		PresetKey:             model.AgentPresetCodeBuilder,
+		IsSystem:              true,
+		RuntimeKind:           "native_sdk",
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}
+
+	_, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          agent,
+		targetType:     "task",
+		targetID:       taskID,
+		taskID:         &taskID,
+		input:          []byte("{}"),
+		invocationMode: model.InvocationModeAutonomous,
+	})
+	if err == nil || !strings.Contains(err.Error(), "AI usage exhausted") {
+		t.Fatalf("createRun() error = %v, want AI usage exhausted", err)
+	}
+	if consumer.preflight.WorkspaceID != workspaceID || consumer.preflight.FeatureKey != BillingFeatureForgeRun || consumer.preflight.Credits != 100 {
+		t.Fatalf("preflight = %#v, want Forge run preflight", consumer.preflight)
+	}
+	runs, total, err := runRepo.ListByWorkspace(ctx, workspaceID, model.PMPagination{Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if total != 0 || len(runs) != 0 {
+		t.Fatalf("expected no queued run after failed preflight, total=%d runs=%#v", total, runs)
+	}
+}
+
 func TestCreateRunDedupesSameAgentOnWorkspaceTarget(t *testing.T) {
 	db := setupCommandBarPlanTestDB(t)
 	runRepo := repository.NewAgentRunRepository(db)

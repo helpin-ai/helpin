@@ -57,7 +57,7 @@ export function TrialBanner({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <div
       className={cn(
-        'mx-2 my-2 rounded-lg border p-2.5 text-xs',
+        'mx-2 my-2 rounded-lg border p-2.5 text-center text-xs',
         urgent
           ? 'border-amber-300 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-500/10'
           : 'border-border bg-muted/50',

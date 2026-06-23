@@ -32,7 +32,7 @@ AI usage is consumed by AI work, not by seats. It resets each billing period. Cu
 
 Internal metering uses the formula and feature floors in [AI Usage Metering](./ai-usage-metering.md). The highest feature floor is 100 usage units; larger runs may consume more than the floor based on token usage.
 
-Implementation status: direct LLM calls are preflighted before provider execution and metered through the shared metered provider context. Metered providers fail closed unless the call has usage context or an explicit setup/free exemption. Native SDK, Codex, and OpenCode agent runs are preflighted before runtime execution and metered after their token usage is persisted. SLA limits are intentionally deferred until the SLA feature exists.
+Implementation status: direct LLM calls are preflighted before provider execution and metered through the shared metered provider context. Metered providers fail closed unless the call has usage context or an explicit setup/free exemption. Native SDK, Codex, and OpenCode agent runs are preflighted before they are queued; if the workspace is locked or AI usage is exhausted, no run row is created and the launch endpoint returns payment required. Completed runs are metered after their token usage is persisted. SLA limits are intentionally deferred until the SLA feature exists.
 
 | Action | Floor usage units |
 | --- | ---: |
@@ -62,7 +62,7 @@ Starter:
 - Unlimited seats
 - 10 teams per workspace
 - 5,000 monthly AI usage units
-- 1,000 documents
+- 500 documents
 - 5,000 CRM contacts
 - Built-in AI agents
 - Tasks custom views
@@ -124,7 +124,21 @@ STRIPE_STARTER_ANNUAL_PRICE_ID=
 STRIPE_GROWTH_MONTHLY_PRICE_ID=
 STRIPE_GROWTH_ANNUAL_PRICE_ID=
 STRIPE_CREDIT_BLOCK_PRICE_ID=
+BILLING_TEST_SCENARIOS_ENABLED=false
 ```
+
+`BILLING_TEST_SCENARIOS_ENABLED=true` enables the dev-only Billing Settings scenario switcher API. Use it only against local/dev databases. The switcher can set the current workspace to:
+
+- Starter baseline with billing-test data removed
+- Growth trial with all 25,000 trial AI units used
+- Growth past_due grace state
+- Growth unpaid locked state
+- Starter with all 5,000 AI units used
+- Starter near overage with extra AI usage enabled
+- Starter with 500 billing-test documents
+- Starter with 5,001 billing-test CRM contacts
+
+The seeded documents and contacts are marked as billing test data so the reset scenario can remove them without deleting normal workspace data.
 
 Sandbox Price creation helper:
 

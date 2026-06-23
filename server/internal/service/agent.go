@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
@@ -254,6 +255,7 @@ type AgentService struct {
 	skillPackageStore          skillPackageStore
 	agentDraftLLM              agentDraftLLM
 	entitlementSvc             *EntitlementService
+	aiUsageMeter               *AIUsageMeter
 }
 
 // NewAgentService creates a new AgentService.
@@ -387,6 +389,11 @@ func (s *AgentService) SetSupportCoverageService(supportCoverageService *Support
 
 func (s *AgentService) SetEntitlementService(entitlementSvc *EntitlementService) *AgentService {
 	s.entitlementSvc = entitlementSvc
+	return s
+}
+
+func (s *AgentService) SetAIUsageMeter(meter *AIUsageMeter) *AgentService {
+	s.aiUsageMeter = meter
 	return s
 }
 
@@ -4969,6 +4976,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	taskQueue := resolved.Queue
 
 	run := &model.AgentRun{
+		ID:                uuid.NewString(),
 		WorkspaceID:       params.workspaceID,
 		AgentID:           params.agent.ID,
 		TaskID:            params.taskID,
@@ -5006,6 +5014,10 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	if params.workingBranch != nil && strings.TrimSpace(*params.workingBranch) != "" {
 		run.WorkingBranch = params.workingBranch
+	}
+	if err := PreflightAgentRunAIUsage(ctx, s.aiUsageMeter, run, params.agent); err != nil {
+		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
+		return nil, err
 	}
 	if err := s.runRepo.Create(ctx, run); err != nil {
 		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)

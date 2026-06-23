@@ -101,6 +101,8 @@ interface FormState {
 
 type ContactTab = 'overview' | 'emails' | 'meetings' | 'tasks' | 'deals' | 'support';
 type ContactSidebarSection = 'primary-company' | 'other-companies' | 'deals' | 'support' | 'tasks';
+const isContactLimitError = (error: unknown) =>
+  error instanceof Error && error.message.includes('5,000 contacts');
 type EnrichedDetailRow = {
   key: string;
   label: string;
@@ -369,7 +371,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   const location = useLocation();
 
   // ── Data hooks ──
-  const { data: contact, isLoading } = useContact(wsId, contactId);
+  const { data: contact, isLoading, error: contactError } = useContact(wsId, contactId);
   useRegisterPageContext(contact ? {
     entity_type: 'crm_contact',
     entity_id: contact.id,
@@ -754,6 +756,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   };
 
   const goBack = () => navigate({ to: '/w/$slug/crm/contacts', params: { slug: wsSlug } });
+  const goToBilling = () => navigate({ to: '/w/$slug/settings/billing', params: { slug: wsSlug } });
   const toggleExpandedSection = (section: ContactSidebarSection) => {
     setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
   };
@@ -763,6 +766,26 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
     return (
       <div className="flex h-full items-center justify-center">
         <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (isContactLimitError(contactError)) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+        <div>
+          <h2 className="text-sm font-medium">Upgrade to view CRM contacts</h2>
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+            Starter includes up to 5,000 contacts. Support can keep capturing new contacts, but CRM contact viewing requires Growth once you exceed that limit.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={goBack}>
+            <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
+            Back to contacts
+          </Button>
+          <Button size="sm" onClick={goToBilling}>Upgrade</Button>
+        </div>
       </div>
     );
   }

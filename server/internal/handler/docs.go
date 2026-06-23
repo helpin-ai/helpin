@@ -398,7 +398,7 @@ func (h *DocsHandler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	doc, err := h.documentSvc.Create(r.Context(), wsID, req, userID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, doc)

@@ -17,16 +17,20 @@ import (
 )
 
 type BillingHandler struct {
-	billingService      *service.BillingService
-	stripeWebhookSecret string
-	appBaseURL          string
+	billingService       *service.BillingService
+	testScenarioService  *service.BillingTestScenarioService
+	testScenariosEnabled bool
+	stripeWebhookSecret  string
+	appBaseURL           string
 }
 
-func NewBillingHandler(billingService *service.BillingService, webhookSecret, appBaseURL string) *BillingHandler {
+func NewBillingHandler(billingService *service.BillingService, webhookSecret, appBaseURL string, testScenarioService *service.BillingTestScenarioService, testScenariosEnabled bool) *BillingHandler {
 	return &BillingHandler{
-		billingService:      billingService,
-		stripeWebhookSecret: strings.TrimSpace(webhookSecret),
-		appBaseURL:          strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
+		billingService:       billingService,
+		testScenarioService:  testScenarioService,
+		testScenariosEnabled: testScenariosEnabled,
+		stripeWebhookSecret:  strings.TrimSpace(webhookSecret),
+		appBaseURL:           strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
 	}
 }
 
@@ -76,6 +80,32 @@ func (h *BillingHandler) Get(w http.ResponseWriter, r *http.Request) {
 	summary, err := h.billingService.GetWorkspaceBilling(r.Context(), workspaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+type billingTestScenarioRequest struct {
+	Scenario string `json:"scenario"`
+}
+
+func (h *BillingHandler) ApplyTestScenario(w http.ResponseWriter, r *http.Request) {
+	if h == nil || !h.testScenariosEnabled || h.testScenarioService == nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	workspaceID := chi.URLParam(r, "id")
+	if !h.canManageWorkspace(w, r, workspaceID) {
+		return
+	}
+	var req billingTestScenarioRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	summary, err := h.testScenarioService.Apply(r.Context(), workspaceID, req.Scenario)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, summary)

@@ -955,7 +955,7 @@ func (h *SupportInboxHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
 
 	run, err := h.agentService.RunConversationAgent(r.Context(), workspaceID, ticketID, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, run)

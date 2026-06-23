@@ -4,6 +4,7 @@ import { BotIcon, GitBranchIcon, Loading01Icon, PlayIcon, Settings02Icon } from 
 import { toast } from 'sonner';
 
 import { AgentAvatar, resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { AgentRunTable } from '@/components/pm/AgentRunTable';
@@ -24,6 +25,7 @@ import { agentService } from '@/lib/services/agentService';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import type { Agent, AgentPresetKey, AgentRun, GitRepository, TaskDeliveryTarget } from '@/lib/pmTypes';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from './agentRunConstants';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 interface Props {
   taskId: string;
@@ -273,6 +275,7 @@ export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentI
   const [triggering, setTriggering] = useState(false);
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
 
   const setRunInUrl = useCallback(
     (runId: string | null) => {
@@ -357,6 +360,11 @@ export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentI
   const startRun = useCallback(async (agentId: string) => {
     const res = await agentService.runTask(workspaceId, taskId, { agent_id: agentId });
     if (res.error) {
+      const reason = getUpgradeRequiredReason(res.error);
+      if (reason) {
+        setUpgradeDialogReason(reason);
+        return;
+      }
       toast.error(res.error);
       return;
     }
@@ -559,6 +567,13 @@ export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentI
           if (!open) setRunInUrl(null);
         }}
         title="Task Agent Run"
+      />
+      <UpgradeRequiredDialog
+        open={upgradeDialogReason !== null}
+        onOpenChange={(open) => {
+          if (!open) setUpgradeDialogReason(null);
+        }}
+        reason={upgradeDialogReason}
       />
     </div>
   );
