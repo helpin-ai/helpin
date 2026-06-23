@@ -3041,6 +3041,75 @@ func TestEmailFallbackProcessInboundEmailRouteThreadsReply(t *testing.T) {
 	}
 }
 
+func TestProcessInboundRouteThreadsByRFCHeaders(t *testing.T) {
+	ctx := context.Background()
+	env := setupEmailFallbackInboundTestEnv(t, model.SupportInboxSettings{})
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	customerEmail := "buyer@example.com"
+	conversationID := "cccccccc-cccc-cccc-cccc-cccccccccccc"
+
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Status:        model.SupportConversationStatusOpen,
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	outboundMsgID := "<helpin-rfc-route-thread@on.helpin.email>"
+	if err := env.emailLogRepo.Create(ctx, &model.SupportEmailLog{
+		ID:             "dddddddd-dddd-dddd-dddd-dddddddddddd",
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		Direction:      "outbound",
+		RFCMessageID:   outboundMsgID,
+		ToEmail:        customerEmail,
+		Status:         "sent",
+	}); err != nil {
+		t.Fatalf("create email log: %v", err)
+	}
+
+	route := &model.SupportEmailRoute{
+		ID:             "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+		WorkspaceID:    workspaceID,
+		InboundAddress: "inbox@acme.on.helpin.email",
+		Active:         true,
+	}
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: customerEmail},
+		OriginalRecipient: route.InboundAddress,
+		To:                route.InboundAddress,
+		Subject:           "Re: Support conversation",
+		MessageID:         "pm-route-rfc-thread",
+		TextBody:          "Thanks, that worked!",
+		Headers: []model.PostmarkHeader{
+			{Name: "In-Reply-To", Value: outboundMsgID},
+		},
+	}
+
+	if err := env.service.processInboundRoute(ctx, route, payload, `{"MessageID":"pm-route-rfc-thread"}`); err != nil {
+		t.Fatalf("processInboundRoute: %v", err)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected inbound message on original conversation, got %d", len(messages))
+	}
+
+	_, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected no new conversation, got total=%d", total)
+	}
+}
+
 func TestResolveInboundFallbackConversationIsConservative(t *testing.T) {
 	ctx := context.Background()
 	env := setupEmailFallbackInboundTestEnv(t, model.SupportInboxSettings{})
