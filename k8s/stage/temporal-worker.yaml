@@ -37,7 +37,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.253-rc.2
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.254-rc.1
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -103,7 +103,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.253-rc.2
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.254-rc.1
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -171,7 +171,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.253-rc.2
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.254-rc.1
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -241,7 +241,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.253-rc.2
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.254-rc.1
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -313,7 +313,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.253-rc.2
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.254-rc.1
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -383,7 +383,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.253-rc.2
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.254-rc.1
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
