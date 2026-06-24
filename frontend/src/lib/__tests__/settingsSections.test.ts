@@ -12,6 +12,12 @@ describe('getSettingsSidebarGroups', () => {
     expect(visibleSectionIDs(false)).toContain('billing');
   });
 
+  it('keeps billing in the workspace settings group', () => {
+    const workspaceGroup = getSettingsSidebarGroups(false).find((group) => group.label === 'Workspace');
+
+    expect(workspaceGroup?.sections.map((section) => section.id)).toContain('billing');
+  });
+
   it('still hides settings-admin-only sections without workspace settings management', () => {
     expect(visibleSectionIDs(false)).not.toContain('command-intents');
   });
