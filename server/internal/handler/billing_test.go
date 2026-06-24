@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	stripe "github.com/stripe/stripe-go/v86"
 )
 
@@ -21,6 +23,17 @@ func TestBillingLockDoesNotAllowRegularWorkspaceRoutes(t *testing.T) {
 
 	if billingLockAllowedRequest(req) {
 		t.Fatal("expected regular workspace routes to be lockable")
+	}
+}
+
+func TestOrgBillingRouteIDPrefersStandardIDParam(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/organizations/org_123/billing/cards", nil)
+	routeCtx := chi.NewRouteContext()
+	routeCtx.URLParams.Add("id", "org_123")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+
+	if got := orgBillingRouteID(req); got != "org_123" {
+		t.Fatalf("orgBillingRouteID() = %q, want org_123", got)
 	}
 }
 
