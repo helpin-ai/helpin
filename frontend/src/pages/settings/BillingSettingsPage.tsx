@@ -424,7 +424,8 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
     );
   }
 
-  const canUsePortal = editable && billing.manage_billing_enabled;
+  const canManageBilling = editable || billing.manage_billing_enabled;
+  const canUsePortal = canManageBilling && billing.manage_billing_enabled;
   const isFounderPlan = billing.plan === 'founder';
   const planLabel = billingOverviewPlanTitle(billing);
   const planStatusCopy = billingStatusCopy(billing);
@@ -455,7 +456,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
         <BillingNoticeBanner billing={billing} onPortal={() => void openPortal('payment method management')} portalLoading={portal.isPending} />
         <PendingBillingNotice
           billing={billing}
-          editable={editable}
+          editable={canManageBilling}
           resumeLoading={resumeSubscription.isPending}
           onResume={() => {
             void resumeSubscription.mutateAsync().then(
@@ -514,7 +515,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
               plan={plan}
               interval={selectedInterval}
               billing={billing}
-              editable={editable}
+              editable={canManageBilling}
               disabled={checkout.isPending || changePlan.isPending || previewPlanChange.isPending}
               loading={pendingPlanAction === `${plan.id}:${selectedInterval}`}
               onSelect={() => void beginPaidPlanChange(plan.id, selectedInterval)}
@@ -567,7 +568,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
               ) : !billing.locked ? (
                 <Button
                   onClick={() => setChoosingPlan(true)}
-                  disabled={!editable}
+                  disabled={!canManageBilling}
                   className="shrink-0"
                 >
                   Change plan
@@ -575,7 +576,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
               ) : (
                 <Button
                   onClick={() => setChoosingPlan(true)}
-                  disabled={!editable}
+                  disabled={!canManageBilling}
                   className="shrink-0"
                 >
                   Choose plan
@@ -593,7 +594,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
         {annualNudge && (
           <AnnualBillingNudge
             nudge={annualNudge}
-            editable={editable}
+            editable={canManageBilling}
             loading={changePlan.isPending}
             onSwitch={() => {
               void startPlanChange(billing.plan, 'annual');
@@ -602,7 +603,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
         )}
         <PendingBillingNotice
           billing={billing}
-          editable={editable}
+          editable={canManageBilling}
           resumeLoading={resumeSubscription.isPending}
           onResume={() => {
             void resumeSubscription.mutateAsync().then(
@@ -636,7 +637,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
               <Switch
                 checked={billing.on_demand_enabled}
                 onCheckedChange={(checked) => void toggleOnDemand(checked)}
-                disabled={!editable || !billing.on_demand_available || setOnDemand.isPending}
+                disabled={!canManageBilling || !billing.on_demand_available || setOnDemand.isPending}
               />
             </div>
           </CardContent>
@@ -738,7 +739,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
           onSelect={setSelectedTestScenario}
           onApply={() => void applySelectedTestScenario()}
           loading={applyTestScenario.isPending}
-          disabled={!editable}
+          disabled={!canManageBilling}
         />
       )}
     </div>

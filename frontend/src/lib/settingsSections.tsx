@@ -151,7 +151,6 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     description: 'Manage this workspace plan, AI usage, payment methods, and invoices.',
     icon: Billing,
     group: 'Workspace',
-    requiresManageSettings: true,
   },
   {
     id: 'members',
