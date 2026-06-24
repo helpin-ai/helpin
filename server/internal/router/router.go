@@ -424,11 +424,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 			// Organization billing is owner-only.
 			if h.Billing != nil {
-				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{orgId}/billing", h.Billing.GetOrganizationBilling)
-				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{orgId}/billing/cards", h.Billing.ListCards)
-				r.With(h.Billing.RequireOrgBillingOwner).Put("/organizations/{orgId}/billing/cards/{cardId}", h.Billing.UpdateCard)
-				r.With(h.Billing.RequireOrgBillingOwner).Delete("/organizations/{orgId}/billing/cards/{cardId}", h.Billing.DeleteCard)
-				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{orgId}/billing/invoices", h.Billing.ListInvoices)
+				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{id}/billing", h.Billing.GetOrganizationBilling)
+				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{id}/billing/cards", h.Billing.ListCards)
+				r.With(h.Billing.RequireOrgBillingOwner).Put("/organizations/{id}/billing/cards/{cardId}", h.Billing.UpdateCard)
+				r.With(h.Billing.RequireOrgBillingOwner).Delete("/organizations/{id}/billing/cards/{cardId}", h.Billing.DeleteCard)
+				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{id}/billing/invoices", h.Billing.ListInvoices)
 			}
 
 			// Workspaces — workspace-scoped routes with RBAC

@@ -42,7 +42,7 @@ func (h *BillingHandler) canManageWorkspace(w http.ResponseWriter, r *http.Reque
 
 func (h *BillingHandler) RequireOrgBillingOwner(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !h.canManageOrg(w, r, chi.URLParam(r, "orgId")) {
+		if !h.canManageOrg(w, r, orgBillingRouteID(r)) {
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -60,7 +60,7 @@ func (h *BillingHandler) RequireWorkspaceBillingOwner(next http.Handler) http.Ha
 
 // GetOrganizationBilling returns the org roll-up + per-workspace cards.
 func (h *BillingHandler) GetOrganizationBilling(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "orgId")
+	orgID := orgBillingRouteID(r)
 	if !h.canManageOrg(w, r, orgID) {
 		return
 	}
@@ -75,7 +75,7 @@ func (h *BillingHandler) GetOrganizationBilling(w http.ResponseWriter, r *http.R
 
 // ListCards returns saved cards with linked-workspace counts.
 func (h *BillingHandler) ListCards(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "orgId")
+	orgID := orgBillingRouteID(r)
 	if !h.canManageOrg(w, r, orgID) {
 		return
 	}
@@ -89,7 +89,7 @@ func (h *BillingHandler) ListCards(w http.ResponseWriter, r *http.Request) {
 
 // UpdateCard edits card details or sets it as the org default.
 func (h *BillingHandler) UpdateCard(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "orgId")
+	orgID := orgBillingRouteID(r)
 	cardID := chi.URLParam(r, "cardId")
 	if !h.canManageOrg(w, r, orgID) {
 		return
@@ -109,7 +109,7 @@ func (h *BillingHandler) UpdateCard(w http.ResponseWriter, r *http.Request) {
 
 // DeleteCard detaches the card and unlinks workspaces using it.
 func (h *BillingHandler) DeleteCard(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "orgId")
+	orgID := orgBillingRouteID(r)
 	cardID := chi.URLParam(r, "cardId")
 	if !h.canManageOrg(w, r, orgID) {
 		return
@@ -123,7 +123,7 @@ func (h *BillingHandler) DeleteCard(w http.ResponseWriter, r *http.Request) {
 
 // ListInvoices returns the org's Stripe invoices.
 func (h *BillingHandler) ListInvoices(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "orgId")
+	orgID := orgBillingRouteID(r)
 	if !h.canManageOrg(w, r, orgID) {
 		return
 	}
@@ -133,6 +133,13 @@ func (h *BillingHandler) ListInvoices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, invoices)
+}
+
+func orgBillingRouteID(r *http.Request) string {
+	if orgID := chi.URLParam(r, "id"); orgID != "" {
+		return orgID
+	}
+	return chi.URLParam(r, "orgId")
 }
 
 // GetUsage returns daily/cumulative usage for a workspace.
