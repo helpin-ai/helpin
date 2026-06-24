@@ -1,10 +1,28 @@
 package handler
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	stripe "github.com/stripe/stripe-go/v86"
 )
+
+func TestBillingLockAllowsBillingRoutes(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/ws_123/billing", nil)
+
+	if !billingLockAllowedRequest(req) {
+		t.Fatal("expected billing routes to remain accessible when a workspace is locked")
+	}
+}
+
+func TestBillingLockDoesNotAllowRegularWorkspaceRoutes(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/ws_123/docs", nil)
+
+	if billingLockAllowedRequest(req) {
+		t.Fatal("expected regular workspace routes to be lockable")
+	}
+}
 
 func TestParseStripeInvoiceEventUsesParentSubscriptionDetails(t *testing.T) {
 	event := stripe.Event{
