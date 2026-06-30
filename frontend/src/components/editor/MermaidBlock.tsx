@@ -61,7 +61,7 @@ export function MermaidBlock({ source }: MermaidBlockProps) {
 
   return (
     <div
-      className="docs-mermaid-preview overflow-auto px-4 py-5 [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
+      className="editor-mermaid-preview overflow-auto px-4 py-5 [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full"
       dangerouslySetInnerHTML={{ __html: state.svg ?? '' }}
     />
   );

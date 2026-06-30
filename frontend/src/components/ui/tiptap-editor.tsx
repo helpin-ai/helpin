@@ -15,6 +15,7 @@ import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
 import { diffRemovedInlineAttachmentIds, normalizeInlineAttachmentImageSrcs } from '@/components/pm/editorImageAttachments';
 import { Button } from '@/components/ui/button';
+import { CodeBlockExtension } from '@/components/editor/CodeBlockExtension';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,6 +52,7 @@ import { uploadEditorFile, uploadEditorImage } from '@/hooks/useEditorImageUploa
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { ResizableImageExtension } from './resizable-image-extension';
+import { normalizePastedMarkdownText } from './tiptapMarkdownPaste';
 import {
   getMemberMentionHandle,
   getMentionSuggestions,
@@ -299,11 +301,13 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     const exts = [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
+        codeBlock: false,
         link: {
           openOnClick: false,
           HTMLAttributes: { class: 'text-blue-600 dark:text-blue-400 underline cursor-pointer', target: '_blank', rel: 'noopener noreferrer' },
         },
       }),
+      CodeBlockExtension,
       UnderlineExtension,
       TextColor,
       Placeholder.configure({
@@ -363,6 +367,9 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       attributes: {
         class: 'tiptap prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] px-4 py-3',
       },
+      transformPastedText: (text, plain) => (
+        plain ? text : normalizePastedMarkdownText(text)
+      ),
       handlePaste: (_view, event) => {
         if (!uploadConfigRef.current) return false;
         const items = event.clipboardData?.items;
