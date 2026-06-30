@@ -781,6 +781,10 @@
   gap: 12px;
 }
 
+.helpin-help-links--bottom {
+  margin-top: auto;
+}
+
 .helpin-help-link {
   display: flex;
   align-items: center;

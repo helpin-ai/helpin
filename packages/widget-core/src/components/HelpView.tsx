@@ -29,7 +29,7 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
     <div className="helpin-help-view">
       <div className="helpin-help-header">
         <div className="helpin-help-header-spacer" />
-        <span className="helpin-help-title">Help</span>
+        <span className="helpin-help-title">Help Center</span>
         {onClose ? (
           <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
             <XIcon size={18} />
@@ -39,17 +39,6 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
         )}
       </div>
       <div className="helpin-help-content">
-        <div className="helpin-help-links">
-          <button className="helpin-help-link" onClick={onContact}>
-            <MailIcon size={20} />
-            <div className="helpin-help-link-text">
-              <span className="helpin-help-link-title">Contact us</span>
-              <span className="helpin-help-link-desc">Send us a message and we'll get back to you</span>
-            </div>
-            <ChevronRightIcon size={16} class="helpin-help-link-arrow" />
-          </button>
-        </div>
-
         {!canBrowseDocs && (
           <p className="helpin-help-empty">Articles are not available in this widget yet.</p>
         )}
@@ -96,6 +85,17 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
             </div>
           </div>
         )}
+
+        <div className="helpin-help-links helpin-help-links--bottom">
+          <button className="helpin-help-link" onClick={onContact}>
+            <MailIcon size={20} />
+            <div className="helpin-help-link-text">
+              <span className="helpin-help-link-title">Contact us</span>
+              <span className="helpin-help-link-desc">Send us a message and we'll get back to you</span>
+            </div>
+            <ChevronRightIcon size={16} class="helpin-help-link-arrow" />
+          </button>
+        </div>
       </div>
     </div>
   );
