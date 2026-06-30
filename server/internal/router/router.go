@@ -167,6 +167,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// Help center routes (used by widget-core helpApi.ts)
 		r.Get("/support/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
 		r.Get("/support/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
+		r.Get("/support/help/search", h.SupportInboxWidget.SearchHelpArticles)
 		r.Get("/support/help/articles/{articleKey}", h.SupportInboxWidget.GetHelpArticle)
 		r.Post("/identify", h.SupportInboxWidget.Identify) // SDK identify/lead path
 		if h.SupportAI != nil {
@@ -305,6 +306,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/config", h.SupportInboxWidget.GetConfig)
 			r.Get("/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
 			r.Get("/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
+			r.Get("/help/search", h.SupportInboxWidget.SearchHelpArticles)
 			r.Get("/help/articles/{articleKey}", h.SupportInboxWidget.GetHelpArticle)
 			r.Post("/session", h.SupportInboxWidget.CreateSession)
 			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)

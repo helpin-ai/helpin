@@ -781,8 +781,80 @@
   gap: 12px;
 }
 
-.helpin-help-links--bottom {
-  margin-top: auto;
+.helpin-help-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--helpin-card-border);
+  border-radius: var(--helpin-radius-lg);
+  background: var(--helpin-card-bg);
+  color: var(--helpin-fg-muted);
+  box-shadow: var(--helpin-card-shadow);
+}
+
+.helpin-help-search-icon {
+  flex-shrink: 0;
+}
+
+.helpin-help-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--helpin-fg);
+  font: inherit;
+  font-size: 14px;
+}
+
+.helpin-help-search input::placeholder {
+  color: var(--helpin-fg-muted);
+}
+
+.helpin-help-search-action {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--helpin-fg-muted);
+}
+
+.helpin-help-search-clear {
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.helpin-help-search-clear:hover {
+  background: var(--helpin-bg-secondary);
+  color: var(--helpin-fg);
+}
+
+.helpin-help-search-spinner {
+  position: relative;
+}
+
+.helpin-help-search-spinner::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(148, 163, 184, 0.28);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: helpin-search-spin 0.7s linear infinite;
+}
+
+@keyframes helpin-search-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .helpin-help-link {
@@ -889,17 +961,6 @@
   padding: 0;
 }
 
-.helpin-help-section-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--helpin-fg-secondary);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
 .helpin-help-list {
   display: flex;
   flex-direction: column;
@@ -915,6 +976,7 @@
   color: var(--helpin-fg-muted);
   font-size: 12px;
   line-height: 1.5;
+  text-align: center;
 }
 
 .helpin-help-empty {

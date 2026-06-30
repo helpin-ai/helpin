@@ -256,9 +256,8 @@ describe('ChatWindow', () => {
     expect(handleStartNewConversation).toHaveBeenCalledTimes(1);
   });
 
-  it('starts a fresh conversation from Help contact us', () => {
-    const handleStartNewConversation = vi.fn();
-    const { getByText } = render(
+  it('does not show Contact us in the Help tab', () => {
+    const { getByText, queryByText } = render(
       <ChatWindow
         config={baseConfig}
         messages={[]}
@@ -268,14 +267,12 @@ describe('ChatWindow', () => {
         onQuickReply={() => {}}
         showPreChatForm={false}
         onPreChatSubmit={() => {}}
-        onStartNewConversation={handleStartNewConversation}
       />,
     );
 
     fireEvent.click(getByText('Help center'));
-    fireEvent.click(getByText('Contact us'));
 
-    expect(handleStartNewConversation).toHaveBeenCalledTimes(1);
+    expect(queryByText('Contact us')).toBeNull();
   });
 
   it('starts a fresh conversation from empty Messages view', () => {

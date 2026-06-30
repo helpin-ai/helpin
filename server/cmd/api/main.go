@@ -713,6 +713,7 @@ func main() {
 	supportInboxViewService := service.NewSupportInboxViewService(supportInboxViewRepo, supportConversationRepo, wsPublisher)
 	supportTagService := service.NewSupportTagService(supportTagRepo, supportConversationRepo, wsPublisher)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
+	supportInboxService.SetDocsSearchRepository(docsSearchRepo)
 	supportInboxService.SetSupportTagRepo(supportTagRepo)
 	supportLinkPreviewService := service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs)
 	emailFallbackService := service.NewEmailFallbackService(

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -311,6 +312,43 @@ func (h *SupportInboxWidgetHandler) GetHelpArticles(w http.ResponseWriter, r *ht
 		articles = []model.WidgetHelpArticleSummary{}
 	}
 	writeJSON(w, http.StatusOK, articles)
+}
+
+// SearchHelpArticles handles GET /api/widget/support/help/search?widget_key=...&q=...
+func (h *SupportInboxWidgetHandler) SearchHelpArticles(w http.ResponseWriter, r *http.Request) {
+	widgetKey := widgetKeyFromRequest(r)
+	if widgetKey == "" {
+		writeError(w, http.StatusBadRequest, "widget_key is required")
+		return
+	}
+
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		writeError(w, http.StatusBadRequest, "q is required")
+		return
+	}
+
+	limit := 0
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			limit = n
+		}
+	}
+
+	results, err := h.supportService.SearchWidgetHelpArticles(r.Context(), widgetKey, query, limit)
+	if err != nil {
+		if err.Error() == "widget not found" {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if results == nil {
+		results = []model.WidgetHelpSearchResult{}
+	}
+	writeJSON(w, http.StatusOK, results)
 }
 
 // GetHelpArticle handles GET /api/widget/support/help/articles/{articleKey}?widget_key=...

@@ -423,9 +423,9 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             host={host}
             widgetKey={widgetKey}
             onClose={onClose}
-            onContact={() => handleStartNewConversation('help')}
             onSelectSpace={handleOpenHelpSpace}
             onSelectCollection={handleOpenHelpCollection}
+            onSelectArticle={handleOpenHelpArticle}
           />
         )}
         {activeView === 'help-space' && activeHelpSpace && host && widgetKey && (

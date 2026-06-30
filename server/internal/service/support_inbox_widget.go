@@ -1174,6 +1174,82 @@ func (s *SupportInboxService) ListWidgetHelpArticles(ctx context.Context, widget
 	return withWidgetArticleKeys(articles), nil
 }
 
+// SearchWidgetHelpArticles searches published help-center articles in the docs spaces
+// selected for the widget.
+func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widgetKey, query string, limit int) ([]model.WidgetHelpSearchResult, error) {
+	inst, allowedSpaces, err := s.getAllowedWidgetHelpSpaces(ctx, widgetKey)
+	if err != nil {
+		return nil, err
+	}
+	if s.docsSearchRepo == nil || s.docsHelpcenterRepo == nil {
+		return nil, fmt.Errorf("docs search repository not configured")
+	}
+
+	cfg, err := s.docsHelpcenterRepo.GetConfig(ctx, inst.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	locale := defaultHelpcenterLocale(cfg)
+	if limit <= 0 || limit > 20 {
+		limit = 8
+	}
+
+	results := make([]model.WidgetHelpSearchResult, 0, limit)
+	seen := make(map[string]struct{})
+	for _, space := range allowedSpaces {
+		if len(results) >= limit {
+			break
+		}
+		spaceResults, err := s.docsSearchRepo.PublicSearch(ctx, inst.WorkspaceID, locale, query, space.Slug, limit)
+		if err != nil {
+			return nil, err
+		}
+		for _, result := range spaceResults {
+			if len(results) >= limit {
+				break
+			}
+			articleKey := buildDocsHelpcenterArticleKey(result.Slug, result.PublicID)
+			if articleKey == "" {
+				articleKey = result.ID
+			}
+			if _, ok := seen[articleKey]; ok {
+				continue
+			}
+			seen[articleKey] = struct{}{}
+			results = append(results, model.WidgetHelpSearchResult{
+				ID:             result.ID,
+				Title:          result.Title,
+				Slug:           result.Slug,
+				PublicID:       result.PublicID,
+				ArticleKey:     articleKey,
+				Excerpt:        result.Excerpt,
+				CollectionName: result.CollectionName,
+				SpaceName:      result.SpaceName,
+			})
+		}
+	}
+
+	searchSourceSignal := model.SupportCoverageSourceSelfService
+	if len(results) == 0 && IsMeaningfulCoverageSearchQuery(query) {
+		searchSourceSignal = "no_results"
+	}
+	s.recordSupportEvent(SupportEventInput{
+		WorkspaceID:  inst.WorkspaceID,
+		EventType:    model.SupportEventWidgetSearchPerformed,
+		ActorType:    model.SupportEventActorCustomer,
+		Channel:      "widget",
+		SourceSignal: searchSourceSignal,
+		IssueSummary: query,
+		Metadata: map[string]any{
+			"query":        query,
+			"result_count": len(results),
+			"surface":      "widget_help",
+		},
+	})
+
+	return results, nil
+}
+
 // GetWidgetHelpArticle returns a widget-visible article with rendered HTML content.
 func (s *SupportInboxService) GetWidgetHelpArticle(ctx context.Context, widgetKey, articleKey string) (*model.WidgetHelpArticle, error) {
 	inst, allowedSpaces, err := s.getAllowedWidgetHelpSpaces(ctx, widgetKey)

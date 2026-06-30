@@ -49,6 +49,7 @@ type SupportInboxService struct {
 	docsSpaceRepo           *repository.DocsSpaceRepository
 	docsCollectionRepo      *repository.DocsCollectionRepository
 	docsHelpcenterRepo      *repository.DocsHelpcenterRepository
+	docsSearchRepo          *repository.DocsSearchRepository
 	conversationAgentRunner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)
 	supportAIService        *SupportAIService
 	emailFallbackService    *EmailFallbackService
@@ -68,6 +69,10 @@ type SupportInboxService struct {
 	supportEventRecorder    SupportEventRecorder
 	entitlementSvc          *EntitlementService
 	routeDomain             string
+}
+
+func (s *SupportInboxService) SetDocsSearchRepository(docsSearchRepo *repository.DocsSearchRepository) {
+	s.docsSearchRepo = docsSearchRepo
 }
 
 var ErrInvalidSupportSearch = errors.New("invalid support search")

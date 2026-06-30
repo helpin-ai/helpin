@@ -466,3 +466,99 @@ func TestDocsSearchRepository_PublicSearchUsesStructuredIndex(t *testing.T) {
 		t.Fatalf("second result match snippet is empty: %+v", results[1].Matches[0])
 	}
 }
+
+func TestDocsSearchRepository_PublicSearchMatchesPublishedCollectionName(t *testing.T) {
+	t.Parallel()
+
+	db := setupDocsPublicSearchIndexTestDB(t)
+	now := time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC)
+	repo := NewDocsSearchRepository(db)
+
+	if err := db.Exec(`INSERT INTO docs_helpcenter_space_translations (id, space_id, locale, name, slug, status, published_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, "space-tr-en", "space-1", "en", "Docs", "docs", model.DocsHelpcenterTranslationStatusPublished, now).Error; err != nil {
+		t.Fatalf("seed space translation: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_collections (id, space_id, workspace_id, name, public_id, slug)
+		VALUES (?, ?, ?, ?, ?, ?)`, "collection-analytics", "space-1", "ws-1", "Link Analytics", "colpub1", "analytics").Error; err != nil {
+		t.Fatalf("seed collection: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_helpcenter_collection_translations (id, collection_id, locale, name, slug, status, published_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, "collection-tr-en", "collection-analytics", "en", "Link Analytics", "analytics", model.DocsHelpcenterTranslationStatusPublished, now).Error; err != nil {
+		t.Fatalf("seed collection translation: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status)
+		VALUES (?, ?, ?, ?, ?)`, "doc-analytics", "ws-1", "space-1", "Dashboard overview", model.DocStatusPublished).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_helpcenter_articles (document_id, public_id, public_published_at)
+		VALUES (?, ?, ?)`, "doc-analytics", "pubanalytics", now).Error; err != nil {
+		t.Fatalf("seed helpcenter article: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_helpcenter_article_publications
+		(id, document_id, workspace_id, space_id, collection_id, locale, title, slug, excerpt, content_text, published_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"pub-doc-analytics-en", "doc-analytics", "ws-1", "space-1", "collection-analytics", "en", "Dashboard overview", "dashboard-overview", "Learn dashboard basics", "This article text intentionally omits the collection keyword.", now, now).Error; err != nil {
+		t.Fatalf("seed publication: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_helpcenter_search_entries
+		(id, workspace_id, document_id, locale, entry_key, entry_type, content, position, rank_weight, search_config)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"entry-doc-analytics-title", "ws-1", "doc-analytics", "en", "title:0", model.DocsHelpcenterSearchEntryTypeTitle, "Dashboard overview", 0, 8, "simple").Error; err != nil {
+		t.Fatalf("seed search entry: %v", err)
+	}
+
+	results, err := repo.PublicSearch(context.Background(), "ws-1", "en", "analytics", "docs", 10)
+	if err != nil {
+		t.Fatalf("PublicSearch: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1: %+v", len(results), results)
+	}
+	if results[0].ID != "doc-analytics" {
+		t.Fatalf("result id = %q, want doc-analytics: %+v", results[0].ID, results)
+	}
+	if len(results[0].Matches) == 0 || results[0].Matches[0].EntryType != "collection" {
+		t.Fatalf("matches = %+v, want collection match", results[0].Matches)
+	}
+}
+
+func TestDocsSearchRepository_PublicSearchFallsBackToPublishedArticleTitleWhenIndexMissing(t *testing.T) {
+	t.Parallel()
+
+	db := setupDocsPublicSearchIndexTestDB(t)
+	now := time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC)
+	repo := NewDocsSearchRepository(db)
+
+	if err := db.Exec(`INSERT INTO docs_helpcenter_space_translations (id, space_id, locale, name, slug, status, published_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, "space-tr-en", "space-1", "en", "Docs", "docs", model.DocsHelpcenterTranslationStatusPublished, now).Error; err != nil {
+		t.Fatalf("seed space translation: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status)
+		VALUES (?, ?, ?, ?, ?)`, "doc-title-fallback", "ws-1", "space-1", "Overview of Analytics", model.DocStatusPublished).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_helpcenter_articles (document_id, public_id, public_published_at)
+		VALUES (?, ?, ?)`, "doc-title-fallback", "pubanalytics", now).Error; err != nil {
+		t.Fatalf("seed helpcenter article: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_helpcenter_article_publications
+		(id, document_id, workspace_id, space_id, collection_id, locale, title, slug, excerpt, content_text, published_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"pub-doc-title-fallback-en", "doc-title-fallback", "ws-1", "space-1", nil, "en", "Overview of Analytics", "overview-of-analytics", "Learn reporting basics", "This content intentionally omits the title keyword.", now, now).Error; err != nil {
+		t.Fatalf("seed publication: %v", err)
+	}
+
+	results, err := repo.PublicSearch(context.Background(), "ws-1", "en", "analytics", "docs", 10)
+	if err != nil {
+		t.Fatalf("PublicSearch: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1: %+v", len(results), results)
+	}
+	if results[0].ID != "doc-title-fallback" {
+		t.Fatalf("result id = %q, want doc-title-fallback: %+v", results[0].ID, results)
+	}
+	if len(results[0].Matches) == 0 || results[0].Matches[0].EntryType != model.DocsHelpcenterSearchEntryTypeTitle {
+		t.Fatalf("matches = %+v, want title match", results[0].Matches)
+	}
+}

@@ -1433,6 +1433,18 @@ type WidgetHelpArticleSummary struct {
 	Icon       *string `json:"icon,omitempty"`
 }
 
+// WidgetHelpSearchResult is a widget-scoped help center search hit.
+type WidgetHelpSearchResult struct {
+	ID             string  `json:"id"`
+	Title          string  `json:"title"`
+	Slug           string  `json:"slug"`
+	PublicID       string  `json:"public_id"`
+	ArticleKey     string  `json:"article_key"`
+	Excerpt        *string `json:"excerpt,omitempty"`
+	CollectionName *string `json:"collection_name,omitempty"`
+	SpaceName      string  `json:"space_name,omitempty"`
+}
+
 // WidgetHelpArticle is a widget help article detail response.
 type WidgetHelpArticle struct {
 	ID          string  `json:"id"`

@@ -19,7 +19,10 @@ type DocsSearchRepository struct {
 	db *gorm.DB
 }
 
-const defaultPublicSearchLimit = 20
+const (
+	defaultPublicSearchLimit    = 20
+	publicSearchEntryCollection = "collection"
+)
 
 // NewDocsSearchRepository creates a new DocsSearchRepository.
 func NewDocsSearchRepository(db *gorm.DB) *DocsSearchRepository {
@@ -218,6 +221,16 @@ func (r *DocsSearchRepository) publicSearchPostgres(ctx context.Context, workspa
 	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("docs public search: %w", err)
 	}
+	collectionRows, err := r.publicSearchCollectionRows(ctx, workspaceID, locale, spaceSlug, query)
+	if err != nil {
+		return nil, err
+	}
+	rows = append(rows, collectionRows...)
+	publicationRows, err := r.publicSearchPublicationRows(ctx, workspaceID, locale, spaceSlug, query)
+	if err != nil {
+		return nil, err
+	}
+	rows = append(rows, publicationRows...)
 	matched := make([]publicSearchEntryRow, 0, len(rows))
 	for _, row := range rows {
 		score, ok := fallbackPublicSearchScore(row, query)
@@ -294,6 +307,16 @@ func (r *DocsSearchRepository) publicSearchFallback(ctx context.Context, workspa
 	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("docs public search: %w", err)
 	}
+	collectionRows, err := r.publicSearchCollectionRows(ctx, workspaceID, locale, spaceSlug, query)
+	if err != nil {
+		return nil, err
+	}
+	rows = append(rows, collectionRows...)
+	publicationRows, err := r.publicSearchPublicationRows(ctx, workspaceID, locale, spaceSlug, query)
+	if err != nil {
+		return nil, err
+	}
+	rows = append(rows, publicationRows...)
 
 	matched := make([]publicSearchEntryRow, 0, len(rows))
 	for _, row := range rows {
@@ -306,6 +329,158 @@ func (r *DocsSearchRepository) publicSearchFallback(ctx context.Context, workspa
 	}
 	sortPublicSearchRows(matched, query)
 	return r.groupPublicSearchRows(ctx, matched, locale, query, limit)
+}
+
+func (r *DocsSearchRepository) publicSearchPublicationRows(ctx context.Context, workspaceID, locale, spaceSlug, query string) ([]publicSearchEntryRow, error) {
+	entryContent := `TRIM(COALESCE(p.title, '') || ' ' || COALESCE(p.excerpt, '') || ' ' || COALESCE(p.content_text, ''))`
+	sql := `
+		SELECT
+			p.document_id AS id,
+			p.title AS title,
+			p.slug AS slug,
+			ha.public_id AS public_id,
+			p.locale AS locale,
+			p.excerpt AS excerpt,
+			p.collection_id AS collection_id,
+			ct.name AS collection_name,
+			ct.slug AS collection_slug,
+			cc.public_id AS collection_public_id,
+			st.slug AS space_slug,
+			st.name AS space_name,
+			? AS entry_type,
+			` + entryContent + ` AS entry_content,
+			NULL AS section_title,
+			NULL AS anchor,
+			0 AS position,
+			3 AS score
+		FROM docs_helpcenter_article_publications p
+		JOIN docs_documents d ON d.id = p.document_id
+		JOIN docs_helpcenter_articles ha ON ha.document_id = p.document_id
+		JOIN docs_helpcenter_space_translations st
+			ON st.space_id = p.space_id
+			AND st.locale = p.locale
+			AND st.status = ?
+			AND st.published_at IS NOT NULL
+		LEFT JOIN docs_helpcenter_collection_translations ct
+			ON ct.collection_id = p.collection_id
+			AND ct.locale = p.locale
+			AND ct.status = ?
+			AND ct.published_at IS NOT NULL
+		LEFT JOIN docs_collections cc ON cc.id = p.collection_id AND cc.deleted_at IS NULL
+		WHERE p.workspace_id = ?
+			AND p.locale = ?
+			AND d.deleted_at IS NULL
+			AND d.status = ?
+			AND ha.public_published_at IS NOT NULL
+	`
+	args := []interface{}{
+		model.DocsHelpcenterSearchEntryTypeTitle,
+		model.DocsHelpcenterTranslationStatusPublished,
+		model.DocsHelpcenterTranslationStatusPublished,
+		workspaceID,
+		locale,
+		model.DocStatusPublished,
+	}
+	if spaceSlug != "" {
+		sql += " AND st.slug = ?"
+		args = append(args, spaceSlug)
+	}
+	if r.db.Dialector.Name() == "postgres" {
+		tsQuery := toTSQuery(query)
+		if tsQuery == "" {
+			return nil, nil
+		}
+		sql += `
+			AND (
+				to_tsvector('simple'::regconfig, ` + entryContent + `) @@ to_tsquery('simple'::regconfig, ?)
+				OR word_similarity(?, ` + entryContent + `) >= 0.45
+				OR ` + entryContent + ` ILIKE ?
+			)
+		`
+		args = append(args, tsQuery, query, "%"+query+"%")
+	}
+
+	var rows []publicSearchEntryRow
+	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("docs public publication search: %w", err)
+	}
+	return rows, nil
+}
+
+func (r *DocsSearchRepository) publicSearchCollectionRows(ctx context.Context, workspaceID, locale, spaceSlug, query string) ([]publicSearchEntryRow, error) {
+	entryContent := `TRIM(COALESCE(ct.name, '') || ' ' || COALESCE(ct.slug, ''))`
+	sql := `
+		SELECT
+			p.document_id AS id,
+			p.title AS title,
+			p.slug AS slug,
+			ha.public_id AS public_id,
+			p.locale AS locale,
+			p.excerpt AS excerpt,
+			p.collection_id AS collection_id,
+			ct.name AS collection_name,
+			ct.slug AS collection_slug,
+			cc.public_id AS collection_public_id,
+			st.slug AS space_slug,
+			st.name AS space_name,
+			? AS entry_type,
+			` + entryContent + ` AS entry_content,
+			NULL AS section_title,
+			NULL AS anchor,
+			0 AS position,
+			5 AS score
+		FROM docs_helpcenter_article_publications p
+		JOIN docs_documents d ON d.id = p.document_id
+		JOIN docs_helpcenter_articles ha ON ha.document_id = p.document_id
+		JOIN docs_collections cc ON cc.id = p.collection_id AND cc.deleted_at IS NULL
+		JOIN docs_helpcenter_collection_translations ct
+			ON ct.collection_id = p.collection_id
+			AND ct.locale = p.locale
+			AND ct.status = ?
+			AND ct.published_at IS NOT NULL
+		JOIN docs_helpcenter_space_translations st
+			ON st.space_id = p.space_id
+			AND st.locale = p.locale
+			AND st.status = ?
+			AND st.published_at IS NOT NULL
+		WHERE p.workspace_id = ?
+			AND p.locale = ?
+			AND d.deleted_at IS NULL
+			AND d.status = ?
+			AND ha.public_published_at IS NOT NULL
+	`
+	args := []interface{}{
+		publicSearchEntryCollection,
+		model.DocsHelpcenterTranslationStatusPublished,
+		model.DocsHelpcenterTranslationStatusPublished,
+		workspaceID,
+		locale,
+		model.DocStatusPublished,
+	}
+	if spaceSlug != "" {
+		sql += " AND st.slug = ?"
+		args = append(args, spaceSlug)
+	}
+	if r.db.Dialector.Name() == "postgres" {
+		tsQuery := toTSQuery(query)
+		if tsQuery == "" {
+			return nil, nil
+		}
+		sql += `
+			AND (
+				to_tsvector('simple'::regconfig, ` + entryContent + `) @@ to_tsquery('simple'::regconfig, ?)
+				OR word_similarity(?, ` + entryContent + `) >= 0.45
+				OR ` + entryContent + ` ILIKE ?
+			)
+		`
+		args = append(args, tsQuery, query, "%"+query+"%")
+	}
+
+	var rows []publicSearchEntryRow
+	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("docs public collection search: %w", err)
+	}
+	return rows, nil
 }
 
 func (r *DocsSearchRepository) groupPublicSearchRows(ctx context.Context, rows []publicSearchEntryRow, locale, query string, limit int) ([]model.PublicSearchResultResponse, error) {
@@ -399,6 +574,9 @@ func fallbackPublicSearchScore(row publicSearchEntryRow, query string) (float64,
 	if row.EntryType == model.DocsHelpcenterSearchEntryTypeTitle {
 		score += 4
 	}
+	if row.EntryType == publicSearchEntryCollection {
+		score += 3
+	}
 	return score, true
 }
 
@@ -420,6 +598,8 @@ func publicSearchRowSortScore(row publicSearchEntryRow, query string) float64 {
 		score += 6
 	case model.DocsHelpcenterSearchEntryTypeHeading:
 		score += 3
+	case publicSearchEntryCollection:
+		score += 5
 	}
 	snippet := buildPublicSearchSnippet(row.EntryContent, query)
 	if strings.Contains(snippet, "<mark>") {
