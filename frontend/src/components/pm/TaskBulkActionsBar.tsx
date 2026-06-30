@@ -127,6 +127,26 @@ export function resolveTeamWorkflow(
 }
 
 /**
+ * Resolves the workflow that owns the selected tasks' current statuses. List
+ * views can be scoped by a page-level workflow while still showing tasks from
+ * team workflows, so status edits should follow the selected task when the
+ * selection is unambiguous.
+ */
+export function resolveSelectionWorkflow(
+  selectedTasks: Pick<Task, 'workflow_id'>[],
+  workflows: WorkflowWithStates[] | undefined,
+  fallbackWorkflow: WorkflowWithStates,
+): WorkflowWithStates {
+  if (selectedTasks.length === 0) return fallbackWorkflow;
+  const firstWorkflowId = selectedTasks[0]?.workflow_id;
+  if (!firstWorkflowId) return fallbackWorkflow;
+  if (selectedTasks.some((task) => task.workflow_id !== firstWorkflowId)) {
+    return fallbackWorkflow;
+  }
+  return workflows?.find((candidate) => candidate.workflow.id === firstWorkflowId) ?? fallbackWorkflow;
+}
+
+/**
  * Builds the per-task UpdateTaskRequest from staged changes.
  *
  * On a team change the backend revalidates the task's existing epic/sprint and
@@ -278,7 +298,7 @@ export function TaskBulkActionsBar({
 
   const effectiveWorkflow = teamChanged
     ? resolveTeamWorkflow(workflows, stagedTeamId)
-    : workflow;
+    : resolveSelectionWorkflow(selectedTasks, workflows, workflow);
   const effectiveSprints = teamChanged ? (teamSprintsQuery.data ?? EMPTY_SPRINTS) : sprints;
   const effectiveEpics = teamChanged ? (teamEpicsQuery.data ?? EMPTY_EPICS) : epics;
   const effectiveLabels = teamChanged ? (teamLabelsQuery.data ?? EMPTY_LABELS) : labels;

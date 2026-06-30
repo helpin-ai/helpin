@@ -29,6 +29,7 @@ import {
   TaskBulkActionsBar,
   BULK_SOFT_CAP,
   buildBulkPatch,
+  resolveSelectionWorkflow,
   resolveTeamWorkflow,
   deriveSetField,
   getLabelIdsAfterAdd,
@@ -264,6 +265,55 @@ describe('resolveTeamWorkflow', () => {
   it('returns null for empty / undefined inputs', () => {
     expect(resolveTeamWorkflow([], 'team-a')).toBeNull();
     expect(resolveTeamWorkflow(undefined, 'team-a')).toBeNull();
+  });
+});
+
+describe('resolveSelectionWorkflow', () => {
+  const wf = (id: string, stateId: string, teamId?: string): WorkflowWithStates => ({
+    workflow: {
+      id,
+      workspace_id: 'ws-1',
+      name: id,
+      description: '',
+      team_id: teamId,
+      auto_assign_owner: false,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+    states: [
+      {
+        id: stateId,
+        workflow_id: id,
+        name: `${id} status`,
+        state_type: 'unstarted',
+        position: 1,
+        is_default: true,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ],
+  });
+
+  it('uses the selected task workflow before the page fallback workflow', () => {
+    const defaultWorkflow = wf('default-workflow', 'default-state');
+    const teamWorkflow = wf('team-workflow', 'team-state', 'team-a');
+    const task = {
+      ...baseTask,
+      workflow_id: 'team-workflow',
+      workflow_state_id: 'team-state',
+      team_id: 'team-a',
+    };
+
+    expect(resolveSelectionWorkflow([task], [defaultWorkflow, teamWorkflow], defaultWorkflow)?.workflow.id).toBe('team-workflow');
+  });
+
+  it('falls back to the page workflow when selected tasks span workflows', () => {
+    const defaultWorkflow = wf('default-workflow', 'default-state');
+    const teamWorkflow = wf('team-workflow', 'team-state', 'team-a');
+    const taskA = { ...baseTask, id: 'task-a', workflow_id: 'team-workflow', workflow_state_id: 'team-state' };
+    const taskB = { ...baseTask, id: 'task-b', workflow_id: 'default-workflow', workflow_state_id: 'default-state' };
+
+    expect(resolveSelectionWorkflow([taskA, taskB], [defaultWorkflow, teamWorkflow], defaultWorkflow)?.workflow.id).toBe('default-workflow');
   });
 });
 
