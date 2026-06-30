@@ -12,6 +12,8 @@ The current Helpin support inbox has a compact scoped search inside the conversa
 
 This feature adds a dedicated global search surface for support conversations. It searches across accessible inboxes and returns ranked, filterable results with snippets, highlights, result counts, status, assignment, and conversation display numbers.
 
+The implementation should stay deliberately small: no async indexer, no Temporal workflow, no GORM hooks, and no separate search-entry table in v1. Search uses generated/search-vector columns and expression indexes that are maintained by PostgreSQL.
+
 ## Product Goals
 
 - Let support users find historical conversations quickly by customer email, conversation number, title, or message content.
@@ -50,6 +52,8 @@ This feature adds a dedicated global search surface for support conversations. I
 - Message content is not searched.
 - Sorting is `updated_at DESC` or `updated_at ASC`, not relevance.
 - The list response returns conversations, not search-specific snippets or highlights.
+
+`SupportConversation` serializes from `server/internal/model/support_inbox.go` and is already used by the existing list/detail APIs and frontend type `frontend/src/lib/pm-types/support.ts`.
 
 ## Target UX
 
@@ -97,6 +101,8 @@ Global search is a full workspace, not a narrow conversation-list mode.
 - Title/subject is included in global keyword search.
 - A `Title` filter narrows keyword matching to conversation title/subject.
 - Message body search includes non-deleted support reply content and non-deleted internal notes. System messages and deleted messages are excluded.
+- Internal-note snippets are only returned if the actor can view internal notes. Today that follows `support.read`, because conversation messages are already readable with `PermSupportRead`; if a narrower note permission is added later, search must use that narrower permission. When the actor cannot view note text, a note-only match may still return the conversation row, but the snippet/highlight must fall back to subject/customer fields or be blank.
+- Empty `q` with no filters is invalid and returns `400`. Empty `q` with at least one filter is valid and returns newest matching conversations.
 
 ### Filters
 
@@ -104,14 +110,17 @@ V1 filters:
 
 - `All`: no entity type restriction. Since Helpin only has conversations in this module today, this means all accessible support conversations.
 - `Assigned to`: current user, unassigned, specific teammate.
-- `Team inbox`: shared inbox or one or more accessible team inboxes.
+- `Team inbox`: shared inbox or one or more accessible team inboxes. In API params, `shared` is the public sentinel for `support_conversations.mailbox_id IS NULL`; it is never treated as a literal mailbox UUID.
 - `Tag`: conversation tags.
 - `User`: exact customer email or CRM contact where available.
 - `Created`: date presets and custom date range over `support_conversations.created_at`.
 - `Status`: open, waiting on customer, resolved, spam.
 - `Priority`: low, medium, high, urgent.
 - `Title`: title-specific text matching.
-- `AI state`: supported under `+ filters` using existing AI handling, handoff, and resolved states.
+- `AI state`: supported under `+ filters` using the existing repository predicates:
+  - `handling` maps to active AI handling: `human_takeover=false` and `flow_state='ai_handling'` or pending AI fallback.
+  - `handoff` maps to AI escalation / requested human / queued-for-human conditions.
+  - `resolved` maps to AI-resolved conditions: `human_takeover=false` and `flow_state='resolved_by_ai'` or `ai_state='resolved'`.
 
 Future filters:
 
@@ -157,6 +166,14 @@ Optional query params:
 - `title`
 - `ai`: existing AI filter values such as `handling`, `handoff`, `resolved`
 
+Limits and validation:
+
+- `q`, `title`, and `customer_email` are trimmed and capped at 256 characters.
+- `per_page` defaults to 50 and is capped at 50.
+- `page` must be positive.
+- A quoted phrase query supports one exact phrase in v1. Multiple quoted phrases are rejected with `400` rather than converted into a pathological search query.
+- Either `q` or at least one filter is required. Requests with neither `q` nor filters return `400`.
+
 Response shape:
 
 ```json
@@ -168,7 +185,11 @@ Response shape:
       "matched_fields": ["title", "message", "customer_email"],
       "snippet": "Adding teammates to project...",
       "highlights": [
-        { "field": "message", "fragments": ["Adding teammates to <mark>project</mark>..."] }
+        {
+          "field": "message",
+          "text": "Adding teammates to project...",
+          "ranges": [{ "start": 20, "end": 27 }]
+        }
       ],
       "score": 0.82
     }
@@ -179,12 +200,16 @@ Response shape:
   "total_pages": 4,
   "meta": {
     "sort": "relevance",
-    "query": "project"
+    "query": "project",
+    "total_capped": false,
+    "total_cap": 1000
   }
 }
 ```
 
 The response intentionally wraps a normal `SupportConversation` so existing row rendering and navigation can reuse known types while search-specific fields remain separate.
+
+`total` is exact up to 1000. For larger result sets, the repository counts to 1001, returns `total: 1000`, `meta.total_capped: true`, and the UI renders `1000+ results found`. `total_pages` is computed from the capped total.
 
 ### Query Semantics
 
@@ -229,32 +254,39 @@ Search must apply the same mailbox access rules as conversation listing:
 
 ### Search Indexing and Migration
 
-Add a dbmigrate SQL migration for production search performance and stable snippets.
+Add a dbmigrate SQL migration for production search performance. V1 does not add a materialized search table.
 
-V1 uses a materialized support search table rather than joining every matching message at query time:
+Conversation-level search uses a stored generated `tsvector` column on `support_conversations`:
 
-```text
-support_conversation_search_entries
-- conversation_id uuid primary key references support_conversations(id) on delete cascade
-- workspace_id uuid not null
-- subject text not null default ''
-- customer_name text not null default ''
-- customer_email text not null default ''
-- display_id_text text not null default ''
-- message_text text not null default ''
-- search_vector tsvector not null default ''::tsvector
-- last_message_at timestamptz
-- refreshed_at timestamptz not null default now()
+```sql
+search_vector tsvector GENERATED ALWAYS AS (
+  setweight(to_tsvector('simple', coalesce(subject, '')), 'A') ||
+  setweight(to_tsvector('simple', coalesce(customer_email, '')), 'A') ||
+  setweight(to_tsvector('simple', display_id::text), 'A') ||
+  setweight(to_tsvector('simple', coalesce(customer_name, '')), 'B')
+) STORED
 ```
 
-The migration creates the table, backfills existing conversations from non-deleted reply/internal-note messages, and adds indexes:
+Message-level search uses a stored generated `tsvector` column on `support_messages`:
 
-- GIN index on `search_vector`
-- trigram indexes on `customer_email`, `subject`, and `message_text`
-- B-tree indexes on `workspace_id`, `conversation_id`, and `last_message_at`
-- existing conversation table indexes continue to cover status, priority, assignment, mailbox, display ID, created date, and updated date filters
+```sql
+search_vector tsvector GENERATED ALWAYS AS (
+  to_tsvector('simple', coalesce(content, ''))
+) STORED
+```
 
-Repository/service writes refresh the entry after conversation subject/customer fields change and after support messages are created, edited, or deleted. A query-time fallback refreshes a missing entry for a matched conversation so older or partially migrated data can self-heal.
+Indexes:
+
+- GIN index on `support_conversations.search_vector`
+- GIN index on `support_messages.search_vector`
+- trigram indexes on `support_conversations.customer_email`, `support_conversations.subject`, and `support_messages.content`
+- B-tree indexes for common filters if missing: `workspace_id`, `display_id`, `created_at`, `updated_at`, `status`, `priority`, `assigned_user_id`, `mailbox_id`, plus `support_messages(workspace_id, conversation_id, created_at)`
+
+PostgreSQL maintains generated vectors synchronously with row writes, so there is no refresh hook, trigger, async job, or drift-prone application-maintained column. Existing rows are computed by PostgreSQL when the generated columns are added. If generated `tsvector` columns are not supported by the target Postgres version, the implementation should use equivalent expression GIN indexes instead, not a separate denormalized table.
+
+Snippets are produced at query time from the highest-ranked matching field/message using `ts_headline` or a safe application-side range builder. The API still returns plain text plus highlight ranges, never HTML.
+
+Backfill rollout is limited to adding generated columns and indexes. It should run as a normal dbmigrate migration using `IF NOT EXISTS`; no separate background job is required for v1.
 
 ## Frontend Design
 
@@ -300,7 +332,8 @@ Create focused components:
   - desktop table rows
   - mobile stacked rows
 - `SupportSearchHighlight`
-  - renders trusted text fragments by escaping text and only allowing generated mark ranges, not raw HTML from backend
+  - renders plain text with highlight ranges from the backend
+  - escapes all text and inserts local `<mark>` elements by offsets; it never renders backend HTML
 
 ### UI Details
 
@@ -337,10 +370,19 @@ Frontend:
 - result table rendering with highlights
 - empty/loading/error states
 - clicking a result navigates to the conversation detail route
+- internal-note matches do not expose note snippets when the actor lacks note visibility
+
+Performance:
+
+- backend caps counts at 1000 and exposes `total_capped`
+- backend rejects overlong queries and multiple quoted phrases
+- search endpoint returns within the same order of magnitude as the existing conversation list for filters-only searches, and should have indexed query plans for keyword searches
+- migration tests or SQL validation should confirm generated columns/indexes are idempotent
 
 ## Rollout Notes
 
-- No feature flag is required unless the search query needs a heavy new materialized index/table.
+- No feature flag is required.
 - Keep existing scoped list search as-is for users working inside a view.
 - The visible sidebar `Search` item becomes route navigation to global search. The conversation-list search icon remains scoped to the active view.
 - Global search should be additive and should not change unread counts, inbox list selection, or current custom view behavior.
+- No long-running backfill job is expected. The migration adds generated columns and indexes; index build time depends on message volume, so stage should run the migration before production rollout.
