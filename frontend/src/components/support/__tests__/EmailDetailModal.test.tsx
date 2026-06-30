@@ -1,0 +1,114 @@
+// @vitest-environment jsdom
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import type { SupportMessage, SupportMessageEmailDetail } from '@/lib/pmTypes'
+import { EmailDetailModal } from '../EmailDetailModal'
+
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+const mockUseMessageEmailDetail = vi.fn()
+
+vi.mock('@/hooks/queries/useSupport', () => ({
+  useMessageEmailDetail: (...args: unknown[]) => mockUseMessageEmailDetail(...args),
+}))
+
+vi.mock('@/components/ui/dialog', () => ({
+  Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) => (open ? <div>{children}</div> : null),
+  DialogContent: ({ children, className }: { children: React.ReactNode; className?: string }) => <section className={className}>{children}</section>,
+  DialogTitle: ({ children, className }: { children: React.ReactNode; className?: string }) => <h2 className={className}>{children}</h2>,
+}))
+
+vi.mock('../EmailBodyRenderer', () => ({
+  EmailBodyRenderer: ({ html, collapsedByDefault }: { html: string; collapsedByDefault?: boolean }) => (
+    <div data-collapsed-by-default={String(!!collapsedByDefault)} dangerouslySetInnerHTML={{ __html: html }} />
+  ),
+}))
+
+const baseMessage: SupportMessage = {
+  id: 'message-1',
+  workspace_id: 'workspace-1',
+  conversation_id: 'conversation-1',
+  sender_type: 'customer',
+  sender_display_name: 'Taylor Visitor',
+  content: 'fallback body',
+  message_type: 'reply',
+  is_internal: false,
+  via_channel: 'email',
+  created_at: '2026-06-02T10:14:00.000Z',
+  updated_at: '2026-06-02T10:14:00.000Z',
+}
+
+function renderModal(detail: SupportMessageEmailDetail) {
+  mockUseMessageEmailDetail.mockReturnValue({ data: detail, isLoading: false, isError: false })
+
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+
+  act(() => {
+    root.render(
+      <EmailDetailModal
+        workspaceId="workspace-1"
+        message={baseMessage}
+        open
+        onOpenChange={() => undefined}
+      />,
+    )
+  })
+
+  return {
+    container,
+    cleanup: () => {
+      act(() => {
+        root.unmount()
+      })
+      container.remove()
+    },
+  }
+}
+
+afterEach(() => {
+  mockUseMessageEmailDetail.mockReset()
+})
+
+describe('EmailDetailModal', () => {
+  it('shows available headers, technical details, and full email body by default', () => {
+    const rendered = renderModal({
+      id: 'log-1',
+      message_id: 'message-1',
+      direction: 'inbound',
+      subject: 'Website inquiry',
+      from_email: 'Acme Contact Form <website@acme.com>',
+      reply_to: 'Taylor Visitor <taylor.visitor@example.com>',
+      to_email: 'Helpin Support <inbox@acme.on.helpin.email>',
+      cc_emails: ['sales@acme.com'],
+      bcc_emails: ['audit@acme.com'],
+      rfc_message_id: '<message-1@acme.com>',
+      in_reply_to: '<prior@customer.example>',
+      references_header: '<root@customer.example> <prior@customer.example>',
+      stripped_text: 'Visible body\n\nOn Monday, prior quote',
+      html_body: '<p>Visible body</p><blockquote>Prior quoted content</blockquote>',
+      status: 'sent',
+      created_at: '2026-06-02T10:14:00.000Z',
+    })
+
+    expect(rendered.container.textContent).toContain('From')
+    expect(rendered.container.textContent).toContain('website@acme.com')
+    expect(rendered.container.textContent).toContain('Reply-To')
+    expect(rendered.container.textContent).toContain('taylor.visitor@example.com')
+    expect(rendered.container.textContent).toContain('Cc')
+    expect(rendered.container.textContent).toContain('sales@acme.com')
+    expect(rendered.container.textContent).toContain('Bcc')
+    expect(rendered.container.textContent).toContain('audit@acme.com')
+    expect(rendered.container.textContent).toContain('Technical details')
+    expect(rendered.container.textContent).toContain('<message-1@acme.com>')
+    expect(rendered.container.textContent).toContain('<prior@customer.example>')
+    expect(rendered.container.querySelector('[data-collapsed-by-default]')?.getAttribute('data-collapsed-by-default')).toBe('false')
+    expect(rendered.container.innerHTML).toContain('Prior quoted content')
+    expect(rendered.container.textContent).not.toContain('Show technical details')
+
+    rendered.cleanup()
+  })
+})

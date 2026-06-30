@@ -2636,6 +2636,87 @@ func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) 
 	}
 }
 
+func TestEmailFallbackProcessInboundEmailRouteUsesReplyToForContactFormCustomer(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID:             "a1111111-1111-1111-1111-111111111112",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-contactform",
+		InboundAddress: "inbox@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "website@acme.com", Name: "Acme Contact Form"},
+		To:                route.InboundAddress,
+		OriginalRecipient: route.InboundAddress,
+		Subject:           "Website inquiry",
+		MessageID:         "pm-route-contact-form-1",
+		StrippedTextReply: "Can someone contact me about pricing?",
+		Headers: []model.PostmarkHeader{
+			{Name: "Reply-To", Value: "Taylor Visitor <taylor.visitor@example.com>"},
+			{Name: "Message-ID", Value: "<contact-form-1@acme.com>"},
+		},
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-contact-form-1"}`); err != nil {
+		t.Fatalf("process routed inbound email: %v", err)
+	}
+
+	resp, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 || len(resp) != 1 {
+		t.Fatalf("expected 1 conversation, got total=%d len=%d", total, len(resp))
+	}
+	conv := resp[0]
+	if conv.CustomerEmail == nil || *conv.CustomerEmail != "taylor.visitor@example.com" {
+		t.Fatalf("customer email = %#v, want reply-to visitor", conv.CustomerEmail)
+	}
+	if conv.CustomerName == nil || *conv.CustomerName != "Taylor Visitor" {
+		t.Fatalf("customer name = %#v, want reply-to display name", conv.CustomerName)
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conv.ID)
+	if err != nil {
+		t.Fatalf("list email logs: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 email log, got %d", len(logs))
+	}
+	if logs[0].FromEmail != "website@acme.com" {
+		t.Fatalf("from email = %q, want original contact form sender", logs[0].FromEmail)
+	}
+	if logs[0].ReplyTo != "Taylor Visitor <taylor.visitor@example.com>" {
+		t.Fatalf("reply-to = %q, want visitor header", logs[0].ReplyTo)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conv.ID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(messages))
+	}
+	detail, err := env.service.supportInboxService.GetMessageEmailDetail(ctx, workspaceID, messages[0].ID)
+	if err != nil {
+		t.Fatalf("get message email detail: %v", err)
+	}
+	if detail.ReplyTo != "Taylor Visitor <taylor.visitor@example.com>" {
+		t.Fatalf("detail reply-to = %q, want visitor header", detail.ReplyTo)
+	}
+}
+
 func TestEmailFallbackProcessInboundEmailRouteUsesForwardedOriginalSender(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()

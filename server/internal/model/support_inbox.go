@@ -258,6 +258,7 @@ type SupportMessage struct {
 	// email's delivery failed. Empty otherwise.
 	EmailDeliveryError string          `json:"email_delivery_error,omitempty" gorm:"-"`
 	EmailTo            string          `json:"email_to,omitempty" gorm:"-"`
+	EmailReplyTo       string          `json:"email_reply_to,omitempty" gorm:"-"`
 	EmailCC            DocsStringArray `json:"email_cc,omitempty" gorm:"-"`
 	EmailBCC           DocsStringArray `json:"email_bcc,omitempty" gorm:"-"`
 }

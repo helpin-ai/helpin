@@ -2908,7 +2908,7 @@ func (s *EmailFallbackService) resolveInboundFallbackConversation(ctx context.Co
 	if s == nil || s.convRepo == nil || route == nil {
 		return nil, nil
 	}
-	senderEmail := strings.TrimSpace(inboundEmailAddress(payload))
+	senderEmail := strings.TrimSpace(inboundEffectiveCustomerEmail(payload))
 	if senderEmail == "" {
 		return nil, nil
 	}
@@ -2950,6 +2950,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	if senderName == "" {
 		senderName = fromEmail
 	}
+	replyToRaw, replyToEmail, replyToName := inboundReplyToAddress(payload)
 
 	settings, err := s.loadSettings(ctx, route.WorkspaceID)
 	if err != nil {
@@ -2985,6 +2986,12 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		}
 		effectiveSenderName = strings.TrimSpace(forwardedAttribution.OriginalName)
 		effectiveSenderEmail = strings.TrimSpace(forwardedAttribution.OriginalEmail)
+		if effectiveSenderName == "" {
+			effectiveSenderName = effectiveSenderEmail
+		}
+	} else if replyToEmail != "" {
+		effectiveSenderEmail = replyToEmail
+		effectiveSenderName = replyToName
 		if effectiveSenderName == "" {
 			effectiveSenderName = effectiveSenderEmail
 		}
@@ -3113,6 +3120,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 			MessageIDs:        model.DocsStringArray{message.ID},
 			FromEmail:         fromEmail,
 			ToEmail:           strings.TrimSpace(payload.To),
+			ReplyTo:           replyToRaw,
 			RecipientAddress:  recipientAddress,
 			Subject:           subject,
 			RFCMessageID:      rfcMessageID,
@@ -3183,6 +3191,31 @@ func inboundEmailAddress(payload model.PostmarkInboundPayload) string {
 		return strings.TrimSpace(addr.Address)
 	}
 	return strings.TrimSpace(payload.From)
+}
+
+func inboundEffectiveCustomerEmail(payload model.PostmarkInboundPayload) string {
+	_, replyToEmail, _ := inboundReplyToAddress(payload)
+	if replyToEmail != "" {
+		return replyToEmail
+	}
+	return inboundEmailAddress(payload)
+}
+
+func inboundReplyToAddress(payload model.PostmarkInboundPayload) (raw, emailAddress, displayName string) {
+	raw = strings.TrimSpace(payload.ReplyTo)
+	if raw == "" {
+		raw = strings.TrimSpace(inboundHeaderValue(payload.Headers, "Reply-To"))
+	}
+	if raw == "" {
+		return "", "", ""
+	}
+	if addresses, err := mail.ParseAddressList(raw); err == nil && len(addresses) > 0 {
+		return raw, strings.TrimSpace(addresses[0].Address), strings.TrimSpace(addresses[0].Name)
+	}
+	if addr, err := mail.ParseAddress(raw); err == nil {
+		return raw, strings.TrimSpace(addr.Address), strings.TrimSpace(addr.Name)
+	}
+	return raw, "", ""
 }
 
 func mailboxHashFromInboundPayload(payload model.PostmarkInboundPayload) string {

@@ -45,6 +45,7 @@ type SupportMessageEmailDetail struct {
 	Subject              string                       `json:"subject"`
 	FromEmail            string                       `json:"from_email"`
 	ToEmail              string                       `json:"to_email"`
+	ReplyTo              string                       `json:"reply_to,omitempty"`
 	CCEmails             DocsStringArray              `json:"cc_emails,omitempty"`
 	BCCEmails            DocsStringArray              `json:"bcc_emails,omitempty"`
 	RFCMessageID         string                       `json:"rfc_message_id,omitempty"`

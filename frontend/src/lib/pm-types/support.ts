@@ -498,6 +498,8 @@ export interface SupportMessage {
   email_delivery_error?: string;
   /** Primary outbound email recipient, populated for messages sent via email. */
   email_to?: string;
+  /** Reply-To header for inbound email messages, when present. */
+  email_reply_to?: string;
   /** Outbound email CC recipients, populated for messages sent via email. */
   email_cc?: string[];
   /** Outbound email BCC recipients, populated for messages sent via email. */
@@ -548,6 +550,9 @@ export interface SupportMessageEmailDetail {
   subject: string;
   from_email: string;
   to_email: string;
+  reply_to?: string;
+  cc_emails?: string[];
+  bcc_emails?: string[];
   rfc_message_id?: string;
   in_reply_to?: string;
   references_header?: string;

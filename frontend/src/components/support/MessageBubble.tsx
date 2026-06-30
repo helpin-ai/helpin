@@ -62,6 +62,13 @@ function firstDisplayNamePart(name?: string | null): string {
   return name?.trim().split(/\s+/)[0] ?? '';
 }
 
+function emailAddressFromHeader(value?: string | null): string {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return '';
+  const match = trimmed.match(/<([^>]+)>/);
+  return (match?.[1] ?? trimmed).trim();
+}
+
 function supportSystemEventDisplayContent(eventType: string | undefined, content: string, senderName: string): string {
   const actor = firstDisplayNamePart(senderName);
   switch (eventType) {
@@ -673,6 +680,10 @@ export const MessageBubble = memo(function MessageBubble({
   );
 
   const hasEmailBadge = message.via_channel === 'email';
+  const inboundReplyToEmail = isCustomer ? emailAddressFromHeader(message.email_reply_to) : '';
+  const inboundEmailBadgeLabel = inboundReplyToEmail
+    ? `Received by email from ${inboundReplyToEmail}`
+    : 'Received via email';
   const hasEmailReceiptStatus = receiptStatus === 'sent_email' || receiptStatus === 'delivered_email' || receiptStatus === 'read_email';
   const showStandaloneEmailBadge = hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);
   const emailReceiptCanOpenDetails = hasEmailBadge && hasEmailReceiptStatus && !isCustomer;
@@ -820,7 +831,7 @@ export const MessageBubble = memo(function MessageBubble({
                   <Mail01Icon className="h-3 w-3" />
                   {forwardedAttribution && isCustomer
                     ? `Forwarded by ${forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}`
-                    : isCustomer ? 'Received via email' : 'Sent via email'}
+                    : isCustomer ? inboundEmailBadgeLabel : 'Sent via email'}
                 </button>
               </div>
             </div>

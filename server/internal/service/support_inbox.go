@@ -296,6 +296,7 @@ func (s *SupportInboxService) GetMessageEmailDetail(ctx context.Context, workspa
 		Subject:              log.Subject,
 		FromEmail:            log.FromEmail,
 		ToEmail:              log.ToEmail,
+		ReplyTo:              log.ReplyTo,
 		CCEmails:             log.CCEmails,
 		BCCEmails:            log.BCCEmails,
 		RFCMessageID:         log.RFCMessageID,
@@ -1627,6 +1628,7 @@ func hydrateEmailBodies(
 		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
 			messages[i].HTMLBody = log.HTMLBody
 			messages[i].StrippedText = log.StrippedText
+			messages[i].EmailReplyTo = log.ReplyTo
 		}
 		if log.Direction == "outbound" {
 			messages[i].EmailDeliveryStatus = log.Status
