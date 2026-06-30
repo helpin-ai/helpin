@@ -744,7 +744,8 @@
 }
 
 .helpin-help-header-spacer {
-  width: 28px;
+  width: 32px;
+  flex: 0 0 32px;
 }
 
 .helpin-help-header-copy {
