@@ -8,6 +8,10 @@ const routerMocks = vi.hoisted(() => ({
   search: {} as Record<string, unknown>,
 }))
 
+const supportMocks = vi.hoisted(() => ({
+  searchResponse: undefined as unknown,
+}))
+
 vi.mock('@tanstack/react-router', async () => {
   const actual = await vi.importActual<typeof import('@tanstack/react-router')>('@tanstack/react-router')
   return {
@@ -31,7 +35,7 @@ vi.mock('@/hooks/queries/useSupport', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/queries/useSupport')>('@/hooks/queries/useSupport')
   return {
     ...actual,
-    useSupportConversationSearch: vi.fn(() => ({ data: undefined, isFetching: false, error: null })),
+    useSupportConversationSearch: vi.fn(() => ({ data: supportMocks.searchResponse, isFetching: false, error: null })),
     useSupportMailboxes: vi.fn(() => ({ data: [] })),
     useSupportTags: vi.fn(() => ({ data: [] })),
   }
@@ -96,6 +100,7 @@ describe('SupportSearchToolbar', () => {
     document.body.innerHTML = ''
     routerMocks.search = {}
     routerMocks.navigate.mockClear()
+    supportMocks.searchResponse = undefined
   })
 
   it('keeps primary search above the epics-style filter row', () => {
@@ -132,6 +137,67 @@ describe('SupportSearchToolbar', () => {
 
     expect(container.textContent).not.toContain('Search all support conversations')
     expect(container.textContent).not.toContain('Search every support conversation')
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('renders search results as a structured row list with a dedicated match column', () => {
+    routerMocks.search = { q: 'refund', per_page: 50, page: 1 }
+    supportMocks.searchResponse = {
+      data: [{
+        conversation: {
+          id: 'conv-1',
+          workspace_id: 'ws-1',
+          display_id: 842,
+          subject: 'Refund request for annual plan',
+          status: 'open',
+          priority: 'high',
+          source: 'email',
+          customer_name: 'Ada Lovelace',
+          customer_email: 'ada@example.com',
+          mailbox_name: 'Billing',
+          last_message: 'I need help with a refund',
+          created_at: '2026-06-29T12:00:00Z',
+          updated_at: '2026-06-30T05:30:00Z',
+        },
+        display_id: 842,
+        matched_fields: ['message'],
+        snippet: 'I need help with a refund',
+        highlights: [{
+          field: 'message',
+          text: 'I need help with a refund',
+          ranges: [{ start: 19, end: 25 }],
+        }],
+        score: 42,
+      }],
+      total: 1,
+      page: 1,
+      per_page: 50,
+      total_pages: 1,
+      meta: { sort: 'relevance', query: 'refund', total_capped: false, total_cap: 1000 },
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<SupportSearchPage />)
+    })
+
+    const results = container.querySelector('[data-slot="support-search-results"]')
+    const row = container.querySelector('[data-slot="support-search-result-row"]')
+
+    expect(results).toBeTruthy()
+    for (const heading of ['Conversation', 'Match', 'Customer', 'State', 'Updated']) {
+      expect(results?.textContent).toContain(heading)
+    }
+    expect(row?.textContent).toContain('#842')
+    expect(row?.textContent).toContain('Refund request for annual plan')
+    expect(row?.textContent).toContain('Ada Lovelace')
+    expect(row?.textContent).toContain('ada@example.com')
+    expect(row?.textContent).toContain('Message')
+    expect(row?.querySelector('mark')?.textContent).toBe('refund')
 
     act(() => root.unmount())
     container.remove()

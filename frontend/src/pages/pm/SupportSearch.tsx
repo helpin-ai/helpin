@@ -394,40 +394,77 @@ export function SupportSearchPage() {
           ) : results.length === 0 && !isFetching ? (
             <SearchEmptyState title="No conversations found" description="Try a broader query or remove a filter." />
           ) : (
-            <div className="divide-y">
-              {results.map((result) => (
-                <button
-                  key={result.conversation.id}
-                  type="button"
-                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-4 px-6 py-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => openConversation(result.conversation.id)}
-                >
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="shrink-0 font-mono text-xs text-muted-foreground">#{result.display_id}</span>
-                      <span className="truncate text-sm font-semibold">{result.conversation.subject}</span>
-                      <Badge variant="secondary" className={cn('h-5 shrink-0 px-1.5 text-[11px]', STATUS_LABELS[result.conversation.status as ConversationStatus] && 'font-medium')}>
-                        {STATUS_LABELS[result.conversation.status as ConversationStatus] ?? result.conversation.status}
-                      </Badge>
-                      <Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[11px]">
-                        {PRIORITY_LABELS[result.conversation.priority as ConversationPriority] ?? result.conversation.priority}
-                      </Badge>
+            <div data-slot="support-search-results" className="min-w-0">
+              <div className="sticky top-0 z-10 hidden border-b bg-background/95 px-6 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground backdrop-blur md:grid md:grid-cols-[minmax(220px,1.25fr)_minmax(280px,1.6fr)_minmax(180px,0.9fr)_minmax(170px,0.85fr)_minmax(120px,0.65fr)_24px] md:gap-4">
+                <span>Conversation</span>
+                <span>Match</span>
+                <span>Customer</span>
+                <span>State</span>
+                <span>Updated</span>
+                <span />
+              </div>
+              <div className="divide-y">
+                {results.map((result) => (
+                  <button
+                    key={result.conversation.id}
+                    type="button"
+                    data-slot="support-search-result-row"
+                    className="group grid w-full grid-cols-1 gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:grid-cols-[minmax(220px,1.25fr)_minmax(280px,1.6fr)_minmax(180px,0.9fr)_minmax(170px,0.85fr)_minmax(120px,0.65fr)_24px] md:items-center md:gap-4 md:px-6"
+                    onClick={() => openConversation(result.conversation.id)}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="shrink-0 font-mono text-[11px] text-muted-foreground">#{result.display_id}</span>
+                        <span className="truncate text-sm font-semibold text-foreground">{result.conversation.subject}</span>
+                      </div>
+                      {result.conversation.mailbox_name ? (
+                        <div className="mt-1 truncate text-xs text-muted-foreground">{result.conversation.mailbox_name}</div>
+                      ) : null}
                     </div>
-                    <div className="line-clamp-2 text-sm leading-5 text-muted-foreground">
-                      {resultHighlight(result)}
+
+                    <div className="min-w-0">
+                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:hidden">Match</div>
+                      <div className="line-clamp-2 text-sm leading-5 text-foreground/85">
+                        {resultHighlight(result)}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        <span>{fieldSummary(result.matched_fields)}</span>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                      <span>{fieldSummary(result.matched_fields)}</span>
-                      {result.conversation.customer_email && <span>{result.conversation.customer_email}</span>}
-                      {result.conversation.mailbox_name && <span>{result.conversation.mailbox_name}</span>}
-                      {result.conversation.created_at && <span>{formatDate(result.conversation.created_at)}</span>}
+
+                    <div className="min-w-0">
+                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:hidden">Customer</div>
+                      <div className="truncate text-sm text-foreground">
+                        {result.conversation.customer_name || result.conversation.customer_email || 'Unknown customer'}
+                      </div>
+                      {result.conversation.customer_email && result.conversation.customer_name ? (
+                        <div className="mt-1 truncate text-xs text-muted-foreground">{result.conversation.customer_email}</div>
+                      ) : null}
                     </div>
-                  </div>
-                  <div className="hidden items-center text-muted-foreground sm:flex">
-                    <ArrowRight02Icon className="h-4 w-4" />
-                  </div>
-                </button>
-              ))}
+
+                    <div className="min-w-0">
+                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:hidden">State</div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge variant="secondary" className={cn('h-5 shrink-0 px-1.5 text-[11px]', STATUS_LABELS[result.conversation.status as ConversationStatus] && 'font-medium')}>
+                          {STATUS_LABELS[result.conversation.status as ConversationStatus] ?? result.conversation.status}
+                        </Badge>
+                        <Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[11px]">
+                          {PRIORITY_LABELS[result.conversation.priority as ConversationPriority] ?? result.conversation.priority}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 text-sm text-muted-foreground">
+                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide md:hidden">Updated</div>
+                      <span>{formatDate(result.conversation.updated_at || result.conversation.created_at)}</span>
+                    </div>
+
+                    <div className="hidden items-center justify-end text-muted-foreground md:flex">
+                      <ArrowRight02Icon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
