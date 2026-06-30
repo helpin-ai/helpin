@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { Search01Icon, Cancel01Icon, ArrowLeft02Icon, ArrowRight02Icon, InboxIcon } from '@/lib/icons';
+import { Search01Icon, Cancel01Icon, ArrowLeft02Icon, ArrowRight02Icon, InboxIcon, FilterHorizontalIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { CategoryFilterChip } from '@/components/pm/CategoryFilterChip';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import {
@@ -24,6 +26,8 @@ import { cn } from '@/lib/utils';
 import type {
   ConversationPriority,
   ConversationStatus,
+  SupportMailbox,
+  SupportTag,
   SupportConversationSearchParams,
   SupportConversationSearchResult,
   SupportSearchHighlight,
@@ -33,6 +37,17 @@ import { PRIORITY_LABELS, STATUS_LABELS } from '@/components/support/constants';
 export type SupportSearchRouteSearch = SupportConversationSearchParams;
 
 const SEARCH_PER_PAGE = 50;
+const assignmentOptions = [
+  { value: 'me', label: 'Assigned to me' },
+  { value: 'mentioned_me', label: 'Mentioned me' },
+  { value: 'opened_by_me', label: 'Opened by me' },
+  { value: 'unassigned', label: 'Unassigned' },
+];
+const aiStateOptions = [
+  { value: 'handling', label: 'AI handling' },
+  { value: 'handoff', label: 'AI handoff' },
+  { value: 'resolved', label: 'AI resolved' },
+];
 const fieldLabels: Record<string, string> = {
   title: 'Title',
   customer_email: 'Email',
@@ -117,6 +132,172 @@ function fieldSummary(fields: string[]) {
   return fields.map((field) => fieldLabels[field] ?? field).join(', ');
 }
 
+function splitFilterValues(value?: string) {
+  return value?.split(',').map((entry) => entry.trim()).filter(Boolean) ?? [];
+}
+
+function joinFilterValues(values: string[]) {
+  return values.length > 0 ? values.join(',') : undefined;
+}
+
+function detailedFilterCount(draft: SupportSearchRouteSearch) {
+  return [
+    draft.customer_email,
+    draft.title,
+    draft.created_from,
+    draft.created_to,
+  ].filter((value) => typeof value === 'string' && value.trim().length > 0).length;
+}
+
+export function SupportSearchToolbar({
+  draft,
+  mailboxes,
+  tags,
+  onDraftChange,
+  onSubmit,
+  onClear,
+}: {
+  draft: SupportSearchRouteSearch;
+  mailboxes: SupportMailbox[];
+  tags: SupportTag[];
+  onDraftChange: (key: keyof SupportSearchRouteSearch, value: string | number | undefined) => void;
+  onSubmit: (event?: FormEvent) => void;
+  onClear: () => void;
+}) {
+  const hasAnyFilter = hasSupportConversationSearchInput(draft);
+  const moreCount = detailedFilterCount(draft);
+
+  return (
+    <form onSubmit={onSubmit} className="ui-divider-bottom-fade flex flex-col gap-2 px-4 pb-2 pt-3 md:px-6">
+      <div data-slot="support-search-primary-row" className="flex flex-col gap-2 lg:flex-row lg:items-center">
+        <div className="relative min-w-0 flex-1">
+          <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            autoFocus
+            value={draft.q ?? ''}
+            maxLength={256}
+            onChange={(event) => onDraftChange('q', event.target.value)}
+            placeholder="Search conversations by email, #number, title, customer, or message"
+            className="h-10 pl-9"
+          />
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button type="submit" className="h-10 gap-2">
+            <Search01Icon className="h-4 w-4" />
+            Search
+          </Button>
+          <Button type="button" variant="ghost" size="icon" className="h-10 w-10" onClick={onClear} aria-label="Clear search">
+            <Cancel01Icon className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div data-slot="support-search-filter-row" className="flex flex-wrap items-end gap-2">
+        <CategoryFilterChip
+          label="Status"
+          options={Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }))}
+          selected={splitFilterValues(draft.statuses)}
+          onChange={(next) => onDraftChange('statuses', joinFilterValues(next))}
+        />
+        <CategoryFilterChip
+          label="Priority"
+          options={Object.entries(PRIORITY_LABELS).map(([value, label]) => ({ value, label }))}
+          selected={splitFilterValues(draft.priorities)}
+          onChange={(next) => onDraftChange('priorities', joinFilterValues(next))}
+        />
+        <CategoryFilterChip
+          label="Assignee"
+          options={assignmentOptions}
+          selected={splitFilterValues(draft.assigned_to)}
+          onChange={(next) => onDraftChange('assigned_to', joinFilterValues(next))}
+        />
+        <CategoryFilterChip
+          label="Inbox"
+          options={[
+            { value: 'shared', label: 'Main inbox' },
+            ...mailboxes.map((mailbox) => ({ value: mailbox.id, label: mailbox.name })),
+          ]}
+          selected={splitFilterValues(draft.mailbox_ids)}
+          onChange={(next) => onDraftChange('mailbox_ids', joinFilterValues(next))}
+        />
+        <CategoryFilterChip
+          label="Tag"
+          options={tags.map((tag) => ({
+            value: tag.id,
+            label: tag.name,
+            leading: <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tag.color ?? '#94a3b8' }} />,
+          }))}
+          selected={splitFilterValues(draft.tag_ids)}
+          onChange={(next) => onDraftChange('tag_ids', joinFilterValues(next))}
+        />
+        <CategoryFilterChip
+          label="AI state"
+          options={aiStateOptions}
+          selected={splitFilterValues(draft.ai)}
+          onChange={(next) => onDraftChange('ai', joinFilterValues(next))}
+        />
+
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs font-medium text-muted-foreground">More</span>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  'inline-flex h-7 min-w-[90px] items-center justify-between gap-1 rounded-md border border-input bg-transparent px-2 text-xs transition-colors hover:bg-accent',
+                  moreCount > 0 ? 'border-primary/40 bg-primary/5 text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                <FilterHorizontalIcon className="h-3.5 w-3.5" />
+                <span>{moreCount > 0 ? `${moreCount} active` : 'Fields'}</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-[360px] p-3">
+              <div className="grid gap-3">
+                <LabeledInput label="Customer email" value={draft.customer_email ?? ''} onChange={(value) => onDraftChange('customer_email', value)} placeholder="customer@example.com" />
+                <LabeledInput label="Conversation title" value={draft.title ?? ''} onChange={(value) => onDraftChange('title', value)} placeholder="Title contains" />
+                <div className="grid grid-cols-2 gap-2">
+                  <LabeledInput label="From" type="date" value={draft.created_from ?? ''} onChange={(value) => onDraftChange('created_from', value)} />
+                  <LabeledInput label="To" type="date" value={draft.created_to ?? ''} onChange={(value) => onDraftChange('created_to', value)} />
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {hasAnyFilter ? (
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[11px] font-medium text-muted-foreground/0">&nbsp;</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground"
+              onClick={onClear}
+            >
+              Clear Filters
+            </Button>
+          </div>
+        ) : null}
+
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Sort by:</span>
+          <Select value={draft.sort ?? 'relevance'} onValueChange={(value) => onDraftChange('sort', value)}>
+            <SelectTrigger className="h-7 w-[130px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="relevance">Relevance</SelectItem>
+              <SelectItem value="newest">Newest</SelectItem>
+              <SelectItem value="oldest">Oldest</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 export function SupportSearchPage() {
   useTitle('Support Search');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
@@ -182,110 +363,32 @@ export function SupportSearchPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="border-b px-6 py-4">
-        <form onSubmit={applySearch} className="space-y-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div className="relative min-w-0 flex-1">
-              <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                autoFocus
-                className="h-10 pl-9"
-                value={draft.q ?? ''}
-                maxLength={256}
-                onChange={(event) => updateDraft('q', event.target.value)}
-                placeholder="Search support by email, #number, title, customer, or message"
-              />
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Button type="submit" className="h-10 gap-2">
-                <Search01Icon className="h-4 w-4" />
-                Search
-              </Button>
-              <Button type="button" variant="ghost" size="icon" className="h-10 w-10" onClick={clearSearch} aria-label="Clear search">
-                <Cancel01Icon className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <FilterSelect label="Status" value={draft.statuses ?? 'any'} onValueChange={(value) => updateDraft('statuses', value === 'any' ? undefined : value)}>
-              <SelectItem value="any">Any status</SelectItem>
-              {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </FilterSelect>
-            <FilterSelect label="Priority" value={draft.priorities ?? 'any'} onValueChange={(value) => updateDraft('priorities', value === 'any' ? undefined : value)}>
-              <SelectItem value="any">Any priority</SelectItem>
-              {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </FilterSelect>
-            <FilterSelect label="Assignee" value={draft.assigned_to ?? 'any'} onValueChange={(value) => updateDraft('assigned_to', value === 'any' ? undefined : value)}>
-              <SelectItem value="any">Anyone</SelectItem>
-              <SelectItem value="me">Assigned to me</SelectItem>
-              <SelectItem value="mentioned_me">Mentioned me</SelectItem>
-              <SelectItem value="opened_by_me">Opened by me</SelectItem>
-              <SelectItem value="unassigned">Unassigned</SelectItem>
-            </FilterSelect>
-            <FilterSelect label="Inbox" value={draft.mailbox_ids ?? 'any'} onValueChange={(value) => updateDraft('mailbox_ids', value === 'any' ? undefined : value)}>
-              <SelectItem value="any">All inboxes</SelectItem>
-              <SelectItem value="shared">Main inbox</SelectItem>
-              {mailboxes.map((mailbox) => (
-                <SelectItem key={mailbox.id} value={mailbox.id}>{mailbox.name}</SelectItem>
-              ))}
-            </FilterSelect>
-            <FilterSelect label="Sort" value={draft.sort ?? 'relevance'} onValueChange={(value) => updateDraft('sort', value)}>
-              <SelectItem value="relevance">Relevance</SelectItem>
-              <SelectItem value="newest">Newest</SelectItem>
-              <SelectItem value="oldest">Oldest</SelectItem>
-            </FilterSelect>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <LabeledInput label="Customer email" value={draft.customer_email ?? ''} onChange={(value) => updateDraft('customer_email', value)} placeholder="customer@example.com" />
-            <LabeledInput label="Conversation title" value={draft.title ?? ''} onChange={(value) => updateDraft('title', value)} placeholder="Title contains" />
-            <FilterSelect label="Tag" value={draft.tag_ids ?? 'any'} onValueChange={(value) => updateDraft('tag_ids', value === 'any' ? undefined : value)}>
-              <SelectItem value="any">Any tag</SelectItem>
-              {tags.map((tag) => (
-                <SelectItem key={tag.id} value={tag.id}>{tag.name}</SelectItem>
-              ))}
-            </FilterSelect>
-            <FilterSelect label="AI state" value={draft.ai ?? 'any'} onValueChange={(value) => updateDraft('ai', value === 'any' ? undefined : value)}>
-              <SelectItem value="any">Any AI state</SelectItem>
-              <SelectItem value="handling">AI handling</SelectItem>
-              <SelectItem value="handoff">AI handoff</SelectItem>
-              <SelectItem value="resolved">AI resolved</SelectItem>
-            </FilterSelect>
-            <div className="grid grid-cols-2 gap-2">
-              <LabeledInput label="From" type="date" value={draft.created_from ?? ''} onChange={(value) => updateDraft('created_from', value)} />
-              <LabeledInput label="To" type="date" value={draft.created_to ?? ''} onChange={(value) => updateDraft('created_to', value)} />
-            </div>
-          </div>
-        </form>
-      </div>
+      <SupportSearchToolbar
+        draft={draft}
+        mailboxes={mailboxes}
+        tags={tags}
+        onDraftChange={updateDraft}
+        onSubmit={applySearch}
+        onClear={clearSearch}
+      />
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex h-12 shrink-0 items-center justify-between border-b px-6">
-          <div className="text-sm text-muted-foreground">
-            {hasInput ? (
+        {hasInput && (
+          <div className="flex h-12 shrink-0 items-center justify-between border-b px-6">
+            <div className="text-sm text-muted-foreground">
               <>
                 <span className="font-medium text-foreground">{total}</span>
                 {data?.meta.total_capped ? '+' : ''} result{total === 1 ? '' : 's'}
                 {data?.meta.total_capped ? `, capped at ${data.meta.total_cap}` : ''}
               </>
-            ) : (
-              'Search all support conversations'
-            )}
+            </div>
+            {isFetching && <span className="text-xs text-muted-foreground">Searching...</span>}
           </div>
-          {isFetching && <span className="text-xs text-muted-foreground">Searching...</span>}
-        </div>
+        )}
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {!hasInput ? (
-            <SearchEmptyState
-              title="Search every support conversation"
-              description="Use the search field or filters to find conversations by customer email, conversation number, title, or message text."
-            />
+            <div />
           ) : error ? (
             <SearchEmptyState title="Search failed" description={error.message} />
           ) : results.length === 0 && !isFetching ? (
@@ -343,30 +446,6 @@ export function SupportSearchPage() {
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function FilterSelect({
-  label,
-  value,
-  onValueChange,
-  children,
-}: {
-  label: string;
-  value: string;
-  onValueChange: (value: string) => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="min-w-0 space-y-1.5">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Select value={value} onValueChange={onValueChange} size="sm">
-        <SelectTrigger className="h-8 w-full rounded-md bg-background">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>{children}</SelectContent>
-      </Select>
     </div>
   );
 }
