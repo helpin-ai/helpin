@@ -736,6 +736,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/inbox/triage-rules/{ruleId}", h.SupportInbox.DeleteTriageRule)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/teammates/presence", h.SupportInbox.ListTeammatePresence)
 				r.With(requirePerm(authorization.PermSupportRead)).Put("/inbox/me/presence", h.SupportInbox.UpdateMyTeammatePresence)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/search", h.SupportInbox.SearchConversations)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations", h.SupportInbox.ListConversations)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations", h.SupportInbox.CreateConversation)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/create-and-send", h.SupportInbox.CreateConversationWithMessage)

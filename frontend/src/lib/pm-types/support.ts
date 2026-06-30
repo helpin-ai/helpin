@@ -427,6 +427,59 @@ export interface ConversationListResponse {
   meta: ConversationListMeta;
 }
 
+export interface SupportSearchHighlightRange {
+  start: number;
+  end: number;
+}
+
+export interface SupportSearchHighlight {
+  field: string;
+  text: string;
+  ranges: SupportSearchHighlightRange[];
+}
+
+export interface SupportConversationSearchResult {
+  conversation: SupportConversation;
+  display_id: number;
+  matched_fields: string[];
+  snippet: string;
+  highlights: SupportSearchHighlight[];
+  score: number;
+}
+
+export interface SupportConversationSearchMeta {
+  sort: 'relevance' | 'newest' | 'oldest' | string;
+  query: string;
+  total_capped: boolean;
+  total_cap: number;
+}
+
+export interface SupportConversationSearchResponse {
+  data: SupportConversationSearchResult[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+  meta: SupportConversationSearchMeta;
+}
+
+export interface SupportConversationSearchParams {
+  q?: string;
+  sort?: 'relevance' | 'newest' | 'oldest';
+  assigned_to?: string;
+  mailbox_ids?: string;
+  tag_ids?: string;
+  customer_email?: string;
+  created_from?: string;
+  created_to?: string;
+  statuses?: string;
+  priorities?: string;
+  title?: string;
+  ai?: string;
+  page?: number;
+  per_page?: number;
+}
+
 export interface SupportAttachmentPayload {
   id: string;
   file_key: string;

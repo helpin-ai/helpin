@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -34,6 +35,21 @@ func splitQueryCSV(value string) []string {
 		}
 	}
 	return result
+}
+
+func parseSupportSearchTimeParam(r *http.Request, key string) (*time.Time, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return nil, nil
+	}
+	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
+		return &parsed, nil
+	}
+	parsed, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
 }
 
 // ListConversations handles GET /api/support/tickets.
@@ -90,6 +106,52 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 		AIFilters:   aiFilters,
 	})
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// SearchConversations handles GET /api/support/inbox/search.
+func (h *SupportInboxHandler) SearchConversations(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	createdFrom, err := parseSupportSearchTimeParam(r, "created_from")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "created_from must be RFC3339 or YYYY-MM-DD")
+		return
+	}
+	createdTo, err := parseSupportSearchTimeParam(r, "created_to")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "created_to must be RFC3339 or YYYY-MM-DD")
+		return
+	}
+
+	resp, err := h.supportService.SearchConversations(r.Context(), service.SupportConversationSearchParams{
+		WorkspaceID:   workspaceID,
+		UserID:        middleware.GetUserID(r.Context()),
+		Query:         strings.TrimSpace(r.URL.Query().Get("q")),
+		Sort:          strings.TrimSpace(r.URL.Query().Get("sort")),
+		Pagination:    queryPagination(r),
+		AssignedTo:    queryStringValues(r, "assigned_to"),
+		MailboxIDs:    queryStringValues(r, "mailbox_ids"),
+		TagIDs:        queryStringValues(r, "tag_ids"),
+		CustomerEmail: strings.TrimSpace(r.URL.Query().Get("customer_email")),
+		CreatedFrom:   createdFrom,
+		CreatedTo:     createdTo,
+		Statuses:      queryStringValues(r, "statuses"),
+		Priorities:    queryStringValues(r, "priorities"),
+		Title:         strings.TrimSpace(r.URL.Query().Get("title")),
+		AI:            queryStringValues(r, "ai"),
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidSupportSearch) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

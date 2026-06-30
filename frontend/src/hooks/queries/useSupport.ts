@@ -56,12 +56,14 @@ import type {
   SupportTag,
   CreateConversationRequest,
   CreateConversationWithMessageRequest,
+  SupportConversationSearchParams,
+  SupportConversationSearchResponse,
 } from '@/lib/pmTypes';
 
 const SUPPORT_CONVERSATIONS_PER_PAGE = 50;
 const CONVERSATION_HANDOFF_DELAY_MS = 180;
 
-type SupportConversationFilters = {
+export type SupportConversationFilters = {
   status?: string;
   statuses?: string;
   priority?: string;
@@ -76,6 +78,8 @@ type SupportConversationFilters = {
   tag_ids?: string;
   system_tags?: string;
 };
+
+export type SupportConversationGlobalSearchFilters = SupportConversationSearchParams;
 
 type SendMessagePayload = {
   content: string;
@@ -237,6 +241,27 @@ export function useConversations(workspaceId: string, filters?: SupportConversat
     queryKey: [...queryKeys.support.conversations(workspaceId), filters] as const,
     queryFn: async (): Promise<ConversationListResponse> => loadConversationListPage(workspaceId, filters),
     enabled: !!workspaceId,
+    staleTime: 15_000,
+  });
+}
+
+export function hasSupportConversationSearchInput(filters: SupportConversationGlobalSearchFilters) {
+  return Object.entries(filters).some(([key, value]) => {
+    if (key === 'page' || key === 'per_page' || key === 'sort') return false;
+    return typeof value === 'string' ? value.trim().length > 0 : value !== undefined && value !== null;
+  });
+}
+
+export function useSupportConversationSearch(
+  workspaceId: string,
+  filters: SupportConversationGlobalSearchFilters,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.support.search(workspaceId, filters),
+    queryFn: async (): Promise<SupportConversationSearchResponse> =>
+      unwrap(await supportService.searchConversations(workspaceId, filters)),
+    enabled: enabled && !!workspaceId && hasSupportConversationSearchInput(filters),
     staleTime: 15_000,
   });
 }

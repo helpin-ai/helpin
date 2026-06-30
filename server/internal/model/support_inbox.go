@@ -212,6 +212,60 @@ type ConversationListResponse struct {
 	Meta       ConversationListMeta  `json:"meta"`
 }
 
+type SupportSearchHighlightRange struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
+}
+
+type SupportSearchHighlight struct {
+	Field  string                        `json:"field"`
+	Text   string                        `json:"text"`
+	Ranges []SupportSearchHighlightRange `json:"ranges"`
+}
+
+type SupportConversationSearchResult struct {
+	Conversation  SupportConversation      `json:"conversation"`
+	DisplayID     int                      `json:"display_id"`
+	MatchedFields []string                 `json:"matched_fields"`
+	Snippet       string                   `json:"snippet"`
+	Highlights    []SupportSearchHighlight `json:"highlights"`
+	Score         float64                  `json:"score"`
+}
+
+type SupportConversationSearchMeta struct {
+	Sort        string `json:"sort"`
+	Query       string `json:"query"`
+	TotalCapped bool   `json:"total_capped"`
+	TotalCap    int    `json:"total_cap"`
+}
+
+type SupportConversationSearchResponse struct {
+	Data       []SupportConversationSearchResult `json:"data"`
+	Total      int                               `json:"total"`
+	Page       int                               `json:"page"`
+	PerPage    int                               `json:"per_page"`
+	TotalPages int                               `json:"total_pages"`
+	Meta       SupportConversationSearchMeta     `json:"meta"`
+}
+
+type SupportConversationSearchParams struct {
+	WorkspaceID   string
+	UserID        string
+	Query         string
+	Sort          string
+	Pagination    PMPagination
+	AssignedTo    []string
+	MailboxIDs    []string
+	TagIDs        []string
+	CustomerEmail string
+	CreatedFrom   *time.Time
+	CreatedTo     *time.Time
+	Statuses      []string
+	Priorities    []string
+	Title         string
+	AI            []string
+}
+
 // SupportMessage represents a message within a support conversation.
 type SupportMessage struct {
 	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
