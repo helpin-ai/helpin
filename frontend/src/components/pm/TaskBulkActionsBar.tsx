@@ -917,12 +917,12 @@ export function TaskBulkActionsBar({
               </Popover>
             </div>
 
-            <div className="mt-2 flex items-center gap-2 border-t border-border/60 pt-2">
+            <div className="mt-2 flex items-center gap-2 border-t border-border/60 pt-3">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 flex-1 px-2 text-xs"
+                className="h-7 px-2 text-xs"
                 disabled={loading}
                 onClick={() => {
                   if (allArchived) {
@@ -935,14 +935,11 @@ export function TaskBulkActionsBar({
                 <ArchiveIcon className="mr-1 h-3 w-3" />
                 {allArchived ? 'Unarchive' : 'Archive'}
               </Button>
-            </div>
-
-            <div className="mt-2 flex items-center justify-end gap-2 border-t border-border/60 pt-3">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 text-xs text-muted-foreground"
+                className="ml-auto h-7 px-2 text-xs text-muted-foreground"
                 disabled={loading}
                 onClick={() => {
                   resetStaged();
