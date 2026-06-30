@@ -19,6 +19,9 @@ import { PRIORITY_CONFIG, SEVERITY_CONFIG } from '@/lib/pmConstants';
 import { Calendar03Icon, ChevronDownIcon } from '@/lib/pmIcons';
 import { ArchiveIcon, Cancel01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon } from '@/lib/icons';
 import { pmTaskService } from '@/lib/services/pmTaskService';
+import { useSprints } from '@/hooks/queries/useSprints';
+import { useEpics } from '@/hooks/queries/useEpics';
+import { useLabels } from '@/hooks/queries/useLabels';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import type {
   EpicWithStats,
@@ -30,7 +33,7 @@ import type {
   UpdateTaskRequest,
   WorkflowWithStates,
 } from '@/lib/pmTypes';
-import type { AssignableMember } from '@/lib/types';
+import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -39,6 +42,11 @@ const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 export const BULK_SOFT_CAP = 25;
 const MIXED = Symbol('mixed');
 
+// Stable empty fallbacks so memoized derivations don't see a new array ref each render.
+const EMPTY_SPRINTS: SprintWithStats[] = [];
+const EMPTY_EPICS: EpicWithStats[] = [];
+const EMPTY_LABELS: Label[] = [];
+
 type BulkOperationResult = Promise<{ error: string | null }>;
 
 interface TaskBulkActionsBarProps {
@@ -46,6 +54,10 @@ interface TaskBulkActionsBarProps {
   workspaceId: string;
   teamId?: string | null;
   workflow: WorkflowWithStates;
+  /** All workflows in the workspace — used to re-scope Status on a team change. */
+  workflows?: WorkflowWithStates[];
+  /** Workspace teams — used to populate the bulk Team selector. */
+  teams?: WorkspaceTeam[];
   assignableMembers: AssignableMember[];
   epics: EpicWithStats[];
   sprints: SprintWithStats[];
@@ -72,6 +84,98 @@ export function getOwnerIdsAfterAdd(task: Pick<Task, 'owner_member_ids'>, member
 export function getOwnerIdsAfterRemove(task: Pick<Task, 'owner_member_ids'>, memberIdsToRemove: string[]) {
   const removeSet = new Set(memberIdsToRemove);
   return (task.owner_member_ids ?? []).filter((id) => !removeSet.has(id));
+}
+
+/**
+ * Staged bulk-edit changes. `undefined` scalar = no change; `null` for
+ * epic/sprint/deadline = clear. `teamId` set means the team is being changed,
+ * which re-scopes and resets the team-scoped fields (see buildBulkPatch).
+ */
+export interface BulkStagedChanges {
+  status: string | undefined;
+  priority: Priority | undefined;
+  severity: Severity | undefined;
+  epicId: string | null | undefined;
+  sprintId: string | null | undefined;
+  deadline: string | null | undefined;
+  /** Staged team change (undefined = unchanged). */
+  teamId: string | undefined;
+  /** Workflow id of the staged team — sent alongside the chosen state. */
+  newTeamWorkflowId: string | undefined;
+  ownerAdds: Set<string>;
+  ownerRemoves: Set<string>;
+  labelAdds: Set<string>;
+  labelRemoves: Set<string>;
+}
+
+/**
+ * Resolves the workflow to use for a staged team change. Prefers a workflow
+ * owned by the team, then the shared/default workflow (no team_id) — mirroring
+ * the backend's GetDefaultWorkflow ordering (team_id IS NULL is the general
+ * workflow). Returns null only when no usable workflow exists.
+ */
+export function resolveTeamWorkflow(
+  workflows: WorkflowWithStates[] | undefined,
+  teamId: string,
+): WorkflowWithStates | null {
+  if (!workflows || workflows.length === 0) return null;
+  return (
+    workflows.find((w) => w.workflow.team_id === teamId)
+    ?? workflows.find((w) => !w.workflow.team_id)
+    ?? null
+  );
+}
+
+/**
+ * Builds the per-task UpdateTaskRequest from staged changes.
+ *
+ * On a team change the backend revalidates the task's existing epic/sprint and
+ * the state↔workflow pairing against the new team (server/internal/service/
+ * pm_task.go), so we must explicitly clear team-scoped links unless the user
+ * picked replacements: epic_id/sprint_id are cleared, all labels are cleared
+ * (keeping only newly chosen ones), and workflow_id is sent with the required
+ * new-team state. Team-independent fields (priority/severity/deadline/owners)
+ * apply in both cases.
+ */
+export function buildBulkPatch(
+  task: Pick<Task, 'owner_member_ids' | 'labels'>,
+  staged: BulkStagedChanges,
+): UpdateTaskRequest {
+  const patch: UpdateTaskRequest = {};
+  const teamChanged = staged.teamId !== undefined;
+
+  if (teamChanged) {
+    patch.team_id = staged.teamId;
+    patch.epic_id = staged.epicId ?? '';
+    patch.sprint_id = staged.sprintId ?? '';
+    patch.label_ids = Array.from(staged.labelAdds);
+    if (staged.newTeamWorkflowId !== undefined) patch.workflow_id = staged.newTeamWorkflowId;
+    if (staged.status !== undefined) patch.workflow_state_id = staged.status;
+  } else {
+    if (staged.status !== undefined) patch.workflow_state_id = staged.status;
+    if (staged.epicId !== undefined) patch.epic_id = staged.epicId ?? '';
+    if (staged.sprintId !== undefined) patch.sprint_id = staged.sprintId ?? '';
+    if (staged.labelAdds.size > 0 || staged.labelRemoves.size > 0) {
+      const current = (task.labels ?? []).map((l) => l.id);
+      patch.label_ids = Array.from(new Set([
+        ...current.filter((id) => !staged.labelRemoves.has(id)),
+        ...staged.labelAdds,
+      ]));
+    }
+  }
+
+  if (staged.priority !== undefined) patch.priority = staged.priority;
+  if (staged.severity !== undefined) patch.severity = staged.severity;
+  if (staged.deadline !== undefined) patch.deadline = staged.deadline ?? undefined;
+  if (staged.ownerAdds.size > 0 || staged.ownerRemoves.size > 0) {
+    const current = task.owner_member_ids ?? [];
+    patch.owner_member_ids = Array.from(new Set([
+      ...current.filter((id) => !staged.ownerRemoves.has(id)),
+      ...staged.ownerAdds,
+    ]));
+  }
+
+  return patch;
 }
 
 type SetField = {
@@ -123,6 +227,8 @@ export function TaskBulkActionsBar({
   workspaceId,
   teamId,
   workflow,
+  workflows,
+  teams,
   assignableMembers,
   epics,
   sprints,
@@ -140,6 +246,7 @@ export function TaskBulkActionsBar({
   const [stagedEpicId, setStagedEpicId] = useState<string | null | undefined>();
   const [stagedSprintId, setStagedSprintId] = useState<string | null | undefined>();
   const [stagedDeadline, setStagedDeadline] = useState<string | null | undefined>();
+  const [stagedTeamId, setStagedTeamId] = useState<string | undefined>();
 
   // Staged set-field deltas (owners + labels).
   const [ownerAdds, setOwnerAdds] = useState<Set<string>>(new Set());
@@ -150,6 +257,35 @@ export function TaskBulkActionsBar({
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [addOwnerOpen, setAddOwnerOpen] = useState(false);
+
+  const teamChanged = stagedTeamId !== undefined;
+
+  // When a team is staged, re-scope the team-scoped fields to that team. Passing
+  // an empty workspaceId disables the query (hooks gate on `enabled: !!wsId`),
+  // so nothing is fetched until the user actually changes the team.
+  const teamSprintsQuery = useSprints(
+    teamChanged ? workspaceId : '',
+    teamChanged ? { team_id: stagedTeamId } : undefined,
+  );
+  const teamEpicsQuery = useEpics(
+    teamChanged ? workspaceId : '',
+    teamChanged ? { team_id: stagedTeamId } : undefined,
+  );
+  const teamLabelsQuery = useLabels(
+    teamChanged ? workspaceId : '',
+    teamChanged ? { teamId: stagedTeamId, includeShared: true } : undefined,
+  );
+
+  const effectiveWorkflow = teamChanged
+    ? resolveTeamWorkflow(workflows, stagedTeamId)
+    : workflow;
+  const effectiveSprints = teamChanged ? (teamSprintsQuery.data ?? EMPTY_SPRINTS) : sprints;
+  const effectiveEpics = teamChanged ? (teamEpicsQuery.data ?? EMPTY_EPICS) : epics;
+  const effectiveLabels = teamChanged ? (teamLabelsQuery.data ?? EMPTY_LABELS) : labels;
+  const effectiveTeamId = teamChanged ? stagedTeamId : (teamId ?? undefined);
+  const teamScopedLoading = teamChanged && (
+    teamSprintsQuery.isLoading || teamEpicsQuery.isLoading || teamLabelsQuery.isLoading
+  );
 
   const count = selectedTasks.length;
   const overSoftCap = count >= BULK_SOFT_CAP;
@@ -179,17 +315,23 @@ export function TaskBulkActionsBar({
 
   const labelById = useMemo(() => {
     const map = new Map<string, Label>();
-    for (const l of labels) map.set(l.id, l);
+    for (const l of effectiveLabels) map.set(l.id, l);
     return map;
-  }, [labels]);
+  }, [effectiveLabels]);
 
   const ownerChips = useMemo(
     () => deriveChipDisplay(ownersField, ownerAdds, ownerRemoves),
     [ownersField, ownerAdds, ownerRemoves],
   );
+  // On a team change the existing (old-team) labels are cleared, so the chip
+  // list shows only labels the user newly picks for the new team.
   const labelChips = useMemo(
-    () => deriveChipDisplay(labelsField, labelAdds, labelRemoves),
-    [labelsField, labelAdds, labelRemoves],
+    () => deriveChipDisplay(
+      teamChanged ? { intersection: [], union: [], partial: [], shared: true } : labelsField,
+      labelAdds,
+      labelRemoves,
+    ),
+    [teamChanged, labelsField, labelAdds, labelRemoves],
   );
 
   const commonValues = useMemo(() => {
@@ -208,12 +350,9 @@ export function TaskBulkActionsBar({
       epic_id: shared((t) => t.epic_id ?? ''),
       sprint_id: shared((t) => t.sprint_id ?? ''),
       deadline: shared((t) => t.deadline ?? ''),
+      team_id: shared((t) => t.team_id ?? ''),
     };
   }, [selectedTasks]);
-
-  const multiplePlaceholder = (
-    <span className="italic text-muted-foreground">Multiple</span>
-  );
 
   const resetStaged = useCallback(() => {
     setStagedStatus(undefined);
@@ -222,8 +361,21 @@ export function TaskBulkActionsBar({
     setStagedEpicId(undefined);
     setStagedSprintId(undefined);
     setStagedDeadline(undefined);
+    setStagedTeamId(undefined);
     setOwnerAdds(new Set());
     setOwnerRemoves(new Set());
+    setLabelAdds(new Set());
+    setLabelRemoves(new Set());
+  }, []);
+
+  // Changing the team resets the team-scoped fields: epic/sprint are cleared,
+  // labels are cleared, and a fresh status pick from the new team's workflow is
+  // required before Apply is enabled.
+  const handleTeamChange = useCallback((nextTeamId: string) => {
+    setStagedTeamId(nextTeamId);
+    setStagedStatus(undefined);
+    setStagedEpicId(null);
+    setStagedSprintId(null);
     setLabelAdds(new Set());
     setLabelRemoves(new Set());
   }, []);
@@ -235,10 +387,24 @@ export function TaskBulkActionsBar({
     || stagedEpicId !== undefined
     || stagedSprintId !== undefined
     || stagedDeadline !== undefined
+    || stagedTeamId !== undefined
     || ownerAdds.size > 0
     || ownerRemoves.size > 0
     || labelAdds.size > 0
     || labelRemoves.size > 0;
+
+  // On a team change a valid status from the new team's workflow is mandatory.
+  const canApply = hasStagedChanges && !(teamChanged && stagedStatus === undefined);
+
+  // The shared team of the selection, but only if it's a team the current user
+  // can actually pick (present in `teams`). Otherwise the Select would render a
+  // blank trigger for an id with no matching option.
+  const commonTeamId = commonValues.team_id !== MIXED && commonValues.team_id
+    ? (commonValues.team_id as string)
+    : undefined;
+  const selectableCommonTeamId = commonTeamId && (teams ?? []).some((t) => t.id === commonTeamId)
+    ? commonTeamId
+    : undefined;
 
   const reportResults = useCallback(
     async (
@@ -298,42 +464,36 @@ export function TaskBulkActionsBar({
 
   // Single Apply commits every staged change in one round of per-task PUTs.
   const handleApply = useCallback(async () => {
-    if (!hasStagedChanges || loading || count === 0) return;
+    if (!canApply || loading || count === 0) return;
+    const staged: BulkStagedChanges = {
+      status: stagedStatus,
+      priority: stagedPriority,
+      severity: stagedSeverity,
+      epicId: stagedEpicId,
+      sprintId: stagedSprintId,
+      deadline: stagedDeadline,
+      teamId: stagedTeamId,
+      newTeamWorkflowId: teamChanged ? effectiveWorkflow?.workflow.id : undefined,
+      ownerAdds,
+      ownerRemoves,
+      labelAdds,
+      labelRemoves,
+    };
     setLoading(true);
     try {
       const results = await Promise.allSettled(
-        selectedTasks.map((task) => {
-          const patch: UpdateTaskRequest = {};
-          if (stagedStatus !== undefined) patch.workflow_state_id = stagedStatus;
-          if (stagedPriority !== undefined) patch.priority = stagedPriority;
-          if (stagedSeverity !== undefined) patch.severity = stagedSeverity;
-          if (stagedEpicId !== undefined) patch.epic_id = stagedEpicId ?? '';
-          if (stagedSprintId !== undefined) patch.sprint_id = stagedSprintId ?? '';
-          if (stagedDeadline !== undefined) patch.deadline = stagedDeadline ?? undefined;
-          if (ownerAdds.size > 0 || ownerRemoves.size > 0) {
-            const current = task.owner_member_ids ?? [];
-            patch.owner_member_ids = Array.from(new Set([
-              ...current.filter((id) => !ownerRemoves.has(id)),
-              ...ownerAdds,
-            ]));
-          }
-          if (labelAdds.size > 0 || labelRemoves.size > 0) {
-            const current = (task.labels ?? []).map((l) => l.id);
-            patch.label_ids = Array.from(new Set([
-              ...current.filter((id) => !labelRemoves.has(id)),
-              ...labelAdds,
-            ]));
-          }
-          return pmTaskService.update(workspaceId, task.id, patch) as BulkOperationResult;
-        }),
+        selectedTasks.map((task) => (
+          pmTaskService.update(workspaceId, task.id, buildBulkPatch(task, staged)) as BulkOperationResult
+        )),
       );
       await reportResults(results, 'Updated');
     } finally {
       setLoading(false);
     }
   }, [
+    canApply,
     count,
-    hasStagedChanges,
+    effectiveWorkflow,
     labelAdds,
     labelRemoves,
     loading,
@@ -347,6 +507,8 @@ export function TaskBulkActionsBar({
     stagedSeverity,
     stagedSprintId,
     stagedStatus,
+    stagedTeamId,
+    teamChanged,
     workspaceId,
   ]);
 
@@ -450,25 +612,59 @@ export function TaskBulkActionsBar({
           </div>
 
           <div className="flex flex-col gap-2">
+            {teams && teams.length > 0 ? (
+              <div className={fieldRow}>
+                <span className={fieldLabel}>Team</span>
+                <Select
+                  size="sm"
+                  disabled={loading}
+                  value={stagedTeamId ?? selectableCommonTeamId}
+                  onValueChange={handleTeamChange}
+                >
+                  <SelectTrigger className={cn(
+                    'h-7 flex-1 text-xs',
+                    stagedTeamId !== undefined && 'border-primary',
+                  )}>
+                    <SelectValue placeholder={commonValues.team_id === MIXED ? 'Multiple' : 'Select team'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+            {teamChanged ? (
+              <p className="-mt-1 pl-24 text-[10px] text-muted-foreground">
+                Switching team clears each task's epic, sprint, and labels.
+              </p>
+            ) : null}
+
             <div className={fieldRow}>
               <span className={fieldLabel}>Status</span>
               <Select
                 size="sm"
-                disabled={loading}
+                disabled={loading || (teamChanged && !effectiveWorkflow)}
                 value={stagedStatus
-                  ?? (commonValues.workflow_state_id === MIXED ? undefined : (commonValues.workflow_state_id as string))}
+                  ?? (teamChanged
+                    ? undefined
+                    : (commonValues.workflow_state_id === MIXED ? undefined : (commonValues.workflow_state_id as string)))}
                 onValueChange={(value) => setStagedStatus(value)}
               >
                 <SelectTrigger className={cn(
                   'h-7 flex-1 text-xs',
                   stagedStatus !== undefined && 'border-primary',
+                  teamChanged && stagedStatus === undefined && 'border-amber-400',
                 )}>
-                  {stagedStatus === undefined && commonValues.workflow_state_id === MIXED
-                    ? multiplePlaceholder
-                    : <SelectValue placeholder="No change" />}
+                  <SelectValue placeholder={teamChanged
+                    ? 'Select status'
+                    : (commonValues.workflow_state_id === MIXED ? 'Multiple' : 'No change')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {workflow.states.map((state) => (
+                  {(effectiveWorkflow?.states ?? []).map((state) => (
                     <SelectItem key={state.id} value={state.id}>
                       {state.name}
                     </SelectItem>
@@ -476,6 +672,11 @@ export function TaskBulkActionsBar({
                 </SelectContent>
               </Select>
             </div>
+            {teamChanged && stagedStatus === undefined ? (
+              <p className="-mt-1 pl-24 text-[10px] text-amber-600 dark:text-amber-400">
+                Pick a status for the new team to apply.
+              </p>
+            ) : null}
 
             <div className={fieldRow}>
               <span className={cn(fieldLabel, 'self-start pt-1')}>Owners</span>
@@ -544,9 +745,7 @@ export function TaskBulkActionsBar({
                   'h-7 flex-1 text-xs',
                   stagedPriority !== undefined && 'border-primary',
                 )}>
-                  {stagedPriority === undefined && commonValues.priority === MIXED
-                    ? multiplePlaceholder
-                    : <SelectValue placeholder="No change" />}
+                  <SelectValue placeholder={commonValues.priority === MIXED ? 'Multiple' : 'No change'} />
                 </SelectTrigger>
                 <SelectContent>
                   {ALL_PRIORITIES.map((priority) => (
@@ -571,9 +770,7 @@ export function TaskBulkActionsBar({
                   'h-7 flex-1 text-xs',
                   stagedSeverity !== undefined && 'border-primary',
                 )}>
-                  {stagedSeverity === undefined && commonValues.severity === MIXED
-                    ? multiplePlaceholder
-                    : <SelectValue placeholder="No change" />}
+                  <SelectValue placeholder={commonValues.severity === MIXED ? 'Multiple' : 'No change'} />
                 </SelectTrigger>
                 <SelectContent>
                   {ALL_SEVERITIES.map((severity) => (
@@ -601,13 +798,11 @@ export function TaskBulkActionsBar({
                   'h-7 flex-1 text-xs',
                   stagedEpicId !== undefined && 'border-primary',
                 )}>
-                  {stagedEpicId === undefined && commonValues.epic_id === MIXED
-                    ? multiplePlaceholder
-                    : <SelectValue placeholder="No change" />}
+                  <SelectValue placeholder={commonValues.epic_id === MIXED ? 'Multiple' : 'No change'} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">No epic</SelectItem>
-                  {epics.map((entry) => (
+                  {effectiveEpics.map((entry) => (
                     <SelectItem key={entry.epic.id} value={entry.epic.id}>
                       {entry.epic.name}
                     </SelectItem>
@@ -632,13 +827,11 @@ export function TaskBulkActionsBar({
                   'h-7 flex-1 text-xs',
                   stagedSprintId !== undefined && 'border-primary',
                 )}>
-                  {stagedSprintId === undefined && commonValues.sprint_id === MIXED
-                    ? multiplePlaceholder
-                    : <SelectValue placeholder="No change" />}
+                  <SelectValue placeholder={commonValues.sprint_id === MIXED ? 'Multiple' : 'No change'} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">No sprint</SelectItem>
-                  {sprints.map((entry) => (
+                  {effectiveSprints.map((entry) => (
                     <SelectItem key={entry.sprint.id} value={entry.sprint.id}>
                       {entry.sprint.name}
                     </SelectItem>
@@ -668,8 +861,8 @@ export function TaskBulkActionsBar({
                 })}
                 <LabelAdder
                   workspaceId={workspaceId}
-                  teamId={teamId ?? undefined}
-                  labels={labels}
+                  teamId={effectiveTeamId}
+                  labels={effectiveLabels}
                   disabled={loading}
                   excludeIds={labelChips.map((c) => c.id)}
                   onAdd={(id) => {
@@ -705,7 +898,7 @@ export function TaskBulkActionsBar({
                           ? 'Clear deadline'
                           : format(new Date(stagedDeadline), 'MMM d, yyyy'))
                       : commonValues.deadline === MIXED
-                        ? multiplePlaceholder
+                        ? <span className="italic text-muted-foreground">Multiple</span>
                         : commonValues.deadline
                           ? format(new Date(commonValues.deadline as string), 'MMM d, yyyy')
                           : 'Set deadline'}
@@ -764,7 +957,7 @@ export function TaskBulkActionsBar({
                 variant="default"
                 size="sm"
                 className="h-7 px-3 text-xs"
-                disabled={loading || !hasStagedChanges}
+                disabled={loading || teamScopedLoading || !canApply}
                 onClick={() => void handleApply()}
               >
                 {loading ? <Loading01Icon className="mr-1 h-3 w-3 animate-spin" /> : null}

@@ -28,12 +28,16 @@ vi.mock('@/lib/services/pmTaskService', () => ({
 import {
   TaskBulkActionsBar,
   BULK_SOFT_CAP,
+  buildBulkPatch,
+  resolveTeamWorkflow,
   deriveSetField,
   getLabelIdsAfterAdd,
   getLabelIdsAfterRemove,
   getOwnerIdsAfterAdd,
   getOwnerIdsAfterRemove,
+  type BulkStagedChanges,
 } from '../TaskBulkActionsBar';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Label, Task, WorkflowWithStates } from '@/lib/pmTypes';
 
@@ -140,11 +144,16 @@ function renderBar(props: Partial<React.ComponentProps<typeof TaskBulkActionsBar
     onClearSelection: vi.fn(),
   };
   const merged = { ...defaults, ...props };
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   act(() => {
     root.render(
-      <TooltipProvider>
-        <TaskBulkActionsBar {...merged} />
-      </TooltipProvider>,
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <TaskBulkActionsBar {...merged} />
+        </TooltipProvider>
+      </QueryClientProvider>,
     );
   });
   return { container, root, props: merged };
@@ -201,6 +210,131 @@ describe('TaskBulkActionsBar helpers', () => {
   it('handles empty inputs', () => {
     expect(deriveSetField([])).toEqual({ intersection: [], union: [], partial: [], shared: true });
     expect(deriveSetField([[], []])).toEqual({ intersection: [], union: [], partial: [], shared: true });
+  });
+});
+
+function makeStaged(overrides: Partial<BulkStagedChanges> = {}): BulkStagedChanges {
+  return {
+    status: undefined,
+    priority: undefined,
+    severity: undefined,
+    epicId: undefined,
+    sprintId: undefined,
+    deadline: undefined,
+    teamId: undefined,
+    newTeamWorkflowId: undefined,
+    ownerAdds: new Set(),
+    ownerRemoves: new Set(),
+    labelAdds: new Set(),
+    labelRemoves: new Set(),
+    ...overrides,
+  };
+}
+
+describe('resolveTeamWorkflow', () => {
+  const wf = (id: string, teamId?: string): WorkflowWithStates => ({
+    workflow: {
+      id,
+      workspace_id: 'ws-1',
+      name: id,
+      description: '',
+      team_id: teamId,
+      auto_assign_owner: false,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+    states: [],
+  });
+
+  it('prefers a workflow owned by the team', () => {
+    const list = [wf('shared'), wf('team-a-wf', 'team-a'), wf('team-b-wf', 'team-b')];
+    expect(resolveTeamWorkflow(list, 'team-a')?.workflow.id).toBe('team-a-wf');
+  });
+
+  it('falls back to the shared (team_id-less) default workflow', () => {
+    const list = [wf('team-b-wf', 'team-b'), wf('shared')];
+    expect(resolveTeamWorkflow(list, 'team-a')?.workflow.id).toBe('shared');
+  });
+
+  it('returns null when neither a team nor a shared workflow exists', () => {
+    const list = [wf('team-b-wf', 'team-b')];
+    expect(resolveTeamWorkflow(list, 'team-a')).toBeNull();
+  });
+
+  it('returns null for empty / undefined inputs', () => {
+    expect(resolveTeamWorkflow([], 'team-a')).toBeNull();
+    expect(resolveTeamWorkflow(undefined, 'team-a')).toBeNull();
+  });
+});
+
+describe('buildBulkPatch', () => {
+  it('emits only explicitly staged fields when team is unchanged', () => {
+    const patch = buildBulkPatch(baseTask, makeStaged({ status: 'state-9', priority: 'high' }));
+    expect(patch).toEqual({ workflow_state_id: 'state-9', priority: 'high' });
+  });
+
+  it('clears epic/sprint when staged to null without a team change', () => {
+    const patch = buildBulkPatch(baseTask, makeStaged({ epicId: null, sprintId: null }));
+    expect(patch.epic_id).toBe('');
+    expect(patch.sprint_id).toBe('');
+  });
+
+  it('computes label_ids as a per-task union when labels are staged (no team change)', () => {
+    const patch = buildBulkPatch(
+      baseTask, // labels: label-1, label-2
+      makeStaged({ labelAdds: new Set(['label-3']), labelRemoves: new Set(['label-1']) }),
+    );
+    expect([...(patch.label_ids ?? [])].sort()).toEqual(['label-2', 'label-3']);
+  });
+
+  it('on team change: sets team_id, clears epic/sprint/labels, and requires workflow + state', () => {
+    const patch = buildBulkPatch(
+      baseTask,
+      makeStaged({ teamId: 'team-2', newTeamWorkflowId: 'workflow-2', status: 'state-b2' }),
+    );
+    expect(patch.team_id).toBe('team-2');
+    expect(patch.epic_id).toBe('');
+    expect(patch.sprint_id).toBe('');
+    expect(patch.label_ids).toEqual([]);
+    expect(patch.workflow_id).toBe('workflow-2');
+    expect(patch.workflow_state_id).toBe('state-b2');
+  });
+
+  it('on team change: keeps user-picked epic/sprint and newly chosen labels', () => {
+    const patch = buildBulkPatch(
+      baseTask,
+      makeStaged({
+        teamId: 'team-2',
+        newTeamWorkflowId: 'workflow-2',
+        status: 'state-b2',
+        epicId: 'epic-b',
+        sprintId: 'sprint-b',
+        labelAdds: new Set(['label-shared']),
+      }),
+    );
+    expect(patch.epic_id).toBe('epic-b');
+    expect(patch.sprint_id).toBe('sprint-b');
+    expect(patch.label_ids).toEqual(['label-shared']);
+  });
+
+  it('applies team-independent fields (priority/severity/deadline/owners) on team change', () => {
+    const patch = buildBulkPatch(
+      baseTask, // owners: user-1
+      makeStaged({
+        teamId: 'team-2',
+        newTeamWorkflowId: 'workflow-2',
+        status: 'state-b2',
+        priority: 'urgent',
+        severity: 'critical',
+        deadline: '2026-07-01',
+        ownerAdds: new Set(['user-9']),
+        ownerRemoves: new Set(['user-1']),
+      }),
+    );
+    expect(patch.priority).toBe('urgent');
+    expect(patch.severity).toBe('critical');
+    expect(patch.deadline).toBe('2026-07-01');
+    expect(patch.owner_member_ids).toEqual(['user-9']);
   });
 });
 
@@ -270,6 +404,41 @@ describe('TaskBulkActionsBar', () => {
       (container.querySelector('button') as HTMLButtonElement).click();
     });
     expect(document.body.textContent).toContain('No labels');
+    unmount(root, container);
+  });
+
+  it('renders a Team selector at the top with the workspace teams', () => {
+    const teams = [
+      { id: 'team-1', workspace_id: 'ws-1', name: 'Engineering' },
+      { id: 'team-2', workspace_id: 'ws-1', name: 'Design' },
+    ];
+    const { container, root } = renderBar({ teams });
+    act(() => {
+      (container.querySelector('button') as HTMLButtonElement).click();
+    });
+    const labelNodes = Array.from(document.querySelectorAll('span')).map((s) => s.textContent);
+    expect(labelNodes).toContain('Team');
+    // Team appears before Status in the field list.
+    const text = document.body.textContent ?? '';
+    expect(text.indexOf('Team')).toBeLessThan(text.indexOf('Status'));
+    unmount(root, container);
+  });
+
+  it('shows an interactive "Multiple" trigger for fields whose values differ', () => {
+    const taskA = { ...baseTask, id: 'task-1', task_key: 'PM-1', priority: 'high' as const };
+    const taskB = { ...baseTask, id: 'task-2', task_key: 'PM-2', priority: 'low' as const };
+    const { container, root } = renderBar({ selectedTasks: [taskA, taskB] });
+    act(() => {
+      (container.querySelector('button') as HTMLButtonElement).click();
+    });
+    expect(document.body.textContent).toContain('Multiple');
+    // The mixed-value triggers are real, enabled Select triggers (not disabled spans),
+    // so the dropdown can be opened — this is the fix for the positioning bug.
+    const triggers = Array.from(
+      document.querySelectorAll('[data-slot="select-trigger"]'),
+    ) as HTMLButtonElement[];
+    expect(triggers.length).toBeGreaterThan(0);
+    expect(triggers.every((t) => !t.disabled)).toBe(true);
     unmount(root, container);
   });
 
