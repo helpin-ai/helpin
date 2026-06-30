@@ -69,10 +69,11 @@ export const HelpSpaceView: FunctionComponent<HelpSpaceViewProps> = ({
               <ChevronLeftIcon size={18} />
             </button>
           )}
-          <div>
+          <div className="helpin-help-header-copy">
             <span className="helpin-help-title">{space.name}</span>
             <p className="helpin-help-subtitle">Browse collections</p>
           </div>
+          <div className="helpin-help-header-spacer" />
         </div>
       )}
       <div className="helpin-help-content">
