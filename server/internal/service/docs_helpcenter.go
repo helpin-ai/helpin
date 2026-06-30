@@ -161,6 +161,9 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	if req.IsPublished != nil {
 		updates["is_published"] = *req.IsPublished
 	}
+	if req.ChatWidgetEnabled != nil {
+		updates["chat_widget_enabled"] = *req.ChatWidgetEnabled
+	}
 	if req.SEOTitle != nil {
 		updates["seo_title"] = req.SEOTitle
 	}

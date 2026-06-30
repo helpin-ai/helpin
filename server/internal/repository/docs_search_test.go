@@ -302,7 +302,8 @@ func setupDocsPublicSearchIndexTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE docs_helpcenter_configs (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
-			default_locale TEXT NOT NULL
+			default_locale TEXT NOT NULL,
+			chat_widget_enabled BOOLEAN NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE docs_helpcenter_articles (
 			document_id TEXT PRIMARY KEY,

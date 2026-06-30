@@ -80,6 +80,16 @@ type DocsHandler struct {
 	commentService       *service.PMCommentService
 	jwtManager           *auth.JWTManager
 	supportEventRecorder service.SupportEventRecorder
+	supportWidgetConfig  supportWidgetConfigProvider
+}
+
+type supportWidgetConfigProvider interface {
+	GetInstallation(ctx context.Context, workspaceID string) (*model.SupportWidgetInstallation, *model.SupportInboxSettings, error)
+}
+
+type publicHelpcenterConfigResponse struct {
+	*model.DocsHelpcenterConfig
+	SupportWidgetKey *string `json:"support_widget_key,omitempty"`
 }
 
 // NewDocsHandler creates a new DocsHandler.
@@ -135,6 +145,13 @@ func (h *DocsHandler) SetSupportEventRecorder(r service.SupportEventRecorder) {
 		return
 	}
 	h.supportEventRecorder = r
+}
+
+func (h *DocsHandler) SetSupportWidgetConfigProvider(p supportWidgetConfigProvider) {
+	if h == nil {
+		return
+	}
+	h.supportWidgetConfig = p
 }
 
 func (h *DocsHandler) recordSupportEvent(input service.SupportEventInput) {
@@ -1820,8 +1837,18 @@ func (h *DocsHandler) PublicGetConfig(w http.ResponseWriter, r *http.Request) {
 	if cfg == nil {
 		return
 	}
+	resp := publicHelpcenterConfigResponse{DocsHelpcenterConfig: cfg}
+	if cfg.ChatWidgetEnabled && h.supportWidgetConfig != nil {
+		inst, _, err := h.supportWidgetConfig.GetInstallation(r.Context(), cfg.WorkspaceID)
+		if err != nil {
+			slog.WarnContext(r.Context(), "public helpcenter widget config unavailable", "error", err, "workspace_id", cfg.WorkspaceID)
+		} else if inst != nil && inst.Active && strings.TrimSpace(inst.WidgetKey) != "" {
+			widgetKey := inst.WidgetKey
+			resp.SupportWidgetKey = &widgetKey
+		}
+	}
 	setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
-	writeJSONWithETag(w, r, http.StatusOK, cfg)
+	writeJSONWithETag(w, r, http.StatusOK, resp)
 }
 
 func (h *DocsHandler) PublicGetSpaces(w http.ResponseWriter, r *http.Request) {

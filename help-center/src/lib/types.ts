@@ -45,6 +45,8 @@ export interface HelpCenterConfig {
   show_language_switcher: boolean
   fallback_to_default_locale: boolean
   is_published: boolean
+  chat_widget_enabled?: boolean
+  support_widget_key?: string | null
   seo_title: string | null
   seo_description: string | null
   og_title?: string | null

@@ -1361,6 +1361,7 @@ func main() {
 
 	// Set support event recorder on DocsHandler after handler creation.
 	handlers.Docs.SetSupportEventRecorder(supportEventRecorder)
+	handlers.Docs.SetSupportWidgetConfigProvider(supportInboxService)
 
 	// Slug resolver adapts workspace repo for RBAC middleware.
 	slugResolver := authorization.SlugResolver(func(ctx context.Context, slug string) (string, error) {

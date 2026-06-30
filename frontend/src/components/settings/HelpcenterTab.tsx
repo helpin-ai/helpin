@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, type ChangeEvent, type FormEvent } from 'react';
+import { Link } from '@tanstack/react-router';
 import {
   DndContext,
   closestCenter,
@@ -36,7 +37,7 @@ import {
   PlusSignIcon, InformationCircleIcon, ArrowDown01Icon, Cancel01Icon,
   GlobeIcon, PaintBoardIcon, LayoutGridIcon, Link01Icon, Image01Icon,
   LanguageCircleIcon, DragDropVerticalIcon, Copy01Icon, Tick01Icon,
-  Folder01Icon,
+  Folder01Icon, Message01Icon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { IconPicker, StoredIcon } from '@/components/ui/icon-picker';
@@ -330,6 +331,7 @@ interface ConfigState {
   search_placeholder: string;
   protected_terms: string[];
   is_published: boolean;
+  chat_widget_enabled: boolean;
   seo_title: string;
   seo_description: string;
   og_title: string;
@@ -362,6 +364,7 @@ const DEFAULT_CONFIG: ConfigState = {
   search_placeholder: '',
   protected_terms: [],
   is_published: false,
+  chat_widget_enabled: true,
   seo_title: '',
   seo_description: '',
   og_title: '',
@@ -571,7 +574,15 @@ function deriveDefaults(brandName: string, current: ConfigState): Partial<Config
   return defaults;
 }
 
-export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: string; workspaceName: string }) {
+export function HelpcenterTab({
+  workspaceId,
+  workspaceName,
+  workspaceSlug,
+}: {
+  workspaceId: string;
+  workspaceName: string;
+  workspaceSlug: string;
+}) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
@@ -633,6 +644,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
           search_placeholder: d.search_placeholder ?? '',
           protected_terms: d.protected_terms ?? [],
           is_published: d.is_published ?? false,
+          chat_widget_enabled: d.chat_widget_enabled !== false,
           seo_title: d.seo_title ?? '',
           seo_description: d.seo_description ?? '',
           og_title: d.og_title ?? '',
@@ -723,6 +735,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       search_placeholder: config.search_placeholder || undefined,
       protected_terms: config.protected_terms.filter(Boolean),
       is_published: config.is_published,
+      chat_widget_enabled: config.chat_widget_enabled,
       seo_title: config.seo_title || undefined,
       seo_description: config.seo_description || undefined,
       og_title: config.og_title,
@@ -1609,6 +1622,60 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
             </div>
           )}
           </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Section: Chat Widget ── */}
+      <div className={cn("overflow-hidden rounded-lg border bg-card transition-shadow", isExpanded('chat-widget') ? "border-primary/20" : "border-border/60")}>
+        <button type="button" onClick={() => toggleSection('chat-widget')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Message01Icon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Chat Widget</p>
+            <p className="text-xs text-muted-foreground">Let visitors start a conversation from your public help center</p>
+          </div>
+          <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('chat-widget') && 'rotate-180')} />
+        </button>
+        <div className="accordion-animate" data-open={isExpanded('chat-widget')}>
+          <div>
+            <div className="border-t border-border px-6 py-6">
+              <div className="max-w-4xl space-y-4">
+                <div className="flex flex-col gap-4 rounded-lg border border-border/70 bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <Label htmlFor="hc-chat-widget-enabled">Show chat widget on help center</Label>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Adds the chat launcher to published help center pages using your Support chat widget settings.
+                    </p>
+                  </div>
+                  <Switch
+                    id="hc-chat-widget-enabled"
+                    checked={config.chat_widget_enabled}
+                    onCheckedChange={(checked) => setConfig({ ...config, chat_widget_enabled: checked })}
+                    aria-label="Show chat widget on help center"
+                  />
+                </div>
+                <div className="flex gap-3 rounded-lg border border-border/60 bg-muted/30 p-4 text-xs leading-relaxed text-muted-foreground">
+                  <InformationCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <p>
+                    Widget branding, routing, business hours, identity capture, and AI behavior are managed in{' '}
+                    {workspaceSlug ? (
+                      <Link
+                        to="/w/$slug/settings/chat-general"
+                        params={{ slug: workspaceSlug }}
+                        className="font-medium text-foreground underline underline-offset-4 hover:text-primary"
+                      >
+                        Chat widget settings
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-foreground">Chat widget settings</span>
+                    )}
+                    .
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

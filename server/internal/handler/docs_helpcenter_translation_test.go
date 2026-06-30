@@ -149,6 +149,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			show_language_switcher BOOLEAN NOT NULL DEFAULT 0,
 			fallback_to_default_locale BOOLEAN NOT NULL DEFAULT 1,
 			is_published BOOLEAN NOT NULL DEFAULT 0,
+			chat_widget_enabled BOOLEAN NOT NULL DEFAULT 1,
 			seo_title TEXT,
 			seo_description TEXT,
 			og_title TEXT,
