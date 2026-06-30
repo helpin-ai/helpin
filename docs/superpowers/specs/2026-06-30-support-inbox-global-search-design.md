@@ -12,7 +12,7 @@ The current Helpin support inbox has a compact scoped search inside the conversa
 
 This feature adds a dedicated global search surface for support conversations. It searches across accessible inboxes and returns ranked, filterable results with snippets, highlights, result counts, status, assignment, and conversation display numbers.
 
-The implementation should stay deliberately small: no async indexer, no Temporal workflow, no GORM hooks, and no separate search-entry table in v1. Search uses generated/search-vector columns and expression indexes that are maintained by PostgreSQL.
+This is the complete first-class search feature for the current support conversation model. It is not a phased MVP. The implementation should stay deliberately small: no async indexer, no Temporal workflow, no GORM hooks, and no separate search-entry table. Search uses generated/search-vector columns and expression indexes that are maintained by PostgreSQL.
 
 ## Product Goals
 
@@ -20,15 +20,15 @@ The implementation should stay deliberately small: no async indexer, no Temporal
 - Match the Intercom mental model: a global search bar, filter chips, result count, table rows, highlights, and relevance/newest/oldest sort.
 - Keep the existing inbox view search behavior stable as scoped search within the current view.
 - Respect Team Inbox access rules. Users must only see conversations in the shared inbox or mailboxes they can access.
-- Avoid inventing a separate ticket entity. Helpin's current support inbox items are `support_conversations`, so "ticket number" maps to the conversation display number for this release.
+- Avoid inventing a separate ticket entity. Helpin's current support inbox items are `support_conversations`, so "ticket number" maps to the conversation display number.
 
 ## Non-Goals
 
 - A separate Intercom-style support ticket object.
-- Search over future ticket attributes that do not exist in the current data model.
+- Search over ticket attributes that do not exist in the current data model.
 - Boolean keyword syntax such as `AND` / `OR`.
 - Saved search presets beyond existing support inbox view persistence.
-- Semantic or vector search. This release uses deterministic full-text and exact/partial matching.
+- Semantic or vector search. This feature uses deterministic full-text and exact/partial matching.
 - Customer-facing widget search. This is teammate-only Support Inbox search.
 
 ## Current Behavior
@@ -101,12 +101,12 @@ Global search is a full workspace, not a narrow conversation-list mode.
 - Title/subject is included in global keyword search.
 - A `Title` filter narrows keyword matching to conversation title/subject.
 - Message body search includes non-deleted support reply content and non-deleted internal notes. System messages and deleted messages are excluded.
-- Internal-note snippets are only returned if the actor can view internal notes. Today that follows `support.read`, because conversation messages are already readable with `PermSupportRead`; if a narrower note permission is added later, search must use that narrower permission. When the actor cannot view note text, a note-only match may still return the conversation row, but the snippet/highlight must fall back to subject/customer fields or be blank.
+- Internal-note snippets are only returned if the actor can view internal notes. Today that follows `support.read`, because conversation messages are already readable with `PermSupportRead`. Search must follow the effective message-visibility policy. When the actor cannot view note text, a note-only match may still return the conversation row, but the snippet/highlight must fall back to subject/customer fields or be blank.
 - Empty `q` with no filters is invalid and returns `400`. Empty `q` with at least one filter is valid and returns newest matching conversations.
 
 ### Filters
 
-V1 filters:
+Supported filters:
 
 - `All`: no entity type restriction. Since Helpin only has conversations in this module today, this means all accessible support conversations.
 - `Assigned to`: current user, unassigned, specific teammate.
@@ -122,11 +122,10 @@ V1 filters:
   - `handoff` maps to AI escalation / requested human / queued-for-human conditions.
   - `resolved` maps to AI-resolved conditions: `human_takeover=false` and `flow_state='resolved_by_ai'` or `ai_state='resolved'`.
 
-Future filters:
+Unavailable Intercom-style filters:
 
-- Company, if/when support conversation results hydrate CRM company associations directly.
-- Topic, AI Topic, AI Subtopic, and Brand, if those concepts become durable support conversation fields.
-- Ticket attributes, if Helpin adds a separate ticket object.
+- `Company`, `Topic`, `AI Topic`, `AI Subtopic`, `Brand`, and ticket attributes are not support conversation fields in the current Helpin data model.
+- They are not omitted as deferred search work; they are outside this feature's source data unless those product entities become part of `support_conversations`.
 
 ### Sort
 
@@ -171,7 +170,7 @@ Limits and validation:
 - `q`, `title`, and `customer_email` are trimmed and capped at 256 characters.
 - `per_page` defaults to 50 and is capped at 50.
 - `page` must be positive.
-- A quoted phrase query supports one exact phrase in v1. Multiple quoted phrases are rejected with `400` rather than converted into a pathological search query.
+- A quoted phrase query supports one exact phrase. Multiple quoted phrases are rejected with `400` rather than converted into a pathological search query.
 - Either `q` or at least one filter is required. Requests with neither `q` nor filters return `400`.
 
 Response shape:
@@ -254,7 +253,7 @@ Search must apply the same mailbox access rules as conversation listing:
 
 ### Search Indexing and Migration
 
-Add a dbmigrate SQL migration for production search performance. V1 does not add a materialized search table.
+Add a dbmigrate SQL migration for production search performance. The feature does not add a materialized search table.
 
 Conversation-level search uses a stored generated `tsvector` column on `support_conversations`:
 
@@ -286,7 +285,7 @@ PostgreSQL maintains generated vectors synchronously with row writes, so there i
 
 Snippets are produced at query time from the highest-ranked matching field/message using `ts_headline` or a safe application-side range builder. The API still returns plain text plus highlight ranges, never HTML.
 
-Backfill rollout is limited to adding generated columns and indexes. It should run as a normal dbmigrate migration using `IF NOT EXISTS`; no separate background job is required for v1.
+Backfill rollout is limited to adding generated columns and indexes. It should run as a normal dbmigrate migration using `IF NOT EXISTS`; no separate background job is required.
 
 ## Frontend Design
 
