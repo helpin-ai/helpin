@@ -22,6 +22,6 @@ describe('widget scroll styles', () => {
     expect(ruleBody('.helpin-powered-by-name')).toContain('background-size: 0 1px');
     expect(ruleBody('.helpin-powered-by:hover .helpin-powered-by-name')).toContain('background-size: 100% 1px');
     expect(ruleBody('.helpin-compose-footer-link')).toContain('background-size: 0 1px');
-    expect(ruleBody('.helpin-compose-footer-link:hover')).toContain('background-size: 100% 1px');
+    expect(ruleBody('.helpin-compose-footer:hover .helpin-compose-footer-link')).toContain('background-size: 100% 1px');
   });
 });

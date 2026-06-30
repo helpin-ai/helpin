@@ -2166,7 +2166,7 @@
   transition: background-size 0.18s ease;
 }
 
-.helpin-compose-footer-link:hover {
+.helpin-compose-footer:hover .helpin-compose-footer-link {
   background-size: 100% 1px;
 }
 
