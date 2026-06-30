@@ -82,6 +82,7 @@ function renderToolbar() {
         onDraftChange={vi.fn()}
         onSubmit={vi.fn()}
         onClear={vi.fn()}
+        onClose={vi.fn()}
       />,
     )
   })
@@ -101,6 +102,7 @@ describe('SupportSearchToolbar', () => {
     routerMocks.search = {}
     routerMocks.navigate.mockClear()
     supportMocks.searchResponse = undefined
+    window.sessionStorage.clear()
   })
 
   it('keeps primary search above the epics-style filter row', () => {
@@ -109,10 +111,12 @@ describe('SupportSearchToolbar', () => {
     const primaryRow = rendered.container.querySelector('[data-slot="support-search-primary-row"]')
     const filterRow = rendered.container.querySelector('[data-slot="support-search-filter-row"]')
     const searchInput = rendered.container.querySelector('input[placeholder="Search conversations by email, #number, title, customer, or message"]')
+    const closeSearch = rendered.container.querySelector<HTMLButtonElement>('[aria-label="Close search"]')
 
     expect(primaryRow).toBeTruthy()
     expect(filterRow).toBeTruthy()
     expect(searchInput).toBeTruthy()
+    expect(closeSearch?.title).toBe('Close Search')
     expect(primaryRow?.contains(searchInput)).toBe(true)
     expect(filterRow?.compareDocumentPosition(primaryRow as Element) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
 
@@ -137,6 +141,33 @@ describe('SupportSearchToolbar', () => {
 
     expect(container.textContent).not.toContain('Search all support conversations')
     expect(container.textContent).not.toContain('Search every support conversation')
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('closes search back to the saved support inbox context', () => {
+    window.sessionStorage.setItem(
+      'support-search-return:test-workspace',
+      '/w/test-workspace/support/conv-42?view=team&team_inbox=mailbox-billing',
+    )
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<SupportSearchPage />)
+    })
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Close search"]')?.click()
+    })
+
+    expect(routerMocks.navigate).toHaveBeenCalledWith({
+      to: '/w/$slug/support/$conversationId',
+      params: { slug: 'test-workspace', conversationId: 'conv-42' },
+      search: { view: 'team', team_inbox: 'mailbox-billing' },
+    })
 
     act(() => root.unmount())
     container.remove()

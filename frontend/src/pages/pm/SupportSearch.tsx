@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { CategoryFilterChip } from '@/components/pm/CategoryFilterChip';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -156,6 +157,7 @@ export function SupportSearchToolbar({
   onDraftChange,
   onSubmit,
   onClear,
+  onClose,
 }: {
   draft: SupportSearchRouteSearch;
   mailboxes: SupportMailbox[];
@@ -163,6 +165,7 @@ export function SupportSearchToolbar({
   onDraftChange: (key: keyof SupportSearchRouteSearch, value: string | number | undefined) => void;
   onSubmit: (event?: FormEvent) => void;
   onClear: () => void;
+  onClose: () => void;
 }) {
   const hasAnyFilter = hasSupportConversationSearchInput(draft);
   const moreCount = detailedFilterCount(draft);
@@ -186,9 +189,26 @@ export function SupportSearchToolbar({
             <Search01Icon className="h-4 w-4" />
             Search
           </Button>
-          <Button type="button" variant="ghost" size="icon" className="h-10 w-10" onClick={onClear} aria-label="Clear search">
-            <Cancel01Icon className="h-4 w-4" />
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10"
+                  onClick={onClose}
+                  aria-label="Close search"
+                  title="Close Search"
+                >
+                  <Cancel01Icon className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <span>Close Search</span>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
@@ -337,6 +357,47 @@ export function SupportSearchPage() {
     void navigate({ to: '/w/$slug/support/search', params: { slug }, search: {} as never });
   };
 
+  const navigateToSupportReturn = (returnTo: string | null) => {
+    if (!returnTo || typeof window === 'undefined') return false;
+
+    const url = new URL(returnTo, window.location.origin);
+    if (url.origin !== window.location.origin) return false;
+
+    const supportPath = `/w/${slug}/support`;
+    if (url.pathname === `${supportPath}/search` || !url.pathname.startsWith(supportPath)) return false;
+
+    const search = Object.fromEntries(url.searchParams.entries());
+    if (url.pathname === supportPath) {
+      void navigate({ to: '/w/$slug/support', params: { slug }, search: search as never });
+      return true;
+    }
+
+    const conversationId = decodeURIComponent(url.pathname.slice(supportPath.length + 1).split('/')[0] ?? '');
+    if (!conversationId || conversationId === 'search') return false;
+
+    void navigate({
+      to: '/w/$slug/support/$conversationId',
+      params: { slug, conversationId },
+      search: search as never,
+    });
+    return true;
+  };
+
+  const closeSearch = () => {
+    const returnTo = typeof window === 'undefined'
+      ? null
+      : window.sessionStorage.getItem(`support-search-return:${slug}`);
+
+    if (navigateToSupportReturn(returnTo)) return;
+
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+
+    void navigate({ to: '/w/$slug/support', params: { slug } });
+  };
+
   const setPage = (page: number) => {
     void navigate({
       to: '/w/$slug/support/search',
@@ -379,6 +440,7 @@ export function SupportSearchPage() {
         onDraftChange={updateDraft}
         onSubmit={applySearch}
         onClear={clearSearch}
+        onClose={closeSearch}
       />
 
       <div className="flex min-h-0 flex-1 flex-col">

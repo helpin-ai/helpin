@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon, MoreVerticalIcon, PencilEdit01Icon, ArchiveIcon, FileSearchIcon, Delete01Icon, UserGroupIcon, Search01Icon } from '@/lib/icons';
+import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon, MoreVerticalIcon, PencilEdit01Icon, ArchiveIcon, FileSearchIcon, Delete01Icon, UserGroupIcon } from '@/lib/icons';
 import { ICON_MAP } from '@/components/ui/icon-picker';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -130,16 +130,6 @@ export function SupportRailNav({
     <>
       <SidebarGroup className="p-0 pb-3">
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              isActive={isOnSearch}
-              className={supportMenuRowClassName}
-              onClick={() => onNavigate(`/w/${wsSlug}/support/search`)}
-            >
-              <Search01Icon className="h-4 w-4" />
-              <span className="min-w-0 truncate">Search</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
           {supportFilterItems.map((item) => {
             const unread =
               item.key === 'inbox'
