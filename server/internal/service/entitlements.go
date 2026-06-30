@@ -71,6 +71,14 @@ func (s *EntitlementService) RequireFeature(ctx context.Context, workspaceID str
 	if def.requiredPlan == "" {
 		return nil
 	}
+	if feature == EntitlementFeatureRemoveBranding && summary.Plan == model.BillingPlanFounder {
+		return &EntitlementError{
+			Feature:      string(feature),
+			RequiredPlan: def.requiredPlan,
+			CurrentPlan:  summary.Plan,
+			Message:      fmt.Sprintf("%s requires the Growth plan", def.label),
+		}
+	}
 	if billingPlanRank(summary.Plan) < billingPlanRank(def.requiredPlan) {
 		return &EntitlementError{
 			Feature:      string(feature),

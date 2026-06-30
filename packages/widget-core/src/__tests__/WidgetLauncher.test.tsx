@@ -49,4 +49,13 @@ describe('WidgetLauncher', () => {
     container.querySelector('.helpin-launcher')?.dispatchEvent(new MouseEvent('click'));
     expect(handleClick).toHaveBeenCalled();
   });
+
+  it('renders distinct icons for question mark and help launcher choices', () => {
+    const questionMark = render(<WidgetLauncher onClick={() => {}} isOpen={false} icon="question_mark" />);
+    const help = render(<WidgetLauncher onClick={() => {}} isOpen={false} icon="help" />);
+
+    expect(questionMark.container.querySelector('svg')?.innerHTML).not.toBe(
+      help.container.querySelector('svg')?.innerHTML,
+    );
+  });
 });

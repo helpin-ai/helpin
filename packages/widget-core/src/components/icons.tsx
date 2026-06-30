@@ -129,6 +129,18 @@ export const MessageCircleIcon = createIcon(
   'MessageCircleIcon',
 );
 
+export const LifeBuoyIcon = createIcon(
+  [
+    'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z',
+    'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+    'M4.93 4.93 9.17 9.17',
+    'M14.83 14.83 19.07 19.07',
+    'M14.83 9.17 19.07 4.93',
+    'M4.93 19.07 9.17 14.83',
+  ],
+  'LifeBuoyIcon',
+);
+
 // ── Misc ──────────────────────────────────────────────────────
 export const SearchIcon = createIcon(
   ['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z', 'm21 21-4.3-4.3'],

@@ -141,6 +141,17 @@ func TestEntitlementServiceTreatsFounderAsUnlimitedGrowthPlan(t *testing.T) {
 	}
 }
 
+func TestEntitlementServiceRejectsFounderRemoveBranding(t *testing.T) {
+	db := newTestDB(t)
+	createEntitlementBillingTables(t, db)
+	entitlements := seedEntitlementBilling(t, db, "ws-founder-branding", model.BillingPlanFounder, model.BillingStatusActive)
+
+	err := entitlements.RequireFeature(context.Background(), "ws-founder-branding", EntitlementFeatureRemoveBranding)
+	if err == nil || !strings.Contains(err.Error(), "Growth") {
+		t.Fatalf("RequireFeature remove branding on Founder = %v, want Growth upgrade error", err)
+	}
+}
+
 func TestSettingsServiceCreateTeamRejectsStarterTeamLimit(t *testing.T) {
 	db := newTestDB(t)
 	createEntitlementBillingTables(t, db)
