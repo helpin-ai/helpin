@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/preact';
 import { ChatWindow } from '../components/ChatWindow';
 
@@ -31,6 +31,10 @@ const baseConfig = {
 };
 
 describe('ChatWindow', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   const sampleMessage = {
     id: 'msg-1',
     conversationId: 'conv-1',
@@ -180,6 +184,46 @@ describe('ChatWindow', () => {
     container
       .querySelector('.helpin-window-close')
       ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(handleClose).toHaveBeenCalled();
+  });
+
+  it('uses the inline header close button instead of a floating close button in help docs subviews', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })),
+    );
+
+    const handleClose = vi.fn();
+    const { container, getByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          helpSpaces: [
+            { id: 'space-1', name: 'Product Docs', slug: 'product-docs' },
+            { id: 'space-2', name: 'Developer Docs', slug: 'developer-docs' },
+          ],
+        }}
+        messages={[]}
+        isOpen={true}
+        initialView="help"
+        host="https://client.helpin.ai"
+        widgetKey="wk_123"
+        onClose={handleClose}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+      />,
+    );
+
+    fireEvent.click(getByText('Product Docs'));
+
+    expect(container.querySelector('.helpin-window-close')).toBeNull();
+    const inlineClose = container.querySelector('.helpin-help-header .helpin-window-close-inline');
+    expect(inlineClose).toBeTruthy();
+
+    fireEvent.click(inlineClose as Element);
 
     expect(handleClose).toHaveBeenCalled();
   });

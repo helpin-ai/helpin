@@ -306,7 +306,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
       )}
 
       {/* Close button — hidden in conversation view (has its own) and messages view with conversation list */}
-      {activeView !== 'home' && activeView !== 'conversation' && activeView !== 'help' && !(activeView === 'messages' && conversations.length > 0) && (
+      {activeView !== 'home' && activeView !== 'conversation' && activeView !== 'help' && activeView !== 'help-space' && activeView !== 'help-collection' && activeView !== 'help-article' && !(activeView === 'messages' && conversations.length > 0) && (
         <button
           className="helpin-window-close"
           onClick={onClose}
@@ -435,6 +435,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             space={activeHelpSpace}
             showBack={helpSpaces.length > 1}
             onBack={() => handleNavigate('help')}
+            onClose={onClose}
             onSelectCollection={handleOpenHelpCollection}
           />
         )}
@@ -447,6 +448,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             onBack={handleBackFromHelpCollection}
             onSelectCollection={handleOpenHelpCollection}
             onSelectArticle={handleOpenHelpArticle}
+            onClose={onClose}
           />
         )}
         {activeView === 'help-article' && activeArticleKey && host && widgetKey && (
@@ -464,6 +466,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
               setActiveView('help');
               onViewChange?.('help');
             }}
+            onClose={onClose}
           />
         )}
       </div>

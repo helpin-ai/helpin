@@ -1,4 +1,4 @@
-import { render } from '@testing-library/preact';
+import { fireEvent, render } from '@testing-library/preact';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HelpSpaceView } from '../components/HelpSpaceView';
 
@@ -13,6 +13,7 @@ describe('HelpSpaceView', () => {
       vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })),
     );
 
+    const onClose = vi.fn();
     const { container } = render(
       <HelpSpaceView
         host="https://client.helpin.ai"
@@ -24,6 +25,7 @@ describe('HelpSpaceView', () => {
         }}
         showBack
         onBack={() => {}}
+        onClose={onClose}
         onSelectCollection={() => {}}
       />,
     );
@@ -37,6 +39,11 @@ describe('HelpSpaceView', () => {
     expect(header?.querySelector('.helpin-help-header-copy .helpin-help-subtitle')?.textContent).toBe(
       'Browse collections',
     );
-    expect(header?.querySelector('.helpin-help-header-spacer')).toBeTruthy();
+    const closeButton = header?.querySelector('.helpin-window-close-inline');
+    expect(closeButton).toBeTruthy();
+
+    fireEvent.click(closeButton as Element);
+
+    expect(onClose).toHaveBeenCalled();
   });
 });

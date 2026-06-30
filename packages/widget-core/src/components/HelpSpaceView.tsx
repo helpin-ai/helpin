@@ -1,7 +1,7 @@
 import { FunctionComponent } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { HelpSpace } from '@helpin-ai/shared';
-import { ChevronLeftIcon, ChevronRightIcon, FileTextIcon } from './icons';
+import { ChevronLeftIcon, ChevronRightIcon, FileTextIcon, XIcon } from './icons';
 import { buildHelpCollectionKey, fetchHelpCollections, type HelpCollection } from './helpApi';
 import { buildHelpCollectionTree } from './helpTree';
 
@@ -12,6 +12,7 @@ interface HelpSpaceViewProps {
   showBack: boolean;
   showHeader?: boolean;
   onBack: () => void;
+  onClose?: () => void;
   onSelectCollection: (collectionSlug: string) => void;
 }
 
@@ -22,6 +23,7 @@ export const HelpSpaceView: FunctionComponent<HelpSpaceViewProps> = ({
   showBack,
   showHeader = true,
   onBack,
+  onClose,
   onSelectCollection,
 }) => {
   const [collections, setCollections] = useState<HelpCollection[]>([]);
@@ -73,7 +75,13 @@ export const HelpSpaceView: FunctionComponent<HelpSpaceViewProps> = ({
             <span className="helpin-help-title">{space.name}</span>
             <p className="helpin-help-subtitle">Browse collections</p>
           </div>
-          <div className="helpin-help-header-spacer" />
+          {onClose ? (
+            <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
+              <XIcon size={18} />
+            </button>
+          ) : (
+            <div className="helpin-help-header-spacer" />
+          )}
         </div>
       )}
       <div className="helpin-help-content">

@@ -1,6 +1,6 @@
 import { FunctionComponent } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { ChevronLeftIcon, ChevronRightIcon, FileTextIcon } from './icons';
+import { ChevronLeftIcon, ChevronRightIcon, FileTextIcon, XIcon } from './icons';
 import {
   buildHelpArticleKey,
   fetchHelpArticles,
@@ -31,9 +31,10 @@ interface HelpCollectionViewProps {
    * Called when the user clicks a child collection tile. The widget
    * state owner (ChatWindow) updates activeCollectionSlug to the new
    * slug, which re-renders this view.
-   */
+  */
   onSelectCollection?: (collectionSlug: string) => void;
   onSelectArticle: (articleKey: string) => void;
+  onClose?: () => void;
 }
 
 export const HelpCollectionView: FunctionComponent<HelpCollectionViewProps> = ({
@@ -44,6 +45,7 @@ export const HelpCollectionView: FunctionComponent<HelpCollectionViewProps> = ({
   onBack,
   onSelectCollection,
   onSelectArticle,
+  onClose,
 }) => {
   const [articles, setArticles] = useState<HelpArticleSummary[]>([]);
   const [collections, setCollections] = useState<HelpCollection[]>([]);
@@ -118,7 +120,13 @@ export const HelpCollectionView: FunctionComponent<HelpCollectionViewProps> = ({
             </p>
           )}
         </div>
-        <div className="helpin-help-header-spacer" />
+        {onClose ? (
+          <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
+            <XIcon size={18} />
+          </button>
+        ) : (
+          <div className="helpin-help-header-spacer" />
+        )}
       </div>
       <div className="helpin-help-content">
         {isLoading && <p className="helpin-help-empty">Loading articles...</p>}

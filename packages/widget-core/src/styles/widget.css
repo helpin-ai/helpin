@@ -1001,18 +1001,32 @@
 }
 
 .helpin-article-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 72px;
   align-items: center;
-  gap: 12px;
+  column-gap: 12px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--helpin-border);
   background: linear-gradient(180deg, rgba(249, 250, 251, 0.96), rgba(255, 255, 255, 0.96));
+}
+
+.helpin-article-header .helpin-help-back {
+  justify-self: start;
 }
 
 .helpin-article-header-copy {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  text-align: center;
+}
+
+.helpin-article-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
 }
 
 .helpin-article-content {
