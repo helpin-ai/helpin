@@ -739,6 +739,22 @@
   min-height: 0;
 }
 
+.helpin-help-drilldown-view {
+  animation: helpin-drilldown-enter 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+@keyframes helpin-drilldown-enter {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .helpin-help-header {
   padding: 16px 20px;
   border-bottom: 1px solid var(--helpin-border);
@@ -983,6 +999,69 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.helpin-help-loading-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.helpin-help-loading-reserve {
+  min-height: 236px;
+}
+
+.helpin-help-link-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 72px;
+  padding: 16px;
+  background: var(--helpin-card-bg);
+  border: 1px solid var(--helpin-card-border);
+  border-radius: var(--helpin-radius-lg);
+  box-shadow: var(--helpin-card-shadow);
+}
+
+.helpin-help-link-skeleton-icon,
+.helpin-help-link-skeleton-line {
+  display: block;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.14), rgba(148, 163, 184, 0.26), rgba(148, 163, 184, 0.14));
+  background-size: 200% 100%;
+  animation: helpin-skeleton-pulse 1.15s ease-in-out infinite;
+}
+
+.helpin-help-link-skeleton-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.helpin-help-link-skeleton-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.helpin-help-link-skeleton-line-title {
+  width: 58%;
+  height: 14px;
+}
+
+.helpin-help-link-skeleton-line-desc {
+  width: 38%;
+  height: 12px;
+}
+
+@keyframes helpin-skeleton-pulse {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
 }
 
 .helpin-help-back:hover {
@@ -1501,6 +1580,17 @@
   background: #7f1d1d;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .helpin-help-drilldown-view,
+  .helpin-message-list--smooth-enter,
+  .helpin-help-link-skeleton-icon,
+  .helpin-help-link-skeleton-line {
+    animation: none;
+    transform: none;
+    clip-path: none;
+  }
+}
+
 /* ===== LEGACY — Widget Header (kept for backward compat) ===== */
 .helpin-widget-header {
   padding: 16px;
@@ -1567,6 +1657,25 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.helpin-message-list--smooth-enter {
+  animation: helpin-message-list-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: top center;
+  will-change: opacity, transform, clip-path;
+}
+
+@keyframes helpin-message-list-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+    clip-path: inset(0 0 18px 0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 .helpin-conversation-thread .helpin-message-list {

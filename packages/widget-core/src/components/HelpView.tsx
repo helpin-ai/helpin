@@ -160,6 +160,7 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
               space={helpSpaces[0]}
               showBack={false}
               showHeader={false}
+              animateDrilldown={false}
               onBack={() => {}}
               onSelectCollection={onSelectCollection}
             />

@@ -112,4 +112,14 @@ describe('MessageList', () => {
     expect(container.querySelector('.helpin-message--agent')).toBeTruthy();
     expect(container.querySelector('.helpin-message--ai')).toBeTruthy();
   });
+
+  it('marks the message list for one smooth thread-level reveal', () => {
+    const messages = createMessages(3);
+    const { container } = render(<MessageList messages={messages} />);
+
+    const list = container.querySelector('.helpin-message-list');
+
+    expect(list?.classList.contains('helpin-message-list--smooth-enter')).toBe(true);
+    expect(container.querySelector('.helpin-message-list-item')).toBeNull();
+  });
 });

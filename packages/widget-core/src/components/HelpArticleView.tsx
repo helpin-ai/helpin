@@ -55,7 +55,7 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
   }, [articleKey, host, widgetKey]);
 
   return (
-    <div className="helpin-article-view">
+    <div className="helpin-article-view helpin-help-drilldown-view">
       <div className="helpin-article-header">
         <button className="helpin-help-back" onClick={onBack} aria-label="Back">
           <ChevronLeftIcon size={18} />

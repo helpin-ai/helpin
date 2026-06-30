@@ -429,6 +429,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
         )}
         {activeView === 'help-space' && activeHelpSpace && host && widgetKey && (
           <HelpSpaceView
+            key={activeHelpSpace.slug}
             host={host}
             widgetKey={widgetKey}
             space={activeHelpSpace}
@@ -440,6 +441,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
         )}
         {activeView === 'help-collection' && activeCollectionSlug && host && widgetKey && (
           <HelpCollectionView
+            key={activeCollectionSlug}
             host={host}
             widgetKey={widgetKey}
             collectionSlug={activeCollectionSlug}
@@ -452,6 +454,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
         )}
         {activeView === 'help-article' && activeArticleKey && host && widgetKey && (
           <HelpArticleView
+            key={activeArticleKey}
             host={host}
             widgetKey={widgetKey}
             articleKey={activeArticleKey}

@@ -77,4 +77,32 @@ describe('HelpArticleView', () => {
     fireEvent.click(closeButton as Element);
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('marks the article screen for drill-in animation', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(
+        JSON.stringify({
+          id: 'doc-1',
+          title: 'Workspace setup',
+          slug: 'workspace-setup',
+          public_id: '884d78a2',
+          article_key: 'workspace-setup-884d78a2',
+          content_html: '<p>Hello</p>',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )),
+    );
+
+    const { container } = render(
+      <HelpArticleView
+        host="docs.helpin.ai"
+        widgetKey="wk_123"
+        articleKey="workspace-setup-884d78a2"
+        onBack={() => {}}
+      />,
+    );
+
+    expect(container.querySelector('.helpin-article-view')?.classList.contains('helpin-help-drilldown-view')).toBe(true);
+  });
 });

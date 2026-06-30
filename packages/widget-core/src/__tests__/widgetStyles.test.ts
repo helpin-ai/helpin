@@ -24,4 +24,26 @@ describe('widget scroll styles', () => {
     expect(ruleBody('.helpin-compose-footer-link')).toContain('background-size: 0 1px');
     expect(ruleBody('.helpin-compose-footer:hover .helpin-compose-footer-link')).toContain('background-size: 100% 1px');
   });
+
+  it('slides help drilldown screens from right to left', () => {
+    expect(ruleBody('.helpin-help-drilldown-view')).toContain('animation: helpin-drilldown-enter 0.38s');
+    expect(css).toContain('@keyframes helpin-drilldown-enter');
+    expect(css).toContain('translateX(28px)');
+    expect(css).toContain('translateX(0)');
+  });
+
+  it('reveals the message thread without adding per-message stagger', () => {
+    expect(css).toContain('.helpin-message-list--smooth-enter {\n  animation: helpin-message-list-in');
+    expect(ruleBody('.helpin-message-row')).toContain('animation: helpin-bubble-in');
+    expect(ruleBody('.helpin-message-row')).not.toContain('animation-delay');
+    expect(css).toContain('@keyframes helpin-message-list-in');
+  });
+
+  it('honors reduced motion for widget entry animations', () => {
+    expect(css).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(css).toContain('.helpin-help-drilldown-view,');
+    expect(css).toContain('.helpin-message-list--smooth-enter,');
+    expect(css).toContain('.helpin-help-link-skeleton-icon,');
+    expect(css).toContain('.helpin-help-link-skeleton-line');
+  });
 });

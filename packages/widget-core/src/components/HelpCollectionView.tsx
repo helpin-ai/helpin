@@ -104,7 +104,7 @@ export const HelpCollectionView: FunctionComponent<HelpCollectionViewProps> = ({
   const hasArticles = articles.length > 0;
 
   return (
-    <div className="helpin-help-view">
+    <div className="helpin-help-view helpin-help-drilldown-view">
       <div className="helpin-help-header">
         <button className="helpin-help-back" onClick={onBack} aria-label="Back">
           <ChevronLeftIcon size={18} />

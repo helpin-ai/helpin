@@ -73,4 +73,23 @@ describe('HelpCollectionView', () => {
     fireEvent.click(closeButton as Element);
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('marks the collection screen for drill-in animation', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })),
+    );
+
+    const { container } = render(
+      <HelpCollectionView
+        host="docs.helpin.ai"
+        widgetKey="wk_123"
+        collectionSlug="getting-started"
+        onBack={() => {}}
+        onSelectArticle={() => {}}
+      />,
+    );
+
+    expect(container.querySelector('.helpin-help-view')?.classList.contains('helpin-help-drilldown-view')).toBe(true);
+  });
 });

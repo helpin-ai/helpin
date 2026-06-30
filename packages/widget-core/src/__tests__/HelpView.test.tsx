@@ -150,6 +150,26 @@ describe('HelpView', () => {
     expect(container.querySelectorAll('.helpin-help-title')).toHaveLength(1);
   });
 
+  it('does not play the drill-in animation for the single-space root Help tab', async () => {
+    stubEmptyCollections();
+
+    const { getByText, container } = render(
+      <HelpView
+        config={configWithOneHelpSpace}
+        host="https://client.helpin.ai"
+        widgetKey="wk_123"
+        onSelectSpace={() => {}}
+        onSelectCollection={() => {}}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(getByText('No published collections are available yet.')).toBeTruthy();
+    });
+
+    expect(container.querySelector('.helpin-help-inline-section .helpin-help-drilldown-view')).toBeNull();
+  });
+
   it('searches help center articles and opens a result', async () => {
     const fetchMock = stubCollectionsAndSearch();
     const onSelectArticle = vi.fn();
