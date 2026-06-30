@@ -345,7 +345,16 @@ export function SupportSearchPage() {
     });
   };
 
-  const openConversation = (conversationId: string) => {
+  const openConversation = (conversationId: string, mailboxId?: string | null) => {
+    if (mailboxId) {
+      void navigate({
+        to: '/w/$slug/support/$conversationId',
+        params: { slug, conversationId },
+        search: { view: 'team', team_inbox: mailboxId } as never,
+      });
+      return;
+    }
+
     void navigate({
       to: '/w/$slug/support/$conversationId',
       params: { slug, conversationId },
@@ -410,7 +419,7 @@ export function SupportSearchPage() {
                     type="button"
                     data-slot="support-search-result-row"
                     className="group grid w-full grid-cols-1 gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:grid-cols-[minmax(220px,1.25fr)_minmax(280px,1.6fr)_minmax(180px,0.9fr)_minmax(170px,0.85fr)_minmax(120px,0.65fr)_24px] md:items-center md:gap-4 md:px-6"
-                    onClick={() => openConversation(result.conversation.id)}
+                    onClick={() => openConversation(result.conversation.id, result.conversation.mailbox_id)}
                   >
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-2">

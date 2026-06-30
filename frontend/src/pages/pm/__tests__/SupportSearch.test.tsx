@@ -202,4 +202,57 @@ describe('SupportSearchToolbar', () => {
     act(() => root.unmount())
     container.remove()
   })
+
+  it('opens team inbox conversations with the matching inbox selected', () => {
+    routerMocks.search = { q: 'refund', per_page: 50, page: 1 }
+    supportMocks.searchResponse = {
+      data: [{
+        conversation: {
+          id: 'conv-1',
+          workspace_id: 'ws-1',
+          mailbox_id: 'mailbox-billing',
+          display_id: 842,
+          subject: 'Refund request for annual plan',
+          status: 'open',
+          priority: 'high',
+          source: 'email',
+          customer_email: 'ada@example.com',
+          mailbox_name: 'Billing',
+          last_message: 'I need help with a refund',
+          created_at: '2026-06-29T12:00:00Z',
+          updated_at: '2026-06-30T05:30:00Z',
+        },
+        display_id: 842,
+        matched_fields: ['message'],
+        snippet: 'I need help with a refund',
+        highlights: [],
+        score: 42,
+      }],
+      total: 1,
+      page: 1,
+      per_page: 50,
+      total_pages: 1,
+      meta: { sort: 'relevance', query: 'refund', total_capped: false, total_cap: 1000 },
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<SupportSearchPage />)
+    })
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-slot="support-search-result-row"]')?.click()
+    })
+
+    expect(routerMocks.navigate).toHaveBeenCalledWith({
+      to: '/w/$slug/support/$conversationId',
+      params: { slug: 'test-workspace', conversationId: 'conv-1' },
+      search: { view: 'team', team_inbox: 'mailbox-billing' },
+    })
+
+    act(() => root.unmount())
+    container.remove()
+  })
 })
