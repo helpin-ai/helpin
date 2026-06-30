@@ -15,7 +15,6 @@ import { HelpArticleView } from './HelpArticleView';
 import { ConversationView } from './ConversationView';
 import { ConversationListView } from './ConversationListView';
 import { XIcon } from './icons';
-import helpinMarkUrl from '../assets/helpin-mark.svg';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
 const HELPIN_BRANDING_URL = 'https://helpin.ai/?utm_source=helpin_widget&utm_medium=widget&utm_campaign=powered_by';
@@ -480,7 +479,6 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
           className="helpin-powered-by"
         >
           <span>Powered by</span>
-          <img src={helpinMarkUrl} alt="" aria-hidden="true" className="helpin-powered-by-icon" />
           <span className="helpin-powered-by-name">Helpin</span>
         </a>
       )}

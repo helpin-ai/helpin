@@ -188,6 +188,26 @@ describe('ChatWindow', () => {
     expect(handleClose).toHaveBeenCalled();
   });
 
+  it('renders powered-by text without the Helpin logo mark', () => {
+    const { container, getByText } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+      />,
+    );
+
+    expect(getByText('Powered by')).toBeTruthy();
+    expect(getByText('Helpin')).toBeTruthy();
+    expect(container.querySelector('.helpin-powered-by img')).toBeNull();
+    expect(container.querySelector('.helpin-powered-by-icon')).toBeNull();
+  });
+
   it('uses the inline header close button instead of a floating close button in help docs subviews', () => {
     vi.stubGlobal(
       'fetch',

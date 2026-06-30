@@ -311,10 +311,10 @@
 /* View Container */
 .helpin-view-container {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 /* ===== HOME VIEW ===== */
@@ -322,6 +322,7 @@
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-height: 0;
 }
 
 .helpin-home-header {
@@ -426,6 +427,9 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .helpin-home-welcome {
@@ -783,6 +787,8 @@
   flex-direction: column;
   gap: 16px;
   min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .helpin-help-links {
@@ -961,6 +967,7 @@
   flex-direction: column;
   gap: 12px;
   min-height: 0;
+  overflow: visible;
 }
 
 .helpin-help-inline-section > .helpin-help-view {
@@ -969,6 +976,7 @@
 
 .helpin-help-inline-section > .helpin-help-view > .helpin-help-content {
   padding: 0;
+  overflow: visible;
 }
 
 .helpin-help-list {
@@ -1250,17 +1258,19 @@
   color: var(--helpin-fg-muted);
 }
 
-.helpin-powered-by-icon {
-  display: block;
-  height: 15px;
-  width: auto;
-  opacity: 0.88;
-  color: var(--helpin-fg-secondary);
-}
-
 .helpin-powered-by-name {
+  display: inline-block;
   font-weight: 600;
   color: var(--helpin-fg-secondary);
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 0 1px;
+  transition: background-size 0.18s ease;
+}
+
+.helpin-powered-by:hover .helpin-powered-by-name {
+  background-size: 100% 1px;
 }
 
 /* ===== Conversation List View ===== */
@@ -2146,9 +2156,18 @@
 }
 
 .helpin-compose-footer-link {
+  display: inline-block;
   color: var(--helpin-fg-secondary);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration: none;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 0 1px;
+  transition: background-size 0.18s ease;
+}
+
+.helpin-compose-footer-link:hover {
+  background-size: 100% 1px;
 }
 
 /* Conversation View */
