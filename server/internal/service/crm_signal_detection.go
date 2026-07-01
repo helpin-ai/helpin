@@ -60,6 +60,17 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 		return nil, fmt.Errorf("marshal payloads: %w", err)
 	}
 
+	payload := payloads[0]
+	ctx = WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    payload.WorkspaceID,
+		FeatureKey:     BillingFeatureCRMSignalDetection,
+		IdempotencyKey: aiUsageIdempotencyKey(payload.WorkspaceID, BillingFeatureCRMSignalDetection, payload.SourceType, payload.SourceID, derefString(payload.SourceThreadID)),
+		Metadata: map[string]interface{}{
+			"source_type": payload.SourceType,
+			"source_id":   payload.SourceID,
+			"thread_id":   derefString(payload.SourceThreadID),
+		},
+	})
 	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
 		SystemPrompt: signalDetectionSystemPrompt,
 		Messages: []llm.Message{
@@ -86,8 +97,6 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 		}
 		detected = wrapper.Signals
 	}
-
-	payload := payloads[0]
 
 	// Create buyer signal records.
 	var signals []model.CRMBuyerSignal

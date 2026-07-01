@@ -40,6 +40,7 @@ type OpenCodeExecutor struct {
 	openRouterBaseURL string
 	runRepo           *repository.AgentRunRepository
 	artifactRepo      *repository.AgentRunArtifactRepository
+	usageRecorder     AgentRunUsageRecorder
 }
 
 // NewOpenCodeExecutor constructs an OpenCodeExecutor with the given dependencies.
@@ -54,6 +55,7 @@ func NewOpenCodeExecutor(
 	openRouterBaseURL string,
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
+	usageRecorder AgentRunUsageRecorder,
 ) *OpenCodeExecutor {
 	if strings.TrimSpace(commandPath) == "" {
 		commandPath = "opencode"
@@ -69,6 +71,7 @@ func NewOpenCodeExecutor(
 		openRouterBaseURL: strings.TrimSpace(openRouterBaseURL),
 		runRepo:           runRepo,
 		artifactRepo:      artifactRepo,
+		usageRecorder:     usageRecorder,
 	}
 }
 
@@ -328,6 +331,9 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	}
 	artifactWriter.Save(postRunCtx, "agent_summary", "markdown", responseText, false)
 
+	run.CachedInputTokens = result.Usage.CachedInputTokens
+	run.InputTokens = result.Usage.InputTokens
+	run.OutputTokens = result.Usage.OutputTokens
 	run.TokensUsed = streamCollector.TokensUsed()
 
 	switch {
@@ -352,6 +358,9 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		}
 	}
 
+	if err := recordAgentRunUsage(postRunCtx, e.usageRecorder, run, execCtx.Agent); err != nil {
+		return normalizeOpenCodePostRunError(postRunCtx, fmt.Errorf("record opencode runtime AI usage: %w", err))
+	}
 	return normalizeOpenCodePostRunError(postRunCtx, nil)
 }
 

@@ -58,6 +58,7 @@ type AutomationRuleEngine struct {
 	activitySvc     *PMActivityService
 	wsPublisher     *websocket.Publisher
 	healthObserver  AutomationHealthObserver
+	entitlementSvc  *EntitlementService
 	runEngine       interface {
 		StartRuleSchedule(ctx context.Context, ruleID, workspaceID, schedule string) error
 		StopRuleSchedule(ctx context.Context, ruleID string) error
@@ -126,6 +127,11 @@ func (e *AutomationRuleEngine) SetRunEngine(runEngine interface {
 	return e
 }
 
+func (e *AutomationRuleEngine) SetEntitlementService(entitlementSvc *EntitlementService) *AutomationRuleEngine {
+	e.entitlementSvc = entitlementSvc
+	return e
+}
+
 // EvaluateEvent finds matching rules for an event and executes their actions.
 func (e *AutomationRuleEngine) EvaluateEvent(ctx context.Context, event model.AutomationEvent, execCtx *model.RuleExecutionContext) {
 	if e == nil {
@@ -157,6 +163,12 @@ func (e *AutomationRuleEngine) EvaluateEvent(ctx context.Context, event model.Au
 			"trigger_type", event.TriggerType,
 		)
 		return
+	}
+	if len(rules) > 0 && e.entitlementSvc != nil {
+		if err := e.entitlementSvc.RequireFeature(ctx, event.WorkspaceID, EntitlementFeatureAutomationFlows); err != nil {
+			e.logger.InfoContext(ctx, "skipping automation rules due to billing entitlement", "workspace_id", event.WorkspaceID, "error", err)
+			return
+		}
 	}
 
 	// Only load the story for story-based triggers.
@@ -803,6 +815,12 @@ func (e *AutomationRuleEngine) EvaluateCronRules(ctx context.Context, category s
 	}
 
 	for _, rule := range rules {
+		if e.entitlementSvc != nil {
+			if err := e.entitlementSvc.RequireFeature(ctx, rule.WorkspaceID, EntitlementFeatureAgentScheduling); err != nil {
+				e.logger.InfoContext(ctx, "skipping cron automation due to billing entitlement", "workspace_id", rule.WorkspaceID, "rule_id", rule.ID, "error", err)
+				continue
+			}
+		}
 		var cfg model.TriggerConfigCron
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			continue
@@ -861,6 +879,11 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 	}
 	if rule.TriggerType != model.TriggerCron {
 		return fmt.Errorf("automation rule is not scheduled")
+	}
+	if e.entitlementSvc != nil {
+		if err := e.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAgentScheduling); err != nil {
+			return err
+		}
 	}
 
 	var actionCfg model.ActionConfigRunAgent
@@ -945,6 +968,11 @@ func (e *AutomationRuleEngine) ExecuteManualRule(ctx context.Context, workspaceI
 	}
 	if rule.ActionType != model.ActionStartAgentRun {
 		return nil, fmt.Errorf("run now is only supported for agent flows")
+	}
+	if e.entitlementSvc != nil {
+		if err := e.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAgentScheduling); err != nil {
+			return nil, err
+		}
 	}
 
 	var actionCfg model.ActionConfigRunAgent
@@ -1038,6 +1066,16 @@ func (e *AutomationRuleEngine) ExecuteManualRule(ctx context.Context, workspaceI
 
 // CreateRule creates a new automation rule with validation.
 func (e *AutomationRuleEngine) CreateRule(ctx context.Context, workspaceID string, req model.CreateAutomationRuleRequest) (*model.AutomationRule, error) {
+	if e.entitlementSvc != nil {
+		if err := e.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAutomationFlows); err != nil {
+			return nil, err
+		}
+		if req.TriggerType == model.TriggerCron {
+			if err := e.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAgentScheduling); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if err := e.validateRuleRequest(req.TriggerType, req.TriggerConfig, req.ActionType, req.ActionConfig); err != nil {
 		return nil, err
 	}
@@ -1123,6 +1161,16 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 
 	if err := e.validateRuleRequest(rule.TriggerType, rule.TriggerConfig, rule.ActionType, rule.ActionConfig); err != nil {
 		return nil, err
+	}
+	if e.entitlementSvc != nil && rule.Enabled {
+		if err := e.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAutomationFlows); err != nil {
+			return nil, err
+		}
+		if rule.TriggerType == model.TriggerCron {
+			if err := e.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAgentScheduling); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	if err := e.ruleRepo.Update(ctx, rule); err != nil {

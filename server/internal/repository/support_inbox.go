@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -794,6 +796,12 @@ type ConversationRepositoryListParams struct {
 	Role              string
 }
 
+type ConversationRepositorySearchParams struct {
+	model.SupportConversationSearchParams
+	WorkspaceMemberID string
+	Role              string
+}
+
 func (r *SupportConversationRepository) mentionExistsCondition(alias string, userID string) (string, []any) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -1049,6 +1057,390 @@ func conversationListOrder(sortOrder string) string {
 	return "support_conversations.updated_at DESC"
 }
 
+const supportConversationSearchTotalCap = 1000
+
+var uuidLikePattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func normalizeSupportSearchQuery(query string) string {
+	return strings.TrimSpace(query)
+}
+
+func supportSearchLikePattern(query string) string {
+	return "%" + escapeLike(strings.ToLower(query)) + "%"
+}
+
+func supportSearchDisplayID(query string) (int, bool) {
+	trimmed := strings.TrimPrefix(strings.TrimSpace(query), "#")
+	if trimmed == "" {
+		return 0, false
+	}
+	value, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
+}
+
+func (r *SupportConversationRepository) supportSearchUsesFTS() bool {
+	return r.db != nil && r.db.Dialector != nil && r.db.Dialector.Name() == "postgres"
+}
+
+func supportSearchTerms(query string) []string {
+	query = strings.Trim(strings.TrimSpace(query), `"`)
+	fields := strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '@' || r == '.' || r == '_' || r == '-')
+	})
+	terms := make([]string, 0, len(fields))
+	seen := map[string]bool{}
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" || seen[field] {
+			continue
+		}
+		seen[field] = true
+		terms = append(terms, field)
+	}
+	return terms
+}
+
+func supportSearchHighlight(field, text, query string) *model.SupportSearchHighlight {
+	if strings.TrimSpace(text) == "" || strings.TrimSpace(query) == "" {
+		return nil
+	}
+	lowerText := strings.ToLower(text)
+	ranges := []model.SupportSearchHighlightRange{}
+	for _, term := range supportSearchTerms(query) {
+		start := strings.Index(lowerText, term)
+		if start < 0 {
+			continue
+		}
+		ranges = append(ranges, model.SupportSearchHighlightRange{Start: start, End: start + len(term)})
+	}
+	if len(ranges) == 0 {
+		return nil
+	}
+	sort.Slice(ranges, func(i, j int) bool { return ranges[i].Start < ranges[j].Start })
+	return &model.SupportSearchHighlight{Field: field, Text: text, Ranges: ranges}
+}
+
+func addMatchedField(fields []string, field string) []string {
+	for _, existing := range fields {
+		if existing == field {
+			return fields
+		}
+	}
+	return append(fields, field)
+}
+
+func (r *SupportConversationRepository) applySupportSearchFilters(query *gorm.DB, alias string, params ConversationRepositorySearchParams) *gorm.DB {
+	query = r.applyMailboxAccess(query, alias, params.WorkspaceMemberID, params.Role)
+	query = r.applyMailboxScopes(query, alias, nil, params.MailboxIDs)
+	query = r.applyConversationAssignmentFilter(query, alias, strings.Join(params.AssignedTo, ","), params.UserID)
+	query = applyConversationTagFilters(query, alias, params.TagIDs, nil)
+	query = applyConversationAIFilters(query, alias, params.AI)
+	if len(params.Statuses) > 0 {
+		query = query.Where(fmt.Sprintf("%s.status IN ?", alias), params.Statuses)
+	}
+	if len(params.Priorities) > 0 {
+		query = query.Where(fmt.Sprintf("%s.priority IN ?", alias), params.Priorities)
+	}
+	if params.CreatedFrom != nil {
+		query = query.Where(fmt.Sprintf("%s.created_at >= ?", alias), *params.CreatedFrom)
+	}
+	if params.CreatedTo != nil {
+		query = query.Where(fmt.Sprintf("%s.created_at <= ?", alias), *params.CreatedTo)
+	}
+	if strings.TrimSpace(params.CustomerEmail) != "" {
+		pattern := supportSearchLikePattern(params.CustomerEmail)
+		query = query.Where(fmt.Sprintf("LOWER(COALESCE(%s.customer_email, '')) LIKE ? ESCAPE '\\'", alias), pattern)
+	}
+	if strings.TrimSpace(params.Title) != "" {
+		pattern := supportSearchLikePattern(params.Title)
+		query = query.Where(fmt.Sprintf("LOWER(%s.subject) LIKE ? ESCAPE '\\'", alias), pattern)
+	}
+	search := normalizeSupportSearchQuery(params.Query)
+	if search == "" {
+		return query
+	}
+	pattern := supportSearchLikePattern(search)
+	conditions := []string{}
+	args := []any{}
+	if r.supportSearchUsesFTS() {
+		conditions = append(conditions,
+			fmt.Sprintf("%s.search_vector @@ websearch_to_tsquery('simple', ?)", alias),
+			fmt.Sprintf("%s.subject ILIKE ? ESCAPE '\\'", alias),
+			fmt.Sprintf("COALESCE(%s.customer_name, '') ILIKE ? ESCAPE '\\'", alias),
+			fmt.Sprintf("COALESCE(%s.customer_email, '') ILIKE ? ESCAPE '\\'", alias),
+			fmt.Sprintf(`EXISTS (
+			SELECT 1
+			FROM support_messages sm_search
+			WHERE sm_search.workspace_id = %s.workspace_id
+			  AND sm_search.conversation_id = %s.id
+			  AND sm_search.deleted_at IS NULL
+			  AND sm_search.message_type = 'reply'
+			  AND sm_search.system_event_type IS NULL
+			  AND sm_search.search_vector @@ websearch_to_tsquery('simple', ?)
+		)`, alias, alias),
+		)
+		args = append(args, search, pattern, pattern, pattern, search)
+	} else {
+		conditions = append(conditions,
+			fmt.Sprintf("LOWER(%s.subject) LIKE ? ESCAPE '\\'", alias),
+			fmt.Sprintf("LOWER(COALESCE(%s.customer_name, '')) LIKE ? ESCAPE '\\'", alias),
+			fmt.Sprintf("LOWER(COALESCE(%s.customer_email, '')) LIKE ? ESCAPE '\\'", alias),
+			fmt.Sprintf(`EXISTS (
+			SELECT 1
+			FROM support_messages sm_search
+			WHERE sm_search.workspace_id = %s.workspace_id
+			  AND sm_search.conversation_id = %s.id
+			  AND sm_search.deleted_at IS NULL
+			  AND sm_search.message_type = 'reply'
+			  AND sm_search.system_event_type IS NULL
+			  AND LOWER(COALESCE(sm_search.content, '')) LIKE ? ESCAPE '\'
+		)`, alias, alias),
+		)
+		args = append(args, pattern, pattern, pattern, pattern)
+	}
+	if displayID, ok := supportSearchDisplayID(search); ok {
+		conditions = append(conditions, fmt.Sprintf("%s.display_id = ?", alias))
+		args = append(args, displayID)
+	}
+	if uuidLikePattern.MatchString(search) {
+		conditions = append(conditions, fmt.Sprintf("%s.id = ?", alias))
+		args = append(args, search)
+	}
+	return query.Where("("+strings.Join(conditions, " OR ")+")", args...)
+}
+
+func supportSearchOrder(sortOrder, query string) string {
+	switch strings.ToLower(strings.TrimSpace(sortOrder)) {
+	case "oldest":
+		return "support_conversations.updated_at ASC"
+	case "newest":
+		return "support_conversations.updated_at DESC"
+	default:
+		if strings.TrimSpace(query) == "" {
+			return "support_conversations.updated_at DESC"
+		}
+		return "support_search_score DESC, support_conversations.updated_at DESC"
+	}
+}
+
+func supportSearchScoreSQL(query string) (string, []any) {
+	query = normalizeSupportSearchQuery(query)
+	if query == "" {
+		return "0", nil
+	}
+	pattern := supportSearchLikePattern(query)
+	score := []string{
+		"CASE WHEN LOWER(COALESCE(support_conversations.customer_email, '')) = LOWER(?) THEN 100 ELSE 0 END",
+		"CASE WHEN LOWER(support_conversations.subject) LIKE ? ESCAPE '\\' THEN 20 ELSE 0 END",
+		"CASE WHEN LOWER(COALESCE(support_conversations.customer_email, '')) LIKE ? ESCAPE '\\' THEN 18 ELSE 0 END",
+		"CASE WHEN LOWER(COALESCE(support_conversations.customer_name, '')) LIKE ? ESCAPE '\\' THEN 10 ELSE 0 END",
+	}
+	args := []any{query, pattern, pattern, pattern}
+	if displayID, ok := supportSearchDisplayID(query); ok {
+		score = append(score, "CASE WHEN support_conversations.display_id = ? THEN 120 ELSE 0 END")
+		args = append(args, displayID)
+	}
+	if uuidLikePattern.MatchString(query) {
+		score = append(score, "CASE WHEN support_conversations.id = ? THEN 120 ELSE 0 END")
+		args = append(args, query)
+	}
+	score = append(score, `CASE WHEN EXISTS (
+		SELECT 1
+		FROM support_messages sm_score
+		WHERE sm_score.workspace_id = support_conversations.workspace_id
+		  AND sm_score.conversation_id = support_conversations.id
+		  AND sm_score.deleted_at IS NULL
+		  AND sm_score.message_type = 'reply'
+		  AND sm_score.system_event_type IS NULL
+		  AND LOWER(COALESCE(sm_score.content, '')) LIKE ? ESCAPE '\'
+	) THEN 5 ELSE 0 END`)
+	args = append(args, pattern)
+	return strings.Join(score, " + "), args
+}
+
+func supportSearchPostgresScoreSQL(query string) (string, []any) {
+	query = normalizeSupportSearchQuery(query)
+	if query == "" {
+		return "0", nil
+	}
+	pattern := supportSearchLikePattern(query)
+	score := []string{
+		"CASE WHEN LOWER(COALESCE(support_conversations.customer_email, '')) = LOWER(?) THEN 100 ELSE 0 END",
+		"CASE WHEN support_conversations.search_vector @@ websearch_to_tsquery('simple', ?) THEN ts_rank_cd(support_conversations.search_vector, websearch_to_tsquery('simple', ?)) * 40 ELSE 0 END",
+		"CASE WHEN support_conversations.subject ILIKE ? ESCAPE '\\' THEN 20 ELSE 0 END",
+		"CASE WHEN COALESCE(support_conversations.customer_email, '') ILIKE ? ESCAPE '\\' THEN 18 ELSE 0 END",
+		"CASE WHEN COALESCE(support_conversations.customer_name, '') ILIKE ? ESCAPE '\\' THEN 10 ELSE 0 END",
+	}
+	args := []any{query, query, query, pattern, pattern, pattern}
+	if displayID, ok := supportSearchDisplayID(query); ok {
+		score = append(score, "CASE WHEN support_conversations.display_id = ? THEN 120 ELSE 0 END")
+		args = append(args, displayID)
+	}
+	if uuidLikePattern.MatchString(query) {
+		score = append(score, "CASE WHEN support_conversations.id = ? THEN 120 ELSE 0 END")
+		args = append(args, query)
+	}
+	score = append(score, `CASE WHEN EXISTS (
+		SELECT 1
+		FROM support_messages sm_score
+		WHERE sm_score.workspace_id = support_conversations.workspace_id
+		  AND sm_score.conversation_id = support_conversations.id
+		  AND sm_score.deleted_at IS NULL
+		  AND sm_score.message_type = 'reply'
+		  AND sm_score.system_event_type IS NULL
+		  AND sm_score.search_vector @@ websearch_to_tsquery('simple', ?)
+	) THEN 5 ELSE 0 END`)
+	args = append(args, query)
+	return strings.Join(score, " + "), args
+}
+
+func (r *SupportConversationRepository) searchSnippet(ctx context.Context, workspaceID, conversationID, query string, conversation model.SupportConversation) (string, []string, []model.SupportSearchHighlight) {
+	matchedFields := []string{}
+	highlights := []model.SupportSearchHighlight{}
+	query = normalizeSupportSearchQuery(query)
+	if query == "" {
+		if conversation.Subject != "" {
+			return conversation.Subject, matchedFields, highlights
+		}
+		return "", matchedFields, highlights
+	}
+	pattern := supportSearchLikePattern(query)
+	if highlight := supportSearchHighlight("title", conversation.Subject, query); highlight != nil {
+		matchedFields = addMatchedField(matchedFields, "title")
+		highlights = append(highlights, *highlight)
+		return conversation.Subject, matchedFields, highlights
+	}
+	if conversation.CustomerEmail != nil {
+		if highlight := supportSearchHighlight("customer_email", *conversation.CustomerEmail, query); highlight != nil {
+			matchedFields = addMatchedField(matchedFields, "customer_email")
+			highlights = append(highlights, *highlight)
+			return *conversation.CustomerEmail, matchedFields, highlights
+		}
+	}
+	if conversation.CustomerName != nil {
+		if highlight := supportSearchHighlight("customer_name", *conversation.CustomerName, query); highlight != nil {
+			matchedFields = addMatchedField(matchedFields, "customer_name")
+			highlights = append(highlights, *highlight)
+			return *conversation.CustomerName, matchedFields, highlights
+		}
+	}
+	if displayID, ok := supportSearchDisplayID(query); ok && displayID == conversation.DisplayID {
+		return fmt.Sprintf("#%d", conversation.DisplayID), []string{"display_id"}, highlights
+	}
+
+	var message model.SupportMessage
+	err := r.db.WithContext(ctx).
+		Where(`workspace_id = ? AND conversation_id = ? AND deleted_at IS NULL AND message_type = 'reply' AND system_event_type IS NULL AND LOWER(COALESCE(content, '')) LIKE ? ESCAPE '\'`,
+			workspaceID, conversationID, pattern).
+		Order("created_at DESC").
+		First(&message).Error
+	if err == nil {
+		snippet := cleanMessageSnippet(message.Content, 180)
+		matchedFields = addMatchedField(matchedFields, "message")
+		if highlight := supportSearchHighlight("message", snippet, query); highlight != nil {
+			highlights = append(highlights, *highlight)
+		}
+		return snippet, matchedFields, highlights
+	}
+	return conversation.Subject, matchedFields, highlights
+}
+
+func (r *SupportConversationRepository) Search(ctx context.Context, params ConversationRepositorySearchParams) (*model.SupportConversationSearchResponse, error) {
+	page := params.Pagination.Page
+	if page <= 0 {
+		page = 1
+	}
+	perPage := params.Pagination.PerPage
+	if perPage <= 0 || perPage > 50 {
+		perPage = 50
+	}
+	sortOrder := strings.ToLower(strings.TrimSpace(params.Sort))
+	if sortOrder == "" {
+		if strings.TrimSpace(params.Query) == "" {
+			sortOrder = "newest"
+		} else {
+			sortOrder = "relevance"
+		}
+	}
+
+	base := r.db.WithContext(ctx).
+		Table("support_conversations").
+		Where("support_conversations.workspace_id = ?", params.WorkspaceID)
+	base = r.applySupportSearchFilters(base, "support_conversations", params)
+
+	var cappedIDs []string
+	if err := base.Session(&gorm.Session{}).
+		Select("support_conversations.id").
+		Limit(supportConversationSearchTotalCap+1).
+		Pluck("support_conversations.id", &cappedIDs).Error; err != nil {
+		return nil, fmt.Errorf("count search conversations: %w", err)
+	}
+	totalCapped := len(cappedIDs) > supportConversationSearchTotalCap
+	total := len(cappedIDs)
+	if totalCapped {
+		total = supportConversationSearchTotalCap
+	}
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + perPage - 1) / perPage
+	}
+
+	scoreSQL, scoreArgs := supportSearchScoreSQL(params.Query)
+	if r.supportSearchUsesFTS() {
+		scoreSQL, scoreArgs = supportSearchPostgresScoreSQL(params.Query)
+	}
+	fetch := r.db.WithContext(ctx).
+		Table("support_conversations").
+		Where("support_conversations.workspace_id = ?", params.WorkspaceID)
+	fetch = r.applySupportSearchFilters(fetch, "support_conversations", params)
+
+	var rows []struct {
+		model.SupportConversation
+		SupportSearchScore float64 `gorm:"column:support_search_score"`
+	}
+	selectSQL := fmt.Sprintf(`support_conversations.*, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon, (%s) AS support_search_score`, scoreSQL)
+	if err := fetch.
+		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
+		Select(selectSQL, scoreArgs...).
+		Order(supportSearchOrder(sortOrder, params.Query)).
+		Offset((page - 1) * perPage).
+		Limit(perPage).
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("search conversations: %w", err)
+	}
+
+	results := make([]model.SupportConversationSearchResult, 0, len(rows))
+	for _, row := range rows {
+		conversation := row.SupportConversation
+		snippet, matchedFields, highlights := r.searchSnippet(ctx, params.WorkspaceID, conversation.ID, params.Query, conversation)
+		results = append(results, model.SupportConversationSearchResult{
+			Conversation:  conversation,
+			DisplayID:     conversation.DisplayID,
+			MatchedFields: matchedFields,
+			Snippet:       snippet,
+			Highlights:    highlights,
+			Score:         row.SupportSearchScore,
+		})
+	}
+
+	return &model.SupportConversationSearchResponse{
+		Data:       results,
+		Total:      total,
+		Page:       page,
+		PerPage:    perPage,
+		TotalPages: totalPages,
+		Meta: model.SupportConversationSearchMeta{
+			Sort:        sortOrder,
+			Query:       strings.TrimSpace(params.Query),
+			TotalCapped: totalCapped,
+			TotalCap:    supportConversationSearchTotalCap,
+		},
+	}, nil
+}
+
 // List returns conversations with optional filters and pagination.
 func (r *SupportConversationRepository) List(ctx context.Context, params ConversationRepositoryListParams) ([]model.SupportConversation, int64, error) {
 	base := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("support_conversations.workspace_id = ?", params.WorkspaceID)
@@ -1229,6 +1621,39 @@ func (r *SupportConversationRepository) ListWorkspacesForCoverageAnalysisCandida
 		return nil, fmt.Errorf("list coverage analysis workspaces: %w", err)
 	}
 	return workspaceIDs, nil
+}
+
+// ListActiveByCustomerEmail returns active conversations for a customer email
+// within a workspace and optional mailbox, most-recently-updated first.
+func (r *SupportConversationRepository) ListActiveByCustomerEmail(ctx context.Context, workspaceID, customerEmail string, mailboxID *string, since time.Time, limit int) ([]model.SupportConversation, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	customerEmail = strings.TrimSpace(customerEmail)
+	if workspaceID == "" || customerEmail == "" {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 20 {
+		limit = 2
+	}
+
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Where("LOWER(customer_email) = LOWER(?)", customerEmail).
+		Where("status IN ?", []string{
+			model.SupportConversationStatusOpen,
+			model.SupportConversationStatusWaitingOnCustomer,
+		}).
+		Where("updated_at >= ?", since).
+		Order("updated_at DESC").
+		Limit(limit)
+	if mailboxID != nil && strings.TrimSpace(*mailboxID) != "" {
+		query = query.Where("mailbox_id = ?", strings.TrimSpace(*mailboxID))
+	}
+
+	var conversations []model.SupportConversation
+	if err := query.Find(&conversations).Error; err != nil {
+		return nil, fmt.Errorf("list active conversations by customer email: %w", err)
+	}
+	return conversations, nil
 }
 
 func (r *SupportConversationRepository) applyConversationSearch(query *gorm.DB, search string) *gorm.DB {

@@ -21,10 +21,12 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/llm"
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -189,6 +191,11 @@ func main() {
 	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
 	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
+	billingRepo := repository.NewBillingRepository(db)
+	billingGateway := billingstripe.New(cfg.StripeSecretKey, cfg.StripeCreditBlockPriceID)
+	billingService := service.NewBillingService(billingRepo, billingGateway, time.Now)
+	billingService.SetWorkspaceRepository(workspaceRepo)
+	aiUsageMeter := service.NewAIUsageMeter(billingService)
 
 	// Gmail OAuth + encryption for email sync.
 	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
@@ -237,6 +244,12 @@ func main() {
 		runRepo,
 		artifactRepo,
 		codexWorkspaceAuthStore,
+		func(ctx context.Context, run *model.AgentRun, agent *model.Agent) error {
+			return service.PreflightAgentRunAIUsage(ctx, aiUsageMeter, run, agent)
+		},
+		func(ctx context.Context, run *model.AgentRun, agent *model.Agent) error {
+			return service.RecordAgentRunAIUsage(ctx, aiUsageMeter, run, agent)
+		},
 	)
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
 	if err != nil {

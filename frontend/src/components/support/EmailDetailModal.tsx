@@ -1,10 +1,8 @@
-import { useState } from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { AttachmentIcon, Download04Icon, ArrowDown01Icon, ArrowUp01Icon, InformationCircleIcon } from '@/lib/icons';
+import { AttachmentIcon, Download04Icon, InformationCircleIcon } from '@/lib/icons';
 import { useMessageEmailDetail } from '@/hooks/queries/useSupport';
 import type { SupportMessage } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
-import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 
 interface EmailDetailModalProps {
   workspaceId: string;
@@ -39,28 +37,31 @@ function parseAddress(raw: string): { name: string; email: string } {
   return { name: '', email: trimmed };
 }
 
+function formatAddresses(addresses?: string[] | null): string {
+  return (addresses ?? []).map((address) => address.trim()).filter(Boolean).join(', ');
+}
+
 export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: EmailDetailModalProps) {
   const { data, isLoading, isError } = useMessageEmailDetail(workspaceId, open ? message.id : null, open);
-  const [showTech, setShowTech] = useState(false);
 
   const attachments = message.attachments ?? [];
   const subject = data?.subject || '(no subject)';
   const from = parseAddress(data?.from_email ?? '');
+  const replyTo = parseAddress(data?.reply_to ?? '');
   const to = parseAddress(data?.to_email ?? '');
+  const cc = formatAddresses(data?.cc_emails);
+  const bcc = formatAddresses(data?.bcc_emails);
   const htmlBody = (data?.html_body && data.html_body.trim()) || '';
   const textBody = (data?.stripped_text && data.stripped_text.trim()) || message.content || '';
   const timestamp = data?.created_at ?? message.created_at;
   const forwardedAttribution = data?.forwarded_attribution;
-  const forwardedTextBody = forwardedAttribution && hasForwardedHeaderMarker(textBody)
-    ? cleanForwardedDisplayContent(textBody).trim()
-    : '';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl gap-0 overflow-hidden p-0 sm:max-w-3xl lg:max-w-4xl">
+      <DialogContent className="max-h-[85vh] max-w-3xl gap-0 overflow-hidden p-0 sm:max-w-3xl lg:max-w-4xl">
         <DialogTitle className="sr-only">{subject}</DialogTitle>
 
-        <div className="max-h-[80vh] overflow-y-auto">
+        <div className="flex max-h-[85vh] min-h-0 flex-col">
           {isLoading && (
             <div className="space-y-3 animate-pulse px-8 py-8">
               <div className="h-6 w-3/4 rounded bg-muted" />
@@ -80,7 +81,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
           )}
 
           {!isLoading && !isError && data && (
-            <div className="px-8 py-8">
+            <div className="flex min-h-0 flex-col px-8 py-8">
               <h2 className="pr-10 text-[17px] font-semibold leading-snug tracking-tight">{subject}</h2>
 
               <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
@@ -96,6 +97,22 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
                   )}
                 </dd>
 
+                {replyTo.email || replyTo.name ? (
+                  <>
+                    <dt className="text-muted-foreground">Reply-To</dt>
+                    <dd className="min-w-0 [overflow-wrap:anywhere]">
+                      {replyTo.name ? (
+                        <>
+                          <span className="font-medium text-foreground">{replyTo.name}</span>
+                          {replyTo.email ? <span className="ml-1 text-muted-foreground">&lt;{replyTo.email}&gt;</span> : null}
+                        </>
+                      ) : (
+                        <span className="font-medium text-foreground">{replyTo.email}</span>
+                      )}
+                    </dd>
+                  </>
+                ) : null}
+
                 {to.email || to.name ? (
                   <>
                     <dt className="text-muted-foreground">To</dt>
@@ -109,6 +126,20 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
                         <span className="font-medium text-foreground">{to.email}</span>
                       )}
                     </dd>
+                  </>
+                ) : null}
+
+                {cc ? (
+                  <>
+                    <dt className="text-muted-foreground">Cc</dt>
+                    <dd className="min-w-0 [overflow-wrap:anywhere]">{cc}</dd>
+                  </>
+                ) : null}
+
+                {bcc ? (
+                  <>
+                    <dt className="text-muted-foreground">Bcc</dt>
+                    <dd className="min-w-0 [overflow-wrap:anywhere]">{bcc}</dd>
                   </>
                 ) : null}
 
@@ -142,20 +173,33 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
                 </div>
               )}
 
-              <div className="mt-6 border-t border-border/60 pt-6">
-                {forwardedTextBody ? (
-                  <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
-                    {forwardedTextBody}
-                  </div>
-                ) : htmlBody ? (
-                  <EmailBodyRenderer html={htmlBody} collapsedByDefault={!forwardedAttribution} />
-                ) : textBody ? (
-                  <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
-                    {textBody}
-                  </div>
-                ) : (
-                  <span className="italic text-muted-foreground">No message body.</span>
-                )}
+              <div className="mt-5 border-t border-border/60 pt-4">
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Technical details</div>
+                <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 rounded-md bg-muted/40 p-3 text-xs">
+                  <TechRow label="Direction" value={data.direction} />
+                  <TechRow label="Status" value={data.status} />
+                  {data.delivered_at && <TechRow label="Delivered" value={formatFullTimestamp(data.delivered_at)} />}
+                  {data.opened_at && <TechRow label="Opened" value={formatFullTimestamp(data.opened_at)} />}
+                  {data.bounced_at && <TechRow label="Bounced" value={formatFullTimestamp(data.bounced_at)} />}
+                  {data.error_message && <TechRow label="Error" value={data.error_message} />}
+                  {data.rfc_message_id && <TechRow label="Message-ID" value={data.rfc_message_id} mono />}
+                  {data.in_reply_to && <TechRow label="In-Reply-To" value={data.in_reply_to} mono />}
+                  {data.references_header && <TechRow label="References" value={data.references_header} mono />}
+                </dl>
+              </div>
+
+              <div className="mt-6 min-h-0 border-t border-border/60 pt-6">
+                <div className="max-h-[46vh] min-h-0 overflow-y-auto pr-1">
+                  {htmlBody ? (
+                    <EmailBodyRenderer html={htmlBody} collapsedByDefault={false} />
+                  ) : textBody ? (
+                    <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
+                      {textBody}
+                    </div>
+                  ) : (
+                    <span className="italic text-muted-foreground">No message body.</span>
+                  )}
+                </div>
               </div>
 
               {attachments.length > 0 && (
@@ -181,31 +225,6 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
                   </div>
                 </div>
               )}
-
-              <div className="mt-6 border-t border-border/60 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowTech(!showTech)}
-                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                >
-                  {showTech ? <ArrowUp01Icon className="h-3 w-3" /> : <ArrowDown01Icon className="h-3 w-3" />}
-                  {showTech ? 'Hide technical details' : 'Show technical details'}
-                </button>
-
-                {showTech && (
-                  <dl className="mt-3 space-y-1.5 rounded-md bg-muted/40 p-3 text-xs">
-                    <TechRow label="Direction" value={data.direction} />
-                    <TechRow label="Status" value={data.status} />
-                    {data.delivered_at && <TechRow label="Delivered" value={formatFullTimestamp(data.delivered_at)} />}
-                    {data.opened_at && <TechRow label="Opened" value={formatFullTimestamp(data.opened_at)} />}
-                    {data.bounced_at && <TechRow label="Bounced" value={formatFullTimestamp(data.bounced_at)} />}
-                    {data.error_message && <TechRow label="Error" value={data.error_message} />}
-                    {data.rfc_message_id && <TechRow label="Message-ID" value={data.rfc_message_id} mono />}
-                    {data.in_reply_to && <TechRow label="In-Reply-To" value={data.in_reply_to} mono />}
-                    {data.references_header && <TechRow label="References" value={data.references_header} mono />}
-                  </dl>
-                )}
-              </div>
             </div>
           )}
         </div>
@@ -216,9 +235,9 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
 
 function TechRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="grid grid-cols-[7rem_1fr] gap-3">
+    <>
       <dt className="text-muted-foreground">{label}</dt>
       <dd className={`[overflow-wrap:anywhere] ${mono ? 'font-mono' : ''}`}>{value}</dd>
-    </div>
+    </>
   );
 }

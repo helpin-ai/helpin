@@ -25,6 +25,7 @@ import {
   SecurityCheckIcon,
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
@@ -41,6 +42,7 @@ import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { AGENT_RUNTIME_HELP_TEXT, AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import type {
   Agent,
@@ -2553,6 +2555,14 @@ export function AgentsPage() {
   const [runNowSubmitting, setRunNowSubmitting] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [runDrawerOpen, setRunDrawerOpen] = useState(false);
+  const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
+
+  const showUpgradeDialogForError = useCallback((error: unknown) => {
+    const reason = getUpgradeRequiredReason(error);
+    if (!reason) return false;
+    setUpgradeDialogReason(reason);
+    return true;
+  }, []);
 
   const loadAgents = useCallback(async () => {
     if (!workspaceId) return;
@@ -2773,6 +2783,7 @@ export function AgentsPage() {
     setRunNowSubmitting(false);
 
     if (res.error || !res.data) {
+      if (showUpgradeDialogForError(res.error)) return;
       toast.error('Failed to start agent run', { description: res.error ?? 'No run was returned.' });
       return;
     }
@@ -2790,6 +2801,7 @@ export function AgentsPage() {
     runNowBaseBranch,
     runNowTargetId,
     runNowTargetType,
+    showUpgradeDialogForError,
     workspace?.slug,
     workspaceId,
   ]);
@@ -3336,6 +3348,10 @@ export function AgentsPage() {
           await loadAgents();
           toast.success(res.data?.flow ? 'Agent and starter flow created' : 'Agent created');
         } else {
+          if (showUpgradeDialogForError(res.error)) {
+            setSaving(false);
+            return;
+          }
           toast.error('Failed to create agent from template', { description: res.error });
         }
       } else {
@@ -3346,6 +3362,10 @@ export function AgentsPage() {
           await loadAgents();
           toast.success('Agent created');
         } else {
+          if (showUpgradeDialogForError(res.error)) {
+            setSaving(false);
+            return;
+          }
           toast.error('Failed to create agent', { description: res.error });
         }
       }
@@ -7455,6 +7475,24 @@ export function AgentsPage() {
         }}
         title="Agent Run"
         description="Interactive transcript, approvals, artifacts, and session details."
+      />
+      <UpgradeRequiredDialog
+        open={upgradeDialogReason !== null}
+        onOpenChange={(open) => {
+          if (!open) setUpgradeDialogReason(null);
+        }}
+        onUpgrade={() => {
+          setDialogOpen(false);
+          setTemplateDialogOpen(false);
+          setTemplateSetupDialogOpen(false);
+          setTemplateDraft(null);
+          setRunNowOpen(false);
+          setRunNowAgent(null);
+          setToolPickerOpen(false);
+          setSkillPickerOpen(false);
+          setSystemPromptEditorOpen(false);
+        }}
+        reason={upgradeDialogReason}
       />
     </div>
   );

@@ -1,369 +1,173 @@
 # Helpin Pricing Strategy
 
-## Section 1: Recommended Pricing Strategy
+## Current Model
 
-**Core principle: Platform pricing by company stage, not per seat.**
+Helpin uses flat workspace pricing with included monthly AI usage. There is no Free plan; unpaid workspaces are locked until they choose Starter or Growth.
 
-Helpin replaces 4-6 tools. Pricing should reflect the value of consolidation + AI, not the number of humans typing. Per-seat pricing punishes growth and makes buyers do math — both kill conversion.
+| Plan | Price | Annual | Seats | Teams | CRM contacts | AI usage/month | Trial |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Starter | $99/month | $948/year | Unlimited | 10 | 5,000 | 5,000 units | No separate trial |
+| Growth | $299/month | $2,868/year | Unlimited | Unlimited | Unlimited | 25,000 units | 14-day no-card trial on new workspaces |
 
-**The right model for Helpin:**
-- Flat monthly platform fee per plan
-- Generous user allowances (not per-seat billing)
-- AI credits included in every plan, with clear overage pricing
-- 3 plans + Enterprise
-- Annual discount (20%) to improve retention and cash flow
+There are no Business, Enterprise, or higher plans in v1.
 
-**Why this works for Helpin specifically:**
-1. Buyers are comparing against 4-6 separate tool subscriptions — Helpin needs to feel like one price for everything
-2. AI usage is variable — some months heavy, some light. Credits with included allowance handles this cleanly
-3. The "platform fee" framing positions Helpin as infrastructure, not another SaaS tool
-4. Generous user limits remove the "let me count my team" friction from buying decisions
+## Trial Behavior
 
----
+- New workspaces start on a 14-day Growth trial without requiring a card.
+- Trial workspaces receive the Growth monthly AI usage allocation: 25,000 units.
+- The trial has a hard 25,000-unit cap. After that cap or the 14-day trial expires, users must upgrade to continue using paid AI features.
+- If the workspace does not upgrade before the trial ends, it becomes locked.
+- Locked workspaces keep their data, but only billing/reactivation flows are available.
 
-## Section 2: Three Pricing Model Options
+## Plan Changes
 
-### Option A: Platform Tiers (Recommended)
+- Paid plan and interval changes apply immediately from the billing page plan selector with prorated billing.
+- Cancellation is handled through Stripe and locks the workspace at the end of the current billing period.
+- Users keep their current paid limits until a scheduled cancellation takes effect.
+- Locked workspaces do not delete data, but product access is blocked except for billing and reactivation.
 
-| | Starter | Growth | Business | Enterprise |
-|---|---------|--------|----------|------------|
-| Price | $299/mo | $799/mo | $1,999/mo | Custom |
-| Users | Up to 10 | Up to 30 | Up to 100 | Unlimited |
-| AI Credits | 5,000/mo | 25,000/mo | 100,000/mo | Custom |
-| Workspaces | 1 | 3 | Unlimited | Unlimited |
+## AI Usage
 
-**Pros:**
-- Dead simple to understand — pick your company size
-- No per-seat math
-- AI included, not gated
-- Easy to upsell (more users, more credits)
-- Feels premium but fair
+AI usage is consumed by AI work, not by seats. It resets each billing period. Customer-facing surfaces should say "AI usage"; backend code may continue to store the allowance and ledger as credits.
 
-**Cons:**
-- Revenue doesn't scale linearly with team size (mitigated by plan tiers)
-- Some large teams on small plans (mitigated by user caps)
+Internal metering uses the formula and feature floors in [AI Usage Metering](./ai-usage-metering.md). The highest feature floor is 100 usage units; larger runs may consume more than the floor based on token usage.
 
-### Option B: Per-Seat + Platform Fee
+Implementation status: direct LLM calls are preflighted before provider execution and metered through the shared metered provider context. Metered providers fail closed unless the call has usage context or an explicit setup/free exemption. Native SDK, Codex, and OpenCode agent runs are preflighted before they are queued; if the workspace is locked or AI usage is exhausted, no run row is created and the launch endpoint returns payment required. Completed runs are metered after their token usage is persisted. SLA limits are intentionally deferred until the SLA feature exists.
 
-| | Starter | Growth | Business |
-|---|---------|--------|----------|
-| Platform fee | $99/mo | $299/mo | $799/mo |
-| Per seat | $15/seat/mo | $12/seat/mo | $10/seat/mo |
-| AI Credits | 2,000/mo | 10,000/mo | 50,000/mo |
+| Action | Floor usage units |
+| --- | ---: |
+| AI triage/routing | 2 |
+| CRM signal detection | 3 |
+| Support reply draft | 8 |
+| Help article generation/update | 20 |
+| Atlas epic planning run | 80 |
+| Forge or Lens run | 100 |
 
-**Pros:**
-- Revenue scales with team size
-- Lower entry point
+Extra AI usage is available only on paid plans. Workspace admins can enable or disable it. When enabled, Helpin bills $50 per 5,000-unit usage pack after included usage is exhausted.
 
-**Cons:**
-- Adds complexity ("what's my total?")
-- Per-seat feels like what they're leaving behind (Jira, HubSpot)
-- Undermines the "one price for everything" message
-- Buyers hate per-seat — it's the #1 complaint about SaaS pricing
+Usage policy:
 
-### Option C: Usage-Based (AI-First)
+- Upgrade: the higher included AI usage allowance is available immediately.
+- Paid downgrade: the lower included AI usage allowance is available immediately. If current-period usage is already above the new allowance, remaining usage shows as zero until the next billing period.
+- Trial expiry or cancellation: the workspace locks and extra AI usage is disabled.
+- Failed payments follow Stripe Billing retry/dunning behavior. While Stripe reports `past_due`, Helpin can warn users. When Stripe moves the subscription to `unpaid`, Helpin locks the workspace and disables extra AI usage until payment is fixed.
+- Unused included AI usage does not roll over.
 
-| | Base | Pro | Scale |
-|---|------|-----|-------|
-| Price | $199/mo | $599/mo | $1,499/mo |
-| Users | Unlimited | Unlimited | Unlimited |
-| AI Credits | 3,000/mo | 15,000/mo | 75,000/mo |
-| Overage | $0.05/credit | $0.04/credit | $0.03/credit |
+## Plan Packaging
 
-**Pros:**
-- Unlimited users is a powerful headline
-- AI usage drives revenue
-- Low entry, scales with value
+Every plan includes the core Helpin modules: Project Management, Support, Sales/CRM, and Docs. Starter includes Helpin's built-in AI agents. Growth unlocks user-defined automation: custom agents, automation flows, and scheduled agent runs.
 
-**Cons:**
-- Unpredictable bills (buyers hate this)
-- Hard to budget for
-- AI credits become the thing buyers worry about instead of using
-- Feels like a cloud infrastructure bill, not a product
+Starter:
 
----
-
-## Section 3: Recommended Final Pricing Model
-
-**Go with Option A: Platform Tiers.**
-
-Here's the refined structure:
-
-### Starter — $299/month
-*For small teams getting started with one connected system.*
-
-- Up to 10 users
-- 1 workspace
-- All modules (PM, Support, Sales, Docs)
+- Unlimited seats
+- 10 teams per workspace
+- 5,000 monthly AI usage units
+- 500 documents
+- 5,000 CRM contacts
 - Built-in AI agents
-- 5,000 AI credits/month
-- Community support
+- Tasks custom views
+- Shared inbox and team inboxes
+- Inbox custom views and saved replies
+- Connect support email addresses
+- Coverage gap detection
+- Custom help center domain
+- Internal docs
 - GitHub integration
+- Extra AI usage packs
 
-### Growth — $799/month
-*For growing companies replacing their tool stack.*
+Growth:
 
-- Up to 30 users
-- 3 workspaces
 - Everything in Starter
+- Unlimited teams
+- 25,000 monthly AI usage units
+- Unlimited CRM contacts
 - Custom AI agents
-- 25,000 AI credits/month
-- Priority support
-- Advanced automations
-- API access
-- Import from Jira, Notion, Intercom, HubSpot
-
-### Business — $1,999/month
-*For teams that want full AI-powered operations.*
-
-- Up to 100 users
-- Unlimited workspaces
-- Everything in Growth
-- 100,000 AI credits/month
-- Dedicated success manager
-- SSO / SAML
-- Advanced RBAC
-- Audit logs
-- Custom integrations
-- SLA guarantee
-
-### Enterprise — Custom
-*For organizations with complex requirements.*
-
-- Unlimited users
-- Custom AI credit volume
-- Dedicated infrastructure
-- Custom SLAs
-- Onboarding & migration support
-- MSA / custom contracts
-- Volume discounts
-
-**Why this is the right model:**
-
-1. **Simple** — 4 options, clear user/credit limits, no math
-2. **Competitive** — $299/mo for 10 users replaces $500-1500/mo in separate tools
-3. **Scalable** — revenue grows with company size naturally
-4. **AI-native** — credits are included, not an afterthought
-5. **Premium** — pricing says "operating system" not "another tool"
-
----
-
-## Section 4: Feature Packaging by Plan
-
-### What should NOT be feature-gated aggressively:
-- **All core modules** (PM, Support, Sales, Docs) — available on every plan. Gating modules kills the "one system" story.
-- **Built-in AI agents** — available on every plan. AI is the differentiator, not a premium add-on.
-- **Basic automations** — available on every plan.
-- **Mobile access** — available on every plan.
-- **Import tools** — available on every plan. Don't make switching harder.
-
-### What SHOULD be gated by plan:
-
-| Feature | Starter | Growth | Business | Enterprise |
-|---------|---------|--------|----------|------------|
-| Core modules (PM, Support, Sales, Docs) | ✓ | ✓ | ✓ | ✓ |
-| Built-in AI agents | ✓ | ✓ | ✓ | ✓ |
-| Custom AI agents | — | ✓ | ✓ | ✓ |
-| Agent scheduling & cron | — | ✓ | ✓ | ✓ |
-| Workspaces | 1 | 3 | Unlimited | Unlimited |
-| Users | 10 | 30 | 100 | Unlimited |
-| AI credits/month | 5,000 | 25,000 | 100,000 | Custom |
-| GitHub integration | ✓ | ✓ | ✓ | ✓ |
-| API access | — | ✓ | ✓ | ✓ |
-| Advanced automations | — | ✓ | ✓ | ✓ |
-| Help center (public) | ✓ | ✓ | ✓ | ✓ |
-| Custom domain (help center) | — | ✓ | ✓ | ✓ |
-| Import tools | ✓ | ✓ | ✓ | ✓ |
-| Priority support | — | ✓ | ✓ | ✓ |
-| Dedicated success manager | — | — | ✓ | ✓ |
-| SSO / SAML | — | — | ✓ | ✓ |
-| Audit logs | — | — | ✓ | ✓ |
-| Advanced RBAC | — | — | ✓ | ✓ |
-| Custom SLA | — | — | — | ✓ |
-| Dedicated infrastructure | — | — | — | ✓ |
-
----
-
-## Section 5: AI Credits Model
-
-### What is an AI credit?
-
-**Commercially:** 1 AI credit = 1 unit of AI work. Each agent action consumes credits based on complexity.
-
-**Technically:** Credits map to token usage across the AI provider (Claude, GPT, etc.). But never expose this to customers — they don't care about tokens.
-
-### Credit consumption examples (for the pricing page):
-
-| Action | Approximate credits |
-|--------|-------------------|
-| Triage a support ticket | ~5 credits |
-| Plan an epic from a brief | ~50 credits |
-| Generate a document draft | ~30 credits |
-| Code review (single PR) | ~20 credits |
-| Search knowledge base | ~2 credits |
-| Auto-reply to customer | ~10 credits |
-| Full sprint planning session | ~100 credits |
-
-### How to present credits:
-
-**On the pricing page:**
-> "Every plan includes AI credits. Credits are consumed when agents work — triaging tickets, planning features, drafting docs, and more. Most teams never exceed their included credits."
-
-**Key messaging:**
-- Credits are INCLUDED, not extra
-- Show what 5,000 credits means in real terms: "~1,000 support triages or ~100 epic plans per month"
-- Overage is available, not punitive: "$0.05/credit beyond your plan"
-- Credits reset monthly — no rollover (keeps it simple)
-
-### BYO Keys consideration:
-Since users bring their own API keys, the "AI credits" are really about Helpin's orchestration, context loading, and tool execution — not raw model costs. This is important: you're charging for the AGENT WORK, not the API call. Frame it that way.
-
----
-
-## Section 6: Website Pricing Page Copy
-
-### Hero
-**Headline:** "One platform. One price. No per-seat surprises."
-
-**Subheadline:** "Replace your project management, support, CRM, and docs tools with one AI-powered system. Every plan includes AI agents that do the work."
-
-### Plan Names & Descriptions
-
-**Starter — $299/mo**
-"For small teams replacing their first set of disconnected tools."
-
-**Growth — $799/mo** ← MOST POPULAR badge
-"For growing companies that want AI agents across every team."
-
-**Business — $1,999/mo**
-"For organizations running their entire operation on Helpin."
-
-**Enterprise — Custom**
-"For companies with complex compliance, security, or scale requirements."
-
-### Top Features Per Plan (for the pricing cards)
-
-**Starter:**
-- Up to 10 users
-- All modules included
-- Built-in AI agents
-- 5,000 AI credits/month
-- GitHub integration
-- 1 workspace
-
-**Growth:**
-- Up to 30 users
-- Custom AI agents
-- 25,000 AI credits/month
-- Advanced automations
-- API access
-- 3 workspaces
+- Automation flows
+- Scheduled agents and cron
+- AI conversation routing
+- Multilingual help center and AI article translation
+- Round robin assignment
+- SLA policies
+- Deal automation
+- Remove Helpin branding
 - Priority support
 
-**Business:**
-- Up to 100 users
-- 100,000 AI credits/month
-- SSO / SAML
-- Dedicated success manager
-- Audit logs
-- Unlimited workspaces
-- SLA guarantee
+## Stripe Implementation
 
-**Enterprise:**
-- Unlimited everything
-- Custom AI credit volume
-- Dedicated infrastructure
-- Custom contracts
-- Migration support
+Use Stripe Billing with Checkout Sessions and the Customer Portal.
 
-### AI Credits Section
+- Create Products/Prices in Stripe for Starter monthly, Starter annual, Growth monthly, Growth annual, and the 5,000-unit AI usage pack.
+- Store Stripe Price IDs in server environment variables.
+- Keep Stripe secret keys server-side only.
+- Use Checkout Sessions for initial paid subscription checkout.
+- Use the in-app billing page plan selector for upgrades and downgrades.
+- Use the Customer Portal for payment method, billing address, invoices, and account-level subscription management.
+- Process subscription webhooks idempotently.
 
-**Headline:** "AI credits, explained simply."
+Billing management access is owner-only in v1. Workspace admins and delegated billing owners must not be able to change plans, open billing management flows, toggle extra AI usage, or manage organization billing. A later release may add explicit ownership transfer or workspace-to-organization reassignment.
 
-**Copy:**
-"Every plan includes AI credits that power your agents. When an agent triages a ticket, plans a sprint, or drafts a document — it uses credits. Most teams never hit their limit.
+Billing correctness rules:
 
-Need more? Add credit packs anytime, or upgrade your plan. No surprises, no throttling, no hidden costs."
+- Stripe webhook event IDs are recorded before processing and marked processed only after the billing mutation succeeds. A duplicate event with `processed=false` must be retried; a duplicate event with `processed=true` must be ignored.
+- Subscription ID is the authoritative workspace resolver for subscription and invoice webhooks. Customer ID may be used only when it maps to exactly one workspace; customer-only events for an organization with multiple workspace subscriptions must not update an arbitrary workspace.
+- Extra AI usage billing must be atomic with usage recording. When a usage event crosses into a new paid 5,000-unit pack, the Stripe charge runs while the workspace billing row is locked and is bounded by a short request timeout; if Stripe billing fails or times out, the usage ledger and usage counters must not commit. A durable charge/reconciliation queue can replace the in-transaction Stripe call later if higher throughput requires shorter row locks.
+- Customer-facing "add payment method" flows should route to the Stripe-hosted Customer Portal. Helpin does not collect cards with an in-app SetupIntent flow in v1.
 
-**Visual:** Show a simple table of "what X credits gets you" with real examples.
+Required server environment variables:
 
-### Comparison Section
+```bash
+STRIPE_PUBLISHABLE_KEY=
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_STARTER_MONTHLY_PRICE_ID=
+STRIPE_STARTER_ANNUAL_PRICE_ID=
+STRIPE_GROWTH_MONTHLY_PRICE_ID=
+STRIPE_GROWTH_ANNUAL_PRICE_ID=
+STRIPE_CREDIT_BLOCK_PRICE_ID=
+BILLING_TEST_SCENARIOS_ENABLED=false
+```
 
-**Headline:** "Everything you need. Nothing you don't."
+`BILLING_TEST_SCENARIOS_ENABLED=true` enables the dev-only Billing Settings scenario switcher API. Use it only against local/dev databases. The switcher can set the current workspace to:
 
-**Subheadline:** "All plans include every module — PM, Support, Sales, and Docs. No feature walls between your teams."
+- Starter baseline with billing-test data removed
+- Growth trial with all 25,000 trial AI units used
+- Growth past_due grace state
+- Growth unpaid locked state
+- Starter with all 5,000 AI units used
+- Starter near overage with extra AI usage enabled
+- Starter with 500 billing-test documents
+- Starter with 5,001 billing-test CRM contacts
 
-### Final CTA
+The seeded documents and contacts are marked as billing test data so the reset scenario can remove them without deleting normal workspace data.
 
-**Headline:** "Start with Starter. Scale when you're ready."
+Sandbox Price creation helper:
 
-**Subheadline:** "Every plan includes a 14-day free trial. No credit card required. Set up in 10 minutes."
+```bash
+export STRIPE_SECRET_KEY
+node scripts/create-stripe-billing-prices.mjs
+```
 
-**Button:** "Start free trial"
-**Secondary:** "Talk to sales"
+The helper creates:
 
----
+- Helpin Starter product with monthly and annual recurring Prices
+- Helpin Growth product with monthly and annual recurring Prices
+- Helpin extra AI usage pack product with a one-time $50 Price
 
-## Section 7: FAQs
+It prints the five Price IDs needed by the server environment.
 
-**Q: Do I need to buy separate modules?**
-A: No. Every plan includes all modules — PM, Support, Sales, and Docs. We don't sell features separately.
+## Customer-Facing Copy
 
-**Q: What happens if I exceed my AI credit limit?**
-A: Your agents don't stop working. We'll notify you and any overage is billed at a simple per-credit rate. You can also add credit packs anytime.
+Primary positioning:
 
-**Q: Can I change plans anytime?**
-A: Yes. Upgrade or downgrade at any time. Changes take effect on your next billing cycle.
+> Pay for output, not headcount.
 
-**Q: Do you offer annual billing?**
-A: Yes. Annual plans save 20% compared to monthly billing.
+Pricing page commitments:
 
-**Q: What AI models does Helpin use?**
-A: You bring your own API keys. Helpin supports Claude, GPT, and other providers. You choose the model per agent.
-
-**Q: Is there a free trial?**
-A: Yes. Every plan includes a 14-day free trial. No credit card required.
-
-**Q: How do AI credits work with BYO API keys?**
-A: AI credits cover Helpin's agent orchestration — the planning, context loading, tool execution, and coordination across modules. Your API key covers the model inference cost. Credits represent the value of the agent doing the work, not just the API call.
-
-**Q: Can I add more users without upgrading?**
-A: User limits are per plan. If you need more users, upgrade to the next plan or contact us for a custom arrangement.
-
-**Q: What's included in Priority Support?**
-A: Priority support includes faster response times, direct access to the engineering team, and a dedicated Slack channel (Growth and above).
-
-**Q: Do unused credits roll over?**
-A: Credits reset monthly. We keep it simple — your included credits refresh at the start of each billing cycle.
-
----
-
-## Section 8: Risks & Things to Watch Out For
-
-### 1. Starter price may feel high for very early-stage teams
-**Risk:** $299/mo is a real commitment for a 3-person startup.
-**Mitigation:** Offer a generous free trial (14 days). Consider a "Solo" plan at $99/mo for 1-3 users if you see drop-off at signup. Don't launch with it — add it later if data shows you need it.
-
-### 2. AI credits can create anxiety
-**Risk:** Users worry about running out and stop using agents.
-**Mitigation:** Make the included allowance generous enough that 80%+ of customers never exceed it. Show credit usage in-app but don't make it scary. Use "soft limits" — agents keep working, you notify and bill later.
-
-### 3. BYO keys + credits = double cost perception
-**Risk:** "I'm paying for my API keys AND your credits?"
-**Mitigation:** Frame credits as "agent orchestration" not "AI usage." The credit pays for Helpin doing the work — reading your tickets, checking your roadmap, updating your docs. The API key pays for the model. Two different things. Be clear on the pricing page.
-
-### 4. Enterprise deals may stall without a sales team
-**Risk:** "Custom pricing" with no one to talk to = lost deals.
-**Mitigation:** Add a Calendly link on the Enterprise card. Respond to Enterprise inquiries within 24 hours. Even if it's just the founder on the call.
-
-### 5. Don't discount too early or too aggressively
-**Risk:** First customers will push for discounts. Discounting trains the market to wait.
-**Mitigation:** Offer "founding member" pricing (e.g., 30% off for the first year) instead of permanent discounts. This rewards early adopters without setting a low anchor.
-
-### 6. Watch the Growth → Business gap
-**Risk:** $799 → $1,999 is a big jump. Some companies with 30-50 users may feel stuck.
-**Mitigation:** Consider a "Growth Plus" at $1,299 if you see clustering at the Growth cap. Don't launch with it — add it based on data.
-
-### 7. Don't launch with all plans day one
-**Risk:** Over-engineering pricing before you have customers.
-**Recommendation:** Launch with just **Starter + Growth** and "Contact us" for larger teams. Add Business and Enterprise when you have real demand signals. This reduces complexity and lets you learn what buyers actually want before committing to a full pricing structure.
+- Every plan includes PM, Support, Sales/CRM, and Docs.
+- Paid plans unlock higher limits and user-defined AI automation.
+- Starter and Growth include unlimited seats.
+- Starter includes up to 10 teams; Growth includes unlimited teams.
+- Starter includes up to 5,000 CRM contacts; Growth includes unlimited CRM contacts.
+- Growth trial lasts 14 days and requires no card.
+- Expired trials and ended subscriptions lock the workspace until reactivated.
+- Extra AI usage packs are optional and admin-controlled.

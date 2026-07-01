@@ -12,7 +12,8 @@ import (
 
 // CRMContactService contains CRM contact business logic.
 type CRMContactService struct {
-	contactRepo *repository.CRMContactRepository
+	contactRepo    *repository.CRMContactRepository
+	entitlementSvc *EntitlementService
 }
 
 // NewCRMContactService creates a new CRMContactService.
@@ -20,10 +21,18 @@ func NewCRMContactService(contactRepo *repository.CRMContactRepository) *CRMCont
 	return &CRMContactService{contactRepo: contactRepo}
 }
 
+func (s *CRMContactService) SetEntitlementService(entitlementSvc *EntitlementService) *CRMContactService {
+	s.entitlementSvc = entitlementSvc
+	return s
+}
+
 // List returns contacts with filters and pagination.
 func (s *CRMContactService) List(ctx context.Context, workspaceID string, filters model.CRMContactListFilters, pagination model.PMPagination) ([]model.CRMContact, int64, error) {
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
+	}
+	if err := s.requireContactViewEntitlement(ctx, workspaceID); err != nil {
+		return nil, 0, err
 	}
 	return s.contactRepo.List(ctx, workspaceID, filters, pagination)
 }
@@ -37,13 +46,36 @@ func (s *CRMContactService) GetByID(ctx context.Context, id string) (*model.CRMC
 	if contact == nil {
 		return nil, fmt.Errorf("contact not found")
 	}
+	if err := s.requireContactViewEntitlement(ctx, contact.WorkspaceID); err != nil {
+		return nil, err
+	}
 	return contact, nil
+}
+
+func (s *CRMContactService) requireContactViewEntitlement(ctx context.Context, workspaceID string) error {
+	if s.entitlementSvc == nil {
+		return nil
+	}
+	count, err := s.contactRepo.CountByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	return s.entitlementSvc.RequireLimitUsage(ctx, workspaceID, EntitlementLimitContacts, count, 0)
 }
 
 // Create creates a contact.
 func (s *CRMContactService) Create(ctx context.Context, req model.CreateCRMContactRequest) (*model.CRMContact, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.FirstName) == "" {
 		return nil, fmt.Errorf("workspace_id and first_name are required")
+	}
+	if s.entitlementSvc != nil {
+		count, err := s.contactRepo.CountByWorkspace(ctx, req.WorkspaceID)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.entitlementSvc.RequireLimitUsage(ctx, req.WorkspaceID, EntitlementLimitContacts, count, 1); err != nil {
+			return nil, err
+		}
 	}
 
 	displayID, err := s.contactRepo.GetNextDisplayID(ctx, req.WorkspaceID)
@@ -99,6 +131,11 @@ func (s *CRMContactService) Seed(ctx context.Context, req model.SeedCRMContactsR
 	existingCount, err := s.contactRepo.CountByWorkspace(ctx, req.WorkspaceID)
 	if err != nil {
 		return nil, err
+	}
+	if s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireLimitUsage(ctx, req.WorkspaceID, EntitlementLimitContacts, existingCount, int64(count)); err != nil {
+			return nil, err
+		}
 	}
 
 	now := time.Now().UTC()

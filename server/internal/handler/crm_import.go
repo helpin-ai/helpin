@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -81,6 +82,11 @@ func (h *CRMImportHandler) Process(w http.ResponseWriter, r *http.Request) {
 	}
 	job, err := h.importService.Process(r.Context(), id, req)
 	if err != nil {
+		var entitlementErr *service.EntitlementError
+		if errors.As(err, &entitlementErr) {
+			writeError(w, http.StatusPaymentRequired, entitlementErr.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

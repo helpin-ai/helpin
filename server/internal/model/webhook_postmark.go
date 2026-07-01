@@ -24,6 +24,7 @@ type PostmarkInboundAttachment struct {
 // PostmarkInboundPayload is the payload sent by Postmark inbound webhooks.
 type PostmarkInboundPayload struct {
 	From              string                      `json:"From"`
+	ReplyTo           string                      `json:"ReplyTo"`
 	MessageStream     string                      `json:"MessageStream"`
 	FromFull          PostmarkAddress             `json:"FromFull"`
 	To                string                      `json:"To"`

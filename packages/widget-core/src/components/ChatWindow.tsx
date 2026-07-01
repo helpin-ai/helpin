@@ -15,7 +15,6 @@ import { HelpArticleView } from './HelpArticleView';
 import { ConversationView } from './ConversationView';
 import { ConversationListView } from './ConversationListView';
 import { XIcon } from './icons';
-import helpinMarkUrl from '../assets/helpin-mark.svg';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
 const HELPIN_BRANDING_URL = 'https://helpin.ai/?utm_source=helpin_widget&utm_medium=widget&utm_campaign=powered_by';
@@ -306,7 +305,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
       )}
 
       {/* Close button — hidden in conversation view (has its own) and messages view with conversation list */}
-      {activeView !== 'home' && activeView !== 'conversation' && activeView !== 'help' && !(activeView === 'messages' && conversations.length > 0) && (
+      {activeView !== 'home' && activeView !== 'conversation' && activeView !== 'help' && activeView !== 'help-space' && activeView !== 'help-collection' && activeView !== 'help-article' && !(activeView === 'messages' && conversations.length > 0) && (
         <button
           className="helpin-window-close"
           onClick={onClose}
@@ -423,23 +422,26 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             host={host}
             widgetKey={widgetKey}
             onClose={onClose}
-            onContact={() => handleStartNewConversation('help')}
             onSelectSpace={handleOpenHelpSpace}
             onSelectCollection={handleOpenHelpCollection}
+            onSelectArticle={handleOpenHelpArticle}
           />
         )}
         {activeView === 'help-space' && activeHelpSpace && host && widgetKey && (
           <HelpSpaceView
+            key={activeHelpSpace.slug}
             host={host}
             widgetKey={widgetKey}
             space={activeHelpSpace}
             showBack={helpSpaces.length > 1}
             onBack={() => handleNavigate('help')}
+            onClose={onClose}
             onSelectCollection={handleOpenHelpCollection}
           />
         )}
         {activeView === 'help-collection' && activeCollectionSlug && host && widgetKey && (
           <HelpCollectionView
+            key={activeCollectionSlug}
             host={host}
             widgetKey={widgetKey}
             collectionSlug={activeCollectionSlug}
@@ -447,10 +449,12 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             onBack={handleBackFromHelpCollection}
             onSelectCollection={handleOpenHelpCollection}
             onSelectArticle={handleOpenHelpArticle}
+            onClose={onClose}
           />
         )}
         {activeView === 'help-article' && activeArticleKey && host && widgetKey && (
           <HelpArticleView
+            key={activeArticleKey}
             host={host}
             widgetKey={widgetKey}
             articleKey={activeArticleKey}
@@ -464,6 +468,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
               setActiveView('help');
               onViewChange?.('help');
             }}
+            onClose={onClose}
           />
         )}
       </div>
@@ -477,7 +482,6 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
           className="helpin-powered-by"
         >
           <span>Powered by</span>
-          <img src={helpinMarkUrl} alt="" aria-hidden="true" className="helpin-powered-by-icon" />
           <span className="helpin-powered-by-name">Helpin</span>
         </a>
       )}

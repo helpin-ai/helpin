@@ -33,6 +33,17 @@ export interface HelpArticle {
   public_path?: string;
 }
 
+export interface HelpSearchResult {
+  id: string;
+  title: string;
+  slug: string;
+  public_id: string;
+  article_key: string;
+  excerpt?: string;
+  collection_name?: string | null;
+  space_name?: string;
+}
+
 export function buildHelpArticleKey(slug: string, publicId?: string | null): string {
   const trimmedSlug = slug.trim().replace(/^\/+|\/+$/g, '');
   const trimmedPublicId = (publicId ?? '').trim().toLowerCase();
@@ -59,7 +70,8 @@ function getApiBase(host: string): string {
 }
 
 async function fetchHelpJSON<T>(host: string, widgetKey: string, path: string): Promise<T> {
-  const response = await fetch(`${getApiBase(host)}${path}?widget_key=${encodeURIComponent(widgetKey)}`);
+  const separator = path.includes('?') ? '&' : '?';
+  const response = await fetch(`${getApiBase(host)}${path}${separator}widget_key=${encodeURIComponent(widgetKey)}`);
   if (!response.ok) {
     throw new Error(`Request failed: ${response.status}`);
   }
@@ -76,4 +88,12 @@ export function fetchHelpArticles(host: string, widgetKey: string, collectionSlu
 
 export function fetchHelpArticle(host: string, widgetKey: string, articleKey: string): Promise<HelpArticle> {
   return fetchHelpJSON(host, widgetKey, `/widget/support/help/articles/${encodeURIComponent(articleKey)}`);
+}
+
+export function fetchHelpSearchResults(host: string, widgetKey: string, query: string, limit = 8): Promise<HelpSearchResult[]> {
+  const params = new URLSearchParams({
+    q: query,
+    limit: String(limit),
+  });
+  return fetchHelpJSON(host, widgetKey, `/widget/support/help/search?${params.toString()}`);
 }

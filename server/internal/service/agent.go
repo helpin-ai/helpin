@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
@@ -253,6 +254,8 @@ type AgentService struct {
 	codexChatGPTAccountID      string
 	skillPackageStore          skillPackageStore
 	agentDraftLLM              agentDraftLLM
+	entitlementSvc             *EntitlementService
+	aiUsageMeter               *AIUsageMeter
 }
 
 // NewAgentService creates a new AgentService.
@@ -381,6 +384,16 @@ func (s *AgentService) SetCRMRepositories(contactRepo *repository.CRMContactRepo
 
 func (s *AgentService) SetSupportCoverageService(supportCoverageService *SupportCoverageService) *AgentService {
 	s.supportCoverageSvc = supportCoverageService
+	return s
+}
+
+func (s *AgentService) SetEntitlementService(entitlementSvc *EntitlementService) *AgentService {
+	s.entitlementSvc = entitlementSvc
+	return s
+}
+
+func (s *AgentService) SetAIUsageMeter(meter *AIUsageMeter) *AgentService {
+	s.aiUsageMeter = meter
 	return s
 }
 
@@ -1699,6 +1712,11 @@ func (s *AgentService) CreateAgentVersion(ctx context.Context, workspaceID, agen
 	if agent.IsSystem {
 		return nil, fmt.Errorf("system agents use preset versions")
 	}
+	if s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureCustomAgents); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.ensureCustomAgentDefaultVersion(ctx, agent, actorID); err != nil {
 		return nil, err
 	}
@@ -2402,6 +2420,11 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
+	if s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireFeature(ctx, req.WorkspaceID, EntitlementFeatureCustomAgents); err != nil {
+			return nil, err
+		}
+	}
 	if req.PresetKey != nil && strings.TrimSpace(*req.PresetKey) != "" {
 		return nil, fmt.Errorf("custom agents cannot specify preset_key")
 	}
@@ -2512,6 +2535,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	}
 	if agent == nil {
 		return nil, fmt.Errorf("agent not found")
+	}
+	if !agent.IsSystem && s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureCustomAgents); err != nil {
+			return nil, err
+		}
 	}
 	if req.TeamID != nil && req.TeamIDs != nil {
 		return nil, fmt.Errorf("team_ids and legacy team_id cannot both be set")
@@ -4948,6 +4976,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	taskQueue := resolved.Queue
 
 	run := &model.AgentRun{
+		ID:                uuid.NewString(),
 		WorkspaceID:       params.workspaceID,
 		AgentID:           params.agent.ID,
 		TaskID:            params.taskID,
@@ -4985,6 +5014,10 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	if params.workingBranch != nil && strings.TrimSpace(*params.workingBranch) != "" {
 		run.WorkingBranch = params.workingBranch
+	}
+	if err := PreflightAgentRunAIUsage(ctx, s.aiUsageMeter, run, params.agent); err != nil {
+		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
+		return nil, err
 	}
 	if err := s.runRepo.Create(ctx, run); err != nil {
 		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
@@ -5033,6 +5066,11 @@ func (s *AgentService) requireRunnableAgent(ctx context.Context, workspaceID, ag
 	}
 	if err := validateAgentTarget(agent, targetType); err != nil {
 		return nil, err
+	}
+	if !agent.IsSystem && s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureCustomAgents); err != nil {
+			return nil, err
+		}
 	}
 	return agent, nil
 }

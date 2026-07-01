@@ -30,6 +30,7 @@ type WorkspaceService struct {
 	defaultsInitializer WorkspaceDefaultsInitializer
 	presence            websocket.PresenceProvider
 	statusOverrideRepo  *repository.SupportTeammateStatusOverrideRepository
+	billingService      *BillingService
 	logger              *slog.Logger
 }
 
@@ -59,6 +60,10 @@ func (s *WorkspaceService) SetPresenceProvider(p websocket.PresenceProvider) {
 
 func (s *WorkspaceService) SetStatusOverrideRepo(repo *repository.SupportTeammateStatusOverrideRepository) {
 	s.statusOverrideRepo = repo
+}
+
+func (s *WorkspaceService) SetBillingService(billingService *BillingService) {
+	s.billingService = billingService
 }
 
 // Create creates a workspace and adds the creator as the owner member.
@@ -171,6 +176,13 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 		if err := s.defaultsInitializer.SeedWorkspaceDefaults(ctx, ws.ID, ownerID); err != nil {
 			s.logger.ErrorContext(ctx, "failed to seed workspace defaults", "error", err, "workspace_id", ws.ID)
 			return nil, fmt.Errorf("seed workspace defaults: %w", err)
+		}
+	}
+
+	if s.billingService != nil {
+		if _, err := s.billingService.EnsureTrialForWorkspace(ctx, ws.ID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to initialize workspace billing", "error", err, "workspace_id", ws.ID)
+			return nil, fmt.Errorf("initialize workspace billing: %w", err)
 		}
 	}
 
@@ -339,6 +351,12 @@ func (s *WorkspaceService) DeleteLogo(ctx context.Context, id string) (*model.Wo
 
 // Delete removes a workspace and all associated data including S3 attachments.
 func (s *WorkspaceService) Delete(ctx context.Context, id string) error {
+	if s.billingService != nil {
+		if err := s.billingService.CancelWorkspaceSubscriptionImmediately(ctx, id); err != nil {
+			s.logger.ErrorContext(ctx, "failed to cancel workspace subscription before delete", "error", err, "workspace_id", id)
+			return fmt.Errorf("cancel workspace subscription before delete: %w", err)
+		}
+	}
 	// Clean up S3 attachments before cascade-deleting DB records.
 	if s.attachmentRepo != nil && s.s3Client != nil {
 		attachments, _ := s.attachmentRepo.ListByWorkspace(ctx, id)

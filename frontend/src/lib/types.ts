@@ -81,12 +81,55 @@ export interface Workspace {
   workspace_key: string;
   owner_id: string;
   organization_id?: string;
+  role?: string;
   description?: string;
   website_url?: string;
   logo_url?: string;
   timezone: string;
   created_at: string;
   updated_at: string;
+  billing?: WorkspaceBillingSummary;
+}
+
+export type BillingPlan = 'starter' | 'growth' | 'founder';
+export type BillingStatus = 'trialing' | 'active' | 'trial_expired' | 'past_due' | 'unpaid' | 'canceled';
+export type BillingInterval = 'monthly' | 'annual';
+
+export interface WorkspaceBillingSummary {
+  workspace_id: string;
+  plan: BillingPlan;
+  status: BillingStatus | string;
+  locked: boolean;
+  billing_interval: BillingInterval | string;
+  trialing: boolean;
+  trial_ends_at?: string;
+  current_period_start: string;
+  current_period_end: string;
+  included_credits: number;
+  credits_used: number;
+  credits_remaining: number;
+  next_charge_cents: number;
+  on_demand_enabled: boolean;
+  on_demand_available: boolean;
+  stripe_customer_id?: string;
+  stripe_subscription_id?: string;
+  pending_plan?: BillingPlan;
+  pending_billing_interval?: BillingInterval;
+  pending_change_at?: string;
+  cancel_at_period_end: boolean;
+  canceled_at?: string;
+  billing_notice_type?: 'payment_failed' | 'trial_will_end' | string;
+  billing_notice_message?: string;
+  billing_notice_at?: string;
+  payment_failed_at?: string;
+  trial_will_end_at?: string;
+  manage_billing_enabled: boolean;
+  warning?: string;
+  seat_limit?: number;
+  seat_usage?: number;
+  seat_over_limit?: boolean;
+  entitlement_warning?: string;
+  on_demand_blocks_invoiced: number;
 }
 
 export interface WorkspaceMember {

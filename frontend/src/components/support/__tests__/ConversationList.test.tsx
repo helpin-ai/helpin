@@ -362,6 +362,32 @@ describe('ConversationList presence resync', () => {
     act(() => root.unmount())
   })
 
+  it('uses the header search action for global support search', () => {
+    const onSearchClick = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" onSearchClick={onSearchClick} />)
+    })
+
+    const searchButton = container.querySelector('[aria-label="Search conversations"]') as HTMLButtonElement
+    const filterButton = container.querySelector('[aria-label="Conversation filters"]') as HTMLButtonElement
+
+    expect(searchButton).toBeTruthy()
+    expect(filterButton).toBeTruthy()
+
+    act(() => {
+      searchButton.click()
+    })
+
+    expect(onSearchClick).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('input[placeholder="Search conversations..."]')).toBeNull()
+
+    act(() => root.unmount())
+  })
+
   it('keeps backend-returned mentioned conversations visible in Mine', () => {
     useSupportInboxStore.setState({
       navFilter: 'mine',

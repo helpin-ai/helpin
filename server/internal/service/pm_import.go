@@ -31,6 +31,7 @@ type PMImportService struct {
 	docsContentSvc    *DocsContentService
 	publisher         *websocket.Publisher
 	temporalClient    tclient.Client
+	entitlementSvc    *EntitlementService
 	encryptionKey     []byte
 }
 
@@ -77,6 +78,11 @@ func (s *PMImportService) SetTemporalClient(client tclient.Client) {
 		return
 	}
 	s.temporalClient = client
+}
+
+func (s *PMImportService) SetEntitlementService(entitlementSvc *EntitlementService) *PMImportService {
+	s.entitlementSvc = entitlementSvc
+	return s
 }
 
 func (s *PMImportService) SetDocsImportDependencies(documentSvc *DocsDocumentService, contentSvc *DocsContentService) {
@@ -942,6 +948,11 @@ func (s *PMImportService) ensureTeams(ctx context.Context, tx *gorm.DB, workspac
 		}
 		if _, ok := teamMap[key]; ok {
 			continue
+		}
+		if s.entitlementSvc != nil {
+			if err := s.entitlementSvc.RequireLimitUsage(ctx, workspaceID, EntitlementLimitTeams, int64(len(existing)+created), 1); err != nil {
+				return nil, 0, err
+			}
 		}
 		team := model.WorkspaceTeam{WorkspaceID: workspaceID, Name: name}
 		if err := tx.WithContext(ctx).Create(&team).Error; err != nil {

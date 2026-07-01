@@ -1,7 +1,7 @@
 import { FunctionComponent } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { HelpSpace } from '@helpin-ai/shared';
-import { ChevronLeftIcon, ChevronRightIcon, FileTextIcon } from './icons';
+import { ChevronLeftIcon, ChevronRightIcon, FileTextIcon, XIcon } from './icons';
 import { buildHelpCollectionKey, fetchHelpCollections, type HelpCollection } from './helpApi';
 import { buildHelpCollectionTree } from './helpTree';
 
@@ -11,7 +11,9 @@ interface HelpSpaceViewProps {
   space: HelpSpace;
   showBack: boolean;
   showHeader?: boolean;
+  animateDrilldown?: boolean;
   onBack: () => void;
+  onClose?: () => void;
   onSelectCollection: (collectionSlug: string) => void;
 }
 
@@ -21,11 +23,14 @@ export const HelpSpaceView: FunctionComponent<HelpSpaceViewProps> = ({
   space,
   showBack,
   showHeader = true,
+  animateDrilldown = true,
   onBack,
+  onClose,
   onSelectCollection,
 }) => {
   const [collections, setCollections] = useState<HelpCollection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showLoadingSkeleton, setShowLoadingSkeleton] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Fold the flat collection list into a tree so we only show top-level
@@ -35,7 +40,14 @@ export const HelpSpaceView: FunctionComponent<HelpSpaceViewProps> = ({
 
   useEffect(() => {
     let cancelled = false;
+    const loadingSkeletonTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        setShowLoadingSkeleton(true);
+      }
+    }, 150);
+
     setIsLoading(true);
+    setShowLoadingSkeleton(false);
     setError(null);
 
     fetchHelpCollections(host, widgetKey, space.slug)
@@ -50,18 +62,21 @@ export const HelpSpaceView: FunctionComponent<HelpSpaceViewProps> = ({
         }
       })
       .finally(() => {
+        window.clearTimeout(loadingSkeletonTimer);
         if (!cancelled) {
           setIsLoading(false);
+          setShowLoadingSkeleton(false);
         }
       });
 
     return () => {
       cancelled = true;
+      window.clearTimeout(loadingSkeletonTimer);
     };
   }, [host, widgetKey, space.slug]);
 
   return (
-    <div className="helpin-help-view">
+    <div className={`helpin-help-view ${animateDrilldown ? 'helpin-help-drilldown-view' : ''}`}>
       {showHeader && (
         <div className="helpin-help-header">
           {showBack && (
@@ -69,14 +84,36 @@ export const HelpSpaceView: FunctionComponent<HelpSpaceViewProps> = ({
               <ChevronLeftIcon size={18} />
             </button>
           )}
-          <div>
+          <div className="helpin-help-header-copy">
             <span className="helpin-help-title">{space.name}</span>
             <p className="helpin-help-subtitle">Browse collections</p>
           </div>
+          {onClose ? (
+            <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
+              <XIcon size={18} />
+            </button>
+          ) : (
+            <div className="helpin-help-header-spacer" />
+          )}
         </div>
       )}
       <div className="helpin-help-content">
-        {isLoading && <p className="helpin-help-empty">Loading collections...</p>}
+        {isLoading && !showLoadingSkeleton && (
+          <div className="helpin-help-loading-reserve" aria-hidden="true" />
+        )}
+        {isLoading && showLoadingSkeleton && (
+          <div className="helpin-help-loading-list" role="status" aria-label="Loading collections">
+            {[0, 1, 2].map((item) => (
+              <div className="helpin-help-link-skeleton" key={item}>
+                <span className="helpin-help-link-skeleton-icon" />
+                <span className="helpin-help-link-skeleton-copy">
+                  <span className="helpin-help-link-skeleton-line helpin-help-link-skeleton-line-title" />
+                  <span className="helpin-help-link-skeleton-line helpin-help-link-skeleton-line-desc" />
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {!isLoading && error && <p className="helpin-help-empty">{error}</p>}
         {!isLoading && !error && topLevelNodes.length === 0 && (
           <p className="helpin-help-empty">No published collections are available yet.</p>

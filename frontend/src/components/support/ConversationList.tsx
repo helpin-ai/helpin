@@ -1,6 +1,5 @@
 import { useMemo, useCallback, useState, memo, useEffect, type ReactNode, type UIEvent } from 'react';
 import {
-  Cancel01Icon,
   FilterHorizontalIcon,
   Message01Icon,
   PlusSignIcon,
@@ -227,6 +226,7 @@ interface ConversationListProps {
   onOnboardingEmptyChange?: (isEmpty: boolean) => void;
   onWidgetSettingsClick?: () => void;
   onCreateConversationClick?: () => void;
+  onSearchClick?: () => void;
   canCreateSharedViews?: boolean;
 }
 
@@ -236,10 +236,10 @@ export function ConversationList({
   onOnboardingEmptyChange,
   onWidgetSettingsClick,
   onCreateConversationClick,
+  onSearchClick,
   canCreateSharedViews = false,
 }: ConversationListProps) {
   const searchQuery = useSupportInboxStore((s) => s.searchQuery);
-  const setSearchQuery = useSupportInboxStore((s) => s.setSearchQuery);
   const navFilter = useSupportInboxStore((s) => s.navFilter);
   const activeCustomViewId = useSupportInboxStore((s) => s.activeCustomViewId);
   const customViewDirty = useSupportInboxStore((s) => s.customViewDirty);
@@ -255,7 +255,6 @@ export function ConversationList({
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
   const selectedConversationId = useSupportInboxStore((s) => s.selectedConversationId);
   const handoffConversationId = useSupportInboxStore((s) => s.conversationHandoff?.fromConversationId ?? null);
-  const [searchExpanded, setSearchExpanded] = useState(false);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState('');
   const [saveViewShared, setSaveViewShared] = useState(false);
@@ -572,84 +571,63 @@ export function ConversationList({
         className="relative z-10 flex items-center gap-1.5 border-b border-border/60 bg-background/85 px-2 py-1.5 supports-[backdrop-filter]:bg-background/75 dark:border-sidebar-border dark:bg-sidebar/90 dark:supports-[backdrop-filter]:bg-sidebar/80"
         style={{ backdropFilter: 'blur(8px) saturate(160%)' }}
       >
-        {searchExpanded ? (
-          <div className="flex flex-1 items-center gap-1">
-            <Search01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <Input
-              autoFocus
-              className="h-7 flex-1 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0 dark:text-sidebar-foreground dark:placeholder:text-sidebar-foreground/60"
-              placeholder="Search conversations..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setSearchQuery('');
-                  setSearchExpanded(false);
-                }
-              }}
-            />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 shrink-0"
-              onClick={() => { setSearchQuery(''); setSearchExpanded(false); }}
-            >
-              <Cancel01Icon className="h-3.5 w-3.5" />
-            </Button>
+        <TooltipProvider>
+          <div className="min-w-0 flex-1 px-1.5 text-sm font-medium">
+            <div className="truncate">{listTitle}</div>
           </div>
-        ) : (
-          <>
-            <div className="min-w-0 flex-1 px-1.5 text-sm font-medium">
-              <div className="truncate">{listTitle}</div>
-            </div>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                aria-label="New conversation"
+                onClick={onCreateConversationClick}
+              >
+                <PlusSignIcon className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <span className="text-xs">New conversation</span>
+            </TooltipContent>
+          </Tooltip>
+          <Popover>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 shrink-0"
-                    aria-label="New conversation"
-                    onClick={onCreateConversationClick}
+                    className={cn('relative h-7 w-7 shrink-0', activeFilterCount > 0 && 'text-primary')}
+                    aria-label="Conversation filters"
                   >
-                    <PlusSignIcon className="h-3.5 w-3.5" />
+                    <FilterHorizontalIcon className="h-3.5 w-3.5" />
+                    {activeFilterCount > 0 && (
+                      <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-primary" />
+                    )}
                   </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  <span className="text-xs">New conversation</span>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn('relative h-7 w-7 shrink-0', activeFilterCount > 0 && 'text-primary')}
-                  aria-label="Conversation filters"
-                >
-                  <FilterHorizontalIcon className="h-3.5 w-3.5" />
-                  {activeFilterCount > 0 && (
-                    <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-primary" />
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent side="right" align="start" sideOffset={8} className="w-[380px] p-3">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0 text-sm font-semibold">
-                    <span className="block truncate">{listTitle} filters</span>
-                  </div>
-                  {activeFilterCount > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs"
-                      onClick={handleResetFilters}
-                    >
-                      Reset
-                    </Button>
-                  )}
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <span className="text-xs">Filter conversations</span>
+              </TooltipContent>
+            </Tooltip>
+            <PopoverContent side="right" align="start" sideOffset={8} className="w-[380px] p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="min-w-0 text-sm font-semibold">
+                  <span className="block truncate">{listTitle} filters</span>
                 </div>
+                {activeFilterCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={handleResetFilters}
+                  >
+                    Reset
+                  </Button>
+                )}
+              </div>
                 <div className="space-y-4">
                   <FilterSection title="State">
                     {[
@@ -789,17 +767,24 @@ export function ConversationList({
                   )}
                 </div>
               </PopoverContent>
-            </Popover>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0"
-              onClick={() => setSearchExpanded(true)}
-            >
-              <Search01Icon className="h-3.5 w-3.5" />
-            </Button>
-          </>
-        )}
+          </Popover>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                aria-label="Search conversations"
+                onClick={onSearchClick}
+              >
+                <Search01Icon className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <span className="text-xs">Search conversations</span>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
       <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
         <DialogContent aria-describedby={undefined}>

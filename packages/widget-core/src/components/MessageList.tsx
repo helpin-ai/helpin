@@ -84,7 +84,7 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
   };
 
   return (
-    <div className="helpin-message-list" ref={listRef} role="list" aria-label="Messages">
+    <div className="helpin-message-list helpin-message-list--smooth-enter" ref={listRef} role="list" aria-label="Messages">
       {messages.map((message, idx) => {
         const dateSeparator = getDateSeparator(message.createdAt, idx);
         // Consecutive = same sender identity for incoming messages.

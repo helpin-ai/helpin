@@ -99,7 +99,7 @@ import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow, useWorkspaceAccess, usePermissions, useWorkflows } from '@/hooks/queries';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { buildTaskCopyUrl, buildTaskPath } from '@/lib/pmTaskLinks';
 import { CommentThread } from '@/components/pm/CommentThread';
@@ -119,6 +119,7 @@ import { getTaskPatchSignature, isBlockedTaskPatch } from '@/components/pm/task-
 import { hasVisibleTaskAssociations } from '@/components/pm/task-detail/taskRelationshipVisibility';
 import { queryKeys } from '@/lib/queryKeys';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
+import { resolveTaskTeamWorkflow, resolveTaskWorkflowStates } from '@/components/pm/task-detail/taskWorkflowResolution';
 import {
   isEpicSelectableForTaskTeam,
   isSprintSelectableForTaskTeam,
@@ -167,6 +168,7 @@ interface FormState {
   name: string;
   description: string;
   task_type: TaskType;
+  workflow_id: string;
   workflow_state_id: string;
   priority: Priority;
   severity: Severity;
@@ -195,6 +197,7 @@ const buildFormState = (detail: TaskDetail): FormState => ({
   name: detail.task.name,
   description: detail.task.description ?? '',
   task_type: detail.task.task_type,
+  workflow_id: detail.task.workflow_id,
   workflow_state_id: detail.task.workflow_state_id,
   priority: detail.task.priority,
   severity: detail.task.severity,
@@ -295,6 +298,7 @@ function TaskDetailPanelBody({
   const queuedDescriptionDropRef = useRef<File[] | null>(null);
   const descriptionDragCounterRef = useRef(0);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
+  const { data: workflows = [] } = useWorkflows(workspaceId);
   const { data: workspaceAccess } = useWorkspaceAccess(workspaceId);
   const permissions = usePermissions(workspaceAccess);
   const { canEdit } = permissions;
@@ -521,7 +525,11 @@ function TaskDetailPanelBody({
   };
 
   // ── Pipeline automation rules ──────────────────────────────────
-  const workflowId = states[0]?.workflow_id;
+  const effectiveStates = useMemo(
+    () => resolveTaskWorkflowStates(workflows, states, form.workflow_id),
+    [form.workflow_id, states, workflows],
+  );
+  const workflowId = effectiveStates[0]?.workflow_id;
   const { data: pipelineRules } = useAutomationRulesByWorkflow(workspaceId, workflowId);
   const automatedStateIds = useMemo(() => {
     const ids = new Set<string>();
@@ -543,9 +551,9 @@ function TaskDetailPanelBody({
   const notifyAgentAutoRunStateChange = useCallback((fromStateId: string | null | undefined, toStateId: string | null | undefined) => {
     if (!shouldNotifyAgentAutoRunStateChange({ fromStateId, toStateId, automatedStateIds })) return;
     if (!toStateId) return;
-    const stateName = states.find((state) => state.id === toStateId)?.name ?? 'this state';
+    const stateName = effectiveStates.find((state) => state.id === toStateId)?.name ?? 'this state';
     toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(toStateId) });
-  }, [automatedStateIds, states]);
+  }, [automatedStateIds, effectiveStates]);
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateTaskRequest) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -941,8 +949,8 @@ function TaskDetailPanelBody({
 
   // ── Derived data ───────────────────────────────────────────────
   const currentState = useMemo(
-    () => states.find((s) => s.id === form.workflow_state_id),
-    [states, form.workflow_state_id],
+    () => effectiveStates.find((s) => s.id === form.workflow_state_id),
+    [effectiveStates, form.workflow_state_id],
   );
 
   const currentEpicName = useMemo(() => {
@@ -1186,8 +1194,8 @@ function TaskDetailPanelBody({
           {/* Pipeline step indicator */}
           {hasPipeline && (
             <div className="mb-4 flex items-center gap-0">
-              {states.map((state, idx) => {
-                const currentIdx = states.findIndex((s) => s.id === form.workflow_state_id);
+              {effectiveStates.map((state, idx) => {
+                const currentIdx = effectiveStates.findIndex((s) => s.id === form.workflow_state_id);
                 const isPast = idx < currentIdx;
                 const isCurrent = idx === currentIdx;
                 const isAutomated = automatedStateIds.has(state.id);
@@ -1508,7 +1516,7 @@ function TaskDetailPanelBody({
                 <TaskDetailSectionHeading title="Activity" icon={Activity01Icon} className="text-xs font-semibold text-foreground/70 uppercase tracking-wide" />
                 <ActivityTimeline
                   activity={activity}
-                  states={states}
+                  states={effectiveStates}
                   showAll={showAllActivity}
                   onShowAll={() => setShowAllActivity(true)}
                   entityLabel="task"
@@ -1533,7 +1541,26 @@ function TaskDetailPanelBody({
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
-                  updateField('team_id', val, { team_id: val });
+                  const nextWorkflow = resolveTaskTeamWorkflow(workflows, val || null);
+                  const nextState =
+                    nextWorkflow?.states.find((state) => state.is_default)
+                    ?? nextWorkflow?.states[0]
+                    ?? null;
+                  if (nextWorkflow && nextState) {
+                    setForm((current) => ({
+                      ...current,
+                      team_id: val,
+                      workflow_id: nextWorkflow.workflow.id,
+                      workflow_state_id: nextState.id,
+                    }));
+                    queuePatch({
+                      team_id: val,
+                      workflow_id: nextWorkflow.workflow.id,
+                      workflow_state_id: nextState.id,
+                    });
+                  } else {
+                    updateField('team_id', val, { team_id: val });
+                  }
                 }}
                 renderTrigger={() => <span>{currentTeamName}</span>}
               />
@@ -1543,7 +1570,7 @@ function TaskDetailPanelBody({
             <MetadataRow icon={HashtagIcon} label="State">
               <SidebarPopoverSelect
                 value={form.workflow_state_id}
-                options={states.map((s) => ({ value: s.id, label: s.name }))}
+                options={effectiveStates.map((s) => ({ value: s.id, label: s.name }))}
                 onChange={(v) => updateField('workflow_state_id', v, { workflow_state_id: v })}
                 renderTrigger={() => (
                   currentState ? (
@@ -1558,7 +1585,7 @@ function TaskDetailPanelBody({
                   )
                 )}
                 renderOption={(v) => {
-                  const s = states.find((st) => st.id === v);
+                  const s = effectiveStates.find((st) => st.id === v);
                   return s ? (
                     <TaskStateSelectContent
                       stateType={s.state_type}

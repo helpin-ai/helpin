@@ -64,7 +64,7 @@ func (h *AgentHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
-		writeError(w, http.StatusForbidden, err.Error())
+		writeBillingAwareError(w, http.StatusForbidden, err)
 		return
 	}
 	agent, err := h.agentService.GetAgent(r.Context(), workspaceID, id)
@@ -210,7 +210,7 @@ func (h *AgentHandler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 
 	agent, err := h.agentService.CreateAgent(r.Context(), req, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, agent)
@@ -234,7 +234,7 @@ func (h *AgentHandler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 
 	agent, err := h.agentService.UpdateAgent(r.Context(), workspaceID, id, req, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, agent)
@@ -244,7 +244,7 @@ func (h *AgentHandler) ListAgentVersions(w http.ResponseWriter, r *http.Request)
 	workspaceID := getWorkspaceID(r)
 	agentID := chi.URLParam(r, "id")
 	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
-		writeError(w, http.StatusForbidden, err.Error())
+		writeBillingAwareError(w, http.StatusForbidden, err)
 		return
 	}
 	versions, err := h.agentService.ListAgentVersions(r.Context(), workspaceID, agentID)
@@ -272,7 +272,7 @@ func (h *AgentHandler) CreateAgentVersion(w http.ResponseWriter, r *http.Request
 	req.AgentID = agentID
 	version, err := h.agentService.CreateAgentVersion(r.Context(), workspaceID, agentID, req, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, version)
@@ -284,7 +284,7 @@ func (h *AgentHandler) UpdateAgentVersion(w http.ResponseWriter, r *http.Request
 	versionID := chi.URLParam(r, "versionID")
 	actorID := middleware.GetUserID(r.Context())
 	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
-		writeError(w, http.StatusForbidden, err.Error())
+		writeBillingAwareError(w, http.StatusForbidden, err)
 		return
 	}
 	var req model.UpdateAgentVersionRequest
@@ -294,7 +294,7 @@ func (h *AgentHandler) UpdateAgentVersion(w http.ResponseWriter, r *http.Request
 	}
 	version, err := h.agentService.UpdateAgentVersion(r.Context(), workspaceID, agentID, versionID, req, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, version)
@@ -306,12 +306,12 @@ func (h *AgentHandler) ActivateAgentVersion(w http.ResponseWriter, r *http.Reque
 	versionID := chi.URLParam(r, "versionID")
 	actorID := middleware.GetUserID(r.Context())
 	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
-		writeError(w, http.StatusForbidden, err.Error())
+		writeBillingAwareError(w, http.StatusForbidden, err)
 		return
 	}
 	agent, err := h.agentService.ActivateAgentVersion(r.Context(), workspaceID, agentID, versionID, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, agent)
@@ -367,7 +367,7 @@ func (h *AgentHandler) RunTaskAgent(w http.ResponseWriter, r *http.Request) {
 
 	run, err := h.agentService.RunTaskAgent(r.Context(), workspaceID, taskID, actorID, req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, run)
@@ -393,7 +393,7 @@ func (h *AgentHandler) RunEpicAgent(w http.ResponseWriter, r *http.Request) {
 
 	run, err := h.agentService.RunEpicAgent(r.Context(), workspaceID, epicID, actorID, req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, run)
@@ -421,7 +421,7 @@ func (h *AgentHandler) StartTargetRun(w http.ResponseWriter, r *http.Request) {
 		WorkingBranch:     req.WorkingBranch,
 	}, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, run)

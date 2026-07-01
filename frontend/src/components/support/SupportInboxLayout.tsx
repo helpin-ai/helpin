@@ -114,6 +114,17 @@ export function SupportInboxLayout() {
     if (!slug) return;
     void navigate({ to: '/w/$slug/settings/inboxes-routing', params: { slug }, search: { tab: 'inboxes' } });
   }, [navigate, slug]);
+  const handleSupportSearchClick = useCallback(() => {
+    if (!slug) return;
+    if (typeof window !== 'undefined') {
+      const returnTo = `${window.location.pathname}${window.location.search}`;
+      const supportPath = `/w/${slug}/support`;
+      if (returnTo.startsWith(supportPath) && !returnTo.startsWith(`${supportPath}/search`)) {
+        window.sessionStorage.setItem(`support-search-return:${slug}`, returnTo);
+      }
+    }
+    void navigate({ to: '/w/$slug/support/search', params: { slug }, search: {} as never });
+  }, [navigate, slug]);
 
   const supportRouteSearch = useMemo(
     () => {
@@ -343,6 +354,7 @@ export function SupportInboxLayout() {
             onOnboardingEmptyChange={setShowInboxOnboarding}
             onWidgetSettingsClick={handleWidgetSettingsClick}
             onCreateConversationClick={() => setCreateDialogOpen(true)}
+            onSearchClick={handleSupportSearchClick}
             canCreateSharedViews={isAdmin}
           />
         </div>

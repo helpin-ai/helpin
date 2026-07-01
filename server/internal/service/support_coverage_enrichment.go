@@ -132,7 +132,15 @@ func (s *SupportCoverageEnrichmentService) EnrichTopic(ctx context.Context, topi
 		Evidence:  evidence,
 		KBContext: kbContext,
 	})
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    topic.WorkspaceID,
+		FeatureKey:     BillingFeatureDocsArticleGeneration,
+		IdempotencyKey: aiUsageIdempotencyKey(topic.WorkspaceID, BillingFeatureDocsArticleGeneration, "coverage_enrichment", topicID, gap.ID),
+		Metadata: map[string]interface{}{
+			"topic_id": topicID,
+			"gap_id":   gap.ID,
+		},
+	}), llm.ChatRequest{
 		SystemPrompt: "You generate support coverage gap article suggestions. Return JSON only.",
 		Messages: []llm.Message{{
 			Role:    "user",

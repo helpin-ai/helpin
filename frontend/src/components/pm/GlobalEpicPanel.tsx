@@ -20,7 +20,9 @@ import {
 } from '@/components/pm/epic-detail/epicRouteNavigation';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 interface GlobalEpicPanelProps {
   workspaceId: string;
@@ -52,6 +54,7 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
   const [deliveryTarget, setDeliveryTarget] = useState<EpicDeliveryTarget | null>(null);
   const [loading, setLoading] = useState(false);
   const [startingAgentRun, setStartingAgentRun] = useState(false);
+  const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { canEdit } = usePermissions(access);
   const openedAtRef = useRef<number | null>(null);
@@ -158,6 +161,11 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
       toast.success('Agent run started');
       await refreshEpic();
     } catch (err) {
+      const reason = getUpgradeRequiredReason(err);
+      if (reason) {
+        setUpgradeDialogReason(reason);
+        return;
+      }
       toast.error(err instanceof Error ? err.message : 'Failed to start agent');
     } finally {
       setStartingAgentRun(false);
@@ -322,8 +330,15 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
               </section>
             </div>
           </div>
-        )}
+      )}
       </SheetContent>
+      <UpgradeRequiredDialog
+        open={upgradeDialogReason !== null}
+        onOpenChange={(open) => {
+          if (!open) setUpgradeDialogReason(null);
+        }}
+        reason={upgradeDialogReason}
+      />
     </Sheet>
   );
 }

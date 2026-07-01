@@ -96,6 +96,8 @@ import { normalizeTeamType } from "@/lib/teamPresets";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { getOptionalSectionActionClass } from "@/components/pm/optionalSectionActionPill";
 import { AgentPickerCard } from "@/components/pm/AgentPickerCard";
+import { UpgradeRequiredDialog } from "@/components/billing/UpgradeRequiredDialog";
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from "@/lib/upgradeRequired";
 
 interface CreateTaskModalProps {
   open: boolean;
@@ -425,6 +427,7 @@ export function CreateTaskModal({
   const [descriptionMode, setDescriptionMode] = useState<'rich' | 'markdown'>('rich');
   const [sourceMarkdown, setSourceMarkdown] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const [taskTypeDirty, setTaskTypeDirty] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [showChecklist, setShowChecklist] = useState(false);
@@ -1070,12 +1073,19 @@ export function CreateTaskModal({
         const postCreateErrors = [
           templateSaveError ? `template save failed: ${templateSaveError}` : null,
           recurringSetupError ? `recurring setup failed: ${recurringSetupError}` : null,
-          result?.agent_run_error ? `agent run did not start: ${result.agent_run_error}` : null,
+          result?.agent_run_error && !getUpgradeRequiredReason(result.agent_run_error)
+            ? `agent run did not start: ${result.agent_run_error}`
+            : null,
         ].filter(Boolean);
+
+        const agentRunUpgradeReason = getUpgradeRequiredReason(result?.agent_run_error);
+        if (agentRunUpgradeReason) {
+          setUpgradeDialogReason(agentRunUpgradeReason);
+        }
 
         if (postCreateErrors.length > 0) {
           toast.error(`Task created, but ${postCreateErrors.join('; ')}`);
-        } else {
+        } else if (!agentRunUpgradeReason) {
           if (createAnother) {
             toast.success('Task created. Ready for the next one.');
           } else if (result?.id) {
@@ -1102,7 +1112,7 @@ export function CreateTaskModal({
           }
         }
 
-        if (createAnother) {
+        if (createAnother && !agentRunUpgradeReason) {
           const resetTeam = teams.find((team) => team.id === (initialTeamId ?? ''));
           setDescriptionEditorKey((current) => current + 1);
           setDescriptionMode('rich');
@@ -1125,11 +1135,16 @@ export function CreateTaskModal({
           setRecurringDraft(null);
           setSaveTaskAsTemplate(false);
           setAssignedAgentId(undefined);
-        } else {
+        } else if (!agentRunUpgradeReason) {
           onOpenChange(false);
         }
       }
     } catch (err) {
+      const reason = getUpgradeRequiredReason(err);
+      if (reason) {
+        setUpgradeDialogReason(reason);
+        return;
+      }
       setError(err instanceof Error ? err.message : isTemplateMode ? "Failed to save template" : "Failed to create task");
     } finally {
       setSubmitting(false);
@@ -1994,6 +2009,15 @@ export function CreateTaskModal({
             </Button>
           </div>
         </div>
+
+        <UpgradeRequiredDialog
+          open={upgradeDialogReason !== null}
+          onOpenChange={(open) => {
+            if (!open) setUpgradeDialogReason(null);
+          }}
+          onUpgrade={() => onOpenChange(false)}
+          reason={upgradeDialogReason}
+        />
 
         {!isTemplateMode && (
           <Dialog open={recurringDialogOpen} onOpenChange={setRecurringDialogOpen}>

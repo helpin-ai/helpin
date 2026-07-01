@@ -49,6 +49,7 @@ type SupportInboxService struct {
 	docsSpaceRepo           *repository.DocsSpaceRepository
 	docsCollectionRepo      *repository.DocsCollectionRepository
 	docsHelpcenterRepo      *repository.DocsHelpcenterRepository
+	docsSearchRepo          *repository.DocsSearchRepository
 	conversationAgentRunner func(ctx context.Context, workspaceID, conversationID string) (*model.AgentRun, error)
 	supportAIService        *SupportAIService
 	emailFallbackService    *EmailFallbackService
@@ -66,8 +67,15 @@ type SupportInboxService struct {
 	taskService             *PMTaskService
 	geoIPResolver           geoip.Resolver
 	supportEventRecorder    SupportEventRecorder
+	entitlementSvc          *EntitlementService
 	routeDomain             string
 }
+
+func (s *SupportInboxService) SetDocsSearchRepository(docsSearchRepo *repository.DocsSearchRepository) {
+	s.docsSearchRepo = docsSearchRepo
+}
+
+var ErrInvalidSupportSearch = errors.New("invalid support search")
 
 type supportConversationTaskDraft struct {
 	Title       string
@@ -219,6 +227,11 @@ func supportActorFromContext(ctx context.Context, workspaceID string) *authoriza
 	return actor
 }
 
+func (s *SupportInboxService) SetEntitlementService(entitlementSvc *EntitlementService) *SupportInboxService {
+	s.entitlementSvc = entitlementSvc
+	return s
+}
+
 func (s *SupportInboxService) SetRouteDomain(domain string) *SupportInboxService {
 	if s == nil {
 		return nil
@@ -290,6 +303,7 @@ func (s *SupportInboxService) GetMessageEmailDetail(ctx context.Context, workspa
 		Subject:              log.Subject,
 		FromEmail:            log.FromEmail,
 		ToEmail:              log.ToEmail,
+		ReplyTo:              log.ReplyTo,
 		CCEmails:             log.CCEmails,
 		BCCEmails:            log.BCCEmails,
 		RFCMessageID:         log.RFCMessageID,
@@ -869,6 +883,12 @@ func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID
 }
 
 type SupportConversationListParams = repository.ConversationListParams
+type SupportConversationSearchParams = model.SupportConversationSearchParams
+
+const (
+	supportSearchMaxQueryLength       = 256
+	supportSearchMaxQuotedPhraseCount = 6
+)
 
 func normalizeSupportConversationStatuses(statuses []string) []string {
 	normalized := make([]string, 0, len(statuses))
@@ -882,6 +902,80 @@ func normalizeSupportConversationStatuses(statuses []string) []string {
 		seen[value] = true
 	}
 	return normalized
+}
+
+func supportSearchHasFilters(params SupportConversationSearchParams) bool {
+	return len(params.AssignedTo) > 0 ||
+		len(params.MailboxIDs) > 0 ||
+		len(params.TagIDs) > 0 ||
+		len(params.Statuses) > 0 ||
+		len(params.Priorities) > 0 ||
+		len(params.AI) > 0 ||
+		strings.TrimSpace(params.CustomerEmail) != "" ||
+		strings.TrimSpace(params.Title) != "" ||
+		params.CreatedFrom != nil ||
+		params.CreatedTo != nil
+}
+
+func validateSupportSearchParams(params SupportConversationSearchParams) error {
+	query := strings.TrimSpace(params.Query)
+	if utf8.RuneCountInString(query) > supportSearchMaxQueryLength {
+		return fmt.Errorf("%w: q must be %d characters or fewer", ErrInvalidSupportSearch, supportSearchMaxQueryLength)
+	}
+	if strings.Count(query, "\"")/2 > supportSearchMaxQuotedPhraseCount {
+		return fmt.Errorf("%w: q has too many quoted phrases", ErrInvalidSupportSearch)
+	}
+	if query == "" && !supportSearchHasFilters(params) {
+		return fmt.Errorf("%w: q or at least one filter is required", ErrInvalidSupportSearch)
+	}
+	return nil
+}
+
+// SearchConversations returns globally searchable support conversations with safe plain-text highlights.
+func (s *SupportInboxService) SearchConversations(ctx context.Context, params SupportConversationSearchParams) (*model.SupportConversationSearchResponse, error) {
+	if params.WorkspaceID == "" {
+		return nil, fmt.Errorf("%w: workspace_id is required", ErrInvalidSupportSearch)
+	}
+	params.Query = strings.TrimSpace(params.Query)
+	params.Statuses = normalizeSupportConversationStatuses(params.Statuses)
+	if err := validateSupportSearchParams(params); err != nil {
+		return nil, err
+	}
+	for _, mailboxID := range params.MailboxIDs {
+		trimmed := strings.TrimSpace(mailboxID)
+		if trimmed == "" || trimmed == "shared" {
+			continue
+		}
+		if err := s.requireMailboxAccess(ctx, params.WorkspaceID, &trimmed); err != nil {
+			return nil, err
+		}
+	}
+	workspaceMemberID, role := s.actorMailboxScope(ctx, params.WorkspaceID)
+	resp, err := s.conversationRepo.Search(ctx, repository.ConversationRepositorySearchParams{
+		SupportConversationSearchParams: params,
+		WorkspaceMemberID:               workspaceMemberID,
+		Role:                            role,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil || len(resp.Data) == 0 {
+		return resp, nil
+	}
+	conversations := make([]model.SupportConversation, len(resp.Data))
+	for i := range resp.Data {
+		conversations[i] = resp.Data[i].Conversation
+	}
+	if s.triageService != nil {
+		if err := s.triageService.HydrateConversations(ctx, conversations); err != nil {
+			slog.ErrorContext(ctx, "hydrate support search triage list", "error", err, "workspace_id", params.WorkspaceID)
+		}
+	}
+	s.hydrateConversationTags(ctx, params.WorkspaceID, conversations)
+	for i := range resp.Data {
+		resp.Data[i].Conversation = conversations[i]
+	}
+	return resp, nil
 }
 
 // ListConversationsWithMeta returns conversations plus aggregate unread stats.
@@ -1621,6 +1715,7 @@ func hydrateEmailBodies(
 		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
 			messages[i].HTMLBody = log.HTMLBody
 			messages[i].StrippedText = log.StrippedText
+			messages[i].EmailReplyTo = log.ReplyTo
 		}
 		if log.Direction == "outbound" {
 			messages[i].EmailDeliveryStatus = log.Status

@@ -22,6 +22,7 @@ type DocsDocumentService struct {
 	helpcenterSvc  *DocsHelpcenterService
 	ruleEngine     *AutomationRuleEngine
 	wsPublisher    *websocket.Publisher
+	entitlementSvc *EntitlementService
 	useSortKey     bool
 }
 
@@ -50,10 +51,24 @@ func (s *DocsDocumentService) SetRuleEngine(engine *AutomationRuleEngine) {
 	s.ruleEngine = engine
 }
 
+func (s *DocsDocumentService) SetEntitlementService(entitlementSvc *EntitlementService) *DocsDocumentService {
+	s.entitlementSvc = entitlementSvc
+	return s
+}
+
 // Create creates a new document.
 func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, req model.CreateDocsDocumentRequest, userID string) (*model.DocsDocument, error) {
 	if req.Title == "" {
 		return nil, fmt.Errorf("title is required")
+	}
+	if s.entitlementSvc != nil {
+		count, err := s.docRepo.CountByWorkspace(ctx, workspaceID)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.entitlementSvc.RequireLimitUsage(ctx, workspaceID, EntitlementLimitDocuments, count, 1); err != nil {
+			return nil, err
+		}
 	}
 
 	// Validate space exists and belongs to workspace.

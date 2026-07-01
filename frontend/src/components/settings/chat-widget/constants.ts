@@ -1,10 +1,10 @@
-import { HelpCircleIcon, Message01Icon, ComputerIcon, Moon02Icon, Sun01Icon } from '@/lib/icons';
+import { HelpCircleIcon, LifebuoyIcon, Message01Icon, ComputerIcon, Moon02Icon, Sun01Icon } from '@/lib/icons';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
 
 export const ICON_OPTIONS = [
   { value: 'chat_bubble', label: 'Chat Bubble', icon: Message01Icon },
   { value: 'question_mark', label: 'Question Mark', icon: HelpCircleIcon },
-  { value: 'help', label: 'Help', icon: HelpCircleIcon },
+  { value: 'help', label: 'Help', icon: LifebuoyIcon },
 ];
 
 export const COLOR_SCHEME_OPTIONS = [
@@ -44,3 +44,12 @@ export const COMMON_TIMEZONES = [
 export const NO_AGENT_VALUE = '__none__';
 export const DEFAULT_ONLINE_REPLY_TEXT = 'We typically reply in a few minutes';
 export const DEFAULT_BUSINESS_HOURS_DAY: BusinessHoursDay = { start: '09:00', end: '17:00', enabled: false };
+
+type BrandingBillingState = {
+  plan?: string;
+  locked?: boolean;
+} | null | undefined;
+
+export function canRemoveHelpinBranding(billing: BrandingBillingState): boolean {
+  return billing?.plan === 'growth' && !billing.locked;
+}

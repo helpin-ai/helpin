@@ -57,6 +57,7 @@ import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { toast } from 'sonner';
 import type { AssignableMember } from '@/lib/types';
 import type { SupportAIRewriteOperation, SupportAttachmentPayload, SupportCannedResponse } from '@/lib/pmTypes';
@@ -78,6 +79,7 @@ interface ReplyComposerProps {
   emailFallbackHint?: {
     email: string;
   } | null;
+  onUpgradeRequired?: (reason: UpgradeRequiredReason) => void;
 }
 
 function loadSkipOfflineEmailConfirm(storageKey: string): boolean {
@@ -783,7 +785,7 @@ function ShortcutFormPanel({
   );
 }
 
-export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }: ReplyComposerProps) {
+export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, onUpgradeRequired }: ReplyComposerProps) {
   const { replyMode, setReplyMode, setDraft, clearDraft } = useSupportInboxStore();
   const sendMutation = useSendMessage(workspaceId, conversationId);
   const rewriteMutation = useRewriteSupportDraft(workspaceId, conversationId);
@@ -1486,14 +1488,19 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     const text = editor.getText().trim();
     if (!text || rewriteMutation.isPending) return;
 
-    const rewritten = await rewriteMutation.mutateAsync({
-      content: text,
-      operation,
-    });
+    try {
+      const rewritten = await rewriteMutation.mutateAsync({
+        content: text,
+        operation,
+      });
 
-    editor.commands.setContent(rewritten.content);
-    editor.commands.focus('end');
-  }, [editor, rewriteMutation]);
+      editor.commands.setContent(rewritten.content);
+      editor.commands.focus('end');
+    } catch (error) {
+      const reason = getUpgradeRequiredReason(error);
+      if (reason) onUpgradeRequired?.(reason);
+    }
+  }, [editor, onUpgradeRequired, rewriteMutation]);
 
   const handleConfirmOfflineEmailSend = useCallback(async () => {
     if (doNotAskAgain) {

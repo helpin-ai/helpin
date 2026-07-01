@@ -283,12 +283,13 @@ func (signals postmarkInboundSpamSignals) messageMetadata() string {
 }
 
 const (
-	emailFallbackOutboxKey     = "email_fallback_outbox"
-	emailFallbackLockKey       = "email_fallback_lock"
-	emailFallbackReconcileKey  = "email_fallback_reconcile_lock"
-	emailFallbackMsgsKeyPrefix = "email_fallback_msgs:"
-	emailFallbackOnlineRetry   = 30 * time.Second
-	emailFallbackReconcileTick = time.Minute
+	emailFallbackOutboxKey       = "email_fallback_outbox"
+	emailFallbackLockKey         = "email_fallback_lock"
+	emailFallbackReconcileKey    = "email_fallback_reconcile_lock"
+	emailFallbackMsgsKeyPrefix   = "email_fallback_msgs:"
+	emailFallbackOnlineRetry     = 30 * time.Second
+	emailFallbackReconcileTick   = time.Minute
+	supportInboundFallbackWindow = 30 * 24 * time.Hour
 )
 
 const (
@@ -1625,7 +1626,7 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 	if err != nil {
 		return err
 	}
-	replyTo := fmt.Sprintf("conv-%s@%s", conversationID, s.replyDomain)
+	replyTo := s.resolveConversationReplyTo(ctx, conv, workspaceName)
 	unsubscribeEmail := s.unsubscribeAddress(conversationID)
 
 	subject, err := s.buildSubject(ctx, conv, pending)
@@ -2181,6 +2182,49 @@ func (s *EmailFallbackService) acquireOrRenewNamedLease(ctx context.Context, key
 		return true, nil
 	}
 	return false, nil
+}
+
+func supportConversationReplyTo(conversationID, replyDomain, displayName string) string {
+	address := fmt.Sprintf("conv-%s@%s", strings.TrimSpace(conversationID), strings.TrimSpace(replyDomain))
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return address
+	}
+	return (&mail.Address{Name: displayName, Address: address}).String()
+}
+
+// supportRouteReplyTo formats a Reply-To header using a workspace's route-backed
+// inbound address with an optional friendly display name.
+func supportRouteReplyTo(inboundAddress, displayName string) string {
+	inboundAddress = strings.TrimSpace(inboundAddress)
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return inboundAddress
+	}
+	return (&mail.Address{Name: displayName, Address: inboundAddress}).String()
+}
+
+func (s *EmailFallbackService) resolveConversationReplyTo(ctx context.Context, conv *model.SupportConversation, displayName string) string {
+	if conv == nil {
+		return supportRouteReplyTo("", displayName)
+	}
+	legacy := supportConversationReplyTo(conv.ID, s.replyDomain, displayName)
+	if s.supportInboxService == nil || s.supportInboxService.emailRouteRepo == nil {
+		return legacy
+	}
+	route, err := s.supportInboxService.emailRouteRepo.GetActiveByMailbox(ctx, conv.WorkspaceID, conv.MailboxID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "resolve route reply-to failed, using legacy conv address",
+			"error", err,
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conv.ID,
+		)
+		return legacy
+	}
+	if route == nil || strings.TrimSpace(route.InboundAddress) == "" {
+		return legacy
+	}
+	return supportRouteReplyTo(route.InboundAddress, displayName)
 }
 
 func (s *EmailFallbackService) buildThreadHeaders(ctx context.Context, workspaceID, conversationID, nextMessageID string) ([]email.EmailHeader, error) {
@@ -2816,10 +2860,19 @@ func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *m
 	if route == nil {
 		return nil
 	}
-	if threadedConversation, err := s.resolveInboundRouteConversation(ctx, route.WorkspaceID, payload); err != nil {
+
+	conversation, err := s.resolveInboundRouteConversation(ctx, route.WorkspaceID, payload)
+	if err != nil {
 		return err
-	} else if threadedConversation != nil {
-		return s.processInboundConversationReply(ctx, threadedConversation, route, payload, rawPayload)
+	}
+	if conversation == nil {
+		conversation, err = s.resolveInboundFallbackConversation(ctx, route, payload)
+		if err != nil {
+			return err
+		}
+	}
+	if conversation != nil {
+		return s.processInboundConversationReply(ctx, conversation, route, payload, rawPayload)
 	}
 
 	return s.createInboundConversationFromRoute(ctx, route, payload, rawPayload)
@@ -2851,6 +2904,30 @@ func (s *EmailFallbackService) resolveInboundRouteConversation(ctx context.Conte
 	return s.findConversationByID(ctx, threadLog.ConversationID)
 }
 
+func (s *EmailFallbackService) resolveInboundFallbackConversation(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload) (*model.SupportConversation, error) {
+	if s == nil || s.convRepo == nil || route == nil {
+		return nil, nil
+	}
+	senderEmail := strings.TrimSpace(inboundEffectiveCustomerEmail(payload))
+	if senderEmail == "" {
+		return nil, nil
+	}
+	matches, err := s.convRepo.ListActiveByCustomerEmail(ctx, route.WorkspaceID, senderEmail, route.MailboxID, s.now().Add(-supportInboundFallbackWindow), 2)
+	if err != nil {
+		return nil, err
+	}
+	if len(matches) != 1 {
+		if len(matches) > 1 {
+			s.logger.InfoContext(ctx, "inbound fallback ambiguous, creating new conversation",
+				"workspace_id", route.WorkspaceID,
+				"match_count", len(matches),
+			)
+		}
+		return nil, nil
+	}
+	return &matches[0], nil
+}
+
 func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string) error {
 	if route == nil {
 		return nil
@@ -2873,6 +2950,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	if senderName == "" {
 		senderName = fromEmail
 	}
+	replyToRaw, replyToEmail, replyToName := inboundReplyToAddress(payload)
 
 	settings, err := s.loadSettings(ctx, route.WorkspaceID)
 	if err != nil {
@@ -2908,6 +2986,12 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		}
 		effectiveSenderName = strings.TrimSpace(forwardedAttribution.OriginalName)
 		effectiveSenderEmail = strings.TrimSpace(forwardedAttribution.OriginalEmail)
+		if effectiveSenderName == "" {
+			effectiveSenderName = effectiveSenderEmail
+		}
+	} else if replyToEmail != "" {
+		effectiveSenderEmail = replyToEmail
+		effectiveSenderName = replyToName
 		if effectiveSenderName == "" {
 			effectiveSenderName = effectiveSenderEmail
 		}
@@ -3036,6 +3120,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 			MessageIDs:        model.DocsStringArray{message.ID},
 			FromEmail:         fromEmail,
 			ToEmail:           strings.TrimSpace(payload.To),
+			ReplyTo:           replyToRaw,
 			RecipientAddress:  recipientAddress,
 			Subject:           subject,
 			RFCMessageID:      rfcMessageID,
@@ -3106,6 +3191,31 @@ func inboundEmailAddress(payload model.PostmarkInboundPayload) string {
 		return strings.TrimSpace(addr.Address)
 	}
 	return strings.TrimSpace(payload.From)
+}
+
+func inboundEffectiveCustomerEmail(payload model.PostmarkInboundPayload) string {
+	_, replyToEmail, _ := inboundReplyToAddress(payload)
+	if replyToEmail != "" {
+		return replyToEmail
+	}
+	return inboundEmailAddress(payload)
+}
+
+func inboundReplyToAddress(payload model.PostmarkInboundPayload) (raw, emailAddress, displayName string) {
+	raw = strings.TrimSpace(payload.ReplyTo)
+	if raw == "" {
+		raw = strings.TrimSpace(inboundHeaderValue(payload.Headers, "Reply-To"))
+	}
+	if raw == "" {
+		return "", "", ""
+	}
+	if addresses, err := mail.ParseAddressList(raw); err == nil && len(addresses) > 0 {
+		return raw, strings.TrimSpace(addresses[0].Address), strings.TrimSpace(addresses[0].Name)
+	}
+	if addr, err := mail.ParseAddress(raw); err == nil {
+		return raw, strings.TrimSpace(addr.Address), strings.TrimSpace(addr.Name)
+	}
+	return raw, "", ""
 }
 
 func mailboxHashFromInboundPayload(payload model.PostmarkInboundPayload) string {

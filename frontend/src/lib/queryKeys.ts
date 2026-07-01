@@ -10,6 +10,15 @@ export const queryKeys = {
     members: (orgId: string) => ['organizations', orgId, 'members'] as const,
   },
 
+  billing: {
+    org: (orgId: string) => ['billing', 'org', orgId] as const,
+    cards: (orgId: string) => ['billing', 'org', orgId, 'cards'] as const,
+    invoices: (orgId: string) => ['billing', 'org', orgId, 'invoices'] as const,
+    usage: (wsId: string, period: string, mode: string, start = '', end = '') =>
+      ['billing', 'workspace', wsId, 'usage', period, mode, start, end] as const,
+    workspace: (wsId: string) => ['billing', 'workspace', wsId] as const,
+  },
+
   workspaces: {
     all: (orgId?: string) => ['workspaces', { orgId }] as const,
     bySlug: (slug: string) => ['workspaces', 'slug', slug] as const,
@@ -17,6 +26,7 @@ export const queryKeys = {
     memberPresence: (wsId: string) => ['workspaces', wsId, 'members', 'presence'] as const,
     assignableMembers: (wsId: string) => ['workspaces', wsId, 'assignableMembers'] as const,
     settings: (wsId: string) => ['workspaces', wsId, 'settings'] as const,
+    billing: (wsId: string) => ['workspaces', wsId, 'billing'] as const,
     moduleAccess: (wsId: string) => ['workspaces', wsId, 'module-access'] as const,
     teams: (wsId: string) => ['workspaces', wsId, 'teams'] as const,
     session: (wsId: string) => ['workspaces', wsId, 'session'] as const,
@@ -157,6 +167,7 @@ export const queryKeys = {
     triageRules: (wsId: string) => ['support', wsId, 'triage-rules'] as const,
     cannedResponses: (wsId: string) => ['support', wsId, 'canned-responses'] as const,
     cannedResponseSearch: (wsId: string, query: string) => ['support', wsId, 'canned-responses', 'search', query] as const,
+    search: (wsId: string, filters: unknown) => ['support', wsId, 'search', filters] as const,
     tags: (wsId: string) => ['support', wsId, 'tags'] as const,
   },
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"gorm.io/gorm"
@@ -79,6 +80,47 @@ func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 		)`,
 		`CREATE TABLE IF NOT EXISTS workspace_managers (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS job_role_criteria (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS workspace_billing (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL UNIQUE,
+			plan TEXT NOT NULL DEFAULT 'free',
+			status TEXT NOT NULL DEFAULT 'active',
+			stripe_customer_id TEXT,
+			stripe_subscription_id TEXT,
+			stripe_price_id TEXT,
+			billing_interval TEXT NOT NULL DEFAULT 'monthly',
+			included_credits INTEGER NOT NULL DEFAULT 1000,
+			credits_used INTEGER NOT NULL DEFAULT 0,
+			on_demand_enabled BOOLEAN NOT NULL DEFAULT 0,
+			on_demand_blocks_invoiced INTEGER NOT NULL DEFAULT 0,
+			current_period_start DATETIME,
+			current_period_end DATETIME,
+			trial_ends_at DATETIME,
+			pending_plan TEXT,
+			pending_billing_interval TEXT,
+			pending_change_at DATETIME,
+			cancel_at_period_end BOOLEAN NOT NULL DEFAULT 0,
+			canceled_at DATETIME,
+			billing_notice_type TEXT,
+			billing_notice_message TEXT,
+			billing_notice_at DATETIME,
+			payment_failed_at DATETIME,
+			trial_will_end_at DATETIME,
+			last_stripe_event_id TEXT,
+			payment_method_id TEXT,
+			billing_owner_user_id TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS organization_billing (
+			id TEXT PRIMARY KEY,
+			organization_id TEXT NOT NULL UNIQUE,
+			stripe_customer_id TEXT,
+			default_payment_method_id TEXT,
+			founder_plan_enabled BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 	}
 	for _, stmt := range stubs {
 		if err := db.Exec(stmt).Error; err != nil {
@@ -625,6 +667,81 @@ func TestWorkspaceService_Delete(t *testing.T) {
 	}
 	if len(list) != 0 {
 		t.Errorf("List returned %d workspaces after delete, want 0", len(list))
+	}
+}
+
+func TestWorkspaceService_DeleteCancelsActiveSubscriptionImmediately(t *testing.T) {
+	db, svc := newWorkspaceTestHarness(t)
+	createDeleteStubTables(t, db)
+	ctx := context.Background()
+	gateway := &fakeBillingGateway{}
+	billingRepo := repository.NewBillingRepository(db)
+	billingSvc := NewBillingService(billingRepo, gateway, nil)
+	svc.SetBillingService(billingSvc)
+
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Paid Delete", Slug: "paid-delete", WorkspaceKey: "PDL"}, "owner-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := billingRepo.UpsertWorkspaceBilling(ctx, &model.WorkspaceBilling{
+		WorkspaceID:          created.ID,
+		Plan:                 model.BillingPlanStarter,
+		Status:               model.BillingStatusActive,
+		StripeCustomerID:     billingStringPtr("cus_paid"),
+		StripeSubscriptionID: billingStringPtr("sub_paid"),
+		BillingInterval:      "monthly",
+		IncludedCredits:      5000,
+	}); err != nil {
+		t.Fatalf("seed billing: %v", err)
+	}
+
+	if err := svc.Delete(ctx, created.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	if len(gateway.immediateCancels) != 1 || gateway.immediateCancels[0].SubscriptionID != "sub_paid" {
+		t.Fatalf("unexpected immediate cancels: %#v", gateway.immediateCancels)
+	}
+	var count int64
+	if err := db.Model(&model.WorkspaceBilling{}).Where("workspace_id = ?", created.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count workspace billing: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("workspace billing rows after delete = %d, want 0", count)
+	}
+}
+
+func TestWorkspaceService_DeleteStopsWhenSubscriptionCancellationFails(t *testing.T) {
+	db, svc := newWorkspaceTestHarness(t)
+	createDeleteStubTables(t, db)
+	ctx := context.Background()
+	gateway := &fakeBillingGateway{cancelErr: errors.New("stripe unavailable")}
+	billingRepo := repository.NewBillingRepository(db)
+	billingSvc := NewBillingService(billingRepo, gateway, nil)
+	svc.SetBillingService(billingSvc)
+
+	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Paid Delete Fail", Slug: "paid-delete-fail", WorkspaceKey: "PDF"}, "owner-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := billingRepo.UpsertWorkspaceBilling(ctx, &model.WorkspaceBilling{
+		WorkspaceID:          created.ID,
+		Plan:                 model.BillingPlanGrowth,
+		Status:               model.BillingStatusActive,
+		StripeCustomerID:     billingStringPtr("cus_paid"),
+		StripeSubscriptionID: billingStringPtr("sub_paid"),
+		BillingInterval:      "monthly",
+		IncludedCredits:      25000,
+	}); err != nil {
+		t.Fatalf("seed billing: %v", err)
+	}
+
+	err = svc.Delete(ctx, created.ID)
+	if err == nil {
+		t.Fatal("expected delete to fail when subscription cancellation fails")
+	}
+	if _, getErr := svc.GetByID(ctx, created.ID); getErr != nil {
+		t.Fatalf("workspace should remain after failed billing cancellation: %v", getErr)
 	}
 }
 

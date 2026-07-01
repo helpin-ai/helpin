@@ -18,6 +18,8 @@ func NewDefaultRuntimeRegistry(
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 	workspaceAuth *CodexWorkspaceAuthStore,
+	usagePreflighter AgentRunUsagePreflighter,
+	usageRecorder AgentRunUsageRecorder,
 ) *RuntimeRegistry {
 	braveSearchClient := NewBraveSearchClient(braveSearchAPIKey)
 	exaSearchClient := NewExaSearchClient(exaSearchAPIKey)
@@ -28,8 +30,8 @@ func NewDefaultRuntimeRegistry(
 		OpenRouterKey:   openRouterAPIKey,
 		OpenRouterURL:   openRouterBaseURL,
 	}
-	opencodeAdapter := NewOpenCodeExecutor("opencode", opencodePath, anthropicAPIKey, anthropicBaseURL, openAIAPIKey, openAIBaseURL, openRouterAPIKey, openRouterBaseURL, runRepo, artifactRepo)
-	codexAdapter := NewCodexExecutor("codex", codexConfig, runRepo, artifactRepo, workspaceAuth)
+	opencodeAdapter := NewOpenCodeExecutor("opencode", opencodePath, anthropicAPIKey, anthropicBaseURL, openAIAPIKey, openAIBaseURL, openRouterAPIKey, openRouterBaseURL, runRepo, artifactRepo, usageRecorder)
+	codexAdapter := NewCodexExecutor("codex", codexConfig, runRepo, artifactRepo, workspaceAuth, usageRecorder)
 	// native_sdk is the only in-process SDK-backed runtime exposed today.
 	// A real terminal-backed claude_code runtime can be added later as a distinct adapter.
 	nativeAdapter := NewEinoExecutor(
@@ -43,6 +45,11 @@ func NewDefaultRuntimeRegistry(
 		codexConfig.HelpinMCPBridgePath,
 		runRepo,
 		artifactRepo,
+		usageRecorder,
 	)
-	return NewRuntimeRegistry(opencodeAdapter, codexAdapter, nativeAdapter)
+	return NewRuntimeRegistry(
+		usagePreflightRuntimeAdapter{adapter: opencodeAdapter, preflighter: usagePreflighter},
+		usagePreflightRuntimeAdapter{adapter: codexAdapter, preflighter: usagePreflighter},
+		usagePreflightRuntimeAdapter{adapter: nativeAdapter, preflighter: usagePreflighter},
+	)
 }

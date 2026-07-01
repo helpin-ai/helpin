@@ -190,6 +190,24 @@ func TestSupportInboxWidgetHandlerValidation(t *testing.T) {
 		assertAPIError(t, rec, http.StatusBadRequest, "widget_key is required")
 	})
 
+	t.Run("SearchHelpArticles requires widget_key", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/widget/support/help/search?q=reset", nil)
+		rec := httptest.NewRecorder()
+
+		h.SearchHelpArticles(rec, req)
+
+		assertAPIError(t, rec, http.StatusBadRequest, "widget_key is required")
+	})
+
+	t.Run("SearchHelpArticles requires query", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/widget/support/help/search?widget_key=wk_123", nil)
+		rec := httptest.NewRecorder()
+
+		h.SearchHelpArticles(rec, req)
+
+		assertAPIError(t, rec, http.StatusBadRequest, "q is required")
+	})
+
 	t.Run("GetHelpArticle requires articleKey", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/widget/support/help/articles/?widget_key=wk_123", nil)
 		req = withURLParam(req, "articleKey", "")

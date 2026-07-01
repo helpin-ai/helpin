@@ -493,6 +493,9 @@ export function GeneralTab({ workspaceId, editable }: {
             <p className="text-sm text-muted-foreground">
               This will permanently delete <span className="font-semibold text-foreground">{workspace?.name}</span> and all of its data including tasks, epics, sprints, comments, attachments, and settings. This action cannot be undone.
             </p>
+            <p className="text-sm text-muted-foreground">
+              If this workspace has an active subscription, deleting it will cancel the subscription immediately. Past invoices and payment records remain available in billing records.
+            </p>
             <div className="space-y-2">
               <Label htmlFor="delete-confirm">
                 Type <span className="font-mono font-semibold text-destructive">{workspace?.slug}</span> to confirm

@@ -11,10 +11,11 @@ import (
 
 // CRMImportService contains CRM import business logic.
 type CRMImportService struct {
-	importRepo  *repository.CRMImportRepository
-	contactRepo *repository.CRMContactRepository
-	companyRepo *repository.CRMCompanyRepository
-	dealRepo    *repository.CRMDealRepository
+	importRepo     *repository.CRMImportRepository
+	contactRepo    *repository.CRMContactRepository
+	companyRepo    *repository.CRMCompanyRepository
+	dealRepo       *repository.CRMDealRepository
+	entitlementSvc *EntitlementService
 }
 
 // NewCRMImportService creates a new CRMImportService.
@@ -30,6 +31,11 @@ func NewCRMImportService(
 		companyRepo: companyRepo,
 		dealRepo:    dealRepo,
 	}
+}
+
+func (s *CRMImportService) SetEntitlementService(entitlementSvc *EntitlementService) *CRMImportService {
+	s.entitlementSvc = entitlementSvc
+	return s
 }
 
 // Create creates an import job.
@@ -92,6 +98,9 @@ func (s *CRMImportService) Process(ctx context.Context, id string, req model.Pro
 	if job.Status != model.CRMImportStatusPending {
 		return nil, fmt.Errorf("import job is not in pending status")
 	}
+	if err := s.preflightImportEntitlements(ctx, job, len(req.CSVData)); err != nil {
+		return nil, err
+	}
 
 	job.Status = model.CRMImportStatusProcessing
 	job.TotalRows = len(req.CSVData)
@@ -142,6 +151,17 @@ func (s *CRMImportService) Process(ctx context.Context, id string, req model.Pro
 	return job, nil
 }
 
+func (s *CRMImportService) preflightImportEntitlements(ctx context.Context, job *model.CRMImportJob, rowCount int) error {
+	if s.entitlementSvc == nil || job == nil || job.ObjectType != "contact" || rowCount <= 0 {
+		return nil
+	}
+	count, err := s.contactRepo.CountByWorkspace(ctx, job.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	return s.entitlementSvc.RequireLimitUsage(ctx, job.WorkspaceID, EntitlementLimitContacts, count, int64(rowCount))
+}
+
 func (s *CRMImportService) processRow(ctx context.Context, job *model.CRMImportJob, row []string, fieldMap map[int]string) error {
 	fields := make(map[string]string)
 	for idx, crmField := range fieldMap {
@@ -166,6 +186,15 @@ func (s *CRMImportService) importContact(ctx context.Context, workspaceID string
 	firstName := fields["first_name"]
 	if firstName == "" {
 		return fmt.Errorf("first_name is required")
+	}
+	if s.entitlementSvc != nil {
+		count, err := s.contactRepo.CountByWorkspace(ctx, workspaceID)
+		if err != nil {
+			return err
+		}
+		if err := s.entitlementSvc.RequireLimitUsage(ctx, workspaceID, EntitlementLimitContacts, count, 1); err != nil {
+			return err
+		}
 	}
 
 	displayID, err := s.contactRepo.GetNextDisplayID(ctx, workspaceID)

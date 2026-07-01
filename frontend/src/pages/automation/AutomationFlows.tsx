@@ -19,6 +19,7 @@ import {
 } from '@/lib/icons';
 import { toast } from 'sonner';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
 import { BASE_BRANCH_TOKEN, TASK_BRANCH_TOKEN, describeMergeInto, describeRunBranchOverrides } from '@/lib/branchLabels';
@@ -50,6 +51,7 @@ import type { Agent, AgentApprovalMode, AgentRuntimeKind, AgentSkillRef, AgentTa
 import type { DocsCollection, DocsSpace } from '@/lib/docsTypes';
 import { buildAutomationActivityPath } from '@/lib/automationUi';
 import { getAgentTeamIds, isAgentVisibleToActor } from '@/lib/agentAccess';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
@@ -4345,8 +4347,16 @@ export function AutomationFlowsPage({
   const [draft, setDraft] = useState<FlowDraft>(defaultDraft());
   const [saving, setSaving] = useState(false);
   const [runningFlowId, setRunningFlowId] = useState<string | null>(null);
+  const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const searchSignature = useMemo(() => JSON.stringify(search), [search]);
   const [appliedSearchSignature, setAppliedSearchSignature] = useState('');
+
+  const showUpgradeDialogForError = useCallback((error: unknown) => {
+    const reason = getUpgradeRequiredReason(error);
+    if (!reason) return false;
+    setUpgradeDialogReason(reason);
+    return true;
+  }, []);
 
   const authoredFlows = rulesQuery.data ?? [];
   const tasks = tasksQuery.data?.data ?? [];
@@ -4542,6 +4552,7 @@ export function AutomationFlowsPage({
   const handleToggle = async (rule: AutomationRule) => {
     const res = await automationService.updateFlow(workspaceId, rule.id, { enabled: !rule.enabled });
     if (res.error) {
+      if (showUpgradeDialogForError(res.error)) return;
       toast.error(res.error);
       return;
     }
@@ -4558,6 +4569,7 @@ export function AutomationFlowsPage({
     const res = await automationService.runFlowNow(workspaceId, rule.id);
     setRunningFlowId(null);
     if (res.error) {
+      if (showUpgradeDialogForError(res.error)) return;
       toast.error(res.error);
       return;
     }
@@ -4588,6 +4600,7 @@ export function AutomationFlowsPage({
       : await automationService.createFlow(workspaceId, { workspace_id: workspaceId, ...payload, position: authoredFlows.length });
     setSaving(false);
     if (res.error) {
+      if (showUpgradeDialogForError(res.error)) return;
       toast.error(res.error);
       return;
     }
@@ -4645,6 +4658,7 @@ export function AutomationFlowsPage({
       });
       await refreshAll();
     } catch (error) {
+      if (showUpgradeDialogForError(error)) return;
       toast.error(error instanceof Error ? error.message : 'Failed to install template');
     }
   };
@@ -4919,6 +4933,23 @@ export function AutomationFlowsPage({
           </div>
         </>
       )}
+      <UpgradeRequiredDialog
+        open={upgradeDialogReason !== null}
+        onOpenChange={(open) => {
+          if (!open) setUpgradeDialogReason(null);
+        }}
+        onUpgrade={() => {
+          setComposerOpen(false);
+          setGalleryOpen(false);
+          setSelectedTemplate(null);
+          setTemplateFlowSetup(null);
+          setTemplateFlowSetupEdited(false);
+          setTemplateAgentSetup(null);
+          setTemplateAgentInstructionsEdited(false);
+          setTemplateAdditionalInstructions('');
+        }}
+        reason={upgradeDialogReason}
+      />
     </div>
   );
 }

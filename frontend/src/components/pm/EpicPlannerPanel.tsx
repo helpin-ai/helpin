@@ -4,6 +4,7 @@ import { ArrowDown01Icon, ArrowRight01Icon, BotIcon, Loading01Icon, MessagePrevi
 import { toast } from 'sonner';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +21,7 @@ import type { Agent, AgentRun } from '@/lib/pmTypes';
 import { isAgentAvailableForTarget } from '@/lib/agentAccess';
 import { agentService } from '@/lib/services/agentService';
 import { cn } from '@/lib/utils';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { ACTIVE_RUN_STATUSES, STATUS_META, getAgentRunDisplayStatus } from './agentRunConstants';
 import {
   HISTORY_VISIBLE_ROW_LIMIT,
@@ -281,6 +283,7 @@ export function EpicPlannerPanel({
   const [starting, setStarting] = useState(false);
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+  const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const lastReportedCompletedRunIdRef = useRef<string | null>(null);
   const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId);
   const accessibleTeamIds = useMemo(
@@ -429,6 +432,11 @@ export function EpicPlannerPanel({
         additional_context: additionalContext.trim() || undefined,
       });
       if (res.error) {
+        const reason = getUpgradeRequiredReason(res.error);
+        if (reason) {
+          setUpgradeDialogReason(reason);
+          return;
+        }
         toast.error(res.error);
         return;
       }
@@ -656,6 +664,13 @@ export function EpicPlannerPanel({
         onOpenChange={setDrawerOpen}
         title={selectedRunId ? `${agentNameById[runs.find((run) => run.id === selectedRunId)?.agent_id ?? ''] ?? 'Epic Agent'} Run` : 'Epic Agent Run'}
         description="Interactive agent chat, artifacts, and live tool activity for this epic."
+      />
+      <UpgradeRequiredDialog
+        open={upgradeDialogReason !== null}
+        onOpenChange={(open) => {
+          if (!open) setUpgradeDialogReason(null);
+        }}
+        reason={upgradeDialogReason}
       />
     </div>
   );

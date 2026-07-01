@@ -128,6 +128,16 @@ type Config struct {
 	// Redis (optional — empty = local-only mode, no cross-pod broadcasting)
 	RedisURL string
 
+	// Stripe Billing (optional — checkout and portal disabled if unset)
+	StripePublishableKey        string
+	StripeSecretKey             string
+	StripeWebhookSecret         string
+	StripeStarterMonthlyPriceID string
+	StripeStarterAnnualPriceID  string
+	StripeGrowthMonthlyPriceID  string
+	StripeGrowthAnnualPriceID   string
+	StripeCreditBlockPriceID    string
+
 	// Agent preview debugging (optional — targeted diagnostics for preview persistence/apply)
 	AgentPreviewDebug bool
 
@@ -279,6 +289,14 @@ func Load() (*Config, error) {
 		MaxMindDownloadURL:                     strings.TrimSpace(os.Getenv("MAXMIND_DOWNLOAD_URL")),
 		MaxMindLicenseKey:                      strings.TrimSpace(os.Getenv("MAXMIND_LICENSE_KEY")),
 		RedisURL:                               os.Getenv("REDIS_URL"),
+		StripePublishableKey:                   strings.TrimSpace(os.Getenv("STRIPE_PUBLISHABLE_KEY")),
+		StripeSecretKey:                        strings.TrimSpace(os.Getenv("STRIPE_SECRET_KEY")),
+		StripeWebhookSecret:                    strings.TrimSpace(os.Getenv("STRIPE_WEBHOOK_SECRET")),
+		StripeStarterMonthlyPriceID:            strings.TrimSpace(os.Getenv("STRIPE_STARTER_MONTHLY_PRICE_ID")),
+		StripeStarterAnnualPriceID:             strings.TrimSpace(os.Getenv("STRIPE_STARTER_ANNUAL_PRICE_ID")),
+		StripeGrowthMonthlyPriceID:             strings.TrimSpace(os.Getenv("STRIPE_GROWTH_MONTHLY_PRICE_ID")),
+		StripeGrowthAnnualPriceID:              strings.TrimSpace(os.Getenv("STRIPE_GROWTH_ANNUAL_PRICE_ID")),
+		StripeCreditBlockPriceID:               strings.TrimSpace(os.Getenv("STRIPE_CREDIT_BLOCK_PRICE_ID")),
 		AgentPreviewDebug:                      parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 		DocsOrderingUseSortKey:                 parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
 	}, nil

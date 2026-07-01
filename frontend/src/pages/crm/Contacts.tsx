@@ -19,6 +19,9 @@ import { CRMDataEmptyState } from '@/components/crm/CRMDataEmptyState';
 import { useTitle } from '@/hooks/useTitle';
 import { toast } from 'sonner';
 
+const isContactLimitError = (error: unknown) =>
+  error instanceof Error && error.message.includes('5,000 contacts');
+
 export function ContactsPage() {
   useTitle('Contacts');
   const { currentWorkspace } = useWorkspaceStore();
@@ -54,6 +57,7 @@ export function ContactsPage() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    error,
   } = useInfiniteContacts(wsId, {
     search: searchParams.search || undefined,
     filters: searchParams.filters || undefined,
@@ -79,6 +83,10 @@ export function ContactsPage() {
   const handleImportClick = () => {
     if (!wsSlug) return;
     void navigate({ to: '/w/$slug/settings/import', params: { slug: wsSlug } });
+  };
+  const handleUpgradeClick = () => {
+    if (!wsSlug) return;
+    void navigate({ to: '/w/$slug/settings/billing', params: { slug: wsSlug } });
   };
 
   const handleSeedContacts = async () => {
@@ -165,7 +173,17 @@ export function ContactsPage() {
 
       {/* Content */}
       <div className="min-h-0 flex-1 overflow-hidden p-3">
-        {showContactsEmptyState ? (
+        {isContactLimitError(error) ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+            <div>
+              <h2 className="text-sm font-medium">Upgrade to view CRM contacts</h2>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                Starter includes up to 5,000 contacts. Support can keep capturing new contacts, but CRM contact viewing requires Growth once you exceed that limit.
+              </p>
+            </div>
+            <Button size="sm" onClick={handleUpgradeClick}>Upgrade</Button>
+          </div>
+        ) : showContactsEmptyState ? (
           <CRMDataEmptyState
             kind="contacts"
             onCreateClick={() => openGlobalCreate('crm_contact')}

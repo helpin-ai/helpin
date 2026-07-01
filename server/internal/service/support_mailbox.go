@@ -314,6 +314,11 @@ func (s *SupportInboxService) CreateMailbox(ctx context.Context, workspaceID str
 	if req.AssignmentMode != "manual" && req.AssignmentMode != "round_robin" {
 		return nil, fmt.Errorf("assignment_mode must be manual or round_robin")
 	}
+	if req.AssignmentMode == "round_robin" && s.entitlementSvc != nil {
+		if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureRoundRobinAssignment); err != nil {
+			return nil, err
+		}
+	}
 	if existing, err := s.mailboxRepo.GetByHandle(ctx, workspaceID, handle); err != nil {
 		return nil, err
 	} else if existing != nil {
@@ -426,6 +431,11 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 		mode := strings.TrimSpace(*req.AssignmentMode)
 		if mode != "manual" && mode != "round_robin" {
 			return nil, fmt.Errorf("assignment_mode must be manual or round_robin")
+		}
+		if mode == "round_robin" && s.entitlementSvc != nil {
+			if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureRoundRobinAssignment); err != nil {
+				return nil, err
+			}
 		}
 		mailbox.AssignmentMode = mode
 	}

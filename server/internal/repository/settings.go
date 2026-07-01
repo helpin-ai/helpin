@@ -143,6 +143,14 @@ func (r *SettingsRepository) ListTeams(ctx context.Context, workspaceID string) 
 	return r.listTeams(ctx, workspaceID)
 }
 
+func (r *SettingsRepository) CountTeams(ctx context.Context, workspaceID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.WorkspaceTeam{}).Where("workspace_id = ?", workspaceID).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count teams: %w", err)
+	}
+	return count, nil
+}
+
 func (r *SettingsRepository) listTeams(ctx context.Context, workspaceID string) ([]model.WorkspaceTeam, error) {
 	var teams []model.WorkspaceTeam
 	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).Order("name").Find(&teams).Error

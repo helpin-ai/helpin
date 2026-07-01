@@ -2044,6 +2044,8 @@ export function TaskListView({
       workspaceId={workspaceId}
       teamId={teamId}
       workflow={workflow}
+      workflows={workflows}
+      teams={teams}
       assignableMembers={assignableMembers}
       epics={epics}
       sprints={sprints}

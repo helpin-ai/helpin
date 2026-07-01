@@ -74,12 +74,10 @@ export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeVie
   useEffect(() => {
     if (open) {
       setSearch('')
-      // Focus the search input after opening
       requestAnimationFrame(() => inputRef.current?.focus())
     }
   }, [open])
 
-  // Close on click outside
   useEffect(() => {
     if (!open) return
     function handleClick(e: MouseEvent) {

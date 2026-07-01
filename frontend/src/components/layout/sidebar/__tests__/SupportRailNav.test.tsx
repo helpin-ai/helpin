@@ -159,6 +159,14 @@ describe('SupportRailNav', () => {
     rendered.cleanup()
   })
 
+  it('does not expose support global search as a sidebar list item', () => {
+    const rendered = renderSupportRail()
+
+    expect(buttonByText(rendered.container, 'Search')).toBeUndefined()
+
+    rendered.cleanup()
+  })
+
   it('shows custom views below team inboxes', () => {
     const rendered = renderSupportRail({
       customViews: [

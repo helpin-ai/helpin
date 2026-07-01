@@ -21,6 +21,8 @@ import { useCreateDocsDocument, useDocsSpaces, useDocsCollections } from '@/hook
 import { ICON_MAP } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
 import { CollectionTreePicker } from '@/components/docs/CollectionTreePicker'
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog'
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired'
 
 interface CreateDocumentDialogProps {
   wsId: string
@@ -42,6 +44,7 @@ export function CreateDocumentDialog({
   const [title, setTitle] = useState('')
   const [spaceId, setSpaceId] = useState(defaultSpaceId ?? '')
   const [collectionId, setCollectionId] = useState(defaultCollectionId ?? '')
+  const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null)
   const createDocument = useCreateDocsDocument(wsId)
   const { data: spaces } = useDocsSpaces(wsId)
   const { data: collections } = useDocsCollections(wsId, spaceId || '')
@@ -91,20 +94,26 @@ export function CreateDocumentDialog({
       onOpenChange(false)
       onCreated?.(doc.id)
     } catch (err) {
+      const reason = getUpgradeRequiredReason(err)
+      if (reason) {
+        setUpgradeDialogReason(reason)
+        return
+      }
       toast.error(err instanceof Error ? err.message : 'Failed to create document')
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>Create Document</DialogTitle>
-            <DialogDescription>
-              Add a new document to your documentation.
-            </DialogDescription>
-          </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <form onSubmit={handleSubmit}>
+            <DialogHeader>
+              <DialogTitle>Create Document</DialogTitle>
+              <DialogDescription>
+                Add a new document to your documentation.
+              </DialogDescription>
+            </DialogHeader>
 
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
@@ -173,8 +182,17 @@ export function CreateDocumentDialog({
               {createDocument.isPending ? 'Creating...' : 'Create Document'}
             </Button>
           </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <UpgradeRequiredDialog
+        open={upgradeDialogReason !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setUpgradeDialogReason(null)
+        }}
+        onUpgrade={() => onOpenChange(false)}
+        reason={upgradeDialogReason}
+      />
+    </>
   )
 }

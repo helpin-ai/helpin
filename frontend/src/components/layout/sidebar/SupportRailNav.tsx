@@ -84,6 +84,7 @@ export function SupportRailNav({
   onNavigate,
 }: SupportRailNavProps) {
   const isOnCoverage = pathname.startsWith(`/w/${wsSlug}/support/coverage`);
+  const isOnSearch = pathname.startsWith(`/w/${wsSlug}/support/search`);
   const mailboxes = inboxScopes?.mailboxes ?? [];
   const aiStats = selectedMailboxId === 'all' ? (globalUnreadStats ?? unreadStats) : globalUnreadStats;
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -150,7 +151,7 @@ export function SupportRailNav({
             return (
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
-                  isActive={!activeCustomViewId && navFilter === item.key && (item.key !== 'inbox' || selectedMailboxId === 'all')}
+                  isActive={!isOnSearch && !isOnCoverage && !activeCustomViewId && navFilter === item.key && (item.key !== 'inbox' || selectedMailboxId === 'all')}
                   className={supportMenuRowClassName}
                   onClick={() => onNavFilterChange(item.key)}
                 >
@@ -185,7 +186,7 @@ export function SupportRailNav({
             return (
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
-                  isActive={!activeCustomViewId && navFilter === item.key}
+                  isActive={!isOnSearch && !isOnCoverage && !activeCustomViewId && navFilter === item.key}
                   className={supportMenuRowClassName}
                   onClick={() => onNavFilterChange(item.key)}
                 >
@@ -233,7 +234,7 @@ export function SupportRailNav({
         <SidebarMenu>
           {mailboxes.map((mailbox) => {
             const MailboxIcon = mailbox.icon ? (ICON_MAP[mailbox.icon] ?? InboxIcon) : InboxIcon;
-            const isActiveMailbox = !activeCustomViewId && selectedMailboxId === mailbox.id;
+            const isActiveMailbox = !isOnSearch && !isOnCoverage && !activeCustomViewId && selectedMailboxId === mailbox.id;
             const isMenuOpen = openMenuId === mailbox.id;
 
             return (
@@ -321,7 +322,7 @@ export function SupportRailNav({
           </SidebarGroupLabel>
           <SidebarMenu>
             {customViews.map((view) => {
-              const isActive = activeCustomViewId === view.id;
+              const isActive = !isOnSearch && !isOnCoverage && activeCustomViewId === view.id;
               const isMenuOpen = openMenuId === view.id;
               const canModifyView = view.created_by === currentUserId || (view.is_shared && canManageSettings);
               const count = customViewCounts[view.id];

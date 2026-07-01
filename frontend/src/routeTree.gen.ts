@@ -37,6 +37,7 @@ import { Route as AuthenticatedWSlugPmIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedWSlugDocsIndexRouteImport } from './routes/_authenticated/w/$slug/docs/index'
 import { Route as AuthenticatedWSlugCrmIndexRouteImport } from './routes/_authenticated/w/$slug/crm/index'
 import { Route as AuthenticatedWSlugAutomationIndexRouteImport } from './routes/_authenticated/w/$slug/automation/index'
+import { Route as AuthenticatedWSlugSupportSearchRouteImport } from './routes/_authenticated/w/$slug/support/search'
 import { Route as AuthenticatedWSlugSupportCoverageRouteImport } from './routes/_authenticated/w/$slug/support/coverage'
 import { Route as AuthenticatedWSlugSupportConversationIdRouteImport } from './routes/_authenticated/w/$slug/support/$conversationId'
 import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/sprints/$sprintId'
@@ -59,6 +60,7 @@ import { Route as AuthenticatedWSlugSettingsCrmEmailRouteImport } from './routes
 import { Route as AuthenticatedWSlugSettingsCrmAutonomyRouteImport } from './routes/_authenticated/w/$slug/settings/crm-autonomy'
 import { Route as AuthenticatedWSlugSettingsCommandIntentsRouteImport } from './routes/_authenticated/w/$slug/settings/command-intents'
 import { Route as AuthenticatedWSlugSettingsChatGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/chat-general'
+import { Route as AuthenticatedWSlugSettingsBillingRouteImport } from './routes/_authenticated/w/$slug/settings/billing'
 import { Route as AuthenticatedWSlugSettingsAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/automations'
 import { Route as AuthenticatedWSlugSettingsAiAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/ai-automations'
 import { Route as AuthenticatedWSlugSettingsAccessRouteImport } from './routes/_authenticated/w/$slug/settings/access'
@@ -256,6 +258,12 @@ const AuthenticatedWSlugAutomationIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedWSlugAutomationRoute,
   } as any)
+const AuthenticatedWSlugSupportSearchRoute =
+  AuthenticatedWSlugSupportSearchRouteImport.update({
+    id: '/search',
+    path: '/search',
+    getParentRoute: () => AuthenticatedWSlugSupportRoute,
+  } as any)
 const AuthenticatedWSlugSupportCoverageRoute =
   AuthenticatedWSlugSupportCoverageRouteImport.update({
     id: '/coverage',
@@ -386,6 +394,12 @@ const AuthenticatedWSlugSettingsChatGeneralRoute =
   AuthenticatedWSlugSettingsChatGeneralRouteImport.update({
     id: '/settings/chat-general',
     path: '/settings/chat-general',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsBillingRoute =
+  AuthenticatedWSlugSettingsBillingRouteImport.update({
+    id: '/settings/billing',
+    path: '/settings/billing',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsAutomationsRoute =
@@ -708,6 +722,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/access': typeof AuthenticatedWSlugSettingsAccessRoute
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
+  '/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
@@ -730,6 +745,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/w/$slug/support/$conversationId': typeof AuthenticatedWSlugSupportConversationIdRoute
   '/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
+  '/w/$slug/support/search': typeof AuthenticatedWSlugSupportSearchRoute
   '/w/$slug/automation/': typeof AuthenticatedWSlugAutomationIndexRoute
   '/w/$slug/crm/': typeof AuthenticatedWSlugCrmIndexRoute
   '/w/$slug/docs/': typeof AuthenticatedWSlugDocsIndexRoute
@@ -799,6 +815,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/access': typeof AuthenticatedWSlugSettingsAccessRoute
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
+  '/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
@@ -821,6 +838,7 @@ export interface FileRoutesByTo {
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/w/$slug/support/$conversationId': typeof AuthenticatedWSlugSupportConversationIdRoute
   '/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
+  '/w/$slug/support/search': typeof AuthenticatedWSlugSupportSearchRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationIndexRoute
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmIndexRoute
   '/w/$slug/docs': typeof AuthenticatedWSlugDocsIndexRoute
@@ -897,6 +915,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/access': typeof AuthenticatedWSlugSettingsAccessRoute
   '/_authenticated/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/_authenticated/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
+  '/_authenticated/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/_authenticated/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/_authenticated/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/_authenticated/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
@@ -919,6 +938,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/_authenticated/w/$slug/support/$conversationId': typeof AuthenticatedWSlugSupportConversationIdRoute
   '/_authenticated/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
+  '/_authenticated/w/$slug/support/search': typeof AuthenticatedWSlugSupportSearchRoute
   '/_authenticated/w/$slug/automation/': typeof AuthenticatedWSlugAutomationIndexRoute
   '/_authenticated/w/$slug/crm/': typeof AuthenticatedWSlugCrmIndexRoute
   '/_authenticated/w/$slug/docs/': typeof AuthenticatedWSlugDocsIndexRoute
@@ -995,6 +1015,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/access'
     | '/w/$slug/settings/ai-automations'
     | '/w/$slug/settings/automations'
+    | '/w/$slug/settings/billing'
     | '/w/$slug/settings/chat-general'
     | '/w/$slug/settings/command-intents'
     | '/w/$slug/settings/crm-autonomy'
@@ -1017,6 +1038,7 @@ export interface FileRouteTypes {
     | '/w/$slug/sprints/$sprintId'
     | '/w/$slug/support/$conversationId'
     | '/w/$slug/support/coverage'
+    | '/w/$slug/support/search'
     | '/w/$slug/automation/'
     | '/w/$slug/crm/'
     | '/w/$slug/docs/'
@@ -1086,6 +1108,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/access'
     | '/w/$slug/settings/ai-automations'
     | '/w/$slug/settings/automations'
+    | '/w/$slug/settings/billing'
     | '/w/$slug/settings/chat-general'
     | '/w/$slug/settings/command-intents'
     | '/w/$slug/settings/crm-autonomy'
@@ -1108,6 +1131,7 @@ export interface FileRouteTypes {
     | '/w/$slug/sprints/$sprintId'
     | '/w/$slug/support/$conversationId'
     | '/w/$slug/support/coverage'
+    | '/w/$slug/support/search'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
     | '/w/$slug/docs'
@@ -1183,6 +1207,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/access'
     | '/_authenticated/w/$slug/settings/ai-automations'
     | '/_authenticated/w/$slug/settings/automations'
+    | '/_authenticated/w/$slug/settings/billing'
     | '/_authenticated/w/$slug/settings/chat-general'
     | '/_authenticated/w/$slug/settings/command-intents'
     | '/_authenticated/w/$slug/settings/crm-autonomy'
@@ -1205,6 +1230,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/sprints/$sprintId'
     | '/_authenticated/w/$slug/support/$conversationId'
     | '/_authenticated/w/$slug/support/coverage'
+    | '/_authenticated/w/$slug/support/search'
     | '/_authenticated/w/$slug/automation/'
     | '/_authenticated/w/$slug/crm/'
     | '/_authenticated/w/$slug/docs/'
@@ -1441,6 +1467,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugAutomationIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugAutomationRoute
     }
+    '/_authenticated/w/$slug/support/search': {
+      id: '/_authenticated/w/$slug/support/search'
+      path: '/search'
+      fullPath: '/w/$slug/support/search'
+      preLoaderRoute: typeof AuthenticatedWSlugSupportSearchRouteImport
+      parentRoute: typeof AuthenticatedWSlugSupportRoute
+    }
     '/_authenticated/w/$slug/support/coverage': {
       id: '/_authenticated/w/$slug/support/coverage'
       path: '/coverage'
@@ -1593,6 +1626,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/chat-general'
       fullPath: '/w/$slug/settings/chat-general'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsChatGeneralRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/billing': {
+      id: '/_authenticated/w/$slug/settings/billing'
+      path: '/settings/billing'
+      fullPath: '/w/$slug/settings/billing'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsBillingRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/automations': {
@@ -2014,6 +2054,7 @@ const AuthenticatedWSlugDocsRouteWithChildren =
 interface AuthenticatedWSlugSupportRouteChildren {
   AuthenticatedWSlugSupportConversationIdRoute: typeof AuthenticatedWSlugSupportConversationIdRoute
   AuthenticatedWSlugSupportCoverageRoute: typeof AuthenticatedWSlugSupportCoverageRoute
+  AuthenticatedWSlugSupportSearchRoute: typeof AuthenticatedWSlugSupportSearchRoute
   AuthenticatedWSlugSupportIndexRoute: typeof AuthenticatedWSlugSupportIndexRoute
 }
 
@@ -2023,6 +2064,7 @@ const AuthenticatedWSlugSupportRouteChildren: AuthenticatedWSlugSupportRouteChil
       AuthenticatedWSlugSupportConversationIdRoute,
     AuthenticatedWSlugSupportCoverageRoute:
       AuthenticatedWSlugSupportCoverageRoute,
+    AuthenticatedWSlugSupportSearchRoute: AuthenticatedWSlugSupportSearchRoute,
     AuthenticatedWSlugSupportIndexRoute: AuthenticatedWSlugSupportIndexRoute,
   }
 
@@ -2056,6 +2098,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsAccessRoute: typeof AuthenticatedWSlugSettingsAccessRoute
   AuthenticatedWSlugSettingsAiAutomationsRoute: typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   AuthenticatedWSlugSettingsAutomationsRoute: typeof AuthenticatedWSlugSettingsAutomationsRoute
+  AuthenticatedWSlugSettingsBillingRoute: typeof AuthenticatedWSlugSettingsBillingRoute
   AuthenticatedWSlugSettingsChatGeneralRoute: typeof AuthenticatedWSlugSettingsChatGeneralRoute
   AuthenticatedWSlugSettingsCommandIntentsRoute: typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   AuthenticatedWSlugSettingsCrmAutonomyRoute: typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
@@ -2119,6 +2162,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsAiAutomationsRoute,
   AuthenticatedWSlugSettingsAutomationsRoute:
     AuthenticatedWSlugSettingsAutomationsRoute,
+  AuthenticatedWSlugSettingsBillingRoute:
+    AuthenticatedWSlugSettingsBillingRoute,
   AuthenticatedWSlugSettingsChatGeneralRoute:
     AuthenticatedWSlugSettingsChatGeneralRoute,
   AuthenticatedWSlugSettingsCommandIntentsRoute:

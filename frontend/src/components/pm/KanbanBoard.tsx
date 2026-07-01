@@ -31,7 +31,7 @@ import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAuthStore } from '@/stores/authStore';
-import { useAgents, useSession, useAutomationRulesByWorkflow, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
+import { useAgents, useSession, useAutomationRulesByWorkflow, useTeamFieldVisibilityForTeam, useWorkflows } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { TaskCard } from './TaskCard';
 import { CreateTaskModal } from './CreateTaskModal';
@@ -569,6 +569,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
   const { data: sessionMembership } = useSession(workspaceId);
   const currentMemberId = sessionMembership?.id;
   const { teams, findTeamName } = useAccessibleTeams(workspaceId);
+  const { data: allWorkflows } = useWorkflows(workspaceId);
   const { userMemberships } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const listFieldVis = useTeamFieldVisibilityForTeam(workspaceId, storeTeamId);
@@ -1452,6 +1453,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         <TaskListView
           workspaceId={workspaceId}
           workflow={workflow}
+          workflows={allWorkflows}
           teams={teams}
           assignableMembers={assignableMembers}
           epics={refEpics}

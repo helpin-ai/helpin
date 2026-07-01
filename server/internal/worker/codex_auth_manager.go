@@ -45,7 +45,7 @@ type codexManagedAuthSession struct {
 
 func NewCodexAuthManager(config CodexRuntimeConfig, artifactRepo *repository.AgentRunArtifactRepository, workspaceAuth *CodexWorkspaceAuthStore) *CodexAuthManager {
 	return &CodexAuthManager{
-		executor:    NewCodexExecutor("codex", config, nil, artifactRepo, workspaceAuth),
+		executor:    NewCodexExecutor("codex", config, nil, artifactRepo, workspaceAuth, nil),
 		threadStore: newCodexThreadStore(artifactRepo),
 		sessions:    map[string]*codexManagedAuthSession{},
 	}

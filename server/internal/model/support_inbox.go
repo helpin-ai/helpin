@@ -212,6 +212,60 @@ type ConversationListResponse struct {
 	Meta       ConversationListMeta  `json:"meta"`
 }
 
+type SupportSearchHighlightRange struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
+}
+
+type SupportSearchHighlight struct {
+	Field  string                        `json:"field"`
+	Text   string                        `json:"text"`
+	Ranges []SupportSearchHighlightRange `json:"ranges"`
+}
+
+type SupportConversationSearchResult struct {
+	Conversation  SupportConversation      `json:"conversation"`
+	DisplayID     int                      `json:"display_id"`
+	MatchedFields []string                 `json:"matched_fields"`
+	Snippet       string                   `json:"snippet"`
+	Highlights    []SupportSearchHighlight `json:"highlights"`
+	Score         float64                  `json:"score"`
+}
+
+type SupportConversationSearchMeta struct {
+	Sort        string `json:"sort"`
+	Query       string `json:"query"`
+	TotalCapped bool   `json:"total_capped"`
+	TotalCap    int    `json:"total_cap"`
+}
+
+type SupportConversationSearchResponse struct {
+	Data       []SupportConversationSearchResult `json:"data"`
+	Total      int                               `json:"total"`
+	Page       int                               `json:"page"`
+	PerPage    int                               `json:"per_page"`
+	TotalPages int                               `json:"total_pages"`
+	Meta       SupportConversationSearchMeta     `json:"meta"`
+}
+
+type SupportConversationSearchParams struct {
+	WorkspaceID   string
+	UserID        string
+	Query         string
+	Sort          string
+	Pagination    PMPagination
+	AssignedTo    []string
+	MailboxIDs    []string
+	TagIDs        []string
+	CustomerEmail string
+	CreatedFrom   *time.Time
+	CreatedTo     *time.Time
+	Statuses      []string
+	Priorities    []string
+	Title         string
+	AI            []string
+}
+
 // SupportMessage represents a message within a support conversation.
 type SupportMessage struct {
 	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -258,6 +312,7 @@ type SupportMessage struct {
 	// email's delivery failed. Empty otherwise.
 	EmailDeliveryError string          `json:"email_delivery_error,omitempty" gorm:"-"`
 	EmailTo            string          `json:"email_to,omitempty" gorm:"-"`
+	EmailReplyTo       string          `json:"email_reply_to,omitempty" gorm:"-"`
 	EmailCC            DocsStringArray `json:"email_cc,omitempty" gorm:"-"`
 	EmailBCC           DocsStringArray `json:"email_bcc,omitempty" gorm:"-"`
 }
@@ -1376,6 +1431,18 @@ type WidgetHelpArticleSummary struct {
 	ArticleKey string  `json:"article_key"`
 	Excerpt    *string `json:"excerpt,omitempty"`
 	Icon       *string `json:"icon,omitempty"`
+}
+
+// WidgetHelpSearchResult is a widget-scoped help center search hit.
+type WidgetHelpSearchResult struct {
+	ID             string  `json:"id"`
+	Title          string  `json:"title"`
+	Slug           string  `json:"slug"`
+	PublicID       string  `json:"public_id"`
+	ArticleKey     string  `json:"article_key"`
+	Excerpt        *string `json:"excerpt,omitempty"`
+	CollectionName *string `json:"collection_name,omitempty"`
+	SpaceName      string  `json:"space_name,omitempty"`
 }
 
 // WidgetHelpArticle is a widget help article detail response.

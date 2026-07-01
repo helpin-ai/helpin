@@ -1,5 +1,5 @@
 import { FunctionComponent } from 'preact';
-import { MessageCircleIcon, CircleHelpIcon, XIcon } from './icons';
+import { MessageCircleIcon, CircleHelpIcon, LifeBuoyIcon, XIcon } from './icons';
 
 type LauncherIcon = 'chat_bubble' | 'question_mark' | 'help';
 
@@ -28,7 +28,7 @@ export const WidgetLauncher: FunctionComponent<WidgetLauncherProps> = ({
   const LauncherIconMap: Record<string, FunctionComponent<{ size?: number; color?: string }>> = {
     chat_bubble: MessageCircleIcon,
     question_mark: CircleHelpIcon,
-    help: CircleHelpIcon,
+    help: LifeBuoyIcon,
   };
   const ActiveIcon = isOpen ? XIcon : (LauncherIconMap[icon] || MessageCircleIcon);
 

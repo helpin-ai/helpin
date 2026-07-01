@@ -1432,7 +1432,14 @@ func (s *SupportAIService) rewriteSupportDraftWithHistory(
 		return nil, fmt.Errorf("%w: unsupported operation %q", ErrSupportRewriteInvalidInput, strings.TrimSpace(req.Operation))
 	}
 
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    workspaceID,
+		FeatureKey:     BillingFeatureSupportReplyRewrite,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureSupportReplyRewrite, operation, aiUsageStableHash(content)),
+		Metadata: map[string]interface{}{
+			"operation": operation,
+		},
+	}), llm.ChatRequest{
 		SystemPrompt: buildSupportRewriteSystemPrompt(operation),
 		Messages:     buildSupportRewriteMessages(history, content),
 		Provider:     supportRewriteProvider,
@@ -1535,7 +1542,14 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 		}
 	}
 
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    workspaceID,
+		FeatureKey:     BillingFeatureSupportTaskDraft,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureSupportTaskDraft, conversation.ID),
+		Metadata: map[string]interface{}{
+			"conversation_id": conversation.ID,
+		},
+	}), llm.ChatRequest{
 		SystemPrompt: supportTaskDraftSystemPrompt,
 		Messages:     messages,
 		Provider:     providerName,
@@ -1765,7 +1779,24 @@ func (s *SupportAIService) generateResponse(
 		ContentParts: buildSupportCustomerContentParts(customerMessage),
 	})
 
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	workspaceID := ""
+	conversationID := ""
+	if conv != nil {
+		workspaceID = conv.WorkspaceID
+		conversationID = conv.ID
+	} else if agent != nil {
+		workspaceID = agent.WorkspaceID
+	}
+	messageID := customerMessage.ID
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    workspaceID,
+		FeatureKey:     BillingFeatureSupportAIReply,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureSupportAIReply, conversationID, messageID),
+		Metadata: map[string]interface{}{
+			"conversation_id": conversationID,
+			"message_id":      messageID,
+		},
+	}), llm.ChatRequest{
 		SystemPrompt: systemPrompt,
 		Messages:     messages,
 		Provider:     providerName,
@@ -2341,7 +2372,15 @@ func (s *SupportAIService) planSupportQuery(ctx context.Context, history []model
 	}
 
 	transcript := buildConversationTranscript(history, 8)
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    customerMessage.WorkspaceID,
+		FeatureKey:     BillingFeatureAIRouting,
+		IdempotencyKey: aiUsageIdempotencyKey(customerMessage.WorkspaceID, BillingFeatureAIRouting, customerMessage.ConversationID, customerMessage.ID),
+		Metadata: map[string]interface{}{
+			"conversation_id": customerMessage.ConversationID,
+			"message_id":      customerMessage.ID,
+		},
+	}), llm.ChatRequest{
 		Provider: s.queryExpansionProvider,
 		Model:    s.queryExpansionModel,
 		SystemPrompt: `You are a support retrieval planner.

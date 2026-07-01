@@ -10,6 +10,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 export type SettingsPageContext = {
   workspaceId: string;
   currentWorkspaceName: string;
+  currentWorkspaceSlug: string;
   currentWorkspaceWebsiteUrl?: string;
   organizationId?: string;
   settings: WorkspaceSettings;
@@ -34,6 +35,7 @@ export function SettingsPageFrame({ section, hideHeader, children }: SettingsPag
   const workspaceId = currentWorkspace?.id ?? '';
   const organizationId = currentWorkspace?.organization_id;
   const currentWorkspaceName = currentWorkspace?.name ?? '';
+  const currentWorkspaceSlug = currentWorkspace?.slug ?? '';
   const { data: settings, isLoading } = useWorkspaceSettings(workspaceId);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const permissions = usePermissions(access);
@@ -78,6 +80,7 @@ export function SettingsPageFrame({ section, hideHeader, children }: SettingsPag
       {children({
         workspaceId: resolvedWorkspaceId,
         currentWorkspaceName,
+        currentWorkspaceSlug,
         currentWorkspaceWebsiteUrl: currentWorkspace?.website_url,
         organizationId,
         settings,

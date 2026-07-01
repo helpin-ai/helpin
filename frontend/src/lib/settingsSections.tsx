@@ -42,6 +42,7 @@ function hi(icon: HugeIconData): IconComponent {
 const Profile = hi(UserIcon);
 const Security = hi(Shield02Icon);
 const Account = hi(Settings02Icon);
+const Billing = Account;
 const Notifications = hi(Notification02Icon);
 const General = hi(Settings01Icon);
 const Members = hi(UserGroupIcon);
@@ -69,6 +70,7 @@ export type SettingsSection =
   | 'members'
   | 'teams'
   | 'access'
+  | 'billing'
   | 'repositories'
   | 'knowledge'
   | 'workflows'
@@ -141,6 +143,13 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     label: 'General',
     description: '',
     icon: General,
+    group: 'Workspace',
+  },
+  {
+    id: 'billing',
+    label: 'Billing',
+    description: 'Manage this workspace plan, AI usage, payment methods, and invoices.',
+    icon: Billing,
     group: 'Workspace',
   },
   {

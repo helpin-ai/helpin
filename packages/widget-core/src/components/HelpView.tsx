@@ -1,15 +1,17 @@
 import { FunctionComponent } from 'preact';
+import { useEffect, useState } from 'preact/hooks';
 import type { WidgetConfig } from '../types';
-import { MailIcon, FileTextIcon, ChevronRightIcon, XIcon } from './icons';
+import { FileTextIcon, ChevronRightIcon, XIcon, SearchIcon } from './icons';
 import { HelpSpaceView } from './HelpSpaceView';
+import { fetchHelpSearchResults, type HelpSearchResult } from './helpApi';
 
 interface HelpViewProps {
   config: WidgetConfig;
   host?: string;
   widgetKey?: string;
-  onContact: () => void;
   onSelectSpace: (spaceSlug: string) => void;
   onSelectCollection: (collectionSlug: string) => void;
+  onSelectArticle?: (articleKey: string) => void;
   onClose?: () => void;
 }
 
@@ -17,19 +19,70 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
   config,
   host,
   widgetKey,
-  onContact,
   onSelectSpace,
   onSelectCollection,
+  onSelectArticle,
   onClose,
 }) => {
   const helpSpaces = config.helpSpaces ?? [];
   const canBrowseDocs = !!host && !!widgetKey && helpSpaces.length > 0;
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<HelpSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const normalizedSearchQuery = searchQuery.trim();
+  const normalizedDebouncedSearchQuery = debouncedSearchQuery.trim();
+  const showSearchResults = canBrowseDocs && normalizedSearchQuery.length >= 2;
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedSearchQuery(normalizedSearchQuery);
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [normalizedSearchQuery]);
+
+  useEffect(() => {
+    if (!showSearchResults || normalizedDebouncedSearchQuery.length < 2 || !host || !widgetKey) {
+      setSearchResults([]);
+      setIsSearching(false);
+      setSearchError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsSearching(true);
+    setSearchError(null);
+
+    fetchHelpSearchResults(host, widgetKey, normalizedDebouncedSearchQuery, 8)
+      .then((results) => {
+        if (!cancelled) {
+          setSearchResults(results);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSearchError('Unable to search articles right now.');
+          setSearchResults([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsSearching(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [host, normalizedDebouncedSearchQuery, showSearchResults, widgetKey]);
 
   return (
     <div className="helpin-help-view">
       <div className="helpin-help-header">
         <div className="helpin-help-header-spacer" />
-        <span className="helpin-help-title">Help</span>
+        <span className="helpin-help-title">Help Center</span>
         {onClose ? (
           <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
             <XIcon size={18} />
@@ -39,45 +92,83 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
         )}
       </div>
       <div className="helpin-help-content">
-        <div className="helpin-help-links">
-          <button className="helpin-help-link" onClick={onContact}>
-            <MailIcon size={20} />
-            <div className="helpin-help-link-text">
-              <span className="helpin-help-link-title">Contact us</span>
-              <span className="helpin-help-link-desc">Send us a message and we'll get back to you</span>
-            </div>
-            <ChevronRightIcon size={16} class="helpin-help-link-arrow" />
-          </button>
-        </div>
+        {canBrowseDocs && (
+          <div className="helpin-help-search">
+            <SearchIcon size={16} class="helpin-help-search-icon" />
+            <input
+              value={searchQuery}
+              onInput={(event) => setSearchQuery((event.currentTarget as HTMLInputElement).value)}
+              placeholder="Search help articles..."
+              aria-label="Search help articles"
+            />
+            {isSearching ? (
+              <span
+                className="helpin-help-search-action helpin-help-search-spinner"
+                role="status"
+                aria-label="Searching articles"
+              />
+            ) : searchQuery.length > 0 ? (
+              <button
+                type="button"
+                className="helpin-help-search-action helpin-help-search-clear"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
+              >
+                <XIcon size={14} />
+              </button>
+            ) : (
+              <span className="helpin-help-search-action" aria-hidden="true" />
+            )}
+          </div>
+        )}
 
         {!canBrowseDocs && (
           <p className="helpin-help-empty">Articles are not available in this widget yet.</p>
         )}
 
-        {canBrowseDocs && helpSpaces.length === 1 && host && widgetKey && (
+        {showSearchResults && (
+          <div className="helpin-help-list">
+            {isSearching && <p className="helpin-help-empty">Searching articles...</p>}
+            {!isSearching && searchError && <p className="helpin-help-empty">{searchError}</p>}
+            {!isSearching && !searchError && searchResults.length === 0 && (
+              <p className="helpin-help-empty">No articles found.</p>
+            )}
+            {!isSearching && !searchError && searchResults.map((result) => (
+              <button
+                key={result.article_key}
+                className="helpin-help-link"
+                onClick={() => onSelectArticle?.(result.article_key)}
+              >
+                <FileTextIcon size={20} />
+                <div className="helpin-help-link-text">
+                  <span className="helpin-help-link-title">{result.title}</span>
+                  <span className="helpin-help-link-desc">
+                    {result.collection_name || result.excerpt || 'Help article'}
+                  </span>
+                </div>
+                <ChevronRightIcon size={16} class="helpin-help-link-arrow" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {!showSearchResults && canBrowseDocs && helpSpaces.length === 1 && host && widgetKey && (
           <div className="helpin-help-inline-section">
-            <div className="helpin-help-section-label">
-              <FileTextIcon size={16} />
-              <span>Help Center</span>
-            </div>
             <HelpSpaceView
               host={host}
               widgetKey={widgetKey}
               space={helpSpaces[0]}
               showBack={false}
               showHeader={false}
+              animateDrilldown={false}
               onBack={() => {}}
               onSelectCollection={onSelectCollection}
             />
           </div>
         )}
 
-        {canBrowseDocs && helpSpaces.length > 1 && (
+        {!showSearchResults && canBrowseDocs && helpSpaces.length > 1 && (
           <div className="helpin-help-inline-section">
-            <div className="helpin-help-section-label">
-              <FileTextIcon size={16} />
-              <span>Help Center</span>
-            </div>
             <div className="helpin-help-list">
               {helpSpaces.map((space) => (
                 <button

@@ -47,4 +47,49 @@ describe('HelpCollectionView', () => {
 
     expect(onSelectArticle).toHaveBeenCalledWith('workspace-setup-884d78a2');
   });
+
+  it('uses an inline header close button', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })),
+    );
+
+    const onClose = vi.fn();
+    const { container } = render(
+      <HelpCollectionView
+        host="docs.helpin.ai"
+        widgetKey="wk_123"
+        collectionSlug="getting-started"
+        onBack={() => {}}
+        onClose={onClose}
+        onSelectArticle={() => {}}
+      />,
+    );
+
+    const header = container.querySelector('.helpin-help-header');
+    const closeButton = header?.querySelector('.helpin-window-close-inline');
+
+    expect(closeButton).toBeTruthy();
+    fireEvent.click(closeButton as Element);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('marks the collection screen for drill-in animation', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })),
+    );
+
+    const { container } = render(
+      <HelpCollectionView
+        host="docs.helpin.ai"
+        widgetKey="wk_123"
+        collectionSlug="getting-started"
+        onBack={() => {}}
+        onSelectArticle={() => {}}
+      />,
+    );
+
+    expect(container.querySelector('.helpin-help-view')?.classList.contains('helpin-help-drilldown-view')).toBe(true);
+  });
 });

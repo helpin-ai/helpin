@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatReplyTimeCopy, SPECIAL_NOTICE_MAX_LENGTH } from '@helpin-ai/shared';
 import { toast } from 'sonner';
 import { Tick01Icon, Copy01Icon, CodeIcon, Loading01Icon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon } from '@/lib/icons';
-import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
+import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces, useWorkspaceBilling } from '@/hooks/queries';
 import { useSupportAgents, useSupportMailboxes } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { WidgetPreview } from './WidgetPreview';
@@ -18,7 +18,7 @@ import { BrandColorPicker } from '@/components/pm/ColorPicker';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
-import { COLOR_SCHEME_OPTIONS, COMMON_TIMEZONES, DAYS, ICON_OPTIONS, NO_AGENT_VALUE } from './chat-widget/constants';
+import { canRemoveHelpinBranding, COLOR_SCHEME_OPTIONS, COMMON_TIMEZONES, DAYS, ICON_OPTIONS, NO_AGENT_VALUE } from './chat-widget/constants';
 import { PreviewLayout } from './chat-widget/PreviewLayout';
 import {
   buildPreviewAvailability,
@@ -36,6 +36,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const { data, isLoading } = useChatSettings(workspaceId);
   const { data: docsSpaces = [], isLoading: docsSpacesLoading } = useDocsSpaces(workspaceId);
+  const { data: billing, isLoading: billingLoading } = useWorkspaceBilling(workspaceId);
   const updateMutation = useUpdateChatSettings(workspaceId);
   const regenerateKeyMutation = useRegenerateWidgetKey(workspaceId);
   const { teams } = useWorkspaceTeams(workspaceId);
@@ -94,9 +95,11 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const canRemoveBranding = canRemoveHelpinBranding(billing);
+  const effectiveShowBranding = canRemoveBranding ? showBranding : true;
 
   useEffect(() => {
-    if (data?.settings) {
+    if (data?.settings && !billingLoading) {
       const s = data.settings;
       const normalizedSchedule = normalizeBusinessHoursSchedule(s.business_hours_schedule);
       const sortedHelpSpaceIds = sortHelpSpaceIds(s.widget_help_space_ids);
@@ -108,7 +111,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setRequirePhone(s.require_phone_after_email);
       setWelcomeMessage(s.welcome_message);
       setBrandColor(s.brand_color);
-      setShowBranding(s.show_branding);
+      setShowBranding(canRemoveBranding ? s.show_branding : true);
       setLauncherPosition(s.launcher_position);
       setLauncherIcon(s.launcher_icon);
       setColorScheme(s.color_scheme || 'light');
@@ -143,7 +146,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setFileUploadsEnabled(s.file_uploads_enabled ?? true);
       setForceVisitorIdentity(s.force_visitor_identity ?? false);
     }
-  }, [data]);
+  }, [data, billingLoading, canRemoveBranding]);
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -159,7 +162,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     widget_avatar_url: widgetAvatarUrl,
     widget_help_space_ids: sortHelpSpaceIds(widgetHelpSpaceIds),
     brand_color: brandColor,
-    show_branding: showBranding,
+    show_branding: effectiveShowBranding,
     launcher_position: launcherPosition,
     launcher_icon: launcherIcon,
     color_scheme: colorScheme,
@@ -207,7 +210,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
 
   // Auto-save with debounce when any setting changes
   useEffect(() => {
-    if (!initializedRef.current || settingsDraftKey === lastSyncedDraftRef.current) {
+    if (billingLoading || !initializedRef.current || settingsDraftKey === lastSyncedDraftRef.current) {
       return;
     }
 
@@ -229,7 +232,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     }, 800);
 
     return () => clearTimeout(debounceRef.current);
-  }, [settingsDraftKey]);
+  }, [billingLoading, settingsDraftKey]);
 
   const updateDay = (dayKey: string, patch: Partial<BusinessHoursDay>) => {
     setSchedule(prev => ({
@@ -300,7 +303,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     if (file) handleLogoFileSelect(file);
   };
 
-  if (isLoading) {
+  if (isLoading || billingLoading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-48 w-full rounded-lg" />
@@ -489,7 +492,7 @@ function Dashboard() {
   const previewElement = (
     <WidgetPreview
       brandColor={brandColor}
-      showBranding={showBranding}
+      showBranding={effectiveShowBranding}
       launcherPosition={launcherPosition}
       launcherIcon={launcherIcon}
       welcomeMessage={welcomeMessage}
@@ -931,9 +934,25 @@ function Dashboard() {
               <div className="flex items-center justify-between pt-2">
                 <div>
                   <Label className="text-sm font-medium">Show "Powered by Helpin"</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">Display branding in the widget footer.</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {canRemoveBranding
+                      ? 'Display branding in the widget footer.'
+                      : billing?.plan === 'founder'
+                        ? 'Founder workspaces keep Helpin branding visible.'
+                        : 'Upgrade to Growth to hide Helpin branding.'}
+                  </p>
                 </div>
-                <Switch checked={showBranding} onCheckedChange={setShowBranding} />
+                <Switch
+                  checked={effectiveShowBranding}
+                  onCheckedChange={(checked) => {
+                    if (canRemoveBranding) {
+                      setShowBranding(checked);
+                    } else {
+                      setShowBranding(true);
+                    }
+                  }}
+                  disabled={!canRemoveBranding}
+                />
               </div>
             </div>
             </div>

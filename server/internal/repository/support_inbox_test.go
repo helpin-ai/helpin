@@ -144,6 +144,40 @@ func TestSupportConversationRepositoryMailboxHelpersRespectAlias(t *testing.T) {
 	}
 }
 
+func TestSupportConversationRepositoryListActiveByCustomerEmailFiltersStatusAndWindow(t *testing.T) {
+	db := setupSupportConversationMessageTestDB(t)
+	repo := NewSupportConversationRepository(db)
+	ctx := context.Background()
+	wsID := "workspace-1"
+	email := "buyer@example.com"
+	now := time.Now().UTC()
+
+	seed := func(id, status string, age time.Duration, customerEmail string) {
+		t.Helper()
+		if err := db.Exec(`INSERT INTO support_conversations
+			(id, workspace_id, status, customer_email, updated_at, created_at)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			id, wsID, status, customerEmail, now.Add(-age), now.Add(-age),
+		).Error; err != nil {
+			t.Fatalf("seed conversation %s: %v", id, err)
+		}
+	}
+
+	seed("open-recent", model.SupportConversationStatusOpen, time.Hour, email)
+	seed("resolved-recent", model.SupportConversationStatusResolved, time.Hour, email)
+	seed("open-old", model.SupportConversationStatusOpen, 40*24*time.Hour, email)
+	seed("open-other-email", model.SupportConversationStatusOpen, time.Hour, "other@example.com")
+
+	since := now.Add(-30 * 24 * time.Hour)
+	got, err := repo.ListActiveByCustomerEmail(ctx, wsID, "BUYER@example.com", nil, since, 2)
+	if err != nil {
+		t.Fatalf("ListActiveByCustomerEmail: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "open-recent" {
+		t.Fatalf("got %d matches, want open-recent; got=%+v", len(got), got)
+	}
+}
+
 // insertMessage is a small helper for the tests below — it inserts a row
 // directly via SQL so we can vary the columns the repo cares about
 // (sender_type, sender_user_id, message_type, is_internal) without

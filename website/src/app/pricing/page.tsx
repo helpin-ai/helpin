@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Check, ArrowRight, Zap, Users, Building2, Crown, Layers, MessageCircle, BarChart3, FileText, Search, Code2, CheckCircle, Send, HelpCircle } from 'lucide-react';
+import { Check, ArrowRight, Zap, Users, Building2, Layers, MessageCircle, BarChart3, FileText, Search, Code2, CheckCircle, Send } from 'lucide-react';
 
 const PLANS = [
   {
@@ -12,8 +12,8 @@ const PLANS = [
     description: 'For solo founders and small projects getting started.',
     Icon: Zap,
     color: 'oklch(0.48 0.15 155)',
-    seats: '2',
-    credits: '50',
+    seats: 'Unlimited',
+    credits: '1,000',
     cta: 'Get started free',
     popular: false,
     features: [
@@ -34,8 +34,8 @@ const PLANS = [
     Icon: Users,
     color: 'oklch(0.52 0.16 250)',
     seats: 'Unlimited',
-    credits: '500',
-    cta: 'Start free trial',
+    credits: '5,000',
+    cta: 'Choose Starter',
     popular: false,
     features: [
       'Everything in Free, plus:',
@@ -51,13 +51,13 @@ const PLANS = [
   {
     name: 'Growth',
     price: 299,
-    annual: 249,
+    annual: 239,
     description: 'For growing teams that want custom AI agents and full control.',
     Icon: Building2,
     color: 'oklch(0.55 0.18 310)',
     seats: 'Unlimited',
-    credits: '2,500',
-    cta: 'Start free trial',
+    credits: '25,000',
+    cta: 'Start Growth trial',
     popular: true,
     features: [
       'Everything in Starter, plus:',
@@ -75,70 +75,67 @@ const PLANS = [
 
 const COMPARISON_FEATURES = [
   { name: 'Users & Access', category: true },
-  { name: 'Users', free: '2', starter: 'Unlimited', growth: 'Unlimited', enterprise: 'Unlimited' },
-  { name: 'Mobile access', free: true, starter: true, growth: true, enterprise: true },
+  { name: 'Users', free: 'Unlimited', starter: 'Unlimited', growth: 'Unlimited' },
+  { name: 'Mobile access', free: true, starter: true, growth: true },
 
   { name: 'Project Management', category: true },
-  { name: 'Tasks & stories', free: '50 active', starter: 'Unlimited', growth: 'Unlimited', enterprise: 'Unlimited' },
-  { name: 'Epics', free: 'Unlimited', starter: 'Unlimited', growth: 'Unlimited', enterprise: 'Unlimited' },
-  { name: 'Sprints', free: false, starter: true, growth: true, enterprise: true },
-  { name: 'Board & list views', free: true, starter: true, growth: true, enterprise: true },
-  { name: 'Custom fields', free: false, starter: true, growth: true, enterprise: true },
-  { name: 'Roadmap', free: false, starter: true, growth: true, enterprise: true },
+  { name: 'Tasks & stories', free: 'Unlimited', starter: 'Unlimited', growth: 'Unlimited' },
+  { name: 'Epics', free: 'Unlimited', starter: 'Unlimited', growth: 'Unlimited' },
+  { name: 'Sprints', free: true, starter: true, growth: true },
+  { name: 'Board & list views', free: true, starter: true, growth: true },
+  { name: 'Custom fields', free: false, starter: true, growth: true },
+  { name: 'Roadmap', free: false, starter: true, growth: true },
 
   { name: 'Support', category: true },
-  { name: 'Live chat widget', free: true, starter: true, growth: true, enterprise: true },
-  { name: 'Shared inbox', free: true, starter: true, growth: true, enterprise: true },
-  { name: 'Conversations/month', free: '50', starter: '500', growth: 'Unlimited', enterprise: 'Unlimited' },
-  { name: 'Conversation history', free: '30 days', starter: 'Unlimited', growth: 'Unlimited', enterprise: 'Unlimited' },
-  { name: 'SLA management', free: false, starter: true, growth: true, enterprise: true },
-  { name: 'CSAT surveys', free: false, starter: true, growth: true, enterprise: true },
+  { name: 'Live chat widget', free: true, starter: true, growth: true },
+  { name: 'Shared inbox', free: true, starter: true, growth: true },
+  { name: 'Conversations/month', free: '50', starter: '500', growth: 'Unlimited' },
+  { name: 'Conversation history', free: '30 days', starter: 'Unlimited', growth: 'Unlimited' },
+  { name: 'SLA management', free: false, starter: true, growth: true },
+  { name: 'CSAT surveys', free: false, starter: true, growth: true },
 
   { name: 'Sales / CRM', category: true },
-  { name: 'Contacts', free: '100', starter: '1,000', growth: '10,000', enterprise: 'Unlimited' },
-  { name: 'Deals', free: '10', starter: '100', growth: 'Unlimited', enterprise: 'Unlimited' },
-  { name: 'Pipeline & activity', free: true, starter: true, growth: true, enterprise: true },
-  { name: 'Email integration', free: false, starter: true, growth: true, enterprise: true },
-  { name: 'Deal automation', free: false, starter: false, growth: true, enterprise: true },
-  { name: 'Forecasting', free: false, starter: false, growth: true, enterprise: true },
+  { name: 'Contacts', free: '100', starter: '1,000', growth: '10,000' },
+  { name: 'Deals', free: '10', starter: '100', growth: 'Unlimited' },
+  { name: 'Pipeline & activity', free: true, starter: true, growth: true },
+  { name: 'Email integration', free: false, starter: true, growth: true },
+  { name: 'Deal automation', free: false, starter: false, growth: true },
+  { name: 'Forecasting', free: false, starter: false, growth: true },
 
   { name: 'Docs / Knowledge', category: true },
-  { name: 'Documents', free: '20', starter: '200', growth: 'Unlimited', enterprise: 'Unlimited' },
-  { name: 'Internal docs', free: true, starter: true, growth: true, enterprise: true },
-  { name: 'Public help center', free: false, starter: true, growth: true, enterprise: true },
-  { name: 'Custom domain', free: false, starter: true, growth: true, enterprise: true },
+  { name: 'Documents', free: '20', starter: '200', growth: 'Unlimited' },
+  { name: 'Internal docs', free: true, starter: true, growth: true },
+  { name: 'Public help center', free: false, starter: true, growth: true },
+  { name: 'Custom domain', free: false, starter: true, growth: true },
 
   { name: 'AI Agents', category: true },
-  { name: 'AI credits/month', free: '50', starter: '500', growth: '2,500', enterprise: 'Custom' },
-  { name: 'Built-in agents', free: 'Limited', starter: true, growth: true, enterprise: true },
-  { name: 'Custom agents', free: false, starter: false, growth: true, enterprise: true },
-  { name: 'Agent scheduling', free: false, starter: false, growth: true, enterprise: true },
+  { name: 'AI credits/month', free: '1,000', starter: '5,000', growth: '25,000' },
+  { name: 'Built-in agents', free: 'Limited', starter: true, growth: true },
+  { name: 'Custom agents', free: false, starter: false, growth: true },
+  { name: 'Agent scheduling', free: false, starter: false, growth: true },
+  { name: 'On-demand credit blocks', free: false, starter: '$50 / 5,000', growth: '$50 / 5,000' },
 
   { name: 'Platform', category: true },
-  { name: 'Storage', free: '500 MB', starter: '5 GB', growth: '50 GB', enterprise: 'Custom' },
-  { name: 'GitHub integration', free: false, starter: true, growth: true, enterprise: true },
-  { name: 'Import tools', free: true, starter: true, growth: true, enterprise: true },
-  { name: 'Basic automations', free: false, starter: true, growth: true, enterprise: true },
-  { name: 'Advanced automations', free: false, starter: false, growth: true, enterprise: true },
-  { name: 'API access & webhooks', free: false, starter: false, growth: true, enterprise: true },
-  { name: 'Analytics', free: false, starter: true, growth: true, enterprise: true },
-  { name: 'Advanced analytics', free: false, starter: false, growth: true, enterprise: true },
+  { name: 'Storage', free: '500 MB', starter: '5 GB', growth: '50 GB' },
+  { name: 'GitHub integration', free: false, starter: true, growth: true },
+  { name: 'Import tools', free: true, starter: true, growth: true },
+  { name: 'Basic automations', free: false, starter: true, growth: true },
+  { name: 'Advanced automations', free: false, starter: false, growth: true },
+  { name: 'API access & webhooks', free: false, starter: false, growth: true },
+  { name: 'Analytics', free: false, starter: true, growth: true },
+  { name: 'Advanced analytics', free: false, starter: false, growth: true },
 
   { name: 'Branding', category: true },
-  { name: 'Widget branding', free: 'Helpin', starter: 'Helpin', growth: 'Removed', enterprise: 'Removed' },
+  { name: 'Widget branding', free: 'Helpin', starter: 'Helpin', growth: 'Removed' },
 
   { name: 'Security & Compliance', category: true },
-  { name: 'Advanced RBAC', free: false, starter: false, growth: true, enterprise: true },
-  { name: 'SSO / SAML', free: false, starter: false, growth: false, enterprise: true },
-  { name: 'Audit logs', free: false, starter: false, growth: false, enterprise: true },
-  { name: 'Custom SLA', free: false, starter: false, growth: false, enterprise: true },
-  { name: 'Dedicated infrastructure', free: false, starter: false, growth: false, enterprise: true },
+  { name: 'Advanced RBAC', free: false, starter: false, growth: true },
+  { name: 'SSO / SAML', free: false, starter: false, growth: false },
+  { name: 'Audit logs', free: false, starter: false, growth: false },
 
   { name: 'Support', category: true },
-  { name: 'Community support', free: true, starter: true, growth: true, enterprise: true },
-  { name: 'Priority support', free: false, starter: false, growth: true, enterprise: true },
-  { name: 'Dedicated success manager', free: false, starter: false, growth: false, enterprise: true },
-  { name: 'Onboarding & migration', free: false, starter: false, growth: false, enterprise: true },
+  { name: 'Community support', free: true, starter: true, growth: true },
+  { name: 'Priority support', free: false, starter: false, growth: true },
 ];
 
 const FAQS = [
@@ -148,11 +145,11 @@ const FAQS = [
   },
   {
     q: 'What happens if I exceed my AI credit limit?',
-    a: 'Your agents keep working. We\'ll notify you when you\'re approaching your limit, and any overage is billed at a simple per-credit rate. You can also add credit packs anytime.',
+    a: 'Free workspaces pause AI usage until the next monthly refresh. Paid workspaces can enable on-demand credits, billed at $50 per 5,000-credit block.',
   },
   {
     q: 'What counts as an AI credit?',
-    a: 'Credits are consumed based on the type of work. Light tasks like support triage use very few credits. Heavier tasks like coding runs or epic planning use more. For example, 100 support triages cost ~20 credits, while 10 coding runs cost ~80 credits. Most teams on Growth never exceed their 2,500 monthly credits.',
+    a: 'Credits are consumed based on the type of work. A support AI reply uses 5 credits, a CRM/deal action uses 10, document generation uses 20, planning uses 50, and coding or review runs use 100.',
   },
   {
     q: 'Can I switch plans anytime?',
@@ -160,11 +157,11 @@ const FAQS = [
   },
   {
     q: 'Do you offer annual billing?',
-    a: 'Yes. Annual plans save 20% compared to monthly billing. You can switch from monthly to annual anytime.',
+    a: 'Yes. Starter is $99/month or $948/year. Growth is $299/month or $2,868/year.',
   },
   {
     q: 'Is there a free plan?',
-    a: 'Yes. The Free plan includes all modules with 2 seats and 50 AI credits/month — no credit card required. Paid plans include a 14-day free trial.',
+    a: 'Yes. The Free plan includes all modules, unlimited seats, and 1,000 AI credits/month. New workspaces start on a no-card 14-day Growth trial, then move to Free if you do not upgrade.',
   },
   {
     q: 'What AI models does Helpin support?',
@@ -180,15 +177,15 @@ const FAQS = [
   },
   {
     q: 'How does per-workspace pricing work?',
-    a: 'Each workspace (product or brand) gets its own plan and billing. Create a workspace, start with a 14-day free trial, then choose a plan. You can have different plans for different workspaces.',
+    a: 'Each workspace gets its own plan and billing. Create a workspace, start with a 14-day Growth trial, then choose Starter or Growth. If you do not upgrade, that workspace moves to Free.',
   },
   {
     q: 'Are seats really unlimited on paid plans?',
-    a: 'Yes. Starter and Growth include unlimited seats. The Free plan supports up to 2 seats. We don\'t charge per seat — your whole team gets access.',
+    a: 'Yes. Free, Starter, and Growth all include unlimited seats. We do not charge per seat — your whole team gets access.',
   },
   {
     q: 'Is my data safe?',
-    a: 'Yes. Your data is encrypted at rest and in transit. It\'s never shared across workspaces and never used to train AI models. Growth includes advanced RBAC. Enterprise adds SSO, audit logs, and dedicated infrastructure.',
+    a: 'Yes. Your data is encrypted at rest and in transit. It is never shared across workspaces and never used to train AI models. Growth includes advanced RBAC.',
   },
 ];
 
@@ -356,23 +353,6 @@ export default function PricingPage() {
             ))}
           </div>
 
-          {/* Enterprise */}
-          <div className="mt-8 rounded-2xl border border-border p-8 md:p-10 flex flex-col md:flex-row items-center justify-between gap-8">
-            <div className="flex items-start gap-4 flex-1">
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-foreground">
-                <Crown className="w-5 h-5 text-background" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-foreground mb-1">Enterprise</h3>
-                <p className="text-muted-foreground max-w-lg">
-                  Custom users per workspace, custom AI credits, dedicated infrastructure, SSO, custom SLAs, onboarding & migration support. For organizations with complex requirements.
-                </p>
-              </div>
-            </div>
-            <Link href="mailto:sales@helpin.ai" className="btn-primary whitespace-nowrap">
-              Talk to sales <ArrowRight className="inline w-4 h-4 ml-1" />
-            </Link>
-          </div>
         </div>
       </section>
 
@@ -423,14 +403,14 @@ export default function PricingPage() {
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { action: '100 support triages', credits: '~20', Icon: MessageCircle, color: 'oklch(0.58 0.15 55)', bg: 'oklch(0.58 0.15 55 / 0.08)' },
-              { action: '20 story drafts', credits: '~10', Icon: Layers, color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)' },
-              { action: '10 epic planner runs', credits: '~30', Icon: Layers, color: 'oklch(0.55 0.18 310)', bg: 'oklch(0.55 0.18 310 / 0.08)' },
-              { action: '10 coding runs', credits: '~80', Icon: Code2, color: 'oklch(0.50 0.14 200)', bg: 'oklch(0.50 0.14 200 / 0.08)' },
-              { action: '50 doc generations', credits: '~25', Icon: FileText, color: 'oklch(0.55 0.16 160)', bg: 'oklch(0.55 0.16 160 / 0.08)' },
-              { action: '200 KB searches', credits: '~20', Icon: Search, color: 'oklch(0.55 0.15 130)', bg: 'oklch(0.55 0.15 130 / 0.08)' },
-              { action: '50 CRM follow-ups', credits: '~15', Icon: Send, color: 'oklch(0.52 0.14 28)', bg: 'oklch(0.52 0.14 28 / 0.08)' },
-              { action: '20 code reviews', credits: '~30', Icon: CheckCircle, color: 'oklch(0.48 0.15 155)', bg: 'oklch(0.48 0.15 155 / 0.08)' },
+              { action: 'Support AI reply', credits: '5', Icon: MessageCircle, color: 'oklch(0.58 0.15 55)', bg: 'oklch(0.58 0.15 55 / 0.08)' },
+              { action: 'CRM/deal action', credits: '10', Icon: Send, color: 'oklch(0.52 0.14 28)', bg: 'oklch(0.52 0.14 28 / 0.08)' },
+              { action: 'Document generation', credits: '20', Icon: FileText, color: 'oklch(0.55 0.16 160)', bg: 'oklch(0.55 0.16 160 / 0.08)' },
+              { action: 'Planning run', credits: '50', Icon: Layers, color: 'oklch(0.55 0.18 310)', bg: 'oklch(0.55 0.18 310 / 0.08)' },
+              { action: 'Coding run', credits: '100', Icon: Code2, color: 'oklch(0.50 0.14 200)', bg: 'oklch(0.50 0.14 200 / 0.08)' },
+              { action: 'Review run', credits: '100', Icon: CheckCircle, color: 'oklch(0.48 0.15 155)', bg: 'oklch(0.48 0.15 155 / 0.08)' },
+              { action: 'Knowledge search', credits: 'Included in action', Icon: Search, color: 'oklch(0.55 0.15 130)', bg: 'oklch(0.55 0.15 130 / 0.08)' },
+              { action: 'On-demand block', credits: '5,000 for $50', Icon: Zap, color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)' },
             ].map((item) => (
               <div key={item.action} className="rounded-xl border border-border p-4 text-center">
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center mx-auto mb-3" style={{ background: item.bg }}>
@@ -444,7 +424,7 @@ export default function PricingPage() {
 
           <div className="mt-10 rounded-xl bg-muted/50 p-6 text-center">
             <p className="text-sm text-muted-foreground leading-relaxed max-w-lg mx-auto">
-              <strong className="text-foreground">Need more?</strong> Add credit packs anytime. Your agents never stop working.
+              <strong className="text-foreground">Need more?</strong> Paid workspaces can enable on-demand 5,000-credit blocks.
             </p>
           </div>
         </div>
@@ -470,7 +450,6 @@ export default function PricingPage() {
                   <th className="py-4 px-4 text-[15px] font-bold text-foreground text-center">Free</th>
                   <th className="py-4 px-4 text-[15px] font-bold text-foreground text-center">Starter</th>
                   <th className="py-4 px-4 text-[15px] font-bold text-pop text-center">Growth</th>
-                  <th className="py-4 pl-4 text-[15px] font-bold text-foreground text-center">Enterprise</th>
                 </tr>
               </thead>
               <tbody>
@@ -478,7 +457,7 @@ export default function PricingPage() {
                   if ('category' in row && row.category) {
                     return (
                       <tr key={i}>
-                        <td colSpan={5} className="pt-8 pb-3 text-sm font-bold uppercase tracking-widest text-muted-foreground/60">
+                        <td colSpan={4} className="pt-8 pb-3 text-sm font-bold uppercase tracking-widest text-muted-foreground/60">
                           {row.name}
                         </td>
                       </tr>
@@ -490,7 +469,6 @@ export default function PricingPage() {
                       <td className="py-4 px-4 text-center"><CellValue value={row.free} /></td>
                       <td className="py-4 px-4 text-center"><CellValue value={row.starter} /></td>
                       <td className="py-4 px-4 text-center"><CellValue value={row.growth} /></td>
-                      <td className="py-4 pl-4 text-center"><CellValue value={row.enterprise} /></td>
                     </tr>
                   );
                 })}

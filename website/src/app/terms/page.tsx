@@ -2,12 +2,12 @@ export default function TermsPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 lg:px-8 py-20">
       <h1 className="text-3xl font-bold tracking-tight text-foreground mb-4">Terms of Service</h1>
-      <p className="text-sm text-muted-foreground mb-12">Last updated: April 6, 2026</p>
+      <p className="text-sm text-muted-foreground mb-12">Last updated: June 23, 2026</p>
 
       <div className="prose prose-sm max-w-none text-muted-foreground space-y-8">
         <section>
           <h2 className="text-lg font-semibold text-foreground mb-3">1. Acceptance of Terms</h2>
-          <p className="leading-relaxed">By accessing or using Helpin, you agree to be bound by these Terms of Service. If you are using Helpin on behalf of an organization, you represent that you have the authority to bind that organization to these terms.</p>
+          <p className="leading-relaxed">By accessing or using Helpin, you agree to be bound by these Terms of Service. Helpin is operated by Usermaven Inc. If you are using Helpin on behalf of an organization, you represent that you have the authority to bind that organization to these terms.</p>
         </section>
 
         <section>
@@ -61,23 +61,47 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-foreground mb-3">7. Service Availability</h2>
+          <h2 className="text-lg font-semibold text-foreground mb-3">7. Payments and Subscriptions</h2>
+          <p className="leading-relaxed mb-3">
+            Paid plans are billed according to the plan, billing period, and usage terms shown at checkout or in the billing area. By purchasing a paid plan, you authorize us and our payment processor, Stripe, to charge the payment method you provide for recurring subscription fees, applicable taxes, and any usage-based charges.
+          </p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li>You are responsible for keeping billing and payment information accurate and up to date</li>
+            <li>Subscriptions renew automatically unless canceled before the next renewal date</li>
+            <li>Failed or unpaid invoices may result in reduced access, workspace locking, or suspension until payment is resolved</li>
+            <li>Fees are non-refundable except where required by law or explicitly stated by us</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 className="text-lg font-semibold text-foreground mb-3">8. Service Availability</h2>
           <p className="leading-relaxed">We strive for high availability but do not guarantee uninterrupted service. We may perform maintenance, updates, or experience outages. We will notify you of planned downtime when possible.</p>
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-foreground mb-3">8. Limitation of Liability</h2>
+          <h2 className="text-lg font-semibold text-foreground mb-3">9. Limitation of Liability</h2>
           <p className="leading-relaxed">To the maximum extent permitted by law, Helpin shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the service. Our total liability is limited to the amount you paid us in the 12 months preceding the claim.</p>
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-foreground mb-3">9. Changes to Terms</h2>
+          <h2 className="text-lg font-semibold text-foreground mb-3">10. Governing Law</h2>
+          <p className="leading-relaxed">These terms are governed by the laws of the State of Delaware, United States, without regard to conflict of law principles.</p>
+        </section>
+
+        <section>
+          <h2 className="text-lg font-semibold text-foreground mb-3">11. Changes to Terms</h2>
           <p className="leading-relaxed">We may update these terms from time to time. We will notify you of material changes via email or in-app notification. Continued use of Helpin after changes constitutes acceptance of the updated terms.</p>
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-foreground mb-3">10. Contact</h2>
-          <p className="leading-relaxed">For questions about these terms, contact us at <a href="mailto:legal@helpin.ai" className="text-foreground underline">legal@helpin.ai</a>.</p>
+          <h2 className="text-lg font-semibold text-foreground mb-3">12. Contact</h2>
+          <p className="leading-relaxed mb-3">For questions about these terms, contact us at <a href="mailto:legal@helpin.ai" className="text-foreground underline">legal@helpin.ai</a>.</p>
+          <address className="not-italic leading-relaxed">
+            Usermaven Inc.<br />
+            16192 Coastal Highway<br />
+            Lewes, DE 19958<br />
+            United States
+          </address>
         </section>
       </div>
     </div>

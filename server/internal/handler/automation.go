@@ -452,7 +452,7 @@ func (h *AutomationHandler) CreateAgentFromTemplate(w http.ResponseWriter, r *ht
 
 	result, err := h.agentService.CreateAgentFromTemplate(r.Context(), workspaceID, templateID, req, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, result)
@@ -469,7 +469,10 @@ func (h *AutomationHandler) ListSkillCatalog(w http.ResponseWriter, r *http.Requ
 }
 
 func writeWorkspaceSkillError(w http.ResponseWriter, err error) {
+	var entitlementErr *service.EntitlementError
 	switch {
+	case errors.As(err, &entitlementErr):
+		writeError(w, http.StatusPaymentRequired, entitlementErr.Error())
 	case errors.Is(err, service.ErrWorkspaceSkillNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrWorkspaceSkillStorageUnavailable):
@@ -616,7 +619,7 @@ func (h *AutomationHandler) CreateAgent(w http.ResponseWriter, r *http.Request) 
 
 	agent, err := h.agentService.CreateAgent(r.Context(), req, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, agent)
@@ -628,7 +631,7 @@ func (h *AutomationHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
-		writeError(w, http.StatusForbidden, err.Error())
+		writeBillingAwareError(w, http.StatusForbidden, err)
 		return
 	}
 	agent, err := h.agentService.GetAgent(r.Context(), workspaceID, id)
@@ -651,13 +654,13 @@ func (h *AutomationHandler) UpdateAgent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
-		writeError(w, http.StatusForbidden, err.Error())
+		writeBillingAwareError(w, http.StatusForbidden, err)
 		return
 	}
 
 	agent, err := h.agentService.UpdateAgent(r.Context(), workspaceID, id, req, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, agent)
@@ -667,7 +670,7 @@ func (h *AutomationHandler) ListAgentVersions(w http.ResponseWriter, r *http.Req
 	workspaceID := getWorkspaceID(r)
 	agentID := chi.URLParam(r, "id")
 	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
-		writeError(w, http.StatusForbidden, err.Error())
+		writeBillingAwareError(w, http.StatusForbidden, err)
 		return
 	}
 	versions, err := h.agentService.ListAgentVersions(r.Context(), workspaceID, agentID)
@@ -695,7 +698,7 @@ func (h *AutomationHandler) CreateAgentVersion(w http.ResponseWriter, r *http.Re
 	req.AgentID = agentID
 	version, err := h.agentService.CreateAgentVersion(r.Context(), workspaceID, agentID, req, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, version)
@@ -707,7 +710,7 @@ func (h *AutomationHandler) UpdateAgentVersion(w http.ResponseWriter, r *http.Re
 	versionID := chi.URLParam(r, "versionID")
 	actorID := middleware.GetUserID(r.Context())
 	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
-		writeError(w, http.StatusForbidden, err.Error())
+		writeBillingAwareError(w, http.StatusForbidden, err)
 		return
 	}
 	var req model.UpdateAgentVersionRequest
@@ -717,7 +720,7 @@ func (h *AutomationHandler) UpdateAgentVersion(w http.ResponseWriter, r *http.Re
 	}
 	version, err := h.agentService.UpdateAgentVersion(r.Context(), workspaceID, agentID, versionID, req, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, version)
@@ -729,12 +732,12 @@ func (h *AutomationHandler) ActivateAgentVersion(w http.ResponseWriter, r *http.
 	versionID := chi.URLParam(r, "versionID")
 	actorID := middleware.GetUserID(r.Context())
 	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
-		writeError(w, http.StatusForbidden, err.Error())
+		writeBillingAwareError(w, http.StatusForbidden, err)
 		return
 	}
 	agent, err := h.agentService.ActivateAgentVersion(r.Context(), workspaceID, agentID, versionID, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, agent)
@@ -870,7 +873,7 @@ func (h *AutomationHandler) StartRun(w http.ResponseWriter, r *http.Request) {
 		WorkingBranch:     req.WorkingBranch,
 	}, actorID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeBillingAwareError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, run)

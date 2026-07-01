@@ -594,6 +594,23 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 
 	current := parseSettings(inst.Settings)
 	merged := mergeSettingsUpdate(current, req)
+	if s.entitlementSvc != nil {
+		if !merged.ShowBranding {
+			if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureRemoveBranding); err != nil {
+				return nil, nil, err
+			}
+		}
+		if merged.TriageEnabled || merged.TriageAutoMoveEnabled {
+			if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAIConversationRouting); err != nil {
+				return nil, nil, err
+			}
+		}
+		if strings.TrimSpace(merged.HandoffBehavior) == "round_robin" {
+			if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureRoundRobinAssignment); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
 	if err := s.validateSettings(ctx, workspaceID, merged); err != nil {
 		return nil, nil, err
 	}

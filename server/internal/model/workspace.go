@@ -50,7 +50,29 @@ func (WorkspaceMember) TableName() string { return "workspace_members" }
 // WorkspaceWithRole is a workspace combined with the requesting user's role.
 type WorkspaceWithRole struct {
 	Workspace
-	Role string `json:"role"`
+	Role    string                          `json:"role"`
+	Billing *WorkspaceBillingSummaryForList `json:"billing,omitempty" gorm:"-"`
+}
+
+// WorkspaceBillingSummaryForList is the non-sensitive billing state shown on
+// cross-workspace selectors.
+type WorkspaceBillingSummaryForList struct {
+	WorkspaceID            string     `json:"workspace_id"`
+	Plan                   string     `json:"plan"`
+	Status                 string     `json:"status"`
+	BillingInterval        string     `json:"billing_interval"`
+	Trialing               bool       `json:"trialing"`
+	TrialEndsAt            *time.Time `json:"trial_ends_at,omitempty"`
+	CurrentPeriodStart     time.Time  `json:"current_period_start"`
+	CurrentPeriodEnd       time.Time  `json:"current_period_end"`
+	IncludedCredits        int        `json:"included_credits"`
+	CreditsUsed            int        `json:"credits_used"`
+	CreditsRemaining       int        `json:"credits_remaining"`
+	OnDemandEnabled        bool       `json:"on_demand_enabled"`
+	OnDemandAvailable      bool       `json:"on_demand_available"`
+	Locked                 bool       `json:"locked"`
+	ManageBillingEnabled   bool       `json:"manage_billing_enabled"`
+	OnDemandBlocksInvoiced int        `json:"on_demand_blocks_invoiced"`
 }
 
 // MemberWithUser is a workspace member with embedded user details.

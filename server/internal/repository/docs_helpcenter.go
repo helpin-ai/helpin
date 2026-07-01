@@ -151,6 +151,11 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	if v, ok := updates["is_published"].(bool); ok {
 		cfg.IsPublished = v
 	}
+	if v, ok := updates["chat_widget_enabled"].(bool); ok {
+		cfg.ChatWidgetEnabled = v
+	} else {
+		cfg.ChatWidgetEnabled = true
+	}
 	if v, ok := updates["seo_title"].(*string); ok {
 		cfg.SEOTitle = v
 	}

@@ -98,6 +98,16 @@ vi.mock('@/components/ui/icon-picker', () => ({
   ICON_MAP: {},
 }))
 
+vi.mock('@/components/billing/UpgradeRequiredDialog', () => ({
+  UpgradeRequiredDialog: ({
+    open,
+    onUpgrade,
+  }: {
+    open: boolean
+    onUpgrade?: () => void
+  }) => open ? <button type="button" onClick={onUpgrade}>Mock upgrade</button> : null,
+}))
+
 vi.mock('@/lib/icons', () => ({
   FolderOpenIcon: () => null,
   Folder01Icon: () => null,
@@ -193,5 +203,50 @@ describe('CreateDocumentDialog', () => {
       space_id: 'space-2',
       collection_id: undefined,
     })
+  })
+
+  it('closes the document dialog before routing to upgrade billing', async () => {
+    const onOpenChange = vi.fn()
+    testState.mutateAsync.mockRejectedValueOnce(new Error('Starter includes up to 500 documents'))
+
+    await act(async () => {
+      root.render(
+        <CreateDocumentDialog
+          wsId="ws-1"
+          open
+          onOpenChange={onOpenChange}
+        />,
+      )
+    })
+
+    const titleInput = container.querySelector('input')
+    const form = container.querySelector('form')
+
+    await act(async () => {
+      if (titleInput instanceof HTMLInputElement) {
+        const valueSetter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          'value',
+        )?.set
+        valueSetter?.call(titleInput, 'Limit check')
+        titleInput.dispatchEvent(new Event('input', { bubbles: true }))
+        titleInput.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+
+    const upgradeButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Mock upgrade',
+    )
+    expect(upgradeButton).toBeTruthy()
+
+    await act(async () => {
+      upgradeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 })

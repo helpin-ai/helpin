@@ -1,6 +1,6 @@
 import { FunctionComponent } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { ChevronLeftIcon, ExternalLinkIcon } from './icons';
+import { ChevronLeftIcon, ExternalLinkIcon, XIcon } from './icons';
 import { fetchHelpArticle, type HelpArticle } from './helpApi';
 
 interface HelpArticleViewProps {
@@ -8,6 +8,7 @@ interface HelpArticleViewProps {
   widgetKey: string;
   articleKey: string;
   onBack: () => void;
+  onClose?: () => void;
 }
 
 export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
@@ -15,6 +16,7 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
   widgetKey,
   articleKey,
   onBack,
+  onClose,
 }) => {
   const [article, setArticle] = useState<HelpArticle | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,7 +55,7 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
   }, [articleKey, host, widgetKey]);
 
   return (
-    <div className="helpin-article-view">
+    <div className="helpin-article-view helpin-help-drilldown-view">
       <div className="helpin-article-header">
         <button className="helpin-help-back" onClick={onBack} aria-label="Back">
           <ChevronLeftIcon size={18} />
@@ -61,20 +63,27 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
         <div className="helpin-article-header-copy">
           <span className="helpin-help-title">{article?.title || 'Article'}</span>
         </div>
-        {articleExternalURL ? (
-          <a
-            href={articleExternalURL}
-            className="helpin-window-close-inline"
-            target="_blank"
-            rel="noreferrer"
-            aria-label="Open article in Help Center"
-            title="Open article in Help Center"
-          >
-            <ExternalLinkIcon size={16} />
-          </a>
-        ) : (
-          <div className="helpin-help-header-spacer" />
-        )}
+        <div className="helpin-article-header-actions">
+          {articleExternalURL && (
+            <a
+              href={articleExternalURL}
+              className="helpin-window-close-inline"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Open article in Help Center"
+              title="Open article in Help Center"
+            >
+              <ExternalLinkIcon size={16} />
+            </a>
+          )}
+          {onClose ? (
+            <button className="helpin-window-close-inline" onClick={onClose} aria-label="Close">
+              <XIcon size={18} />
+            </button>
+          ) : (
+            <div className="helpin-help-header-spacer" />
+          )}
+        </div>
       </div>
       <div className="helpin-article-content">
         {isLoading && <p className="helpin-help-empty">Loading article...</p>}

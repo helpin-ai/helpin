@@ -54,11 +54,23 @@ import type {
   UpdateCannedResponseRequest,
   SupportMessageInfo,
   SupportTag,
+  SupportConversationSearchParams,
+  SupportConversationSearchResponse,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const supportService = {
+  searchConversations: (workspaceId: string, params: SupportConversationSearchParams) => {
+    const query = new URLSearchParams({ workspace_id: workspaceId });
+    Object.entries(params).forEach(([key, value]) => {
+      if (value === undefined || value === null) return;
+      const stringValue = String(value).trim();
+      if (!stringValue) return;
+      query.set(key, stringValue);
+    });
+    return api.get<SupportConversationSearchResponse>(`/support/inbox/search?${query.toString()}`);
+  },
   listConversations: (
     workspaceId: string,
     filters?: {

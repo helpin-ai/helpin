@@ -130,6 +130,7 @@ type CodexExecutor struct {
 	runRepo             *repository.AgentRunRepository
 	artifactRepo        *repository.AgentRunArtifactRepository
 	workspaceAuth       *CodexWorkspaceAuthStore
+	usageRecorder       AgentRunUsageRecorder
 }
 
 func NewCodexExecutor(
@@ -138,6 +139,7 @@ func NewCodexExecutor(
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 	workspaceAuth *CodexWorkspaceAuthStore,
+	usageRecorder AgentRunUsageRecorder,
 ) *CodexExecutor {
 	commandPath := strings.TrimSpace(config.Path)
 	if strings.TrimSpace(commandPath) == "" {
@@ -163,6 +165,7 @@ func NewCodexExecutor(
 		runRepo:             runRepo,
 		artifactRepo:        artifactRepo,
 		workspaceAuth:       workspaceAuth,
+		usageRecorder:       usageRecorder,
 	}
 }
 
@@ -352,6 +355,9 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 		}
 	}
 
+	if err := recordAgentRunUsage(postRunCtx, e.usageRecorder, run, execCtx.Agent); err != nil {
+		return normalizeCodexPostRunError(postRunCtx, fmt.Errorf("record codex runtime AI usage: %w", err))
+	}
 	return normalizeCodexPostRunError(postRunCtx, nil)
 }
 

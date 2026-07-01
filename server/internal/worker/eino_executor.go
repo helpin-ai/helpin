@@ -25,6 +25,7 @@ type EinoExecutor struct {
 	helpinMCPBridgePath string
 	runRepo             *repository.AgentRunRepository
 	artifactRepo        *repository.AgentRunArtifactRepository
+	usageRecorder       AgentRunUsageRecorder
 }
 
 type nativeToolPressureSummary struct {
@@ -162,6 +163,7 @@ func NewEinoExecutor(
 	helpinMCPBridgePath string,
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
+	usageRecorder AgentRunUsageRecorder,
 ) *EinoExecutor {
 	tools := NewToolRegistry(webSearch, exaSearch)
 	tools.SetWebFetchProxyURLs(webFetchProxyURLs)
@@ -174,6 +176,7 @@ func NewEinoExecutor(
 		helpinMCPBridgePath: strings.TrimSpace(helpinMCPBridgePath),
 		runRepo:             runRepo,
 		artifactRepo:        artifactRepo,
+		usageRecorder:       usageRecorder,
 	}
 }
 
@@ -511,6 +514,10 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 			seqNo++
 			e.saveArtifact(ctx, run, "file_bundle", "json", toJSONString(strings.Fields(files)), seqNo)
 		}
+	}
+
+	if err := recordAgentRunUsage(ctx, e.usageRecorder, run, execCtx.Agent); err != nil {
+		return fmt.Errorf("record native runtime AI usage: %w", err)
 	}
 
 	if errors.Is(execErr, ErrMaxToolStepsReached) {

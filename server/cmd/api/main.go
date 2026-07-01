@@ -25,6 +25,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/cache"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
@@ -156,6 +157,11 @@ func main() {
 			&model.WorkspaceMember{},
 			&model.WorkspaceModuleGrant{},
 			&model.WorkspaceSettings{},
+			&model.WorkspaceBilling{},
+			&model.BillingCreditLedgerEntry{},
+			&model.StripeWebhookEvent{},
+			&model.OrganizationBilling{},
+			&model.BillingPaymentMethod{},
 			&model.WorkspaceTeam{},
 			&model.TeamWorkspaceMembership{},
 			&model.WorkspaceManager{},
@@ -587,10 +593,22 @@ func main() {
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
+	billingRepo := repository.NewBillingRepository(db)
 	supportTagRepo := repository.NewSupportTagRepository(db)
 	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
 	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
+	stripeGateway := billingstripe.New(cfg.StripeSecretKey, cfg.StripeCreditBlockPriceID)
+	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
+	billingTestScenarioService := service.NewBillingTestScenarioService(db, billingService, time.Now)
+	billingService.SetPriceConfig(service.BillingPriceConfig{
+		StarterMonthly: cfg.StripeStarterMonthlyPriceID,
+		StarterAnnual:  cfg.StripeStarterAnnualPriceID,
+		GrowthMonthly:  cfg.StripeGrowthMonthlyPriceID,
+		GrowthAnnual:   cfg.StripeGrowthAnnualPriceID,
+	})
+	billingService.SetWorkspaceRepository(workspaceRepo)
+	aiUsageMeter := service.NewAIUsageMeter(billingService)
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
 	gitCredentialRepo := repository.NewGitCredentialRepository(db)
 	gitRepositoryRepo := repository.NewGitRepositoryRepository(db)
@@ -695,6 +713,7 @@ func main() {
 	supportInboxViewService := service.NewSupportInboxViewService(supportInboxViewRepo, supportConversationRepo, wsPublisher)
 	supportTagService := service.NewSupportTagService(supportTagRepo, supportConversationRepo, wsPublisher)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
+	supportInboxService.SetDocsSearchRepository(docsSearchRepo)
 	supportInboxService.SetSupportTagRepo(supportTagRepo)
 	supportLinkPreviewService := service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs)
 	emailFallbackService := service.NewEmailFallbackService(
@@ -752,6 +771,7 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
+	supportLLMProvider := service.NewMeteredLLMProvider(supportLLMRouter, aiUsageMeter)
 	supportInboxTriageService := service.NewSupportInboxTriageService(
 		supportInboxService,
 		supportConversationTriageRepo,
@@ -761,7 +781,7 @@ func main() {
 		supportMailboxRepo,
 		supportConversationRepo,
 		supportMessageRepo,
-		supportLLMRouter,
+		supportLLMProvider,
 	)
 	supportInboxService.SetTriageService(supportInboxTriageService)
 
@@ -851,8 +871,8 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmDealRepo).SetAgentDraftLLM(supportLLMRouter)
-	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMRouter).
+	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter)
+	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMProvider).
 		SetChatRepository(commandBarChatRepo).
 		SetLLMRouterConfig(
 			cfg.CommandRouterLLMProvider,
@@ -924,6 +944,7 @@ func main() {
 	default:
 		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
 	}
+	llmProvider = service.NewMeteredLLMProvider(llmProvider, aiUsageMeter)
 	if llmProvider != nil {
 		slog.Info("LLM provider configured for signal detection")
 	}
@@ -1118,7 +1139,7 @@ func main() {
 
 	// AI Support Agent — wire SupportAIService with LLM provider and JetStream.
 	supportAIService := service.NewSupportAIService(
-		supportLLMRouter, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel, docsChunkRepo,
+		supportLLMProvider, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel, docsChunkRepo,
 		agentKnowledgeSourceRepo, supportContentChunkRepo, agentContentSourceRepo, aiMessageProcessingRepo,
 		supportConversationRepo, supportMessageRepo, supportAttachmentRepo,
 		agentRepo, agentHandoffRepo, supportInstallRepo,
@@ -1165,10 +1186,24 @@ func main() {
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
+	billingService.SetOrgRoleResolver(orgService)
+	entitlementService := service.NewEntitlementService(billingService)
+	pmImportService.SetEntitlementService(entitlementService)
+	supportInboxService.SetEntitlementService(entitlementService)
+	supportInboxTriageService.SetEntitlementService(entitlementService)
+	agentService.SetEntitlementService(entitlementService)
+	ruleEngine.SetEntitlementService(entitlementService)
+	docsDocumentService.SetEntitlementService(entitlementService)
+	docsHelpcenterTranslationService.SetEntitlementService(entitlementService)
+	crmContactService.SetEntitlementService(entitlementService)
+	crmImportService.SetEntitlementService(entitlementService)
+	dealAutomationService.SetEntitlementService(entitlementService)
+	workspaceService.SetBillingService(billingService)
 	workspaceService.SetPresenceProvider(wsHub.Presence)
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
 	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher).
-		SetGitRepositoryRepository(gitRepositoryRepo)
+		SetGitRepositoryRepository(gitRepositoryRepo).
+		SetEntitlementService(entitlementService)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRunRepo, agentRepo, workspaceRepo, pmTaskRepo, supportInstallRepo).
 		SetTargetResolvers(pmEpicRepo, docsDocumentRepo, supportConversationRepo, crmContactRepo, crmDealRepo, gitRepositoryRepo, supportCoverageRepo)
 	flowTemplateRegistry, err := flowtemplates.LoadSystemRegistry()
@@ -1183,6 +1218,7 @@ func main() {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)
 	}
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, appEmailClient, cfg.AppBaseURL, jwtManager)
+	inviteService.SetBillingService(billingService)
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
@@ -1233,6 +1269,7 @@ func main() {
 		Passkey:             handler.NewPasskeyHandler(passkeyService),
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
+		Billing:             handler.NewBillingHandler(billingService, cfg.StripeWebhookSecret, cfg.AppBaseURL, billingTestScenarioService, strings.EqualFold(os.Getenv("BILLING_TEST_SCENARIOS_ENABLED"), "true")),
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
 		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller, flowTemplateUninstaller),
 		Invite:              handler.NewInviteHandler(inviteService),
@@ -1325,6 +1362,7 @@ func main() {
 
 	// Set support event recorder on DocsHandler after handler creation.
 	handlers.Docs.SetSupportEventRecorder(supportEventRecorder)
+	handlers.Docs.SetSupportWidgetConfigProvider(supportInboxService)
 
 	// Slug resolver adapts workspace repo for RBAC middleware.
 	slugResolver := authorization.SlugResolver(func(ctx context.Context, slug string) (string, error) {

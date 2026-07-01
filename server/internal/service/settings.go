@@ -20,6 +20,7 @@ type SettingsService struct {
 	gitRepo           *repository.GitRepositoryRepository
 	pmWorkflowService *PMWorkflowService
 	wsPublisher       *websocket.Publisher
+	entitlementSvc    *EntitlementService
 	logger            *slog.Logger
 }
 
@@ -67,6 +68,11 @@ func (s *SettingsService) SetGitRepositoryRepository(gitRepo *repository.GitRepo
 	return s
 }
 
+func (s *SettingsService) SetEntitlementService(entitlementSvc *EntitlementService) *SettingsService {
+	s.entitlementSvc = entitlementSvc
+	return s
+}
+
 // GetAll returns the full workspace configuration.
 func (s *SettingsService) GetAll(ctx context.Context, workspaceID string) (*model.FullWorkspaceConfig, error) {
 	config, err := s.settingsRepo.GetAll(ctx, workspaceID)
@@ -105,6 +111,15 @@ func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRe
 	}
 	if !isValidDefaultStoryType(req.DefaultStoryType) {
 		return nil, fmt.Errorf("invalid default_task_type")
+	}
+	if s.entitlementSvc != nil {
+		count, err := s.settingsRepo.CountTeams(ctx, req.WorkspaceID)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.entitlementSvc.RequireLimitUsage(ctx, req.WorkspaceID, EntitlementLimitTeams, count, 1); err != nil {
+			return nil, err
+		}
 	}
 
 	team, err := s.settingsRepo.CreateTeam(ctx, req)

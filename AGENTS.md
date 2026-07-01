@@ -337,6 +337,13 @@ Current trigger surfaces in code:
 - agent `schedule`
 - automation-rule triggers: `story.state_entered`, `agent_run.approved`, `cron`
 
+Billing and AI usage rules for agent launch surfaces:
+
+- Any UI or backend route that can start an agent, run an automation-backed agent, continue/handoff a coding session, run a support agent, or invoke AI assistance must go through AI usage preflight/metering.
+- Frontend launch surfaces must classify billing/usage failures with `getUpgradeRequiredReason` before showing a toast. Do not show raw messages like `AI usage exhausted` to users; open `UpgradeRequiredDialog` instead.
+- When an action creates an entity and also starts an agent (`Create & run agent`, `Save & run agent`), handle `agent_run_error` separately. If it is a billing/usage error, keep the create modal open and show the upgrade dialog; otherwise show a normal "created, but agent did not start" warning/error.
+- When adding a new agent launch entry point, audit the matching backend handler/service and frontend error path together. Covered surfaces should include PM task runs, PM epic planner runs, global task/epic create modals, global task/epic panels, automation agents, automation flows, support agent runs, support AI rewrite, coding-session handoffs, and any command-bar or template flow that starts an `agent_run`.
+
 Current limitation to keep in mind:
 
 - agent execution is generic, but some launch paths are still target-specific

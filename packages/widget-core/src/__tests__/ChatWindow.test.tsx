@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/preact';
 import { ChatWindow } from '../components/ChatWindow';
 
@@ -31,6 +31,10 @@ const baseConfig = {
 };
 
 describe('ChatWindow', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   const sampleMessage = {
     id: 'msg-1',
     conversationId: 'conv-1',
@@ -184,6 +188,66 @@ describe('ChatWindow', () => {
     expect(handleClose).toHaveBeenCalled();
   });
 
+  it('renders powered-by text without the Helpin logo mark', () => {
+    const { container, getByText } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+      />,
+    );
+
+    expect(getByText('Powered by')).toBeTruthy();
+    expect(getByText('Helpin')).toBeTruthy();
+    expect(container.querySelector('.helpin-powered-by img')).toBeNull();
+    expect(container.querySelector('.helpin-powered-by-icon')).toBeNull();
+  });
+
+  it('uses the inline header close button instead of a floating close button in help docs subviews', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })),
+    );
+
+    const handleClose = vi.fn();
+    const { container, getByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          helpSpaces: [
+            { id: 'space-1', name: 'Product Docs', slug: 'product-docs' },
+            { id: 'space-2', name: 'Developer Docs', slug: 'developer-docs' },
+          ],
+        }}
+        messages={[]}
+        isOpen={true}
+        initialView="help"
+        host="https://client.helpin.ai"
+        widgetKey="wk_123"
+        onClose={handleClose}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+      />,
+    );
+
+    fireEvent.click(getByText('Product Docs'));
+
+    expect(container.querySelector('.helpin-window-close')).toBeNull();
+    const inlineClose = container.querySelector('.helpin-help-header .helpin-window-close-inline');
+    expect(inlineClose).toBeTruthy();
+
+    fireEvent.click(inlineClose as Element);
+
+    expect(handleClose).toHaveBeenCalled();
+  });
+
   it('uses AI-first copy on the home view without leading with human availability', () => {
     const { getByText } = render(
       <ChatWindow
@@ -256,9 +320,8 @@ describe('ChatWindow', () => {
     expect(handleStartNewConversation).toHaveBeenCalledTimes(1);
   });
 
-  it('starts a fresh conversation from Help contact us', () => {
-    const handleStartNewConversation = vi.fn();
-    const { getByText } = render(
+  it('does not show Contact us in the Help tab', () => {
+    const { getByText, queryByText } = render(
       <ChatWindow
         config={baseConfig}
         messages={[]}
@@ -268,14 +331,12 @@ describe('ChatWindow', () => {
         onQuickReply={() => {}}
         showPreChatForm={false}
         onPreChatSubmit={() => {}}
-        onStartNewConversation={handleStartNewConversation}
       />,
     );
 
     fireEvent.click(getByText('Help center'));
-    fireEvent.click(getByText('Contact us'));
 
-    expect(handleStartNewConversation).toHaveBeenCalledTimes(1);
+    expect(queryByText('Contact us')).toBeNull();
   });
 
   it('starts a fresh conversation from empty Messages view', () => {
