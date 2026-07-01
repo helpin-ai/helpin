@@ -1335,6 +1335,7 @@
   padding: 4px 16px 8px;
   font-size: 11px;
   color: var(--helpin-fg-muted);
+  text-decoration: none;
 }
 
 .helpin-powered-by-name {

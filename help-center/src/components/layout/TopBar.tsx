@@ -461,15 +461,15 @@ export function TopBar({ onSearchClick }: TopBarProps) {
       {/* Center: Search */}
       <button
         onClick={onSearchClick}
-        className="flex items-center gap-2 pl-3 pr-2 h-8 rounded-lg border border-border bg-muted/40 hover:bg-muted/70 transition-colors cursor-text w-[280px]"
+        className="flex items-center gap-2 pl-3 pr-2 h-8 rounded-lg border border-border bg-muted/40 hover:bg-muted/70 transition-colors cursor-text w-[min(280px,calc(100vw-120px))] sm:w-[360px] lg:w-[440px] xl:w-[520px]"
       >
         <Search size={14} className="text-muted-foreground shrink-0" />
         <span className="flex-1 text-left text-[13px] text-muted-foreground">
           {config.search_placeholder || 'Search...'}
         </span>
-        <kbd className="hidden sm:inline-flex items-center rounded-[4px] px-1.5 py-0.5 text-[10px] font-mono font-medium bg-background border border-border text-muted-foreground">
+        <span className="hidden flex-none text-xs font-semibold text-muted-foreground sm:inline-flex">
           ⌘K
-        </kbd>
+        </span>
       </button>
 
       {/* Right: Header links + Theme toggle */}

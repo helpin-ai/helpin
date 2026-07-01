@@ -3,6 +3,7 @@ import { useDocsContext } from '@/contexts/DocsContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { SearchResultsList } from '@/components/SearchResults'
 import { LoadingState } from '@/components/LoadingState'
+import { Footer } from '@/components/layout/Footer'
 
 interface SearchRouteViewProps {
   locale: string
@@ -45,6 +46,7 @@ export function SearchRouteView({
       ) : (
         <SearchResultsList results={results ?? []} query={query} locale={locale} />
       )}
+      <Footer />
     </div>
   )
 }

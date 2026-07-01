@@ -266,7 +266,7 @@ function NestedCollectionItem({
     <AccordionItem value={node.item.id} className={cn('border-none', spacing)}>
       <AccordionTrigger
         className={cn(
-          'py-[7px] text-[13px] font-medium hover:no-underline',
+          'cursor-pointer py-[7px] text-[13px] font-medium hover:no-underline',
           indent,
           isActiveCollection
             ? 'bg-sidebar-active text-sidebar-active-foreground'

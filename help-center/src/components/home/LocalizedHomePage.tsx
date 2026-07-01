@@ -9,6 +9,7 @@ import {
 } from '@/lib/locale'
 import { DocsLink } from '@/components/DocsLink'
 import { Sidebar } from '@/components/layout/Sidebar'
+import { Footer } from '@/components/layout/Footer'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { PhIcon } from '@/components/PhIcon'
 import type { HomepageFeaturedCard } from '@/lib/types'
@@ -121,6 +122,7 @@ export function LocalizedHomePage() {
               ))}
             </div>
           )}
+          <Footer />
         </div>
       </main>
     </div>
