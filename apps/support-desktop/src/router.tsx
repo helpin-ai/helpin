@@ -150,6 +150,45 @@ const chatSettingsRoute = createRoute({
   ),
 })
 
+const billingSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/w/$slug/settings/billing',
+  beforeLoad: requireAuth,
+  component: () => (
+    <OpenInWebPage
+      title="Open Billing Settings"
+      pathBuilder={({ slug }) => `/w/${slug}/settings/billing`}
+    />
+  ),
+})
+
+const inboxesRoutingSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/w/$slug/settings/inboxes-routing',
+  beforeLoad: requireAuth,
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: typeof search.tab === 'string' ? search.tab : undefined,
+  }),
+  component: () => (
+    <OpenInWebPage
+      title="Open Inbox Routing Settings"
+      pathBuilder={({ slug }) => `/w/${slug}/settings/inboxes-routing`}
+    />
+  ),
+})
+
+const supportSearchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/w/$slug/support/search',
+  beforeLoad: requireAuth,
+  component: () => (
+    <OpenInWebPage
+      title="Open Support Search"
+      pathBuilder={({ slug }) => `/w/${slug}/support/search`}
+    />
+  ),
+})
+
 // Catch-all: any web route this desktop app does not implement natively opens in
 // the browser instead of dead-ending on "not found". More specific routes above
 // win; this only matches leftover paths at runtime.
@@ -177,6 +216,9 @@ const routeTree = rootRoute.addChildren([
   docsDocumentRoute,
   pmTaskRoute,
   chatSettingsRoute,
+  billingSettingsRoute,
+  inboxesRoutingSettingsRoute,
+  supportSearchRoute,
   openInWebSplatRoute,
 ])
 
