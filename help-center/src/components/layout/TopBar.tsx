@@ -467,9 +467,9 @@ export function TopBar({ onSearchClick }: TopBarProps) {
         <span className="flex-1 text-left text-[13px] text-muted-foreground">
           {config.search_placeholder || 'Search...'}
         </span>
-        <kbd className="hidden sm:inline-flex items-center rounded-[4px] px-1.5 py-0.5 text-[10px] font-mono font-medium bg-background border border-border text-muted-foreground">
+        <span className="hidden flex-none text-xs font-semibold text-muted-foreground sm:inline-flex">
           ⌘K
-        </kbd>
+        </span>
       </button>
 
       {/* Right: Header links + Theme toggle */}

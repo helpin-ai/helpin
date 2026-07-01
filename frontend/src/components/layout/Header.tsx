@@ -220,9 +220,9 @@ export function Header() {
         >
           <Search01Icon className="h-4 w-4 shrink-0" />
           <span className="truncate">Search {currentWorkspace?.name ?? "workspace"}...</span>
-          <kbd className="ml-auto hidden rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground md:inline-block">
+          <span className="ml-auto hidden flex-none text-xs font-semibold text-muted-foreground md:inline-block">
             ⌘K
-          </kbd>
+          </span>
         </button>
       </div>
 
