@@ -510,10 +510,19 @@ type HelpcenterFooterLink struct {
 	URL   string `json:"url"`
 }
 
+// HelpcenterSocialLink is a single footer social link.
+type HelpcenterSocialLink struct {
+	Platform string `json:"platform"`
+	URL      string `json:"url"`
+	Label    string `json:"label,omitempty"`
+}
+
 // HelpcenterFooterConfig stores footer customization.
 type HelpcenterFooterConfig struct {
-	CopyrightText string                 `json:"copyright_text"`
-	Links         []HelpcenterFooterLink `json:"links"`
+	ShowCopyright *bool                  `json:"show_copyright,omitempty"`
+	CopyrightText string                 `json:"copyright_text,omitempty"`
+	Links         []HelpcenterFooterLink `json:"links,omitempty"`
+	SocialLinks   []HelpcenterSocialLink `json:"social_links,omitempty"`
 }
 
 // HomepageFeaturedCard is a single card on the help center homepage.
