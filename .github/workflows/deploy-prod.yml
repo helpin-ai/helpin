@@ -108,50 +108,11 @@ jobs:
       - name: Compute per-service release versions
         id: versions
         run: |
-          compute_release_version() {
-            local PREFIX=$1
-            local CHANGED=$2
-
-            if [ "$CHANGED" != "true" ]; then
-              echo "tag="
-              echo "prev="
-              return
-            fi
-
-            # Check for RC to promote
-            LATEST_RC=$(git tag -l "${PREFIX}-v*-rc.*" --sort=-v:refname | head -n1 || echo "")
-            PREV_STABLE=$(git tag -l "${PREFIX}-v*" --sort=-v:refname | grep -vE '\-(rc|dev)\.' | head -n1 || echo "")
-
-            if [ -n "$LATEST_RC" ]; then
-              # Promote RC: server-v1.2.3-rc.2 → server-v1.2.3
-              RELEASE_TAG=$(echo "$LATEST_RC" | sed 's/-rc\.[0-9]*//')
-            elif [ -n "$PREV_STABLE" ]; then
-              # No RC — bump patch from latest stable
-              VERSION=${PREV_STABLE#${PREFIX}-v}
-              IFS='.' read -ra P <<< "$VERSION"
-              MAJOR=${P[0]:-0}; MINOR=${P[1]:-0}; PATCH=${P[2]:-0}
-              PATCH=$((PATCH + 1))
-              RELEASE_TAG="${PREFIX}-v${MAJOR}.${MINOR}.${PATCH}"
-            else
-              RELEASE_TAG="${PREFIX}-v0.1.0"
-            fi
-
-            # Guard: don't re-release an existing tag
-            if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
-              echo "tag="
-              echo "prev=$PREV_STABLE"
-              return
-            fi
-
-            echo "tag=$RELEASE_TAG"
-            echo "prev=$PREV_STABLE"
-          }
-
-          SERVER_OUT=$(compute_release_version "server" "${{ needs.changes.outputs.server }}")
+          SERVER_OUT=$(bash .github/scripts/resolve-release-version.sh "server" "${{ needs.changes.outputs.server }}")
           SERVER_TAG=$(echo "$SERVER_OUT" | grep '^tag=' | cut -d= -f2)
           SERVER_PREV=$(echo "$SERVER_OUT" | grep '^prev=' | cut -d= -f2)
 
-          HELPCENTER_OUT=$(compute_release_version "helpcenter" "${{ needs.changes.outputs.helpcenter }}")
+          HELPCENTER_OUT=$(bash .github/scripts/resolve-release-version.sh "helpcenter" "${{ needs.changes.outputs.helpcenter }}")
           HELPCENTER_TAG=$(echo "$HELPCENTER_OUT" | grep '^tag=' | cut -d= -f2)
           HELPCENTER_PREV=$(echo "$HELPCENTER_OUT" | grep '^prev=' | cut -d= -f2)
 
