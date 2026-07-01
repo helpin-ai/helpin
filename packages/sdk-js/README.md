@@ -2,6 +2,8 @@
 
 Analytics and live chat for your website. Install as an npm module or add a script tag — both give you event tracking, user identification, and full control over the Helpin chat widget.
 
+The npm module is a thin integration wrapper for analytics and widget commands. In browser environments it loads the live widget runtime from `https://cdn.helpin.ai/lib.js`, so widget UI and CSS updates can ship from the CDN without requiring customer application redeploys.
+
 ## Installation
 
 ```bash
@@ -18,6 +20,8 @@ const client = helpinClient({
   host: 'https://client.helpin.ai',
   namespace: 'helpin',
   autoBoot: false,
+  // Optional: override the hosted widget runtime for staging or pinned deployments.
+  // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
 });
 
 if (!client) {
@@ -101,6 +105,8 @@ Configure via the `HelpinOptions` object passed to `helpinClient(...)`, or with 
 | `host` | Helpin host URL, with or without protocol |
 | `autoBoot` | Boot the widget on initialization (default: `true`) |
 | `namespace` | Global name for the script-tag build (default: `helpin`) |
+| `widgetRuntimeUrl` | Hosted widget runtime URL for npm installs (default: `https://cdn.helpin.ai/lib.js`) |
+| `widgetRuntimeChannel` / `widgetRuntimeVersion` | Optional runtime selection metadata for hosted/pinned widget deployments |
 | `autoPageview` | Track a pageview automatically on load |
 | `useBeaconApi` | Prefer the Beacon API for event transport |
 | `forceUseFetch` | Prefer `fetch` over `XMLHttpRequest` |
@@ -178,7 +184,7 @@ When using the script tag, every method above is available as `helpin('methodNam
 
 ## Module vs. Script Tag
 
-Both builds provide the same analytics and widget capabilities. The module build returns a typed `HelpinClient` object; the script-tag build exposes the same methods through the `window.helpin(...)` command API. Choose whichever fits your stack.
+Both builds provide the same analytics and widget capabilities. The script-tag build loads `lib.js` directly. The module build returns a typed `HelpinClient` object and injects that same hosted runtime in the browser, then delegates widget commands to `window.helpin(...)`. Choose whichever fits your stack.
 
 ## Development
 

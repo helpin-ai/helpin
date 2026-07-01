@@ -2,6 +2,8 @@
 
 Helpin for React. Analytics, user identification, pageview tracking, and chat widget control — all through a single hook.
 
+This package is a thin React wrapper. The chat widget UI is loaded from the hosted Helpin runtime at `https://cdn.helpin.ai/lib.js`, so future widget UI and CSS updates go live without requiring a React app redeploy after customers upgrade to this wrapper architecture once.
+
 ## Installation
 
 ```bash
@@ -21,6 +23,8 @@ const helpinClient = createClient({
   widgetKey: 'your-widget-key',
   host: 'https://client.helpin.ai',
   autoBoot: false,
+  // Optional: use a staging or pinned runtime.
+  // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
 });
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
