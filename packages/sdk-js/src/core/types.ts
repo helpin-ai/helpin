@@ -93,6 +93,9 @@ type CamelCaseConfig = {
   namespace?: string;
   crossDomainLinking?: boolean;
   domains?: string;
+  widgetRuntimeUrl?: string;
+  widgetRuntimeChannel?: string;
+  widgetRuntimeVersion?: string;
 };
 
 type SnakeCaseConfig = {
@@ -124,6 +127,9 @@ type SnakeCaseConfig = {
   namespace?: string;
   cross_domain_linking?: boolean;
   domains?: string;
+  widget_runtime_url?: string;
+  widget_runtime_channel?: string;
+  widget_runtime_version?: string;
 };
 
 export type Config = Partial<CamelCaseConfig & SnakeCaseConfig> & {

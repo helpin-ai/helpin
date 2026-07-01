@@ -32,4 +32,5 @@ export const defaultConfig: Partial<Config> = {
   propertiesStringMaxLength: null,
   propertyBlacklist: [],
   crossDomainLinking: true,
+  widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
 };

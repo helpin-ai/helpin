@@ -370,6 +370,8 @@ import { createClient, HelpinProvider } from '@helpin-ai/react';
 const client = createClient({
   widgetKey: '${widgetKey}',
   host: 'https://client.helpin.ai',
+  // The React package loads the live widget runtime from Helpin's CDN.
+  // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
 });
 
 function App() {
@@ -423,6 +425,8 @@ import { HelpinProvider, createClient } from '@helpin-ai/nextjs';
 const client = createClient({
   widgetKey: '${widgetKey}',
   host: 'https://client.helpin.ai',
+  // The Next.js package loads the live widget runtime from Helpin's CDN.
+  // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
 });
 
 export default function RootLayout({ children }) {
@@ -630,8 +634,8 @@ function Dashboard() {
                       {snippetTab === 'html'
                         ? 'Step 1: Add the pixel script. Step 2: Identify logged-in users (optional).'
                         : snippetTab === 'react'
-                        ? 'Install @helpin-ai/react from npm. Use useHelpin() hook to identify users and capture leads.'
-                        : 'Install @helpin-ai/nextjs from npm. Works with both App Router and Pages Router.'}
+                        ? 'Install @helpin-ai/react from npm. The package loads the live widget runtime from Helpin CDN.'
+                        : 'Install @helpin-ai/nextjs from npm. The package loads the live widget runtime from Helpin CDN.'}
                     </p>
                   </div>
                 </>
