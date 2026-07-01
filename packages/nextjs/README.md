@@ -2,6 +2,8 @@
 
 Helpin for Next.js. Drop-in analytics, chat widget control, and pageview tracking — with middleware support for server-side events.
 
+This package is a thin Next.js wrapper. Browser clients load the chat widget UI from the hosted Helpin runtime at `https://cdn.helpin.ai/lib.js`, so future widget UI and CSS updates go live without requiring a Next.js app redeploy after customers upgrade to this wrapper architecture once.
+
 ## Installation
 
 ```bash
@@ -25,6 +27,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
         widgetKey: process.env.NEXT_PUBLIC_HELPIN_WIDGET_KEY!,
         host: process.env.NEXT_PUBLIC_HELPIN_HOST!,
         autoBoot: false,
+        // Optional: use a staging or pinned runtime.
+        // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
       }),
     [],
   );
@@ -117,6 +121,7 @@ import { createClient, usePageView } from '@helpin-ai/nextjs';
 const helpinClient = createClient({
   widgetKey: process.env.NEXT_PUBLIC_HELPIN_WIDGET_KEY!,
   host: process.env.NEXT_PUBLIC_HELPIN_HOST!,
+  // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
 });
 
 export function PageViewTracker() {
@@ -183,7 +188,7 @@ export function middleware(req: NextRequest) {
 | Browser (analytics + widget) | `createClient(...)` from `@helpin-ai/nextjs` |
 | Server (middleware, route handlers, server actions) | `helpinClient(...)` from `@helpin-ai/sdk-js` + `middlewareEnv(...)` |
 
-The chat widget boots automatically in the browser when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep it dormant until you call `show()`, `open()`, or `openNewMessage()` — useful for custom launchers.
+The chat widget boots automatically in the browser when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep it dormant until you call `show()`, `open()`, or `openNewMessage()` — useful for custom launchers. Widget UI comes from the hosted runtime by default; analytics and server helpers remain in the npm package.
 
 ## Exports
 
