@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Outlet } from '@tanstack/react-router'
 import { TopBar } from './TopBar'
-import { Footer } from './Footer'
 import { SearchDialog } from '@/components/search/SearchDialog'
 import { useDocsContext } from '@/contexts/DocsContext'
 
@@ -70,7 +69,6 @@ export function AppShell() {
       <div className="flex-1">
         <Outlet />
       </div>
-      <Footer />
       <SearchDialog open={searchOpen} onClose={closeSearch} />
       <HelpCenterChatWidget />
     </div>

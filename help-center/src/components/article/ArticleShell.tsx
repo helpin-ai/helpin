@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Breadcrumbs } from '@/components/navigation/Breadcrumbs'
 import { ArticlePager } from '@/components/navigation/ArticlePager'
+import { Footer } from '@/components/layout/Footer'
 import { ArticleFeedback } from './ArticleFeedback'
 import type { ArticlePagerLink } from '@/lib/navigation'
 
@@ -68,6 +69,7 @@ export function ArticleShell({
         multilingualEnabled={multilingualEnabled}
       />
       <ArticlePager locale={locale} prev={pager.prev} next={pager.next} />
+      <Footer />
     </article>
   )
 }

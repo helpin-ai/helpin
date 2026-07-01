@@ -14,6 +14,7 @@ import { buildCanonicalArticlePath, buildCanonicalCollectionPath } from '@/lib/l
 import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { Sidebar } from '@/components/layout/Sidebar'
+import { Footer } from '@/components/layout/Footer'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { Breadcrumbs, type BreadcrumbEntry } from '@/components/navigation/Breadcrumbs'
 import {
@@ -170,6 +171,7 @@ export function CollectionRouteView({
                 ))}
               </div>
             )}
+            <Footer />
           </section>
         </main>
       </div>
@@ -293,6 +295,7 @@ export function CollectionRouteView({
               No articles are published in this collection yet.
             </div>
           )}
+          <Footer />
         </section>
       </main>
     </div>
