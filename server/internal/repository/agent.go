@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -834,6 +835,21 @@ func (r *AgentRunRepository) Update(ctx context.Context, run *model.AgentRun) er
 	}
 	if r.triggerExecutionRepo != nil {
 		_ = r.triggerExecutionRepo.SyncRunStatus(ctx, run)
+	}
+	return nil
+}
+
+// UpdateOutputSummary updates only the run output summary.
+func (r *AgentRunRepository) UpdateOutputSummary(ctx context.Context, runID string, outputSummary json.RawMessage) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("agent run repository is not configured")
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("id = ?", runID).
+		Update("output_summary", outputSummary).
+		Error; err != nil {
+		return fmt.Errorf("update agent run output summary: %w", err)
 	}
 	return nil
 }

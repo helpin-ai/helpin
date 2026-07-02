@@ -11,11 +11,12 @@ import (
 )
 
 type fakeAgentRuntimeProjectionRunRepo struct {
-	byID          map[string]*model.AgentRun
-	byExternal    map[string]*model.AgentRun
-	active        []model.AgentRun
-	updates       int
-	notifications int
+	byID           map[string]*model.AgentRun
+	byExternal     map[string]*model.AgentRun
+	active         []model.AgentRun
+	updates        int
+	summaryUpdates int
+	notifications  int
 }
 
 func (r *fakeAgentRuntimeProjectionRunRepo) GetByIDAny(_ context.Context, id string) (*model.AgentRun, error) {
@@ -47,6 +48,26 @@ func (r *fakeAgentRuntimeProjectionRunRepo) Update(_ context.Context, run *model
 			r.byExternal = map[string]*model.AgentRun{}
 		}
 		r.byExternal[*run.ExternalRuntime+"|"+*run.ExternalRuntimeID] = run
+	}
+	for index := range r.active {
+		if r.active[index].ID == run.ID {
+			r.active[index] = *run
+			break
+		}
+	}
+	return nil
+}
+
+func (r *fakeAgentRuntimeProjectionRunRepo) UpdateOutputSummary(_ context.Context, runID string, outputSummary json.RawMessage) error {
+	r.summaryUpdates++
+	if r.byID != nil && r.byID[runID] != nil {
+		r.byID[runID].OutputSummary = append(json.RawMessage(nil), outputSummary...)
+	}
+	for index := range r.active {
+		if r.active[index].ID == runID {
+			r.active[index].OutputSummary = append(json.RawMessage(nil), outputSummary...)
+			break
+		}
 	}
 	return nil
 }
@@ -720,6 +741,15 @@ func TestAgentRuntimeProjectionReconcileMirrorsRuntimeTranscriptCollections(t *t
 	}
 	if err := svc.ReconcileMappedRuns(context.Background(), time.Minute, 10); err != nil {
 		t.Fatalf("second ReconcileMappedRuns returned error: %v", err)
+	}
+	if len(runtimeClient.getCalls) != 2 {
+		t.Fatalf("expected runtime state to be fetched on each sweep, got %#v", runtimeClient.getCalls)
+	}
+	if len(runtimeClient.listMessageCalls) != 1 || len(runtimeClient.listArtifactCalls) != 1 || len(runtimeClient.listInteractionCalls) != 1 {
+		t.Fatalf("expected transcript collections to be listed only once, messages=%#v artifacts=%#v interactions=%#v", runtimeClient.listMessageCalls, runtimeClient.listArtifactCalls, runtimeClient.listInteractionCalls)
+	}
+	if runRepo.summaryUpdates != 1 {
+		t.Fatalf("expected one output-summary marker update, got %d", runRepo.summaryUpdates)
 	}
 	if messageRepo.creates != 1 || len(messageRepo.messages) != 1 {
 		t.Fatalf("expected one mirrored message, creates=%d messages=%#v", messageRepo.creates, messageRepo.messages)

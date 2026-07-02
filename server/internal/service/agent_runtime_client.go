@@ -18,6 +18,7 @@ type AgentRuntimeRun = agentruntime.AgentRun
 type AgentRuntimeMessage = agentruntime.AgentRunMessage
 type AgentRuntimeArtifact = agentruntime.AgentRunArtifact
 type AgentRuntimeInteraction = agentruntime.AgentRunInteraction
+type AgentRuntimeEventEnvelope = agentruntime.EventEnvelope
 
 // AgentRuntimeClient is Helpin's host-side client for delegated Agent Runtime
 // runs. It intentionally uses only /v1 routes; /internal runtime routes are not
