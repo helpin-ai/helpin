@@ -942,8 +942,8 @@ function Dashboard() {
                     {canRemoveBranding
                       ? 'Display branding in the widget footer.'
                       : billing?.plan === 'founder'
-                        ? 'Founder workspaces keep Helpin branding visible.'
-                        : 'Upgrade to Growth to hide Helpin branding.'}
+                        ? 'Workspaces on the Founder plan keep Helpin branding visible.'
+                        : 'Upgrade to the Growth plan to hide Helpin branding.'}
                   </p>
                 </div>
                 <Switch

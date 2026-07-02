@@ -15,7 +15,7 @@ export interface UpgradeRequiredReason {
   primaryBenefit: string;
 }
 
-const GROWTH_TITLE = 'Upgrade to Growth';
+const GROWTH_TITLE = 'Upgrade to the Growth plan';
 
 export const GROWTH_UPGRADE_BENEFITS = [
   'Custom AI agents',
@@ -59,7 +59,7 @@ export function getUpgradeRequiredReason(error: unknown): UpgradeRequiredReason 
     return {
       kind: 'custom_agents',
       title: GROWTH_TITLE,
-      message: 'Custom agents are available on Growth.',
+      message: 'Custom agents are available on the Growth plan.',
       primaryBenefit: 'Custom AI agents',
     };
   }
@@ -67,7 +67,7 @@ export function getUpgradeRequiredReason(error: unknown): UpgradeRequiredReason 
     return {
       kind: 'automation_flows',
       title: GROWTH_TITLE,
-      message: 'Automation flows are available on Growth.',
+      message: 'Automation flows are available on the Growth plan.',
       primaryBenefit: 'Automation flows',
     };
   }
@@ -75,7 +75,7 @@ export function getUpgradeRequiredReason(error: unknown): UpgradeRequiredReason 
     return {
       kind: 'agent_scheduling',
       title: GROWTH_TITLE,
-      message: 'Scheduled agents and cron flows are available on Growth.',
+      message: 'Scheduled agents and cron flows are available on the Growth plan.',
       primaryBenefit: 'Scheduled agents and cron',
     };
   }
@@ -99,7 +99,7 @@ export function getUpgradeRequiredReason(error: unknown): UpgradeRequiredReason 
     return {
       kind: 'contacts_limit',
       title: GROWTH_TITLE,
-      message: 'Starter includes up to 5,000 CRM contacts.',
+      message: 'The Starter plan includes up to 5,000 CRM contacts.',
       primaryBenefit: 'Unlimited CRM contacts',
     };
   }
@@ -107,7 +107,7 @@ export function getUpgradeRequiredReason(error: unknown): UpgradeRequiredReason 
     return {
       kind: 'documents_limit',
       title: GROWTH_TITLE,
-      message: 'Starter includes up to 500 documents.',
+      message: 'The Starter plan includes up to 500 documents.',
       primaryBenefit: 'Unlimited documents',
     };
   }

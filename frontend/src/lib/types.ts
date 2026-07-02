@@ -130,6 +130,14 @@ export interface WorkspaceBillingSummary {
   seat_over_limit?: boolean;
   entitlement_warning?: string;
   on_demand_blocks_invoiced: number;
+  billing_managers?: BillingManagerRef[];
+}
+
+export interface BillingManagerRef {
+  user_id: string;
+  name: string;
+  email: string;
+  role: string;
 }
 
 export interface WorkspaceMember {

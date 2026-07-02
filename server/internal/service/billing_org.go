@@ -15,6 +15,7 @@ import (
 // OrganizationService.
 type orgBillingRoleResolver interface {
 	GetMemberRole(ctx context.Context, orgID, userID string) (string, error)
+	ListOwners(ctx context.Context, orgID string) ([]model.MemberWithUser, error)
 }
 
 // SetOrgRoleResolver wires the organization role resolver used by the billing
@@ -152,6 +153,60 @@ func (s *BillingService) CanManageWorkspaceBilling(ctx context.Context, userID, 
 		return false, nil
 	}
 	return s.isOrgOwner(ctx, userID, orgID)
+}
+
+// WorkspaceBillingManagers returns the people who can manage this workspace's
+// billing — the organization owner(s) and the workspace owner(s) — deduped by
+// user, so non-owners viewing the read-only billing page know who to contact.
+// Org owners take precedence over the workspace-owner label when a person holds
+// both roles. Best-effort: partial data is returned rather than failing.
+func (s *BillingService) WorkspaceBillingManagers(ctx context.Context, workspaceID string) ([]BillingManagerRef, error) {
+	managers := make([]BillingManagerRef, 0, 2)
+	seen := map[string]bool{}
+
+	orgID, err := s.repo.FindWorkspaceOrgID(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if orgID != "" && s.orgRoles != nil {
+		owners, err := s.orgRoles.ListOwners(ctx, orgID)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range owners {
+			if seen[o.UserID] {
+				continue
+			}
+			seen[o.UserID] = true
+			managers = append(managers, BillingManagerRef{
+				UserID: o.UserID,
+				Name:   o.FullName,
+				Email:  o.Email,
+				Role:   "Organization owner",
+			})
+		}
+	}
+
+	if s.workspaceRepo != nil {
+		members, err := s.workspaceRepo.ListMembers(ctx, workspaceID)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range members {
+			if m.Role != model.RoleOwner || seen[m.UserID] {
+				continue
+			}
+			seen[m.UserID] = true
+			managers = append(managers, BillingManagerRef{
+				UserID: m.UserID,
+				Name:   m.FullName,
+				Email:  m.Email,
+				Role:   "Workspace owner",
+			})
+		}
+	}
+
+	return managers, nil
 }
 
 // CanManageOrgBilling reports whether the user may manage org-level billing.

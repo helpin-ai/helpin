@@ -776,7 +776,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
         <div>
           <h2 className="text-sm font-medium">Upgrade to view CRM contacts</h2>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            Starter includes up to 5,000 contacts. Support can keep capturing new contacts, but CRM contact viewing requires Growth once you exceed that limit.
+            The Starter plan includes up to 5,000 contacts. Support can keep capturing new contacts, but CRM contact viewing requires the Growth plan once you exceed that limit.
           </p>
         </div>
         <div className="flex items-center gap-2">
