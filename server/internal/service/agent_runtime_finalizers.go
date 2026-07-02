@@ -17,10 +17,11 @@ import (
 // (which re-enters dispatch only while the local run row is still
 // non-terminal) never repeats a side effect that already happened.
 const (
-	agentRuntimeFinalizerAgentIdleSummaryKey       = "agent_runtime_finalizer_agent_idle"
-	agentRuntimeFinalizerAutomationRulesSummaryKey = "agent_runtime_finalizer_automation_rules"
-	agentRuntimeFinalizerPlanningSummaryKey        = "agent_runtime_finalizer_planning"
-	agentRuntimeSupportSentMessageIDSummaryKey     = "sent_message_id"
+	agentRuntimeFinalizerAgentIdleSummaryKey          = "agent_runtime_finalizer_agent_idle"
+	agentRuntimeFinalizerAutomationRulesSummaryKey    = "agent_runtime_finalizer_automation_rules"
+	agentRuntimeFinalizerPlanningSummaryKey           = "agent_runtime_finalizer_planning"
+	agentRuntimeFinalizerRepositoryDeliverySummaryKey = "agent_runtime_finalizer_repository_delivery"
+	agentRuntimeSupportSentMessageIDSummaryKey        = "sent_message_id"
 )
 
 type agentRunFinalizerAgentRepository interface {
@@ -51,6 +52,10 @@ type agentRunFinalizerRuleEvaluator interface {
 	EvaluateEvent(ctx context.Context, event model.AutomationEvent, execCtx *model.RuleExecutionContext)
 }
 
+type agentRunFinalizerRepositoryDeliveryService interface {
+	FinalizeDelegatedRunDelivery(ctx context.Context, run *model.AgentRun, delivery AgentRunRepositoryDelivery) (*AgentRunRepositoryDeliveryResult, error)
+}
+
 // AgentRunFinalizerService fires the product side effects that Temporal
 // activities apply when a run reaches a terminal state, for delegated
 // agent-runtime runs projected back via NATS. Every finalizer is individually
@@ -64,6 +69,7 @@ type AgentRunFinalizerService struct {
 	conversationRepo   agentRunFinalizerConversationRepository
 	supportMessageRepo agentRunFinalizerSupportMessageRepository
 	ruleEngine         agentRunFinalizerRuleEvaluator
+	repositoryDelivery agentRunFinalizerRepositoryDeliveryService
 	wsPublisher        websocket.EventPublisher
 }
 
@@ -104,6 +110,18 @@ func NewAgentRunFinalizerService(
 	return svc
 }
 
+// SetRepositoryDeliveryService wires the git service used by the repository
+// delivery finalizer to open PRs/MRs for runtime-pushed work branches.
+func (s *AgentRunFinalizerService) SetRepositoryDeliveryService(gitService *GitService) *AgentRunFinalizerService {
+	if s == nil {
+		return s
+	}
+	if gitService != nil {
+		s.repositoryDelivery = gitService
+	}
+	return s
+}
+
 // FinalizeTerminalRun applies product side effects for a delegated run that
 // just transitioned into a terminal status (the caller threads the
 // transitioned signal; this must never be invoked for redelivered terminal
@@ -128,6 +146,7 @@ func (s *AgentRunFinalizerService) FinalizeTerminalRun(ctx context.Context, run 
 		{name: "planning_output", completedOnly: true, run: func(ctx context.Context, run *model.AgentRun) error {
 			return s.finalizePlanningOutput(ctx, run, runtimeSummaryAvailable)
 		}},
+		{name: "repository_delivery", completedOnly: true, needsSummary: true, run: s.finalizeRepositoryDelivery},
 	}
 	for _, finalizer := range finalizers {
 		if finalizer.completedOnly && !completed {
@@ -354,6 +373,81 @@ func (s *AgentRunFinalizerService) finalizePlanningOutput(ctx context.Context, r
 		}
 	}
 	return s.markRunOutputSummaryFlag(ctx, run, agentRuntimeFinalizerPlanningSummaryKey)
+}
+
+// finalizeRepositoryDelivery mirrors temporalapp recordPushAndEnsureDeliveryPR
+// for delegated runs on repository-backed targets: when the runtime reports a
+// pushed work branch in the merged OutputSummary ({"repository": {"pushed":
+// true, ...}}), ensure the PR/MR and record it on the delivery target and git
+// link. Idempotency is natural — the provider lookup reuses an existing open
+// PR for the branch pair — with a marker on top so crash replays skip the
+// bookkeeping writes and activity log once delivery fully succeeded.
+func (s *AgentRunFinalizerService) finalizeRepositoryDelivery(ctx context.Context, run *model.AgentRun) error {
+	if s.repositoryDelivery == nil {
+		return nil
+	}
+	switch run.TargetType {
+	case "repository", "task", "story", "epic":
+	default:
+		return nil
+	}
+	repository, ok := delegatedRunRepositorySummary(run.OutputSummary)
+	if !ok || !repository.Pushed {
+		// Nothing pushed (or no repository contract at all): quietly skip
+		// without a marker so nothing here ever blocks non-repo runs.
+		return nil
+	}
+	if runOutputSummaryFlag(run.OutputSummary, agentRuntimeFinalizerRepositoryDeliverySummaryKey) {
+		return nil
+	}
+	result, err := s.repositoryDelivery.FinalizeDelegatedRunDelivery(ctx, run, AgentRunRepositoryDelivery{
+		Branch:    strings.TrimSpace(repository.Branch),
+		CommitSHA: strings.TrimSpace(repository.Commit),
+	})
+	if err != nil {
+		return fmt.Errorf("deliver pushed branch %q: %w", strings.TrimSpace(repository.Branch), err)
+	}
+	if err := s.markRunOutputSummaryFlag(ctx, run, agentRuntimeFinalizerRepositoryDeliverySummaryKey); err != nil {
+		return err
+	}
+	if result != nil {
+		slog.InfoContext(ctx, "delegated run repository delivery finalized",
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+			"target_type", run.TargetType,
+			"target_id", run.TargetID,
+			"provider", result.Provider,
+			"pr_number", result.Number,
+			"pr_url", result.URL,
+		)
+	}
+	return nil
+}
+
+// delegatedRunRepositorySummary parses the runtime repository contract from
+// the merged run output summary (see agent-runtime
+// commitAndPushRepositoryChanges for the producer shape).
+func delegatedRunRepositorySummary(summary json.RawMessage) (agentRuntimeRepositorySummary, bool) {
+	if len(summary) == 0 {
+		return agentRuntimeRepositorySummary{}, false
+	}
+	var body struct {
+		Repository *agentRuntimeRepositorySummary `json:"repository"`
+	}
+	if err := json.Unmarshal(summary, &body); err != nil || body.Repository == nil {
+		return agentRuntimeRepositorySummary{}, false
+	}
+	return *body.Repository, true
+}
+
+// agentRuntimeRepositorySummary is the "repository" object the agent runtime
+// writes into a delegated run's OutputSummary under the push_branch finalize
+// policy.
+type agentRuntimeRepositorySummary struct {
+	Changed bool   `json:"changed"`
+	Pushed  bool   `json:"pushed"`
+	Branch  string `json:"branch"`
+	Commit  string `json:"commit"`
 }
 
 func validateDelegatedFlowOutput(kind string, summary json.RawMessage) error {
