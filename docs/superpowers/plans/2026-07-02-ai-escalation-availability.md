@@ -28,13 +28,13 @@
 - Create `server/internal/service/support_handoff_state_test.go` — unit tests for the above.
 - Modify `server/internal/service/support_ai.go` — wire state resolution + message selection + token rendering + persist `handoff_state` + WS payload + AgentHandoff context.
 - Modify `server/internal/service/support_inbox_settings.go` — apply new DTO fields to settings.
+- Modify `server/internal/service/support_inbox_widget.go` — persist captured visitor email in the transcript path (Task 6).
 - Modify `server/internal/service/support_availability_resolver.go` — combine presence AND hours for the widget snapshot `IsOnline` (Phase 2, Task 8).
 - Modify `server/internal/service/support_notifications` path (located in Task 12) — notify team for busy/after_hours.
 
 **Shared / Widget (TS)**
-- Modify `packages/shared/src/types/message.ts` — nothing new (uses existing `teammate_joined` event).
-- Modify `packages/shared/src/types/widget-config.ts` — add `handoffState?` / `expectedReplyText?` to `availability`.
-- Modify `packages/widget-core/src/types.ts` — mirror availability fields; add `handoffState?` to `Conversation`.
+- No `packages/shared` changes — `teammate_joined` already exists in `SystemEventType`; handoff state rides on the conversation, not the availability config.
+- Modify `packages/widget-core/src/types.ts` — add `handoffState?` to `Conversation`.
 - Modify `packages/widget-core/src/components/ConversationView.tsx` — three-state copy + email-capture card.
 - Modify `packages/sdk-js/src/core/widget.ts` — map `handoff_state` in `mapConversation` + `conversation:escalated` handler.
 - Test `packages/widget-core/src/components/__tests__/ConversationView.test.tsx`.
@@ -234,7 +234,7 @@ git commit -m "feat(support): add busy/after-hours escalation message settings"
 
 **Interfaces:**
 - Consumes: `nextBusinessHoursStart(settings, localNow) *time.Time` (support_inbox_settings.go L468).
-- Produces: `renderEscalationMessage(template, replyTime, nextOpen string) string`; `humanizeNextOpen(next *time.Time, tzLabel string) string`.
+- Produces: `renderEscalationMessage(template, replyTime, nextOpen string) string`; `humanizeNextOpen(next *time.Time, localNow time.Time) string`; `shortReplyTimePhrase(preset string, minutes *int) string`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -267,14 +267,9 @@ Expected: FAIL — `undefined: renderEscalationMessage`.
 
 - [ ] **Step 3: Implement**
 
-Append to `support_handoff_state.go`:
+In `support_handoff_state.go`, add `"fmt"`, `"strings"`, and `"time"` to the file's existing import block (single import block per Go file — do NOT paste a second one), then append:
 
 ```go
-import (
-	"strings"
-	"time"
-)
-
 const escalationFallbackTime = "as soon as possible"
 
 // renderEscalationMessage substitutes {reply_time} and {next_open}. Empty
@@ -291,46 +286,91 @@ func renderEscalationMessage(template, replyTime, nextOpen string) string {
 	return out
 }
 
-// humanizeNextOpen renders a next-open time like "tomorrow at 9:00 AM PST".
-// Returns "" when next is nil (caller degrades to fallback).
-func humanizeNextOpen(next *time.Time, tzLabel string) string {
+// shortReplyTimePhrase converts the reply-time expectation into a short
+// phrase for the {reply_time} token ("a few minutes", "about 45 minutes").
+// Empty result degrades to the fallback inside renderEscalationMessage.
+func shortReplyTimePhrase(preset string, minutes *int) string {
+	switch preset {
+	case "few_minutes":
+		return "a few minutes"
+	case "few_hours":
+		return "a few hours"
+	case "same_day":
+		return "a day"
+	case "custom":
+		if minutes != nil && *minutes > 0 {
+			return fmt.Sprintf("about %d minutes", *minutes)
+		}
+	}
+	return ""
+}
+
+// humanizeNextOpen renders a next-open time relative to localNow in the
+// business-hours timezone: "today at 5:00 PM PST", "tomorrow at 9:00 AM PST",
+// or "on Monday at 9:00 AM PST". Returns "" when next is nil.
+func humanizeNextOpen(next *time.Time, localNow time.Time) string {
 	if next == nil {
 		return ""
 	}
-	t := *next
-	clock := t.Format("3:04 PM")
-	if tzLabel != "" {
-		clock = clock + " " + tzLabel
+	t := next.In(localNow.Location())
+	zone, _ := t.Zone()
+	clock := t.Format("3:04 PM") + " " + zone
+	startOfDay := func(x time.Time) time.Time {
+		y, m, d := x.Date()
+		return time.Date(y, m, d, 0, 0, 0, 0, x.Location())
 	}
-	return "on " + t.Format("Monday") + " at " + clock
+	switch days := int(startOfDay(t).Sub(startOfDay(localNow)).Hours() / 24); {
+	case days <= 0:
+		return "today at " + clock
+	case days == 1:
+		return "tomorrow at " + clock
+	default:
+		return "on " + t.Format("Monday") + " at " + clock
+	}
 }
 ```
 
-> Note: `{reply_time}` string ("a few minutes", "1 hour", …) is produced by the existing reply-expectation resolver — Task 4 passes it in. `humanizeNextOpen` deliberately uses "on Monday at …" phrasing; day-relative wording ("tomorrow") is intentionally omitted in v1 to avoid a clock dependency in this pure helper.
-
-- [ ] **Step 4: Adjust the test expectation to match the implemented phrasing**
-
-Update the first assertion's `want` to the format the helper produces when driven by real inputs; for the pure `renderEscalationMessage` test above the strings are literal and already pass. Run:
+- [ ] **Step 4: Run the render test**
 
 Run: `cd server && go test ./internal/service/ -run TestRenderEscalationMessage -v`
 Expected: PASS.
 
-- [ ] **Step 5: Add a humanizeNextOpen test**
+- [ ] **Step 5: Add humanizeNextOpen + shortReplyTimePhrase tests**
 
 ```go
 func TestHumanizeNextOpen(t *testing.T) {
-	if humanizeNextOpen(nil, "PST") != "" {
+	now := time.Date(2026, 7, 4, 20, 0, 0, 0, time.UTC) // Saturday evening
+	if humanizeNextOpen(nil, now) != "" {
 		t.Fatal("nil should be empty")
 	}
-	tm := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC) // a Monday
-	got := humanizeNextOpen(&tm, "UTC")
-	if got != "on Monday at 9:00 AM UTC" {
-		t.Fatalf("got %q", got)
+	monday := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
+	if got := humanizeNextOpen(&monday, now); got != "on Monday at 9:00 AM UTC" {
+		t.Fatalf("monday got %q", got)
+	}
+	sunday := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+	if got := humanizeNextOpen(&sunday, now); got != "tomorrow at 9:00 AM UTC" {
+		t.Fatalf("tomorrow got %q", got)
+	}
+}
+
+func TestShortReplyTimePhrase(t *testing.T) {
+	if got := shortReplyTimePhrase("few_minutes", nil); got != "a few minutes" {
+		t.Fatalf("few_minutes got %q", got)
+	}
+	if got := shortReplyTimePhrase("same_day", nil); got != "a day" {
+		t.Fatalf("same_day got %q", got)
+	}
+	m := 45
+	if got := shortReplyTimePhrase("custom", &m); got != "about 45 minutes" {
+		t.Fatalf("custom got %q", got)
+	}
+	if got := shortReplyTimePhrase("", nil); got != "" {
+		t.Fatalf("unknown preset must degrade to empty, got %q", got)
 	}
 }
 ```
 
-Run: `cd server && go test ./internal/service/ -run TestHumanizeNextOpen -v`
+Run: `cd server && go test ./internal/service/ -run 'TestHumanizeNextOpen|TestShortReplyTimePhrase' -v`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -423,9 +463,43 @@ func selectEscalationTemplate(s model.SupportInboxSettings, state string) string
 Run: `cd server && go test ./internal/service/ -run TestSelectEscalationTemplate -v`
 Expected: PASS.
 
-- [ ] **Step 5: Wire into escalateToHuman**
+- [ ] **Step 5: Reorder escalateToHuman, then wire state-aware content**
 
-In `support_ai.go`, replace the `escalationContent` block (L1019-1022):
+**Ordering caveat (verified against current code):** the function builds and persists the escalation message at L1018-1051 BEFORE it resolves the handoff mailbox (L1076) and recipient `selection` (L1079-1096). The state-aware message needs the recipient answer first, so reorder:
+
+1. Move these two blocks up to just after the availability load (after L997, before the history/dedupe load at L1005):
+   - `handoffMailboxID, mailboxSelectionSource := s.resolveEscalationMailbox(ctx, workspaceID, conversationID, messageID, conv, settings)`
+   - the entire `selection, selectErr := selectSupportConversationRecipient(...)` block including its error log.
+   Neither depends on the messages being created — they consume only `conv`, `settings`, `now`.
+
+2. Immediately after the moved blocks, resolve the state and content (OUTSIDE the `if !escalationAlreadyMessaged` guard, so `handoffState` is persisted even when the message is deduped):
+
+```go
+	handoffState := resolveHandoffState(selection != nil, availability.IsWithinOfficeHours)
+
+	// Short phrase for the {reply_time} token. Do NOT use
+	// availability.WidgetAvailability.ReplyTimeText — that is full-sentence
+	// copy (and the offline branch sets it to the outside-hours message).
+	replyTime := shortReplyTimePhrase(
+		availability.WidgetAvailability.ReplyTimePreset,
+		availability.WidgetAvailability.ReplyTimeMinutes,
+	)
+
+	// Next-open text (only meaningful for after_hours).
+	var nextOpenText string
+	if loc, err := time.LoadLocation(settings.BusinessHoursTimezone); err == nil {
+		localNow := now.In(loc)
+		nextOpenText = humanizeNextOpen(nextBusinessHoursStart(settings, localNow), localNow)
+	}
+
+	escalationContent := renderEscalationMessage(
+		selectEscalationTemplate(settings, handoffState),
+		replyTime,
+		nextOpenText,
+	)
+```
+
+3. Delete the old `escalationContent` block inside the message-creation branch (L1019-1022):
 
 ```go
 	escalationContent := "Let me connect you with a team member who can help further."
@@ -434,36 +508,7 @@ In `support_ai.go`, replace the `escalationContent` block (L1019-1022):
 	}
 ```
 
-with state-aware selection + token rendering. Insert AFTER `selection` and `availability` are computed (selection is the recipient chosen with `RequireAvailability:true`; `availability.IsWithinOfficeHours` already exists):
-
-```go
-	handoffState := resolveHandoffState(selection != nil, availability.IsWithinOfficeHours)
-
-	// reply-time text reuses the widget availability snapshot the resolver built.
-	replyTimeText := availability.WidgetAvailability.ReplyTimeText
-
-	// next-open text (only meaningful for after_hours).
-	var nextOpenText string
-	if loc, err := time.LoadLocation(settings.BusinessHoursTimezone); err == nil {
-		localNow := now.In(loc)
-		nextOpenText = humanizeNextOpen(nextBusinessHoursStart(settings, localNow), tzLabel(localNow))
-	}
-
-	escalationContent := renderEscalationMessage(
-		selectEscalationTemplate(settings, handoffState),
-		replyTimeText,
-		nextOpenText,
-	)
-```
-
-Add a small `tzLabel` helper to `support_handoff_state.go`:
-
-```go
-func tzLabel(t time.Time) string {
-	name, _ := t.Zone()
-	return name
-}
-```
+The `replyMsg` at L1041-1051 keeps using `escalationContent` unchanged.
 
 - [ ] **Step 6: Persist handoff_state on the conversation**
 
@@ -483,23 +528,22 @@ Replace the `AgentHandoff` `Context: json.RawMessage("{}")` (L1128-1136) with a 
 	Context: handoffCtx,
 ```
 
-Extend the WS `escalated` event (L1187-1192) to carry data the widget already expects:
+Extend the WS `escalated` event (L1187-1192). `websocket.Event.Data` is `json.RawMessage` (hub.go:27), so marshal the payload. Use `fields["flow_state"]` (not the `flowState` local) because L1120-1122 may have overridden it to `after_hours_queue`:
 
 ```go
+	escalatedData, _ := json.Marshal(map[string]any{
+		"conversation_id": conversationID,
+		"flow_state":      fields["flow_state"],
+		"handoff_state":   handoffState,
+	})
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "escalated",
 		Entity:      "support_conversation",
 		EntityID:    conversationID,
 		WorkspaceID: workspaceID,
-		Data: map[string]any{
-			"conversation_id": conversationID,
-			"flow_state":      flowState,
-			"handoff_state":   handoffState,
-		},
+		Data:        escalatedData,
 	})
 ```
-
-(If `websocket.Event` has no `Data` field, use the existing typed constructor; run `grep -n "type Event struct" server/internal/websocket/*.go` to confirm the field name and adapt.)
 
 - [ ] **Step 8: Verify build + full service tests**
 
@@ -518,9 +562,10 @@ git commit -m "feat(support): state-aware escalation message + persisted handoff
 ## Task 5: Shared + widget TS types for handoff state
 
 **Files:**
-- Modify: `packages/shared/src/types/widget-config.ts` (availability)
-- Modify: `packages/widget-core/src/types.ts` (availability mirror + `Conversation`)
+- Modify: `packages/widget-core/src/types.ts` (`Conversation`)
 - Modify: `packages/sdk-js/src/core/widget.ts` (`mapConversation`, `conversation:escalated`)
+
+(No `packages/shared` change: handoff state rides on the conversation, not the availability config, and `teammate_joined` already exists in `SystemEventType`.)
 
 **Interfaces:**
 - Produces: `Conversation.handoffState?: 'live' | 'busy' | 'after_hours'` in widget-core `types.ts`.
@@ -559,7 +604,7 @@ Expected: no type errors.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add packages/widget-core/src/types.ts packages/sdk-js/src/core/widget.ts packages/shared/src/types/widget-config.ts
+git add packages/widget-core/src/types.ts packages/sdk-js/src/core/widget.ts
 git commit -m "feat(widget): plumb handoff_state to conversation state"
 ```
 
@@ -569,10 +614,12 @@ git commit -m "feat(widget): plumb handoff_state to conversation state"
 
 **Files:**
 - Modify: `packages/widget-core/src/components/ConversationView.tsx`
+- Modify: `server/internal/service/support_inbox_widget.go` (persist captured email)
 - Test: `packages/widget-core/src/components/__tests__/ConversationView.test.tsx`
 
 **Interfaces:**
 - Consumes: `conversation.handoffState`, existing `onRequestTranscript(email?) => Promise<{success; message}>`, existing `transcriptEmail`.
+- Produces: `SupportConversation.CustomerEmail` persisted from the capture card — Task 10 (reply-by-email) depends on this.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -664,15 +711,38 @@ In `packages/widget-core/src/styles/widget.css`, add a minimal block near the tr
 .helpin-escalation-email-capture__ok { font-size: 12px; margin: 6px 0 0; color: var(--helpin-success, #16a34a); }
 ```
 
-- [ ] **Step 5: Run tests + typecheck**
+- [ ] **Step 5: Persist the captured email on the conversation (backend)**
+
+The card reuses the transcript endpoint, but `SendWidgetConversationTranscript` (`server/internal/service/support_inbox_widget.go:333`) only READS the email — it never stores it. Without this step, Task 10's reply-by-email has nothing to key off for anonymous visitors and the "we'll reply there too" promise silently fails.
+
+In `SendWidgetConversationTranscript`, after the transcript email is sent successfully, persist the email when the conversation has none:
+
+```go
+	if strings.TrimSpace(derefString(conversation.CustomerEmail)) == "" && strings.TrimSpace(email) != "" {
+		if err := s.conversationRepo.UpdateFields(ctx, conversation.WorkspaceID, conversationID, map[string]any{
+			"customer_email": strings.TrimSpace(email),
+		}); err != nil {
+			slog.WarnContext(ctx, "persist captured visitor email failed", "error", err, "conversation_id", conversationID)
+		}
+	}
+```
+
+(Use whatever conversation-repository handle `SupportInboxService` already holds — confirm with `grep -n "conversationRepo" server/internal/service/support_inbox_widget.go` — and match the existing not-found/ownership checks already done earlier in the function.)
+
+Add a service test: a transcript request carrying an email, against a conversation with no `customer_email`, sets `customer_email` after the call.
+
+Run: `cd server && go test ./internal/service/ -run Transcript -v`
+Expected: PASS (new test included).
+
+- [ ] **Step 6: Run widget tests + typecheck**
 
 Run: `cd packages/widget-core && pnpm test -- ConversationView && pnpm typecheck`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add packages/widget-core/src/components/ConversationView.tsx packages/widget-core/src/components/__tests__/ConversationView.test.tsx packages/widget-core/src/styles/widget.css
+git add packages/widget-core/src/components/ConversationView.tsx packages/widget-core/src/components/__tests__/ConversationView.test.tsx packages/widget-core/src/styles/widget.css server/internal/service/support_inbox_widget.go
 git commit -m "feat(widget): email-capture card on busy/after-hours escalation"
 ```
 
@@ -961,10 +1031,11 @@ git commit -m "feat(support): notify team on busy/after-hours escalations"
 Below the three escalation fields, add a read-only preview block that substitutes tokens client-side using the current reply-time selection and a placeholder next-open string:
 
 ```tsx
+// Mirrors the backend shortReplyTimePhrase mapping (Task 3) so previews match reality.
 const previewReply = replyTimePreset === 'few_minutes' ? 'a few minutes'
   : replyTimePreset === 'few_hours' ? 'a few hours'
-  : replyTimePreset === 'same_day' ? 'later today'
-  : `${replyTimeCustomMinutes ?? 0} minutes`;
+  : replyTimePreset === 'same_day' ? 'a day'
+  : `about ${replyTimeCustomMinutes ?? 0} minutes`;
 const renderPreview = (t: string) =>
   t.replace('{reply_time}', previewReply).replace('{next_open}', 'on Monday at 9:00 AM');
 ```
