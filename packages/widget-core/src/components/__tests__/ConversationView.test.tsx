@@ -83,3 +83,23 @@ describe('ConversationView escalation email capture', () => {
     expect(queryByText(/reply there too/i)).toBeNull();
   });
 });
+
+describe('ConversationView teammate_joined system line', () => {
+  it('renders teammate_joined as a system line', () => {
+    const { getByText } = renderConversationView({
+      conversation: { id: 'c1', status: 'open' },
+      messages: [
+        {
+          id: 'm1',
+          conversationId: 'c1',
+          role: 'system',
+          systemEventType: 'teammate_joined',
+          content: 'Sara joined the conversation',
+          isInternal: false,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    });
+    expect(getByText(/joined the conversation/i)).toBeTruthy();
+  });
+});
