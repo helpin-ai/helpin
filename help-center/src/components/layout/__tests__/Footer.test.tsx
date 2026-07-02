@@ -83,6 +83,11 @@ describe('Footer', () => {
     expect(within(socialLinks).getByRole('link', { name: 'GitHub' }).getAttribute('href')).toBe(
       'https://github.com/replug',
     )
+    const githubIcon = within(socialLinks)
+      .getByRole('link', { name: 'GitHub' })
+      .querySelector('[data-social-brand-icon="github"]') as HTMLElement | null
+    expect(githubIcon?.style.maskImage).toContain('/brands/github.svg')
+    expect(within(socialLinks).getByRole('link', { name: 'GitHub' }).querySelector('svg')).toBeNull()
 
     expect(screen.getByRole('link', { name: 'Powered by Helpin' }).getAttribute('href')).toBe(
       'https://helpin.ai/?utm_campaign=poweredBy&utm_medium=referral&utm_source=replug-ws-12345',

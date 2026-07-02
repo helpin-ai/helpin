@@ -4,6 +4,11 @@ import { DragDropVerticalIcon, Delete01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Globe,
+  Rss,
+  type LucideIcon,
+} from 'lucide-react';
 import type {
   HelpcenterFooterLink,
   HelpcenterHeaderLink,
@@ -12,18 +17,75 @@ import type {
   HelpcenterSocialPlatform,
 } from '@/lib/docsTypes';
 
-const SOCIAL_PLATFORM_OPTIONS: Array<{ value: HelpcenterSocialPlatform; label: string }> = [
-  { value: 'linkedin', label: 'LinkedIn' },
-  { value: 'x', label: 'X' },
-  { value: 'github', label: 'GitHub' },
-  { value: 'youtube', label: 'YouTube' },
-  { value: 'facebook', label: 'Facebook' },
-  { value: 'instagram', label: 'Instagram' },
-  { value: 'discord', label: 'Discord' },
-  { value: 'slack', label: 'Slack' },
-  { value: 'rss', label: 'RSS' },
-  { value: 'website', label: 'Website' },
+const FONT_AWESOME_BRAND_ICON_BASE = 'https://d3gk2c5xim1je2.cloudfront.net/fontawesome/v7.2.0/brands';
+
+type SocialPlatformMeta = {
+  label: string;
+  icon?: LucideIcon;
+  brandIcon?: string;
+};
+
+const SOCIAL_PLATFORM_META: Record<HelpcenterSocialPlatform, SocialPlatformMeta> = {
+  x: { label: 'X', brandIcon: 'x-twitter' },
+  twitter: { label: 'X', brandIcon: 'x-twitter' },
+  linkedin: { label: 'LinkedIn', brandIcon: 'linkedin' },
+  github: { label: 'GitHub', brandIcon: 'github' },
+  youtube: { label: 'YouTube', brandIcon: 'youtube' },
+  facebook: { label: 'Facebook', brandIcon: 'facebook' },
+  instagram: { label: 'Instagram', brandIcon: 'instagram' },
+  discord: { label: 'Discord', brandIcon: 'discord' },
+  slack: { label: 'Slack', brandIcon: 'slack' },
+  rss: { label: 'RSS', icon: Rss },
+  website: { label: 'Website', icon: Globe },
+};
+
+const SOCIAL_PLATFORM_OPTIONS: Array<{ value: HelpcenterSocialPlatform } & SocialPlatformMeta> = [
+  { value: 'linkedin', ...SOCIAL_PLATFORM_META.linkedin },
+  { value: 'x', ...SOCIAL_PLATFORM_META.x },
+  { value: 'github', ...SOCIAL_PLATFORM_META.github },
+  { value: 'youtube', ...SOCIAL_PLATFORM_META.youtube },
+  { value: 'facebook', ...SOCIAL_PLATFORM_META.facebook },
+  { value: 'instagram', ...SOCIAL_PLATFORM_META.instagram },
+  { value: 'discord', ...SOCIAL_PLATFORM_META.discord },
+  { value: 'slack', ...SOCIAL_PLATFORM_META.slack },
+  { value: 'rss', ...SOCIAL_PLATFORM_META.rss },
+  { value: 'website', ...SOCIAL_PLATFORM_META.website },
 ];
+
+function SocialPlatformIcon({
+  platform,
+  meta,
+  className,
+}: {
+  platform: HelpcenterSocialPlatform;
+  meta: SocialPlatformMeta;
+  className?: string;
+}) {
+  if (meta.brandIcon) {
+    const iconUrl = `${FONT_AWESOME_BRAND_ICON_BASE}/${meta.brandIcon}.svg`;
+    const normalizedPlatform = platform === 'twitter' ? 'x' : platform;
+    return (
+      <span
+        aria-hidden="true"
+        data-social-brand-icon={normalizedPlatform}
+        className={`inline-block bg-current ${className ?? ''}`}
+        style={{
+          WebkitMaskImage: `url(${iconUrl})`,
+          WebkitMaskRepeat: 'no-repeat',
+          WebkitMaskPosition: 'center',
+          WebkitMaskSize: 'contain',
+          maskImage: `url(${iconUrl})`,
+          maskRepeat: 'no-repeat',
+          maskPosition: 'center',
+          maskSize: 'contain',
+        }}
+      />
+    );
+  }
+
+  const Icon = meta.icon ?? Globe;
+  return <Icon aria-hidden="true" className={className} />;
+}
 
 export function SortableHeaderLinkRow({
   id,
@@ -136,19 +198,30 @@ export function SortableSocialLinkRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const selectedMeta = SOCIAL_PLATFORM_META[link.platform || 'linkedin'] ?? SOCIAL_PLATFORM_META.website;
+  const selectedPlatform = link.platform || 'linkedin';
+
   return (
     <div ref={setNodeRef} style={style} className="group flex items-center gap-2">
       <button type="button" {...attributes} {...listeners} className="shrink-0 cursor-grab touch-none text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing">
         <DragDropVerticalIcon className="h-4 w-4" />
       </button>
       <Select value={link.platform || 'linkedin'} onValueChange={(value) => onUpdate({ platform: value as HelpcenterSocialPlatform })}>
-        <SelectTrigger className="h-8 w-[118px] shrink-0 text-xs">
-          <SelectValue />
+        <SelectTrigger className="h-8 w-[132px] shrink-0 text-xs">
+          <SelectValue>
+            <span className="flex min-w-0 items-center gap-2">
+              <SocialPlatformIcon platform={selectedPlatform} meta={selectedMeta} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">{selectedMeta.label}</span>
+            </span>
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {SOCIAL_PLATFORM_OPTIONS.map((option) => (
             <SelectItem key={option.value} value={option.value}>
-              {option.label}
+              <span className="flex items-center gap-2">
+                <SocialPlatformIcon platform={option.value} meta={option} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span>{option.label}</span>
+              </span>
             </SelectItem>
           ))}
         </SelectContent>

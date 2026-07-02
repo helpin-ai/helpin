@@ -1,31 +1,66 @@
 import { useDocsContext } from '@/contexts/DocsContext'
 import {
-  Disc,
-  Facebook,
-  Github,
   Globe,
-  Instagram,
-  Linkedin,
   Rss,
-  Slack,
-  Twitter,
-  Youtube,
   type LucideIcon,
 } from 'lucide-react'
 import type { FooterSocialPlatform } from '@/lib/types'
 
-const socialPlatformMeta: Record<FooterSocialPlatform, { label: string; icon: LucideIcon }> = {
-  x: { label: 'X', icon: Twitter },
-  twitter: { label: 'X', icon: Twitter },
-  linkedin: { label: 'LinkedIn', icon: Linkedin },
-  github: { label: 'GitHub', icon: Github },
-  youtube: { label: 'YouTube', icon: Youtube },
-  facebook: { label: 'Facebook', icon: Facebook },
-  instagram: { label: 'Instagram', icon: Instagram },
-  discord: { label: 'Discord', icon: Disc },
-  slack: { label: 'Slack', icon: Slack },
+const FONT_AWESOME_BRAND_ICON_BASE = 'https://d3gk2c5xim1je2.cloudfront.net/fontawesome/v7.2.0/brands'
+
+type SocialPlatformMeta = {
+  label: string
+  icon?: LucideIcon
+  brandIcon?: string
+}
+
+const socialPlatformMeta: Record<FooterSocialPlatform, SocialPlatformMeta> = {
+  x: { label: 'X', brandIcon: 'x-twitter' },
+  twitter: { label: 'X', brandIcon: 'x-twitter' },
+  linkedin: { label: 'LinkedIn', brandIcon: 'linkedin' },
+  github: { label: 'GitHub', brandIcon: 'github' },
+  youtube: { label: 'YouTube', brandIcon: 'youtube' },
+  facebook: { label: 'Facebook', brandIcon: 'facebook' },
+  instagram: { label: 'Instagram', brandIcon: 'instagram' },
+  discord: { label: 'Discord', brandIcon: 'discord' },
+  slack: { label: 'Slack', brandIcon: 'slack' },
   rss: { label: 'RSS', icon: Rss },
   website: { label: 'Website', icon: Globe },
+}
+
+function SocialPlatformIcon({
+  platform,
+  meta,
+  className,
+}: {
+  platform: FooterSocialPlatform
+  meta: SocialPlatformMeta
+  className?: string
+}) {
+  if (meta.brandIcon) {
+    const iconUrl = `${FONT_AWESOME_BRAND_ICON_BASE}/${meta.brandIcon}.svg`
+    const normalizedPlatform = platform === 'twitter' ? 'x' : platform
+    return (
+      <span
+        aria-hidden="true"
+        data-social-brand-icon={normalizedPlatform}
+        className={`inline-block bg-current ${className ?? ''}`}
+        style={{
+          WebkitMaskImage: `url(${iconUrl})`,
+          WebkitMaskRepeat: 'no-repeat',
+          WebkitMaskPosition: 'center',
+          WebkitMaskSize: 'contain',
+          maskImage: `url(${iconUrl})`,
+          maskRepeat: 'no-repeat',
+          maskPosition: 'center',
+          maskSize: 'contain',
+        }}
+      />
+    )
+  }
+
+  const Icon = meta.icon ?? Globe
+  return <Icon aria-hidden="true" className={className} />
 }
 
 export function Footer() {
@@ -76,7 +111,6 @@ export function Footer() {
             <div data-testid="footer-social-links" className="flex flex-wrap items-center gap-2">
               {socialLinks.map((link, i) => {
                 const meta = socialPlatformMeta[link.platform] ?? socialPlatformMeta.website
-                const Icon = meta.icon
                 const label = link.label || meta.label
 
                 return (
@@ -89,7 +123,7 @@ export function Footer() {
                     title={label}
                     className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:text-foreground"
                   >
-                    <Icon aria-hidden="true" className="h-3.5 w-3.5" />
+                    <SocialPlatformIcon platform={link.platform} meta={meta} className="h-3.5 w-3.5" />
                   </a>
                 )
               })}
