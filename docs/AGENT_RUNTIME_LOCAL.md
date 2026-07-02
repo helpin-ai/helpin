@@ -111,3 +111,18 @@ nats-server -js
 For local Codex auth flows, a successful unauthenticated smoke can pause with
 `pause_reason = authentication`; that still validates launch delegation,
 runtime execution, and Helpin projection.
+
+## Mira Workspace Parity Row
+
+Current pilot surface: Mira workspace runs only.
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Launch routing | Green | `AGENT_RUNTIME_LAUNCH_ENABLED=true` delegates Mira workspace runs to Agent Runtime and stamps `external_runtime` / `external_runtime_id` at launch. |
+| Runtime orchestration | Green | Helpin requests `execution_mode=durable`; Agent Runtime owns the Temporal workflow. Helpin does not create a local run workflow for delegated runs. |
+| Projection | Green | NATS projection updates lifecycle, usage, artifacts, messages, and interactions back into Helpin. |
+| Codex auth start/cancel | Green | Delegated Codex auth calls Agent Runtime's `/v1/runs/{id}/codex-auth/device-code/*` endpoints so auth is promoted into the runtime Codex home. |
+| Codex auth completion | Yellow | If runtime auth returns `pending`, complete the device login, then call Helpin's auth-start endpoint again. Runtime then returns `connected`, Helpin records the state, and forwards `auth_completed` to resume the run. |
+| Post-auth assistant turn | Blocked without browser login | Requires completing the OpenAI device-code login for the runtime-issued code. |
+| Product finalizers | Not applicable | Workspace Mira run has no task/support/repository finalizer. |
+| Repository delivery | Not applicable | Workspace Mira run does not prepare or push a repository workspace. |
