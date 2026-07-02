@@ -337,8 +337,9 @@ func ensureAgentRuntimeEventsStream(js nats.JetStreamContext) error {
 		_, err = js.AddStream(cfg)
 		return err
 	}
-	_, err := js.UpdateStream(cfg)
-	return err
+	// The agent runtime owns the stream configuration; when the stream
+	// already exists, leave its config untouched.
+	return nil
 }
 
 func agentRuntimeEventsStreamConfig() *nats.StreamConfig {

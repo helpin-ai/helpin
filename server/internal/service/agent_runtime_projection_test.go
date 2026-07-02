@@ -1090,8 +1090,11 @@ func TestAgentRuntimeProjectionStreamCapturesAllRuntimeAppEvents(t *testing.T) {
 	if len(cfg.Subjects) != 1 || cfg.Subjects[0] != "agent-runtime.events.>" {
 		t.Fatalf("expected all-app runtime event subject, got %#v", cfg.Subjects)
 	}
-	if cfg.MaxAge <= 0 || cfg.MaxBytes <= 0 {
-		t.Fatalf("expected bounded retention config, got max_age=%s max_bytes=%d", cfg.MaxAge, cfg.MaxBytes)
+	if cfg.MaxAge != 7*24*time.Hour {
+		t.Fatalf("expected runtime-matching max_age of 7d, got %s", cfg.MaxAge)
+	}
+	if cfg.MaxBytes != 512*1024*1024 {
+		t.Fatalf("expected runtime-matching max_bytes of 512MB, got %d", cfg.MaxBytes)
 	}
 }
 
