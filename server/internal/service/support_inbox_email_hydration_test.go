@@ -41,6 +41,7 @@ func TestHydrateEmailBodiesAddsInboundBodiesAndOutboundStatus(t *testing.T) {
 			{
 				Direction:    "inbound",
 				MessageIDs:   model.DocsStringArray{"inbound-1"},
+				FromEmail:    "website@acme.com",
 				ReplyTo:      "Taylor Visitor <taylor.visitor@example.com>",
 				HTMLBody:     "<p>Email reply</p>",
 				StrippedText: "Email reply",
@@ -63,6 +64,9 @@ func TestHydrateEmailBodiesAddsInboundBodiesAndOutboundStatus(t *testing.T) {
 
 	if messages[0].HTMLBody != "<p>Email reply</p>" || messages[0].StrippedText != "Email reply" {
 		t.Fatalf("expected inbound email body hydration, got %#v", messages[0])
+	}
+	if messages[0].EmailFrom != "website@acme.com" {
+		t.Fatalf("expected inbound from hydration, got %#v", messages[0])
 	}
 	if messages[0].EmailReplyTo != "Taylor Visitor <taylor.visitor@example.com>" {
 		t.Fatalf("expected inbound reply-to hydration, got %#v", messages[0])

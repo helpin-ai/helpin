@@ -1715,6 +1715,7 @@ func hydrateEmailBodies(
 		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
 			messages[i].HTMLBody = log.HTMLBody
 			messages[i].StrippedText = log.StrippedText
+			messages[i].EmailFrom = log.FromEmail
 			messages[i].EmailReplyTo = log.ReplyTo
 		}
 		if log.Direction == "outbound" {

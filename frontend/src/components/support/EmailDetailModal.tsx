@@ -143,8 +143,15 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
                   </>
                 ) : null}
 
-                <dt className="text-muted-foreground">Date</dt>
+                <dt className="text-muted-foreground">Received at</dt>
                 <dd className="text-foreground">{formatFullTimestamp(timestamp)}</dd>
+
+                {data.delivered_at && <TechRow label="Delivered" value={formatFullTimestamp(data.delivered_at)} />}
+                {data.opened_at && <TechRow label="Opened" value={formatFullTimestamp(data.opened_at)} />}
+                {data.bounced_at && <TechRow label="Bounced" value={formatFullTimestamp(data.bounced_at)} />}
+                {data.error_message && <TechRow label="Error" value={data.error_message} />}
+                {data.rfc_message_id && <TechRow label="Message-ID" value={data.rfc_message_id} mono />}
+                {data.in_reply_to && <TechRow label="In-Reply-To" value={data.in_reply_to} mono />}
               </dl>
 
               {forwardedAttribution && (
@@ -173,23 +180,8 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
                 </div>
               )}
 
-              <div className="mt-5 border-t border-border/60 pt-4">
-                <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Technical details</div>
-                <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 rounded-md bg-muted/40 p-3 text-xs">
-                  <TechRow label="Direction" value={data.direction} />
-                  <TechRow label="Status" value={data.status} />
-                  {data.delivered_at && <TechRow label="Delivered" value={formatFullTimestamp(data.delivered_at)} />}
-                  {data.opened_at && <TechRow label="Opened" value={formatFullTimestamp(data.opened_at)} />}
-                  {data.bounced_at && <TechRow label="Bounced" value={formatFullTimestamp(data.bounced_at)} />}
-                  {data.error_message && <TechRow label="Error" value={data.error_message} />}
-                  {data.rfc_message_id && <TechRow label="Message-ID" value={data.rfc_message_id} mono />}
-                  {data.in_reply_to && <TechRow label="In-Reply-To" value={data.in_reply_to} mono />}
-                  {data.references_header && <TechRow label="References" value={data.references_header} mono />}
-                </dl>
-              </div>
-
               <div className="mt-6 min-h-0 border-t border-border/60 pt-6">
-                <div className="max-h-[46vh] min-h-0 overflow-y-auto pr-1">
+                <div data-testid="email-body-scroll" className="max-h-[46vh] min-h-0 overflow-y-auto pb-8 pr-1">
                   {htmlBody ? (
                     <EmailBodyRenderer html={htmlBody} collapsedByDefault={false} />
                   ) : textBody ? (

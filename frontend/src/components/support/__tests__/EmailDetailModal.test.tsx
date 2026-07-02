@@ -74,7 +74,7 @@ afterEach(() => {
 })
 
 describe('EmailDetailModal', () => {
-  it('shows available headers, technical details, and full email body by default', () => {
+  it('shows available headers, message metadata, and full email body by default', () => {
     const rendered = renderModal({
       id: 'log-1',
       message_id: 'message-1',
@@ -102,9 +102,20 @@ describe('EmailDetailModal', () => {
     expect(rendered.container.textContent).toContain('sales@acme.com')
     expect(rendered.container.textContent).toContain('Bcc')
     expect(rendered.container.textContent).toContain('audit@acme.com')
-    expect(rendered.container.textContent).toContain('Technical details')
+    expect(rendered.container.textContent).toContain('Received at')
+    expect(rendered.container.textContent).not.toContain('Date')
+    expect(rendered.container.textContent).not.toContain('Technical details')
+    expect(rendered.container.textContent).not.toContain('Direction')
+    expect(rendered.container.textContent).not.toContain('Status')
+    expect(rendered.container.textContent).not.toContain('inbound')
+    expect(rendered.container.textContent).not.toContain('sent')
+    expect(rendered.container.textContent).toContain('Message-ID')
     expect(rendered.container.textContent).toContain('<message-1@acme.com>')
+    expect(rendered.container.textContent).toContain('In-Reply-To')
     expect(rendered.container.textContent).toContain('<prior@customer.example>')
+    expect(rendered.container.textContent).not.toContain('References')
+    expect(rendered.container.textContent).not.toContain('<root@customer.example>')
+    expect(rendered.container.querySelector('[data-testid="email-body-scroll"]')?.className).toContain('pb-8')
     expect(rendered.container.querySelector('[data-collapsed-by-default]')?.getAttribute('data-collapsed-by-default')).toBe('false')
     expect(rendered.container.innerHTML).toContain('Prior quoted content')
     expect(rendered.container.textContent).not.toContain('Show technical details')

@@ -311,6 +311,7 @@ type SupportMessage struct {
 	// EmailDeliveryError surfaces the bounce/complaint description when the
 	// email's delivery failed. Empty otherwise.
 	EmailDeliveryError string          `json:"email_delivery_error,omitempty" gorm:"-"`
+	EmailFrom          string          `json:"email_from,omitempty" gorm:"-"`
 	EmailTo            string          `json:"email_to,omitempty" gorm:"-"`
 	EmailReplyTo       string          `json:"email_reply_to,omitempty" gorm:"-"`
 	EmailCC            DocsStringArray `json:"email_cc,omitempty" gorm:"-"`

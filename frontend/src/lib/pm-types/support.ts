@@ -551,6 +551,8 @@ export interface SupportMessage {
   email_delivery_error?: string;
   /** Primary outbound email recipient, populated for messages sent via email. */
   email_to?: string;
+  /** From header for inbound email messages, when present. */
+  email_from?: string;
   /** Reply-To header for inbound email messages, when present. */
   email_reply_to?: string;
   /** Outbound email CC recipients, populated for messages sent via email. */

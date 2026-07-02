@@ -680,9 +680,9 @@ export const MessageBubble = memo(function MessageBubble({
   );
 
   const hasEmailBadge = message.via_channel === 'email';
-  const inboundReplyToEmail = isCustomer ? emailAddressFromHeader(message.email_reply_to) : '';
-  const inboundEmailBadgeLabel = inboundReplyToEmail
-    ? `Received by email from ${inboundReplyToEmail}`
+  const inboundFromEmail = isCustomer ? emailAddressFromHeader(message.email_from) : '';
+  const inboundEmailBadgeLabel = inboundFromEmail
+    ? `Received by email from ${inboundFromEmail}`
     : 'Received via email';
   const hasEmailReceiptStatus = receiptStatus === 'sent_email' || receiptStatus === 'delivered_email' || receiptStatus === 'read_email';
   const showStandaloneEmailBadge = hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);
