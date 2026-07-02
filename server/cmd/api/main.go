@@ -1130,6 +1130,23 @@ func main() {
 	commandService.SetCRMEnrichmentService(crmEnrichmentService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	commandService.SetDocsBlockService(docsBlockService)
+	commandService.SetSupportDependencies(supportMessageRepo, supportConversationRepo, wsPublisher)
+	commandService.SetCRMReadServices(crmContactService, crmSignalService)
+	commandService.SetDocsSearchRepository(docsSearchRepo)
+	commandService.SetDocsChangeProposalService(docsChangeProposalService)
+	commandService.SetAgentRunDependencies(agentRunRepo, agentRunArtifactRepo)
+	commandService.SetReleaseFactsProvider(service.NewReleaseFactsService(
+		gitIntegrationRepo,
+		gitRepositoryRepo,
+		pmTaskRepo,
+		taskGitLinkRepo,
+		pmCommentRepo,
+		docsLinkRepo,
+		docsDocumentRepo,
+		docsContentRepo,
+		workspaceRepo,
+		githubAppClient,
+	))
 	commandBarService.SetInternalCommandService(commandService).
 		SetReadOnlyDataServices(docsDocumentService, crmDealService, crmContactService, crmCompanyService)
 	ruleEngine.SetCommandService(commandService)

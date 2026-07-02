@@ -77,6 +77,7 @@ type AgentRuntimeProjectionService struct {
 	interactionRepo    agentRuntimeProjectionInteractionRepository
 	usageMeter         *AIUsageMeter
 	agentRuntimeClient agentRuntimeSignalClient
+	runFinalizers      *AgentRunFinalizerService
 	appID              string
 	now                func() time.Time
 }
@@ -118,6 +119,16 @@ func (s *AgentRuntimeProjectionService) SetTranscriptRepositories(runMessageRepo
 	s.runMessageRepo = runMessageRepo
 	s.artifactRepo = artifactRepo
 	s.interactionRepo = interactionRepo
+	return s
+}
+
+// SetRunFinalizers wires the product side-effect finalizers dispatched when a
+// delegated run transitions into a terminal status.
+func (s *AgentRuntimeProjectionService) SetRunFinalizers(finalizers *AgentRunFinalizerService) *AgentRuntimeProjectionService {
+	if s == nil {
+		return s
+	}
+	s.runFinalizers = finalizers
 	return s
 }
 
@@ -489,6 +500,11 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	if err != nil {
 		return err
 	}
+	// Prior persisted status, captured before the event is applied: product
+	// finalizers fire only on the transition into a terminal status, so
+	// redelivered or reconciled terminal events on an already-terminal run
+	// are no-ops.
+	wasTerminal := isTerminalAgentRunStatus(run.Status)
 	changed := false
 	runtimeName := agentRuntimeName
 	if run.ExternalRuntime == nil || strings.TrimSpace(*run.ExternalRuntime) != runtimeName {
@@ -609,6 +625,15 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			changed = true
 		}
 	}
+	if s.runFinalizers != nil && isTerminalRuntimeEvent(event.Type) && !wasTerminal && isTerminalAgentRunStatus(run.Status) {
+		// Dispatch before the final Update persists the terminal status: a
+		// crash mid-dispatch leaves the row non-terminal, so the redelivered
+		// event recomputes the transition and per-finalizer idempotency
+		// markers skip the side effects that already fired. Finalizer errors
+		// are logged inside the dispatch and never block status projection.
+		runtimeSummaryAvailable := s.mergeRuntimeOutputSummaryForFinalizers(ctx, run)
+		s.runFinalizers.FinalizeTerminalRun(ctx, run, runtimeSummaryAvailable)
+	}
 	if !changed {
 		return nil
 	}
@@ -618,6 +643,70 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	}
 	s.runRepo.Notify(ctx, run)
 	return nil
+}
+
+// mergeRuntimeOutputSummaryForFinalizers fetches the terminal runtime run and
+// merges its adapter-owned OutputSummary (the delegated summary contract,
+// e.g. draft_reply) into the local run summary. Host-reserved keys (prefix
+// "agent_runtime_") always win. Returns false when the runtime summary could
+// not be fetched so summary-dependent finalizers are skipped without markers
+// and a later duplicate terminal event can retry them.
+func (s *AgentRuntimeProjectionService) mergeRuntimeOutputSummaryForFinalizers(ctx context.Context, run *model.AgentRun) bool {
+	if s == nil || run == nil {
+		return false
+	}
+	if s.agentRuntimeClient == nil {
+		// Without a runtime client the local summary is all we have; treat
+		// it as authoritative rather than blocking every finalizer.
+		return true
+	}
+	runtimeRunID := strings.TrimSpace(derefString(run.ExternalRuntimeID))
+	if runtimeRunID == "" {
+		return true
+	}
+	runtimeRun, err := s.agentRuntimeClient.GetRun(ctx, runtimeRunID)
+	if err != nil {
+		slog.ErrorContext(ctx, "agent runtime terminal output summary fetch failed",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+			"runtime_run_id", runtimeRunID,
+		)
+		return false
+	}
+	if runtimeRun == nil {
+		return true
+	}
+	run.OutputSummary = mergeRuntimeOutputSummaryPayload(run.OutputSummary, runtimeRun.OutputSummary)
+	return true
+}
+
+// mergeRuntimeOutputSummaryPayload overlays runtime summary keys onto the
+// local summary, preserving host-reserved marker keys.
+func mergeRuntimeOutputSummaryPayload(local, runtime json.RawMessage) json.RawMessage {
+	trimmed := strings.TrimSpace(string(runtime))
+	if trimmed == "" || trimmed == "null" {
+		return local
+	}
+	runtimeBody := map[string]any{}
+	if err := json.Unmarshal(runtime, &runtimeBody); err != nil {
+		return local
+	}
+	localBody := map[string]any{}
+	if len(local) > 0 {
+		_ = json.Unmarshal(local, &localBody)
+	}
+	for key, value := range runtimeBody {
+		if strings.HasPrefix(key, "agent_runtime_") {
+			continue
+		}
+		localBody[key] = value
+	}
+	payload, err := json.Marshal(localBody)
+	if err != nil {
+		return local
+	}
+	return payload
 }
 
 func (s *AgentRuntimeProjectionService) maybeCancelOverage(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope, usage agentRuntimeUsagePayload) (bool, error) {

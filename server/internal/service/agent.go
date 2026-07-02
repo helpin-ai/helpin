@@ -5308,6 +5308,12 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 	if strings.TrimSpace(req.Reason) == "" {
 		return nil, fmt.Errorf("reason is required")
 	}
+	// The agent-runtime /v1 API exposes no handoff route; signaling Temporal
+	// for a delegated run would be a silent no-op that still records handoff
+	// state. Reject up front, before any writes.
+	if _, ok := agentRuntimeRunID(run); ok {
+		return nil, fmt.Errorf("handoff is not supported for delegated agent runtime runs")
+	}
 
 	contextJSON := req.Context
 	if contextJSON == nil {

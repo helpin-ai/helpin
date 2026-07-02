@@ -383,24 +383,6 @@ func main() {
 			fatalWithSentry("failed to initialize agent runtime client", err)
 		}
 	}
-	projectionCancel := context.CancelFunc(func() {})
-	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
-		agentRuntimeProjectionService := service.NewAgentRuntimeProjectionService(runRepo, cfg.AgentRuntimeAppID).
-			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
-			SetTranscriptRepositories(runMessageRepo, artifactRepo, interactionRepo)
-		var projectionCtx context.Context
-		projectionCtx, projectionCancel = context.WithCancel(context.Background())
-		go func() {
-			if err := agentRuntimeProjectionService.StartNATSConsumer(projectionCtx, jetstream); err != nil {
-				slog.Error("agent runtime projection consumer stopped", "error", err)
-			}
-		}()
-		go func() {
-			if err := agentRuntimeProjectionService.StartReconciliationSweep(projectionCtx, time.Minute, 2*time.Minute, 50); err != nil {
-				slog.Error("agent runtime reconciliation sweep stopped", "error", err)
-			}
-		}()
-	}
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmRecurringTemplateService := service.NewPMRecurringTemplateService(
 		recurringRepo,
@@ -572,6 +554,22 @@ func main() {
 	commandService.SetCRMEnrichmentService(crmEnrichmentService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	commandService.SetDocsBlockService(docsBlockService)
+	commandService.SetSupportDependencies(supportMessageRepo, conversationRepo, wsPublisher)
+	commandService.SetCRMReadServices(
+		service.NewCRMContactService(crmContactRepo),
+		service.NewCRMSignalService(crmSignalRepo, crmSummaryService),
+	)
+	commandService.SetDocsSearchRepository(docsSearchRepo)
+	commandService.SetDocsChangeProposalService(service.NewDocsChangeProposalService(
+		docsChangeProposalRepo,
+		docsDocumentRepo,
+		docsContentService,
+		docsBlockService,
+		nil,
+		nil,
+	))
+	commandService.SetAgentRunDependencies(runRepo, artifactRepo)
+	commandService.SetReleaseFactsProvider(releaseFactsService)
 	activities = temporalapp.NewAgentRunActivities(
 		runRepo,
 		runMessageRepo,
@@ -637,6 +635,39 @@ func main() {
 	ruleEngine.SetHealthObserver(automationHealthService)
 	ruleEngine.SetTriggerExecutionRepository(triggerExecutionRepo)
 	activities.SetRuleEngine(ruleEngine)
+
+	// Agent runtime projection consumer + delegated-run finalizers. Started
+	// here (after the rule engine exists) so terminal-transition finalizers
+	// can feed agent_run.completed automations.
+	projectionCancel := context.CancelFunc(func() {})
+	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
+		runFinalizers := service.NewAgentRunFinalizerService(
+			runRepo,
+			agentRepo,
+			storyRepo,
+			epicRepo,
+			conversationRepo,
+			supportMessageRepo,
+			ruleEngine,
+			wsPublisher,
+		)
+		agentRuntimeProjectionService := service.NewAgentRuntimeProjectionService(runRepo, cfg.AgentRuntimeAppID).
+			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
+			SetTranscriptRepositories(runMessageRepo, artifactRepo, interactionRepo).
+			SetRunFinalizers(runFinalizers)
+		var projectionCtx context.Context
+		projectionCtx, projectionCancel = context.WithCancel(context.Background())
+		go func() {
+			if err := agentRuntimeProjectionService.StartNATSConsumer(projectionCtx, jetstream); err != nil {
+				slog.Error("agent runtime projection consumer stopped", "error", err)
+			}
+		}()
+		go func() {
+			if err := agentRuntimeProjectionService.StartReconciliationSweep(projectionCtx, time.Minute, 2*time.Minute, 50); err != nil {
+				slog.Error("agent runtime reconciliation sweep stopped", "error", err)
+			}
+		}()
+	}
 	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
 	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)
 	coverageActivities := temporalapp.NewCoverageGapActivities(supportCoverageEnrichmentService, supportCoverageService)
