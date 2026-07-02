@@ -28,6 +28,7 @@ import {
   buildSettingsDraftFromServer,
   normalizeBusinessHoursDay,
   normalizeBusinessHoursSchedule,
+  previewEscalationMessage,
   serializeSettingsDraft,
   sortHelpSpaceIds,
   type ChatSettingsDraft,
@@ -637,6 +638,29 @@ function Dashboard() {
     ? 'Choose when AI replies, leaves notes, or hands off.'
     : 'Configure how AI helps with new visitor messages';
 
+  // Fallback copy shown in the textarea placeholders — reused so the preview
+  // reflects what customers will actually see when a field is left blank.
+  const ESCALATION_DEFAULT_PLACEHOLDER = 'Let me connect you with a team member who can help further.';
+  const ESCALATION_BUSY_PLACEHOLDER = "I've notified the team. Everyone's helping other customers right now - expect a reply within {reply_time}.";
+  const ESCALATION_AFTER_HOURS_PLACEHOLDER = "I've passed this on to the team. We're away right now and back {next_open}.";
+
+  const escalationPreviewDefault = previewEscalationMessage(
+    escalationMessage || ESCALATION_DEFAULT_PLACEHOLDER,
+    replyTimePreset,
+    replyTimeCustomMinutes,
+  );
+  const escalationPreviewBusy = previewEscalationMessage(
+    escalationMessageBusy || ESCALATION_BUSY_PLACEHOLDER,
+    replyTimePreset,
+    replyTimeCustomMinutes,
+  );
+  const escalationPreviewAfterHours = previewEscalationMessage(
+    escalationMessageAfterHours || ESCALATION_AFTER_HOURS_PLACEHOLDER,
+    replyTimePreset,
+    replyTimeCustomMinutes,
+  );
+  const businessHoursSettingsHref = workspace?.slug ? `/w/${workspace.slug}/settings/chat-general` : null;
+
   const aiAssistantSection = (
     <div className={supportSectionClass}>
       <div className="flex items-center">
@@ -805,6 +829,9 @@ function Dashboard() {
                     rows={3}
                     className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
+                  <p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                    Preview: <span className="italic">&ldquo;{escalationPreviewDefault}&rdquo;</span>
+                  </p>
                 </TabsContent>
                 <TabsContent value="busy" className="mt-0">
                   <Textarea
@@ -816,6 +843,9 @@ function Dashboard() {
                     rows={3}
                     className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
+                  <p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                    Preview: <span className="italic">&ldquo;{escalationPreviewBusy}&rdquo;</span>
+                  </p>
                 </TabsContent>
                 <TabsContent value="after_hours" className="mt-0">
                   <Textarea
@@ -827,6 +857,22 @@ function Dashboard() {
                     rows={3}
                     className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
+                  <p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                    Preview: <span className="italic">&ldquo;{escalationPreviewAfterHours}&rdquo;</span> <span className="text-muted-foreground/70">(example — actual time depends on your business hours schedule)</span>
+                  </p>
+                  {!businessHoursEnabled && (
+                    <p className="px-3 pb-2 text-xs text-muted-foreground">
+                      Enable business hours so customers see an accurate return time.
+                      {businessHoursSettingsHref ? (
+                        <>
+                          {' '}
+                          <a href={businessHoursSettingsHref} className="font-medium text-primary hover:underline">
+                            Set up business hours
+                          </a>
+                        </>
+                      ) : null}
+                    </p>
+                  )}
                 </TabsContent>
               </div>
               <p className="text-xs text-muted-foreground">
