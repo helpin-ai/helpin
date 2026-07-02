@@ -27,6 +27,9 @@ const (
 	agentRuntimeUsageConsumedSummaryKey           = "agent_runtime_usage_consumed"
 	agentRuntimeUsageConsumedAtSummaryKey         = "agent_runtime_usage_consumed_at"
 	agentRuntimeTranscriptReconciledVersionKey    = "agent_runtime_transcript_reconciled_runtime_updated_at"
+	agentRuntimeEventCodexAuthStateChanged        = "codex_auth.state_changed"
+	agentRuntimeExecutionStageAuthCompleted       = "auth_completed"
+	agentRuntimeExecutionStageAwaitingAuth        = "awaiting_auth"
 )
 
 var errAgentRuntimeProjectionRunNotFound = errors.New("agent runtime projection run not found")
@@ -562,6 +565,12 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		if err := s.mirrorRuntimePlanUpdated(ctx, run, event); err != nil {
 			return err
 		}
+	case agentRuntimeEventCodexAuthStateChanged:
+		authChanged, err := s.applyCodexAuthStateChanged(ctx, run, event)
+		if err != nil {
+			return err
+		}
+		changed = authChanged || changed
 	default:
 		return nil
 	}
@@ -788,6 +797,56 @@ func (s *AgentRuntimeProjectionService) mirrorRuntimeEventArtifact(ctx context.C
 		}),
 		CreatedAt: s.eventTime(event),
 	})
+}
+
+func (s *AgentRuntimeProjectionService) applyCodexAuthStateChanged(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) (bool, error) {
+	if err := s.createRuntimeArtifact(ctx, run, AgentRuntimeArtifact{
+		ID:            runtimeEventIdentity(event),
+		ArtifactType:  model.AgentRunArtifactTypeCodexAuthState,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: eventDataJSON(event.Data),
+		Metadata: agentRuntimeProjectionMustJSON(map[string]any{
+			"source":             "agent-runtime-event",
+			"runtime_event_type": event.Type,
+		}),
+		CreatedAt: s.eventTime(event),
+	}); err != nil {
+		return false, err
+	}
+
+	state := strings.TrimSpace(eventDataString(event.Data, "state"))
+	switch state {
+	case model.CodexAuthStateRequired, model.CodexAuthStatePending:
+		if run.ExecutionStage == nil || strings.TrimSpace(*run.ExecutionStage) != agentRuntimeExecutionStageAwaitingAuth {
+			run.ExecutionStage = strPtr(agentRuntimeExecutionStageAwaitingAuth)
+			return true, nil
+		}
+		return false, nil
+	case model.CodexAuthStateConnected:
+		if run.ExecutionStage != nil && strings.TrimSpace(*run.ExecutionStage) == agentRuntimeExecutionStageAuthCompleted {
+			return false, nil
+		}
+		runtimeRunID := strings.TrimSpace(event.RunID)
+		if runtimeRunID == "" {
+			runtimeRunID = strings.TrimSpace(derefString(run.ExternalRuntimeID))
+		}
+		if runtimeRunID == "" {
+			return false, fmt.Errorf("agent runtime auth connected event missing run id")
+		}
+		if s.agentRuntimeClient == nil {
+			return false, fmt.Errorf("agent runtime client is not configured")
+		}
+		if _, err := s.agentRuntimeClient.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
+			Intent: model.AgentRunResumeIntentAuthCompleted,
+		}); err != nil {
+			return false, err
+		}
+		run.ExecutionStage = strPtr(agentRuntimeExecutionStageAuthCompleted)
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 func (s *AgentRuntimeProjectionService) reconcileRuntimeTranscript(ctx context.Context, run *model.AgentRun, runtimeRunID string) error {
