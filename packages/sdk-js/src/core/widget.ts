@@ -895,6 +895,7 @@ export class WidgetManager {
       status: raw.status || 'open',
       flowState: raw.flow_state || undefined,
       aiState: raw.ai_state || undefined,
+      handoffState: raw.handoff_state || undefined,
       lastMessage: raw.last_message,
       lastMessageAt: raw.updated_at || raw.created_at,
       unreadCount: raw.unread_count ?? 0,
@@ -1780,6 +1781,7 @@ export class WidgetManager {
               ...conversation,
               aiState: 'escalated',
               flowState: data.data?.flow_state || conversation.flowState,
+              handoffState: data.data?.handoff_state || conversation.handoffState,
               activeTeammate: this.activeTeammate || conversation.activeTeammate,
             };
           });
