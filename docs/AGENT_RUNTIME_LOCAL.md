@@ -2,7 +2,9 @@
 
 This runbook is for testing delegated Helpin runs against a local `agent-runtime`.
 It is intentionally local-only; staging and production app config are managed as
-runtime secrets and must merge Helpin with any existing app entries.
+runtime secrets and must merge Helpin with any existing app entries. For the
+staging rollout (Doppler secrets, NATS sharing, flag order, rollback), see
+`docs/AGENT_RUNTIME_STAGING.md`.
 
 ## Helpin Env
 
