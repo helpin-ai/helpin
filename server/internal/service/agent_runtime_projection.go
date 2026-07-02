@@ -964,7 +964,23 @@ func agentRunMessageMatchesRuntimeMessage(message model.AgentRunMessage, runtime
 	if messageType == "" {
 		messageType = "message"
 	}
-	return strings.TrimSpace(message.MessageType) == messageType || strings.TrimSpace(message.MessageType) == "assistant_turn"
+	localMessageType := strings.TrimSpace(message.MessageType)
+	if localMessageType == messageType {
+		return true
+	}
+	if role == "assistant" && localMessageType == "assistant_turn" {
+		return true
+	}
+	return role == "user" && messageType == "message" && isLocalRuntimeResumeMessageType(localMessageType)
+}
+
+func isLocalRuntimeResumeMessageType(messageType string) bool {
+	switch strings.TrimSpace(messageType) {
+	case "user_reply", "approval", "request_changes":
+		return true
+	default:
+		return false
+	}
 }
 
 func runtimeMessageIdentity(runtimeMessage AgentRuntimeMessage) string {

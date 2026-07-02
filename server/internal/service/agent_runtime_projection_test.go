@@ -857,6 +857,39 @@ func TestAgentRuntimeProjectionTerminalBackfillDedupesLiveAssistantMessageByRunt
 	}
 }
 
+func TestAgentRuntimeProjectionReconcileDedupesLocalUserResumeMessage(t *testing.T) {
+	run := &model.AgentRun{
+		ID:          "helpin-run-user-reply-dedupe",
+		WorkspaceID: "ws-1",
+	}
+	messageRepo := &fakeAgentRuntimeProjectionMessageRepo{
+		messages: []model.AgentRunMessage{{
+			WorkspaceID: "ws-1",
+			RunID:       run.ID,
+			Role:        "user",
+			Content:     "Please make that change.",
+			MessageType: "request_changes",
+			SequenceNo:  1,
+		}},
+	}
+	svc := &AgentRuntimeProjectionService{
+		runMessageRepo: messageRepo,
+	}
+
+	err := svc.createRuntimeMessage(context.Background(), run, AgentRuntimeMessage{
+		ID:          "runtime-user-message-1",
+		Role:        "user",
+		Content:     "Please make that change.",
+		MessageType: "message",
+	})
+	if err != nil {
+		t.Fatalf("createRuntimeMessage returned error: %v", err)
+	}
+	if messageRepo.creates != 0 || len(messageRepo.messages) != 1 {
+		t.Fatalf("expected runtime user message to dedupe against local request_changes, creates=%d messages=%#v", messageRepo.creates, messageRepo.messages)
+	}
+}
+
 func TestAgentRuntimeProjectionSkipsToolCallArgsDeltaArtifacts(t *testing.T) {
 	run := &model.AgentRun{
 		ID:                "helpin-run-tool-delta",
