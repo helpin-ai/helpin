@@ -262,7 +262,7 @@ func TestAgentRuntimeProjectionCancelsOnCumulativeUsageOverage(t *testing.T) {
 	repo := &fakeAgentRuntimeProjectionRunRepo{
 		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_overage": run},
 	}
-	usageConsumer := &fakeAgentRuntimeProjectionUsageConsumer{preflightErr: errors.New("AI usage exhausted")}
+	usageConsumer := &fakeAgentRuntimeProjectionUsageConsumer{preflightErr: model.ErrAIUsageExhausted}
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentRuntimeProjectionService{
 		runRepo: repo,
@@ -322,7 +322,7 @@ func TestAgentRuntimeProjectionDoesNotCancelOverageForNonCumulativeUsage(t *test
 	repo := &fakeAgentRuntimeProjectionRunRepo{
 		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_delta": run},
 	}
-	usageConsumer := &fakeAgentRuntimeProjectionUsageConsumer{preflightErr: errors.New("AI usage exhausted")}
+	usageConsumer := &fakeAgentRuntimeProjectionUsageConsumer{preflightErr: model.ErrAIUsageExhausted}
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentRuntimeProjectionService{
 		runRepo:            repo,
@@ -410,6 +410,62 @@ func TestAgentRuntimeProjectionConsumesTerminalUsageOnce(t *testing.T) {
 	}
 	if !runtimeUsageAlreadyConsumed(run.OutputSummary) {
 		t.Fatalf("expected output summary marker, got %s", string(run.OutputSummary))
+	}
+}
+
+func TestAgentRuntimeProjectionTerminalUsageFailureDoesNotBlockStatusProjection(t *testing.T) {
+	completedAt := time.Date(2026, 7, 2, 14, 30, 0, 0, time.UTC)
+	run := &model.AgentRun{
+		ID:                "helpin-run-consume-failure",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		Status:            model.AgentRunStatusRunning,
+		PauseReason:       model.AgentRunPauseReasonNone,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_consume_failure"),
+		OutputSummary:     json.RawMessage(`{}`),
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_consume_failure": run},
+	}
+	usageConsumer := &fakeAgentRuntimeProjectionUsageConsumer{consumeErr: model.ErrBillingWorkspaceLocked}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: runRepo,
+		agentRepo: &fakeAgentRuntimeProjectionAgentRepo{agent: &model.Agent{
+			ID:        "agent-1",
+			PresetKey: model.AgentPresetCodeBuilder,
+			IsSystem:  true,
+		}},
+		usageMeter: &AIUsageMeter{consumer: usageConsumer},
+		now:        func() time.Time { return completedAt },
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID:  "run_runtime_consume_failure",
+		Type:   "run.completed",
+		SentAt: completedAt,
+		Data: map[string]any{
+			"usage": map[string]any{
+				"total_tokens":  float64(18),
+				"input_tokens":  float64(12),
+				"output_tokens": float64(6),
+			},
+			"usage_semantic": "cumulative",
+		},
+	}); err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	if run.Status != model.AgentRunStatusCompleted || run.CompletedAt == nil || !run.CompletedAt.Equal(completedAt) {
+		t.Fatalf("terminal status not projected after consume failure: status=%s completed_at=%v", run.Status, run.CompletedAt)
+	}
+	if run.InputTokens != 12 || run.OutputTokens != 6 || run.TokensUsed != 18 {
+		t.Fatalf("usage counters not projected after consume failure: input=%d output=%d total=%d", run.InputTokens, run.OutputTokens, run.TokensUsed)
+	}
+	if runtimeUsageAlreadyConsumed(run.OutputSummary) {
+		t.Fatalf("consume marker should remain unset after failed consume, got %s", string(run.OutputSummary))
+	}
+	if runRepo.updates != 1 || runRepo.notifications != 1 {
+		t.Fatalf("expected status update/notify despite consume failure, got %d/%d", runRepo.updates, runRepo.notifications)
 	}
 }
 

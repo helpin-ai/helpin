@@ -524,7 +524,14 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		terminalUsageChanged, err := s.maybeConsumeTerminalUsage(ctx, run, event, usage)
 		if err != nil {
-			return err
+			slog.ErrorContext(ctx, "agent runtime terminal usage consumption failed",
+				"error", err,
+				"workspace_id", run.WorkspaceID,
+				"run_id", run.ID,
+				"runtime_run_id", strings.TrimSpace(derefString(run.ExternalRuntimeID)),
+				"event_type", event.Type,
+			)
+			terminalUsageChanged = false
 		}
 		if terminalUsageChanged {
 			changed = true
@@ -1178,15 +1185,9 @@ func isAIUsageCreditLimitError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, model.ErrAIUsageExhausted) ||
+	return errors.Is(err, model.ErrAIUsageExhausted) ||
 		errors.Is(err, model.ErrExtraAIUsageUnavailable) ||
-		errors.Is(err, model.ErrBillingWorkspaceLocked) {
-		return true
-	}
-	normalized := strings.ToLower(strings.TrimSpace(err.Error()))
-	return strings.Contains(normalized, "ai usage exhausted") ||
-		strings.Contains(normalized, "extra ai usage is not available") ||
-		strings.Contains(normalized, "workspace is locked")
+		errors.Is(err, model.ErrBillingWorkspaceLocked)
 }
 
 func (s *AgentRuntimeProjectionService) resolveRun(ctx context.Context, event AgentRuntimeEventEnvelope) (*model.AgentRun, error) {
