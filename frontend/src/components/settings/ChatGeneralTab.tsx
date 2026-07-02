@@ -6,9 +6,12 @@ import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { formatReplyTimeCopy, SPECIAL_NOTICE_MAX_LENGTH } from '@helpin-ai/shared';
 import { toast } from 'sonner';
-import { Tick01Icon, Copy01Icon, CodeIcon, Loading01Icon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon } from '@/lib/icons';
+import { Tick01Icon, Copy01Icon, CodeIcon, Loading01Icon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon, Alert01Icon } from '@/lib/icons';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces, useWorkspaceBilling } from '@/hooks/queries';
 import { useSupportAgents, useSupportMailboxes } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -18,7 +21,7 @@ import { BrandColorPicker } from '@/components/pm/ColorPicker';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
-import { canRemoveHelpinBranding, COLOR_SCHEME_OPTIONS, COMMON_TIMEZONES, DAYS, ICON_OPTIONS, NO_AGENT_VALUE } from './chat-widget/constants';
+import { canRemoveHelpinBranding, COLOR_SCHEME_OPTIONS, COMMON_TIMEZONES, DAYS, DEFAULT_EMAIL_FALLBACK_DELAY_SECS, ICON_OPTIONS, NO_AGENT_VALUE } from './chat-widget/constants';
 import { PreviewLayout } from './chat-widget/PreviewLayout';
 import {
   buildPreviewAvailability,
@@ -29,11 +32,24 @@ import {
   sortHelpSpaceIds,
   type ChatSettingsDraft,
 } from './chat-widget/utils';
+import { CHAT_WIDGET_ROUTING_ASSIGNMENT_DESCRIPTION } from './chat-widget/handoffSummary';
+import { CHAT_WIDGET_ESCALATION_TABS } from './chat-widget/escalationTabs';
+import {
+  CHAT_WIDGET_AI_RESPONSE_MODES,
+  DEFAULT_CHAT_WIDGET_AI_RESPONSE_MODE,
+  getChatWidgetAIResponseModeForUI,
+  isChatWidgetAIResponseModeActive,
+} from './chat-widget/responseModes';
+import { getChatWidgetAIAssistantEnableBlocker, getChatWidgetAIAssistantToggleToast } from './chat-widget/aiAssistantReadiness';
+import { DEFAULT_AI_HANDOFF_FOLLOWUPS, formatAIHandoffFollowupOption } from './chat-widget/handoffFollowups';
 
 /* ── Main component ──────────────────────────────────────────────────── */
 
-export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
+type ChatGeneralTabMode = 'chat-widget' | 'ai-assistant';
+
+export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspaceId: string; mode?: ChatGeneralTabMode }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const isAIAssistantPage = mode === 'ai-assistant';
   const { data, isLoading } = useChatSettings(workspaceId);
   const { data: docsSpaces = [], isLoading: docsSpacesLoading } = useDocsSpaces(workspaceId);
   const { data: billing, isLoading: billingLoading } = useWorkspaceBilling(workspaceId);
@@ -65,17 +81,17 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
 
   // AI & Routing state
   const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiEnableAttempted, setAiEnableAttempted] = useState(false);
   const [aiAgentId, setAiAgentId] = useState(NO_AGENT_VALUE);
   const [confidenceThreshold, setConfidenceThreshold] = useState('0.7');
-  const [aiResponseMode, setAiResponseMode] = useState('off');
-  const [aiMaxFollowups, setAiMaxFollowups] = useState(3);
+  const [aiResponseMode, setAiResponseMode] = useState(DEFAULT_CHAT_WIDGET_AI_RESPONSE_MODE);
+  const [aiMaxFollowups, setAiMaxFollowups] = useState(DEFAULT_AI_HANDOFF_FOLLOWUPS);
   const [showTalkToHuman, setShowTalkToHuman] = useState(true);
   const [escalationMessage, setEscalationMessage] = useState('Let me connect you with a team member who can help further.');
   const [escalationMessageBusy, setEscalationMessageBusy] = useState('');
   const [escalationMessageAfterHours, setEscalationMessageAfterHours] = useState('');
   const [handoffBehavior, setHandoffBehavior] = useState('unassigned');
   const [handoffTeamId, setHandoffTeamId] = useState<string | null>(null);
-  const [defaultMailboxId, setDefaultMailboxId] = useState<string | null>(null);
   const [aiHandoffMailboxId, setAiHandoffMailboxId] = useState<string | null>(null);
   const [businessHoursEnabled, setBusinessHoursEnabled] = useState(false);
   const [timezone, setTimezone] = useState('America/New_York');
@@ -84,7 +100,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [replyTimePreset, setReplyTimePreset] = useState<string>('few_minutes');
   const [replyTimeCustomMinutes, setReplyTimeCustomMinutes] = useState<number | null>(null);
   const [specialNoticeText, setSpecialNoticeText] = useState<string>('');
-  const [emailFallbackDelaySecs, setEmailFallbackDelaySecs] = useState(180);
+  const [emailFallbackDelaySecs, setEmailFallbackDelaySecs] = useState(DEFAULT_EMAIL_FALLBACK_DELAY_SECS);
   const [emailFallbackFromName, setEmailFallbackFromName] = useState('');
   const [emailFallbackMaxDeliveryAgeMins, setEmailFallbackMaxDeliveryAgeMins] = useState(10);
   const [csatEnabled, setCsatEnabled] = useState(false);
@@ -92,7 +108,9 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [forceVisitorIdentity, setForceVisitorIdentity] = useState(false);
 
   // Accordion state
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['widget-settings']));
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(
+    () => new Set(isAIAssistantPage ? ['ai-auto-reply'] : ['widget-settings']),
+  );
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -123,18 +141,17 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setWidgetName(s.widget_name || '');
       setWidgetAvatarUrl(s.widget_avatar_url || '');
       setWidgetHelpSpaceIds(sortedHelpSpaceIds);
-      setAiEnabled(s.ai_enabled);
+      setAiEnabled(s.ai_enabled && isChatWidgetAIResponseModeActive(s.ai_response_mode));
       setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
       setConfidenceThreshold(String(s.ai_confidence_threshold));
-      setAiResponseMode(s.ai_response_mode ?? 'off');
-      setAiMaxFollowups(s.ai_max_followups ?? 3);
+      setAiResponseMode(getChatWidgetAIResponseModeForUI(s.ai_response_mode));
+      setAiMaxFollowups(s.ai_max_followups ?? DEFAULT_AI_HANDOFF_FOLLOWUPS);
       setShowTalkToHuman(s.show_talk_to_human);
       setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
       setEscalationMessageBusy(s.escalation_message_busy ?? '');
       setEscalationMessageAfterHours(s.escalation_message_after_hours ?? '');
       setHandoffBehavior(s.handoff_behavior);
       setHandoffTeamId(s.handoff_team_id);
-      setDefaultMailboxId(s.default_mailbox_id);
       setAiHandoffMailboxId(s.ai_handoff_mailbox_id);
       setBusinessHoursEnabled(s.business_hours_enabled);
       setTimezone(s.business_hours_timezone);
@@ -143,7 +160,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setReplyTimePreset(s.reply_time_preset ?? 'few_minutes');
       setReplyTimeCustomMinutes(s.reply_time_custom_minutes ?? null);
       setSpecialNoticeText(s.special_notice_text ?? '');
-      setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? 180);
+      setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? DEFAULT_EMAIL_FALLBACK_DELAY_SECS);
       setEmailFallbackFromName(s.email_fallback_from_name ?? '');
       setEmailFallbackMaxDeliveryAgeMins(Math.round((s.email_fallback_max_delivery_age_secs ?? 600) / 60));
       setCsatEnabled(s.csat_enabled);
@@ -157,6 +174,12 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const initializedRef = useRef(false);
   const lastSyncedDraftRef = useRef<string>('');
+
+  const aiAssistantEnableBlocker = getChatWidgetAIAssistantEnableBlocker({
+    aiAgentId,
+    supportAgentCount: supportAgents.length,
+  });
+  const showAIAssistantEnableBlocker = Boolean(aiAssistantEnableBlocker && (aiEnableAttempted || aiEnabled));
 
   const settingsDraft: ChatSettingsDraft = {
     require_email_before_chat: requireEmail,
@@ -173,7 +196,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     button_color: buttonColor,
     button_icon_color: buttonIconColor,
     logo_url: logoUrl,
-    ai_enabled: aiEnabled,
+    ai_enabled: aiEnabled && !aiAssistantEnableBlocker,
     ai_agent_id: aiAgentId === NO_AGENT_VALUE ? '' : aiAgentId,
     ai_confidence_threshold: parseFloat(confidenceThreshold),
     ai_response_mode: aiResponseMode,
@@ -185,7 +208,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     escalation_message_after_hours: escalationMessageAfterHours || undefined,
     handoff_behavior: handoffBehavior,
     handoff_team_id: handoffBehavior === 'assign_to_team' ? handoffTeamId : null,
-    default_mailbox_id: defaultMailboxId,
+    default_mailbox_id: data?.settings.default_mailbox_id ?? null,
     ai_handoff_mailbox_id: aiHandoffMailboxId,
     business_hours_enabled: businessHoursEnabled,
     business_hours_timezone: timezone,
@@ -260,6 +283,42 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   };
 
   const isExpanded = (key: string) => expandedSections.has(key);
+
+  const handleAIEnabledChange = (checked: boolean) => {
+    if (checked) {
+      if (aiAssistantEnableBlocker) {
+        setAiEnableAttempted(true);
+        setAiEnabled(false);
+        setExpandedSections(prev => {
+          if (prev.has('ai-auto-reply')) return prev;
+          const next = new Set(prev);
+          next.add('ai-auto-reply');
+          return next;
+        });
+        return;
+      }
+      setAiEnableAttempted(false);
+      setAiEnabled(true);
+      toast.success(getChatWidgetAIAssistantToggleToast(true));
+      setExpandedSections(prev => {
+        if (prev.has('ai-auto-reply')) return prev;
+        const next = new Set(prev);
+        next.add('ai-auto-reply');
+        return next;
+      });
+      return;
+    }
+    setAiEnableAttempted(false);
+    setAiEnabled(false);
+    toast.success(getChatWidgetAIAssistantToggleToast(false));
+  };
+
+  const handleAIAgentChange = (value: string) => {
+    setAiAgentId(value);
+    if (value && value !== NO_AGENT_VALUE) {
+      setAiEnableAttempted(false);
+    }
+  };
 
   const externalDocsSpaces = docsSpaces.filter((space) => space.type === 'external_capable');
 
@@ -497,6 +556,36 @@ function Dashboard() {
     replyTimeCustomMinutes,
     specialNoticeText: specialNoticeText.trim() || null,
   });
+  const handoffMailboxName = aiHandoffMailboxId
+    ? supportMailboxes.find((mailbox) => mailbox.id === aiHandoffMailboxId)?.name ?? 'Selected inbox'
+    : 'Shared Inbox';
+  const handoffTeamName = handoffTeamId
+    ? teams.find((team) => team.id === handoffTeamId)?.name ?? null
+    : null;
+  const handoffSummaryElement = (() => {
+    if (handoffBehavior === 'round_robin') {
+      return (
+        <>
+          When AI hands off to a human, the conversation moves to <strong>{handoffMailboxName}</strong> and is assigned by <strong>round robin</strong>.
+        </>
+      );
+    }
+    if (handoffBehavior === 'assign_to_team') {
+      return (
+        <>
+          When AI hands off to a human, the conversation moves to <strong>{handoffMailboxName}</strong> and is assigned to <strong>{handoffTeamName || 'the selected team'}</strong>.
+        </>
+      );
+    }
+    return (
+      <>
+        When AI hands off to a human, the conversation moves to <strong>{handoffMailboxName}</strong> and remains <strong>unassigned</strong>.
+      </>
+    );
+  })();
+  const routingAssignmentHref = workspace?.slug
+    ? `/w/${workspace.slug}/settings/inboxes-routing?tab=routing`
+    : null;
 
   // Shared preview element used by both views
   const previewElement = (
@@ -522,31 +611,296 @@ function Dashboard() {
     />
   );
 
+  const saveIndicator = saveStatus !== 'idle' ? (
+    <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-lg backdrop-blur animate-in fade-in slide-in-from-bottom-2 duration-200">
+      {saveStatus === 'saving' && (
+        <>
+          <Loading01Icon className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+          <span className="text-muted-foreground">Saving...</span>
+        </>
+      )}
+      {saveStatus === 'saved' && (
+        <>
+          <Tick01Icon className="h-3.5 w-3.5 text-green-500" />
+          <span className="text-muted-foreground">Saved</span>
+        </>
+      )}
+    </div>
+  ) : null;
+
+  const aiAssistantHref = workspace?.slug
+    ? `/w/${workspace.slug}/settings/support-ai-assistant`
+    : null;
+  const supportSectionClass = 'overflow-hidden rounded-lg border border-border/70 bg-card transition-colors';
+  const aiAssistantSectionTitle = isAIAssistantPage ? 'Configuration' : 'AI Assistant';
+  const aiAssistantSectionDescription = isAIAssistantPage
+    ? 'Choose when AI replies, leaves notes, or hands off.'
+    : 'Configure how AI helps with new visitor messages';
+
+  const aiAssistantSection = (
+    <div className={supportSectionClass}>
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => toggleSection('ai-auto-reply')}
+          className="flex min-w-0 flex-1 items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
+        >
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <BotIcon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">{aiAssistantSectionTitle}</p>
+            <p className="text-sm text-muted-foreground">{aiAssistantSectionDescription}</p>
+          </div>
+        </button>
+        <label className="flex shrink-0 items-center gap-2 px-4 text-sm font-medium">
+          Enable
+          <Switch checked={aiEnabled && !aiAssistantEnableBlocker} onCheckedChange={handleAIEnabledChange} />
+        </label>
+        <button
+          type="button"
+          onClick={() => toggleSection('ai-auto-reply')}
+          aria-label="AI Assistant section"
+          className="flex self-stretch items-center px-4 text-muted-foreground transition-colors hover:bg-muted/40"
+        >
+          <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 transition-transform duration-200', isExpanded('ai-auto-reply') && 'rotate-180')} />
+        </button>
+      </div>
+      <div className="accordion-animate" data-open={isExpanded('ai-auto-reply')}>
+        <div>
+          <div className="border-t border-border px-6 py-6 space-y-4">
+          {showAIAssistantEnableBlocker && aiAssistantEnableBlocker ? (
+            <Alert className="rounded-lg border-amber-200 bg-amber-50/80 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+              <Alert01Icon className="h-4 w-4 text-amber-600 dark:text-amber-300" />
+              <AlertDescription className="text-xs text-amber-800 dark:text-amber-100/90">
+                {aiAssistantEnableBlocker}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <div className="space-y-4">
+            <div className="max-w-md space-y-1.5">
+              <Label className="text-sm">Support agent</Label>
+              <Select value={aiAgentId} onValueChange={handleAIAgentChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a support agent..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_AGENT_VALUE}>No support agent selected</SelectItem>
+                  {supportAgents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-y-4 gap-x-3 lg:grid-cols-[minmax(220px,1fr)_minmax(140px,0.65fr)_minmax(160px,0.75fr)]">
+              <div className="space-y-1.5">
+                <Label className="text-sm">When a message comes in</Label>
+                <Select value={aiResponseMode} onValueChange={setAiResponseMode}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CHAT_WIDGET_AI_RESPONSE_MODES.map((mode) => (
+                      <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-sm">Confidence</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                        aria-label="About confidence"
+                      >
+                        ?
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[240px] text-xs leading-relaxed">
+                      AI only answers when its confidence is at or above this value. Higher confidence means fewer AI answers and more human handoffs.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select value={confidenceThreshold} onValueChange={setConfidenceThreshold}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map(v => (
+                      <SelectItem key={v} value={String(v)}>{(v * 100).toFixed(0)}%</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-sm">Handoff after</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                        aria-label="About handoff after"
+                      >
+                        ?
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed">
+                      Counts AI follow-up replies on the same problem in a conversation. If the visitor brings up a new problem, the count starts over.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select value={String(aiMaxFollowups)} onValueChange={(v) => setAiMaxFollowups(Number(v))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
+                      <SelectItem key={v} value={String(v)}>{formatAIHandoffFollowupOption(v)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Choose whether AI leaves a private note or replies publicly with the selected support agent.
+          </p>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm">Show "Talk to Human" button</Label>
+              <p className="text-xs text-muted-foreground">Let visitors request help from a team member at any time.</p>
+            </div>
+            <Switch checked={showTalkToHuman} onCheckedChange={setShowTalkToHuman} />
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <Label className="text-sm font-medium">Escalation messages</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">Messages shown when AI hands off to a human agent.</p>
+            </div>
+            <Tabs defaultValue="default" className="gap-2">
+              <div className="overflow-hidden rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring/30">
+                <TabsList className="h-9 w-full justify-start gap-0 rounded-none border-b bg-muted/40 p-1">
+                  {CHAT_WIDGET_ESCALATION_TABS.map((tab) => (
+                    <TabsTrigger key={tab.value} value={tab.value} className="h-7 flex-none rounded px-3 text-xs">
+                      {tab.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                <TabsContent value="default" className="mt-0">
+                  <Textarea
+                    id="escalation-msg"
+                    aria-label="Default escalation message"
+                    value={escalationMessage}
+                    onChange={(e) => setEscalationMessage(e.target.value)}
+                    placeholder="Let me connect you with a team member who can help further."
+                    rows={3}
+                    className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                </TabsContent>
+                <TabsContent value="busy" className="mt-0">
+                  <Textarea
+                    id="escalation-msg-busy"
+                    aria-label="Team busy escalation message"
+                    value={escalationMessageBusy}
+                    onChange={(e) => setEscalationMessageBusy(e.target.value)}
+                    placeholder="I've notified the team. Everyone's helping other customers right now - expect a reply within {reply_time}."
+                    rows={3}
+                    className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                </TabsContent>
+                <TabsContent value="after_hours" className="mt-0">
+                  <Textarea
+                    id="escalation-msg-ah"
+                    aria-label="After hours escalation message"
+                    value={escalationMessageAfterHours}
+                    onChange={(e) => setEscalationMessageAfterHours(e.target.value)}
+                    placeholder="I've passed this on to the team. We're away right now and back {next_open}."
+                    rows={3}
+                    className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                </TabsContent>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Use <code>{'{reply_time}'}</code> for busy messages and <code>{'{next_open}'}</code> for after-hours messages.
+              </p>
+            </Tabs>
+          </div>
+
+          <div className="border-t border-border pt-4 space-y-3">
+            <div>
+              <Label className="text-sm font-medium">Routing & Assignment</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">{CHAT_WIDGET_ROUTING_ASSIGNMENT_DESCRIPTION}</p>
+            </div>
+            <div className="flex flex-col gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="min-w-0 text-sm text-foreground">{handoffSummaryElement}</p>
+              {routingAssignmentHref ? (
+                <Button asChild variant="outline" size="sm" className="shrink-0">
+                  <a href={routingAssignmentHref}>Configure routing & assignment</a>
+                </Button>
+              ) : (
+                <p className="shrink-0 text-xs text-muted-foreground">Open a workspace to configure routing & assignment.</p>
+              )}
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const chatWidgetAIAssistantCard = (
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
+      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <BotIcon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium">AI Assistant</p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              AI replies, internal notes, confidence, and handoff settings now live in AI Assistant.
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Current mode: {aiEnabled && !aiAssistantEnableBlocker ? (aiResponseMode === 'ai_first' ? 'Reply directly' : 'Add internal note') : 'Off'}
+            </p>
+          </div>
+        </div>
+        {aiAssistantHref ? (
+          <Button asChild variant="outline" size="sm" className="shrink-0">
+            <a href={aiAssistantHref}>Configure</a>
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  if (isAIAssistantPage) {
+    return (
+      <div className="space-y-4">
+        {saveIndicator}
+        {aiAssistantSection}
+      </div>
+    );
+  }
+
   /* ── Main settings view ────────────────────────────────────────────── */
 
   return (
     <PreviewLayout preview={previewElement}>
       <div className="flex flex-1 flex-col overflow-auto">
         <div className="flex-1 space-y-3 p-4">
-        {/* Auto-save indicator */}
-        {saveStatus !== 'idle' && (
-          <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-lg backdrop-blur animate-in fade-in slide-in-from-bottom-2 duration-200">
-            {saveStatus === 'saving' && (
-              <>
-                <Loading01Icon className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                <span className="text-muted-foreground">Saving...</span>
-              </>
-            )}
-            {saveStatus === 'saved' && (
-              <>
-                <Tick01Icon className="h-3.5 w-3.5 text-green-500" />
-                <span className="text-muted-foreground">Saved</span>
-              </>
-            )}
-          </div>
-        )}
+        {saveIndicator}
         {/* Widget Installation */}
-        <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('widget-installation') ? "border-primary/20" : "border-border/60")}>
+        <div className={supportSectionClass}>
           <button
             type="button"
             onClick={() => toggleSection('widget-installation')}
@@ -652,7 +1006,7 @@ function Dashboard() {
         </div>
 
         {/* Identity Capture */}
-        <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('identity-capture') ? "border-primary/20" : "border-border/60")}>
+        <div className={supportSectionClass}>
           <button
             type="button"
             onClick={() => toggleSection('identity-capture')}
@@ -709,7 +1063,7 @@ function Dashboard() {
         </div>
 
         {/* Appearance */}
-        <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('appearance') ? "border-primary/20" : "border-border/60")}>
+        <div className={supportSectionClass}>
           <button
             type="button"
             onClick={() => toggleSection('appearance')}
@@ -970,7 +1324,7 @@ function Dashboard() {
         </div>
 
         {/* Help Center */}
-        <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('help-center') ? "border-primary/20" : "border-border/60")}>
+        <div className={supportSectionClass}>
           <button
             type="button"
             onClick={() => toggleSection('help-center')}
@@ -1023,213 +1377,10 @@ function Dashboard() {
             </div>
           </div>
         </div>
-          {/* AI Auto-Reply */}
-          <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('ai-auto-reply') ? "border-primary/20" : "border-border/60")}>
-            <button
-              type="button"
-              onClick={() => toggleSection('ai-auto-reply')}
-              className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
-            >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <BotIcon className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">AI Auto-Reply</p>
-                <p className="text-sm text-muted-foreground">Configure AI-powered automatic responses</p>
-              </div>
-              <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('ai-auto-reply') && 'rotate-180')} />
-            </button>
-            <div className="accordion-animate" data-open={isExpanded('ai-auto-reply')}>
-              <div>
-              <div className="border-t border-border px-6 py-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="text-sm">Enable AI auto-reply</Label>
-                    <p className="text-xs text-muted-foreground">AI will attempt to answer questions using your knowledge base.</p>
-                  </div>
-                  <Switch checked={aiEnabled} onCheckedChange={setAiEnabled} />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm">Support Agent</Label>
-                  <Select value={aiAgentId} onValueChange={setAiAgentId}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select a support agent..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NO_AGENT_VALUE}>No support agent selected</SelectItem>
-                      {supportAgents.map((agent) => (
-                        <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Chat auto-replies will run this support agent on new visitor messages.
-                  </p>
-                </div>
-                {/* AI settings — 2-col grid */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">Response Mode</Label>
-                    <Select value={aiResponseMode} onValueChange={setAiResponseMode}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="off">Off (manual only)</SelectItem>
-                        <SelectItem value="ai_first">AI First (auto-reply)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">Confidence Threshold</Label>
-                    <Select value={confidenceThreshold} onValueChange={setConfidenceThreshold}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map(v => (
-                          <SelectItem key={v} value={String(v)}>{(v * 100).toFixed(0)}%</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">Handoff After AI Gets Stuck</Label>
-                    <Select value={String(aiMaxFollowups)} onValueChange={(v) => setAiMaxFollowups(Number(v))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
-                          <SelectItem key={v} value={String(v)}>{v}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Counts repeated, low-progress AI attempts on the same issue. Productive troubleshooting steps do not count toward the limit.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="text-sm">Show "Talk to Human" button</Label>
-                    <p className="text-xs text-muted-foreground">Let visitors request help from a team member at any time.</p>
-                  </div>
-                  <Switch checked={showTalkToHuman} onCheckedChange={setShowTalkToHuman} />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="escalation-msg" className="text-sm">Escalation Message</Label>
-                  <Textarea
-                    id="escalation-msg"
-                    value={escalationMessage}
-                    onChange={(e) => setEscalationMessage(e.target.value)}
-                    placeholder="Let me connect you with a team member who can help further."
-                    rows={2}
-                  />
-                  <p className="text-xs text-muted-foreground">Message shown to the visitor when AI hands off to a human agent.</p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="escalation-msg-busy" className="text-sm">Escalation Message — Team Busy</Label>
-                  <Textarea
-                    id="escalation-msg-busy"
-                    value={escalationMessageBusy}
-                    onChange={(e) => setEscalationMessageBusy(e.target.value)}
-                    placeholder="I've notified the team. Everyone's helping other customers right now — expect a reply within {reply_time}."
-                    rows={2}
-                  />
-                  <p className="text-xs text-muted-foreground">Shown when nobody is online but you're within business hours. Tokens: <code>{'{reply_time}'}</code></p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="escalation-msg-ah" className="text-sm">Escalation Message — After Hours</Label>
-                  <Textarea
-                    id="escalation-msg-ah"
-                    value={escalationMessageAfterHours}
-                    onChange={(e) => setEscalationMessageAfterHours(e.target.value)}
-                    placeholder="I've passed this on to the team. We're away right now and back {next_open}."
-                    rows={2}
-                  />
-                  <p className="text-xs text-muted-foreground">Shown when nobody is online and you're outside business hours. Tokens: <code>{'{next_open}'}</code></p>
-                </div>
-
-                {/* Handoff Routing — merged sub-section */}
-                <div className="border-t border-border pt-4 space-y-3">
-                  <div>
-                    <Label className="text-sm font-medium">Handoff Routing</Label>
-                    <p className="text-xs text-muted-foreground mt-0.5">How conversations are assigned when human help is needed.</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-sm">Default Inbox</Label>
-                      <Select value={defaultMailboxId ?? 'shared'} onValueChange={(value) => setDefaultMailboxId(value === 'shared' ? null : value)}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="shared">Shared Inbox</SelectItem>
-                          {supportMailboxes.filter((mailbox) => mailbox.active).map((mailbox) => (
-                            <SelectItem key={mailbox.id} value={mailbox.id}>{mailbox.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-sm">AI Handoff Inbox</Label>
-                      <Select value={aiHandoffMailboxId ?? 'shared'} onValueChange={(value) => setAiHandoffMailboxId(value === 'shared' ? null : value)}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="shared">Shared Inbox</SelectItem>
-                          {supportMailboxes.filter((mailbox) => mailbox.active).map((mailbox) => (
-                            <SelectItem key={mailbox.id} value={mailbox.id}>{mailbox.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-sm">Behavior</Label>
-                      <Select value={handoffBehavior} onValueChange={setHandoffBehavior}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="unassigned">Leave unassigned</SelectItem>
-                          <SelectItem value="assign_to_team">Assign to team</SelectItem>
-                          <SelectItem value="round_robin">Round robin</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {handoffBehavior === 'assign_to_team' && (
-                      <div className="space-y-1.5">
-                        <Label className="text-sm">Team</Label>
-                        <Select value={handoffTeamId ?? ''} onValueChange={setHandoffTeamId}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a team..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {teams.map(team => (
-                              <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              </div>
-            </div>
-          </div>
+          {chatWidgetAIAssistantCard}
 
           {/* Availability */}
-          <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('business-hours') ? "border-primary/20" : "border-border/60")}>
+          <div className={supportSectionClass}>
             <button
               type="button"
               onClick={() => toggleSection('business-hours')}
@@ -1396,7 +1547,7 @@ function Dashboard() {
           </div>
 
           {/* Chat Features — merged CSAT, File Uploads, Email */}
-          <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('chat-features') ? "border-primary/20" : "border-border/60")}>
+          <div className={supportSectionClass}>
             <button
               type="button"
               onClick={() => toggleSection('chat-features')}
@@ -1463,7 +1614,7 @@ function Dashboard() {
                         min={30}
                         max={600}
                         value={emailFallbackDelaySecs}
-                        onChange={(e) => setEmailFallbackDelaySecs(Number(e.target.value) || 180)}
+                        onChange={(e) => setEmailFallbackDelaySecs(Number(e.target.value) || DEFAULT_EMAIL_FALLBACK_DELAY_SECS)}
                       />
                       <p className="text-xs text-muted-foreground">Seconds after the latest team reply.</p>
                     </div>

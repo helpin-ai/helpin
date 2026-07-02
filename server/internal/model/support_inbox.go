@@ -1060,8 +1060,8 @@ type SupportInboxSettings struct {
 	AIEnabled             bool    `json:"ai_enabled"`
 	AIAgentID             *string `json:"ai_agent_id"`
 	AIConfidenceThreshold float64 `json:"ai_confidence_threshold"` // 0.0–1.0
-	AIResponseMode        string  `json:"ai_response_mode"`        // v1: "ai_first" | "off"
-	AIMaxFollowups        int     `json:"ai_max_followups"`        // max stalled same-issue AI attempts before forced handoff (default: 3)
+	AIResponseMode        string  `json:"ai_response_mode"`        // "ai_first" | "internal_note" | "off"
+	AIMaxFollowups        int     `json:"ai_max_followups"`        // max stalled same-issue AI attempts before forced handoff (default: 5)
 	AIAutoResolveTimeout  int     `json:"ai_auto_resolve_timeout"` // hours before assumed resolution (default: 24, 0 = disabled)
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
 
@@ -1163,8 +1163,8 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIEnabled:                     false,
 		AIAgentID:                     nil,
 		AIConfidenceThreshold:         0.7,
-		AIResponseMode:                "off",
-		AIMaxFollowups:                3,
+		AIResponseMode:                "ai_first",
+		AIMaxFollowups:                5,
 		AIAutoResolveTimeout:          24,
 		ShowTalkToHuman:               true,
 		EscalationMessage:             "Let me connect you with a team member — they typically reply in {reply_time}.",
@@ -1201,7 +1201,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		ReplyTimeCustomMinutes:          nil,
 		SpecialNoticeText:               nil,
 		EmailFallbackEnabled:            true,
-		EmailFallbackDelaySecs:          180,
+		EmailFallbackDelaySecs:          30,
 		EmailFallbackFromName:           "",
 		EmailFallbackMaxDeliveryAgeSecs: 600,
 		ForwardedEmailDetectionEnabled:  true,

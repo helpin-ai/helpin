@@ -365,9 +365,9 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	if !validIcon[settings.LauncherIcon] {
 		return fmt.Errorf("launcher_icon must be chat_bubble, question_mark, or help")
 	}
-	validResponseMode := map[string]bool{"ai_first": true, "off": true}
+	validResponseMode := map[string]bool{"ai_first": true, "internal_note": true, "off": true}
 	if settings.AIResponseMode != "" && !validResponseMode[settings.AIResponseMode] {
-		return fmt.Errorf("ai_response_mode must be ai_first or off")
+		return fmt.Errorf("ai_response_mode must be ai_first, internal_note, or off")
 	}
 	if settings.ReplyTimePreset != "" && !model.IsValidSupportReplyTimePreset(settings.ReplyTimePreset) {
 		return fmt.Errorf("reply_time_preset must be few_minutes, few_hours, same_day, or custom")

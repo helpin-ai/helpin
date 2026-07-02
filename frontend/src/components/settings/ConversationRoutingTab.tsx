@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -71,6 +72,9 @@ type RoutingSettingsDraft = Pick<
   | 'triage_daily_budget'
   | 'triage_skip_spam_conversations'
   | 'triage_deduplicate_first_message'
+  | 'handoff_behavior'
+  | 'handoff_team_id'
+  | 'ai_handoff_mailbox_id'
 >;
 
 export const DEFAULT_ROUTING_SETTINGS: RoutingSettingsDraft = {
@@ -85,9 +89,17 @@ export const DEFAULT_ROUTING_SETTINGS: RoutingSettingsDraft = {
   triage_daily_budget: 250,
   triage_skip_spam_conversations: true,
   triage_deduplicate_first_message: true,
+  handoff_behavior: 'unassigned',
+  handoff_team_id: null,
+  ai_handoff_mailbox_id: null,
 };
 
 export const CONFIGURE_ROUTING_LINK_CLASS = 'text-xs font-medium text-amber-700 underline-offset-4 hover:underline dark:text-amber-300';
+export const AUTOMATED_ROUTING_DESCRIPTION = 'Routing decides which inbox a conversation moves to. Automated routing checks manual rules first, then uses AI when no rule matches.';
+export const HANDOFF_ASSIGNMENT_DESCRIPTION = 'Assignment decides which teammate owns a handoff. Choose where AI handoffs go and whether a teammate is assigned automatically.';
+export const DEFAULT_EXPANDED_ROUTING_SECTIONS = ['automated-routing', 'handoff-assignment'];
+const SUPPORT_SETTINGS_SECTION_CLASS = 'overflow-hidden rounded-lg border bg-card transition-colors';
+const SUPPORT_SETTINGS_SECTION_BORDER_CLASS = 'border-border/70';
 
 export function getDisabledRoutingWarning(
   label: 'AI routing' | 'Rule-based routing',
@@ -100,6 +112,10 @@ export function getDisabledRoutingWarning(
 
 export function getRoutingTooltipLines(disabledWarning: string | null, details: string[]) {
   return disabledWarning ? [disabledWarning] : details;
+}
+
+export function shouldShowAutomatedRoutingContent(enabled: boolean) {
+  return enabled;
 }
 
 export function getSharedEmailRoute<T extends Pick<SupportEmailRoute, 'mailbox_id' | 'active'>>(routes: T[]) {
@@ -140,6 +156,9 @@ export function buildRoutingDraft(settings?: SupportInboxSettings | null): Routi
     triage_daily_budget: settings.triage_daily_budget,
     triage_skip_spam_conversations: settings.triage_skip_spam_conversations,
     triage_deduplicate_first_message: settings.triage_deduplicate_first_message,
+    handoff_behavior: settings.handoff_behavior || 'unassigned',
+    handoff_team_id: settings.handoff_team_id,
+    ai_handoff_mailbox_id: settings.ai_handoff_mailbox_id,
   };
 }
 
@@ -154,6 +173,7 @@ function RoutingCardHeader({
   status,
   action,
   chevron,
+  chevronAfterAction = false,
   asButton = false,
   onClick,
 }: {
@@ -163,6 +183,7 @@ function RoutingCardHeader({
   status?: ReactNode;
   action?: ReactNode;
   chevron?: ReactNode;
+  chevronAfterAction?: boolean;
   asButton?: boolean;
   onClick?: () => void;
 }) {
@@ -178,7 +199,7 @@ function RoutingCardHeader({
         </span>
         <span className="mt-0.5 block text-xs text-muted-foreground">{description}</span>
       </span>
-      {chevron}
+      {!chevronAfterAction ? chevron : null}
     </>
   );
 
@@ -197,7 +218,17 @@ function RoutingCardHeader({
           {content}
         </div>
       )}
-      {action ? <div className="shrink-0 pr-4">{action}</div> : null}
+      {action ? <div className={cn('shrink-0', chevronAfterAction ? 'px-4' : 'pr-4')}>{action}</div> : null}
+      {chevronAfterAction && chevron ? (
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={`${title} section`}
+          className="flex self-stretch items-center px-4 text-muted-foreground transition-colors hover:bg-muted/40"
+        >
+          {chevron}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -224,13 +255,17 @@ function RoutingSection({
   children: ReactNode;
 }) {
   return (
-    <section className={cn('overflow-hidden rounded-lg border bg-card transition-colors', expanded ? 'border-primary/20' : 'border-border/60')}>
+    <section className={cn(
+      SUPPORT_SETTINGS_SECTION_CLASS,
+      SUPPORT_SETTINGS_SECTION_BORDER_CLASS,
+    )}>
       <RoutingCardHeader
         title={title}
         description={description}
         icon={icon}
         status={status}
         action={action}
+        chevronAfterAction={Boolean(action)}
         asButton
         onClick={() => onToggle(id)}
         chevron={(
@@ -805,7 +840,7 @@ export function ConversationRoutingTab({
   const { data: emailSenders = [] } = useSupportEmailSenders(workspaceId);
   const { data: members = [] } = useAssignableMembers(workspaceId);
   const { data: moduleAccess } = useWorkspaceModuleAccess(workspaceId);
-  const { userMemberships } = useWorkspaceTeams(workspaceId);
+  const { teams, userMemberships } = useWorkspaceTeams(workspaceId);
   const updateSettings = useUpdateChatSettings(workspaceId);
   const archiveMailbox = useArchiveMailbox(workspaceId);
   const updateMailbox = useUpdateMailbox(workspaceId);
@@ -896,7 +931,7 @@ export function ConversationRoutingTab({
   };
 
   // Accordion state
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(DEFAULT_EXPANDED_ROUTING_SECTIONS));
   const toggleSection = (id: string) => {
     setExpandedSections((prev) => {
       const next = new Set(prev);
@@ -919,10 +954,11 @@ export function ConversationRoutingTab({
   const routingControlsDisabled = !draft.triage_enabled || updateSettings.isPending;
   const showInboxes = section === 'all' || section === 'inboxes';
   const showRouting = section === 'all' || section === 'routing';
+  const showAutomatedRoutingContent = shouldShowAutomatedRoutingContent(draft.triage_enabled);
   const handleSaveSettings = async () => {
     try {
       await updateSettings.mutateAsync(draft);
-      toast.success('Conversation routing settings saved');
+      toast.success('Routing and assignment settings saved');
     } catch {
       // Mutation hook shows toast on failure.
     }
@@ -988,7 +1024,7 @@ export function ConversationRoutingTab({
       ) : null}
 
       {showInboxes && (
-        <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+        <section className="overflow-hidden rounded-lg border border-border/70 bg-card">
           <RoutingCardHeader
             title="Inboxes"
             description="Route conversations to the main inbox or dedicated team queues."
@@ -1067,11 +1103,13 @@ export function ConversationRoutingTab({
 
       {showRouting && (
         <>
-          <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-            <RoutingCardHeader
+          <RoutingSection
+            id="automated-routing"
               title="Automated routing"
-              description="Automated routing checks manual rules first, then uses AI when no rule matches."
+              description={AUTOMATED_ROUTING_DESCRIPTION}
               icon={<Settings02Icon className="h-4 w-4" />}
+            expanded={isExpanded('automated-routing')}
+            onToggle={toggleSection}
               action={(
                 <label className="flex shrink-0 items-center gap-2 text-sm font-medium">
                   Enable routing
@@ -1082,127 +1120,199 @@ export function ConversationRoutingTab({
                   />
                 </label>
               )}
-            />
-            <div className="divide-y">
-              <div className={cn('divide-y', routingControlsDisabled && 'opacity-60')}>
-                <RoutingSettingRow
-                  title="Channels"
-                  description="Conversation sources where routing should run."
-                  className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
-                >
-                  <div className="flex flex-wrap justify-start gap-x-6 gap-y-3 md:justify-end">
-                    <label className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={draft.triage_widget_enabled}
-                        disabled={routingControlsDisabled}
-                        onCheckedChange={(checked) => setDraft((current) => ({ ...current, triage_widget_enabled: Boolean(checked) }))}
-                      />
-                      Widget
-                    </label>
-                    <label className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={draft.triage_email_enabled}
-                        disabled={routingControlsDisabled}
-                        onCheckedChange={(checked) => setDraft((current) => ({ ...current, triage_email_enabled: Boolean(checked) }))}
-                      />
-                      Email
-                    </label>
-                    <label className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={draft.triage_internal_enabled}
-                        disabled={routingControlsDisabled}
-                        onCheckedChange={(checked) => setDraft((current) => ({ ...current, triage_internal_enabled: Boolean(checked) }))}
-                      />
-                      Internal & API
-                    </label>
-                  </div>
-                </RoutingSettingRow>
+          >
+            {showAutomatedRoutingContent && (
+              <div className="divide-y">
+                <div className={cn('divide-y', routingControlsDisabled && 'opacity-60')}>
+                  <RoutingSettingRow
+                    title="Channels"
+                    description="Conversation sources where routing should run."
+                    className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+                  >
+                    <div className="flex flex-wrap justify-start gap-x-6 gap-y-3 md:justify-end">
+                      <label className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={draft.triage_widget_enabled}
+                          disabled={routingControlsDisabled}
+                          onCheckedChange={(checked) => setDraft((current) => ({ ...current, triage_widget_enabled: Boolean(checked) }))}
+                        />
+                        Widget
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={draft.triage_email_enabled}
+                          disabled={routingControlsDisabled}
+                          onCheckedChange={(checked) => setDraft((current) => ({ ...current, triage_email_enabled: Boolean(checked) }))}
+                        />
+                        Email
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={draft.triage_internal_enabled}
+                          disabled={routingControlsDisabled}
+                          onCheckedChange={(checked) => setDraft((current) => ({ ...current, triage_internal_enabled: Boolean(checked) }))}
+                        />
+                        Internal & API
+                      </label>
+                    </div>
+                  </RoutingSettingRow>
 
-                <RoutingSettingRow
-                  title="Do not auto-move conversations"
-                  description="Show suggestions instead of moving matched conversations."
-                  className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
-                >
-                  <div className="flex justify-start md:justify-end">
-                    <Switch
-                      checked={!draft.triage_auto_move_enabled}
+                  <RoutingSettingRow
+                    title="Do not auto-move conversations"
+                    description="Show suggestions instead of moving matched conversations."
+                    className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+                  >
+                    <div className="flex justify-start md:justify-end">
+                      <Switch
+                        checked={!draft.triage_auto_move_enabled}
+                        disabled={routingControlsDisabled}
+                        onCheckedChange={(checked) => setDraft((current) => ({ ...current, triage_auto_move_enabled: !checked }))}
+                      />
+                    </div>
+                  </RoutingSettingRow>
+
+                  <RoutingSettingRow
+                    title="AI auto-move confidence threshold"
+                    description="Below this, conversations stay as suggestions."
+                  >
+                    <ConfidenceThresholdControl
+                      value={draft.triage_confidence_threshold}
                       disabled={routingControlsDisabled}
-                      onCheckedChange={(checked) => setDraft((current) => ({ ...current, triage_auto_move_enabled: !checked }))}
+                      onChange={(value) => setDraft((current) => ({ ...current, triage_confidence_threshold: value }))}
                     />
-                  </div>
-                </RoutingSettingRow>
+                  </RoutingSettingRow>
+
+                  <RoutingSettingRow
+                    title="Re-run on new customer replies"
+                    description="Run routing again when customers send follow-up replies."
+                    className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+                  >
+                    <div className="flex justify-start md:justify-end">
+                      <Switch
+                        checked={draft.triage_rerun_on_meaning_change}
+                        disabled={routingControlsDisabled}
+                        onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_rerun_on_meaning_change: checked }))}
+                      />
+                    </div>
+                  </RoutingSettingRow>
+
+                  <RoutingSettingRow
+                    title="Daily AI routing attempts"
+                    description="Maximum non-cached AI routing evaluations per day. Use 0 for unlimited."
+                    className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+                  >
+                    <div className="flex justify-start md:justify-end">
+                      <Input
+                        id="triage-daily-budget"
+                        type="number"
+                        min={0}
+                        disabled={routingControlsDisabled}
+                        value={draft.triage_daily_budget}
+                        onChange={(event) => setDraft((c) => ({
+                          ...c,
+                          triage_daily_budget: Math.max(0, Number(event.target.value) || 0),
+                        }))}
+                        className="w-full sm:w-32"
+                      />
+                    </div>
+                  </RoutingSettingRow>
+
+                  <RoutingSettingRow
+                    title="Skip conversations already marked as spam"
+                    description="Do not run routing when a conversation is already in spam."
+                    className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+                  >
+                    <div className="flex justify-start md:justify-end">
+                      <Switch
+                        checked={draft.triage_skip_spam_conversations}
+                        disabled={routingControlsDisabled}
+                        onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_skip_spam_conversations: checked }))}
+                      />
+                    </div>
+                  </RoutingSettingRow>
+                </div>
               </div>
-            </div>
-          </section>
+            )}
+          </RoutingSection>
 
           <RoutingSection
-            id="advanced"
-            title="Advanced Settings"
-            description="AI thresholds, daily limits, and spam prevention."
-            icon={<Settings02Icon className="h-4 w-4" />}
-            expanded={isExpanded('advanced')}
+            id="handoff-assignment"
+              title="AI to human handoff assignment"
+              description={HANDOFF_ASSIGNMENT_DESCRIPTION}
+              icon={<UserGroupIcon className="h-4 w-4" />}
+            expanded={isExpanded('handoff-assignment')}
             onToggle={toggleSection}
           >
-            <div className={cn('divide-y', routingControlsDisabled && 'opacity-60')}>
+            <div className="divide-y">
               <RoutingSettingRow
-                title="AI auto-move confidence threshold"
-                description="Below this, conversations stay as suggestions."
+                title="Handoff inbox"
+                description="Inbox used when AI decides a human should take over."
               >
-                <ConfidenceThresholdControl
-                  value={draft.triage_confidence_threshold}
-                  disabled={routingControlsDisabled}
-                  onChange={(value) => setDraft((current) => ({ ...current, triage_confidence_threshold: value }))}
-                />
+                <Select
+                  value={draft.ai_handoff_mailbox_id ?? 'shared'}
+                  disabled={updateSettings.isPending}
+                  onValueChange={(value) => setDraft((current) => ({
+                    ...current,
+                    ai_handoff_mailbox_id: value === 'shared' ? null : value,
+                  }))}
+                >
+                  <SelectTrigger className="w-full sm:w-64">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="shared">Shared Inbox</SelectItem>
+                    {activeMailboxes.map((mailbox) => (
+                      <SelectItem key={mailbox.id} value={mailbox.id}>{mailbox.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </RoutingSettingRow>
 
               <RoutingSettingRow
-                title="Re-run on new customer replies"
-                description="Run routing again when customers send follow-up replies."
-                className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+                title="Assign to"
+                description="Assignment behavior after the handoff moves the conversation."
               >
-                <div className="flex justify-start md:justify-end">
-                  <Switch
-                    checked={draft.triage_rerun_on_meaning_change}
-                    disabled={routingControlsDisabled}
-                    onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_rerun_on_meaning_change: checked }))}
-                  />
-                </div>
+                <Select
+                  value={draft.handoff_behavior || 'unassigned'}
+                  disabled={updateSettings.isPending}
+                  onValueChange={(value) => setDraft((current) => ({
+                    ...current,
+                    handoff_behavior: value,
+                    handoff_team_id: value === 'assign_to_team' ? current.handoff_team_id : null,
+                  }))}
+                >
+                  <SelectTrigger className="w-full sm:w-64">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">Leave unassigned</SelectItem>
+                    <SelectItem value="round_robin">Round robin</SelectItem>
+                    <SelectItem value="assign_to_team">Specific team</SelectItem>
+                  </SelectContent>
+                </Select>
               </RoutingSettingRow>
 
-              <RoutingSettingRow
-                title="Daily AI routing attempts"
-                description="Maximum non-cached AI routing evaluations per day. Use 0 for unlimited."
-                className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
-              >
-                <div className="flex justify-start md:justify-end">
-                  <Input
-                    id="triage-daily-budget"
-                    type="number"
-                    min={0}
-                    disabled={routingControlsDisabled}
-                    value={draft.triage_daily_budget}
-                    onChange={(event) => setDraft((c) => ({
-                      ...c,
-                      triage_daily_budget: Math.max(0, Number(event.target.value) || 0),
-                    }))}
-                    className="w-full sm:w-32"
-                  />
-                </div>
-              </RoutingSettingRow>
-
-              <RoutingSettingRow
-                title="Skip conversations already marked as spam"
-                description="Do not run routing when a conversation is already in spam."
-                className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
-              >
-                <div className="flex justify-start md:justify-end">
-                  <Switch
-                    checked={draft.triage_skip_spam_conversations}
-                    disabled={routingControlsDisabled}
-                    onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_skip_spam_conversations: checked }))}
-                  />
-                </div>
-              </RoutingSettingRow>
+              {draft.handoff_behavior === 'assign_to_team' && (
+                <RoutingSettingRow
+                  title="Team"
+                  description="Team used for assignment when human handoff selects a specific team."
+                >
+                  <Select
+                    value={draft.handoff_team_id ?? ''}
+                    disabled={updateSettings.isPending || teams.length === 0}
+                    onValueChange={(value) => setDraft((current) => ({ ...current, handoff_team_id: value || null }))}
+                  >
+                    <SelectTrigger className="w-full sm:w-64">
+                      <SelectValue placeholder={teams.length === 0 ? 'No teams available' : 'Select a team'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teams.map((team) => (
+                        <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </RoutingSettingRow>
+              )}
             </div>
           </RoutingSection>
         </>

@@ -2,6 +2,7 @@ import type { BusinessHoursDay, SupportInboxSettings } from '@/lib/pmTypes';
 import type { WidgetConfig } from '@helpin-ai/widget-core';
 import { formatReplyTimeCopy } from '@helpin-ai/shared';
 import { DAYS, DEFAULT_BUSINESS_HOURS_DAY } from './constants';
+import { getChatWidgetAIResponseModeForUI, isChatWidgetAIResponseModeActive } from './responseModes';
 
 export type ChatSettingsDraft = Omit<
   SupportInboxSettings,
@@ -149,6 +150,8 @@ export function buildSettingsDraftFromServer(settings: SupportInboxSettings): Ch
 
   return {
     ...rest,
+    ai_enabled: rest.ai_enabled && isChatWidgetAIResponseModeActive(rest.ai_response_mode),
+    ai_response_mode: getChatWidgetAIResponseModeForUI(rest.ai_response_mode),
     ai_agent_id: ai_agent_id ?? '',
     business_hours_schedule: normalizeBusinessHoursSchedule(rest.business_hours_schedule),
     widget_help_space_ids: sortHelpSpaceIds(rest.widget_help_space_ids),

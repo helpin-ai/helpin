@@ -244,6 +244,58 @@ func TestEmailFallbackOnAgentReplySetsCancellableUntil(t *testing.T) {
 	}
 }
 
+func TestEmailFallbackOnAgentReplySkipsQueueWhenVisitorOnline(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 30
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	now := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return now }
+
+	customerEmail := "customer@example.com"
+	anonymousID := "anon-online-at-reply"
+	conv := &model.SupportConversation{
+		ID:            "33333333-3333-3333-3333-333333333334",
+		WorkspaceID:   "11111111-1111-1111-1111-111111111111",
+		Subject:       "Need help",
+		Status:        "open",
+		AnonymousID:   &anonymousID,
+		CustomerEmail: &customerEmail,
+	}
+	msg := &model.SupportMessage{
+		ID:             "44444444-4444-4444-4444-444444444445",
+		WorkspaceID:    conv.WorkspaceID,
+		ConversationID: conv.ID,
+		SenderType:     "user",
+		MessageType:    "reply",
+		Content:        "Hello while you are here",
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+	if err := env.service.hub.Presence.SetVisitorOnline(ctx, conv.WorkspaceID, anonymousID, "conn-1"); err != nil {
+		t.Fatalf("set visitor online: %v", err)
+	}
+
+	if err := env.service.OnAgentReply(ctx, conv.WorkspaceID, msg, conv); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	if _, err := env.redis.ZScore(ctx, emailFallbackOutboxKey, conv.ID).Result(); err != redis.Nil {
+		t.Fatalf("expected no queued email fallback for online visitor, got err=%v", err)
+	}
+	reloaded, err := env.messageRepo.GetByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if reloaded != nil && reloaded.CancellableUntil != nil {
+		t.Fatalf("expected no cancellable_until for online visitor, got %v", reloaded.CancellableUntil)
+	}
+}
+
 func TestEmailFallbackCancelForMessageRemovesOnlyTargetWhenOthersPending(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()

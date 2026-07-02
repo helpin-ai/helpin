@@ -44,6 +44,7 @@ import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/
 import { Route as AuthenticatedWSlugSettingsWorkflowsRouteImport } from './routes/_authenticated/w/$slug/settings/workflows'
 import { Route as AuthenticatedWSlugSettingsTeamsRouteImport } from './routes/_authenticated/w/$slug/settings/teams'
 import { Route as AuthenticatedWSlugSettingsTaskTemplatesRouteImport } from './routes/_authenticated/w/$slug/settings/task-templates'
+import { Route as AuthenticatedWSlugSettingsSupportAiAssistantRouteImport } from './routes/_authenticated/w/$slug/settings/support-ai-assistant'
 import { Route as AuthenticatedWSlugSettingsRepositoriesRouteImport } from './routes/_authenticated/w/$slug/settings/repositories'
 import { Route as AuthenticatedWSlugSettingsRedirectsRouteImport } from './routes/_authenticated/w/$slug/settings/redirects'
 import { Route as AuthenticatedWSlugSettingsRecurringTasksRouteImport } from './routes/_authenticated/w/$slug/settings/recurring-tasks'
@@ -298,6 +299,12 @@ const AuthenticatedWSlugSettingsTaskTemplatesRoute =
   AuthenticatedWSlugSettingsTaskTemplatesRouteImport.update({
     id: '/settings/task-templates',
     path: '/settings/task-templates',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsSupportAiAssistantRoute =
+  AuthenticatedWSlugSettingsSupportAiAssistantRouteImport.update({
+    id: '/settings/support-ai-assistant',
+    path: '/settings/support-ai-assistant',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsRepositoriesRoute =
@@ -739,6 +746,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
+  '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -832,6 +840,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
+  '/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -932,6 +941,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/_authenticated/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/_authenticated/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
+  '/_authenticated/w/$slug/settings/support-ai-assistant': typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   '/_authenticated/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/_authenticated/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/_authenticated/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -1032,6 +1042,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
     | '/w/$slug/settings/repositories'
+    | '/w/$slug/settings/support-ai-assistant'
     | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
@@ -1125,6 +1136,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
     | '/w/$slug/settings/repositories'
+    | '/w/$slug/settings/support-ai-assistant'
     | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
@@ -1224,6 +1236,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/recurring-tasks'
     | '/_authenticated/w/$slug/settings/redirects'
     | '/_authenticated/w/$slug/settings/repositories'
+    | '/_authenticated/w/$slug/settings/support-ai-assistant'
     | '/_authenticated/w/$slug/settings/task-templates'
     | '/_authenticated/w/$slug/settings/teams'
     | '/_authenticated/w/$slug/settings/workflows'
@@ -1514,6 +1527,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/task-templates'
       fullPath: '/w/$slug/settings/task-templates'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/support-ai-assistant': {
+      id: '/_authenticated/w/$slug/settings/support-ai-assistant'
+      path: '/settings/support-ai-assistant'
+      fullPath: '/w/$slug/settings/support-ai-assistant'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsSupportAiAssistantRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/repositories': {
@@ -2115,6 +2135,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsRecurringTasksRoute: typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   AuthenticatedWSlugSettingsRedirectsRoute: typeof AuthenticatedWSlugSettingsRedirectsRoute
   AuthenticatedWSlugSettingsRepositoriesRoute: typeof AuthenticatedWSlugSettingsRepositoriesRoute
+  AuthenticatedWSlugSettingsSupportAiAssistantRoute: typeof AuthenticatedWSlugSettingsSupportAiAssistantRoute
   AuthenticatedWSlugSettingsTaskTemplatesRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   AuthenticatedWSlugSettingsTeamsRoute: typeof AuthenticatedWSlugSettingsTeamsRoute
   AuthenticatedWSlugSettingsWorkflowsRoute: typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -2194,6 +2215,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsRedirectsRoute,
   AuthenticatedWSlugSettingsRepositoriesRoute:
     AuthenticatedWSlugSettingsRepositoriesRoute,
+  AuthenticatedWSlugSettingsSupportAiAssistantRoute:
+    AuthenticatedWSlugSettingsSupportAiAssistantRoute,
   AuthenticatedWSlugSettingsTaskTemplatesRoute:
     AuthenticatedWSlugSettingsTaskTemplatesRoute,
   AuthenticatedWSlugSettingsTeamsRoute: AuthenticatedWSlugSettingsTeamsRoute,

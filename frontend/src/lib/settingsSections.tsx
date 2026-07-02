@@ -86,6 +86,7 @@ export type SettingsSection =
   | 'crm-pipelines'
   | 'crm-email'
   | 'crm-autonomy'
+  | 'support-ai-assistant'
   | 'chat-general'
   | 'inboxes-routing';
 
@@ -240,6 +241,13 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     requiresManageSettings: true,
   },
   {
+    id: 'support-ai-assistant',
+    label: 'AI Assistant',
+    description: 'Configure how support AI replies, drafts internal notes, and hands conversations to humans.',
+    icon: Automations,
+    group: 'Support',
+  },
+  {
     id: 'inboxes-routing',
     label: 'Inboxes & Routing',
     description: 'Manage team inboxes, email forwarding, and AI conversation routing.',
@@ -249,7 +257,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   {
     id: 'chat-general',
     label: 'Chat Widget',
-    description: 'Widget installation, availability, identity capture, appearance, and AI auto-reply behavior.',
+    description: 'Widget installation, availability, identity capture, and appearance.',
     icon: ChatWidget,
     group: 'Support',
   },

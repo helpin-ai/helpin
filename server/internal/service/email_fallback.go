@@ -612,6 +612,21 @@ func (s *EmailFallbackService) OnAgentReply(ctx context.Context, workspaceID str
 		)
 		return nil
 	}
+	if online, err := s.isVisitorOnline(ctx, workspaceID, conv.AnonymousID); err == nil && online {
+		s.logger.InfoContext(ctx, "email fallback enqueue skipped — visitor online",
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+		)
+		return nil
+	} else if err != nil {
+		s.logger.WarnContext(ctx, "email fallback enqueue visitor presence lookup failed",
+			"error", err,
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+		)
+	}
 
 	delaySecs := normalizedEmailFallbackDelaySecs(settings.EmailFallbackDelaySecs)
 	fireAt := s.now().Add(time.Duration(delaySecs) * time.Second)

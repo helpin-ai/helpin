@@ -21,4 +21,14 @@ describe('getSettingsSidebarGroups', () => {
   it('still hides settings-admin-only sections without workspace settings management', () => {
     expect(visibleSectionIDs(false)).not.toContain('command-intents');
   });
+
+  it('puts AI Assistant first in support settings', () => {
+    const supportGroup = getSettingsSidebarGroups(true).find((group) => group.label === 'Support');
+
+    expect(supportGroup?.sections.map((section) => section.id).slice(0, 3)).toEqual([
+      'support-ai-assistant',
+      'inboxes-routing',
+      'chat-general',
+    ]);
+  });
 });

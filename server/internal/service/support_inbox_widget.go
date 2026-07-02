@@ -633,7 +633,7 @@ func (s *SupportInboxService) runWidgetPostMessageAutomation(ctx context.Context
 		settings = parseSettings(inst.Settings)
 	}
 
-	if settings.AIEnabled && settings.AIResponseMode == "ai_first" && settings.AIAgentID != nil && s.supportAIService != nil {
+	if shouldAutomaticallyProcessSupportAI(settings) && s.supportAIService != nil {
 		conv, convErr := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 		if convErr == nil && conv != nil && conv.HumanTakeover != nil && *conv.HumanTakeover {
 			return
@@ -645,7 +645,9 @@ func (s *SupportInboxService) runWidgetPostMessageAutomation(ctx context.Context
 				"conversation_id", conversationID,
 				"error", pubErr,
 			)
-			go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), workspaceID, conversationID)
+			if shouldCreatePublicSupportAIReply(settings) {
+				go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), workspaceID, conversationID)
+			}
 			return
 		}
 
@@ -660,8 +662,6 @@ func (s *SupportInboxService) runWidgetPostMessageAutomation(ctx context.Context
 		}
 		return
 	}
-
-	go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), workspaceID, conversationID)
 }
 
 // PublishWidgetTypingIndicator publishes a widget visitor typing event using session context.
@@ -721,7 +721,7 @@ func (s *SupportInboxService) maybeAutoRunConversationAgent(ctx context.Context,
 	}
 
 	settings := parseSettings(inst.Settings)
-	if !settings.AIEnabled || settings.AIAgentID == nil || strings.TrimSpace(*settings.AIAgentID) == "" {
+	if !shouldAutomaticallyProcessSupportAI(settings) {
 		return
 	}
 

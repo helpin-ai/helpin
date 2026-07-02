@@ -120,7 +120,7 @@ func (s *SupportInboxService) resolveAIHandoffMailbox(ctx context.Context, works
 	if settings.AIHandoffMailboxID != nil && strings.TrimSpace(*settings.AIHandoffMailboxID) != "" {
 		return s.sanitizeMailboxSelection(ctx, workspaceID, settings.AIHandoffMailboxID)
 	}
-	return s.resolveDefaultMailbox(ctx, workspaceID, settings)
+	return nil, nil, nil
 }
 
 func (s *SupportInboxService) determineMailboxOwner(ctx context.Context, workspaceID string, mailbox *model.SupportMailbox, currentAssignee *string) (*string, string, error) {
@@ -608,10 +608,24 @@ func (s *SupportInboxService) maybeApplyMailboxRoutingForChannel(ctx context.Con
 	if err != nil {
 		return nil, nil, err
 	}
-	if settings != nil && settings.TriageEnabled && triageChannelEnabled(*settings, strings.ToLower(strings.TrimSpace(channel))) && settings.TriageFallbackBehavior == "shared" {
+	if !shouldUseDefaultMailboxForChannel(settings, channel) {
 		return nil, nil, nil
 	}
 	return s.resolveDefaultMailbox(ctx, workspaceID, settings)
+}
+
+func shouldUseDefaultMailboxForChannel(settings *model.SupportInboxSettings, channel string) bool {
+	if settings == nil {
+		return false
+	}
+	normalizedChannel := strings.ToLower(strings.TrimSpace(channel))
+	if normalizedChannel == "widget" {
+		return false
+	}
+	if settings.TriageEnabled && triageChannelEnabled(*settings, normalizedChannel) && settings.TriageFallbackBehavior == "shared" {
+		return false
+	}
+	return true
 }
 
 func (s *SupportInboxService) loadMailboxFromConversation(ctx context.Context, workspaceID string, mailboxID *string) *model.SupportMailbox {
