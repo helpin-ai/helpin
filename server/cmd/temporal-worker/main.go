@@ -481,7 +481,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmDealRepo).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}

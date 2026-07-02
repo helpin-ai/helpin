@@ -466,6 +466,7 @@ type AgentService struct {
 	docsVersionRepo            *repository.DocsVersionRepository
 	docsLinkRepo               *repository.DocsLinkRepository
 	crmContactRepo             *repository.CRMContactRepository
+	crmCompanyRepo             *repository.CRMCompanyRepository
 	crmDealRepo                *repository.CRMDealRepository
 	userRepo                   *repository.UserRepository
 	workspaceSkillRepo         *repository.WorkspaceSkillRepository
@@ -631,8 +632,9 @@ func (s *AgentService) SetNotificationService(notificationService *NotificationS
 	return s
 }
 
-func (s *AgentService) SetCRMRepositories(contactRepo *repository.CRMContactRepository, dealRepo *repository.CRMDealRepository) *AgentService {
+func (s *AgentService) SetCRMRepositories(contactRepo *repository.CRMContactRepository, companyRepo *repository.CRMCompanyRepository, dealRepo *repository.CRMDealRepository) *AgentService {
 	s.crmContactRepo = contactRepo
+	s.crmCompanyRepo = companyRepo
 	s.crmDealRepo = dealRepo
 	return s
 }
@@ -3900,6 +3902,45 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			agent:          agent,
 			targetType:     "crm_contact",
 			targetID:       contact.ID,
+			parentRunID:    parentRunID,
+			actorID:        actorID,
+			input:          input,
+			trigger:        trigger,
+			invocationMode: resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+		s.publishRunEvent(run, derefString(actorID))
+		return run, nil
+
+	case "crm_company":
+		if s.crmCompanyRepo == nil {
+			return nil, fmt.Errorf("crm company repository not configured")
+		}
+		company, err := s.crmCompanyRepo.GetByID(ctx, targetID)
+		if err != nil {
+			return nil, fmt.Errorf("get crm company: %w", err)
+		}
+		if company == nil || company.WorkspaceID != workspaceID {
+			return nil, fmt.Errorf("crm company not found")
+		}
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "crm_company")
+		if err != nil {
+			return nil, err
+		}
+		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
+			return nil, err
+		}
+		input, err := buildAgentRunInputPayload("crm_company", company.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools)
+		if err != nil {
+			return nil, fmt.Errorf("build crm company run input: %w", err)
+		}
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID:    workspaceID,
+			agent:          agent,
+			targetType:     "crm_company",
+			targetID:       company.ID,
 			parentRunID:    parentRunID,
 			actorID:        actorID,
 			input:          input,
