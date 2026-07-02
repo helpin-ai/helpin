@@ -4803,6 +4803,10 @@ func (s *AgentService) applyCodexAuthState(ctx context.Context, workspaceID, run
 		return err
 	}
 
+	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
+		return s.applyDelegatedCodexAuthState(ctx, workspaceID, runID, actorID, runtimeRunID, authState, autoResume)
+	}
+
 	now := time.Now()
 	run.ErrorMessage = nil
 	switch strings.TrimSpace(authState.State) {
@@ -4841,6 +4845,41 @@ func (s *AgentService) applyCodexAuthState(ctx context.Context, workspaceID, run
 	}
 
 	s.publishRunEvent(run, actorID)
+	s.publishCodexAuthStateEvent(run, authState, actorID)
+	return nil
+}
+
+func (s *AgentService) applyDelegatedCodexAuthState(ctx context.Context, workspaceID, runID, actorID, runtimeRunID string, authState *model.CodexAuthState, autoResume bool) error {
+	stage := "awaiting_auth"
+	if strings.TrimSpace(authState.State) == model.CodexAuthStateConnected {
+		stage = "auth_completed"
+		if autoResume {
+			if s.agentRuntimeClient == nil {
+				return fmt.Errorf("agent runtime client is not configured")
+			}
+			if _, err := s.agentRuntimeClient.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
+				Intent:          model.AgentRunResumeIntentAuthCompleted,
+				ExternalActorID: actorID,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+
+	now := time.Now()
+	if err := s.runRepo.UpdateStage(ctx, workspaceID, runID, stage, &now); err != nil {
+		return err
+	}
+	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+	if err != nil {
+		return err
+	}
+	s.publishRunEvent(run, actorID)
+	s.publishCodexAuthStateEvent(run, authState, actorID)
+	return nil
+}
+
+func (s *AgentService) publishCodexAuthStateEvent(run *model.AgentRun, authState *model.CodexAuthState, actorID string) {
 	s.publishCodingSessionEvent(run, "auth.updated", map[string]any{
 		"state":            authState.State,
 		"provider":         authState.Provider,
@@ -4851,7 +4890,6 @@ func (s *AgentService) applyCodexAuthState(ctx context.Context, workspaceID, run
 		"user_code":        derefString(authState.UserCode),
 		"error":            derefString(authState.Error),
 	}, actorID)
-	return nil
 }
 
 func (s *AgentService) appendCodexAuthArtifact(ctx context.Context, run *model.AgentRun, authState *model.CodexAuthState) error {
