@@ -9,7 +9,10 @@ import (
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 )
 
-const agentRuntimeName = "agent-runtime"
+const (
+	agentRuntimeName                 = "agent-runtime"
+	agentRuntimeExecutionModeDurable = "durable"
+)
 
 type AgentRuntimeTargetRef = agentruntime.TargetRef
 type AgentRuntimeAgent = agentruntime.Agent

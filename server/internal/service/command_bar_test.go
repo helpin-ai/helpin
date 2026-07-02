@@ -1583,7 +1583,7 @@ func TestCreateRunDelegatesMiraWorkspaceRunToAgentRuntime(t *testing.T) {
 	if start.HostRunID != run.ID || start.AgentID != agent.ID || start.Target.Type != "workspace" || start.Target.ID != workspaceID {
 		t.Fatalf("unexpected runtime start request: %#v", start)
 	}
-	if start.ExternalActorID != actorID || start.Mode != model.InvocationModeInteractive || start.ExecutionMode != "" || start.Instructions != additionalContext {
+	if start.ExternalActorID != actorID || start.Mode != model.InvocationModeInteractive || start.ExecutionMode != agentRuntimeExecutionModeDurable || start.Instructions != additionalContext {
 		t.Fatalf("unexpected runtime start mode/actor/instructions: %#v", start)
 	}
 	if !slices.Equal(start.AllowedTools, []string{"update_plan"}) {

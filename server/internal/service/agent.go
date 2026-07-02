@@ -303,6 +303,7 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 		AllowedTools:    normalizeStringSlice(input.AllowedTools),
 		ExternalActorID: strings.TrimSpace(derefString(run.TriggeredByUserID)),
 		Mode:            mode,
+		ExecutionMode:   agentRuntimeExecutionModeDurable,
 		Trigger:         trigger,
 		Metadata:        metadata,
 		TurnPolicy:      AgentRuntimeTurnPolicy{Mode: turnPolicyMode},
