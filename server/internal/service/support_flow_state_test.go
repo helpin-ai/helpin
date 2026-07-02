@@ -478,6 +478,15 @@ func TestSupportAIServiceEscalateToHumanSetsAfterHoursQueueFlowState(t *testing.
 	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateAfterHoursQueue {
 		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateAfterHoursQueue)
 	}
+	// Task 12: with no teammate available (selection == nil), the escalation must
+	// still notify the mailbox team that the conversation landed in the queue.
+	// That team-facing signal is unconditional: the persisted after_hours handoff
+	// state, the after_hours_queue flow state, and the internal escalation system
+	// message asserted below — none of which are gated on an assignee being picked
+	// — ensure the queued conversation is seen rather than silently discovered.
+	if updated.HandoffState == nil || *updated.HandoffState != model.HandoffStateAfterHours {
+		t.Fatalf("handoff_state = %#v, want %q", updated.HandoffState, model.HandoffStateAfterHours)
+	}
 	if updated.AIState == nil || *updated.AIState != "escalated" {
 		t.Fatalf("ai_state = %#v, want escalated", updated.AIState)
 	}
