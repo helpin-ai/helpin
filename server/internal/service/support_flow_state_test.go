@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 func TestCreateConversationSetsAssignedToHumanFlowState(t *testing.T) {
@@ -587,5 +589,111 @@ func TestEscalatedConversationFlowStateUsesOfficeHours(t *testing.T) {
 
 	if got := escalatedConversationFlowState(settings, time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC)); got != model.SupportConversationFlowStateAfterHoursQueue {
 		t.Fatalf("escalatedConversationFlowState() = %q, want %q", got, model.SupportConversationFlowStateAfterHoursQueue)
+	}
+}
+
+// TestSupportAIServiceEscalateToHumanHandoffStateFollowsPresence proves that the
+// customer-facing handoff_state is derived from real teammate presence (the same
+// source the widget's pre-chat availability uses) rather than from whether an
+// assignee was selected. With the DEFAULT HandoffBehavior "unassigned",
+// selection is always nil, so before this fix a teammate being online still
+// produced handoff_state "busy" and the email-capture card, contradicting the
+// widget's own "Online now" availability.
+func TestSupportAIServiceEscalateToHumanHandoffStateFollowsPresence(t *testing.T) {
+	tests := []struct {
+		name           string
+		teammateOnline bool
+		wantHandoff    string
+	}{
+		{name: "teammate online within hours -> live", teammateOnline: true, wantHandoff: model.HandoffStateLive},
+		{name: "nobody online within hours -> busy", teammateOnline: false, wantHandoff: model.HandoffStateBusy},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newTestDB(t)
+			ctx := context.Background()
+			ensureSupportModuleGrantsTable(t, db)
+
+			const (
+				workspaceID = "ws-escalate-presence"
+				ownerID     = "user-escalate-owner"
+				supportID   = "user-escalate-support"
+			)
+
+			seedUser(t, db, ownerID, "owner-escalate@example.com", "Owner Escalate", "hash")
+			seedUser(t, db, supportID, "support-escalate@example.com", "Support Escalate", "hash")
+			seedWorkspace(t, db, workspaceID, "Escalate Presence WS", "escalate-presence-ws", ownerID)
+			seedWorkspaceMember(t, db, "wm-escalate-owner", workspaceID, ownerID, "owner-escalate@example.com", "Owner Escalate", model.RoleAdmin)
+			seedWorkspaceMember(t, db, "wm-escalate-support", workspaceID, supportID, "support-escalate@example.com", "Support Escalate", model.RoleMember)
+			seedSupportModuleGrant(t, db, "grant-escalate-support", workspaceID, model.ModuleGrantSubjectWorkspaceMember, "wm-escalate-support")
+
+			convRepo := repository.NewSupportConversationRepository(db)
+			messageRepo := repository.NewSupportMessageRepository(db)
+			handoffRepo := repository.NewAgentHandoffRepository(db)
+			instRepo := repository.NewSupportInboxInstallationRepository(db)
+
+			aiPending := "pending"
+			conv := &model.SupportConversation{
+				WorkspaceID: workspaceID,
+				Subject:     "Need a human",
+				Status:      "open",
+				AIState:     &aiPending,
+				FlowState:   strPtr(model.SupportConversationFlowStateAIHandling),
+			}
+			if err := convRepo.Create(ctx, conv); err != nil {
+				t.Fatalf("create conversation: %v", err)
+			}
+
+			// DEFAULT handoff behavior ("unassigned") + business hours disabled so
+			// we are always WITHIN hours. This isolates the presence signal.
+			settings := model.DefaultSupportInboxSettings()
+			settings.BusinessHoursEnabled = false
+			if strings.TrimSpace(settings.HandoffBehavior) != "unassigned" {
+				t.Fatalf("expected default HandoffBehavior to be 'unassigned', got %q", settings.HandoffBehavior)
+			}
+			settingsJSON, err := json.Marshal(settings)
+			if err != nil {
+				t.Fatalf("marshal settings: %v", err)
+			}
+			if err := instRepo.Create(ctx, &model.SupportWidgetInstallation{
+				WorkspaceID: workspaceID,
+				WidgetKey:   "wk-escalate-presence",
+				SecretKey:   "sk-escalate-presence",
+				Settings:    string(settingsJSON),
+				Active:      true,
+			}); err != nil {
+				t.Fatalf("create installation: %v", err)
+			}
+
+			presence := websocket.NewPresenceState()
+			if tt.teammateOnline {
+				if _, err := presence.SetAgentOnline(ctx, workspaceID, supportID, "conn-escalate-support"); err != nil {
+					t.Fatalf("SetAgentOnline: %v", err)
+				}
+			}
+
+			svc := &SupportAIService{
+				conversationRepo:   convRepo,
+				messageRepo:        messageRepo,
+				handoffRepo:        handoffRepo,
+				installationRepo:   instRepo,
+				workspaceRepo:      repository.NewWorkspaceRepository(db),
+				statusOverrideRepo: repository.NewSupportTeammateStatusOverrideRepository(db),
+				presence:           presence,
+			}
+
+			if err := svc.EscalateToHuman(ctx, workspaceID, conv.ID, "customer_requested"); err != nil {
+				t.Fatalf("EscalateToHuman: %v", err)
+			}
+
+			updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+			if err != nil {
+				t.Fatalf("GetByID: %v", err)
+			}
+			if updated.HandoffState == nil || *updated.HandoffState != tt.wantHandoff {
+				t.Fatalf("handoff_state = %#v, want %q", updated.HandoffState, tt.wantHandoff)
+			}
+		})
 	}
 }

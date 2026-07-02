@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -139,6 +140,31 @@ func loadSupportAvailability(
 	}
 
 	return settings, resolveSupportAvailability(settings, now), nil
+}
+
+// anySupportTeammateOnline reports whether at least one support-accessible
+// teammate is currently online (presence-based). Shared by the widget's
+// pre-chat availability and AI escalation so both surfaces use one source of
+// truth for "is someone available".
+func anySupportTeammateOnline(
+	ctx context.Context,
+	workspaceRepo *repository.WorkspaceRepository,
+	presence websocket.PresenceProvider,
+	statusOverrideRepo *repository.SupportTeammateStatusOverrideRepository,
+	workspaceID string,
+	now time.Time,
+) bool {
+	statuses, err := resolveSupportTeammatePresenceStatuses(ctx, workspaceRepo, presence, statusOverrideRepo, workspaceID, now)
+	if err != nil {
+		slog.WarnContext(ctx, "resolve teammate presence failed; treating as offline", "error", err, "workspace_id", workspaceID)
+		return false
+	}
+	for _, status := range statuses {
+		if status.Status == model.SupportTeammateStatusOnline {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveSupportTeammatePresenceStatuses(

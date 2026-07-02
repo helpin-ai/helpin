@@ -863,25 +863,7 @@ func supportTeammateStatusRank(status string) int {
 // pre-chat IsOnline flag so availability reflects real presence, not just
 // business hours.
 func (s *SupportInboxService) hasOnlineSupportTeammate(ctx context.Context, workspaceID string, now time.Time) bool {
-	statuses, err := resolveSupportTeammatePresenceStatuses(
-		ctx,
-		s.workspaceRepo,
-		s.presence,
-		s.statusOverrideRepo,
-		workspaceID,
-		now,
-	)
-	if err != nil {
-		slog.WarnContext(ctx, "resolve teammate presence for widget availability failed; treating as offline",
-			"error", err, "workspace_id", workspaceID)
-		return false
-	}
-	for _, status := range statuses {
-		if status.Status == model.SupportTeammateStatusOnline {
-			return true
-		}
-	}
-	return false
+	return anySupportTeammateOnline(ctx, s.workspaceRepo, s.presence, s.statusOverrideRepo, workspaceID, now)
 }
 
 func (s *SupportInboxService) listWidgetTeammates(ctx context.Context, workspaceID string, limit int) []model.WidgetActiveTeammate {

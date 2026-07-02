@@ -1125,7 +1125,12 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	// Resolve the customer-facing handoff state and render the escalation message
 	// for that state. Computed outside the dedupe guard below so handoffState is
 	// persisted even when the customer-facing message is skipped.
-	handoffState := resolveHandoffState(selection != nil, availability.IsWithinOfficeHours)
+	// handoff_state must reflect real teammate presence (the same source the
+	// widget's pre-chat availability uses), NOT whether an assignee was selected:
+	// with HandoffBehavior "unassigned" (the default) selection is always nil even
+	// when a teammate is online. selection stays purely about routing/assignment.
+	hasAvailableTeammate := anySupportTeammateOnline(ctx, s.workspaceRepo, s.presence, s.statusOverrideRepo, workspaceID, now)
+	handoffState := resolveHandoffState(hasAvailableTeammate, availability.IsWithinOfficeHours)
 
 	// Short phrase for the {reply_time} token. Do NOT use
 	// availability.WidgetAvailability.ReplyTimeText — that is full-sentence copy
