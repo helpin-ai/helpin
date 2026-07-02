@@ -108,6 +108,23 @@ func (s *OrganizationService) ListMembers(ctx context.Context, orgID, userID str
 	return s.orgRepo.ListMembers(ctx, orgID)
 }
 
+// ListOwners returns the organization's owner-role members with user details.
+// Unscoped by design: used internally (e.g. billing) to resolve who can manage
+// billing, not exposed directly to callers.
+func (s *OrganizationService) ListOwners(ctx context.Context, orgID string) ([]model.MemberWithUser, error) {
+	members, err := s.orgRepo.ListMembers(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	owners := make([]model.MemberWithUser, 0, 1)
+	for _, m := range members {
+		if m.Role == model.RoleOwner {
+			owners = append(owners, m)
+		}
+	}
+	return owners, nil
+}
+
 // AddMember adds a user to an organization. Only owner or admin can add.
 func (s *OrganizationService) AddMember(ctx context.Context, orgID, actorID string, req model.AddOrgMemberRequest) (*model.OrganizationMember, error) {
 	if err := s.requireAdminOrOwner(ctx, orgID, actorID); err != nil {

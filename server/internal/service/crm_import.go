@@ -222,6 +222,36 @@ func (s *CRMImportService) importContact(ctx context.Context, workspaceID string
 	if v := fields["job_title"]; v != "" {
 		contact.JobTitle = &v
 	}
+	if v := fields["description"]; v != "" {
+		contact.Description = &v
+	}
+	if v := fields["primary_location"]; v != "" {
+		contact.PrimaryLocation = &v
+	}
+	if v := fields["country_code"]; v != "" {
+		contact.CountryCode = &v
+	}
+	if v := fields["country_name"]; v != "" {
+		contact.CountryName = &v
+	}
+	if v := fields["linkedin_url"]; v != "" {
+		contact.LinkedInURL = &v
+	}
+	if v := fields["facebook_url"]; v != "" {
+		contact.FacebookURL = &v
+	}
+	if v := fields["instagram_url"]; v != "" {
+		contact.InstagramURL = &v
+	}
+	if v := fields["angellist_url"]; v != "" {
+		contact.AngelListURL = &v
+	}
+	if v := fields["x_url"]; v != "" {
+		contact.XURL = &v
+	}
+	if v := fields["labels"]; v != "" {
+		contact.Labels = model.StringArray(splitCSVList(v))
+	}
 	if v := fields["lifecycle_stage"]; v != "" {
 		contact.LifecycleStage = v
 	}
@@ -233,6 +263,22 @@ func (s *CRMImportService) importContact(ctx context.Context, workspaceID string
 	}
 
 	return s.contactRepo.Create(ctx, contact)
+}
+
+func splitCSVList(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	seen := map[string]bool{}
+	for _, part := range parts {
+		label := strings.TrimSpace(part)
+		key := strings.ToLower(label)
+		if label == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, label)
+	}
+	return result
 }
 
 func (s *CRMImportService) importCompany(ctx context.Context, workspaceID string, fields map[string]string) error {

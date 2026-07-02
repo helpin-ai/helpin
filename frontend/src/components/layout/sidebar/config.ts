@@ -31,11 +31,12 @@ import {
   BookOpen01Icon,
 } from '@/lib/icons';
 import { buildSettingsRoutePath, getSettingsSidebarGroups } from '@/lib/settingsSections';
+import { isWorkspaceSupportRoute } from '@/lib/workspaceRoutes';
 import type { NavGroup, RailId, RailItem } from './types';
 
 export function deriveActiveRail(pathname: string): RailId {
   if (pathname.includes('/settings')) return 'settings';
-  if (pathname.includes('/support')) return 'support';
+  if (isWorkspaceSupportRoute(pathname)) return 'support';
   if (pathname.includes('/crm')) return 'crm';
   if (
     pathname.endsWith('/automation')

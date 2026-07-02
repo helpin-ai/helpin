@@ -23,6 +23,10 @@ const PLACEHOLDERS: Record<ComposerMode, string> = {
   meeting: 'What happened in this meeting?',
 };
 
+export const contactComposerModeBarClassName = 'flex items-center gap-1 rounded-t-xl border-b border-border/60 px-2 py-1.5';
+export const contactComposerTextareaClassName = 'block w-full resize-none border-0 bg-transparent px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none';
+export const contactComposerSaveBarClassName = 'flex items-center gap-1 border-t border-border/60 px-2 py-1.5';
+
 interface ContactComposerProps {
   initialMode?: ComposerMode;
   onSubmit: (args: { activityType: CRMActivityType; subject: string; body?: string }) => Promise<void>;
@@ -76,18 +80,7 @@ export function ContactComposer({
         focused && 'border-border',
       )}
     >
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onKeyDown={handleKeyDown}
-        placeholder={PLACEHOLDERS[mode]}
-        rows={focused || value ? 3 : 1}
-        className="block w-full resize-none rounded-t-xl border-0 bg-transparent px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
-      />
-      <div className="flex items-center gap-1 border-t border-border/60 px-2 py-1.5">
+      <div className={contactComposerModeBarClassName}>
         {MODES.map((m) => {
           const Icon = m.icon;
           const active = mode === m.id;
@@ -118,6 +111,19 @@ export function ContactComposer({
             Email
           </button>
         )}
+      </div>
+      <textarea
+        ref={textareaRef}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={handleKeyDown}
+        placeholder={PLACEHOLDERS[mode]}
+        rows={focused || value ? 3 : 1}
+        className={contactComposerTextareaClassName}
+      />
+      <div className={contactComposerSaveBarClassName}>
         <div className="flex-1" />
         <span className="mr-2 hidden font-mono text-[10.5px] text-muted-foreground/70 sm:inline">
           ⌘↵

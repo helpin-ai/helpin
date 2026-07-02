@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -139,6 +140,49 @@ func TestSupportInboxServiceUpdateMailboxUpdatesBrandedRouteAddress(t *testing.T
 	}
 	if storedRoute.InboundAddress != "finance@acme.on.helpin.email" {
 		t.Fatalf("expected route address to follow mailbox handle, got %q", storedRoute.InboundAddress)
+	}
+}
+
+func TestSupportInboxServiceUpdateMailboxClearsLinkedTeamFromJSONNull(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	linkedTeamID := "33333333-3333-3333-3333-333333333333"
+	seedUser(t, db, actorID, "owner@example.com", "Owner", "hashed")
+	seedWorkspace(t, db, workspaceID, "Acme", "acme", actorID)
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, created_at, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		linkedTeamID, workspaceID, "Marketing", "marketing")
+
+	mailboxRepo := repository.NewSupportMailboxRepository(db)
+	svc := NewSupportInboxService(nil, mailboxRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	mailbox := &model.SupportMailbox{
+		WorkspaceID:    workspaceID,
+		Name:           "Billing",
+		Handle:         "billing",
+		Icon:           "inbox",
+		TriageEligible: true,
+		LinkedTeamID:   &linkedTeamID,
+		VisibilityMode: "members_only",
+		AssignmentMode: "manual",
+		Active:         true,
+		CreatedByID:    actorID,
+	}
+	if err := mailboxRepo.Create(ctx, mailbox); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+
+	var req model.UpdateSupportMailboxRequest
+	if err := json.Unmarshal([]byte(`{"linked_team_id":null}`), &req); err != nil {
+		t.Fatalf("decode update request: %v", err)
+	}
+	updated, err := svc.UpdateMailbox(ctx, workspaceID, mailbox.ID, req)
+	if err != nil {
+		t.Fatalf("update mailbox: %v", err)
+	}
+	if updated.LinkedTeamID != nil {
+		t.Fatalf("linked_team_id = %q, want nil", *updated.LinkedTeamID)
 	}
 }
 

@@ -1264,6 +1264,22 @@ export function useUpdateConversationSubject(workspaceId: string) {
   });
 }
 
+export function useUpdateConversationCustomerName(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, customerName }: { conversationId: string; customerName: string }) =>
+      supportService.updateConversationCustomerName(workspaceId, conversationId, { customer_name: customerName }).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update customer name', { description: error.message });
+    },
+  });
+}
+
 export function useAddConversationTag(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({

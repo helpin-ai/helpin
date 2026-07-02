@@ -402,6 +402,15 @@ func (s *SupportInboxService) SendWidgetConversationTranscript(ctx context.Conte
 	}
 
 	slog.InfoContext(ctx, "widget transcript sent", "workspace_id", session.WorkspaceID, "conversation_id", conversationID, "email", recipientEmail)
+
+	if strings.TrimSpace(derefString(conversation.CustomerEmail)) == "" && strings.TrimSpace(email) != "" {
+		if err := s.conversationRepo.UpdateFields(ctx, conversation.WorkspaceID, conversationID, map[string]any{
+			"customer_email": strings.TrimSpace(email),
+		}); err != nil {
+			slog.WarnContext(ctx, "persist captured visitor email failed", "error", err, "conversation_id", conversationID)
+		}
+	}
+
 	return &model.WidgetTranscriptResponse{
 		Success: true,
 		Message: fmt.Sprintf("Transcript sent to %s", recipientEmail),
@@ -624,7 +633,7 @@ func (s *SupportInboxService) runWidgetPostMessageAutomation(ctx context.Context
 		settings = parseSettings(inst.Settings)
 	}
 
-	if settings.AIEnabled && settings.AIResponseMode == "ai_first" && settings.AIAgentID != nil && s.supportAIService != nil {
+	if shouldAutomaticallyProcessSupportAI(settings) && s.supportAIService != nil {
 		conv, convErr := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 		if convErr == nil && conv != nil && conv.HumanTakeover != nil && *conv.HumanTakeover {
 			return
@@ -636,7 +645,9 @@ func (s *SupportInboxService) runWidgetPostMessageAutomation(ctx context.Context
 				"conversation_id", conversationID,
 				"error", pubErr,
 			)
-			go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), workspaceID, conversationID)
+			if shouldCreatePublicSupportAIReply(settings) {
+				go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), workspaceID, conversationID)
+			}
 			return
 		}
 
@@ -651,8 +662,6 @@ func (s *SupportInboxService) runWidgetPostMessageAutomation(ctx context.Context
 		}
 		return
 	}
-
-	go s.maybeAutoRunConversationAgent(context.WithoutCancel(ctx), workspaceID, conversationID)
 }
 
 // PublishWidgetTypingIndicator publishes a widget visitor typing event using session context.
@@ -712,7 +721,7 @@ func (s *SupportInboxService) maybeAutoRunConversationAgent(ctx context.Context,
 	}
 
 	settings := parseSettings(inst.Settings)
-	if !settings.AIEnabled || settings.AIAgentID == nil || strings.TrimSpace(*settings.AIAgentID) == "" {
+	if !shouldAutomaticallyProcessSupportAI(settings) {
 		return
 	}
 
@@ -849,6 +858,14 @@ func supportTeammateStatusRank(status string) int {
 	}
 }
 
+// hasOnlineSupportTeammate reports whether at least one support-accessible
+// teammate is currently online (presence-based). It drives the widget's
+// pre-chat IsOnline flag so availability reflects real presence, not just
+// business hours.
+func (s *SupportInboxService) hasOnlineSupportTeammate(ctx context.Context, workspaceID string, now time.Time) bool {
+	return anySupportTeammateOnline(ctx, s.workspaceRepo, s.presence, s.statusOverrideRepo, workspaceID, now)
+}
+
 func (s *SupportInboxService) listWidgetTeammates(ctx context.Context, workspaceID string, limit int) []model.WidgetActiveTeammate {
 	if s.workspaceRepo == nil {
 		return []model.WidgetActiveTeammate{}
@@ -962,6 +979,9 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 		return nil, err
 	}
 
+	now := time.Now()
+	hasOnlineAgent := s.hasOnlineSupportTeammate(ctx, inst.WorkspaceID, now)
+
 	return &model.WidgetConfigResponse{
 		WorkspaceID:   inst.WorkspaceID,
 		WorkspaceName: settings.WidgetName,
@@ -987,7 +1007,7 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 			CSATRating:        settings.CSATEnabled,
 			ForceIdentify:     settings.ForceVisitorIdentity,
 		},
-		Availability:       buildWidgetAvailability(settings, time.Now()),
+		Availability:       buildWidgetAvailability(settings, now, hasOnlineAgent),
 		AvailableTeammates: s.listWidgetTeammates(ctx, inst.WorkspaceID, 5),
 		HelpSpaces:         helpSpaces,
 	}, nil

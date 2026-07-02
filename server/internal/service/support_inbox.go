@@ -681,6 +681,9 @@ func (s *SupportInboxService) SetSupportAIService(aiService *SupportAIService) *
 		return nil
 	}
 	s.supportAIService = aiService
+	if aiService != nil {
+		aiService.assignmentSystemMessageEmitter = s.emitAIAssignmentSystemMessage
+	}
 	return s
 }
 
@@ -1279,6 +1282,41 @@ func (s *SupportInboxService) UpdateConversationSubject(ctx context.Context, wor
 	return conv, nil
 }
 
+// UpdateConversationCustomerName changes the customer display name on a support conversation.
+func (s *SupportInboxService) UpdateConversationCustomerName(ctx context.Context, workspaceID, conversationID, customerName, actorID string) (*model.SupportConversation, error) {
+	trimmedName := strings.Join(strings.Fields(strings.TrimSpace(customerName)), " ")
+	if trimmedName == "" {
+		return nil, fmt.Errorf("customer_name is required")
+	}
+
+	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if conv == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
+		"customer_name": trimmedName,
+	}); err != nil {
+		return nil, err
+	}
+	conv.CustomerName = &trimmedName
+
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "support_conversation",
+			EntityID:    conversationID,
+			WorkspaceID: workspaceID,
+			ActorID:     actorID,
+		})
+	}
+
+	return conv, nil
+}
+
 // DeleteConversation permanently deletes a conversation and its messages.
 func (s *SupportInboxService) DeleteConversation(ctx context.Context, workspaceID, conversationID, actorID string) error {
 	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
@@ -1715,6 +1753,7 @@ func hydrateEmailBodies(
 		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
 			messages[i].HTMLBody = log.HTMLBody
 			messages[i].StrippedText = log.StrippedText
+			messages[i].EmailFrom = log.FromEmail
 			messages[i].EmailReplyTo = log.ReplyTo
 		}
 		if log.Direction == "outbound" {
@@ -3859,6 +3898,38 @@ func (s *SupportInboxService) emitAssignmentSystemMessage(
 	}
 	if s.wsPublisher != nil {
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
+	}
+}
+
+func (s *SupportInboxService) emitAIAssignmentSystemMessage(ctx context.Context, workspaceID, conversationID, targetUserID string) {
+	if s.messageRepo == nil {
+		return
+	}
+
+	targetName := supportSystemFirstName(s.lookupUserName(ctx, targetUserID))
+	if targetName == "" {
+		targetName = "a teammate"
+	}
+	displayName := helpinAIDisplayName
+	content := fmt.Sprintf("%s assigned this conversation to %s.", helpinAIDisplayName, targetName)
+	eventType := model.SystemEventAssigned
+
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "agent",
+		SenderDisplayName: &displayName,
+		Content:           content,
+		IsInternal:        true,
+		MessageType:       "system",
+		SystemEventType:   &eventType,
+	}
+	if err := s.messageRepo.Create(ctx, msg); err != nil {
+		slog.ErrorContext(ctx, "create support AI assignment system message", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
+		return
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, ""))
 	}
 }
 

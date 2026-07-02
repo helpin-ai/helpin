@@ -156,14 +156,14 @@ describe('MessageBubble', () => {
     rendered.cleanup()
   })
 
-  it('uses canonical copy for historical assignment system events', () => {
+  it('preserves the assignee in assignment system event content', () => {
     const message: SupportMessage = {
       id: 'msg-assigned-legacy',
       workspace_id: 'ws-1',
       conversation_id: 'conv-1',
       sender_type: 'user',
       sender_display_name: 'Sarah Khan',
-      content: 'Assigned to Support Agent by Sarah Khan.',
+      content: 'Sarah assigned this conversation to Adeel.',
       message_type: 'system',
       system_event_type: 'assigned',
       is_internal: true,
@@ -172,8 +172,8 @@ describe('MessageBubble', () => {
     }
 
     const rendered = renderBubble(message)
-    expect(rendered.container.textContent).toContain('Sarah assigned this conversation.')
-    expect(rendered.container.textContent).not.toContain('Assigned to Support Agent by Sarah Khan.')
+    expect(rendered.container.textContent).toContain('Sarah assigned this conversation to Adeel.')
+    expect(rendered.container.querySelector('strong')?.textContent).toBe('Adeel')
     rendered.cleanup()
   })
 
@@ -335,7 +335,7 @@ describe('MessageBubble', () => {
     rendered.cleanup()
   })
 
-  it('shows reply-to email in the inbound email badge when present', () => {
+  it('shows from email in the inbound email badge when present', () => {
     const message: SupportMessage = {
       id: 'msg-reply-to-1',
       workspace_id: 'ws-1',
@@ -346,15 +346,17 @@ describe('MessageBubble', () => {
       message_type: 'reply',
       is_internal: false,
       via_channel: 'email',
+      email_from: 'Acme Contact Form <website@acme.com>',
       email_reply_to: 'Taylor Visitor <taylor.visitor@example.com>',
       created_at: '2026-06-02T10:14:00.000Z',
       updated_at: '2026-06-02T10:14:00.000Z',
     }
 
     const rendered = renderBubble(message)
-    expect(rendered.container.textContent).toContain('Received by email from taylor.visitor@example.com')
+    expect(rendered.container.textContent).toContain('Received by email from website@acme.com')
+    expect(rendered.container.textContent).not.toContain('Received by email from taylor.visitor@example.com')
     expect(rendered.container.textContent).not.toContain('Received via email')
-    expect(findButtonByText(rendered.container, 'Received by email from taylor.visitor@example.com')).toBeTruthy()
+    expect(findButtonByText(rendered.container, 'Received by email from website@acme.com')).toBeTruthy()
     rendered.cleanup()
   })
 

@@ -551,6 +551,8 @@ export interface SupportMessage {
   email_delivery_error?: string;
   /** Primary outbound email recipient, populated for messages sent via email. */
   email_to?: string;
+  /** From header for inbound email messages, when present. */
+  email_from?: string;
   /** Reply-To header for inbound email messages, when present. */
   email_reply_to?: string;
   /** Outbound email CC recipients, populated for messages sent via email. */
@@ -938,6 +940,10 @@ export interface UpdateConversationCRMContactRequest {
   crm_contact_id: string | null;
 }
 
+export interface UpdateConversationCustomerNameRequest {
+  customer_name: string;
+}
+
 // ── Support Installation Settings ───────────────────────────────────
 
 export interface BusinessHoursDay {
@@ -958,6 +964,8 @@ export interface SupportInboxSettings {
   ai_auto_resolve_timeout: number;
   show_talk_to_human: boolean;
   escalation_message: string;
+  escalation_message_busy?: string;
+  escalation_message_after_hours?: string;
   handoff_behavior: string;
   handoff_team_id: string | null;
   default_mailbox_id: string | null;

@@ -244,6 +244,58 @@ func TestEmailFallbackOnAgentReplySetsCancellableUntil(t *testing.T) {
 	}
 }
 
+func TestEmailFallbackOnAgentReplySkipsQueueWhenVisitorOnline(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 30
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	now := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return now }
+
+	customerEmail := "customer@example.com"
+	anonymousID := "anon-online-at-reply"
+	conv := &model.SupportConversation{
+		ID:            "33333333-3333-3333-3333-333333333334",
+		WorkspaceID:   "11111111-1111-1111-1111-111111111111",
+		Subject:       "Need help",
+		Status:        "open",
+		AnonymousID:   &anonymousID,
+		CustomerEmail: &customerEmail,
+	}
+	msg := &model.SupportMessage{
+		ID:             "44444444-4444-4444-4444-444444444445",
+		WorkspaceID:    conv.WorkspaceID,
+		ConversationID: conv.ID,
+		SenderType:     "user",
+		MessageType:    "reply",
+		Content:        "Hello while you are here",
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+	if err := env.service.hub.Presence.SetVisitorOnline(ctx, conv.WorkspaceID, anonymousID, "conn-1"); err != nil {
+		t.Fatalf("set visitor online: %v", err)
+	}
+
+	if err := env.service.OnAgentReply(ctx, conv.WorkspaceID, msg, conv); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	if _, err := env.redis.ZScore(ctx, emailFallbackOutboxKey, conv.ID).Result(); err != redis.Nil {
+		t.Fatalf("expected no queued email fallback for online visitor, got err=%v", err)
+	}
+	reloaded, err := env.messageRepo.GetByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if reloaded != nil && reloaded.CancellableUntil != nil {
+		t.Fatalf("expected no cancellable_until for online visitor, got %v", reloaded.CancellableUntil)
+	}
+}
+
 func TestEmailFallbackCancelForMessageRemovesOnlyTargetWhenOthersPending(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
@@ -530,6 +582,111 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 		t.Fatalf("check redis cleanup: %v", err)
 	} else if exists != 0 {
 		t.Fatalf("expected redis cleanup, found %d keys", exists)
+	}
+}
+
+// TestReplyByEmailWhenVisitorOffline verifies the after-hours promise from
+// Task 10: when a human teammate replies and the visitor is not currently
+// connected to the widget, the reply goes out by email exactly once. This is
+// the inverse of TestEmailFallbackFireEmailVisitorOnlineUnreadPostponesWithinGraceWindow,
+// which proves an online visitor is NOT emailed.
+func TestReplyByEmailWhenVisitorOffline(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 120
+	settings.EmailFallbackMaxDeliveryAgeSecs = 600
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666672"
+	anonymousID := "anon-offline-visitor"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "After hours question",
+		Status:        "open",
+		AnonymousID:   &anonymousID,
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderDisplayName: strPtr("Sam Teammate"),
+		Content:           "Sorry we missed you — here is the answer.",
+		MessageType:       "reply",
+		CreatedAt:         fixedNow.Add(-120 * time.Second),
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+	if err := env.redis.ZAdd(ctx, emailFallbackOutboxKey, redis.Z{Score: float64(fixedNow.Unix()), Member: conversationID}).Err(); err != nil {
+		t.Fatalf("seed outbox: %v", err)
+	}
+	if err := env.redis.RPush(ctx, env.service.msgListKey(conversationID), msg.ID).Err(); err != nil {
+		t.Fatalf("seed msg list: %v", err)
+	}
+
+	// Intentionally do NOT mark the visitor online — they are offline.
+	sendCount := 0
+	var captured capturedPostmarkRequest
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(body, &captured); err != nil {
+				return nil, err
+			}
+			sendCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ErrorCode": 0,
+					"Message": "OK",
+					"MessageID": "pm-offline-1",
+					"SubmittedAt": "2026-03-20T12:30:00Z",
+					"To": "customer@example.com"
+				}`)),
+			}, nil
+		}),
+	})
+
+	if err := env.service.fireEmail(ctx, conversationID, []string{msg.ID}); err != nil {
+		t.Fatalf("fire email: %v", err)
+	}
+
+	if sendCount != 1 {
+		t.Fatalf("expected exactly one email send to offline visitor, got %d", sendCount)
+	}
+	if captured.To != customerEmail {
+		t.Fatalf("expected recipient %q, got %q", customerEmail, captured.To)
+	}
+
+	saved, err := env.messageRepo.GetByIDs(ctx, []string{msg.ID})
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if len(saved) != 1 || saved[0].EmailNotifiedAt == nil {
+		t.Fatalf("expected email_notified_at to be set after offline send")
+	}
+
+	// The conversation should be removed from the outbox (sent, not postponed).
+	if exists, err := env.redis.Exists(ctx, emailFallbackOutboxKey, env.service.msgListKey(conversationID)).Result(); err != nil {
+		t.Fatalf("check redis cleanup: %v", err)
+	} else if exists != 0 {
+		t.Fatalf("expected redis cleanup after offline send, found %d keys", exists)
 	}
 }
 
@@ -2633,6 +2790,58 @@ func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) 
 	}
 	if logs[0].RFCMessageID != "<customer-thread-1@example.com>" {
 		t.Fatalf("unexpected rfc message id: %q", logs[0].RFCMessageID)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailRouteDerivesCustomerNameFromEmail(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID:             "a2111111-1111-1111-1111-111111111111",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-derived-name",
+		InboundAddress: "support@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "matta.trisha@gmail.com"},
+		To:                route.InboundAddress,
+		OriginalRecipient: route.InboundAddress,
+		Subject:           "Question",
+		MessageID:         "pm-route-derived-name",
+		StrippedTextReply: "Can you help?",
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-derived-name"}`); err != nil {
+		t.Fatalf("process routed inbound email: %v", err)
+	}
+
+	conversations, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 || len(conversations) != 1 {
+		t.Fatalf("expected 1 conversation, got total=%d len=%d", total, len(conversations))
+	}
+	if conversations[0].CustomerName == nil || *conversations[0].CustomerName != "Matta Trisha" {
+		t.Fatalf("customer_name = %#v, want Matta Trisha", conversations[0].CustomerName)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conversations[0].ID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].SenderDisplayName == nil || *messages[0].SenderDisplayName != "Matta Trisha" {
+		t.Fatalf("sender_display_name = %#v, want Matta Trisha", messages)
 	}
 }
 

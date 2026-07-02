@@ -114,6 +114,24 @@ function liveStreamSummary(plan: RunPlanArtifact | null): string | null {
   return null;
 }
 
+function planRuns(plan: CommandBarRunPlan, runsById: Record<string, AgentRun>): AgentRun[] {
+  return Object.values(plan.runIdsByStep)
+    .map((id) => runsById[id])
+    .filter(Boolean);
+}
+
+function planHasReadyUnstartedStep(plan: CommandBarRunPlan, runsById: Record<string, AgentRun>): boolean {
+  return plan.steps.some((step, index) => {
+    if (plan.runIdsByStep[index]) return false;
+    const deps = step.depends_on_step_indexes ?? [];
+    return deps.every((depIndex) => {
+      const depRunId = plan.runIdsByStep[depIndex];
+      const depRun = depRunId ? runsById[depRunId] : null;
+      return depRun?.status === 'completed';
+    });
+  });
+}
+
 export function ExecutionStrip(props: ExecutionStripProps) {
   const initialOpen = props.defaultOpen ?? false;
   const [open, setOpen] = useState(initialOpen);
@@ -200,6 +218,13 @@ function PlanStrip({
   };
   const completed = plan.status === 'completed' || state === 'completed';
   const busy = busyPlanId === plan.id;
+  const runs = planRuns(plan, runsById);
+  const hasActiveRun = runs.some((run) => ACTIVE_RUN_STATUSES.has(run.status));
+  const canContinuePlan =
+    plan.status === 'running' &&
+    !hasActiveRun &&
+    planHasReadyUnstartedStep(plan, runsById);
+  const canCancelPlan = plan.status === 'running' && (hasActiveRun || canContinuePlan);
 
   return (
     <div className="space-y-2">
@@ -348,21 +373,25 @@ function PlanStrip({
         </ChipRow>
       ) : null}
 
-      {onAction && state === 'running' ? (
+      {onAction && (canContinuePlan || canCancelPlan) ? (
         <ChipRow>
-          <ActionChip
-            icon={busy ? Loading01Icon : PlayIcon}
-            label={busy ? 'Resuming…' : 'Resume'}
-            onClick={() => onAction('resume')}
-            disabled={busy}
-          />
-          <ActionChip
-            icon={Cancel01Icon}
-            label="Cancel"
-            onClick={() => onAction('cancel')}
-            disabled={busy}
-            danger
-          />
+          {canContinuePlan ? (
+            <ActionChip
+              icon={busy ? Loading01Icon : PlayIcon}
+              label={busy ? 'Continuing…' : 'Continue'}
+              onClick={() => onAction('resume')}
+              disabled={busy}
+            />
+          ) : null}
+          {canCancelPlan ? (
+            <ActionChip
+              icon={Cancel01Icon}
+              label="Cancel"
+              onClick={() => onAction('cancel')}
+              disabled={busy}
+              danger
+            />
+          ) : null}
           {hasTranscript ? null : (
             <ActionChip
               icon={ArrowUpRight01Icon}

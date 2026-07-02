@@ -612,6 +612,21 @@ func (s *EmailFallbackService) OnAgentReply(ctx context.Context, workspaceID str
 		)
 		return nil
 	}
+	if online, err := s.isVisitorOnline(ctx, workspaceID, conv.AnonymousID); err == nil && online {
+		s.logger.InfoContext(ctx, "email fallback enqueue skipped — visitor online",
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+		)
+		return nil
+	} else if err != nil {
+		s.logger.WarnContext(ctx, "email fallback enqueue visitor presence lookup failed",
+			"error", err,
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+		)
+	}
 
 	delaySecs := normalizedEmailFallbackDelaySecs(settings.EmailFallbackDelaySecs)
 	fireAt := s.now().Add(time.Duration(delaySecs) * time.Second)
@@ -2947,9 +2962,6 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	}
 
 	senderName := strings.TrimSpace(payload.FromFull.Name)
-	if senderName == "" {
-		senderName = fromEmail
-	}
 	replyToRaw, replyToEmail, replyToName := inboundReplyToAddress(payload)
 
 	settings, err := s.loadSettings(ctx, route.WorkspaceID)
@@ -2992,9 +3004,14 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	} else if replyToEmail != "" {
 		effectiveSenderEmail = replyToEmail
 		effectiveSenderName = replyToName
-		if effectiveSenderName == "" {
-			effectiveSenderName = effectiveSenderEmail
+	}
+	if strings.TrimSpace(effectiveSenderName) == "" || strings.EqualFold(strings.TrimSpace(effectiveSenderName), effectiveSenderEmail) {
+		if derivedName := deriveWidgetNameFromEmail(effectiveSenderEmail); derivedName != "" {
+			effectiveSenderName = derivedName
 		}
+	}
+	if strings.TrimSpace(effectiveSenderName) == "" {
+		effectiveSenderName = effectiveSenderEmail
 	}
 
 	subject := strings.TrimSpace(payload.Subject)

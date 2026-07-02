@@ -79,7 +79,7 @@ export function UpgradeRequiredDialog({ open, onOpenChange, onUpgrade, reason }:
 
         <div className="rounded-lg border border-border bg-muted/30 p-4">
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Growth includes
+            The Growth plan includes
           </div>
           <div className="mt-3 grid gap-4 sm:grid-cols-[1fr_0.8fr]">
             <BenefitColumn benefits={featureBenefits} />

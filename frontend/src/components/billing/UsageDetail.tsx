@@ -49,10 +49,26 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
     if (periodStart && periodEnd) return `${periodStart}..${periodEnd}`;
     return dayjs().format('YYYY-MM');
   }, [periodEnd, periodStart]);
-  const { data: usage, isLoading } = useWorkspaceUsage(workspaceId, period, mode, periodStart, periodEnd);
+  const { data: usage, isLoading, isError } = useWorkspaceUsage(
+    workspaceId,
+    period,
+    mode,
+    periodStart,
+    periodEnd,
+  );
 
-  if (isLoading || !usage) {
+  if (isLoading) {
     return <Skeleton className="h-64 w-full" />;
+  }
+
+  if (isError || !usage) {
+    return (
+      <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+        Usage details couldn't be loaded. Only the billing owner can manage this
+        workspace's billing, but usage should be visible to workspace admins — if
+        this keeps happening, please refresh or contact support.
+      </div>
+    );
   }
 
   const { points, max } = buildUsageChart(usage, mode);

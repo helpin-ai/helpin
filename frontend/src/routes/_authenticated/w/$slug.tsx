@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { MFARequiredGate } from '@/components/auth/MFARequiredGate'
 import { queryKeys } from '@/lib/queryKeys'
+import { isWorkspaceSupportRoute } from '@/lib/workspaceRoutes'
 import type { WorkspaceBillingSummary } from '@/lib/types'
 
 export const Route = createFileRoute('/_authenticated/w/$slug')({
@@ -206,14 +207,14 @@ function WorkspaceBillingNotice({
 /** Isolates useLocation subscription so WorkspaceLayout doesn't re-render on every navigation */
 function RouteAwareHeader() {
   const location = useLocation()
-  if (location.pathname.includes('/support')) return null
+  if (isWorkspaceSupportRoute(location.pathname)) return null
   return <Header />
 }
 
 /** Hide the Ask Agents dock on support routes — support has its own assistant flow. */
 function RouteAwareAskAgentsDock() {
   const location = useLocation()
-  if (location.pathname.includes('/support')) return null
+  if (isWorkspaceSupportRoute(location.pathname)) return null
   return <AskAgentsDock />
 }
 

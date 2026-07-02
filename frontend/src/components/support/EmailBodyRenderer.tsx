@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
+import {
+  COLLAPSED_BODY_ATTR,
+  COLLAPSE_HOST_ATTR,
+  COLLAPSIBLE_SELECTOR,
+  QUOTE_ATTR,
+  measureVisibleEmailContentHeight,
+  prepareCollapsedEmailLayout,
+} from './EmailBodyRendererLayout';
 
 interface EmailBodyRendererProps {
   /** Backend-sanitized HTML. Still re-sanitized here as defense-in-depth. */
@@ -7,10 +15,10 @@ interface EmailBodyRendererProps {
   collapsedByDefault?: boolean;
 }
 
-// Matches the attribute the backend (server/internal/email/inboundhtml) uses
-// to flag quoted reply history. We keep the attribute in case we want to add
-// a collapse affordance later, but quotes always render inline today.
-const QUOTE_ATTR = 'data-helpin-quote';
+interface EmailBodyFrameProps {
+  srcDoc: string;
+  collapsedByDefault: boolean;
+}
 
 // Minimal iframe baseline. We want author stylesheets to win, so we only
 // set inherit-able defaults on the document root — email inline styles and
@@ -36,6 +44,7 @@ const IFRAME_STYLES = `
     word-wrap: break-word !important;
     overflow-wrap: anywhere !important;
     overflow-x: hidden;
+    overflow-y: hidden;
   }
   /* Padding lives on body only so body.scrollHeight reflects the full
      visible content height — measure() relies on this to size the iframe. */
@@ -89,17 +98,30 @@ function sanitize(html: string): string {
 // CSS injected into the iframe to hide quoted replies and known signature
 // wrappers. Toggled on/off via a stylesheet enable/disable.
 const COLLAPSE_STYLES = `
-  [${QUOTE_ATTR}], .gmail_signature, .gmail_signature_prefix {
+  ${COLLAPSIBLE_SELECTOR} {
     display: none !important;
+  }
+  body[${COLLAPSED_BODY_ATTR}="true"] [${COLLAPSE_HOST_ATTR}="true"] {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
   }
 `;
 
 // Checks whether the email iframe has any collapsible sections.
 function hasCollapsibleContent(doc: Document): boolean {
-  return doc.querySelector(`[${QUOTE_ATTR}], .gmail_signature`) !== null;
+  return doc.querySelector(COLLAPSIBLE_SELECTOR) !== null;
 }
 
 export function EmailBodyRenderer({ html, collapsedByDefault = true }: EmailBodyRendererProps) {
+  const sanitized = useMemo(() => sanitize(html), [html]);
+  const srcDoc = useMemo(() => buildSrcDoc(sanitized), [sanitized]);
+  const rendererKey = `${collapsedByDefault ? 'collapsed' : 'expanded'}:${srcDoc}`;
+
+  return <EmailBodyFrame key={rendererKey} srcDoc={srcDoc} collapsedByDefault={collapsedByDefault} />;
+}
+
+function EmailBodyFrame({ srcDoc, collapsedByDefault }: EmailBodyFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [height, setHeight] = useState(40);
   const [ready, setReady] = useState(false);
@@ -108,41 +130,11 @@ export function EmailBodyRenderer({ html, collapsedByDefault = true }: EmailBody
   const collapseSheetRef = useRef<HTMLStyleElement | null>(null);
   const measureTimerRef = useRef<number | null>(null);
 
-  const sanitized = useMemo(() => sanitize(html), [html]);
-  const srcDoc = useMemo(() => buildSrcDoc(sanitized), [sanitized]);
-
-  useEffect(() => {
-    setCollapsed(collapsedByDefault);
-    setReady(false);
-    setHasCollapsible(false);
-    setHeight(40);
-  }, [collapsedByDefault, srcDoc]);
-
   const measure = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc) return;
-    const body = doc.body;
-    const children = Array.from(body.children) as HTMLElement[];
-    let visibleCount = 0;
-    const visibleBottom = children.reduce((bottom, child) => {
-      const style = doc.defaultView?.getComputedStyle(child);
-      if (!style || style.display === 'none' || style.visibility === 'hidden') {
-        return bottom;
-      }
-      const rect = child.getBoundingClientRect();
-      visibleCount += 1;
-      return Math.max(bottom, rect.bottom);
-    }, 0);
-
-    const bodyStyle = doc.defaultView?.getComputedStyle(body);
-    const paddingBottom = bodyStyle ? Number.parseFloat(bodyStyle.paddingBottom || '0') || 0 : 0;
-    // body.scrollHeight can stay at the old iframe viewport height in some
-    // browsers. Prefer visible child bounds so hidden quote blocks don't leave
-    // a tall blank iframe after collapse.
-    const measured = visibleCount > 0 ? visibleBottom + paddingBottom : body.scrollHeight;
-    const next = Math.ceil(Math.max(measured, 40));
-    setHeight(next);
-  }, []);
+    setHeight(measureVisibleEmailContentHeight(doc, collapsed));
+  }, [collapsed]);
 
   const scheduleMeasure = useCallback(() => {
     measure();
@@ -185,6 +177,7 @@ export function EmailBodyRenderer({ html, collapsedByDefault = true }: EmailBody
     doc.head.appendChild(sheet);
     collapseSheetRef.current = sheet;
     sheet.disabled = !collapsed;
+    prepareCollapsedEmailLayout(doc, collapsed);
 
     setHasCollapsible(hasCollapsibleContent(doc));
     setReady(true);
@@ -195,6 +188,10 @@ export function EmailBodyRenderer({ html, collapsedByDefault = true }: EmailBody
   useEffect(() => {
     if (!collapseSheetRef.current) return;
     collapseSheetRef.current.disabled = !collapsed;
+    const doc = iframeRef.current?.contentDocument;
+    if (doc) {
+      prepareCollapsedEmailLayout(doc, collapsed);
+    }
     scheduleMeasure();
   }, [collapsed, scheduleMeasure]);
 

@@ -20,9 +20,30 @@ export interface FooterLink {
   url: string
 }
 
+export type FooterSocialPlatform =
+  | 'x'
+  | 'twitter'
+  | 'linkedin'
+  | 'github'
+  | 'youtube'
+  | 'facebook'
+  | 'instagram'
+  | 'discord'
+  | 'slack'
+  | 'rss'
+  | 'website'
+
+export interface FooterSocialLink {
+  platform: FooterSocialPlatform
+  url: string
+  label?: string
+}
+
 export interface FooterConfig {
+  show_copyright?: boolean
   copyright_text?: string
   links?: FooterLink[]
+  social_links?: FooterSocialLink[]
 }
 
 export interface HelpCenterConfig {

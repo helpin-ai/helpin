@@ -73,7 +73,7 @@ function supportSystemEventDisplayContent(eventType: string | undefined, content
   const actor = firstDisplayNamePart(senderName);
   switch (eventType) {
     case 'assigned':
-      return actor ? `${actor} assigned this conversation.` : 'Conversation assigned.';
+      return content.trim() || (actor ? `${actor} assigned this conversation.` : 'Conversation assigned.');
     case 'agent_assigned':
       return actor ? `${actor} assigned this conversation to an AI agent.` : 'Assigned to an AI agent.';
     case 'unassigned':
@@ -83,6 +83,20 @@ function supportSystemEventDisplayContent(eventType: string | undefined, content
     default:
       return content;
   }
+}
+
+function renderAssignedSystemEventContent(content: string): ReactNode {
+  const match = content.match(/^(.*\bassigned this conversation to\s+)([^.]+)(\.)$/);
+  if (!match) return content;
+
+  const [, prefix, targetName, suffix] = match;
+  return (
+    <>
+      {prefix}
+      <strong className="font-semibold text-foreground">{targetName}</strong>
+      {suffix}
+    </>
+  );
 }
 
 const markdownComponents = {
@@ -507,6 +521,9 @@ export const MessageBubble = memo(function MessageBubble({
         ? <BotIcon className="h-3 w-3" />
         : null;
     const systemDisplayContent = escalationLabel ?? supportSystemEventDisplayContent(eventType, message.content, resolvedSenderName);
+    const systemDisplayNode = eventType === 'assigned'
+      ? renderAssignedSystemEventContent(systemDisplayContent)
+      : systemDisplayContent;
 
     let isRoutingEvent: boolean;
     let stateEventKind: 'resolved' | 'reopened' | 'closed' | null;
@@ -585,7 +602,7 @@ export const MessageBubble = memo(function MessageBubble({
                     {getInitial(resolvedSenderName)}
                   </div>
                 )}
-                <span>{systemDisplayContent}</span>
+                <span>{systemDisplayNode}</span>
               </div>
             </TooltipTrigger>
             <TooltipContent side="top">
@@ -603,7 +620,7 @@ export const MessageBubble = memo(function MessageBubble({
             <div className={`flex items-center gap-2.5 ${statePillClass}`}>
               {statusIcon ?? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />}
               {resolvedActorAvatar}
-              <span className={stateEventKind === 'resolved' ? 'font-medium' : 'text-sm font-medium'}>{systemDisplayContent}</span>
+              <span className={stateEventKind === 'resolved' ? 'font-medium' : 'text-sm font-medium'}>{systemDisplayNode}</span>
             </div>
           </TooltipTrigger>
           <TooltipContent side="top">
@@ -680,9 +697,9 @@ export const MessageBubble = memo(function MessageBubble({
   );
 
   const hasEmailBadge = message.via_channel === 'email';
-  const inboundReplyToEmail = isCustomer ? emailAddressFromHeader(message.email_reply_to) : '';
-  const inboundEmailBadgeLabel = inboundReplyToEmail
-    ? `Received by email from ${inboundReplyToEmail}`
+  const inboundFromEmail = isCustomer ? emailAddressFromHeader(message.email_from) : '';
+  const inboundEmailBadgeLabel = inboundFromEmail
+    ? `Received by email from ${inboundFromEmail}`
     : 'Received via email';
   const hasEmailReceiptStatus = receiptStatus === 'sent_email' || receiptStatus === 'delivered_email' || receiptStatus === 'read_email';
   const showStandaloneEmailBadge = hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);

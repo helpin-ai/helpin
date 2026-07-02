@@ -144,10 +144,9 @@ func orgBillingRouteID(r *http.Request) string {
 
 // GetUsage returns daily/cumulative usage for a workspace.
 func (h *BillingHandler) GetUsage(w http.ResponseWriter, r *http.Request) {
+	// Read-only usage is authorized at the route (settings read + workspace
+	// access); no billing-owner check here so non-owner admins can view it.
 	workspaceID := chi.URLParam(r, "id")
-	if !h.canManageWorkspace(w, r, workspaceID) {
-		return
-	}
 	period := r.URL.Query().Get("period")
 	mode := r.URL.Query().Get("mode")
 	start := r.URL.Query().Get("start")

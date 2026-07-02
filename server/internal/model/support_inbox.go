@@ -19,6 +19,7 @@ type SupportConversation struct {
 	Subject           string     `json:"subject" gorm:"not null"`
 	Status            string     `json:"status" gorm:"not null;default:'open'"`     // open, waiting_on_customer, resolved, spam
 	FlowState         *string    `json:"flow_state" gorm:"index"`                   // ai_handling, waiting_for_human, queued_for_human, after_hours_queue, assigned_to_human, resolved_by_ai, resolved_by_human
+	HandoffState      *string    `json:"handoff_state" gorm:"column:handoff_state"` // live, busy, after_hours — customer-facing availability at handoff time
 	Priority          string     `json:"priority" gorm:"not null;default:'medium'"` // low, medium, high, urgent
 	Channel           string     `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
 	CustomerName      *string    `json:"customer_name"`
@@ -83,6 +84,13 @@ const (
 	SupportConversationFlowStateAssignedToHuman = "assigned_to_human"
 	SupportConversationFlowStateResolvedByAI    = "resolved_by_ai"
 	SupportConversationFlowStateResolvedByHuman = "resolved_by_human"
+)
+
+// Handoff states describe availability at the moment the AI hands off.
+const (
+	HandoffStateLive       = "live"
+	HandoffStateBusy       = "busy"
+	HandoffStateAfterHours = "after_hours"
 )
 
 const (
@@ -311,6 +319,7 @@ type SupportMessage struct {
 	// EmailDeliveryError surfaces the bounce/complaint description when the
 	// email's delivery failed. Empty otherwise.
 	EmailDeliveryError string          `json:"email_delivery_error,omitempty" gorm:"-"`
+	EmailFrom          string          `json:"email_from,omitempty" gorm:"-"`
 	EmailTo            string          `json:"email_to,omitempty" gorm:"-"`
 	EmailReplyTo       string          `json:"email_reply_to,omitempty" gorm:"-"`
 	EmailCC            DocsStringArray `json:"email_cc,omitempty" gorm:"-"`
@@ -685,18 +694,37 @@ type CreateSupportMailboxRequest struct {
 	ImportLinkedTeam   bool     `json:"import_linked_team"`
 }
 
+type OptionalNullableString struct {
+	Set   bool
+	Value *string
+}
+
+func (s *OptionalNullableString) UnmarshalJSON(data []byte) error {
+	s.Set = true
+	if strings.TrimSpace(string(data)) == "null" {
+		s.Value = nil
+		return nil
+	}
+	var value string
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	s.Value = &value
+	return nil
+}
+
 type UpdateSupportMailboxRequest struct {
-	Name               *string  `json:"name,omitempty"`
-	Handle             *string  `json:"handle,omitempty"`
-	Icon               *string  `json:"icon,omitempty"`
-	Description        *string  `json:"description,omitempty"`
-	RoutingPrompt      *string  `json:"routing_prompt,omitempty"`
-	TriageEligible     *bool    `json:"triage_eligible,omitempty"`
-	LinkedTeamID       *string  `json:"linked_team_id,omitempty"`
-	WorkspaceMemberIDs []string `json:"workspace_member_ids,omitempty"`
-	AssignmentMode     *string  `json:"assignment_mode,omitempty"`
-	Active             *bool    `json:"active,omitempty"`
-	ImportLinkedTeam   bool     `json:"import_linked_team,omitempty"`
+	Name               *string                `json:"name,omitempty"`
+	Handle             *string                `json:"handle,omitempty"`
+	Icon               *string                `json:"icon,omitempty"`
+	Description        *string                `json:"description,omitempty"`
+	RoutingPrompt      *string                `json:"routing_prompt,omitempty"`
+	TriageEligible     *bool                  `json:"triage_eligible,omitempty"`
+	LinkedTeamID       OptionalNullableString `json:"linked_team_id,omitempty"`
+	WorkspaceMemberIDs []string               `json:"workspace_member_ids,omitempty"`
+	AssignmentMode     *string                `json:"assignment_mode,omitempty"`
+	Active             *bool                  `json:"active,omitempty"`
+	ImportLinkedTeam   bool                   `json:"import_linked_team,omitempty"`
 
 	// ReplyTimePreset overrides the workspace default for conversations in
 	// this mailbox. Pass an explicit value to set; set ClearReplyTimePreset
@@ -836,6 +864,11 @@ type AssignConversationUserRequest struct {
 // UpdateConversationCRMContactRequest sets or clears the primary CRM contact link.
 type UpdateConversationCRMContactRequest struct {
 	CRMContactID *string `json:"crm_contact_id"`
+}
+
+// UpdateConversationCustomerNameRequest sets the support conversation customer display name.
+type UpdateConversationCustomerNameRequest struct {
+	CustomerName string `json:"customer_name"`
 }
 
 // UpdateConversationStatusRequest changes conversation status.
@@ -1027,13 +1060,15 @@ type SupportInboxSettings struct {
 	AIEnabled             bool    `json:"ai_enabled"`
 	AIAgentID             *string `json:"ai_agent_id"`
 	AIConfidenceThreshold float64 `json:"ai_confidence_threshold"` // 0.0–1.0
-	AIResponseMode        string  `json:"ai_response_mode"`        // v1: "ai_first" | "off"
-	AIMaxFollowups        int     `json:"ai_max_followups"`        // max stalled same-issue AI attempts before forced handoff (default: 3)
+	AIResponseMode        string  `json:"ai_response_mode"`        // "ai_first" | "internal_note" | "off"
+	AIMaxFollowups        int     `json:"ai_max_followups"`        // max stalled same-issue AI attempts before forced handoff (default: 5)
 	AIAutoResolveTimeout  int     `json:"ai_auto_resolve_timeout"` // hours before assumed resolution (default: 24, 0 = disabled)
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
 
 	// Escalation
-	EscalationMessage string `json:"escalation_message"` // message shown when AI hands off to human
+	EscalationMessage           string `json:"escalation_message"`             // message shown when AI hands off to human (live)
+	EscalationMessageBusy       string `json:"escalation_message_busy"`        // message shown when AI hands off while team is busy
+	EscalationMessageAfterHours string `json:"escalation_message_after_hours"` // message shown when AI hands off after hours
 
 	// Handoff Routing
 	HandoffBehavior    string  `json:"handoff_behavior"` // unassigned, assign_to_team, round_robin
@@ -1128,11 +1163,13 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIEnabled:                     false,
 		AIAgentID:                     nil,
 		AIConfidenceThreshold:         0.7,
-		AIResponseMode:                "off",
-		AIMaxFollowups:                3,
+		AIResponseMode:                "ai_first",
+		AIMaxFollowups:                5,
 		AIAutoResolveTimeout:          24,
 		ShowTalkToHuman:               true,
-		EscalationMessage:             "Let me connect you with a team member who can help further.",
+		EscalationMessage:             "Let me connect you with a team member — they typically reply in {reply_time}.",
+		EscalationMessageBusy:         "I've notified the team. Everyone's helping other customers right now — expect a reply within {reply_time}.",
+		EscalationMessageAfterHours:   "I've passed this on to the team. We're away right now and back {next_open}.",
 		HandoffBehavior:               "unassigned",
 		HandoffTeamID:                 nil,
 		DefaultMailboxID:              nil,
@@ -1164,7 +1201,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		ReplyTimeCustomMinutes:          nil,
 		SpecialNoticeText:               nil,
 		EmailFallbackEnabled:            true,
-		EmailFallbackDelaySecs:          180,
+		EmailFallbackDelaySecs:          30,
 		EmailFallbackFromName:           "",
 		EmailFallbackMaxDeliveryAgeSecs: 600,
 		ForwardedEmailDetectionEnabled:  true,
@@ -1203,6 +1240,8 @@ type UpdateInstallationSettingsRequest struct {
 	AIAutoResolveTimeout            *int                        `json:"ai_auto_resolve_timeout,omitempty"`
 	ShowTalkToHuman                 *bool                       `json:"show_talk_to_human,omitempty"`
 	EscalationMessage               *string                     `json:"escalation_message,omitempty"`
+	EscalationMessageBusy           *string                     `json:"escalation_message_busy,omitempty"`
+	EscalationMessageAfterHours     *string                     `json:"escalation_message_after_hours,omitempty"`
 	HandoffBehavior                 *string                     `json:"handoff_behavior,omitempty"`
 	HandoffTeamID                   *string                     `json:"handoff_team_id,omitempty"`
 	DefaultMailboxID                *string                     `json:"default_mailbox_id,omitempty"`

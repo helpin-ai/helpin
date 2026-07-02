@@ -298,9 +298,30 @@ export interface HelpcenterFooterLink {
   url: string;
 }
 
+export type HelpcenterSocialPlatform =
+  | 'x'
+  | 'twitter'
+  | 'linkedin'
+  | 'github'
+  | 'youtube'
+  | 'facebook'
+  | 'instagram'
+  | 'discord'
+  | 'slack'
+  | 'rss'
+  | 'website';
+
+export interface HelpcenterSocialLink {
+  platform: HelpcenterSocialPlatform;
+  url: string;
+  label?: string;
+}
+
 export interface HelpcenterFooterConfig {
-  copyright_text: string;
-  links: HelpcenterFooterLink[];
+  show_copyright?: boolean;
+  copyright_text?: string;
+  links?: HelpcenterFooterLink[];
+  social_links?: HelpcenterSocialLink[];
 }
 
 export type HomepageFeaturedCardLinkType = 'space' | 'collection' | 'article' | 'url';

@@ -37,9 +37,10 @@ import type {
   UpdateSupportMailboxRequest,
 } from '@/lib/pmTypes';
 import {
+  buildSupportMemberOptions,
+  buildSupportTeamOptions,
   filterMembersOutsideLinkedTeam,
   filterSupportAccessibleMembers,
-  filterSupportAccessibleTeams,
   splitMailboxMembersBySelection,
 } from './teamInboxDialogMembers';
 import { getTeamInboxDialogSteps } from './teamInboxDialogFlow';
@@ -189,6 +190,23 @@ function FieldLabel({ htmlFor, children, tip }: { htmlFor?: string; children: Re
   );
 }
 
+function TeamSelectItem({
+  value,
+  children,
+  disabledReason,
+}: {
+  value: string;
+  children: ReactNode;
+  disabledReason?: string | null;
+}) {
+  return (
+    <SelectItem value={value} disabled={Boolean(disabledReason)}>
+      <span className="min-w-0 truncate">{children}</span>
+      {disabledReason && <span className="ml-auto shrink-0 text-xs text-muted-foreground">No Support access</span>}
+    </SelectItem>
+  );
+}
+
 export function TeamInboxDialog({
   workspaceId,
   open,
@@ -221,7 +239,7 @@ export function TeamInboxDialog({
   const updateTriageRule = useUpdateSupportTriageRule(workspaceId);
   const deleteTriageRule = useDeleteSupportTriageRule(workspaceId);
   const supportAccessHref = workspaceSlug ? `/w/${workspaceSlug}/settings/access` : '/workspaces';
-  const supportRoutingHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=inboxes` : '/workspaces';
+  const supportRoutingHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=routing` : '/workspaces';
   const isRoutingOff = chatSettings ? !chatSettings.settings.triage_enabled : false;
 
   useEffect(() => {
@@ -274,8 +292,8 @@ export function TeamInboxDialog({
     [moduleAccess?.grants],
   );
 
-  const supportAccessibleTeams = useMemo(
-    () => filterSupportAccessibleTeams(teams, supportGrants),
+  const supportTeamOptions = useMemo(
+    () => buildSupportTeamOptions(teams, supportGrants),
     [supportGrants, teams],
   );
 
@@ -294,20 +312,25 @@ export function TeamInboxDialog({
     [supportAccessibleMembers],
   );
 
-  const additionalSupportMembers = useMemo(
+  const additionalMembers = useMemo(
     () =>
-      filterMembersOutsideLinkedTeam(supportAccessibleMembers, form.linkedTeamId, userMemberships),
-    [form.linkedTeamId, supportAccessibleMembers, userMemberships],
+      filterMembersOutsideLinkedTeam(activeMembers, form.linkedTeamId, userMemberships),
+    [activeMembers, form.linkedTeamId, userMemberships],
   );
 
-  const additionalSupportMemberIDs = useMemo(
-    () => new Set(additionalSupportMembers.map((member) => member.id)),
-    [additionalSupportMembers],
+  const additionalMemberOptions = useMemo(
+    () => buildSupportMemberOptions(additionalMembers, supportGrants, userMemberships),
+    [additionalMembers, supportGrants, userMemberships],
+  );
+
+  const additionalMemberIDs = useMemo(
+    () => new Set(additionalMembers.map((member) => member.id)),
+    [additionalMembers],
   );
 
   useEffect(() => {
     if (!open || mailbox || !currentWorkspaceMember) return;
-    if (!additionalSupportMemberIDs.has(currentWorkspaceMember.id)) return;
+    if (!additionalMemberIDs.has(currentWorkspaceMember.id)) return;
 
     setForm((current) => {
       if (current.workspaceMemberIds.includes(currentWorkspaceMember.id)) return current;
@@ -316,7 +339,7 @@ export function TeamInboxDialog({
         workspaceMemberIds: [...current.workspaceMemberIds, currentWorkspaceMember.id],
       };
     });
-  }, [additionalSupportMemberIDs, currentWorkspaceMember, mailbox, open]);
+  }, [additionalMemberIDs, currentWorkspaceMember, mailbox, open]);
 
   const teamMemberCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -331,38 +354,42 @@ export function TeamInboxDialog({
     [form.workspaceMemberIds, supportAccessibleMemberIDs],
   );
 
+  const selectedAdditionalWorkspaceMemberIds = useMemo(
+    () => form.workspaceMemberIds.filter((id) => additionalMemberIDs.has(id)),
+    [additionalMemberIDs, form.workspaceMemberIds],
+  );
+
   const supportedAdditionalWorkspaceMemberIds = useMemo(
-    () => supportedWorkspaceMemberIds.filter((id) => additionalSupportMemberIDs.has(id)),
-    [additionalSupportMemberIDs, supportedWorkspaceMemberIds],
+    () => selectedAdditionalWorkspaceMemberIds.filter((id) => supportAccessibleMemberIDs.has(id)),
+    [selectedAdditionalWorkspaceMemberIds, supportAccessibleMemberIDs],
   );
 
   const inaccessibleSelectedMemberCount = form.workspaceMemberIds.length - supportedWorkspaceMemberIds.length;
-  const linkedTeamSelectedMemberCount =
-    supportedWorkspaceMemberIds.length - supportedAdditionalWorkspaceMemberIds.length;
-  const selectedAdditionalMemberCount = supportedAdditionalWorkspaceMemberIds.length;
+  const selectedAdditionalMemberCount = selectedAdditionalWorkspaceMemberIds.length;
 
   const selectedLinkedTeamHasSupportAccess =
-    form.linkedTeamId === 'none' || supportAccessibleTeams.some((team) => team.id === form.linkedTeamId);
+    form.linkedTeamId === 'none' ||
+    supportTeamOptions.some((option) => option.team.id === form.linkedTeamId && option.hasSupportAccess);
 
-  const selectedInaccessibleLinkedTeam = useMemo(
-    () =>
-      form.linkedTeamId !== 'none' && !selectedLinkedTeamHasSupportAccess
-        ? teams.find((team) => team.id === form.linkedTeamId)
-        : undefined,
-    [form.linkedTeamId, selectedLinkedTeamHasSupportAccess, teams],
-  );
-
-  const inaccessibleTeamCount = Math.max(teams.length - supportAccessibleTeams.length, 0);
+  const inaccessibleTeamCount = supportTeamOptions.filter((option) => !option.hasSupportAccess).length;
   const inaccessibleMemberCount = Math.max(activeMembers.length - supportAccessibleMembers.length, 0);
+  const accessRestrictionParts = [
+    inaccessibleTeamCount > 0 ? `${inaccessibleTeamCount} ${inaccessibleTeamCount === 1 ? 'team' : 'teams'}` : null,
+    inaccessibleMemberCount > 0 ? `${inaccessibleMemberCount} ${inaccessibleMemberCount === 1 ? 'member' : 'members'}` : null,
+  ].filter((part): part is string => Boolean(part));
+  const accessRestrictionSummary =
+    accessRestrictionParts.length > 0
+      ? `${accessRestrictionParts.join(' and ')} cannot be selected because ${inaccessibleTeamCount + inaccessibleMemberCount === 1 ? 'it does' : 'they do'} not have access to the Support module.`
+      : '';
 
   const availableAdditionalMembers = useMemo(
-    () => splitMailboxMembersBySelection(additionalSupportMembers, supportedAdditionalWorkspaceMemberIds).available,
-    [additionalSupportMembers, supportedAdditionalWorkspaceMemberIds],
+    () => splitMailboxMembersBySelection(additionalMemberOptions, selectedAdditionalWorkspaceMemberIds, (option) => option.member.id).available,
+    [additionalMemberOptions, selectedAdditionalWorkspaceMemberIds],
   );
 
   const selectedMembers = useMemo(
-    () => splitMailboxMembersBySelection(additionalSupportMembers, supportedAdditionalWorkspaceMemberIds).selected,
-    [additionalSupportMembers, supportedAdditionalWorkspaceMemberIds],
+    () => splitMailboxMembersBySelection(additionalMemberOptions, selectedAdditionalWorkspaceMemberIds, (option) => option.member.id).selected,
+    [additionalMemberOptions, selectedAdditionalWorkspaceMemberIds],
   );
 
   const canProceedToStep2 = form.name.trim().length > 0 && form.handle.trim().length > 0;
@@ -713,7 +740,7 @@ export function TeamInboxDialog({
         )}
 
         {step === 2 && (
-          <div className="px-6 pb-2">
+          <div className="max-h-[calc(90svh-8rem)] overflow-y-auto px-6 pb-2 pr-5">
             <DialogHeader className="mb-4">
               <DialogTitle>Members & Assignment</DialogTitle>
               <DialogDescription>
@@ -722,60 +749,12 @@ export function TeamInboxDialog({
             </DialogHeader>
 
             <div className="mb-4 space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <FieldLabel tip="Choose the main team responsible for this inbox. Everyone in the team is included automatically, and you can add extra people below.">
-                    Responsible team
-                  </FieldLabel>
-                  <Select value={form.linkedTeamId} onValueChange={(value) => setForm((current) => ({ ...current, linkedTeamId: value }))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No team</SelectItem>
-                      {selectedInaccessibleLinkedTeam && (
-                        <SelectItem value={selectedInaccessibleLinkedTeam.id} disabled>
-                          {selectedInaccessibleLinkedTeam.name} · {teamMemberCounts.get(selectedInaccessibleLinkedTeam.id) ?? 0} members · needs Support access
-                        </SelectItem>
-                      )}
-                      {supportAccessibleTeams.map((team) => (
-                        <SelectItem key={team.id} value={team.id}>
-                          {team.name} · {teamMemberCounts.get(team.id) ?? 0} members
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <FieldLabel tip="Choose whether conversations stay unassigned for agents to pick up, or are automatically distributed across inbox members.">
-                    Assignment
-                  </FieldLabel>
-                  <Select value={form.assignmentMode} onValueChange={(value: 'manual' | 'round_robin') => setForm((current) => ({ ...current, assignmentMode: value }))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="manual">Manual</SelectItem>
-                      <SelectItem value="round_robin">Round robin</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {(inaccessibleTeamCount > 0 || inaccessibleMemberCount > 0 || !selectedLinkedTeamHasSupportAccess || inaccessibleSelectedMemberCount > 0 || linkedTeamSelectedMemberCount > 0) && (
+              {(accessRestrictionSummary || !selectedLinkedTeamHasSupportAccess || inaccessibleSelectedMemberCount > 0) && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                  <span className="font-medium">Only teams and members with Support access are shown.</span>
-                  {(inaccessibleTeamCount > 0 || inaccessibleMemberCount > 0) && (
-                    <span className="ml-1">
-                      {inaccessibleTeamCount > 0 && `${inaccessibleTeamCount} ${inaccessibleTeamCount === 1 ? 'team is' : 'teams are'} hidden`}
-                      {inaccessibleTeamCount > 0 && inaccessibleMemberCount > 0 ? ' and ' : ''}
-                      {inaccessibleMemberCount > 0 && `${inaccessibleMemberCount} ${inaccessibleMemberCount === 1 ? 'member is' : 'members are'} hidden`}
-                      .
-                    </span>
-                  )}
+                  {accessRestrictionSummary && <span className="font-medium">{accessRestrictionSummary}</span>}
                   {!selectedLinkedTeamHasSupportAccess && (
                     <span className="ml-1">
-                      The current team will be removed on save unless Support access is added first.
+                      The selected team will be removed on save unless Support access is added first.
                     </span>
                   )}
                   {inaccessibleSelectedMemberCount > 0 && (
@@ -783,21 +762,35 @@ export function TeamInboxDialog({
                       {inaccessibleSelectedMemberCount} selected {inaccessibleSelectedMemberCount === 1 ? 'member no longer has' : 'members no longer have'} Support access and will be removed on save.
                     </span>
                   )}
-                  {linkedTeamSelectedMemberCount > 0 && (
-                    <span className="ml-1">
-                      {linkedTeamSelectedMemberCount} selected {linkedTeamSelectedMemberCount === 1 ? 'member is' : 'members are'} already included through the team and will not be saved separately.
-                    </span>
-                  )}
                   <a
                     href={supportAccessHref}
                     target="_blank"
                     rel="noreferrer"
-                    className="ml-1 font-medium underline underline-offset-2"
+                    className="mt-1 block font-medium underline underline-offset-2"
                   >
-                    Open Access settings
+                    Open module access settings
                   </a>
                 </div>
               )}
+
+              <div className="space-y-1.5">
+                <FieldLabel tip="Choose which team gets access to this inbox. Team members are included automatically, and you can add extra people below.">
+                  Team Access
+                </FieldLabel>
+                <Select value={form.linkedTeamId} onValueChange={(value) => setForm((current) => ({ ...current, linkedTeamId: value }))}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    <SelectItem value="none">No linked team</SelectItem>
+                    {supportTeamOptions.map(({ team, disabledReason }) => (
+                      <TeamSelectItem key={team.id} value={team.id} disabledReason={disabledReason}>
+                        {team.name} · {teamMemberCounts.get(team.id) ?? 0} members
+                      </TeamSelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -829,15 +822,15 @@ export function TeamInboxDialog({
                       <CommandList>
                         <CommandEmpty>No eligible members found.</CommandEmpty>
                         <CommandGroup>
-                          {availableAdditionalMembers.map((member) => {
+                          {availableAdditionalMembers.map(({ member, disabledReason }) => {
                             const displayName = member.display_name || member.email || 'Unknown';
-                            return (
+                            const item = (
                               <CommandItem
                                 key={member.id}
                                 value={`${displayName} ${member.email ?? ''}`}
+                                disabled={Boolean(disabledReason)}
                                 onSelect={() => {
                                   toggleMember(member.id, true);
-                                  setMemberPickerOpen(false);
                                 }}
                                 className="gap-3"
                               >
@@ -859,6 +852,17 @@ export function TeamInboxDialog({
                                 </div>
                               </CommandItem>
                             );
+                            if (!disabledReason) return item;
+                            return (
+                              <Tooltip key={member.id}>
+                                <TooltipTrigger asChild>
+                                  <div>{item}</div>
+                                </TooltipTrigger>
+                                <TooltipContent side="left" className="max-w-56">
+                                  {disabledReason}
+                                </TooltipContent>
+                              </Tooltip>
+                            );
                           })}
                         </CommandGroup>
                       </CommandList>
@@ -867,18 +871,18 @@ export function TeamInboxDialog({
                 </Popover>
               </div>
 
-              <div className="min-h-32 rounded-lg border">
+              <div className="max-h-72 min-h-32 overflow-y-auto rounded-lg border">
                 {selectedMembers.length === 0 ? (
                   <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-                    No additional members
+                    No additional members selected
                   </p>
                 ) : (
                   <div className="divide-y divide-border/70">
-                    {selectedMembers.map((member) => {
+                    {selectedMembers.map(({ member, disabledReason }) => {
                       const displayName = member.display_name || member.email || 'Unknown';
                       const isCurrentUser = member.id === currentWorkspaceMember?.id;
-                      return (
-                        <div key={member.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+                      const row = (
+                        <div key={member.id} className={`flex items-center gap-3 px-3 py-2.5 text-sm ${disabledReason ? 'opacity-60' : ''}`}>
                           <UserAvatar
                             name={displayName}
                             avatarUrl={member.avatar_url}
@@ -916,16 +920,40 @@ export function TeamInboxDialog({
                           )}
                         </div>
                       );
+                      if (!disabledReason) return row;
+                      return (
+                        <Tooltip key={member.id}>
+                          <TooltipTrigger asChild>{row}</TooltipTrigger>
+                          <TooltipContent side="left" className="max-w-56">
+                            {disabledReason}
+                          </TooltipContent>
+                        </Tooltip>
+                      );
                     })}
                   </div>
                 )}
               </div>
             </div>
+
+            <div className="mt-4 space-y-1.5">
+              <FieldLabel tip="Choose whether conversations stay unassigned for agents to pick up, or are automatically distributed across inbox members.">
+                Assignment
+              </FieldLabel>
+              <Select value={form.assignmentMode} onValueChange={(value: 'manual' | 'round_robin') => setForm((current) => ({ ...current, assignmentMode: value }))}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manual">Manual</SelectItem>
+                  <SelectItem value="round_robin">Round robin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         )}
 
         {step === 3 && (
-          <div className="px-6 pb-2">
+          <div className="max-h-[calc(90svh-8rem)] overflow-y-auto px-6 pb-2 pr-5">
             <DialogHeader className="mb-4">
               <DialogTitle>Routing</DialogTitle>
               <DialogDescription>

@@ -2,6 +2,7 @@ import type { BusinessHoursDay, SupportInboxSettings } from '@/lib/pmTypes';
 import type { WidgetConfig } from '@helpin-ai/widget-core';
 import { formatReplyTimeCopy } from '@helpin-ai/shared';
 import { DAYS, DEFAULT_BUSINESS_HOURS_DAY } from './constants';
+import { getChatWidgetAIResponseModeForUI, isChatWidgetAIResponseModeActive } from './responseModes';
 
 export type ChatSettingsDraft = Omit<
   SupportInboxSettings,
@@ -119,6 +120,46 @@ export function sortHelpSpaceIds(ids?: string[] | null): string[] {
   return [...(ids ?? [])].sort();
 }
 
+const ESCALATION_FALLBACK_TIME = 'as soon as possible';
+// Static, illustrative stand-in for {next_open} — the real value depends on
+// the workspace's business-hours schedule/timezone and is only known server-side.
+const ESCALATION_NEXT_OPEN_EXAMPLE = 'on Monday at 9:00 AM';
+
+// Mirrors server/internal/service/support_handoff_state.go#shortReplyTimePhrase
+// so the settings preview matches what customers actually see in {reply_time}.
+export function shortReplyTimePhrase(preset: string, customMinutes: number | null): string {
+  switch (preset) {
+    case 'few_minutes':
+      return 'a few minutes';
+    case 'few_hours':
+      return 'a few hours';
+    case 'same_day':
+      return 'a day';
+    case 'custom':
+      return customMinutes && customMinutes > 0 ? `about ${customMinutes} minutes` : '';
+    default:
+      return '';
+  }
+}
+
+/**
+ * Renders an escalation message template with {reply_time}/{next_open} tokens
+ * substituted for a read-only settings preview. Mirrors the token substitution
+ * in server/internal/service/support_handoff_state.go#renderEscalationMessage;
+ * {next_open} uses a static illustrative example since the real value is
+ * timezone/schedule-dependent and only resolved server-side.
+ */
+export function previewEscalationMessage(
+  template: string,
+  replyTimePreset: string,
+  replyTimeCustomMinutes: number | null,
+): string {
+  const replyTime = shortReplyTimePhrase(replyTimePreset, replyTimeCustomMinutes) || ESCALATION_FALLBACK_TIME;
+  return template
+    .split('{reply_time}').join(replyTime)
+    .split('{next_open}').join(ESCALATION_NEXT_OPEN_EXAMPLE);
+}
+
 export function buildSettingsDraftFromServer(settings: SupportInboxSettings): ChatSettingsDraft {
   const {
     ai_agent_id,
@@ -149,6 +190,8 @@ export function buildSettingsDraftFromServer(settings: SupportInboxSettings): Ch
 
   return {
     ...rest,
+    ai_enabled: rest.ai_enabled && isChatWidgetAIResponseModeActive(rest.ai_response_mode),
+    ai_response_mode: getChatWidgetAIResponseModeForUI(rest.ai_response_mode),
     ai_agent_id: ai_agent_id ?? '',
     business_hours_schedule: normalizeBusinessHoursSchedule(rest.business_hours_schedule),
     widget_help_space_ids: sortHelpSpaceIds(rest.widget_help_space_ids),

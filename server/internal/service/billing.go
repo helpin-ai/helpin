@@ -237,6 +237,16 @@ type BillingCreditPreflight struct {
 	Credits     int
 }
 
+// BillingManagerRef identifies a person who can manage this workspace's
+// billing (a workspace owner or the organization owner), for display so
+// non-owners know who to contact.
+type BillingManagerRef struct {
+	UserID string `json:"user_id"`
+	Name   string `json:"name"`
+	Email  string `json:"email"`
+	Role   string `json:"role"`
+}
+
 type BillingSummary struct {
 	WorkspaceID            string     `json:"workspace_id"`
 	Plan                   string     `json:"plan"`
@@ -272,6 +282,9 @@ type BillingSummary struct {
 	SeatOverLimit          bool       `json:"seat_over_limit,omitempty"`
 	EntitlementWarning     string     `json:"entitlement_warning,omitempty"`
 	OnDemandBlocksInvoiced int        `json:"on_demand_blocks_invoiced"`
+	// BillingManagers lists the workspace owner(s) and org owner who can manage
+	// billing. Populated only on the workspace billing page, not hot paths.
+	BillingManagers []BillingManagerRef `json:"billing_managers,omitempty"`
 }
 
 type BillingService struct {

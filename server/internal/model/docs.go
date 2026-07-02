@@ -68,11 +68,14 @@ const (
 
 // ─── Helper types ───────────────────────────────────────────────────────────
 
-// DocsStringArray is a PostgreSQL text[] compatible type for GORM.
-type DocsStringArray []string
+// StringArray is a PostgreSQL text[] compatible type for GORM.
+type StringArray []string
+
+// DocsStringArray is kept for existing docs models that use the older name.
+type DocsStringArray = StringArray
 
 // Value implements driver.Valuer for PostgreSQL text[].
-func (a DocsStringArray) Value() (driver.Value, error) {
+func (a StringArray) Value() (driver.Value, error) {
 	if a == nil {
 		return "{}", nil
 	}
@@ -84,9 +87,9 @@ func (a DocsStringArray) Value() (driver.Value, error) {
 }
 
 // Scan implements sql.Scanner for PostgreSQL text[].
-func (a *DocsStringArray) Scan(src interface{}) error {
+func (a *StringArray) Scan(src interface{}) error {
 	if src == nil {
-		*a = DocsStringArray{}
+		*a = StringArray{}
 		return nil
 	}
 	var s string
@@ -101,11 +104,11 @@ func (a *DocsStringArray) Scan(src interface{}) error {
 	s = strings.TrimPrefix(s, "{")
 	s = strings.TrimSuffix(s, "}")
 	if s == "" {
-		*a = DocsStringArray{}
+		*a = StringArray{}
 		return nil
 	}
 	parts := strings.Split(s, ",")
-	result := make(DocsStringArray, len(parts))
+	result := make(StringArray, len(parts))
 	for i, p := range parts {
 		result[i] = strings.Trim(p, `"`)
 	}
@@ -510,10 +513,19 @@ type HelpcenterFooterLink struct {
 	URL   string `json:"url"`
 }
 
+// HelpcenterSocialLink is a single footer social link.
+type HelpcenterSocialLink struct {
+	Platform string `json:"platform"`
+	URL      string `json:"url"`
+	Label    string `json:"label,omitempty"`
+}
+
 // HelpcenterFooterConfig stores footer customization.
 type HelpcenterFooterConfig struct {
-	CopyrightText string                 `json:"copyright_text"`
-	Links         []HelpcenterFooterLink `json:"links"`
+	ShowCopyright *bool                  `json:"show_copyright,omitempty"`
+	CopyrightText string                 `json:"copyright_text,omitempty"`
+	Links         []HelpcenterFooterLink `json:"links,omitempty"`
+	SocialLinks   []HelpcenterSocialLink `json:"social_links,omitempty"`
 }
 
 // HomepageFeaturedCard is a single card on the help center homepage.
