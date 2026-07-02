@@ -85,6 +85,13 @@ const (
 	SupportConversationFlowStateResolvedByHuman = "resolved_by_human"
 )
 
+// Handoff states describe availability at the moment the AI hands off.
+const (
+	HandoffStateLive       = "live"
+	HandoffStateBusy       = "busy"
+	HandoffStateAfterHours = "after_hours"
+)
+
 const (
 	SupportConversationListFilterInbox    = "inbox"
 	SupportConversationListFilterMine     = "mine"
