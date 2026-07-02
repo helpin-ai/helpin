@@ -141,6 +141,21 @@ func (f *supportTriageTestFixture) createMailbox(t *testing.T, name, handle stri
 	return created
 }
 
+func (f *supportTriageTestFixture) createMailboxWithRoutingPrompt(t *testing.T, name, handle, routingPrompt string, triageEligible bool) *model.SupportMailbox {
+	t.Helper()
+
+	mailbox := f.createMailbox(t, name, handle, triageEligible)
+	mailbox.RoutingPrompt = strPtr(routingPrompt)
+	if err := f.mailboxRepo.Update(f.ctx, mailbox); err != nil {
+		t.Fatalf("update mailbox routing prompt: %v", err)
+	}
+	updated, err := f.mailboxRepo.GetByID(f.ctx, f.workspaceID, mailbox.ID)
+	if err != nil {
+		t.Fatalf("get updated mailbox: %v", err)
+	}
+	return updated
+}
+
 func (f *supportTriageTestFixture) createConversation(t *testing.T, subject, customerEmail string, mailboxID *string) *model.SupportConversation {
 	t.Helper()
 
@@ -297,6 +312,39 @@ func TestSupportInboxTriageEvaluateAndRoute_AISuggestion(t *testing.T) {
 	}
 }
 
+func TestSupportInboxTriageEvaluateAndRoute_AISharedDoesNotUseLexicalFallback(t *testing.T) {
+	fakeLLM := &scriptedSupportTriageLLM{
+		response: `{"intent":"unclear","target_mailbox_handle":"shared","confidence":0.22,"reason":"No specialized inbox is a clear fit."}`,
+	}
+	fixture := newSupportTriageTestFixture(t, fakeLLM, nil)
+	fixture.createMailboxWithRoutingPrompt(t, "Billing", "billing", "Messages from customers about invoices and billing.", true)
+
+	conversation := fixture.createConversation(t, "Message from customer", "buyer@example.com", nil)
+	message := fixture.createCustomerReply(t, conversation.ID, "This is a message from the customer. Can someone take a look?")
+
+	triage, err := fixture.triageSvc.EvaluateAndRoute(fixture.ctx, fixture.workspaceID, conversation.ID, message.ID)
+	if err != nil {
+		t.Fatalf("EvaluateAndRoute: %v", err)
+	}
+	if triage != nil {
+		t.Fatalf("triage = %#v, want nil when AI abstains", triage)
+	}
+	if fakeLLM.calls != 1 {
+		t.Fatalf("llm calls = %d, want 1", fakeLLM.calls)
+	}
+
+	updatedConversation, err := fixture.conversationRepo.GetByID(fixture.ctx, fixture.workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("load conversation: %v", err)
+	}
+	if updatedConversation.MailboxID != nil {
+		t.Fatalf("mailbox_id = %q, want shared", derefString(updatedConversation.MailboxID))
+	}
+	if got := countTriageEvents(t, fixture.db, conversation.ID, supportTriageEventEvaluated); got != 0 {
+		t.Fatalf("evaluated events = %d, want 0", got)
+	}
+}
+
 func TestSupportInboxTriageEvaluateAndRoute_AutoMovesHighConfidenceRule(t *testing.T) {
 	fixture := newSupportTriageTestFixture(t, nil, func(settings *model.SupportInboxSettings) {
 		settings.TriageAutoMoveEnabled = true
@@ -351,6 +399,49 @@ func TestSupportInboxTriageEvaluateAndRoute_AutoMovesHighConfidenceRule(t *testi
 	}
 	if !strings.Contains(systemMessages[len(systemMessages)-1].Content, "Routing rule moved to inbox 'Billing'.") {
 		t.Fatalf("unexpected system message %q", systemMessages[len(systemMessages)-1].Content)
+	}
+}
+
+func TestSupportInboxTriageShouldAutoMoveRequiresTrustedSource(t *testing.T) {
+	targetMailboxID := "mailbox-target"
+	confidence := 1.0
+	settings := model.DefaultSupportInboxSettings()
+	settings.TriageAutoMoveEnabled = true
+	settings.TriageConfidenceThreshold = 0.8
+	conversation := &model.SupportConversation{
+		Channel: "widget",
+		Source:  "widget",
+	}
+	messages := []model.SupportMessage{
+		{
+			SenderType:  "customer",
+			MessageType: "reply",
+		},
+	}
+
+	tests := []struct {
+		name   string
+		source string
+		want   bool
+	}{
+		{name: "rule source", source: model.SupportConversationTriageSourceRule, want: true},
+		{name: "ai source", source: model.SupportConversationTriageSourceAI, want: true},
+		{name: "lexical source", source: "lexical", want: false},
+		{name: "empty source", source: "", want: false},
+	}
+
+	svc := &SupportInboxTriageService{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			triage := &model.SupportConversationTriage{
+				ClassifierSource:   tt.source,
+				Confidence:         &confidence,
+				SuggestedMailboxID: &targetMailboxID,
+			}
+			if got := svc.shouldAutoMove(settings, conversation, messages, triage); got != tt.want {
+				t.Fatalf("shouldAutoMove() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
