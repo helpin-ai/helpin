@@ -171,11 +171,68 @@ func buildAgentRunInputPayload(targetType, targetID string, trigger *model.Agent
 	return json.Marshal(payload)
 }
 
+// agentRuntimePresetDelegatedTargets lists, per system preset, the target
+// types whose runs are delegated to Agent Runtime when
+// AGENT_RUNTIME_LAUNCH_ENABLED is on. Presets absent from this map (code
+// builder, review agent, epic/task planner, support agent, command agent) and
+// target types absent from a preset's set (task, story, epic, repository,
+// support_conversation, support_coverage_gap) stay on the local Temporal
+// executor until the repo-delivery and support slices flip.
+var agentRuntimePresetDelegatedTargets = map[string]map[string]bool{
+	model.AgentPresetMarketer: {
+		"workspace": true,
+	},
+	model.AgentPresetDocumentationAgent: {
+		"workspace": true,
+		"document":  true,
+	},
+	model.AgentPresetCRMOperator: {
+		"workspace":   true,
+		"crm_contact": true,
+		"crm_company": true,
+		"crm_deal":    true,
+	},
+}
+
+// agentRuntimeCustomAgentDelegatedTargets lists the target types delegated for
+// custom (non-preset) agents. Custom agents are native_sdk-only generic
+// executors per the agents taxonomy; codex/opencode custom agents keep the
+// local executor because their auth and interaction handling still live there.
+var agentRuntimeCustomAgentDelegatedTargets = map[string]bool{
+	"workspace":   true,
+	"document":    true,
+	"crm_contact": true,
+	"crm_company": true,
+	"crm_deal":    true,
+}
+
+// shouldDelegateRunToAgentRuntime reports whether a run for the given agent
+// and target type is executed by Agent Runtime instead of the local Temporal
+// executor. The AGENT_RUNTIME_LAUNCH_ENABLED flag gate lives in
+// AgentService.delegatesRunToAgentRuntime.
 func shouldDelegateRunToAgentRuntime(agent *model.Agent, targetType string) bool {
-	if agent == nil || strings.TrimSpace(targetType) != "workspace" {
+	if agent == nil {
 		return false
 	}
-	return strings.TrimSpace(agent.PresetKey) == model.AgentPresetMarketer
+	targetType = strings.TrimSpace(targetType)
+	if preset := agent.EffectivePresetKey(); preset != "" {
+		return agentRuntimePresetDelegatedTargets[preset][targetType]
+	}
+	if agent.IsSystem {
+		// System agents are preset-bound; one without a preset is
+		// misconfigured and stays on the local executor.
+		return false
+	}
+	if strings.TrimSpace(agent.RuntimeKind) != model.AgentTemplateRuntimeKindNativeSDK {
+		return false
+	}
+	return agentRuntimeCustomAgentDelegatedTargets[targetType]
+}
+
+// delegatesRunToAgentRuntime is the launch-time delegation decision: the
+// AGENT_RUNTIME_LAUNCH_ENABLED flag short-circuits the preset/target predicate.
+func (s *AgentService) delegatesRunToAgentRuntime(agent *model.Agent, targetType string) bool {
+	return s != nil && s.agentRuntimeLaunchEnabled && shouldDelegateRunToAgentRuntime(agent, targetType)
 }
 
 func shouldRetryAgentRuntimeStart(err error) bool {
@@ -5471,7 +5528,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 
 	var runtimeLauncher agentRuntimeLaunchClient
 	var runtimeAgent AgentRuntimeAgent
-	delegateToAgentRuntime := s.agentRuntimeLaunchEnabled && shouldDelegateRunToAgentRuntime(params.agent, params.targetType)
+	delegateToAgentRuntime := s.delegatesRunToAgentRuntime(params.agent, params.targetType)
 	if delegateToAgentRuntime {
 		launcher, ok := s.agentRuntimeClient.(agentRuntimeLaunchClient)
 		if !ok || launcher == nil {

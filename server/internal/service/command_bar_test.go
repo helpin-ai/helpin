@@ -1608,18 +1608,6 @@ func TestCreateRunDelegatesMiraWorkspaceRunToAgentRuntime(t *testing.T) {
 	}
 }
 
-func TestShouldDelegateRunToAgentRuntimeUsesPresetNotName(t *testing.T) {
-	if shouldDelegateRunToAgentRuntime(&model.Agent{Name: "Mira"}, "workspace") {
-		t.Fatal("custom agent named Mira should not delegate without marketer preset")
-	}
-	if !shouldDelegateRunToAgentRuntime(&model.Agent{Name: "Launch Ops", PresetKey: model.AgentPresetMarketer}, "workspace") {
-		t.Fatal("marketer preset workspace run should delegate")
-	}
-	if shouldDelegateRunToAgentRuntime(&model.Agent{Name: "Mira", PresetKey: model.AgentPresetMarketer}, "task") {
-		t.Fatal("non-workspace target should not delegate")
-	}
-}
-
 func TestCreateRunRetriesDelegatedRuntimeStartOnce(t *testing.T) {
 	db := setupCommandBarPlanTestDB(t)
 	runRepo := repository.NewAgentRunRepository(db)

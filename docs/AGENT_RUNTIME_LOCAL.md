@@ -18,8 +18,20 @@ AGENT_RUNTIME_APP_ID=helpin
 AGENT_RUNTIME_LAUNCH_ENABLED=true
 ```
 
-`AGENT_RUNTIME_LAUNCH_ENABLED=true` currently delegates only workspace runs for the marketer preset.
-Other Helpin runs continue through the in-process Temporal executor.
+`AGENT_RUNTIME_LAUNCH_ENABLED=true` delegates these run surfaces to Agent Runtime:
+
+- marketer preset: workspace targets
+- documentation_agent preset: workspace + document targets
+- crm_operator preset: workspace + crm_contact / crm_company / crm_deal targets
+- custom agents (no preset, `runtime_kind = native_sdk`): workspace / document / crm_* targets
+
+Task, story, epic, repository, support_conversation, and support_coverage_gap
+targets — and all other presets (code_builder, review_agent, epic_planner,
+task_planner, support_agent, command_agent) — continue through the in-process
+Temporal executor. Codex/opencode custom agents also stay local (their auth and
+interaction handling live in the local executor). The predicate is the
+preset→target map in `server/internal/service/agent.go`
+(`agentRuntimePresetDelegatedTargets` / `agentRuntimeCustomAgentDelegatedTargets`).
 
 ## Runtime App Config
 
@@ -129,3 +141,17 @@ Current pilot surface: marketer-preset workspace runs only.
 | Post-auth assistant turn | Blocked without browser login | Requires completing the OpenAI device-code login for the runtime-issued code. |
 | Product finalizers | Not applicable | Workspace Mira run has no task/support/repository finalizer. |
 | Repository delivery | Not applicable | Workspace Mira run does not prepare or push a repository workspace. |
+
+## Delegated Surface Parity Rows
+
+One row per surface delegated beyond the marketer pilot. Columns map to the
+launch pipeline stages; evidence is the code path that exists today.
+
+| Surface | Launch routing | Target context | Tools | Write path | Finalizers | Transcript |
+| --- | --- | --- | --- | --- | --- | --- |
+| documentation_agent / workspace | Green — preset→target map delegates; `startTargetRunWithOptions` workspace case stamps `workspace_id` metadata via `runtimeStartRunRequest`. | Green — host `workspace` case returns workspace context data. | Green — docs read tools cataloged; docs/publish product tools are command-backed via the commands provider endpoint. | Amber — document writes (`write_document_content`, `publish_document_change_proposal`) are command-backed but not yet E2E-smoked from a delegated run. | Green — agent-idle + automation completed-rules finalizers fire on terminal projection. | Green — NATS projection mirrors messages/interactions into Helpin. |
+| documentation_agent / document | Green — predicate delegates; `document` launch case validates `doc.WorkspaceID == workspaceID` before `createRun`, so `metadata.workspace_id` is always set. | Green — host `document` case resolves the doc and stamps `workspace_id`; type string `document` matches what Helpin stamps. | Green — same command-backed docs tool set as workspace runs. | Amber — document-target write flows not yet E2E-smoked against a live runtime. | Green — agent-idle + completed-rules; no doc-specific finalizer exists (none needed yet). | Green — same projection path as marketer pilot. |
+| crm_operator / workspace | Green — preset→target map delegates workspace runs. | Green — host `workspace` case. | Green — CRM product tools (`add_deal_note`, `update_deal_stage`, `ensure_crm_contact_company`, `enrich_crm_*`) are command-backed. | Amber — CRM command writes exist but no delegated-run smoke has exercised them yet. | Green — agent-idle + completed-rules; `crm.deal_review_actions` flow output is validated by the planning finalizer. | Green — same projection path. |
+| crm_operator / crm_contact + crm_deal | Green — predicate delegates; `crm_contact` / `crm_deal` launch cases validate workspace ownership before `createRun`. | Green — host `crm_contact` / `crm_deal` cases; type strings match Helpin's stamps exactly. | Green — command-backed CRM tools with target-aware defaults (e.g. enrich uses run target ID). | Amber — same as above: command-backed, not E2E-smoked. | Green — agent-idle + completed-rules. | Green — same projection path. |
+| crm_operator / crm_company | Amber — predicate delegates `crm_company`, but `startTargetRunWithOptions` has no `crm_company` launch case yet (`unsupported target type`), so no Helpin path can create such a run today; predicate is forward-ready only. | Green — host `crm_company` case already resolves company context. | Green — `enrich_crm_company` command supports `crm_company` targets. | Amber — unreachable until the launch case lands. | Green — generic finalizers would apply once reachable. | Green — projection is target-agnostic. |
+| custom native_sdk agents / workspace + document + crm_* | Green — custom agents with no preset and `runtime_kind = native_sdk` delegate on these targets; codex/opencode custom agents intentionally stay local. | Green — same host target-context cases as preset runs. | Amber — tool surface is whatever the agent's `allowed_tools` grants; scanners/preview/github built-ins plus command-backed product tools exist, but per-agent tool grants are not preset-curated. | Amber — write commands available but no custom-agent delegated smoke yet. | Green — agent-idle + completed-rules are agent-agnostic. | Green — same projection path. |
