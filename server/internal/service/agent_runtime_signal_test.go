@@ -17,6 +17,8 @@ import (
 type fakeAgentRuntimeSignalClient struct {
 	resumeCalls          []fakeAgentRuntimeResumeCall
 	cancelCalls          []string
+	startAuthCalls       []string
+	cancelAuthCalls      []string
 	upsertAgents         []AgentRuntimeAgent
 	startRunCalls        []AgentRuntimeStartRunRequest
 	appID                string
@@ -34,6 +36,10 @@ type fakeAgentRuntimeSignalClient struct {
 	startRunErr          error
 	resumeErr            error
 	cancelErr            error
+	startAuthState       *model.CodexAuthState
+	cancelAuthState      *model.CodexAuthState
+	startAuthErr         error
+	cancelAuthErr        error
 }
 
 type fakeAgentRuntimeResumeCall struct {
@@ -113,6 +119,28 @@ func (c *fakeAgentRuntimeSignalClient) CancelRun(_ context.Context, runtimeRunID
 		return nil, c.cancelErr
 	}
 	return &AgentRuntimeRun{ID: runtimeRunID, Status: model.AgentRunStatusCancelled}, nil
+}
+
+func (c *fakeAgentRuntimeSignalClient) StartCodexDeviceCodeAuth(_ context.Context, runtimeRunID string) (*model.CodexAuthState, error) {
+	c.startAuthCalls = append(c.startAuthCalls, runtimeRunID)
+	if c.startAuthErr != nil {
+		return nil, c.startAuthErr
+	}
+	if c.startAuthState != nil {
+		return c.startAuthState, nil
+	}
+	return &model.CodexAuthState{State: model.CodexAuthStatePending, Provider: "openai", AuthMode: "chatgpt_device_code"}, nil
+}
+
+func (c *fakeAgentRuntimeSignalClient) CancelCodexDeviceCodeAuth(_ context.Context, runtimeRunID string) (*model.CodexAuthState, error) {
+	c.cancelAuthCalls = append(c.cancelAuthCalls, runtimeRunID)
+	if c.cancelAuthErr != nil {
+		return nil, c.cancelAuthErr
+	}
+	if c.cancelAuthState != nil {
+		return c.cancelAuthState, nil
+	}
+	return &model.CodexAuthState{State: model.CodexAuthStateCancelled, Provider: "openai", AuthMode: "chatgpt_device_code"}, nil
 }
 
 func TestResumeRunForAgentRuntimeRunSignalsRuntimeAndKeepsLocalSideEffects(t *testing.T) {
@@ -351,6 +379,88 @@ func TestDelegatedCodexAuthConnectedResumesRuntimeWithoutLocalStatusClobber(t *t
 	}
 	if reloaded.ExecutionStage == nil || *reloaded.ExecutionStage != "auth_completed" {
 		t.Fatalf("expected auth_completed stage, got %#v", reloaded.ExecutionStage)
+	}
+}
+
+func TestStartCodexDeviceCodeAuthForAgentRuntimeRunUsesRuntimeAuthManager(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	now := time.Now().UTC()
+	seedAgentRuntimeSignalAgent(t, db, now)
+	run := seedAgentRuntimeSignalRun(t, runRepo, model.AgentRunStatusPaused, model.AgentRunPauseReasonAuthentication, "not_required", now)
+	mustExec(t, db, `UPDATE agents SET runtime_kind = ?, provider = ? WHERE id = ?`, "codex", "openai", "agent-1")
+	mustExec(t, db, `UPDATE agent_runs SET runtime_kind = ? WHERE id = ?`, "codex", run.ID)
+	runtimeClient := &fakeAgentRuntimeSignalClient{startAuthState: &model.CodexAuthState{
+		State:     model.CodexAuthStateConnected,
+		Provider:  "openai",
+		AuthMode:  "chatgpt_device_code",
+		PlanType:  strPtr("pro"),
+		UpdatedAt: now,
+	}}
+	svc := &AgentService{
+		agentRepo:                agentRepo,
+		runRepo:                  runRepo,
+		agentRuntimeClient:       runtimeClient,
+		codexOpenAIAuthMode:      "chatgpt_device_code",
+		codexChatGPTOAuthEnabled: true,
+	}
+
+	state, err := svc.StartCodexDeviceCodeAuth(context.Background(), "ws-1", run.ID, "user-1")
+	if err != nil {
+		t.Fatalf("StartCodexDeviceCodeAuth returned error: %v", err)
+	}
+	if state == nil || state.State != model.CodexAuthStateConnected {
+		t.Fatalf("expected connected auth state, got %#v", state)
+	}
+	if len(runtimeClient.startAuthCalls) != 1 || runtimeClient.startAuthCalls[0] != "run_runtime_1" {
+		t.Fatalf("expected runtime auth start call, got %#v", runtimeClient.startAuthCalls)
+	}
+	if len(runtimeClient.resumeCalls) != 1 || runtimeClient.resumeCalls[0].req.Intent != model.AgentRunResumeIntentAuthCompleted {
+		t.Fatalf("expected runtime auth_completed resume, got %#v", runtimeClient.resumeCalls)
+	}
+	reloaded, err := runRepo.GetByID(context.Background(), "ws-1", run.ID)
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if reloaded.Status != model.AgentRunStatusPaused || reloaded.PauseReason != model.AgentRunPauseReasonAuthentication {
+		t.Fatalf("expected projection-owned status to remain paused/authentication, got %s/%s", reloaded.Status, reloaded.PauseReason)
+	}
+	if reloaded.ExecutionStage == nil || *reloaded.ExecutionStage != "auth_completed" {
+		t.Fatalf("expected auth_completed stage, got %#v", reloaded.ExecutionStage)
+	}
+}
+
+func TestCancelCodexDeviceCodeAuthForAgentRuntimeRunUsesRuntimeAuthManager(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	now := time.Now().UTC()
+	seedAgentRuntimeSignalAgent(t, db, now)
+	run := seedAgentRuntimeSignalRun(t, runRepo, model.AgentRunStatusPaused, model.AgentRunPauseReasonAuthentication, "not_required", now)
+	mustExec(t, db, `UPDATE agents SET runtime_kind = ?, provider = ? WHERE id = ?`, "codex", "openai", "agent-1")
+	mustExec(t, db, `UPDATE agent_runs SET runtime_kind = ? WHERE id = ?`, "codex", run.ID)
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	svc := &AgentService{
+		agentRepo:                agentRepo,
+		runRepo:                  runRepo,
+		agentRuntimeClient:       runtimeClient,
+		codexOpenAIAuthMode:      "chatgpt_device_code",
+		codexChatGPTOAuthEnabled: true,
+	}
+
+	state, err := svc.CancelCodexDeviceCodeAuth(context.Background(), "ws-1", run.ID, "user-1")
+	if err != nil {
+		t.Fatalf("CancelCodexDeviceCodeAuth returned error: %v", err)
+	}
+	if state == nil || state.State != model.CodexAuthStateCancelled {
+		t.Fatalf("expected cancelled auth state, got %#v", state)
+	}
+	if len(runtimeClient.cancelAuthCalls) != 1 || runtimeClient.cancelAuthCalls[0] != "run_runtime_1" {
+		t.Fatalf("expected runtime auth cancel call, got %#v", runtimeClient.cancelAuthCalls)
+	}
+	if len(runtimeClient.resumeCalls) != 0 {
+		t.Fatalf("did not expect runtime resume, got %#v", runtimeClient.resumeCalls)
 	}
 }
 

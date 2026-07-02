@@ -2,11 +2,16 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 const (
@@ -30,7 +35,11 @@ type AgentRuntimeEventEnvelope = agentruntime.EventEnvelope
 // runs. It intentionally uses only /v1 routes; /internal runtime routes are not
 // a host contract.
 type AgentRuntimeClient struct {
-	client *agentruntime.Client
+	client       *agentruntime.Client
+	baseURL      string
+	appID        string
+	serviceToken string
+	httpClient   *http.Client
 }
 
 func NewAgentRuntimeClient(baseURL, appID, token string, httpClient *http.Client) (*AgentRuntimeClient, error) {
@@ -46,11 +55,26 @@ func NewAgentRuntimeClient(baseURL, appID, token string, httpClient *http.Client
 	if err != nil {
 		return nil, err
 	}
-	return &AgentRuntimeClient{client: client}, nil
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	return &AgentRuntimeClient{
+		client:       client,
+		baseURL:      strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		appID:        strings.TrimSpace(appID),
+		serviceToken: strings.TrimSpace(token),
+		httpClient:   httpClient,
+	}, nil
 }
 
 func (c *AgentRuntimeClient) AppID() string {
-	if c == nil || c.client == nil {
+	if c == nil {
+		return ""
+	}
+	if c.appID != "" {
+		return c.appID
+	}
+	if c.client == nil {
 		return ""
 	}
 	return c.client.AppID()
@@ -106,6 +130,47 @@ func (c *AgentRuntimeClient) AppendMessage(ctx context.Context, runtimeRunID, ro
 
 func (c *AgentRuntimeClient) CancelRun(ctx context.Context, runtimeRunID string) (*AgentRuntimeRun, error) {
 	return c.client.CancelRun(ctx, runtimeRunID)
+}
+
+func (c *AgentRuntimeClient) StartCodexDeviceCodeAuth(ctx context.Context, runtimeRunID string) (*model.CodexAuthState, error) {
+	return c.codexDeviceCodeAuth(ctx, runtimeRunID, "start")
+}
+
+func (c *AgentRuntimeClient) CancelCodexDeviceCodeAuth(ctx context.Context, runtimeRunID string) (*model.CodexAuthState, error) {
+	return c.codexDeviceCodeAuth(ctx, runtimeRunID, "cancel")
+}
+
+func (c *AgentRuntimeClient) codexDeviceCodeAuth(ctx context.Context, runtimeRunID, action string) (*model.CodexAuthState, error) {
+	if c == nil || c.httpClient == nil {
+		return nil, fmt.Errorf("agent runtime client is not configured")
+	}
+	endpoint := fmt.Sprintf("%s/v1/runs/%s/codex-auth/device-code/%s?app_id=%s",
+		c.baseURL,
+		url.PathEscape(strings.TrimSpace(runtimeRunID)),
+		url.PathEscape(strings.TrimSpace(action)),
+		url.QueryEscape(c.AppID()),
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	if c.serviceToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.serviceToken)
+	}
+	res, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return nil, fmt.Errorf("agent runtime POST %s returned %d: %s", req.URL.Path, res.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var state model.CodexAuthState
+	if err := json.NewDecoder(res.Body).Decode(&state); err != nil {
+		return nil, err
+	}
+	return &state, nil
 }
 
 func firstOptionalString(values []string) string {

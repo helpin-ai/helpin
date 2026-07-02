@@ -437,6 +437,11 @@ type agentRuntimeSignalClient interface {
 	CancelRun(ctx context.Context, runtimeRunID string) (*AgentRuntimeRun, error)
 }
 
+type agentRuntimeCodexAuthClient interface {
+	StartCodexDeviceCodeAuth(ctx context.Context, runtimeRunID string) (*model.CodexAuthState, error)
+	CancelCodexDeviceCodeAuth(ctx context.Context, runtimeRunID string) (*model.CodexAuthState, error)
+}
+
 type agentRuntimeLaunchClient interface {
 	AppID() string
 	UpsertAgent(ctx context.Context, agent AgentRuntimeAgent) (*AgentRuntimeAgent, error)
@@ -4029,16 +4034,30 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 }
 
 func (s *AgentService) StartCodexDeviceCodeAuth(ctx context.Context, workspaceID, runID, actorID string) (*model.CodexAuthState, error) {
-	if s.codexAuthManager == nil {
-		return nil, fmt.Errorf("codex device-code auth is not configured")
-	}
-
 	run, agent, err := s.loadRunAndAgentForCodexAuth(ctx, workspaceID, runID)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.ensureRunSupportsCodexDeviceCode(run, agent); err != nil {
 		return nil, err
+	}
+	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
+		runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeCodexAuthClient)
+		if !ok || runtimeClient == nil {
+			return nil, fmt.Errorf("agent runtime codex auth client is not configured")
+		}
+		authState, err := runtimeClient.StartCodexDeviceCodeAuth(ctx, runtimeRunID)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.applyCodexAuthState(ctx, workspaceID, runID, actorID, authState, authState != nil && authState.State == model.CodexAuthStateConnected); err != nil {
+			return nil, err
+		}
+		return authState, nil
+	}
+
+	if s.codexAuthManager == nil {
+		return nil, fmt.Errorf("codex device-code auth is not configured")
 	}
 
 	authState, err := s.codexAuthManager.StartDeviceCode(ctx, run, agent, func(callbackCtx context.Context, state *model.CodexAuthState) {
@@ -4064,16 +4083,30 @@ func (s *AgentService) StartCodexDeviceCodeAuth(ctx context.Context, workspaceID
 }
 
 func (s *AgentService) CancelCodexDeviceCodeAuth(ctx context.Context, workspaceID, runID, actorID string) (*model.CodexAuthState, error) {
-	if s.codexAuthManager == nil {
-		return nil, fmt.Errorf("codex device-code auth is not configured")
-	}
-
 	run, agent, err := s.loadRunAndAgentForCodexAuth(ctx, workspaceID, runID)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.ensureRunSupportsCodexDeviceCode(run, agent); err != nil {
 		return nil, err
+	}
+	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
+		runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeCodexAuthClient)
+		if !ok || runtimeClient == nil {
+			return nil, fmt.Errorf("agent runtime codex auth client is not configured")
+		}
+		authState, err := runtimeClient.CancelCodexDeviceCodeAuth(ctx, runtimeRunID)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.applyCodexAuthState(ctx, workspaceID, runID, actorID, authState, false); err != nil {
+			return nil, err
+		}
+		return authState, nil
+	}
+
+	if s.codexAuthManager == nil {
+		return nil, fmt.Errorf("codex device-code auth is not configured")
 	}
 
 	return s.codexAuthManager.CancelDeviceCode(ctx, runID)
