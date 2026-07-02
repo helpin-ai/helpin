@@ -402,6 +402,15 @@ func (s *SupportInboxService) SendWidgetConversationTranscript(ctx context.Conte
 	}
 
 	slog.InfoContext(ctx, "widget transcript sent", "workspace_id", session.WorkspaceID, "conversation_id", conversationID, "email", recipientEmail)
+
+	if strings.TrimSpace(derefString(conversation.CustomerEmail)) == "" && strings.TrimSpace(email) != "" {
+		if err := s.conversationRepo.UpdateFields(ctx, conversation.WorkspaceID, conversationID, map[string]any{
+			"customer_email": strings.TrimSpace(email),
+		}); err != nil {
+			slog.WarnContext(ctx, "persist captured visitor email failed", "error", err, "conversation_id", conversationID)
+		}
+	}
+
 	return &model.WidgetTranscriptResponse{
 		Success: true,
 		Message: fmt.Sprintf("Transcript sent to %s", recipientEmail),

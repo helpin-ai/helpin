@@ -2476,6 +2476,11 @@
   color: #991b1b;
 }
 
+.helpin-escalation-email-capture { margin-top: 8px; padding: 10px; border-radius: 10px; background: var(--helpin-surface-muted, #f4f4f5); }
+.helpin-escalation-email-capture__label { font-size: 12px; margin: 0 0 6px; }
+.helpin-escalation-email-capture__form { display: flex; gap: 6px; }
+.helpin-escalation-email-capture__ok { font-size: 12px; margin: 6px 0 0; color: var(--helpin-success, #16a34a); }
+
 .helpin-conversation-title {
   font-size: 15px;
   font-weight: 600;

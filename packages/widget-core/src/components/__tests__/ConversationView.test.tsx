@@ -1,0 +1,85 @@
+import { describe, expect, it } from 'vitest';
+import { render } from '@testing-library/preact';
+import { ConversationView } from '../ConversationView';
+import type { Conversation, Message, WidgetConfig } from '../../types';
+
+const baseConfig: WidgetConfig = {
+  workspaceId: 'ws_123',
+  workspaceName: 'Acme',
+  branding: {
+    primaryColor: '#6366f1',
+    welcomeMessage: 'How can we help?',
+    widgetPosition: 'bottom-right',
+    showBranding: true,
+    colorScheme: 'light',
+  },
+  features: {
+    aiEnabled: false,
+    aiFirst: false,
+    showTalkToHuman: false,
+    escalationMessage: 'Let me connect you with a team member who can help further.',
+    fileUploads: false,
+    preChatForm: false,
+    requirePhone: false,
+    csatRating: false,
+    forceIdentify: false,
+  },
+  availability: {
+    isOnline: true,
+    statusText: 'Online now',
+    replyTimeText: 'We typically reply in a few minutes',
+  },
+};
+
+interface RenderOverrides {
+  conversation?: Partial<Conversation>;
+  messages?: Message[];
+  transcriptEmail?: string;
+}
+
+function renderConversationView(overrides: RenderOverrides = {}) {
+  const { conversation: conversationOverrides, messages, transcriptEmail } = overrides;
+  const conversation: Conversation | undefined = conversationOverrides
+    ? ({ subject: 'Help request', ...conversationOverrides } as Conversation)
+    : undefined;
+
+  return render(
+    <ConversationView
+      config={baseConfig}
+      conversation={conversation}
+      messages={messages ?? []}
+      onSendMessage={() => {}}
+      onBack={() => {}}
+      showHumanAvailability={true}
+      transcriptEmail={transcriptEmail}
+      onRequestTranscript={async () => ({ success: true, message: 'Transcript sent' })}
+    />,
+  );
+}
+
+describe('ConversationView escalation email capture', () => {
+  it('shows email-capture card for anonymous visitor when busy', () => {
+    const { getByText, getByPlaceholderText } = renderConversationView({
+      conversation: { id: 'c1', status: 'open', aiState: 'escalated', handoffState: 'busy' },
+      transcriptEmail: undefined,
+    });
+    expect(getByText(/reply there too/i)).toBeTruthy();
+    expect(getByPlaceholderText(/you@/i)).toBeTruthy();
+  });
+
+  it('hides email-capture card when visitor email is known', () => {
+    const { queryByText } = renderConversationView({
+      conversation: { id: 'c1', status: 'open', aiState: 'escalated', handoffState: 'after_hours' },
+      transcriptEmail: 'known@example.com',
+    });
+    expect(queryByText(/reply there too/i)).toBeNull();
+  });
+
+  it('does not show email-capture card in live state', () => {
+    const { queryByText } = renderConversationView({
+      conversation: { id: 'c1', status: 'open', aiState: 'escalated', handoffState: 'live' },
+      transcriptEmail: undefined,
+    });
+    expect(queryByText(/reply there too/i)).toBeNull();
+  });
+});
