@@ -100,6 +100,16 @@ func (s *CRMContactService) Create(ctx context.Context, req model.CreateCRMConta
 		Email:            req.Email,
 		Phone:            req.Phone,
 		JobTitle:         req.JobTitle,
+		Description:      req.Description,
+		Labels:           model.StringArray(req.Labels),
+		PrimaryLocation:  req.PrimaryLocation,
+		CountryCode:      req.CountryCode,
+		CountryName:      req.CountryName,
+		LinkedInURL:      req.LinkedInURL,
+		FacebookURL:      req.FacebookURL,
+		InstagramURL:     req.InstagramURL,
+		AngelListURL:     req.AngelListURL,
+		XURL:             req.XURL,
 		LifecycleStage:   lifecycleStage,
 		LeadStatus:       leadStatus,
 		OwnerMemberID:    req.OwnerMemberID,
@@ -201,6 +211,36 @@ func (s *CRMContactService) Update(ctx context.Context, id string, req model.Upd
 	}
 	if req.JobTitle != nil {
 		contact.JobTitle = req.JobTitle
+	}
+	if req.Description != nil {
+		contact.Description = req.Description
+	}
+	if req.Labels != nil {
+		contact.Labels = model.StringArray(req.Labels)
+	}
+	if req.PrimaryLocation != nil {
+		contact.PrimaryLocation = req.PrimaryLocation
+	}
+	if req.CountryCode != nil {
+		contact.CountryCode = req.CountryCode
+	}
+	if req.CountryName != nil {
+		contact.CountryName = req.CountryName
+	}
+	if req.LinkedInURL != nil {
+		contact.LinkedInURL = req.LinkedInURL
+	}
+	if req.FacebookURL != nil {
+		contact.FacebookURL = req.FacebookURL
+	}
+	if req.InstagramURL != nil {
+		contact.InstagramURL = req.InstagramURL
+	}
+	if req.AngelListURL != nil {
+		contact.AngelListURL = req.AngelListURL
+	}
+	if req.XURL != nil {
+		contact.XURL = req.XURL
 	}
 	if req.LifecycleStage != nil {
 		contact.LifecycleStage = *req.LifecycleStage

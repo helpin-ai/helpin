@@ -1,0 +1,10 @@
+ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS labels TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS primary_location TEXT;
+ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS country_code TEXT;
+ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS country_name TEXT;
+ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS linkedin_url TEXT;
+ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS facebook_url TEXT;
+ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS instagram_url TEXT;
+ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS angellist_url TEXT;
+ALTER TABLE crm_contacts ADD COLUMN IF NOT EXISTS x_url TEXT;

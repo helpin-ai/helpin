@@ -1,17 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState, type JSX, type SVGProps } from 'react';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { format, formatDistanceToNow } from 'date-fns';
+import * as Flags from 'country-flag-icons/react/3x2';
 import { toast } from 'sonner';
 import {
   ArrowLeft02Icon,
   ArrowRight01Icon,
   Calendar01Icon,
+  Clock01Icon,
+  Copy01Icon,
   Delete01Icon,
   DollarCircleIcon,
   GlobeIcon,
+  InformationCircleIcon,
   LinkSquare01Icon,
   Loading01Icon,
   Mail01Icon,
+  MapPinIcon,
   Message01Icon,
   MoreVerticalIcon,
   PlusSignIcon,
@@ -71,11 +76,17 @@ import { ContactHeader } from '@/components/crm/contact-detail/ContactHeader';
 import { ContactComposer } from '@/components/crm/contact-detail/ContactComposer';
 import { RailSection } from '@/components/crm/contact-detail/RailSection';
 import { CompanyRailCard } from '@/components/crm/contact-detail/CompanyRailCard';
+import { SupportTagBadge } from '@/components/support/SupportTagPicker';
+import { SocialPlatformIcon } from '@/components/docs/helpcenter/SocialPlatformIcon';
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { crmSearchService } from '@/lib/services/crmService';
 import { supportService } from '@/lib/services/supportService';
 import { useTitle } from '@/hooks/useTitle';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { cn } from '@/lib/utils';
+import type {
+  HelpcenterSocialPlatform,
+} from '@/lib/docsTypes';
 import type {
   CRMEmailProvider,
   CRMSearchResult,
@@ -94,6 +105,16 @@ interface FormState {
   email: string;
   phone: string;
   job_title: string;
+  description: string;
+  labels: string;
+  primary_location: string;
+  country_code: string;
+  country_name: string;
+  linkedin_url: string;
+  facebook_url: string;
+  instagram_url: string;
+  angellist_url: string;
+  x_url: string;
   lifecycle_stage: LifecycleStage;
   lead_status: LeadStatus;
   source: string;
@@ -101,6 +122,38 @@ interface FormState {
 
 type ContactTab = 'overview' | 'emails' | 'meetings' | 'tasks' | 'deals' | 'support';
 type ContactSidebarSection = 'primary-company' | 'other-companies' | 'deals' | 'support' | 'tasks';
+export const contactDetailOverviewGridClassName = 'grid-cols-1 lg:grid-cols-[1fr_360px]';
+export const contactDetailOverviewContentClassName = 'mt-0 h-full overflow-y-auto px-8 pb-28 pt-6';
+export const buyerSignalsSectionClassName = '';
+export const contactDetailOverviewSectionOrder = ['summary', 'composer', 'notes_calls', 'buyer_signals', 'recent_activity'] as const;
+export const contactDetailSidebarSectionTitles = ['Details', 'Enrichment', 'Company', 'Deals', 'Open tasks', 'Support'] as const;
+export const contactDetailDefaultFieldKeys = [
+  'email',
+  'phone',
+  'job_title',
+  'linkedin_url',
+  'primary_location',
+  'labels',
+  'description',
+  'last_interaction',
+  'lifecycle_stage',
+  'lead_status',
+] as const;
+export const contactDetailExpandedFieldKeys = [
+  'source',
+  'facebook_url',
+  'instagram_url',
+  'x_url',
+  'angellist_url',
+  'first_email',
+  'last_email',
+  'first_calendar',
+  'last_calendar',
+  'next_calendar',
+  'first_interaction',
+  'created_at',
+  'updated_at',
+] as const;
 const isContactLimitError = (error: unknown) =>
   error instanceof Error && error.message.includes('5,000 contacts');
 type EnrichedDetailRow = {
@@ -177,6 +230,194 @@ function shortUrlLabel(value: string): string {
   }
 }
 
+function normalizeCountryCode(code?: string | null): keyof typeof Flags | null {
+  const normalized = code?.trim().toUpperCase().replace(/-/g, '_');
+  if (!normalized || !/^[A-Z]{2,3}(?:_[A-Z]{2,3})?$/.test(normalized)) {
+    return null;
+  }
+  return normalized as keyof typeof Flags;
+}
+
+const ContactCountryFlag = memo(function ContactCountryFlag({
+  countryCode,
+  countryName,
+}: {
+  countryCode?: string | null;
+  countryName?: string | null;
+}) {
+  const flagKey = normalizeCountryCode(countryCode);
+  if (!flagKey) return null;
+
+  const Flag = Flags[flagKey] as ((props: SVGProps<SVGSVGElement>) => JSX.Element) | undefined;
+  if (!Flag) return null;
+
+  const label = countryName?.trim() || countryCode?.trim()?.toUpperCase() || 'Contact country';
+
+  return (
+    <QuickTooltip label={label}>
+      <span className="inline-flex h-3.5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-[3px] border border-border/70 shadow-sm">
+        <Flag aria-label={label} className="h-full w-full object-cover" />
+      </span>
+    </QuickTooltip>
+  );
+});
+
+export function formatCRMContactLocation(contact: Pick<CRMContact, 'primary_location' | 'country_name'>): string {
+  const primaryLocation = nonEmptyString(contact.primary_location);
+  const countryName = nonEmptyString(contact.country_name);
+  if (!primaryLocation) return countryName ?? '';
+  if (!countryName) return primaryLocation;
+  if (primaryLocation.toLowerCase().includes(countryName.toLowerCase())) return primaryLocation;
+  return `${primaryLocation}, ${countryName}`;
+}
+
+export function normalizeCRMContactLabels(value: string | string[] | null | undefined): string[] {
+  const rawLabels = Array.isArray(value) ? value : (value ?? '').split(',');
+  const seen = new Set<string>();
+  const labels: string[] = [];
+
+  for (const rawLabel of rawLabels) {
+    const label = rawLabel.trim();
+    const key = label.toLowerCase();
+    if (!label || seen.has(key)) continue;
+    seen.add(key);
+    labels.push(label);
+  }
+
+  return labels;
+}
+
+type ContactInteractionKind = 'email' | 'calendar' | 'activity' | 'support';
+type ContactInteractionPoint = {
+  kind: ContactInteractionKind;
+  timestamp: string;
+};
+
+export function deriveCRMContactInteractionSummary({
+  emails = [],
+  meetings = [],
+  activities = [],
+  supportConversations = [],
+}: {
+  emails?: Array<{ sent_at?: string | null }>;
+  meetings?: Array<{ start_time?: string | null }>;
+  activities?: Array<{ occurred_at?: string | null }>;
+  supportConversations?: Array<{ updated_at?: string | null; created_at?: string | null }>;
+}) {
+  const makePoint = (kind: ContactInteractionKind, value?: string | null): ContactInteractionPoint[] => {
+    const timestamp = nonEmptyString(value);
+    return timestamp ? [{ kind, timestamp }] : [];
+  };
+  const emailPoints = emails.flatMap((email) => makePoint('email', email.sent_at));
+  const calendarPoints = meetings.flatMap((meeting) => makePoint('calendar', meeting.start_time));
+  const activityPoints = activities.flatMap((activity) => makePoint('activity', activity.occurred_at));
+  const supportPoints = supportConversations.flatMap((conversation) => {
+    const timestamp = nonEmptyString(conversation.updated_at) ?? nonEmptyString(conversation.created_at);
+    return makePoint('support', timestamp);
+  });
+
+  const validDate = (point: ContactInteractionPoint) => !Number.isNaN(new Date(point.timestamp).getTime());
+  const sortAsc = (left: ContactInteractionPoint, right: ContactInteractionPoint) =>
+    new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime();
+  const allPoints = [...emailPoints, ...calendarPoints, ...activityPoints, ...supportPoints]
+    .filter(validDate)
+    .sort(sortAsc);
+  const sortedEmails = emailPoints.filter(validDate).sort(sortAsc);
+  const sortedCalendar = calendarPoints.filter(validDate).sort(sortAsc);
+  const now = Date.now();
+  const futureCalendar = sortedCalendar.filter((point) => new Date(point.timestamp).getTime() >= now);
+
+  return {
+    firstInteraction: allPoints[0],
+    lastInteraction: allPoints.at(-1),
+    firstEmail: sortedEmails[0],
+    lastEmail: sortedEmails.at(-1),
+    firstCalendar: sortedCalendar[0],
+    lastCalendar: sortedCalendar.at(-1),
+    nextCalendar: futureCalendar[0],
+  };
+}
+
+function formatRailTimestamp(timestamp?: string | null): string {
+  if (!timestamp) return '—';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '—';
+  return formatDistanceToNow(date, { addSuffix: true });
+}
+
+function formatRailTimestampTitle(timestamp?: string | null): string | undefined {
+  if (!timestamp) return undefined;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return format(date, 'MMM d, yyyy h:mm a');
+}
+
+function isBlankEditableValue(value: string | null | undefined): boolean {
+  return !value || value.trim().length === 0;
+}
+
+export function editableRailFieldClassName(
+  value: string | null | undefined,
+  options: { mono?: boolean; link?: boolean } = {},
+): string {
+  const empty = isBlankEditableValue(value);
+  return cn(
+    'w-full rounded-sm border px-1.5 py-0.5 outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/40 focus:bg-background',
+    options.mono ? 'font-mono text-[11.5px]' : 'text-xs',
+    empty
+      ? 'border-border/60 bg-transparent text-muted-foreground hover:border-border'
+      : 'border-transparent bg-transparent text-foreground hover:border-border/50 hover:bg-background/60',
+    options.link && !empty && externalHref(value ?? '') && 'text-primary',
+  );
+}
+
+export const sidebarPopoverSelectTriggerClassName =
+  'inline-flex h-6 w-full items-center justify-between gap-1.5 rounded-sm border border-border/60 bg-transparent px-1.5 py-0.5 text-[12px] transition-colors hover:border-border hover:bg-background/60 focus-visible:border-primary/40 focus-visible:outline-none';
+
+export const copyableRailValueClassName =
+  'group/copy grid min-w-0 grid-cols-[minmax(0,1fr)_20px] items-start gap-1';
+
+function CopyableRailValue({
+  value,
+  label,
+  children,
+}: {
+  value?: string | null;
+  label: string;
+  children: React.ReactNode;
+}) {
+  const { copy } = useCopyToClipboard();
+  const copyValue = nonEmptyString(value);
+
+  return (
+    <div className={copyableRailValueClassName}>
+      <div className="min-w-0">{children}</div>
+      <QuickTooltip label={copyValue ? `Copy ${label}` : `No ${label} to copy`}>
+        <button
+          type="button"
+          className={cn(
+            'flex h-6 w-5 items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground',
+            copyValue ? 'opacity-0 group-hover/copy:opacity-100 group-focus-within/copy:opacity-100' : 'pointer-events-none opacity-0',
+          )}
+          disabled={!copyValue}
+          aria-label={`Copy ${label}`}
+          onClick={() => {
+            if (!copyValue) return;
+            copy(copyValue);
+            toast.success(`${label} copied`);
+          }}
+        >
+          <Copy01Icon className="h-3.5 w-3.5" />
+        </button>
+      </QuickTooltip>
+    </div>
+  );
+}
+
+function formatRailEmptyState(timestamp?: string | null, emptyLabel = 'None yet'): string {
+  return timestamp ? formatRailTimestamp(timestamp) : emptyLabel;
+}
+
 function humanizeEnrichmentKey(key: string): string {
   return key
     .replace(/_url$/i, '')
@@ -242,9 +483,31 @@ function TabBadge({ children, active }: { children: React.ReactNode; active: boo
 function MetadataRow({ icon: Icon, label, children }: { icon: React.ElementType; label: string; children: React.ReactNode }) {
   return (
     <>
-      <Icon className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground" />
-      <span className="self-center text-[12px] text-muted-foreground">{label}</span>
-      <div className="min-w-0 self-center text-[12px]">{children}</div>
+      <span className="flex h-6 w-4 items-center justify-center">
+        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      </span>
+      <span className="flex h-6 items-center text-[12px] text-muted-foreground">{label}</span>
+      <div className="min-w-0 text-[12px]">{children}</div>
+    </>
+  );
+}
+
+function SocialMetadataRow({
+  platform,
+  label,
+  children,
+}: {
+  platform: HelpcenterSocialPlatform;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      <span className="flex h-6 w-4 items-center justify-center">
+        <SocialPlatformIcon platform={platform} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      </span>
+      <span className="flex h-6 items-center text-[12px] text-muted-foreground">{label}</span>
+      <div className="min-w-0 text-[12px]">{children}</div>
     </>
   );
 }
@@ -266,7 +529,7 @@ function SidebarPopoverSelect<T extends string>({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] transition-colors hover:bg-accent cursor-pointer"
+          className={sidebarPopoverSelectTriggerClassName}
         >
           <span className="truncate">{current?.label ?? value}</span>
           <ArrowRight01Icon className="h-3 w-3 rotate-90 text-muted-foreground" />
@@ -425,6 +688,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
     support: false,
     tasks: false,
   });
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
 
   // ── Provider map for source badges ──
   const accountProviderMap = useMemo(() => {
@@ -509,6 +773,22 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
     () => contact ? buildEnrichedDetailRows(contact) : [],
     [contact],
   );
+  const interactionSummary = useMemo(
+    () => deriveCRMContactInteractionSummary({
+      emails: emailsData?.data,
+      meetings: meetingsData?.data,
+      activities: activitiesData?.data,
+      supportConversations: supportConversationsData?.data,
+    }),
+    [activitiesData, emailsData, meetingsData, supportConversationsData],
+  );
+  const contactLocation = useMemo(
+    () => formatCRMContactLocation({
+      primary_location: form?.primary_location,
+      country_name: form?.country_name,
+    }),
+    [form?.country_name, form?.primary_location],
+  );
 
   const supportConvos = supportConversationsData?.data ?? [];
   const supportCount = supportConvos.length;
@@ -570,6 +850,16 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
         email: contact.email ?? '',
         phone: contact.phone ?? '',
         job_title: contact.job_title ?? '',
+        description: contact.description ?? '',
+        labels: normalizeCRMContactLabels(contact.labels).join(', '),
+        primary_location: contact.primary_location ?? '',
+        country_code: contact.country_code ?? '',
+        country_name: contact.country_name ?? '',
+        linkedin_url: contact.linkedin_url ?? '',
+        facebook_url: contact.facebook_url ?? '',
+        instagram_url: contact.instagram_url ?? '',
+        angellist_url: contact.angellist_url ?? '',
+        x_url: contact.x_url ?? '',
         lifecycle_stage: contact.lifecycle_stage,
         lead_status: contact.lead_status,
         source: contact.source ?? '',
@@ -806,7 +1096,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
     <div
       className={cn(
         'grid h-full min-h-0',
-        activeTab === 'overview' ? 'grid-cols-1 lg:grid-cols-[1fr_300px]' : 'grid-cols-1',
+        activeTab === 'overview' ? contactDetailOverviewGridClassName : 'grid-cols-1',
       )}
     >
       <div className="flex min-h-0 flex-col overflow-hidden">
@@ -866,7 +1156,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
 
         <div className="min-h-0 flex-1 overflow-y-auto">
             {/* ──────── OVERVIEW TAB ──────── */}
-            <TabsContent value="overview" className="mt-0 h-full overflow-y-auto px-8 py-6">
+            <TabsContent value="overview" className={contactDetailOverviewContentClassName}>
               {/* AI Summary (renders its own SUMMARY heading) */}
               <EntitySummaryCard workspaceId={wsId} contactId={contactId} />
 
@@ -913,60 +1203,6 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                   </button>
                 </div>
               )}
-
-              <Separator className="my-6 bg-border/40" />
-
-              {/* Recent activity (3 items across all types) */}
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent activity</h3>
-                <div className="mt-3">
-                  {unifiedItems.length === 0 ? (
-                    <RecentActivityEmptyState />
-                  ) : (
-                    <div className="space-y-1">
-                      {unifiedItems.slice(0, 3).map((item) => {
-                        const key = item.kind === 'activity' ? `a-${item.data.id}` : item.kind === 'email' ? `e-${item.data.id}` : `c-${item.data.id}`;
-                        let icon = Message01Icon;
-                        let typeLabel = '';
-                        let title = '';
-
-                        if (item.kind === 'activity') {
-                          icon = item.data.activity_type === 'call' ? TelephoneIcon : item.data.activity_type === 'meeting' ? Calendar01Icon : Message01Icon;
-                          typeLabel = item.data.activity_type;
-                          title = item.data.subject ?? '';
-                        } else if (item.kind === 'email') {
-                          icon = Mail01Icon;
-                          typeLabel = 'Email';
-                          title = item.data.subject || '(no subject)';
-                        } else if (item.kind === 'calendar') {
-                          icon = Calendar01Icon;
-                          typeLabel = 'Meeting';
-                          title = item.data.title;
-                        }
-
-                        const Icon = icon;
-                        return (
-                          <div key={key} className="flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-muted/30">
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
-                              <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-medium capitalize">{typeLabel}</span>
-                                <span className="text-[10px] text-muted-foreground">· {sourceLabel(item.source)}</span>
-                              </div>
-                              <p className="truncate text-sm">{title}</p>
-                            </div>
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                              {formatDistanceToNow(new Date(item.timestamp), { addSuffix: true })}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
 
               <Separator className="my-6 bg-border/40" />
 
@@ -1031,6 +1267,60 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Buyer signals</h3>
                 <div className="mt-3">
                   <BuyerSignals workspaceId={wsId} contactId={contactId} />
+                </div>
+              </div>
+
+              <Separator className="my-6 bg-border/40" />
+
+              {/* Recent activity (3 items across all types) */}
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent activity</h3>
+                <div className="mt-3">
+                  {unifiedItems.length === 0 ? (
+                    <RecentActivityEmptyState />
+                  ) : (
+                    <div className="space-y-1">
+                      {unifiedItems.slice(0, 3).map((item) => {
+                        const key = item.kind === 'activity' ? `a-${item.data.id}` : item.kind === 'email' ? `e-${item.data.id}` : `c-${item.data.id}`;
+                        let icon = Message01Icon;
+                        let typeLabel = '';
+                        let title = '';
+
+                        if (item.kind === 'activity') {
+                          icon = item.data.activity_type === 'call' ? TelephoneIcon : item.data.activity_type === 'meeting' ? Calendar01Icon : Message01Icon;
+                          typeLabel = item.data.activity_type;
+                          title = item.data.subject ?? '';
+                        } else if (item.kind === 'email') {
+                          icon = Mail01Icon;
+                          typeLabel = 'Email';
+                          title = item.data.subject || '(no subject)';
+                        } else if (item.kind === 'calendar') {
+                          icon = Calendar01Icon;
+                          typeLabel = 'Meeting';
+                          title = item.data.title;
+                        }
+
+                        const Icon = icon;
+                        return (
+                          <div key={key} className="flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-muted/30">
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
+                              <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-medium capitalize">{typeLabel}</span>
+                                <span className="text-[10px] text-muted-foreground">· {sourceLabel(item.source)}</span>
+                              </div>
+                              <p className="truncate text-sm">{title}</p>
+                            </div>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {formatDistanceToNow(new Date(item.timestamp), { addSuffix: true })}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </TabsContent>
@@ -1202,62 +1492,112 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
         <aside className="hidden min-h-0 overflow-y-auto border-l border-border/60 bg-muted/30 pb-10 lg:block">
               {/* DETAILS (always visible, non-collapsible) */}
               <div className="border-b border-border/50 px-4 py-3">
-                <div className="grid grid-cols-[16px_68px_1fr] gap-x-2 gap-y-2.5">
+                <div className="grid grid-cols-[16px_84px_1fr] gap-x-2 gap-y-2.5">
                   <MetadataRow icon={Mail01Icon} label="Email">
-                    <input
-                      className="w-full bg-transparent font-mono text-[11.5px] outline-none"
-                      value={form.email}
-                      onChange={(event) => updateField('email', event.target.value, { email: event.target.value })}
-                      placeholder="—"
-                    />
+                    <CopyableRailValue value={form.email} label="email">
+                      <input
+                        className={editableRailFieldClassName(form.email, { mono: true })}
+                        value={form.email}
+                        onChange={(event) => updateField('email', event.target.value, { email: event.target.value })}
+                        placeholder="Add email"
+                      />
+                    </CopyableRailValue>
                   </MetadataRow>
 
                   <MetadataRow icon={TelephoneIcon} label="Phone">
-                    <input
-                      className="w-full bg-transparent font-mono text-[11.5px] outline-none"
-                      value={form.phone}
-                      onChange={(event) => updateField('phone', event.target.value, { phone: event.target.value })}
-                      placeholder="—"
-                    />
+                    <CopyableRailValue value={form.phone} label="phone">
+                      <input
+                        className={editableRailFieldClassName(form.phone, { mono: true })}
+                        value={form.phone}
+                        onChange={(event) => updateField('phone', event.target.value, { phone: event.target.value })}
+                        placeholder="Add phone"
+                      />
+                    </CopyableRailValue>
                   </MetadataRow>
 
-                  <MetadataRow icon={UserIcon} label="Title">
-                    <input
-                      className="w-full bg-transparent text-xs outline-none"
-                      value={form.job_title}
-                      onChange={(event) => updateField('job_title', event.target.value, { job_title: event.target.value })}
-                      placeholder="—"
-                    />
+                  <MetadataRow icon={UserIcon} label="Job title">
+                    <CopyableRailValue value={form.job_title} label="job title">
+                      <input
+                        className={editableRailFieldClassName(form.job_title)}
+                        value={form.job_title}
+                        onChange={(event) => updateField('job_title', event.target.value, { job_title: event.target.value })}
+                        placeholder="Add job title"
+                      />
+                    </CopyableRailValue>
                   </MetadataRow>
 
-                  <MetadataRow icon={GlobeIcon} label="Source">
-                    <input
-                      className="w-full bg-transparent text-xs outline-none"
-                      value={form.source}
-                      onChange={(event) => updateField('source', event.target.value, { source: event.target.value })}
-                      placeholder="—"
-                    />
+                  <SocialMetadataRow platform="linkedin" label="LinkedIn">
+                    <CopyableRailValue value={form.linkedin_url} label="LinkedIn URL">
+                      <input
+                        className={cn(editableRailFieldClassName(form.linkedin_url, { link: true }), 'underline-offset-2')}
+                        value={form.linkedin_url}
+                        onChange={(event) => updateField('linkedin_url', event.target.value, { linkedin_url: event.target.value })}
+                        placeholder="Add LinkedIn URL"
+                      />
+                    </CopyableRailValue>
+                  </SocialMetadataRow>
+
+                  <MetadataRow icon={MapPinIcon} label="Location">
+                    <CopyableRailValue value={contactLocation || form.primary_location} label="location">
+                      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5">
+                        <input
+                          className={cn(editableRailFieldClassName(form.primary_location), 'min-w-0 flex-1')}
+                          value={form.primary_location}
+                          onChange={(event) => updateField('primary_location', event.target.value, { primary_location: event.target.value })}
+                          placeholder="Add location"
+                          title={contactLocation || undefined}
+                        />
+                        <ContactCountryFlag countryCode={form.country_code} countryName={form.country_name} />
+                      </div>
+                    </CopyableRailValue>
                   </MetadataRow>
 
-                  {enrichedDetailRows.map((row) => (
-                    <MetadataRow key={row.key} icon={row.icon} label={row.label}>
-                      {row.href ? (
-                        <a
-                          href={row.href}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block truncate text-xs text-primary underline-offset-2 hover:underline"
-                          title={row.href}
-                        >
-                          {row.value}
-                        </a>
-                      ) : (
-                        <span className="block truncate text-xs text-foreground" title={row.value}>
-                          {row.value}
-                        </span>
-                      )}
-                    </MetadataRow>
-                  ))}
+                  <MetadataRow icon={Tag01Icon} label="Labels">
+                    <CopyableRailValue value={normalizeCRMContactLabels(form.labels).join(', ')} label="labels">
+                      <div className="space-y-1.5">
+                        <input
+                          className={editableRailFieldClassName(form.labels)}
+                          value={form.labels}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            updateField('labels', nextValue, { labels: normalizeCRMContactLabels(nextValue) });
+                          }}
+                          placeholder="Add labels"
+                        />
+                        {normalizeCRMContactLabels(form.labels).length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {normalizeCRMContactLabels(form.labels).map((label) => (
+                              <SupportTagBadge
+                                key={label}
+                                name={label}
+                                className="h-4 max-w-[120px] px-1.5 text-[10px]"
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </CopyableRailValue>
+                  </MetadataRow>
+
+                  <MetadataRow icon={InformationCircleIcon} label="Description">
+                    <CopyableRailValue value={form.description} label="description">
+                      <input
+                        className={editableRailFieldClassName(form.description)}
+                        value={form.description}
+                        onChange={(event) => updateField('description', event.target.value, { description: event.target.value })}
+                        placeholder="Add description"
+                      />
+                    </CopyableRailValue>
+                  </MetadataRow>
+
+                  <MetadataRow icon={Clock01Icon} label="Last touch">
+                    <span
+                      className="block truncate text-xs text-foreground"
+                      title={formatRailTimestampTitle(interactionSummary.lastInteraction?.timestamp)}
+                    >
+                      {formatRailEmptyState(interactionSummary.lastInteraction?.timestamp, 'No activity yet')}
+                    </span>
+                  </MetadataRow>
 
                   <MetadataRow icon={Tag01Icon} label="Stage">
                     <SidebarPopoverSelect
@@ -1274,6 +1614,162 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                       onChange={(value) => updateField('lead_status', value, { lead_status: value })}
                     />
                   </MetadataRow>
+
+                  {detailsExpanded && (
+                    <>
+                      <MetadataRow icon={GlobeIcon} label="Source">
+                        <CopyableRailValue value={form.source} label="source">
+                          <input
+                            className={editableRailFieldClassName(form.source)}
+                            value={form.source}
+                            onChange={(event) => updateField('source', event.target.value, { source: event.target.value })}
+                            placeholder="Add source"
+                          />
+                        </CopyableRailValue>
+                      </MetadataRow>
+
+                      <SocialMetadataRow platform="facebook" label="Facebook">
+                        <CopyableRailValue value={form.facebook_url} label="Facebook URL">
+                          <input
+                            className={editableRailFieldClassName(form.facebook_url, { link: true })}
+                            value={form.facebook_url}
+                            onChange={(event) => updateField('facebook_url', event.target.value, { facebook_url: event.target.value })}
+                            placeholder="Add Facebook URL"
+                          />
+                        </CopyableRailValue>
+                      </SocialMetadataRow>
+
+                      <SocialMetadataRow platform="instagram" label="Instagram">
+                        <CopyableRailValue value={form.instagram_url} label="Instagram URL">
+                          <input
+                            className={editableRailFieldClassName(form.instagram_url, { link: true })}
+                            value={form.instagram_url}
+                            onChange={(event) => updateField('instagram_url', event.target.value, { instagram_url: event.target.value })}
+                            placeholder="Add Instagram URL"
+                          />
+                        </CopyableRailValue>
+                      </SocialMetadataRow>
+
+                      <SocialMetadataRow platform="x" label="X">
+                        <CopyableRailValue value={form.x_url} label="X URL">
+                          <input
+                            className={editableRailFieldClassName(form.x_url, { link: true })}
+                            value={form.x_url}
+                            onChange={(event) => updateField('x_url', event.target.value, { x_url: event.target.value })}
+                            placeholder="Add X URL"
+                          />
+                        </CopyableRailValue>
+                      </SocialMetadataRow>
+
+                      <MetadataRow icon={LinkSquare01Icon} label="AngelList">
+                        <CopyableRailValue value={form.angellist_url} label="AngelList URL">
+                          <input
+                            className={editableRailFieldClassName(form.angellist_url, { link: true })}
+                            value={form.angellist_url}
+                            onChange={(event) => updateField('angellist_url', event.target.value, { angellist_url: event.target.value })}
+                            placeholder="Add AngelList URL"
+                          />
+                        </CopyableRailValue>
+                      </MetadataRow>
+
+                      <MetadataRow icon={MapPinIcon} label="Country">
+                        <CopyableRailValue value={[form.country_code, form.country_name].filter(Boolean).join(' ')} label="country">
+                          <div className="grid grid-cols-[52px_1fr] gap-1.5">
+                            <input
+                              className={cn(editableRailFieldClassName(form.country_code), 'min-w-0 uppercase')}
+                              value={form.country_code}
+                              onChange={(event) => updateField('country_code', event.target.value.toUpperCase(), { country_code: event.target.value.toUpperCase() })}
+                              placeholder="Code"
+                            />
+                            <input
+                              className={cn(editableRailFieldClassName(form.country_name), 'min-w-0')}
+                              value={form.country_name}
+                              onChange={(event) => updateField('country_name', event.target.value, { country_name: event.target.value })}
+                              placeholder="Country"
+                            />
+                          </div>
+                        </CopyableRailValue>
+                      </MetadataRow>
+
+                      <MetadataRow icon={Mail01Icon} label="First email">
+                        <span className="block truncate text-xs" title={formatRailTimestampTitle(interactionSummary.firstEmail?.timestamp)}>
+                          {formatRailEmptyState(interactionSummary.firstEmail?.timestamp, 'No email yet')}
+                        </span>
+                      </MetadataRow>
+
+                      <MetadataRow icon={Mail01Icon} label="Last email">
+                        <span className="block truncate text-xs" title={formatRailTimestampTitle(interactionSummary.lastEmail?.timestamp)}>
+                          {formatRailEmptyState(interactionSummary.lastEmail?.timestamp, 'No email yet')}
+                        </span>
+                      </MetadataRow>
+
+                      <MetadataRow icon={Calendar01Icon} label="First meeting">
+                        <span className="block truncate text-xs" title={formatRailTimestampTitle(interactionSummary.firstCalendar?.timestamp)}>
+                          {formatRailEmptyState(interactionSummary.firstCalendar?.timestamp, 'No meeting yet')}
+                        </span>
+                      </MetadataRow>
+
+                      <MetadataRow icon={Calendar01Icon} label="Last meeting">
+                        <span className="block truncate text-xs" title={formatRailTimestampTitle(interactionSummary.lastCalendar?.timestamp)}>
+                          {formatRailEmptyState(interactionSummary.lastCalendar?.timestamp, 'No meeting yet')}
+                        </span>
+                      </MetadataRow>
+
+                      <MetadataRow icon={Calendar01Icon} label="Next meeting">
+                        <span className="block truncate text-xs" title={formatRailTimestampTitle(interactionSummary.nextCalendar?.timestamp)}>
+                          {formatRailEmptyState(interactionSummary.nextCalendar?.timestamp, 'None scheduled')}
+                        </span>
+                      </MetadataRow>
+
+                      <MetadataRow icon={Clock01Icon} label="First touch">
+                        <span className="block truncate text-xs" title={formatRailTimestampTitle(interactionSummary.firstInteraction?.timestamp)}>
+                          {formatRailEmptyState(interactionSummary.firstInteraction?.timestamp, 'No activity yet')}
+                        </span>
+                      </MetadataRow>
+
+                      <MetadataRow icon={Clock01Icon} label="Created">
+                        <span className="block truncate text-xs" title={formatRailTimestampTitle(contact.created_at)}>
+                          {formatRailTimestamp(contact.created_at)}
+                        </span>
+                      </MetadataRow>
+
+                      <MetadataRow icon={Clock01Icon} label="Updated">
+                        <span className="block truncate text-xs" title={formatRailTimestampTitle(contact.updated_at)}>
+                          {formatRailTimestamp(contact.updated_at)}
+                        </span>
+                      </MetadataRow>
+
+                      {enrichedDetailRows.map((row) => (
+                        <MetadataRow key={row.key} icon={row.icon} label={row.label}>
+                          {row.href ? (
+                            <a
+                              href={row.href}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block truncate text-xs text-primary underline-offset-2 hover:underline"
+                              title={row.href}
+                            >
+                              {row.value}
+                            </a>
+                          ) : (
+                            <span className="block truncate text-xs text-foreground" title={row.value}>
+                              {row.value}
+                            </span>
+                          )}
+                        </MetadataRow>
+                      ))}
+                    </>
+                  )}
+
+                  <div className="col-span-3 pt-1">
+                    <button
+                      type="button"
+                      className="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                      onClick={() => setDetailsExpanded((value) => !value)}
+                    >
+                      {detailsExpanded ? 'Show less' : 'Show all fields'}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1583,11 +2079,6 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                     )}
                   </div>
                 )}
-              </RailSection>
-
-              {/* SIGNALS */}
-              <RailSection title="Signals">
-                <BuyerSignals workspaceId={wsId} contactId={contactId} />
               </RailSection>
         </aside>
       )}
