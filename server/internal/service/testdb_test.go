@@ -717,6 +717,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			subject TEXT NOT NULL,
 			status TEXT NOT NULL DEFAULT 'open',
 			flow_state TEXT,
+			handoff_state TEXT,
 			priority TEXT NOT NULL DEFAULT 'medium',
 			channel TEXT NOT NULL DEFAULT 'widget',
 			customer_name TEXT,

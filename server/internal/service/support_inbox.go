@@ -681,6 +681,9 @@ func (s *SupportInboxService) SetSupportAIService(aiService *SupportAIService) *
 		return nil
 	}
 	s.supportAIService = aiService
+	if aiService != nil {
+		aiService.assignmentSystemMessageEmitter = s.emitAIAssignmentSystemMessage
+	}
 	return s
 }
 
@@ -3895,6 +3898,38 @@ func (s *SupportInboxService) emitAssignmentSystemMessage(
 	}
 	if s.wsPublisher != nil {
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
+	}
+}
+
+func (s *SupportInboxService) emitAIAssignmentSystemMessage(ctx context.Context, workspaceID, conversationID, targetUserID string) {
+	if s.messageRepo == nil {
+		return
+	}
+
+	targetName := supportSystemFirstName(s.lookupUserName(ctx, targetUserID))
+	if targetName == "" {
+		targetName = "a teammate"
+	}
+	displayName := helpinAIDisplayName
+	content := fmt.Sprintf("%s assigned this conversation to %s.", helpinAIDisplayName, targetName)
+	eventType := model.SystemEventAssigned
+
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "agent",
+		SenderDisplayName: &displayName,
+		Content:           content,
+		IsInternal:        true,
+		MessageType:       "system",
+		SystemEventType:   &eventType,
+	}
+	if err := s.messageRepo.Create(ctx, msg); err != nil {
+		slog.ErrorContext(ctx, "create support AI assignment system message", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
+		return
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, ""))
 	}
 }
 

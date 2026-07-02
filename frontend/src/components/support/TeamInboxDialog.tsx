@@ -239,7 +239,7 @@ export function TeamInboxDialog({
   const updateTriageRule = useUpdateSupportTriageRule(workspaceId);
   const deleteTriageRule = useDeleteSupportTriageRule(workspaceId);
   const supportAccessHref = workspaceSlug ? `/w/${workspaceSlug}/settings/access` : '/workspaces';
-  const supportRoutingHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=inboxes` : '/workspaces';
+  const supportRoutingHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=routing` : '/workspaces';
   const isRoutingOff = chatSettings ? !chatSettings.settings.triage_enabled : false;
 
   useEffect(() => {

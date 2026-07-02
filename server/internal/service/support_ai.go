@@ -256,35 +256,36 @@ var (
 // SupportAIService handles autonomous AI-first auto-replies for support conversations.
 // It is a separate path from the existing AgentRun system (manual-assist mode).
 type SupportAIService struct {
-	llmProvider            llm.Provider
-	taskDraftLLM           supportTaskDraftLLM
-	embeddingProvider      llm.EmbeddingProvider
-	embeddingModel         string
-	queryExpansionModel    string
-	queryExpansionProvider string
-	docsChunkRepo          *repository.DocsChunkRepository
-	knowledgeRepo          *repository.AgentKnowledgeSourceRepository
-	contentChunkRepo       *repository.SupportContentChunkRepository
-	contentLinkRepo        *repository.AgentContentSourceRepository
-	processingRepo         *repository.AIMessageProcessingRepository
-	conversationRepo       *repository.SupportConversationRepository
-	messageRepo            *repository.SupportMessageRepository
-	attachmentRepo         *repository.SupportAttachmentRepository
-	agentRepo              *repository.AgentRepository
-	handoffRepo            *repository.AgentHandoffRepository
-	installationRepo       *repository.SupportInboxInstallationRepository
-	mailboxRepo            *repository.SupportMailboxRepository
-	workspaceRepo          *repository.WorkspaceRepository
-	statusOverrideRepo     *repository.SupportTeammateStatusOverrideRepository
-	triageService          *SupportInboxTriageService
-	linkPreviewService     SupportMessageLinkPreviewer
-	wsPublisher            *websocket.Publisher
-	presence               websocket.PresenceProvider
-	js                     nats.JetStreamContext
-	redis                  *redis.Client
-	db                     *gorm.DB
-	supportEventRecorder   SupportEventRecorder
-	traceRecorder          SupportAIRetrievalTraceRecorder
+	llmProvider                    llm.Provider
+	taskDraftLLM                   supportTaskDraftLLM
+	embeddingProvider              llm.EmbeddingProvider
+	embeddingModel                 string
+	queryExpansionModel            string
+	queryExpansionProvider         string
+	docsChunkRepo                  *repository.DocsChunkRepository
+	knowledgeRepo                  *repository.AgentKnowledgeSourceRepository
+	contentChunkRepo               *repository.SupportContentChunkRepository
+	contentLinkRepo                *repository.AgentContentSourceRepository
+	processingRepo                 *repository.AIMessageProcessingRepository
+	conversationRepo               *repository.SupportConversationRepository
+	messageRepo                    *repository.SupportMessageRepository
+	attachmentRepo                 *repository.SupportAttachmentRepository
+	agentRepo                      *repository.AgentRepository
+	handoffRepo                    *repository.AgentHandoffRepository
+	installationRepo               *repository.SupportInboxInstallationRepository
+	mailboxRepo                    *repository.SupportMailboxRepository
+	workspaceRepo                  *repository.WorkspaceRepository
+	statusOverrideRepo             *repository.SupportTeammateStatusOverrideRepository
+	triageService                  *SupportInboxTriageService
+	linkPreviewService             SupportMessageLinkPreviewer
+	assignmentSystemMessageEmitter func(ctx context.Context, workspaceID, conversationID, targetUserID string)
+	wsPublisher                    *websocket.Publisher
+	presence                       websocket.PresenceProvider
+	js                             nats.JetStreamContext
+	redis                          *redis.Client
+	db                             *gorm.DB
+	supportEventRecorder           SupportEventRecorder
+	traceRecorder                  SupportAIRetrievalTraceRecorder
 }
 
 // NewSupportAIService creates a new SupportAIService with all dependencies.
@@ -998,26 +999,30 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 
 	handoffMailboxID, mailboxSelectionSource := s.resolveEscalationMailbox(ctx, workspaceID, conversationID, messageID, conv, settings)
 
-	selection, selectErr := selectSupportConversationRecipient(
-		ctx,
-		s.workspaceRepo,
-		s.mailboxRepo,
-		s.installationRepo,
-		nil,
-		s.presence,
-		s.statusOverrideRepo,
-		supportRecipientSelectorInput{
-			WorkspaceID:         workspaceID,
-			MailboxID:           handoffMailboxID,
-			OwnerUserID:         conv.AssignedUserID,
-			HandoffBehavior:     settings.HandoffBehavior,
-			HandoffTeamID:       settings.HandoffTeamID,
-			RequireAvailability: true,
-			Now:                 now,
-		},
-	)
-	if selectErr != nil {
-		slog.ErrorContext(ctx, "select escalation recipient", "error", selectErr, "conversation_id", conversationID)
+	var selection *supportRecipientSelection
+	if strings.TrimSpace(settings.HandoffBehavior) != "unassigned" {
+		var selectErr error
+		selection, selectErr = selectSupportConversationRecipient(
+			ctx,
+			s.workspaceRepo,
+			s.mailboxRepo,
+			s.installationRepo,
+			nil,
+			s.presence,
+			s.statusOverrideRepo,
+			supportRecipientSelectorInput{
+				WorkspaceID:         workspaceID,
+				MailboxID:           handoffMailboxID,
+				OwnerUserID:         conv.AssignedUserID,
+				HandoffBehavior:     settings.HandoffBehavior,
+				HandoffTeamID:       settings.HandoffTeamID,
+				RequireAvailability: true,
+				Now:                 now,
+			},
+		)
+		if selectErr != nil {
+			slog.ErrorContext(ctx, "select escalation recipient", "error", selectErr, "conversation_id", conversationID)
+		}
 	}
 
 	// Resolve the customer-facing handoff state and render the escalation message
@@ -1144,6 +1149,9 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	}
 	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
 		return fmt.Errorf("update conversation for escalation: %w", err)
+	}
+	if selection != nil && strings.TrimSpace(selection.UserID) != "" && s.assignmentSystemMessageEmitter != nil {
+		s.assignmentSystemMessageEmitter(ctx, workspaceID, conversationID, selection.UserID)
 	}
 
 	// 3. Record handoff for analytics
