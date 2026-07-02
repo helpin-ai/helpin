@@ -608,7 +608,7 @@ func (e *CodexExecutor) helpinMCPServerConfig(execCtx *ExecutionContext) (codexC
 		Command:                  bridge.Command,
 		Required:                 true,
 		StartupTimeoutSec:        15,
-		ToolTimeoutSec:           300,
+		ToolTimeoutSec:           120,
 		DefaultToolsApprovalMode: "approve",
 		Env: map[string]string{
 			"HELPIN_API_BASE_URL":         bridge.BaseURL,
