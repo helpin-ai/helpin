@@ -376,6 +376,17 @@ func main() {
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	runRepo.SetTriggerExecutionRepository(triggerExecutionRepo)
+	projectionCancel := context.CancelFunc(func() {})
+	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
+		agentRuntimeProjectionService := service.NewAgentRuntimeProjectionService(runRepo, cfg.AgentRuntimeAppID)
+		var projectionCtx context.Context
+		projectionCtx, projectionCancel = context.WithCancel(context.Background())
+		go func() {
+			if err := agentRuntimeProjectionService.StartNATSConsumer(projectionCtx, jetstream); err != nil {
+				slog.Error("agent runtime projection consumer stopped", "error", err)
+			}
+		}()
+	}
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmRecurringTemplateService := service.NewPMRecurringTemplateService(
 		recurringRepo,
@@ -439,6 +450,13 @@ func main() {
 		SetEpicDeliveryDependencies(epicDeliveryTargetRepo, epicRepo).
 		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
 	pmStoryService.SetGitService(gitService)
+	var agentRuntimeClient *service.AgentRuntimeClient
+	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
+		agentRuntimeClient, err = service.NewAgentRuntimeClient(cfg.AgentRuntimeBaseURL, cfg.AgentRuntimeAppID, cfg.AgentRuntimeServiceToken, nil)
+		if err != nil {
+			fatalWithSentry("failed to initialize agent runtime client", err)
+		}
+	}
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,
@@ -474,7 +492,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmDealRepo)
+	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmDealRepo).SetAgentRuntimeClient(agentRuntimeClient)
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
@@ -651,6 +669,7 @@ func main() {
 
 	log.Println("shutting down temporal workers")
 	aiConsumerCancel() // stop AI support consumer
+	projectionCancel()
 	gitGraceCleanupCancel()
 	for _, sharedWorker := range workers {
 		sharedWorker.Stop()

@@ -3802,6 +3802,8 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			status TEXT NOT NULL DEFAULT 'queued',
 			workflow_id TEXT,
 			workflow_run_id TEXT,
+			external_runtime TEXT,
+			external_runtime_id TEXT,
 			task_queue TEXT,
 			runner_pool TEXT,
 			agent_version_id TEXT,

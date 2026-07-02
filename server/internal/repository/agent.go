@@ -708,6 +708,25 @@ func (r *AgentRunRepository) GetByIDAny(ctx context.Context, id string) (*model.
 	return &run, nil
 }
 
+// GetByExternalRuntimeID returns a run linked to an external runtime run ID.
+func (r *AgentRunRepository) GetByExternalRuntimeID(ctx context.Context, externalRuntime, externalRuntimeID string) (*model.AgentRun, error) {
+	externalRuntime = strings.TrimSpace(externalRuntime)
+	externalRuntimeID = strings.TrimSpace(externalRuntimeID)
+	if externalRuntime == "" || externalRuntimeID == "" {
+		return nil, nil
+	}
+	var run model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("external_runtime = ? AND external_runtime_id = ?", externalRuntime, externalRuntimeID).
+		First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get agent run by external runtime id: %w", err)
+	}
+	return &run, nil
+}
+
 // ListByIDs returns runs in a workspace for a set of IDs.
 func (r *AgentRunRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.AgentRun, error) {
 	if len(ids) == 0 {

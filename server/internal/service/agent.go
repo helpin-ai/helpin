@@ -146,6 +146,17 @@ func agentRunActivityExtraForMessage(intent string, message *model.AgentRunMessa
 	return map[string]interface{}{"note_snippet": snippet}
 }
 
+func agentRuntimeRunID(run *model.AgentRun) (string, bool) {
+	if run == nil || run.ExternalRuntime == nil || run.ExternalRuntimeID == nil {
+		return "", false
+	}
+	if strings.TrimSpace(*run.ExternalRuntime) != agentRuntimeName {
+		return "", false
+	}
+	runtimeRunID := strings.TrimSpace(*run.ExternalRuntimeID)
+	return runtimeRunID, runtimeRunID != ""
+}
+
 func buildAgentRunInputPayload(targetType, targetID string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, output *model.AgentRunOutputContext, additionalContext *string, allowedTools []string) ([]byte, error) {
 	payload := model.AgentRunInputPayload{
 		Trigger:      trigger,
@@ -256,6 +267,12 @@ type AgentService struct {
 	agentDraftLLM              agentDraftLLM
 	entitlementSvc             *EntitlementService
 	aiUsageMeter               *AIUsageMeter
+	agentRuntimeClient         agentRuntimeSignalClient
+}
+
+type agentRuntimeSignalClient interface {
+	ResumeRun(ctx context.Context, runtimeRunID string, req AgentRuntimeResumeRunRequest) (*AgentRuntimeRun, error)
+	CancelRun(ctx context.Context, runtimeRunID string) (*AgentRuntimeRun, error)
 }
 
 // NewAgentService creates a new AgentService.
@@ -394,6 +411,11 @@ func (s *AgentService) SetEntitlementService(entitlementSvc *EntitlementService)
 
 func (s *AgentService) SetAIUsageMeter(meter *AIUsageMeter) *AgentService {
 	s.aiUsageMeter = meter
+	return s
+}
+
+func (s *AgentService) SetAgentRuntimeClient(client agentRuntimeSignalClient) *AgentService {
+	s.agentRuntimeClient = client
 	return s
 }
 
@@ -3796,6 +3818,18 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	if !model.IsAgentRunActiveStatus(run.Status) {
 		return nil, fmt.Errorf("only queued, running, or paused runs can be cancelled")
 	}
+	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
+		if s.agentRuntimeClient == nil {
+			return nil, fmt.Errorf("agent runtime client is not configured")
+		}
+		if _, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID); err != nil {
+			return nil, fmt.Errorf("cancel agent runtime run: %w", err)
+		}
+		_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
+		s.logTargetAgentRunActivity(ctx, run, actorID, "cancelled", nil)
+		s.publishRunEvent(run, actorID)
+		return run, nil
+	}
 
 	now := time.Now()
 	run.Status = "cancelled"
@@ -3805,7 +3839,9 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, err
 	}
-	_ = s.runEngine.CancelRun(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
+	if _, ok := agentRuntimeRunID(run); !ok {
+		_ = s.runEngine.CancelRun(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
+	}
 
 	_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
 	s.logTargetAgentRunActivity(ctx, run, actorID, "cancelled", nil)
@@ -3961,6 +3997,9 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		return nil, nil, fmt.Errorf("run is waiting for authentication")
 	}
 	model.NormalizeAgentRunPauseState(run)
+	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
+		return s.resumeAgentRuntimeRunWithIntent(ctx, workspaceID, run, runtimeRunID, actorID, req, intent)
+	}
 	liveCodexPause, err := s.shouldUseLiveCodexPausePath(ctx, run)
 	if err != nil {
 		return nil, nil, err
@@ -4127,6 +4166,144 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 			"run_id", run.ID,
 			"pause_reason", previousPauseReason,
 			"intent", signal.Intent,
+		)
+	}
+	s.logTargetAgentRunActivity(ctx, run, actorID, agentRunActivityActionForResumeIntent(intent), agentRunActivityExtraForMessage(intent, message))
+	s.publishRunEvent(run, actorID)
+	return run, message, nil
+}
+
+func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, workspaceID string, run *model.AgentRun, runtimeRunID, actorID string, req model.ResumeAgentRunRequest, intent string) (*model.AgentRun, *model.AgentRunMessage, error) {
+	if s.agentRuntimeClient == nil {
+		return nil, nil, fmt.Errorf("agent runtime client is not configured")
+	}
+
+	var (
+		replyText        string
+		runtimeIntent    string
+		stage            = "resuming"
+		messageRole      = "user"
+		messageType      string
+		shouldAddMessage bool
+		approvalState    = run.ApprovalState
+	)
+
+	switch intent {
+	case model.AgentRunResumeIntentReply:
+		if s.runMessageRepo == nil {
+			return nil, nil, fmt.Errorf("run messages are not configured")
+		}
+		replyText = strings.TrimSpace(req.Content)
+		if replyText == "" {
+			return nil, nil, fmt.Errorf("content is required")
+		}
+		shouldAddMessage = true
+		messageType = "user_reply"
+		runtimeIntent = model.AgentRunResumeIntentReply
+		if run.PauseReason == model.AgentRunPauseReasonHumanApproval {
+			if isExplicitInteractiveApprovalReply(replyText) {
+				approvalState = "approved"
+				stage = "approved"
+				runtimeIntent = model.AgentRunResumeIntentApprove
+			} else {
+				approvalState = "rejected"
+			}
+		}
+	case model.AgentRunResumeIntentApprove:
+		if run.ApprovalState != "pending" {
+			return nil, nil, fmt.Errorf("run does not require approval")
+		}
+		replyText = strings.TrimSpace(req.Content)
+		if replyText == "" {
+			replyText = "approve"
+		}
+		if req.SendMessage || strings.TrimSpace(req.Content) != "" {
+			if s.runMessageRepo == nil {
+				return nil, nil, fmt.Errorf("run messages are not configured")
+			}
+			shouldAddMessage = true
+			messageType = "approval"
+		}
+		approvalState = "approved"
+		stage = "approved"
+		runtimeIntent = model.AgentRunResumeIntentApprove
+	case model.AgentRunResumeIntentRequestChanges:
+		if s.runMessageRepo == nil {
+			return nil, nil, fmt.Errorf("run messages are not configured")
+		}
+		replyText = strings.TrimSpace(req.Content)
+		if replyText == "" {
+			return nil, nil, fmt.Errorf("content is required")
+		}
+		if run.PauseReason != model.AgentRunPauseReasonHumanApproval || run.ApprovalState != "pending" {
+			return nil, nil, fmt.Errorf("run is not awaiting approval")
+		}
+		shouldAddMessage = true
+		messageType = "request_changes"
+		approvalState = "rejected"
+		runtimeIntent = model.AgentRunResumeIntentRequestChanges
+	default:
+		return nil, nil, fmt.Errorf("unsupported intent %q", req.Intent)
+	}
+
+	responsePayload := json.RawMessage(nil)
+	if len(req.ResponsePayload) > 0 && strings.TrimSpace(string(req.ResponsePayload)) != "" && strings.TrimSpace(string(req.ResponsePayload)) != "null" {
+		responsePayload = append(json.RawMessage(nil), req.ResponsePayload...)
+	}
+	runtimeContent := replyText
+	if intent == model.AgentRunResumeIntentApprove && !shouldAddMessage {
+		runtimeContent = ""
+	}
+	if _, err := s.agentRuntimeClient.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
+		Intent:          runtimeIntent,
+		Content:         runtimeContent,
+		ResponsePayload: responsePayload,
+		ExternalActorID: actorID,
+	}); err != nil {
+		return nil, nil, fmt.Errorf("resume agent runtime run failed: %w", err)
+	}
+
+	var message *model.AgentRunMessage
+	if shouldAddMessage {
+		var err error
+		message, err = s.createRunMessage(ctx, run, messageRole, messageType, replyText)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if intent != model.AgentRunResumeIntentRequestChanges {
+		if err := s.maybePersistApprovedInteractivePreview(ctx, run, actorID, replyText); err != nil {
+			slog.ErrorContext(ctx, "failed to persist approved interactive preview after agent runtime resume",
+				"error", err,
+				"workspace_id", run.WorkspaceID,
+				"run_id", run.ID,
+				"intent", runtimeIntent,
+			)
+		}
+	}
+
+	now := time.Now()
+	run.ApprovalState = approvalState
+	run.ExecutionStage = strPtr(stage)
+	run.LastHeartbeatAt = &now
+	if err := s.runRepo.Update(ctx, run); err != nil {
+		return nil, nil, err
+	}
+	if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.TaskID); err != nil {
+		slog.ErrorContext(ctx, "failed to mark agent working after agent runtime resume",
+			"error", err,
+			"workspace_id", workspaceID,
+			"run_id", run.ID,
+			"agent_id", run.AgentID,
+		)
+	}
+	if err := s.resolveLatestPendingInteraction(ctx, run, actorID, run.PauseReason, runtimeIntent, replyText, responsePayload); err != nil {
+		slog.ErrorContext(ctx, "failed to resolve run interaction",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+			"pause_reason", run.PauseReason,
+			"intent", runtimeIntent,
 		)
 	}
 	s.logTargetAgentRunActivity(ctx, run, actorID, agentRunActivityActionForResumeIntent(intent), agentRunActivityExtraForMessage(intent, message))
