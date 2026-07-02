@@ -1540,6 +1540,7 @@ func TestCreateRunDelegatesMiraWorkspaceRunToAgentRuntime(t *testing.T) {
 		AllowedTargets:        json.RawMessage(`["workspace","document"]`),
 		AllowedTools:          json.RawMessage(`["update_plan","request_user_input"]`),
 		AllowedCommands:       json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{{Key: "marketing_context_setup"}},
 		ExecutionConfig:       model.JSONBlob(`{"reasoning_effort":"medium"}`),
 		MaxConcurrentRuns:     1,
 	}
@@ -1571,6 +1572,9 @@ func TestCreateRunDelegatesMiraWorkspaceRunToAgentRuntime(t *testing.T) {
 	}
 	if !slices.Equal(upsert.AllowedTargets, []string{"workspace", "document"}) || !slices.Equal(upsert.AllowedTools, []string{"update_plan", "request_user_input"}) {
 		t.Fatalf("unexpected upserted permissions: targets=%#v tools=%#v", upsert.AllowedTargets, upsert.AllowedTools)
+	}
+	if len(upsert.Skills) != 1 || upsert.Skills[0].Key != "marketing_context_setup" {
+		t.Fatalf("expected runtime skill refs, got %#v", upsert.Skills)
 	}
 	if len(runtimeClient.startRunCalls) != 1 {
 		t.Fatalf("expected one runtime start call, got %d", len(runtimeClient.startRunCalls))

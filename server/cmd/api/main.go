@@ -1155,7 +1155,7 @@ func main() {
 		crmDealRepo,
 		commandService,
 		gitService,
-	)
+	).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)

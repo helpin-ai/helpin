@@ -41,6 +41,12 @@ port. If Helpin is on `:8080`, use:
         "transport": "http",
         "base_url": "http://127.0.0.1:8080/api/internal/agent-runtime/commands",
         "token": "dev-token"
+      },
+      "skill_provider": {
+        "transport": "http",
+        "base_url": "http://127.0.0.1:8080/api/internal/agent-runtime/skills",
+        "package_base_url": "http://127.0.0.1:8080/api/internal/agent-runtime/skill-packages",
+        "token": "dev-token"
       }
     }
   ]
@@ -63,6 +69,7 @@ AGENT_RUNTIME_APP_CONFIG=@/tmp/helpin-app-config.json
 TEMPORAL_ADDRESS=localhost:7233
 TEMPORAL_NAMESPACE=default
 TEMPORAL_TASK_QUEUE_PREFIX=helpin-
+NATS_URL=nats://127.0.0.1:4222
 CODEX_APP_SERVER=true
 CODEX_PATH=codex
 ```
@@ -79,16 +86,26 @@ set +a
 GOCACHE=/private/tmp/agent-runtime-go-cache go run ./cmd/agent-runtime
 ```
 
+Start a local NATS server with JetStream before running the Helpin worker and
+runtime. Live projection uses the `AGENT_RUNTIME_EVENTS` stream; the
+reconciliation sweep is only a backstop.
+
+```bash
+nats-server -js
+```
+
 ## Smoke Check
 
-1. Start Helpin API and the Temporal worker with the Helpin env above.
-2. Start `agent-runtime` with the app config above.
-3. Launch a Mira workspace run.
-4. Confirm the Helpin `agent_runs` row has:
+1. Start NATS with JetStream.
+2. Start Helpin API and the Temporal worker with the Helpin env above.
+3. Start `agent-runtime` with the app config above.
+4. Launch a Mira workspace run.
+5. Confirm the Helpin `agent_runs` row has:
    - `external_runtime = 'agent-runtime'`
    - `external_runtime_id` set
    - no Helpin `workflow_id`
-5. Confirm projection updates the row from runtime events or reconciliation.
+6. Confirm projection updates the row from runtime events. The worker creates
+   the `AGENT_RUNTIME_EVENTS` stream if it is missing.
 
 For local Codex auth flows, a successful unauthenticated smoke can pause with
 `pause_reason = authentication`; that still validates launch delegation,

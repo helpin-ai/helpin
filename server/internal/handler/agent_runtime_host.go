@@ -3,7 +3,10 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 
+	"github.com/go-chi/chi/v5"
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -57,6 +60,49 @@ func (h *AgentRuntimeHostHandler) ExecuteCommand(w http.ResponseWriter, r *http.
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *AgentRuntimeHostHandler) ResolveSkillByID(w http.ResponseWriter, r *http.Request) {
+	var req service.AgentRuntimeSkillLookupRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.host.ResolveSkillByID(r.Context(), req)
+	if err != nil {
+		writeAgentRuntimeHostError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *AgentRuntimeHostHandler) ResolveActiveSkillByKey(w http.ResponseWriter, r *http.Request) {
+	var req service.AgentRuntimeSkillLookupRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.host.ResolveActiveSkillByKey(r.Context(), req)
+	if err != nil {
+		writeAgentRuntimeHostError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *AgentRuntimeHostHandler) GetSkillPackageObject(w http.ResponseWriter, r *http.Request) {
+	objectKey := strings.TrimSpace(chi.URLParam(r, "*"))
+	if decoded, err := url.PathUnescape(objectKey); err == nil {
+		objectKey = decoded
+	}
+	payload, err := h.host.GetSkillPackageObject(r.Context(), objectKey)
+	if err != nil {
+		writeAgentRuntimeHostError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(payload)
 }
 
 func writeAgentRuntimeHostError(w http.ResponseWriter, err error) {

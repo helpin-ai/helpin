@@ -193,6 +193,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		Provider:              strings.TrimSpace(derefString(agent.Provider)),
 		Model:                 strings.TrimSpace(derefString(agent.Model)),
 		SystemPrompt:          strings.TrimSpace(derefString(agent.SystemPrompt)),
+		Skills:                runtimeSkillRefsFromHelpin(agent.Skills),
 		AllowedTools:          parseJSONStringSlice(agent.AllowedTools),
 		AllowedTargets:        parseJSONStringSlice(agent.AllowedTargets),
 		ApprovalMode:          strings.TrimSpace(agent.ApprovalMode),
@@ -209,6 +210,29 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	}
 	if out.DefaultInvocationMode == "" {
 		out.DefaultInvocationMode = model.InvocationModeAutonomous
+	}
+	return out
+}
+
+func runtimeSkillRefsFromHelpin(refs model.AgentSkillRefs) []AgentRuntimeSkillRef {
+	normalized := refs.Normalize()
+	if len(normalized) == 0 {
+		return nil
+	}
+	out := make([]AgentRuntimeSkillRef, 0, len(normalized))
+	for _, ref := range normalized {
+		runtimeRef := AgentRuntimeSkillRef{
+			SkillID:    strings.TrimSpace(derefString(ref.SkillID)),
+			Key:        strings.TrimSpace(ref.Key),
+			VersionKey: strings.TrimSpace(derefString(ref.VersionKey)),
+		}
+		if len(ref.Config) > 0 && strings.TrimSpace(string(ref.Config)) != "null" {
+			runtimeRef.Config = append([]byte(nil), ref.Config...)
+		}
+		if runtimeRef.SkillID == "" && runtimeRef.Key == "" {
+			continue
+		}
+		out = append(out, runtimeRef)
 	}
 	return out
 }

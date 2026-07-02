@@ -11,6 +11,12 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/worker"
+)
+
+const (
+	agentRuntimeHelpinBuiltInSkillIDPrefix     = "helpin_builtin:"
+	agentRuntimeHelpinBuiltInSkillObjectPrefix = "helpin-builtins/"
 )
 
 var (
@@ -35,6 +41,38 @@ type AgentRuntimeHostService struct {
 	crmDealRepo    *repository.CRMDealRepository
 	commandService *InternalCommandService
 	gitService     *GitService
+	skillRepo      *repository.WorkspaceSkillRepository
+	skillStore     skillPackageStore
+}
+
+type AgentRuntimeSkillLookupRequest struct {
+	AppID    string                 `json:"app_id"`
+	AgentID  string                 `json:"agent_id,omitempty"`
+	RunID    string                 `json:"run_id,omitempty"`
+	Target   agentruntime.TargetRef `json:"target"`
+	Trigger  map[string]interface{} `json:"trigger,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	SkillID  string                 `json:"skill_id,omitempty"`
+	Key      string                 `json:"key,omitempty"`
+}
+
+type AgentRuntimeWorkspaceSkill struct {
+	ID                string          `json:"id"`
+	Key               string          `json:"key"`
+	VersionKey        string          `json:"version_key"`
+	Title             string          `json:"title"`
+	Description       string          `json:"description,omitempty"`
+	SourceKind        string          `json:"source_kind"`
+	Instructions      string          `json:"instructions"`
+	RequiredTools     []string        `json:"required_tools,omitempty"`
+	SupportedRuntimes []string        `json:"supported_runtimes,omitempty"`
+	Interface         json.RawMessage `json:"interface,omitempty"`
+	Policy            json.RawMessage `json:"policy,omitempty"`
+	PackageObjectKey  string          `json:"package_object_key,omitempty"`
+	PackageFileName   string          `json:"package_file_name,omitempty"`
+	PackageChecksum   string          `json:"package_checksum,omitempty"`
+	PackageSize       int64           `json:"package_size,omitempty"`
+	IsArchived        bool            `json:"is_archived,omitempty"`
 }
 
 func NewAgentRuntimeHostService(
@@ -65,6 +103,15 @@ func NewAgentRuntimeHostService(
 		commandService: commandService,
 		gitService:     gitService,
 	}
+}
+
+func (s *AgentRuntimeHostService) SetWorkspaceSkillStore(repo *repository.WorkspaceSkillRepository, store skillPackageStore) *AgentRuntimeHostService {
+	if s == nil {
+		return s
+	}
+	s.skillRepo = repo
+	s.skillStore = store
+	return s
 }
 
 func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req agentruntime.TargetContextRequest) (*agentruntime.TargetContext, error) {
@@ -314,6 +361,263 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 		return &agentruntime.CommandExecutionResponse{Error: err.Error()}, nil
 	}
 	return &agentruntime.CommandExecutionResponse{Output: output}, nil
+}
+
+func (s *AgentRuntimeHostService) ResolveSkillByID(ctx context.Context, req AgentRuntimeSkillLookupRequest) (*AgentRuntimeWorkspaceSkill, error) {
+	skillID := strings.TrimSpace(req.SkillID)
+	if skillID == "" {
+		return nil, fmt.Errorf("%w: skill_id is required", ErrAgentRuntimeHostBadRequest)
+	}
+	if s == nil {
+		return nil, fmt.Errorf("workspace skill lookup is not configured")
+	}
+	if err := s.validateAppID(req.AppID); err != nil {
+		return nil, err
+	}
+	if strings.HasPrefix(skillID, agentRuntimeHelpinBuiltInSkillIDPrefix) {
+		key := strings.TrimPrefix(skillID, agentRuntimeHelpinBuiltInSkillIDPrefix)
+		definition, ok := worker.GetBuiltInSkill(key)
+		if !ok {
+			return nil, fmt.Errorf("%w: workspace skill not found", ErrAgentRuntimeHostNotFound)
+		}
+		return runtimeBuiltInWorkspaceSkill(definition)
+	}
+	return s.resolveWorkspaceSkill(ctx, req, func(workspaceID string) (*model.WorkspaceSkill, error) {
+		return s.skillRepo.GetByID(ctx, workspaceID, skillID)
+	})
+}
+
+func (s *AgentRuntimeHostService) ResolveActiveSkillByKey(ctx context.Context, req AgentRuntimeSkillLookupRequest) (*AgentRuntimeWorkspaceSkill, error) {
+	key := strings.TrimSpace(req.Key)
+	if key == "" {
+		return nil, fmt.Errorf("%w: key is required", ErrAgentRuntimeHostBadRequest)
+	}
+	if s == nil {
+		return nil, fmt.Errorf("workspace skill lookup is not configured")
+	}
+	if err := s.validateAppID(req.AppID); err != nil {
+		return nil, err
+	}
+	workspaceID, err := s.workspaceIDForSkillLookup(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if workspaceID != "" && s.skillRepo != nil {
+		skill, err := s.skillRepo.GetActiveByKey(ctx, workspaceID, key)
+		if err != nil {
+			return nil, err
+		}
+		if skill != nil && !skill.IsArchived {
+			return runtimeWorkspaceSkill(skill), nil
+		}
+	}
+	if definition, ok := worker.GetBuiltInSkill(key); ok {
+		return runtimeBuiltInWorkspaceSkill(definition)
+	}
+	if workspaceID == "" {
+		return nil, fmt.Errorf("%w: workspace_id metadata or run mapping is required", ErrAgentRuntimeHostBadRequest)
+	}
+	return nil, fmt.Errorf("%w: workspace skill not found", ErrAgentRuntimeHostNotFound)
+}
+
+func (s *AgentRuntimeHostService) resolveWorkspaceSkill(ctx context.Context, req AgentRuntimeSkillLookupRequest, lookup func(workspaceID string) (*model.WorkspaceSkill, error)) (*AgentRuntimeWorkspaceSkill, error) {
+	if s == nil || s.skillRepo == nil {
+		return nil, fmt.Errorf("workspace skill lookup is not configured")
+	}
+	if err := s.validateAppID(req.AppID); err != nil {
+		return nil, err
+	}
+	workspaceID, err := s.workspaceIDForSkillLookup(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if workspaceID == "" {
+		return nil, fmt.Errorf("%w: workspace_id metadata or run mapping is required", ErrAgentRuntimeHostBadRequest)
+	}
+	skill, err := lookup(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if skill == nil || skill.IsArchived {
+		return nil, fmt.Errorf("%w: workspace skill not found", ErrAgentRuntimeHostNotFound)
+	}
+	return runtimeWorkspaceSkill(skill), nil
+}
+
+func (s *AgentRuntimeHostService) workspaceIDForSkillLookup(ctx context.Context, req AgentRuntimeSkillLookupRequest) (string, error) {
+	workspaceID := runtimeWorkspaceID(req.Metadata, req.Target.Metadata)
+	mappedWorkspaceID, err := s.workspaceIDForRuntimeRun(ctx, req.RunID)
+	if err != nil {
+		return "", err
+	}
+	if workspaceID == "" {
+		return mappedWorkspaceID, nil
+	}
+	if err := ensureRuntimeWorkspaceMatch(mappedWorkspaceID, workspaceID); err != nil {
+		return "", err
+	}
+	return workspaceID, nil
+}
+
+func (s *AgentRuntimeHostService) GetSkillPackageObject(ctx context.Context, objectKey string) ([]byte, error) {
+	objectKey = strings.TrimSpace(objectKey)
+	if s == nil {
+		return nil, fmt.Errorf("workspace skill package store is not configured")
+	}
+	if objectKey == "" {
+		return nil, fmt.Errorf("%w: package object key is required", ErrAgentRuntimeHostBadRequest)
+	}
+	if strings.HasPrefix(objectKey, agentRuntimeHelpinBuiltInSkillObjectPrefix) {
+		key := strings.TrimSuffix(strings.TrimPrefix(objectKey, agentRuntimeHelpinBuiltInSkillObjectPrefix), ".zip")
+		definition, ok := worker.GetBuiltInSkill(key)
+		if !ok {
+			return nil, fmt.Errorf("%w: workspace skill package not found", ErrAgentRuntimeHostNotFound)
+		}
+		archive, _, _, err := worker.BuildSkillArchive(definition)
+		if err != nil {
+			return nil, err
+		}
+		return archive, nil
+	}
+	if s.skillRepo == nil || s.skillStore == nil {
+		return nil, fmt.Errorf("workspace skill package store is not configured")
+	}
+	if !strings.HasPrefix(objectKey, "workspaces/") || strings.Contains(objectKey, "..") {
+		return nil, fmt.Errorf("%w: package object key is not allowed", ErrAgentRuntimeHostForbidden)
+	}
+	skill, err := s.skillRepo.GetActiveByPackageObjectKey(ctx, objectKey)
+	if err != nil {
+		return nil, err
+	}
+	if skill == nil {
+		return nil, fmt.Errorf("%w: workspace skill package not found", ErrAgentRuntimeHostNotFound)
+	}
+	payload, err := s.skillStore.GetObject(ctx, objectKey)
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func runtimeWorkspaceSkill(skill *model.WorkspaceSkill) *AgentRuntimeWorkspaceSkill {
+	if skill == nil {
+		return nil
+	}
+	return &AgentRuntimeWorkspaceSkill{
+		ID:                skill.ID,
+		Key:               skill.Key,
+		VersionKey:        skill.VersionKey,
+		Title:             skill.Title,
+		Description:       stringOrDefault(skill.Description, ""),
+		SourceKind:        skill.SourceKind,
+		Instructions:      skill.Instructions,
+		RequiredTools:     parseJSONStringSlice(json.RawMessage(skill.RequiredTools)),
+		SupportedRuntimes: parseJSONStringSlice(json.RawMessage(skill.SupportedRuntimes)),
+		Interface:         json.RawMessage(skill.InterfaceConfig),
+		Policy:            json.RawMessage(skill.PolicyConfig),
+		PackageObjectKey:  skill.PackageObjectKey,
+		PackageFileName:   skill.PackageFileName,
+		PackageChecksum:   skill.PackageChecksum,
+		PackageSize:       skill.PackageSize,
+		IsArchived:        skill.IsArchived,
+	}
+}
+
+func runtimeBuiltInWorkspaceSkill(definition worker.SkillDefinition) (*AgentRuntimeWorkspaceSkill, error) {
+	archive, checksum, filename, err := worker.BuildSkillArchive(definition)
+	if err != nil {
+		return nil, err
+	}
+	return &AgentRuntimeWorkspaceSkill{
+		ID:                agentRuntimeHelpinBuiltInSkillIDPrefix + definition.Key,
+		Key:               definition.Key,
+		VersionKey:        checksum,
+		Title:             definition.Title,
+		Description:       definition.Description,
+		SourceKind:        model.WorkspaceSkillSourceBuiltIn,
+		Instructions:      definition.Instructions,
+		RequiredTools:     append([]string(nil), definition.RequiredTools...),
+		SupportedRuntimes: append([]string(nil), definition.SupportedRuntimes...),
+		Interface:         runtimeSkillInterfaceJSON(definition.Interface),
+		Policy:            runtimeSkillPolicyJSON(definition.Policy),
+		PackageObjectKey:  agentRuntimeHelpinBuiltInSkillObjectPrefix + definition.Key + ".zip",
+		PackageFileName:   filename,
+		PackageChecksum:   checksum,
+		PackageSize:       int64(len(archive)),
+	}, nil
+}
+
+func runtimeSkillInterfaceJSON(value worker.SkillInterface) json.RawMessage {
+	payload := map[string]interface{}{}
+	if strings.TrimSpace(value.DisplayName) != "" {
+		payload["display_name"] = strings.TrimSpace(value.DisplayName)
+	}
+	if strings.TrimSpace(value.ShortDescription) != "" {
+		payload["short_description"] = strings.TrimSpace(value.ShortDescription)
+	}
+	if strings.TrimSpace(value.IconSmall) != "" {
+		payload["icon_small"] = strings.TrimSpace(value.IconSmall)
+	}
+	if strings.TrimSpace(value.IconLarge) != "" {
+		payload["icon_large"] = strings.TrimSpace(value.IconLarge)
+	}
+	if strings.TrimSpace(value.BrandColor) != "" {
+		payload["brand_color"] = strings.TrimSpace(value.BrandColor)
+	}
+	if strings.TrimSpace(value.DefaultPrompt) != "" {
+		payload["default_prompt"] = strings.TrimSpace(value.DefaultPrompt)
+	}
+	return mustMarshalRuntimeHostJSON(payload)
+}
+
+func runtimeSkillPolicyJSON(value worker.SkillPolicy) json.RawMessage {
+	payload := map[string]interface{}{}
+	if value.AllowImplicitInvocation != nil {
+		payload["allow_implicit_invocation"] = *value.AllowImplicitInvocation
+	}
+	if len(value.CompletionRequiresInteractionKinds) > 0 {
+		payload["completion_requires_interaction_kinds"] = append([]string(nil), value.CompletionRequiresInteractionKinds...)
+	}
+	if len(value.InteractionContracts) > 0 {
+		contracts := make([]map[string]interface{}, 0, len(value.InteractionContracts))
+		for _, contract := range value.InteractionContracts {
+			item := map[string]interface{}{}
+			if strings.TrimSpace(contract.Kind) != "" {
+				item["kind"] = strings.TrimSpace(contract.Kind)
+			}
+			if strings.TrimSpace(contract.Schema) != "" {
+				item["schema"] = strings.TrimSpace(contract.Schema)
+			}
+			if len(contract.Transports) > 0 {
+				transports := make(map[string]interface{}, len(contract.Transports))
+				for key, transport := range contract.Transports {
+					transportPayload := map[string]interface{}{}
+					if strings.TrimSpace(transport.Type) != "" {
+						transportPayload["type"] = strings.TrimSpace(transport.Type)
+					}
+					if strings.TrimSpace(transport.ToolName) != "" {
+						transportPayload["tool_name"] = strings.TrimSpace(transport.ToolName)
+					}
+					if strings.TrimSpace(transport.BlockLabel) != "" {
+						transportPayload["block_label"] = strings.TrimSpace(transport.BlockLabel)
+					}
+					transports[key] = transportPayload
+				}
+				item["transports"] = transports
+			}
+			contracts = append(contracts, item)
+		}
+		payload["interaction_contracts"] = contracts
+	}
+	return mustMarshalRuntimeHostJSON(payload)
+}
+
+func mustMarshalRuntimeHostJSON(value interface{}) json.RawMessage {
+	payload, err := json.Marshal(value)
+	if err != nil || len(payload) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	return payload
 }
 
 func normalizeRuntimeTarget(target agentruntime.TargetRef) agentruntime.TargetRef {
