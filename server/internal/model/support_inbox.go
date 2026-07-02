@@ -19,6 +19,7 @@ type SupportConversation struct {
 	Subject           string     `json:"subject" gorm:"not null"`
 	Status            string     `json:"status" gorm:"not null;default:'open'"`     // open, waiting_on_customer, resolved, spam
 	FlowState         *string    `json:"flow_state" gorm:"index"`                   // ai_handling, waiting_for_human, queued_for_human, after_hours_queue, assigned_to_human, resolved_by_ai, resolved_by_human
+	HandoffState      *string    `json:"handoff_state" gorm:"column:handoff_state"` // live, busy, after_hours — customer-facing availability at handoff time
 	Priority          string     `json:"priority" gorm:"not null;default:'medium'"` // low, medium, high, urgent
 	Channel           string     `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
 	CustomerName      *string    `json:"customer_name"`

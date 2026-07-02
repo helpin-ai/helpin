@@ -55,6 +55,27 @@ func shortReplyTimePhrase(preset string, minutes *int) string {
 	return ""
 }
 
+// selectEscalationTemplate picks the escalation message template for the
+// resolved handoff state, falling back to the built-in default for that state
+// (never to the live message) when the workspace has not customized it.
+func selectEscalationTemplate(s model.SupportInboxSettings, state string) string {
+	defaults := model.DefaultSupportInboxSettings()
+	pick := func(custom, def string) string {
+		if strings.TrimSpace(custom) != "" {
+			return custom
+		}
+		return def
+	}
+	switch state {
+	case model.HandoffStateBusy:
+		return pick(s.EscalationMessageBusy, defaults.EscalationMessageBusy)
+	case model.HandoffStateAfterHours:
+		return pick(s.EscalationMessageAfterHours, defaults.EscalationMessageAfterHours)
+	default: // live
+		return pick(s.EscalationMessage, defaults.EscalationMessage)
+	}
+}
+
 // humanizeNextOpen renders a next-open time relative to localNow in the
 // business-hours timezone: "today at 5:00 PM PST", "tomorrow at 9:00 AM PST",
 // or "on Monday at 9:00 AM PST". Returns "" when next is nil.

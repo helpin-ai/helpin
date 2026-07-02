@@ -996,6 +996,56 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		availability = resolveSupportAvailability(settings, now)
 	}
 
+	handoffMailboxID, mailboxSelectionSource := s.resolveEscalationMailbox(ctx, workspaceID, conversationID, messageID, conv, settings)
+
+	selection, selectErr := selectSupportConversationRecipient(
+		ctx,
+		s.workspaceRepo,
+		s.mailboxRepo,
+		s.installationRepo,
+		nil,
+		s.presence,
+		s.statusOverrideRepo,
+		supportRecipientSelectorInput{
+			WorkspaceID:         workspaceID,
+			MailboxID:           handoffMailboxID,
+			OwnerUserID:         conv.AssignedUserID,
+			HandoffBehavior:     settings.HandoffBehavior,
+			HandoffTeamID:       settings.HandoffTeamID,
+			RequireAvailability: true,
+			Now:                 now,
+		},
+	)
+	if selectErr != nil {
+		slog.ErrorContext(ctx, "select escalation recipient", "error", selectErr, "conversation_id", conversationID)
+	}
+
+	// Resolve the customer-facing handoff state and render the escalation message
+	// for that state. Computed outside the dedupe guard below so handoffState is
+	// persisted even when the customer-facing message is skipped.
+	handoffState := resolveHandoffState(selection != nil, availability.IsWithinOfficeHours)
+
+	// Short phrase for the {reply_time} token. Do NOT use
+	// availability.WidgetAvailability.ReplyTimeText — that is full-sentence copy
+	// (and the offline branch sets it to the outside-hours message).
+	replyTime := shortReplyTimePhrase(
+		availability.WidgetAvailability.ReplyTimePreset,
+		availability.WidgetAvailability.ReplyTimeMinutes,
+	)
+
+	// Next-open text (only meaningful for after_hours).
+	var nextOpenText string
+	if loc, err := time.LoadLocation(settings.BusinessHoursTimezone); err == nil {
+		localNow := now.In(loc)
+		nextOpenText = humanizeNextOpen(nextBusinessHoursStart(settings, localNow), localNow)
+	}
+
+	escalationContent := renderEscalationMessage(
+		selectEscalationTemplate(settings, handoffState),
+		replyTime,
+		nextOpenText,
+	)
+
 	var replyMsg *model.SupportMessage
 	var escalationSystemMsg *model.SupportMessage
 	escalationAlreadyMessaged := false
@@ -1016,11 +1066,6 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	// 1. Create escalation messages — a customer-facing reply plus an
 	// internal-only system event describing why the escalation happened.
 	if !escalationAlreadyMessaged {
-		escalationContent := "Let me connect you with a team member who can help further."
-		if strings.TrimSpace(settings.EscalationMessage) != "" {
-			escalationContent = settings.EscalationMessage
-		}
-
 		createSystemEventFirst := systemEventForEscalationReason(reason) == model.SystemEventCustomerRequestedHuman
 		if createSystemEventFirst {
 			escalationSystemMsg = &model.SupportMessage{
@@ -1073,31 +1118,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		)
 	}
 
-	handoffMailboxID, mailboxSelectionSource := s.resolveEscalationMailbox(ctx, workspaceID, conversationID, messageID, conv, settings)
-
 	// 2. Transition AI state: pending → escalated
-	selection, selectErr := selectSupportConversationRecipient(
-		ctx,
-		s.workspaceRepo,
-		s.mailboxRepo,
-		s.installationRepo,
-		nil,
-		s.presence,
-		s.statusOverrideRepo,
-		supportRecipientSelectorInput{
-			WorkspaceID:         workspaceID,
-			MailboxID:           handoffMailboxID,
-			OwnerUserID:         conv.AssignedUserID,
-			HandoffBehavior:     settings.HandoffBehavior,
-			HandoffTeamID:       settings.HandoffTeamID,
-			RequireAvailability: true,
-			Now:                 now,
-		},
-	)
-	if selectErr != nil {
-		slog.ErrorContext(ctx, "select escalation recipient", "error", selectErr, "conversation_id", conversationID)
-	}
-
 	flowState := escalatedConversationFlowState(settings, now)
 	if selection != nil {
 		flowState = model.SupportConversationFlowStateAssignedToHuman
@@ -1109,6 +1130,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		"assigned_agent_id": nil,
 		"mailbox_id":        handoffMailboxID,
 		"flow_state":        flowState,
+		"handoff_state":     handoffState,
 		"human_takeover":    true,
 	}
 	if selection != nil {
@@ -1125,12 +1147,13 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	}
 
 	// 3. Record handoff for analytics
+	handoffCtx, _ := json.Marshal(map[string]string{"handoff_state": handoffState})
 	if err := s.handoffRepo.Create(ctx, &model.AgentHandoff{
 		WorkspaceID:    workspaceID,
 		ConversationID: &conversationID,
 		HandoffType:    "agent_to_human",
 		Reason:         reason,
-		Context:        json.RawMessage(`{}`),
+		Context:        handoffCtx,
 	}); err != nil {
 		slog.ErrorContext(ctx, "record handoff failed", "error", err)
 	}
@@ -1184,11 +1207,17 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	if escalationSystemMsg != nil && systemEventForEscalationReason(reason) != model.SystemEventCustomerRequestedHuman {
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, escalationSystemMsg, "ai:escalation"))
 	}
+	escalatedData, _ := json.Marshal(map[string]any{
+		"conversation_id": conversationID,
+		"flow_state":      fields["flow_state"],
+		"handoff_state":   handoffState,
+	})
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "escalated",
 		Entity:      "support_conversation",
 		EntityID:    conversationID,
 		WorkspaceID: workspaceID,
+		Data:        escalatedData,
 	})
 
 	// Push a refreshed visitor conversation list so the widget can observe the new

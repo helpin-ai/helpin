@@ -61,6 +61,28 @@ func TestHumanizeNextOpen(t *testing.T) {
 	}
 }
 
+func TestSelectEscalationTemplate(t *testing.T) {
+	s := model.SupportInboxSettings{
+		EscalationMessage:           "live {reply_time}",
+		EscalationMessageBusy:       "busy {reply_time}",
+		EscalationMessageAfterHours: "away {next_open}",
+	}
+	if got := selectEscalationTemplate(s, model.HandoffStateLive); got != "live {reply_time}" {
+		t.Fatalf("live got %q", got)
+	}
+	if got := selectEscalationTemplate(s, model.HandoffStateBusy); got != "busy {reply_time}" {
+		t.Fatalf("busy got %q", got)
+	}
+	if got := selectEscalationTemplate(s, model.HandoffStateAfterHours); got != "away {next_open}" {
+		t.Fatalf("after_hours got %q", got)
+	}
+	// Empty busy field falls back to default, NOT to the live message.
+	s2 := model.SupportInboxSettings{EscalationMessage: "custom live"}
+	if got := selectEscalationTemplate(s2, model.HandoffStateBusy); got == "custom live" || got == "" {
+		t.Fatalf("busy fallback must be the built-in default, got %q", got)
+	}
+}
+
 func TestShortReplyTimePhrase(t *testing.T) {
 	if got := shortReplyTimePhrase("few_minutes", nil); got != "a few minutes" {
 		t.Fatalf("few_minutes got %q", got)
