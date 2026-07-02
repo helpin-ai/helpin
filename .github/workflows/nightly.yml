@@ -20,6 +20,7 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  GOPRIVATE: github.com/helpin-ai
 
 jobs:
   # `go test -race` against full backend with Postgres service. Race builds
@@ -40,6 +41,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+      - name: Configure private Go module access
+        env:
+          GO_PRIVATE_TOKEN: ${{ secrets.AGENT_RUNTIME_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+        run: git config --global url."https://x-access-token:${GO_PRIVATE_TOKEN}@github.com/".insteadOf "https://github.com/"
       - name: Verify gcc available
         run: |
           if ! command -v gcc >/dev/null 2>&1; then

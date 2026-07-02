@@ -27,6 +27,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/helpin-ai/helpin
+  GOPRIVATE: github.com/helpin-ai
 
 jobs:
   changes:
@@ -146,10 +147,13 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build and push server images
+        env:
+          GITHUB_TOKEN: ${{ secrets.AGENT_RUNTIME_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           docker buildx build \
             -f build-prod-server/server/Dockerfile \
             --target api \
+            --secret id=github_token,env=GITHUB_TOKEN \
             -t ${{ env.IMAGE_PREFIX }}/server:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/server:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/server:prod-latest \
@@ -160,6 +164,7 @@ jobs:
           docker buildx build \
             -f build-prod-server/server/Dockerfile \
             --target temporal-worker \
+            --secret id=github_token,env=GITHUB_TOKEN \
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:prod-latest \
@@ -170,6 +175,7 @@ jobs:
           docker buildx build \
             -f build-prod-server/server/Dockerfile \
             --target migrate \
+            --secret id=github_token,env=GITHUB_TOKEN \
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:prod-latest \
