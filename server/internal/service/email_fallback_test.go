@@ -533,6 +533,111 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	}
 }
 
+// TestReplyByEmailWhenVisitorOffline verifies the after-hours promise from
+// Task 10: when a human teammate replies and the visitor is not currently
+// connected to the widget, the reply goes out by email exactly once. This is
+// the inverse of TestEmailFallbackFireEmailVisitorOnlineUnreadPostponesWithinGraceWindow,
+// which proves an online visitor is NOT emailed.
+func TestReplyByEmailWhenVisitorOffline(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 120
+	settings.EmailFallbackMaxDeliveryAgeSecs = 600
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666672"
+	anonymousID := "anon-offline-visitor"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "After hours question",
+		Status:        "open",
+		AnonymousID:   &anonymousID,
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderDisplayName: strPtr("Sam Teammate"),
+		Content:           "Sorry we missed you — here is the answer.",
+		MessageType:       "reply",
+		CreatedAt:         fixedNow.Add(-120 * time.Second),
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+	if err := env.redis.ZAdd(ctx, emailFallbackOutboxKey, redis.Z{Score: float64(fixedNow.Unix()), Member: conversationID}).Err(); err != nil {
+		t.Fatalf("seed outbox: %v", err)
+	}
+	if err := env.redis.RPush(ctx, env.service.msgListKey(conversationID), msg.ID).Err(); err != nil {
+		t.Fatalf("seed msg list: %v", err)
+	}
+
+	// Intentionally do NOT mark the visitor online — they are offline.
+	sendCount := 0
+	var captured capturedPostmarkRequest
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(body, &captured); err != nil {
+				return nil, err
+			}
+			sendCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ErrorCode": 0,
+					"Message": "OK",
+					"MessageID": "pm-offline-1",
+					"SubmittedAt": "2026-03-20T12:30:00Z",
+					"To": "customer@example.com"
+				}`)),
+			}, nil
+		}),
+	})
+
+	if err := env.service.fireEmail(ctx, conversationID, []string{msg.ID}); err != nil {
+		t.Fatalf("fire email: %v", err)
+	}
+
+	if sendCount != 1 {
+		t.Fatalf("expected exactly one email send to offline visitor, got %d", sendCount)
+	}
+	if captured.To != customerEmail {
+		t.Fatalf("expected recipient %q, got %q", customerEmail, captured.To)
+	}
+
+	saved, err := env.messageRepo.GetByIDs(ctx, []string{msg.ID})
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if len(saved) != 1 || saved[0].EmailNotifiedAt == nil {
+		t.Fatalf("expected email_notified_at to be set after offline send")
+	}
+
+	// The conversation should be removed from the outbox (sent, not postponed).
+	if exists, err := env.redis.Exists(ctx, emailFallbackOutboxKey, env.service.msgListKey(conversationID)).Result(); err != nil {
+		t.Fatalf("check redis cleanup: %v", err)
+	} else if exists != 0 {
+		t.Fatalf("expected redis cleanup after offline send, found %d keys", exists)
+	}
+}
+
 func TestSupportRouteReplyToFormatsDisplayName(t *testing.T) {
 	tests := []struct {
 		name           string
