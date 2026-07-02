@@ -1279,6 +1279,41 @@ func (s *SupportInboxService) UpdateConversationSubject(ctx context.Context, wor
 	return conv, nil
 }
 
+// UpdateConversationCustomerName changes the customer display name on a support conversation.
+func (s *SupportInboxService) UpdateConversationCustomerName(ctx context.Context, workspaceID, conversationID, customerName, actorID string) (*model.SupportConversation, error) {
+	trimmedName := strings.Join(strings.Fields(strings.TrimSpace(customerName)), " ")
+	if trimmedName == "" {
+		return nil, fmt.Errorf("customer_name is required")
+	}
+
+	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if conv == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
+		"customer_name": trimmedName,
+	}); err != nil {
+		return nil, err
+	}
+	conv.CustomerName = &trimmedName
+
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "support_conversation",
+			EntityID:    conversationID,
+			WorkspaceID: workspaceID,
+			ActorID:     actorID,
+		})
+	}
+
+	return conv, nil
+}
+
 // DeleteConversation permanently deletes a conversation and its messages.
 func (s *SupportInboxService) DeleteConversation(ctx context.Context, workspaceID, conversationID, actorID string) error {
 	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)

@@ -940,6 +940,10 @@ export interface UpdateConversationCRMContactRequest {
   crm_contact_id: string | null;
 }
 
+export interface UpdateConversationCustomerNameRequest {
+  customer_name: string;
+}
+
 // ── Support Installation Settings ───────────────────────────────────
 
 export interface BusinessHoursDay {

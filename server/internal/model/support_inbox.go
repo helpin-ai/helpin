@@ -839,6 +839,11 @@ type UpdateConversationCRMContactRequest struct {
 	CRMContactID *string `json:"crm_contact_id"`
 }
 
+// UpdateConversationCustomerNameRequest sets the support conversation customer display name.
+type UpdateConversationCustomerNameRequest struct {
+	CustomerName string `json:"customer_name"`
+}
+
 // UpdateConversationStatusRequest changes conversation status.
 type UpdateConversationStatusRequest struct {
 	Status string `json:"status"`

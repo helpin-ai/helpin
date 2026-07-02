@@ -1783,6 +1783,63 @@ func TestSupportInboxServiceUpdateConversationStatus_KeepsResolvedEventsInternal
 	}
 }
 
+func TestSupportInboxServiceUpdateConversationCustomerName(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-update-customer-name"
+	seedWorkspace(t, db, workspaceID, "Update Customer Name WS", "update-customer-name", "user-123")
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	svc := NewSupportInboxService(
+		convRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	email := "casey@example.com"
+	conversation := &model.SupportConversation{
+		WorkspaceID:   workspaceID,
+		Subject:       "Need help",
+		Status:        model.SupportConversationStatusOpen,
+		Priority:      "medium",
+		Channel:       "email",
+		Source:        "email",
+		CustomerEmail: &email,
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	updated, err := svc.UpdateConversationCustomerName(ctx, workspaceID, conversation.ID, "  Casey Newton  ", "user-123")
+	if err != nil {
+		t.Fatalf("update customer name: %v", err)
+	}
+	if updated.CustomerName == nil || *updated.CustomerName != "Casey Newton" {
+		t.Fatalf("customer_name = %#v, want Casey Newton", updated.CustomerName)
+	}
+
+	reloaded, err := convRepo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if reloaded.CustomerName == nil || *reloaded.CustomerName != "Casey Newton" {
+		t.Fatalf("persisted customer_name = %#v, want Casey Newton", reloaded.CustomerName)
+	}
+}
+
 func TestBuildSupportConversationStatusEventIncludesStatusPayload(t *testing.T) {
 	flowState := model.SupportConversationFlowStateAssignedToHuman
 	mailboxID := "mailbox-billing"

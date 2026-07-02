@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { SupportMessage } from '@/lib/pmTypes'
 import {
+  copyCustomerEmailToClipboard,
+  customerEmailCopyButtonClassName,
+  customerEmailDisplayRowClassName,
+  customerNameDisplayRowClassName,
+  customerNameEditButtonClassName,
   getLatestEmailRecipients,
   getLastActiveTooltipLabel,
   shouldShowLastActiveIndicator,
@@ -77,5 +82,57 @@ describe('last active presence helpers', () => {
     expect(label).toContain('Last active')
     expect(label).toContain('12 minutes ago')
     expect(label).toContain('across this contact')
+  })
+})
+
+describe('copyCustomerEmailToClipboard', () => {
+  it('copies the trimmed email address', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+
+    const copied = await copyCustomerEmailToClipboard('  buyer@example.com  ', writeText)
+
+    expect(copied).toBe(true)
+    expect(writeText).toHaveBeenCalledWith('buyer@example.com')
+  })
+
+  it('does not copy empty email values', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+
+    const copied = await copyCustomerEmailToClipboard('   ', writeText)
+
+    expect(copied).toBe(false)
+    expect(writeText).not.toHaveBeenCalled()
+  })
+})
+
+describe('customer name edit affordance', () => {
+  it('keeps the pencil hidden until the name row is hovered or focused', () => {
+    expect(customerNameEditButtonClassName).toContain('opacity-0')
+    expect(customerNameEditButtonClassName).toContain('group-hover/name:opacity-100')
+    expect(customerNameEditButtonClassName).toContain('group-focus-within/name:opacity-100')
+  })
+
+  it('keeps the customer name centered with equal left and right affordance columns', () => {
+    expect(customerNameDisplayRowClassName).toContain('grid')
+    expect(customerNameDisplayRowClassName).toContain('w-fit')
+    expect(customerNameDisplayRowClassName).toContain('grid-cols-[1.5rem_minmax(0,1fr)_1.5rem]')
+    expect(customerNameEditButtonClassName).toContain('col-start-3')
+    expect(customerNameEditButtonClassName).not.toContain('absolute')
+  })
+})
+
+describe('customer email copy affordance', () => {
+  it('keeps the email centered with equal icon and copy columns', () => {
+    expect(customerEmailDisplayRowClassName).toContain('grid')
+    expect(customerEmailDisplayRowClassName).toContain('w-fit')
+    expect(customerEmailDisplayRowClassName).toContain('grid-cols-[1.5rem_minmax(0,1fr)_1.5rem]')
+    expect(customerEmailCopyButtonClassName).toContain('col-start-3')
+    expect(customerEmailCopyButtonClassName).not.toContain('absolute')
+  })
+
+  it('keeps the copy button hidden until the email row is hovered or focused', () => {
+    expect(customerEmailCopyButtonClassName).toContain('opacity-0')
+    expect(customerEmailCopyButtonClassName).toContain('group-hover/email:opacity-100')
+    expect(customerEmailCopyButtonClassName).toContain('group-focus-within/email:opacity-100')
   })
 })

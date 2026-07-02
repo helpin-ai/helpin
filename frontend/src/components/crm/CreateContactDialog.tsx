@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -8,12 +8,24 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCreateContact } from '@/hooks/queries';
-import type { LifecycleStage, LeadStatus } from '@/lib/crmTypes';
+import type { CRMContact, LifecycleStage, LeadStatus } from '@/lib/crmTypes';
 import { entityCreatedToastIcons, showEntityCreatedToast } from '@/components/ui/entity-created-toast';
 
 interface CreateContactDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialValues?: {
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    phone?: string;
+    job_title?: string;
+    lifecycle_stage?: LifecycleStage;
+    lead_status?: LeadStatus;
+    source?: string;
+  };
+  showCreatedToast?: boolean;
+  onCreated?: (contact: CRMContact) => void | Promise<void>;
 }
 
 const lifecycleOptions: { value: LifecycleStage; label: string }[] = [
@@ -33,33 +45,53 @@ const leadStatusOptions: { value: LeadStatus; label: string }[] = [
   { value: 'unqualified', label: 'Unqualified' },
 ];
 
-const sourceOptions = ['web', 'referral', 'social', 'event', 'cold_outreach', 'other'];
+const sourceOptions = ['web', 'support', 'referral', 'social', 'event', 'cold_outreach', 'other'];
 
-export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogProps) {
+export function CreateContactDialog({
+  open,
+  onOpenChange,
+  initialValues,
+  showCreatedToast = true,
+  onCreated,
+}: CreateContactDialogProps) {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const createContact = useCreateContact(wsId);
 
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [jobTitle, setJobTitle] = useState('');
-  const [lifecycleStage, setLifecycleStage] = useState<LifecycleStage>('subscriber');
-  const [leadStatus, setLeadStatus] = useState<LeadStatus>('new');
-  const [source, setSource] = useState('');
+  const [firstName, setFirstName] = useState(initialValues?.first_name ?? '');
+  const [lastName, setLastName] = useState(initialValues?.last_name ?? '');
+  const [email, setEmail] = useState(initialValues?.email ?? '');
+  const [phone, setPhone] = useState(initialValues?.phone ?? '');
+  const [jobTitle, setJobTitle] = useState(initialValues?.job_title ?? '');
+  const [lifecycleStage, setLifecycleStage] = useState<LifecycleStage>(initialValues?.lifecycle_stage ?? 'subscriber');
+  const [leadStatus, setLeadStatus] = useState<LeadStatus>(initialValues?.lead_status ?? 'new');
+  const [source, setSource] = useState(initialValues?.source ?? '');
 
   const resetForm = () => {
-    setFirstName('');
-    setLastName('');
-    setEmail('');
-    setPhone('');
-    setJobTitle('');
-    setLifecycleStage('subscriber');
-    setLeadStatus('new');
-    setSource('');
+    setFirstName(initialValues?.first_name ?? '');
+    setLastName(initialValues?.last_name ?? '');
+    setEmail(initialValues?.email ?? '');
+    setPhone(initialValues?.phone ?? '');
+    setJobTitle(initialValues?.job_title ?? '');
+    setLifecycleStage(initialValues?.lifecycle_stage ?? 'subscriber');
+    setLeadStatus(initialValues?.lead_status ?? 'new');
+    setSource(initialValues?.source ?? '');
   };
+
+  useEffect(() => {
+    if (open) resetForm();
+  }, [
+    open,
+    initialValues?.first_name,
+    initialValues?.last_name,
+    initialValues?.email,
+    initialValues?.phone,
+    initialValues?.job_title,
+    initialValues?.lifecycle_stage,
+    initialValues?.lead_status,
+    initialValues?.source,
+  ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,22 +109,25 @@ export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogP
         lead_status: leadStatus,
         source: source || undefined,
       });
-      showEntityCreatedToast({
-        entityLabel: 'Contact',
-        title: [contact.first_name, contact.last_name].filter(Boolean).join(' '),
-        tone: 'crm',
-        icon: entityCreatedToastIcons.contact,
-        onOpen: currentWorkspace?.slug
-          ? () => navigate({
-              to: '/w/$slug/crm/contacts/$contactId',
-              params: { slug: currentWorkspace.slug, contactId: contact.id },
-            })
-          : undefined,
-      });
+      await onCreated?.(contact);
+      if (showCreatedToast) {
+        showEntityCreatedToast({
+          entityLabel: 'Contact',
+          title: [contact.first_name, contact.last_name].filter(Boolean).join(' '),
+          tone: 'crm',
+          icon: entityCreatedToastIcons.contact,
+          onOpen: currentWorkspace?.slug
+            ? () => navigate({
+                to: '/w/$slug/crm/contacts/$contactId',
+                params: { slug: currentWorkspace.slug, contactId: contact.id },
+              })
+            : undefined,
+        });
+      }
       onOpenChange(false);
       resetForm();
     } catch {
-      toast.error('Failed to create contact');
+      toast.error(onCreated ? 'Failed to create or link contact' : 'Failed to create contact');
     }
   };
 

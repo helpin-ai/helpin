@@ -2636,6 +2636,58 @@ func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) 
 	}
 }
 
+func TestEmailFallbackProcessInboundEmailRouteDerivesCustomerNameFromEmail(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID:             "a2111111-1111-1111-1111-111111111111",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-derived-name",
+		InboundAddress: "support@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "matta.trisha@gmail.com"},
+		To:                route.InboundAddress,
+		OriginalRecipient: route.InboundAddress,
+		Subject:           "Question",
+		MessageID:         "pm-route-derived-name",
+		StrippedTextReply: "Can you help?",
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-derived-name"}`); err != nil {
+		t.Fatalf("process routed inbound email: %v", err)
+	}
+
+	conversations, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 || len(conversations) != 1 {
+		t.Fatalf("expected 1 conversation, got total=%d len=%d", total, len(conversations))
+	}
+	if conversations[0].CustomerName == nil || *conversations[0].CustomerName != "Matta Trisha" {
+		t.Fatalf("customer_name = %#v, want Matta Trisha", conversations[0].CustomerName)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conversations[0].ID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].SenderDisplayName == nil || *messages[0].SenderDisplayName != "Matta Trisha" {
+		t.Fatalf("sender_display_name = %#v, want Matta Trisha", messages)
+	}
+}
+
 func TestEmailFallbackProcessInboundEmailRouteUsesReplyToForContactFormCustomer(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()

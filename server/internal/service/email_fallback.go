@@ -2947,9 +2947,6 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	}
 
 	senderName := strings.TrimSpace(payload.FromFull.Name)
-	if senderName == "" {
-		senderName = fromEmail
-	}
 	replyToRaw, replyToEmail, replyToName := inboundReplyToAddress(payload)
 
 	settings, err := s.loadSettings(ctx, route.WorkspaceID)
@@ -2992,9 +2989,14 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	} else if replyToEmail != "" {
 		effectiveSenderEmail = replyToEmail
 		effectiveSenderName = replyToName
-		if effectiveSenderName == "" {
-			effectiveSenderName = effectiveSenderEmail
+	}
+	if strings.TrimSpace(effectiveSenderName) == "" || strings.EqualFold(strings.TrimSpace(effectiveSenderName), effectiveSenderEmail) {
+		if derivedName := deriveWidgetNameFromEmail(effectiveSenderEmail); derivedName != "" {
+			effectiveSenderName = derivedName
 		}
+	}
+	if strings.TrimSpace(effectiveSenderName) == "" {
+		effectiveSenderName = effectiveSenderEmail
 	}
 
 	subject := strings.TrimSpace(payload.Subject)
