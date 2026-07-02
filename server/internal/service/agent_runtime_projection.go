@@ -20,6 +20,7 @@ import (
 
 const (
 	agentRuntimeEventsStreamName                  = "AGENT_RUNTIME_EVENTS"
+	agentRuntimeEventsSubjectAll                  = "agent-runtime.events.>"
 	agentRuntimeProjectionDurable                 = "helpin-agent-runtime-projection"
 	agentRuntimeExecutionStageUsageOverageCancel  = "usage_overage_cancel_requested"
 	agentRuntimeUsageOverageCancellationErrorText = "agent runtime run cancelled because workspace AI usage is exhausted"
@@ -276,6 +277,9 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 }
 
 func (s *AgentRuntimeProjectionService) subscribeNATS(js nats.JetStreamContext) (*nats.Subscription, error) {
+	if err := ensureAgentRuntimeEventsStream(js); err != nil {
+		return nil, err
+	}
 	subject := s.eventSubject()
 	if info, err := js.ConsumerInfo(agentRuntimeEventsStreamName, agentRuntimeProjectionDurable); err == nil && info != nil {
 		if strings.TrimSpace(info.Config.FilterSubject) != subject {
@@ -316,6 +320,35 @@ func (s *AgentRuntimeProjectionService) subscribeNATS(js nats.JetStreamContext) 
 		agentRuntimeProjectionDurable,
 		nats.Bind(agentRuntimeEventsStreamName, agentRuntimeProjectionDurable),
 	)
+}
+
+func ensureAgentRuntimeEventsStream(js nats.JetStreamContext) error {
+	if js == nil {
+		return fmt.Errorf("jetstream context is nil")
+	}
+	cfg := agentRuntimeEventsStreamConfig()
+	if _, err := js.StreamInfo(cfg.Name); err != nil {
+		if !errors.Is(err, nats.ErrStreamNotFound) {
+			return err
+		}
+		_, err = js.AddStream(cfg)
+		return err
+	}
+	_, err := js.UpdateStream(cfg)
+	return err
+}
+
+func agentRuntimeEventsStreamConfig() *nats.StreamConfig {
+	return &nats.StreamConfig{
+		Name:       agentRuntimeEventsStreamName,
+		Subjects:   []string{agentRuntimeEventsSubjectAll},
+		Storage:    nats.FileStorage,
+		Retention:  nats.LimitsPolicy,
+		Discard:    nats.DiscardOld,
+		Duplicates: 2 * time.Minute,
+		MaxAge:     7 * 24 * time.Hour,
+		MaxBytes:   512 * 1024 * 1024,
+	}
 }
 
 func (s *AgentRuntimeProjectionService) eventSubject() string {
