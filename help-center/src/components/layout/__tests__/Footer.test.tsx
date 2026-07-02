@@ -61,7 +61,7 @@ function renderWithDocsContext(ui: ReactNode, config: HelpCenterConfig = baseCon
 }
 
 describe('Footer', () => {
-  it('renders footer links, social links, support link, and attribution without hidden copyright', () => {
+  it('renders footer links, social links, and attribution without hidden copyright or automatic contact support', () => {
     renderWithDocsContext(<Footer />)
 
     const textLinks = screen.getByTestId('footer-text-links')
@@ -72,9 +72,7 @@ describe('Footer', () => {
     expect(within(textLinks).getByRole('link', { name: 'Status' }).getAttribute('href')).toBe(
       'https://status.example.com',
     )
-    expect(within(textLinks).getByRole('link', { name: 'Contact support' }).getAttribute('href')).toBe(
-      'mailto:support@example.com',
-    )
+    expect(within(textLinks).queryByRole('link', { name: 'Contact support' })).toBeNull()
 
     const socialLinks = screen.getByTestId('footer-social-links')
     expect(within(socialLinks).getByRole('link', { name: 'LinkedIn' }).getAttribute('href')).toBe(
@@ -106,5 +104,26 @@ describe('Footer', () => {
     )
 
     expect(screen.getByText(`© ${new Date().getFullYear()} Replug`)).not.toBeNull()
+  })
+
+  it('renders contact support when it is added as a footer link', () => {
+    renderWithDocsContext(
+      <Footer />,
+      {
+        ...baseConfig,
+        footer_config: {
+          ...baseConfig.footer_config,
+          links: [
+            ...(baseConfig.footer_config?.links ?? []),
+            { label: 'Contact support', url: 'mailto:support@example.com' },
+          ],
+        },
+      },
+    )
+
+    const textLinks = screen.getByTestId('footer-text-links')
+    expect(within(textLinks).getByRole('link', { name: 'Contact support' }).getAttribute('href')).toBe(
+      'mailto:support@example.com',
+    )
   })
 })

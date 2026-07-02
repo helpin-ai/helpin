@@ -1912,7 +1912,7 @@ export function HelpcenterTab({
               </div>
               <div className="space-y-3">
                 <Label className="text-sm">Footer Links</Label>
-                <p className="text-xs text-muted-foreground">Text links such as Privacy, Terms, Status, or Contact pages. These render with Contact support.</p>
+                <p className="text-xs text-muted-foreground">Links like Privacy, Terms, Status, or Contact.</p>
                 {config.footer_links.length === 0 && (
                   <p className="text-xs text-muted-foreground py-2 text-center">No footer links yet.</p>
                 )}

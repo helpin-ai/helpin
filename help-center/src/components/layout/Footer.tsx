@@ -96,14 +96,6 @@ export function Footer() {
               {link.label}
             </a>
           ))}
-          {config.support_email && (
-            <a
-              href={`mailto:${config.support_email}`}
-              className="transition-colors hover:text-foreground"
-            >
-              Contact support
-            </a>
-          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3 lg:justify-end">
