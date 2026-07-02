@@ -12,7 +12,10 @@ import (
 const agentRuntimeName = "agent-runtime"
 
 type AgentRuntimeTargetRef = agentruntime.TargetRef
+type AgentRuntimeAgent = agentruntime.Agent
+type AgentRuntimeSkillRef = agentruntime.SkillRef
 type AgentRuntimeStartRunRequest = agentruntime.StartRunRequest
+type AgentRuntimeTurnPolicy = agentruntime.TurnPolicy
 type AgentRuntimeResumeRunRequest = agentruntime.ResumeRunRequest
 type AgentRuntimeRun = agentruntime.AgentRun
 type AgentRuntimeMessage = agentruntime.AgentRunMessage
@@ -41,6 +44,20 @@ func NewAgentRuntimeClient(baseURL, appID, token string, httpClient *http.Client
 		return nil, err
 	}
 	return &AgentRuntimeClient{client: client}, nil
+}
+
+func (c *AgentRuntimeClient) AppID() string {
+	if c == nil || c.client == nil {
+		return ""
+	}
+	return c.client.AppID()
+}
+
+func (c *AgentRuntimeClient) UpsertAgent(ctx context.Context, agent AgentRuntimeAgent) (*AgentRuntimeAgent, error) {
+	if strings.TrimSpace(agent.AppID) == "" {
+		agent.AppID = c.AppID()
+	}
+	return c.client.UpsertAgent(ctx, agent)
 }
 
 func (c *AgentRuntimeClient) StartRun(ctx context.Context, req AgentRuntimeStartRunRequest) (*AgentRuntimeRun, error) {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -1446,6 +1447,222 @@ func TestCreateRunPreflightsAICreditsBeforeQueueingRun(t *testing.T) {
 	}
 	if total != 0 || len(runs) != 0 {
 		t.Fatalf("expected no queued run after failed preflight, total=%d runs=%#v", total, runs)
+	}
+}
+
+func seedCreateRunAgentRow(t *testing.T, db *gorm.DB, agent *model.Agent) {
+	t.Helper()
+	now := time.Now().UTC()
+	execConfig := strings.TrimSpace(string(agent.ExecutionConfig))
+	if execConfig == "" {
+		execConfig = "{}"
+	}
+	allowedTools := strings.TrimSpace(string(agent.AllowedTools))
+	if allowedTools == "" {
+		allowedTools = "[]"
+	}
+	allowedTargets := strings.TrimSpace(string(agent.AllowedTargets))
+	if allowedTargets == "" {
+		allowedTargets = "[]"
+	}
+	allowedCommands := strings.TrimSpace(string(agent.AllowedCommands))
+	if allowedCommands == "" {
+		allowedCommands = "[]"
+	}
+	skills, err := json.Marshal(agent.Skills.Normalize())
+	if err != nil {
+		t.Fatalf("marshal agent skills: %v", err)
+	}
+	if err := db.Exec(`
+		INSERT INTO agents (
+			id, workspace_id, is_system, name, preset_key, status, runtime_kind,
+			skills, trigger_mode, provider, model, execution_config, system_prompt,
+			allowed_tools, allowed_commands, allowed_targets, approval_mode,
+			max_concurrent_runs, default_invocation_mode, tokens_used_this_month,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		agent.ID,
+		agent.WorkspaceID,
+		agent.IsSystem,
+		agent.Name,
+		agent.PresetKey,
+		agent.Status,
+		agent.RuntimeKind,
+		string(skills),
+		defaultString(agent.TriggerMode, "manual"),
+		agent.Provider,
+		agent.Model,
+		execConfig,
+		agent.SystemPrompt,
+		allowedTools,
+		allowedCommands,
+		allowedTargets,
+		agent.ApprovalMode,
+		agent.MaxConcurrentRuns,
+		agent.DefaultInvocationMode,
+		agent.TokensUsedThisMonth,
+		now,
+		now,
+	).Error; err != nil {
+		t.Fatalf("seed agent row: %v", err)
+	}
+}
+
+func TestCreateRunDelegatesMiraWorkspaceRunToAgentRuntime(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	service := (&AgentService{
+		runRepo:            runRepo,
+		agentRepo:          agentRepo,
+		agentRuntimeClient: runtimeClient,
+	}).SetAgentRuntimeLaunchEnabled(true)
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	prompt := "You are Mira."
+	provider := "openai"
+	modelName := "gpt-5.5"
+	agent := &model.Agent{
+		ID:                    "33333333-3333-3333-3333-333333333333",
+		WorkspaceID:           workspaceID,
+		Name:                  "Mira",
+		PresetKey:             model.AgentPresetMarketer,
+		RuntimeKind:           "native_sdk",
+		Provider:              &provider,
+		Model:                 &modelName,
+		SystemPrompt:          &prompt,
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeInteractive,
+		AllowedTargets:        json.RawMessage(`["workspace","document"]`),
+		AllowedTools:          json.RawMessage(`["update_plan","request_user_input"]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		ExecutionConfig:       model.JSONBlob(`{"reasoning_effort":"medium"}`),
+		MaxConcurrentRuns:     1,
+	}
+	seedCreateRunAgentRow(t, db, agent)
+	additionalContext := "Prepare a short launch plan."
+	payload, err := buildAgentRunInputPayload("workspace", workspaceID, manualRunTriggerContext(), nil, nil, &additionalContext, []string{"update_plan"})
+	if err != nil {
+		t.Fatalf("build payload: %v", err)
+	}
+
+	run, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          agent,
+		targetType:     "workspace",
+		targetID:       workspaceID,
+		actorID:        &actorID,
+		input:          payload,
+		invocationMode: model.InvocationModeInteractive,
+	})
+	if err != nil {
+		t.Fatalf("createRun() error = %v", err)
+	}
+	if len(runtimeClient.upsertAgents) != 1 {
+		t.Fatalf("expected one runtime agent upsert, got %d", len(runtimeClient.upsertAgents))
+	}
+	upsert := runtimeClient.upsertAgents[0]
+	if upsert.ID != agent.ID || upsert.AppID != "helpin" || upsert.Name != "Mira" || upsert.SystemPrompt != prompt {
+		t.Fatalf("unexpected upserted agent: %#v", upsert)
+	}
+	if !slices.Equal(upsert.AllowedTargets, []string{"workspace", "document"}) || !slices.Equal(upsert.AllowedTools, []string{"update_plan", "request_user_input"}) {
+		t.Fatalf("unexpected upserted permissions: targets=%#v tools=%#v", upsert.AllowedTargets, upsert.AllowedTools)
+	}
+	if len(runtimeClient.startRunCalls) != 1 {
+		t.Fatalf("expected one runtime start call, got %d", len(runtimeClient.startRunCalls))
+	}
+	start := runtimeClient.startRunCalls[0]
+	if start.HostRunID != run.ID || start.AgentID != agent.ID || start.Target.Type != "workspace" || start.Target.ID != workspaceID {
+		t.Fatalf("unexpected runtime start request: %#v", start)
+	}
+	if start.ExternalActorID != actorID || start.Mode != model.InvocationModeInteractive || start.ExecutionMode != "" || start.Instructions != additionalContext {
+		t.Fatalf("unexpected runtime start mode/actor/instructions: %#v", start)
+	}
+	if !slices.Equal(start.AllowedTools, []string{"update_plan"}) {
+		t.Fatalf("unexpected start allowed tools: %#v", start.AllowedTools)
+	}
+	if start.TurnPolicy.Mode != "pause_after_assistant" {
+		t.Fatalf("expected interactive turn policy, got %#v", start.TurnPolicy)
+	}
+	if start.Metadata["workspace_id"] != workspaceID || start.Metadata["helpin_run_id"] != run.ID || start.Target.Metadata["workspace_id"] != workspaceID {
+		t.Fatalf("unexpected runtime metadata: metadata=%#v target=%#v", start.Metadata, start.Target.Metadata)
+	}
+
+	reloaded, err := runRepo.GetByID(ctx, workspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if reloaded.ExternalRuntime == nil || *reloaded.ExternalRuntime != agentRuntimeName || reloaded.ExternalRuntimeID == nil || *reloaded.ExternalRuntimeID != "run_runtime_1" {
+		t.Fatalf("expected delegated runtime mapping, got external_runtime=%v external_runtime_id=%v", reloaded.ExternalRuntime, reloaded.ExternalRuntimeID)
+	}
+	if reloaded.WorkflowID != nil || reloaded.WorkflowRunID != nil {
+		t.Fatalf("expected no Helpin Temporal workflow IDs, got %v/%v", reloaded.WorkflowID, reloaded.WorkflowRunID)
+	}
+}
+
+func TestCreateRunMarksDelegatedMiraRunFailedWhenRuntimeStartFails(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	runtimeClient := &fakeAgentRuntimeSignalClient{startRunErr: errors.New("runtime unavailable")}
+	service := (&AgentService{
+		runRepo:            runRepo,
+		agentRepo:          agentRepo,
+		agentRuntimeClient: runtimeClient,
+	}).SetAgentRuntimeLaunchEnabled(true)
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	agent := &model.Agent{
+		ID:                    "22222222-2222-2222-2222-222222222222",
+		WorkspaceID:           workspaceID,
+		Name:                  "Mira",
+		PresetKey:             model.AgentPresetMarketer,
+		RuntimeKind:           "native_sdk",
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+		AllowedTargets:        json.RawMessage(`["workspace"]`),
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		MaxConcurrentRuns:     1,
+	}
+	seedCreateRunAgentRow(t, db, agent)
+	_, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          agent,
+		targetType:     "workspace",
+		targetID:       workspaceID,
+		input:          []byte(`{"target":{"target_type":"workspace","target_id":"11111111-1111-1111-1111-111111111111"}}`),
+		invocationMode: model.InvocationModeAutonomous,
+	})
+	if err == nil || !strings.Contains(err.Error(), "runtime unavailable") {
+		t.Fatalf("expected runtime start error, got %v", err)
+	}
+	runs, total, err := runRepo.ListByWorkspace(ctx, workspaceID, model.PMPagination{Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if total != 1 || len(runs) != 1 {
+		t.Fatalf("expected one failed run, total=%d runs=%#v", total, runs)
+	}
+	failed := runs[0]
+	if failed.Status != model.AgentRunStatusFailed || failed.ExecutionStage == nil || *failed.ExecutionStage != "failed_to_start" || failed.ErrorMessage == nil || !strings.Contains(*failed.ErrorMessage, "runtime unavailable") {
+		t.Fatalf("unexpected failed run state: %#v", failed)
+	}
+	if failed.ExternalRuntime != nil || failed.ExternalRuntimeID != nil {
+		t.Fatalf("failed runtime start should not stamp external mapping, got %v/%v", failed.ExternalRuntime, failed.ExternalRuntimeID)
+	}
+	var status string
+	if err := db.WithContext(ctx).Raw("SELECT status FROM agents WHERE workspace_id = ? AND id = ?", workspaceID, agent.ID).Scan(&status).Error; err != nil {
+		t.Fatalf("query agent status: %v", err)
+	}
+	if status != "idle" {
+		t.Fatalf("expected agent to be idle after failed runtime start, got %q", status)
 	}
 }
 

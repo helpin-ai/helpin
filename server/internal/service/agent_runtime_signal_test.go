@@ -17,6 +17,9 @@ import (
 type fakeAgentRuntimeSignalClient struct {
 	resumeCalls          []fakeAgentRuntimeResumeCall
 	cancelCalls          []string
+	upsertAgents         []AgentRuntimeAgent
+	startRunCalls        []AgentRuntimeStartRunRequest
+	appID                string
 	getCalls             []string
 	listMessageCalls     []string
 	listArtifactCalls    []string
@@ -27,6 +30,8 @@ type fakeAgentRuntimeSignalClient struct {
 	interactions         map[string][]AgentRuntimeInteraction
 	getErr               error
 	listErr              error
+	upsertErr            error
+	startRunErr          error
 	resumeErr            error
 	cancelErr            error
 }
@@ -34,6 +39,29 @@ type fakeAgentRuntimeSignalClient struct {
 type fakeAgentRuntimeResumeCall struct {
 	runID string
 	req   AgentRuntimeResumeRunRequest
+}
+
+func (c *fakeAgentRuntimeSignalClient) AppID() string {
+	if c.appID == "" {
+		return "helpin"
+	}
+	return c.appID
+}
+
+func (c *fakeAgentRuntimeSignalClient) UpsertAgent(_ context.Context, agent AgentRuntimeAgent) (*AgentRuntimeAgent, error) {
+	c.upsertAgents = append(c.upsertAgents, agent)
+	if c.upsertErr != nil {
+		return nil, c.upsertErr
+	}
+	return &agent, nil
+}
+
+func (c *fakeAgentRuntimeSignalClient) StartRun(_ context.Context, req AgentRuntimeStartRunRequest) (*AgentRuntimeRun, error) {
+	c.startRunCalls = append(c.startRunCalls, req)
+	if c.startRunErr != nil {
+		return nil, c.startRunErr
+	}
+	return &AgentRuntimeRun{ID: "run_runtime_1", HostRunID: req.HostRunID, AgentID: req.AgentID, Status: model.AgentRunStatusQueued}, nil
 }
 
 func (c *fakeAgentRuntimeSignalClient) GetRun(_ context.Context, runtimeRunID string) (*AgentRuntimeRun, error) {
