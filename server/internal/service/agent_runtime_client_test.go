@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 )
 
 func TestAgentRuntimeClientStartRunUsesV1AuthAndHostRunID(t *testing.T) {
@@ -61,16 +60,6 @@ func TestAgentRuntimeClientRequiresAppID(t *testing.T) {
 	}
 }
 
-func TestAgentRuntimeClientDefaultHTTPClientHasTimeout(t *testing.T) {
-	client, err := NewAgentRuntimeClient("http://runtime.test", "helpin", "runtime-token", nil)
-	if err != nil {
-		t.Fatalf("new client: %v", err)
-	}
-	if client.httpClient == nil || client.httpClient.Timeout != 30*time.Second {
-		t.Fatalf("expected default 30s timeout, got %#v", client.httpClient)
-	}
-}
-
 func TestAgentRuntimeClientForwardsRunSignals(t *testing.T) {
 	var paths []string
 	var resumeBodies []AgentRuntimeResumeRunRequest
@@ -90,6 +79,14 @@ func TestAgentRuntimeClientForwardsRunSignals(t *testing.T) {
 				t.Fatalf("decode message body: %v", err)
 			}
 			messageBodies = append(messageBodies, body)
+		case "/v1/runs/run-runtime-1/codex-auth/device-code/start",
+			"/v1/runs/run-runtime-1/codex-auth/device-code/cancel":
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"provider":  "openai",
+				"auth_mode": "chatgpt_device_code",
+				"state":     "pending",
+			})
+			return
 		}
 		_ = json.NewEncoder(w).Encode(AgentRuntimeRun{
 			ID:     "run-runtime-1",
@@ -118,6 +115,12 @@ func TestAgentRuntimeClientForwardsRunSignals(t *testing.T) {
 	if _, err := client.CancelRun(context.Background(), "run-runtime-1"); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
+	if state, err := client.StartCodexDeviceCodeAuth(context.Background(), "run-runtime-1"); err != nil || state.State != "pending" {
+		t.Fatalf("start codex auth state=%#v err=%v", state, err)
+	}
+	if state, err := client.CancelCodexDeviceCodeAuth(context.Background(), "run-runtime-1"); err != nil || state.State != "pending" {
+		t.Fatalf("cancel codex auth state=%#v err=%v", state, err)
+	}
 
 	want := []string{
 		"POST /v1/runs/run-runtime-1/resume?app_id=helpin",
@@ -125,6 +128,8 @@ func TestAgentRuntimeClientForwardsRunSignals(t *testing.T) {
 		"POST /v1/runs/run-runtime-1/resume?app_id=helpin",
 		"POST /v1/runs/run-runtime-1/messages?app_id=helpin",
 		"POST /v1/runs/run-runtime-1/cancel?app_id=helpin",
+		"POST /v1/runs/run-runtime-1/codex-auth/device-code/start?app_id=helpin",
+		"POST /v1/runs/run-runtime-1/codex-auth/device-code/cancel?app_id=helpin",
 	}
 	if len(paths) != len(want) {
 		t.Fatalf("expected paths %#v, got %#v", want, paths)
