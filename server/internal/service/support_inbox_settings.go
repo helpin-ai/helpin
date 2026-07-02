@@ -500,8 +500,24 @@ func nextBusinessHoursStart(settings model.SupportInboxSettings, localNow time.T
 	return nil
 }
 
-func buildWidgetAvailability(settings model.SupportInboxSettings, now time.Time) model.WidgetConfigAvailability {
-	return resolveSupportAvailability(settings, now).WidgetAvailability
+// buildWidgetAvailability returns the widget-facing availability snapshot.
+//
+// IsOnline reflects ACTUAL teammate presence (hasOnlineAgent) rather than
+// business hours alone: being within business hours while nobody is online is
+// not "Online now", and a teammate online outside hours is still online
+// (presence trumps hours, matching the escalation path). Business hours
+// continue to drive the offline StatusText, NextOnlineAt, and
+// OutsideHoursMessage fields.
+func buildWidgetAvailability(settings model.SupportInboxSettings, now time.Time, hasOnlineAgent bool) model.WidgetConfigAvailability {
+	snapshot := resolveSupportAvailability(settings, now)
+	availability := snapshot.WidgetAvailability
+	availability.IsOnline = hasOnlineAgent
+	if snapshot.IsWithinOfficeHours && !hasOnlineAgent {
+		// Within hours but no teammate online: don't claim "Online now" —
+		// surface the reply-time expectation instead.
+		availability.StatusText = availability.ReplyTimeText
+	}
+	return availability
 }
 
 // GetInstallation returns the installation and its parsed settings for a workspace.

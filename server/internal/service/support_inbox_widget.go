@@ -858,6 +858,30 @@ func supportTeammateStatusRank(status string) int {
 	}
 }
 
+// hasOnlineSupportTeammate reports whether at least one support-accessible
+// teammate is currently online (presence-based). It drives the widget's
+// pre-chat IsOnline flag so availability reflects real presence, not just
+// business hours.
+func (s *SupportInboxService) hasOnlineSupportTeammate(ctx context.Context, workspaceID string, now time.Time) bool {
+	statuses, err := resolveSupportTeammatePresenceStatuses(
+		ctx,
+		s.workspaceRepo,
+		s.presence,
+		s.statusOverrideRepo,
+		workspaceID,
+		now,
+	)
+	if err != nil {
+		return false
+	}
+	for _, status := range statuses {
+		if status.Status == model.SupportTeammateStatusOnline {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *SupportInboxService) listWidgetTeammates(ctx context.Context, workspaceID string, limit int) []model.WidgetActiveTeammate {
 	if s.workspaceRepo == nil {
 		return []model.WidgetActiveTeammate{}
@@ -971,6 +995,9 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 		return nil, err
 	}
 
+	now := time.Now()
+	hasOnlineAgent := s.hasOnlineSupportTeammate(ctx, inst.WorkspaceID, now)
+
 	return &model.WidgetConfigResponse{
 		WorkspaceID:   inst.WorkspaceID,
 		WorkspaceName: settings.WidgetName,
@@ -996,7 +1023,7 @@ func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, ins
 			CSATRating:        settings.CSATEnabled,
 			ForceIdentify:     settings.ForceVisitorIdentity,
 		},
-		Availability:       buildWidgetAvailability(settings, time.Now()),
+		Availability:       buildWidgetAvailability(settings, now, hasOnlineAgent),
 		AvailableTeammates: s.listWidgetTeammates(ctx, inst.WorkspaceID, 5),
 		HelpSpaces:         helpSpaces,
 	}, nil

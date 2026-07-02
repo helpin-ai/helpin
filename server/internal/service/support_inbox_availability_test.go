@@ -12,7 +12,7 @@ func TestBuildWidgetAvailabilityDisabledBusinessHoursReturnsOnline(t *testing.T)
 	settings := model.DefaultSupportInboxSettings()
 	settings.BusinessHoursEnabled = false
 
-	availability := buildWidgetAvailability(settings, time.Date(2026, 3, 24, 15, 0, 0, 0, time.UTC))
+	availability := buildWidgetAvailability(settings, time.Date(2026, 3, 24, 15, 0, 0, 0, time.UTC), true)
 
 	if !availability.IsOnline {
 		t.Fatal("expected widget availability to be online when business hours are disabled")
@@ -41,7 +41,7 @@ func TestBuildWidgetAvailabilityWithinBusinessHoursReturnsOnline(t *testing.T) {
 	settings.BusinessHoursEnabled = true
 	settings.BusinessHoursTimezone = "America/New_York"
 
-	availability := buildWidgetAvailability(settings, time.Date(2026, 3, 24, 10, 30, 0, 0, loc))
+	availability := buildWidgetAvailability(settings, time.Date(2026, 3, 24, 10, 30, 0, 0, loc), true)
 
 	if !availability.IsOnline {
 		t.Fatal("expected widget availability to be online during configured business hours")
@@ -62,7 +62,7 @@ func TestBuildWidgetAvailabilityOutsideBusinessHoursReturnsOfflineMessageAndNext
 	settings.BusinessHoursTimezone = "America/New_York"
 	settings.OutsideHoursMessage = "We are offline right now."
 
-	availability := buildWidgetAvailability(settings, time.Date(2026, 3, 24, 8, 0, 0, 0, loc))
+	availability := buildWidgetAvailability(settings, time.Date(2026, 3, 24, 8, 0, 0, 0, loc), false)
 
 	if availability.IsOnline {
 		t.Fatal("expected widget availability to be offline before opening hours")
