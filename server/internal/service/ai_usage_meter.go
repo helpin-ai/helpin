@@ -97,6 +97,7 @@ type AIUsageMeterInput struct {
 	ReasoningTokens   int
 	CachedInputTokens int
 	Metadata          map[string]interface{}
+	AllowOverage      bool
 }
 
 type aiUsageMeteringContextKey struct{}
@@ -292,6 +293,7 @@ func (m *AIUsageMeter) Consume(ctx context.Context, input AIUsageMeterInput) (*B
 		Credits:        units,
 		IdempotencyKey: input.IdempotencyKey,
 		Metadata:       metadata,
+		AllowOverage:   input.AllowOverage,
 	})
 }
 

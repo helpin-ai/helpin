@@ -463,8 +463,10 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			changed = setRunStatus(run, model.AgentRunStatusRunning, model.AgentRunPauseReasonNone) || changed
 		}
 	case "run.resumed":
-		run.CompletedAt = nil
-		changed = setRunStatus(run, model.AgentRunStatusRunning, model.AgentRunPauseReasonNone) || changed
+		if !suppressLifecycle {
+			run.CompletedAt = nil
+			changed = setRunStatus(run, model.AgentRunStatusRunning, model.AgentRunPauseReasonNone) || changed
+		}
 	case "run.paused":
 		if !suppressLifecycle {
 			pauseReason := normalizeRuntimePauseReason(eventDataString(event.Data, "pause_reason"))
@@ -499,10 +501,12 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		if err := s.mirrorAssistantMessageCompleted(ctx, run, event); err != nil {
 			return err
 		}
-	case "tool_call_started", "tool_call_args_delta", "tool_call_result", "tool_call_finished":
+	case "tool_call_started", "tool_call_result", "tool_call_finished":
 		if err := s.mirrorRuntimeEventArtifact(ctx, run, event, model.AgentRunArtifactTypeToolCall); err != nil {
 			return err
 		}
+	case "tool_call_args_delta":
+		return nil
 	case "plan_updated":
 		if err := s.mirrorRuntimePlanUpdated(ctx, run, event); err != nil {
 			return err
@@ -632,6 +636,7 @@ func (s *AgentRuntimeProjectionService) maybeConsumeTerminalUsage(ctx context.Co
 		OutputTokens:      usage.OutputTokens,
 		ReasoningTokens:   usage.ReasoningOutputTokens,
 		CachedInputTokens: usage.CachedInputTokens,
+		AllowOverage:      true,
 		Metadata: map[string]interface{}{
 			"run_id":         run.ID,
 			"runtime_run_id": runtimeRunID,
@@ -765,7 +770,7 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 	if s == nil || s.runMessageRepo == nil || run == nil {
 		return nil
 	}
-	runtimeMessageID := strings.TrimSpace(runtimeMessage.ID)
+	runtimeMessageID := runtimeMessageIdentity(runtimeMessage)
 	if runtimeMessageID == "" {
 		return nil
 	}
@@ -774,7 +779,7 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 		return err
 	}
 	for _, message := range existing {
-		if agentRunMessageHasRuntimeMessageID(message, runtimeMessageID) {
+		if agentRunMessageHasRuntimeMessageID(message, runtimeMessageID) || agentRunMessageMatchesRuntimeMessage(message, runtimeMessage, runtimeMessageID) {
 			return nil
 		}
 	}
@@ -939,6 +944,34 @@ func agentRunMessageHasRuntimeMessageID(message model.AgentRunMessage, runtimeMe
 		return false
 	}
 	return jsonRawContainsStringField(message.ContentBlocks, "runtime_message_id", runtimeMessageID)
+}
+
+func agentRunMessageMatchesRuntimeMessage(message model.AgentRunMessage, runtimeMessage AgentRuntimeMessage, runtimeMessageID string) bool {
+	if strings.TrimSpace(runtimeMessage.ID) != "" && strings.TrimSpace(runtimeMessage.ID) != strings.TrimSpace(runtimeMessageID) && agentRunMessageHasRuntimeMessageID(message, runtimeMessage.ID) {
+		return true
+	}
+	role := strings.TrimSpace(runtimeMessage.Role)
+	if role == "" {
+		role = "assistant"
+	}
+	if strings.TrimSpace(message.Role) != role {
+		return false
+	}
+	if strings.TrimSpace(message.Content) != strings.TrimSpace(runtimeMessage.Content) {
+		return false
+	}
+	messageType := strings.TrimSpace(runtimeMessage.MessageType)
+	if messageType == "" {
+		messageType = "message"
+	}
+	return strings.TrimSpace(message.MessageType) == messageType || strings.TrimSpace(message.MessageType) == "assistant_turn"
+}
+
+func runtimeMessageIdentity(runtimeMessage AgentRuntimeMessage) string {
+	if id := strings.TrimSpace(runtimeMessage.RuntimeMessageID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(runtimeMessage.ID)
 }
 
 func agentRunArtifactHasRuntimeArtifactID(artifact model.AgentRunArtifact, runtimeArtifactID string) bool {
@@ -1242,7 +1275,7 @@ func isTerminalAgentRunStatus(status string) bool {
 
 func isPreTerminalRuntimeEvent(eventType string) bool {
 	switch strings.TrimSpace(eventType) {
-	case "run.queued", "run.started", "run.paused":
+	case "run.queued", "run.started", "run.resumed", "run.paused":
 		return true
 	default:
 		return false

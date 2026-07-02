@@ -229,6 +229,7 @@ type BillingCreditConsumption struct {
 	Credits        int
 	IdempotencyKey string
 	Metadata       map[string]any
+	AllowOverage   bool
 }
 
 type BillingCreditPreflight struct {
@@ -1095,10 +1096,10 @@ func (s *BillingService) ConsumeCredits(ctx context.Context, input BillingCredit
 		return nil, model.ErrBillingWorkspaceLocked
 	}
 	nextUsed := summary.CreditsUsed + input.Credits
-	if nextUsed > summary.IncludedCredits && !summary.OnDemandEnabled {
+	if nextUsed > summary.IncludedCredits && !summary.OnDemandEnabled && !input.AllowOverage {
 		return nil, model.ErrAIUsageExhausted
 	}
-	if nextUsed > summary.IncludedCredits && !summary.OnDemandAvailable {
+	if nextUsed > summary.IncludedCredits && !summary.OnDemandAvailable && !input.AllowOverage {
 		return nil, model.ErrExtraAIUsageUnavailable
 	}
 

@@ -3829,6 +3829,13 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 		if _, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID); err != nil {
 			return nil, fmt.Errorf("cancel agent runtime run: %w", err)
 		}
+		now := time.Now()
+		if err := s.runRepo.UpdateStage(ctx, workspaceID, run.ID, "cancelling", &now); err != nil {
+			return nil, err
+		}
+		if refreshed, err := s.runRepo.GetByID(ctx, workspaceID, run.ID); err == nil && refreshed != nil {
+			run = refreshed
+		}
 		_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
 		s.logTargetAgentRunActivity(ctx, run, actorID, "cancelled", nil)
 		s.publishRunEvent(run, actorID)
@@ -4286,10 +4293,13 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 	}
 
 	now := time.Now()
-	run.ApprovalState = approvalState
-	run.ExecutionStage = strPtr(stage)
-	run.LastHeartbeatAt = &now
-	if err := s.runRepo.Update(ctx, run); err != nil {
+	originalPauseReason := run.PauseReason
+	if err := s.runRepo.UpdateRuntimeResumeState(ctx, run.WorkspaceID, run.ID, approvalState, stage, &now); err != nil {
+		return nil, nil, err
+	}
+	if refreshed, err := s.runRepo.GetByID(ctx, run.WorkspaceID, run.ID); err == nil && refreshed != nil {
+		run = refreshed
+	} else if err != nil {
 		return nil, nil, err
 	}
 	if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.TaskID); err != nil {
@@ -4300,12 +4310,12 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 			"agent_id", run.AgentID,
 		)
 	}
-	if err := s.resolveLatestPendingInteraction(ctx, run, actorID, run.PauseReason, runtimeIntent, replyText, responsePayload); err != nil {
+	if err := s.resolveLatestPendingInteraction(ctx, run, actorID, originalPauseReason, runtimeIntent, replyText, responsePayload); err != nil {
 		slog.ErrorContext(ctx, "failed to resolve run interaction",
 			"error", err,
 			"workspace_id", run.WorkspaceID,
 			"run_id", run.ID,
-			"pause_reason", run.PauseReason,
+			"pause_reason", originalPauseReason,
 			"intent", runtimeIntent,
 		)
 	}

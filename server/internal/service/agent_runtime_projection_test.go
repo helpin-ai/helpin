@@ -498,6 +498,21 @@ func TestAgentRuntimeProjectionDoesNotRegressTerminalRunOnLatePreTerminalEvent(t
 	if repo.updates != 0 || repo.notifications != 0 {
 		t.Fatalf("expected no update/notify for late pre-terminal event, got %d/%d", repo.updates, repo.notifications)
 	}
+
+	err = svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID:  "run_runtime_terminal",
+		Type:   "run.resumed",
+		SentAt: completedAt.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("ApplyEvent resumed returned error: %v", err)
+	}
+	if run.Status != model.AgentRunStatusCompleted || run.CompletedAt == nil || !run.CompletedAt.Equal(completedAt) {
+		t.Fatalf("terminal run regressed after run.resumed: status=%s completed_at=%v", run.Status, run.CompletedAt)
+	}
+	if repo.updates != 0 || repo.notifications != 0 {
+		t.Fatalf("expected no update/notify for late run.resumed, got %d/%d", repo.updates, repo.notifications)
+	}
 }
 
 func TestAgentRuntimeProjectionAppliesCumulativeUsage(t *testing.T) {
@@ -779,6 +794,99 @@ func TestAgentRuntimeProjectionTerminalEventBackfillsRuntimeTranscript(t *testin
 	}
 	if !agentRunMessageHasRuntimeMessageID(messageRepo.messages[0], "msg-runtime-terminal") {
 		t.Fatalf("message missing runtime id: %s", string(messageRepo.messages[0].ContentBlocks))
+	}
+}
+
+func TestAgentRuntimeProjectionTerminalBackfillDedupesLiveAssistantMessageByRuntimeMessageID(t *testing.T) {
+	completedAt := time.Date(2026, 7, 2, 15, 15, 0, 0, time.UTC)
+	run := &model.AgentRun{
+		ID:                "helpin-run-terminal-live-dedupe",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		RuntimeKind:       "codex",
+		Status:            model.AgentRunStatusRunning,
+		PauseReason:       model.AgentRunPauseReasonNone,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_terminal_live_dedupe"),
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_terminal_live_dedupe": run},
+	}
+	messageRepo := &fakeAgentRuntimeProjectionMessageRepo{}
+	runtimeClient := &fakeAgentRuntimeSignalClient{
+		messages: map[string][]AgentRuntimeMessage{
+			"run_runtime_terminal_live_dedupe": {{
+				ID:               "store-msg-1",
+				RuntimeMessageID: "event-msg-1",
+				Role:             "assistant",
+				Content:          "Same answer.",
+				MessageType:      "message",
+				CreatedAt:        completedAt,
+			}},
+		},
+	}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:            runRepo,
+		runMessageRepo:     messageRepo,
+		agentRuntimeClient: runtimeClient,
+		now:                func() time.Time { return completedAt },
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_terminal_live_dedupe",
+		Type:  "assistant_message_completed",
+		Data: map[string]any{
+			"message_id": "event-msg-1",
+			"content":    "Same answer.",
+		},
+	}); err != nil {
+		t.Fatalf("ApplyEvent assistant returned error: %v", err)
+	}
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID:  "run_runtime_terminal_live_dedupe",
+		Type:   "run.completed",
+		SentAt: completedAt,
+	}); err != nil {
+		t.Fatalf("ApplyEvent completed returned error: %v", err)
+	}
+	if messageRepo.creates != 1 || len(messageRepo.messages) != 1 {
+		t.Fatalf("expected terminal backfill to dedupe live message, creates=%d messages=%#v", messageRepo.creates, messageRepo.messages)
+	}
+	if !agentRunMessageHasRuntimeMessageID(messageRepo.messages[0], "event-msg-1") {
+		t.Fatalf("message missing event runtime id: %s", string(messageRepo.messages[0].ContentBlocks))
+	}
+}
+
+func TestAgentRuntimeProjectionSkipsToolCallArgsDeltaArtifacts(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-tool-delta",
+		WorkspaceID:       "ws-1",
+		Status:            model.AgentRunStatusRunning,
+		PauseReason:       model.AgentRunPauseReasonNone,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_tool_delta"),
+	}
+	artifactRepo := &fakeAgentRuntimeProjectionArtifactRepo{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: &fakeAgentRuntimeProjectionRunRepo{
+			byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_tool_delta": run},
+		},
+		artifactRepo: artifactRepo,
+		now:          time.Now,
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_tool_delta",
+		Type:  "tool_call_args_delta",
+		Data: map[string]any{
+			"tool_call_id": "tool-1",
+			"args_delta":   "{\"path\"",
+		},
+	}); err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	if artifactRepo.creates != 0 || len(artifactRepo.artifacts) != 0 {
+		t.Fatalf("expected no artifact for args delta, creates=%d artifacts=%#v", artifactRepo.creates, artifactRepo.artifacts)
 	}
 }
 

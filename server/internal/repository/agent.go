@@ -867,6 +867,25 @@ func (r *AgentRunRepository) UpdateStage(ctx context.Context, workspaceID, runID
 	return nil
 }
 
+// UpdateRuntimeResumeState updates local bookkeeping fields after a delegated
+// runtime resume. Runtime event projection owns status and pause fields.
+func (r *AgentRunRepository) UpdateRuntimeResumeState(ctx context.Context, workspaceID, runID, approvalState, stage string, heartbeatAt *time.Time) error {
+	updates := map[string]any{
+		"approval_state":  approvalState,
+		"execution_stage": stage,
+	}
+	if heartbeatAt != nil {
+		updates["last_heartbeat_at"] = heartbeatAt
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, runID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update agent run runtime resume state: %w", err)
+	}
+	return nil
+}
+
 // AddTokens increments the token count for a run.
 func (r *AgentRunRepository) AddTokens(ctx context.Context, workspaceID, runID string, tokens int) error {
 	if err := r.db.WithContext(ctx).
