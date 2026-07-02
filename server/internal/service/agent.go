@@ -193,7 +193,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		Provider:              strings.TrimSpace(derefString(agent.Provider)),
 		Model:                 strings.TrimSpace(derefString(agent.Model)),
 		SystemPrompt:          strings.TrimSpace(derefString(agent.SystemPrompt)),
-		Skills:                runtimeSkillRefsFromHelpin(agent.Skills),
+		Skills:                runtimeSkillRefsFromHelpin(agent.Skills, agent.RuntimeKind),
 		AllowedTools:          parseJSONStringSlice(agent.AllowedTools),
 		AllowedTargets:        parseJSONStringSlice(agent.AllowedTargets),
 		ApprovalMode:          strings.TrimSpace(agent.ApprovalMode),
@@ -214,13 +214,17 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	return out
 }
 
-func runtimeSkillRefsFromHelpin(refs model.AgentSkillRefs) []AgentRuntimeSkillRef {
+func runtimeSkillRefsFromHelpin(refs model.AgentSkillRefs, runtimeKind string) []AgentRuntimeSkillRef {
 	normalized := refs.Normalize()
 	if len(normalized) == 0 {
 		return nil
 	}
+	runtimeKind = strings.TrimSpace(runtimeKind)
 	out := make([]AgentRuntimeSkillRef, 0, len(normalized))
 	for _, ref := range normalized {
+		if !helpinSkillRefSupportsRuntime(ref, runtimeKind) {
+			continue
+		}
 		runtimeRef := AgentRuntimeSkillRef{
 			SkillID:    strings.TrimSpace(derefString(ref.SkillID)),
 			Key:        strings.TrimSpace(ref.Key),
@@ -235,6 +239,25 @@ func runtimeSkillRefsFromHelpin(refs model.AgentSkillRefs) []AgentRuntimeSkillRe
 		out = append(out, runtimeRef)
 	}
 	return out
+}
+
+func helpinSkillRefSupportsRuntime(ref model.AgentSkillRef, runtimeKind string) bool {
+	if runtimeKind == "" || ref.SkillID != nil {
+		return true
+	}
+	definition, ok := worker.GetBuiltInSkill(ref.Key)
+	if !ok {
+		return true
+	}
+	if len(definition.SupportedRuntimes) == 0 {
+		return true
+	}
+	for _, supported := range definition.SupportedRuntimes {
+		if strings.TrimSpace(supported) == runtimeKind {
+			return true
+		}
+	}
+	return false
 }
 
 func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntimeStartRunRequest {
