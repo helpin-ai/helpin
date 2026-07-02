@@ -53,7 +53,7 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 
 	prepareAO := workflow.ActivityOptions{
 		StartToCloseTimeout: 2 * time.Hour,
-		HeartbeatTimeout:    60 * time.Second,
+		HeartbeatTimeout:    5 * time.Minute,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    5 * time.Second,
 			BackoffCoefficient: 2,

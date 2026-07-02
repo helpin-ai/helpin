@@ -742,7 +742,7 @@ func TestBuildCodexConfigArtifactRequiresHelpinMCPServer(t *testing.T) {
 	if !helpin.Required {
 		t.Fatal("expected Helpin MCP server to be required")
 	}
-	if helpin.StartupTimeoutSec != 15 || helpin.ToolTimeoutSec != 120 {
+	if helpin.StartupTimeoutSec != 15 || helpin.ToolTimeoutSec != 300 {
 		t.Fatalf("unexpected MCP timeouts: startup=%d tool=%d", helpin.StartupTimeoutSec, helpin.ToolTimeoutSec)
 	}
 	if helpin.DefaultToolsApprovalMode != "approve" {

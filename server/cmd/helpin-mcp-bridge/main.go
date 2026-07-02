@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+const defaultHTTPTimeout = 5 * time.Minute
+
 type rpcRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id,omitempty"`
@@ -66,7 +68,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "HELPIN_API_BASE_URL and HELPIN_AGENT_RUN_TOOL_TOKEN are required")
 		os.Exit(1)
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: bridgeHTTPTimeout()}
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		msg, format, err := readMCPMessage(reader)
@@ -88,6 +90,18 @@ func main() {
 		resp := handleRequest(client, baseURL, token, req)
 		writeMCPResponse(resp, format)
 	}
+}
+
+func bridgeHTTPTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("HELPIN_MCP_BRIDGE_HTTP_TIMEOUT_SECONDS"))
+	if raw == "" {
+		return defaultHTTPTimeout
+	}
+	seconds, err := strconv.Atoi(raw)
+	if err != nil || seconds <= 0 {
+		return defaultHTTPTimeout
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func handleRequest(client *http.Client, baseURL, token string, req rpcRequest) rpcResponse {
