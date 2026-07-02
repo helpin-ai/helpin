@@ -419,11 +419,11 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 	if req.TriageEligible != nil {
 		mailbox.TriageEligible = *req.TriageEligible
 	}
-	if req.LinkedTeamID != nil {
-		if strings.TrimSpace(*req.LinkedTeamID) == "" {
+	if req.LinkedTeamID.Set {
+		if req.LinkedTeamID.Value == nil || strings.TrimSpace(*req.LinkedTeamID.Value) == "" {
 			mailbox.LinkedTeamID = nil
 		} else {
-			trimmed := strings.TrimSpace(*req.LinkedTeamID)
+			trimmed := strings.TrimSpace(*req.LinkedTeamID.Value)
 			mailbox.LinkedTeamID = &trimmed
 		}
 	}

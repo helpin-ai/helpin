@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildSupportMemberOptions,
+  buildSupportTeamOptions,
   filterMembersOutsideLinkedTeam,
   filterSupportAccessibleMembers,
   filterSupportAccessibleTeams,
@@ -34,6 +36,26 @@ describe('team inbox dialog members', () => {
     expect(filterSupportAccessibleTeams(teams, grants).map((team) => team.id)).toEqual(['team-support']);
   });
 
+  it('keeps all teams visible while marking teams without support access disabled', () => {
+    const teams = [
+      { id: 'team-support', name: 'Support' },
+      { id: 'team-marketing', name: 'Marketing' },
+    ];
+    const grants = [
+      { module: 'support', subject_type: 'team', subject_id: 'team-support' },
+      { module: 'crm', subject_type: 'team', subject_id: 'team-marketing' },
+    ];
+
+    expect(buildSupportTeamOptions(teams, grants)).toEqual([
+      { team: teams[0], hasSupportAccess: true, disabledReason: null },
+      {
+        team: teams[1],
+        hasSupportAccess: false,
+        disabledReason: 'This team does not have access to the Support module.',
+      },
+    ]);
+  });
+
   it('shows members with direct, inherited, or admin support access', () => {
     const members = [
       { id: 'wm-owner', user_id: 'u-owner', role: 'owner' },
@@ -53,6 +75,28 @@ describe('team inbox dialog members', () => {
     expect(
       filterSupportAccessibleMembers(members, grants, teamMemberships).map((member) => member.id),
     ).toEqual(['wm-owner', 'wm-direct', 'wm-team']);
+  });
+
+  it('keeps all members visible while marking members without support access disabled', () => {
+    const members = [
+      { id: 'wm-owner', user_id: 'u-owner', role: 'owner' },
+      { id: 'wm-direct', user_id: 'u-direct', role: 'member' },
+      { id: 'wm-hidden', user_id: 'u-hidden', role: 'member' },
+    ];
+    const grants = [
+      { module: 'support', subject_type: 'workspace_member', subject_id: 'wm-direct' },
+    ];
+    const teamMemberships = [{ team_id: 'team-sales', user_id: 'u-hidden' }];
+
+    expect(buildSupportMemberOptions(members, grants, teamMemberships)).toEqual([
+      { member: members[0], hasSupportAccess: true, disabledReason: null },
+      { member: members[1], hasSupportAccess: true, disabledReason: null },
+      {
+        member: members[2],
+        hasSupportAccess: false,
+        disabledReason: 'This member does not have access to the Support module.',
+      },
+    ]);
   });
 
   it('removes linked team members from the additional member list', () => {

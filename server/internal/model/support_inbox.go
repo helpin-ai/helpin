@@ -693,18 +693,37 @@ type CreateSupportMailboxRequest struct {
 	ImportLinkedTeam   bool     `json:"import_linked_team"`
 }
 
+type OptionalNullableString struct {
+	Set   bool
+	Value *string
+}
+
+func (s *OptionalNullableString) UnmarshalJSON(data []byte) error {
+	s.Set = true
+	if strings.TrimSpace(string(data)) == "null" {
+		s.Value = nil
+		return nil
+	}
+	var value string
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	s.Value = &value
+	return nil
+}
+
 type UpdateSupportMailboxRequest struct {
-	Name               *string  `json:"name,omitempty"`
-	Handle             *string  `json:"handle,omitempty"`
-	Icon               *string  `json:"icon,omitempty"`
-	Description        *string  `json:"description,omitempty"`
-	RoutingPrompt      *string  `json:"routing_prompt,omitempty"`
-	TriageEligible     *bool    `json:"triage_eligible,omitempty"`
-	LinkedTeamID       *string  `json:"linked_team_id,omitempty"`
-	WorkspaceMemberIDs []string `json:"workspace_member_ids,omitempty"`
-	AssignmentMode     *string  `json:"assignment_mode,omitempty"`
-	Active             *bool    `json:"active,omitempty"`
-	ImportLinkedTeam   bool     `json:"import_linked_team,omitempty"`
+	Name               *string                `json:"name,omitempty"`
+	Handle             *string                `json:"handle,omitempty"`
+	Icon               *string                `json:"icon,omitempty"`
+	Description        *string                `json:"description,omitempty"`
+	RoutingPrompt      *string                `json:"routing_prompt,omitempty"`
+	TriageEligible     *bool                  `json:"triage_eligible,omitempty"`
+	LinkedTeamID       OptionalNullableString `json:"linked_team_id,omitempty"`
+	WorkspaceMemberIDs []string               `json:"workspace_member_ids,omitempty"`
+	AssignmentMode     *string                `json:"assignment_mode,omitempty"`
+	Active             *bool                  `json:"active,omitempty"`
+	ImportLinkedTeam   bool                   `json:"import_linked_team,omitempty"`
 
 	// ReplyTimePreset overrides the workspace default for conversations in
 	// this mailbox. Pass an explicit value to set; set ClearReplyTimePreset
