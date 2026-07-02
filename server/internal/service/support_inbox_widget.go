@@ -872,6 +872,8 @@ func (s *SupportInboxService) hasOnlineSupportTeammate(ctx context.Context, work
 		now,
 	)
 	if err != nil {
+		slog.WarnContext(ctx, "resolve teammate presence for widget availability failed; treating as offline",
+			"error", err, "workspace_id", workspaceID)
 		return false
 	}
 	for _, status := range statuses {

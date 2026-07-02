@@ -29,15 +29,7 @@ func resolveSupportAvailabilityForMailbox(settings model.SupportInboxSettings, m
 	offlineMessage := defaultOutsideHoursMessage(settings)
 	specialNotice := normalizedSpecialNotice(settings.SpecialNoticeText)
 
-	onlineAvailability := model.WidgetConfigAvailability{
-		IsOnline:          true,
-		StatusText:        "Online now",
-		ReplyTimeText:     expectation.Text,
-		ReplyTimePreset:   expectation.Preset,
-		ReplyTimeMinutes:  optionalMinutes(expectation),
-		SpecialNoticeText: specialNotice,
-		MailboxID:         expectation.FromMailboxID,
-	}
+	onlineAvailability := resolveSupportOnlineAvailability(settings, mailbox)
 
 	if !settings.BusinessHoursEnabled {
 		return supportAvailabilitySnapshot{
@@ -83,6 +75,24 @@ func resolveSupportAvailabilityForMailbox(settings model.SupportInboxSettings, m
 	return supportAvailabilitySnapshot{
 		IsWithinOfficeHours: false,
 		WidgetAvailability:  availability,
+	}
+}
+
+// resolveSupportOnlineAvailability builds the canonical "online" widget
+// availability snapshot: an explicit online status with reply-time expectation
+// copy and no offline "back later" framing. It is the single source of truth
+// for the online presentation, reused by both the business-hours online branch
+// and the presence-driven widget path (where a teammate online trumps hours).
+func resolveSupportOnlineAvailability(settings model.SupportInboxSettings, mailbox *model.SupportMailbox) model.WidgetConfigAvailability {
+	expectation := ResolveReplyExpectation(settings, mailbox)
+	return model.WidgetConfigAvailability{
+		IsOnline:          true,
+		StatusText:        "Online now",
+		ReplyTimeText:     expectation.Text,
+		ReplyTimePreset:   expectation.Preset,
+		ReplyTimeMinutes:  optionalMinutes(expectation),
+		SpecialNoticeText: normalizedSpecialNotice(settings.SpecialNoticeText),
+		MailboxID:         expectation.FromMailboxID,
 	}
 }
 

@@ -145,14 +145,21 @@ func TestBuildWidgetAvailabilityGatesOnPresence(t *testing.T) {
 		}
 	})
 
-	t.Run("outside hours with online teammate is online (presence trumps hours)", func(t *testing.T) {
+	t.Run("outside hours with online teammate is a consistent online snapshot (presence trumps hours)", func(t *testing.T) {
 		a := buildWidgetAvailability(settings, outsideHours, true)
 		if !a.IsOnline {
 			t.Fatalf("expected IsOnline=true when a teammate is online outside hours")
 		}
-		// Offline-branch hours fields remain driven by the schedule.
-		if a.NextOnlineAt == nil {
-			t.Fatalf("expected NextOnlineAt to remain populated from business hours")
+		// Invariant: online => online StatusText and no "back later" framing,
+		// even though we are outside business hours.
+		if a.StatusText != "Online now" {
+			t.Fatalf("expected online status text, got %q", a.StatusText)
+		}
+		if a.NextOnlineAt != nil {
+			t.Fatalf("expected NextOnlineAt to be empty when online, got %v", *a.NextOnlineAt)
+		}
+		if a.OutsideHoursMessage != nil {
+			t.Fatalf("expected OutsideHoursMessage to be empty when online, got %v", *a.OutsideHoursMessage)
 		}
 	})
 

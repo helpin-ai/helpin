@@ -503,16 +503,29 @@ func nextBusinessHoursStart(settings model.SupportInboxSettings, localNow time.T
 // buildWidgetAvailability returns the widget-facing availability snapshot.
 //
 // IsOnline reflects ACTUAL teammate presence (hasOnlineAgent) rather than
-// business hours alone: being within business hours while nobody is online is
-// not "Online now", and a teammate online outside hours is still online
-// (presence trumps hours, matching the escalation path). Business hours
-// continue to drive the offline StatusText, NextOnlineAt, and
-// OutsideHoursMessage fields.
+// business hours alone. Presence trumps hours (matching the escalation path):
+//
+//   - A teammate online => a fully consistent ONLINE snapshot regardless of
+//     hours: online StatusText and no offline "back later" framing
+//     (NextOnlineAt / OutsideHoursMessage cleared). This avoids the
+//     contradictory "IsOnline=true but StatusText='Offline now'" state that the
+//     widget would otherwise render.
+//   - Nobody online => the business-hours snapshot with IsOnline forced false.
+//     Within hours we surface the reply-time expectation instead of claiming
+//     "Online now"; outside hours keeps the offline copy, NextOnlineAt, and
+//     OutsideHoursMessage unchanged.
+//
+// Invariant: IsOnline == true iff StatusText is an online message and
+// NextOnlineAt is empty.
 func buildWidgetAvailability(settings model.SupportInboxSettings, now time.Time, hasOnlineAgent bool) model.WidgetConfigAvailability {
+	if hasOnlineAgent {
+		return resolveSupportOnlineAvailability(settings, nil)
+	}
+
 	snapshot := resolveSupportAvailability(settings, now)
 	availability := snapshot.WidgetAvailability
-	availability.IsOnline = hasOnlineAgent
-	if snapshot.IsWithinOfficeHours && !hasOnlineAgent {
+	availability.IsOnline = false
+	if snapshot.IsWithinOfficeHours {
 		// Within hours but no teammate online: don't claim "Online now" —
 		// surface the reply-time expectation instead.
 		availability.StatusText = availability.ReplyTimeText
