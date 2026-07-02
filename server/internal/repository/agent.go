@@ -727,6 +727,31 @@ func (r *AgentRunRepository) GetByExternalRuntimeID(ctx context.Context, externa
 	return &run, nil
 }
 
+// ListActiveByExternalRuntime returns non-terminal mapped runs old enough to reconcile.
+func (r *AgentRunRepository) ListActiveByExternalRuntime(ctx context.Context, externalRuntime string, olderThan time.Time, limit int) ([]model.AgentRun, error) {
+	externalRuntime = strings.TrimSpace(externalRuntime)
+	if externalRuntime == "" {
+		return []model.AgentRun{}, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	var runs []model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("external_runtime = ? AND external_runtime_id IS NOT NULL AND status IN ?", externalRuntime, []string{
+			model.AgentRunStatusQueued,
+			model.AgentRunStatusRunning,
+			model.AgentRunStatusPaused,
+		}).
+		Where("updated_at < ?", olderThan).
+		Order("updated_at ASC").
+		Limit(limit).
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list active agent runs by external runtime: %w", err)
+	}
+	return runs, nil
+}
+
 // ListByIDs returns runs in a workspace for a set of IDs.
 func (r *AgentRunRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.AgentRun, error) {
 	if len(ids) == 0 {

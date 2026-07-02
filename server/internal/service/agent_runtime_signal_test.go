@@ -15,15 +15,60 @@ import (
 )
 
 type fakeAgentRuntimeSignalClient struct {
-	resumeCalls []fakeAgentRuntimeResumeCall
-	cancelCalls []string
-	resumeErr   error
-	cancelErr   error
+	resumeCalls          []fakeAgentRuntimeResumeCall
+	cancelCalls          []string
+	getCalls             []string
+	listMessageCalls     []string
+	listArtifactCalls    []string
+	listInteractionCalls []string
+	getRuns              map[string]*AgentRuntimeRun
+	messages             map[string][]AgentRuntimeMessage
+	artifacts            map[string][]AgentRuntimeArtifact
+	interactions         map[string][]AgentRuntimeInteraction
+	getErr               error
+	listErr              error
+	resumeErr            error
+	cancelErr            error
 }
 
 type fakeAgentRuntimeResumeCall struct {
 	runID string
 	req   AgentRuntimeResumeRunRequest
+}
+
+func (c *fakeAgentRuntimeSignalClient) GetRun(_ context.Context, runtimeRunID string) (*AgentRuntimeRun, error) {
+	c.getCalls = append(c.getCalls, runtimeRunID)
+	if c.getErr != nil {
+		return nil, c.getErr
+	}
+	if c.getRuns == nil {
+		return nil, nil
+	}
+	return c.getRuns[runtimeRunID], nil
+}
+
+func (c *fakeAgentRuntimeSignalClient) ListMessages(_ context.Context, runtimeRunID string) ([]AgentRuntimeMessage, error) {
+	c.listMessageCalls = append(c.listMessageCalls, runtimeRunID)
+	if c.listErr != nil {
+		return nil, c.listErr
+	}
+	return append([]AgentRuntimeMessage(nil), c.messages[runtimeRunID]...), nil
+}
+
+func (c *fakeAgentRuntimeSignalClient) ListArtifacts(_ context.Context, runtimeRunID string) ([]AgentRuntimeArtifact, error) {
+	c.listArtifactCalls = append(c.listArtifactCalls, runtimeRunID)
+	if c.listErr != nil {
+		return nil, c.listErr
+	}
+	return append([]AgentRuntimeArtifact(nil), c.artifacts[runtimeRunID]...), nil
+}
+
+func (c *fakeAgentRuntimeSignalClient) ListInteractions(_ context.Context, runtimeRunID string) ([]AgentRuntimeInteraction, error) {
+	c.listInteractionCalls = append(c.listInteractionCalls, runtimeRunID)
+	if c.listErr != nil {
+		return nil, c.listErr
+	}
+	return append([]AgentRuntimeInteraction(nil), c.interactions[runtimeRunID]...), nil
 }
 
 func (c *fakeAgentRuntimeSignalClient) ResumeRun(_ context.Context, runtimeRunID string, req AgentRuntimeResumeRunRequest) (*AgentRuntimeRun, error) {
@@ -169,6 +214,45 @@ func TestApproveRunForAgentRuntimeRunWithoutMessageDoesNotSendSyntheticContent(t
 	}
 	if len(messages) != 0 {
 		t.Fatalf("expected no local approval message, got %#v", messages)
+	}
+}
+
+func TestReplyToApprovalPausedAgentRuntimeRunForwardsRequestChanges(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	now := time.Now().UTC()
+	seedAgentRuntimeSignalAgent(t, db, now)
+	run := seedAgentRuntimeSignalRun(t, runRepo, model.AgentRunStatusPaused, model.AgentRunPauseReasonHumanApproval, "pending", now)
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	svc := &AgentService{
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		runEngine:          &temporalapp.RunEngine{},
+		agentRuntimeClient: runtimeClient,
+	}
+
+	updated, err := svc.ResumeRun(context.Background(), "ws-1", run.ID, "user-1", model.ResumeAgentRunRequest{
+		Intent:  model.AgentRunResumeIntentReply,
+		Content: "please change the title before approval",
+	})
+	if err != nil {
+		t.Fatalf("ResumeRun returned error: %v", err)
+	}
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one runtime resume call, got %d", len(runtimeClient.resumeCalls))
+	}
+	call := runtimeClient.resumeCalls[0]
+	if call.req.Intent != model.AgentRunResumeIntentRequestChanges {
+		t.Fatalf("expected request_changes runtime intent, got %#v", call.req)
+	}
+	if call.req.Content != "please change the title before approval" {
+		t.Fatalf("expected feedback content to forward, got %q", call.req.Content)
+	}
+	if updated.ApprovalState != "rejected" {
+		t.Fatalf("expected local approval state rejected, got %q", updated.ApprovalState)
 	}
 }
 

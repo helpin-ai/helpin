@@ -878,7 +878,10 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeClient(agentRuntimeClient)
+	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter)
+	if agentRuntimeClient != nil {
+		agentService.SetAgentRuntimeClient(agentRuntimeClient)
+	}
 	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMProvider).
 		SetChatRepository(commandBarChatRepo).
 		SetLLMRouterConfig(

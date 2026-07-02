@@ -271,6 +271,10 @@ type AgentService struct {
 }
 
 type agentRuntimeSignalClient interface {
+	GetRun(ctx context.Context, runtimeRunID string) (*AgentRuntimeRun, error)
+	ListMessages(ctx context.Context, runtimeRunID string) ([]AgentRuntimeMessage, error)
+	ListArtifacts(ctx context.Context, runtimeRunID string) ([]AgentRuntimeArtifact, error)
+	ListInteractions(ctx context.Context, runtimeRunID string) ([]AgentRuntimeInteraction, error)
 	ResumeRun(ctx context.Context, runtimeRunID string, req AgentRuntimeResumeRunRequest) (*AgentRuntimeRun, error)
 	CancelRun(ctx context.Context, runtimeRunID string) (*AgentRuntimeRun, error)
 }
@@ -3839,9 +3843,7 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, err
 	}
-	if _, ok := agentRuntimeRunID(run); !ok {
-		_ = s.runEngine.CancelRun(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
-	}
+	_ = s.runEngine.CancelRun(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
 
 	_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
 	s.logTargetAgentRunActivity(ctx, run, actorID, "cancelled", nil)
@@ -4207,6 +4209,7 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 				runtimeIntent = model.AgentRunResumeIntentApprove
 			} else {
 				approvalState = "rejected"
+				runtimeIntent = model.AgentRunResumeIntentRequestChanges
 			}
 		}
 	case model.AgentRunResumeIntentApprove:

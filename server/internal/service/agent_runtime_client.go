@@ -68,6 +68,47 @@ type AgentRuntimeRun struct {
 	OutputSummary   json.RawMessage `json:"output_summary,omitempty"`
 	ErrorMessage    string          `json:"error_message,omitempty"`
 	ExternalActorID string          `json:"external_actor_id,omitempty"`
+	StartedAt       *time.Time      `json:"started_at,omitempty"`
+	CompletedAt     *time.Time      `json:"completed_at,omitempty"`
+	CreatedAt       time.Time       `json:"created_at,omitempty"`
+	UpdatedAt       time.Time       `json:"updated_at,omitempty"`
+}
+
+type AgentRuntimeMessage struct {
+	ID              string          `json:"id"`
+	Role            string          `json:"role"`
+	Content         string          `json:"content"`
+	MessageType     string          `json:"message_type"`
+	ContentBlocks   json.RawMessage `json:"content_blocks,omitempty"`
+	ToolInvocations json.RawMessage `json:"tool_invocations,omitempty"`
+	SequenceNo      int             `json:"sequence_no"`
+	CreatedAt       time.Time       `json:"created_at,omitempty"`
+}
+
+type AgentRuntimeArtifact struct {
+	ID            string          `json:"id"`
+	ArtifactType  string          `json:"artifact_type"`
+	Format        string          `json:"format"`
+	StorageMode   string          `json:"storage_mode"`
+	InlineContent string          `json:"inline_content,omitempty"`
+	Metadata      json.RawMessage `json:"metadata,omitempty"`
+	SequenceNo    int             `json:"sequence_no"`
+	CreatedAt     time.Time       `json:"created_at,omitempty"`
+}
+
+type AgentRuntimeInteraction struct {
+	ID                   string          `json:"id"`
+	RuntimeKind          string          `json:"runtime_kind"`
+	InteractionKind      string          `json:"interaction_kind"`
+	Status               string          `json:"status"`
+	Title                string          `json:"title,omitempty"`
+	Summary              string          `json:"summary,omitempty"`
+	RequestPayload       json.RawMessage `json:"request_payload,omitempty"`
+	ResponsePayload      json.RawMessage `json:"response_payload,omitempty"`
+	ResolvedByExternalID string          `json:"resolved_by_external_id,omitempty"`
+	ResolvedAt           *time.Time      `json:"resolved_at,omitempty"`
+	CreatedAt            time.Time       `json:"created_at,omitempty"`
+	UpdatedAt            time.Time       `json:"updated_at,omitempty"`
 }
 
 func NewAgentRuntimeClient(baseURL, appID, token string, httpClient *http.Client) (*AgentRuntimeClient, error) {
@@ -107,6 +148,30 @@ func (c *AgentRuntimeClient) GetRun(ctx context.Context, runtimeRunID string) (*
 		return nil, err
 	}
 	return &run, nil
+}
+
+func (c *AgentRuntimeClient) ListMessages(ctx context.Context, runtimeRunID string) ([]AgentRuntimeMessage, error) {
+	var messages []AgentRuntimeMessage
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(strings.TrimSpace(runtimeRunID))+"/messages", agentRuntimeAppQuery(c.appID), nil, &messages); err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
+func (c *AgentRuntimeClient) ListArtifacts(ctx context.Context, runtimeRunID string) ([]AgentRuntimeArtifact, error) {
+	var artifacts []AgentRuntimeArtifact
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(strings.TrimSpace(runtimeRunID))+"/artifacts", agentRuntimeAppQuery(c.appID), nil, &artifacts); err != nil {
+		return nil, err
+	}
+	return artifacts, nil
+}
+
+func (c *AgentRuntimeClient) ListInteractions(ctx context.Context, runtimeRunID string) ([]AgentRuntimeInteraction, error) {
+	var interactions []AgentRuntimeInteraction
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(strings.TrimSpace(runtimeRunID))+"/interactions", agentRuntimeAppQuery(c.appID), nil, &interactions); err != nil {
+		return nil, err
+	}
+	return interactions, nil
 }
 
 func (c *AgentRuntimeClient) ResumeRun(ctx context.Context, runtimeRunID string, req AgentRuntimeResumeRunRequest) (*AgentRuntimeRun, error) {

@@ -376,14 +376,28 @@ func main() {
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	runRepo.SetTriggerExecutionRepository(triggerExecutionRepo)
+	var agentRuntimeClient *service.AgentRuntimeClient
+	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
+		agentRuntimeClient, err = service.NewAgentRuntimeClient(cfg.AgentRuntimeBaseURL, cfg.AgentRuntimeAppID, cfg.AgentRuntimeServiceToken, nil)
+		if err != nil {
+			fatalWithSentry("failed to initialize agent runtime client", err)
+		}
+	}
 	projectionCancel := context.CancelFunc(func() {})
 	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
-		agentRuntimeProjectionService := service.NewAgentRuntimeProjectionService(runRepo, cfg.AgentRuntimeAppID)
+		agentRuntimeProjectionService := service.NewAgentRuntimeProjectionService(runRepo, cfg.AgentRuntimeAppID).
+			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
+			SetTranscriptRepositories(runMessageRepo, artifactRepo, interactionRepo)
 		var projectionCtx context.Context
 		projectionCtx, projectionCancel = context.WithCancel(context.Background())
 		go func() {
 			if err := agentRuntimeProjectionService.StartNATSConsumer(projectionCtx, jetstream); err != nil {
 				slog.Error("agent runtime projection consumer stopped", "error", err)
+			}
+		}()
+		go func() {
+			if err := agentRuntimeProjectionService.StartReconciliationSweep(projectionCtx, time.Minute, 2*time.Minute, 50); err != nil {
+				slog.Error("agent runtime reconciliation sweep stopped", "error", err)
 			}
 		}()
 	}
@@ -450,13 +464,6 @@ func main() {
 		SetEpicDeliveryDependencies(epicDeliveryTargetRepo, epicRepo).
 		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
 	pmStoryService.SetGitService(gitService)
-	var agentRuntimeClient *service.AgentRuntimeClient
-	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
-		agentRuntimeClient, err = service.NewAgentRuntimeClient(cfg.AgentRuntimeBaseURL, cfg.AgentRuntimeAppID, cfg.AgentRuntimeServiceToken, nil)
-		if err != nil {
-			fatalWithSentry("failed to initialize agent runtime client", err)
-		}
-	}
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,
@@ -492,7 +499,10 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmDealRepo).SetAgentRuntimeClient(agentRuntimeClient)
+	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmDealRepo)
+	if agentRuntimeClient != nil {
+		agentService.SetAgentRuntimeClient(agentRuntimeClient)
+	}
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
