@@ -54,6 +54,12 @@ func TestAgentRuntimeClientStartRunUsesV1AuthAndHostRunID(t *testing.T) {
 	}
 }
 
+func TestAgentRuntimeClientRequiresAppID(t *testing.T) {
+	if _, err := NewAgentRuntimeClient("http://runtime.test", " ", "runtime-token", nil); err == nil {
+		t.Fatal("expected missing app ID error")
+	}
+}
+
 func TestAgentRuntimeClientForwardsRunSignals(t *testing.T) {
 	var paths []string
 	var resumeBodies []AgentRuntimeResumeRunRequest
