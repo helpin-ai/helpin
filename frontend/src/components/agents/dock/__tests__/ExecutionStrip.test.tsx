@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ExecutionStrip } from '../ExecutionStrip';
 import type { AgentRun } from '@/lib/pmTypes';
+import type { CommandBarRunPlan } from '@/stores/commandBarStore';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -63,6 +64,27 @@ function buttonNamed(name: string): HTMLButtonElement {
     .find((button) => button.textContent?.trim() === name);
   if (!match) throw new Error(`Missing button: ${name}`);
   return match;
+}
+
+function plan(overrides: Partial<CommandBarRunPlan> = {}): CommandBarRunPlan {
+  return {
+    id: 'plan-1',
+    steps: [
+      {
+        agent_id: 'agent-1',
+        agent_name: 'Writer',
+        instructions: 'Draft the customer reply',
+      },
+    ],
+    runIdsByStep: { 0: 'run-1' },
+    status: 'running',
+    planKind: 'one_shot_command',
+    currentStepIndex: 0,
+    prompt: 'Draft a reply',
+    createdAt: '2026-05-01T00:00:00Z',
+    updatedAt: '2026-05-01T00:00:00Z',
+    ...overrides,
+  };
 }
 
 describe('ExecutionStrip actions', () => {
@@ -224,5 +246,43 @@ describe('ExecutionStrip actions', () => {
 
     expect(container.textContent).not.toContain('Task · HLP-123');
     expect(container.textContent).not.toContain('Cancel');
+  });
+
+  it('hides resume for a running plan while a step is active', () => {
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="plan"
+          workspaceId="ws-1"
+          plan={plan()}
+          runsById={{ 'run-1': run({ status: 'running' }) }}
+          defaultOpen
+          onAction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).not.toContain('Resume');
+    expect(container.textContent).not.toContain('Continue');
+    expect(buttonNamed('Cancel')).toBeTruthy();
+  });
+
+  it('shows continue for a running plan with no active step to advance', () => {
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="plan"
+          workspaceId="ws-1"
+          plan={plan({ runIdsByStep: {} })}
+          runsById={{}}
+          defaultOpen
+          onAction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(buttonNamed('Continue')).toBeTruthy();
+    expect(container.textContent).not.toContain('Resume');
+    expect(buttonNamed('Cancel')).toBeTruthy();
   });
 });

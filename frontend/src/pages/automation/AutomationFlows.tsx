@@ -1900,6 +1900,31 @@ const FLOW_STATE_STYLES: Record<FlowState, { pill: string; dot: string; label: s
     label: 'Incomplete',
   },
 };
+const FLOW_ERROR_PREVIEW_LENGTH = 260;
+
+function FlowErrorMessage({ message }: { message: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const trimmed = message.trim();
+  const isLong = trimmed.length > FLOW_ERROR_PREVIEW_LENGTH;
+  const visibleMessage = !isLong || expanded
+    ? trimmed
+    : `${trimmed.slice(0, FLOW_ERROR_PREVIEW_LENGTH).trimEnd()}...`;
+
+  return (
+    <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
+      <div className="whitespace-pre-wrap break-words">⚠ {visibleMessage}</div>
+      {isLong ? (
+        <button
+          type="button"
+          className="mt-1 text-[11px] font-medium text-destructive underline underline-offset-2 hover:text-destructive/80"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 function FlowStatePill({ state }: { state: FlowState }) {
   const style = FLOW_STATE_STYLES[state];
@@ -2473,9 +2498,7 @@ export function FlowRow({
         </div>
 
         {flowState === 'error' && lastErrorMessage && (
-          <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
-            ⚠ {lastErrorMessage}
-          </div>
+          <FlowErrorMessage message={lastErrorMessage} />
         )}
       </div>
     </>
