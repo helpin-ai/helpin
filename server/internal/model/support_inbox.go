@@ -1046,7 +1046,9 @@ type SupportInboxSettings struct {
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
 
 	// Escalation
-	EscalationMessage string `json:"escalation_message"` // message shown when AI hands off to human
+	EscalationMessage           string `json:"escalation_message"`             // message shown when AI hands off to human (live)
+	EscalationMessageBusy       string `json:"escalation_message_busy"`        // message shown when AI hands off while team is busy
+	EscalationMessageAfterHours string `json:"escalation_message_after_hours"` // message shown when AI hands off after hours
 
 	// Handoff Routing
 	HandoffBehavior    string  `json:"handoff_behavior"` // unassigned, assign_to_team, round_robin
@@ -1145,7 +1147,9 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIMaxFollowups:                3,
 		AIAutoResolveTimeout:          24,
 		ShowTalkToHuman:               true,
-		EscalationMessage:             "Let me connect you with a team member who can help further.",
+		EscalationMessage:             "Let me connect you with a team member — they typically reply in {reply_time}.",
+		EscalationMessageBusy:         "I've notified the team. Everyone's helping other customers right now — expect a reply within {reply_time}.",
+		EscalationMessageAfterHours:   "I've passed this on to the team. We're away right now and back {next_open}.",
 		HandoffBehavior:               "unassigned",
 		HandoffTeamID:                 nil,
 		DefaultMailboxID:              nil,
@@ -1216,6 +1220,8 @@ type UpdateInstallationSettingsRequest struct {
 	AIAutoResolveTimeout            *int                        `json:"ai_auto_resolve_timeout,omitempty"`
 	ShowTalkToHuman                 *bool                       `json:"show_talk_to_human,omitempty"`
 	EscalationMessage               *string                     `json:"escalation_message,omitempty"`
+	EscalationMessageBusy           *string                     `json:"escalation_message_busy,omitempty"`
+	EscalationMessageAfterHours     *string                     `json:"escalation_message_after_hours,omitempty"`
 	HandoffBehavior                 *string                     `json:"handoff_behavior,omitempty"`
 	HandoffTeamID                   *string                     `json:"handoff_team_id,omitempty"`
 	DefaultMailboxID                *string                     `json:"default_mailbox_id,omitempty"`

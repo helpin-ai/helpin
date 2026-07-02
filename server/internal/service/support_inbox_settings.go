@@ -160,6 +160,12 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.EscalationMessage != nil {
 		current.EscalationMessage = *patch.EscalationMessage
 	}
+	if patch.EscalationMessageBusy != nil {
+		current.EscalationMessageBusy = *patch.EscalationMessageBusy
+	}
+	if patch.EscalationMessageAfterHours != nil {
+		current.EscalationMessageAfterHours = *patch.EscalationMessageAfterHours
+	}
 	if patch.HandoffBehavior != nil {
 		current.HandoffBehavior = *patch.HandoffBehavior
 	}
