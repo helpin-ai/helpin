@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 # ---- Build stage ----
 FROM golang:1.24-alpine AS builder
 
@@ -7,15 +5,9 @@ RUN apk add --no-cache git ca-certificates
 
 WORKDIR /app
 
-ENV GOPRIVATE=github.com/helpin-ai
-
 # Cache dependencies
 COPY go.mod go.sum ./
-RUN --mount=type=secret,id=github_token,required=true \
-    GITHUB_TOKEN="$(cat /run/secrets/github_token)" \
-    && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/" \
-    && go mod download \
-    && git config --global --unset-all url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
+RUN go mod download
 
 # Copy source and build
 COPY . .

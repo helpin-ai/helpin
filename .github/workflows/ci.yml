@@ -18,7 +18,6 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  GOPRIVATE: github.com/helpin-ai
 
 jobs:
   changes:
@@ -115,11 +114,6 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Configure private Go module access
-        env:
-          GO_PRIVATE_TOKEN: ${{ secrets.AGENT_RUNTIME_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
-        run: git config --global url."https://x-access-token:${GO_PRIVATE_TOKEN}@github.com/".insteadOf "https://github.com/"
-
       - name: Migration status (informational)
         # `migrate validate` exits 1 on pending migrations, which is normal
         # for any PR that adds one — so we print status only here. A real
@@ -161,10 +155,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
-      - name: Configure private Go module access
-        env:
-          GO_PRIVATE_TOKEN: ${{ secrets.AGENT_RUNTIME_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
-        run: git config --global url."https://x-access-token:${GO_PRIVATE_TOKEN}@github.com/".insteadOf "https://github.com/"
       - name: Verify gcc available (CGO requires it)
         run: |
           if ! command -v gcc >/dev/null 2>&1; then

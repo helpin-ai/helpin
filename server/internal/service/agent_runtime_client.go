@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	agentruntime "github.com/helpin-ai/agent-runtime/sdk"
+	agentruntime "github.com/helpin-ai/agent-runtime-go"
 )
 
 const agentRuntimeName = "agent-runtime"
