@@ -964,6 +964,8 @@ export interface SupportInboxSettings {
   ai_auto_resolve_timeout: number;
   show_talk_to_human: boolean;
   escalation_message: string;
+  escalation_message_busy?: string;
+  escalation_message_after_hours?: string;
   handoff_behavior: string;
   handoff_team_id: string | null;
   default_mailbox_id: string | null;
