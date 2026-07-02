@@ -1142,6 +1142,20 @@ func main() {
 		jwtManager,
 		wsPublisher,
 	)
+	agentRuntimeHostService := service.NewAgentRuntimeHostService(
+		cfg.AgentRuntimeAppID,
+		agentRunRepo,
+		workspaceRepo,
+		pmTaskRepo,
+		pmEpicRepo,
+		supportConversationRepo,
+		docsDocumentRepo,
+		crmContactRepo,
+		crmCompanyRepo,
+		crmDealRepo,
+		commandService,
+		gitService,
+	)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
@@ -1304,6 +1318,7 @@ func main() {
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:               handler.NewAgentHandler(agentService),
 		AgentToolGateway:    handler.NewAgentToolGatewayHandler(agentToolGateway),
+		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),

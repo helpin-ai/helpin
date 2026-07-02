@@ -44,6 +44,7 @@ type Handlers struct {
 	CommandBar          *handler.CommandBarHandler
 	Agent               *handler.AgentHandler
 	AgentToolGateway    *handler.AgentToolGatewayHandler
+	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
 	SupportInbox        *handler.SupportInboxHandler
 	SupportInboxView    *handler.SupportInboxViewHandler
 	SupportTag          *handler.SupportTagHandler
@@ -359,6 +360,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Route("/internal", func(r chi.Router) {
 			r.Use(middleware.RequireInternalAPISecret)
 			r.Get("/widget-tokens", h.SupportInboxWidget.GetWidgetTokens)
+			if h.AgentRuntimeHost != nil {
+				r.Route("/agent-runtime", func(r chi.Router) {
+					r.Post("/target-context", h.AgentRuntimeHost.ResolveTargetContext)
+					r.Post("/workspace/repository-spec", h.AgentRuntimeHost.ResolveRepositorySpec)
+					r.Post("/commands/execute", h.AgentRuntimeHost.ExecuteCommand)
+				})
+			}
 		})
 
 		if h.AgentToolGateway != nil {

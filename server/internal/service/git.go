@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	agentruntime "github.com/helpin-ai/agent-runtime-go"
 	appcrypto "github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/gitlab"
@@ -62,6 +63,7 @@ func (s *GitService) SetEpicDeliveryDependencies(deliveryRepo *repository.EpicDe
 }
 
 type gitHubAppClient interface {
+	MintInstallationToken(ctx context.Context, installationID string) (string, error)
 	ListInstallationRepositories(ctx context.Context, installationID string) ([]githubapp.Repository, error)
 	ListRepositoryBranches(ctx context.Context, installationID, owner, repo string) ([]githubapp.Branch, error)
 	GetReleaseByTag(ctx context.Context, installationID, owner, repo, tag string) (*githubapp.Release, error)
@@ -1983,6 +1985,231 @@ func (s *GitService) ResolveTaskRunBranchValues(ctx context.Context, workspaceID
 	}
 
 	return baseBranch, model.BuildTaskWorkingBranch(task, teamDefault, workspace.WorkspaceKey), nil
+}
+
+func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, workspaceID string, target agentruntime.TargetRef, runID string) (*agentruntime.RepositoryWorkspaceSpec, error) {
+	if s == nil {
+		return nil, fmt.Errorf("git service is not configured")
+	}
+	target.Type = strings.TrimSpace(target.Type)
+	target.ID = strings.TrimSpace(target.ID)
+	if target.Type == "" || target.ID == "" {
+		return nil, fmt.Errorf("target.type and target.id are required")
+	}
+
+	var (
+		repo          *model.GitRepository
+		baseBranch    string
+		workingBranch string
+		deliveryMeta  map[string]interface{}
+		err           error
+	)
+
+	switch target.Type {
+	case "repository":
+		if strings.TrimSpace(workspaceID) == "" {
+			return nil, fmt.Errorf("workspace_id metadata is required for repository targets")
+		}
+		repo, err = s.repoRepo.GetEnabledByID(ctx, workspaceID, target.ID)
+		if err != nil {
+			return nil, err
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("repository is not available")
+		}
+		baseBranch = defaultBranch(repo.DefaultBranch)
+		workingBranch = strings.TrimSpace(firstStringValue(target.Metadata, "work_branch", "working_branch"))
+	case "task", "story":
+		if strings.TrimSpace(workspaceID) == "" {
+			return nil, fmt.Errorf("workspace_id metadata is required for task repository targets")
+		}
+		deliveryTarget, err := s.ResolveTaskDeliveryTargetForRun(ctx, workspaceID, target.ID, true)
+		if err != nil {
+			return nil, err
+		}
+		if deliveryTarget == nil || deliveryTarget.RepositoryID == nil {
+			return nil, ErrTaskDeliveryTargetRequired
+		}
+		repo, err = s.repoRepo.GetEnabledByID(ctx, workspaceID, strings.TrimSpace(*deliveryTarget.RepositoryID))
+		if err != nil {
+			return nil, err
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("repository is not available")
+		}
+		baseBranch, workingBranch, err = s.ResolveTaskRunBranchValues(ctx, workspaceID, target.ID)
+		if err != nil {
+			return nil, err
+		}
+		deliveryMeta = map[string]interface{}{
+			"delivery_target_id": deliveryTarget.ID,
+			"delivery_state":     deliveryTarget.DeliveryState,
+			"target_source":      deliveryTarget.TargetSource,
+		}
+	case "epic":
+		if strings.TrimSpace(workspaceID) == "" {
+			return nil, fmt.Errorf("workspace_id metadata is required for epic repository targets")
+		}
+		deliveryTarget, err := s.GetEpicDeliveryTarget(ctx, workspaceID, target.ID)
+		if err != nil {
+			return nil, err
+		}
+		if deliveryTarget == nil || deliveryTarget.RepositoryID == nil || deliveryTarget.BaseBranch == nil || deliveryTarget.EpicBranch == nil {
+			return nil, ErrEpicDeliveryTargetRequired
+		}
+		repo, err = s.repoRepo.GetEnabledByID(ctx, workspaceID, strings.TrimSpace(*deliveryTarget.RepositoryID))
+		if err != nil {
+			return nil, err
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("repository is not available")
+		}
+		baseBranch = strings.TrimSpace(*deliveryTarget.BaseBranch)
+		workingBranch = strings.TrimSpace(*deliveryTarget.EpicBranch)
+		deliveryMeta = map[string]interface{}{
+			"delivery_target_id": deliveryTarget.ID,
+			"delivery_state":     deliveryTarget.DeliveryState,
+		}
+	default:
+		return nil, fmt.Errorf("target type %q does not resolve to a repository workspace", target.Type)
+	}
+
+	if strings.TrimSpace(baseBranch) == "" {
+		baseBranch = defaultBranch(repo.DefaultBranch)
+	}
+	if strings.TrimSpace(workingBranch) == "" {
+		workingBranch = strings.TrimSpace(firstStringValue(target.Metadata, "work_branch", "working_branch"))
+	}
+	if strings.TrimSpace(workingBranch) == "" {
+		workingBranch = fmt.Sprintf("agent-runtime/%s", strings.TrimSpace(runID))
+	}
+
+	integration, err := s.integrationRepo.GetByID(ctx, repo.WorkspaceID, repo.IntegrationID)
+	if err != nil {
+		return nil, err
+	}
+	if integration == nil || !integration.Active {
+		return nil, fmt.Errorf("git integration is not available")
+	}
+	auth, err := s.agentRuntimeRepositoryAuth(ctx, integration)
+	if err != nil {
+		return nil, err
+	}
+
+	meta := map[string]interface{}{
+		"workspace_id":   repo.WorkspaceID,
+		"repository_id":  repo.ID,
+		"integration_id": repo.IntegrationID,
+		"repo_full_name": repo.FullName,
+		"target_type":    target.Type,
+		"target_id":      target.ID,
+	}
+	for key, value := range deliveryMeta {
+		meta[key] = value
+	}
+
+	return &agentruntime.RepositoryWorkspaceSpec{
+		Provider:       strings.TrimSpace(repo.Provider),
+		CloneURL:       agentRuntimeCloneURL(repo, integration),
+		Auth:           auth,
+		BaseBranch:     strings.TrimSpace(baseBranch),
+		WorkBranch:     strings.TrimSpace(workingBranch),
+		FinalizePolicy: agentruntime.RepositoryFinalizePushBranch,
+		CommitIdentity: &agentruntime.GitIdentity{
+			Name:  strings.TrimSpace(agentRuntimeHostFirstNonEmpty(agentRuntimeStringPtr(integration.DefaultCommitAuthorName), "Helpin Agent")),
+			Email: strings.TrimSpace(agentRuntimeHostFirstNonEmpty(agentRuntimeStringPtr(integration.DefaultCommitAuthorEmail), "agents@helpin.ai")),
+		},
+		Metadata: meta,
+	}, nil
+}
+
+func (s *GitService) agentRuntimeRepositoryAuth(ctx context.Context, integration *model.GitIntegration) (*agentruntime.RepositoryAuth, error) {
+	if integration == nil {
+		return nil, fmt.Errorf("git integration is required")
+	}
+	switch strings.TrimSpace(strings.ToLower(integration.Provider)) {
+	case "github":
+		token := strings.TrimSpace(integration.AccessToken)
+		if strings.EqualFold(strings.TrimSpace(integration.CredentialMode), "github_app") {
+			if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
+				return nil, fmt.Errorf("github installation id is required")
+			}
+			if s.githubApp == nil {
+				return nil, fmt.Errorf("github app client is not configured")
+			}
+			minted, err := s.githubApp.MintInstallationToken(ctx, strings.TrimSpace(*integration.InstallationID))
+			if err != nil {
+				return nil, err
+			}
+			token = minted
+		}
+		if token == "" {
+			return nil, fmt.Errorf("github repository token is unavailable")
+		}
+		return &agentruntime.RepositoryAuth{Type: "github", Token: token}, nil
+	case "gitlab":
+		token, err := s.gitlabAccessToken(ctx, integration)
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(token) == "" {
+			return nil, fmt.Errorf("gitlab repository token is unavailable")
+		}
+		return &agentruntime.RepositoryAuth{Type: "gitlab", Token: token}, nil
+	default:
+		return nil, fmt.Errorf("unsupported git provider %q", integration.Provider)
+	}
+}
+
+func agentRuntimeCloneURL(repo *model.GitRepository, integration *model.GitIntegration) string {
+	if repo == nil {
+		return ""
+	}
+	fullName := strings.Trim(strings.TrimSpace(repo.FullName), "/")
+	switch strings.TrimSpace(strings.ToLower(repo.Provider)) {
+	case "gitlab":
+		base := model.ResolveGitLabWebBaseURL(repo.BaseURL)
+		if integration != nil && strings.TrimSpace(agentRuntimeStringPtr(integration.BaseURL)) != "" {
+			base = model.ResolveGitLabWebBaseURL(integration.BaseURL)
+		}
+		return strings.TrimRight(base, "/") + "/" + fullName + ".git"
+	default:
+		base := model.ResolveGitHubWebBaseURL(repo.BaseURL)
+		if integration != nil && strings.TrimSpace(agentRuntimeStringPtr(integration.BaseURL)) != "" {
+			base = model.ResolveGitHubWebBaseURL(integration.BaseURL)
+		}
+		return strings.TrimRight(base, "/") + "/" + fullName + ".git"
+	}
+}
+
+func firstStringValue(values map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if values == nil {
+			return ""
+		}
+		if value, ok := values[key]; ok {
+			if text := strings.TrimSpace(fmt.Sprint(value)); text != "" && text != "<nil>" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+func agentRuntimeStringPtr(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+func agentRuntimeHostFirstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if text := strings.TrimSpace(value); text != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 // CreateBranch retains backward compatibility by updating the delivery target and a git link.
