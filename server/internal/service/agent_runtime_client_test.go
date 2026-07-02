@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestAgentRuntimeClientStartRunUsesV1AuthAndHostRunID(t *testing.T) {
@@ -57,6 +58,16 @@ func TestAgentRuntimeClientStartRunUsesV1AuthAndHostRunID(t *testing.T) {
 func TestAgentRuntimeClientRequiresAppID(t *testing.T) {
 	if _, err := NewAgentRuntimeClient("http://runtime.test", " ", "runtime-token", nil); err == nil {
 		t.Fatal("expected missing app ID error")
+	}
+}
+
+func TestAgentRuntimeClientDefaultHTTPClientHasTimeout(t *testing.T) {
+	client, err := NewAgentRuntimeClient("http://runtime.test", "helpin", "runtime-token", nil)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	if client.httpClient == nil || client.httpClient.Timeout != 30*time.Second {
+		t.Fatalf("expected default 30s timeout, got %#v", client.httpClient)
 	}
 }
 

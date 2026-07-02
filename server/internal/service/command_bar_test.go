@@ -1608,6 +1608,73 @@ func TestCreateRunDelegatesMiraWorkspaceRunToAgentRuntime(t *testing.T) {
 	}
 }
 
+func TestShouldDelegateRunToAgentRuntimeUsesPresetNotName(t *testing.T) {
+	if shouldDelegateRunToAgentRuntime(&model.Agent{Name: "Mira"}, "workspace") {
+		t.Fatal("custom agent named Mira should not delegate without marketer preset")
+	}
+	if !shouldDelegateRunToAgentRuntime(&model.Agent{Name: "Launch Ops", PresetKey: model.AgentPresetMarketer}, "workspace") {
+		t.Fatal("marketer preset workspace run should delegate")
+	}
+	if shouldDelegateRunToAgentRuntime(&model.Agent{Name: "Mira", PresetKey: model.AgentPresetMarketer}, "task") {
+		t.Fatal("non-workspace target should not delegate")
+	}
+}
+
+func TestCreateRunRetriesDelegatedRuntimeStartOnce(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	runtimeClient := &fakeAgentRuntimeSignalClient{startRunErrs: []error{errors.New("runtime timeout")}}
+	service := (&AgentService{
+		runRepo:            runRepo,
+		agentRepo:          agentRepo,
+		agentRuntimeClient: runtimeClient,
+	}).SetAgentRuntimeLaunchEnabled(true)
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	agent := &model.Agent{
+		ID:                    "22222222-2222-2222-2222-222222222222",
+		WorkspaceID:           workspaceID,
+		Name:                  "Mira",
+		PresetKey:             model.AgentPresetMarketer,
+		RuntimeKind:           "native_sdk",
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+		AllowedTargets:        json.RawMessage(`["workspace"]`),
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		MaxConcurrentRuns:     1,
+	}
+	seedCreateRunAgentRow(t, db, agent)
+
+	run, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          agent,
+		targetType:     "workspace",
+		targetID:       workspaceID,
+		input:          []byte(`{"target":{"target_type":"workspace","target_id":"11111111-1111-1111-1111-111111111111"}}`),
+		invocationMode: model.InvocationModeAutonomous,
+	})
+	if err != nil {
+		t.Fatalf("createRun() error = %v", err)
+	}
+	if len(runtimeClient.startRunCalls) != 2 {
+		t.Fatalf("expected runtime start retry, got %d calls", len(runtimeClient.startRunCalls))
+	}
+	if runtimeClient.startRunCalls[0].HostRunID != run.ID || runtimeClient.startRunCalls[1].HostRunID != run.ID {
+		t.Fatalf("retry should preserve host_run_id, calls=%#v", runtimeClient.startRunCalls)
+	}
+	reloaded, err := runRepo.GetByID(ctx, workspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if reloaded.ExternalRuntimeID == nil || *reloaded.ExternalRuntimeID != "run_runtime_1" || reloaded.Status != model.AgentRunStatusQueued {
+		t.Fatalf("expected delegated mapping after retry, got %#v", reloaded)
+	}
+}
+
 func TestCreateRunMarksDelegatedMiraRunFailedWhenRuntimeStartFails(t *testing.T) {
 	db := setupCommandBarPlanTestDB(t)
 	runRepo := repository.NewAgentRunRepository(db)

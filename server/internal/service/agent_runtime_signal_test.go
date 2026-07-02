@@ -34,6 +34,7 @@ type fakeAgentRuntimeSignalClient struct {
 	listErr              error
 	upsertErr            error
 	startRunErr          error
+	startRunErrs         []error
 	resumeErr            error
 	cancelErr            error
 	startAuthState       *model.CodexAuthState
@@ -64,6 +65,13 @@ func (c *fakeAgentRuntimeSignalClient) UpsertAgent(_ context.Context, agent Agen
 
 func (c *fakeAgentRuntimeSignalClient) StartRun(_ context.Context, req AgentRuntimeStartRunRequest) (*AgentRuntimeRun, error) {
 	c.startRunCalls = append(c.startRunCalls, req)
+	if len(c.startRunErrs) > 0 {
+		err := c.startRunErrs[0]
+		c.startRunErrs = c.startRunErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
 	if c.startRunErr != nil {
 		return nil, c.startRunErr
 	}

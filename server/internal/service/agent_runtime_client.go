@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
@@ -56,7 +57,7 @@ func NewAgentRuntimeClient(baseURL, appID, token string, httpClient *http.Client
 		return nil, err
 	}
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &AgentRuntimeClient{
 		client:       client,

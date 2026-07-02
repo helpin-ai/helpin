@@ -175,10 +175,18 @@ func shouldDelegateRunToAgentRuntime(agent *model.Agent, targetType string) bool
 	if agent == nil || strings.TrimSpace(targetType) != "workspace" {
 		return false
 	}
-	if strings.EqualFold(strings.TrimSpace(agent.Name), "Mira") {
-		return true
-	}
 	return strings.TrimSpace(agent.PresetKey) == model.AgentPresetMarketer
+}
+
+func shouldRetryAgentRuntimeStart(err error) bool {
+	if err == nil {
+		return false
+	}
+	var clientErr interface{ ClientError() bool }
+	if errors.As(err, &clientErr) {
+		return !clientErr.ClientError()
+	}
+	return !strings.Contains(err.Error(), " returned 4")
 }
 
 func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeAgent {
@@ -5482,7 +5490,12 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 			return nil, err
 		}
-		runtimeRun, err := runtimeLauncher.StartRun(ctx, runtimeStartRunRequest(run, params.agent))
+		startReq := runtimeStartRunRequest(run, params.agent)
+		runtimeRun, err := runtimeLauncher.StartRun(ctx, startReq)
+		if err != nil && shouldRetryAgentRuntimeStart(err) {
+			slog.WarnContext(ctx, "retrying agent runtime start after transient failure", "error", err, "run_id", run.ID, "agent_id", params.agent.ID)
+			runtimeRun, err = runtimeLauncher.StartRun(ctx, startReq)
+		}
 		if err != nil {
 			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 			return nil, err
