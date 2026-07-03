@@ -711,7 +711,9 @@ func main() {
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
 	supportInboxViewService := service.NewSupportInboxViewService(supportInboxViewRepo, supportConversationRepo, wsPublisher)
-	supportTagService := service.NewSupportTagService(supportTagRepo, supportConversationRepo, wsPublisher)
+	supportTagService := service.NewSupportTagService(supportTagRepo, supportConversationRepo, wsPublisher).
+		SetMessageRepo(supportMessageRepo).
+		SetUserRepo(userRepo)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
 	supportInboxService.SetDocsSearchRepository(docsSearchRepo)
 	supportInboxService.SetSupportTagRepo(supportTagRepo)

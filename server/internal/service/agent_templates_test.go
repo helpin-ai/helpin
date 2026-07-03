@@ -73,11 +73,11 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	if competitiveIntel == nil {
 		t.Fatalf("expected %q template, got %+v", model.AgentTemplateTypeCompetitiveIntel, templates)
 	}
-	if competitiveIntel.Name != "Competitive Intelligence Digest" {
-		t.Fatalf("expected Competitive Intelligence Digest template name, got %q", competitiveIntel.Name)
+	if competitiveIntel.Name != "Competitors Changelog Tracking Report" {
+		t.Fatalf("expected Competitors Changelog Tracking Report template name, got %q", competitiveIntel.Name)
 	}
 	if len(competitiveIntel.Skills) != 1 || competitiveIntel.Skills[0].Key != model.AgentTemplateTypeCompetitiveIntel {
-		t.Fatalf("expected competitive_intelligence_digest skill ref, got %+v", competitiveIntel.Skills)
+		t.Fatalf("expected competitors_changelog_tracking_report skill ref, got %+v", competitiveIntel.Skills)
 	}
 	if competitiveIntel.SystemPrompt == nil || !strings.Contains(*competitiveIntel.SystemPrompt, "{{target_company}}") || !strings.Contains(*competitiveIntel.SystemPrompt, "{{raw_configuration_json}}") {
 		t.Fatalf("expected competitive template prompt placeholders, got %+v", competitiveIntel.SystemPrompt)
@@ -363,7 +363,7 @@ func TestCreateAgentFromCompetitiveIntelTemplateCreatesCronStarterFlow(t *testin
 	result, err := svc.CreateAgentFromTemplate(context.Background(), "ws-test", template.ID, model.CreateAgentFromTemplateRequest{
 		CreateFlow: true,
 		Flow: &model.CreateAgentFromTemplateFlow{
-			FlowKey:   "competitive_intel_scheduled",
+			FlowKey:   "competitors_changelog_scheduled",
 			FlowInput: flowInput,
 		},
 	}, "user-1")
@@ -376,7 +376,7 @@ func TestCreateAgentFromCompetitiveIntelTemplateCreatesCronStarterFlow(t *testin
 	if result.Agent.SourceTemplateKey != model.AgentTemplateTypeCompetitiveIntel {
 		t.Fatalf("expected source_template_key %q, got %q", model.AgentTemplateTypeCompetitiveIntel, result.Agent.SourceTemplateKey)
 	}
-	if result.Agent.SystemPrompt == nil || !strings.Contains(*result.Agent.SystemPrompt, "You are a competitive intelligence agent for Usermaven") || !strings.Contains(*result.Agent.SystemPrompt, "Do not plan or perform discovery of configuration variables") || !strings.Contains(*result.Agent.SystemPrompt, `- competitors: jasper.ai, writesonic.ai`) || !strings.Contains(*result.Agent.SystemPrompt, `"target_company": "Usermaven"`) || !strings.Contains(*result.Agent.SystemPrompt, `"schedule_preset": "daily"`) || !strings.Contains(*result.Agent.SystemPrompt, `"destination_team_id": "team-marketing"`) || strings.Contains(*result.Agent.SystemPrompt, "{{target_company}}") {
+	if result.Agent.SystemPrompt == nil || !strings.Contains(*result.Agent.SystemPrompt, "You are a competitors changelog tracking agent for Usermaven") || !strings.Contains(*result.Agent.SystemPrompt, "Do not plan or perform discovery of configuration variables") || !strings.Contains(*result.Agent.SystemPrompt, `- competitors: jasper.ai, writesonic.ai`) || !strings.Contains(*result.Agent.SystemPrompt, `"target_company": "Usermaven"`) || !strings.Contains(*result.Agent.SystemPrompt, `"schedule_preset": "daily"`) || !strings.Contains(*result.Agent.SystemPrompt, `"destination_team_id": "team-marketing"`) || strings.Contains(*result.Agent.SystemPrompt, "{{target_company}}") {
 		t.Fatalf("expected configured system prompt, got %+v", result.Agent.SystemPrompt)
 	}
 	var allowedTargets []string
@@ -447,7 +447,7 @@ func TestCreateAgentFromCompetitiveIntelTemplateValidatesFlowInput(t *testing.T)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := competitiveIntelInputFromTemplateFlow(&model.CreateAgentFromTemplateFlow{
-				FlowKey:   "competitive_intel_scheduled",
+				FlowKey:   "competitors_changelog_scheduled",
 				FlowInput: tt.flowInput,
 			})
 			if err == nil || err.Error() != tt.wantError {

@@ -24,7 +24,7 @@ agent:
 
       Treat these values as resolved configuration. Inspect the failing check logs and related repository files before creating work.
 
-      Always create a Docs report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Failing checks triage - <scope/context>`. Use the repository full name, repository name, branch, or check suite context for `<scope/context>`. The report should include:
+      Always create a Docs report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Failing checks triage - <scope/context>`. Use the repository full name, repository name, branch, or check suite context for `<scope/context>`. Call create_document exactly once with the complete report content. Do not repeat the document title as the first heading or opening line in the document body. The report should include:
       - Failing check summary, branch, and relevant log excerpts.
       - Suspected root causes, grouped by confidence.
       - Files or areas inspected.
@@ -35,7 +35,7 @@ agent:
 
       Raw configuration:
       {{raw_configuration_json}}
-    allowed_tools: [get_check_run_logs, read_file, read_files, search_files, ripgrep, run_command, create_document, write_document_content, link_document_to_object, create_task]
+    allowed_tools: [get_check_run_logs, read_file, read_files, search_files, ripgrep, run_command, create_document, link_document_to_object, create_task]
     allowed_targets: [repository, document]
     approval_mode: always
 trigger:

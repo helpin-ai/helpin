@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"net/mail"
 	"net/netip"
 	"reflect"
 	"slices"
@@ -141,6 +142,39 @@ func normalizeSupportEmailList(values []string) []string {
 			continue
 		}
 		seen[email] = struct{}{}
+		result = append(result, email)
+	}
+	return result
+}
+
+func normalizeSupportEmailAddress(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("email is required")
+	}
+	if addr, err := mail.ParseAddress(value); err == nil {
+		value = strings.TrimSpace(addr.Address)
+	}
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" || !strings.Contains(value, "@") {
+		return "", fmt.Errorf("invalid email address")
+	}
+	return value, nil
+}
+
+func normalizeSupportEmailListExcluding(values []string, excluded ...string) []string {
+	excludedSet := make(map[string]struct{}, len(excluded))
+	for _, value := range excluded {
+		if email, err := normalizeSupportEmailAddress(value); err == nil {
+			excludedSet[email] = struct{}{}
+		}
+	}
+	normalized := normalizeSupportEmailList(values)
+	result := make([]string, 0, len(normalized))
+	for _, email := range normalized {
+		if _, exists := excludedSet[email]; exists {
+			continue
+		}
 		result = append(result, email)
 	}
 	return result
@@ -1317,6 +1351,108 @@ func (s *SupportInboxService) UpdateConversationCustomerName(ctx context.Context
 	return conv, nil
 }
 
+func (s *SupportInboxService) UpdateConversationEmailRecipients(ctx context.Context, workspaceID, conversationID string, req model.UpdateConversationEmailRecipientsRequest, actorID string) (*model.SupportConversation, error) {
+	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if conv == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	currentPrimary := strings.TrimSpace(derefString(conv.CustomerEmail))
+	nextPrimary := currentPrimary
+	var nextName *string
+	if conv.CustomerName != nil {
+		name := strings.TrimSpace(*conv.CustomerName)
+		if name != "" {
+			nextName = &name
+		}
+	}
+	if req.PrimaryRecipientEmail != nil {
+		normalized, err := normalizeSupportEmailAddress(*req.PrimaryRecipientEmail)
+		if err != nil {
+			return nil, err
+		}
+		nextPrimary = normalized
+		if req.PrimaryRecipientName != nil && strings.TrimSpace(*req.PrimaryRecipientName) != "" {
+			name := strings.Join(strings.Fields(strings.TrimSpace(*req.PrimaryRecipientName)), " ")
+			nextName = &name
+		} else if !strings.EqualFold(nextPrimary, currentPrimary) {
+			name := deriveWidgetNameFromEmail(nextPrimary)
+			if name == "" {
+				name = nextPrimary
+			}
+			nextName = &name
+		}
+	}
+	if nextPrimary == "" {
+		return nil, fmt.Errorf("primary_recipient_email is required")
+	}
+
+	previousCCEmails := normalizeSupportEmailListExcluding([]string(conv.EmailCC), currentPrimary)
+	ccEmails := []string(conv.EmailCC)
+	if req.CCEmails != nil {
+		ccEmails = req.CCEmails
+	}
+	if currentPrimary != "" && !strings.EqualFold(currentPrimary, nextPrimary) && req.CCEmails == nil {
+		ccEmails = append(ccEmails, currentPrimary)
+	}
+	ccEmails = normalizeSupportEmailListExcluding(ccEmails, nextPrimary)
+
+	confirmPrimary := false
+	if req.ConfirmPrimary != nil {
+		confirmPrimary = *req.ConfirmPrimary
+	}
+	if req.PrimaryRecipientEmail != nil {
+		confirmPrimary = true
+	}
+
+	updates := map[string]any{
+		"customer_email": nextPrimary,
+		"email_cc":       model.DocsStringArray(ccEmails),
+	}
+	if nextName != nil {
+		updates["customer_name"] = *nextName
+	}
+	if confirmPrimary {
+		updates["primary_recipient_state"] = model.SupportPrimaryRecipientStateConfirmed
+		updates["suggested_primary_recipient_email"] = nil
+		updates["suggested_primary_recipient_name"] = nil
+	}
+	if contactID := s.matchOrCreateCRMContact(ctx, workspaceID, &nextPrimary, nextName); contactID != nil {
+		updates["crm_contact_id"] = *contactID
+	}
+	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, updates); err != nil {
+		return nil, err
+	}
+
+	conv.CustomerEmail = &nextPrimary
+	conv.CustomerName = nextName
+	conv.EmailCC = model.DocsStringArray(ccEmails)
+	if confirmPrimary {
+		conv.PrimaryRecipientState = model.SupportPrimaryRecipientStateConfirmed
+		conv.SuggestedPrimaryRecipientEmail = nil
+		conv.SuggestedPrimaryRecipientName = nil
+	}
+	if crmContactID, ok := updates["crm_contact_id"].(string); ok {
+		conv.CRMContactID = &crmContactID
+	}
+
+	s.emitEmailRecipientsUpdatedSystemMessage(ctx, workspaceID, conversationID, actorID, currentPrimary, nextPrimary, previousCCEmails, ccEmails)
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "support_conversation",
+			EntityID:    conversationID,
+			WorkspaceID: workspaceID,
+			ActorID:     actorID,
+		})
+	}
+
+	return conv, nil
+}
+
 // DeleteConversation permanently deletes a conversation and its messages.
 func (s *SupportInboxService) DeleteConversation(ctx context.Context, workspaceID, conversationID, actorID string) error {
 	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
@@ -1475,6 +1611,15 @@ func (s *SupportInboxService) CreateConversationWithMessage(ctx context.Context,
 	if req.CRMContactID != nil && strings.TrimSpace(*req.CRMContactID) != "" {
 		conversation.CRMContactID = req.CRMContactID
 		if err := s.conversationRepo.Update(ctx, conversation); err != nil {
+			return nil, err
+		}
+	}
+	if supportChannelsIncludeEmail(channels) && len(req.CCEmails) > 0 {
+		ccEmails := normalizeSupportEmailListExcluding(req.CCEmails, derefString(conversation.CustomerEmail))
+		conversation.EmailCC = model.DocsStringArray(ccEmails)
+		if err := s.conversationRepo.UpdateFields(ctx, req.WorkspaceID, conversation.ID, map[string]any{
+			"email_cc": conversation.EmailCC,
+		}); err != nil {
 			return nil, err
 		}
 	}
@@ -1754,7 +1899,10 @@ func hydrateEmailBodies(
 			messages[i].HTMLBody = log.HTMLBody
 			messages[i].StrippedText = log.StrippedText
 			messages[i].EmailFrom = log.FromEmail
+			messages[i].EmailTo = log.ToEmail
 			messages[i].EmailReplyTo = log.ReplyTo
+			messages[i].EmailCC = log.CCEmails
+			messages[i].EmailBCC = log.BCCEmails
 		}
 		if log.Direction == "outbound" {
 			messages[i].EmailDeliveryStatus = log.Status
@@ -1789,6 +1937,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	messageType := req.MessageType
 	if messageType == "" {
 		messageType = "reply"
+	}
+	if !req.IsInternal && messageType == "reply" && supportChannelsIncludeEmail(req.Channels) &&
+		strings.TrimSpace(conv.PrimaryRecipientState) == model.SupportPrimaryRecipientStateUnconfirmed {
+		return nil, fmt.Errorf("confirm the primary recipient before sending an email reply")
 	}
 
 	// Auto-resolve sender display name and avatar from user record.
@@ -2133,6 +2285,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	if err != nil {
 		return nil, err
 	}
+	s.emitTaskCreatedSystemMessage(ctx, workspaceID, conversationID, actorID, detail.Task.TaskKey, detail.Task.Name)
 
 	slog.InfoContext(ctx, "created task from support conversation",
 		"workspace_id", workspaceID,
@@ -3899,6 +4052,138 @@ func (s *SupportInboxService) emitAssignmentSystemMessage(
 	if s.wsPublisher != nil {
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
 	}
+}
+
+func (s *SupportInboxService) emitEmailRecipientsUpdatedSystemMessage(ctx context.Context, workspaceID, conversationID, actorUserID, previousPrimary, nextPrimary string, previousCCEmails, nextCCEmails []string) {
+	if s.messageRepo == nil {
+		return
+	}
+	displayName := "A teammate"
+	if strings.TrimSpace(actorUserID) != "" {
+		if name := s.lookupUserName(ctx, actorUserID); strings.TrimSpace(name) != "" {
+			displayName = supportSystemFirstName(name)
+			if displayName == "" {
+				displayName = name
+			}
+		}
+	}
+	changes := make([]string, 0, 1+len(previousCCEmails)+len(nextCCEmails))
+	if strings.TrimSpace(previousPrimary) != "" && strings.TrimSpace(nextPrimary) != "" && !strings.EqualFold(previousPrimary, nextPrimary) {
+		changes = append(changes, fmt.Sprintf("%s made %s the primary recipient.", displayName, nextPrimary))
+	}
+	for _, email := range supportEmailListDifference(nextCCEmails, previousCCEmails) {
+		changes = append(changes, fmt.Sprintf("%s added %s to Cc.", displayName, email))
+	}
+	for _, email := range supportEmailListDifference(previousCCEmails, nextCCEmails) {
+		changes = append(changes, fmt.Sprintf("%s removed %s from Cc.", displayName, email))
+	}
+	content := strings.Join(changes, " ")
+	if content == "" {
+		content = fmt.Sprintf("%s confirmed email recipients.", displayName)
+	}
+	var senderUserID *string
+	if strings.TrimSpace(actorUserID) != "" {
+		senderUserID = &actorUserID
+	}
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderUserID:      senderUserID,
+		SenderDisplayName: &displayName,
+		Content:           content,
+		IsInternal:        true,
+		MessageType:       "system",
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventEmailRecipientsUpdated),
+	}
+	if err := s.messageRepo.Create(ctx, msg); err != nil {
+		slog.ErrorContext(ctx, "create support email recipients system message", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
+		return
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
+	}
+}
+
+func (s *SupportInboxService) emitTaskCreatedSystemMessage(ctx context.Context, workspaceID, conversationID, actorUserID, taskKey, taskName string) {
+	if s.messageRepo == nil {
+		return
+	}
+	displayName := "A teammate"
+	if strings.TrimSpace(actorUserID) != "" {
+		if name := s.lookupUserName(ctx, actorUserID); strings.TrimSpace(name) != "" {
+			displayName = supportSystemFirstName(name)
+			if displayName == "" {
+				displayName = name
+			}
+		}
+	}
+	taskLabel := strings.TrimSpace(taskKey)
+	if taskLabel != "" && !strings.HasPrefix(taskLabel, "#") {
+		taskLabel = "#" + taskLabel
+	}
+	cleanTaskName := strings.Join(strings.Fields(strings.TrimSpace(taskName)), " ")
+	content := fmt.Sprintf("%s created task %s.", displayName, taskLabel)
+	if taskLabel == "" {
+		content = fmt.Sprintf("%s created a task.", displayName)
+	}
+	if cleanTaskName != "" {
+		if taskLabel != "" {
+			content = fmt.Sprintf("%s created task %s: %s.", displayName, taskLabel, cleanTaskName)
+		} else {
+			content = fmt.Sprintf("%s created task: %s.", displayName, cleanTaskName)
+		}
+	}
+	var senderUserID *string
+	if strings.TrimSpace(actorUserID) != "" {
+		senderUserID = &actorUserID
+	}
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderUserID:      senderUserID,
+		SenderDisplayName: &displayName,
+		Content:           content,
+		IsInternal:        true,
+		MessageType:       "system",
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventTaskCreated),
+	}
+	if err := s.messageRepo.Create(ctx, msg); err != nil {
+		slog.ErrorContext(ctx, "create support task created system message", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
+		return
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
+	}
+}
+
+func supportEmailListDifference(left, right []string) []string {
+	rightSet := make(map[string]struct{}, len(right))
+	for _, email := range right {
+		normalized := strings.ToLower(strings.TrimSpace(email))
+		if normalized != "" {
+			rightSet[normalized] = struct{}{}
+		}
+	}
+	diff := make([]string, 0, len(left))
+	seen := make(map[string]struct{}, len(left))
+	for _, email := range left {
+		cleaned := strings.TrimSpace(email)
+		normalized := strings.ToLower(cleaned)
+		if cleaned == "" {
+			continue
+		}
+		if _, ok := rightSet[normalized]; ok {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		diff = append(diff, cleaned)
+	}
+	return diff
 }
 
 func (s *SupportInboxService) emitAIAssignmentSystemMessage(ctx context.Context, workspaceID, conversationID, targetUserID string) {

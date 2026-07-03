@@ -56,6 +56,7 @@ import type {
   SupportTag,
   CreateConversationRequest,
   CreateConversationWithMessageRequest,
+  UpdateConversationEmailRecipientsRequest,
   SupportConversationSearchParams,
   SupportConversationSearchResponse,
 } from '@/lib/pmTypes';
@@ -1276,6 +1277,23 @@ export function useUpdateConversationCustomerName(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to update customer name', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateConversationEmailRecipients(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, payload }: { conversationId: string; payload: UpdateConversationEmailRecipientsRequest }) =>
+      supportService.updateConversationEmailRecipients(workspaceId, conversationId, payload).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, variables.conversationId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update email recipients', { description: error.message });
     },
   });
 }

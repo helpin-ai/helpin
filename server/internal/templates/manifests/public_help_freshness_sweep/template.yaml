@@ -111,7 +111,7 @@ flow:
     - If source_repository_id is configured, use read-only repository inspection to verify customer-facing behavior, routes, feature names, settings, limits, integrations, and setup flows before marking help docs accurate or stale.
     - If source_repository_id is not configured, do not claim product behavior is verified. Label those findings as "needs source verification" and focus on support gaps, article structure, clarity, duplication, navigation, and obvious stale language.
 
-    Always create a new public help freshness report in the configured internal Docs report space and collection. Use this title format: `YYYY-MM-DD - Public help freshness sweep - <scope/context>`. Use the selected collection name, selected help space name, or another concise scope label for `<scope/context>`. The report should include:
+    Always create a new public help freshness report in the configured internal Docs report space and collection. Use this title format: `YYYY-MM-DD - Public help freshness sweep - <scope/context>`. Use the selected collection name, selected help space name, or another concise scope label for `<scope/context>`. Call create_document exactly once with the complete report content. Do not repeat the document title as the first heading or opening line in the document body. The report should include:
     - Scope reviewed and source-verification status.
     - Customer-impact findings grouped by severity.
     - Missing, stale, duplicated, confusing, or misplaced public help content.

@@ -1,9 +1,9 @@
-import { memo, useEffect, useState, type JSX, type SVGProps } from 'react';
+import { memo, useEffect, useState, type JSX, type ReactNode, type SVGProps } from 'react';
 import { format, formatDistance } from 'date-fns';
 import * as Flags from 'country-flag-icons/react/3x2';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, Cancel01Icon, CheckmarkCircle02Icon, Copy01Icon, Mail01Icon, Message01Icon, PencilEdit01Icon, Tag01Icon, UserIcon } from '@/lib/icons';
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, Cancel01Icon, CheckmarkCircle02Icon, Copy01Icon, Mail01Icon, Message01Icon, PencilEdit01Icon, PlusSignIcon, Tag01Icon, UserIcon } from '@/lib/icons';
 import { EmptyState } from './EmptyState';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,11 +16,11 @@ import { SidebarAssociations } from './SidebarAssociations';
 import { SidebarVisitorContext } from './SidebarVisitorContext';
 import { SupportTagPicker } from './SupportTagPicker';
 import { CustomerProfileDrawer } from './CustomerProfileDrawer';
-import { useConversation, useConversationAssignees, useVisitorContext, useAssignConversationUser, useConversationMessages, useUpdateConversationCustomerName } from '@/hooks/queries/useSupport';
+import { useConversation, useConversationAssignees, useVisitorContext, useAssignConversationUser, useUpdateConversationCustomerName, useUpdateConversationEmailRecipients } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import type { SupportMessage } from '@/lib/pmTypes';
+import type { SupportConversation, SupportMessage } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { getInitial, getAvatarColor } from './helpers';
 
@@ -120,8 +120,37 @@ export interface EmailRecipientsSummary {
   bcc: string[];
 }
 
+export interface ConversationEmailRecipientsSummary {
+  primary: string[];
+  cc: string[];
+  alsoOnThread: string[];
+}
+
+export interface AddConversationCCResult {
+  cc: string[];
+  error?: string;
+}
+
 function normalizeRecipients(values?: string[] | null): string[] {
   return Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean)));
+}
+
+function normalizeEmailInput(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function isLikelyEmailAddress(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+export function getConversationEmailRecipients(conversation?: SupportConversation | null): ConversationEmailRecipientsSummary {
+  const primary = normalizeRecipients(conversation?.customer_email ? [conversation.customer_email] : []);
+  const cc = normalizeRecipients(conversation?.email_cc);
+  const excluded = new Set([...primary, ...cc].map((value) => value.toLowerCase()));
+  const alsoOnThread = normalizeRecipients(conversation?.email_thread_participants)
+    .filter((value) => !excluded.has(value.toLowerCase()));
+
+  return { primary, cc, alsoOnThread };
 }
 
 export function getLatestEmailRecipients(messages: SupportMessage[]): EmailRecipientsSummary | null {
@@ -142,6 +171,25 @@ export function getLatestEmailRecipients(messages: SupportMessage[]): EmailRecip
   return null;
 }
 
+export function getAddConversationCCResult(
+  recipients: ConversationEmailRecipientsSummary,
+  rawEmail: string
+): AddConversationCCResult {
+  const cc = normalizeRecipients(recipients.cc);
+  const email = normalizeEmailInput(rawEmail);
+  if (!isLikelyEmailAddress(email)) {
+    return { cc, error: 'Enter a valid email address.' };
+  }
+  if (recipients.primary.some((value) => value.toLowerCase() === email)) {
+    return { cc, error: 'This is already the To recipient.' };
+  }
+  if (cc.some((value) => value.toLowerCase() === email)) {
+    return { cc, error: 'Already added to Cc.' };
+  }
+
+  return { cc: [...cc, email] };
+}
+
 type ClipboardWriteText = (text: string) => Promise<void> | void;
 
 export async function copyCustomerEmailToClipboard(email: string, writeText?: ClipboardWriteText): Promise<boolean> {
@@ -155,22 +203,48 @@ export async function copyCustomerEmailToClipboard(email: string, writeText?: Cl
   return true;
 }
 
-function EmailRecipientRow({ label, values }: { label: string; values: string[] }) {
-  if (values.length === 0) return null;
+function EmailRecipientRow({
+  label,
+  tooltip,
+  values,
+  onRemove,
+  children,
+}: {
+  label: string;
+  tooltip: string;
+  values: string[];
+  onRemove?: (value: string) => void;
+  children?: ReactNode;
+}) {
+  if (values.length === 0 && !children) return null;
 
   return (
-    <div className="space-y-1">
-      <div className="text-[10px] font-medium uppercase tracking-tight text-muted-foreground">{label}</div>
-      <div className="space-y-1">
+    <div className="grid grid-cols-[2rem_minmax(0,1fr)] gap-2">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="h-6 cursor-help pt-1 text-[10px] font-medium uppercase tracking-tight text-muted-foreground">{label}</div>
+        </TooltipTrigger>
+        <TooltipContent side="left">
+          <span className="text-xs">{tooltip}</span>
+        </TooltipContent>
+      </Tooltip>
+      <div className="min-w-0 space-y-1">
         {values.map((value) => (
-          <div
-            key={`${label}-${value}`}
-            className="truncate rounded border bg-background px-2 py-1 text-xs text-foreground"
-            title={value}
-          >
-            {value}
+          <div key={`${label}-${value}`} className="flex h-6 items-center gap-1 rounded border bg-background px-2 text-xs text-foreground" title={value}>
+            <span className="min-w-0 flex-1 truncate">{value}</span>
+            {onRemove ? (
+              <button
+                type="button"
+                className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => onRemove(value)}
+                aria-label={`Remove ${value} from Cc replies`}
+              >
+                <Cancel01Icon className="h-3 w-3" />
+              </button>
+            ) : null}
           </div>
         ))}
+        {children}
       </div>
     </div>
   );
@@ -182,18 +256,24 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
   const [nameEditing, setNameEditing] = useState(false);
   const [customerNameDraft, setCustomerNameDraft] = useState('');
   const [customerProfileOpen, setCustomerProfileOpen] = useState(false);
+  const [ccAdding, setCcAdding] = useState(false);
+  const [ccDraft, setCcDraft] = useState('');
+  const [ccError, setCcError] = useState('');
   const { data: conversation } = useConversation(workspaceId, conversationId);
-  const { data: messages = [] } = useConversationMessages(workspaceId, conversationId);
   const { data: visitorContext } = useVisitorContext(workspaceId, conversationId);
   const { data: assignableMembers = [], isLoading: assigneesLoading } = useConversationAssignees(workspaceId, conversationId);
   const assignConversationUser = useAssignConversationUser(workspaceId);
   const updateCustomerName = useUpdateConversationCustomerName(workspaceId);
+  const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
   const isVisitorOnline = useSupportPresenceStore((s) =>
     conversation?.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false
   );
 
   useEffect(() => {
     setCustomerProfileOpen(false);
+    setCcAdding(false);
+    setCcDraft('');
+    setCcError('');
   }, [conversationId]);
 
   if (detailSidebarCollapsed) {
@@ -214,10 +294,11 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
   const assignedMember = conversation
     ? findAssignableMember(assignableUsers, conversation.assigned_user_id, (member) => member.user_id ?? member.id)
     : undefined;
-  const latestEmailRecipients = getLatestEmailRecipients(messages);
-  const emailRecipientCount = latestEmailRecipients
-    ? [latestEmailRecipients.to, ...latestEmailRecipients.cc, ...latestEmailRecipients.bcc].filter(Boolean).length
-    : 0;
+  const conversationEmailRecipients = getConversationEmailRecipients(conversation);
+  const emailRecipientCount = [
+    ...conversationEmailRecipients.primary,
+    ...conversationEmailRecipients.cc,
+  ].length;
   const beginCustomerNameEdit = () => {
     setCustomerNameDraft(conversation?.customer_name?.trim() ?? '');
     setNameEditing(true);
@@ -249,6 +330,46 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
     } catch {
       toast.error('Could not copy email');
     }
+  };
+  const removeCCRecipient = (email: string) => {
+    if (!conversation) return;
+    updateEmailRecipients.mutate({
+      conversationId: conversation.id,
+      payload: {
+        cc_emails: conversationEmailRecipients.cc.filter((value) => value.toLowerCase() !== email.toLowerCase()),
+      },
+    });
+  };
+  const beginAddCCRecipient = () => {
+    setCcAdding(true);
+    setCcDraft('');
+    setCcError('');
+  };
+  const cancelAddCCRecipient = () => {
+    setCcAdding(false);
+    setCcDraft('');
+    setCcError('');
+  };
+  const saveCCRecipient = () => {
+    if (!conversation) return;
+    const result = getAddConversationCCResult(conversationEmailRecipients, ccDraft);
+    if (result.error) {
+      setCcError(result.error);
+      return;
+    }
+
+    updateEmailRecipients.mutate({
+      conversationId: conversation.id,
+      payload: {
+        cc_emails: result.cc,
+      },
+    }, {
+      onSuccess: () => {
+        setCcAdding(false);
+        setCcDraft('');
+        setCcError('');
+      },
+    });
   };
 
   return (
@@ -446,11 +567,95 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
             />
           </CollapsibleSection>
 
-          {latestEmailRecipients && (
+          {emailRecipientCount > 0 && (
             <CollapsibleSection title="Email recipients" icon={Mail01Icon} count={emailRecipientCount}>
-              <EmailRecipientRow label="To" values={latestEmailRecipients.to ? [latestEmailRecipients.to] : []} />
-              <EmailRecipientRow label="Cc" values={latestEmailRecipients.cc} />
-              <EmailRecipientRow label="Bcc" values={latestEmailRecipients.bcc} />
+              <div className="space-y-2">
+                <EmailRecipientRow
+                  label="To"
+                  tooltip="Main recipient for future replies."
+                  values={conversationEmailRecipients.primary}
+                />
+                <EmailRecipientRow
+                  label="Cc"
+                  tooltip="Also included on future email replies."
+                  values={conversationEmailRecipients.cc}
+                  onRemove={removeCCRecipient}
+                >
+                  {ccAdding ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1">
+                        <Input
+                          value={ccDraft}
+                          onChange={(event) => {
+                            setCcDraft(event.target.value);
+                            setCcError('');
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              saveCCRecipient();
+                            }
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              cancelAddCCRecipient();
+                            }
+                          }}
+                          placeholder="email@example.com"
+                          autoFocus
+                          className="h-7 min-w-0 text-xs"
+                          aria-label="Cc email"
+                        />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 shrink-0 p-0"
+                              onClick={saveCCRecipient}
+                              disabled={updateEmailRecipients.isPending}
+                              aria-label="Add Cc recipient"
+                            >
+                              <CheckmarkCircle02Icon className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            <span className="text-xs">Add</span>
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 shrink-0 p-0"
+                              onClick={cancelAddCCRecipient}
+                              disabled={updateEmailRecipients.isPending}
+                              aria-label="Cancel adding Cc recipient"
+                            >
+                              <Cancel01Icon className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            <span className="text-xs">Cancel</span>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                      {ccError ? <p className="text-[11px] text-destructive">{ccError}</p> : null}
+                    </div>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={beginAddCCRecipient}
+                      disabled={updateEmailRecipients.isPending}
+                    >
+                      <PlusSignIcon className="h-3 w-3" />
+                      Add
+                    </Button>
+                  )}
+                </EmailRecipientRow>
+              </div>
             </CollapsibleSection>
           )}
 

@@ -1,20 +1,15 @@
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { AttachmentIcon, Download04Icon, InformationCircleIcon } from '@/lib/icons';
+import { InformationCircleIcon } from '@/lib/icons';
 import { useMessageEmailDetail } from '@/hooks/queries/useSupport';
 import type { SupportMessage } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
+import { SupportAttachmentGallery } from './SupportAttachmentGallery';
 
 interface EmailDetailModalProps {
   workspaceId: string;
   message: SupportMessage;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatFullTimestamp(dateStr: string): string {
@@ -199,22 +194,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
                   <div className="mb-2.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     {attachments.length} attachment{attachments.length === 1 ? '' : 's'}
                   </div>
-                  <div className="grid gap-1.5 sm:grid-cols-2">
-                    {attachments.map((att) => (
-                      <a
-                        key={att.id}
-                        href={att.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="group flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs transition-colors hover:border-border hover:bg-muted/60"
-                      >
-                        <AttachmentIcon className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                        <span className="min-w-0 flex-1 truncate font-medium">{att.file_name}</span>
-                        <span className="shrink-0 text-muted-foreground">{formatFileSize(att.file_size)}</span>
-                        <Download04Icon className="h-3.5 w-3.5 shrink-0 opacity-60 transition-opacity group-hover:opacity-100" />
-                      </a>
-                    ))}
-                  </div>
+                  <SupportAttachmentGallery attachments={attachments} thumbnailSize="md" />
                 </div>
               )}
             </div>

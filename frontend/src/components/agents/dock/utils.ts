@@ -270,6 +270,8 @@ export function runDisplayTitle(run: AgentRun): string {
   if (typeof promptText === 'string' && promptText.trim()) return promptText.trim();
   const output = outputSummaryText(run);
   if (output) return output;
+  const automationTitle = automationRunTitle(run);
+  if (automationTitle) return automationTitle;
   if (run.target_info?.title) return run.target_info.title;
   if (run.target_info?.task_key) return run.target_info.task_key;
   return '';
@@ -438,4 +440,34 @@ export const LIST_GROUP_LABEL: Record<ListGroupKey, string> = {
 
 export function shortId(id: string): string {
   return id.slice(0, 8);
+}
+
+function automationRunTitle(run: AgentRun): string {
+  const input = asRecord(run.input);
+  const trigger = asRecord(input?.trigger);
+  const event = asRecord(input?.event);
+  const source = asNonEmptyString(trigger?.source);
+  if (source && source !== 'automation_rule') return '';
+
+  const directTitle =
+    asNonEmptyString(trigger?.flow_name)
+    || asNonEmptyString(trigger?.rule_name)
+    || asNonEmptyString(trigger?.reference_title)
+    || asNonEmptyString(event?.flow_name)
+    || asNonEmptyString(event?.rule_name)
+    || asNonEmptyString(event?.reference_title);
+  if (directTitle) return directTitle;
+
+  const reason = asNonEmptyString(event?.reason);
+  const match = reason.match(/automation rule\s+"([^"]+)"/i);
+  if (match?.[1]?.trim()) return match[1].trim();
+  return '';
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function asNonEmptyString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
 }

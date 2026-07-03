@@ -526,7 +526,7 @@ describe('CodingInterruptionPanel', () => {
             status: 'completed',
             pause_reason: 'none',
             auth_state: undefined,
-            system_prompt: 'Research configured competitors and file the marketing digest task.',
+            system_prompt: 'Research configured competitors and file the changelog tracking report task.',
           })}
         />,
       );

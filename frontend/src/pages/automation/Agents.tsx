@@ -286,11 +286,11 @@ const TEMPLATE_RELEASE_KIND_OPTIONS = [
 ] as const;
 
 const NONE_OPTION_VALUE = '__none__';
-const COMPETITIVE_INTEL_TEMPLATE_KEY = 'competitive_intelligence_digest';
-const COMPETITIVE_INTEL_FLOW_KEY = 'competitive_intel_scheduled';
-const COMPETITIVE_INTEL_SYSTEM_PROMPT_TEMPLATE = `You are a competitive intelligence agent for {{target_company}}.
+const COMPETITIVE_INTEL_TEMPLATE_KEY = 'competitors_changelog_tracking_report';
+const COMPETITIVE_INTEL_FLOW_KEY = 'competitors_changelog_scheduled';
+const COMPETITIVE_INTEL_SYSTEM_PROMPT_TEMPLATE = `You are a competitors changelog tracking agent for {{target_company}}.
 
-Configured digest:
+Configured report:
 - target_company: {{target_company}}
 - target_domain: {{target_domain}}
 - competitors: {{competitors}}
@@ -305,7 +305,7 @@ Use the configured competitor list when it is not empty. If no competitors are c
 
 For each competitor, first use web_search_exa to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog.
 
-Create exactly one marketing digest task with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
+Create exactly one competitors changelog tracking report task with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
 
 Raw configuration:
 {{raw_configuration_json}}`;

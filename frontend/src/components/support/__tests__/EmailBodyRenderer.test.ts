@@ -52,4 +52,26 @@ describe('EmailBodyRenderer collapsed quote layout', () => {
 
     expect(wrapper?.hasAttribute('data-helpin-collapse-host')).toBe(false);
   });
+
+  it('marks Outlook quoted body siblings after the reply header as collapsible', () => {
+    document.body.innerHTML = `
+      <div>
+        <p>We are cutting costs and management said to cut it.</p>
+        <div id="Signature"><img src="signature.png" alt="Signature" /></div>
+        <div id="appendonsend" data-helpin-quote="true"></div>
+        <hr id="quote-rule" />
+        <div id="divRplyFwdMsg" data-helpin-quote="true">From: Support</div>
+        <div id="old-thread">
+          <p>-- Please type your reply above this line --</p>
+          <p>Hi Brian, We're sorry to hear that.</p>
+        </div>
+      </div>
+    `;
+
+    prepareCollapsedEmailLayout(document, true);
+
+    expect(document.getElementById('Signature')?.hasAttribute('data-helpin-quote')).toBe(false);
+    expect(document.getElementById('quote-rule')?.getAttribute('data-helpin-quote')).toBe('true');
+    expect(document.getElementById('old-thread')?.getAttribute('data-helpin-quote')).toBe('true');
+  });
 });

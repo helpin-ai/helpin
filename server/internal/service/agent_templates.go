@@ -23,10 +23,10 @@ func builtInAgentTemplates() []model.AgentTemplate {
 			"output_type":       "docs_document",
 		},
 	}))
-	competitiveIntelDescription := "Tracks recent competitor launches and creates a recurring marketing digest task."
-	competitiveIntelSystemPrompt := `You are a competitive intelligence agent for {{target_company}}.
+	competitiveIntelDescription := "Tracks recent competitor changelog updates and creates a recurring tracking report task."
+	competitiveIntelSystemPrompt := `You are a competitors changelog tracking agent for {{target_company}}.
 
-Configured digest:
+Configured report:
 - target_company: {{target_company}}
 - target_domain: {{target_domain}}
 - competitors: {{competitors}}
@@ -41,15 +41,15 @@ Use the configured competitor list when it is not empty. If no competitors are c
 
 For each competitor, first use web_search_exa to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog.
 
-Create exactly one marketing digest task with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
+Create exactly one competitors changelog tracking report task with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
 
 Raw configuration:
 {{raw_configuration_json}}`
 	competitiveIntelStarterFlows := model.JSONBlob(mustJSONValue([]map[string]any{
 		{
-			"key":               "competitive_intel_scheduled",
-			"label":             "Run competitor digest on a schedule",
-			"description":       "Runs on the selected cadence, researches recent competitor updates, and creates one marketing task.",
+			"key":               "competitors_changelog_scheduled",
+			"label":             "Run competitors changelog report on a schedule",
+			"description":       "Runs on the selected cadence, researches recent competitor changelog updates, and creates one report task.",
 			"trigger_type":      model.TriggerCron,
 			"default_enabled":   true,
 			"config_schema_key": "competitive_intel_cron",
@@ -338,7 +338,6 @@ Raw configuration:
 				"search_documents",
 				"list_collections",
 				"create_document",
-				"write_document_content",
 				"link_document_to_object",
 			})),
 			AllowedCommands:       model.JSONBlob(mustJSONStringSlice(nil)),
@@ -351,11 +350,11 @@ Raw configuration:
 		},
 		{
 			Key:          model.AgentTemplateTypeCompetitiveIntel,
-			Name:         "Competitive Intelligence Digest",
+			Name:         "Competitors Changelog Tracking Report",
 			Description:  &competitiveIntelDescription,
 			SystemPrompt: &competitiveIntelSystemPrompt,
 			RuntimeKind:  model.AgentTemplateRuntimeKindNativeSDK,
-			DefaultRole:  "Competitive Intelligence Analyst",
+			DefaultRole:  "Competitors Changelog Analyst",
 			Skills: model.AgentSkillRefs{
 				{Key: model.AgentTemplateTypeCompetitiveIntel},
 			},
@@ -972,11 +971,11 @@ func competitiveIntelInputFromTemplateFlow(flow *model.CreateAgentFromTemplateFl
 		return competitiveIntelStarterFlowInput{}, fmt.Errorf("flow configuration is required when create_flow is true")
 	}
 	flowKey := strings.TrimSpace(flow.FlowKey)
-	if flowKey != "" && flowKey != "competitive_intel_scheduled" {
-		return competitiveIntelStarterFlowInput{}, fmt.Errorf("unsupported competitive intel flow_key %q", flowKey)
+	if flowKey != "" && flowKey != "competitors_changelog_scheduled" && flowKey != "competitive_intel_scheduled" {
+		return competitiveIntelStarterFlowInput{}, fmt.Errorf("unsupported competitors changelog flow_key %q", flowKey)
 	}
 	if len(flow.FlowInput) == 0 || strings.TrimSpace(string(flow.FlowInput)) == "" || strings.TrimSpace(string(flow.FlowInput)) == "null" {
-		return competitiveIntelStarterFlowInput{}, fmt.Errorf("flow.flow_input is required for competitive intelligence starter flow")
+		return competitiveIntelStarterFlowInput{}, fmt.Errorf("flow.flow_input is required for competitors changelog starter flow")
 	}
 
 	var input competitiveIntelStarterFlowInput

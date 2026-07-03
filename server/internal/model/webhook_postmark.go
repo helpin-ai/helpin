@@ -29,6 +29,10 @@ type PostmarkInboundPayload struct {
 	FromFull          PostmarkAddress             `json:"FromFull"`
 	To                string                      `json:"To"`
 	ToFull            []PostmarkAddress           `json:"ToFull"`
+	Cc                string                      `json:"Cc"`
+	CcFull            []PostmarkAddress           `json:"CcFull"`
+	Bcc               string                      `json:"Bcc"`
+	BccFull           []PostmarkAddress           `json:"BccFull"`
 	OriginalRecipient string                      `json:"OriginalRecipient"`
 	Subject           string                      `json:"Subject"`
 	MessageID         string                      `json:"MessageID"`

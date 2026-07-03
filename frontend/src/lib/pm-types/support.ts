@@ -47,6 +47,11 @@ export interface SupportConversation {
   priority: ConversationPriority;
   customer_name?: string;
   customer_email?: string;
+  primary_recipient_state?: 'confirmed' | 'unconfirmed';
+  suggested_primary_recipient_email?: string | null;
+  suggested_primary_recipient_name?: string | null;
+  email_cc?: string[];
+  email_thread_participants?: string[];
   email_unsubscribed?: boolean;
   anonymous_id?: string;
   opened_by_user_id?: string;
@@ -518,6 +523,10 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
   'resolved',
   'reopened',
   'closed',
+  'email_recipients_updated',
+  'tag_added',
+  'tag_removed',
+  'task_created',
 ] as const;
 
 export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number];
@@ -942,6 +951,13 @@ export interface UpdateConversationCRMContactRequest {
 
 export interface UpdateConversationCustomerNameRequest {
   customer_name: string;
+}
+
+export interface UpdateConversationEmailRecipientsRequest {
+  primary_recipient_email?: string;
+  primary_recipient_name?: string;
+  cc_emails?: string[];
+  confirm_primary?: boolean;
 }
 
 // ── Support Installation Settings ───────────────────────────────────

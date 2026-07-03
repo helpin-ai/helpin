@@ -12,31 +12,36 @@ import (
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
 type SupportConversation struct {
-	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	MailboxID         *string    `json:"mailbox_id" gorm:"type:uuid;index"`
-	DisplayID         int        `json:"display_id" gorm:"not null;index"`
-	Subject           string     `json:"subject" gorm:"not null"`
-	Status            string     `json:"status" gorm:"not null;default:'open'"`     // open, waiting_on_customer, resolved, spam
-	FlowState         *string    `json:"flow_state" gorm:"index"`                   // ai_handling, waiting_for_human, queued_for_human, after_hours_queue, assigned_to_human, resolved_by_ai, resolved_by_human
-	HandoffState      *string    `json:"handoff_state" gorm:"column:handoff_state"` // live, busy, after_hours — customer-facing availability at handoff time
-	Priority          string     `json:"priority" gorm:"not null;default:'medium'"` // low, medium, high, urgent
-	Channel           string     `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
-	CustomerName      *string    `json:"customer_name"`
-	CustomerEmail     *string    `json:"customer_email"`
-	CustomerPhone     *string    `json:"customer_phone"`
-	OpenedByUserID    *string    `json:"opened_by_user_id" gorm:"type:uuid"`
-	AssignedUserID    *string    `json:"assigned_user_id" gorm:"type:uuid"`
-	AssignedAgentID   *string    `json:"assigned_agent_id" gorm:"type:uuid"`
-	LinkedTaskID      *string    `json:"linked_task_id" gorm:"column:linked_task_id;type:uuid"`
-	Source            string     `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
-	AnonymousID       *string    `json:"anonymous_id" gorm:"index"`
-	CRMContactID      *string    `json:"crm_contact_id" gorm:"type:uuid;index"`
-	ResolvedAt        *time.Time `json:"resolved_at"`
-	ClosedAt          *time.Time `json:"closed_at"`
-	TeamLastSeenAt    *time.Time `json:"team_last_seen_at" gorm:"type:timestamptz"`
-	ContactLastSeenAt *time.Time `json:"contact_last_seen_at" gorm:"type:timestamptz"`
-	EmailUnsubscribed bool       `json:"email_unsubscribed" gorm:"not null;default:false"`
+	ID                             string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID                    string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	MailboxID                      *string         `json:"mailbox_id" gorm:"type:uuid;index"`
+	DisplayID                      int             `json:"display_id" gorm:"not null;index"`
+	Subject                        string          `json:"subject" gorm:"not null"`
+	Status                         string          `json:"status" gorm:"not null;default:'open'"`     // open, waiting_on_customer, resolved, spam
+	FlowState                      *string         `json:"flow_state" gorm:"index"`                   // ai_handling, waiting_for_human, queued_for_human, after_hours_queue, assigned_to_human, resolved_by_ai, resolved_by_human
+	HandoffState                   *string         `json:"handoff_state" gorm:"column:handoff_state"` // live, busy, after_hours — customer-facing availability at handoff time
+	Priority                       string          `json:"priority" gorm:"not null;default:'medium'"` // low, medium, high, urgent
+	Channel                        string          `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
+	CustomerName                   *string         `json:"customer_name"`
+	CustomerEmail                  *string         `json:"customer_email"`
+	CustomerPhone                  *string         `json:"customer_phone"`
+	PrimaryRecipientState          string          `json:"primary_recipient_state" gorm:"not null;default:'confirmed'"`
+	SuggestedPrimaryRecipientEmail *string         `json:"suggested_primary_recipient_email,omitempty"`
+	SuggestedPrimaryRecipientName  *string         `json:"suggested_primary_recipient_name,omitempty"`
+	EmailCC                        DocsStringArray `json:"email_cc,omitempty" gorm:"type:text[]"`
+	EmailThreadParticipants        DocsStringArray `json:"email_thread_participants,omitempty" gorm:"type:text[]"`
+	OpenedByUserID                 *string         `json:"opened_by_user_id" gorm:"type:uuid"`
+	AssignedUserID                 *string         `json:"assigned_user_id" gorm:"type:uuid"`
+	AssignedAgentID                *string         `json:"assigned_agent_id" gorm:"type:uuid"`
+	LinkedTaskID                   *string         `json:"linked_task_id" gorm:"column:linked_task_id;type:uuid"`
+	Source                         string          `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
+	AnonymousID                    *string         `json:"anonymous_id" gorm:"index"`
+	CRMContactID                   *string         `json:"crm_contact_id" gorm:"type:uuid;index"`
+	ResolvedAt                     *time.Time      `json:"resolved_at"`
+	ClosedAt                       *time.Time      `json:"closed_at"`
+	TeamLastSeenAt                 *time.Time      `json:"team_last_seen_at" gorm:"type:timestamptz"`
+	ContactLastSeenAt              *time.Time      `json:"contact_last_seen_at" gorm:"type:timestamptz"`
+	EmailUnsubscribed              bool            `json:"email_unsubscribed" gorm:"not null;default:false"`
 
 	// AI State — separate from human Status. Null when AI is not involved.
 	AIState                  *string    `json:"ai_state" gorm:"index"` // null, "pending", "resolved", "escalated"
@@ -84,6 +89,11 @@ const (
 	SupportConversationFlowStateAssignedToHuman = "assigned_to_human"
 	SupportConversationFlowStateResolvedByAI    = "resolved_by_ai"
 	SupportConversationFlowStateResolvedByHuman = "resolved_by_human"
+)
+
+const (
+	SupportPrimaryRecipientStateConfirmed   = "confirmed"
+	SupportPrimaryRecipientStateUnconfirmed = "unconfirmed"
 )
 
 // Handoff states describe availability at the moment the AI hands off.
@@ -869,6 +879,14 @@ type UpdateConversationCRMContactRequest struct {
 // UpdateConversationCustomerNameRequest sets the support conversation customer display name.
 type UpdateConversationCustomerNameRequest struct {
 	CustomerName string `json:"customer_name"`
+}
+
+// UpdateConversationEmailRecipientsRequest confirms or updates who receives email replies.
+type UpdateConversationEmailRecipientsRequest struct {
+	PrimaryRecipientEmail *string  `json:"primary_recipient_email,omitempty"`
+	PrimaryRecipientName  *string  `json:"primary_recipient_name,omitempty"`
+	CCEmails              []string `json:"cc_emails,omitempty"`
+	ConfirmPrimary        *bool    `json:"confirm_primary,omitempty"`
 }
 
 // UpdateConversationStatusRequest changes conversation status.
