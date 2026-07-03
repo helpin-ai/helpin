@@ -268,8 +268,18 @@ func shouldDelegateRunToAgentRuntime(agent *model.Agent, targetType string) bool
 
 // delegatesRunToAgentRuntime is the launch-time delegation decision: the
 // AGENT_RUNTIME_LAUNCH_ENABLED flag short-circuits the preset/target predicate.
+// AGENT_RUNTIME_DELEGATE_ALL is a testing override that delegates every
+// preset/target combination, bypassing the parity-gated table; known parity
+// gaps (planner context, workspace coding) then fail loudly at execution
+// instead of routing to the local executor.
 func (s *AgentService) delegatesRunToAgentRuntime(agent *model.Agent, targetType string) bool {
-	return s != nil && s.agentRuntimeLaunchEnabled && shouldDelegateRunToAgentRuntime(agent, targetType)
+	if s == nil || !s.agentRuntimeLaunchEnabled {
+		return false
+	}
+	if s.agentRuntimeDelegateAll {
+		return agent != nil && strings.TrimSpace(targetType) != ""
+	}
+	return shouldDelegateRunToAgentRuntime(agent, targetType)
 }
 
 func shouldRetryAgentRuntimeStart(err error) bool {
@@ -532,6 +542,7 @@ type AgentService struct {
 	aiUsageMeter               *AIUsageMeter
 	agentRuntimeClient         agentRuntimeSignalClient
 	agentRuntimeLaunchEnabled  bool
+	agentRuntimeDelegateAll    bool
 }
 
 type agentRuntimeSignalClient interface {
@@ -701,6 +712,13 @@ func (s *AgentService) SetAgentRuntimeClient(client agentRuntimeSignalClient) *A
 
 func (s *AgentService) SetAgentRuntimeLaunchEnabled(enabled bool) *AgentService {
 	s.agentRuntimeLaunchEnabled = enabled
+	return s
+}
+
+// SetAgentRuntimeDelegateAll enables the testing override that delegates every
+// preset/target combination to the agent runtime.
+func (s *AgentService) SetAgentRuntimeDelegateAll(enabled bool) *AgentService {
+	s.agentRuntimeDelegateAll = enabled
 	return s
 }
 

@@ -201,3 +201,27 @@ func TestDelegatesRunToAgentRuntimeFlagShortCircuit(t *testing.T) {
 		t.Fatal("nil service must not delegate")
 	}
 }
+
+func TestDelegatesRunToAgentRuntimeDelegateAllOverride(t *testing.T) {
+	svc := &AgentService{agentRuntimeLaunchEnabled: true, agentRuntimeDelegateAll: true}
+
+	planner := &model.Agent{PresetKey: model.AgentPresetEpicPlanner, IsSystem: true}
+	if !svc.delegatesRunToAgentRuntime(planner, "epic") {
+		t.Fatal("delegate-all must delegate planner presets on epic targets")
+	}
+	codexCustom := &model.Agent{RuntimeKind: "codex"}
+	if !svc.delegatesRunToAgentRuntime(codexCustom, "repository") {
+		t.Fatal("delegate-all must delegate custom codex agents on repository targets")
+	}
+	if svc.delegatesRunToAgentRuntime(nil, "workspace") {
+		t.Fatal("delegate-all must still reject nil agents")
+	}
+	if svc.delegatesRunToAgentRuntime(planner, "  ") {
+		t.Fatal("delegate-all must still reject empty target types")
+	}
+
+	withoutLaunchFlag := &AgentService{agentRuntimeDelegateAll: true}
+	if withoutLaunchFlag.delegatesRunToAgentRuntime(planner, "epic") {
+		t.Fatal("delegate-all must not bypass the launch flag")
+	}
+}
