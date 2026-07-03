@@ -46,6 +46,7 @@ var builtInSkillAliases = map[string]string{
 	"epic_state_routing":               "epic_planning_state_routing",
 	"external_help_doc_writing":        "public_help_doc_writing",
 	"general_agent_behavior":           "engineering_planner_operating_rules",
+	"competitive_intelligence_digest":  "competitors_changelog_tracking_report",
 	"marketing_ads_creative":           "ads_creative_planning",
 	"marketing_community_partnerships": "community_partnerships_planning",
 	"marketing_competitive":            "competitive_positioning",

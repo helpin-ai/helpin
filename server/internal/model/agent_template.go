@@ -5,7 +5,7 @@ import "time"
 const (
 	AgentTemplateRuntimeKindNativeSDK  = "native_sdk"
 	AgentTemplateTypeReleaseNotes      = "release_notes_writer"
-	AgentTemplateTypeCompetitiveIntel  = "competitive_intelligence_digest"
+	AgentTemplateTypeCompetitiveIntel  = "competitors_changelog_tracking_report"
 	AgentTemplateTypeDependencyAuditor = "engineering_dependency_auditor"
 	AgentTemplateTypeSecurityTriage    = "engineering_security_triage"
 )

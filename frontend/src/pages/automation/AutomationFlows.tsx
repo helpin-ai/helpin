@@ -692,7 +692,7 @@ const TEMPLATE_DISPLAY_ORDER: Record<string, number> = {
   docs_freshness_sweep: 60,
   public_help_freshness_sweep: 70,
   api_docs_freshness_sweep: 80,
-  competitive_intelligence_digest: 90,
+  competitors_changelog_tracking_report: 90,
   buying_signal_to_task: 100,
   stale_task_escalation: 110,
   merge_when_done: 120,
@@ -781,7 +781,7 @@ export function defaultTemplateInputs(
       }
     }
   }
-  if (template.key === 'competitive_intelligence_digest') {
+  if (template.key === 'competitors_changelog_tracking_report') {
     if (!String(inputs.target_company ?? '').trim() && workspace?.name?.trim()) {
       inputs.target_company = workspace.name.trim();
     }

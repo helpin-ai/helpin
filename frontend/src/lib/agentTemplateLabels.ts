@@ -2,7 +2,8 @@ import type { Agent } from './pmTypes';
 
 const FLOW_TEMPLATE_NAMES: Record<string, string> = {
   release_notes_writer: 'Release Notes Writer',
-  competitive_intelligence_digest: 'Competitive Intelligence Digest',
+  competitive_intelligence_digest: 'Competitors Changelog Tracking Report',
+  competitors_changelog_tracking_report: 'Competitors Changelog Tracking Report',
   dependency_auditor: 'Dependency Auditor',
   security_triage: 'Security Triage',
   review_merged_prs: 'Review merged PRs',

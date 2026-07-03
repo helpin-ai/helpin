@@ -35,7 +35,7 @@ func TestListBuiltInSkillsContainsExpectedKeys(t *testing.T) {
 		"post_release_docs_update",
 		"support_gap_docs_update",
 		"release_notes_writing",
-		"competitive_intelligence_digest",
+		"competitors_changelog_tracking_report",
 		"marketing_context_setup",
 		"marketing_plan",
 		"marketing_copywriting",
@@ -60,6 +60,19 @@ func TestListBuiltInSkillsContainsExpectedKeys(t *testing.T) {
 		if !containsString(keys, key) {
 			t.Fatalf("expected built-in skill %q in registry, got %v", key, keys)
 		}
+	}
+}
+
+func TestGetBuiltInSkillAcceptsCompetitiveDigestAlias(t *testing.T) {
+	skill, ok := GetBuiltInSkill("competitive_intelligence_digest")
+	if !ok {
+		t.Fatal("expected legacy competitive intelligence skill alias to resolve")
+	}
+	if skill.Key != "competitors_changelog_tracking_report" {
+		t.Fatalf("expected canonical competitors changelog skill, got %q", skill.Key)
+	}
+	if CanonicalBuiltInSkillKey("system/competitive_intelligence_digest") != "competitors_changelog_tracking_report" {
+		t.Fatalf("expected canonical key alias for system/competitive_intelligence_digest")
 	}
 }
 

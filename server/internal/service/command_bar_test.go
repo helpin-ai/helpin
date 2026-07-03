@@ -1351,7 +1351,7 @@ func TestCreateRunAllowsDifferentAgentsOnWorkspaceTarget(t *testing.T) {
 	nextAgent := &model.Agent{
 		ID:                    "33333333-3333-3333-3333-333333333333",
 		WorkspaceID:           workspaceID,
-		Name:                  "Competitive Intelligence Digest",
+		Name:                  "Competitors Changelog Tracking Report",
 		RuntimeKind:           "native_sdk",
 		Status:                "idle",
 		ApprovalMode:          "never",
@@ -1460,7 +1460,7 @@ func TestCreateRunDedupesSameAgentOnWorkspaceTarget(t *testing.T) {
 	agent := &model.Agent{
 		ID:                    "22222222-2222-2222-2222-222222222222",
 		WorkspaceID:           workspaceID,
-		Name:                  "Competitive Intelligence Digest",
+		Name:                  "Competitors Changelog Tracking Report",
 		RuntimeKind:           "native_sdk",
 		Status:                "idle",
 		ApprovalMode:          "never",

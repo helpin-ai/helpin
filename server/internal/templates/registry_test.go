@@ -157,7 +157,7 @@ func TestEmbeddedSystemRegistryLoads(t *testing.T) {
 		"advance_on_approval",
 		"api_docs_freshness_sweep",
 		"buying_signal_to_task",
-		"competitive_intelligence_digest",
+		"competitors_changelog_tracking_report",
 		"docs_freshness_sweep",
 		"engineering_dependency_auditor",
 		"engineering_security_triage",
@@ -182,7 +182,7 @@ func TestEmbeddedReportTemplatesUseStandardTitlePattern(t *testing.T) {
 	}
 	reportTemplates := []string{
 		"api_docs_freshness_sweep",
-		"competitive_intelligence_digest",
+		"competitors_changelog_tracking_report",
 		"engineering_dependency_auditor",
 		"docs_freshness_sweep",
 		"public_help_freshness_sweep",
@@ -204,6 +204,26 @@ func TestEmbeddedReportTemplatesUseStandardTitlePattern(t *testing.T) {
 				t.Fatalf("template %q missing standard report title format in prompt:\n%s", key, prompt)
 			}
 		})
+	}
+}
+
+func TestEmbeddedCompetitorsChangelogTemplateUsesNewIdentity(t *testing.T) {
+	registry, err := LoadSystemRegistry()
+	if err != nil {
+		t.Fatalf("LoadSystemRegistry returned error: %v", err)
+	}
+	if _, ok := registry.Get("competitive_intelligence_digest"); ok {
+		t.Fatal("legacy competitive_intelligence_digest template key should not be exposed")
+	}
+	tmpl, ok := registry.Get("competitors_changelog_tracking_report")
+	if !ok {
+		t.Fatal("competitors_changelog_tracking_report template not found")
+	}
+	if tmpl.Name != "Competitors Changelog Tracking Report" {
+		t.Fatalf("template name = %q", tmpl.Name)
+	}
+	if tmpl.Agent.Create == nil || len(tmpl.Agent.Create.Skills) != 1 || tmpl.Agent.Create.Skills[0] != "competitors_changelog_tracking_report" {
+		t.Fatalf("expected renamed skill ref, got %+v", tmpl.Agent.Create)
 	}
 }
 
