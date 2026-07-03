@@ -32,7 +32,7 @@ import { useDocsHelpcenterLocales, useUpdateDocsHelpcenterLocales } from '@/hook
 import { HelpcenterLocalesCard } from '@/components/settings/helpcenter/HelpcenterLocalesCard';
 import { HelpcenterTranslationsTable } from '@/components/settings/helpcenter/HelpcenterTranslationsTable';
 import { StickyFormFooter } from '@/components/settings/StickyFormFooter';
-import { SortableFooterLinkRow, SortableHeaderLinkRow } from '@/components/settings/helpcenter/HelpcenterSortableRows';
+import { SortableFooterLinkRow, SortableHeaderLinkRow, SortableSocialLinkRow } from '@/components/settings/helpcenter/HelpcenterSortableRows';
 import {
   PlusSignIcon, InformationCircleIcon, ArrowDown01Icon, Cancel01Icon,
   GlobeIcon, PaintBoardIcon, LayoutGridIcon, Link01Icon, Image01Icon,
@@ -60,6 +60,7 @@ import {
 import type {
   HelpcenterHeaderLink,
   HelpcenterFooterLink,
+  HelpcenterSocialLink,
   HelpcenterPublicUrlMode,
   HelpcenterThemeMode,
   HomepageFeaturedCard,
@@ -323,8 +324,10 @@ interface ConfigState {
   favicon_url: string;
   theme_mode: HelpcenterThemeMode;
   header_links: HeaderLinkWithId[];
+  footer_show_copyright: boolean;
   footer_copyright_text: string;
   footer_links: HelpcenterFooterLink[];
+  footer_social_links: HelpcenterSocialLink[];
   homepage_hero_title: string;
   homepage_hero_subtitle: string;
   homepage_featured_cards: HomepageFeaturedCard[];
@@ -356,8 +359,10 @@ const DEFAULT_CONFIG: ConfigState = {
   favicon_url: '',
   theme_mode: 'system',
   header_links: [],
+  footer_show_copyright: true,
   footer_copyright_text: '',
   footer_links: [],
+  footer_social_links: [],
   homepage_hero_title: '',
   homepage_hero_subtitle: '',
   homepage_featured_cards: [],
@@ -636,8 +641,10 @@ export function HelpcenterTab({
           favicon_url: d.favicon_url ?? '',
           theme_mode: d.theme_mode ?? 'system',
           header_links: withIds(d.header_links ?? []),
+          footer_show_copyright: d.footer_config?.show_copyright !== false,
           footer_copyright_text: d.footer_config?.copyright_text ?? '',
           footer_links: d.footer_config?.links ?? [],
+          footer_social_links: d.footer_config?.social_links ?? [],
           homepage_hero_title: d.homepage_config?.hero_title ?? '',
           homepage_hero_subtitle: d.homepage_config?.hero_subtitle ?? '',
           homepage_featured_cards: d.homepage_config?.featured_cards ?? [],
@@ -724,8 +731,10 @@ export function HelpcenterTab({
       theme_mode: config.theme_mode,
       header_links: config.header_links,
       footer_config: {
+        show_copyright: config.footer_show_copyright,
         copyright_text: config.footer_copyright_text,
         links: config.footer_links,
+        social_links: config.footer_social_links,
       },
       homepage_config: {
         hero_title: config.homepage_hero_title,
@@ -824,6 +833,34 @@ export function HelpcenterTab({
       const oldIndex = Number(active.id);
       const newIndex = Number(over.id);
       return { ...prev, footer_links: arrayMove(prev.footer_links, oldIndex, newIndex) };
+    });
+  }, []);
+
+  // ── Social link helpers ──
+  const addSocialLink = () => {
+    setConfig({
+      ...config,
+      footer_social_links: [...config.footer_social_links, { platform: 'linkedin', url: '' }],
+    });
+  };
+
+  const updateSocialLink = (index: number, patch: Partial<HelpcenterSocialLink>) => {
+    const links = [...config.footer_social_links];
+    links[index] = { ...links[index], ...patch };
+    setConfig({ ...config, footer_social_links: links });
+  };
+
+  const removeSocialLink = (index: number) => {
+    setConfig({ ...config, footer_social_links: config.footer_social_links.filter((_, i) => i !== index) });
+  };
+
+  const handleSocialDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setConfig(prev => {
+      const oldIndex = Number(active.id);
+      const newIndex = Number(over.id);
+      return { ...prev, footer_social_links: arrayMove(prev.footer_social_links, oldIndex, newIndex) };
     });
   }, []);
 
@@ -1851,21 +1888,36 @@ export function HelpcenterTab({
             <div className="space-y-4 rounded-lg border border-border/60 p-4">
               <div>
                 <Label className="text-sm font-medium">Footer</Label>
-                <p className="text-xs text-muted-foreground mt-0.5">Copyright text and footer links.</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Footer text links, social links, and copyright.</p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="hc-footer-copyright" className="text-sm">Copyright Text</Label>
+              <div className="space-y-3 rounded-md border border-border/50 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label htmlFor="hc-footer-show-copyright" className="text-sm">Copyright</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">Show copyright text in the public footer.</p>
+                  </div>
+                  <Switch
+                    id="hc-footer-show-copyright"
+                    checked={config.footer_show_copyright}
+                    onCheckedChange={(checked) => setConfig({ ...config, footer_show_copyright: checked })}
+                  />
+                </div>
                 <Input
                   id="hc-footer-copyright"
                   value={config.footer_copyright_text}
                   onChange={(e) => setConfig({ ...config, footer_copyright_text: e.target.value })}
                   placeholder={`\u00A9 ${new Date().getFullYear()} Your Company. All rights reserved.`}
+                  disabled={!config.footer_show_copyright}
                 />
               </div>
               <div className="space-y-3">
                 <Label className="text-sm">Footer Links</Label>
+                <p className="text-xs text-muted-foreground">Links like Privacy, Terms, Status, or Contact.</p>
                 {config.footer_links.length === 0 && (
                   <p className="text-xs text-muted-foreground py-2 text-center">No footer links yet.</p>
+                )}
+                {config.footer_links.length > 8 && (
+                  <p className="text-xs text-muted-foreground">Many links may wrap onto multiple lines in the public footer.</p>
                 )}
                 {config.footer_links.length > 0 && (
                   <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleFooterDragEnd}>
@@ -1885,6 +1937,33 @@ export function HelpcenterTab({
                 <div className="flex justify-center">
                   <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addFooterLink}>
                     <PlusSignIcon className="mr-1 h-3.5 w-3.5" /> Add Link
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <Label className="text-sm">Social Links</Label>
+                <p className="text-xs text-muted-foreground">Social links render as compact icons before the Helpin attribution.</p>
+                {config.footer_social_links.length === 0 && (
+                  <p className="text-xs text-muted-foreground py-2 text-center">No social links yet.</p>
+                )}
+                {config.footer_social_links.length > 0 && (
+                  <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleSocialDragEnd}>
+                    <SortableContext items={config.footer_social_links.map((_, i) => i)} strategy={verticalListSortingStrategy}>
+                      {config.footer_social_links.map((link, i) => (
+                        <SortableSocialLinkRow
+                          key={i}
+                          id={i}
+                          link={link}
+                          onUpdate={(patch) => updateSocialLink(i, patch)}
+                          onRemove={() => removeSocialLink(i)}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
+                )}
+                <div className="flex justify-center">
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addSocialLink}>
+                    <PlusSignIcon className="mr-1 h-3.5 w-3.5" /> Add Social Link
                   </Button>
                 </div>
               </div>

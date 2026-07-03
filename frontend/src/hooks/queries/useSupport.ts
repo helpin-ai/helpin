@@ -56,6 +56,7 @@ import type {
   SupportTag,
   CreateConversationRequest,
   CreateConversationWithMessageRequest,
+  UpdateConversationEmailRecipientsRequest,
   SupportConversationSearchParams,
   SupportConversationSearchResponse,
 } from '@/lib/pmTypes';
@@ -1260,6 +1261,39 @@ export function useUpdateConversationSubject(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to update subject', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateConversationCustomerName(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, customerName }: { conversationId: string; customerName: string }) =>
+      supportService.updateConversationCustomerName(workspaceId, conversationId, { customer_name: customerName }).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update customer name', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateConversationEmailRecipients(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, payload }: { conversationId: string; payload: UpdateConversationEmailRecipientsRequest }) =>
+      supportService.updateConversationEmailRecipients(workspaceId, conversationId, payload).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, variables.conversationId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update email recipients', { description: error.message });
     },
   });
 }

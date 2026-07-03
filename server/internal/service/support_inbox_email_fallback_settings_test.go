@@ -27,6 +27,9 @@ func TestDefaultSupportInboxSettingsEnableEmailFallback(t *testing.T) {
 	if !settings.EmailFallbackEnabled {
 		t.Fatal("expected email fallback to be enabled by default")
 	}
+	if settings.EmailFallbackDelaySecs != 30 {
+		t.Fatalf("expected default email fallback delay to be 30 seconds, got %d", settings.EmailFallbackDelaySecs)
+	}
 }
 
 func TestParseSettingsForcesEmailFallbackEnabled(t *testing.T) {

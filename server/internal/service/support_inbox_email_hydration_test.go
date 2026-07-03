@@ -41,6 +41,10 @@ func TestHydrateEmailBodiesAddsInboundBodiesAndOutboundStatus(t *testing.T) {
 			{
 				Direction:    "inbound",
 				MessageIDs:   model.DocsStringArray{"inbound-1"},
+				FromEmail:    "website@acme.com",
+				ToEmail:      "support@acme.on.helpin.email",
+				CCEmails:     model.DocsStringArray{"teammate1@company.com", "teammate2@company.com"},
+				BCCEmails:    model.DocsStringArray{"hidden@company.com"},
 				ReplyTo:      "Taylor Visitor <taylor.visitor@example.com>",
 				HTMLBody:     "<p>Email reply</p>",
 				StrippedText: "Email reply",
@@ -64,8 +68,20 @@ func TestHydrateEmailBodiesAddsInboundBodiesAndOutboundStatus(t *testing.T) {
 	if messages[0].HTMLBody != "<p>Email reply</p>" || messages[0].StrippedText != "Email reply" {
 		t.Fatalf("expected inbound email body hydration, got %#v", messages[0])
 	}
+	if messages[0].EmailFrom != "website@acme.com" {
+		t.Fatalf("expected inbound from hydration, got %#v", messages[0])
+	}
 	if messages[0].EmailReplyTo != "Taylor Visitor <taylor.visitor@example.com>" {
 		t.Fatalf("expected inbound reply-to hydration, got %#v", messages[0])
+	}
+	if messages[0].EmailTo != "support@acme.on.helpin.email" {
+		t.Fatalf("expected inbound to hydration, got %#v", messages[0])
+	}
+	if len(messages[0].EmailCC) != 2 || messages[0].EmailCC[0] != "teammate1@company.com" || messages[0].EmailCC[1] != "teammate2@company.com" {
+		t.Fatalf("expected inbound cc hydration, got %#v", messages[0].EmailCC)
+	}
+	if len(messages[0].EmailBCC) != 1 || messages[0].EmailBCC[0] != "hidden@company.com" {
+		t.Fatalf("expected inbound bcc hydration, got %#v", messages[0].EmailBCC)
 	}
 	if messages[1].EmailDeliveryStatus != "delivered" || messages[1].EmailDeliveryError != "" {
 		t.Fatalf("expected delivered outbound status, got %#v", messages[1])

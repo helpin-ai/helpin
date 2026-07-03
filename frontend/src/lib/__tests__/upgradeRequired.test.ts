@@ -7,7 +7,7 @@ describe('upgradeRequired', () => {
     const reason = getUpgradeRequiredReason('Custom AI agents requires the Growth plan');
 
     expect(reason?.kind).toBe('custom_agents');
-    expect(reason?.title).toBe('Upgrade to Growth');
+    expect(reason?.title).toBe('Upgrade to the Growth plan');
     expect(isUpgradeRequiredError('Custom AI agents requires the Growth plan')).toBe(true);
   });
 

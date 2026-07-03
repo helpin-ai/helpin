@@ -4046,6 +4046,9 @@ func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, co
 	if conversation == nil {
 		return nil, fmt.Errorf("conversation not found")
 	}
+	if strings.TrimSpace(conversation.PrimaryRecipientState) == model.SupportPrimaryRecipientStateUnconfirmed {
+		return nil, fmt.Errorf("confirm the primary recipient before running AI on this conversation")
+	}
 	if conversation.AssignedAgentID == nil || *conversation.AssignedAgentID == "" {
 		return nil, fmt.Errorf("no agent assigned to this conversation")
 	}

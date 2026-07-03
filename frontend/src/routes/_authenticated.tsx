@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
 import { currentPathForLoginRedirect, storeRedirectAfterLogin } from '@/lib/authRedirect'
+import { EmailVerificationBanner } from '@/components/auth/EmailVerificationBanner'
 
 export const Route = createFileRoute('/_authenticated')({
   beforeLoad: ({ context, location }) => {
@@ -20,6 +21,7 @@ export const Route = createFileRoute('/_authenticated')({
 
 function AuthenticatedLayout() {
   const { auth } = Route.useRouteContext()
+  const user = useAuthStore((state) => state.user)
   const [retrying, setRetrying] = useState(false)
 
   const handleRetry = async () => {
@@ -52,5 +54,10 @@ function AuthenticatedLayout() {
     )
   }
 
-  return <Outlet />
+  return (
+    <>
+      <EmailVerificationBanner emailVerified={user?.email_verified} />
+      <Outlet />
+    </>
+  )
 }

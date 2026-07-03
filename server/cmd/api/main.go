@@ -151,6 +151,7 @@ func main() {
 			&model.User{},
 			&model.UserPasskey{},
 			&model.PasswordResetToken{},
+			&model.EmailVerificationToken{},
 			&model.Organization{},
 			&model.OrganizationMember{},
 			&model.Workspace{},
@@ -672,12 +673,13 @@ func main() {
 
 	// Initialize services.
 	passwordResetRepo := repository.NewPasswordResetTokenRepository(db)
+	emailVerificationRepo := repository.NewEmailVerificationTokenRepository(db)
 	passkeySessionCache := newPasskeySessionCache(redisClient, podID)
 	passkeyWebAuthnClient, err := appwebauthn.NewClient(cfg.WebAuthnRPID, cfg.WebAuthnRPOrigins, passkeySessionCache)
 	if err != nil {
 		fatalWithSentry("failed to initialize webauthn", err)
 	}
-	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
+	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, emailVerificationRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
 	passkeyService := service.NewPasskeyService(userRepo, passkeyRepo, jwtManager, passkeyWebAuthnClient, resolveTOTPEncryptionKey(cfg))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo, wsPublisher)
@@ -711,7 +713,9 @@ func main() {
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
 	supportInboxViewService := service.NewSupportInboxViewService(supportInboxViewRepo, supportConversationRepo, wsPublisher)
-	supportTagService := service.NewSupportTagService(supportTagRepo, supportConversationRepo, wsPublisher)
+	supportTagService := service.NewSupportTagService(supportTagRepo, supportConversationRepo, wsPublisher).
+		SetMessageRepo(supportMessageRepo).
+		SetUserRepo(userRepo)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
 	supportInboxService.SetDocsSearchRepository(docsSearchRepo)
 	supportInboxService.SetSupportTagRepo(supportTagRepo)
@@ -1347,8 +1351,13 @@ func main() {
 	}
 
 	handlers := router.Handlers{
-		Health:              handler.NewHealthHandler(s3Client, geoIPResolver),
-		Auth:                handler.NewAuthHandler(authService),
+		Health: handler.NewHealthHandler(s3Client, geoIPResolver),
+		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
+			ClientID:     cfg.GoogleAuthClientID,
+			ClientSecret: cfg.GoogleAuthClientSecret,
+			RedirectURL:  cfg.GoogleAuthRedirectURL,
+			AppBaseURL:   cfg.AppBaseURL,
+		}),
 		Passkey:             handler.NewPasskeyHandler(passkeyService),
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),

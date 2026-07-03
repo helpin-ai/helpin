@@ -18,12 +18,12 @@ function KnowledgePageIntro({
   hasAnySource,
   workspaceSlug,
   onOpenDocs,
-  onOpenChatWidget,
+  onOpenAIAssistant,
 }: {
   hasAnySource: boolean;
   workspaceSlug?: string;
   onOpenDocs: () => void;
-  onOpenChatWidget: () => void;
+  onOpenAIAssistant: () => void;
 }) {
   return (
     <div className="space-y-4">
@@ -50,9 +50,9 @@ function KnowledgePageIntro({
                   <PlusSignIcon className="h-4 w-4" />
                   Open docs
                 </Button>
-                <Button type="button" variant="outline" size="sm" onClick={onOpenChatWidget}>
+                <Button type="button" variant="outline" size="sm" onClick={onOpenAIAssistant}>
                   <Settings02Icon className="h-4 w-4" />
-                  Chat widget
+                  AI Assistant
                 </Button>
               </div>
             ) : null}
@@ -87,9 +87,9 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
     void navigate({ to: '/w/$slug/docs', params: { slug: workspaceSlug } });
   };
 
-  const openChatWidgetSettings = () => {
+  const openAIAssistantSettings = () => {
     if (!workspaceSlug) return;
-    void navigate({ to: '/w/$slug/settings/chat-general', params: { slug: workspaceSlug } });
+    void navigate({ to: '/w/$slug/settings/support-ai-assistant', params: { slug: workspaceSlug } });
   };
 
   const toggleSpace = (spaceId: string) => {
@@ -151,7 +151,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
         hasAnySource={hasAnySource}
         workspaceSlug={workspaceSlug}
         onOpenDocs={openDocs}
-        onOpenChatWidget={openChatWidgetSettings}
+        onOpenAIAssistant={openAIAssistantSettings}
       />
 
       <div className="space-y-3">
@@ -226,7 +226,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
           )}
           {!chatWidgetAgentId && (
             <p className="mt-3 text-sm text-muted-foreground">
-              Assign a Chat Widget support agent to attach docs.
+              Select a support agent in AI Assistant to attach docs.
             </p>
           )}
         </CardContent>

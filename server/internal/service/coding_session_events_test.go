@@ -556,7 +556,7 @@ func TestGetCodingSessionIncludesAgentSystemPrompt(t *testing.T) {
 	agentRepo := repository.NewAgentRepository(db)
 
 	now := time.Now().UTC()
-	systemPrompt := "Research configured competitors and file the marketing digest task."
+	systemPrompt := "Research configured competitors and file the changelog tracking report task."
 	agent := &model.Agent{
 		ID:                    "agent-session-prompt",
 		WorkspaceID:           "ws-1",

@@ -22,16 +22,17 @@ export type MailboxSupportMemberOption = MailboxMemberOption & {
   role?: string;
 };
 
-export function splitMailboxMembersBySelection<T extends MailboxMemberOption>(
+export function splitMailboxMembersBySelection<T>(
   members: T[],
   selectedIDs: string[],
+  getMemberID: (member: T) => string = (member) => (member as MailboxMemberOption).id,
 ): { selected: T[]; available: T[] } {
-  const byID = new Map(members.map((member) => [member.id, member]));
+  const byID = new Map(members.map((member) => [getMemberID(member), member]));
   const selected = selectedIDs
     .map((id) => byID.get(id))
     .filter((member): member is T => Boolean(member));
-  const selectedSet = new Set(selected.map((member) => member.id));
-  const available = members.filter((member) => !selectedSet.has(member.id));
+  const selectedSet = new Set(selected.map((member) => getMemberID(member)));
+  const available = members.filter((member) => !selectedSet.has(getMemberID(member)));
 
   return { selected, available };
 }
@@ -68,6 +69,23 @@ export function filterSupportAccessibleTeams<T extends MailboxTeamOption>(
   return teams.filter((team) => supportTeamIDs.has(team.id));
 }
 
+export function buildSupportTeamOptions<T extends MailboxTeamOption>(
+  teams: T[],
+  grants: MailboxSupportAccessGrant[],
+) {
+  const supportTeamIDs = getSupportAccessTeamIDs(grants);
+  return teams.map((team) => {
+    const hasSupportAccess = supportTeamIDs.has(team.id);
+    return {
+      team,
+      hasSupportAccess,
+      disabledReason: hasSupportAccess
+        ? null
+        : 'This team does not have access to the Support module.',
+    };
+  });
+}
+
 export function memberHasSupportAccess<T extends MailboxSupportMemberOption>(
   member: T,
   grants: MailboxSupportAccessGrant[],
@@ -93,6 +111,23 @@ export function filterSupportAccessibleMembers<T extends MailboxSupportMemberOpt
   teamMemberships: MailboxTeamUserMembership[],
 ) {
   return members.filter((member) => memberHasSupportAccess(member, grants, teamMemberships));
+}
+
+export function buildSupportMemberOptions<T extends MailboxSupportMemberOption>(
+  members: T[],
+  grants: MailboxSupportAccessGrant[],
+  teamMemberships: MailboxTeamUserMembership[],
+) {
+  return members.map((member) => {
+    const hasSupportAccess = memberHasSupportAccess(member, grants, teamMemberships);
+    return {
+      member,
+      hasSupportAccess,
+      disabledReason: hasSupportAccess
+        ? null
+        : 'This member does not have access to the Support module.',
+    };
+  });
 }
 
 export function filterMembersOutsideLinkedTeam<T extends MailboxSupportMemberOption>(

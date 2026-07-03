@@ -321,6 +321,43 @@ describe('FlowRow', () => {
     expect(container?.textContent).toContain('Last run');
     expect(container?.textContent).toContain('Runs when triggered');
   });
+
+  it('collapses long error messages with a show more action', () => {
+    const longError = `Failed to start run: ${'permission denied while validating repository settings '.repeat(12)}final diagnostic tail`;
+
+    render(
+      <FlowRow
+        rule={baseRule}
+        statesById={new Map()}
+        agentNames={new Map([['agent-1', 'Release Notes Writer agent']])}
+        healthItem={healthItem({
+          status: 'error',
+          last_error_at: '2026-06-08T01:00:00Z',
+          last_error_message: longError,
+        })}
+        canEdit={false}
+        canRunNowAction={false}
+        onEdit={() => {}}
+        onRunNow={() => {}}
+        onToggle={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    expect(container?.textContent).toContain('Show more');
+    expect(container?.textContent).not.toContain('final diagnostic tail');
+
+    const showMore = Array.from(container?.querySelectorAll('button') ?? [])
+      .find((button) => button.textContent?.trim() === 'Show more');
+    if (!showMore) throw new Error('Show more button not found');
+
+    act(() => {
+      showMore.click();
+    });
+
+    expect(container?.textContent).toContain('final diagnostic tail');
+    expect(container?.textContent).toContain('Show less');
+  });
 });
 
 describe('filterAutomationFlowsForSearch', () => {
@@ -458,6 +495,16 @@ describe('templateMatchesSearch', () => {
     expect(templateMatchesSearch(template, 'run_on')).toBe(true);
     expect(templateMatchesSearch(template, 'github')).toBe(true);
     expect(templateMatchesSearch(template, 'billing')).toBe(false);
+  });
+
+  it('handles templates without categories when search is non-empty', () => {
+    const uncategorizedTemplate = {
+      ...template,
+      categories: null,
+    } as unknown as FlowTemplateManifest;
+
+    expect(templateMatchesSearch(uncategorizedTemplate, 'release')).toBe(true);
+    expect(templateMatchesSearch(uncategorizedTemplate, 'engineering')).toBe(false);
   });
 });
 

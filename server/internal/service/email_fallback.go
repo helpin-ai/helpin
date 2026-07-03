@@ -576,6 +576,14 @@ func (s *EmailFallbackService) OnAgentReply(ctx context.Context, workspaceID str
 		)
 		return nil
 	}
+	if strings.TrimSpace(conv.PrimaryRecipientState) == model.SupportPrimaryRecipientStateUnconfirmed {
+		s.logger.InfoContext(ctx, "email fallback enqueue skipped — primary recipient unconfirmed",
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+		)
+		return nil
+	}
 	if isEmailFallbackTerminalStatus(conv.Status) {
 		s.logger.InfoContext(ctx, "email fallback enqueue skipped — conversation is terminal",
 			"workspace_id", workspaceID,
@@ -611,6 +619,21 @@ func (s *EmailFallbackService) OnAgentReply(ctx context.Context, workspaceID str
 			"message_id", msg.ID,
 		)
 		return nil
+	}
+	if online, err := s.isVisitorOnline(ctx, workspaceID, conv.AnonymousID); err == nil && online {
+		s.logger.InfoContext(ctx, "email fallback enqueue skipped — visitor online",
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+		)
+		return nil
+	} else if err != nil {
+		s.logger.WarnContext(ctx, "email fallback enqueue visitor presence lookup failed",
+			"error", err,
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+		)
 	}
 
 	delaySecs := normalizedEmailFallbackDelaySecs(settings.EmailFallbackDelaySecs)
@@ -737,10 +760,12 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 	}
 
 	if mailboxHash == "" {
-		if route, err := s.findInboundRouteByRecipient(ctx, inboundRecipientAddress(payload)); err != nil {
-			return err
-		} else if route != nil {
-			return s.processInboundRoute(ctx, route, payload, rawPayload)
+		for _, recipientAddress := range inboundRecipientAddresses(payload) {
+			if route, err := s.findInboundRouteByRecipient(ctx, recipientAddress); err != nil {
+				return err
+			} else if route != nil {
+				return s.processInboundRoute(ctx, route, payload, rawPayload)
+			}
 		}
 		s.logger.WarnContext(ctx, "postmark inbound missing mailbox hash",
 			"message_id", strings.TrimSpace(payload.MessageID),
@@ -800,6 +825,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	if senderName == "" {
 		senderName = "Customer"
 	}
+	replyToRaw, replyToEmail, replyToName := inboundReplyToAddress(payload)
 
 	settings, err := s.loadSettings(ctx, conv.WorkspaceID)
 	if err != nil {
@@ -834,15 +860,19 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		customerEmail = strings.TrimSpace(*conv.CustomerEmail)
 	}
 	if !strings.EqualFold(customerEmail, fromEmail) {
-		if !forwardedAttribution.Applied || !strings.EqualFold(customerEmail, strings.TrimSpace(forwardedAttribution.OriginalEmail)) {
+		replyToMatchesCustomer := replyToEmail != "" && strings.EqualFold(customerEmail, replyToEmail)
+		forwardedMatchesCustomer := forwardedAttribution.Applied && strings.EqualFold(customerEmail, strings.TrimSpace(forwardedAttribution.OriginalEmail))
+		if !replyToMatchesCustomer && !forwardedMatchesCustomer {
 			s.logger.InfoContext(ctx, "postmark inbound sender mismatch",
 				"message_id", strings.TrimSpace(payload.MessageID),
 				"conversation_id", conv.ID,
 			)
 			return nil
 		}
-		if strings.TrimSpace(forwardedAttribution.OriginalName) != "" {
+		if forwardedMatchesCustomer && strings.TrimSpace(forwardedAttribution.OriginalName) != "" {
 			senderName = strings.TrimSpace(forwardedAttribution.OriginalName)
+		} else if replyToMatchesCustomer && strings.TrimSpace(replyToName) != "" {
+			senderName = strings.TrimSpace(replyToName)
 		} else if conv.CustomerName != nil && strings.TrimSpace(*conv.CustomerName) != "" {
 			senderName = strings.TrimSpace(*conv.CustomerName)
 		}
@@ -858,6 +888,8 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	inReplyTo := normalizeRFCHeaderValue(inboundHeaderValue(payload.Headers, "In-Reply-To"))
 	referencesHeader := strings.TrimSpace(inboundHeaderValue(payload.Headers, "References"))
 	recipientAddress := inboundRecipientAddress(payload)
+	ccEmails := inboundCCEmails(payload)
+	bccEmails := inboundBCCEmails(payload)
 
 	viaEmail := "email"
 	spamSignals := postmarkInboundSpamSignalsFromHeaders(payload.Headers)
@@ -908,7 +940,10 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			MessageIDs:        model.DocsStringArray{msg.ID},
 			FromEmail:         fromEmail,
 			ToEmail:           strings.TrimSpace(payload.To),
+			ReplyTo:           replyToRaw,
 			RecipientAddress:  recipientAddress,
+			CCEmails:          model.DocsStringArray(ccEmails),
+			BCCEmails:         model.DocsStringArray(bccEmails),
 			Subject:           strings.TrimSpace(payload.Subject),
 			RFCMessageID:      rfcMessageID,
 			InReplyTo:         inReplyTo,
@@ -1634,6 +1669,12 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		return err
 	}
 	emailRecipients := supportMessageEmailRecipientsFromMetadata(pending[len(pending)-1].Metadata)
+	if len(emailRecipients.CC) == 0 && len(conv.EmailCC) > 0 {
+		emailRecipients.CC = normalizeSupportEmailListExcluding([]string(conv.EmailCC), strings.TrimSpace(derefString(conv.CustomerEmail)))
+	}
+	if recipientCount := 1 + len(emailRecipients.CC) + len(emailRecipients.BCC); recipientCount > 50 {
+		return fmt.Errorf("email recipient count exceeds provider limit")
+	}
 	chatLink, _ := s.buildChatLink(ctx, conv)
 	preparedPending, emailAttachments := s.prepareEmailAttachments(ctx, pending)
 	htmlBody, textBody := s.renderBodies(preparedPending, agentName, workspaceName, chatLink, unsubscribeEmail)
@@ -2947,9 +2988,6 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	}
 
 	senderName := strings.TrimSpace(payload.FromFull.Name)
-	if senderName == "" {
-		senderName = fromEmail
-	}
 	replyToRaw, replyToEmail, replyToName := inboundReplyToAddress(payload)
 
 	settings, err := s.loadSettings(ctx, route.WorkspaceID)
@@ -2992,9 +3030,14 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	} else if replyToEmail != "" {
 		effectiveSenderEmail = replyToEmail
 		effectiveSenderName = replyToName
-		if effectiveSenderName == "" {
-			effectiveSenderName = effectiveSenderEmail
+	}
+	if strings.TrimSpace(effectiveSenderName) == "" || strings.EqualFold(strings.TrimSpace(effectiveSenderName), effectiveSenderEmail) {
+		if derivedName := deriveWidgetNameFromEmail(effectiveSenderEmail); derivedName != "" {
+			effectiveSenderName = derivedName
 		}
+	}
+	if strings.TrimSpace(effectiveSenderName) == "" {
+		effectiveSenderName = effectiveSenderEmail
 	}
 
 	subject := strings.TrimSpace(payload.Subject)
@@ -3004,6 +3047,23 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 
 	customerName := effectiveSenderName
 	customerEmail := effectiveSenderEmail
+	primaryRecipientState := model.SupportPrimaryRecipientStateConfirmed
+	var suggestedPrimaryRecipientEmail *string
+	var suggestedPrimaryRecipientName *string
+	threadParticipants := inboundVisibleThreadParticipants(payload, route.InboundAddress, customerEmail)
+	routeAddressInCC := inboundRouteAddressInCC(payload, route.InboundAddress)
+	emailCC := model.DocsStringArray{}
+	if routeAddressInCC {
+		if email, name := inboundSuggestedPrimaryRecipient(payload, route.InboundAddress, customerEmail); email != "" {
+			primaryRecipientState = model.SupportPrimaryRecipientStateUnconfirmed
+			suggestedPrimaryRecipientEmail = strPtr(email)
+			if strings.TrimSpace(name) != "" {
+				suggestedPrimaryRecipientName = strPtr(strings.TrimSpace(name))
+			}
+		}
+	} else if inboundRouteAddressInTo(payload, route.InboundAddress) {
+		emailCC = model.DocsStringArray(normalizeSupportEmailListExcluding(inboundCCEmails(payload), route.InboundAddress, customerEmail))
+	}
 	viaEmail := "email"
 	now := s.now()
 	spamSignals := postmarkInboundSpamSignalsFromHeaders(payload.Headers)
@@ -3035,17 +3095,22 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	}
 
 	conversation := &model.SupportConversation{
-		WorkspaceID:   route.WorkspaceID,
-		MailboxID:     routeMailboxID,
-		Subject:       subject,
-		Status:        status,
-		ClosedAt:      closedAt,
-		FlowState:     strPtr(model.SupportConversationFlowStateWaitingForHuman),
-		Priority:      "medium",
-		Channel:       "email",
-		CustomerName:  &customerName,
-		CustomerEmail: &customerEmail,
-		Source:        "email",
+		WorkspaceID:                    route.WorkspaceID,
+		MailboxID:                      routeMailboxID,
+		Subject:                        subject,
+		Status:                         status,
+		ClosedAt:                       closedAt,
+		FlowState:                      strPtr(model.SupportConversationFlowStateWaitingForHuman),
+		Priority:                       "medium",
+		Channel:                        "email",
+		CustomerName:                   &customerName,
+		CustomerEmail:                  &customerEmail,
+		PrimaryRecipientState:          primaryRecipientState,
+		SuggestedPrimaryRecipientEmail: suggestedPrimaryRecipientEmail,
+		SuggestedPrimaryRecipientName:  suggestedPrimaryRecipientName,
+		EmailCC:                        emailCC,
+		EmailThreadParticipants:        model.DocsStringArray(threadParticipants),
+		Source:                         "email",
 	}
 
 	if conversation.Status != model.SupportConversationStatusSpam && conversation.MailboxID == nil && s.supportInboxService != nil {
@@ -3079,6 +3144,8 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	inReplyTo := normalizeRFCHeaderValue(inboundHeaderValue(payload.Headers, "In-Reply-To"))
 	referencesHeader := strings.TrimSpace(inboundHeaderValue(payload.Headers, "References"))
 	recipientAddress := inboundRecipientAddress(payload)
+	ccEmails := inboundCCEmails(payload)
+	bccEmails := inboundBCCEmails(payload)
 
 	txErr := s.convRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		convRepoTx := s.convRepo.WithTx(tx)
@@ -3122,6 +3189,8 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 			ToEmail:           strings.TrimSpace(payload.To),
 			ReplyTo:           replyToRaw,
 			RecipientAddress:  recipientAddress,
+			CCEmails:          model.DocsStringArray(ccEmails),
+			BCCEmails:         model.DocsStringArray(bccEmails),
 			Subject:           subject,
 			RFCMessageID:      rfcMessageID,
 			InReplyTo:         inReplyTo,
@@ -3225,12 +3294,18 @@ func mailboxHashFromInboundPayload(payload model.PostmarkInboundPayload) string 
 	for _, candidate := range []string{
 		payload.OriginalRecipient,
 		payload.To,
+		payload.Cc,
 	} {
 		if mailboxHash := mailboxHashFromRecipient(candidate); mailboxHash != "" {
 			return mailboxHash
 		}
 	}
 	for _, addr := range payload.ToFull {
+		if mailboxHash := mailboxHashFromRecipient(addr.Email); mailboxHash != "" {
+			return mailboxHash
+		}
+	}
+	for _, addr := range payload.CcFull {
 		if mailboxHash := mailboxHashFromRecipient(addr.Email); mailboxHash != "" {
 			return mailboxHash
 		}
@@ -3258,22 +3333,142 @@ func mailboxHashFromRecipient(value string) string {
 }
 
 func inboundRecipientAddress(payload model.PostmarkInboundPayload) string {
-	for _, candidate := range []string{payload.OriginalRecipient, payload.To} {
-		candidate = strings.TrimSpace(candidate)
-		if candidate == "" {
+	recipients := inboundRecipientAddresses(payload)
+	if len(recipients) == 0 {
+		return ""
+	}
+	return recipients[0]
+}
+
+func inboundRecipientAddresses(payload model.PostmarkInboundPayload) []string {
+	var candidates []string
+	candidates = append(candidates, payload.OriginalRecipient, payload.To)
+	for _, addr := range payload.ToFull {
+		candidates = append(candidates, addr.Email)
+	}
+	candidates = append(candidates, payload.Cc)
+	for _, addr := range payload.CcFull {
+		candidates = append(candidates, addr.Email)
+	}
+	return normalizedEmailAddressList(candidates)
+}
+
+func inboundCCEmails(payload model.PostmarkInboundPayload) []string {
+	values := []string{payload.Cc}
+	for _, addr := range payload.CcFull {
+		values = append(values, addr.Email)
+	}
+	return normalizedEmailAddressList(values)
+}
+
+func inboundBCCEmails(payload model.PostmarkInboundPayload) []string {
+	values := []string{payload.Bcc}
+	for _, addr := range payload.BccFull {
+		values = append(values, addr.Email)
+	}
+	return normalizedEmailAddressList(values)
+}
+
+func inboundRouteAddressInCC(payload model.PostmarkInboundPayload, routeAddress string) bool {
+	routeAddress = strings.ToLower(strings.TrimSpace(routeAddress))
+	if routeAddress == "" {
+		return false
+	}
+	for _, email := range inboundCCEmails(payload) {
+		if strings.EqualFold(email, routeAddress) {
+			return true
+		}
+	}
+	return false
+}
+
+func inboundRouteAddressInTo(payload model.PostmarkInboundPayload, routeAddress string) bool {
+	routeAddress = strings.ToLower(strings.TrimSpace(routeAddress))
+	if routeAddress == "" {
+		return false
+	}
+	values := []string{payload.To}
+	for _, addr := range payload.ToFull {
+		values = append(values, addr.Email)
+	}
+	for _, email := range normalizedEmailAddressList(values) {
+		if strings.EqualFold(email, routeAddress) {
+			return true
+		}
+	}
+	return false
+}
+
+func inboundSuggestedPrimaryRecipient(payload model.PostmarkInboundPayload, routeAddress, currentPrimary string) (string, string) {
+	routeAddress = strings.ToLower(strings.TrimSpace(routeAddress))
+	currentPrimary = strings.ToLower(strings.TrimSpace(currentPrimary))
+	for _, addr := range payload.ToFull {
+		email := strings.ToLower(strings.TrimSpace(addr.Email))
+		if email == "" || email == routeAddress || email == currentPrimary {
 			continue
 		}
-		if addr, err := mail.ParseAddress(candidate); err == nil {
-			return strings.TrimSpace(addr.Address)
-		}
-		return candidate
+		return email, strings.TrimSpace(addr.Name)
 	}
+	for _, email := range normalizedEmailAddressList([]string{payload.To}) {
+		if email == "" || email == routeAddress || email == currentPrimary {
+			continue
+		}
+		return email, ""
+	}
+	return "", ""
+}
+
+func inboundVisibleThreadParticipants(payload model.PostmarkInboundPayload, routeAddress, currentPrimary string) []string {
+	routeAddress = strings.ToLower(strings.TrimSpace(routeAddress))
+	currentPrimary = strings.ToLower(strings.TrimSpace(currentPrimary))
+	values := []string{payload.To, payload.Cc}
 	for _, addr := range payload.ToFull {
-		if strings.TrimSpace(addr.Email) != "" {
-			return strings.TrimSpace(addr.Email)
+		values = append(values, addr.Email)
+	}
+	for _, addr := range payload.CcFull {
+		values = append(values, addr.Email)
+	}
+	result := make([]string, 0, len(values))
+	for _, email := range normalizedEmailAddressList(values) {
+		if email == "" || email == routeAddress || email == currentPrimary {
+			continue
+		}
+		result = append(result, email)
+	}
+	return result
+}
+
+func normalizedEmailAddressList(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		var addresses []string
+		if parsed, err := mail.ParseAddressList(value); err == nil {
+			for _, addr := range parsed {
+				addresses = append(addresses, addr.Address)
+			}
+		} else if addr, err := mail.ParseAddress(value); err == nil {
+			addresses = append(addresses, addr.Address)
+		} else {
+			addresses = append(addresses, value)
+		}
+		for _, address := range addresses {
+			email := strings.ToLower(strings.TrimSpace(address))
+			if email == "" {
+				continue
+			}
+			if _, exists := seen[email]; exists {
+				continue
+			}
+			seen[email] = struct{}{}
+			result = append(result, email)
 		}
 	}
-	return ""
+	return result
 }
 
 func inboundHeaderValue(headers []model.PostmarkHeader, name string) string {

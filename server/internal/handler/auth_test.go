@@ -188,6 +188,8 @@ func newAuthHandlerTestFixture(t *testing.T) (*AuthHandler, string) {
 		email TEXT NOT NULL UNIQUE,
 		password_hash TEXT NOT NULL,
 		full_name TEXT NOT NULL,
+		email_verified_at DATETIME,
+		google_subject TEXT UNIQUE,
 		avatar_url TEXT,
 		avatar_style TEXT,
 		avatar_seed TEXT,
@@ -208,6 +210,7 @@ func newAuthHandlerTestFixture(t *testing.T) (*AuthHandler, string) {
 	jwtManager := auth.NewJWTManager("test-secret")
 	authService := service.NewAuthService(
 		userRepo,
+		nil,
 		nil,
 		nil,
 		nil,

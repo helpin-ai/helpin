@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -29,15 +30,7 @@ func resolveSupportAvailabilityForMailbox(settings model.SupportInboxSettings, m
 	offlineMessage := defaultOutsideHoursMessage(settings)
 	specialNotice := normalizedSpecialNotice(settings.SpecialNoticeText)
 
-	onlineAvailability := model.WidgetConfigAvailability{
-		IsOnline:          true,
-		StatusText:        "Online now",
-		ReplyTimeText:     expectation.Text,
-		ReplyTimePreset:   expectation.Preset,
-		ReplyTimeMinutes:  optionalMinutes(expectation),
-		SpecialNoticeText: specialNotice,
-		MailboxID:         expectation.FromMailboxID,
-	}
+	onlineAvailability := resolveSupportOnlineAvailability(settings, mailbox)
 
 	if !settings.BusinessHoursEnabled {
 		return supportAvailabilitySnapshot{
@@ -86,6 +79,24 @@ func resolveSupportAvailabilityForMailbox(settings model.SupportInboxSettings, m
 	}
 }
 
+// resolveSupportOnlineAvailability builds the canonical "online" widget
+// availability snapshot: an explicit online status with reply-time expectation
+// copy and no offline "back later" framing. It is the single source of truth
+// for the online presentation, reused by both the business-hours online branch
+// and the presence-driven widget path (where a teammate online trumps hours).
+func resolveSupportOnlineAvailability(settings model.SupportInboxSettings, mailbox *model.SupportMailbox) model.WidgetConfigAvailability {
+	expectation := ResolveReplyExpectation(settings, mailbox)
+	return model.WidgetConfigAvailability{
+		IsOnline:          true,
+		StatusText:        "Online now",
+		ReplyTimeText:     expectation.Text,
+		ReplyTimePreset:   expectation.Preset,
+		ReplyTimeMinutes:  optionalMinutes(expectation),
+		SpecialNoticeText: normalizedSpecialNotice(settings.SpecialNoticeText),
+		MailboxID:         expectation.FromMailboxID,
+	}
+}
+
 // optionalMinutes returns a pointer only for the custom preset so the
 // JSON payload stays minimal for preset-only cases.
 func optionalMinutes(exp ReplyExpectation) *int {
@@ -129,6 +140,31 @@ func loadSupportAvailability(
 	}
 
 	return settings, resolveSupportAvailability(settings, now), nil
+}
+
+// anySupportTeammateOnline reports whether at least one support-accessible
+// teammate is currently online (presence-based). Shared by the widget's
+// pre-chat availability and AI escalation so both surfaces use one source of
+// truth for "is someone available".
+func anySupportTeammateOnline(
+	ctx context.Context,
+	workspaceRepo *repository.WorkspaceRepository,
+	presence websocket.PresenceProvider,
+	statusOverrideRepo *repository.SupportTeammateStatusOverrideRepository,
+	workspaceID string,
+	now time.Time,
+) bool {
+	statuses, err := resolveSupportTeammatePresenceStatuses(ctx, workspaceRepo, presence, statusOverrideRepo, workspaceID, now)
+	if err != nil {
+		slog.WarnContext(ctx, "resolve teammate presence failed; treating as offline", "error", err, "workspace_id", workspaceID)
+		return false
+	}
+	for _, status := range statuses {
+		if status.Status == model.SupportTeammateStatusOnline {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveSupportTeammatePresenceStatuses(

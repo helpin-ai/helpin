@@ -692,7 +692,7 @@ const TEMPLATE_DISPLAY_ORDER: Record<string, number> = {
   docs_freshness_sweep: 60,
   public_help_freshness_sweep: 70,
   api_docs_freshness_sweep: 80,
-  competitive_intelligence_digest: 90,
+  competitors_changelog_tracking_report: 90,
   buying_signal_to_task: 100,
   stale_task_escalation: 110,
   merge_when_done: 120,
@@ -720,6 +720,7 @@ function compareTemplatesForDisplay(a: FlowTemplateManifest, b: FlowTemplateMani
 export function templateMatchesSearch(template: FlowTemplateManifest, search: string) {
   const query = search.trim().toLowerCase();
   if (!query) return true;
+  const categories = template.categories ?? [];
 
   const searchableParts = [
     template.key,
@@ -728,8 +729,8 @@ export function templateMatchesSearch(template: FlowTemplateManifest, search: st
     template.description_ref,
     template.trigger.type,
     template.trigger.event,
-    ...template.categories,
-    ...template.categories.map((category) => TEMPLATE_CATEGORY_LABELS[category]),
+    ...categories,
+    ...categories.map((category) => TEMPLATE_CATEGORY_LABELS[category]),
   ];
 
   return searchableParts.some((part) => String(part ?? '').toLowerCase().includes(query));
@@ -780,7 +781,7 @@ export function defaultTemplateInputs(
       }
     }
   }
-  if (template.key === 'competitive_intelligence_digest') {
+  if (template.key === 'competitors_changelog_tracking_report') {
     if (!String(inputs.target_company ?? '').trim() && workspace?.name?.trim()) {
       inputs.target_company = workspace.name.trim();
     }
@@ -1900,6 +1901,31 @@ const FLOW_STATE_STYLES: Record<FlowState, { pill: string; dot: string; label: s
     label: 'Incomplete',
   },
 };
+const FLOW_ERROR_PREVIEW_LENGTH = 260;
+
+function FlowErrorMessage({ message }: { message: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const trimmed = message.trim();
+  const isLong = trimmed.length > FLOW_ERROR_PREVIEW_LENGTH;
+  const visibleMessage = !isLong || expanded
+    ? trimmed
+    : `${trimmed.slice(0, FLOW_ERROR_PREVIEW_LENGTH).trimEnd()}...`;
+
+  return (
+    <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
+      <div className="whitespace-pre-wrap break-words">⚠ {visibleMessage}</div>
+      {isLong ? (
+        <button
+          type="button"
+          className="mt-1 text-[11px] font-medium text-destructive underline underline-offset-2 hover:text-destructive/80"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 function FlowStatePill({ state }: { state: FlowState }) {
   const style = FLOW_STATE_STYLES[state];
@@ -2473,9 +2499,7 @@ export function FlowRow({
         </div>
 
         {flowState === 'error' && lastErrorMessage && (
-          <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
-            ⚠ {lastErrorMessage}
-          </div>
+          <FlowErrorMessage message={lastErrorMessage} />
         )}
       </div>
     </>

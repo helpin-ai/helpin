@@ -244,6 +244,58 @@ func TestEmailFallbackOnAgentReplySetsCancellableUntil(t *testing.T) {
 	}
 }
 
+func TestEmailFallbackOnAgentReplySkipsQueueWhenVisitorOnline(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 30
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	now := time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return now }
+
+	customerEmail := "customer@example.com"
+	anonymousID := "anon-online-at-reply"
+	conv := &model.SupportConversation{
+		ID:            "33333333-3333-3333-3333-333333333334",
+		WorkspaceID:   "11111111-1111-1111-1111-111111111111",
+		Subject:       "Need help",
+		Status:        "open",
+		AnonymousID:   &anonymousID,
+		CustomerEmail: &customerEmail,
+	}
+	msg := &model.SupportMessage{
+		ID:             "44444444-4444-4444-4444-444444444445",
+		WorkspaceID:    conv.WorkspaceID,
+		ConversationID: conv.ID,
+		SenderType:     "user",
+		MessageType:    "reply",
+		Content:        "Hello while you are here",
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+	if err := env.service.hub.Presence.SetVisitorOnline(ctx, conv.WorkspaceID, anonymousID, "conn-1"); err != nil {
+		t.Fatalf("set visitor online: %v", err)
+	}
+
+	if err := env.service.OnAgentReply(ctx, conv.WorkspaceID, msg, conv); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	if _, err := env.redis.ZScore(ctx, emailFallbackOutboxKey, conv.ID).Result(); err != redis.Nil {
+		t.Fatalf("expected no queued email fallback for online visitor, got err=%v", err)
+	}
+	reloaded, err := env.messageRepo.GetByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if reloaded != nil && reloaded.CancellableUntil != nil {
+		t.Fatalf("expected no cancellable_until for online visitor, got %v", reloaded.CancellableUntil)
+	}
+}
+
 func TestEmailFallbackCancelForMessageRemovesOnlyTargetWhenOthersPending(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
@@ -530,6 +582,111 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 		t.Fatalf("check redis cleanup: %v", err)
 	} else if exists != 0 {
 		t.Fatalf("expected redis cleanup, found %d keys", exists)
+	}
+}
+
+// TestReplyByEmailWhenVisitorOffline verifies the after-hours promise from
+// Task 10: when a human teammate replies and the visitor is not currently
+// connected to the widget, the reply goes out by email exactly once. This is
+// the inverse of TestEmailFallbackFireEmailVisitorOnlineUnreadPostponesWithinGraceWindow,
+// which proves an online visitor is NOT emailed.
+func TestReplyByEmailWhenVisitorOffline(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 120
+	settings.EmailFallbackMaxDeliveryAgeSecs = 600
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666672"
+	anonymousID := "anon-offline-visitor"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "After hours question",
+		Status:        "open",
+		AnonymousID:   &anonymousID,
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderDisplayName: strPtr("Sam Teammate"),
+		Content:           "Sorry we missed you — here is the answer.",
+		MessageType:       "reply",
+		CreatedAt:         fixedNow.Add(-120 * time.Second),
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+	if err := env.redis.ZAdd(ctx, emailFallbackOutboxKey, redis.Z{Score: float64(fixedNow.Unix()), Member: conversationID}).Err(); err != nil {
+		t.Fatalf("seed outbox: %v", err)
+	}
+	if err := env.redis.RPush(ctx, env.service.msgListKey(conversationID), msg.ID).Err(); err != nil {
+		t.Fatalf("seed msg list: %v", err)
+	}
+
+	// Intentionally do NOT mark the visitor online — they are offline.
+	sendCount := 0
+	var captured capturedPostmarkRequest
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(body, &captured); err != nil {
+				return nil, err
+			}
+			sendCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ErrorCode": 0,
+					"Message": "OK",
+					"MessageID": "pm-offline-1",
+					"SubmittedAt": "2026-03-20T12:30:00Z",
+					"To": "customer@example.com"
+				}`)),
+			}, nil
+		}),
+	})
+
+	if err := env.service.fireEmail(ctx, conversationID, []string{msg.ID}); err != nil {
+		t.Fatalf("fire email: %v", err)
+	}
+
+	if sendCount != 1 {
+		t.Fatalf("expected exactly one email send to offline visitor, got %d", sendCount)
+	}
+	if captured.To != customerEmail {
+		t.Fatalf("expected recipient %q, got %q", customerEmail, captured.To)
+	}
+
+	saved, err := env.messageRepo.GetByIDs(ctx, []string{msg.ID})
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if len(saved) != 1 || saved[0].EmailNotifiedAt == nil {
+		t.Fatalf("expected email_notified_at to be set after offline send")
+	}
+
+	// The conversation should be removed from the outbox (sent, not postponed).
+	if exists, err := env.redis.Exists(ctx, emailFallbackOutboxKey, env.service.msgListKey(conversationID)).Result(); err != nil {
+		t.Fatalf("check redis cleanup: %v", err)
+	} else if exists != 0 {
+		t.Fatalf("expected redis cleanup after offline send, found %d keys", exists)
 	}
 }
 
@@ -2636,6 +2793,189 @@ func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) 
 	}
 }
 
+func TestEmailFallbackProcessInboundEmailRouteFromCcRequiresPrimaryRecipientConfirmation(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID:             "a2111111-1111-1111-1111-111111111115",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-copied",
+		InboundAddress: "support@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "teammate@company.com", Name: "Alex Teammate"},
+		To:                "Jane Persona <jane@example.com>",
+		ToFull:            []model.PostmarkAddress{{Email: "jane@example.com", Name: "Jane Persona"}},
+		Cc:                route.InboundAddress,
+		CcFull:            []model.PostmarkAddress{{Email: route.InboundAddress, Name: "Support"}},
+		OriginalRecipient: "",
+		Subject:           "Can you handle this?",
+		MessageID:         "pm-route-copied-1",
+		StrippedTextReply: "Looping support in.",
+		Headers: []model.PostmarkHeader{
+			{Name: "Message-ID", Value: "<copied-thread-1@example.com>"},
+		},
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-copied-1"}`); err != nil {
+		t.Fatalf("process copied inbound email: %v", err)
+	}
+
+	conversations, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 || len(conversations) != 1 {
+		t.Fatalf("expected 1 conversation, got total=%d len=%d", total, len(conversations))
+	}
+	conv := conversations[0]
+	if conv.CustomerEmail == nil || *conv.CustomerEmail != "teammate@company.com" {
+		t.Fatalf("customer_email = %#v, want teammate sender", conv.CustomerEmail)
+	}
+	if conv.PrimaryRecipientState != model.SupportPrimaryRecipientStateUnconfirmed {
+		t.Fatalf("primary_recipient_state = %q", conv.PrimaryRecipientState)
+	}
+	if conv.SuggestedPrimaryRecipientEmail == nil || *conv.SuggestedPrimaryRecipientEmail != "jane@example.com" {
+		t.Fatalf("suggested_primary_recipient_email = %#v", conv.SuggestedPrimaryRecipientEmail)
+	}
+	if len(conv.EmailThreadParticipants) != 1 || conv.EmailThreadParticipants[0] != "jane@example.com" {
+		t.Fatalf("email_thread_participants = %#v", conv.EmailThreadParticipants)
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conv.ID)
+	if err != nil {
+		t.Fatalf("list email logs: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 email log, got %d", len(logs))
+	}
+	if len(logs[0].CCEmails) != 1 || logs[0].CCEmails[0] != route.InboundAddress {
+		t.Fatalf("cc_emails = %#v", logs[0].CCEmails)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailRouteFromToPersistsCustomerCCForReplies(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID:             "a2111111-1111-1111-1111-111111111116",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-direct-cc",
+		InboundAddress: "support@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "customer@company.com", Name: "Casey Customer"},
+		To:                route.InboundAddress,
+		ToFull:            []model.PostmarkAddress{{Email: route.InboundAddress, Name: "Support"}},
+		Cc:                "teammate1@company.com, Teammate Two <teammate2@company.com>",
+		CcFull:            []model.PostmarkAddress{{Email: "teammate1@company.com", Name: "Teammate One"}, {Email: "teammate2@company.com", Name: "Teammate Two"}},
+		OriginalRecipient: route.InboundAddress,
+		Subject:           "Need help with billing",
+		MessageID:         "pm-route-direct-cc-1",
+		StrippedTextReply: "Can you help us?",
+		Headers: []model.PostmarkHeader{
+			{Name: "Message-ID", Value: "<direct-cc-thread-1@example.com>"},
+		},
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-direct-cc-1"}`); err != nil {
+		t.Fatalf("process direct inbound email with cc: %v", err)
+	}
+
+	conversations, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 || len(conversations) != 1 {
+		t.Fatalf("expected 1 conversation, got total=%d len=%d", total, len(conversations))
+	}
+	conv := conversations[0]
+	if conv.CustomerEmail == nil || *conv.CustomerEmail != "customer@company.com" {
+		t.Fatalf("customer_email = %#v, want customer sender", conv.CustomerEmail)
+	}
+	if conv.PrimaryRecipientState != model.SupportPrimaryRecipientStateConfirmed {
+		t.Fatalf("primary_recipient_state = %q", conv.PrimaryRecipientState)
+	}
+	if len(conv.EmailCC) != 2 || conv.EmailCC[0] != "teammate1@company.com" || conv.EmailCC[1] != "teammate2@company.com" {
+		t.Fatalf("email_cc = %#v, want customer cc teammates", conv.EmailCC)
+	}
+	if len(conv.EmailThreadParticipants) != 2 || conv.EmailThreadParticipants[0] != "teammate1@company.com" || conv.EmailThreadParticipants[1] != "teammate2@company.com" {
+		t.Fatalf("email_thread_participants = %#v", conv.EmailThreadParticipants)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailRouteDerivesCustomerNameFromEmail(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID:             "a2111111-1111-1111-1111-111111111111",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-derived-name",
+		InboundAddress: "support@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "matta.trisha@gmail.com"},
+		To:                route.InboundAddress,
+		OriginalRecipient: route.InboundAddress,
+		Subject:           "Question",
+		MessageID:         "pm-route-derived-name",
+		StrippedTextReply: "Can you help?",
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-derived-name"}`); err != nil {
+		t.Fatalf("process routed inbound email: %v", err)
+	}
+
+	conversations, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 || len(conversations) != 1 {
+		t.Fatalf("expected 1 conversation, got total=%d len=%d", total, len(conversations))
+	}
+	if conversations[0].CustomerName == nil || *conversations[0].CustomerName != "Matta Trisha" {
+		t.Fatalf("customer_name = %#v, want Matta Trisha", conversations[0].CustomerName)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conversations[0].ID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].SenderDisplayName == nil || *messages[0].SenderDisplayName != "Matta Trisha" {
+		t.Fatalf("sender_display_name = %#v, want Matta Trisha", messages)
+	}
+}
+
 func TestEmailFallbackProcessInboundEmailRouteUsesReplyToForContactFormCustomer(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
@@ -2711,6 +3051,89 @@ func TestEmailFallbackProcessInboundEmailRouteUsesReplyToForContactFormCustomer(
 	detail, err := env.service.supportInboxService.GetMessageEmailDetail(ctx, workspaceID, messages[0].ID)
 	if err != nil {
 		t.Fatalf("get message email detail: %v", err)
+	}
+	if detail.ReplyTo != "Taylor Visitor <taylor.visitor@example.com>" {
+		t.Fatalf("detail reply-to = %q, want visitor header", detail.ReplyTo)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailRouteAcceptsExistingContactFormReplyByReplyTo(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "99999999-9999-9999-9999-999999999991"
+	customerEmail := "taylor.visitor@example.com"
+	customerName := "Taylor Visitor"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Website inquiry",
+		Status:        model.SupportConversationStatusOpen,
+		Channel:       "email",
+		Source:        "email",
+		CustomerEmail: &customerEmail,
+		CustomerName:  &customerName,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	outboundMsgID := "<helpin-contact-form-thread@on.helpin.email>"
+	if err := env.emailLogRepo.Create(ctx, &model.SupportEmailLog{
+		ID:             "dddddddd-dddd-dddd-dddd-dddddddddd91",
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		Direction:      "outbound",
+		RFCMessageID:   outboundMsgID,
+		ToEmail:        customerEmail,
+		Status:         "sent",
+	}); err != nil {
+		t.Fatalf("create email log: %v", err)
+	}
+
+	route := &model.SupportEmailRoute{
+		ID:             "eeeeeeee-eeee-eeee-eeee-eeeeeeeeee91",
+		WorkspaceID:    workspaceID,
+		InboundAddress: "inbox@acme.on.helpin.email",
+		Active:         true,
+	}
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "website@acme.com", Name: "Acme Contact Form"},
+		OriginalRecipient: route.InboundAddress,
+		To:                route.InboundAddress,
+		Subject:           "Re: Website inquiry",
+		MessageID:         "pm-route-contact-form-reply",
+		TextBody:          "I can meet tomorrow.",
+		Headers: []model.PostmarkHeader{
+			{Name: "Reply-To", Value: "Taylor Visitor <taylor.visitor@example.com>"},
+			{Name: "In-Reply-To", Value: outboundMsgID},
+			{Name: "Message-ID", Value: "<contact-form-reply-1@acme.com>"},
+		},
+	}
+
+	if err := env.service.processInboundRoute(ctx, route, payload, `{"MessageID":"pm-route-contact-form-reply"}`); err != nil {
+		t.Fatalf("process routed contact form reply: %v", err)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected contact form reply to be accepted on existing conversation, got %d messages", len(messages))
+	}
+	if messages[0].SenderDisplayName == nil || *messages[0].SenderDisplayName != "Taylor Visitor" {
+		t.Fatalf("sender display name = %#v, want Taylor Visitor", messages[0].SenderDisplayName)
+	}
+
+	detail, err := env.service.supportInboxService.GetMessageEmailDetail(ctx, workspaceID, messages[0].ID)
+	if err != nil {
+		t.Fatalf("get message email detail: %v", err)
+	}
+	if detail.FromEmail != "website@acme.com" {
+		t.Fatalf("detail from = %q, want raw contact form sender", detail.FromEmail)
 	}
 	if detail.ReplyTo != "Taylor Visitor <taylor.visitor@example.com>" {
 		t.Fatalf("detail reply-to = %q, want visitor header", detail.ReplyTo)

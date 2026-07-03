@@ -1439,3 +1439,13 @@ type testOrgRoleResolver struct {
 func (r testOrgRoleResolver) GetMemberRole(_ context.Context, _ string, userID string) (string, error) {
 	return r.roles[userID], nil
 }
+
+func (r testOrgRoleResolver) ListOwners(_ context.Context, _ string) ([]model.MemberWithUser, error) {
+	owners := make([]model.MemberWithUser, 0)
+	for userID, role := range r.roles {
+		if role == model.RoleOwner {
+			owners = append(owners, model.MemberWithUser{UserID: userID, Role: role})
+		}
+	}
+	return owners, nil
+}

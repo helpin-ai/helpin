@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AUTOMATED_ROUTING_DESCRIPTION,
   CONFIGURE_ROUTING_LINK_CLASS,
+  DEFAULT_EXPANDED_ROUTING_SECTIONS,
   getDisabledRoutingWarning,
   getEmailForwardingStatus,
   getRoutingTooltipLines,
   getSharedEmailRoute,
   getWorkspaceDefaultSender,
+  HANDOFF_ASSIGNMENT_DESCRIPTION,
+  shouldShowAutomatedRoutingContent,
 } from '../ConversationRoutingTab';
 
 describe('conversation routing status helpers', () => {
@@ -32,6 +36,19 @@ describe('conversation routing status helpers', () => {
     expect(CONFIGURE_ROUTING_LINK_CLASS).not.toContain('text-primary');
   });
 
+  it('keeps routing and assignment section descriptions concise', () => {
+    expect(AUTOMATED_ROUTING_DESCRIPTION).toBe(
+      'Routing decides which inbox a conversation moves to. Automated routing checks manual rules first, then uses AI when no rule matches.',
+    );
+    expect(HANDOFF_ASSIGNMENT_DESCRIPTION).toBe(
+      'Assignment decides which teammate owns a handoff. Choose where AI handoffs go and whether a teammate is assigned automatically.',
+    );
+  });
+
+  it('opens routing sections by default', () => {
+    expect(DEFAULT_EXPANDED_ROUTING_SECTIONS).toEqual(['automated-routing', 'handoff-assignment']);
+  });
+
   it('shows only the warning in status tooltips when routing is globally disabled', () => {
     const warning = getDisabledRoutingWarning('AI routing', true, false);
 
@@ -40,6 +57,11 @@ describe('conversation routing status helpers', () => {
 
   it('shows normal tooltip detail when there is no disabled-routing warning', () => {
     expect(getRoutingTooltipLines(null, ['Text contains: refund'])).toEqual(['Text contains: refund']);
+  });
+
+  it('hides automated routing content while automated routing is off', () => {
+    expect(shouldShowAutomatedRoutingContent(false)).toBe(false);
+    expect(shouldShowAutomatedRoutingContent(true)).toBe(true);
   });
 
   it('selects the shared inbox forwarding route', () => {

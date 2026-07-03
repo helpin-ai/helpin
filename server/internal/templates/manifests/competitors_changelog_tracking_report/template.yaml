@@ -1,19 +1,19 @@
-key: competitive_intelligence_digest
+key: competitors_changelog_tracking_report
 version: 1
-name: Competitive Intelligence Digest
+name: Competitors Changelog Tracking Report
 icon: chart
-short_description: Tracks competitor updates and saves a market digest report.
+short_description: Tracks competitor changelogs and saves a scheduled report.
 categories: [marketing]
 agent:
   create:
     preset: researcher
     runtime_kind: native_sdk
     name_template: "{{template_name}} agent"
-    skills: [competitive_intelligence_digest]
+    skills: [competitors_changelog_tracking_report]
     system_prompt: |
-      You are a competitive intelligence agent for {{target_company}}.
+      You are a competitors changelog tracking agent for {{target_company}}.
 
-      Configured digest:
+      Configured report:
       - target_company: {{target_company}}
       - target_domain: {{target_domain}}
       - competitors: {{competitors}}
@@ -31,13 +31,13 @@ agent:
 
       For each competitor, first use web_search_exa to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog.
 
-      Always create one Docs digest report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Competitive intelligence digest - <scope/context>`. Use {{target_company}}, the market/category, or the primary competitor set for `<scope/context>`. Include competitor updates, source links, relevance to {{target_company}}, customer-facing implications, and recommended messaging or product follow-ups.
+      Always create one Docs report in the configured internal Docs space and collection. Use this title format: `Competitors changelog tracking report - <scope/context> - YYYY-MM-DD`. Use {{target_company}}, the market/category, or the primary competitor set for `<scope/context>`. Call create_document exactly once with the complete report content. Do not repeat the document title as the first heading or opening line in the document body. Start the body with TL;DR, then include competitor updates, source links, relevance to {{target_company}}, customer-facing implications, and recommended messaging or product follow-ups.
 
       If create_follow_up_tasks is true, create focused marketing/product tasks only for notable changes that need action. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
 
       Raw configuration:
       {{raw_configuration_json}}
-    allowed_tools: [update_plan, web_search_exa, fetch_url, crawl_url, create_document, write_document_content, link_document_to_object, list_workspace_teams, list_team_workflows_with_stages, create_task]
+    allowed_tools: [update_plan, web_search_exa, fetch_url, crawl_url, create_document, link_document_to_object, list_workspace_teams, list_team_workflows_with_stages, create_task]
     allowed_targets: [workspace, document, task]
     approval_mode: always
 trigger:
@@ -48,14 +48,14 @@ inputs:
     required: true
     label: Run schedule
     section: When should it run
-    help_text: How often the market digest should be created.
+    help_text: How often the competitors changelog report should be created.
   - key: target_company
     type: string
     required: true
     label: Your company/brand
     section: What market should it watch?
     placeholder: Acme
-    help_text: The company the digest should compare competitors against.
+    help_text: The company the report should compare competitors against.
   - key: target_domain
     type: string
     required: false
@@ -71,7 +71,7 @@ inputs:
     max: 30
     label: Lookback window
     section: What market should it watch?
-    help_text: How many days of competitor updates to include in each digest.
+    help_text: How many days of competitor updates to include in each report.
   - key: competitors
     type: string_list
     required: false
@@ -86,14 +86,14 @@ inputs:
     required: true
     label: Docs space
     section: Where should the report be saved?
-    help_text: Market digest reports are saved as internal Docs documents in this space.
+    help_text: Competitors changelog reports are saved as internal Docs documents in this space.
   - key: report_collection_id
     type: collection
     required: true
     label: Docs collection
     section: Where should the report be saved?
     depends_on: report_space_id
-    help_text: The collection where competitive intelligence reports will be created.
+    help_text: The collection where competitors changelog reports will be created.
   - key: create_follow_up_tasks
     type: bool
     required: false

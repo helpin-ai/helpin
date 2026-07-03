@@ -112,7 +112,7 @@ export function SupportInboxLayout() {
   }, [navigate, slug]);
   const handleRoutingSettingsClick = useCallback(() => {
     if (!slug) return;
-    void navigate({ to: '/w/$slug/settings/inboxes-routing', params: { slug }, search: { tab: 'inboxes' } });
+    void navigate({ to: '/w/$slug/settings/inboxes-routing', params: { slug }, search: { tab: 'routing' } });
   }, [navigate, slug]);
   const handleSupportSearchClick = useCallback(() => {
     if (!slug) return;

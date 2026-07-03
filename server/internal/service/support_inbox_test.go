@@ -863,6 +863,9 @@ func TestSupportInboxServiceCreateConversationWithMessageAssignsCreatorAndStores
 	if !slices.Equal(metadata.BCCEmails, []string{"audit@example.com"}) {
 		t.Fatalf("bcc metadata = %#v", metadata.BCCEmails)
 	}
+	if !slices.Equal([]string(result.Conversation.EmailCC), []string{"finance@example.com"}) {
+		t.Fatalf("conversation email_cc = %#v", result.Conversation.EmailCC)
+	}
 
 	tags, err := repository.NewSupportTagRepository(db).ListByConversationIDs(ctx, workspaceID, []string{result.Conversation.ID})
 	if err != nil {
@@ -870,6 +873,228 @@ func TestSupportInboxServiceCreateConversationWithMessageAssignsCreatorAndStores
 	}
 	if len(tags[result.Conversation.ID]) != 1 || tags[result.Conversation.ID][0].ID != "tag-new-conversation" {
 		t.Fatalf("conversation tags = %#v", tags[result.Conversation.ID])
+	}
+}
+
+func TestSupportInboxServiceUpdateConversationEmailRecipientsSwitchesPrimaryAndKeepsPreviousAsCC(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "ws-recipient-switch"
+	actorID := "user-recipient-switch"
+	seedUser(t, db, actorID, "owner@example.com", "Owner", "hashed")
+	seedWorkspace(t, db, workspaceID, "Recipient Switch WS", "recipient-switch", actorID)
+	seedWorkspaceMember(t, db, "wm-recipient-switch", workspaceID, actorID, "owner@example.com", "Owner", model.RoleOwner)
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	msgRepo := repository.NewSupportMessageRepository(db)
+	svc := NewSupportInboxService(
+		convRepo,
+		repository.NewSupportMailboxRepository(db),
+		msgRepo,
+		nil,
+		nil,
+		repository.NewSupportInboxInstallationRepository(db),
+		repository.NewSupportInboxSessionRepository(db),
+		nil,
+		nil,
+		nil,
+		repository.NewCRMContactRepository(db),
+		repository.NewUserRepository(db),
+		nil,
+		nil,
+		nil,
+	).SetWorkspaceRepo(repository.NewWorkspaceRepository(db))
+
+	currentEmail := "teammate@company.com"
+	currentName := "Alex Teammate"
+	suggestedEmail := "jane@example.com"
+	suggestedName := "Jane Persona"
+	conversation := &model.SupportConversation{
+		WorkspaceID:                    workspaceID,
+		DisplayID:                      1,
+		Subject:                        "Copied thread",
+		Status:                         model.SupportConversationStatusOpen,
+		FlowState:                      strPtr(model.SupportConversationFlowStateWaitingForHuman),
+		Priority:                       "medium",
+		Channel:                        "email",
+		CustomerName:                   &currentName,
+		CustomerEmail:                  &currentEmail,
+		Source:                         "email",
+		PrimaryRecipientState:          model.SupportPrimaryRecipientStateUnconfirmed,
+		SuggestedPrimaryRecipientEmail: &suggestedEmail,
+		SuggestedPrimaryRecipientName:  &suggestedName,
+		EmailThreadParticipants:        model.DocsStringArray{suggestedEmail},
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	updated, err := svc.UpdateConversationEmailRecipients(ctx, workspaceID, conversation.ID, model.UpdateConversationEmailRecipientsRequest{
+		PrimaryRecipientEmail: &suggestedEmail,
+		PrimaryRecipientName:  &suggestedName,
+		ConfirmPrimary:        boolPtr(true),
+	}, actorID)
+	if err != nil {
+		t.Fatalf("UpdateConversationEmailRecipients: %v", err)
+	}
+
+	if updated.CustomerEmail == nil || *updated.CustomerEmail != suggestedEmail {
+		t.Fatalf("customer_email = %#v, want %q", updated.CustomerEmail, suggestedEmail)
+	}
+	if updated.CustomerName == nil || *updated.CustomerName != suggestedName {
+		t.Fatalf("customer_name = %#v, want %q", updated.CustomerName, suggestedName)
+	}
+	if updated.PrimaryRecipientState != model.SupportPrimaryRecipientStateConfirmed {
+		t.Fatalf("primary_recipient_state = %q", updated.PrimaryRecipientState)
+	}
+	if updated.SuggestedPrimaryRecipientEmail != nil || updated.SuggestedPrimaryRecipientName != nil {
+		t.Fatalf("suggested recipient not cleared: email=%#v name=%#v", updated.SuggestedPrimaryRecipientEmail, updated.SuggestedPrimaryRecipientName)
+	}
+	if len(updated.EmailCC) != 1 || updated.EmailCC[0] != currentEmail {
+		t.Fatalf("email_cc = %#v, want previous primary as cc", updated.EmailCC)
+	}
+	messages, err := msgRepo.ListByConversation(ctx, workspaceID, conversation.ID, true)
+	if err != nil {
+		t.Fatalf("list messages after recipient switch: %v", err)
+	}
+	if len(messages) != 1 || messages[0].SystemEventType == nil || *messages[0].SystemEventType != model.SystemEventEmailRecipientsUpdated {
+		t.Fatalf("expected email recipient system event, got %#v", messages)
+	}
+	if !strings.Contains(messages[0].Content, "Owner made jane@example.com the primary recipient.") {
+		t.Fatalf("recipient switch system message = %q", messages[0].Content)
+	}
+	if !strings.Contains(messages[0].Content, "Owner added teammate@company.com to Cc.") {
+		t.Fatalf("recipient cc add system message = %q", messages[0].Content)
+	}
+
+	updated, err = svc.UpdateConversationEmailRecipients(ctx, workspaceID, conversation.ID, model.UpdateConversationEmailRecipientsRequest{
+		CCEmails: []string{},
+	}, actorID)
+	if err != nil {
+		t.Fatalf("remove cc UpdateConversationEmailRecipients: %v", err)
+	}
+	if len(updated.EmailCC) != 0 {
+		t.Fatalf("email_cc after remove = %#v", updated.EmailCC)
+	}
+	messages, err = msgRepo.ListByConversation(ctx, workspaceID, conversation.ID, true)
+	if err != nil {
+		t.Fatalf("list messages after recipient remove: %v", err)
+	}
+	lastMessage := messages[len(messages)-1]
+	if lastMessage.SystemEventType == nil || *lastMessage.SystemEventType != model.SystemEventEmailRecipientsUpdated {
+		t.Fatalf("expected email recipient remove system event, got %#v", lastMessage.SystemEventType)
+	}
+	if !strings.Contains(lastMessage.Content, "Owner removed teammate@company.com from Cc.") {
+		t.Fatalf("recipient cc remove system message = %q", lastMessage.Content)
+	}
+}
+
+func TestSupportInboxServiceCreateConversationMessageBlocksEmailReplyUntilPrimaryRecipientConfirmed(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "ws-unconfirmed-send"
+	actorID := "user-unconfirmed-send"
+	seedUser(t, db, actorID, "agent@example.com", "Agent User", "hash")
+	seedWorkspace(t, db, workspaceID, "Unconfirmed Send Workspace", "unconfirmed-send", actorID)
+	seedWorkspaceMember(t, db, "wm-unconfirmed-send", workspaceID, actorID, "agent@example.com", "Agent User", model.RoleAdmin)
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	svc := NewSupportInboxService(
+		convRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		repository.NewAgentRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewSupportInboxInstallationRepository(db),
+		repository.NewSupportInboxSessionRepository(db),
+		repository.NewSupportCannedResponseRepository(db),
+		nil,
+		nil,
+		repository.NewCRMContactRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewDocsSpaceRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
+		repository.NewDocsHelpcenterRepository(db, false),
+	)
+
+	primaryEmail := "teammate@company.com"
+	suggestedEmail := "jane@example.com"
+	conversation := &model.SupportConversation{
+		WorkspaceID:                    workspaceID,
+		DisplayID:                      1,
+		Subject:                        "Copied thread",
+		Status:                         model.SupportConversationStatusOpen,
+		FlowState:                      strPtr(model.SupportConversationFlowStateWaitingForHuman),
+		Priority:                       "medium",
+		Channel:                        "email",
+		CustomerEmail:                  &primaryEmail,
+		Source:                         "email",
+		PrimaryRecipientState:          model.SupportPrimaryRecipientStateUnconfirmed,
+		SuggestedPrimaryRecipientEmail: &suggestedEmail,
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	_, err := svc.CreateConversationMessage(ctx, workspaceID, conversation.ID, model.CreateMessageRequest{
+		Content: "Looping back over email.",
+		Channels: []string{
+			"email",
+		},
+	}, "user", &actorID, nil, nil)
+	if err == nil {
+		t.Fatalf("expected unconfirmed recipient error")
+	}
+	if !strings.Contains(err.Error(), "primary recipient") {
+		t.Fatalf("error = %q, want primary recipient confirmation", err.Error())
+	}
+
+	_, err = svc.CreateConversationMessage(ctx, workspaceID, conversation.ID, model.CreateMessageRequest{
+		Content:    "Internal context is still allowed.",
+		IsInternal: true,
+	}, "user", &actorID, nil, nil)
+	if err != nil {
+		t.Fatalf("internal note should not be blocked: %v", err)
+	}
+}
+
+func TestAgentServiceRunConversationAgentSkipsUnconfirmedPrimaryRecipient(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "ws-agent-unconfirmed-recipient"
+	seedWorkspace(t, db, workspaceID, "Agent Unconfirmed Workspace", "agent-unconfirmed", "owner-agent-unconfirmed")
+
+	primaryEmail := "teammate@company.com"
+	suggestedEmail := "jane@example.com"
+	conversation := &model.SupportConversation{
+		WorkspaceID:                    workspaceID,
+		DisplayID:                      1,
+		Subject:                        "Copied thread",
+		Status:                         model.SupportConversationStatusOpen,
+		FlowState:                      strPtr(model.SupportConversationFlowStateWaitingForHuman),
+		Priority:                       "medium",
+		Channel:                        "email",
+		CustomerEmail:                  &primaryEmail,
+		Source:                         "email",
+		PrimaryRecipientState:          model.SupportPrimaryRecipientStateUnconfirmed,
+		SuggestedPrimaryRecipientEmail: &suggestedEmail,
+	}
+	convRepo := repository.NewSupportConversationRepository(db)
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := &AgentService{conversationRepo: convRepo}
+	_, err := svc.RunConversationAgentAuto(ctx, workspaceID, conversation.ID)
+	if err == nil {
+		t.Fatalf("expected unconfirmed recipient error")
+	}
+	if !strings.Contains(err.Error(), "primary recipient") {
+		t.Fatalf("error = %q, want primary recipient confirmation", err.Error())
 	}
 }
 
@@ -1783,6 +2008,63 @@ func TestSupportInboxServiceUpdateConversationStatus_KeepsResolvedEventsInternal
 	}
 }
 
+func TestSupportInboxServiceUpdateConversationCustomerName(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-update-customer-name"
+	seedWorkspace(t, db, workspaceID, "Update Customer Name WS", "update-customer-name", "user-123")
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	svc := NewSupportInboxService(
+		convRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	email := "casey@example.com"
+	conversation := &model.SupportConversation{
+		WorkspaceID:   workspaceID,
+		Subject:       "Need help",
+		Status:        model.SupportConversationStatusOpen,
+		Priority:      "medium",
+		Channel:       "email",
+		Source:        "email",
+		CustomerEmail: &email,
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	updated, err := svc.UpdateConversationCustomerName(ctx, workspaceID, conversation.ID, "  Casey Newton  ", "user-123")
+	if err != nil {
+		t.Fatalf("update customer name: %v", err)
+	}
+	if updated.CustomerName == nil || *updated.CustomerName != "Casey Newton" {
+		t.Fatalf("customer_name = %#v, want Casey Newton", updated.CustomerName)
+	}
+
+	reloaded, err := convRepo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if reloaded.CustomerName == nil || *reloaded.CustomerName != "Casey Newton" {
+		t.Fatalf("persisted customer_name = %#v, want Casey Newton", reloaded.CustomerName)
+	}
+}
+
 func TestBuildSupportConversationStatusEventIncludesStatusPayload(t *testing.T) {
 	flowState := model.SupportConversationFlowStateAssignedToHuman
 	mailboxID := "mailbox-billing"
@@ -1949,6 +2231,22 @@ func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopie
 	}
 	if resp.CopiedCompanyAssociations != 1 {
 		t.Fatalf("copied_company_associations = %d, want 1", resp.CopiedCompanyAssociations)
+	}
+	messages, err := messageRepo.ListByConversation(ctx, env.wsID, conversation.ID, true)
+	if err != nil {
+		t.Fatalf("list messages after task creation: %v", err)
+	}
+	var taskEvent *model.SupportMessage
+	for i := range messages {
+		if messages[i].SystemEventType != nil && *messages[i].SystemEventType == model.SystemEventTaskCreated {
+			taskEvent = &messages[i]
+		}
+	}
+	if taskEvent == nil {
+		t.Fatalf("expected task_created system event, got %#v", messages)
+	}
+	if !strings.Contains(taskEvent.Content, "created task #"+resp.TaskKey+": "+resp.TaskName) {
+		t.Fatalf("task system message = %q", taskEvent.Content)
 	}
 	if resp.CopiedDealAssociations != 1 {
 		t.Fatalf("copied_deal_associations = %d, want 1", resp.CopiedDealAssociations)

@@ -146,6 +146,41 @@ describe('ConversationRow', () => {
     cleanup()
   })
 
+  it('shows a waiting-for-human badge with relative wait time when queued', () => {
+    const { container, cleanup } = renderRow(conversation({
+      flow_state: 'queued_for_human',
+      customer_requested_human_at: new Date(Date.now() - 90 * 60000).toISOString(),
+    }))
+
+    const badge = container.querySelector('[aria-label^="Waiting for human"]')
+    expect(badge).not.toBeNull()
+    expect(badge!.textContent).toContain('Waiting for human')
+    expect(badge!.textContent).toContain('1h')
+
+    cleanup()
+  })
+
+  it('shows the waiting-for-human badge for after-hours queue conversations', () => {
+    const { container, cleanup } = renderRow(conversation({
+      flow_state: 'after_hours_queue',
+      updated_at: new Date(Date.now() - 5 * 60000).toISOString(),
+    }))
+
+    expect(container.querySelector('[aria-label^="Waiting for human"]')).not.toBeNull()
+
+    cleanup()
+  })
+
+  it('does not render the waiting-for-human badge for other flow states', () => {
+    const { container, cleanup } = renderRow(conversation({
+      flow_state: 'ai_handling',
+    }))
+
+    expect(container.querySelector('[aria-label^="Waiting for human"]')).toBeNull()
+
+    cleanup()
+  })
+
   it('does not render the visitor country flag in the compact row', () => {
     const { container, cleanup } = renderRow(conversation({
       country_code: 'AT',

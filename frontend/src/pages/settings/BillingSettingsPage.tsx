@@ -34,6 +34,7 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { UsageDetail } from '@/components/billing/UsageDetail';
+import { useAuthStore } from '@/stores/authStore';
 import { useApplyBillingTestScenario, useBillingCheckout, useBillingPlanChange, useBillingPlanChangePreview, useBillingPortal, useConfirmBillingCheckout, useResumeBillingSubscription, useSetBillingOnDemand, useWorkspaceBilling } from '@/hooks/queries';
 import type { BillingTestScenarioID, PlanChangePreview } from '@/lib/billingTypes';
 import type { BillingInterval, BillingPlan, WorkspaceBillingSummary } from '@/lib/types';
@@ -160,7 +161,7 @@ const BILLING_FAQS = [
   },
   {
     q: 'What happens if I exceed my AI usage limit?',
-    a: 'Starter and Growth workspaces can enable extra AI usage at $50 per 5,000-unit pack.',
+    a: 'The Starter and Growth plans can enable extra AI usage at $50 per 5,000-unit pack.',
   },
   {
     q: 'Can I switch plans anytime?',
@@ -172,7 +173,7 @@ const BILLING_FAQS = [
   },
   {
     q: 'Are seats included?',
-    a: 'Starter and Growth include unlimited seats.',
+    a: 'The Starter and Growth plans include unlimited seats.',
   },
 ];
 
@@ -258,6 +259,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
   const [pendingPlanAction, setPendingPlanAction] = useState<string | null>(null);
   const [selectedTestScenario, setSelectedTestScenario] = useState<BillingTestScenarioID>('reset_starter');
   const { data: billing, isLoading, refetch } = useWorkspaceBilling(workspaceId);
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const checkout = useBillingCheckout(workspaceId);
   const confirmCheckout = useConfirmBillingCheckout(workspaceId);
   const previewPlanChange = useBillingPlanChangePreview(workspaceId);
@@ -425,6 +427,10 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
   }
 
   const canManageBilling = editable || billing.manage_billing_enabled;
+  const billingManagers = billing.billing_managers ?? [];
+  const viewerIsBillingManager =
+    !!currentUserId && billingManagers.some((m) => m.user_id === currentUserId);
+  const showBillingManagerBanner = billingManagers.length > 0 && !viewerIsBillingManager;
   const canUsePortal = canManageBilling && billing.manage_billing_enabled;
   const isFounderPlan = billing.plan === 'founder';
   const planLabel = billingOverviewPlanTitle(billing);
@@ -438,7 +444,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
           <div className="space-y-1">
             <h3 className="text-xl font-semibold tracking-normal">Choose a plan</h3>
             <p className="text-sm text-muted-foreground">
-              Compare Starter and Growth to choose the right workspace plan.
+              Compare the Starter and Growth plans to choose the right one for your workspace.
             </p>
           </div>
           <Button
@@ -544,6 +550,32 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <section className="space-y-3">
+        {showBillingManagerBanner && (
+          <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+            <p className="text-muted-foreground">
+              You can view this workspace's billing, but only its owners can make changes. Contact:
+            </p>
+            <ul className="mt-2 space-y-1">
+              {billingManagers.map((m) => (
+                <li key={m.user_id} className="text-muted-foreground">
+                  <span className="font-medium text-foreground">{m.name || m.email}</span>
+                  <span> — {m.role}</span>
+                  {m.email && (
+                    <>
+                      {' '}
+                      <a
+                        href={`mailto:${m.email}`}
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        {m.email}
+                      </a>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <CheckoutReturnNotice result={checkoutResult} confirming={checkoutConfirming} delayed={checkoutConfirmationDelayed} onRefresh={() => void refetch()} />
         <BillingNoticeBanner billing={billing} onPortal={() => void openPortal('payment method management')} portalLoading={portal.isPending} />
         <Card className="overflow-hidden">
@@ -628,10 +660,10 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
                 <p className="text-sm font-medium">{billing.on_demand_enabled ? 'Enabled' : 'Disabled'}</p>
                 <p className="text-sm text-muted-foreground">
                   {isFounderPlan
-                    ? 'Founder includes 100,000 AI usage units each month. Extra usage packs are not available on this plan.'
+                    ? 'The Founder plan includes 100,000 AI usage units each month. Extra usage packs are not available on this plan.'
                     : billing.on_demand_available
                     ? '$50 per 5,000-unit pack, added to your next invoice.'
-                    : 'Available on Starter and Growth workspaces with an active subscription.'}
+                    : 'Available on the Starter and Growth plans with an active subscription.'}
                 </p>
               </div>
               <Switch
@@ -673,7 +705,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
         <SectionHeading
           title="Billing management"
           description={isFounderPlan
-            ? 'Founder is managed by Helpin, so Stripe checkout and billing portal actions are disabled.'
+            ? 'The Founder plan is managed by Helpin, so Stripe checkout and billing portal actions are disabled.'
             : 'Payment method, billing address, invoices, and cancellation are handled securely in Stripe.'}
         />
         {isFounderPlan ? (
@@ -924,7 +956,7 @@ function BillingNoticeBanner({
         <CalendarClock className="mt-0.5 h-4 w-4 shrink-0" />
         <div>
           <p className="font-medium">Trial ending soon</p>
-          <p className="mt-1">Your Growth trial ends on {formatDate(trialEnd)}. Choose a plan to keep Growth limits active.</p>
+          <p className="mt-1">Your Growth plan trial ends on {formatDate(trialEnd)}. Choose a plan to keep Growth plan limits active.</p>
         </div>
       </div>
     );
@@ -1132,7 +1164,7 @@ function PlanChoiceCard({
           </div>
 
           {plan.id === 'growth' && (
-            <p className="text-sm font-medium text-foreground">Everything in Starter, plus</p>
+            <p className="text-sm font-medium text-foreground">Everything in the Starter plan, plus</p>
           )}
           <ul className="space-y-2.5">
             {plan.features.map((feature) => (
@@ -1152,7 +1184,7 @@ function PlanComparison() {
     <section className="space-y-3">
       <SectionHeading
         title="Detailed comparison"
-        description="Both plans include the full Helpin workspace. Growth adds advanced AI automation and control."
+        description="Both plans include the full Helpin workspace. The Growth plan adds advanced AI automation and control."
         align="center"
         size="lg"
       />
@@ -1483,7 +1515,7 @@ function statusLabel(billing: WorkspaceBillingSummary): string {
 
 function billingStatusCopy(billing: WorkspaceBillingSummary): string {
   if (billing.plan === 'founder') {
-    return 'Founder includes all features and 100,000 AI usage units each month.';
+    return 'The Founder plan includes all features and 100,000 AI usage units each month.';
   }
   if (hasScheduledCancellation(billing)) {
     return `Subscription cancellation scheduled. This workspace will lock on ${formatDate(cancellationEffectiveDate(billing))}.`;

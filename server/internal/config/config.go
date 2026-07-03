@@ -100,6 +100,11 @@ type Config struct {
 	WebAuthnRPOrigins                 []string
 	PlatformAdminEmails               []string
 
+	// Google account sign-in (optional — Google button disabled if unset)
+	GoogleAuthClientID     string
+	GoogleAuthClientSecret string
+	GoogleAuthRedirectURL  string
+
 	// CRM encryption & Gmail OAuth (optional — Gmail sync disabled if not set)
 	TOTPEncryptionKey     string
 	CRMEncryptionKey      string
@@ -277,6 +282,9 @@ func Load() (*Config, error) {
 		WebAuthnRPID:                           webAuthnRPID,
 		WebAuthnRPOrigins:                      webAuthnRPOrigins,
 		PlatformAdminEmails:                    parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
+		GoogleAuthClientID:                     strings.TrimSpace(os.Getenv("GOOGLE_AUTH_CLIENT_ID")),
+		GoogleAuthClientSecret:                 strings.TrimSpace(os.Getenv("GOOGLE_AUTH_CLIENT_SECRET")),
+		GoogleAuthRedirectURL:                  strings.TrimSpace(os.Getenv("GOOGLE_AUTH_REDIRECT_URL")),
 		TOTPEncryptionKey:                      strings.TrimSpace(os.Getenv("TOTP_ENCRYPTION_KEY")),
 		CRMEncryptionKey:                       os.Getenv("CRM_ENCRYPTION_KEY"),
 		PMImportEncryptionKey:                  strings.TrimSpace(os.Getenv("PM_IMPORT_ENCRYPTION_KEY")),

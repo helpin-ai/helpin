@@ -10,6 +10,8 @@ export interface User {
   default_workspace_id?: string;
   two_fa_enabled?: boolean;
   mfa_satisfied_in_token?: boolean;
+  email_verified?: boolean;
+  email_verified_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -130,6 +132,14 @@ export interface WorkspaceBillingSummary {
   seat_over_limit?: boolean;
   entitlement_warning?: string;
   on_demand_blocks_invoiced: number;
+  billing_managers?: BillingManagerRef[];
+}
+
+export interface BillingManagerRef {
+  user_id: string;
+  name: string;
+  email: string;
+  role: string;
 }
 
 export interface WorkspaceMember {

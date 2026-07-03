@@ -117,6 +117,9 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       conversation?.flowState === 'resolved_by_human',
   );
   const showHumanHandoffState = showHumanAvailability && !hasHumanReply;
+  const handoffState = conversation?.handoffState;
+  const nobodyAvailable = handoffState === 'busy' || handoffState === 'after_hours';
+  const showEscalationEmailCapture = nobodyAvailable && !transcriptEmail && !hasHumanReply;
   const showTalkToHumanButton = Boolean(
     config.features?.showTalkToHuman &&
       onEscalateToHuman &&
@@ -494,6 +497,38 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           )}
         </div>
       </div>
+
+      {showEscalationEmailCapture && (
+        <div className="helpin-escalation-email-capture">
+          <p className="helpin-escalation-email-capture__label">
+            Leave your email and we'll reply there too.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleTranscriptRequest();
+            }}
+            className="helpin-escalation-email-capture__form"
+          >
+            <input
+              type="email"
+              required
+              placeholder="you@example.com"
+              value={transcriptEmailInput}
+              onInput={(e) => setTranscriptEmailInput((e.target as HTMLInputElement).value)}
+              className="helpin-transcript-email-input"
+            />
+            <button type="submit" disabled={isSendingTranscript}>
+              {isSendingTranscript ? 'Sending…' : 'Notify me'}
+            </button>
+          </form>
+          {transcriptStatus?.type === 'success' && (
+            <p className="helpin-escalation-email-capture__ok">
+              We'll reply to you at {transcriptEmailInput}.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="helpin-conversation-thread" ref={threadRef}>
         <SpecialNoticeBanner text={availability?.specialNoticeText} workspaceId={config.workspaceId} />

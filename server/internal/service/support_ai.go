@@ -256,35 +256,36 @@ var (
 // SupportAIService handles autonomous AI-first auto-replies for support conversations.
 // It is a separate path from the existing AgentRun system (manual-assist mode).
 type SupportAIService struct {
-	llmProvider            llm.Provider
-	taskDraftLLM           supportTaskDraftLLM
-	embeddingProvider      llm.EmbeddingProvider
-	embeddingModel         string
-	queryExpansionModel    string
-	queryExpansionProvider string
-	docsChunkRepo          *repository.DocsChunkRepository
-	knowledgeRepo          *repository.AgentKnowledgeSourceRepository
-	contentChunkRepo       *repository.SupportContentChunkRepository
-	contentLinkRepo        *repository.AgentContentSourceRepository
-	processingRepo         *repository.AIMessageProcessingRepository
-	conversationRepo       *repository.SupportConversationRepository
-	messageRepo            *repository.SupportMessageRepository
-	attachmentRepo         *repository.SupportAttachmentRepository
-	agentRepo              *repository.AgentRepository
-	handoffRepo            *repository.AgentHandoffRepository
-	installationRepo       *repository.SupportInboxInstallationRepository
-	mailboxRepo            *repository.SupportMailboxRepository
-	workspaceRepo          *repository.WorkspaceRepository
-	statusOverrideRepo     *repository.SupportTeammateStatusOverrideRepository
-	triageService          *SupportInboxTriageService
-	linkPreviewService     SupportMessageLinkPreviewer
-	wsPublisher            *websocket.Publisher
-	presence               websocket.PresenceProvider
-	js                     nats.JetStreamContext
-	redis                  *redis.Client
-	db                     *gorm.DB
-	supportEventRecorder   SupportEventRecorder
-	traceRecorder          SupportAIRetrievalTraceRecorder
+	llmProvider                    llm.Provider
+	taskDraftLLM                   supportTaskDraftLLM
+	embeddingProvider              llm.EmbeddingProvider
+	embeddingModel                 string
+	queryExpansionModel            string
+	queryExpansionProvider         string
+	docsChunkRepo                  *repository.DocsChunkRepository
+	knowledgeRepo                  *repository.AgentKnowledgeSourceRepository
+	contentChunkRepo               *repository.SupportContentChunkRepository
+	contentLinkRepo                *repository.AgentContentSourceRepository
+	processingRepo                 *repository.AIMessageProcessingRepository
+	conversationRepo               *repository.SupportConversationRepository
+	messageRepo                    *repository.SupportMessageRepository
+	attachmentRepo                 *repository.SupportAttachmentRepository
+	agentRepo                      *repository.AgentRepository
+	handoffRepo                    *repository.AgentHandoffRepository
+	installationRepo               *repository.SupportInboxInstallationRepository
+	mailboxRepo                    *repository.SupportMailboxRepository
+	workspaceRepo                  *repository.WorkspaceRepository
+	statusOverrideRepo             *repository.SupportTeammateStatusOverrideRepository
+	triageService                  *SupportInboxTriageService
+	linkPreviewService             SupportMessageLinkPreviewer
+	assignmentSystemMessageEmitter func(ctx context.Context, workspaceID, conversationID, targetUserID string)
+	wsPublisher                    *websocket.Publisher
+	presence                       websocket.PresenceProvider
+	js                             nats.JetStreamContext
+	redis                          *redis.Client
+	db                             *gorm.DB
+	supportEventRecorder           SupportEventRecorder
+	traceRecorder                  SupportAIRetrievalTraceRecorder
 }
 
 // NewSupportAIService creates a new SupportAIService with all dependencies.
@@ -466,9 +467,10 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	if err != nil {
 		return fmt.Errorf("load settings: %w", err)
 	}
-	if !settings.AIEnabled || settings.AIResponseMode != "ai_first" || settings.AIAgentID == nil {
+	if !shouldAutomaticallyProcessSupportAI(*settings) {
 		return nil
 	}
+	publicReplyMode := shouldCreatePublicSupportAIReply(*settings)
 
 	// 2. Check conversation state
 	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
@@ -600,6 +602,14 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"reason", reason,
 			"customer_message_preview", safeLogPreview(msg.Content, 120),
 		)
+		if !publicReplyMode {
+			note, noteErr := s.publishAIInternalNote(ctx, workspaceID, conversationID, agentID, fmt.Sprintf("AI recommends human handoff.\n\nReason: %s", reason), "", 0, 0, nil, "handoff", "", "", "", conv.CustomerEmail, conv.CustomerPhone)
+			if noteErr != nil {
+				return noteErr
+			}
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, 0)
+			return nil
+		}
 		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, reason); err != nil {
 			return err
 		}
@@ -616,6 +626,14 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"reason", signal.Reason,
 			"score", signal.Score,
 		)
+		if !publicReplyMode {
+			note, noteErr := s.publishAIInternalNote(ctx, workspaceID, conversationID, agentID, fmt.Sprintf("AI recommends human handoff.\n\nReason: %s", signal.Reason), "", 0, signal.Score, nil, "handoff", "", "", "", conv.CustomerEmail, conv.CustomerPhone)
+			if noteErr != nil {
+				return noteErr
+			}
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, 0)
+			return nil
+		}
 		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, signal.Reason); err != nil {
 			return err
 		}
@@ -629,6 +647,14 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return fmt.Errorf("get agent %s: %w", agentID, err)
 	}
 	if s.llmProvider == nil {
+		if !publicReplyMode {
+			note, noteErr := s.publishAIInternalNote(ctx, workspaceID, conversationID, agentID, "AI could not analyze this message because the LLM provider is unavailable.", "", 0, 0, nil, "handoff", "", "", "", conv.CustomerEmail, conv.CustomerPhone)
+			if noteErr != nil {
+				return noteErr
+			}
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, 0)
+			return nil
+		}
 		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "llm_provider_unavailable"); err != nil {
 			return err
 		}
@@ -642,6 +668,14 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 	// 12. Check token budget before planner + answer model usage.
 	if !s.checkTokenBudget(agent) {
+		if !publicReplyMode {
+			note, noteErr := s.publishAIInternalNote(ctx, workspaceID, conversationID, agentID, "AI could not analyze this message because the agent token budget is exhausted.", "", 0, 0, nil, "handoff", "", "", "", conv.CustomerEmail, conv.CustomerPhone)
+			if noteErr != nil {
+				return noteErr
+			}
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, 0)
+			return nil
+		}
 		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "token_budget_exhausted"); err != nil {
 			return err
 		}
@@ -692,6 +726,14 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"reason", signal.Reason,
 		)
 		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
+		if !publicReplyMode {
+			note, noteErr := s.publishAIInternalNote(ctx, workspaceID, conversationID, agentID, fmt.Sprintf("AI recommends human handoff.\n\nReason: %s", signal.Reason), s.queryPlannerModelName(), plannerTokens, 0, nil, "handoff", queryPlan.IssueKey, queryPlan.IssueSummary, "", conv.CustomerEmail, conv.CustomerPhone)
+			if noteErr != nil {
+				return noteErr
+			}
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, plannerTokens)
+			return nil
+		}
 		if err := s.EscalateToHumanForMessageWithIssue(ctx, workspaceID, conversationID, msg.ID, signal.Reason, queryPlan.IssueKey, queryPlan.IssueSummary); err != nil {
 			return err
 		}
@@ -710,6 +752,14 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		)
 		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
 		clarifyProgressState := determineAIProgressState(queryPlan, supportReplyKindClarify, 0.92, settings.AIConfidenceThreshold, issueStats)
+		if !publicReplyMode {
+			note, noteErr := s.publishAIInternalNote(ctx, workspaceID, conversationID, agentID, "Suggested clarification:\n\n"+queryPlan.ClarifyingQuestion, s.queryPlannerModelName(), plannerTokens, 0.92, nil, supportReplyKindClarify, queryPlan.IssueKey, queryPlan.IssueSummary, clarifyProgressState, conv.CustomerEmail, conv.CustomerPhone)
+			if noteErr != nil {
+				return noteErr
+			}
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, plannerTokens)
+			return nil
+		}
 		aiMsg, err := s.publishAIReply(ctx, workspaceID, conversationID, agentID, queryPlan.ClarifyingQuestion, s.queryPlannerModelName(), plannerTokens, 0.92, nil, supportReplyKindClarify, queryPlan.IssueKey, queryPlan.IssueSummary, clarifyProgressState, conv.CustomerEmail, conv.CustomerPhone)
 		if err != nil {
 			return err
@@ -724,6 +774,14 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"planner_reason", queryPlan.Reason,
 		)
 		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
+		if !publicReplyMode {
+			note, noteErr := s.publishAIInternalNote(ctx, workspaceID, conversationID, agentID, fmt.Sprintf("AI recommends human handoff.\n\nReason: %s", queryPlan.Reason), s.queryPlannerModelName(), plannerTokens, 0, nil, "handoff", queryPlan.IssueKey, queryPlan.IssueSummary, "", conv.CustomerEmail, conv.CustomerPhone)
+			if noteErr != nil {
+				return noteErr
+			}
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, plannerTokens)
+			return nil
+		}
 		if err := s.EscalateToHumanForMessageWithIssue(ctx, workspaceID, conversationID, msg.ID, queryPlan.Reason, queryPlan.IssueKey, queryPlan.IssueSummary); err != nil {
 			return err
 		}
@@ -778,6 +836,14 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"response_preview", safeLogPreview(response.Content, 160),
 		)
 		if conv.AIState == nil || *conv.AIState != "escalated" {
+			if !publicReplyMode {
+				note, noteErr := s.publishAIInternalNote(ctx, workspaceID, conversationID, agentID, "AI generated handoff language, but a handoff message was already shown to the visitor.", modelName, totalTokens, 0, nil, "handoff", queryPlan.IssueKey, queryPlan.IssueSummary, "", conv.CustomerEmail, conv.CustomerPhone)
+				if noteErr != nil {
+					return noteErr
+				}
+				_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, totalTokens)
+				return nil
+			}
 			if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "redundant_handoff_response"); err != nil {
 				return err
 			}
@@ -803,6 +869,11 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 	// 18. Decide: grounded reply or escalate
 	if response.CanAnswer && confidence >= settings.AIConfidenceThreshold {
+		cleanContent := stripConversationPII(response.Content, conv.CustomerEmail, conv.CustomerPhone)
+		publicSources := buildAISources(response.SourceDocIDs, searchResults)
+		answerReplyKind := classifyAnswerReplyKind(msg.Content)
+		answerProgressState := determineAIProgressState(queryPlan, answerReplyKind, confidence, settings.AIConfidenceThreshold, issueStats)
+
 		// 18a. Check for declining satisfaction trend before sending reply.
 		if signal := evaluatePostAnswerEscalation(historyForPrompt, confidence); signal != nil {
 			slog.InfoContext(ctx, "support AI declining satisfaction escalation",
@@ -813,17 +884,20 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 				"reason", signal.Reason,
 				"score", signal.Score,
 			)
+			if !publicReplyMode {
+				note, noteErr := s.publishAIInternalNote(ctx, workspaceID, conversationID, agentID, fmt.Sprintf("AI recommends human handoff.\n\nReason: %s", signal.Reason), modelName, totalTokens, confidence, publicSources, "handoff", queryPlan.IssueKey, queryPlan.IssueSummary, "", conv.CustomerEmail, conv.CustomerPhone)
+				if noteErr != nil {
+					return noteErr
+				}
+				_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, totalTokens)
+				return nil
+			}
 			if err := s.EscalateToHumanForMessageWithIssue(ctx, workspaceID, conversationID, msg.ID, signal.Reason, queryPlan.IssueKey, queryPlan.IssueSummary); err != nil {
 				return err
 			}
 			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, totalTokens)
 			return nil
 		}
-
-		cleanContent := stripConversationPII(response.Content, conv.CustomerEmail, conv.CustomerPhone)
-		publicSources := buildAISources(response.SourceDocIDs, searchResults)
-		answerReplyKind := classifyAnswerReplyKind(msg.Content)
-		answerProgressState := determineAIProgressState(queryPlan, answerReplyKind, confidence, settings.AIConfidenceThreshold, issueStats)
 
 		metadata := AIMessageMetadata{
 			AIAutoReply:     true,
@@ -839,6 +913,22 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		}
 		metadataJSON, _ := json.Marshal(metadata)
 		metadataStr := string(metadataJSON)
+
+		if !publicReplyMode {
+			note, err := s.publishAIInternalNote(ctx, workspaceID, conversationID, agentID, "Suggested reply:\n\n"+cleanContent, modelName, totalTokens, confidence, publicSources, answerReplyKind, queryPlan.IssueKey, queryPlan.IssueSummary, answerProgressState, conv.CustomerEmail, conv.CustomerPhone)
+			if err != nil {
+				return err
+			}
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, totalTokens)
+			slog.InfoContext(ctx, "support AI internal note created",
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"message_id", msg.ID,
+				"note_message_id", note.ID,
+				"confidence", confidence,
+			)
+			return nil
+		}
 
 		aiMsg := &model.SupportMessage{
 			WorkspaceID:       workspaceID,
@@ -930,6 +1020,14 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"grounded_confidence", confidence,
 			"confidence_threshold", settings.AIConfidenceThreshold,
 		)
+		if !publicReplyMode {
+			note, noteErr := s.publishAIInternalNote(ctx, workspaceID, conversationID, agentID, "AI could not answer confidently. A human should review this conversation.", modelName, totalTokens, confidence, buildAISources(response.SourceDocIDs, searchResults), "handoff", queryPlan.IssueKey, queryPlan.IssueSummary, "", conv.CustomerEmail, conv.CustomerPhone)
+			if noteErr != nil {
+				return noteErr
+			}
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, totalTokens)
+			return nil
+		}
 		if err := s.EscalateToHumanForMessageWithIssue(ctx, workspaceID, conversationID, msg.ID, "low_confidence", queryPlan.IssueKey, queryPlan.IssueSummary); err != nil {
 			return err
 		}
@@ -996,6 +1094,65 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		availability = resolveSupportAvailability(settings, now)
 	}
 
+	handoffMailboxID, mailboxSelectionSource := s.resolveEscalationMailbox(ctx, workspaceID, conversationID, messageID, conv, settings)
+
+	var selection *supportRecipientSelection
+	if strings.TrimSpace(settings.HandoffBehavior) != "unassigned" {
+		var selectErr error
+		selection, selectErr = selectSupportConversationRecipient(
+			ctx,
+			s.workspaceRepo,
+			s.mailboxRepo,
+			s.installationRepo,
+			nil,
+			s.presence,
+			s.statusOverrideRepo,
+			supportRecipientSelectorInput{
+				WorkspaceID:         workspaceID,
+				MailboxID:           handoffMailboxID,
+				OwnerUserID:         conv.AssignedUserID,
+				HandoffBehavior:     settings.HandoffBehavior,
+				HandoffTeamID:       settings.HandoffTeamID,
+				RequireAvailability: true,
+				Now:                 now,
+			},
+		)
+		if selectErr != nil {
+			slog.ErrorContext(ctx, "select escalation recipient", "error", selectErr, "conversation_id", conversationID)
+		}
+	}
+
+	// Resolve the customer-facing handoff state and render the escalation message
+	// for that state. Computed outside the dedupe guard below so handoffState is
+	// persisted even when the customer-facing message is skipped.
+	// handoff_state must reflect real teammate presence (the same source the
+	// widget's pre-chat availability uses), NOT whether an assignee was selected:
+	// with HandoffBehavior "unassigned" (the default) selection is always nil even
+	// when a teammate is online. selection stays purely about routing/assignment.
+	hasAvailableTeammate := anySupportTeammateOnline(ctx, s.workspaceRepo, s.presence, s.statusOverrideRepo, workspaceID, now)
+	handoffState := resolveHandoffState(hasAvailableTeammate, availability.IsWithinOfficeHours)
+
+	// Short phrase for the {reply_time} token. Do NOT use
+	// availability.WidgetAvailability.ReplyTimeText — that is full-sentence copy
+	// (and the offline branch sets it to the outside-hours message).
+	replyTime := shortReplyTimePhrase(
+		availability.WidgetAvailability.ReplyTimePreset,
+		availability.WidgetAvailability.ReplyTimeMinutes,
+	)
+
+	// Next-open text (only meaningful for after_hours).
+	var nextOpenText string
+	if loc, err := time.LoadLocation(settings.BusinessHoursTimezone); err == nil {
+		localNow := now.In(loc)
+		nextOpenText = humanizeNextOpen(nextBusinessHoursStart(settings, localNow), localNow)
+	}
+
+	escalationContent := renderEscalationMessage(
+		selectEscalationTemplate(settings, handoffState),
+		replyTime,
+		nextOpenText,
+	)
+
 	var replyMsg *model.SupportMessage
 	var escalationSystemMsg *model.SupportMessage
 	escalationAlreadyMessaged := false
@@ -1016,11 +1173,6 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	// 1. Create escalation messages — a customer-facing reply plus an
 	// internal-only system event describing why the escalation happened.
 	if !escalationAlreadyMessaged {
-		escalationContent := "Let me connect you with a team member who can help further."
-		if strings.TrimSpace(settings.EscalationMessage) != "" {
-			escalationContent = settings.EscalationMessage
-		}
-
 		createSystemEventFirst := systemEventForEscalationReason(reason) == model.SystemEventCustomerRequestedHuman
 		if createSystemEventFirst {
 			escalationSystemMsg = &model.SupportMessage{
@@ -1073,31 +1225,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		)
 	}
 
-	handoffMailboxID, mailboxSelectionSource := s.resolveEscalationMailbox(ctx, workspaceID, conversationID, messageID, conv, settings)
-
 	// 2. Transition AI state: pending → escalated
-	selection, selectErr := selectSupportConversationRecipient(
-		ctx,
-		s.workspaceRepo,
-		s.mailboxRepo,
-		s.installationRepo,
-		nil,
-		s.presence,
-		s.statusOverrideRepo,
-		supportRecipientSelectorInput{
-			WorkspaceID:         workspaceID,
-			MailboxID:           handoffMailboxID,
-			OwnerUserID:         conv.AssignedUserID,
-			HandoffBehavior:     settings.HandoffBehavior,
-			HandoffTeamID:       settings.HandoffTeamID,
-			RequireAvailability: true,
-			Now:                 now,
-		},
-	)
-	if selectErr != nil {
-		slog.ErrorContext(ctx, "select escalation recipient", "error", selectErr, "conversation_id", conversationID)
-	}
-
 	flowState := escalatedConversationFlowState(settings, now)
 	if selection != nil {
 		flowState = model.SupportConversationFlowStateAssignedToHuman
@@ -1109,6 +1237,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		"assigned_agent_id": nil,
 		"mailbox_id":        handoffMailboxID,
 		"flow_state":        flowState,
+		"handoff_state":     handoffState,
 		"human_takeover":    true,
 	}
 	if selection != nil {
@@ -1123,14 +1252,18 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
 		return fmt.Errorf("update conversation for escalation: %w", err)
 	}
+	if selection != nil && strings.TrimSpace(selection.UserID) != "" && s.assignmentSystemMessageEmitter != nil {
+		s.assignmentSystemMessageEmitter(ctx, workspaceID, conversationID, selection.UserID)
+	}
 
 	// 3. Record handoff for analytics
+	handoffCtx, _ := json.Marshal(map[string]string{"handoff_state": handoffState})
 	if err := s.handoffRepo.Create(ctx, &model.AgentHandoff{
 		WorkspaceID:    workspaceID,
 		ConversationID: &conversationID,
 		HandoffType:    "agent_to_human",
 		Reason:         reason,
-		Context:        json.RawMessage(`{}`),
+		Context:        handoffCtx,
 	}); err != nil {
 		slog.ErrorContext(ctx, "record handoff failed", "error", err)
 	}
@@ -1184,11 +1317,17 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	if escalationSystemMsg != nil && systemEventForEscalationReason(reason) != model.SystemEventCustomerRequestedHuman {
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, escalationSystemMsg, "ai:escalation"))
 	}
+	escalatedData, _ := json.Marshal(map[string]any{
+		"conversation_id": conversationID,
+		"flow_state":      fields["flow_state"],
+		"handoff_state":   handoffState,
+	})
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "escalated",
 		Entity:      "support_conversation",
 		EntityID:    conversationID,
 		WorkspaceID: workspaceID,
+		Data:        escalatedData,
 	})
 
 	// Push a refreshed visitor conversation list so the widget can observe the new
@@ -1263,7 +1402,7 @@ func (s *SupportAIService) resolveConfiguredHandoffMailbox(ctx context.Context, 
 	if mailboxID := s.resolveActiveMailboxID(ctx, workspaceID, settings.AIHandoffMailboxID); mailboxID != nil {
 		return mailboxID
 	}
-	return s.resolveActiveMailboxID(ctx, workspaceID, settings.DefaultMailboxID)
+	return nil
 }
 
 func (s *SupportAIService) resolveActiveMailboxID(ctx context.Context, workspaceID string, mailboxID *string) *string {
@@ -2296,6 +2435,51 @@ func (s *SupportAIService) publishAIReply(
 	})
 
 	return aiMsg, nil
+}
+
+func (s *SupportAIService) publishAIInternalNote(
+	ctx context.Context,
+	workspaceID, conversationID, agentID, content, modelName string,
+	tokensUsed int,
+	confidence float64,
+	sources []AISource,
+	replyKind string,
+	issueKey string,
+	issueSummary string,
+	progressState string,
+	customerEmail *string,
+	customerPhone *string,
+) (*model.SupportMessage, error) {
+	metadata := AIMessageMetadata{
+		AIAutoReply:     false,
+		AISources:       sources,
+		AIConfidence:    confidence,
+		AIModel:         modelName,
+		AITokensUsed:    tokensUsed,
+		AIAgentID:       agentID,
+		AIReplyKind:     strings.TrimSpace(replyKind),
+		AIIssueKey:      strings.TrimSpace(issueKey),
+		AIIssueSummary:  strings.TrimSpace(issueSummary),
+		AIProgressState: strings.TrimSpace(progressState),
+	}
+	metadataJSON, _ := json.Marshal(metadata)
+
+	note := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "ai",
+		SenderAgentID:     &agentID,
+		SenderDisplayName: strPtr(helpinAIDisplayName),
+		Content:           stripConversationPII(strings.TrimSpace(content), customerEmail, customerPhone),
+		IsInternal:        true,
+		MessageType:       "reply",
+		Metadata:          string(metadataJSON),
+	}
+	if err := s.messageRepo.Create(ctx, note); err != nil {
+		return nil, fmt.Errorf("create AI internal note: %w", err)
+	}
+	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, note, "ai:"+agentID))
+	return note, nil
 }
 
 func classifyAnswerReplyKind(customerMessage string) string {

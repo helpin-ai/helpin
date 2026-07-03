@@ -30,6 +30,7 @@ import {
   planKindLabel,
   planSummaryText,
   planUpdatedAt,
+  runDisplayTitle,
   runStatusLabel,
   runUpdatedAt,
   stepDotState,
@@ -112,6 +113,24 @@ function liveStreamSummary(plan: RunPlanArtifact | null): string | null {
   if (inProgress?.step) return `…${inProgress.step}`;
   if (plan.note) return plan.note;
   return null;
+}
+
+function planRuns(plan: CommandBarRunPlan, runsById: Record<string, AgentRun>): AgentRun[] {
+  return Object.values(plan.runIdsByStep)
+    .map((id) => runsById[id])
+    .filter(Boolean);
+}
+
+function planHasReadyUnstartedStep(plan: CommandBarRunPlan, runsById: Record<string, AgentRun>): boolean {
+  return plan.steps.some((step, index) => {
+    if (plan.runIdsByStep[index]) return false;
+    const deps = step.depends_on_step_indexes ?? [];
+    return deps.every((depIndex) => {
+      const depRunId = plan.runIdsByStep[depIndex];
+      const depRun = depRunId ? runsById[depRunId] : null;
+      return depRun?.status === 'completed';
+    });
+  });
 }
 
 export function ExecutionStrip(props: ExecutionStripProps) {
@@ -201,6 +220,13 @@ function PlanStrip({
   const completed = plan.status === 'completed' || state === 'completed';
   const busy = busyPlanId === plan.id;
   const pendingInteraction = activeRunId ? stream.pendingInteraction : null;
+  const runs = planRuns(plan, runsById);
+  const hasActiveRun = runs.some((run) => ACTIVE_RUN_STATUSES.has(run.status));
+  const canContinuePlan =
+    plan.status === 'running' &&
+    !hasActiveRun &&
+    planHasReadyUnstartedStep(plan, runsById);
+  const canCancelPlan = plan.status === 'running' && (hasActiveRun || canContinuePlan);
 
   return (
     <div className="space-y-2">
@@ -349,28 +375,33 @@ function PlanStrip({
         </ChipRow>
       ) : null}
 
-      {onAction && state === 'running' ? (
-        <ChipRow>
-          <ActionChip
-            icon={busy ? Loading01Icon : PlayIcon}
-            label={busy ? 'Resuming…' : 'Resume'}
-            onClick={() => onAction('resume')}
-            disabled={busy}
-          />
-          <ActionChip
-            icon={Cancel01Icon}
-            label="Cancel"
-            onClick={() => onAction('cancel')}
-            disabled={busy}
-            danger
-          />
+      {onAction && (canContinuePlan || canCancelPlan) ? (
+        <ChipRow align="end">
+          {canContinuePlan ? (
+            <ActionChip
+              icon={busy ? Loading01Icon : PlayIcon}
+              label={busy ? 'Continuing…' : 'Continue'}
+              onClick={() => onAction('resume')}
+              disabled={busy}
+            />
+          ) : null}
           {hasTranscript ? null : (
             <ActionChip
               icon={ArrowUpRight01Icon}
               label="Open"
               onClick={() => onAction('open')}
+              accent
             />
           )}
+          {canCancelPlan ? (
+            <ActionChip
+              icon={Cancel01Icon}
+              label="Cancel"
+              onClick={() => onAction('cancel')}
+              disabled={busy}
+              subtle
+            />
+          ) : null}
         </ChipRow>
       ) : null}
     </div>
@@ -395,7 +426,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
   // conveyed by the dot + the right-side pill.
   const pendingInteraction = isActive ? stream.pendingInteraction : null;
   const interactionTitle = pendingInteraction?.title?.trim() || null;
-  const baseSummary = outputSummary || interactionTitle || runStatusLabel(run);
+  const baseSummary = outputSummary || interactionTitle || runDisplayTitle(run) || runStatusLabel(run);
   const summary = isActive && liveSummary ? liveSummary : baseSummary;
   const ts = runUpdatedAt(run);
   const duration = totalDurationMs(null, {}, run);
@@ -476,7 +507,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
           // When the inline approval card already provides the primary action,
           // demote Cancel/Open to a right-aligned meta row so the user's eye
           // stays on the actual decision (Approve / Request changes).
-          align={pendingInteraction ? 'end' : 'start'}
+          align={pendingInteraction || canCancel ? 'end' : 'start'}
         >
           {completed ? (
             <>
@@ -506,18 +537,18 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
               accent
             />
           ) : null}
+          {/* Output is inline once the transcript is present, so the prominent
+              "Open the session sheet" chip is only offered as a fallback. */}
+          <ActionChip icon={ArrowUpRight01Icon} label="Open" onClick={() => onAction('open')} accent />
           {canCancel ? (
             <ActionChip
               icon={busy ? Loading01Icon : Cancel01Icon}
               label={busy ? 'Cancelling…' : 'Cancel'}
               onClick={() => onAction('cancel')}
               disabled={busy}
-              danger
+              subtle
             />
           ) : null}
-          {/* Output is inline once the transcript is present, so the prominent
-              "Open the session sheet" chip is only offered as a fallback. */}
-          <ActionChip icon={ArrowUpRight01Icon} label="Open" onClick={() => onAction('open')} />
         </ChipRow>
       ) : null}
     </div>
@@ -632,7 +663,7 @@ function ActionChip({
       className={cn(
         'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition',
         accent
-          ? 'border border-orange-500/40 bg-orange-500/10 text-orange-700 hover:bg-orange-500/15 dark:text-orange-300'
+          ? 'border border-primary bg-primary text-primary-foreground hover:bg-primary/90'
           : danger
             ? 'border border-destructive/30 bg-transparent text-destructive hover:bg-destructive/10 hover:text-destructive'
             : retry

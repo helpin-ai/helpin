@@ -158,6 +158,24 @@ func TestSupportAIServiceEscalateToHumanAssignsAvailableTeamRecipient(t *testing
 		installationRepo: instRepo,
 	}
 	svc.SetSupportRoutingDependencies(repository.NewWorkspaceRepository(db), nil, repository.NewSupportTeammateStatusOverrideRepository(db))
+	supportSvc := NewSupportInboxService(
+		convRepo,
+		nil,
+		messageRepo,
+		nil,
+		nil,
+		instRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(db),
+		nil,
+		nil,
+		nil,
+	)
+	supportSvc.SetSupportAIService(svc)
 
 	if err := svc.EscalateToHuman(ctx, workspaceID, conv.ID, "customer_requested"); err != nil {
 		t.Fatalf("EscalateToHuman: %v", err)
@@ -172,6 +190,103 @@ func TestSupportAIServiceEscalateToHumanAssignsAvailableTeamRecipient(t *testing
 	}
 	if updated.AssignedUserID == nil || *updated.AssignedUserID != teammateID {
 		t.Fatalf("assigned_user_id = %#v, want %q", updated.AssignedUserID, teammateID)
+	}
+
+	messages, err := messageRepo.ListByConversation(ctx, workspaceID, conv.ID, true)
+	if err != nil {
+		t.Fatalf("ListByConversation: %v", err)
+	}
+	foundAssignmentMessage := false
+	for _, msg := range messages {
+		if msg.SystemEventType != nil && *msg.SystemEventType == model.SystemEventAssigned && msg.Content == "Helpin AI assigned this conversation to Team." {
+			foundAssignmentMessage = true
+			break
+		}
+	}
+	if !foundAssignmentMessage {
+		t.Fatalf("expected internal assignment system message for AI-assigned teammate")
+	}
+}
+
+func TestSupportAIServiceEscalateToHumanLeavesUnassignedWhenConfigured(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	ensureSupportModuleGrantsTable(t, db)
+
+	workspaceID := "ws-escalate-unassigned"
+	ownerID := "user-owner"
+	teammateID := "user-team"
+
+	seedUser(t, db, ownerID, "owner@example.com", "Owner User", "hash")
+	seedUser(t, db, teammateID, "team@example.com", "Team User", "hash")
+	seedWorkspace(t, db, workspaceID, "Escalate Unassigned WS", "escalate-unassigned-ws", ownerID)
+	seedWorkspaceMember(t, db, "wm-owner-unassigned", workspaceID, ownerID, "owner@example.com", "Owner User", model.RoleAdmin)
+	seedWorkspaceMember(t, db, "wm-team-unassigned", workspaceID, teammateID, "team@example.com", "Team User", model.RoleMember)
+
+	mailboxRepo := repository.NewSupportMailboxRepository(db)
+	handoffMailbox := &model.SupportMailbox{
+		WorkspaceID:    workspaceID,
+		Name:           "Support",
+		Handle:         "support",
+		Icon:           "inbox",
+		TriageEligible: true,
+		AssignmentMode: "round_robin",
+		Active:         true,
+		CreatedByID:    ownerID,
+	}
+	if err := mailboxRepo.Create(ctx, handoffMailbox); err != nil {
+		t.Fatalf("create handoff mailbox: %v", err)
+	}
+	mustExec(t, db, `INSERT INTO support_mailbox_memberships (id, mailbox_id, workspace_member_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		"smm-team-unassigned", handoffMailbox.ID, "wm-team-unassigned", time.Now(), time.Now())
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	handoffRepo := repository.NewAgentHandoffRepository(db)
+	instRepo := repository.NewSupportInboxInstallationRepository(db)
+	seedSupportInstallationSettings(t, db, workspaceID, func(settings *model.SupportInboxSettings) {
+		settings.BusinessHoursEnabled = false
+		settings.HandoffBehavior = "unassigned"
+		settings.AIHandoffMailboxID = &handoffMailbox.ID
+	})
+
+	aiPending := "pending"
+	conv := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Need a human",
+		Status:      "open",
+		AIState:     &aiPending,
+		FlowState:   strPtr(model.SupportConversationFlowStateAIHandling),
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := &SupportAIService{
+		conversationRepo: convRepo,
+		messageRepo:      messageRepo,
+		handoffRepo:      handoffRepo,
+		installationRepo: instRepo,
+	}
+	svc.SetSupportRoutingDependencies(repository.NewWorkspaceRepository(db), nil, repository.NewSupportTeammateStatusOverrideRepository(db))
+	svc.SetMailboxRepository(mailboxRepo)
+
+	if err := svc.EscalateToHuman(ctx, workspaceID, conv.ID, "customer_requested"); err != nil {
+		t.Fatalf("EscalateToHuman: %v", err)
+	}
+
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.MailboxID == nil || *updated.MailboxID != handoffMailbox.ID {
+		t.Fatalf("mailbox_id = %#v, want %q", updated.MailboxID, handoffMailbox.ID)
+	}
+	if updated.AssignedUserID != nil {
+		t.Fatalf("assigned_user_id = %#v, want nil", updated.AssignedUserID)
+	}
+	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateWaitingForHuman {
+		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateWaitingForHuman)
 	}
 }
 

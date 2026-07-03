@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -81,6 +82,13 @@ func (h *BillingHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	// Best-effort: attach who can manage billing so non-owners know who to
+	// contact. A failure here must not break the billing page.
+	if managers, mErr := h.billingService.WorkspaceBillingManagers(r.Context(), workspaceID); mErr != nil {
+		slog.ErrorContext(r.Context(), "resolve billing managers", "error", mErr, "workspace_id", workspaceID)
+	} else {
+		summary.BillingManagers = managers
 	}
 	writeJSON(w, http.StatusOK, summary)
 }

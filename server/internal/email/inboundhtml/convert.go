@@ -76,6 +76,15 @@ var (
 		"div.protonmail_quote",
 	}
 
+	// outlookQuoteBoundarySelectors mark the start of Outlook/Exchange quoted
+	// history. Outlook often puts the reply metadata in #divRplyFwdMsg, then
+	// places the actual old message body in following sibling nodes. Treat the
+	// marker and all following siblings as quote history.
+	outlookQuoteBoundarySelectors = []string{
+		"div#appendonsend",
+		"div#divRplyFwdMsg",
+	}
+
 	// trackingPixelSelectors remove zero-area images used for open-tracking
 	// from the markdown variant. The HTML variant leaves them alone — email
 	// clients like Gmail and Crisp render them as-is (firing the "read"
@@ -257,6 +266,7 @@ func buildCleanHTML(html string) string {
 	for _, sel := range quotedReplySelectors {
 		doc.Find(sel).SetAttr(QuotedAttr, "true")
 	}
+	markOutlookQuotedSiblings(doc)
 
 	hoistHeadStylesIntoBody(doc)
 
@@ -348,6 +358,7 @@ func stripQuotedHistory(html string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	removeOutlookQuotedSiblings(doc)
 	for _, sel := range quotedReplySelectors {
 		doc.Find(sel).Remove()
 	}
@@ -355,6 +366,24 @@ func stripQuotedHistory(html string) (string, error) {
 		doc.Find(sel).Remove()
 	}
 	return bodyInnerHTML(doc)
+}
+
+func markOutlookQuotedSiblings(doc *goquery.Document) {
+	for _, sel := range outlookQuoteBoundarySelectors {
+		doc.Find(sel).Each(func(_ int, marker *goquery.Selection) {
+			marker.SetAttr(QuotedAttr, "true")
+			marker.NextAll().SetAttr(QuotedAttr, "true")
+		})
+	}
+}
+
+func removeOutlookQuotedSiblings(doc *goquery.Document) {
+	for _, sel := range outlookQuoteBoundarySelectors {
+		doc.Find(sel).Each(func(_ int, marker *goquery.Selection) {
+			marker.NextAll().Remove()
+			marker.Remove()
+		})
+	}
 }
 
 // bodyInnerHTML returns the inner HTML of the document's <body>, falling

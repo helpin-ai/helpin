@@ -241,7 +241,7 @@ export function SupportContentSourcesField({
         <div className="space-y-3 p-4">
           {!hasAgent && (
             <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-              Add, edit, and sync website content now. Attach these sources to support AI after you assign a support agent in Chat Widget.
+              Add, edit, and sync website content now. Attach these sources to support AI after you select a support agent in AI Assistant.
             </div>
           )}
           {sources.length === 0 ? (

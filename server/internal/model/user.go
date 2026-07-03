@@ -4,22 +4,24 @@ import "time"
 
 // User represents a row in the users table.
 type User struct {
-	ID                     string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	Email                  string    `json:"email" gorm:"uniqueIndex;not null"`
-	PasswordHash           string    `json:"-" gorm:"not null"`
-	FullName               string    `json:"full_name" gorm:"not null"`
-	AvatarURL              *string   `json:"avatar_url"`
-	AvatarStyle            *string   `json:"avatar_style"`
-	AvatarSeed             *string   `json:"avatar_seed"`
-	AvatarBackgroundMode   *string   `json:"avatar_background_mode"`
-	AvatarBackgroundColor  *string   `json:"avatar_background_color"`
-	DefaultWorkspaceID     *string   `json:"default_workspace_id" gorm:"type:uuid"`
-	TOTPSecretEncrypted    *string   `json:"-" gorm:"column:totp_secret_encrypted;type:text"`
-	TOTPVerified           bool      `json:"-" gorm:"column:totp_verified;not null;default:false"`
-	RecoveryCodesEncrypted *string   `json:"-" gorm:"column:recovery_codes_encrypted;type:text"`
-	IsPlatformAdmin        bool      `json:"is_platform_admin" gorm:"column:is_platform_admin;not null;default:false"`
-	CreatedAt              time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt              time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                     string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	Email                  string     `json:"email" gorm:"uniqueIndex;not null"`
+	PasswordHash           string     `json:"-" gorm:"not null"`
+	FullName               string     `json:"full_name" gorm:"not null"`
+	EmailVerifiedAt        *time.Time `json:"email_verified_at"`
+	GoogleSubject          *string    `json:"-" gorm:"uniqueIndex"`
+	AvatarURL              *string    `json:"avatar_url"`
+	AvatarStyle            *string    `json:"avatar_style"`
+	AvatarSeed             *string    `json:"avatar_seed"`
+	AvatarBackgroundMode   *string    `json:"avatar_background_mode"`
+	AvatarBackgroundColor  *string    `json:"avatar_background_color"`
+	DefaultWorkspaceID     *string    `json:"default_workspace_id" gorm:"type:uuid"`
+	TOTPSecretEncrypted    *string    `json:"-" gorm:"column:totp_secret_encrypted;type:text"`
+	TOTPVerified           bool       `json:"-" gorm:"column:totp_verified;not null;default:false"`
+	RecoveryCodesEncrypted *string    `json:"-" gorm:"column:recovery_codes_encrypted;type:text"`
+	IsPlatformAdmin        bool       `json:"is_platform_admin" gorm:"column:is_platform_admin;not null;default:false"`
+	CreatedAt              time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt              time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (User) TableName() string { return "users" }
@@ -56,20 +58,22 @@ type SigninResponse struct {
 
 // UserProfile is the public user representation.
 type UserProfile struct {
-	ID                    string    `json:"id"`
-	Email                 string    `json:"email"`
-	FullName              string    `json:"full_name"`
-	AvatarURL             *string   `json:"avatar_url"`
-	AvatarStyle           *string   `json:"avatar_style"`
-	AvatarSeed            *string   `json:"avatar_seed"`
-	AvatarBackgroundMode  *string   `json:"avatar_background_mode"`
-	AvatarBackgroundColor *string   `json:"avatar_background_color"`
-	DefaultWorkspaceID    *string   `json:"default_workspace_id"`
-	TwoFAEnabled          bool      `json:"two_fa_enabled"`
-	IsPlatformAdmin       bool      `json:"is_platform_admin"`
-	MFASatisfiedInToken   bool      `json:"mfa_satisfied_in_token,omitempty"`
-	CreatedAt             time.Time `json:"created_at"`
-	UpdatedAt             time.Time `json:"updated_at"`
+	ID                    string     `json:"id"`
+	Email                 string     `json:"email"`
+	FullName              string     `json:"full_name"`
+	AvatarURL             *string    `json:"avatar_url"`
+	AvatarStyle           *string    `json:"avatar_style"`
+	AvatarSeed            *string    `json:"avatar_seed"`
+	AvatarBackgroundMode  *string    `json:"avatar_background_mode"`
+	AvatarBackgroundColor *string    `json:"avatar_background_color"`
+	DefaultWorkspaceID    *string    `json:"default_workspace_id"`
+	TwoFAEnabled          bool       `json:"two_fa_enabled"`
+	IsPlatformAdmin       bool       `json:"is_platform_admin"`
+	EmailVerified         bool       `json:"email_verified"`
+	EmailVerifiedAt       *time.Time `json:"email_verified_at,omitempty"`
+	MFASatisfiedInToken   bool       `json:"mfa_satisfied_in_token,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
 // UpdateProfileRequest is the payload for PUT /api/auth/me.

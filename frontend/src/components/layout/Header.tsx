@@ -12,6 +12,7 @@ import { SearchCommandPalette } from "@/components/search/SearchCommandPalette.t
 import { useSupportInboxStore } from "@/stores/supportInboxStore";
 import { usePageHeaderStore } from "@/stores/pageHeaderStore";
 import { buildSettingsRoutePath, SETTINGS_SECTION_LABELS } from "@/lib/settingsSections";
+import { isWorkspaceSupportRoute } from "@/lib/workspaceRoutes";
 
 type Crumb = {
   label: string;
@@ -27,7 +28,7 @@ export function Header() {
   const openGlobalCreate = useGlobalCreateStore((s) => s.openCreate);
   const titleOverride = usePageHeaderStore((s) => s.titleOverride);
   const headerActions = usePageHeaderStore((s) => s.actions);
-  const isSupport = location.pathname.includes("/support");
+  const isSupport = isWorkspaceSupportRoute(location.pathname);
   const isContactsIndex = /\/crm\/contacts\/?$/.test(location.pathname);
 
   // Cmd+K / Ctrl+K shortcut

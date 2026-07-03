@@ -285,6 +285,19 @@ const AIResolvedIndicator = memo(function AIResolvedIndicator() {
   );
 });
 
+const HUMAN_QUEUE_FLOW_STATES = new Set(['queued_for_human', 'after_hours_queue']);
+
+const HumanQueueBadge = memo(function HumanQueueBadge({ waitSince }: { waitSince: string }) {
+  return (
+    <span
+      aria-label={`Waiting for human, waiting ${timeAgo(waitSince)}`}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-200/70 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"
+    >
+      Waiting for human · {timeAgo(waitSince)}
+    </span>
+  );
+});
+
 const MAX_VISIBLE_USER_TAGS = 2;
 
 const UserTagStrip = memo(function UserTagStrip({
@@ -353,6 +366,8 @@ export const ConversationRow = memo(function ConversationRow({
   );
   const hasAIHandoff = (conversation.system_tags ?? []).includes('ai_handoff');
   const hasAIResolved = (conversation.system_tags ?? []).includes('ai_resolved') || conversation.flow_state === 'resolved_by_ai' || conversation.ai_state === 'resolved';
+  const isWaitingForHuman = !!conversation.flow_state && HUMAN_QUEUE_FLOW_STATES.has(conversation.flow_state);
+  const humanQueueWaitSince = conversation.customer_requested_human_at || conversation.ai_escalated_at || conversation.updated_at;
   const userTags = conversation.tags ?? [];
   const hasAgentReplyPreview = conversation.last_message_sender_type === 'user' || conversation.last_message_sender_type === 'agent';
   const agentReplyLabel = `${conversation.last_message_sender_display_name?.trim() || 'Agent'} replied`;
@@ -562,6 +577,11 @@ export const ConversationRow = memo(function ConversationRow({
               ) : null}
             </div>
           </div>
+          {isWaitingForHuman && humanQueueWaitSince ? (
+            <div className="mt-1 flex min-w-0 items-center gap-1 overflow-hidden">
+              <HumanQueueBadge waitSince={humanQueueWaitSince} />
+            </div>
+          ) : null}
           <UserTagStrip tags={userTags} />
         </div>
       </div>

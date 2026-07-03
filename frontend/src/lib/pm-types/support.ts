@@ -47,6 +47,11 @@ export interface SupportConversation {
   priority: ConversationPriority;
   customer_name?: string;
   customer_email?: string;
+  primary_recipient_state?: 'confirmed' | 'unconfirmed';
+  suggested_primary_recipient_email?: string | null;
+  suggested_primary_recipient_name?: string | null;
+  email_cc?: string[];
+  email_thread_participants?: string[];
   email_unsubscribed?: boolean;
   anonymous_id?: string;
   opened_by_user_id?: string;
@@ -518,6 +523,10 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
   'resolved',
   'reopened',
   'closed',
+  'email_recipients_updated',
+  'tag_added',
+  'tag_removed',
+  'task_created',
 ] as const;
 
 export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number];
@@ -551,6 +560,8 @@ export interface SupportMessage {
   email_delivery_error?: string;
   /** Primary outbound email recipient, populated for messages sent via email. */
   email_to?: string;
+  /** From header for inbound email messages, when present. */
+  email_from?: string;
   /** Reply-To header for inbound email messages, when present. */
   email_reply_to?: string;
   /** Outbound email CC recipients, populated for messages sent via email. */
@@ -938,6 +949,17 @@ export interface UpdateConversationCRMContactRequest {
   crm_contact_id: string | null;
 }
 
+export interface UpdateConversationCustomerNameRequest {
+  customer_name: string;
+}
+
+export interface UpdateConversationEmailRecipientsRequest {
+  primary_recipient_email?: string;
+  primary_recipient_name?: string;
+  cc_emails?: string[];
+  confirm_primary?: boolean;
+}
+
 // ── Support Installation Settings ───────────────────────────────────
 
 export interface BusinessHoursDay {
@@ -958,6 +980,8 @@ export interface SupportInboxSettings {
   ai_auto_resolve_timeout: number;
   show_talk_to_human: boolean;
   escalation_message: string;
+  escalation_message_busy?: string;
+  escalation_message_after_hours?: string;
   handoff_behavior: string;
   handoff_team_id: string | null;
   default_mailbox_id: string | null;

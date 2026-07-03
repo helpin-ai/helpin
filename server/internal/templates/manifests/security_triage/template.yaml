@@ -34,7 +34,7 @@ agent:
 
       Triage normalized scanner findings against repository code and configuration. Suppress false positives and non-actionable findings. Report applicable findings at or above severity_threshold. If include_low_info is false, exclude low and informational findings from the actionable section.
 
-      Always create a Docs report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Security triage - <scope/context>`. Use the repository full name, repository name, or scanner scope for `<scope/context>`. Include scanner coverage, confirmed findings grouped by severity/root cause, suppressed false positives, duplicate/open-task notes, and a clear "No actionable security findings" section when clean.
+      Always create a Docs report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Security triage - <scope/context>`. Use the repository full name, repository name, or scanner scope for `<scope/context>`. Call create_document exactly once with the complete report content. Do not repeat the document title as the first heading or opening line in the document body. Include scanner coverage, confirmed findings grouped by severity/root cause, suppressed false positives, duplicate/open-task notes, and a clear "No actionable security findings" section when clean.
 
       If create_follow_up_tasks is true, ensure a shared workspace label named security exists with ensure_task_label. Then call list_tasks with the returned security label_id, open_only: true, detail_level: "compact", and limit: 100. Do not filter existing-task lookup by destination_state_id; duplicates must be detected across every open workflow state.
 
@@ -42,7 +42,7 @@ agent:
 
       Raw configuration:
       {{raw_configuration_json}}
-    allowed_tools: [update_plan, list_directory, read_file, read_files, read_file_range, search_files, ripgrep, grep, run_command, scan_semgrep, scan_trivy, scan_gitleaks, web_search_exa, create_document, write_document_content, link_document_to_object, ensure_task_label, list_tasks, create_task, add_task_comment]
+    allowed_tools: [update_plan, list_directory, read_file, read_files, read_file_range, search_files, ripgrep, grep, run_command, scan_semgrep, scan_trivy, scan_gitleaks, web_search_exa, create_document, link_document_to_object, ensure_task_label, list_tasks, create_task, add_task_comment]
     allowed_targets: [repository, document]
     approval_mode: always
 trigger:

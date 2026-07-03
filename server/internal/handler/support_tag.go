@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -79,7 +80,8 @@ func (h *SupportTagHandler) AddConversationTag(w http.ResponseWriter, r *http.Re
 	workspaceID := getWorkspaceID(r)
 	conversationID := chi.URLParam(r, "id")
 	tagID := chi.URLParam(r, "tagId")
-	if err := h.tagService.AddConversationTag(r.Context(), workspaceID, conversationID, tagID); err != nil {
+	actorID := middleware.GetUserID(r.Context())
+	if err := h.tagService.AddConversationTag(r.Context(), workspaceID, conversationID, tagID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -90,7 +92,8 @@ func (h *SupportTagHandler) RemoveConversationTag(w http.ResponseWriter, r *http
 	workspaceID := getWorkspaceID(r)
 	conversationID := chi.URLParam(r, "id")
 	tagID := chi.URLParam(r, "tagId")
-	if err := h.tagService.RemoveConversationTag(r.Context(), workspaceID, conversationID, tagID); err != nil {
+	actorID := middleware.GetUserID(r.Context())
+	if err := h.tagService.RemoveConversationTag(r.Context(), workspaceID, conversationID, tagID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

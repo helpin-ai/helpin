@@ -222,6 +222,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 		// ---- Public routes ----
 		r.Post("/auth/signup", h.Auth.Signup)
+		r.Post("/auth/verify-email", h.Auth.VerifyEmail)
+		r.Get("/auth/google/start", h.Auth.GoogleStart)
+		r.Get("/auth/google/callback", h.Auth.GoogleCallback)
 		r.Post("/auth/signin", h.Auth.Signin)
 		r.Post("/auth/passkey/authentication-options", h.Passkey.AuthenticationOptions)
 		r.Post("/auth/passkey/authenticate", h.Passkey.Authenticate)
@@ -399,6 +402,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Auth / profile
 			r.Get("/auth/me", h.Auth.Me)
 			r.Put("/auth/me", h.Auth.UpdateProfile)
+			r.Post("/auth/resend-verification", h.Auth.ResendVerificationEmail)
 			r.Post("/auth/me/avatar", h.Auth.UploadAvatar)
 			r.Delete("/auth/me/avatar", h.Auth.DeleteAvatar)
 			r.Put("/auth/change-password", h.Auth.ChangePassword)
@@ -484,8 +488,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/portal", h.Billing.Portal)
 					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Put("/billing/on-demand", h.Billing.SetOnDemand)
 					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/test-scenario", h.Billing.ApplyTestScenario)
-					// Usage/payment-method management is owner-only and may be reached from org billing.
-					r.With(h.Billing.RequireWorkspaceBillingOwner).Get("/billing/usage", h.Billing.GetUsage)
+					// Usage is read-only and visible to any settings reader (matches the
+					// billing summary). Payment-method changes remain billing-owner-only.
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/billing/usage", h.Billing.GetUsage)
 					r.With(h.Billing.RequireWorkspaceBillingOwner).Put("/billing/payment-method", h.Billing.LinkPaymentMethod)
 				}
 
@@ -777,6 +782,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-user", h.SupportInbox.AssignConversationUser)
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/crm-contact", h.SupportInbox.UpdateConversationCRMContact)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/customer-name", h.SupportInbox.UpdateConversationCustomerName)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/email-recipients", h.SupportInbox.UpdateConversationEmailRecipients)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/run-agent", h.SupportInbox.RunAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/move", h.SupportInbox.MoveConversation)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/tags/{tagId}", h.SupportTag.AddConversationTag)

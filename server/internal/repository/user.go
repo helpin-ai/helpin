@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -28,6 +29,11 @@ func (r *UserRepository) Create(ctx context.Context, email, passwordHash, fullNa
 		PasswordHash: passwordHash,
 		FullName:     fullName,
 	}
+	return r.CreateUser(ctx, user)
+}
+
+// CreateUser inserts a new user row using the provided model.
+func (r *UserRepository) CreateUser(ctx context.Context, user *model.User) (*model.User, error) {
 	if err := r.db.WithContext(ctx).Create(user).Error; err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
@@ -128,6 +134,26 @@ func (r *UserRepository) Update(ctx context.Context, id string, fullName, avatar
 // UpdatePassword updates a user's password hash.
 func (r *UserRepository) UpdatePassword(ctx context.Context, id, passwordHash string) error {
 	return r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Update("password_hash", passwordHash).Error
+}
+
+// MarkEmailVerified marks a user's email as verified if it has not already been verified.
+func (r *UserRepository) MarkEmailVerified(ctx context.Context, id string, verifiedAt time.Time) (*model.User, error) {
+	if err := r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("id = ? AND email_verified_at IS NULL", id).
+		Update("email_verified_at", verifiedAt).Error; err != nil {
+		return nil, fmt.Errorf("mark email verified: %w", err)
+	}
+	return r.GetByID(ctx, id)
+}
+
+// LinkGoogleSubject stores the Google subject identifier for a user.
+func (r *UserRepository) LinkGoogleSubject(ctx context.Context, id, subject string) (*model.User, error) {
+	updates := map[string]interface{}{"google_subject": strings.TrimSpace(subject)}
+	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("link google subject: %w", err)
+	}
+	return r.GetByID(ctx, id)
 }
 
 // UpsertTwoFactor stores the current encrypted TOTP secret and recovery codes.
