@@ -2793,6 +2793,77 @@ func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) 
 	}
 }
 
+func TestEmailFallbackProcessInboundEmailRouteFromCcRequiresPrimaryRecipientConfirmation(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID:             "a2111111-1111-1111-1111-111111111115",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-copied",
+		InboundAddress: "support@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "teammate@company.com", Name: "Alex Teammate"},
+		To:                "Jane Persona <jane@example.com>",
+		ToFull:            []model.PostmarkAddress{{Email: "jane@example.com", Name: "Jane Persona"}},
+		Cc:                route.InboundAddress,
+		CcFull:            []model.PostmarkAddress{{Email: route.InboundAddress, Name: "Support"}},
+		OriginalRecipient: "",
+		Subject:           "Can you handle this?",
+		MessageID:         "pm-route-copied-1",
+		StrippedTextReply: "Looping support in.",
+		Headers: []model.PostmarkHeader{
+			{Name: "Message-ID", Value: "<copied-thread-1@example.com>"},
+		},
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-copied-1"}`); err != nil {
+		t.Fatalf("process copied inbound email: %v", err)
+	}
+
+	conversations, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 || len(conversations) != 1 {
+		t.Fatalf("expected 1 conversation, got total=%d len=%d", total, len(conversations))
+	}
+	conv := conversations[0]
+	if conv.CustomerEmail == nil || *conv.CustomerEmail != "teammate@company.com" {
+		t.Fatalf("customer_email = %#v, want teammate sender", conv.CustomerEmail)
+	}
+	if conv.PrimaryRecipientState != model.SupportPrimaryRecipientStateUnconfirmed {
+		t.Fatalf("primary_recipient_state = %q", conv.PrimaryRecipientState)
+	}
+	if conv.SuggestedPrimaryRecipientEmail == nil || *conv.SuggestedPrimaryRecipientEmail != "jane@example.com" {
+		t.Fatalf("suggested_primary_recipient_email = %#v", conv.SuggestedPrimaryRecipientEmail)
+	}
+	if len(conv.EmailThreadParticipants) != 1 || conv.EmailThreadParticipants[0] != "jane@example.com" {
+		t.Fatalf("email_thread_participants = %#v", conv.EmailThreadParticipants)
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conv.ID)
+	if err != nil {
+		t.Fatalf("list email logs: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 email log, got %d", len(logs))
+	}
+	if len(logs[0].CCEmails) != 1 || logs[0].CCEmails[0] != route.InboundAddress {
+		t.Fatalf("cc_emails = %#v", logs[0].CCEmails)
+	}
+}
+
 func TestEmailFallbackProcessInboundEmailRouteDerivesCustomerNameFromEmail(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
@@ -2920,6 +2991,89 @@ func TestEmailFallbackProcessInboundEmailRouteUsesReplyToForContactFormCustomer(
 	detail, err := env.service.supportInboxService.GetMessageEmailDetail(ctx, workspaceID, messages[0].ID)
 	if err != nil {
 		t.Fatalf("get message email detail: %v", err)
+	}
+	if detail.ReplyTo != "Taylor Visitor <taylor.visitor@example.com>" {
+		t.Fatalf("detail reply-to = %q, want visitor header", detail.ReplyTo)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailRouteAcceptsExistingContactFormReplyByReplyTo(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "99999999-9999-9999-9999-999999999991"
+	customerEmail := "taylor.visitor@example.com"
+	customerName := "Taylor Visitor"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Website inquiry",
+		Status:        model.SupportConversationStatusOpen,
+		Channel:       "email",
+		Source:        "email",
+		CustomerEmail: &customerEmail,
+		CustomerName:  &customerName,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	outboundMsgID := "<helpin-contact-form-thread@on.helpin.email>"
+	if err := env.emailLogRepo.Create(ctx, &model.SupportEmailLog{
+		ID:             "dddddddd-dddd-dddd-dddd-dddddddddd91",
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		Direction:      "outbound",
+		RFCMessageID:   outboundMsgID,
+		ToEmail:        customerEmail,
+		Status:         "sent",
+	}); err != nil {
+		t.Fatalf("create email log: %v", err)
+	}
+
+	route := &model.SupportEmailRoute{
+		ID:             "eeeeeeee-eeee-eeee-eeee-eeeeeeeeee91",
+		WorkspaceID:    workspaceID,
+		InboundAddress: "inbox@acme.on.helpin.email",
+		Active:         true,
+	}
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "website@acme.com", Name: "Acme Contact Form"},
+		OriginalRecipient: route.InboundAddress,
+		To:                route.InboundAddress,
+		Subject:           "Re: Website inquiry",
+		MessageID:         "pm-route-contact-form-reply",
+		TextBody:          "I can meet tomorrow.",
+		Headers: []model.PostmarkHeader{
+			{Name: "Reply-To", Value: "Taylor Visitor <taylor.visitor@example.com>"},
+			{Name: "In-Reply-To", Value: outboundMsgID},
+			{Name: "Message-ID", Value: "<contact-form-reply-1@acme.com>"},
+		},
+	}
+
+	if err := env.service.processInboundRoute(ctx, route, payload, `{"MessageID":"pm-route-contact-form-reply"}`); err != nil {
+		t.Fatalf("process routed contact form reply: %v", err)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected contact form reply to be accepted on existing conversation, got %d messages", len(messages))
+	}
+	if messages[0].SenderDisplayName == nil || *messages[0].SenderDisplayName != "Taylor Visitor" {
+		t.Fatalf("sender display name = %#v, want Taylor Visitor", messages[0].SenderDisplayName)
+	}
+
+	detail, err := env.service.supportInboxService.GetMessageEmailDetail(ctx, workspaceID, messages[0].ID)
+	if err != nil {
+		t.Fatalf("get message email detail: %v", err)
+	}
+	if detail.FromEmail != "website@acme.com" {
+		t.Fatalf("detail from = %q, want raw contact form sender", detail.FromEmail)
 	}
 	if detail.ReplyTo != "Taylor Visitor <taylor.visitor@example.com>" {
 		t.Fatalf("detail reply-to = %q, want visitor header", detail.ReplyTo)

@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { SupportMessage } from '@/lib/pmTypes'
+import type { SupportConversation, SupportMessage } from '@/lib/pmTypes'
 import {
   copyCustomerEmailToClipboard,
   customerEmailCopyButtonClassName,
   customerEmailDisplayRowClassName,
   customerNameDisplayRowClassName,
   customerNameEditButtonClassName,
+  getConversationEmailRecipients,
   getLatestEmailRecipients,
   getLastActiveTooltipLabel,
   shouldShowLastActiveIndicator,
@@ -66,6 +67,22 @@ describe('getLatestEmailRecipients', () => {
     ])
 
     expect(recipients).toBeNull()
+  })
+})
+
+describe('getConversationEmailRecipients', () => {
+  it('keeps the primary recipient, reply cc, and also-on-thread buckets distinct', () => {
+    const conversation = {
+      customer_email: 'teammate@company.com',
+      email_cc: ['jane@example.com'],
+      email_thread_participants: ['jane@example.com', 'manager@example.com', 'teammate@company.com'],
+    } as SupportConversation
+
+    expect(getConversationEmailRecipients(conversation)).toEqual({
+      primary: ['teammate@company.com'],
+      cc: ['jane@example.com'],
+      alsoOnThread: ['manager@example.com'],
+    })
   })
 })
 

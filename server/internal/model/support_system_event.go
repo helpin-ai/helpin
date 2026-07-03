@@ -61,6 +61,10 @@ const (
 
 	// SystemEventClosed — conversation closed (e.g., spam).
 	SystemEventClosed SupportSystemEventType = "closed"
+
+	// SystemEventEmailRecipientsUpdated — primary email recipient or copied
+	// recipients changed. Admin-only.
+	SystemEventEmailRecipientsUpdated SupportSystemEventType = "email_recipients_updated"
 )
 
 // allSupportSystemEventTypes is the authoritative set of valid event types.
@@ -79,6 +83,7 @@ var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
 	SystemEventResolved:               {},
 	SystemEventReopened:               {},
 	SystemEventClosed:                 {},
+	SystemEventEmailRecipientsUpdated: {},
 }
 
 // IsValidSupportSystemEventType reports whether s is a recognized event type.

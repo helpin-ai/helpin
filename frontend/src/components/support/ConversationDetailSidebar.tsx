@@ -16,11 +16,11 @@ import { SidebarAssociations } from './SidebarAssociations';
 import { SidebarVisitorContext } from './SidebarVisitorContext';
 import { SupportTagPicker } from './SupportTagPicker';
 import { CustomerProfileDrawer } from './CustomerProfileDrawer';
-import { useConversation, useConversationAssignees, useVisitorContext, useAssignConversationUser, useConversationMessages, useUpdateConversationCustomerName } from '@/hooks/queries/useSupport';
+import { useConversation, useConversationAssignees, useVisitorContext, useAssignConversationUser, useConversationMessages, useUpdateConversationCustomerName, useUpdateConversationEmailRecipients } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import type { SupportMessage } from '@/lib/pmTypes';
+import type { SupportConversation, SupportMessage } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { getInitial, getAvatarColor } from './helpers';
 
@@ -120,8 +120,24 @@ export interface EmailRecipientsSummary {
   bcc: string[];
 }
 
+export interface ConversationEmailRecipientsSummary {
+  primary: string[];
+  cc: string[];
+  alsoOnThread: string[];
+}
+
 function normalizeRecipients(values?: string[] | null): string[] {
   return Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean)));
+}
+
+export function getConversationEmailRecipients(conversation?: SupportConversation | null): ConversationEmailRecipientsSummary {
+  const primary = normalizeRecipients(conversation?.customer_email ? [conversation.customer_email] : []);
+  const cc = normalizeRecipients(conversation?.email_cc);
+  const excluded = new Set([...primary, ...cc].map((value) => value.toLowerCase()));
+  const alsoOnThread = normalizeRecipients(conversation?.email_thread_participants)
+    .filter((value) => !excluded.has(value.toLowerCase()));
+
+  return { primary, cc, alsoOnThread };
 }
 
 export function getLatestEmailRecipients(messages: SupportMessage[]): EmailRecipientsSummary | null {
@@ -155,7 +171,7 @@ export async function copyCustomerEmailToClipboard(email: string, writeText?: Cl
   return true;
 }
 
-function EmailRecipientRow({ label, values }: { label: string; values: string[] }) {
+function EmailRecipientRow({ label, values, onRemove }: { label: string; values: string[]; onRemove?: (value: string) => void }) {
   if (values.length === 0) return null;
 
   return (
@@ -163,12 +179,18 @@ function EmailRecipientRow({ label, values }: { label: string; values: string[] 
       <div className="text-[10px] font-medium uppercase tracking-tight text-muted-foreground">{label}</div>
       <div className="space-y-1">
         {values.map((value) => (
-          <div
-            key={`${label}-${value}`}
-            className="truncate rounded border bg-background px-2 py-1 text-xs text-foreground"
-            title={value}
-          >
-            {value}
+          <div key={`${label}-${value}`} className="flex items-center gap-1 rounded border bg-background px-2 py-1 text-xs text-foreground" title={value}>
+            <span className="min-w-0 flex-1 truncate">{value}</span>
+            {onRemove ? (
+              <button
+                type="button"
+                className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => onRemove(value)}
+                aria-label={`Remove ${value}`}
+              >
+                <Cancel01Icon className="h-3 w-3" />
+              </button>
+            ) : null}
           </div>
         ))}
       </div>
@@ -188,6 +210,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
   const { data: assignableMembers = [], isLoading: assigneesLoading } = useConversationAssignees(workspaceId, conversationId);
   const assignConversationUser = useAssignConversationUser(workspaceId);
   const updateCustomerName = useUpdateConversationCustomerName(workspaceId);
+  const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
   const isVisitorOnline = useSupportPresenceStore((s) =>
     conversation?.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false
   );
@@ -215,9 +238,12 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
     ? findAssignableMember(assignableUsers, conversation.assigned_user_id, (member) => member.user_id ?? member.id)
     : undefined;
   const latestEmailRecipients = getLatestEmailRecipients(messages);
-  const emailRecipientCount = latestEmailRecipients
-    ? [latestEmailRecipients.to, ...latestEmailRecipients.cc, ...latestEmailRecipients.bcc].filter(Boolean).length
-    : 0;
+  const conversationEmailRecipients = getConversationEmailRecipients(conversation);
+  const emailRecipientCount = [
+    ...conversationEmailRecipients.primary,
+    ...conversationEmailRecipients.cc,
+    ...conversationEmailRecipients.alsoOnThread,
+  ].length;
   const beginCustomerNameEdit = () => {
     setCustomerNameDraft(conversation?.customer_name?.trim() ?? '');
     setNameEditing(true);
@@ -249,6 +275,15 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
     } catch {
       toast.error('Could not copy email');
     }
+  };
+  const removeCCRecipient = (email: string) => {
+    if (!conversation) return;
+    updateEmailRecipients.mutate({
+      conversationId: conversation.id,
+      payload: {
+        cc_emails: conversationEmailRecipients.cc.filter((value) => value.toLowerCase() !== email.toLowerCase()),
+      },
+    });
   };
 
   return (
@@ -446,11 +481,14 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
             />
           </CollapsibleSection>
 
-          {latestEmailRecipients && (
+          {emailRecipientCount > 0 && (
             <CollapsibleSection title="Email recipients" icon={Mail01Icon} count={emailRecipientCount}>
-              <EmailRecipientRow label="To" values={latestEmailRecipients.to ? [latestEmailRecipients.to] : []} />
-              <EmailRecipientRow label="Cc" values={latestEmailRecipients.cc} />
-              <EmailRecipientRow label="Bcc" values={latestEmailRecipients.bcc} />
+              <EmailRecipientRow label="Primary recipient" values={conversationEmailRecipients.primary} />
+              <EmailRecipientRow label="Cc on replies" values={conversationEmailRecipients.cc} onRemove={removeCCRecipient} />
+              <EmailRecipientRow label="Also on thread" values={conversationEmailRecipients.alsoOnThread} />
+              {latestEmailRecipients?.bcc?.length ? (
+                <EmailRecipientRow label="Bcc on last sent email" values={latestEmailRecipients.bcc} />
+              ) : null}
             </CollapsibleSection>
           )}
 
