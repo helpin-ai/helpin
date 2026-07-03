@@ -34,7 +34,6 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
-import { EmailChipInput } from '@/components/ui/email-chip-input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -839,10 +838,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   );
   const [offlineEmailConfirmOpen, setOfflineEmailConfirmOpen] = useState(false);
   const [doNotAskAgain, setDoNotAskAgain] = useState(false);
-  const [ccEmails, setCcEmails] = useState<string[]>([]);
-  const [bccEmails, setBccEmails] = useState<string[]>([]);
-  const [ccInput, setCcInput] = useState('');
-  const [bccInput, setBccInput] = useState('');
 
   // Link insertion modal
   const [linkModalOpen, setLinkModalOpen] = useState(false);
@@ -857,13 +852,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   useEffect(() => {
     setSkipOfflineEmailConfirm(loadSkipOfflineEmailConfirm(offlineEmailConfirmStorageKey));
   }, [offlineEmailConfirmStorageKey]);
-
-  useEffect(() => {
-    setCcEmails(normalizeRecipientEmails(conversation?.email_cc ?? [], [conversation?.customer_email ?? '']));
-    setCcInput('');
-    setBccEmails([]);
-    setBccInput('');
-  }, [conversationId, conversation?.customer_email, conversation?.email_cc]);
 
   // File attachments
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1481,29 +1469,23 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
     const attachmentIds = doneAttachments.map((a) => a.attachmentId!);
     const isInternal = useSupportInboxStore.getState().replyMode === 'note';
     const primaryEmail = conversation?.customer_email?.trim() || emailFallbackHint?.email?.trim() || '';
-    const normalizedCC = normalizeRecipientEmails(ccEmails, [primaryEmail]);
-    const normalizedBCC = normalizeRecipientEmails(bccEmails, [primaryEmail, ...normalizedCC]);
+    const normalizedCC = normalizeRecipientEmails(conversation?.email_cc ?? [], [primaryEmail]);
 
     await sendMutation.mutateAsync({
       content: markdown || ' ',
       is_internal: isInternal,
       ...(!isInternal && primaryEmail ? { channels: ['email' as const] } : {}),
       ...(!isInternal && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
-      ...(!isInternal && normalizedBCC.length > 0 ? { bcc_emails: normalizedBCC } : {}),
       ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
     });
 
     // Clean up preview URLs
     pendingAttachments.forEach((a) => { if (a.previewUrl && a.previewObjectUrl) URL.revokeObjectURL(a.previewUrl); });
     setPendingAttachments([]);
-    if (!isInternal) {
-      setBccEmails([]);
-      setBccInput('');
-    }
     editor.commands.clearContent();
     clearDraft(conversationId);
     editor.commands.focus();
-  }, [bccEmails, ccEmails, clearDraft, conversation?.customer_email, conversationId, editor, emailFallbackHint?.email, pendingAttachments, sendMutation, sendTyping]);
+  }, [clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, emailFallbackHint?.email, pendingAttachments, sendMutation, sendTyping]);
 
   const handleSend = useCallback(async () => {
     if (!editor) return;
@@ -1559,11 +1541,11 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
       conversationId: conversation.id,
       payload: {
         confirm_primary: true,
-        cc_emails: normalizeRecipientEmails(ccEmails, [conversation.customer_email ?? '']),
+        cc_emails: normalizeRecipientEmails(conversation.email_cc ?? [], [conversation.customer_email ?? '']),
       },
     });
     toast.success('Primary recipient confirmed');
-  }, [ccEmails, conversation, updateEmailRecipients]);
+  }, [conversation, updateEmailRecipients]);
 
   const makeSuggestedPrimary = useCallback(async () => {
     if (!conversation?.suggested_primary_recipient_email) return;
@@ -2059,41 +2041,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
               </button>
             </div>
           ))}
-        </div>
-      )}
-
-      {!isNote && primaryRecipientEmail && (
-        <div className="space-y-2 border-t border-border/20 px-4 py-3">
-          <div className="grid gap-1.5 text-xs sm:grid-cols-[3rem_minmax(0,1fr)] sm:items-center">
-            <span className="font-medium text-muted-foreground">To</span>
-            <div className="truncate rounded-md border bg-muted/30 px-2.5 py-1.5 text-foreground" title={primaryRecipientEmail}>
-              {primaryRecipientEmail}
-            </div>
-          </div>
-          <div className="grid gap-1.5 text-xs sm:grid-cols-[3rem_minmax(0,1fr)] sm:items-start">
-            <span className="pt-2 font-medium text-muted-foreground">Cc</span>
-            <EmailChipInput
-              value={ccEmails}
-              onValueChange={(value) => setCcEmails(normalizeRecipientEmails(value, [primaryRecipientEmail]))}
-              inputValue={ccInput}
-              onInputValueChange={setCcInput}
-              placeholder="Add Cc recipients"
-              className="min-h-8 px-2 py-1 text-xs"
-              disabled={sendMutation.isPending}
-            />
-          </div>
-          <div className="grid gap-1.5 text-xs sm:grid-cols-[3rem_minmax(0,1fr)] sm:items-start">
-            <span className="pt-2 font-medium text-muted-foreground">Bcc</span>
-            <EmailChipInput
-              value={bccEmails}
-              onValueChange={(value) => setBccEmails(normalizeRecipientEmails(value, [primaryRecipientEmail, ...ccEmails]))}
-              inputValue={bccInput}
-              onInputValueChange={setBccInput}
-              placeholder="Add Bcc recipients"
-              className="min-h-8 px-2 py-1 text-xs"
-              disabled={sendMutation.isPending}
-            />
-          </div>
         </div>
       )}
 
