@@ -24,7 +24,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/gitlab"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -2046,6 +2045,9 @@ func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, work
 			"delivery_state":     deliveryTarget.DeliveryState,
 			"target_source":      deliveryTarget.TargetSource,
 		}
+		if deliveryTarget.ActivePRNumber != nil {
+			deliveryMeta["active_pr_number"] = *deliveryTarget.ActivePRNumber
+		}
 	case "epic":
 		if strings.TrimSpace(workspaceID) == "" {
 			return nil, fmt.Errorf("workspace_id metadata is required for epic repository targets")
@@ -2069,6 +2071,9 @@ func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, work
 		deliveryMeta = map[string]interface{}{
 			"delivery_target_id": deliveryTarget.ID,
 			"delivery_state":     deliveryTarget.DeliveryState,
+		}
+		if deliveryTarget.FinalPRNumber != nil {
+			deliveryMeta["final_pr_number"] = *deliveryTarget.FinalPRNumber
 		}
 	default:
 		return nil, fmt.Errorf("target type %q does not resolve to a repository workspace", target.Type)
@@ -3529,12 +3534,4 @@ func deref(value *string) string {
 		return ""
 	}
 	return *value
-}
-
-// QueueForAgent returns the shared Temporal queue for an agent capability profile.
-func QueueForAgent(agent *model.Agent) string {
-	if agent == nil {
-		return temporalapp.QueueAutomation
-	}
-	return temporalapp.QueueForRuntime(agent.RuntimeKind, resolveInvocationMode(agent))
 }

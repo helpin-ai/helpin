@@ -865,7 +865,6 @@ func main() {
 		docsContentRepo,
 		docsVersionRepo,
 		docsLinkRepo,
-		runEngine,
 		gitService,
 		pmTaskService,
 		pmActivityService,
@@ -878,7 +877,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled).SetAgentRuntimeDelegateAll(cfg.AgentRuntimeDelegateAll)
+	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
@@ -1173,6 +1172,49 @@ func main() {
 		commandService,
 		gitService,
 	).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
+	var agentRuntimeProjectionService *service.AgentRuntimeProjectionService
+	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
+		runFinalizers := service.NewAgentRunFinalizerService(
+			agentRunRepo,
+			agentRepo,
+			pmTaskRepo,
+			pmEpicRepo,
+			supportConversationRepo,
+			supportMessageRepo,
+			ruleEngine,
+			wsPublisher,
+		).SetRepositoryDeliveryService(gitService).SetCommandBarPlanAdvancer(agentService)
+		agentRuntimeProjectionService = service.NewAgentRuntimeProjectionService(agentRunRepo, cfg.AgentRuntimeAppID).
+			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
+			SetTranscriptRepositories(agentRunMessageRepo, agentRunArtifactRepo, agentRunInteractionRepo).
+			SetCodingSessionSnapshotRepository(codingSessionStateSnapshotRepo).
+			SetWebSocketPublisher(wsPublisher).
+			SetRunFinalizers(runFinalizers)
+	}
+	agentRuntimeProjectionCancel := context.CancelFunc(func() {})
+	if agentRuntimeProjectionService != nil {
+		var projectionCtx context.Context
+		projectionCtx, agentRuntimeProjectionCancel = context.WithCancel(context.Background())
+		go func() {
+			if err := agentRuntimeProjectionService.StartNATSConsumer(projectionCtx, jetstream); err != nil {
+				slog.Error("agent runtime projection consumer stopped", "error", err)
+			}
+		}()
+		go func() {
+			if err := agentRuntimeProjectionService.StartReconciliationSweep(projectionCtx, time.Minute, 2*time.Minute, 50); err != nil {
+				slog.Error("agent runtime reconciliation sweep stopped", "error", err)
+			}
+		}()
+		// Self-healing backstop for command-bar plan advancement: the
+		// projection finalizer advances plans on terminal run events; this
+		// sweep re-kicks plans that stall between events (replaces the
+		// retired CommandBarPlanWorkflow watchdog timer).
+		go func() {
+			if err := agentService.StartCommandBarPlanSweep(projectionCtx, time.Minute, 3*time.Minute, 50); err != nil {
+				slog.Error("command bar plan sweep stopped", "error", err)
+			}
+		}()
+	}
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
@@ -1335,7 +1377,7 @@ func main() {
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:               handler.NewAgentHandler(agentService),
 		AgentToolGateway:    handler.NewAgentToolGatewayHandler(agentToolGateway),
-		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService),
+		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),
@@ -1587,6 +1629,7 @@ func main() {
 	<-done
 	slog.Info("server shutting down")
 	realtimeCancel()
+	agentRuntimeProjectionCancel()
 	if emailFallbackCancel != nil {
 		emailFallbackCancel()
 	}

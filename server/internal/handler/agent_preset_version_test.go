@@ -323,7 +323,7 @@ func newAgentPresetVersionTestHandler(t *testing.T) (*AgentHandler, *gorm.DB) {
 		workspacePresetVersionRepo,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
 

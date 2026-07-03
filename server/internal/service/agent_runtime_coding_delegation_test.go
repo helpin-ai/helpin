@@ -11,7 +11,6 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 )
 
 func TestAgentRequiresRepositoryWorkspace(t *testing.T) {
@@ -261,14 +260,14 @@ func newCodingDelegationService(t *testing.T, db *gorm.DB, runtimeClient *fakeAg
 		taskRepo:     repository.NewPMTaskRepository(db),
 	}
 	return (&AgentService{
-		agentRepo:          repository.NewAgentRepository(db),
-		runRepo:            repository.NewAgentRunRepository(db),
-		runMessageRepo:     repository.NewAgentRunMessageRepository(db),
-		taskRepo:           repository.NewPMTaskRepository(db),
-		docsDocumentRepo:   repository.NewDocsDocumentRepository(db),
-		docsContentRepo:    repository.NewDocsContentRepository(db),
-		gitService:         gitService,
-		runEngine:          &temporalapp.RunEngine{},
+		agentRepo:        repository.NewAgentRepository(db),
+		runRepo:          repository.NewAgentRunRepository(db),
+		runMessageRepo:   repository.NewAgentRunMessageRepository(db),
+		taskRepo:         repository.NewPMTaskRepository(db),
+		docsDocumentRepo: repository.NewDocsDocumentRepository(db),
+		docsContentRepo:  repository.NewDocsContentRepository(db),
+		gitService:       gitService,
+
 		agentRuntimeClient: runtimeClient,
 	}).SetAgentRuntimeLaunchEnabled(true)
 }
@@ -360,11 +359,11 @@ func TestStartTargetRunDelegatesCodeBuilderTaskRunToAgentRuntime(t *testing.T) {
 	}
 }
 
-// TestStartTargetRunDelegatesReviewAgentTaskRunUsesInteractiveTurnPolicy
-// covers the review-agent flavor of the task chain: interactive default
-// invocation maps to pause_after_assistant so the review loop stays
-// interactive, mirroring the Temporal review flow.
-func TestStartTargetRunDelegatesReviewAgentTaskRunUsesInteractiveTurnPolicy(t *testing.T) {
+// TestStartTargetRunDelegatesReviewAgentTaskRunCompletesOnFinish covers the
+// review-agent flavor of the task chain: the run is still interactive for
+// auth/approval semantics, but it must not enter the runtime chat loop after
+// its final assistant response.
+func TestStartTargetRunDelegatesReviewAgentTaskRunCompletesOnFinish(t *testing.T) {
 	db := setupCodingDelegationTestDB(t)
 	now := time.Now().UTC()
 	seedCodingDelegationAgent(t, db, model.AgentPresetReviewAgent, model.InvocationModeInteractive, now)
@@ -383,8 +382,8 @@ func TestStartTargetRunDelegatesReviewAgentTaskRunUsesInteractiveTurnPolicy(t *t
 		t.Fatalf("expected one runtime start call, got %d", len(runtimeClient.startRunCalls))
 	}
 	start := runtimeClient.startRunCalls[0]
-	if start.Mode != model.InvocationModeInteractive || start.TurnPolicy.Mode != "pause_after_assistant" {
-		t.Fatalf("expected interactive pause_after_assistant policy, got mode=%q turn=%#v", start.Mode, start.TurnPolicy)
+	if start.Mode != model.InvocationModeInteractive || start.TurnPolicy.Mode != agentRuntimeTurnCompleteOnFinish {
+		t.Fatalf("expected interactive complete_on_finish policy, got mode=%q turn=%#v", start.Mode, start.TurnPolicy)
 	}
 	if !strings.Contains(start.Instructions, "Repository branches: base `develop`, working `HLP-42-fix-login-redirect`.") {
 		t.Fatalf("review runs need branch context in instructions (review skill compares work branch against base), got:\n%s", start.Instructions)

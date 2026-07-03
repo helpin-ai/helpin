@@ -468,7 +468,6 @@ func main() {
 		docsContentRepo,
 		docsVersionRepo,
 		docsLinkRepo,
-		runEngine,
 		gitService,
 		pmStoryService,
 		pmActivityService,
@@ -481,7 +480,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled).SetAgentRuntimeDelegateAll(cfg.AgentRuntimeDelegateAll)
+	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
@@ -636,38 +635,6 @@ func main() {
 	ruleEngine.SetTriggerExecutionRepository(triggerExecutionRepo)
 	activities.SetRuleEngine(ruleEngine)
 
-	// Agent runtime projection consumer + delegated-run finalizers. Started
-	// here (after the rule engine exists) so terminal-transition finalizers
-	// can feed agent_run.completed automations.
-	projectionCancel := context.CancelFunc(func() {})
-	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
-		runFinalizers := service.NewAgentRunFinalizerService(
-			runRepo,
-			agentRepo,
-			storyRepo,
-			epicRepo,
-			conversationRepo,
-			supportMessageRepo,
-			ruleEngine,
-			wsPublisher,
-		).SetRepositoryDeliveryService(gitService).SetCommandBarPlanAdvancer(agentService)
-		agentRuntimeProjectionService := service.NewAgentRuntimeProjectionService(runRepo, cfg.AgentRuntimeAppID).
-			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
-			SetTranscriptRepositories(runMessageRepo, artifactRepo, interactionRepo).
-			SetRunFinalizers(runFinalizers)
-		var projectionCtx context.Context
-		projectionCtx, projectionCancel = context.WithCancel(context.Background())
-		go func() {
-			if err := agentRuntimeProjectionService.StartNATSConsumer(projectionCtx, jetstream); err != nil {
-				slog.Error("agent runtime projection consumer stopped", "error", err)
-			}
-		}()
-		go func() {
-			if err := agentRuntimeProjectionService.StartReconciliationSweep(projectionCtx, time.Minute, 2*time.Minute, 50); err != nil {
-				slog.Error("agent runtime reconciliation sweep stopped", "error", err)
-			}
-		}()
-	}
 	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
 	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)
 	coverageActivities := temporalapp.NewCoverageGapActivities(supportCoverageEnrichmentService, supportCoverageService)
@@ -710,7 +677,6 @@ func main() {
 
 	log.Println("shutting down temporal workers")
 	aiConsumerCancel() // stop AI support consumer
-	projectionCancel()
 	gitGraceCleanupCancel()
 	for _, sharedWorker := range workers {
 		sharedWorker.Stop()
@@ -740,23 +706,9 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		WorkerStopTimeout:                  temporalWorkerStopTimeout,
 	}
 	w := tworker.New(client, taskQueue, options)
-	w.RegisterWorkflow(temporalapp.AgentRunWorkflow)
-	w.RegisterWorkflow(temporalapp.CommandBarPlanWorkflow)
-	w.RegisterActivityWithOptions(activities.PrepareRunActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.PrepareRunActivity",
-	})
-	w.RegisterActivityWithOptions(activities.ExecuteRunActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.ExecuteRunActivity",
-	})
-	w.RegisterActivityWithOptions(activities.MarkRunFailedActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.MarkRunFailedActivity",
-	})
-	w.RegisterActivityWithOptions(activities.AdvanceCommandBarPlanActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.AdvanceCommandBarPlanActivity",
-	})
-	w.RegisterActivityWithOptions(activities.StartReadyCommandBarPlanStepsActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.StartReadyCommandBarPlanStepsActivity",
-	})
+	// Agent execution is fully delegated to the agent-runtime service —
+	// AgentRunWorkflow / CommandBarPlanWorkflow and their activities are no
+	// longer registered. This worker hosts product background jobs only.
 
 	// Register email sync workflow and activities.
 	w.RegisterWorkflow(temporalapp.EmailSyncWorkflow)

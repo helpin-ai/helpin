@@ -15,8 +15,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/temporalapp"
-	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -53,25 +51,6 @@ func (s *scriptedCommandBarLLM) ChatCompletion(ctx context.Context, req llm.Chat
 		return &llm.ChatResponse{Content: response}, nil
 	}
 	return &llm.ChatResponse{Content: s.response}, nil
-}
-
-type commandBarSignalTemporalClient struct {
-	tclient.Client
-	err           error
-	signalName    string
-	workflowID    string
-	signaledRunID string
-}
-
-func (c *commandBarSignalTemporalClient) SignalWorkflow(_ context.Context, workflowID, workflowRunID, signalName string, arg interface{}) error {
-	c.workflowID = workflowID
-	c.signalName = signalName
-	payload, ok := arg.(temporalapp.CommandBarRunCompletedSignal)
-	if !ok {
-		return fmt.Errorf("unexpected command bar signal payload type %T", arg)
-	}
-	c.signaledRunID = payload.RunID
-	return c.err
 }
 
 func TestParseExplicitNamedAgentsPreservesRequestOrder(t *testing.T) {
@@ -1589,8 +1568,8 @@ func TestCreateRunDelegatesMiraWorkspaceRunToAgentRuntime(t *testing.T) {
 	if !slices.Equal(start.AllowedTools, []string{"update_plan"}) {
 		t.Fatalf("unexpected start allowed tools: %#v", start.AllowedTools)
 	}
-	if start.TurnPolicy.Mode != "pause_after_assistant" {
-		t.Fatalf("expected interactive turn policy, got %#v", start.TurnPolicy)
+	if start.TurnPolicy.Mode != agentRuntimeTurnCompleteOnFinish {
+		t.Fatalf("expected completion turn policy, got %#v", start.TurnPolicy)
 	}
 	if start.Metadata["workspace_id"] != workspaceID || start.Metadata["helpin_run_id"] != run.ID || start.Target.Metadata["workspace_id"] != workspaceID {
 		t.Fatalf("unexpected runtime metadata: metadata=%#v target=%#v", start.Metadata, start.Target.Metadata)
@@ -3406,108 +3385,13 @@ func TestAdvanceTaskPipelinePlanSchedulesFallbackWithoutRunEngine(t *testing.T) 
 	}
 }
 
-func TestAdvanceTaskPipelinePlanSignalsOnlyWithRunEngine(t *testing.T) {
+func TestAdvanceTaskPipelinePlanCompletesWhenAllRunsTerminal(t *testing.T) {
 	db := setupCommandBarPlanTestDB(t)
 	runRepo := repository.NewAgentRunRepository(db)
 	planRepo := repository.NewCommandBarPlanRepository(db)
-	temporalClient := &commandBarSignalTemporalClient{}
 	service := &AgentService{
 		runRepo:            runRepo,
 		commandBarPlanRepo: planRepo,
-		runEngine:          temporalapp.NewRunEngine(temporalClient, "test"),
-	}
-
-	ctx := context.Background()
-	workspaceID := "11111111-1111-1111-1111-111111111111"
-	planID := "22222222-2222-2222-2222-222222222222"
-	forgeAgentID := "33333333-3333-3333-3333-333333333333"
-	lensAgentID := "44444444-4444-4444-4444-444444444444"
-	forgeRunID := "55555555-5555-5555-5555-555555555555"
-	taskID := "66666666-6666-6666-6666-666666666666"
-	pageContext := model.CommandBarPageContext{EntityType: "epic", EntityID: "epic-1", DisplayTitle: "Epic 1"}
-	steps := []model.CommandBarPlanStep{
-		{
-			AgentID:      forgeAgentID,
-			AgentName:    "Forge",
-			PlanKind:     model.CommandBarPlanKindTaskPipeline,
-			Target:       model.CommandBarPageContext{EntityType: "task", EntityID: taskID, DisplayTitle: "Task 1"},
-			Instructions: "Build task 1.",
-		},
-		{
-			AgentID:              lensAgentID,
-			AgentName:            "Lens",
-			PlanKind:             model.CommandBarPlanKindTaskPipeline,
-			Target:               model.CommandBarPageContext{EntityType: "task", EntityID: taskID, DisplayTitle: "Task 1"},
-			Instructions:         "Review task 1.",
-			DependsOnStepIndexes: []int{0},
-		},
-	}
-	plan, err := newCommandBarPlanRecord(workspaceID, "", planID, "run forge then lens", pageContext, steps)
-	if err != nil {
-		t.Fatalf("build plan record: %v", err)
-	}
-	runIDs, _ := json.Marshal(map[int]string{0: forgeRunID})
-	plan.RunIDsByStep = runIDs
-	plan.RunCount = 2
-	if err := planRepo.Create(ctx, plan); err != nil {
-		t.Fatalf("create plan: %v", err)
-	}
-
-	trigger, err := buildCommandBarTriggerContext("run forge then lens", pageContext, steps, 0, planID)
-	if err != nil {
-		t.Fatalf("build trigger: %v", err)
-	}
-	input, _ := json.Marshal(model.AgentRunInputPayload{Trigger: trigger})
-	if err := runRepo.Create(ctx, &model.AgentRun{
-		ID:             forgeRunID,
-		WorkspaceID:    workspaceID,
-		AgentID:        forgeAgentID,
-		TargetType:     "task",
-		TargetID:       taskID,
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeAutonomous,
-		ApprovalState:  "not_required",
-		PauseReason:    model.AgentRunPauseReasonNone,
-		Status:         model.AgentRunStatusCompleted,
-		Input:          input,
-		OutputSummary:  json.RawMessage("{}"),
-	}); err != nil {
-		t.Fatalf("create forge run: %v", err)
-	}
-
-	if _, err := service.AdvanceCommandBarPlanAfterRun(ctx, forgeRunID); err != nil {
-		t.Fatalf("advance task pipeline run: %v", err)
-	}
-	if temporalClient.workflowID != temporalapp.WorkflowIDForCommandBarPlan(planID) {
-		t.Fatalf("expected signal to command bar workflow, got %q", temporalClient.workflowID)
-	}
-	if temporalClient.signalName != temporalapp.WorkflowSignalCommandBarRun {
-		t.Fatalf("expected command bar run signal, got %q", temporalClient.signalName)
-	}
-	if temporalClient.signaledRunID != forgeRunID {
-		t.Fatalf("expected signal run id %q, got %q", forgeRunID, temporalClient.signaledRunID)
-	}
-	updated, err := planRepo.GetByID(ctx, workspaceID, planID)
-	if err != nil {
-		t.Fatalf("get plan: %v", err)
-	}
-	if updated.Status != model.CommandBarPlanStatusRunning {
-		t.Fatalf("expected signal-only path to leave plan running, got %q", updated.Status)
-	}
-	if got := decodeCommandBarPlanRunIDs(updated.RunIDsByStep); strings.TrimSpace(got[1]) != "" {
-		t.Fatalf("expected signal-only path not to start Lens directly, got run ids %#v", got)
-	}
-}
-
-func TestAdvanceTaskPipelinePlanFallsBackWhenSignalFails(t *testing.T) {
-	db := setupCommandBarPlanTestDB(t)
-	runRepo := repository.NewAgentRunRepository(db)
-	planRepo := repository.NewCommandBarPlanRepository(db)
-	temporalClient := &commandBarSignalTemporalClient{err: fmt.Errorf("workflow not found")}
-	service := &AgentService{
-		runRepo:            runRepo,
-		commandBarPlanRepo: planRepo,
-		runEngine:          temporalapp.NewRunEngine(temporalClient, "test"),
 	}
 
 	ctx := context.Background()
@@ -3572,15 +3456,12 @@ func TestAdvanceTaskPipelinePlanFallsBackWhenSignalFails(t *testing.T) {
 	if _, err := service.AdvanceCommandBarPlanAfterRun(ctx, runTwoID); err != nil {
 		t.Fatalf("advance task pipeline run: %v", err)
 	}
-	if temporalClient.signaledRunID != runTwoID {
-		t.Fatalf("expected signal attempt for run %q, got %q", runTwoID, temporalClient.signaledRunID)
-	}
 	updated, err := planRepo.GetByID(ctx, workspaceID, planID)
 	if err != nil {
 		t.Fatalf("get plan: %v", err)
 	}
 	if updated.Status != model.CommandBarPlanStatusCompleted {
-		t.Fatalf("expected fallback to complete task pipeline plan, got %q", updated.Status)
+		t.Fatalf("expected local advancement to complete task pipeline plan, got %q", updated.Status)
 	}
 }
 
@@ -4035,9 +3916,9 @@ func TestRetryPlanFromStepAcceptsRunningPlanWithNoActiveRuns(t *testing.T) {
 	}
 
 	// Zombie (running plan, cancelled run): must pass the running gate and
-	// only fail later on the missing temporal engine in this test harness.
+	// only fail later in the retry pipeline in this partial test harness.
 	_, err = service.RetryPlanFromStep(ctx, workspaceID, "actor-2", planID, model.CommandBarRetryPlanRequest{StepIndex: 0})
-	if err == nil || !strings.Contains(err.Error(), "orchestration is not configured") {
+	if err != nil && strings.Contains(err.Error(), "active runs") {
 		t.Fatalf("expected zombie plan to pass the running gate, got %v", err)
 	}
 

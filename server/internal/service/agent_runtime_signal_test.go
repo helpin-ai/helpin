@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,7 +12,6 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 )
 
 type fakeAgentRuntimeSignalClient struct {
@@ -161,10 +161,10 @@ func TestResumeRunForAgentRuntimeRunSignalsRuntimeAndKeepsLocalSideEffects(t *te
 	run := seedAgentRuntimeSignalRun(t, runRepo, model.AgentRunStatusPaused, model.AgentRunPauseReasonHumanInput, "not_required", now)
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentService{
-		agentRepo:          agentRepo,
-		runRepo:            runRepo,
-		runMessageRepo:     runMessageRepo,
-		runEngine:          &temporalapp.RunEngine{},
+		agentRepo:      agentRepo,
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+
 		agentRuntimeClient: runtimeClient,
 	}
 
@@ -211,10 +211,10 @@ func TestResumeRunForAgentRuntimeRunRollsBackLocalStateWhenRuntimeSignalFails(t 
 	run := seedAgentRuntimeSignalRun(t, runRepo, model.AgentRunStatusPaused, model.AgentRunPauseReasonHumanInput, "not_required", now)
 	runtimeClient := &fakeAgentRuntimeSignalClient{resumeErr: errors.New("runtime down")}
 	svc := &AgentService{
-		agentRepo:          agentRepo,
-		runRepo:            runRepo,
-		runMessageRepo:     runMessageRepo,
-		runEngine:          &temporalapp.RunEngine{},
+		agentRepo:      agentRepo,
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+
 		agentRuntimeClient: runtimeClient,
 	}
 
@@ -251,10 +251,10 @@ func TestApproveRunForAgentRuntimeRunWithoutMessageDoesNotSendSyntheticContent(t
 	run := seedAgentRuntimeSignalRun(t, runRepo, model.AgentRunStatusPaused, model.AgentRunPauseReasonHumanApproval, "pending", now)
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentService{
-		agentRepo:          agentRepo,
-		runRepo:            runRepo,
-		runMessageRepo:     runMessageRepo,
-		runEngine:          &temporalapp.RunEngine{},
+		agentRepo:      agentRepo,
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+
 		agentRuntimeClient: runtimeClient,
 	}
 
@@ -291,10 +291,10 @@ func TestReplyToApprovalPausedAgentRuntimeRunForwardsRequestChanges(t *testing.T
 	run := seedAgentRuntimeSignalRun(t, runRepo, model.AgentRunStatusPaused, model.AgentRunPauseReasonHumanApproval, "pending", now)
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentService{
-		agentRepo:          agentRepo,
-		runRepo:            runRepo,
-		runMessageRepo:     runMessageRepo,
-		runEngine:          &temporalapp.RunEngine{},
+		agentRepo:      agentRepo,
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+
 		agentRuntimeClient: runtimeClient,
 	}
 
@@ -329,9 +329,9 @@ func TestCancelRunForAgentRuntimeRunSignalsRuntimeBeforeLocalCancel(t *testing.T
 	run := seedAgentRuntimeSignalRun(t, runRepo, model.AgentRunStatusRunning, model.AgentRunPauseReasonNone, "not_required", now)
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentService{
-		agentRepo:          agentRepo,
-		runRepo:            runRepo,
-		runEngine:          &temporalapp.RunEngine{},
+		agentRepo: agentRepo,
+		runRepo:   runRepo,
+
 		agentRuntimeClient: runtimeClient,
 	}
 
@@ -611,11 +611,11 @@ func seedAgentRuntimeSupportConversation(t *testing.T, db *gorm.DB, now time.Tim
 func newDelegatedSupportRunService(t *testing.T, db *gorm.DB, runtimeClient *fakeAgentRuntimeSignalClient) *AgentService {
 	t.Helper()
 	return (&AgentService{
-		agentRepo:          repository.NewAgentRepository(db),
-		runRepo:            repository.NewAgentRunRepository(db),
-		runMessageRepo:     repository.NewAgentRunMessageRepository(db),
-		conversationRepo:   repository.NewSupportConversationRepository(db),
-		runEngine:          &temporalapp.RunEngine{},
+		agentRepo:        repository.NewAgentRepository(db),
+		runRepo:          repository.NewAgentRunRepository(db),
+		runMessageRepo:   repository.NewAgentRunMessageRepository(db),
+		conversationRepo: repository.NewSupportConversationRepository(db),
+
 		agentRuntimeClient: runtimeClient,
 	}).SetAgentRuntimeLaunchEnabled(true)
 }
@@ -684,6 +684,40 @@ func TestRunConversationAgentDelegatesSupportRunToAgentRuntime(t *testing.T) {
 	}
 	if reloaded.WorkflowID != nil || reloaded.WorkflowRunID != nil {
 		t.Fatalf("expected no local Temporal workflow, got %v/%v", reloaded.WorkflowID, reloaded.WorkflowRunID)
+	}
+}
+
+// TestStartRunFailsLoudlyWhenAgentRuntimeLaunchDisabled proves there is no
+// local executor fallback: with AGENT_RUNTIME_LAUNCH_ENABLED off the run row
+// is created and immediately failed with an explicit error.
+func TestStartRunFailsLoudlyWhenAgentRuntimeLaunchDisabled(t *testing.T) {
+	db := setupAgentRuntimeSupportRunTestDB(t)
+	now := time.Now().UTC()
+	seedAgentRuntimeSupportAgent(t, db, model.InvocationModeAutonomous, now)
+	seedAgentRuntimeSupportConversation(t, db, now)
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	svc := newDelegatedSupportRunService(t, db, runtimeClient)
+	svc.SetAgentRuntimeLaunchEnabled(false)
+
+	_, err := svc.RunConversationAgent(context.Background(), "ws-1", "conv-1", "user-1")
+	if err == nil || !strings.Contains(err.Error(), "no execution path") {
+		t.Fatalf("expected loud launch-disabled failure, got %v", err)
+	}
+	if len(runtimeClient.startRunCalls) != 0 {
+		t.Fatalf("expected no runtime start call, got %d", len(runtimeClient.startRunCalls))
+	}
+	var runs []model.AgentRun
+	if err := db.Where("workspace_id = ?", "ws-1").Find(&runs).Error; err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("expected one failed run row, got %d", len(runs))
+	}
+	if runs[0].Status != model.AgentRunStatusFailed {
+		t.Fatalf("expected failed run, got %q", runs[0].Status)
+	}
+	if runs[0].ErrorMessage == nil || !strings.Contains(*runs[0].ErrorMessage, "no execution path") {
+		t.Fatalf("expected explicit error message, got %v", runs[0].ErrorMessage)
 	}
 }
 
@@ -766,10 +800,10 @@ func TestDelegatedSupportRunReplyForwardsHumanInput(t *testing.T) {
 	run := seedDelegatedSupportRun(t, runRepo, model.AgentRunStatusPaused, model.AgentRunPauseReasonHumanInput, "not_required", "", now)
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentService{
-		agentRepo:          repository.NewAgentRepository(db),
-		runRepo:            runRepo,
-		runMessageRepo:     repository.NewAgentRunMessageRepository(db),
-		runEngine:          &temporalapp.RunEngine{},
+		agentRepo:      repository.NewAgentRepository(db),
+		runRepo:        runRepo,
+		runMessageRepo: repository.NewAgentRunMessageRepository(db),
+
 		agentRuntimeClient: runtimeClient,
 	}
 
@@ -809,10 +843,10 @@ func TestDelegatedSupportRunApproveForwardsApprovalAndKeepsDraftStaged(t *testin
 	run := seedDelegatedSupportRun(t, runRepo, model.AgentRunStatusPaused, model.AgentRunPauseReasonHumanApproval, "pending", delegatedSupportDraftSummary, now)
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentService{
-		agentRepo:          repository.NewAgentRepository(db),
-		runRepo:            runRepo,
-		runMessageRepo:     repository.NewAgentRunMessageRepository(db),
-		runEngine:          &temporalapp.RunEngine{},
+		agentRepo:      repository.NewAgentRepository(db),
+		runRepo:        runRepo,
+		runMessageRepo: repository.NewAgentRunMessageRepository(db),
+
 		agentRuntimeClient: runtimeClient,
 	}
 
@@ -859,10 +893,10 @@ func TestDelegatedSupportRunRequestChangesForwardsIntent(t *testing.T) {
 	run := seedDelegatedSupportRun(t, runRepo, model.AgentRunStatusPaused, model.AgentRunPauseReasonHumanApproval, "pending", delegatedSupportDraftSummary, now)
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentService{
-		agentRepo:          repository.NewAgentRepository(db),
-		runRepo:            runRepo,
-		runMessageRepo:     repository.NewAgentRunMessageRepository(db),
-		runEngine:          &temporalapp.RunEngine{},
+		agentRepo:      repository.NewAgentRepository(db),
+		runRepo:        runRepo,
+		runMessageRepo: repository.NewAgentRunMessageRepository(db),
+
 		agentRuntimeClient: runtimeClient,
 	}
 

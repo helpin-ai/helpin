@@ -20,7 +20,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 	"github.com/helpin-ai/helpin/server/internal/worker"
 )
@@ -171,115 +170,16 @@ func buildAgentRunInputPayload(targetType, targetID string, trigger *model.Agent
 	return json.Marshal(payload)
 }
 
-// agentRuntimePresetDelegatedTargets lists, per system preset, the target
-// types whose runs are delegated to Agent Runtime when
-// AGENT_RUNTIME_LAUNCH_ENABLED is on. Presets absent from this map
-// (epic/task planner, command agent) and target types absent from a preset's
-// set (story, epic, support_coverage_gap, coding-preset workspace) stay on
-// the local Temporal executor:
-//   - epic_planner / task_planner: blocked on planner parity — the Temporal
-//     path assembles planning context and phase guidance at execution time and
-//     applies approved previews (task creation, PRD/plan-doc persistence)
-//     after approval; none of that reaches a delegated run yet. See "Planner
-//     parity blockers" in docs/AGENT_RUNTIME_LOCAL.md.
-//   - support_coverage_gap: not a support-agent target (its runtime profile
-//     only allows support_conversation); coverage-gap runs belong to the
-//     documentation-agent surface, which delegates workspace/document only.
-//   - code_builder / review_agent workspace targets: the runtime host
-//     repository-spec resolver (GitService.ResolveAgentRuntimeRepositorySpec)
-//     has no workspace case, and these presets' runtime agent records demand a
-//     repository workspace, so PrepareWorkspace would fail. See "Coding preset
-//     parity" in docs/AGENT_RUNTIME_LOCAL.md.
-var agentRuntimePresetDelegatedTargets = map[string]map[string]bool{
-	model.AgentPresetMarketer: {
-		"workspace": true,
-	},
-	// Coding presets: launch stamps run branch fields from the resolved task
-	// delivery target (createRun), the host repository-spec endpoint clones
-	// and checks out the work branch, buildDelegatedTaskLaunchContext stamps
-	// execution-time task context into additional_context, and the
-	// repository-delivery finalizer opens the PR/MR off the runtime-pushed
-	// branch summary.
-	model.AgentPresetCodeBuilder: {
-		"task":       true,
-		"repository": true,
-	},
-	model.AgentPresetReviewAgent: {
-		"task":       true,
-		"repository": true,
-	},
-	model.AgentPresetDocumentationAgent: {
-		"workspace": true,
-		"document":  true,
-	},
-	model.AgentPresetCRMOperator: {
-		"workspace":   true,
-		"crm_contact": true,
-		"crm_company": true,
-		"crm_deal":    true,
-	},
-	model.AgentPresetSupportAgent: {
-		// Full delegated chain exists: manual, API, and widget auto-run
-		// launches all funnel through runConversationAgent /
-		// startTargetRunWithOptions into createRun's delegation branch; the
-		// runtime host resolves support_conversation target context from the
-		// workspace_id metadata stamped by runtimeStartRunRequest; drafts are
-		// staged via the support.draft_reply command onto
-		// output_summary.draft_reply; finalizeSupportDraft sends the reply on
-		// the terminal completed transition.
-		"support_conversation": true,
-	},
-}
-
-// agentRuntimeCustomAgentDelegatedTargets lists the target types delegated for
-// custom (non-preset) agents. Custom agents are native_sdk-only generic
-// executors per the agents taxonomy; codex/opencode custom agents keep the
-// local executor because their auth and interaction handling still live there.
-var agentRuntimeCustomAgentDelegatedTargets = map[string]bool{
-	"workspace":   true,
-	"document":    true,
-	"crm_contact": true,
-	"crm_company": true,
-	"crm_deal":    true,
-}
-
-// shouldDelegateRunToAgentRuntime reports whether a run for the given agent
-// and target type is executed by Agent Runtime instead of the local Temporal
-// executor. The AGENT_RUNTIME_LAUNCH_ENABLED flag gate lives in
-// AgentService.delegatesRunToAgentRuntime.
-func shouldDelegateRunToAgentRuntime(agent *model.Agent, targetType string) bool {
-	if agent == nil {
-		return false
-	}
-	targetType = strings.TrimSpace(targetType)
-	if preset := agent.EffectivePresetKey(); preset != "" {
-		return agentRuntimePresetDelegatedTargets[preset][targetType]
-	}
-	if agent.IsSystem {
-		// System agents are preset-bound; one without a preset is
-		// misconfigured and stays on the local executor.
-		return false
-	}
-	if strings.TrimSpace(agent.RuntimeKind) != model.AgentTemplateRuntimeKindNativeSDK {
-		return false
-	}
-	return agentRuntimeCustomAgentDelegatedTargets[targetType]
-}
-
-// delegatesRunToAgentRuntime is the launch-time delegation decision: the
-// AGENT_RUNTIME_LAUNCH_ENABLED flag short-circuits the preset/target predicate.
-// AGENT_RUNTIME_DELEGATE_ALL is a testing override that delegates every
-// preset/target combination, bypassing the parity-gated table; known parity
-// gaps (planner context, workspace coding) then fail loudly at execution
-// instead of routing to the local executor.
+// delegatesRunToAgentRuntime is the launch-time delegation decision. Agent
+// Runtime is the only execution path: every run with an agent and a target
+// type delegates when AGENT_RUNTIME_LAUNCH_ENABLED is on. When the flag is
+// off (or the runtime client is not configured) run starts fail loudly —
+// there is no local executor fallback.
 func (s *AgentService) delegatesRunToAgentRuntime(agent *model.Agent, targetType string) bool {
 	if s == nil || !s.agentRuntimeLaunchEnabled {
 		return false
 	}
-	if s.agentRuntimeDelegateAll {
-		return agent != nil && strings.TrimSpace(targetType) != ""
-	}
-	return shouldDelegateRunToAgentRuntime(agent, targetType)
+	return agent != nil && strings.TrimSpace(targetType) != ""
 }
 
 func shouldRetryAgentRuntimeStart(err error) bool {
@@ -406,10 +306,6 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 	if mode == "" {
 		mode = model.InvocationModeAutonomous
 	}
-	turnPolicyMode := "complete_on_finish"
-	if mode == model.InvocationModeInteractive {
-		turnPolicyMode = "pause_after_assistant"
-	}
 	return AgentRuntimeStartRunRequest{
 		HostRunID:       strings.TrimSpace(run.ID),
 		AgentID:         strings.TrimSpace(run.AgentID),
@@ -421,8 +317,25 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 		ExecutionMode:   agentRuntimeExecutionModeDurable,
 		Trigger:         trigger,
 		Metadata:        metadata,
-		TurnPolicy:      AgentRuntimeTurnPolicy{Mode: turnPolicyMode},
+		TurnPolicy:      AgentRuntimeTurnPolicy{Mode: runtimeTurnPolicyMode(run, mode)},
 	}
+}
+
+func runtimeTurnPolicyMode(run *model.AgentRun, mode string) string {
+	if run == nil {
+		return agentRuntimeTurnCompleteOnFinish
+	}
+	if strings.TrimSpace(mode) != model.InvocationModeInteractive {
+		return agentRuntimeTurnCompleteOnFinish
+	}
+	// Agent Runtime's pause_after_assistant mode is a chat-loop primitive: it
+	// intentionally pauses after an assistant turn and waits for another user
+	// message. Most Helpin "interactive" runs still have a finite product
+	// outcome, so keep chat-loop behavior scoped to conversational surfaces.
+	if strings.TrimSpace(run.TargetType) == "support_conversation" {
+		return agentRuntimeTurnPauseAfterAssist
+	}
+	return agentRuntimeTurnCompleteOnFinish
 }
 
 func mapFromJSON(value interface{}) map[string]interface{} {
@@ -520,7 +433,6 @@ type AgentService struct {
 	crmDealRepo                *repository.CRMDealRepository
 	userRepo                   *repository.UserRepository
 	workspaceSkillRepo         *repository.WorkspaceSkillRepository
-	runEngine                  *temporalapp.RunEngine
 	gitService                 *GitService
 	taskService                *PMTaskService
 	workflowService            *PMWorkflowService
@@ -542,7 +454,6 @@ type AgentService struct {
 	aiUsageMeter               *AIUsageMeter
 	agentRuntimeClient         agentRuntimeSignalClient
 	agentRuntimeLaunchEnabled  bool
-	agentRuntimeDelegateAll    bool
 }
 
 type agentRuntimeSignalClient interface {
@@ -588,7 +499,6 @@ func NewAgentService(
 	docsContentRepo *repository.DocsContentRepository,
 	docsVersionRepo *repository.DocsVersionRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
-	runEngine *temporalapp.RunEngine,
 	gitService *GitService,
 	taskService *PMTaskService,
 	activitySvc *PMActivityService,
@@ -616,7 +526,6 @@ func NewAgentService(
 		docsContentRepo:            docsContentRepo,
 		docsVersionRepo:            docsVersionRepo,
 		docsLinkRepo:               docsLinkRepo,
-		runEngine:                  runEngine,
 		gitService:                 gitService,
 		taskService:                taskService,
 		activitySvc:                activitySvc,
@@ -712,13 +621,6 @@ func (s *AgentService) SetAgentRuntimeClient(client agentRuntimeSignalClient) *A
 
 func (s *AgentService) SetAgentRuntimeLaunchEnabled(enabled bool) *AgentService {
 	s.agentRuntimeLaunchEnabled = enabled
-	return s
-}
-
-// SetAgentRuntimeDelegateAll enables the testing override that delegates every
-// preset/target combination to the agent runtime.
-func (s *AgentService) SetAgentRuntimeDelegateAll(enabled bool) *AgentService {
-	s.agentRuntimeDelegateAll = enabled
 	return s
 }
 
@@ -4196,6 +4098,9 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 		return run, nil
 	}
 
+	// Legacy row without a runtime mapping (pre-delegation drain leftovers):
+	// there is no executor to signal; flip the local status so the run stops
+	// occupying the agent.
 	now := time.Now()
 	run.Status = "cancelled"
 	run.PauseReason = model.AgentRunPauseReasonNone
@@ -4204,7 +4109,6 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, err
 	}
-	_ = s.runEngine.CancelRun(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
 
 	_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
 	s.logTargetAgentRunActivity(ctx, run, actorID, "cancelled", nil)
@@ -4388,180 +4292,13 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		return nil, nil, fmt.Errorf("run is waiting for authentication")
 	}
 	model.NormalizeAgentRunPauseState(run)
-	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
-		return s.resumeAgentRuntimeRunWithIntent(ctx, workspaceID, run, runtimeRunID, actorID, req, intent)
+	runtimeRunID, ok := agentRuntimeRunID(run)
+	if !ok {
+		// No runtime mapping means no executor to resume (legacy pre-drain
+		// row) — the local Temporal resume path is retired.
+		return nil, nil, fmt.Errorf("run is not managed by the agent runtime and cannot be resumed")
 	}
-	liveCodexPause, err := s.shouldUseLiveCodexPausePath(ctx, run)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var (
-		message     *model.AgentRunMessage
-		signal      temporalapp.RunResumeSignal
-		replyText   string
-		stage       = "resuming"
-		approvalSet bool
-	)
-	previousStatus := run.Status
-	previousPauseReason := run.PauseReason
-	previousApprovalState := run.ApprovalState
-	previousCompletedAt := run.CompletedAt
-	previousExecutionStage := run.ExecutionStage
-	previousHeartbeatAt := run.LastHeartbeatAt
-
-	switch intent {
-	case model.AgentRunResumeIntentReply:
-		if s.runMessageRepo == nil {
-			return nil, nil, fmt.Errorf("run messages are not configured")
-		}
-		replyText = strings.TrimSpace(req.Content)
-		if replyText == "" {
-			return nil, nil, fmt.Errorf("content is required")
-		}
-		message, err = s.createRunMessage(ctx, run, "user", "user_reply", replyText)
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := s.maybePersistApprovedInteractivePreview(ctx, run, actorID, replyText); err != nil {
-			return nil, nil, err
-		}
-		signalIntent := model.AgentRunResumeIntentReply
-		if run.PauseReason == model.AgentRunPauseReasonHumanApproval {
-			if isExplicitInteractiveApprovalReply(replyText) {
-				run.ApprovalState = "approved"
-				approvalSet = true
-				stage = "approved"
-				signalIntent = model.AgentRunResumeIntentApprove
-			} else {
-				run.ApprovalState = "rejected"
-			}
-		}
-		signal = temporalapp.RunResumeSignal{
-			Intent:  signalIntent,
-			Content: replyText,
-		}
-	case model.AgentRunResumeIntentApprove:
-		if run.ApprovalState != "pending" {
-			return nil, nil, fmt.Errorf("run does not require approval")
-		}
-		replyText = strings.TrimSpace(req.Content)
-		if replyText == "" {
-			replyText = "approve"
-		}
-		if req.SendMessage || strings.TrimSpace(req.Content) != "" {
-			if s.runMessageRepo == nil {
-				return nil, nil, fmt.Errorf("run messages are not configured")
-			}
-			message, err = s.createRunMessage(ctx, run, "user", "approval", replyText)
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-		if err := s.maybePersistApprovedInteractivePreview(ctx, run, actorID, replyText); err != nil {
-			return nil, nil, err
-		}
-		run.ApprovalState = "approved"
-		approvalSet = true
-		stage = "approved"
-		signal = temporalapp.RunResumeSignal{
-			Intent:  model.AgentRunResumeIntentApprove,
-			Content: replyText,
-		}
-	case model.AgentRunResumeIntentRequestChanges:
-		if s.runMessageRepo == nil {
-			return nil, nil, fmt.Errorf("run messages are not configured")
-		}
-		replyText = strings.TrimSpace(req.Content)
-		if replyText == "" {
-			return nil, nil, fmt.Errorf("content is required")
-		}
-		if run.PauseReason != model.AgentRunPauseReasonHumanApproval || run.ApprovalState != "pending" {
-			return nil, nil, fmt.Errorf("run is not awaiting approval")
-		}
-		message, err = s.createRunMessage(ctx, run, "user", "request_changes", replyText)
-		if err != nil {
-			return nil, nil, err
-		}
-		run.ApprovalState = "rejected"
-		signal = temporalapp.RunResumeSignal{
-			Intent:  model.AgentRunResumeIntentRequestChanges,
-			Content: replyText,
-		}
-	default:
-		return nil, nil, fmt.Errorf("unsupported intent %q", req.Intent)
-	}
-
-	now := time.Now()
-	if len(req.ResponsePayload) > 0 && strings.TrimSpace(string(req.ResponsePayload)) != "" && strings.TrimSpace(string(req.ResponsePayload)) != "null" {
-		signal.ResponsePayload = append(json.RawMessage(nil), req.ResponsePayload...)
-	}
-	run.ExecutionStage = strPtr(stage)
-	run.LastHeartbeatAt = &now
-	run.CompletedAt = nil
-	if !approvalSet && intent != model.AgentRunResumeIntentRequestChanges && run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
-		run.ApprovalState = "not_required"
-	}
-	if liveCodexPause {
-		if err := s.runRepo.Update(ctx, run); err != nil {
-			return nil, nil, err
-		}
-		if err := s.resolveLatestPendingInteraction(ctx, run, actorID, previousPauseReason, signal.Intent, replyText, req.ResponsePayload); err != nil {
-			slog.ErrorContext(ctx, "failed to resolve run interaction",
-				"error", err,
-				"workspace_id", run.WorkspaceID,
-				"run_id", run.ID,
-				"pause_reason", previousPauseReason,
-				"intent", signal.Intent,
-			)
-		}
-		s.logTargetAgentRunActivity(ctx, run, actorID, agentRunActivityActionForResumeIntent(intent), agentRunActivityExtraForMessage(intent, message))
-		s.publishRunEvent(run, actorID)
-		return run, message, nil
-	}
-	run.Status = model.AgentRunStatusRunning
-	run.PauseReason = model.AgentRunPauseReasonNone
-	if err := s.runRepo.Update(ctx, run); err != nil {
-		return nil, nil, err
-	}
-	if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.TaskID); err != nil {
-		return nil, nil, err
-	}
-	workflowID := strings.TrimSpace(derefString(run.WorkflowID))
-	if workflowID == "" {
-		workflowID = temporalapp.WorkflowIDForRun(run.ID)
-	}
-	if err := s.runEngine.SignalResume(ctx, workflowID, strings.TrimSpace(derefString(run.WorkflowRunID)), signal); err != nil {
-		slog.ErrorContext(ctx, "failed to signal agent run resume",
-			"run_id", run.ID,
-			"workflow_id", workflowID,
-			"workflow_run_id", strings.TrimSpace(derefString(run.WorkflowRunID)),
-			"intent", signal.Intent,
-			"error", err)
-		run.Status = previousStatus
-		run.PauseReason = previousPauseReason
-		run.ApprovalState = previousApprovalState
-		run.CompletedAt = previousCompletedAt
-		run.ExecutionStage = previousExecutionStage
-		run.LastHeartbeatAt = previousHeartbeatAt
-		if updateErr := s.runRepo.Update(ctx, run); updateErr != nil {
-			return nil, nil, updateErr
-		}
-		_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
-		return nil, nil, fmt.Errorf("resume workflow signal failed: %w", err)
-	}
-	if err := s.resolveLatestPendingInteraction(ctx, run, actorID, previousPauseReason, signal.Intent, replyText, req.ResponsePayload); err != nil {
-		slog.ErrorContext(ctx, "failed to resolve run interaction",
-			"error", err,
-			"workspace_id", run.WorkspaceID,
-			"run_id", run.ID,
-			"pause_reason", previousPauseReason,
-			"intent", signal.Intent,
-		)
-	}
-	s.logTargetAgentRunActivity(ctx, run, actorID, agentRunActivityActionForResumeIntent(intent), agentRunActivityExtraForMessage(intent, message))
-	s.publishRunEvent(run, actorID)
-	return run, message, nil
+	return s.resumeAgentRuntimeRunWithIntent(ctx, workspaceID, run, runtimeRunID, actorID, req, intent)
 }
 
 func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, workspaceID string, run *model.AgentRun, runtimeRunID, actorID string, req model.ResumeAgentRunRequest, intent string) (*model.AgentRun, *model.AgentRunMessage, error) {
@@ -5038,11 +4775,6 @@ func (s *AgentService) applyCodexAuthState(ctx context.Context, workspaceID, run
 		}
 		if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.TaskID); err != nil {
 			return err
-		}
-		if autoResume && s.runEngine != nil {
-			_ = s.runEngine.SignalResume(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID), temporalapp.RunResumeSignal{
-				Intent: model.AgentRunResumeIntentAuthCompleted,
-			})
 		}
 	default:
 		run.Status = model.AgentRunStatusPaused
@@ -5521,7 +5253,6 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, err
 	}
-	_ = s.runEngine.SignalHandoff(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID), req)
 
 	payload, _ := json.MarshalIndent(map[string]any{
 		"reason":       req.Reason,
@@ -5589,7 +5320,6 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 
 	resolved := worker.ResolveAgentProfile(params.agent, params.invocationMode)
 	approvalState := worker.ResolveApprovalState(resolved)
-	taskQueue := resolved.Queue
 
 	run := &model.AgentRun{
 		ID:                uuid.NewString(),
@@ -5606,8 +5336,6 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		PauseReason:       model.AgentRunPauseReasonNone,
 		TriggeredByUserID: params.actorID,
 		Status:            "queued",
-		TaskQueue:         &taskQueue,
-		RunnerPool:        &taskQueue,
 		AgentVersionID:    params.agent.ActiveVersionID,
 		Input:             json.RawMessage(params.input),
 		OutputSummary:     json.RawMessage("{}"),
@@ -5641,19 +5369,20 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, run, nil)
 
-	var runtimeLauncher agentRuntimeLaunchClient
-	var runtimeAgent AgentRuntimeAgent
-	delegateToAgentRuntime := s.delegatesRunToAgentRuntime(params.agent, params.targetType)
-	if delegateToAgentRuntime {
-		launcher, ok := s.agentRuntimeClient.(agentRuntimeLaunchClient)
-		if !ok || launcher == nil {
-			err := fmt.Errorf("agent runtime launch is enabled but client is not configured")
-			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
-			return nil, err
-		}
-		runtimeLauncher = launcher
-		runtimeAgent = runtimeAgentFromHelpinAgent(params.agent, launcher.AppID())
+	// Agent Runtime is the only execution path — a run that cannot delegate
+	// fails loudly instead of falling back to a local executor.
+	if !s.delegatesRunToAgentRuntime(params.agent, params.targetType) {
+		err := fmt.Errorf("agent runtime launch is disabled; no execution path available for this run")
+		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+		return nil, err
 	}
+	runtimeLauncher, ok := s.agentRuntimeClient.(agentRuntimeLaunchClient)
+	if !ok || runtimeLauncher == nil {
+		err := fmt.Errorf("agent runtime launch is enabled but client is not configured")
+		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+		return nil, err
+	}
+	runtimeAgent := runtimeAgentFromHelpinAgent(params.agent, runtimeLauncher.AppID())
 
 	params.agent.Status = "working"
 	if params.taskID != nil {
@@ -5663,45 +5392,30 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	_ = s.agentRepo.Update(ctx, params.agent)
 
-	if delegateToAgentRuntime {
-		if _, err := runtimeLauncher.UpsertAgent(ctx, runtimeAgent); err != nil {
-			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
-			return nil, err
-		}
-		startReq := runtimeStartRunRequest(run, params.agent)
-		runtimeRun, err := runtimeLauncher.StartRun(ctx, startReq)
-		if err != nil && shouldRetryAgentRuntimeStart(err) {
-			slog.WarnContext(ctx, "retrying agent runtime start after transient failure", "error", err, "run_id", run.ID, "agent_id", params.agent.ID)
-			runtimeRun, err = runtimeLauncher.StartRun(ctx, startReq)
-		}
-		if err != nil {
-			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
-			return nil, err
-		}
-		if runtimeRun == nil || strings.TrimSpace(runtimeRun.ID) == "" {
-			err := fmt.Errorf("agent runtime returned empty run id")
-			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
-			return nil, err
-		}
-		run.ExternalRuntime = strPtr(agentRuntimeName)
-		run.ExternalRuntimeID = strPtr(strings.TrimSpace(runtimeRun.ID))
-		if err := s.runRepo.Update(ctx, run); err != nil {
-			return nil, err
-		}
-		return run, nil
+	if _, err := runtimeLauncher.UpsertAgent(ctx, runtimeAgent); err != nil {
+		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+		return nil, err
 	}
-
-	workflowID, workflowRunID, err := s.runEngine.StartRun(ctx, run)
+	startReq := runtimeStartRunRequest(run, params.agent)
+	runtimeRun, err := runtimeLauncher.StartRun(ctx, startReq)
+	if err != nil && shouldRetryAgentRuntimeStart(err) {
+		slog.WarnContext(ctx, "retrying agent runtime start after transient failure", "error", err, "run_id", run.ID, "agent_id", params.agent.ID)
+		runtimeRun, err = runtimeLauncher.StartRun(ctx, startReq)
+	}
 	if err != nil {
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
 	}
-	run.WorkflowID = &workflowID
-	run.WorkflowRunID = &workflowRunID
+	if runtimeRun == nil || strings.TrimSpace(runtimeRun.ID) == "" {
+		err := fmt.Errorf("agent runtime returned empty run id")
+		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+		return nil, err
+	}
+	run.ExternalRuntime = strPtr(agentRuntimeName)
+	run.ExternalRuntimeID = strPtr(strings.TrimSpace(runtimeRun.ID))
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, err
 	}
-
 	return run, nil
 }
 
@@ -5970,86 +5684,6 @@ func (s *AgentService) pushVisitorConversationRefresh(ctx context.Context, works
 	})
 }
 
-// GetRunnerHealth returns the configured shared runner pools and active runs for a workspace.
-func (s *AgentService) GetRunnerHealth(ctx context.Context, workspaceID string) temporalapp.RunnerHealth {
-	if s.runEngine == nil {
-		return temporalapp.RunnerHealth{}
-	}
-
-	health := s.runEngine.Health()
-	if workspaceID == "" {
-		return health
-	}
-
-	activeRuns, err := s.runRepo.ListActive(ctx, workspaceID, 100)
-	if err != nil {
-		return health
-	}
-	activeRuns = s.reconcileStuckRuns(ctx, activeRuns)
-	activeRuns = s.normalizeRunCollection(activeRuns)
-
-	queueIndex := make(map[string]int, len(health.Queues))
-	for idx, queue := range health.Queues {
-		queueIndex[queue.Name] = idx
-	}
-
-	now := time.Now()
-	for _, run := range activeRuns {
-		if !model.IsAgentRunActiveStatus(run.Status) {
-			continue
-		}
-		taskQueue := stringOrDefault(run.TaskQueue, temporalapp.QueueAutomation)
-		idx, ok := queueIndex[taskQueue]
-		if !ok {
-			health.Queues = append(health.Queues, temporalapp.RunnerQueueHealth{Name: taskQueue})
-			idx = len(health.Queues) - 1
-			queueIndex[taskQueue] = idx
-		}
-
-		queue := health.Queues[idx]
-		queue.ActiveRuns++
-		switch run.Status {
-		case "queued":
-			queue.QueuedRuns++
-		case "running":
-			queue.RunningRuns++
-		case model.AgentRunStatusPaused:
-			if run.PauseReason == model.AgentRunPauseReasonHumanApproval {
-				queue.AwaitingApprovalRuns++
-			}
-		}
-		if run.LastHeartbeatAt != nil && (queue.LatestHeartbeatAt == nil || run.LastHeartbeatAt.After(*queue.LatestHeartbeatAt)) {
-			queue.LatestHeartbeatAt = run.LastHeartbeatAt
-		}
-		health.Queues[idx] = queue
-
-		stale := false
-		if run.Status == "running" {
-			stale = run.LastHeartbeatAt == nil || now.Sub(*run.LastHeartbeatAt) > 2*time.Minute
-		} else if run.Status == "queued" {
-			stale = now.Sub(run.CreatedAt) > 10*time.Minute
-		}
-
-		health.ActiveRuns = append(health.ActiveRuns, temporalapp.RunnerActiveRun{
-			ID:              run.ID,
-			AgentID:         run.AgentID,
-			TargetType:      run.TargetType,
-			TargetID:        run.TargetID,
-			Status:          run.Status,
-			TaskQueue:       taskQueue,
-			RunnerPool:      stringOrDefault(run.RunnerPool, taskQueue),
-			ExecutionStage:  run.ExecutionStage,
-			LastHeartbeatAt: run.LastHeartbeatAt,
-			StartedAt:       run.StartedAt,
-			CreatedAt:       run.CreatedAt,
-			WorkflowID:      run.WorkflowID,
-			Stale:           stale,
-		})
-	}
-
-	return health
-}
-
 func stringOrDefault(value *string, fallback string) string {
 	if value == nil || strings.TrimSpace(*value) == "" {
 		return fallback
@@ -6144,33 +5778,10 @@ func (s *AgentService) reconcileStaleQueuedRun(ctx context.Context, run *model.A
 	if !shouldInspectQueuedRun(run, now) {
 		return run
 	}
-
-	workflowID := strings.TrimSpace(derefString(run.WorkflowID))
-	workflowRunID := strings.TrimSpace(derefString(run.WorkflowRunID))
-
-	switch {
-	case workflowID == "":
-		return s.failStaleRun(ctx, run, now, "run remained queued but no Temporal workflow execution was recorded")
-	case s.runEngine == nil:
-		return run
-	}
-
-	state, err := s.runEngine.DescribeRun(ctx, workflowID, workflowRunID)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to inspect queued Temporal execution", "run_id", run.ID, "workflow_id", workflowID, "error", err)
-		return run
-	}
-	if !state.Exists {
-		return s.failStaleRun(ctx, run, now, "run remained queued but the Temporal workflow execution was not found")
-	}
-	if !state.Open {
-		status := strings.ToLower(strings.TrimSpace(state.Status.String()))
-		if status == "" || status == "workflow_execution_status_unspecified" {
-			status = "closed"
-		}
-		return s.failStaleRun(ctx, run, now, fmt.Sprintf("run remained queued but the Temporal workflow is already %s", status))
-	}
-	return run
+	// Only non-delegated rows reach here (reconcileStuckRun exits early for
+	// runtime-mapped runs). With the local executor retired there is nothing
+	// that could ever pick this run up.
+	return s.failStaleRun(ctx, run, now, "run remained queued but no execution path exists for it")
 }
 
 func (s *AgentService) failStaleRun(ctx context.Context, run *model.AgentRun, now time.Time, errMsg string) *model.AgentRun {
