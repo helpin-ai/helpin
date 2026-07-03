@@ -3051,7 +3051,9 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	var suggestedPrimaryRecipientEmail *string
 	var suggestedPrimaryRecipientName *string
 	threadParticipants := inboundVisibleThreadParticipants(payload, route.InboundAddress, customerEmail)
-	if inboundRouteAddressInCC(payload, route.InboundAddress) {
+	routeAddressInCC := inboundRouteAddressInCC(payload, route.InboundAddress)
+	emailCC := model.DocsStringArray{}
+	if routeAddressInCC {
 		if email, name := inboundSuggestedPrimaryRecipient(payload, route.InboundAddress, customerEmail); email != "" {
 			primaryRecipientState = model.SupportPrimaryRecipientStateUnconfirmed
 			suggestedPrimaryRecipientEmail = strPtr(email)
@@ -3059,6 +3061,8 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 				suggestedPrimaryRecipientName = strPtr(strings.TrimSpace(name))
 			}
 		}
+	} else if inboundRouteAddressInTo(payload, route.InboundAddress) {
+		emailCC = model.DocsStringArray(normalizeSupportEmailListExcluding(inboundCCEmails(payload), route.InboundAddress, customerEmail))
 	}
 	viaEmail := "email"
 	now := s.now()
@@ -3104,6 +3108,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		PrimaryRecipientState:          primaryRecipientState,
 		SuggestedPrimaryRecipientEmail: suggestedPrimaryRecipientEmail,
 		SuggestedPrimaryRecipientName:  suggestedPrimaryRecipientName,
+		EmailCC:                        emailCC,
 		EmailThreadParticipants:        model.DocsStringArray(threadParticipants),
 		Source:                         "email",
 	}
@@ -3370,6 +3375,23 @@ func inboundRouteAddressInCC(payload model.PostmarkInboundPayload, routeAddress 
 		return false
 	}
 	for _, email := range inboundCCEmails(payload) {
+		if strings.EqualFold(email, routeAddress) {
+			return true
+		}
+	}
+	return false
+}
+
+func inboundRouteAddressInTo(payload model.PostmarkInboundPayload, routeAddress string) bool {
+	routeAddress = strings.ToLower(strings.TrimSpace(routeAddress))
+	if routeAddress == "" {
+		return false
+	}
+	values := []string{payload.To}
+	for _, addr := range payload.ToFull {
+		values = append(values, addr.Email)
+	}
+	for _, email := range normalizedEmailAddressList(values) {
 		if strings.EqualFold(email, routeAddress) {
 			return true
 		}

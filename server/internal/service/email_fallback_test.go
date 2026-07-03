@@ -2864,6 +2864,66 @@ func TestEmailFallbackProcessInboundEmailRouteFromCcRequiresPrimaryRecipientConf
 	}
 }
 
+func TestEmailFallbackProcessInboundEmailRouteFromToPersistsCustomerCCForReplies(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID:             "a2111111-1111-1111-1111-111111111116",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-direct-cc",
+		InboundAddress: "support@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "customer@company.com", Name: "Casey Customer"},
+		To:                route.InboundAddress,
+		ToFull:            []model.PostmarkAddress{{Email: route.InboundAddress, Name: "Support"}},
+		Cc:                "teammate1@company.com, Teammate Two <teammate2@company.com>",
+		CcFull:            []model.PostmarkAddress{{Email: "teammate1@company.com", Name: "Teammate One"}, {Email: "teammate2@company.com", Name: "Teammate Two"}},
+		OriginalRecipient: route.InboundAddress,
+		Subject:           "Need help with billing",
+		MessageID:         "pm-route-direct-cc-1",
+		StrippedTextReply: "Can you help us?",
+		Headers: []model.PostmarkHeader{
+			{Name: "Message-ID", Value: "<direct-cc-thread-1@example.com>"},
+		},
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-direct-cc-1"}`); err != nil {
+		t.Fatalf("process direct inbound email with cc: %v", err)
+	}
+
+	conversations, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 || len(conversations) != 1 {
+		t.Fatalf("expected 1 conversation, got total=%d len=%d", total, len(conversations))
+	}
+	conv := conversations[0]
+	if conv.CustomerEmail == nil || *conv.CustomerEmail != "customer@company.com" {
+		t.Fatalf("customer_email = %#v, want customer sender", conv.CustomerEmail)
+	}
+	if conv.PrimaryRecipientState != model.SupportPrimaryRecipientStateConfirmed {
+		t.Fatalf("primary_recipient_state = %q", conv.PrimaryRecipientState)
+	}
+	if len(conv.EmailCC) != 2 || conv.EmailCC[0] != "teammate1@company.com" || conv.EmailCC[1] != "teammate2@company.com" {
+		t.Fatalf("email_cc = %#v, want customer cc teammates", conv.EmailCC)
+	}
+	if len(conv.EmailThreadParticipants) != 2 || conv.EmailThreadParticipants[0] != "teammate1@company.com" || conv.EmailThreadParticipants[1] != "teammate2@company.com" {
+		t.Fatalf("email_thread_participants = %#v", conv.EmailThreadParticipants)
+	}
+}
+
 func TestEmailFallbackProcessInboundEmailRouteDerivesCustomerNameFromEmail(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()

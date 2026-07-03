@@ -1898,7 +1898,10 @@ func hydrateEmailBodies(
 			messages[i].HTMLBody = log.HTMLBody
 			messages[i].StrippedText = log.StrippedText
 			messages[i].EmailFrom = log.FromEmail
+			messages[i].EmailTo = log.ToEmail
 			messages[i].EmailReplyTo = log.ReplyTo
+			messages[i].EmailCC = log.CCEmails
+			messages[i].EmailBCC = log.BCCEmails
 		}
 		if log.Direction == "outbound" {
 			messages[i].EmailDeliveryStatus = log.Status
