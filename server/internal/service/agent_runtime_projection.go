@@ -67,19 +67,26 @@ type agentRuntimeProjectionInteractionRepository interface {
 	Update(ctx context.Context, interaction *model.AgentRunInteraction) error
 }
 
+type agentRuntimeProjectionSessionSnapshotRepository interface {
+	GetByRun(ctx context.Context, workspaceID, runID string) (*model.CodingSessionStateSnapshot, error)
+	Upsert(ctx context.Context, snapshot *model.CodingSessionStateSnapshot) error
+	DeleteByRun(ctx context.Context, workspaceID, runID string) error
+}
+
 // AgentRuntimeProjectionService projects Agent Runtime lifecycle events back
 // into Helpin's agent_runs table and existing realtime fanout.
 type AgentRuntimeProjectionService struct {
-	runRepo            agentRuntimeProjectionRunRepository
-	agentRepo          agentRuntimeProjectionAgentRepository
-	runMessageRepo     agentRuntimeProjectionMessageRepository
-	artifactRepo       agentRuntimeProjectionArtifactRepository
-	interactionRepo    agentRuntimeProjectionInteractionRepository
-	usageMeter         *AIUsageMeter
-	agentRuntimeClient agentRuntimeSignalClient
-	runFinalizers      *AgentRunFinalizerService
-	appID              string
-	now                func() time.Time
+	runRepo             agentRuntimeProjectionRunRepository
+	agentRepo           agentRuntimeProjectionAgentRepository
+	runMessageRepo      agentRuntimeProjectionMessageRepository
+	artifactRepo        agentRuntimeProjectionArtifactRepository
+	interactionRepo     agentRuntimeProjectionInteractionRepository
+	sessionSnapshotRepo agentRuntimeProjectionSessionSnapshotRepository
+	usageMeter          *AIUsageMeter
+	agentRuntimeClient  agentRuntimeSignalClient
+	runFinalizers       *AgentRunFinalizerService
+	appID               string
+	now                 func() time.Time
 }
 
 type agentRuntimeUsagePayload struct {
@@ -119,6 +126,14 @@ func (s *AgentRuntimeProjectionService) SetTranscriptRepositories(runMessageRepo
 	s.runMessageRepo = runMessageRepo
 	s.artifactRepo = artifactRepo
 	s.interactionRepo = interactionRepo
+	return s
+}
+
+func (s *AgentRuntimeProjectionService) SetCodingSessionSnapshotRepository(sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository) *AgentRuntimeProjectionService {
+	if s == nil {
+		return s
+	}
+	s.sessionSnapshotRepo = sessionSnapshotRepo
 	return s
 }
 
@@ -532,11 +547,13 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			}
 			run.CompletedAt = nil
 			changed = setRunStatus(run, model.AgentRunStatusRunning, model.AgentRunPauseReasonNone) || changed
+			changed = clearRuntimeResumeStage(run) || changed
 		}
 	case agentruntime.EventRunResumed:
 		if !suppressLifecycle {
 			run.CompletedAt = nil
 			changed = setRunStatus(run, model.AgentRunStatusRunning, model.AgentRunPauseReasonNone) || changed
+			changed = clearRuntimeResumeStage(run) || changed
 		}
 	case agentruntime.EventRunPaused:
 		if !suppressLifecycle {
@@ -568,18 +585,29 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		changed = setRunStatus(run, model.AgentRunStatusCancelled, model.AgentRunPauseReasonNone) || changed
 	case agentruntime.EventUsageCheckpoint:
+	case agentruntime.EventAssistantMessageStarted, agentruntime.EventAssistantMessageDelta:
+		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
 	case agentruntime.EventAssistantMessageCompleted:
+		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
 		if err := s.mirrorAssistantMessageCompleted(ctx, run, event); err != nil {
 			return err
 		}
 	case agentruntime.EventToolCallStarted, agentruntime.EventToolCallResult, agentruntime.EventToolCallFinished:
-		if err := s.mirrorRuntimeEventArtifact(ctx, run, event, model.AgentRunArtifactTypeToolCall); err != nil {
-			return err
-		}
+		// Tool-call activity renders inline in the transcript via message
+		// turn_segments (and live via the coding-session snapshot) — do not
+		// mirror it as artifacts, which would surface raw JSON in the side
+		// panel.
+		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
 	case agentruntime.EventToolCallArgsDelta:
+		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
 		return nil
 	case agentruntime.EventPlanUpdated:
+		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
 		if err := s.mirrorRuntimePlanUpdated(ctx, run, event); err != nil {
+			return err
+		}
+	case agentruntime.EventActivitySnapshot, agentruntime.EventActivityDelta:
+		if err := s.mirrorRuntimeActivity(ctx, run, event); err != nil {
 			return err
 		}
 	case agentRuntimeEventCodexAuthStateChanged:
@@ -834,21 +862,117 @@ func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx cont
 	if err != nil {
 		return err
 	}
-	contentBlocks := annotateRuntimeMessageBlocks(nil, runtimeMessageID, content)
+	// Enrich from the runtime store row when reachable: it carries the tool
+	// invocations for the turn, which drive inline transcript rendering.
+	runtimeMessage := s.lookupRuntimeStoreMessage(ctx, run, runtimeMessageID)
+	var storeBlocks, toolInvocations json.RawMessage
+	if runtimeMessage != nil {
+		storeBlocks = runtimeMessage.ContentBlocks
+		toolInvocations = runtimeMessage.ToolInvocations
+	}
 	message := &model.AgentRunMessage{
-		WorkspaceID:   run.WorkspaceID,
-		RunID:         run.ID,
-		Role:          "assistant",
-		Content:       content,
-		MessageType:   "assistant_turn",
-		ContentBlocks: contentBlocks,
-		SequenceNo:    sequenceNo,
+		WorkspaceID:     run.WorkspaceID,
+		RunID:           run.ID,
+		Role:            "assistant",
+		Content:         content,
+		MessageType:     "assistant_turn",
+		ContentBlocks:   annotateRuntimeMessageBlocks(storeBlocks, runtimeMessageID, content),
+		ToolInvocations: toolInvocations,
+		TurnSegments:    runtimeMessageTurnSegments(runtimeMessageID, content, toolInvocations),
+		SequenceNo:      sequenceNo,
 	}
 	if err := s.runMessageRepo.Create(ctx, message); err != nil {
 		return err
 	}
 	s.runRepo.Notify(ctx, run)
 	return nil
+}
+
+func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapshot(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) {
+	if s == nil || s.sessionSnapshotRepo == nil || run == nil {
+		return
+	}
+	eventType := codingSessionEventTypeFromAgentRuntimeEvent(event)
+	if eventType == "" {
+		return
+	}
+
+	record, err := s.sessionSnapshotRepo.GetByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "load delegated coding session stream snapshot failed",
+			"run_id", run.ID,
+			"workspace_id", run.WorkspaceID,
+			"runtime_run_id", strings.TrimSpace(event.RunID),
+			"event_type", event.Type,
+			"error", err,
+		)
+		return
+	}
+
+	var snapshot *model.CodingSessionStreamSnapshot
+	if record != nil {
+		snapshot, err = model.DecodeCodingSessionStreamSnapshot(record.SnapshotPayload)
+		if err != nil {
+			slog.WarnContext(ctx, "decode delegated coding session stream snapshot failed",
+				"run_id", run.ID,
+				"workspace_id", run.WorkspaceID,
+				"runtime_run_id", strings.TrimSpace(event.RunID),
+				"event_type", event.Type,
+				"error", err,
+			)
+			record = nil
+		}
+	}
+
+	snapshot = model.ApplyCodingSessionStreamEvent(snapshot, eventType, event.Data, s.eventTime(event))
+	if snapshot == nil || snapshot.IsEmpty() {
+		if record != nil {
+			if err := s.sessionSnapshotRepo.DeleteByRun(ctx, run.WorkspaceID, run.ID); err != nil {
+				slog.WarnContext(ctx, "delete delegated empty coding session stream snapshot failed",
+					"run_id", run.ID,
+					"workspace_id", run.WorkspaceID,
+					"runtime_run_id", strings.TrimSpace(event.RunID),
+					"event_type", event.Type,
+					"error", err,
+				)
+			}
+		}
+		return
+	}
+
+	encoded, err := model.EncodeCodingSessionStreamSnapshot(snapshot)
+	if err != nil {
+		slog.WarnContext(ctx, "encode delegated coding session stream snapshot failed",
+			"run_id", run.ID,
+			"workspace_id", run.WorkspaceID,
+			"runtime_run_id", strings.TrimSpace(event.RunID),
+			"event_type", event.Type,
+			"error", err,
+		)
+		return
+	}
+
+	nextRecord := &model.CodingSessionStateSnapshot{
+		WorkspaceID:     run.WorkspaceID,
+		RunID:           run.ID,
+		SchemaVersion:   model.CodingSessionStateSnapshotSchemaVersionV1,
+		SnapshotPayload: encoded,
+	}
+	if record != nil {
+		nextRecord.ID = record.ID
+		nextRecord.CreatedAt = record.CreatedAt
+	}
+	if err := s.sessionSnapshotRepo.Upsert(ctx, nextRecord); err != nil {
+		slog.WarnContext(ctx, "persist delegated coding session stream snapshot failed",
+			"run_id", run.ID,
+			"workspace_id", run.WorkspaceID,
+			"runtime_run_id", strings.TrimSpace(event.RunID),
+			"event_type", event.Type,
+			"error", err,
+		)
+		return
+	}
+	s.runRepo.Notify(ctx, run)
 }
 
 func (s *AgentRuntimeProjectionService) mirrorRuntimePlanUpdated(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) error {
@@ -867,27 +991,21 @@ func (s *AgentRuntimeProjectionService) mirrorRuntimePlanUpdated(ctx context.Con
 	})
 }
 
-func (s *AgentRuntimeProjectionService) mirrorRuntimeEventArtifact(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope, artifactType string) error {
-	toolCallID := eventDataString(event.Data, "tool_call_id")
-	if data, ok, err := event.ToolCall(); err != nil {
-		return err
-	} else if ok {
-		toolCallID = firstNonEmptyString(data.ToolCallID, toolCallID)
-	}
+func (s *AgentRuntimeProjectionService) mirrorRuntimeActivity(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) error {
 	return s.createRuntimeArtifact(ctx, run, AgentRuntimeArtifact{
 		ID:            runtimeEventIdentity(event),
-		ArtifactType:  artifactType,
+		ArtifactType:  model.AgentRunArtifactTypeRuntimeActivity,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: eventDataJSON(event.Data),
 		Metadata: agentRuntimeProjectionMustJSON(map[string]any{
 			"source":             "agent-runtime-event",
 			"runtime_event_type": event.Type,
-			"tool_call_id":       toolCallID,
 		}),
 		CreatedAt: s.eventTime(event),
 	})
 }
+
 
 func (s *AgentRuntimeProjectionService) applyCodexAuthStateChanged(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) (bool, error) {
 	if err := s.createRuntimeArtifact(ctx, run, AgentRuntimeArtifact{
@@ -915,6 +1033,9 @@ func (s *AgentRuntimeProjectionService) applyCodexAuthStateChanged(ctx context.C
 		return false, nil
 	case model.CodexAuthStateConnected:
 		if run.ExecutionStage != nil && strings.TrimSpace(*run.ExecutionStage) == agentRuntimeExecutionStageAuthCompleted {
+			return false, nil
+		}
+		if strings.TrimSpace(run.Status) != model.AgentRunStatusPaused || strings.TrimSpace(run.PauseReason) != model.AgentRunPauseReasonAuthentication {
 			return false, nil
 		}
 		runtimeRunID := strings.TrimSpace(event.RunID)
@@ -1017,6 +1138,9 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 		ContentBlocks:   annotateRuntimeMessageBlocks(runtimeMessage.ContentBlocks, runtimeMessageID, runtimeMessage.Content),
 		ToolInvocations: runtimeMessage.ToolInvocations,
 		SequenceNo:      sequenceNo,
+	}
+	if role == "assistant" {
+		message.TurnSegments = runtimeMessageTurnSegments(runtimeMessageID, message.Content, runtimeMessage.ToolInvocations)
 	}
 	if !runtimeMessage.CreatedAt.IsZero() {
 		message.CreatedAt = runtimeMessage.CreatedAt.UTC()
@@ -1201,6 +1325,95 @@ func runtimeMessageIdentity(runtimeMessage AgentRuntimeMessage) string {
 		return id
 	}
 	return strings.TrimSpace(runtimeMessage.ID)
+}
+
+// lookupRuntimeStoreMessage fetches the runtime's persisted copy of a message
+// by its runtime message ID. Best-effort: any failure degrades to the
+// event-payload-only mirror rather than blocking projection.
+func (s *AgentRuntimeProjectionService) lookupRuntimeStoreMessage(ctx context.Context, run *model.AgentRun, runtimeMessageID string) *AgentRuntimeMessage {
+	if s == nil || s.agentRuntimeClient == nil || run == nil {
+		return nil
+	}
+	runtimeRunID := strings.TrimSpace(derefString(run.ExternalRuntimeID))
+	if runtimeRunID == "" || strings.TrimSpace(runtimeMessageID) == "" {
+		return nil
+	}
+	messages, err := s.agentRuntimeClient.ListMessages(ctx, runtimeRunID)
+	if err != nil {
+		slog.WarnContext(ctx, "agent runtime store message lookup failed",
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+			"runtime_run_id", runtimeRunID,
+			"error", err,
+		)
+		return nil
+	}
+	for index := range messages {
+		if strings.TrimSpace(messages[index].RuntimeMessageID) == strings.TrimSpace(runtimeMessageID) {
+			return &messages[index]
+		}
+	}
+	return nil
+}
+
+// runtimeToolInvocation mirrors the runtime's persisted tool invocation shape
+// (agent-runtime internal/runtime native tool invocations).
+type runtimeToolInvocation struct {
+	ToolName      string          `json:"tool_name"`
+	Input         json.RawMessage `json:"input"`
+	OutputSummary string          `json:"output_summary"`
+	DurationMs    int64           `json:"duration_ms"`
+}
+
+// runtimeMessageTurnSegments maps runtime tool invocations plus the assistant
+// text into the turn_segments shape the transcript UI renders inline
+// (model.CodingSessionLiveTurnSegment), matching the local executor's output.
+func runtimeMessageTurnSegments(runtimeMessageID, content string, toolInvocations json.RawMessage) json.RawMessage {
+	var invocations []runtimeToolInvocation
+	if len(toolInvocations) > 0 {
+		_ = json.Unmarshal(toolInvocations, &invocations)
+	}
+	if len(invocations) == 0 {
+		return nil
+	}
+	segments := make([]model.CodingSessionLiveTurnSegment, 0, len(invocations)+1)
+	for index, invocation := range invocations {
+		segmentID := fmt.Sprintf("%s-tool-%d", runtimeMessageID, index)
+		toolCall := &model.CodingSessionLiveToolCall{
+			ToolCallID: segmentID,
+			ToolName:   strings.TrimSpace(invocation.ToolName),
+			ArgsText:   strings.TrimSpace(string(invocation.Input)),
+			Status:     "completed",
+		}
+		if invocation.DurationMs > 0 {
+			duration := invocation.DurationMs
+			toolCall.DurationMs = &duration
+		}
+		if summary := strings.TrimSpace(invocation.OutputSummary); summary != "" {
+			toolCall.Result = &model.CodingSessionLiveToolResult{Content: summary}
+		}
+		segments = append(segments, model.CodingSessionLiveTurnSegment{
+			SegmentID: segmentID,
+			Kind:      "tool_call",
+			ToolCall:  toolCall,
+		})
+	}
+	if trimmed := strings.TrimSpace(content); trimmed != "" {
+		segments = append(segments, model.CodingSessionLiveTurnSegment{
+			SegmentID: runtimeMessageID,
+			Kind:      "assistant_message",
+			AssistantMessage: &model.CodingSessionLiveAssistantMessage{
+				MessageID: runtimeMessageID,
+				Content:   trimmed,
+				Status:    "completed",
+			},
+		})
+	}
+	payload, err := json.Marshal(segments)
+	if err != nil {
+		return nil
+	}
+	return payload
 }
 
 func agentRunArtifactHasRuntimeArtifactID(artifact model.AgentRunArtifact, runtimeArtifactID string) bool {
@@ -1467,6 +1680,36 @@ func eventDataJSON(data map[string]any) string {
 	return string(payload)
 }
 
+func codingSessionEventTypeFromAgentRuntimeEvent(event AgentRuntimeEventEnvelope) string {
+	switch strings.TrimSpace(event.Type) {
+	case agentruntime.EventAssistantMessageStarted:
+		return "assistant.message.started"
+	case agentruntime.EventAssistantMessageDelta:
+		return "assistant.message.delta"
+	case agentruntime.EventAssistantMessageCompleted:
+		return "assistant.message.completed"
+	case agentruntime.EventToolCallStarted:
+		return "tool.call.started"
+	case agentruntime.EventToolCallArgsDelta:
+		return "tool.call.args.delta"
+	case agentruntime.EventToolCallResult:
+		return "tool.call.result"
+	case agentruntime.EventToolCallFinished:
+		if strings.TrimSpace(eventDataString(event.Data, "error")) != "" {
+			return "tool.call.failed"
+		}
+		return "tool.call.completed"
+	case agentruntime.EventPlanUpdated:
+		return "plan.updated"
+	case agentruntime.EventActivitySnapshot:
+		return "activity.snapshot"
+	case agentruntime.EventActivityDelta:
+		return "activity.delta"
+	default:
+		return ""
+	}
+}
+
 func agentRuntimeProjectionMustJSON(value any) json.RawMessage {
 	payload, err := json.Marshal(value)
 	if err != nil {
@@ -1601,10 +1844,25 @@ func setRunStatus(run *model.AgentRun, status, pauseReason string) bool {
 	return changed
 }
 
+func clearRuntimeResumeStage(run *model.AgentRun) bool {
+	if run == nil || run.ExecutionStage == nil {
+		return false
+	}
+	switch strings.TrimSpace(*run.ExecutionStage) {
+	case "resuming", "approved", "feedback_received", "input_received", agentRuntimeExecutionStageAuthCompleted:
+		run.ExecutionStage = nil
+		return true
+	default:
+		return false
+	}
+}
+
 func normalizeRuntimePauseReason(reason string) string {
 	switch strings.TrimSpace(reason) {
 	case model.AgentRunPauseReasonHumanApproval:
 		return model.AgentRunPauseReasonHumanApproval
+	case model.AgentRunPauseReasonUserMessage:
+		return model.AgentRunPauseReasonUserMessage
 	case model.AgentRunPauseReasonAuthentication, "auth":
 		return model.AgentRunPauseReasonAuthentication
 	case model.AgentRunPauseReasonNone:

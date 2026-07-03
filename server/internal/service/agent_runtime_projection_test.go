@@ -172,6 +172,37 @@ func (r *fakeAgentRuntimeProjectionInteractionRepo) Update(_ context.Context, in
 	return nil
 }
 
+type fakeAgentRuntimeProjectionSessionSnapshotRepo struct {
+	record  *model.CodingSessionStateSnapshot
+	upserts int
+	deletes int
+}
+
+func (r *fakeAgentRuntimeProjectionSessionSnapshotRepo) GetByRun(_ context.Context, _, _ string) (*model.CodingSessionStateSnapshot, error) {
+	if r.record == nil {
+		return nil, nil
+	}
+	copy := *r.record
+	return &copy, nil
+}
+
+func (r *fakeAgentRuntimeProjectionSessionSnapshotRepo) Upsert(_ context.Context, snapshot *model.CodingSessionStateSnapshot) error {
+	r.upserts++
+	if snapshot == nil {
+		r.record = nil
+		return nil
+	}
+	copy := *snapshot
+	r.record = &copy
+	return nil
+}
+
+func (r *fakeAgentRuntimeProjectionSessionSnapshotRepo) DeleteByRun(_ context.Context, _, _ string) error {
+	r.deletes++
+	r.record = nil
+	return nil
+}
+
 func TestAgentRuntimeProjectionMapsLifecycleByHostRunID(t *testing.T) {
 	now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
 	sentAt := now.Add(-2 * time.Minute)
@@ -222,6 +253,18 @@ func TestAgentRuntimeProjectionMapsLifecycleByHostRunID(t *testing.T) {
 	if run.Status != model.AgentRunStatusPaused || run.PauseReason != model.AgentRunPauseReasonHumanApproval {
 		t.Fatalf("expected paused/human_approval, got %s/%s", run.Status, run.PauseReason)
 	}
+
+	err = svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_1",
+		Type:  "run.paused",
+		Data:  map[string]any{"pause_reason": model.AgentRunPauseReasonUserMessage},
+	})
+	if err != nil {
+		t.Fatalf("ApplyEvent awaiting user message returned error: %v", err)
+	}
+	if run.Status != model.AgentRunStatusPaused || run.PauseReason != model.AgentRunPauseReasonUserMessage {
+		t.Fatalf("expected paused/awaiting_user_message, got %s/%s", run.Status, run.PauseReason)
+	}
 }
 
 func TestAgentRuntimeProjectionMirrorsAssistantMessageCompletedIdempotently(t *testing.T) {
@@ -268,6 +311,114 @@ func TestAgentRuntimeProjectionMirrorsAssistantMessageCompletedIdempotently(t *t
 	}
 	if !agentRunMessageHasRuntimeMessageID(message, "runtime-message-1") {
 		t.Fatalf("mirrored message missing runtime id in content blocks: %s", string(message.ContentBlocks))
+	}
+}
+
+func TestAgentRuntimeProjectionPersistsCodingSessionStreamSnapshot(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-stream",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		Status:            model.AgentRunStatusRunning,
+		PauseReason:       model.AgentRunPauseReasonNone,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_stream"),
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_stream": run},
+	}
+	snapshotRepo := &fakeAgentRuntimeProjectionSessionSnapshotRepo{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:             runRepo,
+		sessionSnapshotRepo: snapshotRepo,
+		now:                 time.Now,
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_stream",
+		Type:  "assistant_message_started",
+		Data:  map[string]any{"message_id": "runtime-message-1"},
+	}); err != nil {
+		t.Fatalf("ApplyEvent started returned error: %v", err)
+	}
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_stream",
+		Type:  "assistant_message_delta",
+		Data: map[string]any{
+			"message_id": "runtime-message-1",
+			"content":    "Working through the task.",
+		},
+	}); err != nil {
+		t.Fatalf("ApplyEvent delta returned error: %v", err)
+	}
+
+	if snapshotRepo.upserts != 2 || snapshotRepo.record == nil {
+		t.Fatalf("expected two snapshot upserts, got upserts=%d record=%#v", snapshotRepo.upserts, snapshotRepo.record)
+	}
+	snapshot, err := model.DecodeCodingSessionStreamSnapshot(snapshotRepo.record.SnapshotPayload)
+	if err != nil {
+		t.Fatalf("decode snapshot: %v", err)
+	}
+	if snapshot.LiveAssistantMessage == nil || snapshot.LiveAssistantMessage.Content != "Working through the task." || snapshot.LiveAssistantMessage.Status != "streaming" {
+		t.Fatalf("unexpected live assistant message: %#v", snapshot.LiveAssistantMessage)
+	}
+	if len(snapshot.LiveTurnSegments) != 1 || snapshot.LiveTurnSegments[0].AssistantMessage == nil || snapshot.LiveTurnSegments[0].AssistantMessage.Content != "Working through the task." {
+		t.Fatalf("unexpected live turn segments: %#v", snapshot.LiveTurnSegments)
+	}
+	if runRepo.notifications != 2 {
+		t.Fatalf("expected snapshot updates to notify run subscribers, got %d", runRepo.notifications)
+	}
+}
+
+func TestAgentRuntimeProjectionMirrorsActivityEvent(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-activity",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		Status:            model.AgentRunStatusRunning,
+		PauseReason:       model.AgentRunPauseReasonNone,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_activity"),
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_activity": run},
+	}
+	artifactRepo := &fakeAgentRuntimeProjectionArtifactRepo{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:      runRepo,
+		artifactRepo: artifactRepo,
+		now:          time.Now,
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		EventID: "event-activity-1",
+		RunID:   "run_runtime_activity",
+		Type:    "activity_delta",
+		Data: map[string]any{
+			"activity_id":   "activity-1",
+			"activity_type": "step",
+			"content":       "Reading competitor pages.",
+		},
+	}); err != nil {
+		t.Fatalf("ApplyEvent activity returned error: %v", err)
+	}
+
+	if artifactRepo.creates != 1 || len(artifactRepo.artifacts) != 1 {
+		t.Fatalf("expected one activity artifact, creates=%d artifacts=%#v", artifactRepo.creates, artifactRepo.artifacts)
+	}
+	artifact := artifactRepo.artifacts[0]
+	if artifact.ArtifactType != model.AgentRunArtifactTypeRuntimeActivity {
+		t.Fatalf("unexpected artifact type %q", artifact.ArtifactType)
+	}
+	if artifact.InlineContent == nil || !strings.Contains(*artifact.InlineContent, "Reading competitor pages.") {
+		t.Fatalf("activity content was not persisted: %#v", artifact.InlineContent)
+	}
+	eventType, payload := codingSessionEventFromArtifact(artifact)
+	if eventType != "activity.delta" {
+		t.Fatalf("expected activity.delta event, got %q payload=%#v", eventType, payload)
+	}
+	if run.Status != model.AgentRunStatusRunning || runRepo.updates != 0 {
+		t.Fatalf("activity event should not mutate lifecycle, status=%q updates=%d", run.Status, runRepo.updates)
 	}
 }
 
@@ -1050,6 +1201,20 @@ func TestAgentRuntimeProjectionCodexAuthConnectedResumesRuntimeIdempotently(t *t
 		t.Fatalf("expected one artifact create, got %d", artifactRepo.creates)
 	}
 
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		EventID: "event-auth-started",
+		RunID:   "run_runtime_auth",
+		Type:    "run.started",
+	}); err != nil {
+		t.Fatalf("ApplyEvent run.started returned error: %v", err)
+	}
+	if run.Status != model.AgentRunStatusRunning || run.PauseReason != model.AgentRunPauseReasonNone {
+		t.Fatalf("expected running/none after auth resume start, got %s/%s", run.Status, run.PauseReason)
+	}
+	if run.ExecutionStage != nil {
+		t.Fatalf("expected auth_completed stage to clear after run.started, got %#v", run.ExecutionStage)
+	}
+
 	if err := svc.ApplyEvent(context.Background(), event); err != nil {
 		t.Fatalf("ApplyEvent redelivery returned error: %v", err)
 	}
@@ -1100,4 +1265,151 @@ func TestAgentRuntimeProjectionStreamCapturesAllRuntimeAppEvents(t *testing.T) {
 
 func stringPointer(value string) *string {
 	return &value
+}
+
+func TestAgentRuntimeProjectionDropsToolCallEventArtifacts(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-tool-events",
+		WorkspaceID:       "ws-1",
+		Status:            model.AgentRunStatusRunning,
+		PauseReason:       model.AgentRunPauseReasonNone,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_tool_events"),
+	}
+	artifactRepo := &fakeAgentRuntimeProjectionArtifactRepo{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: &fakeAgentRuntimeProjectionRunRepo{
+			byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_tool_events": run},
+		},
+		artifactRepo: artifactRepo,
+		now:          time.Now,
+	}
+
+	for _, eventType := range []string{"tool_call_started", "tool_call_result", "tool_call_finished"} {
+		if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+			RunID: "run_runtime_tool_events",
+			Type:  eventType,
+			Data:  map[string]any{"tool_call_id": "tool-1"},
+		}); err != nil {
+			t.Fatalf("ApplyEvent(%s) returned error: %v", eventType, err)
+		}
+	}
+	if artifactRepo.creates != 0 || len(artifactRepo.artifacts) != 0 {
+		t.Fatalf("tool call events must not create artifacts, creates=%d artifacts=%#v", artifactRepo.creates, artifactRepo.artifacts)
+	}
+}
+
+func TestRuntimeMessageTurnSegmentsMapsInvocations(t *testing.T) {
+	invocations := []byte(`[{"tool_name":"read_file","input":{"path":"a.md"},"output_summary":"12 lines","duration_ms":40}]`)
+	payload := runtimeMessageTurnSegments("msg-1", "All done.", invocations)
+	if payload == nil {
+		t.Fatal("expected turn segments payload")
+	}
+	var segments []model.CodingSessionLiveTurnSegment
+	if err := json.Unmarshal(payload, &segments); err != nil {
+		t.Fatalf("unmarshal segments: %v", err)
+	}
+	if len(segments) != 2 {
+		t.Fatalf("expected tool + assistant segments, got %#v", segments)
+	}
+	tool := segments[0]
+	if tool.Kind != "tool_call" || tool.ToolCall == nil || tool.ToolCall.ToolName != "read_file" || tool.ToolCall.Status != "completed" {
+		t.Fatalf("unexpected tool segment %#v", tool)
+	}
+	if tool.ToolCall.Result == nil || tool.ToolCall.Result.Content != "12 lines" {
+		t.Fatalf("expected tool result summary, got %#v", tool.ToolCall.Result)
+	}
+	if tool.ToolCall.DurationMs == nil || *tool.ToolCall.DurationMs != 40 {
+		t.Fatalf("expected duration 40, got %#v", tool.ToolCall.DurationMs)
+	}
+	text := segments[1]
+	if text.Kind != "assistant_message" || text.AssistantMessage == nil || text.AssistantMessage.Content != "All done." {
+		t.Fatalf("unexpected assistant segment %#v", text)
+	}
+	if runtimeMessageTurnSegments("msg-2", "text only", nil) != nil {
+		t.Fatal("no invocations must produce no segments")
+	}
+}
+
+func TestAgentRuntimeProjectionMirrorsAssistantMessageWithToolInvocations(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-enriched",
+		WorkspaceID:       "ws-1",
+		Status:            model.AgentRunStatusRunning,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_enriched"),
+	}
+	messageRepo := &fakeAgentRuntimeProjectionMessageRepo{}
+	client := &fakeAgentRuntimeSignalClient{
+		messages: map[string][]AgentRuntimeMessage{
+			"run_runtime_enriched": {{
+				ID:               "msg_store_1",
+				RuntimeMessageID: "evt-msg-1",
+				Role:             "assistant",
+				Content:          "Drafts created.",
+				MessageType:      "assistant_turn",
+				ToolInvocations:  json.RawMessage(`[{"tool_name":"create_document","input":{},"output_summary":"doc created","duration_ms":10}]`),
+			}},
+		},
+	}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: &fakeAgentRuntimeProjectionRunRepo{
+			byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_enriched": run},
+		},
+		runMessageRepo:     messageRepo,
+		agentRuntimeClient: client,
+		now:                time.Now,
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_enriched",
+		Type:  "assistant_message_completed",
+		Data:  map[string]any{"message_id": "evt-msg-1", "content": "Drafts created."},
+	}); err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	if len(messageRepo.messages) != 1 {
+		t.Fatalf("expected one mirrored message, got %#v", messageRepo.messages)
+	}
+	mirrored := messageRepo.messages[0]
+	if len(mirrored.ToolInvocations) == 0 {
+		t.Fatal("expected tool invocations copied from runtime store message")
+	}
+	if len(mirrored.TurnSegments) == 0 {
+		t.Fatal("expected turn segments derived from tool invocations")
+	}
+	if !agentRunMessageHasRuntimeMessageID(mirrored, "evt-msg-1") {
+		t.Fatal("dedupe identity annotation must survive enrichment")
+	}
+}
+
+func TestAgentRuntimeProjectionMirrorsAssistantMessageWhenStoreLookupFails(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-degraded",
+		WorkspaceID:       "ws-1",
+		Status:            model.AgentRunStatusRunning,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_degraded"),
+	}
+	messageRepo := &fakeAgentRuntimeProjectionMessageRepo{}
+	client := &fakeAgentRuntimeSignalClient{listErr: errors.New("runtime unreachable")}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: &fakeAgentRuntimeProjectionRunRepo{
+			byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_degraded": run},
+		},
+		runMessageRepo:     messageRepo,
+		agentRuntimeClient: client,
+		now:                time.Now,
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_degraded",
+		Type:  "assistant_message_completed",
+		Data:  map[string]any{"message_id": "evt-msg-2", "content": "Done."},
+	}); err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	if len(messageRepo.messages) != 1 || messageRepo.messages[0].Content != "Done." {
+		t.Fatalf("store lookup failure must degrade to content-only mirror, got %#v", messageRepo.messages)
+	}
 }
