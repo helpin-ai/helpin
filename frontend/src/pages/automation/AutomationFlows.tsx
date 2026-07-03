@@ -720,6 +720,7 @@ function compareTemplatesForDisplay(a: FlowTemplateManifest, b: FlowTemplateMani
 export function templateMatchesSearch(template: FlowTemplateManifest, search: string) {
   const query = search.trim().toLowerCase();
   if (!query) return true;
+  const categories = template.categories ?? [];
 
   const searchableParts = [
     template.key,
@@ -728,8 +729,8 @@ export function templateMatchesSearch(template: FlowTemplateManifest, search: st
     template.description_ref,
     template.trigger.type,
     template.trigger.event,
-    ...template.categories,
-    ...template.categories.map((category) => TEMPLATE_CATEGORY_LABELS[category]),
+    ...categories,
+    ...categories.map((category) => TEMPLATE_CATEGORY_LABELS[category]),
   ];
 
   return searchableParts.some((part) => String(part ?? '').toLowerCase().includes(query));

@@ -496,6 +496,16 @@ describe('templateMatchesSearch', () => {
     expect(templateMatchesSearch(template, 'github')).toBe(true);
     expect(templateMatchesSearch(template, 'billing')).toBe(false);
   });
+
+  it('handles templates without categories when search is non-empty', () => {
+    const uncategorizedTemplate = {
+      ...template,
+      categories: null,
+    } as unknown as FlowTemplateManifest;
+
+    expect(templateMatchesSearch(uncategorizedTemplate, 'release')).toBe(true);
+    expect(templateMatchesSearch(uncategorizedTemplate, 'engineering')).toBe(false);
+  });
 });
 
 describe('flowMetadataPills', () => {
