@@ -133,6 +133,29 @@ describe('collectSegments', () => {
     expect(live[1]).toMatchObject({ kind: 'assistant', content: 'Live answer', streaming: true });
   });
 
+  it('includes live tool-call snapshot segments in the transcript', () => {
+    const input = stream({
+      live_turn_segments: [
+        toolSegment('live-tool', toolCall({
+          tool_call_id: 'tc-live',
+          tool_name: 'fetch_url',
+          args_text: '{"url":"https://example.com"}',
+          status: 'completed',
+        })),
+      ],
+    });
+
+    const live = collectSegments(input, { includeLive: true });
+    expect(live).toHaveLength(1);
+    expect(live[0]).toMatchObject({
+      kind: 'tool',
+      toolCall: {
+        tool_call_id: 'tc-live',
+        tool_name: 'fetch_url',
+      },
+    });
+  });
+
   it('does not repeat live assistant segments that are already persisted', () => {
     const input = stream({
       transcript_messages: [

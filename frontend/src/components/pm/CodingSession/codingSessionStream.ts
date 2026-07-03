@@ -53,7 +53,7 @@ function isStreamingTurnEventType(type: string) {
 function isSidecarActivityEvent(event: CodingSessionEvent) {
   if (isStreamingTurnEventType(event.type)) return false;
   if (event.type === 'user.message.completed' || event.type === 'assistant.message.completed') return false;
-  if (event.type === 'plan.updated') return false;
+  if (event.type === 'plan.updated' || event.type === 'activity.updated') return false;
   return true;
 }
 
@@ -419,6 +419,28 @@ function appendAssistantSegment(
   return assistantSegment;
 }
 
+function streamDelta(current: string, incoming: string) {
+  if (!incoming) return '';
+  if (current && incoming.startsWith(current)) {
+    return incoming.slice(current.length);
+  }
+  if (shouldInsertStreamSpace(current, incoming)) {
+    return ` ${incoming}`;
+  }
+  return incoming;
+}
+
+function shouldInsertStreamSpace(current: string, incoming: string) {
+  if (!current || !incoming) return false;
+  const last = current[current.length - 1] ?? '';
+  const first = incoming[0] ?? '';
+  if (/\s/.test(last) || /\s/.test(first)) return false;
+  if (/[.,;:!?()[\]{}'"`]/.test(first) && first !== '(' && first !== '[' && first !== '{') return false;
+  if (/[(\[{`]/.test(last)) return false;
+  if (/[.,;:!?]/.test(last)) return /[A-Za-z0-9]/.test(first);
+  return /[A-Za-z0-9]/.test(last) && /[A-Za-z0-9]/.test(first);
+}
+
 function deriveAssistantSegmentDelta(previousContent: string, fullContent: string) {
   if (!fullContent) return null;
   if (!previousContent) return fullContent;
@@ -443,6 +465,16 @@ function appendOrMarkCompletedAssistantSegment(
     return;
   }
 
+  if (fullContent.trim() && fullContent !== previousContent) {
+    const firstSegment = firstAssistantSegment(segments, messageID);
+    if (firstSegment) {
+      firstSegment.content = fullContent;
+      firstSegment.status = 'completed';
+      firstSegment.completed_at = timestamp;
+      return;
+    }
+  }
+
   const segment = latestAssistantSegment(segments, messageID);
   if (segment) {
     segment.status = 'completed';
@@ -456,6 +488,14 @@ function appendOrMarkCompletedAssistantSegment(
     fallback.status = 'completed';
     fallback.completed_at = timestamp;
   }
+}
+
+function firstAssistantSegment(segments: CodingSessionLiveTurnSegment[], messageID: string) {
+  for (const segment of segments) {
+    if (segment.kind !== 'assistant_message') continue;
+    if (segment.assistant_message.message_id === messageID) return segment.assistant_message;
+  }
+  return null;
 }
 
 function ensureToolCallSegment(
@@ -891,12 +931,13 @@ export function buildCodingSessionStreamState(
         liveAssistantMessage = ensureAssistantMessage(liveAssistantMessage, messageID, event.timestamp);
         const previousContent = liveAssistantMessage.content;
         // Use raw coalescing (not asString) to preserve whitespace-only deltas like " " or " found".
-        const deltaContent = typeof payload.content === 'string' ? payload.content : (typeof payload.text === 'string' ? payload.text : '');
+        let deltaContent = typeof payload.content === 'string' ? payload.content : (typeof payload.text === 'string' ? payload.text : '');
         const coveredSnapshotPrefix = snapshotAssistantDeltaCoverage.get(messageID);
         if (deltaContent && coveredSnapshotPrefix?.startsWith(deltaContent)) {
           snapshotAssistantDeltaCoverage.set(messageID, coveredSnapshotPrefix.slice(deltaContent.length));
           break;
         }
+        deltaContent = streamDelta(liveAssistantMessage.content, deltaContent);
         liveAssistantMessage.content += deltaContent;
         liveAssistantMessage.status = 'streaming';
         if (deltaContent || previousContent.length === 0) {
@@ -910,7 +951,7 @@ export function buildCodingSessionStreamState(
         liveAssistantMessage = ensureAssistantMessage(liveAssistantMessage, messageID, event.timestamp);
         const previousContent = liveAssistantMessage.content;
         const content = firstNonEmptyString(asString(payload.content), asString(payload.text));
-        if (content && content.length >= liveAssistantMessage.content.length) {
+        if (content) {
           liveAssistantMessage.content = content;
         }
         liveAssistantMessage.status = 'completed';
@@ -935,7 +976,8 @@ export function buildCodingSessionStreamState(
       case 'reasoning.message.delta': {
         const messageID = asString(payload.message_id) ?? liveReasoningMessage?.message_id ?? `reasoning:${event.id}`;
         liveReasoningMessage = ensureReasoningMessage(liveReasoningMessage, messageID, event.timestamp);
-        const reasoningDelta = typeof payload.content === 'string' ? payload.content : (typeof payload.text === 'string' ? payload.text : '');
+        const rawReasoningDelta = typeof payload.content === 'string' ? payload.content : (typeof payload.text === 'string' ? payload.text : '');
+        const reasoningDelta = streamDelta(liveReasoningMessage.content, rawReasoningDelta);
         liveReasoningMessage.content += reasoningDelta;
         liveReasoningMessage.encrypted_value = firstNonEmptyString(
           asString(payload.encrypted_value),

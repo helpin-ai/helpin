@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	agentruntime "github.com/helpin-ai/agent-runtime-go"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 type fakeAgentRuntimeProjectionRunRepo struct {
@@ -178,6 +181,14 @@ type fakeAgentRuntimeProjectionSessionSnapshotRepo struct {
 	deletes int
 }
 
+type fakeAgentRuntimeProjectionPublisher struct {
+	events []websocket.Event
+}
+
+func (p *fakeAgentRuntimeProjectionPublisher) Publish(event websocket.Event) {
+	p.events = append(p.events, event)
+}
+
 func (r *fakeAgentRuntimeProjectionSessionSnapshotRepo) GetByRun(_ context.Context, _, _ string) (*model.CodingSessionStateSnapshot, error) {
 	if r.record == nil {
 		return nil, nil
@@ -267,6 +278,191 @@ func TestAgentRuntimeProjectionMapsLifecycleByHostRunID(t *testing.T) {
 	}
 }
 
+func TestAgentRuntimeProjectionStoresWorkspacePreparedBranchSyncSummary(t *testing.T) {
+	run := &model.AgentRun{
+		ID:            "run-helpin",
+		WorkspaceID:   "ws-1",
+		AgentID:       "agent-1",
+		Status:        model.AgentRunStatusQueued,
+		PauseReason:   model.AgentRunPauseReasonNone,
+		OutputSummary: json.RawMessage(`{"existing":true}`),
+	}
+	repo := &fakeAgentRuntimeProjectionRunRepo{byID: map[string]*model.AgentRun{run.ID: run}}
+	svc := &AgentRuntimeProjectionService{runRepo: repo, now: time.Now}
+
+	err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		Type:      "workspace.prepared",
+		RunID:     "run-runtime",
+		HostRunID: run.ID,
+		Data: map[string]any{
+			"metadata": map[string]any{
+				"repository_id":              "repo-1",
+				"repo_full_name":             "usermaven/events-pipeline",
+				"base_branch":                "main",
+				"work_branch":                "use-100",
+				"branch_sync_status":         "conflicted",
+				"branch_sync_conflict_files": []any{"Dockerfile"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	var summary map[string]any
+	if err := json.Unmarshal(run.OutputSummary, &summary); err != nil {
+		t.Fatalf("decode output summary: %v", err)
+	}
+	repository, _ := summary["repository"].(map[string]any)
+	if repository["repo_full_name"] != "usermaven/events-pipeline" || repository["work_branch"] != "use-100" {
+		t.Fatalf("repository summary not projected: %s", string(run.OutputSummary))
+	}
+	branchSync, _ := repository["branch_sync"].(map[string]any)
+	if branchSync["branch_sync_status"] != "conflicted" {
+		t.Fatalf("branch sync summary not projected: %s", string(run.OutputSummary))
+	}
+	if repo.updates != 1 || repo.notifications != 1 {
+		t.Fatalf("expected update and notify, got updates=%d notifications=%d", repo.updates, repo.notifications)
+	}
+}
+
+func TestAgentRuntimeProjectionPausedRunBackfillsAndPublishesPendingInteraction(t *testing.T) {
+	now := time.Date(2026, 7, 3, 8, 0, 0, 0, time.UTC)
+	run := &model.AgentRun{
+		ID:                "helpin-run-approval",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		RuntimeKind:       "native_sdk",
+		Status:            model.AgentRunStatusRunning,
+		PauseReason:       model.AgentRunPauseReasonNone,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_approval"),
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_approval": run},
+	}
+	interactionRepo := &fakeAgentRuntimeProjectionInteractionRepo{}
+	publisher := &fakeAgentRuntimeProjectionPublisher{}
+	runtimeClient := &fakeAgentRuntimeSignalClient{
+		interactions: map[string][]AgentRuntimeInteraction{
+			"run_runtime_approval": {{
+				ID:              "runtime-interaction-1",
+				RuntimeKind:     "native_sdk",
+				InteractionKind: "approval_request",
+				Status:          model.AgentRunInteractionStatusPending,
+				Title:           "Approve tool call",
+				Summary:         "Approve fetch_branch for this agent run.",
+				RequestPayload:  json.RawMessage(`{"request_schema":"approval_request_v1","title":"Approve tool call","summary":"Approve fetch_branch for this agent run."}`),
+				CreatedAt:       now,
+				UpdatedAt:       now,
+			}},
+		},
+	}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:            runRepo,
+		interactionRepo:    interactionRepo,
+		agentRuntimeClient: runtimeClient,
+		wsPublisher:        publisher,
+		now:                func() time.Time { return now },
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID:  "run_runtime_approval",
+		Type:   "run.paused",
+		SentAt: now,
+		Data:   map[string]any{"pause_reason": model.AgentRunPauseReasonHumanApproval},
+	}); err != nil {
+		t.Fatalf("ApplyEvent paused returned error: %v", err)
+	}
+
+	if run.Status != model.AgentRunStatusPaused || run.PauseReason != model.AgentRunPauseReasonHumanApproval {
+		t.Fatalf("expected paused/human_approval, got %s/%s", run.Status, run.PauseReason)
+	}
+	if len(runtimeClient.listInteractionCalls) != 1 || runtimeClient.listInteractionCalls[0] != "run_runtime_approval" {
+		t.Fatalf("expected paused event to backfill runtime interactions, got %#v", runtimeClient.listInteractionCalls)
+	}
+	if interactionRepo.creates != 1 || len(interactionRepo.interactions) != 1 {
+		t.Fatalf("expected pending interaction mirror, creates=%d interactions=%#v", interactionRepo.creates, interactionRepo.interactions)
+	}
+	if len(publisher.events) != 1 {
+		t.Fatalf("expected live interaction websocket event, got %#v", publisher.events)
+	}
+	var event model.CodingSessionEvent
+	if err := json.Unmarshal(publisher.events[0].Data, &event); err != nil {
+		t.Fatalf("decode interaction websocket event: %v", err)
+	}
+	if event.Type != "interaction.requested" || event.Payload["interaction_kind"] != model.AgentRunInteractionKindApprovalRequest {
+		t.Fatalf("unexpected interaction event: %#v", event)
+	}
+}
+
+func TestAgentRuntimeProjectionCancelsPendingInteractionsOnTerminalEvent(t *testing.T) {
+	now := time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC)
+	run := &model.AgentRun{
+		ID:                "helpin-run-terminal-interaction",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		Status:            model.AgentRunStatusRunning,
+		PauseReason:       model.AgentRunPauseReasonNone,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_terminal_interaction"),
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_terminal_interaction": run},
+	}
+	interactionRepo := &fakeAgentRuntimeProjectionInteractionRepo{
+		interactions: []model.AgentRunInteraction{{
+			ID:                   "interaction-1",
+			WorkspaceID:          run.WorkspaceID,
+			RunID:                run.ID,
+			RuntimeKind:          "codex",
+			InteractionKind:      model.AgentRunInteractionKindCommandExecutionApproval,
+			Status:               model.AgentRunInteractionStatusPending,
+			RequestSchemaVersion: model.AgentRunInteractionSchemaVersionCodexV2,
+			RequestPayload:       json.RawMessage(`{"command":"git push"}`),
+			RuntimeMetadata:      json.RawMessage(`{}`),
+			CreatedAt:            now.Add(-time.Minute),
+			UpdatedAt:            now.Add(-time.Minute),
+		}},
+	}
+	publisher := &fakeAgentRuntimeProjectionPublisher{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:         runRepo,
+		interactionRepo: interactionRepo,
+		wsPublisher:     publisher,
+		now:             func() time.Time { return now },
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID:  "run_runtime_terminal_interaction",
+		Type:   agentruntime.EventRunCompleted,
+		SentAt: now,
+		Data:   map[string]any{},
+	}); err != nil {
+		t.Fatalf("ApplyEvent completed returned error: %v", err)
+	}
+
+	if got := interactionRepo.interactions[0].Status; got != model.AgentRunInteractionStatusCancelled {
+		t.Fatalf("interaction status = %q, want cancelled", got)
+	}
+	if interactionRepo.interactions[0].ResolvedAt == nil {
+		t.Fatalf("expected cancelled interaction resolved_at timestamp")
+	}
+	var cancelledEvent *model.CodingSessionEvent
+	for index := range publisher.events {
+		var event model.CodingSessionEvent
+		if err := json.Unmarshal(publisher.events[index].Data, &event); err != nil {
+			t.Fatalf("decode interaction websocket event: %v", err)
+		}
+		if event.Type == "interaction.cancelled" {
+			cancelledEvent = &event
+			break
+		}
+	}
+	if cancelledEvent == nil || cancelledEvent.Payload["status"] != model.AgentRunInteractionStatusCancelled {
+		t.Fatalf("missing cancelled interaction event: %#v", publisher.events)
+	}
+}
+
 func TestAgentRuntimeProjectionMirrorsAssistantMessageCompletedIdempotently(t *testing.T) {
 	run := &model.AgentRun{
 		ID:                "helpin-run-message",
@@ -328,22 +524,26 @@ func TestAgentRuntimeProjectionPersistsCodingSessionStreamSnapshot(t *testing.T)
 		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_stream": run},
 	}
 	snapshotRepo := &fakeAgentRuntimeProjectionSessionSnapshotRepo{}
+	publisher := &fakeAgentRuntimeProjectionPublisher{}
 	svc := &AgentRuntimeProjectionService{
 		runRepo:             runRepo,
 		sessionSnapshotRepo: snapshotRepo,
+		wsPublisher:         publisher,
 		now:                 time.Now,
 	}
 
 	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
-		RunID: "run_runtime_stream",
-		Type:  "assistant_message_started",
-		Data:  map[string]any{"message_id": "runtime-message-1"},
+		EventID: "event-assistant-started",
+		RunID:   "run_runtime_stream",
+		Type:    "assistant_message_started",
+		Data:    map[string]any{"message_id": "runtime-message-1"},
 	}); err != nil {
 		t.Fatalf("ApplyEvent started returned error: %v", err)
 	}
 	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
-		RunID: "run_runtime_stream",
-		Type:  "assistant_message_delta",
+		EventID: "event-assistant-delta",
+		RunID:   "run_runtime_stream",
+		Type:    "assistant_message_delta",
 		Data: map[string]any{
 			"message_id": "runtime-message-1",
 			"content":    "Working through the task.",
@@ -365,60 +565,121 @@ func TestAgentRuntimeProjectionPersistsCodingSessionStreamSnapshot(t *testing.T)
 	if len(snapshot.LiveTurnSegments) != 1 || snapshot.LiveTurnSegments[0].AssistantMessage == nil || snapshot.LiveTurnSegments[0].AssistantMessage.Content != "Working through the task." {
 		t.Fatalf("unexpected live turn segments: %#v", snapshot.LiveTurnSegments)
 	}
-	if runRepo.notifications != 2 {
-		t.Fatalf("expected snapshot updates to notify run subscribers, got %d", runRepo.notifications)
+	if runRepo.notifications != 0 {
+		t.Fatalf("expected snapshot updates to avoid generic run notifications, got %d", runRepo.notifications)
+	}
+	if len(publisher.events) != 2 {
+		t.Fatalf("expected live websocket events, got %#v", publisher.events)
+	}
+	if publisher.events[1].Entity != "coding_session_event" || publisher.events[1].ParentID != run.ID {
+		t.Fatalf("unexpected websocket event: %#v", publisher.events[1])
+	}
+	var liveEvent model.CodingSessionEvent
+	if err := json.Unmarshal(publisher.events[1].Data, &liveEvent); err != nil {
+		t.Fatalf("decode live websocket event: %v", err)
+	}
+	if liveEvent.Type != "assistant.message.delta" || liveEvent.Payload["content"] != "Working through the task." {
+		t.Fatalf("unexpected live event payload: %#v", liveEvent)
 	}
 }
 
-func TestAgentRuntimeProjectionMirrorsActivityEvent(t *testing.T) {
+func TestAgentRuntimeProjectionClearsResumingStageOnRuntimeWork(t *testing.T) {
+	stage := "resuming"
 	run := &model.AgentRun{
-		ID:                "helpin-run-activity",
+		ID:                "helpin-run-resuming-work",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		Status:            model.AgentRunStatusRunning,
+		PauseReason:       model.AgentRunPauseReasonNone,
+		ExecutionStage:    &stage,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_resuming_work"),
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_resuming_work": run},
+	}
+	snapshotRepo := &fakeAgentRuntimeProjectionSessionSnapshotRepo{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:             runRepo,
+		sessionSnapshotRepo: snapshotRepo,
+		now:                 time.Now,
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_resuming_work",
+		Type:  "tool_call_started",
+		Data: map[string]any{
+			"tool_call_id":      "tool-1",
+			"tool_name":         "run_command",
+			"parent_message_id": "assistant-1",
+			"args_text":         `{"cmd":"git status --short"}`,
+		},
+	}); err != nil {
+		t.Fatalf("ApplyEvent tool_call_started returned error: %v", err)
+	}
+	if run.ExecutionStage != nil {
+		t.Fatalf("expected resuming stage to clear on runtime work, got %#v", run.ExecutionStage)
+	}
+	if runRepo.updates != 1 || runRepo.notifications != 1 {
+		t.Fatalf("expected lifecycle update notification only, got updates=%d notifications=%d", runRepo.updates, runRepo.notifications)
+	}
+	if snapshotRepo.upserts != 1 {
+		t.Fatalf("expected snapshot upsert, got %d", snapshotRepo.upserts)
+	}
+}
+
+func TestAgentRuntimeProjectionPublishesReasoningStreamEvent(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-reasoning",
 		WorkspaceID:       "ws-1",
 		AgentID:           "agent-1",
 		Status:            model.AgentRunStatusRunning,
 		PauseReason:       model.AgentRunPauseReasonNone,
 		ExternalRuntime:   stringPointer(agentRuntimeName),
-		ExternalRuntimeID: stringPointer("run_runtime_activity"),
+		ExternalRuntimeID: stringPointer("run_runtime_reasoning"),
 	}
 	runRepo := &fakeAgentRuntimeProjectionRunRepo{
-		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_activity": run},
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_reasoning": run},
 	}
-	artifactRepo := &fakeAgentRuntimeProjectionArtifactRepo{}
+	snapshotRepo := &fakeAgentRuntimeProjectionSessionSnapshotRepo{}
+	publisher := &fakeAgentRuntimeProjectionPublisher{}
 	svc := &AgentRuntimeProjectionService{
-		runRepo:      runRepo,
-		artifactRepo: artifactRepo,
-		now:          time.Now,
+		runRepo:             runRepo,
+		sessionSnapshotRepo: snapshotRepo,
+		wsPublisher:         publisher,
+		now:                 time.Now,
 	}
 
 	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
-		EventID: "event-activity-1",
-		RunID:   "run_runtime_activity",
-		Type:    "activity_delta",
+		EventID: "event-reasoning-delta",
+		RunID:   "run_runtime_reasoning",
+		Type:    "reasoning_message_delta",
 		Data: map[string]any{
-			"activity_id":   "activity-1",
-			"activity_type": "step",
-			"content":       "Reading competitor pages.",
+			"message_id": "reasoning-1",
+			"content":    "Checking repo state.",
 		},
 	}); err != nil {
-		t.Fatalf("ApplyEvent activity returned error: %v", err)
+		t.Fatalf("ApplyEvent reasoning returned error: %v", err)
 	}
-
-	if artifactRepo.creates != 1 || len(artifactRepo.artifacts) != 1 {
-		t.Fatalf("expected one activity artifact, creates=%d artifacts=%#v", artifactRepo.creates, artifactRepo.artifacts)
+	if snapshotRepo.upserts != 1 || snapshotRepo.record == nil {
+		t.Fatalf("expected reasoning snapshot upsert, got upserts=%d record=%#v", snapshotRepo.upserts, snapshotRepo.record)
 	}
-	artifact := artifactRepo.artifacts[0]
-	if artifact.ArtifactType != model.AgentRunArtifactTypeRuntimeActivity {
-		t.Fatalf("unexpected artifact type %q", artifact.ArtifactType)
+	snapshot, err := model.DecodeCodingSessionStreamSnapshot(snapshotRepo.record.SnapshotPayload)
+	if err != nil {
+		t.Fatalf("decode snapshot: %v", err)
 	}
-	if artifact.InlineContent == nil || !strings.Contains(*artifact.InlineContent, "Reading competitor pages.") {
-		t.Fatalf("activity content was not persisted: %#v", artifact.InlineContent)
+	if snapshot.LiveReasoningMessage == nil || snapshot.LiveReasoningMessage.Content != "Checking repo state." {
+		t.Fatalf("unexpected reasoning snapshot: %#v", snapshot.LiveReasoningMessage)
 	}
-	eventType, payload := codingSessionEventFromArtifact(artifact)
-	if eventType != "activity.delta" {
-		t.Fatalf("expected activity.delta event, got %q payload=%#v", eventType, payload)
+	if len(publisher.events) != 1 {
+		t.Fatalf("expected one reasoning websocket event, got %#v", publisher.events)
 	}
-	if run.Status != model.AgentRunStatusRunning || runRepo.updates != 0 {
-		t.Fatalf("activity event should not mutate lifecycle, status=%q updates=%d", run.Status, runRepo.updates)
+	var liveEvent model.CodingSessionEvent
+	if err := json.Unmarshal(publisher.events[0].Data, &liveEvent); err != nil {
+		t.Fatalf("decode reasoning websocket event: %v", err)
+	}
+	if liveEvent.Type != "reasoning.message.delta" || liveEvent.Payload["content"] != "Checking repo state." {
+		t.Fatalf("unexpected reasoning event: %#v", liveEvent)
 	}
 }
 
@@ -1241,25 +1502,20 @@ func TestAgentRuntimeProjectionReturnsNotFoundForUnmappedRun(t *testing.T) {
 }
 
 func TestAgentRuntimeProjectionSubjectIsScopedToApp(t *testing.T) {
-	svc := NewAgentRuntimeProjectionService(nil, "helpin")
-	if got := svc.eventSubject(); got != "agent-runtime.events.helpin.>" {
+	if got := agentruntime.AppEventSubject("helpin"); got != "agent-runtime.events.helpin.>" {
 		t.Fatalf("expected app-scoped subject, got %q", got)
+	}
+	if got := agentruntime.AppEventSubject("helpin.stage"); got != "agent-runtime.events.helpin_stage.>" {
+		t.Fatalf("expected dotted app IDs to be scoped as one token, got %q", got)
 	}
 }
 
-func TestAgentRuntimeProjectionStreamCapturesAllRuntimeAppEvents(t *testing.T) {
-	cfg := agentRuntimeEventsStreamConfig()
-	if cfg.Name != agentRuntimeEventsStreamName {
-		t.Fatalf("unexpected stream name: %q", cfg.Name)
+func TestAgentRuntimeProjectionStreamUsesSDKRuntimeEventDefaults(t *testing.T) {
+	if agentruntime.DefaultNATSStreamName != "AGENT_RUNTIME_EVENTS" {
+		t.Fatalf("unexpected runtime stream name: %q", agentruntime.DefaultNATSStreamName)
 	}
-	if len(cfg.Subjects) != 1 || cfg.Subjects[0] != "agent-runtime.events.>" {
-		t.Fatalf("expected all-app runtime event subject, got %#v", cfg.Subjects)
-	}
-	if cfg.MaxAge != 7*24*time.Hour {
-		t.Fatalf("expected runtime-matching max_age of 7d, got %s", cfg.MaxAge)
-	}
-	if cfg.MaxBytes != 512*1024*1024 {
-		t.Fatalf("expected runtime-matching max_bytes of 512MB, got %d", cfg.MaxBytes)
+	if agentruntime.DefaultNATSStreamSubject != "agent-runtime.events.>" {
+		t.Fatalf("unexpected runtime stream subject: %q", agentruntime.DefaultNATSStreamSubject)
 	}
 }
 

@@ -289,6 +289,23 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 		"target_id":     strings.TrimSpace(run.TargetID),
 		"helpin_run_id": strings.TrimSpace(run.ID),
 	}
+	if run.RepositoryID != nil && strings.TrimSpace(*run.RepositoryID) != "" {
+		metadata["repository_id"] = strings.TrimSpace(*run.RepositoryID)
+		metadata["workspace_mode"] = "repository"
+	}
+	if run.RepoFullName != nil && strings.TrimSpace(*run.RepoFullName) != "" {
+		metadata["repo_full_name"] = strings.TrimSpace(*run.RepoFullName)
+		metadata["workspace_mode"] = "repository"
+	}
+	if run.BaseBranch != nil && strings.TrimSpace(*run.BaseBranch) != "" {
+		metadata["base_branch"] = strings.TrimSpace(*run.BaseBranch)
+	}
+	if run.WorkingBranch != nil && strings.TrimSpace(*run.WorkingBranch) != "" {
+		metadata["work_branch"] = strings.TrimSpace(*run.WorkingBranch)
+	}
+	if run.DeliveryTargetID != nil && strings.TrimSpace(*run.DeliveryTargetID) != "" {
+		metadata["delivery_target_id"] = strings.TrimSpace(*run.DeliveryTargetID)
+	}
 	if run.ParentRunID != nil && strings.TrimSpace(*run.ParentRunID) != "" {
 		metadata["parent_run_id"] = strings.TrimSpace(*run.ParentRunID)
 	}

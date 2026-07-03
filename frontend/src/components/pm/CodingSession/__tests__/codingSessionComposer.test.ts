@@ -80,6 +80,17 @@ describe('resolveCodingSessionComposerState', () => {
     });
   });
 
+  it('enables chat replies when the runtime is waiting for a user message', () => {
+    const state = resolveCodingSessionComposerState(buildSession({ status: 'paused', pause_reason: 'awaiting_user_message' }));
+
+    expect(state).toMatchObject({
+      visible: true,
+      enabled: true,
+      mode: 'answer',
+      placeholder: 'Reply to continue this chat...',
+    });
+  });
+
   it('keeps authentication pauses visible but disabled', () => {
     const state = resolveCodingSessionComposerState(buildSession({ status: 'paused', pause_reason: 'authentication' }));
 

@@ -13,11 +13,36 @@ import (
 )
 
 type AgentRuntimeHostHandler struct {
-	host *service.AgentRuntimeHostService
+	host       *service.AgentRuntimeHostService
+	projection *service.AgentRuntimeProjectionService
 }
 
 func NewAgentRuntimeHostHandler(host *service.AgentRuntimeHostService) *AgentRuntimeHostHandler {
 	return &AgentRuntimeHostHandler{host: host}
+}
+
+func (h *AgentRuntimeHostHandler) SetProjectionService(projection *service.AgentRuntimeProjectionService) *AgentRuntimeHostHandler {
+	if h != nil {
+		h.projection = projection
+	}
+	return h
+}
+
+func (h *AgentRuntimeHostHandler) ApplyEvent(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.projection == nil {
+		writeError(w, http.StatusServiceUnavailable, "agent runtime projection unavailable")
+		return
+	}
+	var event service.AgentRuntimeEventEnvelope
+	if err := decodeJSON(r, &event); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.projection.ApplyEvent(r.Context(), event); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 }
 
 func (h *AgentRuntimeHostHandler) ResolveTargetContext(w http.ResponseWriter, r *http.Request) {

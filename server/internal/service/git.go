@@ -2009,14 +2009,32 @@ func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, work
 		if strings.TrimSpace(workspaceID) == "" {
 			return nil, fmt.Errorf("workspace_id metadata is required for repository targets")
 		}
-		repo, err = s.repoRepo.GetEnabledByID(ctx, workspaceID, target.ID)
-		if err != nil {
-			return nil, err
+		repoFullName := strings.TrimSpace(firstStringValue(target.Metadata, "repo_full_name"))
+		if strings.TrimSpace(target.ID) != "" {
+			repo, err = s.repoRepo.GetEnabledByID(ctx, workspaceID, target.ID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if repo == nil && repoFullName == "" && strings.Contains(strings.TrimSpace(target.ID), "/") {
+			repoFullName = strings.TrimSpace(target.ID)
+		}
+		if repo == nil && repoFullName != "" {
+			repo, err = s.repoRepo.GetByFullName(ctx, workspaceID, repoFullName)
+			if err != nil {
+				return nil, err
+			}
+			if repo != nil && (repo.Archived || !repo.Selected || !repo.Active || repo.DeletedAt != nil) {
+				repo = nil
+			}
 		}
 		if repo == nil {
 			return nil, fmt.Errorf("repository is not available")
 		}
 		baseBranch = defaultBranch(repo.DefaultBranch)
+		if requestedBase := strings.TrimSpace(firstStringValue(target.Metadata, "base_branch")); requestedBase != "" {
+			baseBranch = requestedBase
+		}
 		workingBranch = strings.TrimSpace(firstStringValue(target.Metadata, "work_branch", "working_branch"))
 	case "task", "story":
 		if strings.TrimSpace(workspaceID) == "" {

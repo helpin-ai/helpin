@@ -319,6 +319,18 @@ func TestStartTargetRunDelegatesCodeBuilderTaskRunToAgentRuntime(t *testing.T) {
 	if start.Metadata["workspace_id"] != "ws-1" || start.Target.Metadata["workspace_id"] != "ws-1" {
 		t.Fatalf("task target context requires workspace_id metadata, got metadata=%#v target=%#v", start.Metadata, start.Target.Metadata)
 	}
+	for key, want := range map[string]interface{}{
+		"workspace_mode":     "repository",
+		"repository_id":      "repo-1",
+		"repo_full_name":     "helpin/app",
+		"base_branch":        "develop",
+		"work_branch":        "HLP-42-fix-login-redirect",
+		"delivery_target_id": "delivery-1",
+	} {
+		if start.Metadata[key] != want || start.Target.Metadata[key] != want {
+			t.Fatalf("runtime start metadata %s = %v/%v, want %v", key, start.Metadata[key], start.Target.Metadata[key], want)
+		}
+	}
 	for _, expected := range []string{
 		"Operator notes:\nPrioritize the SSO path.",
 		"Task: **Fix login redirect**",

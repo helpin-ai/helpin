@@ -176,6 +176,106 @@ describe('buildCodingSessionStreamState', () => {
     expect(state.activity_events.map((event) => event.type)).toEqual(['interaction.requested']);
   });
 
+  it('stitches whitespace-less assistant deltas into readable live text', () => {
+    const tokens = ['inspect', 'the', 'repository', 'structure', 'and', 'existing', 'HTTP', 'token/rate-limit', 'paths', 'first,', 'then', 'build', 'against', 'the', 'new', 'API.', 'If', 'it', 'breaks', 'I', "'ll", 'patch', '.'];
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-start',
+        type: 'assistant.message.started',
+        sequence_no: 1,
+        payload: { message_id: 'assistant-live-words' },
+      }),
+      ...tokens.map((token, index) => buildEvent({
+        id: `assistant-delta-${index}`,
+        type: 'assistant.message.delta',
+        sequence_no: index + 2,
+        payload: { message_id: 'assistant-live-words', text: token },
+      })),
+    ]);
+
+    expect(state.live_assistant_message?.content).toBe(
+      "inspect the repository structure and existing HTTP token/rate-limit paths first, then build against the new API. If it breaks I'll patch.",
+    );
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: {
+        content: "inspect the repository structure and existing HTTP token/rate-limit paths first, then build against the new API. If it breaks I'll patch.",
+      },
+    });
+  });
+
+  it('repairs a jumbled live assistant segment from completed text', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-start',
+        type: 'assistant.message.started',
+        sequence_no: 1,
+        payload: { message_id: 'assistant-live-repair' },
+      }),
+      ...['inspect', 'the', 'Rust', 'crate'].map((token, index) => buildEvent({
+        id: `assistant-delta-${index}`,
+        type: 'assistant.message.delta',
+        sequence_no: index + 2,
+        payload: { message_id: 'assistant-live-repair', text: token },
+      })),
+      buildEvent({
+        id: 'assistant-completed',
+        type: 'assistant.message.completed',
+        sequence_no: 10,
+        payload: {
+          message_id: 'assistant-live-repair',
+          text: 'Inspect the Rust crate first, then build against the new API.',
+        },
+      }),
+    ]);
+
+    expect(state.live_assistant_message?.content).toBe(
+      'Inspect the Rust crate first, then build against the new API.',
+    );
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: {
+        content: 'Inspect the Rust crate first, then build against the new API.',
+        status: 'completed',
+      },
+    });
+  });
+
+  it('replaces duplicated live assistant text with shorter completed text', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-delta-duplicate',
+        type: 'assistant.message.delta',
+        sequence_no: 1,
+        payload: {
+          message_id: 'assistant-live-duplicate',
+          text: 'I found the Docker build arg issue. I found the Docker build arg issue.',
+        },
+      }),
+      buildEvent({
+        id: 'assistant-completed-duplicate',
+        type: 'assistant.message.completed',
+        sequence_no: 2,
+        payload: {
+          message_id: 'assistant-live-duplicate',
+          text: 'I found the Docker build arg issue.',
+        },
+      }),
+    ]);
+
+    expect(state.live_assistant_message?.content).toBe('I found the Docker build arg issue.');
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: {
+        content: 'I found the Docker build arg issue.',
+        status: 'completed',
+      },
+    });
+  });
+
   it('attaches persisted tool invocations to finalized assistant turns and drops duplicate live completions', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({
@@ -1138,6 +1238,47 @@ describe('buildCodingSessionStreamState', () => {
         { step: 'Review PRD draft', status: 'completed' },
         { step: 'Refine implementation tasks', status: 'in_progress' },
       ],
+    });
+    expect(state.activity_events).toHaveLength(0);
+  });
+
+  it('keeps persisted runtime tool-call events in the transcript stream', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'tool-start',
+        type: 'tool.call.started',
+        sequence_no: 10,
+        payload: {
+          parent_message_id: 'assistant-1',
+          tool_call_id: 'tool-1',
+          tool_name: 'fetch_url',
+          args_text: '{"url":"https://example.com"}',
+        },
+      }),
+      buildEvent({
+        id: 'tool-complete',
+        type: 'tool.call.completed',
+        sequence_no: 11,
+        payload: {
+          parent_message_id: 'assistant-1',
+          tool_call_id: 'tool-1',
+          tool_name: 'fetch_url',
+          output_summary: 'Fetched page',
+          duration_ms: 42,
+        },
+      }),
+    ]);
+
+    const toolSegment = state.live_turn_segments.find((segment) => segment.kind === 'tool_call');
+    expect(toolSegment?.kind).toBe('tool_call');
+    if (toolSegment?.kind !== 'tool_call') return;
+    expect(toolSegment.tool_call).toMatchObject({
+      tool_call_id: 'tool-1',
+      tool_name: 'fetch_url',
+      status: 'completed',
+      result: {
+        output_summary: 'Fetched page',
+      },
     });
   });
 });

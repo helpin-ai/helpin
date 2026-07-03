@@ -251,7 +251,7 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 				t.Fatalf("expected documentation target %q in %v", targetType, preset.AllowedTargetTypes)
 			}
 		}
-		for _, toolName := range []string{"list_documents", "create_document", "write_document_content", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
+		for _, toolName := range []string{"list_repositories", "checkout_repository", "checkout_repositories", "read_file", "list_documents", "create_document", "write_document_content", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
 			if !slices.Contains(preset.AllowedTools, toolName) {
 				t.Fatalf("expected documentation tool %q in %v", toolName, preset.AllowedTools)
 			}

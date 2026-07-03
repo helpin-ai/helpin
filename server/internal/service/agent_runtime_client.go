@@ -14,6 +14,8 @@ import (
 const (
 	agentRuntimeName                 = "agent-runtime"
 	agentRuntimeExecutionModeDurable = "durable"
+	agentRuntimeTurnCompleteOnFinish = agentruntime.TurnPolicyCompleteOnFinish
+	agentRuntimeTurnPauseAfterAssist = agentruntime.TurnPolicyPauseAfterAssist
 )
 
 type AgentRuntimeTargetRef = agentruntime.TargetRef

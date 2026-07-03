@@ -16,11 +16,10 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 const (
-	agentRuntimeEventsStreamName                  = "AGENT_RUNTIME_EVENTS"
-	agentRuntimeEventsSubjectAll                  = "agent-runtime.events.>"
 	agentRuntimeProjectionDurable                 = "helpin-agent-runtime-projection"
 	agentRuntimeExecutionStageUsageOverageCancel  = "usage_overage_cancel_requested"
 	agentRuntimeUsageOverageCancellationErrorText = "agent runtime run cancelled because workspace AI usage is exhausted"
@@ -85,6 +84,7 @@ type AgentRuntimeProjectionService struct {
 	usageMeter          *AIUsageMeter
 	agentRuntimeClient  agentRuntimeSignalClient
 	runFinalizers       *AgentRunFinalizerService
+	wsPublisher         websocket.EventPublisher
 	appID               string
 	now                 func() time.Time
 }
@@ -137,6 +137,14 @@ func (s *AgentRuntimeProjectionService) SetCodingSessionSnapshotRepository(sessi
 	return s
 }
 
+func (s *AgentRuntimeProjectionService) SetWebSocketPublisher(wsPublisher websocket.EventPublisher) *AgentRuntimeProjectionService {
+	if s == nil {
+		return s
+	}
+	s.wsPublisher = wsPublisher
+	return s
+}
+
 // SetRunFinalizers wires the product side-effect finalizers dispatched when a
 // delegated run transitions into a terminal status.
 func (s *AgentRuntimeProjectionService) SetRunFinalizers(finalizers *AgentRunFinalizerService) *AgentRuntimeProjectionService {
@@ -156,42 +164,35 @@ func (s *AgentRuntimeProjectionService) StartNATSConsumer(ctx context.Context, j
 			slog.ErrorContext(ctx, "agent runtime projection consumer panic", "panic", recovered)
 		}
 	}()
-	var sub *nats.Subscription
-	for sub == nil {
-		candidate, err := s.subscribeNATS(js)
-		if err != nil {
-			slog.WarnContext(ctx, "agent runtime projection consumer waiting for stream", "stream", agentRuntimeEventsStreamName, "error", err)
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-time.After(10 * time.Second):
-				continue
+	consumer := agentruntime.NewNATSConsumer(agentruntime.NATSConsumerConfig{
+		JetStream:    js,
+		AppID:        s.appID,
+		Durable:      agentRuntimeProjectionDurable,
+		Stream:       agentruntime.DefaultNATSStreamName,
+		EnsureStream: true,
+		Logger:       slog.Default(),
+	})
+	slog.Info("agent runtime projection consumer starting")
+	return consumer.Run(ctx, func(ctx context.Context, event AgentRuntimeEventEnvelope) error {
+		if err := s.ApplyEvent(ctx, event); err != nil {
+			if errors.Is(err, errAgentRuntimeProjectionRunNotFound) {
+				slog.WarnContext(ctx, "agent runtime projection waiting for mapped run",
+					"runtime_run_id", event.RunID,
+					"host_run_id", event.HostRunID,
+					"event_type", event.Type,
+				)
+				return agentruntime.ErrRetryEvent
 			}
+			slog.ErrorContext(ctx, "agent runtime projection failed",
+				"runtime_run_id", event.RunID,
+				"host_run_id", event.HostRunID,
+				"event_type", event.Type,
+				"error", err,
+			)
+			return err
 		}
-		sub = candidate
-	}
-
-	slog.Info("agent runtime projection consumer started")
-	for {
-		select {
-		case <-ctx.Done():
-			slog.Info("agent runtime projection consumer shutting down")
-			return sub.Drain()
-		default:
-		}
-
-		msgs, err := sub.Fetch(8, nats.MaxWait(5*time.Second))
-		if err != nil {
-			if err == nats.ErrTimeout {
-				continue
-			}
-			slog.ErrorContext(ctx, "agent runtime projection fetch failed", "error", err)
-			continue
-		}
-		for _, msg := range msgs {
-			s.processNATSMessage(ctx, msg)
-		}
-	}
+		return nil
+	})
 }
 
 func (s *AgentRuntimeProjectionService) StartReconciliationSweep(ctx context.Context, interval, staleAfter time.Duration, limit int) error {
@@ -305,93 +306,6 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 	return nil
 }
 
-func (s *AgentRuntimeProjectionService) subscribeNATS(js nats.JetStreamContext) (*nats.Subscription, error) {
-	if err := ensureAgentRuntimeEventsStream(js); err != nil {
-		return nil, err
-	}
-	subject := s.eventSubject()
-	if info, err := js.ConsumerInfo(agentRuntimeEventsStreamName, agentRuntimeProjectionDurable); err == nil && info != nil {
-		if strings.TrimSpace(info.Config.FilterSubject) != subject {
-			if err := js.DeleteConsumer(agentRuntimeEventsStreamName, agentRuntimeProjectionDurable); err != nil {
-				return nil, err
-			}
-		}
-	}
-	sub, err := js.PullSubscribe(
-		subject,
-		agentRuntimeProjectionDurable,
-		nats.Bind(agentRuntimeEventsStreamName, agentRuntimeProjectionDurable),
-	)
-	if err == nil {
-		return sub, nil
-	}
-	consumerCfg := &nats.ConsumerConfig{
-		Durable:       agentRuntimeProjectionDurable,
-		FilterSubject: subject,
-		AckPolicy:     nats.AckExplicitPolicy,
-		AckWait:       45 * time.Second,
-		MaxDeliver:    5,
-		BackOff: []time.Duration{
-			5 * time.Second,
-			15 * time.Second,
-			45 * time.Second,
-			2 * time.Minute,
-			5 * time.Minute,
-		},
-		DeliverPolicy: nats.DeliverAllPolicy,
-		MaxAckPending: 64,
-	}
-	if _, addErr := js.AddConsumer(agentRuntimeEventsStreamName, consumerCfg); addErr != nil {
-		return nil, addErr
-	}
-	return js.PullSubscribe(
-		subject,
-		agentRuntimeProjectionDurable,
-		nats.Bind(agentRuntimeEventsStreamName, agentRuntimeProjectionDurable),
-	)
-}
-
-func ensureAgentRuntimeEventsStream(js nats.JetStreamContext) error {
-	if js == nil {
-		return fmt.Errorf("jetstream context is nil")
-	}
-	cfg := agentRuntimeEventsStreamConfig()
-	if _, err := js.StreamInfo(cfg.Name); err != nil {
-		if !errors.Is(err, nats.ErrStreamNotFound) {
-			return err
-		}
-		_, err = js.AddStream(cfg)
-		return err
-	}
-	// The agent runtime owns the stream configuration; when the stream
-	// already exists, leave its config untouched.
-	return nil
-}
-
-func agentRuntimeEventsStreamConfig() *nats.StreamConfig {
-	return &nats.StreamConfig{
-		Name:       agentRuntimeEventsStreamName,
-		Subjects:   []string{agentRuntimeEventsSubjectAll},
-		Storage:    nats.FileStorage,
-		Retention:  nats.LimitsPolicy,
-		Discard:    nats.DiscardOld,
-		Duplicates: 2 * time.Minute,
-		MaxAge:     7 * 24 * time.Hour,
-		MaxBytes:   512 * 1024 * 1024,
-	}
-}
-
-func (s *AgentRuntimeProjectionService) eventSubject() string {
-	appID := strings.TrimSpace(s.appID)
-	if appID == "" {
-		appID = "helpin"
-	}
-	appID = strings.ReplaceAll(appID, ".", "_")
-	appID = strings.ReplaceAll(appID, "*", "_")
-	appID = strings.ReplaceAll(appID, ">", "_")
-	return "agent-runtime.events." + appID + ".>"
-}
-
 func reconciliationEventForRuntimeRun(runtimeRun *AgentRuntimeRun, localRun model.AgentRun, fallback time.Time) (AgentRuntimeEventEnvelope, bool) {
 	if runtimeRun == nil {
 		return AgentRuntimeEventEnvelope{}, false
@@ -467,46 +381,6 @@ func runtimeRunEventTime(runtimeRun *AgentRuntimeRun, fallback time.Time) time.T
 	return fallback.UTC()
 }
 
-func (s *AgentRuntimeProjectionService) processNATSMessage(ctx context.Context, msg *nats.Msg) {
-	parsed, err := agentruntime.ParseEventEnvelope(msg.Data)
-	if err != nil {
-		slog.WarnContext(ctx, "agent runtime projection invalid payload", "subject", msg.Subject, "error", err)
-		_ = msg.Ack()
-		return
-	}
-	event := *parsed
-	if err := s.ApplyEvent(ctx, event); err != nil {
-		if errors.Is(err, errAgentRuntimeProjectionRunNotFound) {
-			meta, _ := msg.Metadata()
-			if meta != nil && meta.NumDelivered >= 5 {
-				slog.ErrorContext(ctx, "agent runtime projection dropping event without mapped run",
-					"runtime_run_id", event.RunID,
-					"host_run_id", event.HostRunID,
-					"event_type", event.Type,
-				)
-				_ = msg.Ack()
-				return
-			}
-			slog.WarnContext(ctx, "agent runtime projection waiting for mapped run",
-				"runtime_run_id", event.RunID,
-				"host_run_id", event.HostRunID,
-				"event_type", event.Type,
-			)
-			_ = msg.NakWithDelay(5 * time.Second)
-			return
-		}
-		slog.ErrorContext(ctx, "agent runtime projection failed",
-			"runtime_run_id", event.RunID,
-			"host_run_id", event.HostRunID,
-			"event_type", event.Type,
-			"error", err,
-		)
-		_ = msg.NakWithDelay(5 * time.Second)
-		return
-	}
-	_ = msg.Ack()
-}
-
 func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event AgentRuntimeEventEnvelope) error {
 	if s == nil || s.runRepo == nil {
 		return fmt.Errorf("agent runtime projection service is not configured")
@@ -534,6 +408,9 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 
 	now := s.eventTime(event)
 	suppressLifecycle := isTerminalAgentRunStatus(run.Status) && isPreTerminalRuntimeEvent(event.Type)
+	if !suppressLifecycle && isRuntimeWorkProgressEvent(event.Type) {
+		changed = clearRuntimeResumeStage(run) || changed
+	}
 	switch strings.TrimSpace(event.Type) {
 	case agentruntime.EventRunQueued:
 		if !suppressLifecycle {
@@ -585,29 +462,36 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		changed = setRunStatus(run, model.AgentRunStatusCancelled, model.AgentRunPauseReasonNone) || changed
 	case agentruntime.EventUsageCheckpoint:
+	case "workspace.prepared":
+		if applyRuntimeWorkspacePrepared(run, event) {
+			changed = true
+		}
 	case agentruntime.EventAssistantMessageStarted, agentruntime.EventAssistantMessageDelta:
 		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
+		s.publishRuntimeCodingSessionEvent(run, event)
 	case agentruntime.EventAssistantMessageCompleted:
 		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
+		s.publishRuntimeCodingSessionEvent(run, event)
 		if err := s.mirrorAssistantMessageCompleted(ctx, run, event); err != nil {
 			return err
 		}
+	case agentruntime.EventReasoningMessageStarted, agentruntime.EventReasoningMessageDelta, agentruntime.EventReasoningMessageCompleted:
+		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
+		s.publishRuntimeCodingSessionEvent(run, event)
 	case agentruntime.EventToolCallStarted, agentruntime.EventToolCallResult, agentruntime.EventToolCallFinished:
 		// Tool-call activity renders inline in the transcript via message
 		// turn_segments (and live via the coding-session snapshot) — do not
 		// mirror it as artifacts, which would surface raw JSON in the side
 		// panel.
 		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
+		s.publishRuntimeCodingSessionEvent(run, event)
 	case agentruntime.EventToolCallArgsDelta:
 		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
-		return nil
+		s.publishRuntimeCodingSessionEvent(run, event)
 	case agentruntime.EventPlanUpdated:
 		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
+		s.publishRuntimeCodingSessionEvent(run, event)
 		if err := s.mirrorRuntimePlanUpdated(ctx, run, event); err != nil {
-			return err
-		}
-	case agentruntime.EventActivitySnapshot, agentruntime.EventActivityDelta:
-		if err := s.mirrorRuntimeActivity(ctx, run, event); err != nil {
 			return err
 		}
 	case agentRuntimeEventCodexAuthStateChanged:
@@ -620,7 +504,17 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		return nil
 	}
 
+	if strings.TrimSpace(event.Type) == agentruntime.EventRunPaused && isRuntimeHumanPause(run) {
+		if runtimeRunID := strings.TrimSpace(derefString(run.ExternalRuntimeID)); runtimeRunID != "" {
+			if err := s.reconcileRuntimeTranscript(ctx, run, runtimeRunID); err != nil {
+				return err
+			}
+		}
+	}
 	if isTerminalRuntimeEvent(event.Type) {
+		if err := s.cancelPendingRuntimeInteractions(ctx, run, now); err != nil {
+			return err
+		}
 		if runtimeRunID := strings.TrimSpace(derefString(run.ExternalRuntimeID)); runtimeRunID != "" {
 			if err := s.reconcileRuntimeTranscript(ctx, run, runtimeRunID); err != nil {
 				return err
@@ -670,6 +564,32 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		return err
 	}
 	s.runRepo.Notify(ctx, run)
+	return nil
+}
+
+func (s *AgentRuntimeProjectionService) cancelPendingRuntimeInteractions(ctx context.Context, run *model.AgentRun, timestamp time.Time) error {
+	if s == nil || s.interactionRepo == nil || run == nil {
+		return nil
+	}
+	interactions, err := s.interactionRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return err
+	}
+	if timestamp.IsZero() {
+		timestamp = time.Now().UTC()
+	}
+	for index := range interactions {
+		if interactions[index].Status != model.AgentRunInteractionStatusPending {
+			continue
+		}
+		updated := interactions[index]
+		updated.Status = model.AgentRunInteractionStatusCancelled
+		updated.ResolvedAt = &timestamp
+		if err := s.interactionRepo.Update(ctx, &updated); err != nil {
+			return err
+		}
+		s.publishRuntimeInteractionEvent(run, updated)
+	}
 	return nil
 }
 
@@ -735,6 +655,62 @@ func mergeRuntimeOutputSummaryPayload(local, runtime json.RawMessage) json.RawMe
 		return local
 	}
 	return payload
+}
+
+func applyRuntimeWorkspacePrepared(run *model.AgentRun, event AgentRuntimeEventEnvelope) bool {
+	if run == nil {
+		return false
+	}
+	metadata := eventDataMap(event.Data, "metadata")
+	if len(metadata) == 0 {
+		return false
+	}
+	repository := map[string]any{}
+	for _, key := range []string{"repository_id", "repo_full_name", "base_branch", "work_branch", "clone_url", "repository_fingerprint"} {
+		if value, ok := metadata[key]; ok && strings.TrimSpace(fmt.Sprint(value)) != "" {
+			repository[key] = value
+		}
+	}
+	branchSync := map[string]any{}
+	for _, key := range []string{"branch_sync_status", "branch_sync_base_branch", "branch_sync_work_branch", "branch_sync_conflict_files", "branch_sync_backup_branch"} {
+		if value, ok := metadata[key]; ok && strings.TrimSpace(fmt.Sprint(value)) != "" {
+			branchSync[key] = value
+		}
+	}
+	if len(branchSync) > 0 {
+		repository["branch_sync"] = branchSync
+	}
+	if len(repository) == 0 {
+		return false
+	}
+	body := map[string]any{}
+	if len(run.OutputSummary) > 0 {
+		_ = json.Unmarshal(run.OutputSummary, &body)
+	}
+	body["repository"] = mergeRuntimeSummaryMap(body["repository"], repository)
+	payload, _ := json.Marshal(body)
+	if agentRuntimeProjectionJSONRawEqual(run.OutputSummary, payload) {
+		return false
+	}
+	run.OutputSummary = payload
+	return true
+}
+
+func mergeRuntimeSummaryMap(existing any, updates map[string]any) map[string]any {
+	out := map[string]any{}
+	if existingMap, ok := existing.(map[string]any); ok {
+		for key, value := range existingMap {
+			out[key] = value
+		}
+	}
+	for key, value := range updates {
+		if nested, ok := value.(map[string]any); ok {
+			out[key] = mergeRuntimeSummaryMap(out[key], nested)
+			continue
+		}
+		out[key] = value
+	}
+	return out
 }
 
 func (s *AgentRuntimeProjectionService) maybeCancelOverage(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope, usage agentRuntimeUsagePayload) (bool, error) {
@@ -972,7 +948,66 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 		)
 		return
 	}
-	s.runRepo.Notify(ctx, run)
+	// Stream snapshots are surfaced through coding_session_event websocket
+	// events. Do not emit a generic agent_run update for every transcript
+	// delta; that causes run-summary refetch storms in sheet/dock views.
+}
+
+func (s *AgentRuntimeProjectionService) publishRuntimeCodingSessionEvent(run *model.AgentRun, event AgentRuntimeEventEnvelope) {
+	if s == nil || s.wsPublisher == nil || run == nil {
+		return
+	}
+	eventType := codingSessionEventTypeFromAgentRuntimeEvent(event)
+	if strings.TrimSpace(eventType) == "" {
+		return
+	}
+	eventID := firstNonEmptyString(strings.TrimSpace(event.EventID), fmt.Sprintf("%s:%d", run.ID, time.Now().UTC().UnixNano()))
+	payload := runtimeCodingSessionEventPayload(event)
+	envelope, _ := json.Marshal(model.CodingSessionEvent{
+		ID:          eventID,
+		SessionID:   run.ID,
+		RunID:       run.ID,
+		SequenceNo:  runtimeCodingSessionSequence(event),
+		Timestamp:   s.eventTime(event),
+		Type:        eventType,
+		RuntimeKind: run.RuntimeKind,
+		Payload:     payload,
+	})
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "created",
+		Entity:      "coding_session_event",
+		EntityID:    eventID,
+		WorkspaceID: run.WorkspaceID,
+		ParentType:  "coding_session",
+		ParentID:    run.ID,
+		Data:        envelope,
+	})
+}
+
+func runtimeCodingSessionSequence(event AgentRuntimeEventEnvelope) int {
+	if event.SequenceNo <= 0 {
+		return int(time.Now().UTC().UnixMilli())
+	}
+	if event.SequenceNo > int64(maxIntValue) {
+		return int(maxIntValue)
+	}
+	return int(event.SequenceNo)
+}
+
+func runtimeCodingSessionEventPayload(event AgentRuntimeEventEnvelope) map[string]any {
+	payload := make(map[string]any, len(event.Data)+2)
+	for key, value := range event.Data {
+		payload[key] = value
+	}
+	text := firstNonEmptyString(eventDataString(event.Data, "text"), eventDataString(event.Data, "content"))
+	if text != "" {
+		payload["text"] = text
+		payload["content"] = firstNonEmptyString(eventDataString(event.Data, "content"), text)
+	}
+	if strings.TrimSpace(event.HostRunID) != "" {
+		payload["host_run_id"] = strings.TrimSpace(event.HostRunID)
+	}
+	return payload
 }
 
 func (s *AgentRuntimeProjectionService) mirrorRuntimePlanUpdated(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) error {
@@ -990,22 +1025,6 @@ func (s *AgentRuntimeProjectionService) mirrorRuntimePlanUpdated(ctx context.Con
 		CreatedAt:     s.eventTime(event),
 	})
 }
-
-func (s *AgentRuntimeProjectionService) mirrorRuntimeActivity(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) error {
-	return s.createRuntimeArtifact(ctx, run, AgentRuntimeArtifact{
-		ID:            runtimeEventIdentity(event),
-		ArtifactType:  model.AgentRunArtifactTypeRuntimeActivity,
-		Format:        "json",
-		StorageMode:   "inline",
-		InlineContent: eventDataJSON(event.Data),
-		Metadata: agentRuntimeProjectionMustJSON(map[string]any{
-			"source":             "agent-runtime-event",
-			"runtime_event_type": event.Type,
-		}),
-		CreatedAt: s.eventTime(event),
-	})
-}
-
 
 func (s *AgentRuntimeProjectionService) applyCodexAuthStateChanged(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) (bool, error) {
 	if err := s.createRuntimeArtifact(ctx, run, AgentRuntimeArtifact{
@@ -1233,7 +1252,11 @@ func (s *AgentRuntimeProjectionService) upsertRuntimeInteraction(ctx context.Con
 		}
 		updated := existing[index]
 		if applyRuntimeInteraction(&updated, runtimeInteraction, run) {
-			return s.interactionRepo.Update(ctx, &updated)
+			if err := s.interactionRepo.Update(ctx, &updated); err != nil {
+				return err
+			}
+			s.publishRuntimeInteractionEvent(run, updated)
+			return nil
 		}
 		return nil
 	}
@@ -1271,8 +1294,37 @@ func (s *AgentRuntimeProjectionService) upsertRuntimeInteraction(ctx context.Con
 	if err := s.interactionRepo.Create(ctx, interaction); err != nil {
 		return err
 	}
+	s.publishRuntimeInteractionEvent(run, *interaction)
 	s.runRepo.Notify(ctx, run)
 	return nil
+}
+
+func (s *AgentRuntimeProjectionService) publishRuntimeInteractionEvent(run *model.AgentRun, interaction model.AgentRunInteraction) {
+	if s == nil || s.wsPublisher == nil || run == nil {
+		return
+	}
+	for _, item := range codingSessionEventsFromInteraction(interaction) {
+		payload, _ := json.Marshal(model.CodingSessionEvent{
+			ID:              item.id,
+			SessionID:       run.ID,
+			RunID:           run.ID,
+			SequenceNo:      interactionAssistantSequenceNo(interaction),
+			Timestamp:       item.timestamp,
+			Type:            item.eventType,
+			RuntimeKind:     run.RuntimeKind,
+			Payload:         item.payload,
+			RuntimeMetadata: item.runtimeMetadata,
+		})
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "created",
+			Entity:      "coding_session_event",
+			EntityID:    item.id,
+			WorkspaceID: run.WorkspaceID,
+			ParentType:  "coding_session",
+			ParentID:    run.ID,
+			Data:        payload,
+		})
+	}
 }
 
 func agentRunMessageHasRuntimeMessageID(message model.AgentRunMessage, runtimeMessageID string) bool {
@@ -1688,6 +1740,12 @@ func codingSessionEventTypeFromAgentRuntimeEvent(event AgentRuntimeEventEnvelope
 		return "assistant.message.delta"
 	case agentruntime.EventAssistantMessageCompleted:
 		return "assistant.message.completed"
+	case agentruntime.EventReasoningMessageStarted:
+		return "reasoning.message.started"
+	case agentruntime.EventReasoningMessageDelta:
+		return "reasoning.message.delta"
+	case agentruntime.EventReasoningMessageCompleted:
+		return "reasoning.message.completed"
 	case agentruntime.EventToolCallStarted:
 		return "tool.call.started"
 	case agentruntime.EventToolCallArgsDelta:
@@ -1701,10 +1759,6 @@ func codingSessionEventTypeFromAgentRuntimeEvent(event AgentRuntimeEventEnvelope
 		return "tool.call.completed"
 	case agentruntime.EventPlanUpdated:
 		return "plan.updated"
-	case agentruntime.EventActivitySnapshot:
-		return "activity.snapshot"
-	case agentruntime.EventActivityDelta:
-		return "activity.delta"
 	default:
 		return ""
 	}
@@ -1822,6 +1876,40 @@ func isPreTerminalRuntimeEvent(eventType string) bool {
 	}
 }
 
+func isRuntimeWorkProgressEvent(eventType string) bool {
+	switch strings.TrimSpace(eventType) {
+	case agentruntime.EventAssistantMessageStarted,
+		agentruntime.EventAssistantMessageDelta,
+		agentruntime.EventAssistantMessageCompleted,
+		agentruntime.EventReasoningMessageStarted,
+		agentruntime.EventReasoningMessageDelta,
+		agentruntime.EventReasoningMessageCompleted,
+		agentruntime.EventToolCallStarted,
+		agentruntime.EventToolCallArgsDelta,
+		agentruntime.EventToolCallResult,
+		agentruntime.EventToolCallFinished,
+		agentruntime.EventPlanUpdated,
+		agentruntime.EventUsageCheckpoint:
+		return true
+	default:
+		return false
+	}
+}
+
+func isRuntimeHumanPause(run *model.AgentRun) bool {
+	if run == nil || strings.TrimSpace(run.Status) != model.AgentRunStatusPaused {
+		return false
+	}
+	switch strings.TrimSpace(run.PauseReason) {
+	case model.AgentRunPauseReasonHumanInput,
+		model.AgentRunPauseReasonHumanApproval,
+		model.AgentRunPauseReasonUserMessage:
+		return true
+	default:
+		return false
+	}
+}
+
 func isTerminalRuntimeEvent(eventType string) bool {
 	switch strings.TrimSpace(eventType) {
 	case agentruntime.EventRunCompleted, agentruntime.EventRunFailed, agentruntime.EventRunCancelled:
@@ -1888,6 +1976,20 @@ func eventDataString(data map[string]any, key string) string {
 	default:
 		return strings.TrimSpace(fmt.Sprint(typed))
 	}
+}
+
+func eventDataMap(data map[string]any, key string) map[string]any {
+	if len(data) == 0 {
+		return nil
+	}
+	value, ok := data[key]
+	if !ok {
+		return nil
+	}
+	if typed, ok := value.(map[string]any); ok {
+		return typed
+	}
+	return nil
 }
 
 func eventUsage(event AgentRuntimeEventEnvelope) (agentRuntimeUsagePayload, bool) {

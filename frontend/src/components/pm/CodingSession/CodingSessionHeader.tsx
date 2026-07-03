@@ -105,6 +105,7 @@ function currentLifecycleStagePresentation(session: CodingSession) {
   if (activeKey === 'waiting') {
     if (session.execution_stage === 'awaiting_review') return { label: 'Review', detail: 'Waiting for your review', tone: 'waiting' };
     if (session.pause_reason === 'human_approval') return { label: 'Approval', detail: 'Waiting for your decision', tone: 'waiting' };
+    if (session.pause_reason === 'awaiting_user_message') return { label: 'Chat', detail: 'Waiting for your reply', tone: 'waiting' };
     if (session.pause_reason === 'human_input') return { label: 'Input', detail: 'Waiting for your reply', tone: 'waiting' };
     if (session.pause_reason === 'authentication') return { label: 'Sign-in', detail: 'Waiting for sign-in', tone: 'waiting' };
     return { label: 'Waiting', detail: 'Waiting for you', tone: 'waiting' };

@@ -162,6 +162,7 @@ export interface CodingSessionEvent {
 export interface CodingSessionEventListResponse {
   events: CodingSessionEvent[];
   next_sequence_no: number;
+  stream_state_snapshot?: CodingSessionStreamSnapshot;
 }
 
 export interface CodingSessionTranscriptMessage {

@@ -200,6 +200,7 @@ function PlanStrip({
   };
   const completed = plan.status === 'completed' || state === 'completed';
   const busy = busyPlanId === plan.id;
+  const pendingInteraction = activeRunId ? stream.pendingInteraction : null;
 
   return (
     <div className="space-y-2">
@@ -296,14 +297,14 @@ function PlanStrip({
         </div>
       ) : null}
 
-      {stream.pendingInteraction && activeRunId ? (
+      {pendingInteraction && activeRunId ? (
         <PendingInteractionCard
           workspaceId={workspaceId}
           runId={activeRunId}
-          interaction={stream.pendingInteraction}
+          interaction={pendingInteraction}
           onResolved={() => {
-            if (!stream.pendingInteraction) return;
-            stream.clearPendingInteraction(stream.pendingInteraction.interaction_id);
+            if (!pendingInteraction) return;
+            stream.clearPendingInteraction(pendingInteraction.interaction_id);
             void stream.refetch();
           }}
         />
@@ -392,7 +393,8 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
   // customer") over the generic status label so the header line tells the
   // user *what* needs review, not just that something does. Status is already
   // conveyed by the dot + the right-side pill.
-  const interactionTitle = stream.pendingInteraction?.title?.trim() || null;
+  const pendingInteraction = isActive ? stream.pendingInteraction : null;
+  const interactionTitle = pendingInteraction?.title?.trim() || null;
   const baseSummary = outputSummary || interactionTitle || runStatusLabel(run);
   const summary = isActive && liveSummary ? liveSummary : baseSummary;
   const ts = runUpdatedAt(run);
@@ -454,14 +456,14 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
         </div>
       ) : null}
 
-      {expanded && stream.pendingInteraction ? (
+      {expanded && pendingInteraction ? (
         <PendingInteractionCard
           workspaceId={workspaceId}
           runId={run.id}
-          interaction={stream.pendingInteraction}
+          interaction={pendingInteraction}
           onResolved={() => {
-            if (!stream.pendingInteraction) return;
-            stream.clearPendingInteraction(stream.pendingInteraction.interaction_id);
+            if (!pendingInteraction) return;
+            stream.clearPendingInteraction(pendingInteraction.interaction_id);
             void stream.refetch();
           }}
         />
@@ -474,7 +476,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
           // When the inline approval card already provides the primary action,
           // demote Cancel/Open to a right-aligned meta row so the user's eye
           // stays on the actual decision (Approve / Request changes).
-          align={stream.pendingInteraction ? 'end' : 'start'}
+          align={pendingInteraction ? 'end' : 'start'}
         >
           {completed ? (
             <>
@@ -495,7 +497,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
               retry
             />
           ) : null}
-          {awaitingApproval && !stream.pendingInteraction ? (
+          {awaitingApproval && !pendingInteraction ? (
             <ActionChip
               icon={busy ? Loading01Icon : ArrowUpRight01Icon}
               label={busy ? 'Approving…' : 'Approve'}

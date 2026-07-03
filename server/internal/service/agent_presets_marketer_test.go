@@ -33,6 +33,18 @@ func TestMiraPresetDefinitionUsesNativeHelpinTools(t *testing.T) {
 		"update_plan",
 		"request_user_input",
 		"request_approval",
+		"list_repositories",
+		"checkout_repository",
+		"checkout_repositories",
+		"list_commits",
+		"read_file",
+		"read_file_range",
+		"read_files",
+		"list_directory",
+		"search_files",
+		"ripgrep",
+		"grep",
+		"list_symbols",
 		"list_documents",
 		"read_document",
 		"create_document",
@@ -55,9 +67,9 @@ func TestMiraPresetDefinitionUsesNativeHelpinTools(t *testing.T) {
 			t.Fatalf("expected tool %q in %v", tool, preset.AllowedTools)
 		}
 	}
-	for _, forbidden := range []string{"web_search_brave", "run_command", "read_file", "write_file", "open_pr"} {
+	for _, forbidden := range []string{"web_search_brave", "run_command", "write_file", "edit_file", "apply_patch", "commit_and_push", "open_pr"} {
 		if slices.Contains(preset.AllowedTools, forbidden) {
-			t.Fatalf("did not expect mutating or broad repo tool %q in Mira tools: %v", forbidden, preset.AllowedTools)
+			t.Fatalf("did not expect mutating or shell/delivery repo tool %q in Mira tools: %v", forbidden, preset.AllowedTools)
 		}
 	}
 }

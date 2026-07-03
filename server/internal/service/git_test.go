@@ -1166,6 +1166,37 @@ func TestResolveAgentRuntimeRepositorySpecForTaskDeliveryTarget(t *testing.T) {
 	}
 }
 
+func TestResolveAgentRuntimeRepositorySpecForRepositoryFullName(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	svc := newGitDeliveryStatusService(db, &fakeGitHubAppClient{})
+
+	spec, err := svc.ResolveAgentRuntimeRepositorySpec(context.Background(), "ws-1", agentruntime.TargetRef{
+		Type: "repository",
+		ID:   "acme/api",
+		Metadata: map[string]interface{}{
+			"repo_full_name": "acme/api",
+			"base_branch":    "release",
+			"work_branch":    "agent/runtime-checkout",
+		},
+	}, "run-runtime-1")
+	if err != nil {
+		t.Fatalf("ResolveAgentRuntimeRepositorySpec returned error: %v", err)
+	}
+	if spec.CloneURL != "https://github.com/acme/api.git" {
+		t.Fatalf("unexpected clone URL: %q", spec.CloneURL)
+	}
+	if spec.Auth == nil || spec.Auth.Type != "github" || spec.Auth.Token != "github-installation-token" {
+		t.Fatalf("unexpected auth: %#v", spec.Auth)
+	}
+	if spec.BaseBranch != "release" || spec.WorkBranch != "agent/runtime-checkout" {
+		t.Fatalf("unexpected branch spec: %#v", spec)
+	}
+	if spec.Metadata["repository_id"] != "repo-1" || spec.Metadata["repo_full_name"] != "acme/api" {
+		t.Fatalf("unexpected metadata: %#v", spec.Metadata)
+	}
+}
+
 func TestSyncTaskDeliveryTargetToEpicPreservesManualTargetUnlessForced(t *testing.T) {
 	db := newTestDB(t)
 	seedGitDeliveryStatusFixture(t, db)
