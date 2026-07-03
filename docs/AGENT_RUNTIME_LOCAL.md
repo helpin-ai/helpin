@@ -155,3 +155,56 @@ launch pipeline stages; evidence is the code path that exists today.
 | crm_operator / crm_contact + crm_deal | Green — predicate delegates; `crm_contact` / `crm_deal` launch cases validate workspace ownership before `createRun`. | Green — host `crm_contact` / `crm_deal` cases; type strings match Helpin's stamps exactly. | Green — command-backed CRM tools with target-aware defaults (e.g. enrich uses run target ID). | Amber — same as above: command-backed, not E2E-smoked. | Green — agent-idle + completed-rules. | Green — same projection path. |
 | crm_operator / crm_company | Amber — predicate delegates `crm_company`, but `startTargetRunWithOptions` has no `crm_company` launch case yet (`unsupported target type`), so no Helpin path can create such a run today; predicate is forward-ready only. | Green — host `crm_company` case already resolves company context. | Green — `enrich_crm_company` command supports `crm_company` targets. | Amber — unreachable until the launch case lands. | Green — generic finalizers would apply once reachable. | Green — projection is target-agnostic. |
 | custom native_sdk agents / workspace + document + crm_* | Green — custom agents with no preset and `runtime_kind = native_sdk` delegate on these targets; codex/opencode custom agents intentionally stay local. | Green — same host target-context cases as preset runs. | Amber — tool surface is whatever the agent's `allowed_tools` grants; scanners/preview/github built-ins plus command-backed product tools exist, but per-agent tool grants are not preset-curated. | Amber — write commands available but no custom-agent delegated smoke yet. | Green — agent-idle + completed-rules are agent-agnostic. | Green — same projection path. |
+| support_agent / support_conversation | Green — predicate delegates; every trigger path funnels through `createRun`'s delegation branch: manual (`RunConversationAgent`, `startTargetRunWithOptions` support case), inbox auto (`RunConversationAgentAuto`), and widget auto-run (`maybeAutoRunConversationAgent` → `conversationAgentRunner`). Conversation-specific input assembly (target + `conversation_id` + manual/`support.auto` trigger context) happens before `createRun`, so it is identical for delegated runs. | Green — host `support_conversation` case resolves the conversation; requires `workspace_id` metadata, which `runtimeStartRunRequest` stamps into both run metadata and target metadata. | Green — support tools are command-backed with aliases matching the native names: `support.list_conversation_messages` / `support.draft_reply` / `support.update_conversation_status`. `support.draft_reply` stages `output_summary.draft_reply` on the Helpin run row via the external-runtime-ID run lookup; the terminal summary merge preserves local-only keys. | Green — reply / approve / request_changes forward through `resumeAgentRuntimeRunWithIntent` (unit-tested for support runs in `agent_runtime_signal_test.go`); approval pauses mirror as `human_approval` + pending, and `finalizeSupportDraft` skips pending runs so an unapproved draft is never sent. | Green — `finalizeSupportDraft` (terminal completed transition) is a faithful port of `finalizeSupportConversationRun`: same pending-gate, run-ID message idempotency, `sent_message_id` write-back, websocket publish, and visitor refresh. Turn policy: autonomous (preset default) maps to `complete_on_finish` so the terminal transition fires; interactive-configured support agents map to `pause_after_assistant`. | Green — same projection path; interaction mirroring covers the approval checkpoint on the draft. |
+| support_agent / support_coverage_gap | Deliberately local — `support_coverage_gap` is not an allowed support-agent target (runtime profile allows `support_conversation` only), so there is no support-agent path to flip. Coverage-gap runs belong to the documentation-agent surface (`support_gap_to_docs`), which currently delegates workspace/document only; additionally the host `ResolveTargetContext` has no `support_coverage_gap` case (falls through to the generic default), so flipping it belongs to the docs-agent slice together with a dedicated target-context resolver. | — | — | — | — | — |
+
+## Planner parity blockers (epic_planner / task_planner — not flipped)
+
+Planner presets stay on the local Temporal executor. Flipping them today would
+produce planner runs that start without planning context, without phase
+guidance, and whose approved plans never materialize. Blockers, in dependency
+order:
+
+1. **Execution-time context assembly** — `temporalapp/planner_context_assembly.go`
+   (+ `planning_domain_documents.go`, `planning_code_context.go`) builds the
+   initial instructions at execution time: epic/task summaries, approved spec
+   versions, spec-document drafts, linked docs/tickets, task comments,
+   existing epic tasks, operator notes, and repository code context. For
+   delegated runs `runtimeStartRunRequest.Instructions` only carries
+   `input.AdditionalContext` (raw user text from launch), and the host target
+   context returns shallow epic/task rows. A delegated planner would start
+   with essentially no planning context; the read tools/commands to
+   self-gather an equivalent context set are not yet curated for planners.
+2. **Phase selection metadata** — the runtime can select planner phase skills
+   (`prd_authorship`/`task_decomposition`/`task_planner_context` +
+   `approval_protocol`, keyed off `preset_key` + `planning_stage` in
+   `skills.SelectNativeActiveSkills`), but Helpin stamps neither `preset_key`
+   (agent `execution_config` passthrough does not include it) nor
+   `planning_stage` into run metadata/trigger, so phase selection never
+   activates. Even with the metadata, the runtime has no equivalent of
+   `epicPlannerPhaseName` derived-state facts (has-spec / has-tasks
+   derivation in `planner_phase_guidance.go`).
+3. **Approved-preview application** — `temporalapp/approved_preview_application.go`
+   (`applyApprovedInteractivePreview`: create_tasks, persist_prd,
+   persist_task_doc) is explicitly deferred from the delegated finalizer set
+   (see `docs/plans/2026-07-02-delegated-run-finalizers.md`).
+   `maybePersistApprovedInteractivePreview` on the write path only persists
+   the approved-preview artifact; nothing applies it for delegated runs, so
+   an approved delegated epic plan would never create tasks or persist the
+   PRD. This is the hard blocker: a flipped planner would look functional and
+   silently drop its output.
+4. **Completion interaction policy** — `enforceCompletionInteractionPolicy` /
+   `retryInvalidCompletionTurn` / `synthesizeCompletionInteractionFallback`
+   and transcript planning-artifact capture are Temporal-execution machinery
+   with no runtime counterpart yet.
+5. **Fail-on-invalid flow output** — delegated flow-output runs cannot be
+   failed by the host (run status is runtime-owned); the delegated planning
+   finalizer only validates and logs. Acceptable for the currently delegated
+   flow outputs, not for planners whose output *is* the product.
+
+What already works (would carry over on flip): epic planning pointer
+finalizer (`epic.last_planning_run_id`), flow-output summary validation,
+generic agent-idle/automation finalizers, interaction mirroring, and
+`pm.*` / `docs.*` commands (`pm.create_task_batch`, `pm.approve_epic_spec`,
+`docs.ensure_spec_doc`, `docs.ensure_task_plan_doc`) that a future
+command-driven planner contract could target instead of preview application.

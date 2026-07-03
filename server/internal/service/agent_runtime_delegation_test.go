@@ -81,9 +81,13 @@ func TestShouldDelegateRunToAgentRuntimeMatrix(t *testing.T) {
 			delegated: nil,
 		},
 		{
-			name:      "support agent preset never delegates",
-			agent:     &model.Agent{IsSystem: true, PresetKey: model.AgentPresetSupportAgent, RuntimeKind: "native_sdk"},
-			delegated: nil,
+			// support_coverage_gap must stay false: it is not an allowed
+			// support-agent target and stays on the local executor.
+			name:  "support agent preset delegates support_conversation only",
+			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetSupportAgent, RuntimeKind: "native_sdk"},
+			delegated: map[string]bool{
+				"support_conversation": true,
+			},
 		},
 		{
 			name:      "command agent preset never delegates",

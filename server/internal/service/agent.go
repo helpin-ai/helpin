@@ -174,10 +174,17 @@ func buildAgentRunInputPayload(targetType, targetID string, trigger *model.Agent
 // agentRuntimePresetDelegatedTargets lists, per system preset, the target
 // types whose runs are delegated to Agent Runtime when
 // AGENT_RUNTIME_LAUNCH_ENABLED is on. Presets absent from this map (code
-// builder, review agent, epic/task planner, support agent, command agent) and
-// target types absent from a preset's set (task, story, epic, repository,
-// support_conversation, support_coverage_gap) stay on the local Temporal
-// executor until the repo-delivery and support slices flip.
+// builder, review agent, epic/task planner, command agent) and target types
+// absent from a preset's set (task, story, epic, repository,
+// support_coverage_gap) stay on the local Temporal executor:
+//   - epic_planner / task_planner: blocked on planner parity — the Temporal
+//     path assembles planning context and phase guidance at execution time and
+//     applies approved previews (task creation, PRD/plan-doc persistence)
+//     after approval; none of that reaches a delegated run yet. See "Planner
+//     parity blockers" in docs/AGENT_RUNTIME_LOCAL.md.
+//   - support_coverage_gap: not a support-agent target (its runtime profile
+//     only allows support_conversation); coverage-gap runs belong to the
+//     documentation-agent surface, which delegates workspace/document only.
 var agentRuntimePresetDelegatedTargets = map[string]map[string]bool{
 	model.AgentPresetMarketer: {
 		"workspace": true,
@@ -191,6 +198,17 @@ var agentRuntimePresetDelegatedTargets = map[string]map[string]bool{
 		"crm_contact": true,
 		"crm_company": true,
 		"crm_deal":    true,
+	},
+	model.AgentPresetSupportAgent: {
+		// Full delegated chain exists: manual, API, and widget auto-run
+		// launches all funnel through runConversationAgent /
+		// startTargetRunWithOptions into createRun's delegation branch; the
+		// runtime host resolves support_conversation target context from the
+		// workspace_id metadata stamped by runtimeStartRunRequest; drafts are
+		// staged via the support.draft_reply command onto
+		// output_summary.draft_reply; finalizeSupportDraft sends the reply on
+		// the terminal completed transition.
+		"support_conversation": true,
 	},
 }
 
@@ -3661,17 +3679,18 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
-			workspaceID:    workspaceID,
-			agent:          agent,
-			targetType:     "epic",
-			targetID:       epic.ID,
-			parentRunID:    parentRunID,
-			actorID:        actorID,
-			input:          payload,
-			trigger:        trigger,
-			baseBranch:     req.BaseBranch,
-			workingBranch:  req.WorkingBranch,
-			invocationMode: resolveInvocationMode(agent),
+			workspaceID:          workspaceID,
+			agent:                agent,
+			targetType:           "epic",
+			targetID:             epic.ID,
+			parentRunID:          parentRunID,
+			allowActiveParentRun: opts.allowActiveParentRun,
+			actorID:              actorID,
+			input:                payload,
+			trigger:              trigger,
+			baseBranch:           req.BaseBranch,
+			workingBranch:        req.WorkingBranch,
+			invocationMode:       resolveInvocationMode(agent),
 		})
 		if err != nil {
 			return nil, err
@@ -3722,19 +3741,20 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		workingBranch := strings.TrimSpace(derefString(req.WorkingBranch))
 
 		run, err := s.createRun(ctx, createRunParams{
-			workspaceID:    workspaceID,
-			agent:          agent,
-			targetType:     "repository",
-			targetID:       repo.ID,
-			parentRunID:    parentRunID,
-			actorID:        actorID,
-			input:          payload,
-			trigger:        trigger,
-			repositoryID:   &repoID,
-			repoFullName:   strPtr(repoFullName),
-			baseBranch:     strPtr(baseBranch),
-			workingBranch:  nilIfEmpty(workingBranch),
-			invocationMode: resolveInvocationMode(agent),
+			workspaceID:          workspaceID,
+			agent:                agent,
+			targetType:           "repository",
+			targetID:             repo.ID,
+			parentRunID:          parentRunID,
+			allowActiveParentRun: opts.allowActiveParentRun,
+			actorID:              actorID,
+			input:                payload,
+			trigger:              trigger,
+			repositoryID:         &repoID,
+			repoFullName:         strPtr(repoFullName),
+			baseBranch:           strPtr(baseBranch),
+			workingBranch:        nilIfEmpty(workingBranch),
+			invocationMode:       resolveInvocationMode(agent),
 		})
 		if err != nil {
 			return nil, err
@@ -3859,15 +3879,16 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build document run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
-			workspaceID:    workspaceID,
-			agent:          agent,
-			targetType:     "document",
-			targetID:       doc.ID,
-			parentRunID:    parentRunID,
-			actorID:        actorID,
-			input:          input,
-			trigger:        trigger,
-			invocationMode: resolveInvocationMode(agent),
+			workspaceID:          workspaceID,
+			agent:                agent,
+			targetType:           "document",
+			targetID:             doc.ID,
+			parentRunID:          parentRunID,
+			allowActiveParentRun: opts.allowActiveParentRun,
+			actorID:              actorID,
+			input:                input,
+			trigger:              trigger,
+			invocationMode:       resolveInvocationMode(agent),
 		})
 		if err != nil {
 			return nil, err
@@ -3898,15 +3919,16 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build crm contact run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
-			workspaceID:    workspaceID,
-			agent:          agent,
-			targetType:     "crm_contact",
-			targetID:       contact.ID,
-			parentRunID:    parentRunID,
-			actorID:        actorID,
-			input:          input,
-			trigger:        trigger,
-			invocationMode: resolveInvocationMode(agent),
+			workspaceID:          workspaceID,
+			agent:                agent,
+			targetType:           "crm_contact",
+			targetID:             contact.ID,
+			parentRunID:          parentRunID,
+			allowActiveParentRun: opts.allowActiveParentRun,
+			actorID:              actorID,
+			input:                input,
+			trigger:              trigger,
+			invocationMode:       resolveInvocationMode(agent),
 		})
 		if err != nil {
 			return nil, err
@@ -3937,15 +3959,16 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build crm company run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
-			workspaceID:    workspaceID,
-			agent:          agent,
-			targetType:     "crm_company",
-			targetID:       company.ID,
-			parentRunID:    parentRunID,
-			actorID:        actorID,
-			input:          input,
-			trigger:        trigger,
-			invocationMode: resolveInvocationMode(agent),
+			workspaceID:          workspaceID,
+			agent:                agent,
+			targetType:           "crm_company",
+			targetID:             company.ID,
+			parentRunID:          parentRunID,
+			allowActiveParentRun: opts.allowActiveParentRun,
+			actorID:              actorID,
+			input:                input,
+			trigger:              trigger,
+			invocationMode:       resolveInvocationMode(agent),
 		})
 		if err != nil {
 			return nil, err
@@ -3976,15 +3999,16 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build crm deal run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
-			workspaceID:    workspaceID,
-			agent:          agent,
-			targetType:     "crm_deal",
-			targetID:       deal.ID,
-			parentRunID:    parentRunID,
-			actorID:        actorID,
-			input:          input,
-			trigger:        trigger,
-			invocationMode: resolveInvocationMode(agent),
+			workspaceID:          workspaceID,
+			agent:                agent,
+			targetType:           "crm_deal",
+			targetID:             deal.ID,
+			parentRunID:          parentRunID,
+			allowActiveParentRun: opts.allowActiveParentRun,
+			actorID:              actorID,
+			input:                input,
+			trigger:              trigger,
+			invocationMode:       resolveInvocationMode(agent),
 		})
 		if err != nil {
 			return nil, err
@@ -4010,15 +4034,16 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
-			workspaceID:    workspaceID,
-			agent:          agent,
-			targetType:     "workspace",
-			targetID:       workspaceID,
-			parentRunID:    parentRunID,
-			actorID:        actorID,
-			input:          input,
-			trigger:        trigger,
-			invocationMode: resolveInvocationMode(agent),
+			workspaceID:          workspaceID,
+			agent:                agent,
+			targetType:           "workspace",
+			targetID:             workspaceID,
+			parentRunID:          parentRunID,
+			allowActiveParentRun: opts.allowActiveParentRun,
+			actorID:              actorID,
+			input:                input,
+			trigger:              trigger,
+			invocationMode:       resolveInvocationMode(agent),
 		})
 		if err != nil {
 			return nil, err
@@ -6033,6 +6058,15 @@ func (s *AgentService) reconcileStuckRuns(ctx context.Context, runs []model.Agen
 }
 
 func (s *AgentService) reconcileStuckRun(ctx context.Context, run *model.AgentRun) *model.AgentRun {
+	// Delegated agent-runtime runs never record a Temporal workflow, so the
+	// stale-queued heuristic below (which fails queued runs without a
+	// WorkflowID) does not apply; their lifecycle is owned by the runtime
+	// projection and its reconciliation sweep.
+	if run != nil {
+		if _, ok := agentRuntimeRunID(run); ok {
+			return run
+		}
+	}
 	if updated := s.reconcileStaleQueuedRun(ctx, run, time.Now()); updated != nil {
 		run = updated
 	}

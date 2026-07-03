@@ -3,6 +3,14 @@
 Status: implemented 2026-07-02. Scope: `AgentRuntimeProjectionService` terminal-event
 handling, new `AgentRunFinalizerService`, temporal-worker wiring, `HandoffRun` delegated guard.
 
+Update 2026-07-02 (support/planner flip slice): `support_agent → support_conversation`
+is now in `agentRuntimePresetDelegatedTargets` — finalizer 3 is live for delegated
+support runs across all trigger paths (manual, inbox auto, widget auto-run).
+`epic_planner`/`task_planner` were evaluated against the deferred list below and NOT
+flipped; the blocking gaps (context assembly, phase metadata, approved-preview
+application, completion policy, fail-on-invalid-output) are enumerated as
+"Planner parity blockers" in `docs/AGENT_RUNTIME_LOCAL.md`.
+
 ## Problem
 
 Temporal-executed runs fire product side effects inside `temporalapp/activities.go`
