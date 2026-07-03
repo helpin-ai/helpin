@@ -2,6 +2,7 @@ export const QUOTE_ATTR = 'data-helpin-quote';
 export const COLLAPSE_HOST_ATTR = 'data-helpin-collapse-host';
 export const COLLAPSED_BODY_ATTR = 'data-helpin-collapsed';
 export const COLLAPSIBLE_SELECTOR = `[${QUOTE_ATTR}], .gmail_signature, .gmail_signature_prefix`;
+const OUTLOOK_QUOTE_BOUNDARY_SELECTOR = `#appendonsend[${QUOTE_ATTR}], #divRplyFwdMsg[${QUOTE_ATTR}]`;
 
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
@@ -38,6 +39,14 @@ export function prepareCollapsedEmailLayout(doc: Document, collapsed: boolean): 
     el.removeAttribute(COLLAPSE_HOST_ATTR);
   });
   if (!collapsed) return;
+
+  doc.querySelectorAll(OUTLOOK_QUOTE_BOUNDARY_SELECTOR).forEach((marker) => {
+    let sibling = marker.nextElementSibling;
+    while (sibling) {
+      sibling.setAttribute(QUOTE_ATTR, 'true');
+      sibling = sibling.nextElementSibling;
+    }
+  });
 
   doc.querySelectorAll(COLLAPSIBLE_SELECTOR).forEach((el) => {
     let parent = el.parentElement;

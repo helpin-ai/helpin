@@ -46,15 +46,15 @@ func TestConvert(t *testing.T) {
 			notSubstr:  []string{"alert(1)", "color:red"},
 		},
 		{
-			name:      "empty html falls back to plain text",
-			html:      "",
-			plainText: "fallback body",
+			name:       "empty html falls back to plain text",
+			html:       "",
+			plainText:  "fallback body",
 			wantSubstr: []string{"fallback body"},
 		},
 		{
-			name:      "whitespace-only html falls back to plain text",
-			html:      "   \n\t ",
-			plainText: "plain only",
+			name:       "whitespace-only html falls back to plain text",
+			html:       "   \n\t ",
+			plainText:  "plain only",
 			wantSubstr: []string{"plain only"},
 		},
 		{
@@ -67,6 +67,19 @@ func TestConvert(t *testing.T) {
 			html:       `<p>My reply here.</p><div id="divRplyFwdMsg"><hr><p>From: Sender</p><p>Prior content</p></div>`,
 			wantSubstr: []string{"My reply here."},
 			notSubstr:  []string{"Prior content", "From: Sender"},
+		},
+		{
+			name: "outlook quoted reply sibling body stripped",
+			html: `<div>We are cutting costs and management said to cut it.</div>` +
+				`<div>Please cancel the subscription.</div>` +
+				`<div>Thank you!</div>` +
+				`<div id="Signature"><img src="https://cdn.example.com/signature.png" /></div>` +
+				`<div id="appendonsend"></div>` +
+				`<hr />` +
+				`<div id="divRplyFwdMsg"><b>From:</b> Support<br /><b>Subject:</b> I want to cancel my subscription</div>` +
+				`<div><p>-- Please type your reply above this line --</p><p>Hi Brian, We're sorry to hear that.</p></div>`,
+			wantSubstr: []string{"We are cutting costs", "Please cancel the subscription.", "Thank you!", "signature.png"},
+			notSubstr:  []string{"From:", "Please type your reply above this line", "Hi Brian"},
 		},
 		{
 			name:       "yahoo quoted reply stripped",
@@ -251,13 +264,13 @@ func TestConvertCollapsesBlankLines(t *testing.T) {
 
 func TestProcess(t *testing.T) {
 	tests := []struct {
-		name          string
-		html          string
-		plainText     string
-		wantHTML      []string
-		notHTML       []string
-		wantMarkdown  []string
-		notMarkdown   []string
+		name         string
+		html         string
+		plainText    string
+		wantHTML     []string
+		notHTML      []string
+		wantMarkdown []string
+		notMarkdown  []string
 	}{
 		{
 			name:         "remote image src preserved in html",
@@ -280,15 +293,29 @@ func TestProcess(t *testing.T) {
 			notMarkdown:  []string{"Old thread"},
 		},
 		{
+			name: "outlook quoted sibling body marked and removed from markdown",
+			html: `<div>We are cutting costs and management said to cut it.</div>` +
+				`<div>Please cancel the subscription.</div>` +
+				`<div>Thank you!</div>` +
+				`<div id="Signature"><img src="https://cdn.example.com/signature.png" /></div>` +
+				`<div id="appendonsend"></div>` +
+				`<hr />` +
+				`<div id="divRplyFwdMsg"><b>From:</b> Support<br /><b>Subject:</b> I want to cancel my subscription</div>` +
+				`<div><p>-- Please type your reply above this line --</p><p>Hi Brian, We're sorry to hear that.</p></div>`,
+			wantHTML:     []string{"We are cutting costs", "Please cancel the subscription", "Thank you!", "signature.png", `data-helpin-quote="true"`, "Hi Brian"},
+			wantMarkdown: []string{"We are cutting costs", "Please cancel the subscription", "Thank you!", "signature.png"},
+			notMarkdown:  []string{"From:", "Please type your reply above this line", "Hi Brian"},
+		},
+		{
 			name:     "cid image src dropped by scheme allowlist",
 			html:     `<img src="cid:logo@example" alt="logo" />`,
 			wantHTML: []string{`alt="logo"`},
 			notHTML:  []string{`src="cid:`},
 		},
 		{
-			name:     "data uri stripped by policy",
-			html:     `<img src="data:image/png;base64,AAAA" />`,
-			notHTML:  []string{"data:image/png", "AAAA"},
+			name:    "data uri stripped by policy",
+			html:    `<img src="data:image/png;base64,AAAA" />`,
+			notHTML: []string{"data:image/png", "AAAA"},
 		},
 		{
 			name:     "script and javascript href stripped",
@@ -354,9 +381,9 @@ func TestProcess(t *testing.T) {
 			notHTML:  []string{"<script", "alert(1)"},
 		},
 		{
-			name:      "empty html returns empty html and plain markdown fallback",
-			html:      "",
-			plainText: "fallback",
+			name:         "empty html returns empty html and plain markdown fallback",
+			html:         "",
+			plainText:    "fallback",
 			wantMarkdown: []string{"fallback"},
 		},
 		{
