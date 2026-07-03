@@ -7,6 +7,7 @@ import {
   customerEmailDisplayRowClassName,
   customerNameDisplayRowClassName,
   customerNameEditButtonClassName,
+  getAddConversationCCResult,
   getConversationEmailRecipients,
   getLatestEmailRecipients,
   getLastActiveTooltipLabel,
@@ -82,6 +83,41 @@ describe('getConversationEmailRecipients', () => {
       primary: ['teammate@company.com'],
       cc: ['jane@example.com'],
       alsoOnThread: ['manager@example.com'],
+    })
+  })
+})
+
+describe('getAddConversationCCResult', () => {
+  const recipients = {
+    primary: ['brian@example.com'],
+    cc: ['ops@example.com'],
+    alsoOnThread: ['finance@example.com'],
+  }
+
+  it('normalizes a new cc email and appends it to the reply recipient list', () => {
+    expect(getAddConversationCCResult(recipients, '  Sarah@Example.com  ')).toEqual({
+      cc: ['ops@example.com', 'sarah@example.com'],
+    })
+  })
+
+  it('allows a thread participant to be promoted to cc replies', () => {
+    expect(getAddConversationCCResult(recipients, 'finance@example.com')).toEqual({
+      cc: ['ops@example.com', 'finance@example.com'],
+    })
+  })
+
+  it('rejects invalid, primary, and duplicate cc values', () => {
+    expect(getAddConversationCCResult(recipients, 'not-an-email')).toEqual({
+      cc: ['ops@example.com'],
+      error: 'Enter a valid email address.',
+    })
+    expect(getAddConversationCCResult(recipients, 'BRIAN@example.com')).toEqual({
+      cc: ['ops@example.com'],
+      error: 'This is already the To recipient.',
+    })
+    expect(getAddConversationCCResult(recipients, 'OPS@example.com')).toEqual({
+      cc: ['ops@example.com'],
+      error: 'Already added to Cc.',
     })
   })
 })
