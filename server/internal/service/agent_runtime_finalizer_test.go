@@ -493,6 +493,190 @@ func TestAgentRuntimeFinalizersFlowOutputValidationMarksWithoutFailingRun(t *tes
 	}
 }
 
+type fakeFinalizerCommandBarAdvancer struct {
+	calls []model.AgentRun
+	err   error
+}
+
+func (a *fakeFinalizerCommandBarAdvancer) AdvanceCommandBarPlanForDelegatedRun(_ context.Context, run *model.AgentRun) (*model.AgentRun, error) {
+	a.calls = append(a.calls, *run)
+	if a.err != nil {
+		return nil, a.err
+	}
+	return nil, nil
+}
+
+func commandBarDelegatedRunInput(t *testing.T, planID string, stepIndex int) json.RawMessage {
+	t.Helper()
+	target := model.CommandBarPageContext{EntityType: "task", EntityID: "task-1", DisplayTitle: "Task 1"}
+	steps := []model.CommandBarPlanStep{
+		{AgentID: "agent-1", AgentName: "Forge", Target: target, Instructions: "Build it."},
+		{AgentID: "agent-1", AgentName: "Lens", Target: target, Instructions: "Review it."},
+	}
+	trigger, err := buildCommandBarTriggerContext("run forge then lens", target, steps, stepIndex, planID)
+	if err != nil {
+		t.Fatalf("build command bar trigger: %v", err)
+	}
+	input, err := json.Marshal(model.AgentRunInputPayload{Trigger: trigger})
+	if err != nil {
+		t.Fatalf("marshal command bar input: %v", err)
+	}
+	return input
+}
+
+func TestAgentRuntimeFinalizersCommandBarPlanAdvancesWithInMemoryStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		eventType  string
+		wantStatus string
+	}{
+		{name: "completed", eventType: "run.completed", wantStatus: model.AgentRunStatusCompleted},
+		{name: "failed", eventType: "run.failed", wantStatus: model.AgentRunStatusFailed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := newDelegatedTerminalTestRun("helpin-run-cbp-"+tt.name, "run_runtime_cbp_"+tt.name)
+			run.Input = commandBarDelegatedRunInput(t, "plan-1", 0)
+			runRepo := &fakeAgentRuntimeProjectionRunRepo{
+				byID:       map[string]*model.AgentRun{run.ID: run},
+				byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_cbp_" + tt.name: run},
+			}
+			advancer := &fakeFinalizerCommandBarAdvancer{}
+			svc := &AgentRuntimeProjectionService{
+				runRepo: runRepo,
+				runFinalizers: &AgentRunFinalizerService{
+					runRepo:            runRepo,
+					commandBarAdvancer: advancer,
+				},
+				now: time.Now,
+			}
+			event := AgentRuntimeEventEnvelope{RunID: "run_runtime_cbp_" + tt.name, Type: tt.eventType}
+
+			if err := svc.ApplyEvent(context.Background(), event); err != nil {
+				t.Fatalf("ApplyEvent returned error: %v", err)
+			}
+			if len(advancer.calls) != 1 {
+				t.Fatalf("expected one plan advancement call, got %d", len(advancer.calls))
+			}
+			if advancer.calls[0].Status != tt.wantStatus {
+				t.Fatalf("expected in-memory terminal status %q passed to advancer, got %q", tt.wantStatus, advancer.calls[0].Status)
+			}
+			if !runOutputSummaryFlag(run.OutputSummary, agentRuntimeFinalizerCommandBarPlanSummaryKey) {
+				t.Fatalf("expected command bar plan marker, got %s", string(run.OutputSummary))
+			}
+
+			// Redelivered terminal event on the now-terminal run is a no-op.
+			if err := svc.ApplyEvent(context.Background(), event); err != nil {
+				t.Fatalf("ApplyEvent redelivery returned error: %v", err)
+			}
+			if len(advancer.calls) != 1 {
+				t.Fatalf("expected redelivery to skip advancement, got %d calls", len(advancer.calls))
+			}
+		})
+	}
+}
+
+func TestAgentRuntimeFinalizersCommandBarPlanMarkerSkipsCrashReplay(t *testing.T) {
+	// Crash after the advancement marker persisted but before the terminal
+	// status: the redelivered event re-enters dispatch and must not advance
+	// the plan a second time.
+	run := newDelegatedTerminalTestRun("helpin-run-cbp-replay", "run_runtime_cbp_replay")
+	run.Input = commandBarDelegatedRunInput(t, "plan-1", 0)
+	run.OutputSummary = json.RawMessage(`{"` + agentRuntimeFinalizerCommandBarPlanSummaryKey + `":true}`)
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_cbp_replay": run},
+	}
+	advancer := &fakeFinalizerCommandBarAdvancer{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: runRepo,
+		runFinalizers: &AgentRunFinalizerService{
+			runRepo:            runRepo,
+			commandBarAdvancer: advancer,
+		},
+		now: time.Now,
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_cbp_replay",
+		Type:  "run.completed",
+	}); err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	if len(advancer.calls) != 0 {
+		t.Fatalf("expected marker to skip plan advancement, got %d calls", len(advancer.calls))
+	}
+	if run.Status != model.AgentRunStatusCompleted {
+		t.Fatalf("expected terminal status projection, got %q", run.Status)
+	}
+}
+
+func TestAgentRuntimeFinalizersCommandBarPlanSkipsNonCommandBarRunsWithoutMarker(t *testing.T) {
+	run := newDelegatedTerminalTestRun("helpin-run-cbp-plain", "run_runtime_cbp_plain")
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_cbp_plain": run},
+	}
+	advancer := &fakeFinalizerCommandBarAdvancer{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: runRepo,
+		runFinalizers: &AgentRunFinalizerService{
+			runRepo:            runRepo,
+			commandBarAdvancer: advancer,
+		},
+		now: time.Now,
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_cbp_plain",
+		Type:  "run.completed",
+	}); err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	if len(advancer.calls) != 0 {
+		t.Fatalf("expected non-command-bar run to skip advancement, got %d calls", len(advancer.calls))
+	}
+	if runOutputSummaryFlag(run.OutputSummary, agentRuntimeFinalizerCommandBarPlanSummaryKey) {
+		t.Fatalf("non-command-bar run must not record the plan marker, got %s", string(run.OutputSummary))
+	}
+}
+
+func TestAgentRuntimeFinalizersCommandBarPlanAdvancerFailureIsIsolated(t *testing.T) {
+	run := newDelegatedTerminalTestRun("helpin-run-cbp-fail", "run_runtime_cbp_fail")
+	run.Input = commandBarDelegatedRunInput(t, "plan-1", 0)
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_cbp_fail": run},
+	}
+	agentRepo := &fakeFinalizerAgentRepo{agent: &model.Agent{ID: "agent-1", Status: "working"}}
+	advancer := &fakeFinalizerCommandBarAdvancer{err: errors.New("plan repo unavailable")}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: runRepo,
+		runFinalizers: &AgentRunFinalizerService{
+			runRepo:            runRepo,
+			agentRepo:          agentRepo,
+			commandBarAdvancer: advancer,
+		},
+		now: time.Now,
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_cbp_fail",
+		Type:  "run.completed",
+	}); err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	if len(advancer.calls) != 1 {
+		t.Fatalf("expected one failed advancement attempt, got %d", len(advancer.calls))
+	}
+	if runOutputSummaryFlag(run.OutputSummary, agentRuntimeFinalizerCommandBarPlanSummaryKey) {
+		t.Fatalf("failed advancement must not record the marker, got %s", string(run.OutputSummary))
+	}
+	if agentRepo.updates != 1 {
+		t.Fatalf("expected other finalizers to run despite advancement failure, agent updates=%d", agentRepo.updates)
+	}
+	if run.Status != model.AgentRunStatusCompleted || runRepo.updates != 1 {
+		t.Fatalf("expected status projection despite advancement failure: status=%s updates=%d", run.Status, runRepo.updates)
+	}
+}
+
 func TestMergeRuntimeOutputSummaryPayloadPreservesHostMarkers(t *testing.T) {
 	local := json.RawMessage(`{"agent_runtime_usage_consumed":true,"agent_runtime_finalizer_agent_idle":true}`)
 	runtime := json.RawMessage(`{"draft_reply":{"content":"hello"},"agent_runtime_usage_consumed":false,"status":"success"}`)

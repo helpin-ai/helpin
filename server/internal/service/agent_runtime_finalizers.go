@@ -21,6 +21,7 @@ const (
 	agentRuntimeFinalizerAutomationRulesSummaryKey    = "agent_runtime_finalizer_automation_rules"
 	agentRuntimeFinalizerPlanningSummaryKey           = "agent_runtime_finalizer_planning"
 	agentRuntimeFinalizerRepositoryDeliverySummaryKey = "agent_runtime_finalizer_repository_delivery"
+	agentRuntimeFinalizerCommandBarPlanSummaryKey     = "agent_runtime_finalizer_command_bar_plan"
 	agentRuntimeSupportSentMessageIDSummaryKey        = "sent_message_id"
 )
 
@@ -56,6 +57,10 @@ type agentRunFinalizerRepositoryDeliveryService interface {
 	FinalizeDelegatedRunDelivery(ctx context.Context, run *model.AgentRun, delivery AgentRunRepositoryDelivery) (*AgentRunRepositoryDeliveryResult, error)
 }
 
+type agentRunFinalizerCommandBarPlanAdvancer interface {
+	AdvanceCommandBarPlanForDelegatedRun(ctx context.Context, run *model.AgentRun) (*model.AgentRun, error)
+}
+
 // AgentRunFinalizerService fires the product side effects that Temporal
 // activities apply when a run reaches a terminal state, for delegated
 // agent-runtime runs projected back via NATS. Every finalizer is individually
@@ -70,6 +75,7 @@ type AgentRunFinalizerService struct {
 	supportMessageRepo agentRunFinalizerSupportMessageRepository
 	ruleEngine         agentRunFinalizerRuleEvaluator
 	repositoryDelivery agentRunFinalizerRepositoryDeliveryService
+	commandBarAdvancer agentRunFinalizerCommandBarPlanAdvancer
 	wsPublisher        websocket.EventPublisher
 }
 
@@ -122,6 +128,20 @@ func (s *AgentRunFinalizerService) SetRepositoryDeliveryService(gitService *GitS
 	return s
 }
 
+// SetCommandBarPlanAdvancer wires the agent service used by the command-bar
+// plan finalizer to advance parent plans when a delegated child run reaches a
+// terminal state (the role AdvanceCommandBarPlanActivity plays for
+// Temporal-executed runs).
+func (s *AgentRunFinalizerService) SetCommandBarPlanAdvancer(advancer agentRunFinalizerCommandBarPlanAdvancer) *AgentRunFinalizerService {
+	if s == nil {
+		return s
+	}
+	if advancer != nil {
+		s.commandBarAdvancer = advancer
+	}
+	return s
+}
+
 // FinalizeTerminalRun applies product side effects for a delegated run that
 // just transitioned into a terminal status (the caller threads the
 // transitioned signal; this must never be invoked for redelivered terminal
@@ -147,6 +167,11 @@ func (s *AgentRunFinalizerService) FinalizeTerminalRun(ctx context.Context, run 
 			return s.finalizePlanningOutput(ctx, run, runtimeSummaryAvailable)
 		}},
 		{name: "repository_delivery", completedOnly: true, needsSummary: true, run: s.finalizeRepositoryDelivery},
+		// command_bar_plan runs last so repository delivery (PR bookkeeping a
+		// downstream merge step may depend on) lands before the plan advances.
+		// It fires on every terminal status: Temporal AgentRunWorkflow also
+		// advances the plan on both its completion and failure paths.
+		{name: "command_bar_plan", run: s.finalizeCommandBarPlan},
 	}
 	for _, finalizer := range finalizers {
 		if finalizer.completedOnly && !completed {
@@ -422,6 +447,31 @@ func (s *AgentRunFinalizerService) finalizeRepositoryDelivery(ctx context.Contex
 		)
 	}
 	return nil
+}
+
+// finalizeCommandBarPlan mirrors temporalapp advanceCommandBarPlan for
+// delegated runs: when a command-bar plan child reaches a terminal state,
+// advance the owning plan (signal the DAG/pipeline workflow, start the next
+// linear step, or settle fan-out/plan status). The in-memory run is passed
+// through because its terminal status is not yet persisted at dispatch time.
+// The marker is written after a successful advancement (at-least-once): the
+// advancement itself is naturally idempotent (existing-child lookups, plan
+// status checks, and re-signaling a workflow are all safe to repeat).
+func (s *AgentRunFinalizerService) finalizeCommandBarPlan(ctx context.Context, run *model.AgentRun) error {
+	if s.commandBarAdvancer == nil {
+		return nil
+	}
+	if _, ok := commandBarRunPayload(run); !ok {
+		// Not a command-bar child: skip quietly without a marker.
+		return nil
+	}
+	if runOutputSummaryFlag(run.OutputSummary, agentRuntimeFinalizerCommandBarPlanSummaryKey) {
+		return nil
+	}
+	if _, err := s.commandBarAdvancer.AdvanceCommandBarPlanForDelegatedRun(ctx, run); err != nil {
+		return fmt.Errorf("advance command bar plan after run %q: %w", run.ID, err)
+	}
+	return s.markRunOutputSummaryFlag(ctx, run, agentRuntimeFinalizerCommandBarPlanSummaryKey)
 }
 
 // delegatedRunRepositorySummary parses the runtime repository contract from

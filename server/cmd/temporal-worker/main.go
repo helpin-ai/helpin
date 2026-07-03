@@ -650,7 +650,7 @@ func main() {
 			supportMessageRepo,
 			ruleEngine,
 			wsPublisher,
-		).SetRepositoryDeliveryService(gitService)
+		).SetRepositoryDeliveryService(gitService).SetCommandBarPlanAdvancer(agentService)
 		agentRuntimeProjectionService := service.NewAgentRuntimeProjectionService(runRepo, cfg.AgentRuntimeAppID).
 			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
 			SetTranscriptRepositories(runMessageRepo, artifactRepo, interactionRepo).

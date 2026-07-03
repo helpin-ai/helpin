@@ -3689,13 +3689,21 @@ func (s *AgentService) startCommandBarPlanStep(ctx context.Context, workspaceID,
 	if strings.TrimSpace(actorID) != "" {
 		actor = &actorID
 	}
-	return s.startTargetRun(ctx, workspaceID, target.EntityType, target.EntityID, model.StartAgentRunRequest{
+	// allowActiveParentRun: a next step chained from its parent run must never
+	// conflict with that parent. For delegated (agent-runtime) children the
+	// parent's terminal status may not be persisted yet when the finalizer
+	// advances the plan, so the parent can still look active in the database.
+	return s.startTargetRunWithOptions(ctx, workspaceID, target.EntityType, target.EntityID, model.StartAgentRunRequest{
 		AgentID:           agentID,
 		AdditionalContext: &additionalContext,
 		AllowedTools:      step.AllowedTools,
-	}, actor, triggerContext, event, parentRunID)
+	}, actor, triggerContext, event, parentRunID, startTargetRunOptions{allowActiveParentRun: parentRunID != nil})
 }
 
+// AdvanceCommandBarPlanAfterRun advances the command-bar plan that owns the
+// given terminal run, loading the run's persisted state. Temporal
+// AgentRunWorkflow calls this (via AdvanceCommandBarPlanActivity) after the
+// terminal status is already persisted.
 func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, completedRunID string) (*model.AgentRun, error) {
 	if s == nil || s.runRepo == nil {
 		return nil, nil
@@ -3708,6 +3716,23 @@ func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, comple
 	if err != nil || run == nil {
 		return nil, err
 	}
+	return s.advanceCommandBarPlanForRun(ctx, run)
+}
+
+// AdvanceCommandBarPlanForDelegatedRun advances the command-bar plan for a
+// delegated agent-runtime run whose terminal status is only known in memory:
+// the projection dispatches finalizers before persisting the terminal row, so
+// re-loading the run here would observe a stale (still active) status.
+func (s *AgentService) AdvanceCommandBarPlanForDelegatedRun(ctx context.Context, run *model.AgentRun) (*model.AgentRun, error) {
+	if s == nil || s.runRepo == nil || run == nil {
+		return nil, nil
+	}
+	return s.advanceCommandBarPlanForRun(ctx, run)
+}
+
+// advanceCommandBarPlanForRun advances the owning command-bar plan using the
+// caller-provided run as the authoritative view of the terminal transition.
+func (s *AgentService) advanceCommandBarPlanForRun(ctx context.Context, run *model.AgentRun) (*model.AgentRun, error) {
 	payload, ok := commandBarRunPayload(run)
 	if !ok {
 		return nil, nil
@@ -3715,14 +3740,14 @@ func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, comple
 	planKind := commandBarPlanKindForSteps(payload.Steps)
 	if planKind == model.CommandBarPlanKindTaskPipeline || planKind == model.CommandBarPlanKindDAG {
 		if s.runEngine != nil && payload.PlanID != "" {
-			if err := s.runEngine.SignalCommandBarPlanRunCompleted(ctx, payload.PlanID, completedRunID); err == nil {
+			if err := s.runEngine.SignalCommandBarPlanRunCompleted(ctx, payload.PlanID, run.ID); err == nil {
 				return nil, nil
 			} else {
 				slog.WarnContext(ctx, "command bar plan signal failed; running scheduler fallback",
 					"error", err,
 					"workspace_id", run.WorkspaceID,
 					"plan_id", payload.PlanID,
-					"run_id", completedRunID,
+					"run_id", run.ID,
 				)
 			}
 		}
@@ -4322,6 +4347,12 @@ func (s *AgentService) advanceFanOutCommandBarPlan(ctx context.Context, run *mod
 	}
 	allCompleted := true
 	for _, item := range runs {
+		if item.ID == run.ID {
+			// The caller's run carries the authoritative status: for delegated
+			// runs the finalizer dispatches before the terminal row update
+			// persists, so the freshly listed sibling row can still be stale.
+			item = *run
+		}
 		switch item.Status {
 		case model.AgentRunStatusCompleted:
 		case model.AgentRunStatusFailed:
