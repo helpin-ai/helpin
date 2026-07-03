@@ -221,6 +221,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 		// ---- Public routes ----
 		r.Post("/auth/signup", h.Auth.Signup)
+		r.Post("/auth/verify-email", h.Auth.VerifyEmail)
+		r.Get("/auth/google/start", h.Auth.GoogleStart)
+		r.Get("/auth/google/callback", h.Auth.GoogleCallback)
 		r.Post("/auth/signin", h.Auth.Signin)
 		r.Post("/auth/passkey/authentication-options", h.Passkey.AuthenticationOptions)
 		r.Post("/auth/passkey/authenticate", h.Passkey.Authenticate)
@@ -387,6 +390,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Auth / profile
 			r.Get("/auth/me", h.Auth.Me)
 			r.Put("/auth/me", h.Auth.UpdateProfile)
+			r.Post("/auth/resend-verification", h.Auth.ResendVerificationEmail)
 			r.Post("/auth/me/avatar", h.Auth.UploadAvatar)
 			r.Delete("/auth/me/avatar", h.Auth.DeleteAvatar)
 			r.Put("/auth/change-password", h.Auth.ChangePassword)

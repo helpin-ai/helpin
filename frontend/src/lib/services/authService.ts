@@ -43,7 +43,9 @@ export const authService = {
   regenerateRecoveryCodes: (password: string, totpCode: string) =>
     api.post<RecoveryCodesResponse>('/auth/2fa/regenerate-recovery-codes', { password, totp_code: totpCode }),
   verifyEmail: (token: string) =>
-    api.post<{ message: string }>('/auth/verify-email', { token }),
+    api.post<User>('/auth/verify-email', { token }),
+  resendVerification: () =>
+    api.post<{ message: string }>('/auth/resend-verification', {}),
   uploadAvatar: async (file: File): Promise<{ data: User | null; error: string | null }> => {
     const formData = new FormData();
     formData.append('avatar', file);

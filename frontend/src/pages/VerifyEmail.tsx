@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearch } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { authService } from '@/lib/services/authService';
+import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
@@ -10,6 +11,7 @@ import { Loading01Icon } from '@/lib/icons';
 export default function VerifyEmail() {
   useTitle('Verify Email');
   const { token } = useSearch({ strict: false }) as { token?: string };
+  const user = useAuthStore((state) => state.user);
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -20,15 +22,18 @@ export default function VerifyEmail() {
       return;
     }
 
-    authService.verifyEmail(token).then(({ error }) => {
+    authService.verifyEmail(token).then(({ data, error }) => {
       if (error) {
         setStatus('error');
         setErrorMessage(error);
       } else {
+        if (data && user?.id === data.id) {
+          useAuthStore.setState({ user: data });
+        }
         setStatus('success');
       }
     });
-  }, [token]);
+  }, [token, user?.id]);
 
   return (
     <PublicPageShell>
@@ -52,8 +57,8 @@ export default function VerifyEmail() {
               <CardDescription>Your email has been verified successfully.</CardDescription>
             </CardHeader>
             <CardFooter className="flex flex-col gap-4 mt-4">
-              <Link to="/login" className="w-full">
-                <Button className="w-full">Continue to sign in</Button>
+              <Link to={user ? '/workspaces' : '/login'} className="w-full">
+                <Button className="w-full">{user ? 'Continue' : 'Continue to sign in'}</Button>
               </Link>
             </CardFooter>
           </>

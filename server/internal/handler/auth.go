@@ -1,11 +1,19 @@
 package handler
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -15,11 +23,34 @@ import (
 // AuthHandler handles authentication HTTP requests.
 type AuthHandler struct {
 	authService *service.AuthService
+	googleOAuth *oauth2.Config
+	appBaseURL  string
+}
+
+type GoogleOAuthConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+	AppBaseURL   string
 }
 
 // NewAuthHandler creates a new AuthHandler.
-func NewAuthHandler(authService *service.AuthService) *AuthHandler {
-	return &AuthHandler{authService: authService}
+func NewAuthHandler(authService *service.AuthService, googleConfig ...GoogleOAuthConfig) *AuthHandler {
+	h := &AuthHandler{authService: authService}
+	if len(googleConfig) > 0 {
+		cfg := googleConfig[0]
+		h.appBaseURL = strings.TrimRight(strings.TrimSpace(cfg.AppBaseURL), "/")
+		if strings.TrimSpace(cfg.ClientID) != "" && strings.TrimSpace(cfg.ClientSecret) != "" && strings.TrimSpace(cfg.RedirectURL) != "" {
+			h.googleOAuth = &oauth2.Config{
+				ClientID:     strings.TrimSpace(cfg.ClientID),
+				ClientSecret: strings.TrimSpace(cfg.ClientSecret),
+				RedirectURL:  strings.TrimSpace(cfg.RedirectURL),
+				Scopes:       []string{"openid", "email", "profile"},
+				Endpoint:     google.Endpoint,
+			}
+		}
+	}
+	return h
 }
 
 // Signup handles POST /api/auth/signup.
@@ -38,6 +69,111 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 
 	setAuthCookies(w, r, resp.AccessToken, resp.RefreshToken)
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// VerifyEmail handles POST /api/auth/verify-email.
+func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	profile, err := h.authService.VerifyEmail(r.Context(), req.Token)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, profile)
+}
+
+// ResendVerificationEmail handles POST /api/auth/resend-verification.
+func (h *AuthHandler) ResendVerificationEmail(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if err := h.authService.ResendEmailVerification(r.Context(), userID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "verification email sent"})
+}
+
+// GoogleStart redirects the browser to Google's OAuth consent screen.
+func (h *AuthHandler) GoogleStart(w http.ResponseWriter, r *http.Request) {
+	if h.googleOAuth == nil {
+		writeError(w, http.StatusNotFound, "google sign-in is not configured")
+		return
+	}
+	state, err := randomState()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start google sign-in")
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "helpin_google_oauth_state",
+		Value:    state,
+		Path:     "/api/auth/google/callback",
+		MaxAge:   600,
+		Expires:  time.Now().Add(10 * time.Minute),
+		HttpOnly: true,
+		Secure:   secureCookie(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+	if redirectPath := sanitizeGoogleRedirectPath(r.URL.Query().Get("redirect")); redirectPath != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "helpin_google_oauth_redirect",
+			Value:    base64.RawURLEncoding.EncodeToString([]byte(redirectPath)),
+			Path:     "/api/auth/google/callback",
+			MaxAge:   600,
+			Expires:  time.Now().Add(10 * time.Minute),
+			HttpOnly: true,
+			Secure:   secureCookie(r),
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+	http.Redirect(w, r, h.googleOAuth.AuthCodeURL(state, oauth2.AccessTypeOnline), http.StatusFound)
+}
+
+// GoogleCallback handles the Google OAuth redirect.
+func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
+	if h.googleOAuth == nil {
+		writeError(w, http.StatusNotFound, "google sign-in is not configured")
+		return
+	}
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	cookie, err := r.Cookie("helpin_google_oauth_state")
+	if err != nil || state == "" || cookie.Value != state {
+		clearGoogleOAuthCookies(w, r)
+		http.Redirect(w, r, h.authFailureRedirect("invalid_state"), http.StatusFound)
+		return
+	}
+	redirectPath := googleRedirectPathFromCookie(r)
+	clearGoogleOAuthCookies(w, r)
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	if code == "" {
+		http.Redirect(w, r, h.authFailureRedirect("missing_code"), http.StatusFound)
+		return
+	}
+	token, err := h.googleOAuth.Exchange(r.Context(), code)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "google oauth exchange failed", "error", err)
+		http.Redirect(w, r, h.authFailureRedirect("exchange_failed"), http.StatusFound)
+		return
+	}
+	identity, err := googleIdentityFromToken(r, token)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "google userinfo failed", "error", err)
+		http.Redirect(w, r, h.authFailureRedirect("userinfo_failed"), http.StatusFound)
+		return
+	}
+	resp, err := h.authService.SignInWithGoogle(r.Context(), identity)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "google auth signin failed", "error", err)
+		http.Redirect(w, r, h.authFailureRedirect("signin_failed"), http.StatusFound)
+		return
+	}
+	setAuthCookies(w, r, resp.AccessToken, resp.RefreshToken)
+	http.Redirect(w, r, h.appRedirect(redirectPath), http.StatusFound)
 }
 
 // Signin handles POST /api/auth/signin.
@@ -229,6 +365,103 @@ func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Signout(w http.ResponseWriter, r *http.Request) {
 	clearAuthCookies(w, r)
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "signed out"})
+}
+
+func randomState() (string, error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
+}
+
+func clearGoogleOAuthCookies(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "helpin_google_oauth_state",
+		Value:    "",
+		Path:     "/api/auth/google/callback",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+		Secure:   secureCookie(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "helpin_google_oauth_redirect",
+		Value:    "",
+		Path:     "/api/auth/google/callback",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+		Secure:   secureCookie(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func googleRedirectPathFromCookie(r *http.Request) string {
+	cookie, err := r.Cookie("helpin_google_oauth_redirect")
+	if err != nil {
+		return "/workspaces"
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(cookie.Value)
+	if err != nil {
+		return "/workspaces"
+	}
+	if path := sanitizeGoogleRedirectPath(string(raw)); path != "" {
+		return path
+	}
+	return "/workspaces"
+}
+
+func sanitizeGoogleRedirectPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") || strings.ContainsAny(path, "\r\n\t") {
+		return ""
+	}
+	return path
+}
+
+func (h *AuthHandler) appRedirect(path string) string {
+	base := h.appBaseURL
+	if base == "" {
+		base = "http://localhost:5173"
+	}
+	return strings.TrimRight(base, "/") + path
+}
+
+func (h *AuthHandler) authFailureRedirect(reason string) string {
+	return h.appRedirect("/login?error=" + reason)
+}
+
+func googleIdentityFromToken(r *http.Request, token *oauth2.Token) (service.GoogleIdentity, error) {
+	client := oauth2.NewClient(r.Context(), oauth2.StaticTokenSource(token))
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, "https://openidconnect.googleapis.com/v1/userinfo", nil)
+	if err != nil {
+		return service.GoogleIdentity{}, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return service.GoogleIdentity{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return service.GoogleIdentity{}, errors.New("google userinfo returned non-success status")
+	}
+	var payload struct {
+		Subject       string `json:"sub"`
+		Email         string `json:"email"`
+		EmailVerified bool   `json:"email_verified"`
+		Name          string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return service.GoogleIdentity{}, err
+	}
+	return service.GoogleIdentity{
+		Subject:       payload.Subject,
+		Email:         payload.Email,
+		EmailVerified: payload.EmailVerified,
+		FullName:      payload.Name,
+	}, nil
 }
 
 // Get2FAStatus handles GET /api/auth/2fa/status.

@@ -33,29 +33,40 @@ var (
 )
 
 const (
-	passwordResetTTL   = time.Hour
-	twoFAIssuer        = "Helpin"
-	recoveryCodeCount  = 10
-	totpWindow         = 1
-	legacyRefreshFloor = 30 * time.Minute
+	passwordResetTTL     = time.Hour
+	emailVerificationTTL = 24 * time.Hour
+	twoFAIssuer          = "Helpin"
+	recoveryCodeCount    = 10
+	totpWindow           = 1
+	legacyRefreshFloor   = 30 * time.Minute
 )
 
 type authEmailSender interface {
 	SendPasswordResetEmail(to, fullName, resetURL string) error
+	SendVerificationEmail(to, fullName, verificationURL string) error
+}
+
+// GoogleIdentity is the normalized user profile returned by Google OAuth.
+type GoogleIdentity struct {
+	Subject       string
+	Email         string
+	EmailVerified bool
+	FullName      string
 }
 
 // AuthService handles authentication business logic.
 type AuthService struct {
-	userRepo          *repository.UserRepository
-	passwordResetRepo *repository.PasswordResetTokenRepository
-	organizationRepo  *repository.OrganizationRepository
-	workspaceRepo     *repository.WorkspaceRepository
-	jwtManager        *auth.JWTManager
-	s3Client          *storage.S3Client
-	emailClient       authEmailSender
-	appBaseURL        string
-	encryptionKey     []byte
-	logger            *slog.Logger
+	userRepo              *repository.UserRepository
+	passwordResetRepo     *repository.PasswordResetTokenRepository
+	emailVerificationRepo *repository.EmailVerificationTokenRepository
+	organizationRepo      *repository.OrganizationRepository
+	workspaceRepo         *repository.WorkspaceRepository
+	jwtManager            *auth.JWTManager
+	s3Client              *storage.S3Client
+	emailClient           authEmailSender
+	appBaseURL            string
+	encryptionKey         []byte
+	logger                *slog.Logger
 }
 
 // NewAuthService creates a new AuthService.
@@ -64,6 +75,7 @@ func NewAuthService(
 	passwordResetRepo *repository.PasswordResetTokenRepository,
 	organizationRepo *repository.OrganizationRepository,
 	workspaceRepo *repository.WorkspaceRepository,
+	emailVerificationRepo *repository.EmailVerificationTokenRepository,
 	jwtManager *auth.JWTManager,
 	s3Client *storage.S3Client,
 	emailClient authEmailSender,
@@ -71,23 +83,29 @@ func NewAuthService(
 	encryptionKey []byte,
 ) *AuthService {
 	return &AuthService{
-		userRepo:          userRepo,
-		passwordResetRepo: passwordResetRepo,
-		organizationRepo:  organizationRepo,
-		workspaceRepo:     workspaceRepo,
-		jwtManager:        jwtManager,
-		s3Client:          s3Client,
-		emailClient:       emailClient,
-		appBaseURL:        strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
-		encryptionKey:     append([]byte(nil), encryptionKey...),
-		logger:            slog.Default().With("service", "auth"),
+		userRepo:              userRepo,
+		passwordResetRepo:     passwordResetRepo,
+		emailVerificationRepo: emailVerificationRepo,
+		organizationRepo:      organizationRepo,
+		workspaceRepo:         workspaceRepo,
+		jwtManager:            jwtManager,
+		s3Client:              s3Client,
+		emailClient:           emailClient,
+		appBaseURL:            strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
+		encryptionKey:         append([]byte(nil), encryptionKey...),
+		logger:                slog.Default().With("service", "auth"),
 	}
 }
 
 // Signup creates a new user account and returns auth tokens.
 func (s *AuthService) Signup(ctx context.Context, req model.SignupRequest) (*model.AuthResponse, error) {
+	req.Email = normalizeAuthEmail(req.Email)
+	req.FullName = strings.TrimSpace(req.FullName)
 	if req.Email == "" || req.Password == "" || req.FullName == "" {
 		return nil, fmt.Errorf("email, password, and full_name are required")
+	}
+	if isDisposableEmailDomain(req.Email) {
+		return nil, fmt.Errorf("temporary email addresses are not allowed")
 	}
 
 	existing, err := s.userRepo.GetByEmail(ctx, req.Email)
@@ -120,9 +138,79 @@ func (s *AuthService) Signup(ctx context.Context, req model.SignupRequest) (*mod
 
 	s.logger.InfoContext(ctx, "user signed up", "user_id", user.ID, "email", user.Email)
 
+	if err := s.sendEmailVerification(ctx, user); err != nil {
+		s.logger.ErrorContext(ctx, "failed to prepare verification email after signup", "user_id", user.ID, "email", user.Email, "error", err)
+	}
+
 	// Auto-create a default organization for the new user.
 	s.autoCreateOrganization(ctx, user)
 
+	return &model.AuthResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		User:         toUserProfile(user),
+	}, nil
+}
+
+// SignInWithGoogle creates or signs in a user from a verified Google OAuth identity.
+func (s *AuthService) SignInWithGoogle(ctx context.Context, identity GoogleIdentity) (*model.AuthResponse, error) {
+	email := normalizeAuthEmail(identity.Email)
+	subject := strings.TrimSpace(identity.Subject)
+	fullName := strings.TrimSpace(identity.FullName)
+	if email == "" || subject == "" {
+		return nil, fmt.Errorf("google account did not return a usable email")
+	}
+	if !identity.EmailVerified {
+		return nil, fmt.Errorf("google account email is not verified")
+	}
+	if isDisposableEmailDomain(email) {
+		return nil, fmt.Errorf("temporary email addresses are not allowed")
+	}
+	if fullName == "" {
+		fullName = email
+	}
+
+	now := time.Now().UTC()
+	user, err := s.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("get user by email: %w", err)
+	}
+	if user == nil {
+		passwordHash, err := auth.HashPassword(randomOAuthPassword())
+		if err != nil {
+			return nil, fmt.Errorf("hash oauth password placeholder: %w", err)
+		}
+		user, err = s.userRepo.CreateUser(ctx, &model.User{
+			Email:           email,
+			PasswordHash:    passwordHash,
+			FullName:        fullName,
+			GoogleSubject:   &subject,
+			EmailVerifiedAt: &now,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create google user: %w", err)
+		}
+		s.autoCreateOrganization(ctx, user)
+	} else {
+		if user.GoogleSubject == nil || *user.GoogleSubject == "" {
+			user, err = s.userRepo.LinkGoogleSubject(ctx, user.ID, subject)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if user.EmailVerifiedAt == nil {
+			user, err = s.userRepo.MarkEmailVerified(ctx, user.ID, now)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	accessToken, refreshToken, err := s.generateTokenPairForUser(user, true, false)
+	if err != nil {
+		return nil, fmt.Errorf("generate tokens: %w", err)
+	}
+	s.logger.InfoContext(ctx, "user signed in with google", "user_id", user.ID, "email", user.Email)
 	return &model.AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
@@ -171,6 +259,7 @@ func slugifyOrg(name string) string {
 
 // Signin authenticates a user and returns auth tokens or a 2FA challenge.
 func (s *AuthService) Signin(ctx context.Context, req model.SigninRequest) (*model.SigninResponse, error) {
+	req.Email = normalizeAuthEmail(req.Email)
 	if req.Email == "" || req.Password == "" {
 		return nil, fmt.Errorf("%w: email and password are required", ErrBadRequest)
 	}
@@ -227,6 +316,66 @@ func (s *AuthService) Signin(ctx context.Context, req model.SigninRequest) (*mod
 		RefreshToken: refreshToken,
 		User:         &profile,
 	}, nil
+}
+
+// VerifyEmail consumes an email verification token and marks the user verified.
+func (s *AuthService) VerifyEmail(ctx context.Context, rawToken string) (*model.UserProfile, error) {
+	rawToken = strings.TrimSpace(rawToken)
+	if rawToken == "" {
+		return nil, fmt.Errorf("verification token is required")
+	}
+	if s.emailVerificationRepo == nil {
+		return nil, fmt.Errorf("email verification is not configured")
+	}
+	now := time.Now().UTC()
+	tokenHash := hashEmailVerificationToken(rawToken)
+
+	var user *model.User
+	err := s.emailVerificationRepo.WithTx(ctx, func(txRepo *repository.EmailVerificationTokenRepository, tx *gorm.DB) error {
+		tokenRow, err := txRepo.GetActiveByTokenHash(ctx, tokenHash, now)
+		if err != nil {
+			return err
+		}
+		if tokenRow == nil {
+			return fmt.Errorf("verification link is invalid or has expired")
+		}
+		used, err := txRepo.MarkUsed(ctx, tokenRow.ID, now)
+		if err != nil {
+			return err
+		}
+		if !used {
+			return fmt.Errorf("verification link is invalid or has expired")
+		}
+		txUserRepo := repository.NewUserRepository(tx)
+		user, err = txUserRepo.MarkEmailVerified(ctx, tokenRow.UserID, now)
+		if err != nil {
+			return err
+		}
+		return txRepo.InvalidateAllForUser(ctx, tokenRow.UserID, now)
+	})
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	profile := toUserProfile(user)
+	return &profile, nil
+}
+
+// ResendEmailVerification sends a fresh verification email for an unverified user.
+func (s *AuthService) ResendEmailVerification(ctx context.Context, userID string) error {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+	if user.EmailVerifiedAt != nil {
+		return nil
+	}
+	return s.sendEmailVerification(ctx, user)
 }
 
 // Get2FAStatus returns whether the current user has active TOTP enabled.
@@ -946,6 +1095,8 @@ func toUserProfile(u *model.User) model.UserProfile {
 		DefaultWorkspaceID:    u.DefaultWorkspaceID,
 		TwoFAEnabled:          u.TOTPVerified,
 		IsPlatformAdmin:       u.IsPlatformAdmin,
+		EmailVerified:         u.EmailVerifiedAt != nil,
+		EmailVerifiedAt:       u.EmailVerifiedAt,
 		CreatedAt:             u.CreatedAt,
 		UpdatedAt:             u.UpdatedAt,
 	}
@@ -1019,7 +1170,21 @@ func generatePasswordResetToken() (string, string, error) {
 	return rawToken, hashPasswordResetToken(rawToken), nil
 }
 
+func generateEmailVerificationToken() (string, string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", "", fmt.Errorf("generate email verification token: %w", err)
+	}
+	rawToken := hex.EncodeToString(b)
+	return rawToken, hashEmailVerificationToken(rawToken), nil
+}
+
 func hashPasswordResetToken(token string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return hex.EncodeToString(sum[:])
+}
+
+func hashEmailVerificationToken(token string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
 	return hex.EncodeToString(sum[:])
 }
@@ -1030,4 +1195,70 @@ func buildPasswordResetURL(appBaseURL, token string) string {
 		base = "http://localhost:5173"
 	}
 	return fmt.Sprintf("%s/reset-password?token=%s", base, url.QueryEscape(token))
+}
+
+func buildEmailVerificationURL(appBaseURL, token string) string {
+	base := strings.TrimRight(strings.TrimSpace(appBaseURL), "/")
+	if base == "" {
+		base = "http://localhost:5173"
+	}
+	return fmt.Sprintf("%s/verify-email?token=%s", base, url.QueryEscape(token))
+}
+
+func (s *AuthService) sendEmailVerification(ctx context.Context, user *model.User) error {
+	if user == nil || user.EmailVerifiedAt != nil || s.emailVerificationRepo == nil {
+		return nil
+	}
+	rawToken, tokenHash, err := generateEmailVerificationToken()
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	if err := s.emailVerificationRepo.InvalidateAllForUser(ctx, user.ID, now); err != nil {
+		return err
+	}
+	if err := s.emailVerificationRepo.Create(ctx, &model.EmailVerificationToken{
+		UserID:    user.ID,
+		TokenHash: tokenHash,
+		ExpiresAt: now.Add(emailVerificationTTL),
+	}); err != nil {
+		return err
+	}
+	if s.emailClient == nil {
+		s.logger.WarnContext(ctx, "verification email requested but email client not configured", "user_id", user.ID, "email", user.Email)
+		return nil
+	}
+	return s.emailClient.SendVerificationEmail(user.Email, user.FullName, buildEmailVerificationURL(s.appBaseURL, rawToken))
+}
+
+func normalizeAuthEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func isDisposableEmailDomain(email string) bool {
+	parts := strings.Split(normalizeAuthEmail(email), "@")
+	if len(parts) != 2 {
+		return false
+	}
+	_, blocked := disposableEmailDomains[parts[1]]
+	return blocked
+}
+
+var disposableEmailDomains = map[string]struct{}{
+	"10minutemail.com":  {},
+	"guerrillamail.com": {},
+	"mailinator.com":    {},
+	"sharklasers.com":   {},
+	"tempmail.com":      {},
+	"temp-mail.org":     {},
+	"throwaway.email":   {},
+	"yopmail.com":       {},
+}
+
+func randomOAuthPassword() string {
+	raw, _, err := generatePasswordResetToken()
+	if err != nil {
+		return uuid.NewString()
+	}
+	return raw
 }

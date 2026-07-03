@@ -26,6 +26,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			email TEXT NOT NULL UNIQUE,
 			password_hash TEXT NOT NULL,
 			full_name TEXT NOT NULL,
+			email_verified_at DATETIME,
+			google_subject TEXT UNIQUE,
 			avatar_url TEXT,
 			avatar_style TEXT,
 			avatar_seed TEXT,
@@ -55,6 +57,15 @@ func newTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE password_reset_tokens (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			user_id TEXT NOT NULL,
+			token_hash TEXT NOT NULL UNIQUE,
+			expires_at DATETIME NOT NULL,
+			used_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE email_verification_tokens (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			user_id TEXT NOT NULL,
 			token_hash TEXT NOT NULL UNIQUE,

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 )
@@ -124,6 +125,18 @@ func (c *Client) SendEmail(to, subject, htmlBody, textBody string) error {
 	}
 	_, err := c.send(payload)
 	return err
+}
+
+// SendVerificationEmail sends an account email verification message.
+func (c *Client) SendVerificationEmail(to, fullName, verificationURL string) error {
+	name := strings.TrimSpace(fullName)
+	if name == "" {
+		name = "there"
+	}
+	subject := "Verify your Helpin email"
+	textBody := fmt.Sprintf("Hi %s,\n\nVerify your email address to secure your Helpin account:\n%s\n\nIf you did not create a Helpin account, you can ignore this email.", name, verificationURL)
+	htmlBody := fmt.Sprintf(`<p>Hi %s,</p><p>Verify your email address to secure your Helpin account:</p><p><a href="%s">Verify email</a></p><p>If you did not create a Helpin account, you can ignore this email.</p>`, html.EscapeString(name), html.EscapeString(verificationURL))
+	return c.SendEmail(to, subject, htmlBody, textBody)
 }
 
 // FromEmail returns the configured Postmark sender address.
