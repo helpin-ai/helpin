@@ -61,14 +61,25 @@ func TestShouldDelegateRunToAgentRuntimeMatrix(t *testing.T) {
 			},
 		},
 		{
-			name:      "code builder preset never delegates",
-			agent:     &model.Agent{IsSystem: true, PresetKey: model.AgentPresetCodeBuilder, RuntimeKind: "native_sdk"},
-			delegated: nil,
+			// "story" stays false at the predicate level: startTargetRunWithOptions
+			// normalizes story targets to "task" before createRun consults the
+			// predicate. Workspace targets stay local — the host repository-spec
+			// resolver has no workspace case and the coding runtime agent record
+			// demands a repository workspace.
+			name:  "code builder preset delegates task and repository",
+			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetCodeBuilder, RuntimeKind: "codex"},
+			delegated: map[string]bool{
+				"task":       true,
+				"repository": true,
+			},
 		},
 		{
-			name:      "review agent preset never delegates",
-			agent:     &model.Agent{IsSystem: true, PresetKey: model.AgentPresetReviewAgent, RuntimeKind: "native_sdk"},
-			delegated: nil,
+			name:  "review agent preset delegates task and repository",
+			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetReviewAgent, RuntimeKind: "codex"},
+			delegated: map[string]bool{
+				"task":       true,
+				"repository": true,
+			},
 		},
 		{
 			name:      "epic planner preset never delegates",

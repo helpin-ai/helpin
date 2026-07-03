@@ -156,7 +156,64 @@ launch pipeline stages; evidence is the code path that exists today.
 | crm_operator / crm_company | Amber — predicate delegates `crm_company`, but `startTargetRunWithOptions` has no `crm_company` launch case yet (`unsupported target type`), so no Helpin path can create such a run today; predicate is forward-ready only. | Green — host `crm_company` case already resolves company context. | Green — `enrich_crm_company` command supports `crm_company` targets. | Amber — unreachable until the launch case lands. | Green — generic finalizers would apply once reachable. | Green — projection is target-agnostic. |
 | custom native_sdk agents / workspace + document + crm_* | Green — custom agents with no preset and `runtime_kind = native_sdk` delegate on these targets; codex/opencode custom agents intentionally stay local. | Green — same host target-context cases as preset runs. | Amber — tool surface is whatever the agent's `allowed_tools` grants; scanners/preview/github built-ins plus command-backed product tools exist, but per-agent tool grants are not preset-curated. | Amber — write commands available but no custom-agent delegated smoke yet. | Green — agent-idle + completed-rules are agent-agnostic. | Green — same projection path. |
 | support_agent / support_conversation | Green — predicate delegates; every trigger path funnels through `createRun`'s delegation branch: manual (`RunConversationAgent`, `startTargetRunWithOptions` support case), inbox auto (`RunConversationAgentAuto`), and widget auto-run (`maybeAutoRunConversationAgent` → `conversationAgentRunner`). Conversation-specific input assembly (target + `conversation_id` + manual/`support.auto` trigger context) happens before `createRun`, so it is identical for delegated runs. | Green — host `support_conversation` case resolves the conversation; requires `workspace_id` metadata, which `runtimeStartRunRequest` stamps into both run metadata and target metadata. | Green — support tools are command-backed with aliases matching the native names: `support.list_conversation_messages` / `support.draft_reply` / `support.update_conversation_status`. `support.draft_reply` stages `output_summary.draft_reply` on the Helpin run row via the external-runtime-ID run lookup; the terminal summary merge preserves local-only keys. | Green — reply / approve / request_changes forward through `resumeAgentRuntimeRunWithIntent` (unit-tested for support runs in `agent_runtime_signal_test.go`); approval pauses mirror as `human_approval` + pending, and `finalizeSupportDraft` skips pending runs so an unapproved draft is never sent. | Green — `finalizeSupportDraft` (terminal completed transition) is a faithful port of `finalizeSupportConversationRun`: same pending-gate, run-ID message idempotency, `sent_message_id` write-back, websocket publish, and visitor refresh. Turn policy: autonomous (preset default) maps to `complete_on_finish` so the terminal transition fires; interactive-configured support agents map to `pause_after_assistant`. | Green — same projection path; interaction mirroring covers the approval checkpoint on the draft. |
+| code_builder / task (+ story, normalized to task at launch) | Green — predicate delegates; task launch case resolves the delivery target (`ResolveTaskDeliveryTargetForRun`, repo required) before `createRun`, which stamps `repository_id` / `repo_full_name` / `base_branch` / `working_branch` / `delivery_target_id` on the run row for delegated runs exactly as for Temporal runs. | Amber — host `task` case returns the task row (name, description, type, priority, state, labels) but adapters inject only the shallow summary ("Task N: name") into prompts; bridged at launch by `buildDelegatedTaskLaunchContext`, which stamps operator notes, task name/description, parent-epic background, branch values, and truncated plan-doc content into `additional_context` → runtime `Instructions`. Known gaps vs Temporal: checklist items and non-plan linked docs are not stamped (no repos wired for them on the launch path). | Amber — repo workspace tools (`read_file`/`write_file`/`run_command`/git tools) exist runtime-side and the repository clone is prepared via the host repository-spec endpoint with the work branch checked out (`workspace.mode=repository` is injected into the runtime agent record at delegation because Helpin's `AgentExecutionConfig` does not model it). `add_task_comment` / `update_task_state` are command-backed with native aliases; `list_task_checklist` and `open_pr` have no runtime counterpart (PR opening is deliberately backend-managed). | Green — runtime `push_branch` finalize policy commits/pushes and reports `{"repository": {pushed, branch, commit}}` in the output summary. | Green — `finalizeRepositoryDelivery` → `FinalizeDelegatedRunDelivery` ensures the PR/MR off the pushed branch (run fields with delivery-target fallback), records the delivery target, git link, activity, and websocket events; `pr_failed` bookkeeping on provider errors. Codex auth pause/mirroring is the same machinery as the marketer pilot. | Green — same NATS projection; summary merge preserves the local finalizer markers. E2E smoke vs a live runtime: **ops-pending**. |
+| code_builder / repository | Green — predicate delegates; repository launch case stamps `repository_id` / `repo_full_name` / `base_branch` (default-branch fallback) on the run. | Green-by-parity — host has no `repository` target-context case (generic fallback), but the Temporal path also assembles no repository-target instructions (`additional_context` passthrough), so delegated ≥ Temporal here; the clone spec resolver has a first-class `repository` case. | Amber — same tool notes as the task row. | Green — same push_branch write-back. | Green — `FinalizeDelegatedRunDelivery` resolves the repository directly from the run/target for repository targets. | Green — same projection. E2E smoke: **ops-pending**. |
+| review_agent / task + repository | Green — same launch paths as code_builder; interactive default invocation maps to `pause_after_assistant` so the review loop stays interactive. | Amber — same launch-context bridge; the runtime `review_agent` skill expects "repository base and working branch context" for task reviews, which the bridge stamps. | Amber — review tools (`read_file`, `edit_file`, `apply_patch`, `run_command`, `request_review_checkpoint`, `request_user_input`) exist runtime-side; `list_task_checklist` gap as above. | Green — `review_checkpoint` / `request_user_input` interactions mirror through the projection; approve / request-changes / reply forward via `resumeAgentRuntimeRunWithIntent` (generic, unit-tested). | Green — repository delivery finalizer fires only on the terminal completed transition, so review-only runs with nothing pushed skip PR creation and fix-applying runs get their PR. | Green — same projection. E2E smoke: **ops-pending**. |
 | support_agent / support_coverage_gap | Deliberately local — `support_coverage_gap` is not an allowed support-agent target (runtime profile allows `support_conversation` only), so there is no support-agent path to flip. Coverage-gap runs belong to the documentation-agent surface (`support_gap_to_docs`), which currently delegates workspace/document only; additionally the host `ResolveTargetContext` has no `support_coverage_gap` case (falls through to the generic default), so flipping it belongs to the docs-agent slice together with a dedicated target-context resolver. | — | — | — | — | — |
+
+## Coding preset parity (code_builder / review_agent — flipped for task + repository)
+
+Flipped combos: `code_builder × {task, repository}`, `review_agent × {task,
+repository}` (story launches normalize to task before the predicate). Three
+launch-path bridges made the flip honest instead of lobotomized:
+
+1. **Repository workspace mode** — Agent Runtime prepares a repository clone
+   only when the runtime agent record's `execution_config` carries
+   `workspace.mode = "repository"` (`engine.ensureWorkspace` →
+   `workspace.WorkspaceMode`). Helpin's `AgentExecutionConfig` does not model
+   that field, so `runtimeAgentFromHelpinAgent` injects it for repo-requiring
+   presets (`agentRequiresRepositoryWorkspace`, keyed strictly off the preset
+   runtime profile's `RequiresRepo`; custom agents never match). The host-side
+   clone spec (`GitService.ResolveAgentRuntimeRepositorySpec`) already handled
+   task/story/repository/epic targets with delivery-target and branch
+   resolution plus `push_branch` finalize policy.
+2. **Launch-time task context** — Temporal assembles task instructions at
+   execution time (`worker.BuildUserPrompt` + `buildTaskExecutionInstructions`:
+   operator notes, task description, epic background, branch values, plan-doc
+   content, linked docs, checklist). Runtime adapters inject only the shallow
+   target summary ("Task N: name"), and the coding presets' tool grants include
+   no PM read tools to self-gather the rest. `buildDelegatedTaskLaunchContext`
+   stamps the equivalent context into `additional_context` at launch for
+   delegated task runs (best-effort; enrichment failures log and skip).
+   Remaining gaps vs Temporal: checklist items and non-plan linked docs.
+3. **Branch stamping** — no bridge needed: `createRun` stamps
+   `repository_id` / `repo_full_name` / `base_branch` / `working_branch` from
+   the resolved delivery target (task) or repository row (repository) *before*
+   the delegation branch, so delegated runs get the same run-row fields the
+   repository-delivery finalizer reads (with delivery-target fallback).
+
+Deliberately not flipped:
+
+- `code_builder / review_agent × workspace` — the host repository-spec
+  resolver has no `workspace` case, and the runtime agent record now demands a
+  repository workspace, so `PrepareWorkspace` would fail. Temporal keeps this
+  exploratory surface.
+- **custom agents × task/repository** — custom agents carry no
+  requires-repo signal, so the workspace-mode injection (preset-keyed) does not
+  apply; without it a delegated custom coding run would execute with no
+  workspace at all. Revisit when custom-agent execution profiles express
+  workspace needs.
+- Flow-output runs on task targets (`pm.task_completion_followups`) delegate
+  with the rest of the surface; like the already-delegated CRM flow outputs
+  they rely on the delegated planning finalizer's validate-and-log path rather
+  than Temporal's fail-on-invalid retry.
+
+E2E smoke against a live Agent Runtime (clone → edit → commit → push → PR) is
+**ops-pending**; unit coverage lives in
+`agent_runtime_coding_delegation_test.go` (launch chain, run-row stamping,
+instruction stamping, workspace-mode injection, interactive review turn
+policy) and the updated predicate matrix in
+`agent_runtime_delegation_test.go`.
 
 ## Planner parity blockers (epic_planner / task_planner — not flipped)
 

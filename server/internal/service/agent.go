@@ -173,10 +173,10 @@ func buildAgentRunInputPayload(targetType, targetID string, trigger *model.Agent
 
 // agentRuntimePresetDelegatedTargets lists, per system preset, the target
 // types whose runs are delegated to Agent Runtime when
-// AGENT_RUNTIME_LAUNCH_ENABLED is on. Presets absent from this map (code
-// builder, review agent, epic/task planner, command agent) and target types
-// absent from a preset's set (task, story, epic, repository,
-// support_coverage_gap) stay on the local Temporal executor:
+// AGENT_RUNTIME_LAUNCH_ENABLED is on. Presets absent from this map
+// (epic/task planner, command agent) and target types absent from a preset's
+// set (story, epic, support_coverage_gap, coding-preset workspace) stay on
+// the local Temporal executor:
 //   - epic_planner / task_planner: blocked on planner parity — the Temporal
 //     path assembles planning context and phase guidance at execution time and
 //     applies approved previews (task creation, PRD/plan-doc persistence)
@@ -185,9 +185,28 @@ func buildAgentRunInputPayload(targetType, targetID string, trigger *model.Agent
 //   - support_coverage_gap: not a support-agent target (its runtime profile
 //     only allows support_conversation); coverage-gap runs belong to the
 //     documentation-agent surface, which delegates workspace/document only.
+//   - code_builder / review_agent workspace targets: the runtime host
+//     repository-spec resolver (GitService.ResolveAgentRuntimeRepositorySpec)
+//     has no workspace case, and these presets' runtime agent records demand a
+//     repository workspace, so PrepareWorkspace would fail. See "Coding preset
+//     parity" in docs/AGENT_RUNTIME_LOCAL.md.
 var agentRuntimePresetDelegatedTargets = map[string]map[string]bool{
 	model.AgentPresetMarketer: {
 		"workspace": true,
+	},
+	// Coding presets: launch stamps run branch fields from the resolved task
+	// delivery target (createRun), the host repository-spec endpoint clones
+	// and checks out the work branch, buildDelegatedTaskLaunchContext stamps
+	// execution-time task context into additional_context, and the
+	// repository-delivery finalizer opens the PR/MR off the runtime-pushed
+	// branch summary.
+	model.AgentPresetCodeBuilder: {
+		"task":       true,
+		"repository": true,
+	},
+	model.AgentPresetReviewAgent: {
+		"task":       true,
+		"repository": true,
 	},
 	model.AgentPresetDocumentationAgent: {
 		"workspace": true,
@@ -284,6 +303,9 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	}
 	if len(agent.ExecutionConfig) > 0 && strings.TrimSpace(string(agent.ExecutionConfig)) != "null" {
 		out.ExecutionConfig = append([]byte(nil), agent.ExecutionConfig...)
+	}
+	if agentRequiresRepositoryWorkspace(agent) {
+		out.ExecutionConfig = withRepositoryWorkspaceExecutionConfig(out.ExecutionConfig)
 	}
 	if out.RuntimeKind == "" {
 		out.RuntimeKind = "native_sdk"
@@ -3626,7 +3648,16 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
-		payload, err := buildAgentRunInputPayload("task", task.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools)
+		additionalContext := req.AdditionalContext
+		if s.delegatesRunToAgentRuntime(agent, "task") {
+			// Delegated runs receive no execution-time instruction assembly
+			// (the Temporal path builds task context inside the workflow), so
+			// stamp the equivalent launch context into additional_context.
+			if launchContext := s.buildDelegatedTaskLaunchContext(ctx, task, delivery, req); launchContext != "" {
+				additionalContext = &launchContext
+			}
+		}
+		payload, err := buildAgentRunInputPayload("task", task.ID, trigger, event, req.Output, additionalContext, req.AllowedTools)
 		if err != nil {
 			return nil, fmt.Errorf("build task run input: %w", err)
 		}
