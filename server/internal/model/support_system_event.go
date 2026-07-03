@@ -65,6 +65,17 @@ const (
 	// SystemEventEmailRecipientsUpdated — primary email recipient or copied
 	// recipients changed. Admin-only.
 	SystemEventEmailRecipientsUpdated SupportSystemEventType = "email_recipients_updated"
+
+	// SystemEventTagAdded — user tag added to the conversation. Admin-only.
+	SystemEventTagAdded SupportSystemEventType = "tag_added"
+
+	// SystemEventTagRemoved — user tag removed from the conversation.
+	// Admin-only.
+	SystemEventTagRemoved SupportSystemEventType = "tag_removed"
+
+	// SystemEventTaskCreated — PM task created from the conversation.
+	// Admin-only.
+	SystemEventTaskCreated SupportSystemEventType = "task_created"
 )
 
 // allSupportSystemEventTypes is the authoritative set of valid event types.
@@ -84,6 +95,9 @@ var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
 	SystemEventReopened:               {},
 	SystemEventClosed:                 {},
 	SystemEventEmailRecipientsUpdated: {},
+	SystemEventTagAdded:               {},
+	SystemEventTagRemoved:             {},
+	SystemEventTaskCreated:            {},
 }
 
 // IsValidSupportSystemEventType reports whether s is a recognized event type.

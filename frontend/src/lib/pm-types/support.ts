@@ -524,6 +524,9 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
   'reopened',
   'closed',
   'email_recipients_updated',
+  'tag_added',
+  'tag_removed',
+  'task_created',
 ] as const;
 
 export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number];

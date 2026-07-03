@@ -900,7 +900,7 @@ func TestSupportInboxServiceUpdateConversationEmailRecipientsSwitchesPrimaryAndK
 		nil,
 		nil,
 		repository.NewCRMContactRepository(db),
-		nil,
+		repository.NewUserRepository(db),
 		nil,
 		nil,
 		nil,
@@ -954,6 +954,19 @@ func TestSupportInboxServiceUpdateConversationEmailRecipientsSwitchesPrimaryAndK
 	if len(updated.EmailCC) != 1 || updated.EmailCC[0] != currentEmail {
 		t.Fatalf("email_cc = %#v, want previous primary as cc", updated.EmailCC)
 	}
+	messages, err := msgRepo.ListByConversation(ctx, workspaceID, conversation.ID, true)
+	if err != nil {
+		t.Fatalf("list messages after recipient switch: %v", err)
+	}
+	if len(messages) != 1 || messages[0].SystemEventType == nil || *messages[0].SystemEventType != model.SystemEventEmailRecipientsUpdated {
+		t.Fatalf("expected email recipient system event, got %#v", messages)
+	}
+	if !strings.Contains(messages[0].Content, "Owner made jane@example.com the primary recipient.") {
+		t.Fatalf("recipient switch system message = %q", messages[0].Content)
+	}
+	if !strings.Contains(messages[0].Content, "Owner added teammate@company.com to Cc.") {
+		t.Fatalf("recipient cc add system message = %q", messages[0].Content)
+	}
 
 	updated, err = svc.UpdateConversationEmailRecipients(ctx, workspaceID, conversation.ID, model.UpdateConversationEmailRecipientsRequest{
 		CCEmails: []string{},
@@ -963,6 +976,17 @@ func TestSupportInboxServiceUpdateConversationEmailRecipientsSwitchesPrimaryAndK
 	}
 	if len(updated.EmailCC) != 0 {
 		t.Fatalf("email_cc after remove = %#v", updated.EmailCC)
+	}
+	messages, err = msgRepo.ListByConversation(ctx, workspaceID, conversation.ID, true)
+	if err != nil {
+		t.Fatalf("list messages after recipient remove: %v", err)
+	}
+	lastMessage := messages[len(messages)-1]
+	if lastMessage.SystemEventType == nil || *lastMessage.SystemEventType != model.SystemEventEmailRecipientsUpdated {
+		t.Fatalf("expected email recipient remove system event, got %#v", lastMessage.SystemEventType)
+	}
+	if !strings.Contains(lastMessage.Content, "Owner removed teammate@company.com from Cc.") {
+		t.Fatalf("recipient cc remove system message = %q", lastMessage.Content)
 	}
 }
 
@@ -2207,6 +2231,22 @@ func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopie
 	}
 	if resp.CopiedCompanyAssociations != 1 {
 		t.Fatalf("copied_company_associations = %d, want 1", resp.CopiedCompanyAssociations)
+	}
+	messages, err := messageRepo.ListByConversation(ctx, env.wsID, conversation.ID, true)
+	if err != nil {
+		t.Fatalf("list messages after task creation: %v", err)
+	}
+	var taskEvent *model.SupportMessage
+	for i := range messages {
+		if messages[i].SystemEventType != nil && *messages[i].SystemEventType == model.SystemEventTaskCreated {
+			taskEvent = &messages[i]
+		}
+	}
+	if taskEvent == nil {
+		t.Fatalf("expected task_created system event, got %#v", messages)
+	}
+	if !strings.Contains(taskEvent.Content, "created task #"+resp.TaskKey+": "+resp.TaskName) {
+		t.Fatalf("task system message = %q", taskEvent.Content)
 	}
 	if resp.CopiedDealAssociations != 1 {
 		t.Fatalf("copied_deal_associations = %d, want 1", resp.CopiedDealAssociations)

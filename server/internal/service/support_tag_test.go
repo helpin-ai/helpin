@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
@@ -27,11 +28,17 @@ func TestSupportTagService(t *testing.T) {
 	)`)
 	ctx := context.Background()
 	workspaceID := "ws-support-tags"
-	seedWorkspace(t, db, workspaceID, "Support Tags", "support-tags", "user-123")
+	actorID := "user-123"
+	seedUser(t, db, actorID, "sarah@example.com", "Sarah Khan", "hash")
+	seedWorkspace(t, db, workspaceID, "Support Tags", "support-tags", actorID)
+	seedWorkspaceMember(t, db, "wm-support-tags", workspaceID, actorID, "sarah@example.com", "Sarah Khan", model.RoleOwner)
 
 	conversationRepo := repository.NewSupportConversationRepository(db)
 	tagRepo := repository.NewSupportTagRepository(db)
-	tagService := NewSupportTagService(tagRepo, conversationRepo, nil)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	tagService := NewSupportTagService(tagRepo, conversationRepo, nil).
+		SetMessageRepo(messageRepo).
+		SetUserRepo(repository.NewUserRepository(db))
 
 	conversation := &model.SupportConversation{
 		WorkspaceID: workspaceID,
@@ -60,7 +67,7 @@ func TestSupportTagService(t *testing.T) {
 		t.Fatal("expected duplicate tag name to fail case-insensitively")
 	}
 
-	if err := tagService.AddConversationTag(ctx, workspaceID, conversation.ID, tag.ID); err != nil {
+	if err := tagService.AddConversationTag(ctx, workspaceID, conversation.ID, tag.ID, actorID); err != nil {
 		t.Fatalf("add tag to conversation: %v", err)
 	}
 
@@ -71,6 +78,23 @@ func TestSupportTagService(t *testing.T) {
 	tags := tagsByConversation[conversation.ID]
 	if len(tags) != 1 || tags[0].Name != "Billing" {
 		t.Fatalf("expected Billing tag on conversation, got %#v", tags)
+	}
+
+	if err := tagService.RemoveConversationTag(ctx, workspaceID, conversation.ID, tag.ID, actorID); err != nil {
+		t.Fatalf("remove tag from conversation: %v", err)
+	}
+	messages, err := messageRepo.ListByConversation(ctx, workspaceID, conversation.ID, true)
+	if err != nil {
+		t.Fatalf("list tag system messages: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected add and remove tag system messages, got %#v", messages)
+	}
+	if messages[0].SystemEventType == nil || *messages[0].SystemEventType != model.SystemEventTagAdded || !strings.Contains(messages[0].Content, "Sarah added tag Billing.") {
+		t.Fatalf("tag added system message = %#v", messages[0])
+	}
+	if messages[1].SystemEventType == nil || *messages[1].SystemEventType != model.SystemEventTagRemoved || !strings.Contains(messages[1].Content, "Sarah removed tag Billing.") {
+		t.Fatalf("tag removed system message = %#v", messages[1])
 	}
 }
 
@@ -160,7 +184,7 @@ func TestSupportConversationTagsInList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create tag: %v", err)
 	}
-	if err := tagService.AddConversationTag(ctx, workspaceID, handoff.ID, tag.ID); err != nil {
+	if err := tagService.AddConversationTag(ctx, workspaceID, handoff.ID, tag.ID, ""); err != nil {
 		t.Fatalf("add conversation tag: %v", err)
 	}
 	directTags, err := tagRepo.ListByConversationIDs(ctx, workspaceID, []string{handoff.ID})

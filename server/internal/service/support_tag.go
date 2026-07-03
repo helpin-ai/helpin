@@ -14,6 +14,8 @@ import (
 type SupportTagService struct {
 	tagRepo          *repository.SupportTagRepository
 	conversationRepo *repository.SupportConversationRepository
+	messageRepo      *repository.SupportMessageRepository
+	userRepo         *repository.UserRepository
 	wsPublisher      *websocket.Publisher
 	logger           *slog.Logger
 }
@@ -25,6 +27,16 @@ func NewSupportTagService(tagRepo *repository.SupportTagRepository, conversation
 		wsPublisher:      wsPublisher,
 		logger:           slog.Default().With("service", "support_tag"),
 	}
+}
+
+func (s *SupportTagService) SetMessageRepo(repo *repository.SupportMessageRepository) *SupportTagService {
+	s.messageRepo = repo
+	return s
+}
+
+func (s *SupportTagService) SetUserRepo(repo *repository.UserRepository) *SupportTagService {
+	s.userRepo = repo
+	return s
 }
 
 func (s *SupportTagService) List(ctx context.Context, workspaceID string) ([]model.SupportTag, error) {
@@ -117,24 +129,109 @@ func (s *SupportTagService) Delete(ctx context.Context, workspaceID, id string) 
 	return nil
 }
 
-func (s *SupportTagService) AddConversationTag(ctx context.Context, workspaceID, conversationID, tagID string) error {
+func (s *SupportTagService) AddConversationTag(ctx context.Context, workspaceID, conversationID, tagID, actorID string) error {
 	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(conversationID) == "" || strings.TrimSpace(tagID) == "" {
 		return fmt.Errorf("workspace_id, conversation_id, and tag_id are required")
 	}
+	wasLinked, err := s.conversationHasTag(ctx, workspaceID, conversationID, tagID)
+	if err != nil {
+		return err
+	}
 	if err := s.tagRepo.AddConversationTag(ctx, workspaceID, conversationID, tagID); err != nil {
 		return err
+	}
+	if !wasLinked {
+		if tag, err := s.tagRepo.GetByID(ctx, workspaceID, tagID); err == nil && tag != nil {
+			s.emitTagSystemMessage(ctx, workspaceID, conversationID, actorID, tag.Name, model.SystemEventTagAdded)
+		} else if err != nil {
+			s.logger.WarnContext(ctx, "failed to load added support tag for system message", "error", err, "workspace_id", workspaceID, "tag_id", tagID)
+		}
 	}
 	publishWorkspaceEvent(s.wsPublisher, "updated", "support_conversation", conversationID, workspaceID, "")
 	return nil
 }
 
-func (s *SupportTagService) RemoveConversationTag(ctx context.Context, workspaceID, conversationID, tagID string) error {
+func (s *SupportTagService) RemoveConversationTag(ctx context.Context, workspaceID, conversationID, tagID, actorID string) error {
 	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(conversationID) == "" || strings.TrimSpace(tagID) == "" {
 		return fmt.Errorf("workspace_id, conversation_id, and tag_id are required")
+	}
+	wasLinked, err := s.conversationHasTag(ctx, workspaceID, conversationID, tagID)
+	if err != nil {
+		return err
+	}
+	var tagName string
+	if wasLinked {
+		if tag, err := s.tagRepo.GetByID(ctx, workspaceID, tagID); err == nil && tag != nil {
+			tagName = tag.Name
+		} else if err != nil {
+			s.logger.WarnContext(ctx, "failed to load removed support tag for system message", "error", err, "workspace_id", workspaceID, "tag_id", tagID)
+		}
 	}
 	if err := s.tagRepo.RemoveConversationTag(ctx, workspaceID, conversationID, tagID); err != nil {
 		return err
 	}
+	if wasLinked && strings.TrimSpace(tagName) != "" {
+		s.emitTagSystemMessage(ctx, workspaceID, conversationID, actorID, tagName, model.SystemEventTagRemoved)
+	}
 	publishWorkspaceEvent(s.wsPublisher, "updated", "support_conversation", conversationID, workspaceID, "")
 	return nil
+}
+
+func (s *SupportTagService) conversationHasTag(ctx context.Context, workspaceID, conversationID, tagID string) (bool, error) {
+	tagsByConversation, err := s.tagRepo.ListByConversationIDs(ctx, workspaceID, []string{conversationID})
+	if err != nil {
+		return false, err
+	}
+	for _, tag := range tagsByConversation[conversationID] {
+		if tag.ID == tagID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *SupportTagService) emitTagSystemMessage(ctx context.Context, workspaceID, conversationID, actorUserID, tagName string, eventType model.SupportSystemEventType) {
+	if s.messageRepo == nil {
+		return
+	}
+	displayName := "A teammate"
+	if strings.TrimSpace(actorUserID) != "" && s.userRepo != nil {
+		if user, err := s.userRepo.GetByID(ctx, actorUserID); err == nil && user != nil {
+			name := supportSystemFirstName(user.FullName)
+			if name == "" {
+				name = user.FullName
+			}
+			if strings.TrimSpace(name) != "" {
+				displayName = name
+			}
+		} else if err != nil {
+			s.logger.WarnContext(ctx, "failed to load support tag actor", "error", err, "user_id", actorUserID)
+		}
+	}
+	action := "added"
+	if eventType == model.SystemEventTagRemoved {
+		action = "removed"
+	}
+	var senderUserID *string
+	if strings.TrimSpace(actorUserID) != "" {
+		senderUserID = &actorUserID
+	}
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderUserID:      senderUserID,
+		SenderDisplayName: &displayName,
+		Content:           fmt.Sprintf("%s %s tag %s.", displayName, action, strings.Join(strings.Fields(strings.TrimSpace(tagName)), " ")),
+		IsInternal:        true,
+		MessageType:       "system",
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(eventType),
+	}
+	if err := s.messageRepo.Create(ctx, msg); err != nil {
+		s.logger.ErrorContext(ctx, "failed to create support tag system message", "error", err, "workspace_id", workspaceID, "conversation_id", conversationID)
+		return
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
+	}
 }

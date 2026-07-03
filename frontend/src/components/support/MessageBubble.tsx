@@ -1,12 +1,12 @@
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon, ZapIcon } from '@/lib/icons';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon, ZapIcon } from '@/lib/icons';
 import { EmailDetailModal } from './EmailDetailModal';
 import { MessageActionsContextMenu, MessageActionsMenu } from './MessageActionsMenu';
 import { MessageDeleteDialog } from './MessageDeleteDialog';
 import { MessageInfoDialog } from './MessageInfoDialog';
+import { SupportAttachmentGallery } from './SupportAttachmentGallery';
 import { useShortcutComposerStore } from './shortcutDialogStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDeleteSupportMessage } from '@/hooks/queries/useSupport';
@@ -46,12 +46,6 @@ function renderMentionHighlights(content: string): ReactNode[] | null {
     parts.push(content.slice(lastIndex));
   }
   return parts.length > 1 ? parts : null;
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function containsMarkdownTable(content: string): boolean {
@@ -97,6 +91,64 @@ function renderAssignedSystemEventContent(content: string): ReactNode {
       {suffix}
     </>
   );
+}
+
+function boldSupportSystemValue(value: string): ReactNode {
+  return <strong className="font-semibold text-foreground">{value}</strong>;
+}
+
+function renderBoldedSupportMatches(content: string, pattern: RegExp): ReactNode {
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  for (const match of content.matchAll(pattern)) {
+    if (match.index === undefined) continue;
+    const [fullMatch, prefix, value, suffix] = match;
+    const valueIndex = match.index + prefix.length;
+    if (valueIndex > lastIndex) {
+      parts.push(content.slice(lastIndex, valueIndex));
+    }
+    parts.push(<strong key={key++} className="font-semibold text-foreground">{value}</strong>);
+    lastIndex = match.index + fullMatch.length - suffix.length;
+  }
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
+  }
+  return parts.length > 1 ? <>{parts}</> : content;
+}
+
+function renderSupportAuditSystemEventContent(eventType: string | undefined, content: string): ReactNode {
+  if (eventType === 'assigned') {
+    return renderAssignedSystemEventContent(content);
+  }
+
+  if (eventType === 'email_recipients_updated') {
+    return renderBoldedSupportMatches(
+      content,
+      /(\b(?:made|added|removed)\s+)(\S+@\S+?)(\s+(?:the primary recipient|to Cc|from Cc)\.)/g,
+    );
+  }
+
+  if (eventType === 'tag_added' || eventType === 'tag_removed') {
+    return renderBoldedSupportMatches(content, /(\b(?:added|removed) tag\s+)([^.]+)(\.)/g);
+  }
+
+  if (eventType === 'task_created') {
+    const taskMatch = content.match(/^(.*\bcreated task\s+)(#[^:\s]+)(?::\s+(.+))?(\.)$/);
+    if (taskMatch) {
+      const [, prefix, taskKey, taskName, suffix] = taskMatch;
+      return (
+        <>
+          {prefix}
+          {boldSupportSystemValue(taskKey)}
+          {taskName ? <>: {boldSupportSystemValue(taskName)}</> : null}
+          {suffix}
+        </>
+      );
+    }
+  }
+
+  return content;
 }
 
 const markdownComponents = {
@@ -310,7 +362,6 @@ export const MessageBubble = memo(function MessageBubble({
   }, [visibleContent, isInternal]);
 
   const [sourcesOpen, setSourcesOpen] = useState(false);
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [emailDetailOpen, setEmailDetailOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -388,74 +439,14 @@ export const MessageBubble = memo(function MessageBubble({
   const renderFileAttachments = (tone: 'default' | 'note' = 'default', className = '') => {
     if (fileAttachments.length === 0) return null;
 
-    const linkClassName = tone === 'note'
-      ? 'flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-100/40 px-3 py-2 text-xs text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-900/30'
-      : 'flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-foreground transition-colors hover:bg-muted/50';
-
-    return (
-      <div className={`${className} space-y-1.5`.trim()}>
-        {fileAttachments.map((att) => (
-          <a
-            key={att.id}
-            href={att.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={linkClassName}
-          >
-            <AttachmentIcon className="h-3.5 w-3.5 shrink-0 opacity-60" />
-            <span className="truncate font-medium">{att.file_name}</span>
-            <span className="shrink-0 opacity-60">{formatFileSize(att.file_size)}</span>
-            <Download04Icon className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
-          </a>
-        ))}
-      </div>
-    );
+    return <SupportAttachmentGallery attachments={fileAttachments} tone={tone} className={className} />;
   };
 
   const renderImageAttachments = (className = '') => {
     if (imageAttachments.length === 0) return null;
 
-    return (
-      <div className={`${className} space-y-1.5`.trim()}>
-        {imageAttachments.map((att) => (
-          <button
-            key={att.id}
-            type="button"
-            onClick={() => setLightboxSrc(att.url)}
-            className="block cursor-zoom-in overflow-hidden rounded-xl transition-opacity hover:opacity-90"
-          >
-            <img
-              src={att.url}
-              alt={att.file_name}
-              className="max-h-60 max-w-full rounded-xl object-cover"
-              loading="lazy"
-            />
-          </button>
-        ))}
-      </div>
-    );
+    return <SupportAttachmentGallery attachments={imageAttachments} className={className} />;
   };
-
-  const lightboxPortal = lightboxSrc ? createPortal(
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-sm animate-in fade-in duration-150"
-      onClick={() => setLightboxSrc(null)}
-    >
-      <button
-        onClick={() => setLightboxSrc(null)}
-        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25"
-      >
-        <Cancel01Icon className="h-5 w-5" />
-      </button>
-      <img
-        src={lightboxSrc}
-        alt="Preview"
-        className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      />
-    </div>,
-    document.body,
-  ) : null;
 
   const resolvedAvatarUrl = message.sender_avatar_url
     ?? fallbackAvatarUrl
@@ -497,6 +488,10 @@ export const MessageBubble = memo(function MessageBubble({
       'ai_escalated',
       'customer_requested_human',
       'reopened',
+      'email_recipients_updated',
+      'tag_added',
+      'tag_removed',
+      'task_created',
     ];
 
     const stateEventTypes: ReadonlyArray<string> = ['resolved', 'closed'];
@@ -521,9 +516,7 @@ export const MessageBubble = memo(function MessageBubble({
         ? <BotIcon className="h-3 w-3" />
         : null;
     const systemDisplayContent = escalationLabel ?? supportSystemEventDisplayContent(eventType, message.content, resolvedSenderName);
-    const systemDisplayNode = eventType === 'assigned'
-      ? renderAssignedSystemEventContent(systemDisplayContent)
-      : systemDisplayContent;
+    const systemDisplayNode = renderSupportAuditSystemEventContent(eventType, systemDisplayContent);
 
     let isRoutingEvent: boolean;
     let stateEventKind: 'resolved' | 'reopened' | 'closed' | null;
@@ -667,7 +660,6 @@ export const MessageBubble = memo(function MessageBubble({
             </Tooltip>
           </div>
         </div>
-        {lightboxPortal}
       </>
     );
   }
@@ -834,10 +826,6 @@ export const MessageBubble = memo(function MessageBubble({
         onConfirm={handleDelete}
         isPending={deleteMutation.isPending}
       />
-
-      {/* Lightbox modal — rendered in portal for full-screen overlay */}
-      {lightboxPortal}
-
       {/* Status below the bubble row — outside the avatar alignment */}
       {(hasStatusBelow || hasCancellableFooter) && (
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>

@@ -177,6 +177,58 @@ describe('MessageBubble', () => {
     rendered.cleanup()
   })
 
+  it('bolds important values in support audit system events', () => {
+    const messages: SupportMessage[] = [
+      {
+        id: 'msg-recipient-updated',
+        workspace_id: 'ws-1',
+        conversation_id: 'conv-1',
+        sender_type: 'user',
+        sender_display_name: 'Sarah Khan',
+        content: 'Sarah made jane@example.com the primary recipient. Sarah added teammate@example.com to Cc.',
+        message_type: 'system',
+        system_event_type: 'email_recipients_updated',
+        is_internal: true,
+        created_at: '2026-06-12T09:00:00.000Z',
+        updated_at: '2026-06-12T09:00:00.000Z',
+      },
+      {
+        id: 'msg-tag-added',
+        workspace_id: 'ws-1',
+        conversation_id: 'conv-1',
+        sender_type: 'user',
+        sender_display_name: 'Sarah Khan',
+        content: 'Sarah added tag Billing.',
+        message_type: 'system',
+        system_event_type: 'tag_added',
+        is_internal: true,
+        created_at: '2026-06-12T09:00:00.000Z',
+        updated_at: '2026-06-12T09:00:00.000Z',
+      },
+      {
+        id: 'msg-task-created',
+        workspace_id: 'ws-1',
+        conversation_id: 'conv-1',
+        sender_type: 'user',
+        sender_display_name: 'Sarah Khan',
+        content: 'Sarah created task #ENG-123: Fix billing webhook.',
+        message_type: 'system',
+        system_event_type: 'task_created',
+        is_internal: true,
+        created_at: '2026-06-12T09:00:00.000Z',
+        updated_at: '2026-06-12T09:00:00.000Z',
+      },
+    ]
+
+    const rendered = messages.map(renderBubble)
+    expect(rendered[0].container.querySelectorAll('strong')[0]?.textContent).toBe('jane@example.com')
+    expect(rendered[0].container.querySelectorAll('strong')[1]?.textContent).toBe('teammate@example.com')
+    expect(rendered[1].container.querySelector('strong')?.textContent).toBe('Billing')
+    expect(rendered[2].container.querySelectorAll('strong')[0]?.textContent).toBe('#ENG-123')
+    expect(rendered[2].container.querySelectorAll('strong')[1]?.textContent).toBe('Fix billing webhook')
+    rendered.forEach((entry) => entry.cleanup())
+  })
+
   it('uses canonical copy for historical AI escalation system events', () => {
     const message: SupportMessage = {
       id: 'msg-ai-escalated-legacy',
@@ -483,7 +535,7 @@ Can I export my data?`,
     active.cleanup()
   })
 
-  it('renders internal note image and file attachments with image preview', () => {
+  it('renders internal note images as thumbnails with hover preview and image navigation', () => {
     const message: SupportMessage = {
       id: 'msg-note-attachments-1',
       workspace_id: 'ws-1',
@@ -503,6 +555,14 @@ Can I export my data?`,
           file_type: 'image/png',
           file_size: 2048,
           url: 'https://cdn.example.com/screenshot.png',
+        },
+        {
+          id: 'att-image-2',
+          file_key: 'support/att-image-2',
+          file_name: 'receipt.png',
+          file_type: 'image/png',
+          file_size: 3072,
+          url: 'https://cdn.example.com/receipt.png',
         },
         {
           id: 'att-file-1',
@@ -529,15 +589,40 @@ Can I export my data?`,
     const image = container.querySelector('img[alt="screenshot.png"]') as HTMLImageElement | null
     expect(image).toBeTruthy()
     expect(image?.getAttribute('src')).toBe('https://cdn.example.com/screenshot.png')
-    expect(image?.className).toContain('max-h-60')
+    expect(image?.className).toContain('h-full')
+    expect(image?.className).toContain('w-full')
+    expect(image?.closest('button')?.className).toContain('h-16')
+
+    act(() => {
+      image?.closest('button')?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    })
+
+    const hoverPreview = container.querySelector('[data-testid="support-attachment-hover-preview"] img') as HTMLImageElement | null
+    expect(hoverPreview?.getAttribute('src')).toBe('https://cdn.example.com/screenshot.png')
+    expect(container.textContent).toContain('1 / 2')
+
+    const hoverNext = container.querySelector('button[aria-label="Next image attachment"]')
+    act(() => {
+      hoverNext?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const nextHoverPreview = container.querySelector('[data-testid="support-attachment-hover-preview"] img') as HTMLImageElement | null
+    expect(nextHoverPreview?.getAttribute('src')).toBe('https://cdn.example.com/receipt.png')
 
     act(() => {
       image?.closest('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const preview = document.body.querySelector('img[alt="Preview"]') as HTMLImageElement | null
+    const preview = document.body.querySelector('[data-testid="support-attachment-lightbox"] img') as HTMLImageElement | null
     expect(preview).toBeTruthy()
     expect(preview?.getAttribute('src')).toBe('https://cdn.example.com/screenshot.png')
+    expect(document.body.textContent).toContain('screenshot.png')
+
+    const lightboxNext = document.body.querySelector('[data-testid="support-attachment-lightbox"] button[aria-label="Next image attachment"]')
+    act(() => {
+      lightboxNext?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const nextPreview = document.body.querySelector('[data-testid="support-attachment-lightbox"] img') as HTMLImageElement | null
+    expect(nextPreview?.getAttribute('src')).toBe('https://cdn.example.com/receipt.png')
 
     cleanup()
   })
