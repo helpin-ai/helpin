@@ -88,7 +88,7 @@ function plan(overrides: Partial<CommandBarRunPlan> = {}): CommandBarRunPlan {
 }
 
 describe('ExecutionStrip actions', () => {
-  it('renders running cancel as a minimal destructive action', () => {
+  it('renders running actions with Open primary and Cancel low emphasis', () => {
     act(() => {
       root.render(
         <ExecutionStrip
@@ -101,8 +101,13 @@ describe('ExecutionStrip actions', () => {
       );
     });
 
-    expect(buttonNamed('Cancel').className).toContain('text-destructive');
-    expect(buttonNamed('Cancel').className).toContain('border-destructive/30');
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .map((button) => button.textContent?.trim())
+      .filter(Boolean);
+    expect(buttons.indexOf('Open')).toBeLessThan(buttons.indexOf('Cancel'));
+    expect(buttonNamed('Open').className).toContain('bg-primary');
+    expect(buttonNamed('Cancel').className).toContain('text-muted-foreground');
+    expect(buttonNamed('Cancel').className).not.toContain('border-destructive');
   });
 
   it('starts a running run collapsed until the user expands it', () => {
@@ -212,6 +217,29 @@ describe('ExecutionStrip actions', () => {
 
     expect(buttonNamed('Cancel')).toBeTruthy();
     expect(buttonNamed('Open')).toBeTruthy();
+  });
+
+  it('labels automation flow runs with the flow name while running', () => {
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="run"
+          workspaceId="ws-1"
+          run={run({
+            status: 'running',
+            target_type: 'workspace',
+            target_id: 'ws-1',
+            input: {
+              trigger: { source: 'automation_rule', trigger_type: 'cron' },
+              event: { reason: 'automation rule "Competitors Changelog Tracking Report"' },
+            },
+          })}
+          onAction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Competitors Changelog Tracking Report');
   });
 
   it('collapses all running run details when the chevron is toggled', () => {

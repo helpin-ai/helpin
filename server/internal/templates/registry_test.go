@@ -180,12 +180,42 @@ func TestEmbeddedReportTemplatesUseStandardTitlePattern(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadSystemRegistry returned error: %v", err)
 	}
+	reportTemplates := map[string]string{
+		"api_docs_freshness_sweep":              "Use this title format: `YYYY-MM-DD - ",
+		"competitors_changelog_tracking_report": "Use this title format: `Competitors changelog tracking report - <scope/context> - YYYY-MM-DD`",
+		"engineering_dependency_auditor":        "Use this title format: `YYYY-MM-DD - ",
+		"docs_freshness_sweep":                  "Use this title format: `YYYY-MM-DD - ",
+		"public_help_freshness_sweep":           "Use this title format: `YYYY-MM-DD - ",
+		"review_merged_prs":                     "Use this title format: `YYYY-MM-DD - ",
+		"engineering_security_triage":           "Use this title format: `YYYY-MM-DD - ",
+		"triage_failing_checks":                 "Use this title format: `YYYY-MM-DD - ",
+	}
+	for key, want := range reportTemplates {
+		t.Run(key, func(t *testing.T) {
+			tmpl, ok := registry.Get(key)
+			if !ok {
+				t.Fatalf("template %q not found", key)
+			}
+			prompt := embeddedTemplatePrompt(tmpl)
+			if !strings.Contains(prompt, want) {
+				t.Fatalf("template %q missing standard report title format in prompt:\n%s", key, prompt)
+			}
+		})
+	}
+}
+
+func TestEmbeddedReportTemplatesUseSingleCreateDocumentContract(t *testing.T) {
+	registry, err := LoadSystemRegistry()
+	if err != nil {
+		t.Fatalf("LoadSystemRegistry returned error: %v", err)
+	}
 	reportTemplates := []string{
 		"api_docs_freshness_sweep",
 		"competitors_changelog_tracking_report",
 		"engineering_dependency_auditor",
 		"docs_freshness_sweep",
 		"public_help_freshness_sweep",
+		"release_notes_writer",
 		"review_merged_prs",
 		"engineering_security_triage",
 		"triage_failing_checks",
@@ -196,12 +226,17 @@ func TestEmbeddedReportTemplatesUseStandardTitlePattern(t *testing.T) {
 			if !ok {
 				t.Fatalf("template %q not found", key)
 			}
-			prompt := strings.TrimSpace(tmpl.Flow.AdditionalContext)
-			if prompt == "" && tmpl.Agent.Create != nil {
-				prompt = strings.TrimSpace(tmpl.Agent.Create.SystemPrompt)
+			prompt := embeddedTemplatePrompt(tmpl)
+			if tmpl.Agent.Create != nil && containsString(tmpl.Agent.Create.AllowedTools, "write_document_content") {
+				t.Fatalf("template %q should create Docs reports with create_document content, not write_document_content: %#v", key, tmpl.Agent.Create.AllowedTools)
 			}
-			if !strings.Contains(prompt, "Use this title format: `YYYY-MM-DD - ") {
-				t.Fatalf("template %q missing standard report title format in prompt:\n%s", key, prompt)
+			if tmpl.Agent.Create == nil || containsString(tmpl.Agent.Create.AllowedTools, "create_document") {
+				if !strings.Contains(prompt, "Call create_document exactly once") || !strings.Contains(prompt, "with the complete report content") {
+					t.Fatalf("template %q must require one create_document call with complete content:\n%s", key, prompt)
+				}
+			}
+			if !strings.Contains(prompt, "Do not repeat the document title") {
+				t.Fatalf("template %q must prevent title repetition in the document body:\n%s", key, prompt)
 			}
 		})
 	}
@@ -224,6 +259,34 @@ func TestEmbeddedCompetitorsChangelogTemplateUsesNewIdentity(t *testing.T) {
 	}
 	if tmpl.Agent.Create == nil || len(tmpl.Agent.Create.Skills) != 1 || tmpl.Agent.Create.Skills[0] != "competitors_changelog_tracking_report" {
 		t.Fatalf("expected renamed skill ref, got %+v", tmpl.Agent.Create)
+	}
+}
+
+func TestEmbeddedCompetitorsChangelogTemplateCreatesOneDocumentWithContent(t *testing.T) {
+	registry, err := LoadSystemRegistry()
+	if err != nil {
+		t.Fatalf("LoadSystemRegistry returned error: %v", err)
+	}
+	tmpl, ok := registry.Get("competitors_changelog_tracking_report")
+	if !ok {
+		t.Fatal("competitors_changelog_tracking_report template not found")
+	}
+	if tmpl.Agent.Create == nil {
+		t.Fatal("expected created agent config")
+	}
+
+	prompt := tmpl.Agent.Create.SystemPrompt
+	if !strings.Contains(prompt, "Use this title format: `Competitors changelog tracking report - <scope/context> - YYYY-MM-DD`") {
+		t.Fatalf("competitors changelog prompt missing date-at-end title format:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Call create_document exactly once") || !strings.Contains(prompt, "with the complete report content") {
+		t.Fatalf("competitors changelog prompt must require a single create_document call with content:\n%s", prompt)
+	}
+	if !containsString(tmpl.Agent.Create.AllowedTools, "create_document") {
+		t.Fatalf("expected create_document in allowed tools, got %#v", tmpl.Agent.Create.AllowedTools)
+	}
+	if containsString(tmpl.Agent.Create.AllowedTools, "write_document_content") {
+		t.Fatalf("write_document_content should not be allowed for this template; create_document must include content, got %#v", tmpl.Agent.Create.AllowedTools)
 	}
 }
 
@@ -298,6 +361,23 @@ func keysOf(templates []Template) []string {
 		keys = append(keys, tmpl.Key)
 	}
 	return keys
+}
+
+func embeddedTemplatePrompt(tmpl Template) string {
+	prompt := strings.TrimSpace(tmpl.Flow.AdditionalContext)
+	if prompt == "" && tmpl.Agent.Create != nil {
+		prompt = strings.TrimSpace(tmpl.Agent.Create.SystemPrompt)
+	}
+	return prompt
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func validTemplateYAML(key, name, trigger, action, agent string) string {

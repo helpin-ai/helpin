@@ -338,7 +338,6 @@ Raw configuration:
 				"search_documents",
 				"list_collections",
 				"create_document",
-				"write_document_content",
 				"link_document_to_object",
 			})),
 			AllowedCommands:       model.JSONBlob(mustJSONStringSlice(nil)),

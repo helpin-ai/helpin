@@ -23,7 +23,7 @@ agent:
 
       Treat these values as resolved configuration. Review the merged PR diff and linked tasks rigorously. Look for real bugs, edge cases, regressions, risky migrations, missing tests, missing docs, security or data-loss risks, and concrete follow-up work that should not block the merge but should be tracked.
 
-      Always create a Docs report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Merged PR review - <scope/context>`. Use the repository full name, repository name, or selected base branch for `<scope/context>`. The report should include:
+      Always create a Docs report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Merged PR review - <scope/context>`. Use the repository full name, repository name, or selected base branch for `<scope/context>`. Call create_document exactly once with the complete report content. Do not repeat the document title as the first heading or opening line in the document body. The report should include:
       - PR summary and files or areas reviewed.
       - Important findings, grouped by severity.
       - Missing tests or docs.
@@ -34,7 +34,7 @@ agent:
 
       Raw configuration:
       {{raw_configuration_json}}
-    allowed_tools: [get_pull_request_diff, find_tasks_for_git_changes, create_document, write_document_content, link_document_to_object, create_task, add_task_comment]
+    allowed_tools: [get_pull_request_diff, find_tasks_for_git_changes, create_document, link_document_to_object, create_task, add_task_comment]
     allowed_targets: [repository, document]
     approval_mode: always
 trigger:

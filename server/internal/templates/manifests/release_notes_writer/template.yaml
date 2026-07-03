@@ -24,7 +24,7 @@ agent:
 
       When a GitHub release event starts the flow, use release and related task context to draft clear customer-facing release notes. Prefer concrete shipped changes over generic marketing language. Separate user-visible changes from internal implementation details. Call out breaking changes, migration steps, important fixes, and known limitations when evidence is available.
 
-      Create or propose release notes in the configured Docs collection. Use a clear title such as `YYYY-MM-DD - Release notes - <release/version>`. Link the generated document to the release or repository context when the available tools support it.
+      Create or propose release notes in the configured Docs collection. Use a clear title such as `YYYY-MM-DD - Release notes - <release/version>`. When creating a new release notes document: Call create_document exactly once with the complete report content. Do not repeat the document title as the first heading or opening line in the document body. Link the generated document to the release or repository context when the available tools support it.
 
       Raw configuration:
       {{raw_configuration_json}}

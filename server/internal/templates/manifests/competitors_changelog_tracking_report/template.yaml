@@ -31,13 +31,13 @@ agent:
 
       For each competitor, first use web_search_exa to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog.
 
-      Always create one Docs report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Competitors changelog tracking report - <scope/context>`. Use {{target_company}}, the market/category, or the primary competitor set for `<scope/context>`. Include competitor updates, source links, relevance to {{target_company}}, customer-facing implications, and recommended messaging or product follow-ups.
+      Always create one Docs report in the configured internal Docs space and collection. Use this title format: `Competitors changelog tracking report - <scope/context> - YYYY-MM-DD`. Use {{target_company}}, the market/category, or the primary competitor set for `<scope/context>`. Call create_document exactly once with the complete report content. Do not repeat the document title as the first heading or opening line in the document body. Start the body with TL;DR, then include competitor updates, source links, relevance to {{target_company}}, customer-facing implications, and recommended messaging or product follow-ups.
 
       If create_follow_up_tasks is true, create focused marketing/product tasks only for notable changes that need action. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
 
       Raw configuration:
       {{raw_configuration_json}}
-    allowed_tools: [update_plan, web_search_exa, fetch_url, crawl_url, create_document, write_document_content, link_document_to_object, list_workspace_teams, list_team_workflows_with_stages, create_task]
+    allowed_tools: [update_plan, web_search_exa, fetch_url, crawl_url, create_document, link_document_to_object, list_workspace_teams, list_team_workflows_with_stages, create_task]
     allowed_targets: [workspace, document, task]
     approval_mode: always
 trigger:
