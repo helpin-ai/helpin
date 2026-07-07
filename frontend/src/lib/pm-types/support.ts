@@ -682,6 +682,7 @@ export interface SupportAIPreviewQueryPlan {
   standalone_query: string;
   search_queries: string[];
   clarifying_question: string;
+  greeting_reply: string;
   reason: string;
   tokens_used: number;
   fallback_used: boolean;

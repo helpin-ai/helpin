@@ -47,6 +47,7 @@ func TestPreviewSupportReplyClarifySkipsAnswerGeneration(t *testing.T) {
 		8,
 		0.7,
 		"history",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("previewSupportReply() error = %v", err)
@@ -68,6 +69,42 @@ func TestPreviewSupportReplyClarifySkipsAnswerGeneration(t *testing.T) {
 	}
 	if len(resp.QueryPlan.SearchQueries) != 0 {
 		t.Fatalf("search_queries len = %d, want 0", len(resp.QueryPlan.SearchQueries))
+	}
+}
+
+func TestPreviewSupportReplyGreetSkipsRetrievalAndAnswer(t *testing.T) {
+	svc := &SupportAIService{
+		llmProvider:            &scriptedSupportPreviewLLM{responses: []llm.ChatResponse{{Content: `{"decision":"greet","greeting_reply":"Hello! What would you like help with today?","reason":"greeting"}`, TokensUsed: llm.TokenUsage{InputTokens: 10, OutputTokens: 8}}}},
+		queryExpansionModel:    "gpt-5.5",
+		queryExpansionProvider: "openai",
+	}
+
+	resp, err := svc.previewSupportReply(
+		context.Background(),
+		"ws-1",
+		&model.Agent{Name: "Support", Provider: strPtr(model.AgentModelProviderOpenAI), Model: strPtr("gpt-5-mini")},
+		[]model.SupportMessage{{SenderType: "customer", MessageType: "reply", Content: "Hello"}},
+		"Hello",
+		true,
+		8,
+		0.7,
+		"history",
+		"Hi there! How can we help you today?",
+	)
+	if err != nil {
+		t.Fatalf("previewSupportReply() error = %v", err)
+	}
+	if resp.FinalDecision != supportDecisionGreet {
+		t.Fatalf("final_decision = %q, want %q", resp.FinalDecision, supportDecisionGreet)
+	}
+	if resp.QueryPlan.GreetingReply == "" {
+		t.Fatal("query_plan.greeting_reply is empty; simulator would show decision=greet with no text")
+	}
+	if resp.Retrieval.QueryCount != 0 || resp.Retrieval.ResultCount != 0 {
+		t.Fatalf("retrieval = %d queries / %d results, want 0/0", resp.Retrieval.QueryCount, resp.Retrieval.ResultCount)
+	}
+	if resp.Answer != nil {
+		t.Fatalf("expected answer to be nil for greet decision, got %#v", resp.Answer)
 	}
 }
 
@@ -99,6 +136,7 @@ func TestPreviewSupportReplyReturnsGroundedAnswerDecision(t *testing.T) {
 		8,
 		0.7,
 		"history",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("previewSupportReply() error = %v", err)
@@ -140,6 +178,7 @@ func TestPreviewSupportReplySurfacesPlannerFallback(t *testing.T) {
 		8,
 		0.7,
 		"none",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("previewSupportReply() error = %v", err)

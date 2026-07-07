@@ -1522,6 +1522,7 @@ func (s *SupportAIService) PreviewSupportReply(
 		normalizePreviewMaxResults(req.MaxResults),
 		settings.AIConfidenceThreshold,
 		conversationSource,
+		settings.WelcomeMessage,
 	)
 }
 
@@ -1827,13 +1828,14 @@ func (s *SupportAIService) previewSupportReply(
 	maxResults int,
 	confidenceThreshold float64,
 	conversationSource string,
+	welcomeMessage string,
 ) (*model.SupportAIPreviewResponse, error) {
 	if s.llmProvider == nil {
 		return nil, fmt.Errorf("support chat LLM provider is not configured")
 	}
 
 	currentMessage := model.SupportMessage{SenderType: "customer", Content: customerMessage}
-	queryPlan, plannerTokens, plannerErr := s.planSupportQuery(ctx, history, currentMessage, "")
+	queryPlan, plannerTokens, plannerErr := s.planSupportQuery(ctx, history, currentMessage, welcomeMessage)
 	fallbackUsed := false
 	plannerError := ""
 	if plannerErr != nil {
@@ -1856,6 +1858,7 @@ func (s *SupportAIService) previewSupportReply(
 			StandaloneQuery:    queryPlan.StandaloneQuery,
 			SearchQueries:      cloneStringSlice(queryPlan.SearchQueries),
 			ClarifyingQuestion: queryPlan.ClarifyingQuestion,
+			GreetingReply:      queryPlan.GreetingReply,
 			Reason:             queryPlan.Reason,
 			TokensUsed:         plannerTokens,
 			FallbackUsed:       fallbackUsed,
@@ -1868,7 +1871,7 @@ func (s *SupportAIService) previewSupportReply(
 	}
 
 	switch queryPlan.Decision {
-	case supportDecisionClarify, supportDecisionHandoff:
+	case supportDecisionClarify, supportDecisionHandoff, supportDecisionGreet:
 		return response, nil
 	}
 

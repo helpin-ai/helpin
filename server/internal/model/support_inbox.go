@@ -1357,6 +1357,7 @@ type SupportAIPreviewQueryPlan struct {
 	StandaloneQuery    string   `json:"standalone_query"`
 	SearchQueries      []string `json:"search_queries"`
 	ClarifyingQuestion string   `json:"clarifying_question"`
+	GreetingReply      string   `json:"greeting_reply"`
 	Reason             string   `json:"reason"`
 	TokensUsed         int      `json:"tokens_used"`
 	FallbackUsed       bool     `json:"fallback_used"`
