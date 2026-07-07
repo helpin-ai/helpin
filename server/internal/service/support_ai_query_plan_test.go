@@ -252,3 +252,62 @@ func TestParseSupportQueryPlanStripsCodeFences(t *testing.T) {
 		t.Fatalf("reason = %q, want customer_requested_human", plan.Reason)
 	}
 }
+
+func TestParseSupportQueryPlanGreetingReply(t *testing.T) {
+	plan, err := parseSupportQueryPlan(`{"decision":"greet","greeting_reply":"Hi! What can I help you with?","reason":"greeting"}`)
+	if err != nil {
+		t.Fatalf("parseSupportQueryPlan() error = %v", err)
+	}
+	if plan.Decision != "greet" || plan.GreetingReply != "Hi! What can I help you with?" {
+		t.Fatalf("plan = %+v, want decision=greet with greeting reply", plan)
+	}
+}
+
+func TestNormalizeSupportQueryPlanPreservesGreet(t *testing.T) {
+	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
+		Decision:      "greet",
+		GreetingReply: "  ¡Hola! ¿En qué puedo ayudarte hoy?  ",
+		SearchQueries: []string{"hola"},
+		IssueKey:      "greeting",
+	}, "Hola")
+	if plan.Decision != supportDecisionGreet {
+		t.Fatalf("decision = %q, want %q", plan.Decision, supportDecisionGreet)
+	}
+	if plan.GreetingReply != "¡Hola! ¿En qué puedo ayudarte hoy?" {
+		t.Fatalf("greeting reply = %q, want trimmed text", plan.GreetingReply)
+	}
+	if len(plan.SearchQueries) != 0 {
+		t.Fatalf("search queries = %v, want empty", plan.SearchQueries)
+	}
+	if plan.IssueKey != "" || plan.IssueSummary != "" {
+		t.Fatalf("issue key/summary = %q/%q, want empty", plan.IssueKey, plan.IssueSummary)
+	}
+}
+
+func TestNormalizeSupportQueryPlanGreetWithoutReplyFallsBack(t *testing.T) {
+	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{Decision: "greet"}, "hello")
+	if plan.Decision != supportDecisionGreet {
+		t.Fatalf("decision = %q, want greet fallback for pure greeting", plan.Decision)
+	}
+	if plan.GreetingReply == "" {
+		t.Fatal("greeting reply empty, want canned fallback text")
+	}
+	mixed := normalizeSupportQueryPlan(SupportQueryPlanContract{Decision: "greet"}, "hi, how do I reset my password?")
+	if mixed.Decision != supportDecisionAnswer {
+		t.Fatalf("decision = %q, want answer for greeting+question when planner text missing", mixed.Decision)
+	}
+}
+
+func TestDefaultSupportQueryPlanGreeting(t *testing.T) {
+	plan := defaultSupportQueryPlan("Hello!")
+	if plan.Decision != supportDecisionGreet {
+		t.Fatalf("decision = %q, want %q", plan.Decision, supportDecisionGreet)
+	}
+	if plan.GreetingReply == "" || len(plan.SearchQueries) != 0 || plan.IssueKey != "" {
+		t.Fatalf("plan = %+v, want canned greeting, no queries, no issue key", plan)
+	}
+	mixed := defaultSupportQueryPlan("hi, how do I reset my password?")
+	if mixed.Decision != supportDecisionAnswer {
+		t.Fatalf("decision = %q, want answer for greeting+question", mixed.Decision)
+	}
+}

@@ -47,6 +47,7 @@ type SupportQueryPlanContract struct {
 	StandaloneQuery    string   `json:"standalone_query"`
 	SearchQueries      []string `json:"search_queries"`
 	ClarifyingQuestion string   `json:"clarifying_question"`
+	GreetingReply      string   `json:"greeting_reply"`
 	Reason             string   `json:"reason"`
 }
 
@@ -226,6 +227,7 @@ const (
 	helpinAIDisplayName        = "Helpin AI"
 	supportDecisionAnswer      = "answer"
 	supportDecisionClarify     = "clarify"
+	supportDecisionGreet       = "greet"
 	supportDecisionHandoff     = "handoff"
 	supportReplyKindAnswer     = "answer"
 	supportReplyKindClarify    = "clarify"
@@ -2946,6 +2948,15 @@ func defaultSupportQueryPlan(customerMessage string) SupportQueryPlanContract {
 			SearchQueries:  []string{},
 		}
 	}
+	if isGreetingMessage(current) {
+		return SupportQueryPlanContract{
+			Decision:       supportDecisionGreet,
+			ProgressSignal: supportProgressNewIssue,
+			SearchQueries:  []string{},
+			GreetingReply:  "Hello! What can I help you with today?",
+			Reason:         "greeting_fallback",
+		}
+	}
 	return SupportQueryPlanContract{
 		Decision:        supportDecisionAnswer,
 		IssueKey:        normalizeSupportIssueKey("", current),
@@ -2965,6 +2976,20 @@ func normalizeSupportQueryPlan(plan SupportQueryPlanContract, customerMessage st
 	progressSignal := normalizeSupportProgressSignal(plan.ProgressSignal)
 
 	switch strings.ToLower(strings.TrimSpace(plan.Decision)) {
+	case supportDecisionGreet:
+		greeting := strings.TrimSpace(plan.GreetingReply)
+		if greeting == "" {
+			// Fall back to the default plan: a canned greet for pure greetings,
+			// or a normal answer plan when the message includes a request.
+			return normalized
+		}
+		return SupportQueryPlanContract{
+			Decision:       supportDecisionGreet,
+			ProgressSignal: defaultPlannerProgressSignal(progressSignal, supportProgressNewIssue),
+			SearchQueries:  []string{},
+			GreetingReply:  greeting,
+			Reason:         normalizedPlannerReason(plan.Reason, "greeting"),
+		}
 	case supportDecisionClarify:
 		question := strings.TrimSpace(plan.ClarifyingQuestion)
 		if question == "" {
