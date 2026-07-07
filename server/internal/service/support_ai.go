@@ -745,6 +745,30 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	}
 
 	switch queryPlan.Decision {
+	case supportDecisionGreet:
+		slog.InfoContext(ctx, "support AI sending greeting",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"greeting_reply_preview", safeLogPreview(queryPlan.GreetingReply, 140),
+			"planner_reason", queryPlan.Reason,
+		)
+		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
+		greetProgressState := determineAIProgressState(queryPlan, supportReplyKindGreeting, 0.95, settings.AIConfidenceThreshold, issueStats)
+		if !publicReplyMode {
+			note, noteErr := s.publishAIInternalNote(ctx, workspaceID, conversationID, agentID, "Suggested greeting:\n\n"+queryPlan.GreetingReply, s.queryPlannerModelName(), plannerTokens, 0.95, nil, supportReplyKindGreeting, "", "", greetProgressState, conv.CustomerEmail, conv.CustomerPhone)
+			if noteErr != nil {
+				return noteErr
+			}
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, plannerTokens)
+			return nil
+		}
+		aiMsg, err := s.publishAIReply(ctx, workspaceID, conversationID, agentID, queryPlan.GreetingReply, s.queryPlannerModelName(), plannerTokens, 0.95, nil, supportReplyKindGreeting, "", "", greetProgressState, conv.CustomerEmail, conv.CustomerPhone)
+		if err != nil {
+			return err
+		}
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &aiMsg.ID, plannerTokens)
+		return nil
 	case supportDecisionClarify:
 		slog.InfoContext(ctx, "support AI sending clarification",
 			"workspace_id", workspaceID,
