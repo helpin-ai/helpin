@@ -145,6 +145,9 @@ export function AskAgentsDock() {
   const [parsing, setParsing] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [intentResult, setIntentResult] = useState<CommandBarParseResponse | null>(null);
+  // The prompt that produced the current plan proposal. The input is cleared
+  // optimistically on send, so confirmPlan can't read it from `value`.
+  const planPromptRef = useRef('');
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [chatThreadId, setChatThreadId] = useState<string | null>(null);
   const [sessionPlanIds, setSessionPlanIds] = useState<Set<string>>(() => new Set());
@@ -570,6 +573,7 @@ export function AskAgentsDock() {
         ]);
         const proposal = res.data.proposal ?? res.data.assistant_message.proposal;
         if (proposal?.type === 'run_plan' && proposal.plan) {
+          planPromptRef.current = text;
           setIntentResult({
             status: 'plan',
             plan: proposal.plan,
@@ -596,10 +600,13 @@ export function AskAgentsDock() {
 
   const confirmPlan = useCallback(async () => {
     if (!workspace?.id || !dockPageContext || !intentResult || intentResult.status !== 'plan') return;
+    // The input was cleared when the plan was requested, so use the prompt
+    // that produced this plan; fall back to whatever is typed now.
+    const promptText = planPromptRef.current.trim() || trimmed;
     setDispatching(true);
     try {
       const res = await commandBarService.dispatchPlan(workspace.id, {
-        text: trimmed,
+        text: promptText,
         page_context: dockPageContext,
         steps: intentResult.plan.steps,
       });
@@ -616,7 +623,7 @@ export function AskAgentsDock() {
             runIdsByStep: Object.fromEntries(res.data.runs.map((run, index) => [index, run.id])),
             planKind: intentResult.plan.plan_kind,
             status: 'running',
-            prompt: trimmed,
+            prompt: promptText,
             currentStepIndex: 0,
             createdAt: res.data.runs[0]?.created_at,
             updatedAt: res.data.runs[0]?.updated_at ?? res.data.runs[0]?.created_at,
@@ -1101,6 +1108,11 @@ export function AskAgentsDock() {
                 dispatching={dispatching}
                 onConfirm={() => void confirmPlan()}
                 onEdit={() => {
+                  // Put the originating prompt back in the input for editing —
+                  // it was cleared optimistically on send.
+                  if (!value.trim() && planPromptRef.current) {
+                    setValue(planPromptRef.current);
+                  }
                   setIntentResult(null);
                   requestAnimationFrame(() => textareaRef.current?.focus());
                 }}
