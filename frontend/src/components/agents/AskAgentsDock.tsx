@@ -532,6 +532,17 @@ export function AskAgentsDock() {
       }
       setParsing(true);
       setIntentResult(null);
+      // Optimistic turn: clear the input and show the question in the
+      // transcript immediately. If the turn fails, put the text back in the
+      // input so the user can retry without retyping.
+      const pendingId = `pending-user-${Date.now()}`;
+      setValue('');
+      setMessages((prev) => [...prev, { kind: 'user', id: pendingId, text, ts: Date.now() }]);
+      const restoreFailedTurn = () => {
+        setMessages((prev) => prev.filter((m) => m.id !== pendingId));
+        setValue(text);
+        requestAnimationFrame(() => textareaRef.current?.focus());
+      };
       try {
         const res = await commandBarService.chatTurn(workspace.id, {
           thread_id: chatThreadId ?? undefined,
@@ -539,6 +550,7 @@ export function AskAgentsDock() {
           page_context: dockPageContext,
         });
         if (res.error || !res.data) {
+          restoreFailedTurn();
           toast.error(res.error ?? 'Failed to ask agents');
           return;
         }
@@ -546,7 +558,7 @@ export function AskAgentsDock() {
         const userTs = Date.parse(res.data.user_message.created_at) || Date.now();
         const assistantTs = Date.parse(res.data.assistant_message.created_at) || userTs + 1;
         setMessages((prev) => [
-          ...prev,
+          ...prev.filter((m) => m.id !== pendingId),
           { kind: 'user', id: res.data!.user_message.id, text, ts: userTs },
           {
             kind: 'assistant',
@@ -572,6 +584,9 @@ export function AskAgentsDock() {
         } else {
           setIntentResult(null);
         }
+      } catch {
+        restoreFailedTurn();
+        toast.error('Failed to ask agents');
       } finally {
         setParsing(false);
       }
@@ -1065,6 +1080,17 @@ export function AskAgentsDock() {
                 />
               );
             })}
+
+            {parsing ? (
+              <div className="flex items-center gap-2 px-1 py-0.5 text-sm text-muted-foreground animate-in fade-in duration-150">
+                <span className="flex items-center gap-1" aria-hidden="true">
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.3s] motion-reduce:animate-none" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.15s] motion-reduce:animate-none" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 motion-reduce:animate-none" />
+                </span>
+                <span role="status">Thinking…</span>
+              </div>
+            ) : null}
 
             {plan ? (
               <PlanPreview
