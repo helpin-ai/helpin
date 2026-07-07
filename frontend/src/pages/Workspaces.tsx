@@ -25,7 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { useCreateSupportContentSource } from '@/hooks/queries/useSupport';
 import { Favicon } from '@/components/ui/favicon';
-import { CheckmarkCircle02Icon, Loading01Icon, PlusSignIcon, Cancel01Icon } from '@/lib/icons';
+import { CheckmarkCircle02Icon, Loading01Icon, PlusSignIcon, Cancel01Icon, Logout01Icon } from '@/lib/icons';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import {
   buildPresetFieldVisibility,
@@ -81,7 +81,7 @@ export default function Workspaces() {
   useTitle('Workspaces');
   const { data: organizations = [], isLoading: orgsLoading } = useOrganizations();
   const navigate = useNavigate();
-  const { user } = useAuthStore();
+  const { user, signOut } = useAuthStore();
   const { currentOrganization, setCurrentOrganization } = useOrganizationStore();
   const { data: allWorkspaces = [], isLoading: wsLoading } = useWorkspaces();
   const createOrgMutation = useCreateOrganization();
@@ -461,13 +461,14 @@ export default function Workspaces() {
             <h1 className="text-3xl font-bold">Workspaces</h1>
             <p className="text-muted-foreground mt-1">Select a workspace or create a new one</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={handleWorkspaceDialogChange}>
-            <DialogTrigger asChild>
-              <Button disabled={!currentOrganization} onClick={openWorkspaceDialog}>
-                <PlusSignIcon className="h-4 w-4 mr-2" />
-                Create Workspace
-              </Button>
-            </DialogTrigger>
+          <div className="flex flex-col-reverse items-stretch gap-2 sm:flex-row sm:items-center">
+            <Dialog open={dialogOpen} onOpenChange={handleWorkspaceDialogChange}>
+              <DialogTrigger asChild>
+                <Button disabled={!currentOrganization} onClick={openWorkspaceDialog}>
+                  <PlusSignIcon className="h-4 w-4 mr-2" />
+                  Create Workspace
+                </Button>
+              </DialogTrigger>
             <DialogContent className="sm:max-w-2xl">
               <form onSubmit={
                 workspaceStep === 'details' ? handleContinueToTeams
@@ -742,7 +743,12 @@ export default function Workspaces() {
                 </DialogFooter>
               </form>
             </DialogContent>
-          </Dialog>
+            </Dialog>
+            <Button type="button" variant="outline" onClick={() => void signOut()}>
+              <Logout01Icon className="h-4 w-4 mr-2" />
+              Sign out
+            </Button>
+          </div>
         </div>
 
         {isLoading ? (
