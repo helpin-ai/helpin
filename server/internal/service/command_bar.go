@@ -17,6 +17,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 const maxCommandBarPlanSteps = 50
@@ -157,6 +158,7 @@ type CommandBarService struct {
 	commandRouterLLMMaxTokens              int
 	commandRouterLLMTimeout                time.Duration
 	commandRouterOpenRouterProviderOptions json.RawMessage
+	wsPublisher                            *websocket.Publisher
 }
 
 func NewCommandBarService(agentService *AgentService, planRepo *repository.CommandBarPlanRepository, unmetRepo *repository.CommandBarUnmetIntentRepository, dismissalRepo *repository.CommandBarPlanDismissalRepository, llmProvider llm.Provider) *CommandBarService {
@@ -198,6 +200,52 @@ func (s *CommandBarService) SetChatRepository(repo *repository.CommandBarChatRep
 		s.chatRepo = repo
 	}
 	return s
+}
+
+func (s *CommandBarService) SetWebsocketPublisher(publisher *websocket.Publisher) *CommandBarService {
+	if s != nil {
+		s.wsPublisher = publisher
+	}
+	return s
+}
+
+type commandBarTurnProgressKey struct{}
+
+// WithCommandBarTurnProgress tags the context with the client-supplied turn
+// ID so progress events published deeper in the chat turn can be correlated
+// by the dock that initiated the request.
+func WithCommandBarTurnProgress(ctx context.Context, clientTurnID string) context.Context {
+	clientTurnID = strings.TrimSpace(clientTurnID)
+	if clientTurnID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, commandBarTurnProgressKey{}, clientTurnID)
+}
+
+// publishChatTurnProgress emits a lightweight websocket event describing what
+// the chat turn is doing right now ("classifying", "tool", "composing", …).
+// No-op unless the request carried a client_turn_id and a publisher is wired.
+func (s *CommandBarService) publishChatTurnProgress(ctx context.Context, workspaceID, actorID, stage, tool string) {
+	if s == nil || s.wsPublisher == nil {
+		return
+	}
+	clientTurnID, _ := ctx.Value(commandBarTurnProgressKey{}).(string)
+	if clientTurnID == "" {
+		return
+	}
+	data, _ := json.Marshal(map[string]string{
+		"client_turn_id": clientTurnID,
+		"stage":          stage,
+		"tool":           tool,
+	})
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "progress",
+		Entity:      "command_bar_turn",
+		EntityID:    clientTurnID,
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+		Data:        data,
+	})
 }
 
 func (s *CommandBarService) SetInternalCommandService(commandService *InternalCommandService) *CommandBarService {
@@ -426,6 +474,7 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 		return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: denied}, denied, nil
 	}
 	if commandBarShouldUseRunPlannerBeforeInline(effectiveText, pageContext) {
+		s.publishChatTurnProgress(ctx, workspaceID, actorID, "planning", "")
 		proposal, content, handled, err := s.commandBarRunPlanProposalFromParse(ctx, workspaceID, actorID, effectiveText, pageContext)
 		if err != nil {
 			return nil, "", err
@@ -435,6 +484,7 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 		}
 	}
 
+	s.publishChatTurnProgress(ctx, workspaceID, actorID, "classifying", "")
 	classification, err := s.classifyCommandBarChatIntent(ctx, workspaceID, effectiveText, pageContext, access, history)
 	if err != nil {
 		slog.WarnContext(ctx, "ask agents chat intent classification failed", "error", err, "workspace_id", workspaceID)
@@ -467,6 +517,7 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 		}
 	}
 
+	s.publishChatTurnProgress(ctx, workspaceID, actorID, "planning", "")
 	proposal, content, handled, err := s.commandBarRunPlanProposalFromParse(ctx, workspaceID, actorID, effectiveText, pageContext)
 	if err != nil {
 		return nil, "", err
@@ -632,6 +683,11 @@ func (s *CommandBarService) inlineReadOnlyAnswer(ctx context.Context, workspaceI
 	historyWorkingContext := commandBarWorkingContextFromHistory(history)
 	toolCalls := make([]commandBarReadOnlyToolCall, 0, 4)
 	for i := 0; i < 4; i++ {
+		if i == 0 {
+			s.publishChatTurnProgress(ctx, workspaceID, actorID, "thinking", "")
+		} else {
+			s.publishChatTurnProgress(ctx, workspaceID, actorID, "composing", "")
+		}
 		toolResultJSON, _ := json.Marshal(toolCalls)
 		workingContextJSON, _ := json.Marshal(commandBarWorkingContextWithToolCalls(historyWorkingContext, toolCalls))
 		resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
@@ -696,6 +752,7 @@ Tool results so far: %s`, text, string(contextJSON), string(historyJSON), string
 			return answer, commandBarReadOnlyToolContextJSON(toolCalls, commandBarWorkingContextWithToolCalls(historyWorkingContext, toolCalls))
 		case "tool_call":
 			call := commandBarReadOnlyToolCall{Tool: strings.TrimSpace(turn.Tool), Input: normalizeCommandBarToolInput(turn.Input)}
+			s.publishChatTurnProgress(ctx, workspaceID, actorID, "tool", call.Tool)
 			output, err := s.executeCommandBarReadOnlyTool(ctx, workspaceID, actorID, pageContext, access, call.Tool, call.Input)
 			if err != nil {
 				call.Error = err.Error()

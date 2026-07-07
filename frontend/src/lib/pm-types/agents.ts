@@ -266,6 +266,8 @@ export interface CommandBarChatTurnRequest {
   thread_id?: string;
   text: string;
   page_context: CommandBarPageContext;
+  /** Correlates websocket turn-progress events with this in-flight turn. */
+  client_turn_id?: string;
 }
 
 export type CommandBarParseResponse =

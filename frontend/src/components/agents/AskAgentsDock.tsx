@@ -107,6 +107,24 @@ function runMatchesRestoredThread(run: AgentRun, messages: ThreadMessage[]): boo
   );
 }
 
+function turnStageLabel(progress: { stage: string; tool: string } | null): string {
+  if (!progress) return 'Thinking…';
+  switch (progress.stage) {
+    case 'classifying':
+      return 'Understanding your request…';
+    case 'tool':
+      return progress.tool
+        ? `Running ${progress.tool.replaceAll('_', ' ').replaceAll('.', ' ')}…`
+        : 'Gathering workspace data…';
+    case 'composing':
+      return 'Writing the answer…';
+    case 'planning':
+      return 'Drafting a plan…';
+    default:
+      return 'Thinking…';
+  }
+}
+
 function pageContextKey(context: CommandBarPageContext | null | undefined): string {
   if (!context) return '';
   return JSON.stringify({
@@ -148,6 +166,10 @@ export function AskAgentsDock() {
   // The prompt that produced the current plan proposal. The input is cleared
   // optimistically on send, so confirmPlan can't read it from `value`.
   const planPromptRef = useRef('');
+  // In-flight turn correlation for websocket progress events, plus the last
+  // reported stage ("classifying", "tool", …) shown next to the spinner.
+  const activeTurnIdRef = useRef<string | null>(null);
+  const [turnStage, setTurnStage] = useState<{ stage: string; tool: string } | null>(null);
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [chatThreadId, setChatThreadId] = useState<string | null>(null);
   const [sessionPlanIds, setSessionPlanIds] = useState<Set<string>>(() => new Set());
@@ -314,6 +336,24 @@ export function AskAgentsDock() {
     setSelectedRunId(null);
     setIntentResult(null);
   }, [clearRuns, workspace?.id]);
+
+  // Live turn progress: the backend publishes command_bar_turn/progress
+  // websocket events (bridged to DOM by useRealtimeSync) while a chat turn
+  // is running; show the current stage next to the spinner.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { entity_id?: string; data?: { client_turn_id?: string; stage?: string; tool?: string } }
+        | undefined;
+      const turnId = activeTurnIdRef.current;
+      if (!turnId) return;
+      const id = detail?.data?.client_turn_id ?? detail?.entity_id;
+      if (id !== turnId) return;
+      setTurnStage({ stage: detail?.data?.stage ?? '', tool: detail?.data?.tool ?? '' });
+    };
+    window.addEventListener('command_bar_turn-progress', handler);
+    return () => window.removeEventListener('command_bar_turn-progress', handler);
+  }, []);
 
   // Auto-scroll on new content.
   useEffect(() => {
@@ -539,6 +579,9 @@ export function AskAgentsDock() {
       // transcript immediately. If the turn fails, put the text back in the
       // input so the user can retry without retyping.
       const pendingId = `pending-user-${Date.now()}`;
+      const turnId = crypto.randomUUID();
+      activeTurnIdRef.current = turnId;
+      setTurnStage(null);
       setValue('');
       setMessages((prev) => [...prev, { kind: 'user', id: pendingId, text, ts: Date.now() }]);
       const restoreFailedTurn = () => {
@@ -551,6 +594,7 @@ export function AskAgentsDock() {
           thread_id: chatThreadId ?? undefined,
           text,
           page_context: dockPageContext,
+          client_turn_id: turnId,
         });
         if (res.error || !res.data) {
           restoreFailedTurn();
@@ -592,6 +636,8 @@ export function AskAgentsDock() {
         restoreFailedTurn();
         toast.error('Failed to ask agents');
       } finally {
+        activeTurnIdRef.current = null;
+        setTurnStage(null);
         setParsing(false);
       }
     },
@@ -1095,7 +1141,7 @@ export function AskAgentsDock() {
                   <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.15s] motion-reduce:animate-none" />
                   <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 motion-reduce:animate-none" />
                 </span>
-                <span role="status">Thinking…</span>
+                <span role="status">{turnStageLabel(turnStage)}</span>
               </div>
             ) : null}
 

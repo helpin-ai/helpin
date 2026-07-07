@@ -893,7 +893,8 @@ func main() {
 			cfg.CommandRouterLLMMaxTokens,
 			time.Duration(cfg.CommandRouterLLMTimeoutMS)*time.Millisecond,
 		).
-		SetCommandRouterOpenRouterProviderOptions(cfg.CommandRouterOpenRouterProviderOptions)
+		SetCommandRouterOpenRouterProviderOptions(cfg.CommandRouterOpenRouterProviderOptions).
+		SetWebsocketPublisher(wsPublisher)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)
