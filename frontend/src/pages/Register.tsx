@@ -9,7 +9,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
 import { loginRedirectFromSearch } from '@/lib/authRedirect';
-import { buildGoogleAuthStartUrl } from '@/lib/authGoogle';
 
 export default function Register() {
   useTitle('Sign Up');
@@ -21,10 +20,6 @@ export default function Register() {
   const navigate = useNavigate();
   const redirect = loginRedirectFromSearch();
   const loginHref = redirect ? `/login?redirect=${encodeURIComponent(redirect)}` : '/login';
-
-  const handleGoogleSignup = () => {
-    window.location.assign(buildGoogleAuthStartUrl(redirect));
-  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -68,15 +63,6 @@ export default function Register() {
           <CardFooter className="flex flex-col gap-4 mt-4">
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Creating account...' : 'Create account'}
-            </Button>
-            <div className="flex w-full items-center gap-3 text-xs uppercase text-muted-foreground">
-              <span className="h-px flex-1 bg-border" />
-              <span>or</span>
-              <span className="h-px flex-1 bg-border" />
-            </div>
-            <Button type="button" variant="outline" className="w-full" disabled={loading} onClick={handleGoogleSignup}>
-              <span className="mr-2 flex h-5 w-5 items-center justify-center rounded-full border text-xs font-semibold">G</span>
-              Sign up with Google
             </Button>
             <p className="text-sm text-muted-foreground">
               Already have an account? <Link to={loginHref as '/login'} className="text-primary hover:underline">Sign in</Link>

@@ -12,7 +12,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
 import { consumeRedirectAfterLogin, loginRedirectFromSearch } from '@/lib/authRedirect';
-import { buildGoogleAuthStartUrl } from '@/lib/authGoogle';
 
 export default function Login() {
   useTitle('Sign In');
@@ -28,11 +27,6 @@ export default function Login() {
   const passkeySupported = passkeyService.isSupported();
   const redirect = loginRedirectFromSearch();
   const registerHref = redirect ? `/register?redirect=${encodeURIComponent(redirect)}` : '/register';
-
-  const handleGoogleSignin = () => {
-    passkeyService.cancelPendingAuthentication();
-    window.location.assign(buildGoogleAuthStartUrl(redirect));
-  };
 
   const completeLoginRedirect = async (isCancelled?: () => boolean) => {
     const redirect = loginRedirectFromSearch() ?? consumeRedirectAfterLogin();
@@ -275,10 +269,6 @@ export default function Login() {
               <>
                 <Button type="button" variant="outline" className="w-full" disabled={loading || !passkeySupported} onClick={() => void handlePasskeyLogin()}>
                   Sign in with passkey
-                </Button>
-                <Button type="button" variant="outline" className="w-full" disabled={loading} onClick={handleGoogleSignin}>
-                  <span className="mr-2 flex h-5 w-5 items-center justify-center rounded-full border text-xs font-semibold">G</span>
-                  Sign in with Google
                 </Button>
                 {!passkeySupported && (
                   <p className="text-xs text-muted-foreground text-center">
