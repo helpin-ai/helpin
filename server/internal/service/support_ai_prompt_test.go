@@ -31,6 +31,23 @@ func TestBuildAISystemPrompt_IncludesHandoffRepeatGuidance(t *testing.T) {
 	}
 }
 
+func TestBuildSupportPlannerSystemPromptIncludesWelcomeMessage(t *testing.T) {
+	prompt := buildSupportPlannerSystemPrompt("Hi there! How can we help you today?")
+	if !strings.Contains(prompt, "Automatic welcome message already shown to the visitor:\nHi there! How can we help you today?") {
+		t.Fatalf("prompt missing welcome context:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, `"greet"`) || !strings.Contains(prompt, `"greeting_reply"`) {
+		t.Fatal("prompt missing greet decision or greeting_reply field")
+	}
+}
+
+func TestBuildSupportPlannerSystemPromptOmitsEmptyWelcome(t *testing.T) {
+	prompt := buildSupportPlannerSystemPrompt("   ")
+	if strings.Contains(prompt, "Automatic welcome message already shown to the visitor:") {
+		t.Fatal("prompt should omit welcome section when none is configured")
+	}
+}
+
 func TestHasEscalationMessageInHistoryDetectsSystemEvent(t *testing.T) {
 	history := []model.SupportMessage{
 		{SenderType: "customer", Content: "Can you help?"},

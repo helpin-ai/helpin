@@ -84,7 +84,7 @@ func TestPlanSupportQueryResolvesFollowUpFromContext(t *testing.T) {
 		{SenderType: "ai", MessageType: "reply", Content: "ContentStudio is stronger for agencies and richer analytics."},
 	}
 
-	plan, tokensUsed, err := svc.planSupportQuery(context.Background(), history, model.SupportMessage{SenderType: "customer", Content: "features"})
+	plan, tokensUsed, err := svc.planSupportQuery(context.Background(), history, model.SupportMessage{SenderType: "customer", Content: "features"}, "")
 	if err != nil {
 		t.Fatalf("planSupportQuery() error = %v", err)
 	}
@@ -143,7 +143,7 @@ func TestPlanSupportQueryUsesClarifyInsteadOfHandoffForAmbiguousFollowUp(t *test
 		{SenderType: "customer", MessageType: "reply", Content: "Which one is better?"},
 	}
 
-	plan, _, err := svc.planSupportQuery(context.Background(), history, model.SupportMessage{SenderType: "customer", Content: "pricing"})
+	plan, _, err := svc.planSupportQuery(context.Background(), history, model.SupportMessage{SenderType: "customer", Content: "pricing"}, "")
 	if err != nil {
 		t.Fatalf("planSupportQuery() error = %v", err)
 	}
@@ -180,7 +180,7 @@ func TestPlanSupportQueryIncludesImageContentParts(t *testing.T) {
 		Attachments: []model.SupportAttachmentPayload{
 			{FileName: "Screenshot.png", FileType: "image/png", URL: "https://assets.example.com/screenshot.png"},
 		},
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("planSupportQuery() error = %v", err)
 	}

@@ -688,7 +688,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	providerName, modelName := resolveSupportLLMConfig(agent)
 
 	// 13. Plan how to handle the message: answer, clarify, or hand off.
-	queryPlan, plannerTokens, err := s.planSupportQuery(ctx, historyForPrompt, *msg)
+	queryPlan, plannerTokens, err := s.planSupportQuery(ctx, historyForPrompt, *msg, settings.WelcomeMessage)
 	if err != nil {
 		slog.WarnContext(ctx, "support query planning failed; using direct retrieval fallback",
 			"error", err,
@@ -712,6 +712,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		"search_query_count", len(queryPlan.SearchQueries),
 		"search_query_previews", safeLogPreviewList(queryPlan.SearchQueries, 4, 100),
 		"clarifying_question_preview", safeLogPreview(queryPlan.ClarifyingQuestion, 140),
+		"greeting_reply_preview", safeLogPreview(queryPlan.GreetingReply, 140),
 		"planner_tokens", plannerTokens,
 	)
 
@@ -1808,7 +1809,7 @@ func (s *SupportAIService) previewSupportReply(
 	}
 
 	currentMessage := model.SupportMessage{SenderType: "customer", Content: customerMessage}
-	queryPlan, plannerTokens, plannerErr := s.planSupportQuery(ctx, history, currentMessage)
+	queryPlan, plannerTokens, plannerErr := s.planSupportQuery(ctx, history, currentMessage, "")
 	fallbackUsed := false
 	plannerError := ""
 	if plannerErr != nil {
@@ -2547,40 +2548,24 @@ RESPONSE FORMAT (respond with valid JSON only):
 	return sb.String()
 }
 
-func (s *SupportAIService) planSupportQuery(ctx context.Context, history []model.SupportMessage, customerMessage model.SupportMessage) (SupportQueryPlanContract, int, error) {
-	current := supportMessagePromptText(customerMessage)
-	fallback := defaultSupportQueryPlan(current)
-	if current == "" {
-		return fallback, 0, nil
-	}
-	if s.llmProvider == nil || strings.TrimSpace(s.queryExpansionModel) == "" {
-		return fallback, 0, nil
-	}
-
-	transcript := buildConversationTranscript(history, 8)
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
-		WorkspaceID:    customerMessage.WorkspaceID,
-		FeatureKey:     BillingFeatureAIRouting,
-		IdempotencyKey: aiUsageIdempotencyKey(customerMessage.WorkspaceID, BillingFeatureAIRouting, customerMessage.ConversationID, customerMessage.ID),
-		Metadata: map[string]interface{}{
-			"conversation_id": customerMessage.ConversationID,
-			"message_id":      customerMessage.ID,
-		},
-	}), llm.ChatRequest{
-		Provider: s.queryExpansionProvider,
-		Model:    s.queryExpansionModel,
-		SystemPrompt: `You are a support retrieval planner.
+const supportPlannerSystemPromptBase = `You are a support retrieval planner.
 You do not answer the customer. You only decide how the support system should proceed.
 
 Choose exactly one decision:
+- "greet": the latest message is a pure greeting or social opener (for example "hi", "hello", "good morning", or the equivalent in any language) with no question, request, or issue.
 - "answer": the latest message can be resolved into a standalone retrieval intent from the recent conversation context.
 - "clarify": the message is ambiguous or underspecified, and one short clarification question would unblock retrieval.
 - "handoff": a human is required because the customer asked for a human, or the request needs account-specific action, billing/refund handling, security/privacy review, or other human-only intervention.
 
 Rules:
+- A greeting combined with a question or request is never "greet": choose "answer" for "hi, how do I reset my password?" and "handoff" for "hello, can I talk to a human?".
 - Do not choose "handoff" just because the message is short, vague, or a fragment. Use "clarify" for that.
 - If recent conversation resolves the fragment, choose "answer".
-- Also produce an "issue_key" that identifies the underlying customer issue. Keep it stable across paraphrases and follow-up turns on the same issue.
+- For "greet", write "greeting_reply": one short, warm sentence in the customer's language that welcomes them and asks what they need help with.
+- The visitor may have already seen an automatic welcome message (included below when configured). Never repeat or closely paraphrase it in "greeting_reply".
+- If the recent conversation shows the assistant already greeted and the customer greets again, keep decision "greet" but make "greeting_reply" skip the pleasantries and directly ask what they need help with.
+- For "greet", leave "issue_key" and "issue_summary" empty and "search_queries" empty.
+- For other decisions, produce an "issue_key" that identifies the underlying customer issue. Keep it stable across paraphrases and follow-up turns on the same issue.
 - "issue_key" must be a short snake_case label like "password_reset" or "sso_okta_setup". It is not a search query.
 - Also produce an "issue_summary" with one short human-readable sentence describing the issue.
 - Also produce a "progress_signal" describing how the latest customer turn relates to the issue. Use exactly one of:
@@ -2603,8 +2588,43 @@ Return valid JSON only in this shape:
   "standalone_query": "standalone retrieval query",
   "search_queries": ["query 1", "query 2"],
   "clarifying_question": "",
+  "greeting_reply": "",
   "reason": "resolved_from_context"
-}`,
+}`
+
+// buildSupportPlannerSystemPrompt appends the configured widget welcome message
+// so the planner can avoid repeating it in greeting replies.
+func buildSupportPlannerSystemPrompt(welcomeMessage string) string {
+	trimmed := strings.TrimSpace(welcomeMessage)
+	if trimmed == "" {
+		return supportPlannerSystemPromptBase
+	}
+	return supportPlannerSystemPromptBase + "\n\nAutomatic welcome message already shown to the visitor:\n" + trimmed
+}
+
+func (s *SupportAIService) planSupportQuery(ctx context.Context, history []model.SupportMessage, customerMessage model.SupportMessage, welcomeMessage string) (SupportQueryPlanContract, int, error) {
+	current := supportMessagePromptText(customerMessage)
+	fallback := defaultSupportQueryPlan(current)
+	if current == "" {
+		return fallback, 0, nil
+	}
+	if s.llmProvider == nil || strings.TrimSpace(s.queryExpansionModel) == "" {
+		return fallback, 0, nil
+	}
+
+	transcript := buildConversationTranscript(history, 8)
+	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    customerMessage.WorkspaceID,
+		FeatureKey:     BillingFeatureAIRouting,
+		IdempotencyKey: aiUsageIdempotencyKey(customerMessage.WorkspaceID, BillingFeatureAIRouting, customerMessage.ConversationID, customerMessage.ID),
+		Metadata: map[string]interface{}{
+			"conversation_id": customerMessage.ConversationID,
+			"message_id":      customerMessage.ID,
+		},
+	}), llm.ChatRequest{
+		Provider:     s.queryExpansionProvider,
+		Model:        s.queryExpansionModel,
+		SystemPrompt: buildSupportPlannerSystemPrompt(welcomeMessage),
 		Messages: []llm.Message{
 			{
 				Role:    "user",
