@@ -5,7 +5,14 @@ package service
 // When retrieval produced chunks, we require strong retrieval quality plus explicit citation coverage.
 // When retrieval produced no chunks, only conversational turns like greetings or
 // safe limitation/redirect responses for out-of-scope questions should pass.
-func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIResponseContract) float64 {
+//
+// isGreeting marks replies to messages like "hi"/"hello" that the system prompt
+// instructs the model to answer without citing sources. Vector search has no
+// similarity floor, so it can still return spurious low-relevance chunks for a
+// bare greeting; grounding the confidence score against those chunks would
+// penalize a correctly-uncited greeting reply. Skip the grounded formula for
+// this case the same way we do when retrieval found nothing.
+func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIResponseContract, isGreeting bool) float64 {
 	llmConfidence := clamp01(response.Confidence)
 
 	canAnswerScore := 0.0
@@ -13,7 +20,7 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 		canAnswerScore = 1.0
 	}
 
-	if len(searchResults) == 0 {
+	if len(searchResults) == 0 || isGreeting {
 		return (llmConfidence * 0.65) + (canAnswerScore * 0.35)
 	}
 

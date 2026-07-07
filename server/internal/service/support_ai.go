@@ -853,7 +853,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	}
 
 	// 17. Multi-signal confidence evaluation
-	confidence := evaluateConfidence(searchResults, response)
+	confidence := evaluateConfidence(searchResults, response, isGreetingMessage(customerPromptText))
 	slog.InfoContext(ctx, "support AI response evaluated",
 		"workspace_id", workspaceID,
 		"conversation_id", conversationID,
@@ -1870,7 +1870,7 @@ func (s *SupportAIService) previewSupportReply(
 	}
 	response.TotalTokensUsed += answerTokens
 
-	groundedConfidence := evaluateConfidence(searchResults, answer)
+	groundedConfidence := evaluateConfidence(searchResults, answer, isGreetingMessage(customerMessage))
 	response.Answer = &model.SupportAIPreviewAnswer{
 		Content:            answer.Content,
 		CanAnswer:          answer.CanAnswer,

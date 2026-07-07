@@ -1,0 +1,60 @@
+package service
+
+import "testing"
+
+func TestEvaluateConfidence(t *testing.T) {
+	tests := []struct {
+		name        string
+		searchResults []KnowledgeSearchResult
+		response    *AIResponseContract
+		isGreeting  bool
+		wantAbove   bool // want confidence >= 0.7 (the default AIConfidenceThreshold)
+	}{
+		{
+			name:          "greeting with no retrieval hits answers confidently",
+			searchResults: nil,
+			response:      &AIResponseContract{CanAnswer: true, SourceDocIDs: nil, Confidence: 0.95},
+			isGreeting:    true,
+			wantAbove:     true,
+		},
+		{
+			name: "greeting with spurious low-relevance retrieval hits still answers confidently",
+			searchResults: []KnowledgeSearchResult{
+				{ReferenceID: "doc-1", VectorScore: 0.1, LexicalScore: 0},
+				{ReferenceID: "doc-2", VectorScore: 0.05, LexicalScore: 0},
+			},
+			response:   &AIResponseContract{CanAnswer: true, SourceDocIDs: nil, Confidence: 0.95},
+			isGreeting: true,
+			wantAbove:  true,
+		},
+		{
+			name: "non-greeting answer with uncited low-relevance retrieval stays low confidence",
+			searchResults: []KnowledgeSearchResult{
+				{ReferenceID: "doc-1", VectorScore: 0.1, LexicalScore: 0},
+				{ReferenceID: "doc-2", VectorScore: 0.05, LexicalScore: 0},
+			},
+			response:   &AIResponseContract{CanAnswer: true, SourceDocIDs: nil, Confidence: 0.95},
+			isGreeting: false,
+			wantAbove:  false,
+		},
+		{
+			name: "non-greeting answer grounded in cited high-relevance retrieval is confident",
+			searchResults: []KnowledgeSearchResult{
+				{ReferenceID: "doc-1", VectorScore: 0.95, LexicalScore: 0},
+			},
+			response:   &AIResponseContract{CanAnswer: true, SourceDocIDs: []string{"doc-1"}, Confidence: 0.9},
+			isGreeting: false,
+			wantAbove:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evaluateConfidence(tt.searchResults, tt.response, tt.isGreeting)
+			gotAbove := got >= 0.7
+			if gotAbove != tt.wantAbove {
+				t.Errorf("evaluateConfidence() = %v, above threshold = %v, want above threshold = %v", got, gotAbove, tt.wantAbove)
+			}
+		})
+	}
+}
