@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Helpin Support",
+  "version": "0.1.0",
+  "identifier": "ai.helpin.mobile",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://localhost:5176",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{ "label": "main", "title": "Helpin Support" }],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "iOS": { "minimumSystemVersion": "15.0" },
+    "android": { "minSdkVersion": 26 }
+  }
+}
