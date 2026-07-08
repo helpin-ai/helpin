@@ -433,6 +433,47 @@ describe('CodingInteractionCard', () => {
     expect(container.textContent).not.toContain('"proposed_tasks"');
   });
 
+  it('surfaces the runtime summary (e.g. codex command) on approvals without a preview', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'approval_request',
+      title: 'Codex needs approval',
+      summary: 'Command: rm -rf ./dist\nWorking directory: /repo\nReason: clean build output',
+      request_payload: {
+        command: 'rm -rf ./dist',
+        cwd: '/repo',
+      },
+    }));
+
+    // The reviewer must see WHAT is being approved, not just the title.
+    expect(container.textContent).toContain('What the agent wants to do');
+    expect(container.textContent).toContain('Command: rm -rf ./dist');
+    expect(container.textContent).toContain('Working directory: /repo');
+    expect(container.textContent).toContain('Reason: clean build output');
+  });
+
+  it('does not duplicate the summary when a document preview already represents the request', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'approval_request',
+      title: 'Approve planning document',
+      summary: 'Review the proposed task document.',
+      request_payload: { phase: 'task_doc', preview_panel_key: 'task_plan_doc', title: 'Approve planning document' },
+    }), {
+      attachedPreview: {
+        panelKey: 'task_plan_doc',
+        title: 'Task Planning Document',
+        format: 'markdown',
+        content: '# Outcome\nShort plan.',
+        replace: true,
+        surroundingText: '',
+      },
+    });
+
+    expect(container.textContent).not.toContain('What the agent wants to do');
+    expect(container.textContent).not.toContain('Review the proposed task document.');
+  });
+
   it('labels approve as approve with note and sends the note with an approval decision', () => {
     const onResolve = vi.fn();
     renderCard(onResolve, buildInteraction({
