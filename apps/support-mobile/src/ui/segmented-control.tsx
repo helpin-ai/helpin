@@ -25,21 +25,16 @@ export function SegmentedControl<T extends string>({
     <div className={cn('flex items-center gap-1 rounded-[10px] bg-muted p-1', className)}>
       {segments.map((segment) => {
         const selected = segment.value === value
-        // Pressable's declared props don't include aria-pressed; SegmentedControl
-        // still needs it on the rendered <button> for a11y + the RTL test, so it's
-        // passed through the rest-spread with a targeted cast rather than widening
-        // Pressable's public interface.
-        const ariaProps = { 'aria-pressed': selected } as unknown as { 'aria-label'?: string }
         return (
           <Pressable
             key={segment.value}
             haptic="selection"
+            aria-pressed={selected}
             onPress={() => onChange(segment.value)}
             className={cn(
               'relative isolate flex flex-1 items-center justify-center gap-1.5 rounded-[8px] px-3 py-1.5 text-footnote font-medium transition-colors',
               selected ? 'text-foreground' : 'text-muted-foreground',
             )}
-            {...ariaProps}
           >
             {selected && (
               <motion.div

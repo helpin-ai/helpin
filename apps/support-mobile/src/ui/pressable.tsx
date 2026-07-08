@@ -10,6 +10,7 @@ export interface PressableProps {
   className?: string
   children: ReactNode
   'aria-label'?: string
+  'aria-pressed'?: boolean
 }
 
 export function Pressable({ onPress, haptic: hapticKind, disabled, className, children, ...rest }: PressableProps) {
