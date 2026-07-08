@@ -236,3 +236,51 @@ cargo check
      plugin README items 4 and 14).
    - Confirm `onPushTokenChanged` fires when Firebase issues a fresh token
      (e.g. after clearing app data and relaunching).
+
+10. **Push registration, priming, and tap-through routing (Task 20 —
+    `src/push/push-registration.ts`, `src/push/permission-priming-sheet.tsx`,
+    `src/main.tsx` tap wiring, `src/screens/you-screen.tsx` notifications
+    row)**: `routePushTap`, `shouldShowPriming`, and `registerForPush`/
+    `unregisterPush`'s request-shaping logic are unit-tested (mocked
+    plugin/API), but the end-to-end device loop needs a real toolchain,
+    real push delivery, and a real backend — none of which exist in this
+    environment. Once Task 19's SPIKE-VERIFY items above are confirmed on
+    device:
+    - **First-run priming**: sign in fresh (or clear the app's prefs store)
+      and land on Inbox; confirm the priming sheet appears once ("Never miss
+      a customer" / bell icon), tapping "Enable notifications" triggers the
+      real OS permission prompt (via `getPushToken()`), and after accepting,
+      the You-screen Notifications row shows "Enabled". Relaunch the app and
+      confirm the sheet does NOT reappear.
+    - **"Not now" cooldown**: on a fresh prefs state, tap "Not now"; confirm
+      the sheet does not reappear on subsequent Inbox visits/relaunches
+      until 7 days have elapsed (or fast-forward by editing the persisted
+      `push_priming` entry in the Tauri store file directly, since there's
+      no dev-only clock override).
+    - **You-screen manual enable**: with no priming decision yet made (or
+      after "Not now"), open the You tab directly and confirm the
+      Notifications row offers "Enable notifications"; tapping it triggers
+      registration the same as the priming sheet and flips the row to
+      "Enabled".
+    - **Registration + backend row**: after enabling, confirm (via DB or an
+      internal admin view) that a `push_devices` row exists for the signed-in
+      user with the correct `platform` (`ios`/`android`), a non-empty
+      `token`, and `app_version` matching the build.
+    - **Full tap-through loop**: background the app (do not force-kill),
+      have a customer reply to a conversation on staging, confirm the push
+      notification arrives, tap it, and confirm the app opens directly on
+      that conversation (not the Inbox) — then confirm the back gesture/
+      button returns to the Inbox, not a dead end.
+    - **Cold-start tap-through**: fully kill the app, trigger a customer
+      reply push, tap it from a killed state, and confirm the app boots
+      straight through to that conversation once auth bootstrap completes
+      (not a flash of Inbox first, not a hang).
+    - **Sign-out unregisters**: sign out, then confirm (via DB) the
+      corresponding `push_devices` row is deleted; send another test push
+      to the same device/token and confirm nothing arrives.
+    - **Degraded payload**: if the backend ever sends a payload with only
+      `conversation_id` (no `deep_link`, no `workspace_slug` — e.g. an older
+      app version's queued notification), confirm tapping it does NOT crash
+      or navigate anywhere (current documented behavior — see
+      `routePushTap`'s doc comment for why a slugless payload is a no-op
+      rather than a best-effort guess).
