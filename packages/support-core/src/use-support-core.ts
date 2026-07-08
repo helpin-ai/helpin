@@ -6,11 +6,19 @@ import {
   updateConversationUnreadCount,
 } from './support-query-cache'
 import type {
+  AssignableMember,
   ConversationListResponse,
+  ConversationStatus,
   SupportConversation,
+  SupportMessage,
 } from './support-types'
 import type { VisitorContextResponse } from './visitor-types'
-import { supportService, type ConversationFilters } from './support-service'
+import {
+  supportService,
+  type AssignConversationUserPayload,
+  type ConversationFilters,
+  type SendMessagePayload,
+} from './support-service'
 
 function unwrapOrThrow<T>(value: { data: T | null; error: string | null }): T {
   if (value.error || value.data === null) {
@@ -145,6 +153,87 @@ export function useMarkConversationUnread(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.unreadStats(workspaceId) })
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxScopes(workspaceId) })
     },
+  })
+}
+
+interface SendMessageMutationContext {
+  previousMessages: SupportMessage[] | undefined
+  optimisticId: string
+}
+
+export function useSendMessage(workspaceId: string, conversationId: string) {
+  const queryClient = useQueryClient()
+  const messagesKey = supportQueryKeys.messages(workspaceId, conversationId)
+
+  return useMutation<SupportMessage, Error, SendMessagePayload, SendMessageMutationContext>({
+    mutationFn: async (payload) => unwrapOrThrow(await supportService.sendMessage(workspaceId, conversationId, payload)),
+    onMutate: async (payload) => {
+      await queryClient.cancelQueries({ queryKey: messagesKey })
+      const previousMessages = queryClient.getQueryData<SupportMessage[]>(messagesKey)
+      const optimisticId = `pending-${crypto.randomUUID()}`
+      const optimisticMessage: SupportMessage = {
+        id: optimisticId,
+        workspace_id: workspaceId,
+        conversation_id: conversationId,
+        sender_type: 'user',
+        content: payload.content,
+        is_internal: payload.is_internal ?? false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        pending: true,
+      }
+      queryClient.setQueryData<SupportMessage[]>(messagesKey, (current) => [...(current ?? []), optimisticMessage])
+      return { previousMessages, optimisticId }
+    },
+    onSuccess: (message, _payload, context) => {
+      queryClient.setQueryData<SupportMessage[]>(messagesKey, (current) => {
+        const list = current ?? []
+        const withoutOptimistic = list.filter((m) => m.id !== context.optimisticId)
+        return [...withoutOptimistic, message]
+      })
+    },
+    onError: (_error, _payload, context) => {
+      queryClient.setQueryData<SupportMessage[]>(messagesKey, context?.previousMessages)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+    },
+  })
+}
+
+export function useUpdateConversationStatus(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ conversationId, status }: { conversationId: string; status: ConversationStatus }) =>
+      supportService.updateConversationStatus(workspaceId, conversationId, status).then(unwrapOrThrow),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, variables.conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+    },
+  })
+}
+
+export function useAssignConversationUser(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ conversationId, userId }: { conversationId: string; userId: string | null }) => {
+      const payload: AssignConversationUserPayload = { user_id: userId }
+      return supportService.assignConversationUser(workspaceId, conversationId, payload).then(unwrapOrThrow)
+    },
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, variables.conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+    },
+  })
+}
+
+export function useConversationAssignees(workspaceId: string, conversationId: string | null) {
+  return useQuery<AssignableMember[]>({
+    queryKey: supportQueryKeys.assignees(workspaceId, conversationId ?? ''),
+    queryFn: async () => unwrapOrThrow(await supportService.listConversationAssignees(workspaceId, conversationId!)),
+    enabled: !!workspaceId && !!conversationId,
+    staleTime: 15_000,
   })
 }
 

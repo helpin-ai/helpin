@@ -11,4 +11,6 @@ export const supportQueryKeys = {
   teammatePresence: (wsId: string) => ['support', wsId, 'teammates', 'presence'] as const,
   visitorContext: (wsId: string, conversationId: string) =>
     ['support', wsId, 'conversations', conversationId, 'visitor-context'] as const,
+  assignees: (wsId: string, conversationId: string) =>
+    ['support', wsId, 'conversations', conversationId, 'assignees'] as const,
 } as const
