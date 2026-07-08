@@ -14,6 +14,10 @@ import {
 } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
 import { haptic } from '@mobile/lib/haptics'
+import { isTauri } from '@mobile/lib/host'
+import { getPushPrimingPref, shouldShowPriming } from '@mobile/lib/prefs'
+import { PermissionPrimingSheet } from '@mobile/push/permission-priming-sheet'
+import { useAuthStore } from '@mobile/stores/auth-store'
 import { TopBar } from '@mobile/ui/top-bar'
 import { OfflineBanner } from '@mobile/ui/offline-banner'
 import { SegmentedControl, type Segment } from '@mobile/ui/segmented-control'
@@ -86,6 +90,26 @@ export function InboxScreen() {
   const [segment, setSegment] = useState<InboxSegment>('mine')
   const [selectedMailboxId, setSelectedMailboxId] = useState<string | null>(null)
   const [mailboxSheetOpen, setMailboxSheetOpen] = useState(false)
+
+  // Push-notification permission priming: first time a signed-in user lands
+  // on Inbox (after the workspace has resolved), show the priming sheet —
+  // but only inside the native shell, and only when `shouldShowPriming`
+  // says we haven't already asked recently / gotten an answer. Checked once
+  // per screen mount rather than on a live subscription: the decision only
+  // changes as a result of THIS sheet's own actions, which close the sheet
+  // and don't need to re-open it within the same mount.
+  const user = useAuthStore((s) => s.user)
+  const [primingSheetOpen, setPrimingSheetOpen] = useState(false)
+  useEffect(() => {
+    if (!workspace || !user || !isTauri()) return
+    let cancelled = false
+    void getPushPrimingPref().then((pref) => {
+      if (!cancelled && shouldShowPriming(pref, new Date())) setPrimingSheetOpen(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [workspace, user])
 
   const unreadStats = useUnreadStats(workspaceId, selectedMailboxId)
   const mailboxesQuery = useSupportMailboxes(workspaceId)
@@ -362,6 +386,8 @@ export function InboxScreen() {
         selectedMailboxId={selectedMailboxId}
         onSelect={setSelectedMailboxId}
       />
+
+      <PermissionPrimingSheet open={primingSheetOpen} onOpenChange={setPrimingSheetOpen} />
     </TabShell>
   )
 }

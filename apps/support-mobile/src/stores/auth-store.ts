@@ -6,6 +6,7 @@ import {
   hydrateSessionStorage,
 } from '@helpin-ai/support-core'
 import { authService } from '@mobile/lib/services/auth-service'
+import { unregisterPush } from '@mobile/push/push-registration'
 import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 import type { User } from '@mobile/lib/types'
 
@@ -41,6 +42,11 @@ export async function bootstrapAuth(): Promise<void> {
 }
 
 export async function signOut(): Promise<void> {
+  // Unregister the device's push token BEFORE the session is cleared —
+  // DELETE /user/push-devices needs the still-valid auth header. Failures
+  // are swallowed internally by unregisterPush(): sign-out must never fail
+  // or hang because a push-device delete didn't go through.
+  await unregisterPush()
   await clearSession()
   useAuthStore.setState({ user: null })
   // Tear down realtime: RootRealtimeMount (router.tsx) keys its websocket on
