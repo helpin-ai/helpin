@@ -112,3 +112,10 @@ pass before attempting `android init` / `ios init`:
 cd apps/support-mobile/src-tauri
 cargo check
 ```
+
+5. **Haptics on-device spot check** (`src/lib/haptics.ts`, backed by
+   `tauri-plugin-haptics`): on a physical Android/iOS device, trigger each
+   `HapticKind` (e.g. tap a `Pressable`/`SegmentedControl` with a `haptic`
+   prop, or call `haptic(...)` from devtools) and confirm you feel the
+   corresponding tap. Simulators/emulators don't vibrate — on those, just
+   verify no crash/error occurs when `haptic()` fires.
