@@ -20,16 +20,17 @@ func (s *AgentService) SetAgentDraftLLM(client agentDraftLLM) *AgentService {
 	return s
 }
 
-func (s *AgentService) DraftCustomAgent(ctx context.Context, req model.CustomAgentDraftRequest) (*model.CustomAgentDraftResponse, error) {
-	skillCatalog, err := s.ListSkillCatalog(ctx, "")
+func (s *AgentService) DraftCustomAgent(ctx context.Context, workspaceID string, req model.CustomAgentDraftRequest) (*model.CustomAgentDraftResponse, error) {
+	skillCatalog, err := s.ListSkillCatalog(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	return s.DraftCustomAgentWithCatalog(ctx, req, s.ListToolCatalog().Tools, skillCatalog.Skills)
+	return s.DraftCustomAgentWithCatalog(ctx, workspaceID, req, s.ListToolCatalog().Tools, skillCatalog.Skills)
 }
 
 func (s *AgentService) DraftCustomAgentWithCatalog(
 	ctx context.Context,
+	workspaceID string,
 	req model.CustomAgentDraftRequest,
 	tools []model.ToolCatalogEntry,
 	skills []model.SkillCatalogEntry,
@@ -42,7 +43,17 @@ func (s *AgentService) DraftCustomAgentWithCatalog(
 		return nil, fmt.Errorf("agent draft LLM is not configured")
 	}
 
-	resp, err := s.agentDraftLLM.ChatCompletion(ctx, llm.ChatRequest{
+	// Drafting is non-chargeable, but the metered LLM provider rejects calls
+	// without a metering context.
+	callCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    workspaceID,
+		FeatureKey:     BillingFeatureCustomAgentDraft,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureCustomAgentDraft, "draft", aiUsageStableHash(description)),
+		Metadata: map[string]interface{}{
+			"action": "custom_agent_draft",
+		},
+	})
+	resp, err := s.agentDraftLLM.ChatCompletion(callCtx, llm.ChatRequest{
 		SystemPrompt: customAgentDraftSystemPrompt(tools, skills),
 		Messages: []llm.Message{{
 			Role:    "user",

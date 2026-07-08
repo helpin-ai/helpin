@@ -559,7 +559,7 @@ func (s *CommandBarService) commandBarCreateAgentChatProposal(ctx context.Contex
 	if s == nil || s.agentService == nil {
 		return nil, "", fmt.Errorf("agent service is not configured")
 	}
-	draft, err := s.agentService.DraftCustomAgent(ctx, model.CustomAgentDraftRequest{Description: text})
+	draft, err := s.agentService.DraftCustomAgent(ctx, workspaceID, model.CustomAgentDraftRequest{Description: text})
 	if err != nil {
 		return nil, "", err
 	}

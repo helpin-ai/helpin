@@ -95,7 +95,7 @@ func TestDraftCustomAgentRejectsShortDescriptionBeforeCallingLLM(t *testing.T) {
 	llmClient := &fakeAgentDraftLLM{content: `{}`}
 	svc := (&AgentService{}).SetAgentDraftLLM(llmClient)
 
-	_, err := svc.DraftCustomAgent(context.Background(), model.CustomAgentDraftRequest{Description: "hi"})
+	_, err := svc.DraftCustomAgent(context.Background(), "ws-1", model.CustomAgentDraftRequest{Description: "hi"})
 
 	if err == nil {
 		t.Fatal("expected validation error")
@@ -129,6 +129,7 @@ func TestDraftCustomAgentReturnsValidatedDraftWithoutCreatingAgent(t *testing.T)
 
 	result, err := svc.DraftCustomAgentWithCatalog(
 		context.Background(),
+		"ws-1",
 		model.CustomAgentDraftRequest{Description: "Create an agent that answers questions from docs."},
 		[]model.ToolCatalogEntry{{Name: "search_documents", Description: "Search docs"}},
 		nil,
