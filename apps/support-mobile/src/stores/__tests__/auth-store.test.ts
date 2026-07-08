@@ -1,7 +1,8 @@
 import { configureSessionStorage, createMemorySessionStorage } from '@helpin-ai/support-core'
 import { authService } from '@mobile/lib/services/auth-service'
 import type { User } from '@mobile/lib/types'
-import { bootstrapAuth, useAuthStore } from '@mobile/stores/auth-store'
+import { bootstrapAuth, signOut, useAuthStore } from '@mobile/stores/auth-store'
+import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 
 vi.mock('@mobile/lib/services/auth-service', () => ({
   authService: { me: vi.fn(), signin: vi.fn() },
@@ -65,4 +66,19 @@ test('me() network error: serverUnreachable is true, user stays null, session is
   // because the server was briefly unreachable at startup.
   expect(storage.getAccessToken()).toBe('at')
   expect(storage.getRefreshToken()).toBe('rt')
+})
+
+test('signOut clears the session, user, AND the workspace store (realtime teardown)', async () => {
+  const storage = createMemorySessionStorage({ accessToken: 'at', refreshToken: 'rt' })
+  configureSessionStorage(storage)
+  useAuthStore.setState({ user: testUser, loading: false, serverUnreachable: false })
+  useWorkspaceStore.getState().setCurrentWorkspace({ id: 'ws-1', slug: 'acme', name: 'Acme' })
+
+  await signOut()
+
+  expect(useAuthStore.getState().user).toBeNull()
+  expect(storage.getAccessToken()).toBeNull()
+  // RootRealtimeMount derives its workspaceId from this store; if it stayed
+  // populated, a token-less websocket would loop reconnects after logout.
+  expect(useWorkspaceStore.getState().currentWorkspace).toBeNull()
 })

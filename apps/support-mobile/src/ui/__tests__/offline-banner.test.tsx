@@ -34,7 +34,13 @@ let consoleErrorSpy: ReturnType<typeof vi.spyOn>
 beforeAll(() => {
   const originalError = console.error.bind(console)
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
-    if (typeof args[0] === 'string' && args[0].includes(ACT_WARNING_SNIPPET)) return
+    // Swallow ONLY the verified upstream warning: it must be the act warning
+    // AND reference OfflineBanner (React formats "An update to %s inside a
+    // test..." — the component name may be baked into the string or passed as
+    // a later format arg, so match across all string args). Any other act
+    // warning in this file still fails loudly.
+    const text = args.filter((arg): arg is string => typeof arg === 'string').join(' ')
+    if (text.includes(ACT_WARNING_SNIPPET) && text.includes('OfflineBanner')) return
     originalError(...args)
   })
 })

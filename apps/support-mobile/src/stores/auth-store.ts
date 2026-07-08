@@ -6,6 +6,7 @@ import {
   hydrateSessionStorage,
 } from '@helpin-ai/support-core'
 import { authService } from '@mobile/lib/services/auth-service'
+import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 import type { User } from '@mobile/lib/types'
 
 interface AuthState {
@@ -42,4 +43,9 @@ export async function bootstrapAuth(): Promise<void> {
 export async function signOut(): Promise<void> {
   await clearSession()
   useAuthStore.setState({ user: null })
+  // Tear down realtime: RootRealtimeMount (router.tsx) keys its websocket on
+  // useWorkspaceStore's currentWorkspace.id. Leaving it populated after the
+  // tokens are cleared would keep a token-less socket looping reconnect
+  // attempts forever on the login screen.
+  useWorkspaceStore.getState().setCurrentWorkspace(null)
 }

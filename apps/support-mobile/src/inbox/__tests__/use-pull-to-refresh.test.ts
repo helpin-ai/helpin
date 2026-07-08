@@ -42,6 +42,20 @@ test('an active row-swipe claim zeroes pull distance and ignores the rest of the
   expect(activeGesture()).toBe('row-swipe')
 })
 
+test('unmounting mid-gesture releases a claimed "pull" token', () => {
+  const { result, unmount } = renderHook(() =>
+    usePullToRefresh({ scrollRef: scrollRefAtTop(), onRefresh: async () => {} }),
+  )
+  act(() => result.current.handlers.onPointerDown(pointer(0)))
+  act(() => result.current.handlers.onPointerMove(pointer(60)))
+  expect(activeGesture()).toBe('pull')
+
+  // Screen unmounts (e.g. navigation) before pointerup/pointercancel fires —
+  // the claim must not leak and block row-swipe gestures elsewhere.
+  unmount()
+  expect(activeGesture()).toBeNull()
+})
+
 test('releasing an unarmed pull frees the claim and resets distance', () => {
   const { result } = renderHook(() => usePullToRefresh({ scrollRef: scrollRefAtTop(), onRefresh: async () => {} }))
   act(() => result.current.handlers.onPointerDown(pointer(0)))

@@ -15,6 +15,12 @@ const CONNECTED_LIKE_STATUSES = new Set(['idle', 'connecting', 'connected'])
  *    "Reconnecting…".
  *  - Otherwise ('idle' pre-connect, 'connecting', 'connected') stays hidden,
  *    so the banner never flashes during ordinary app startup.
+ *
+ * Known tradeoff (deliberate): `auth_expired` shows "Reconnecting…", which is
+ * imprecise — the socket won't recover without a token refresh. Accepted
+ * because the api client's onUnauthorized handler already navigates to /login
+ * on genuine expiry, so the mislabel is transient; a dedicated third visible
+ * state isn't worth the surface area yet.
  */
 export function bannerState(online: boolean, realtimeStatus: string): BannerVisibility {
   if (!online) return 'offline'
