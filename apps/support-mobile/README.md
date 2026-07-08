@@ -119,3 +119,24 @@ cargo check
    prop, or call `haptic(...)` from devtools) and confirm you feel the
    corresponding tap. Simulators/emulators don't vibrate — on those, just
    verify no crash/error occurs when `haptic()` fires.
+
+6. **Navigation / ScreenStack device check** (`src/navigation/screen-stack.tsx`,
+   `src/navigation/use-edge-swipe-back.ts`) — these need a real touchscreen or
+   at minimum an emulator with touch input; jsdom cannot exercise gestures or
+   the reduced-motion media query end-to-end:
+   - Navigate placeholder Inbox → Conversation (temporary `Link` or
+     `router.navigate`) and confirm the new screen slides in from the right
+     with a spring feel (not linear/robotic), and the previous screen
+     partially parallaxes left.
+   - From the Conversation screen, swipe right starting within ~28px of the
+     left edge and confirm it pops back to Inbox; confirm swipes starting
+     mid-screen do NOT trigger back (edge-only gesture).
+   - Confirm a vertical scroll started near the edge does not get hijacked by
+     the horizontal gesture (intent-lock check — scroll the conversation list
+     with a mostly-vertical touch starting at x < 28px).
+   - Enable OS-level "Reduce Motion" (Settings > Accessibility on iOS/Android)
+     and confirm push/pop transitions crossfade instead of sliding.
+   - Cold-start directly on a conversation deep link (`/w/{slug}/support/{id}`,
+     routine once Task 21 lands) with no prior in-app history, then trigger
+     back — confirm it lands on the Inbox (`backFallbackPath`), not a dead
+     end or a crash from `router.history.back()` on an empty stack.
