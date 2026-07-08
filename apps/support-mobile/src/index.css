@@ -185,3 +185,12 @@ body {
 @keyframes skeleton-shimmer {
   100% { transform: translateX(100%); }
 }
+
+/* Typing-indicator dot pulse, referenced by src/thread/message-list.tsx via
+   animate-[typing-dot-bounce_...]. Mirrors packages/widget-core's
+   helpin-typing-bounce keyframe so the native app and the embeddable widget
+   feel the same. */
+@keyframes typing-dot-bounce {
+  0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+  40% { transform: scale(1); opacity: 1; }
+}

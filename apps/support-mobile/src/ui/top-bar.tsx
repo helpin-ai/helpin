@@ -13,9 +13,27 @@ export interface TopBarProps {
   /** Scroll offset motion value driving the large-title collapse; ignored when `large` is false. */
   scrollY?: MotionValue<number>
   className?: string
+  /**
+   * Overrides the compact title/subtitle text block with custom content
+   * (e.g. a presence dot next to a customer name). Ignored when `large` is
+   * true — large mode always shows the plain title/subtitle strings.
+   */
+  titleSlot?: ReactNode
+  /** Makes the compact title area tappable (e.g. opening a context sheet). Ignored when `large` is true. */
+  onTitlePress?: () => void
 }
 
-export function TopBar({ title, subtitle, onBack, trailing, large, scrollY, className }: TopBarProps) {
+export function TopBar({
+  title,
+  subtitle,
+  onBack,
+  trailing,
+  large,
+  scrollY,
+  className,
+  titleSlot,
+  onTitlePress,
+}: TopBarProps) {
   // Always call the hooks (rules of hooks) even when `large`/`scrollY` aren't in play;
   // the fallback motion value just never changes, so the derived transforms stay static.
   const fallbackScrollY = useMotionValue(0)
@@ -47,10 +65,27 @@ export function TopBar({ title, subtitle, onBack, trailing, large, scrollY, clas
             >
               <span className="text-headline">{title}</span>
             </motion.div>
+          ) : onTitlePress ? (
+            <Pressable
+              aria-label={title}
+              onPress={onTitlePress}
+              className="absolute inset-x-12 flex min-h-0 min-w-0 flex-col items-center justify-center text-center"
+            >
+              {titleSlot ?? (
+                <>
+                  <span className="text-headline">{title}</span>
+                  {subtitle && <span className="text-footnote text-muted-foreground">{subtitle}</span>}
+                </>
+              )}
+            </Pressable>
           ) : (
             <div className="pointer-events-none absolute inset-x-12 flex flex-col items-center text-center">
-              <span className="text-headline">{title}</span>
-              {subtitle && <span className="text-footnote text-muted-foreground">{subtitle}</span>}
+              {titleSlot ?? (
+                <>
+                  <span className="text-headline">{title}</span>
+                  {subtitle && <span className="text-footnote text-muted-foreground">{subtitle}</span>}
+                </>
+              )}
             </div>
           )}
 

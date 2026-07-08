@@ -18,7 +18,8 @@ const STATUS_BADGES: Partial<Record<SupportConversation['status'], { label: stri
   spam: { label: 'Spam', tone: 'neutral' },
 }
 
-function displayNameFor(conversation: SupportConversation): string {
+/** A conversation's display name — customer name, else email, else a short visitor id, else "Anonymous". */
+export function displayNameFor(conversation: SupportConversation): string {
   if (conversation.customer_name) return conversation.customer_name
   if (conversation.customer_email) return conversation.customer_email
   if (conversation.anonymous_id) return `Visitor #${conversation.anonymous_id.slice(0, 6)}`

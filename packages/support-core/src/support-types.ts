@@ -176,6 +176,7 @@ export interface SupportMessage {
   sender_display_name?: string
   sender_avatar_url?: string
   content: string
+  /** "reply" | "csat_survey" | "system" — server/internal/model/support_inbox.go:293. */
   message_type?: string
   is_internal: boolean
   metadata?: string
@@ -183,6 +184,18 @@ export interface SupportMessage {
   email_notified_at?: string
   email_read_at?: string
   attachments?: SupportAttachmentPayload[]
+  /**
+   * Sanitized HTML body — only populated for inbound email messages
+   * (via_channel === 'email') from the linked support_email_logs row.
+   * Backend already marks quoted-reply wrappers with
+   * `data-helpin-quote="true"` (server/internal/email/inboundhtml/convert.go)
+   * so the frontend can collapse them; see thread/thread-helpers.ts#splitQuotedHtml.
+   * Was missing from this type until Task 13 — verified against the web
+   * client's canonical type at frontend/src/lib/pm-types/support.ts:554.
+   */
+  html_body?: string
+  /** Markdown-friendly plaintext body — present only for inbound email messages. */
+  stripped_text?: string
   created_at: string
   updated_at: string
   /** Client-only optimistic-send flag; never set by the backend. */
