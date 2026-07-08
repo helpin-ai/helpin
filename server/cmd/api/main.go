@@ -299,6 +299,7 @@ func main() {
 			&model.NotificationPreference{},
 			&model.UserNotificationSettings{},
 			&model.EntityFollower{},
+			&model.PushDevice{},
 			// CRM module
 			&model.CRMContact{},
 			&model.CRMCompany{},
@@ -644,6 +645,7 @@ func main() {
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
 	userNotifSettingsRepo := repository.NewUserNotificationSettingsRepository(db)
+	pushDeviceRepo := repository.NewPushDeviceRepository(db)
 	crmContactRepo := repository.NewCRMContactRepository(db)
 	crmCompanyRepo := repository.NewCRMCompanyRepository(db)
 	crmDealRepo := repository.NewCRMDealRepository(db)
@@ -692,6 +694,7 @@ func main() {
 	pmAutomationService.SetHealthObserver(automationHealthService)
 	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, appEmailClient, cfg.AppBaseURL)
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
+	pushDeviceService := service.NewPushDeviceService(pushDeviceRepo)
 	followerService := service.NewFollowerService(followerRepo)
 	pmTaskService := service.NewPMTaskService(pmTaskRepo, workspaceRepo, pmWorkflowRepo, pmEpicRepo, pmSprintRepo, pmLabelRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmAttachmentRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
 	pmTaskService.SetTaskTemplateRepository(pmTaskTemplateRepo)
@@ -1316,6 +1319,7 @@ func main() {
 		Git:                 handler.NewGitHandler(gitService, gitWebhookEventRepo),
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
+		PushDevice:          handler.NewPushDeviceHandler(pushDeviceService),
 		CRMContact:          handler.NewCRMContactHandler(crmContactService),
 		CRMCompany:          handler.NewCRMCompanyHandler(crmCompanyService),
 		CRMDeal:             handler.NewCRMDealHandler(crmDealService),
