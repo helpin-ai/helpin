@@ -193,3 +193,19 @@ export function routePushTap(data: Record<string, string>, navigate: (to: string
 export function routeDeepLinkUrl(url: string, navigate: (to: string) => void): void {
   routePushTap({ deep_link: url }, navigate)
 }
+
+/**
+ * Cold-start counterpart to {@link routeDeepLinkUrl}: handles the deep-link
+ * plugin's `getCurrent()` return shape (`string[] | null`). Per the plugin's
+ * own docs, `onOpenUrl` only fires while the app is already running —
+ * `getCurrent()` must be checked once on app load to catch a deep link that
+ * *launched* the app.
+ *
+ * Only the first URL is considered: an app launch is triggered by exactly one
+ * URL (the array shape exists for macOS API compatibility), and the caller's
+ * pending-tap queue holds a single target anyway.
+ */
+export function routeColdStartUrls(urls: string[] | null, navigate: (to: string) => void): void {
+  const first = urls?.[0]
+  if (first) routeDeepLinkUrl(first, navigate)
+}

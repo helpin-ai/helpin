@@ -104,14 +104,20 @@ the prerequisites above must run the following to finish mobile bring-up.
 4. **Commit the generated `gen/android` and `gen/apple` directories** once
    initialized (see point 1 above).
 
-If `cargo check` in `src-tauri/` was not previously verified (no network
-access to crates.io, or no Rust toolchain), run it once as a first sanity
-pass before attempting `android init` / `ios init`:
+If `cargo check` in `src-tauri/` was not previously verified locally (no
+network access to crates.io, or no Rust toolchain), run it once as a first
+sanity pass before attempting `android init` / `ios init`:
 
 ```bash
 cd apps/support-mobile/src-tauri
 cargo check
 ```
+
+Note: CI's `mobile-check` job (`.github/workflows/ci.yml`) runs this same
+`cargo check` on every PR that touches the mobile app — but for the
+**desktop (linux host) target only**; it does not exercise Android/iOS
+`#[cfg(mobile)]` code paths, so the local check above is still worth running
+before mobile `init`.
 
 5. **Haptics on-device spot check** (`src/lib/haptics.ts`, backed by
    `tauri-plugin-haptics`): on a physical Android/iOS device, trigger each
@@ -286,13 +292,17 @@ cargo check
       rather than a best-effort guess).
 
 11. **OS-level deep links (Task 21 — `tauri-plugin-deep-link`,
-    `src/main.tsx`'s `onOpenUrl` wiring, `routeDeepLinkUrl` in
-    `src/push/push-registration.ts`)**: config was added text-only (no Rust
-    toolchain, no `gen/android`/`gen/apple` on this machine — see
-    SPIKE-VERIFY notes below); the pure URL-parsing wrapper is unit-tested,
-    but the OS→app handoff itself needs a real device/emulator and generated
-    native projects. Once `gen/android` and `gen/apple` exist (item 1 above)
-    and the app is installed on a device/emulator/simulator:
+    `src/main.tsx`'s `onOpenUrl` + `getCurrent()` wiring, `routeDeepLinkUrl`
+    and `routeColdStartUrls` in `src/push/push-registration.ts`)**: config
+    was added text-only (no Rust toolchain, no `gen/android`/`gen/apple` on
+    this machine — see SPIKE-VERIFY notes below); the pure URL-parsing
+    wrappers are unit-tested, but the OS→app handoff itself needs a real
+    device/emulator and generated native projects. Warm opens arrive via
+    `onOpenUrl`; cold starts (app launched BY the link) are picked up via a
+    one-shot `getCurrent()` at startup, since the plugin's `onOpenUrl` only
+    fires while the app is already running. Once `gen/android` and
+    `gen/apple` exist (item 1 above) and the app is installed on a
+    device/emulator/simulator:
     - **Android**:
       ```bash
       adb shell am start -a android.intent.action.VIEW -d "helpin://w/<slug>/support/<id>"

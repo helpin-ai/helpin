@@ -4,14 +4,14 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 import { Toaster } from 'sonner'
 import { configureSessionStorage, createBrowserSessionStorage } from '@helpin-ai/support-core'
-import { onOpenUrl } from '@tauri-apps/plugin-deep-link'
+import { getCurrent as getCurrentDeepLink, onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import { onPushTapped } from '@helpin/plugin-push'
 import { setupVisibilityRefresh, startTokenRefreshTimer, stopTokenRefreshTimer } from '@mobile/lib/api'
 import { isTauri } from '@mobile/lib/host'
 import { queryClient } from '@mobile/lib/queryClient'
 import { createTauriSessionStorage } from '@mobile/lib/session-storage'
 import { router } from '@mobile/router'
-import { routeDeepLinkUrl, routePushTap } from '@mobile/push/push-registration'
+import { routeColdStartUrls, routeDeepLinkUrl, routePushTap } from '@mobile/push/push-registration'
 import { bootstrapAuth, useAuthStore } from '@mobile/stores/auth-store'
 import './index.css'
 
@@ -80,6 +80,17 @@ if (isTauri()) {
     for (const url of urls) {
       routeDeepLinkUrl(url, queueTapNavigation)
     }
+  })
+
+  // Cold-start deep links: per the plugin's own .d.ts, `onOpenUrl` only
+  // fires while the app is already running — a deep link that *launched*
+  // the app must be picked up via `getCurrent()` once at startup. Feeds the
+  // same auth-gated queue as the two listeners above. If the same launch
+  // ever surfaced a target via both the push plugin's pending-tap drain and
+  // `getCurrent()` (unlikely — a push tap is not a deep-link open), the
+  // queue holds only one pending target and last write wins, which is fine.
+  void getCurrentDeepLink().then((urls) => {
+    routeColdStartUrls(urls, queueTapNavigation)
   })
 }
 

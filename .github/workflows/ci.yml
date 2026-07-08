@@ -323,24 +323,28 @@ jobs:
         run: pnpm --dir apps/support-desktop run build
 
   # ------------------- Support Mobile (Tauri) ---------------
-  # Validates the web/TS side of the mobile shell only (typecheck + vitest
-  # for both the app and packages/support-core, which it consumes from
-  # source via a Vite/tsconfig alias — see apps/support-mobile/vite.config.ts
-  # — so no package build step is needed before these run, unlike the
-  # desktop job's widget-core dependency).
+  # Validates the web/TS side of the mobile shell (typecheck + vitest for
+  # both the app and packages/support-core, which it consumes from source
+  # via a Vite/tsconfig alias — see apps/support-mobile/vite.config.ts — so
+  # no package build step is needed before those run, unlike the desktop
+  # job's widget-core dependency), PLUS a `cargo check` of `src-tauri/`.
   #
-  # Deliberately NOT running `cargo check` in `src-tauri/`: none of the
-  # existing jobs in this file set up a Rust toolchain (no
-  # `actions/checkout` + rustup/cargo step anywhere above), so adding one
-  # here would be new CI infrastructure, not a same-shape addition. Wiring a
-  # Rust toolchain (and eventually real Android/iOS builds) is scoped to a
-  # future release-pipeline job, not this per-PR web-only gate.
+  # The cargo check compiles the DESKTOP (linux host) target only — the
+  # mobile shell and the vendored tauri-plugin-helpin-push were written
+  # without a local Rust toolchain, so this is their only compile gate.
+  # Android/iOS targets need SDK/NDK/Xcode setups and stay release-pipeline
+  # scope, not per-PR scope. The webkit2gtk/gtk apt packages below are
+  # tauri v2's Linux build prerequisites (sys crates resolve them via
+  # pkg-config at build time), per https://v2.tauri.app/start/prerequisites/.
   mobile-check:
     name: Support Mobile CI
     needs: changes
     if: needs.changes.outputs.mobile == 'true'
     runs-on: arc-runners-helpin-ai
-    timeout-minutes: 10
+    # cargo check of the tauri stack is heavy on a cold cache (rust-cache
+    # keeps warm runs fast); generous timeout so a cache miss doesn't fail
+    # the run for the wrong reason.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -355,3 +359,23 @@ jobs:
         run: pnpm --dir apps/support-mobile run test
       - name: Test support-core
         run: pnpm --dir packages/support-core run test
+      - name: Install Tauri Linux build deps (webkit2gtk/gtk via pkg-config)
+        # Same sudo-or-not fallback pattern as server-tests' gcc step — ARC
+        # runner images may or may not ship sudo.
+        run: |
+          PKGS="pkg-config build-essential libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev"
+          (command -v sudo >/dev/null 2>&1 && sudo apt-get update && sudo apt-get install -y $PKGS) \
+            || (apt-get update && apt-get install -y $PKGS) \
+            || echo "::error::could not install Tauri Linux build deps — cargo check will fail"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/support-mobile/src-tauri
+      - name: Build frontend dist (tauri::generate_context! embeds frontendDist)
+        # The generate_context! proc macro reads tauri.conf.json and embeds
+        # the frontendDist ("../dist") assets at compile time, so ../dist
+        # must exist before cargo check expands it. cargo check itself never
+        # invokes tauri-cli, so beforeBuildCommand does not run here.
+        run: pnpm --dir apps/support-mobile run build
+      - name: Cargo check (desktop target — see job comment)
+        run: cargo check --manifest-path apps/support-mobile/src-tauri/Cargo.toml

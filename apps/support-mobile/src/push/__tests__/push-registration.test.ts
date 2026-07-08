@@ -1,7 +1,7 @@
 import type { invoke as InvokeFn } from '@tauri-apps/api/core'
 import type { getPushToken as GetPushTokenFn, onPushTokenChanged as OnPushTokenChangedFn } from '@helpin/plugin-push'
 import type { api as ApiClient } from '@mobile/lib/api'
-import { routeDeepLinkUrl, routePushTap } from '@mobile/push/push-registration'
+import { routeColdStartUrls, routeDeepLinkUrl, routePushTap } from '@mobile/push/push-registration'
 
 // Mocked locally (not in a shared setup file), same rationale as
 // haptics.test.ts: these fakes must never leak into other test files that
@@ -338,5 +338,46 @@ describe('routeDeepLinkUrl', () => {
     const navigate = vi.fn()
     routeDeepLinkUrl('', navigate)
     expect(navigate).not.toHaveBeenCalled()
+  })
+})
+
+// `routeColdStartUrls` handles the deep-link plugin's `getCurrent()` return
+// shape (`string[] | null`) — the cold-start path, since `onOpenUrl` only
+// fires while the app is already running. Same single parser via
+// `routeDeepLinkUrl`; these tests only cover the array/null handling that's
+// new here.
+describe('routeColdStartUrls', () => {
+  test('array with a valid helpin:// URL navigates', () => {
+    const navigate = vi.fn()
+    routeColdStartUrls(['helpin://w/acme/support/conv_1'], navigate)
+    expect(navigate).toHaveBeenCalledWith('/w/acme/support/conv_1')
+  })
+
+  test('null (app not started via a deep link): no navigation', () => {
+    const navigate = vi.fn()
+    routeColdStartUrls(null, navigate)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  test('empty array: no navigation', () => {
+    const navigate = vi.fn()
+    routeColdStartUrls([], navigate)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  test('invalid URL in the array: no navigation (delegates to the shared parser)', () => {
+    const navigate = vi.fn()
+    routeColdStartUrls(['https://helpin.ai/w/acme/support/conv_1'], navigate)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  test('only the first URL is considered (matches launch semantics: one triggering URL)', () => {
+    const navigate = vi.fn()
+    routeColdStartUrls(
+      ['helpin://w/acme/support/conv_1', 'helpin://w/other/support/conv_2'],
+      navigate,
+    )
+    expect(navigate).toHaveBeenCalledTimes(1)
+    expect(navigate).toHaveBeenCalledWith('/w/acme/support/conv_1')
   })
 })
