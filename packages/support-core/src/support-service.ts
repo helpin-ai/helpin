@@ -62,6 +62,14 @@ export interface ConversationFilters {
   status?: string
   priority?: string
   filter?: string
+  /**
+   * Server-side "assigned_to" filter (CSV-capable, but the mobile client only
+   * ever sends a single value: "unassigned" — see
+   * server/internal/repository/support_inbox.go:966 and
+   * server/internal/handler/support_inbox.go:71). There is no `filter=unassigned`
+   * value server-side; unassigned is only expressed through this param.
+   */
+  assigned_to?: string
   mailbox_id?: string | null
   ai_state?: string
   flow_state?: string
@@ -76,6 +84,7 @@ export const supportService = {
     if (filters?.status) path += `&status=${filters.status}`
     if (filters?.priority) path += `&priority=${filters.priority}`
     if (filters?.filter) path += `&filter=${filters.filter}`
+    if (filters?.assigned_to) path += `&assigned_to=${encodeURIComponent(filters.assigned_to)}`
     if (filters?.mailbox_id && filters.mailbox_id !== 'all') {
       path += `&mailbox_id=${encodeURIComponent(filters.mailbox_id)}`
     }
