@@ -186,12 +186,15 @@ export function ConversationScreen() {
         )}
       </div>
 
+      {/* key={conversationId}: hard-remount the composer on conversation
+          switch so its transient local state (send phase, sent-timer) can
+          never leak across conversations — persistent state (draft text,
+          mode, failed-send chips) lives in useDraftStore keyed by
+          conversation. Scroll-on-own-send is handled by MessageList's
+          append effect reacting to the optimistic append, not wired from
+          the composer. */}
       {workspaceId && conversationId && (
-        <Composer
-          workspaceId={workspaceId}
-          conversationId={conversationId}
-          onSendStart={() => messageListRef.current?.scrollToBottom('smooth')}
-        />
+        <Composer key={conversationId} workspaceId={workspaceId} conversationId={conversationId} />
       )}
 
       <Sheet open={contextSheetOpen} onOpenChange={setContextSheetOpen}>

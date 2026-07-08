@@ -1,18 +1,16 @@
-import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { useSendMessage } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
 import { haptic } from '@mobile/lib/haptics'
 import { SegmentedControl } from '@mobile/ui/segmented-control'
 import { DEFAULT_DRAFT, useDraftStore, type ComposerMode } from './draft-store'
-import { failedSendsReducer, type FailedSend } from './failed-sends-reducer'
+import type { FailedSend } from './failed-sends-reducer'
 import { SendButton, type SendButtonState } from './send-button'
 
 export interface ComposerProps {
   workspaceId: string
   conversationId: string
-  /** Fires the moment a send is initiated (optimistic bubble about to appear) — lets the screen jump the thread to bottom regardless of eventual success/failure, matching "own sends always land at the bottom". */
-  onSendStart?: () => void
 }
 
 /**
@@ -27,18 +25,38 @@ const MIN_TEXTAREA_HEIGHT_PX = LINE_HEIGHT_PX + TEXTAREA_VERTICAL_PADDING_PX
 
 const SENT_STATE_MS = 400
 
-export function Composer({ workspaceId, conversationId, onSendStart }: ComposerProps) {
+/**
+ * NOTE: the conversation screen mounts this with `key={conversationId}` so
+ * the transient local state here (`phase`, `sendingRef`, the sent-timer)
+ * resets on every conversation switch — everything that must survive
+ * navigation (text, mode, failed-send chips) lives in `useDraftStore`,
+ * keyed by conversation.
+ *
+ * Scroll-on-send is NOT wired from here: the optimistic append from
+ * `useSendMessage` grows the message list's content, and the list's own
+ * append effect + pinned-to-bottom ResizeObserver (message-list.tsx) already
+ * scroll to the new bubble in the correct order (after the append exists),
+ * so an extra imperative call from the composer would be redundant at best
+ * and premature (pre-append) at worst.
+ */
+export function Composer({ workspaceId, conversationId }: ComposerProps) {
   const draft = useDraftStore((state) => state.drafts[conversationId] ?? DEFAULT_DRAFT)
   const setText = useDraftStore((state) => state.setText)
   const setMode = useDraftStore((state) => state.setMode)
   const clearDraft = useDraftStore((state) => state.clearDraft)
+  const addFailedSend = useDraftStore((state) => state.addFailedSend)
+  const removeFailedSend = useDraftStore((state) => state.removeFailedSend)
 
   const sendMessage = useSendMessage(workspaceId, conversationId)
   const [phase, setPhase] = useState<'idle' | 'sending' | 'sent'>('idle')
-  const [failedSends, dispatchFailedSends] = useReducer(failedSendsReducer, [] as FailedSend[])
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // Synchronous re-entrancy lock: `phase` is async React state, so two taps
+  // landing before a re-render could both see phase !== 'sending' and
+  // double-send. This ref flips before any await and is the source of truth
+  // for "a send is in flight right now".
+  const sendingRef = useRef(false)
 
   // Auto-grow 1..MAX_LINES: reset to 'auto' first so shrinking (e.g. after
   // clearing the draft on send) is measured correctly, then clamp scrollHeight
@@ -65,12 +83,17 @@ export function Composer({ workspaceId, conversationId, onSendStart }: ComposerP
     phase === 'sending' ? 'sending' : phase === 'sent' ? 'sent' : trimmed.length === 0 ? 'disabled' : 'active'
 
   async function attemptSend(content: string, mode: ComposerMode, retryId?: string) {
+    if (sendingRef.current) return
+    sendingRef.current = true
+    // A new send during the 400ms 'sent' display is legitimate — cancel the
+    // stale timer so it can't fire mid-flight and flip this send's 'sending'
+    // state back to 'idle' while the request is still outstanding.
+    if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current)
     setPhase('sending')
-    onSendStart?.()
     try {
       await sendMessage.mutateAsync({ content, is_internal: mode === 'note' })
       haptic('notificationSuccess')
-      if (retryId) dispatchFailedSends({ type: 'remove', id: retryId })
+      if (retryId) removeFailedSend(conversationId, retryId)
       setPhase('sent')
       sentTimeoutRef.current = setTimeout(() => setPhase('idle'), SENT_STATE_MS)
     } catch {
@@ -79,19 +102,22 @@ export function Composer({ workspaceId, conversationId, onSendStart }: ComposerP
       // A fresh send (no retryId) needs a new chip; a retry's chip is already
       // in the list — leave it there so the user can retry again.
       if (!retryId) {
-        dispatchFailedSends({ type: 'add', failedSend: { id: crypto.randomUUID(), content, mode } })
+        addFailedSend(conversationId, { id: crypto.randomUUID(), content, mode })
       }
+    } finally {
+      sendingRef.current = false
     }
   }
 
   function handleSendPress() {
-    if (trimmed.length === 0 || phase === 'sending') return
+    if (trimmed.length === 0 || sendingRef.current) return
     const content = trimmed
     const mode = draft.mode
     // Clear the draft the instant a send is confirmed by the user (tapping
     // Send) — mirrors the optimistic bubble appearing instantly. If the send
     // later fails, the content isn't lost: it lives on in the failedSends
-    // retry chip below, not back in the (now-empty) input.
+    // retry chip below (persisted alongside the draft), not back in the
+    // (now-empty) input.
     clearDraft(conversationId)
     void attemptSend(content, mode)
   }
@@ -100,17 +126,13 @@ export function Composer({ workspaceId, conversationId, onSendStart }: ComposerP
     void attemptSend(failedSend.content, failedSend.mode, failedSend.id)
   }
 
-  function handleDismiss(id: string) {
-    dispatchFailedSends({ type: 'remove', id })
-  }
-
   const isNote = draft.mode === 'note'
 
   return (
     <div className="flex flex-col">
-      {failedSends.length > 0 && (
+      {draft.failedSends.length > 0 && (
         <div className="flex flex-col gap-1.5 px-3 pb-2">
-          {failedSends.map((failedSend) => (
+          {draft.failedSends.map((failedSend) => (
             <div
               key={failedSend.id}
               className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-footnote text-destructive"
@@ -126,7 +148,7 @@ export function Composer({ workspaceId, conversationId, onSendStart }: ComposerP
               <button
                 type="button"
                 aria-label="Dismiss failed message"
-                onClick={() => handleDismiss(failedSend.id)}
+                onClick={() => removeFailedSend(conversationId, failedSend.id)}
                 className="shrink-0 rounded-full p-0.5 opacity-60 active:opacity-100"
               >
                 <X className="h-3 w-3" />

@@ -66,14 +66,14 @@ test('sending trims content and maps note mode to is_internal, clears the draft 
   fireEvent.change(screen.getByPlaceholderText('Internal note…'), { target: { value: '  internal thought  ' } })
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
-  // Draft clears the instant Send is pressed, before the network resolves.
-  expect(useDraftStore.getState().drafts['conv-1']).toBeUndefined()
+  // Draft text clears the instant Send is pressed, before the network resolves.
+  expect(useDraftStore.getState().drafts['conv-1']?.text ?? '').toBe('')
   expect(mutateAsync).toHaveBeenCalledWith({ content: 'internal thought', is_internal: true })
 
   await waitFor(() => expect(haptic).toHaveBeenCalledWith('notificationSuccess'))
 })
 
-test('onSendStart fires the instant a send is initiated (before the network resolves)', async () => {
+test('rapid double-tap fires exactly one send (synchronous sendingRef lock)', async () => {
   let resolveSend: (() => void) | undefined
   const mutateAsync = setupMutate(
     () =>
@@ -81,14 +81,15 @@ test('onSendStart fires the instant a send is initiated (before the network reso
         resolveSend = () => resolve({ id: 'msg-1' })
       }),
   )
-  const onSendStart = vi.fn()
-  render(<Composer workspaceId="ws-1" conversationId="conv-1" onSendStart={onSendStart} />)
+  render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
 
-  fireEvent.change(screen.getByPlaceholderText('Reply…'), { target: { value: 'Hi' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+  fireEvent.change(screen.getByPlaceholderText('Reply…'), { target: { value: 'once only' } })
+  const button = screen.getByRole('button', { name: 'Send message' })
+  fireEvent.click(button)
+  fireEvent.click(button)
+  fireEvent.click(button)
 
-  expect(onSendStart).toHaveBeenCalledTimes(1)
-  expect(mutateAsync).toHaveBeenCalled()
+  expect(mutateAsync).toHaveBeenCalledTimes(1)
   resolveSend?.()
   await waitFor(() => expect(haptic).toHaveBeenCalledWith('notificationSuccess'))
 })
@@ -105,6 +106,18 @@ test('a failed send shows a retry chip with the original content instead of rest
   await waitFor(() => expect(screen.getByText('will fail')).toBeDefined())
   expect(haptic).toHaveBeenCalledWith('notificationError')
   expect((screen.getByPlaceholderText('Reply…') as HTMLTextAreaElement).value).toBe('')
+  // The chip lives in the draft store (conversation-scoped and persisted),
+  // not in composer-local state that a navigation would discard.
+  expect(useDraftStore.getState().drafts['conv-1']?.failedSends.map((f) => f.content)).toEqual(['will fail'])
+})
+
+test('failed chips are conversation-scoped: a chip from another conversation never renders here', () => {
+  setupMutate(async () => ({}))
+  useDraftStore.getState().addFailedSend('conv-OTHER', { id: 'f-x', content: 'other conv failure', mode: 'reply' })
+
+  render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
+
+  expect(screen.queryByText('other conv failure')).toBeNull()
 })
 
 test('tapping Retry on a failed chip re-sends the same content and removes the chip on success', async () => {
@@ -125,6 +138,29 @@ test('tapping Retry on a failed chip re-sends the same content and removes the c
   await waitFor(() => expect(screen.queryByText('retry me')).toBeNull())
   expect(mutateAsync).toHaveBeenCalledTimes(2)
   expect(mutateAsync).toHaveBeenLastCalledWith({ content: 'retry me', is_internal: false })
+  expect(useDraftStore.getState().drafts['conv-1']?.failedSends ?? []).toEqual([])
+})
+
+test('a failed NOTE keeps is_internal: true through the chip round-trip on retry', async () => {
+  let shouldFail = true
+  const mutateAsync = setupMutate(async (payload) => {
+    if (shouldFail) throw new Error('still down')
+    return { id: 'msg-3', content: payload.content }
+  })
+  render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Note' }))
+  fireEvent.change(screen.getByPlaceholderText('Internal note…'), { target: { value: 'secret note' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+  await waitFor(() => expect(screen.getByText('secret note')).toBeDefined())
+  expect(mutateAsync).toHaveBeenNthCalledWith(1, { content: 'secret note', is_internal: true })
+
+  shouldFail = false
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+
+  await waitFor(() => expect(screen.queryByText('secret note')).toBeNull())
+  // The retry must re-send as an internal note, not silently downgrade to a customer-visible reply.
+  expect(mutateAsync).toHaveBeenNthCalledWith(2, { content: 'secret note', is_internal: true })
 })
 
 test('dismissing a failed chip removes it without retrying', async () => {
@@ -140,4 +176,5 @@ test('dismissing a failed chip removes it without retrying', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss failed message' }))
 
   expect(screen.queryByText('discard me')).toBeNull()
+  expect(useDraftStore.getState().drafts['conv-1']?.failedSends ?? []).toEqual([])
 })
