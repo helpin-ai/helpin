@@ -20,6 +20,7 @@ import { workspacesService } from '@mobile/lib/services/workspaces-service'
 import { displayNameFor } from '@mobile/inbox/conversation-cell'
 import { MessageList, type MessageListHandle, type TypingIndicatorState } from '@mobile/thread/message-list'
 import { groupMessages } from '@mobile/thread/thread-helpers'
+import { Composer } from '@mobile/thread/composer'
 import { MessageCircle } from 'lucide-react'
 
 const STATUS_LABELS: Record<ConversationStatus, string> = {
@@ -185,15 +186,13 @@ export function ConversationScreen() {
         )}
       </div>
 
-      {/*
-        Composer seam (Task 14): render the composer bar as a sibling here,
-        below the MessageList's flex-1 container. After a successful
-        own-send, call `messageListRef.current?.scrollToBottom('smooth')` to
-        satisfy "auto-scroll on own-sends". The "New message" pill above is
-        positioned `bottom-4` against this screen's own edge as a
-        placeholder — once the composer exists, give it a fixed height and
-        move the pill to sit just above it (e.g. `bottom-[var(--composer-height)]`).
-      */}
+      {workspaceId && conversationId && (
+        <Composer
+          workspaceId={workspaceId}
+          conversationId={conversationId}
+          onSendStart={() => messageListRef.current?.scrollToBottom('smooth')}
+        />
+      )}
 
       <Sheet open={contextSheetOpen} onOpenChange={setContextSheetOpen}>
         <div className="px-4 pb-4">

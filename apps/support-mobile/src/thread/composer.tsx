@@ -1,0 +1,171 @@
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
+import { X } from 'lucide-react'
+import { useSendMessage } from '@helpin-ai/support-core'
+import { cn } from '@mobile/lib/cn'
+import { haptic } from '@mobile/lib/haptics'
+import { SegmentedControl } from '@mobile/ui/segmented-control'
+import { DEFAULT_DRAFT, useDraftStore, type ComposerMode } from './draft-store'
+import { failedSendsReducer, type FailedSend } from './failed-sends-reducer'
+import { SendButton, type SendButtonState } from './send-button'
+
+export interface ComposerProps {
+  workspaceId: string
+  conversationId: string
+  /** Fires the moment a send is initiated (optimistic bubble about to appear) — lets the screen jump the thread to bottom regardless of eventual success/failure, matching "own sends always land at the bottom". */
+  onSendStart?: () => void
+}
+
+/**
+ * `text-body` is 0.9375rem/1.25rem (20px line-height, see index.css) — the
+ * textarea grows from 1 to `MAX_LINES` of that, then scrolls internally.
+ */
+const LINE_HEIGHT_PX = 20
+const MAX_LINES = 6
+const TEXTAREA_VERTICAL_PADDING_PX = 16 // py-2 (8px top + 8px bottom)
+const MAX_TEXTAREA_HEIGHT_PX = LINE_HEIGHT_PX * MAX_LINES + TEXTAREA_VERTICAL_PADDING_PX
+const MIN_TEXTAREA_HEIGHT_PX = LINE_HEIGHT_PX + TEXTAREA_VERTICAL_PADDING_PX
+
+const SENT_STATE_MS = 400
+
+export function Composer({ workspaceId, conversationId, onSendStart }: ComposerProps) {
+  const draft = useDraftStore((state) => state.drafts[conversationId] ?? DEFAULT_DRAFT)
+  const setText = useDraftStore((state) => state.setText)
+  const setMode = useDraftStore((state) => state.setMode)
+  const clearDraft = useDraftStore((state) => state.clearDraft)
+
+  const sendMessage = useSendMessage(workspaceId, conversationId)
+  const [phase, setPhase] = useState<'idle' | 'sending' | 'sent'>('idle')
+  const [failedSends, dispatchFailedSends] = useReducer(failedSendsReducer, [] as FailedSend[])
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  // Auto-grow 1..MAX_LINES: reset to 'auto' first so shrinking (e.g. after
+  // clearing the draft on send) is measured correctly, then clamp scrollHeight
+  // to the 6-line cap. Runs in useLayoutEffect (before paint) so the height
+  // change is applied in the same frame as the keystroke that caused it —
+  // an effect running after paint would show one frame at the old height
+  // first, which reads as a "jump".
+  useLayoutEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT_PX)}px`
+  }, [draft.text])
+
+  useEffect(
+    () => () => {
+      if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current)
+    },
+    [],
+  )
+
+  const trimmed = draft.text.trim()
+  const buttonState: SendButtonState =
+    phase === 'sending' ? 'sending' : phase === 'sent' ? 'sent' : trimmed.length === 0 ? 'disabled' : 'active'
+
+  async function attemptSend(content: string, mode: ComposerMode, retryId?: string) {
+    setPhase('sending')
+    onSendStart?.()
+    try {
+      await sendMessage.mutateAsync({ content, is_internal: mode === 'note' })
+      haptic('notificationSuccess')
+      if (retryId) dispatchFailedSends({ type: 'remove', id: retryId })
+      setPhase('sent')
+      sentTimeoutRef.current = setTimeout(() => setPhase('idle'), SENT_STATE_MS)
+    } catch {
+      haptic('notificationError')
+      setPhase('idle')
+      // A fresh send (no retryId) needs a new chip; a retry's chip is already
+      // in the list — leave it there so the user can retry again.
+      if (!retryId) {
+        dispatchFailedSends({ type: 'add', failedSend: { id: crypto.randomUUID(), content, mode } })
+      }
+    }
+  }
+
+  function handleSendPress() {
+    if (trimmed.length === 0 || phase === 'sending') return
+    const content = trimmed
+    const mode = draft.mode
+    // Clear the draft the instant a send is confirmed by the user (tapping
+    // Send) — mirrors the optimistic bubble appearing instantly. If the send
+    // later fails, the content isn't lost: it lives on in the failedSends
+    // retry chip below, not back in the (now-empty) input.
+    clearDraft(conversationId)
+    void attemptSend(content, mode)
+  }
+
+  function handleRetry(failedSend: FailedSend) {
+    void attemptSend(failedSend.content, failedSend.mode, failedSend.id)
+  }
+
+  function handleDismiss(id: string) {
+    dispatchFailedSends({ type: 'remove', id })
+  }
+
+  const isNote = draft.mode === 'note'
+
+  return (
+    <div className="flex flex-col">
+      {failedSends.length > 0 && (
+        <div className="flex flex-col gap-1.5 px-3 pb-2">
+          {failedSends.map((failedSend) => (
+            <div
+              key={failedSend.id}
+              className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-footnote text-destructive"
+            >
+              <span className="min-w-0 flex-1 truncate">{failedSend.content}</span>
+              <button
+                type="button"
+                onClick={() => handleRetry(failedSend)}
+                className="shrink-0 font-medium underline underline-offset-2"
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                aria-label="Dismiss failed message"
+                onClick={() => handleDismiss(failedSend.id)}
+                className="shrink-0 rounded-full p-0.5 opacity-60 active:opacity-100"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div
+        className={cn(
+          'border-t border-border/60 pb-[max(var(--safe-bottom),8px)] transition-[margin-bottom] duration-150 ease-out mb-[var(--keyboard-inset)]',
+          isNote ? 'bg-amber-500/10' : 'bg-background',
+        )}
+      >
+        <div className="flex items-center px-3 pt-2 pb-1.5">
+          <SegmentedControl<ComposerMode>
+            segments={[
+              { value: 'reply', label: 'Reply' },
+              { value: 'note', label: 'Note' },
+            ]}
+            value={draft.mode}
+            onChange={(mode) => setMode(conversationId, mode)}
+            className="w-40"
+          />
+        </div>
+        <div className="flex items-end gap-2 px-3 pb-2">
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            value={draft.text}
+            onChange={(event) => setText(conversationId, event.target.value)}
+            placeholder={isNote ? 'Internal note…' : 'Reply…'}
+            style={{ minHeight: MIN_TEXTAREA_HEIGHT_PX, maxHeight: MAX_TEXTAREA_HEIGHT_PX }}
+            className="flex-1 resize-none overflow-y-auto rounded-2xl border border-input bg-background px-3 py-2 text-body text-foreground outline-none placeholder:text-muted-foreground"
+          />
+          <SendButton state={buttonState} onPress={handleSendPress} />
+        </div>
+      </div>
+    </div>
+  )
+}

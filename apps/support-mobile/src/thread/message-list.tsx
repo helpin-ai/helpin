@@ -143,6 +143,17 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   // auto-scroll get compensated. Deliberately keyed on `loading`: the
   // scroll container only mounts once loading finishes, so the observer
   // must (re)attach then. Disconnected on cleanup/unmount.
+  //
+  // Task 14 addition: also observe `el` (the scroll container) itself, not
+  // just its content. The composer rides the keyboard via a `margin-bottom`
+  // that tracks `--keyboard-inset` — when the keyboard opens, that margin
+  // grows, which shrinks THIS container's height (it's a flex-1 sibling
+  // above the composer), not its content height. A resize of `el` alone
+  // would be invisible to a content-only observer, and a pinned-to-bottom
+  // reader would see the last message slide up behind the keyboard until
+  // they scrolled again. Observing both elements on the same ResizeObserver
+  // instance re-snaps on either kind of size change with the one existing
+  // "am I pinned" check.
   useEffect(() => {
     const el = scrollRef.current
     const content = contentRef.current
@@ -155,6 +166,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       distanceRef.current = el.scrollHeight - el.scrollTop - el.clientHeight
     })
     observer.observe(content)
+    observer.observe(el)
     return () => observer.disconnect()
   }, [loading])
 

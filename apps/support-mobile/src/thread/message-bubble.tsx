@@ -1,6 +1,9 @@
+import type { ReactNode } from 'react'
+import { motion } from 'motion/react'
 import { Paperclip } from 'lucide-react'
 import type { SupportMessage } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
+import { riseIn } from '@mobile/lib/motion'
 import { EmailBody } from './email-body'
 
 export interface MessageBubbleProps {
@@ -74,20 +77,20 @@ export function MessageBubble({ message, align }: MessageBubbleProps) {
   const fileAttachments = message.attachments?.filter((a) => !a.file_type.startsWith('image/')) ?? []
   const isEmail = message.via_channel === 'email' && !!message.html_body
 
+  let content: ReactNode
+
   // System events (assigned, resolved, mailbox moved, ...) are narration, not
   // a chat turn — render as a centered pill instead of a directional bubble.
   if (message.message_type === 'system') {
-    return (
+    content = (
       <div className="flex justify-center py-1">
         <span className="selectable max-w-[85%] rounded-full bg-muted px-3 py-1 text-center text-footnote text-muted-foreground">
           {message.content}
         </span>
       </div>
     )
-  }
-
-  if (message.is_internal) {
-    return (
+  } else if (message.is_internal) {
+    content = (
       <div className="w-full rounded-2xl border border-amber-300/60 bg-amber-100/50 px-3 py-2 dark:border-amber-800/60 dark:bg-amber-950/30">
         <div className="mb-1 text-caption font-semibold text-amber-700 dark:text-amber-300">Internal note</div>
         {isEmail ? (
@@ -99,24 +102,42 @@ export function MessageBubble({ message, align }: MessageBubbleProps) {
         <AttachmentRows attachments={fileAttachments} tone="note" />
       </div>
     )
+  } else {
+    content = (
+      <div className={cn('flex', align === 'right' ? 'justify-end' : 'justify-start')}>
+        <div
+          className={cn(
+            'max-w-[78%] min-w-0 rounded-[16px] px-3 py-2',
+            align === 'right' ? 'bg-primary/10' : 'bg-muted',
+          )}
+        >
+          {isEmail ? (
+            <EmailBody html={message.html_body!} />
+          ) : (
+            <p className="selectable whitespace-pre-wrap text-body">{message.content}</p>
+          )}
+          <ImageThumbnails attachments={imageAttachments} />
+          <AttachmentRows attachments={fileAttachments} tone="default" />
+        </div>
+      </div>
+    )
   }
 
+  // Task 14: a message optimistically appended by `useSendMessage` (Task 10)
+  // carries `pending: true` while the request is in flight. Render it at 70%
+  // opacity with a gentle rise-in so an own-send visibly registers before the
+  // network confirms — settled messages (the vast majority of renders) skip
+  // this wrapper entirely so historical thread loads don't replay an
+  // entrance animation for every bubble.
+  if (!message.pending) return content
+
   return (
-    <div className={cn('flex', align === 'right' ? 'justify-end' : 'justify-start')}>
-      <div
-        className={cn(
-          'max-w-[78%] min-w-0 rounded-[16px] px-3 py-2',
-          align === 'right' ? 'bg-primary/10' : 'bg-muted',
-        )}
-      >
-        {isEmail ? (
-          <EmailBody html={message.html_body!} />
-        ) : (
-          <p className="selectable whitespace-pre-wrap text-body">{message.content}</p>
-        )}
-        <ImageThumbnails attachments={imageAttachments} />
-        <AttachmentRows attachments={fileAttachments} tone="default" />
-      </div>
-    </div>
+    <motion.div
+      initial={{ opacity: 0, y: riseIn.initial.y }}
+      animate={{ opacity: 0.7, y: 0 }}
+      transition={riseIn.transition}
+    >
+      {content}
+    </motion.div>
   )
 }
