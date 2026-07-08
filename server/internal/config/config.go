@@ -143,6 +143,9 @@ type Config struct {
 	StripeGrowthAnnualPriceID   string
 	StripeCreditBlockPriceID    string
 
+	// Firebase Cloud Messaging (optional — mobile push notifications disabled if unset)
+	FCMServiceAccountJSON string
+
 	// Agent preview debugging (optional — targeted diagnostics for preview persistence/apply)
 	AgentPreviewDebug bool
 
@@ -305,6 +308,7 @@ func Load() (*Config, error) {
 		StripeGrowthMonthlyPriceID:             strings.TrimSpace(os.Getenv("STRIPE_GROWTH_MONTHLY_PRICE_ID")),
 		StripeGrowthAnnualPriceID:              strings.TrimSpace(os.Getenv("STRIPE_GROWTH_ANNUAL_PRICE_ID")),
 		StripeCreditBlockPriceID:               strings.TrimSpace(os.Getenv("STRIPE_CREDIT_BLOCK_PRICE_ID")),
+		FCMServiceAccountJSON:                  strings.TrimSpace(os.Getenv("FCM_SERVICE_ACCOUNT_JSON")),
 		AgentPreviewDebug:                      parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 		DocsOrderingUseSortKey:                 parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
 	}, nil

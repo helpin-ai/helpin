@@ -46,6 +46,20 @@ func (r *PushDeviceRepository) DeleteByToken(ctx context.Context, userID, token 
 	return nil
 }
 
+// DeleteByTokenAny removes a device registration by token regardless of
+// owner. Unlike DeleteByToken (user-facing unregister, owner-scoped), this
+// is used internally by the push sender to prune devices the FCM provider
+// reports as unregistered (app uninstalled, token rotated) — never expose
+// this to a user-facing endpoint.
+func (r *PushDeviceRepository) DeleteByTokenAny(ctx context.Context, token string) error {
+	if err := r.db.WithContext(ctx).
+		Where("token = ?", token).
+		Delete(&model.PushDevice{}).Error; err != nil {
+		return fmt.Errorf("delete push device by token: %w", err)
+	}
+	return nil
+}
+
 // ListByUserIDs returns all registered push devices for the given users.
 func (r *PushDeviceRepository) ListByUserIDs(ctx context.Context, userIDs []string) ([]model.PushDevice, error) {
 	if len(userIDs) == 0 {

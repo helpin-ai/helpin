@@ -14,11 +14,13 @@ import (
 	"syscall"
 	"time"
 
+	firebase "firebase.google.com/go/v4"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"go.temporal.io/api/serviceerror"
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	tclient "go.temporal.io/sdk/client"
+	"google.golang.org/api/option"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -695,6 +697,19 @@ func main() {
 	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, appEmailClient, cfg.AppBaseURL)
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	pushDeviceService := service.NewPushDeviceService(pushDeviceRepo)
+	var fcmClient service.FCMClient
+	if cfg.FCMServiceAccountJSON != "" {
+		fbApp, err := firebase.NewApp(context.Background(), nil, option.WithCredentialsJSON([]byte(cfg.FCMServiceAccountJSON)))
+		if err != nil {
+			slog.Error("failed to initialize firebase app, mobile push disabled", "error", err)
+		} else if msgClient, err := fbApp.Messaging(context.Background()); err != nil {
+			slog.Error("failed to initialize firebase messaging client, mobile push disabled", "error", err)
+		} else {
+			fcmClient = service.NewFirebaseFCMClient(msgClient)
+			slog.Info("firebase cloud messaging initialized")
+		}
+	}
+	pushSenderService := service.NewPushSenderService(pushDeviceRepo, fcmClient)
 	followerService := service.NewFollowerService(followerRepo)
 	pmTaskService := service.NewPMTaskService(pmTaskRepo, workspaceRepo, pmWorkflowRepo, pmEpicRepo, pmSprintRepo, pmLabelRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmAttachmentRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
 	pmTaskService.SetTaskTemplateRepository(pmTaskTemplateRepo)
@@ -890,7 +905,9 @@ func main() {
 		SetCommandRouterOpenRouterProviderOptions(cfg.CommandRouterOpenRouterProviderOptions)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
+	supportInboxService.SetPushSenderService(pushSenderService)
 	emailFallbackService.SetNotificationService(notificationService)
+	emailFallbackService.SetPushSenderService(pushSenderService)
 
 	// Automation Rule Engine — wired after agent + story services to break circular deps.
 	ruleEngine := service.NewAutomationRuleEngine(

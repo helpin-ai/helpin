@@ -40,7 +40,7 @@ func NewPushDeviceService(repo PushDeviceRepo) *PushDeviceService {
 // Re-registering an existing token moves the device to the current user,
 // since phones change owners/accounts.
 func (s *PushDeviceService) Register(ctx context.Context, userID string, req model.RegisterPushDeviceRequest) (*model.PushDevice, error) {
-	platform := strings.TrimSpace(req.Platform)
+	platform := strings.ToLower(strings.TrimSpace(req.Platform))
 	if !validPushPlatforms[platform] {
 		return nil, fmt.Errorf("invalid platform %q: must be ios or android", req.Platform)
 	}
