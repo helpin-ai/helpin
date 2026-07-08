@@ -1,6 +1,7 @@
 import type { User } from '@mobile/lib/types'
 import {
   Link,
+  Navigate,
   createRootRouteWithContext,
   createRoute,
   createRouter,
@@ -8,6 +9,8 @@ import {
 } from '@tanstack/react-router'
 import { AppThemeProvider } from '@mobile/ui/theme-provider'
 import { ScreenStack } from '@mobile/navigation/screen-stack'
+import { useKeyboardInset } from '@mobile/lib/use-keyboard-inset'
+import { useAuthStore } from '@mobile/stores/auth-store'
 import { LoginScreen } from '@mobile/screens/login-screen'
 import { WorkspacesScreen } from '@mobile/screens/workspaces-screen'
 import { InboxScreen } from '@mobile/screens/inbox-screen'
@@ -36,7 +39,7 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
-  component: LoginScreen,
+  component: LoginRouteComponent,
 })
 
 const workspacesRoute = createRoute({
@@ -94,12 +97,24 @@ declare module '@tanstack/react-router' {
 }
 
 function RootComponent() {
+  useKeyboardInset()
   return (
     <AppThemeProvider>
       <ScreenStack />
       {/* TabBar rendered inside ScreenStack chrome for tab-level routes only */}
     </AppThemeProvider>
   )
+}
+
+/** Mirrors desktop's LoginRouteComponent: an already-signed-in user visiting /login is bounced onward. */
+function LoginRouteComponent() {
+  const user = useAuthStore((state) => state.user)
+
+  if (user) {
+    return <Navigate to="/workspaces" />
+  }
+
+  return <LoginScreen />
 }
 
 function NotFoundComponent() {

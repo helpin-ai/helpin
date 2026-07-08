@@ -140,3 +140,27 @@ cargo check
      routine once Task 21 lands) with no prior in-app history, then trigger
      back — confirm it lands on the Inbox (`backFallbackPath`), not a dead
      end or a crash from `router.history.back()` on an empty stack.
+
+7. **Login / workspace picker / You screen end-to-end check** (Task 9 —
+   `src/screens/login-screen.tsx`, `workspaces-screen.tsx`, `you-screen.tsx`):
+   point `VITE_API_URL` at staging or a local API (`http://10.0.2.2:8080/api`
+   on the Android emulator; see "Local API URL" above), then on a real
+   emulator/simulator:
+   - Sign in with a real account/password; confirm field-level errors show
+     for empty email, malformed email, and empty password before any request
+     fires, and that a bad password shows a single error line above the
+     button (no toast) without the card resizing.
+   - Confirm the primary button shows an inline spinner while the request is
+     in flight and the keyboard never covers the focused field (`TextField` /
+     `--keyboard-inset`).
+   - On success, land on the workspace picker; if the account has exactly one
+     workspace (or a previously-picked one matches), confirm it skips
+     straight to the Inbox instead of flashing the list.
+   - Kill and relaunch the app; confirm it skips both login and the picker
+     and returns straight to the last workspace's Inbox (persisted session +
+     `last_workspace_slug`).
+   - On the You tab: confirm the Appearance segmented control flips the app
+     between light/dark immediately, the Workspace row navigates back to the
+     picker, and Sign Out requires a second tap ("Tap again to confirm" for
+     ~3s, no modal) before it actually signs out and redirects to Login.
+   - Repeat the visual pass in both OS light and dark themes.
