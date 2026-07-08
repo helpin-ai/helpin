@@ -87,6 +87,14 @@ function useNotificationsRowState() {
       const next: PushPrimingPref = { decision: 'enabled', at: new Date().toISOString() }
       await setPushPrimingPref(next)
       setPref(next)
+    } catch (error) {
+      // `registerForPush()` can reject (e.g. the native plugin's
+      // `getPushToken()` throwing) instead of resolving to 'unavailable' —
+      // without this catch the rejection escaped unhandled (this handler is
+      // invoked via `void notifications.handleEnable()`) and the toast below
+      // never showed.
+      console.debug('[push] registerForPush rejected', error)
+      toast.error("Couldn't enable notifications")
     } finally {
       setEnabling(false)
     }

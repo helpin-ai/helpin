@@ -61,11 +61,17 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
   const time = formatRelativeTime(conversation.updated_at)
   const ChannelIcon = CHANNEL_ICONS[conversation.source]
   const statusBadge = conversation.status !== 'open' ? STATUS_BADGES[conversation.status] : undefined
+  // Explicit label so VoiceOver/TalkBack announce "«name», «preview», «time»,
+  // unread" (A8) instead of the default accessible-name-from-subtree
+  // computation, which would otherwise also pick up the Avatar's initials
+  // text node ("AL") ahead of the name.
+  const cellLabel = [displayName, preview, time, unread ? 'unread' : null].filter(Boolean).join(', ')
 
   return (
     <motion.div
       role="button"
       tabIndex={0}
+      aria-label={cellLabel}
       data-testid="conversation-cell"
       onClick={onPress}
       onKeyDown={(event) => {

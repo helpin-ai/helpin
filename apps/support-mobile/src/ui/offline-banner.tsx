@@ -57,20 +57,26 @@ export function OfflineBanner() {
   const state = bannerState(online, realtimeStatus)
 
   return (
-    <AnimatePresence initial={false}>
-      {state !== 'hidden' && (
-        <motion.div
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 28, opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="overflow-hidden bg-amber-500/15"
-        >
-          <div className="flex h-[28px] items-center justify-center text-footnote text-amber-700 dark:text-amber-400">
-            {COPY[state]}
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    // `role="status"` + `aria-live="polite"` on a wrapper that persists across
+    // mount/unmount (rather than only on the AnimatePresence child) so
+    // assistive tech reliably announces the offline/reconnecting text change
+    // instead of depending on a fresh live-region element being noticed.
+    <div role="status" aria-live="polite">
+      <AnimatePresence initial={false}>
+        {state !== 'hidden' && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 28, opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden bg-amber-500/15"
+          >
+            <div className="flex h-[28px] items-center justify-center text-footnote text-amber-700 dark:text-amber-400">
+              {COPY[state]}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }

@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
 import { queryOptions, useQuery } from '@tanstack/react-query'
-import { motion } from 'motion/react'
+import { motion, useReducedMotion } from 'motion/react'
 import { TopBar } from '@mobile/ui/top-bar'
 import { Avatar } from '@mobile/ui/avatar'
 import { Pressable } from '@mobile/ui/pressable'
@@ -48,6 +48,11 @@ const MAX_STAGGERED_ROWS = 10
 export function WorkspacesScreen() {
   const navigate = useNavigate()
   const { data: workspaces, isLoading, isError } = useQuery(workspacesQueryOptions)
+  // The global CSS `prefers-reduced-motion` clamp (index.css) only catches
+  // CSS transitions/animations — this staggered fade+rise is a JS-driven
+  // `motion` value, which the clamp can't touch, so it needs its own guard
+  // (Task 22 reduced-motion audit; same idiom as ScreenStack's `crossfade`).
+  const reduced = useReducedMotion()
 
   const handleSelect = (slug: string) => {
     void setLastWorkspaceSlug(slug)
@@ -83,9 +88,13 @@ export function WorkspacesScreen() {
           {workspaces.map((workspace, index) => (
             <motion.div
               key={workspace.id}
-              initial={{ opacity: 0, y: 8 }}
+              initial={reduced ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(index, MAX_STAGGERED_ROWS) * 0.03, duration: 0.2, ease: 'easeOut' }}
+              transition={
+                reduced
+                  ? { duration: 0 }
+                  : { delay: Math.min(index, MAX_STAGGERED_ROWS) * 0.03, duration: 0.2, ease: 'easeOut' }
+              }
             >
               <Pressable
                 haptic="selection"

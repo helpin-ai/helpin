@@ -62,3 +62,16 @@ test('fires onPress when the cell is clicked', () => {
   fireEvent.click(screen.getByTestId('conversation-cell'))
   expect(onPress).toHaveBeenCalledOnce()
 })
+
+test('accessible name announces name, preview, and time, but not "unread" when read', () => {
+  render(<ConversationCell conversation={conversation({ unread_count: 0 })} onPress={vi.fn()} />)
+  const cell = screen.getByTestId('conversation-cell')
+  expect(cell.getAttribute('aria-label')).toBe('Ada Lovelace, Can you help me with my invoice?, ' + screen.getByTestId('conversation-time').textContent)
+  expect(cell.getAttribute('aria-label')).not.toMatch(/unread/i)
+})
+
+test('accessible name appends ", unread" when the conversation is unread', () => {
+  render(<ConversationCell conversation={conversation({ unread_count: 3 })} onPress={vi.fn()} />)
+  const cell = screen.getByTestId('conversation-cell')
+  expect(cell.getAttribute('aria-label')).toMatch(/, unread$/)
+})

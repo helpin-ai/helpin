@@ -101,4 +101,18 @@ describe('<OfflineBanner>', () => {
     })
     expect(screen.getByText('Reconnecting…')).toBeDefined()
   })
+
+  test('is a persistent aria-live=polite status region regardless of visibility (A8)', () => {
+    setOnline(true)
+    render(<OfflineBanner />)
+    // The region itself (role="status") must exist even while hidden, so a
+    // screen reader is already listening before the banner's text appears.
+    const region = screen.getByRole('status', { hidden: true })
+    expect(region.getAttribute('aria-live')).toBe('polite')
+
+    act(() => {
+      useSupportRealtimeStore.getState().setStatus('reconnecting', 'Reconnecting…', 1)
+    })
+    expect(screen.getByRole('status', { hidden: true }).textContent).toContain('Reconnecting…')
+  })
 })

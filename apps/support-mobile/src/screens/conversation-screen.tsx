@@ -192,17 +192,22 @@ export function ConversationScreen() {
           />
         )}
 
-        {showNewMessagePill && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
-            <Pressable
-              haptic="selection"
-              onPress={() => messageListRef.current?.scrollToBottom('smooth')}
-              className="pointer-events-auto flex h-auto min-h-0 w-auto min-w-0 items-center rounded-full bg-primary px-4 py-1.5 text-footnote font-medium text-primary-foreground shadow-lg"
-            >
-              New message
-            </Pressable>
-          </div>
-        )}
+        {/* Persistent aria-live region (same rationale as OfflineBanner): the
+            pill itself mounts/unmounts with `showNewMessagePill`, so the live
+            region needs to survive that to reliably announce "New message". */}
+        <div role="status" aria-live="polite">
+          {showNewMessagePill && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
+              <Pressable
+                haptic="selection"
+                onPress={() => messageListRef.current?.scrollToBottom('smooth')}
+                className="pointer-events-auto flex h-auto min-h-0 w-auto min-w-0 items-center rounded-full bg-primary px-4 py-1.5 text-footnote font-medium text-primary-foreground shadow-lg"
+              >
+                New message
+              </Pressable>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* key={conversationId}: hard-remount the composer on conversation

@@ -19,12 +19,20 @@ export interface SendButtonProps {
  * `Pressable` itself swallows taps during those two states (see
  * `pressable.tsx`), so `onPress` cannot fire mid-send.
  */
+/** Per-state accessible name so VoiceOver/TalkBack announce the send lifecycle, not just a static "Send message" (A8). */
+const STATE_LABELS: Record<SendButtonState, string> = {
+  disabled: 'Send message',
+  active: 'Send message',
+  sending: 'Sending message',
+  sent: 'Message sent',
+}
+
 export function SendButton({ state, onPress }: SendButtonProps) {
   const disabled = state === 'disabled' || state === 'sending'
 
   return (
     <Pressable
-      aria-label="Send message"
+      aria-label={STATE_LABELS[state]}
       disabled={disabled}
       onPress={onPress}
       className={cn(

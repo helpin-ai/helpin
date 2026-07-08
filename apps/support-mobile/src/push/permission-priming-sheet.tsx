@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { BellRing } from 'lucide-react'
+import { toast } from 'sonner'
 import { Sheet } from '@mobile/ui/sheet'
 import { Pressable } from '@mobile/ui/pressable'
 import { setPushPrimingPref } from '@mobile/lib/prefs'
@@ -35,6 +36,15 @@ export function PermissionPrimingSheet({ open, onOpenChange }: PermissionPriming
         decision: result === 'registered' ? 'enabled' : 'later',
         at: new Date().toISOString(),
       })
+    } catch (error) {
+      // `registerForPush()` can reject (e.g. the native plugin's
+      // `getPushToken()` throwing) rather than resolving to 'unavailable' —
+      // without this catch the rejection escaped as an unhandled promise
+      // rejection (this handler is invoked via `void handleEnable()`) and
+      // the user never saw any feedback. Surface the same error toast as
+      // the ordinary 'unavailable' path would from the You-screen row.
+      console.debug('[push] registerForPush rejected', error)
+      toast.error("Couldn't enable notifications")
     } finally {
       setEnabling(false)
       onOpenChange(false)

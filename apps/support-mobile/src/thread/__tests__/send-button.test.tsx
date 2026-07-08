@@ -27,11 +27,11 @@ test('active state: is pressable and fires onPress on click', () => {
   expect(onPress).toHaveBeenCalledTimes(1)
 })
 
-test('sending state: renders a spinner and fires nothing on click', () => {
+test('sending state: renders a spinner, announces "Sending message", and fires nothing on click', () => {
   const onPress = vi.fn()
   render(<SendButton state="sending" onPress={onPress} />)
 
-  const button = screen.getByRole('button', { name: 'Send message' })
+  const button = screen.getByRole('button', { name: 'Sending message' })
   expect(button).toHaveProperty('disabled', true)
   expect(screen.getByRole('status')).toBeDefined() // Spinner's aria-label="Loading" role="status"
 
@@ -39,10 +39,10 @@ test('sending state: renders a spinner and fires nothing on click', () => {
   expect(onPress).not.toHaveBeenCalled()
 })
 
-test('sent state: is pressable again (re-armed after the 400ms grace window elsewhere)', () => {
+test('sent state: announces "Message sent" and is pressable again (re-armed after the 400ms grace window elsewhere)', () => {
   render(<SendButton state="sent" onPress={vi.fn()} />)
 
-  const button = screen.getByRole('button', { name: 'Send message' })
+  const button = screen.getByRole('button', { name: 'Message sent' })
   expect(button).toHaveProperty('disabled', false)
 })
 
@@ -50,7 +50,7 @@ test('button footprint (h-9 w-9, min-h-0 min-w-0) is identical across every stat
   const states = ['disabled', 'active', 'sending', 'sent'] as const
   const footprints = states.map((state) => {
     const { unmount } = render(<SendButton state={state} onPress={vi.fn()} />)
-    const classes = sizeClasses(screen.getByRole('button', { name: 'Send message' })).sort()
+    const classes = sizeClasses(screen.getByRole('button')).sort()
     unmount()
     return classes
   })

@@ -6,6 +6,7 @@ import {
   createRoute,
   createRouter,
   isRedirect,
+  lazyRouteComponent,
   redirect,
   useParams,
 } from '@tanstack/react-router'
@@ -24,7 +25,6 @@ import {
   workspacesQueryOptions,
 } from '@mobile/screens/workspaces-screen'
 import { InboxScreen } from '@mobile/screens/inbox-screen'
-import { ConversationScreen } from '@mobile/screens/conversation-screen'
 import { YouScreen } from '@mobile/screens/you-screen'
 
 export interface RouterContext {
@@ -94,7 +94,14 @@ const supportConversationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/w/$slug/support/$conversationId',
   beforeLoad: requireAuth,
-  component: ConversationScreen,
+  // Lazy-loaded (Task 22 bundle-budget pass): the thread screen pulls in the
+  // composer, message list, and context sheet — none of that is needed to
+  // paint the Inbox, so keeping it out of the initial chunk shaves a real
+  // (if, per QA.md's measurements, not currently budget-critical) amount off
+  // cold start. `defaultPreload: 'intent'` (below) still prefetches it the
+  // moment a conversation row is pressed/hovered, so there's no added
+  // loading flash on the common path.
+  component: lazyRouteComponent(() => import('@mobile/screens/conversation-screen'), 'ConversationScreen'),
 })
 
 const youRoute = createRoute({
