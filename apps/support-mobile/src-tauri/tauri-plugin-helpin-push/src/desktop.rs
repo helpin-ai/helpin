@@ -21,4 +21,8 @@ impl<R: Runtime> HelpinPush<R> {
     pub fn get_push_token(&self) -> crate::Result<GetPushTokenResponse> {
         Ok(GetPushTokenResponse { token: None })
     }
+
+    pub fn take_pending_tap(&self) -> crate::Result<TakePendingTapResponse> {
+        Ok(TakePendingTapResponse { tap: None })
+    }
 }

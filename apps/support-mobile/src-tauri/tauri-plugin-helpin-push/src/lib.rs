@@ -4,14 +4,23 @@
 //! Guest-js contract (see `guest-js/index.ts`, consumed by Task 20):
 //! - `getPushToken(): Promise<string | null>`
 //! - `onPushTokenChanged(cb): Promise<UnlistenFn>` — native `push-token-changed` event
-//! - `onPushTapped(cb): Promise<UnlistenFn>` — native `push-tapped` event
+//! - `onPushTapped(cb): Promise<UnlistenFn>` — live `push-tapped` event +
+//!   one-shot `take_pending_tap` drain (deduped)
 //!
-//! The two events are delivered natively via the Tauri mobile plugin's
-//! `trigger()` channel (Kotlin/Swift call `trigger("push-token-changed", ...)`
-//! / `trigger("push-tapped", ...)` directly) and are picked up on the JS side
+//! Events are delivered natively via the Tauri mobile plugin's `trigger()`
+//! channel (Kotlin/Swift call `trigger("push-token-changed", ...)` /
+//! `trigger("push-tapped", ...)` directly) and are picked up on the JS side
 //! by `addPluginListener('helpin-push', <event>, cb)` — this crate does not
 //! re-emit them itself, mirroring how `tauri-plugin-notification` bridges its
 //! `notification` / `actionPerformed` events.
+//!
+//! Tap delivery uses a pull model on top of the live event: the native side
+//! buffers every tap payload, and `onPushTapped` registers its listener
+//! first, then drains the buffer once via the `take_pending_tap` command
+//! (return-and-clear). This makes cold-start taps deterministic — no race
+//! between native event emission and webview/listener readiness — while warm
+//! taps still arrive instantly via `trigger()`; guest-js dedupes the case
+//! where the same tap arrives through both paths.
 
 use tauri::{
     plugin::{Builder, TauriPlugin},
@@ -53,7 +62,10 @@ impl<R: Runtime, T: Manager<R>> HelpinPushExt<R> for T {
 /// `src/lib.rs` via `.plugin(tauri_plugin_helpin_push::init())`.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("helpin-push")
-        .invoke_handler(tauri::generate_handler![commands::get_push_token])
+        .invoke_handler(tauri::generate_handler![
+            commands::get_push_token,
+            commands::take_pending_tap
+        ])
         .setup(|app, api| {
             #[cfg(mobile)]
             let helpin_push = mobile::init(app, api)?;

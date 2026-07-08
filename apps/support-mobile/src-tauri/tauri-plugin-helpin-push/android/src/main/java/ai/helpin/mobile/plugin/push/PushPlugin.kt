@@ -42,16 +42,25 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
 
     companion object {
         /**
-         * The cold-start tap payload, captured from the launcher intent
-         * before the webview/JS listener is ready. Static because
-         * `HelpinMessagingService` (an OS-instantiated `FirebaseMessagingService`)
-         * has no direct handle to this plugin instance — see
-         * `HelpinMessagingService.onNewToken` for the same pattern applied
-         * to token refresh.
+         * The last unconsumed notification-tap payload. Written in `load()`
+         * (cold start: launch intent carries the FCM data extras before any
+         * JS listener exists) and in `onNewIntent` (warm tap that no
+         * listener has consumed yet); returned-and-cleared by the
+         * `takePendingTap` command. This is a deliberate pull model: the JS
+         * side registers its live listener first, then drains this buffer
+         * once, so cold-start delivery never races webview/listener
+         * readiness. Static because `HelpinMessagingService` (an
+         * OS-instantiated `FirebaseMessagingService`) has no direct handle
+         * to this plugin instance — see `HelpinMessagingService.onNewToken`
+         * for the same pattern applied to token refresh.
          *
-         * SPIKE-VERIFY: confirm this static/companion-object approach
-         * survives process death + restore correctly, and doesn't leak a
-         * stale payload into a second, unrelated cold start.
+         * SPIKE-VERIFY: confirm no stale payload leaks into a later,
+         * unrelated launch — the launch intent (and thus its extras) can be
+         * redelivered by the OS on activity recreation (e.g. rotation,
+         * process restore), which would re-populate this buffer with an
+         * already-handled tap. If that happens in practice, the fix is to
+         * mark the intent consumed (e.g. `intent.removeExtra(...)` or an
+         * `intent.identifier` check) rather than to change the pull model.
          */
         private var pendingTapPayload: JSObject? = null
 
@@ -66,23 +75,34 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
         super.load(webView)
         instance = this
         readTapPayloadFromIntent(activity.intent)?.let { payload ->
-            // App was cold-started directly into this activity from a
-            // notification tap: emit immediately, the webview is attached.
-            trigger("push-tapped", payload)
-        }
-        pendingTapPayload?.let { payload ->
-            trigger("push-tapped", payload)
-            pendingTapPayload = null
+            // Cold start from a notification tap: buffer only. The JS
+            // listener cannot have registered yet at load() time, so a
+            // trigger() here would be lost; `takePendingTap` delivers it
+            // deterministically once the JS side is ready.
+            pendingTapPayload = payload
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // Warm tap: activity already running, `onNewIntent` delivers the
-        // fresh launcher intent with the notification's extras.
+        // fresh launcher intent with the notification's extras. Buffer AND
+        // trigger (belt and braces): the live event gives instant delivery
+        // when a listener is attached, the buffer covers a tap landing
+        // before `onPushTapped` has finished registering. The JS side
+        // dedupes if the same payload arrives through both paths.
         readTapPayloadFromIntent(intent)?.let { payload ->
+            pendingTapPayload = payload
             trigger("push-tapped", payload)
         }
+    }
+
+    @Command
+    fun takePendingTap(invoke: Invoke) {
+        val ret = JSObject()
+        ret.put("tap", pendingTapPayload)
+        pendingTapPayload = null
+        invoke.resolve(ret)
     }
 
     @Command

@@ -1,4 +1,4 @@
-const COMMANDS: &[&str] = &["get_push_token"];
+const COMMANDS: &[&str] = &["get_push_token", "take_pending_tap"];
 
 fn main() {
     // Mirrors the build.rs shape used by every official Tauri v2 mobile

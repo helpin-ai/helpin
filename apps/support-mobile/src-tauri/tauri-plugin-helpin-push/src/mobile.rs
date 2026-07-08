@@ -46,4 +46,13 @@ impl<R: Runtime> HelpinPush<R> {
             .run_mobile_plugin("getPushToken", ())
             .map_err(Into::into)
     }
+
+    /// Returns-and-clears the natively buffered notification-tap payload
+    /// (cold-start or not-yet-consumed warm tap). See
+    /// `TakePendingTapResponse` for the pull-model rationale.
+    pub fn take_pending_tap(&self) -> crate::Result<TakePendingTapResponse> {
+        self.0
+            .run_mobile_plugin("takePendingTap", ())
+            .map_err(Into::into)
+    }
 }

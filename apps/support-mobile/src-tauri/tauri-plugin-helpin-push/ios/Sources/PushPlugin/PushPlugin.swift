@@ -17,11 +17,16 @@ import WebKit
 /// `pnpm tauri ios init` has run on macOS.
 class PushPlugin: Plugin, MessagingDelegate, UNUserNotificationCenterDelegate {
 
-    /// Cold-start tap payload, buffered until `load(webview:)` attaches the
-    /// webview (mirrors the Android companion-object buffer in
-    /// `PushPlugin.kt` — same reasoning: `didReceive response` can fire
-    /// before the JS `onPushTapped` listener has registered).
-    private static var bufferedTapPayload: [String: String]?
+    /// The last unconsumed notification-tap payload. Written by every
+    /// `didReceive response` (cold-start and warm taps alike) and
+    /// returned-and-cleared by the `takePendingTap` command. Deliberate
+    /// pull model mirroring the Android buffer in `PushPlugin.kt`: the JS
+    /// side registers its live listener first, then drains this buffer
+    /// once, so a cold-start tap (which fires `didReceive` before the JS
+    /// `onPushTapped` listener exists) is never lost to event timing.
+    /// Static so a hypothetical plugin re-instantiation across webview
+    /// reloads doesn't drop an unconsumed payload.
+    static var bufferedTapPayload: [String: String]?
 
     override init() {
         super.init()
@@ -42,12 +47,15 @@ class PushPlugin: Plugin, MessagingDelegate, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().delegate = self
     }
 
-    override func load(webview: WKWebView) {
-        super.load(webview: webview)
+    @objc public func takePendingTap(_ invoke: Invoke) throws {
+        let ret = JSObject()
         if let payload = PushPlugin.bufferedTapPayload {
-            trigger("push-tapped", data: payload)
-            PushPlugin.bufferedTapPayload = nil
+            ret["tap"] = payload
+        } else {
+            ret["tap"] = nil
         }
+        PushPlugin.bufferedTapPayload = nil
+        invoke.resolve(ret)
     }
 
     @objc public func getPushToken(_ invoke: Invoke) throws {
@@ -100,6 +108,14 @@ class PushPlugin: Plugin, MessagingDelegate, UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let payload = Self.flattenUserInfo(response.notification.request.content.userInfo)
+        // Buffer AND trigger: the live event gives instant delivery to an
+        // already-registered JS listener (warm tap); the buffer is drained
+        // deterministically by `takePendingTap` once the JS side registers
+        // (cold-start tap, where this delegate fires before the webview/JS
+        // listener exists). The JS side dedupes if the same payload arrives
+        // through both paths.
+        PushPlugin.bufferedTapPayload = payload
+        trigger("push-tapped", data: payload)
         // SPIKE-VERIFY: confirm this delegate callback fires for a
         // cold-start tap too (delivered once the app finishes launching),
         // and not only for warm taps — if cold-start delivery instead
@@ -108,7 +124,6 @@ class PushPlugin: Plugin, MessagingDelegate, UNUserNotificationCenterDelegate {
         // `application(_:didFinishLaunchingWithOptions:)`, that value would
         // need forwarding into `PushPlugin.bufferedTapPayload` from there,
         // same as the APNs device token forwarding above.
-        trigger("push-tapped", data: payload)
         completionHandler()
     }
 

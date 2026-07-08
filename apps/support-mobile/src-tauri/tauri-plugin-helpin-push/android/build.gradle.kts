@@ -13,10 +13,16 @@
 // - the Firebase BOM/messaging version pins below match whatever Task 19a's
 //   findings doc records as tested-working on real hardware
 
+// NOTE: the `com.google.gms.google-services` Gradle plugin is deliberately
+// NOT applied here — it is documented as ineffective on Android *library*
+// modules (it processes `google-services.json` into resources for the
+// *application* module only). It must be applied in
+// `gen/android/app/build.gradle.kts` (the application module) during Task
+// 19a, alongside placing `google-services.json` in that module — see this
+// plugin's README, SPIKE item on Google services wiring.
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
-    id("com.google.gms.google-services")
 }
 
 android {

@@ -12,9 +12,29 @@ vi.mock('@tauri-apps/api/core', () => ({
 const mockInvoke = vi.mocked(invoke)
 const mockAddPluginListener = vi.mocked(addPluginListener)
 
+type TapHandler = (payload: Record<string, string>) => void
+
+/** Stubs addPluginListener, capturing the live-event handler that
+ * onPushTapped/onPushTokenChanged register, plus a spy-able unregister. */
+function stubListener() {
+  const captured: { handler?: TapHandler } = {}
+  const unregister = vi.fn().mockResolvedValue(undefined)
+  mockAddPluginListener.mockImplementation(((
+    _plugin: string,
+    _event: string,
+    handler: TapHandler,
+  ) => {
+    captured.handler = handler
+    return Promise.resolve({ unregister } as unknown as PluginListener)
+  }) as typeof addPluginListener)
+  return { captured, unregister }
+}
+
 beforeEach(() => {
   mockInvoke.mockReset()
   mockAddPluginListener.mockReset()
+  // Default: no pending tap buffered natively.
+  mockInvoke.mockResolvedValue({ tap: null })
 })
 
 describe('getPushToken', () => {
@@ -64,32 +84,98 @@ describe('onPushTokenChanged', () => {
 })
 
 describe('onPushTapped', () => {
-  test('registers on the helpin-push plugin channel and passes the payload through unchanged', async () => {
-    let capturedHandler: ((payload: Record<string, string>) => void) | undefined
-    const unregister = vi.fn().mockResolvedValue(undefined)
-    mockAddPluginListener.mockImplementation(((
-      _plugin: string,
-      _event: string,
-      handler: (payload: Record<string, string>) => void,
-    ) => {
-      capturedHandler = handler
-      return Promise.resolve({ unregister } as unknown as PluginListener)
-    }) as typeof addPluginListener)
-
+  test('registers the live listener first, then drains take_pending_tap exactly once', async () => {
+    const { captured } = stubListener()
     const cb = vi.fn()
-    const unlisten = await onPushTapped(cb)
+    await onPushTapped(cb)
 
     expect(mockAddPluginListener).toHaveBeenCalledWith(
       'helpin-push',
       'push-tapped',
       expect.any(Function),
     )
+    expect(mockInvoke).toHaveBeenCalledWith('plugin:helpin-push|take_pending_tap')
+    expect(mockInvoke).toHaveBeenCalledTimes(1)
+    // Listener must be registered BEFORE the drain, so a tap arriving in
+    // between is caught by one path or the other, never lost.
+    expect(mockAddPluginListener.mock.invocationCallOrder[0]).toBeLessThan(
+      mockInvoke.mock.invocationCallOrder[0],
+    )
+    // No pending tap buffered -> cb not called at registration time.
+    expect(cb).not.toHaveBeenCalled()
+    expect(captured.handler).toBeDefined()
+  })
+
+  test('delivers a natively buffered cold-start tap exactly once via the drain', async () => {
+    stubListener()
+    const pending = { conversation_id: 'conv_1', workspace_slug: 'acme' }
+    mockInvoke.mockResolvedValue({ tap: pending })
+
+    const cb = vi.fn()
+    await onPushTapped(cb)
+
+    expect(cb).toHaveBeenCalledTimes(1)
+    expect(cb).toHaveBeenCalledWith(pending)
+  })
+
+  test('live event still passes payloads through unchanged', async () => {
+    const { captured, unregister } = stubListener()
+    const cb = vi.fn()
+    const unlisten = await onPushTapped(cb)
 
     const payload = { conversation_id: 'conv_1', workspace_slug: 'acme' }
-    capturedHandler?.(payload)
+    captured.handler?.(payload)
     expect(cb).toHaveBeenCalledWith(payload)
 
     unlisten()
     expect(unregister).toHaveBeenCalledTimes(1)
+  })
+
+  test('dedupes the same payload arriving via both the drain and the live event', async () => {
+    const { captured } = stubListener()
+    const payload = { conversation_id: 'conv_1', workspace_slug: 'acme' }
+    mockInvoke.mockResolvedValue({ tap: payload })
+
+    const cb = vi.fn()
+    await onPushTapped(cb)
+    // Drain already delivered it once...
+    expect(cb).toHaveBeenCalledTimes(1)
+
+    // ...the belt-and-braces live trigger of the SAME tap (fresh object,
+    // key order shuffled — dedupe must be by content, not reference).
+    captured.handler?.({ workspace_slug: 'acme', conversation_id: 'conv_1' })
+    expect(cb).toHaveBeenCalledTimes(1)
+
+    // A genuinely different tap still goes through.
+    captured.handler?.({ conversation_id: 'conv_2', workspace_slug: 'acme' })
+    expect(cb).toHaveBeenCalledTimes(2)
+    expect(cb).toHaveBeenLastCalledWith({ conversation_id: 'conv_2', workspace_slug: 'acme' })
+  })
+
+  test('an identical payload after the dedupe window is delivered again (real second tap)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { captured } = stubListener()
+      const payload = { conversation_id: 'conv_1' }
+
+      const cb = vi.fn()
+      await onPushTapped(cb)
+      expect(cb).not.toHaveBeenCalled()
+
+      captured.handler?.(payload)
+      expect(cb).toHaveBeenCalledTimes(1)
+
+      // Within the window: duplicate suppressed.
+      vi.advanceTimersByTime(1_000)
+      captured.handler?.({ ...payload })
+      expect(cb).toHaveBeenCalledTimes(1)
+
+      // Past the window: the user really tapped identical content again.
+      vi.advanceTimersByTime(10_000)
+      captured.handler?.({ ...payload })
+      expect(cb).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

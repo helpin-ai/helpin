@@ -3,9 +3,10 @@
 [default]
 description = """
 Allows the Helpin push plugin to retrieve the current FCM/APNs push token
-(`get_push_token`) and to receive `push-token-changed` / `push-tapped`
+(`get_push_token`), drain the buffered notification-tap payload
+(`take_pending_tap`), and receive `push-token-changed` / `push-tapped`
 events. Events are delivered over the plugin's own listener channel and are
 not separately permission-gated (matches the pattern used by
 `notification:default` for its `notification` / `actionPerformed` events).
 """
-permissions = ["allow-get-push-token"]
+permissions = ["allow-get-push-token", "allow-take-pending-tap"]

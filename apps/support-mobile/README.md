@@ -209,11 +209,16 @@ cargo check
      attempting mobile targets.
    - Add `google-services.json` (Android) / `GoogleService-Info.plist`
      (iOS) from Doppler per Task 19a Step 1; both are gitignored.
+   - Apply the `com.google.gms.google-services` Gradle plugin in
+     `gen/android/app/build.gradle.kts` (the **application** module —
+     deliberately not applied in the plugin's library module, where it is
+     documented-ineffective), alongside where `google-services.json` lands
+     (see plugin README item 10).
    - Manually enable Push Notifications + Background Modes
      (remote-notification) capabilities in the generated Xcode project, and
      wire `Messaging.messaging().apnsToken` in the generated AppDelegate's
      `didRegisterForRemoteNotificationsWithDeviceToken` — the plugin cannot
-     do this itself (see plugin README item 12).
+     do this itself (see plugin README item 13).
    - `getPushToken()` from devtools console (or a temporary button) on both
      a physical Android device and a physical iPhone (push does not reach
      simulators/emulators reliably for APNs; Android emulators with Play
@@ -223,7 +228,11 @@ cargo check
      delivery on both platforms, tapping opens the app, and
      `onPushTapped`'s callback fires with the data payload on **both** a
      cold start (app was fully killed) and a warm tap (app already
-     running) — cold start is the case most likely to be broken by the
-     buffering logic in `PushPlugin.kt`/`PushPlugin.swift`.
+     running), and fires exactly **once** per tap (the same payload can
+     reach JS via both the live event and the `take_pending_tap` drain —
+     guest-js dedupes). Cold start's remaining risk is whether the launch
+     intent (Android) / `didReceive` (iOS) actually carries the data
+     payload — the buffer/drain mechanism itself is deterministic (see
+     plugin README items 4 and 14).
    - Confirm `onPushTokenChanged` fires when Firebase issues a fresh token
      (e.g. after clearing app data and relaunching).

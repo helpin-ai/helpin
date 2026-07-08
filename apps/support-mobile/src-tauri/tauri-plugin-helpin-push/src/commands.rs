@@ -10,3 +10,10 @@ pub(crate) async fn get_push_token<R: Runtime>(
 ) -> Result<GetPushTokenResponse> {
     app.helpin_push().get_push_token()
 }
+
+#[command]
+pub(crate) async fn take_pending_tap<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<TakePendingTapResponse> {
+    app.helpin_push().take_pending_tap()
+}
