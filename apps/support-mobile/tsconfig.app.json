@@ -23,7 +23,8 @@
     "paths": {
       "@mobile/*": ["./src/*"],
       "@helpin-ai/support-core": ["../../packages/support-core/src/index.ts"],
-      "@helpin-ai/shared": ["../../packages/shared/src/index.ts"]
+      "@helpin-ai/shared": ["../../packages/shared/src/index.ts"],
+      "@helpin/plugin-push": ["./src-tauri/tauri-plugin-helpin-push/guest-js/index.ts"]
     }
   },
   "include": ["src"]

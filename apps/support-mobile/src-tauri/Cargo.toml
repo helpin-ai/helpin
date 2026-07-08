@@ -19,3 +19,4 @@ tauri = { version = "2.9.1", features = [] }
 tauri-plugin-haptics = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-store = "2.4.0"
+tauri-plugin-helpin-push = { path = "tauri-plugin-helpin-push" }

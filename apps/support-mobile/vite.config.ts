@@ -20,6 +20,13 @@ export default defineConfig({
         find: '@helpin-ai/shared',
         replacement: path.resolve(__dirname, '../../packages/shared/src/index.ts'),
       },
+      {
+        find: '@helpin/plugin-push',
+        replacement: path.resolve(
+          __dirname,
+          './src-tauri/tauri-plugin-helpin-push/guest-js/index.ts',
+        ),
+      },
     ],
   },
   server: {

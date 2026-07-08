@@ -195,3 +195,35 @@ cargo check
    - Switch segments (Mine/Unassigned/All) and confirm the previous list
      stays visible (dimmed, not skeletons) while the new page loads, with
      skeletons appearing only on the very first load of the screen.
+
+9. **Push plugin (Task 19 — `src-tauri/tauri-plugin-helpin-push/`)**: written
+   pre-spike, entirely unverified — no Rust/Android/iOS toolchain exists in
+   this environment. Full SPIKE-VERIFY list lives in
+   `src-tauri/tauri-plugin-helpin-push/README.md`; do not proceed with any
+   of the below until Task 19a's findings doc
+   (`docs/superpowers/plans/2026-07-08-push-spike-findings.md`) exists and
+   this plugin has been reconciled against it. Once a real toolchain and
+   `gen/android`/`gen/apple` exist:
+   - `cd apps/support-mobile/src-tauri && cargo check` — first sanity pass;
+     confirm the crate compiles for desktop (`#[cfg(desktop)]` path) before
+     attempting mobile targets.
+   - Add `google-services.json` (Android) / `GoogleService-Info.plist`
+     (iOS) from Doppler per Task 19a Step 1; both are gitignored.
+   - Manually enable Push Notifications + Background Modes
+     (remote-notification) capabilities in the generated Xcode project, and
+     wire `Messaging.messaging().apnsToken` in the generated AppDelegate's
+     `didRegisterForRemoteNotificationsWithDeviceToken` — the plugin cannot
+     do this itself (see plugin README item 12).
+   - `getPushToken()` from devtools console (or a temporary button) on both
+     a physical Android device and a physical iPhone (push does not reach
+     simulators/emulators reliably for APNs; Android emulators with Play
+     services do work) — confirm it resolves to a non-null token and that
+     the OS permission prompt appears on first call.
+   - Send a test message from the Firebase console: confirm background
+     delivery on both platforms, tapping opens the app, and
+     `onPushTapped`'s callback fires with the data payload on **both** a
+     cold start (app was fully killed) and a warm tap (app already
+     running) — cold start is the case most likely to be broken by the
+     buffering logic in `PushPlugin.kt`/`PushPlugin.swift`.
+   - Confirm `onPushTokenChanged` fires when Firebase issues a fresh token
+     (e.g. after clearing app data and relaunching).

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Merged into the generated app manifest at `src-tauri/gen/android/app/src/main/AndroidManifest.xml`
+  via Gradle manifest merging once `pnpm tauri android init` has run.
+  SPIKE-VERIFY: confirm the merge doesn't collide with any `<service>` or
+  permission the app shell's own manifest (or another plugin, e.g.
+  tauri-plugin-notification) already declares.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <service
+            android:name=".HelpinMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>
