@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, type ReactNode } from 'react'
 import { Outlet, useRouter, useRouterState } from '@tanstack/react-router'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { stackSpring } from '@mobile/lib/motion'
@@ -20,29 +20,55 @@ export function backFallbackPath(pathname: string): string {
 const TAB_ROOTS = [/^\/w\/[^/]+\/support$/, /^\/w\/[^/]+\/you$/]
 const isTabRoot = (path: string) => TAB_ROOTS.some((re) => re.test(path))
 
+/**
+ * Per-screen gesture host. Rendered INSIDE the pathname-keyed motion.div so
+ * every navigation gets a fresh motion value — during an AnimatePresence
+ * transition the exiting and entering screens must NOT share `gestureX`,
+ * or the incoming screen renders translated by the dying gesture's offset.
+ */
+export function GestureScreen({
+  enabled,
+  onBack,
+  children,
+}: {
+  enabled: boolean
+  onBack: () => void
+  children: ReactNode
+}) {
+  const { swipeRef, gestureX } = useEdgeSwipeBack({ enabled, onBack })
+  return (
+    <motion.div ref={swipeRef} style={{ x: gestureX }} className="h-full">
+      {children}
+    </motion.div>
+  )
+}
+
 export function ScreenStack() {
   const router = useRouter()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const historyIndex = useRouterState({
     select: (s) => (s.location.state as { __TSR_index?: number }).__TSR_index ?? 0,
   })
+  // Compute direction synchronously during render (no useState/useEffect
+  // round-trip): the exiting screen's `exit` variant is captured on THIS
+  // render, so a lagging state value would bake the previous transition's
+  // direction into it (e.g. pop exiting with push's -25% parallax).
   const prevIndexRef = useRef(historyIndex)
-  const [direction, setDirection] = useState<'push' | 'pop' | 'replace'>('replace')
-
-  useEffect(() => {
-    setDirection(resolveDirection(prevIndexRef.current, historyIndex))
+  const directionRef = useRef<'push' | 'pop' | 'replace'>('replace')
+  if (historyIndex !== prevIndexRef.current) {
+    directionRef.current = resolveDirection(prevIndexRef.current, historyIndex)
     prevIndexRef.current = historyIndex
-  }, [historyIndex])
+  }
+  const direction = directionRef.current
 
   const reduced = useReducedMotion()
   const crossfade = reduced || (isTabRoot(pathname) && direction !== 'pop')
 
   const swipeEnabled = !isTabRoot(pathname) && pathname !== '/login' && pathname !== '/workspaces'
-  const goBack = () => {
+  const goBack = useCallback(() => {
     if (router.history.canGoBack()) router.history.back()
     else router.navigate({ to: backFallbackPath(pathname) })
-  }
-  const { swipeRef, gestureX } = useEdgeSwipeBack({ enabled: swipeEnabled, onBack: goBack })
+  }, [router, pathname])
 
   const variants = crossfade
     ? {
@@ -71,9 +97,9 @@ export function ScreenStack() {
           exit="exit"
           transition={crossfade ? { duration: 0.15 } : stackSpring}
         >
-          <motion.div ref={swipeRef} style={{ x: gestureX }} className="h-full">
+          <GestureScreen enabled={swipeEnabled} onBack={goBack}>
             <Outlet />
-          </motion.div>
+          </GestureScreen>
         </motion.div>
       </AnimatePresence>
     </div>
