@@ -473,6 +473,12 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 	if denied := commandBarDeniedReadOnlyDomainAnswer(effectiveText, access); denied != "" {
 		return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: denied}, denied, nil
 	}
+	// Explicit "create an agent" phrasing wins over the planner shortcut and
+	// the LLM classifier: the user has already named their intent.
+	if shouldCreateReusableAgentFromChat(effectiveText) {
+		s.publishChatTurnProgress(ctx, workspaceID, actorID, "planning", "")
+		return s.commandBarCreateAgentChatProposal(ctx, workspaceID, effectiveText, pageContext)
+	}
 	if commandBarShouldUseRunPlannerBeforeInline(effectiveText, pageContext) {
 		s.publishChatTurnProgress(ctx, workspaceID, actorID, "planning", "")
 		proposal, content, handled, err := s.commandBarRunPlanProposalFromParse(ctx, workspaceID, actorID, effectiveText, pageContext)
@@ -511,10 +517,6 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 		}
 		proposal := &model.CommandBarProposal{Type: model.CommandBarProposalClarification, Answer: answer, Reason: strings.TrimSpace(classification.Reason)}
 		return proposal, answer, nil
-	default:
-		if classification == nil && shouldCreateReusableAgentFromChat(effectiveText) {
-			return s.commandBarCreateAgentChatProposal(ctx, workspaceID, effectiveText, pageContext)
-		}
 	}
 
 	s.publishChatTurnProgress(ctx, workspaceID, actorID, "planning", "")
@@ -1916,18 +1918,32 @@ func fullCommandBarChatAccess() CommandBarChatAccess {
 	}
 }
 
+// shouldCreateReusableAgentFromChat reports whether the text explicitly asks
+// to create a reusable agent. Requires a creation verb (or want/need) next to
+// "agent" so run requests like "run the changelog agent to summarize this doc"
+// keep flowing to the classifier.
 func shouldCreateReusableAgentFromChat(text string) bool {
 	lower := strings.ToLower(strings.TrimSpace(text))
 	return containsAny(lower,
 		"create an agent",
+		"create a new agent",
 		"create agent",
 		"make an agent",
-		"make agent",
+		"make a new agent",
 		"build an agent",
 		"save an agent",
+		"save as an agent",
+		"save this as an agent",
+		"set up an agent",
+		"setup an agent",
+		"add an agent",
+		"define an agent",
+		"new agent that",
+		"want an agent to",
+		"want an agent that",
+		"need an agent to",
+		"need an agent that",
 		"reusable agent",
-		"agent that",
-		"agent to",
 	)
 }
 
