@@ -25,6 +25,7 @@ import {
   workspacesQueryOptions,
 } from '@mobile/screens/workspaces-screen'
 import { InboxScreen } from '@mobile/screens/inbox-screen'
+import { ConversationPending } from '@mobile/screens/conversation-pending'
 import { YouScreen } from '@mobile/screens/you-screen'
 
 export interface RouterContext {
@@ -102,6 +103,27 @@ const supportConversationRoute = createRoute({
   // moment a conversation row is pressed/hovered, so there's no added
   // loading flash on the common path.
   component: lazyRouteComponent(() => import('@mobile/screens/conversation-screen'), 'ConversationScreen'),
+  // Fallback for a cold chunk load (worst case: a cold-start push-tap deep
+  // link, where intent-preload never had a head start). Verified against
+  // this router version's Match implementation (react-router/dist/esm/
+  // Match.js, MatchView): setting `pendingComponent` is what upgrades the
+  // match's boundary from SafeFragment to a real `React.Suspense` with this
+  // as the fallback — without it the lazy component's thrown load promise
+  // bubbles to the root's null fallback and the ScreenStack slides in a
+  // blank panel.
+  pendingComponent: ConversationPending,
+  // ...and `pendingMs: 0` is ALSO required: the router preloads the lazy
+  // component as part of match loading, holding the match in a pending
+  // state that only *displays* the pendingComponent after `pendingMs`
+  // (default 1000ms) — measured empirically in
+  // src/screens/__tests__/conversation-pending.test.tsx, where the skeleton
+  // first rendered at ~1032ms without this override (a full second of blank
+  // panel on a slow chunk fetch). With 0 it renders immediately. The
+  // router's default `pendingMinMs` (500ms) is deliberately kept: once
+  // shown, the skeleton stays up briefly instead of flashing for one frame
+  // when the chunk lands quickly — and the common warm path (chunk already
+  // intent-preloaded from the inbox) never enters pending at all.
+  pendingMs: 0,
 })
 
 const youRoute = createRoute({

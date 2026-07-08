@@ -51,6 +51,21 @@ the common path). **Initial JS gzip: 226.46 kB → 210.46 kB (−16 kB, −7%).*
 Gate passes both before and after with large margin; the split is a genuine
 improvement, not a required fix.
 
+**Cold-chunk fallback (review follow-up)**: the route now has a
+`pendingComponent` (`src/screens/conversation-pending.tsx` — TopBar-shaped
+header + 3 skeleton bubbles, deliberately standalone so it stays in the
+entry chunk) AND `pendingMs: 0`. Both were required: without
+`pendingComponent` the match has no Suspense boundary of its own
+(SafeFragment in this router version's Match implementation) and a cold
+chunk slides in a BLANK panel; without `pendingMs: 0` the router's default
+1000ms pending-display delay meant the skeleton first rendered at a
+measured ~1032ms — up to a second of blank panel on a slow chunk fetch,
+worst on the cold-start push-tap deep link, where `defaultPreload:
+'intent'` gives no head start. With both fixes, measured ~55ms to skeleton.
+Test: `src/screens/__tests__/conversation-pending.test.tsx` (never-resolving
+lazy chunk through a real in-test router; a 500ms findBy budget is the
+regression guard against the 1000ms default sneaking back).
+
 Checked what makes up the bulk of the entry chunk (no mermaid/excalidraw/
 tiptap — confirmed absent from `package.json`): `react`/`react-dom` 19,
 `@tanstack/react-query` + `react-router` + `react-virtual`, `motion` 12,
@@ -301,7 +316,7 @@ is the plan's table (verbatim) plus exact execution notes.
 
 | Scenario | Expected | Execution notes |
 |---|---|---|
-| Kill app → push tap | Opens to conversation after auth restore | Requires Task 19a's push spike findings + a real device (push doesn't reach simulators/emulators reliably for APNs — see README item 9). Force-quit the app, send a push from the Firebase console, tap the notification, confirm `onPushTapped`'s cold-start path (`take_pending_tap` drain, per plugin README) fires exactly once and lands on the right conversation after `bootstrapAuth()` resolves (`main.tsx`'s `flushPendingTap` queue). |
+| Kill app → push tap | Opens to conversation after auth restore | Requires Task 19a's push spike findings + a real device (push doesn't reach simulators/emulators reliably for APNs — see README item 9). Force-quit the app, send a push from the Firebase console, tap the notification, confirm `onPushTapped`'s cold-start path (`take_pending_tap` drain, per plugin README) fires exactly once and lands on the right conversation after `bootstrapAuth()` resolves (`main.tsx`'s `flushPendingTap` queue). While the lazy conversation chunk loads (intent-preload gives no head start on a deep link), the `ConversationPending` skeleton must show — never a blank panel (see §1a's cold-chunk fallback). |
 | Token expiry while backgrounded overnight | Silent refresh, no logout | Background the app with a session close to expiry (or shorten the token TTL in a test env), leave backgrounded 8+ hours (or fast-forward via a debug endpoint), foreground, confirm `setupVisibilityRefresh`/`startTokenRefreshTimer` (`main.tsx`) silently refreshes rather than bouncing to `/login`. |
 | Airplane mode mid-send | Failed bubble + retry chip; retry succeeds on reconnect | Start a send, enable airplane mode before it resolves, confirm the composer's `attemptSend` catch path fires (`src/thread/composer.tsx`) — failed-send chip renders, tapping Retry after disabling airplane mode re-attempts via the same `attemptSend(retryId)` path and clears the chip on success. |
 | Workspace with 0 conversations | Inbox-zero empty state | Point at a workspace with no support conversations; confirm `InboxScreen`'s `showEmpty` branch renders "Inbox zero" (already code-verified to exist — `src/screens/inbox-screen.tsx`); device run confirms no false-positive skeleton flash first. |
