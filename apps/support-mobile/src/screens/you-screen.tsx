@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useTheme } from 'next-themes'
 import { Bell, ChevronRight } from 'lucide-react'
+import { toast } from 'sonner'
 import { TopBar } from '@mobile/ui/top-bar'
 import { TabShell } from '@mobile/navigation/tab-bar'
 import { Avatar } from '@mobile/ui/avatar'
@@ -46,8 +47,9 @@ function useAppVersion(): string {
  * OWN persisted decision (`enabled` / `later` / never-asked) rather than
  * the true OS permission state. If the user denied the OS prompt, the row
  * still offers "Enable notifications" and re-attempts `registerForPush()`,
- * which will just silently get a null token again — not incorrect, just
- * not as informative as a real "denied, go to Settings" deep link would be.
+ * which returns 'unavailable' again (surfaced as a "Couldn't enable
+ * notifications" toast) — not incorrect, just not as informative as a real
+ * "denied, go to Settings" deep link would be.
  */
 function useNotificationsRowState() {
   const [pref, setPref] = useState<PushPrimingPref | null>(null)
@@ -74,7 +76,14 @@ function useNotificationsRowState() {
   const handleEnable = async () => {
     setEnabling(true)
     try {
-      await registerForPush()
+      const result = await registerForPush()
+      if (result !== 'registered') {
+        // Denied OS prompt / simulator / failed POST — don't record
+        // 'enabled' (the row would claim Enabled forever with no retry
+        // path); leave the pref as-is so the row keeps offering the action.
+        toast.error("Couldn't enable notifications")
+        return
+      }
       const next: PushPrimingPref = { decision: 'enabled', at: new Date().toISOString() }
       await setPushPrimingPref(next)
       setPref(next)

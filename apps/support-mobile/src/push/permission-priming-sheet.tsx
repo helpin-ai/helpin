@@ -25,8 +25,16 @@ export function PermissionPrimingSheet({ open, onOpenChange }: PermissionPriming
   const handleEnable = async () => {
     setEnabling(true)
     try {
-      await registerForPush()
-      await setPushPrimingPref({ decision: 'enabled', at: new Date().toISOString() })
+      const result = await registerForPush()
+      // 'enabled' is persisted ONLY on a confirmed registration (token
+      // obtained + backend POST succeeded). A denied prompt / simulator /
+      // failed POST persists 'later' instead, so the natural 7-day cooldown
+      // becomes the retry path rather than being locked into "enabled"
+      // forever with no recovery.
+      await setPushPrimingPref({
+        decision: result === 'registered' ? 'enabled' : 'later',
+        at: new Date().toISOString(),
+      })
     } finally {
       setEnabling(false)
       onOpenChange(false)

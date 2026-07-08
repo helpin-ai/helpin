@@ -61,6 +61,8 @@ if (isTauri()) {
   })
 }
 
+// Intentionally never unsubscribed: this module-scope subscription lives for
+// the app's lifetime, same as the onPushTapped registration above.
 useAuthStore.subscribe((state, prevState) => {
   if (prevState.loading && !state.loading) flushPendingTap()
 })

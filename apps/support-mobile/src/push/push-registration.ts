@@ -40,10 +40,15 @@ async function resolveShellInfo(): Promise<{ platform: MobilePlatform | null; ap
   }
 }
 
-async function postToken(token: string): Promise<void> {
+async function postToken(token: string): Promise<boolean> {
   const { platform, appVersion } = await resolveShellInfo()
-  if (!platform) return
-  await api.post(PUSH_DEVICES_PATH, { platform, token, app_version: appVersion })
+  if (!platform) return false
+  const { error } = await api.post(PUSH_DEVICES_PATH, { platform, token, app_version: appVersion })
+  if (error) {
+    console.debug('[push] device registration POST failed', { error })
+    return false
+  }
+  return true
 }
 
 // Module-scope guard: onPushTokenChanged must be subscribed exactly once —
@@ -51,6 +56,9 @@ async function postToken(token: string): Promise<void> {
 // permission-priming sheet and the You-screen notifications row) without
 // creating a second listener.
 let tokenChangeSubscribed = false
+
+/** Outcome of a {@link registerForPush} attempt. */
+export type PushRegistrationResult = 'registered' | 'unavailable'
 
 /**
  * Registers this device for push notifications: fetches the current FCM/APNs
@@ -60,15 +68,22 @@ let tokenChangeSubscribed = false
  * automatically — but only once, no matter how many times this function is
  * called.
  *
- * No-ops entirely outside Tauri (desktop/browser preview) and when the shell
- * reports a non-mobile platform.
+ * Returns `'registered'` ONLY when a token was actually obtained AND the
+ * backend POST succeeded — callers must persist `{decision:'enabled'}` on
+ * that outcome alone. Everything else — outside Tauri, non-mobile platform,
+ * OS permission denied / no Play services (null token), or a failed POST —
+ * returns `'unavailable'`, so a denied or simulator user is never recorded
+ * as permanently "enabled" with no recovery path.
  */
-export async function registerForPush(): Promise<void> {
-  if (!isTauri()) return
+export async function registerForPush(): Promise<PushRegistrationResult> {
+  if (!isTauri()) return 'unavailable'
 
   const token = await getPushToken()
+  let registered = false
   if (token) {
-    await postToken(token)
+    registered = await postToken(token)
+  } else {
+    console.debug('[push] no push token available (permission denied or unsupported environment)')
   }
 
   if (!tokenChangeSubscribed) {
@@ -77,20 +92,39 @@ export async function registerForPush(): Promise<void> {
       void postToken(newToken)
     })
   }
+
+  return registered ? 'registered' : 'unavailable'
 }
+
+/** How long sign-out is willing to wait for the push-device DELETE. */
+const UNREGISTER_TIMEOUT_MS = 3_000
+
+const UNREGISTER_TIMED_OUT = Symbol('unregister-timed-out')
 
 /**
  * Unregisters this device's current push token from the backend. Called from
  * `signOut()` BEFORE the session is cleared (needs the authenticated API
  * call). Failures are swallowed and logged — sign-out must never block or
  * fail because a push-device delete didn't go through.
+ *
+ * The DELETE is raced against a {@link UNREGISTER_TIMEOUT_MS} timeout
+ * (support-core's fetch layer has no timeout of its own, and sign-out must
+ * never hang on a dead network). When the timeout wins, the token may leak
+ * server-side until FCM/APNs reports it unregistered and the backend prunes
+ * it — an accepted trade-off for a sign-out that always completes.
  */
 export async function unregisterPush(): Promise<void> {
   if (!isTauri()) return
   try {
     const token = await getPushToken()
     if (!token) return
-    await api.del(PUSH_DEVICES_PATH, { token })
+    const timeout = new Promise<typeof UNREGISTER_TIMED_OUT>((resolve) => {
+      setTimeout(() => resolve(UNREGISTER_TIMED_OUT), UNREGISTER_TIMEOUT_MS)
+    })
+    const result = await Promise.race([api.del(PUSH_DEVICES_PATH, { token }), timeout])
+    if (result === UNREGISTER_TIMED_OUT) {
+      console.debug('[push] unregisterPush timed out after 3s (non-fatal); token may linger server-side')
+    }
   } catch (error) {
     console.debug('[push] unregisterPush failed (non-fatal)', error)
   }
@@ -98,9 +132,18 @@ export async function unregisterPush(): Promise<void> {
 
 const DEEP_LINK_PREFIX = 'helpin://w/'
 
-/** Loosely validates a slug/id path segment: non-empty, no path separators. */
+/**
+ * Loosely validates a slug/id path segment: non-empty, no path separators,
+ * and not a relative-path traversal segment (`.` / `..`).
+ */
 function isValidSegment(value: string | undefined | null): value is string {
-  return typeof value === 'string' && value.length > 0 && !value.includes('/')
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    !value.includes('/') &&
+    value !== '.' &&
+    value !== '..'
+  )
 }
 
 function parseDeepLink(deepLink: string | undefined): string | null {

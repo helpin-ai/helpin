@@ -66,23 +66,23 @@ afterEach(() => {
 })
 
 describe('registerForPush', () => {
-  test('outside Tauri: no-ops (no token fetch, no post, no subscribe)', async () => {
+  test("outside Tauri: no-ops and returns 'unavailable' (no token fetch, no post, no subscribe)", async () => {
     const { mod, mockGetPushToken, mockPost, mockOnPushTokenChanged } = await freshPushRegistration()
     mockGetPushToken.mockResolvedValue('token-abc')
 
-    await mod.registerForPush()
+    await expect(mod.registerForPush()).resolves.toBe('unavailable')
 
     expect(mockGetPushToken).not.toHaveBeenCalled()
     expect(mockPost).not.toHaveBeenCalled()
     expect(mockOnPushTokenChanged).not.toHaveBeenCalled()
   })
 
-  test('posts { platform, token, app_version } from the plugin token + shell info', async () => {
+  test("posts { platform, token, app_version } and returns 'registered' on success", async () => {
     const { mod, mockGetPushToken, mockPost } = await freshPushRegistration()
     markAsTauri()
     mockGetPushToken.mockResolvedValue('token-abc')
 
-    await mod.registerForPush()
+    await expect(mod.registerForPush()).resolves.toBe('registered')
 
     expect(mockPost).toHaveBeenCalledWith('/user/push-devices', {
       platform: 'ios',
@@ -91,14 +91,25 @@ describe('registerForPush', () => {
     })
   })
 
-  test('token null: does not post', async () => {
+  test("token null: does not post, returns 'unavailable'", async () => {
     const { mod, mockGetPushToken, mockPost } = await freshPushRegistration()
     markAsTauri()
     mockGetPushToken.mockResolvedValue(null)
 
-    await mod.registerForPush()
+    await expect(mod.registerForPush()).resolves.toBe('unavailable')
 
     expect(mockPost).not.toHaveBeenCalled()
+  })
+
+  test("backend POST failure: returns 'unavailable' (never falsely reported as registered)", async () => {
+    const { mod, mockGetPushToken, mockPost } = await freshPushRegistration()
+    markAsTauri()
+    mockGetPushToken.mockResolvedValue('token-abc')
+    mockPost.mockResolvedValue({ data: null, error: 'internal server error' })
+
+    await expect(mod.registerForPush()).resolves.toBe('unavailable')
+
+    expect(mockPost).toHaveBeenCalledTimes(1)
   })
 
   test('second call does not double-subscribe onPushTokenChanged', async () => {
@@ -137,13 +148,13 @@ describe('registerForPush', () => {
     })
   })
 
-  test('non-mobile platform reported by shell info: does not post', async () => {
+  test("non-mobile platform reported by shell info: does not post, returns 'unavailable'", async () => {
     const { mod, mockInvoke, mockGetPushToken, mockPost } = await freshPushRegistration()
     markAsTauri()
     mockInvoke.mockResolvedValue({ platform: 'linux', app_version: '1.2.3' })
     mockGetPushToken.mockResolvedValue('token-abc')
 
-    await mod.registerForPush()
+    await expect(mod.registerForPush()).resolves.toBe('unavailable')
 
     expect(mockPost).not.toHaveBeenCalled()
   })
@@ -185,6 +196,32 @@ describe('unregisterPush', () => {
     mockGetPushToken.mockRejectedValue(new Error('plugin unavailable'))
 
     await expect(mod.unregisterPush()).resolves.toBeUndefined()
+  })
+
+  test('resolves after 3s even when the DELETE hangs forever (sign-out must never hang)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { mod, mockGetPushToken, mockDel } = await freshPushRegistration()
+      markAsTauri()
+      mockGetPushToken.mockResolvedValue('token-abc')
+      // Dead network: the DELETE never settles.
+      mockDel.mockImplementation(() => new Promise(() => {}))
+
+      let settled = false
+      const promise = mod.unregisterPush().then(() => {
+        settled = true
+      })
+
+      // Let the token fetch resolve and the race begin.
+      await vi.advanceTimersByTimeAsync(0)
+      expect(settled).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(3_000)
+      await promise
+      expect(settled).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -238,6 +275,35 @@ describe('routePushTap', () => {
   test('slug containing a slash is rejected even via fallback', () => {
     const navigate = vi.fn()
     routePushTap({ workspace_slug: 'a/b', conversation_id: 'conv_1' }, navigate)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  test('deep_link with an extra slash (too many segments) is rejected via the deep_link path', () => {
+    const navigate = vi.fn()
+    // Extra path segment means the fallback fields are also absent — the
+    // deep_link parser itself must reject this, not just the fallback.
+    routePushTap({ deep_link: 'helpin://w/a/b/support/conv_1' }, navigate)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  test('deep_link with an empty slug segment is rejected via the deep_link path', () => {
+    const navigate = vi.fn()
+    routePushTap({ deep_link: 'helpin://w//support/conv_1' }, navigate)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  test('deep_link with dot traversal segments is rejected via the deep_link path', () => {
+    const navigate = vi.fn()
+    routePushTap({ deep_link: 'helpin://w/../support/conv_1' }, navigate)
+    routePushTap({ deep_link: 'helpin://w/acme/support/..' }, navigate)
+    routePushTap({ deep_link: 'helpin://w/./support/conv_1' }, navigate)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  test('dot traversal segments are rejected via the fallback path too', () => {
+    const navigate = vi.fn()
+    routePushTap({ workspace_slug: '..', conversation_id: 'conv_1' }, navigate)
+    routePushTap({ workspace_slug: 'acme', conversation_id: '.' }, navigate)
     expect(navigate).not.toHaveBeenCalled()
   })
 })
