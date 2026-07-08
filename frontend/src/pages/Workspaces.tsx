@@ -9,6 +9,7 @@ import { workspacesService } from '@/lib/services/workspacesService';
 import { settingsService } from '@/lib/services/settingsService';
 import { inviteService } from '@/lib/services/inviteService';
 import { generateWorkspaceSlug } from '@/lib/slugUtils';
+import { workspaceDefaultsFromUserEmail } from '@/lib/workspaceOnboardingDefaults';
 import { buildWorkspaceWebsiteContentSourcePayload } from '@/lib/workspaceWebsiteSource';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import type { OrganizationWithRole } from '@/lib/types';
@@ -19,13 +20,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { moreContextCopy } from '@/lib/onboardingContextPresentation';
 import { useCreateSupportContentSource } from '@/hooks/queries/useSupport';
-import { Favicon } from '@/components/ui/favicon';
-import { CheckmarkCircle02Icon, Loading01Icon, PlusSignIcon, Cancel01Icon, Logout01Icon } from '@/lib/icons';
+import { BookOpen01Icon, CheckmarkCircle02Icon, GitBranchIcon, Loading01Icon, PlusSignIcon, Cancel01Icon, Logout01Icon, MagicWand01Icon } from '@/lib/icons';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import {
   buildPresetFieldVisibility,
@@ -67,6 +69,8 @@ type TeamDraft = {
   isCustom: boolean;
 };
 
+type WorkspaceOnboardingStep = 'details' | 'learning' | 'context' | 'more-context' | 'teams' | 'invite';
+
 const createInitialTeamDrafts = (): TeamDraft[] =>
   WORKSPACE_TEAM_SUGGESTIONS.map((team, index) => ({
     id: `preset-${index}`,
@@ -94,8 +98,10 @@ export default function Workspaces() {
   const [workspaceKey, setWorkspaceKey] = useState('');
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [creating, setCreating] = useState(false);
-  const [workspaceStep, setWorkspaceStep] = useState<'details' | 'teams' | 'invite'>('details');
+  const [workspaceStep, setWorkspaceStep] = useState<WorkspaceOnboardingStep>('details');
   const [createdWorkspace, setCreatedWorkspace] = useState<{ id: string; slug: string; name: string; website_url?: string } | null>(null);
+  const [companyProductDescription, setCompanyProductDescription] = useState('');
+  const [generatingDescription, setGeneratingDescription] = useState(false);
   const [createdTeamIds, setCreatedTeamIds] = useState<string[]>([]);
   const [inviteEmails, setInviteEmails] = useState<string[]>([]);
   const [inviteEmailInput, setInviteEmailInput] = useState('');
@@ -104,6 +110,7 @@ export default function Workspaces() {
   const [websiteSourceAdded, setWebsiteSourceAdded] = useState(false);
   const [teamDrafts, setTeamDrafts] = useState<TeamDraft[]>(createInitialTeamDrafts);
   const createWebsiteSourceMutation = useCreateSupportContentSource(createdWorkspace?.id ?? '');
+  const workspaceDefaults = workspaceDefaultsFromUserEmail(user?.email);
 
   // Org creation state — pre-fill from user's first name for first-time users
   const firstName = user?.full_name?.split(' ')[0] ?? '';
@@ -154,9 +161,12 @@ export default function Workspaces() {
 
   const resetWorkspaceDialog = () => {
     setWorkspaceStep('details');
-    setName('');
-    setSlug('');
-    setWebsiteUrl('');
+    setName(workspaceDefaults.name);
+    setSlug(workspaceDefaults.slug);
+    setWorkspaceKey(workspaceDefaults.workspaceKey);
+    setWebsiteUrl(workspaceDefaults.websiteUrl);
+    setCompanyProductDescription('');
+    setGeneratingDescription(false);
     setTeamDrafts(createInitialTeamDrafts());
     setCreatedWorkspace(null);
     setCreatedTeamIds([]);
@@ -193,7 +203,7 @@ export default function Workspaces() {
 
   const [checkingSlug] = useState(false);
 
-  const handleContinueToTeams = async (e: FormEvent) => {
+  const handleContinueFromDetails = async (e: FormEvent) => {
     e.preventDefault();
     if (!currentOrganization) {
       toast.error('Please select an organization first');
@@ -203,7 +213,24 @@ export default function Workspaces() {
       toast.error('Enter a workspace name and slug');
       return;
     }
-    setWorkspaceStep('teams');
+    if (!websiteUrl.trim()) {
+      setWorkspaceStep('context');
+      return;
+    }
+
+    setWorkspaceStep('learning');
+    setGeneratingDescription(true);
+    const { data, error } = await workspacesService.generateCompanyProductDescription({
+      workspace_name: name.trim(),
+      website_url: websiteUrl.trim(),
+    });
+    setGeneratingDescription(false);
+    if (data?.company_product_context || data?.description) {
+      setCompanyProductDescription(data.company_product_context || data.description);
+    } else if (error) {
+      toast.warning('Could not generate company/product context', { description: error });
+    }
+    setWorkspaceStep('context');
   };
 
   const updateTeamDraft = (id: string, updates: Partial<TeamDraft>) => {
@@ -229,10 +256,13 @@ export default function Workspaces() {
     setTeamDrafts((current) => current.filter((team) => team.id !== id));
   };
 
-  const completeWorkspaceSetup = async (skipTeams = false) => {
+  const createWorkspaceOnly = async () => {
+    if (createdWorkspace) {
+      return createdWorkspace;
+    }
     if (!currentOrganization) {
       toast.error('Please select an organization first');
-      return;
+      return null;
     }
     setCreating(true);
     const { data: workspace, error } = await workspacesService.create({
@@ -240,12 +270,39 @@ export default function Workspaces() {
       slug,
       workspace_key: (workspaceKey || name.replace(/[^a-zA-Z]/g, '').slice(0, 3) || 'WS').toUpperCase(),
       organization_id: currentOrganization.id,
+      company_product_context: companyProductDescription.trim() || undefined,
       website_url: websiteUrl.trim() || undefined,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
     if (error) {
       setCreating(false);
       toast.error(error);
+      return null;
+    }
+    setCreating(false);
+    queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+    if (!workspace) return null;
+    const created = {
+      id: workspace.id,
+      slug: workspace.slug,
+      name: workspace.name,
+      website_url: workspace.website_url,
+    };
+    setCreatedWorkspace(created);
+    toast.success('Workspace created');
+    return created;
+  };
+
+  const handleSaveContext = async () => {
+    const workspace = await createWorkspaceOnly();
+    if (workspace) {
+      setWorkspaceStep('more-context');
+    }
+  };
+
+  const completeWorkspaceSetup = async (skipTeams = false) => {
+    const workspace = await createWorkspaceOnly();
+    if (!workspace) {
       return;
     }
 
@@ -262,7 +319,7 @@ export default function Workspaces() {
     let createdTeamCount = 0;
     let failedTeamCount = 0;
 
-    if (workspace && selectedTeams.length > 0) {
+    if (selectedTeams.length > 0) {
       const results = await Promise.allSettled(
         selectedTeams.map(async (team) => {
           const teamRes = await settingsService.createTeam({
@@ -294,7 +351,6 @@ export default function Workspaces() {
       setCreatedTeamIds(results.filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled').map((r) => r.value));
     }
 
-    setCreating(false);
     queryClient.invalidateQueries({ queryKey: ['workspaces'] });
 
     if (failedTeamCount > 0) {
@@ -305,15 +361,7 @@ export default function Workspaces() {
       toast.success('Workspace created');
     }
 
-    if (workspace) {
-      setCreatedWorkspace({
-        id: workspace.id,
-        slug: workspace.slug,
-        name: workspace.name,
-        website_url: workspace.website_url,
-      });
-      setWorkspaceStep('invite');
-    }
+    setWorkspaceStep('invite');
   };
 
   const handleAddWebsiteSource = async () => {
@@ -326,6 +374,11 @@ export default function Workspaces() {
     );
     setWebsiteSourceAdded(true);
     toast.success('Website source added and syncing');
+  };
+
+  const openGitHubSetup = () => {
+    if (!createdWorkspace) return;
+    window.open(`/w/${createdWorkspace.slug}/settings/git-connections`, '_blank', 'noopener,noreferrer');
   };
   const handleSendInvites = async () => {
     if (!createdWorkspace) return;
@@ -471,17 +524,30 @@ export default function Workspaces() {
               </DialogTrigger>
             <DialogContent className="sm:max-w-2xl">
               <form onSubmit={
-                workspaceStep === 'details' ? handleContinueToTeams
+                workspaceStep === 'details' ? handleContinueFromDetails
+                : workspaceStep === 'context' ? (e) => { e.preventDefault(); void handleSaveContext(); }
+                : workspaceStep === 'more-context' ? (e) => { e.preventDefault(); setWorkspaceStep('teams'); }
                 : workspaceStep === 'teams' ? (e) => { e.preventDefault(); void completeWorkspaceSetup(false); }
                 : (e) => { e.preventDefault(); void handleSendInvites(); }
               }>
                 <DialogHeader>
                   <DialogTitle>
-                    {workspaceStep === 'details' ? 'Create Workspace' : workspaceStep === 'teams' ? 'Set Up Teams' : 'Invite Members'}
+                    {workspaceStep === 'details' ? 'Create Workspace'
+                      : workspaceStep === 'learning' ? `Learning about ${websiteUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}`
+                      : workspaceStep === 'context' ? 'Company/Product Context'
+                      : workspaceStep === 'more-context' ? moreContextCopy.title
+                      : workspaceStep === 'teams' ? 'Set Up Teams'
+                      : 'Invite Members'}
                   </DialogTitle>
                   <DialogDescription>
                     {workspaceStep === 'details'
                       ? 'Set up a new workspace.'
+                      : workspaceStep === 'learning'
+                      ? 'Reading a few public pages and drafting a description you can review.'
+                      : workspaceStep === 'context'
+                      ? 'Review the context Helpin agents should use to understand your company and product.'
+                      : workspaceStep === 'more-context'
+                      ? moreContextCopy.description
                       : workspaceStep === 'teams'
                       ? 'Pick the teams you need. You can always add more later.'
                       : 'Invite your team to collaborate. You can always do this later.'}
@@ -537,6 +603,108 @@ export default function Workspaces() {
                         onChange={e => setWebsiteUrl(e.target.value)}
                       />
                       <p className="text-xs text-muted-foreground">Used for workspace identity and future website-aware features.</p>
+                    </div>
+                  </div>
+                )}
+                {workspaceStep === 'learning' && (
+                  <div className="py-10">
+                    <div className="mx-auto flex max-w-sm flex-col items-center text-center">
+                      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                        <Loading01Icon className="h-5 w-5 animate-spin" />
+                      </div>
+                      <p className="text-sm font-medium">Learning about your product</p>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        We are reading public website pages and drafting company/product context for your agents.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {workspaceStep === 'context' && (
+                  <div className="space-y-4 py-4">
+                    <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground">
+                          <MagicWand01Icon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 space-y-1">
+                          <p className="text-sm font-medium">Review before saving</p>
+                          <p className="text-xs leading-5 text-muted-foreground">
+                            This is saved to Settings &gt; Knowledge and used as workspace-level context for support answers, docs, planning, automation, and product-aware work.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="company-product-description">Company/Product description</Label>
+                      <Textarea
+                        id="company-product-description"
+                        value={companyProductDescription}
+                        onChange={(event) => setCompanyProductDescription(event.target.value)}
+                        placeholder="Describe what your company or product does, who it serves, and what problems it solves."
+                        rows={12}
+                      />
+                    </div>
+                  </div>
+                )}
+                {workspaceStep === 'more-context' && (
+                  <div className="space-y-3 py-4">
+                    {createdWorkspace?.website_url && (
+                      <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground">
+                            {websiteSourceAdded ? (
+                              <CheckmarkCircle02Icon className="h-4 w-4 text-emerald-600" />
+                            ) : createWebsiteSourceMutation.isPending ? (
+                              <Loading01Icon className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <BookOpen01Icon className="h-4 w-4" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <p className="text-sm font-medium">{moreContextCopy.websiteTitle}</p>
+                            <p className="text-xs leading-5 text-muted-foreground">
+                              {moreContextCopy.websiteDescription}
+                            </p>
+                            {websiteSourceAdded && (
+                              <p className="text-xs leading-5 text-muted-foreground">{moreContextCopy.websiteSyncStatus}</p>
+                            )}
+                            <div className="flex flex-wrap items-center gap-2 pt-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={websiteSourceAdded ? 'outline' : 'default'}
+                                onClick={() => void handleAddWebsiteSource()}
+                                disabled={websiteSourceAdded || createWebsiteSourceMutation.isPending}
+                              >
+                                {createWebsiteSourceMutation.isPending
+                                  ? 'Adding...'
+                                  : websiteSourceAdded
+                                  ? 'Sync queued'
+                                  : 'Start website sync'}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground">
+                          <GitBranchIcon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="text-sm font-medium">{moreContextCopy.githubTitle}</p>
+                          <p className="text-xs leading-5 text-muted-foreground">
+                            {moreContextCopy.githubDescription}
+                          </p>
+                          <p className="text-xs leading-5 text-muted-foreground">{moreContextCopy.githubTrustNote}</p>
+                          <div className="flex flex-wrap items-center gap-2 pt-2">
+                            <Button type="button" size="sm" variant="outline" onClick={openGitHubSetup}>
+                              Open GitHub setup
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -613,52 +781,6 @@ export default function Workspaces() {
                 )}
                 {workspaceStep === 'invite' && (
                   <div className="space-y-4 py-4">
-                    {createdWorkspace?.website_url && (
-                      <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground">
-                            {websiteSourceAdded ? (
-                              <CheckmarkCircle02Icon className="h-4 w-4 text-emerald-600" />
-                            ) : createWebsiteSourceMutation.isPending ? (
-                              <Loading01Icon className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Favicon
-                                url={createdWorkspace.website_url}
-                                name={createdWorkspace.name}
-                                size={32}
-                                className="h-5 w-5 rounded-md border-none bg-transparent"
-                                fallbackClassName="text-[8px]"
-                              />
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <p className="text-sm font-medium">Use your website for Support AI?</p>
-                            <p className="text-xs text-muted-foreground">
-                              Add <span className="font-medium text-foreground">{createdWorkspace.website_url}</span> as a Website Content Source.
-                              We&apos;ll save it at the workspace level and start syncing now. You can manage agent access later in Settings → Knowledge.
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2 pt-1">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant={websiteSourceAdded ? 'outline' : 'default'}
-                                onClick={() => void handleAddWebsiteSource()}
-                                disabled={websiteSourceAdded || createWebsiteSourceMutation.isPending}
-                              >
-                                {createWebsiteSourceMutation.isPending
-                                  ? 'Adding...'
-                                  : websiteSourceAdded
-                                  ? 'Added'
-                                  : 'Add and sync'}
-                              </Button>
-                              {websiteSourceAdded && (
-                                <span className="text-xs text-muted-foreground">The first sync is now queued.</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
                     <div className="space-y-2">
                       <Label>Emails</Label>
                       <EmailChipInput
@@ -710,6 +832,23 @@ export default function Workspaces() {
                     <>
                       <Button type="button" variant="outline" onClick={() => handleWorkspaceDialogChange(false)}>Cancel</Button>
                       <Button type="submit" disabled={checkingSlug}>{checkingSlug ? 'Checking...' : 'Continue'}</Button>
+                    </>
+                  )}
+                  {workspaceStep === 'learning' && (
+                    <Button type="button" disabled>
+                      {generatingDescription ? 'Learning...' : 'Preparing...'}
+                    </Button>
+                  )}
+                  {workspaceStep === 'context' && (
+                    <>
+                      <Button type="button" variant="outline" onClick={() => setWorkspaceStep('details')} disabled={creating}>Back</Button>
+                      <Button type="submit" disabled={creating}>{creating ? 'Saving...' : 'Save and continue'}</Button>
+                    </>
+                  )}
+                  {workspaceStep === 'more-context' && (
+                    <>
+                      <Button type="button" variant="outline" onClick={() => setWorkspaceStep('context')}>Back</Button>
+                      <Button type="submit">Continue</Button>
                     </>
                   )}
                   {workspaceStep === 'teams' && (

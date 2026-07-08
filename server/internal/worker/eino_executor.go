@@ -228,7 +228,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	}
 
 	userPromptInitialInstructions, initialTurnLocalInstructions, initialInstructionTransport := resolveNativeInitialInstructionTransport(execCtx)
-	userPrompt := BuildUserPrompt(
+	userPrompt := BuildUserPromptWithRunInput(
 		execCtx.Agent,
 		execCtx.Task,
 		execCtx.Epic,
@@ -239,6 +239,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		execCtx.ArtifactContext,
 		execCtx.PlanningStage,
 		userPromptInitialInstructions,
+		execCtx.RunInput,
 	)
 
 	history := append([]ExecutionMessage(nil), execCtx.ConversationHistory...)

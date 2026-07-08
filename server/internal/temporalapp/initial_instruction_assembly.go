@@ -98,7 +98,7 @@ func (a *AgentRunActivities) buildInitialRunUserPrompt(ctx context.Context, stat
 		ticketMessages = messages
 	}
 
-	prompt := workerpkg.BuildUserPrompt(
+	prompt := workerpkg.BuildUserPromptWithRunInput(
 		state.agent,
 		state.task,
 		state.epic,
@@ -109,6 +109,7 @@ func (a *AgentRunActivities) buildInitialRunUserPrompt(ctx context.Context, stat
 		artifactContext,
 		planningInput.Stage,
 		initialInstructions,
+		&model.AgentRunInputPayload{WorkspaceContext: planningInput.WorkspaceContext},
 	)
 	if strings.TrimSpace(prompt) == "" {
 		return defaultInitialRunUserPrompt, nil

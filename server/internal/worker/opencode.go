@@ -126,7 +126,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	if runtimeInstructions := buildOpenCodeRuntimeInstructions(execCtx, run); runtimeInstructions != "" {
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## OpenCode Runtime Instructions\n" + runtimeInstructions)
 	}
-	userPrompt := BuildUserPrompt(
+	userPrompt := BuildUserPromptWithRunInput(
 		execCtx.Agent,
 		execCtx.Task,
 		execCtx.Epic,
@@ -137,6 +137,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		execCtx.ArtifactContext,
 		execCtx.PlanningStage,
 		execCtx.InitialInstructions,
+		execCtx.RunInput,
 	)
 	if execCtx.Conversation != nil {
 		systemPrompt += "\nFor support conversations, respond with valid JSON only in this shape: " +

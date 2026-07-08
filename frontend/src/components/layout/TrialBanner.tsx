@@ -8,7 +8,6 @@ import {
   useWorkspaceBilling,
   useWorkspaceAccess,
   usePermissions,
-  useBillingCards,
 } from '@/hooks/queries';
 import { PlanChangeModal } from '@/components/billing/PlanChangeModal';
 
@@ -20,13 +19,11 @@ import { PlanChangeModal } from '@/components/billing/PlanChangeModal';
 export function TrialBanner({ collapsed = false }: { collapsed?: boolean }) {
   const workspaceId = useWorkspaceStore((s) => s.currentWorkspace?.id);
   const workspaceName = useWorkspaceStore((s) => s.currentWorkspace?.name ?? '');
-  const orgId = useOrganizationStore((s) => s.currentOrganization?.id);
   const isOrgOwner = useOrganizationStore((s) => s.currentOrganization?.role === 'owner');
 
   const { data: billing } = useWorkspaceBilling(workspaceId);
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canManageSettings } = usePermissions(access);
-  const { data: cards = [] } = useBillingCards(isOrgOwner ? orgId : undefined);
 
   const [planOpen, setPlanOpen] = useState(false);
 
@@ -35,8 +32,6 @@ export function TrialBanner({ collapsed = false }: { collapsed?: boolean }) {
   const canManage = (billing.manage_billing_enabled ?? false) || canManageSettings || isOrgOwner;
   const days = daysUntil(billing.trial_ends_at);
   const urgent = days <= 3;
-
-  const orgDefaultCardId = cards.find((c) => c.is_org_default)?.id ?? null;
 
   if (collapsed) {
     return (
@@ -88,8 +83,6 @@ export function TrialBanner({ collapsed = false }: { collapsed?: boolean }) {
               workspaceId={billing.workspace_id}
               workspaceName={workspaceName}
               currentPlan={billing.plan}
-              cards={cards}
-              defaultCardId={orgDefaultCardId}
             />
           )}
         </>

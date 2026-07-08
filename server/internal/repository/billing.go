@@ -152,6 +152,22 @@ func (r *BillingRepository) UpdateWorkspaceBilling(ctx context.Context, billing 
 	return nil
 }
 
+func (r *BillingRepository) ExpireOverdueTrials(ctx context.Context, now time.Time) (int64, error) {
+	result := r.db.WithContext(ctx).
+		Model(&model.WorkspaceBilling{}).
+		Where("status = ? AND trial_ends_at IS NOT NULL AND trial_ends_at <= ? AND stripe_subscription_id IS NULL", model.BillingStatusTrialing, now).
+		Updates(map[string]interface{}{
+			"status":                    model.BillingStatusTrialExpired,
+			"on_demand_enabled":         false,
+			"on_demand_blocks_invoiced": 0,
+			"updated_at":                now,
+		})
+	if result.Error != nil {
+		return 0, fmt.Errorf("expire overdue billing trials: %w", result.Error)
+	}
+	return result.RowsAffected, nil
+}
+
 type BillingConsumeResult struct {
 	Billing     *model.WorkspaceBilling
 	AlreadyUsed bool

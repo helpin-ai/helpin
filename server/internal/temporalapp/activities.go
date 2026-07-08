@@ -33,14 +33,15 @@ var codexLivePausePollEvery = time.Second
 var errBranchSyncUnrelatedHistory = errors.New("working branch does not share history with base branch")
 
 type planningRunInput struct {
-	Stage               string   `json:"stage,omitempty"`
-	AdditionalContext   string   `json:"additional_context,omitempty"`
-	PlanDocumentID      string   `json:"plan_document_id,omitempty"`
-	SpecDocumentID      string   `json:"spec_document_id,omitempty"`
-	SpecVersionID       string   `json:"spec_version_id,omitempty"`
-	PlanningMethodology string   `json:"planning_methodology,omitempty"`
-	AllowedTools        []string `json:"allowed_tools,omitempty"`
-	FlowOutputKind      string   `json:"flow_output_kind,omitempty"`
+	Stage               string                          `json:"stage,omitempty"`
+	AdditionalContext   string                          `json:"additional_context,omitempty"`
+	PlanDocumentID      string                          `json:"plan_document_id,omitempty"`
+	SpecDocumentID      string                          `json:"spec_document_id,omitempty"`
+	SpecVersionID       string                          `json:"spec_version_id,omitempty"`
+	PlanningMethodology string                          `json:"planning_methodology,omitempty"`
+	AllowedTools        []string                        `json:"allowed_tools,omitempty"`
+	FlowOutputKind      string                          `json:"flow_output_kind,omitempty"`
+	WorkspaceContext    *model.AgentRunWorkspaceContext `json:"workspace_context,omitempty"`
 }
 
 type planningRunSummary struct {

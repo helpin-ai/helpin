@@ -875,7 +875,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter)
+	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter)
 	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMProvider).
 		SetChatRepository(commandBarChatRepo).
 		SetLLMRouterConfig(
@@ -1190,6 +1190,7 @@ func main() {
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
+	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil)
 	billingService.SetOrgRoleResolver(orgService)
 	entitlementService := service.NewEntitlementService(billingService)
 	pmImportService.SetEntitlementService(entitlementService)
@@ -1459,6 +1460,34 @@ func main() {
 		}
 	}()
 
+	// Start background ticker for Helpin-managed trial expiry (daily).
+	billingTrialExpiryDone := make(chan struct{})
+	go func() {
+		runBillingTrialExpirySweep := func() {
+			count, err := billingService.ExpireOverdueTrials(context.Background())
+			if err != nil {
+				slog.Error("billing trial expiry sweep failed", "error", err)
+				return
+			}
+			if count > 0 {
+				slog.Info("billing trial expiry sweep complete", "expired_count", count)
+			}
+		}
+
+		runBillingTrialExpirySweep()
+
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				runBillingTrialExpirySweep()
+			case <-billingTrialExpiryDone:
+				return
+			}
+		}
+	}()
+
 	// Start email fallback workers only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc
 	if redisClient != nil && replyEmailClient != nil {
@@ -1559,6 +1588,7 @@ func main() {
 	}
 	close(digestDone)
 	close(supportReplyEmailDone)
+	close(billingTrialExpiryDone)
 	close(cleanupDone)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

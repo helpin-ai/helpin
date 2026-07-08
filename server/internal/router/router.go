@@ -440,6 +440,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Workspaces — workspace-scoped routes with RBAC
 			r.Get("/workspaces", h.Workspace.List)
 			r.Post("/workspaces", h.Workspace.Create)
+			r.Post("/workspaces/context/generate-description", h.Workspace.GenerateCompanyProductDescription)
 
 			// Cross-workspace support unread summary for the workspace switcher badge.
 			r.Get("/support/workspace-unread", h.SupportInbox.ListWorkspaceUnread)

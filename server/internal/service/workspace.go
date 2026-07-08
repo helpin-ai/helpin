@@ -31,6 +31,8 @@ type WorkspaceService struct {
 	presence            websocket.PresenceProvider
 	statusOverrideRepo  *repository.SupportTeammateStatusOverrideRepository
 	billingService      *BillingService
+	contextLLM          workspaceContextLLM
+	contextFetcher      WorkspaceContextFetcher
 	logger              *slog.Logger
 }
 
@@ -64,6 +66,12 @@ func (s *WorkspaceService) SetStatusOverrideRepo(repo *repository.SupportTeammat
 
 func (s *WorkspaceService) SetBillingService(billingService *BillingService) {
 	s.billingService = billingService
+}
+
+func (s *WorkspaceService) SetContextGeneratorDependencies(llm workspaceContextLLM, fetcher WorkspaceContextFetcher) *WorkspaceService {
+	s.contextLLM = llm
+	s.contextFetcher = fetcher
+	return s
 }
 
 // Create creates a workspace and adds the creator as the owner member.
@@ -160,7 +168,7 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 		orgID = &req.OrganizationID
 	}
 
-	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, req.WorkspaceKey, ownerID, orgID, req.Description, websiteURL, req.Timezone)
+	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, req.WorkspaceKey, ownerID, orgID, req.Description, req.CompanyProductContext, websiteURL, req.Timezone)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to create workspace", "error", err, "slug", req.Slug)
 		return nil, fmt.Errorf("create workspace: %w", err)
@@ -262,7 +270,7 @@ func (s *WorkspaceService) Update(ctx context.Context, id string, req model.Upda
 		}
 	}
 
-	ws, err := s.workspaceRepo.Update(ctx, id, req.Name, req.Description, websiteURL, req.LogoURL, req.Timezone)
+	ws, err := s.workspaceRepo.Update(ctx, id, req.Name, req.Description, req.CompanyProductContext, websiteURL, req.LogoURL, req.Timezone)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to update workspace", "error", err, "workspace_id", id)
 		return nil, err
@@ -325,7 +333,7 @@ func (s *WorkspaceService) UploadLogo(ctx context.Context, id string, body io.Re
 	}
 
 	logoURL := s.s3Client.PublicURL(key)
-	return s.workspaceRepo.Update(ctx, id, nil, nil, nil, &logoURL, nil)
+	return s.workspaceRepo.Update(ctx, id, nil, nil, nil, nil, &logoURL, nil)
 }
 
 // DeleteLogo removes the workspace logo.
@@ -346,7 +354,7 @@ func (s *WorkspaceService) DeleteLogo(ctx context.Context, id string) (*model.Wo
 	}
 
 	empty := ""
-	return s.workspaceRepo.Update(ctx, id, nil, nil, nil, &empty, nil)
+	return s.workspaceRepo.Update(ctx, id, nil, nil, nil, nil, &empty, nil)
 }
 
 // Delete removes a workspace and all associated data including S3 attachments.

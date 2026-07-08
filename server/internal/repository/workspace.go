@@ -23,16 +23,17 @@ func NewWorkspaceRepository(db *gorm.DB) *WorkspaceRepository {
 }
 
 // Create inserts a new workspace.
-func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, workspaceKey, ownerID string, organizationID *string, description, websiteURL *string, timezone string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, workspaceKey, ownerID string, organizationID *string, description, companyProductContext, websiteURL *string, timezone string) (*model.Workspace, error) {
 	ws := &model.Workspace{
-		Name:           name,
-		Slug:           slug,
-		WorkspaceKey:   workspaceKey,
-		OwnerID:        ownerID,
-		OrganizationID: organizationID,
-		Description:    description,
-		WebsiteURL:     websiteURL,
-		Timezone:       timezone,
+		Name:                  name,
+		Slug:                  slug,
+		WorkspaceKey:          workspaceKey,
+		OwnerID:               ownerID,
+		OrganizationID:        organizationID,
+		Description:           description,
+		CompanyProductContext: companyProductContext,
+		WebsiteURL:            websiteURL,
+		Timezone:              timezone,
 	}
 	if err := r.db.WithContext(ctx).Create(ws).Error; err != nil {
 		return nil, fmt.Errorf("create workspace: %w", err)
@@ -326,13 +327,16 @@ func (r *WorkspaceRepository) ListTeams(ctx context.Context, workspaceID string)
 }
 
 // Update modifies workspace fields.
-func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, websiteURL, logoURL, timezone *string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, companyProductContext, websiteURL, logoURL, timezone *string) (*model.Workspace, error) {
 	updates := map[string]interface{}{}
 	if name != nil {
 		updates["name"] = *name
 	}
 	if description != nil {
 		updates["description"] = *description
+	}
+	if companyProductContext != nil {
+		updates["company_product_context"] = *companyProductContext
 	}
 	if websiteURL != nil {
 		if *websiteURL == "" {

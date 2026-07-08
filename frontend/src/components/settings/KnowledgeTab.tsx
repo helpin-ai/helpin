@@ -1,17 +1,29 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { BookOpen01Icon, LinkSquare01Icon, PlusSignIcon, Settings02Icon } from '@/lib/icons';
+import { BookOpen01Icon, LinkSquare01Icon, MagicWand01Icon, PlusSignIcon, Settings02Icon } from '@/lib/icons';
 import { useDocsSpaces } from '@/hooks/queries';
 import { useChatSettings, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources, useReindexAgentKnowledgeSource, useSupportContentSources, useCreateSupportContentSource } from '@/hooks/queries/useSupport';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { workspacesService } from '@/lib/services/workspacesService';
+import {
+  companyProductContextGenerateDisabledReason,
+  companyProductContextGenerateHelper,
+  companyProductContextGenerateLabel,
+  shouldConfirmCompanyProductContextReplacement,
+} from '@/lib/companyProductContext';
 import { findWorkspaceWebsiteContentSource, buildWorkspaceWebsiteContentSourcePayload } from '@/lib/workspaceWebsiteSource';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { SupportContentSourcesField } from './SupportContentSourcesField';
 import { SupportKnowledgeSourcesField } from './SupportKnowledgeSourcesField';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { toast } from 'sonner';
 
 function KnowledgePageIntro({
@@ -66,6 +78,12 @@ function KnowledgePageIntro({
 export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const [companyDescription, setCompanyDescription] = useState(workspace?.company_product_context ?? workspace?.description ?? '');
+  const [savingDescription, setSavingDescription] = useState(false);
+  const [generatingCompanyContext, setGeneratingCompanyContext] = useState(false);
+  const [companyContextExpanded, setCompanyContextExpanded] = useState(false);
+  const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
+  const savedCompanyProductContext = workspace?.company_product_context ?? workspace?.description ?? '';
   const { data: chatSettings, isLoading: chatSettingsLoading } = useChatSettings(workspaceId);
   const { data: docsSpaces = [], isLoading: docsSpacesLoading } = useDocsSpaces(workspaceId);
   const { data: contentSources = [] } = useSupportContentSources(workspaceId);
@@ -81,6 +99,13 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
   const websiteContentSource = findWorkspaceWebsiteContentSource(workspace?.website_url, contentSources);
   const hasAnySource = externalDocsSpaces.length > 0 || contentSources.length > 0 || Boolean(workspace?.website_url);
   const workspaceSlug = workspace?.slug ?? '';
+  const shouldCollapseCompanyContext = companyDescription.length > 700 || companyDescription.split(/\r?\n/).length > 8;
+  const generateCompanyContextDisabledReason = companyProductContextGenerateDisabledReason(workspace?.website_url);
+
+  useEffect(() => {
+    setCompanyDescription(workspace?.company_product_context ?? workspace?.description ?? '');
+    setCompanyContextExpanded(false);
+  }, [workspace?.id, workspace?.company_product_context, workspace?.description]);
 
   const openDocs = () => {
     if (!workspaceSlug) return;
@@ -116,6 +141,61 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
     toast.success('Website source added and syncing');
   };
 
+  const handleSaveCompanyDescription = async () => {
+    if (!workspace) return;
+    setSavingDescription(true);
+    const { data, error } = await workspacesService.update(workspace.id, {
+      company_product_context: companyDescription.trim(),
+    });
+    setSavingDescription(false);
+    if (error) {
+      toast.error('Failed to save company/product context', { description: error });
+      return;
+    }
+    if (data) {
+      useWorkspaceStore.getState().setCurrentWorkspace(data);
+    }
+    toast.success('Company/Product Context saved');
+  };
+
+  const handleGenerateCompanyContext = async () => {
+    if (!workspace) return;
+    if (!workspace.website_url) {
+      toast.error('Website URL required', { description: 'Add a website URL in General settings to generate context.' });
+      return;
+    }
+    if (
+      shouldConfirmCompanyProductContextReplacement(companyDescription, savedCompanyProductContext) &&
+      !window.confirm('Replace the current unsaved company/product context with an AI-generated draft?')
+    ) {
+      return;
+    }
+
+    setGeneratingCompanyContext(true);
+    const { data, error } = await workspacesService.generateCompanyProductDescription({
+      workspace_name: workspace.name,
+      website_url: workspace.website_url,
+    });
+    setGeneratingCompanyContext(false);
+    if (error) {
+      const reason = getUpgradeRequiredReason(error);
+      if (reason) {
+        setUpgradeDialogReason(reason);
+        return;
+      }
+      toast.error('Could not generate company/product context', { description: error });
+      return;
+    }
+    const generated = data?.company_product_context || data?.description || '';
+    if (!generated.trim()) {
+      toast.error('Generated company/product context was empty');
+      return;
+    }
+    setCompanyDescription(generated);
+    setCompanyContextExpanded(true);
+    toast.success('AI draft generated. Review and save when ready.');
+  };
+
   const websiteSourceStatusLabel = (() => {
     switch (websiteContentSource?.sync_status) {
       case 'queued':
@@ -146,6 +226,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
   }
 
   return (
+    <>
     <div className="space-y-4">
       <KnowledgePageIntro
         hasAnySource={hasAnySource}
@@ -153,6 +234,80 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
         onOpenDocs={openDocs}
         onOpenAIAssistant={openAIAssistantSettings}
       />
+
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <BookOpen01Icon className="h-4 w-4" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Company/Product Context</CardTitle>
+              </div>
+            </div>
+            <div className="flex flex-col items-start gap-1 sm:items-end">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void handleGenerateCompanyContext()}
+                disabled={generatingCompanyContext || Boolean(generateCompanyContextDisabledReason)}
+              >
+                <MagicWand01Icon className="h-4 w-4" />
+                {generatingCompanyContext ? 'Generating...' : companyProductContextGenerateLabel(savedCompanyProductContext)}
+              </Button>
+              <p className="max-w-xs text-xs leading-5 text-muted-foreground sm:text-right">
+                {generateCompanyContextDisabledReason || companyProductContextGenerateHelper}
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="company-product-context">Company/Product description</Label>
+              {shouldCollapseCompanyContext ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setCompanyContextExpanded((current) => !current)}
+                >
+                  {companyContextExpanded ? 'Show less' : 'Show more'}
+                </Button>
+              ) : null}
+            </div>
+            <div className={shouldCollapseCompanyContext && !companyContextExpanded ? 'relative max-h-44 overflow-hidden' : 'relative'}>
+              <Textarea
+                id="company-product-context"
+                value={companyDescription}
+                onChange={(event) => setCompanyDescription(event.target.value)}
+                placeholder="Describe what your company or product does, who it serves, and what problems it solves."
+                rows={companyContextExpanded ? 14 : 8}
+                className={shouldCollapseCompanyContext && !companyContextExpanded ? 'resize-none' : undefined}
+              />
+              {shouldCollapseCompanyContext && !companyContextExpanded ? (
+                <div className="pointer-events-none absolute inset-x-px bottom-px h-16 rounded-b-md bg-gradient-to-t from-background via-background/90 to-transparent" />
+              ) : null}
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              Used by Helpin agents as workspace-level context for support answers, docs, planning, automation, and product-aware work.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleSaveCompanyDescription()}
+              disabled={savingDescription || companyDescription === savedCompanyProductContext}
+            >
+              {savingDescription ? 'Saving...' : 'Save'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="space-y-3">
         {workspace?.website_url && (
@@ -232,5 +387,13 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
         </CardContent>
       </Card>
     </div>
+      <UpgradeRequiredDialog
+        open={upgradeDialogReason !== null}
+        onOpenChange={(open) => {
+          if (!open) setUpgradeDialogReason(null);
+        }}
+        reason={upgradeDialogReason}
+      />
+    </>
   );
 }

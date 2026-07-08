@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -243,11 +244,43 @@ func BuildUserPrompt(
 	planningStage string,
 	initialInstructions string,
 ) string {
+	return BuildUserPromptWithRunInput(
+		agent,
+		story,
+		epic,
+		epicStories,
+		ticket,
+		ticketMessages,
+		checklist,
+		artifactContext,
+		planningStage,
+		initialInstructions,
+		nil,
+	)
+}
+
+func BuildUserPromptWithRunInput(
+	agent *model.Agent,
+	story *model.PMTask,
+	epic *model.PMEpic,
+	epicStories []model.PMTask,
+	ticket *model.SupportConversation,
+	ticketMessages []model.SupportMessage,
+	checklist []model.PMChecklistItem,
+	artifactContext *ArtifactContext,
+	planningStage string,
+	initialInstructions string,
+	runInput *model.AgentRunInputPayload,
+) string {
 	var sections []string
 	var contextParts []string
 
 	now := time.Now().UTC()
 	contextParts = append(contextParts, fmt.Sprintf("Current system date is: %s (%s UTC)", now.Format("2006-01-02"), now.Format("Monday")))
+
+	if workspaceContext := formatWorkspaceContext(runInput); workspaceContext != "" {
+		contextParts = append(contextParts, workspaceContext)
+	}
 
 	if story != nil {
 		if epic != nil && strings.TrimSpace(epic.Name) != "" {
@@ -342,6 +375,28 @@ func BuildUserPrompt(
 	return strings.Join(sections, "\n\n")
 }
 
+func formatWorkspaceContext(runInput *model.AgentRunInputPayload) string {
+	if runInput == nil || runInput.WorkspaceContext == nil {
+		return ""
+	}
+	ctx := runInput.WorkspaceContext
+	var lines []string
+	if name := strings.TrimSpace(ctx.Name); name != "" {
+		lines = append(lines, fmt.Sprintf("Workspace: **%s**", name))
+	}
+	if websiteURL := strings.TrimSpace(ctx.WebsiteURL); websiteURL != "" {
+		lines = append(lines, "Website: "+websiteURL)
+	}
+	if companyProductContext := strings.TrimSpace(ctx.CompanyProductContext); companyProductContext != "" {
+		lines = append(lines, "Company/Product context:\n"+companyProductContext)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	lines = append(lines, "Use this as high-level workspace context. Prefer exact task, document, support conversation, CRM, repository, or fetched source context when they conflict.")
+	return "\nWorkspace Context:\n" + strings.Join(lines, "\n")
+}
+
 func BuildExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]string, artifactContext *ArtifactContext) string {
 	return buildExecutionSupplementPrompt(run, runFacts, artifactContext, true)
 }
@@ -352,6 +407,10 @@ func BuildRuntimeExecutionSupplementPrompt(run *model.AgentRun, runFacts map[str
 
 func buildExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]string, artifactContext *ArtifactContext, includeArtifactContext bool) string {
 	var parts []string
+
+	if workspaceContext := formatWorkspaceContext(agentRunInputPayload(run)); workspaceContext != "" {
+		parts = append(parts, strings.TrimSpace(workspaceContext))
+	}
 
 	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
 		parts = append(parts, "This is an interactive transcript that may resume after a human reply.")
@@ -374,6 +433,17 @@ func buildExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]str
 	}
 
 	return strings.Join(parts, "\n\n")
+}
+
+func agentRunInputPayload(run *model.AgentRun) *model.AgentRunInputPayload {
+	if run == nil || len(run.Input) == 0 {
+		return nil
+	}
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(run.Input, &input); err != nil {
+		return nil
+	}
+	return &input
 }
 
 func formatRunFacts(runFacts map[string]string) string {

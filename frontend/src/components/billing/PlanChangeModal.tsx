@@ -9,13 +9,6 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import {
   PLAN_OPTIONS,
@@ -24,7 +17,7 @@ import {
   formatNumber,
   planPriceCents,
 } from '@/lib/billingUtils';
-import type { BillingInterval, BillingPlan, PaymentMethod } from '@/lib/billingTypes';
+import type { BillingInterval, BillingPlan } from '@/lib/billingTypes';
 import { useBillingCheckout } from '@/hooks/queries';
 
 interface Props {
@@ -33,8 +26,6 @@ interface Props {
   workspaceId: string;
   workspaceName: string;
   currentPlan: BillingPlan;
-  cards: PaymentMethod[];
-  defaultCardId: string | null;
 }
 
 export function PlanChangeModal({
@@ -43,14 +34,11 @@ export function PlanChangeModal({
   workspaceId,
   workspaceName,
   currentPlan,
-  cards,
-  defaultCardId,
 }: Props) {
   const [plan, setPlan] = useState<BillingPlan>(
     currentPlan === 'starter' ? 'starter' : 'growth',
   );
   const [interval, setInterval] = useState<BillingInterval>('monthly');
-  const [cardId, setCardId] = useState<string>(defaultCardId ?? 'org-default');
 
   const checkout = useBillingCheckout();
 
@@ -140,26 +128,8 @@ export function PlanChangeModal({
             })}
           </div>
 
-          {/* Billed to */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Billed to
-            </label>
-            <Select size="sm" value={cardId} onValueChange={setCardId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a card" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="org-default">Organization default card</SelectItem>
-                {cards.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    <span className="capitalize">
-                      {c.brand} ···· {c.last4}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            Stripe Checkout will collect and save the payment method for this subscription.
           </div>
         </div>
 

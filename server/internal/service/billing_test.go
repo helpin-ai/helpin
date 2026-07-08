@@ -22,6 +22,7 @@ type fakeBillingGateway struct {
 	cancellations    []BillingSubscriptionCancelInput
 	immediateCancels []BillingSubscriptionCancelInput
 	resumes          []BillingSubscriptionCancelInput
+	checkoutSession  *BillingCheckoutSession
 	cancelErr        error
 	blockErr         error
 }
@@ -31,6 +32,9 @@ func (g *fakeBillingGateway) CreateCheckoutSession(ctx context.Context, input Bi
 }
 
 func (g *fakeBillingGateway) RetrieveCheckoutSession(ctx context.Context, sessionID string) (*BillingCheckoutSession, error) {
+	if g.checkoutSession != nil {
+		return g.checkoutSession, nil
+	}
 	return &BillingCheckoutSession{ID: sessionID}, nil
 }
 
@@ -361,6 +365,77 @@ func TestBillingServiceLocksExpiredUnpaidTrial(t *testing.T) {
 	}
 }
 
+func TestBillingServiceExpireOverdueTrialsLocksInternalTrials(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
+
+	past := now.Add(-time.Hour)
+	future := now.Add(time.Hour)
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
+		WorkspaceID:        "expired-trial",
+		Plan:               model.BillingPlanGrowth,
+		Status:             model.BillingStatusTrialing,
+		IncludedCredits:    25000,
+		CreditsUsed:        250,
+		CurrentPeriodStart: now.Add(-15 * 24 * time.Hour),
+		CurrentPeriodEnd:   past,
+		TrialEndsAt:        &past,
+	}); err != nil {
+		t.Fatalf("seed expired trial: %v", err)
+	}
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
+		WorkspaceID:        "active-trial",
+		Plan:               model.BillingPlanGrowth,
+		Status:             model.BillingStatusTrialing,
+		IncludedCredits:    25000,
+		CreditsUsed:        125,
+		CurrentPeriodStart: now.Add(-24 * time.Hour),
+		CurrentPeriodEnd:   future,
+		TrialEndsAt:        &future,
+	}); err != nil {
+		t.Fatalf("seed active trial: %v", err)
+	}
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
+		WorkspaceID:          "stripe-trial",
+		Plan:                 model.BillingPlanGrowth,
+		Status:               model.BillingStatusTrialing,
+		StripeSubscriptionID: billingStringPtr("sub_trial"),
+		IncludedCredits:      25000,
+		CurrentPeriodStart:   now.Add(-15 * 24 * time.Hour),
+		CurrentPeriodEnd:     past,
+		TrialEndsAt:          &past,
+	}); err != nil {
+		t.Fatalf("seed stripe trial: %v", err)
+	}
+
+	expired, err := svc.ExpireOverdueTrials(context.Background())
+	if err != nil {
+		t.Fatalf("expire overdue trials: %v", err)
+	}
+	if expired != 1 {
+		t.Fatalf("expired count = %d, want 1", expired)
+	}
+
+	for _, tc := range []struct {
+		workspaceID string
+		wantStatus  string
+	}{
+		{"expired-trial", model.BillingStatusTrialExpired},
+		{"active-trial", model.BillingStatusTrialing},
+		{"stripe-trial", model.BillingStatusTrialing},
+	} {
+		billing, err := repo.GetByWorkspaceID(context.Background(), tc.workspaceID)
+		if err != nil {
+			t.Fatalf("load %s: %v", tc.workspaceID, err)
+		}
+		if billing.Status != tc.wantStatus {
+			t.Fatalf("%s status = %s, want %s", tc.workspaceID, billing.Status, tc.wantStatus)
+		}
+	}
+}
+
 func TestBillingServiceConsumeCreditsRejectsWhenOnDemandDisabled(t *testing.T) {
 	db := newBillingTestDB(t)
 	repo := repository.NewBillingRepository(db)
@@ -658,6 +733,59 @@ func TestBillingServiceRejectsCheckoutForExistingPaidSubscription(t *testing.T) 
 
 	if err == nil {
 		t.Fatal("expected checkout to be rejected for existing subscription")
+	}
+}
+
+func TestBillingServiceConfirmCheckoutReactivatesExpiredTrialWithFallbackPeriodStart(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	gateway := &fakeBillingGateway{
+		checkoutSession: &BillingCheckoutSession{
+			ID:                   "cs_paid",
+			WorkspaceID:          "workspace-1",
+			Plan:                 model.BillingPlanStarter,
+			Interval:             "monthly",
+			StripeCustomerID:     "cus_paid",
+			StripeSubscriptionID: "sub_paid",
+			StripePriceID:        "price_starter_monthly",
+			SubscriptionStatus:   model.BillingStatusActive,
+			CurrentPeriodEnd:     now.AddDate(0, 1, 0),
+		},
+	}
+	svc := NewBillingService(repo, gateway, func() time.Time { return now })
+	svc.SetPriceConfig(BillingPriceConfig{StarterMonthly: "price_starter_monthly"})
+
+	past := now.Add(-time.Hour)
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
+		WorkspaceID:        "workspace-1",
+		Plan:               model.BillingPlanGrowth,
+		Status:             model.BillingStatusTrialExpired,
+		IncludedCredits:    25000,
+		CreditsUsed:        25000,
+		CurrentPeriodStart: now.Add(-15 * 24 * time.Hour),
+		CurrentPeriodEnd:   past,
+		TrialEndsAt:        &past,
+	}); err != nil {
+		t.Fatalf("seed expired trial: %v", err)
+	}
+
+	summary, err := svc.ConfirmCheckoutSession(context.Background(), "workspace-1", "cs_paid")
+	if err != nil {
+		t.Fatalf("confirm checkout: %v", err)
+	}
+
+	if summary.Status != model.BillingStatusActive || summary.Plan != model.BillingPlanStarter {
+		t.Fatalf("plan/status = %s/%s, want starter/active", summary.Plan, summary.Status)
+	}
+	if !summary.CurrentPeriodStart.Equal(now) {
+		t.Fatalf("period start = %s, want fallback now %s", summary.CurrentPeriodStart, now)
+	}
+	if summary.CreditsUsed != 0 || summary.CreditsRemaining != 5000 {
+		t.Fatalf("credits after reactivation = used %d remaining %d, want 0/5000", summary.CreditsUsed, summary.CreditsRemaining)
+	}
+	if summary.TrialEndsAt != nil || summary.Locked {
+		t.Fatalf("trial/lock state after checkout = trial %v locked %v, want nil/false", summary.TrialEndsAt, summary.Locked)
 	}
 }
 

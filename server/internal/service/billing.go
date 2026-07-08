@@ -508,14 +508,16 @@ func (s *BillingService) ConfirmCheckoutSession(ctx context.Context, workspaceID
 		return nil, fmt.Errorf("checkout session price is not configured for Helpin billing")
 	}
 	periodEnd := session.CurrentPeriodEnd
+	if session.CurrentPeriodStart.IsZero() {
+		session.CurrentPeriodStart = s.now().UTC()
+	}
 	if periodEnd.IsZero() {
-		now := s.now()
+		now := session.CurrentPeriodStart
 		if interval == "annual" {
 			periodEnd = now.AddDate(1, 0, 0)
 		} else {
 			periodEnd = now.AddDate(0, 1, 0)
 		}
-		session.CurrentPeriodStart = now
 	}
 	return s.ApplyStripeSubscriptionUpdate(ctx, BillingStripeSubscriptionUpdate{
 		EventID:              "checkout.session.sync:" + session.ID,
@@ -531,6 +533,13 @@ func (s *BillingService) ConfirmCheckoutSession(ctx context.Context, workspaceID
 		CurrentPeriodEnd:     periodEnd,
 		CancelAtPeriodEnd:    session.CancelAtPeriodEnd,
 	})
+}
+
+func (s *BillingService) ExpireOverdueTrials(ctx context.Context) (int64, error) {
+	if s.repo == nil {
+		return 0, nil
+	}
+	return s.repo.ExpireOverdueTrials(ctx, s.now().UTC())
 }
 
 func (s *BillingService) PreviewWorkspacePlanChange(ctx context.Context, input BillingPlanChangeRequest) (*BillingPlanChangePreview, error) {
