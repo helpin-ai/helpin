@@ -151,6 +151,7 @@
   --keyboard-inset: 0px;
   --surface-raised: var(--card);
   --overlay-scrim: rgb(0 0 0 / 0.4);
+  --unread-dot: var(--primary);
 }
 
 html, body, #root { height: 100%; }

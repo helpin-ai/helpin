@@ -1,4 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import { useTheme } from 'next-themes'
+import { useEffect } from 'react'
 import { AppThemeProvider } from '../theme-provider'
 
 // jsdom does not implement matchMedia; next-themes' `enableSystem` reads it
@@ -16,6 +18,14 @@ beforeAll(() => {
   })) as unknown as typeof window.matchMedia
 })
 
+afterEach(() => {
+  // next-themes persists the selected theme and stamps the root element;
+  // reset both so tests stay independent.
+  window.localStorage.removeItem('theme')
+  document.documentElement.classList.remove('dark', 'light')
+  document.documentElement.style.removeProperty('color-scheme')
+})
+
 test('renders children', () => {
   render(
     <AppThemeProvider>
@@ -25,12 +35,26 @@ test('renders children', () => {
   expect(screen.getByText('hello world')).toBeDefined()
 })
 
-test('document root can carry the dark class next-themes drives', () => {
-  document.documentElement.classList.remove('dark')
+function ForceDark() {
+  const { setTheme } = useTheme()
+  useEffect(() => {
+    setTheme('dark')
+  }, [setTheme])
+  return null
+}
+
+test('next-themes drives the dark class on the document root', async () => {
   expect(document.documentElement.classList.contains('dark')).toBe(false)
 
-  document.documentElement.classList.add('dark')
-  expect(document.documentElement.classList.contains('dark')).toBe(true)
+  render(
+    <AppThemeProvider>
+      <ForceDark />
+    </AppThemeProvider>,
+  )
 
-  document.documentElement.classList.remove('dark')
+  // Fails if AppThemeProvider does not use attribute="class" (e.g. a
+  // data-theme attribute would leave classList untouched).
+  await waitFor(() => {
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+  })
 })
