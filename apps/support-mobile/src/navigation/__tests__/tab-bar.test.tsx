@@ -30,15 +30,15 @@ test('fires onNavigate with the tapped tab key', () => {
 
 test('renders the unread badge on the Inbox tab when a count is provided', () => {
   render(<TabBar activeTab="inbox" onNavigate={vi.fn()} unreadCount={5} />)
-  expect(screen.getByText('5')).toBeDefined()
+  expect(screen.getByTestId('tab-badge').textContent).toBe('5')
 })
 
 test('caps the badge at 99+', () => {
   render(<TabBar activeTab="inbox" onNavigate={vi.fn()} unreadCount={150} />)
-  expect(screen.getByText('99+')).toBeDefined()
+  expect(screen.getByTestId('tab-badge').textContent).toBe('99+')
 })
 
-test('hides the badge when the count is zero or absent', () => {
-  render(<TabBar activeTab="inbox" onNavigate={vi.fn()} />)
-  expect(screen.queryByText('0')).toBeNull()
+test('hides the badge element when the count is zero or absent', () => {
+  render(<TabBar activeTab="inbox" onNavigate={vi.fn()} unreadCount={0} />)
+  expect(screen.queryByTestId('tab-badge')).toBeNull()
 })

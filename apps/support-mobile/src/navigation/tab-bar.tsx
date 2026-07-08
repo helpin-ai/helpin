@@ -47,45 +47,51 @@ export interface TabBarProps {
 export function TabBar({ activeTab, onNavigate, unreadCount = 0, className }: TabBarProps) {
   const badgeLabel = formatBadgeCount(unreadCount)
 
+  // Two-layer split (same precedent as TopBar's safe-top handling): the outer
+  // nav absorbs the safe-area inset as padding, the inner row keeps the full
+  // 49px content height. Putting both on one border-box element would subtract
+  // the ~34pt inset from the 49px and crush the 44pt tab items.
   return (
     <nav
       aria-label="Primary"
-      className={cn(
-        'flex h-[49px] items-stretch border-t border-border bg-background pb-[var(--safe-bottom)]',
-        className,
-      )}
+      className={cn('border-t border-border bg-background pb-[var(--safe-bottom)]', className)}
     >
-      {TABS.map(({ key, label, icon: Icon }) => {
-        const selected = key === activeTab
-        return (
-          <Pressable
-            key={key}
-            haptic="selection"
-            aria-pressed={selected}
-            onPress={() => onNavigate(key)}
-            className={cn(
-              'flex flex-1 flex-col items-center justify-center gap-0.5',
-              selected ? 'text-primary' : 'text-muted-foreground',
-            )}
-          >
-            <span className="relative inline-flex">
-              <motion.span
-                className="inline-flex"
-                animate={{ scale: selected ? 1.08 : 1 }}
-                transition={pressTransition}
-              >
-                <Icon className="h-6 w-6" />
-              </motion.span>
-              {key === 'inbox' && badgeLabel && (
-                <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-caption tnum text-white">
-                  {badgeLabel}
-                </span>
+      <div className="flex h-[49px] items-stretch">
+        {TABS.map(({ key, label, icon: Icon }) => {
+          const selected = key === activeTab
+          return (
+            <Pressable
+              key={key}
+              haptic="selection"
+              aria-pressed={selected}
+              onPress={() => onNavigate(key)}
+              className={cn(
+                'flex flex-1 flex-col items-center justify-center gap-0.5',
+                selected ? 'text-primary' : 'text-muted-foreground',
               )}
-            </span>
-            <span className="text-caption">{label}</span>
-          </Pressable>
-        )
-      })}
+            >
+              <span className="relative inline-flex">
+                <motion.span
+                  className="inline-flex"
+                  animate={{ scale: selected ? 1.08 : 1 }}
+                  transition={pressTransition}
+                >
+                  <Icon className="h-6 w-6" />
+                </motion.span>
+                {key === 'inbox' && badgeLabel && (
+                  <span
+                    data-testid="tab-badge"
+                    className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-caption tnum text-white"
+                  >
+                    {badgeLabel}
+                  </span>
+                )}
+              </span>
+              <span className="text-caption">{label}</span>
+            </Pressable>
+          )
+        })}
+      </div>
     </nav>
   )
 }
