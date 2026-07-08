@@ -4135,3 +4135,60 @@ func seedCommandBarThreadWithWorkingContext(t *testing.T, ctx context.Context, r
 	}
 	return thread.ID
 }
+
+func TestShouldCreateReusableAgentFromChat(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{
+			name: "create an agent with changelog wording routes to creation",
+			text: "Create an agent to review the competitors changelog and produce a doc afterwards.",
+			want: true,
+		},
+		{
+			name: "want an agent to phrasing",
+			text: "I want an agent to watch our support inbox",
+			want: true,
+		},
+		{
+			name: "build an agent phrasing",
+			text: "build an agent for release notes",
+			want: true,
+		},
+		{
+			name: "reusable agent phrasing",
+			text: "save this as a reusable agent",
+			want: true,
+		},
+		{
+			name: "running an existing agent is not creation",
+			text: "run the changelog agent to summarize this doc",
+			want: false,
+		},
+		{
+			name: "asking an agent a question is not creation",
+			text: "ask the support agent to check open tickets",
+			want: false,
+		},
+		{
+			name: "plain summary request is not creation",
+			text: "summarize the changelog of the api repo",
+			want: false,
+		},
+		{
+			name: "empty text is not creation",
+			text: "  ",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldCreateReusableAgentFromChat(tt.text); got != tt.want {
+				t.Errorf("shouldCreateReusableAgentFromChat(%q) = %v, want %v", tt.text, got, tt.want)
+			}
+		})
+	}
+}
