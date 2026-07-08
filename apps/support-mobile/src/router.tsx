@@ -1,4 +1,4 @@
-import type { User } from '@helpin-ai/shared'
+import type { User } from '@mobile/lib/types'
 import {
   Link,
   createRootRouteWithContext,
