@@ -1,14 +1,28 @@
-import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { queryOptions, useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
 import { TopBar } from '@mobile/ui/top-bar'
 import { Avatar } from '@mobile/ui/avatar'
 import { Pressable } from '@mobile/ui/pressable'
 import { Spinner } from '@mobile/ui/spinner'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
-import { getLastWorkspaceSlug, setLastWorkspaceSlug } from '@mobile/lib/prefs'
+import { setLastWorkspaceSlug } from '@mobile/lib/prefs'
 import type { Workspace } from '@mobile/lib/types'
+
+/**
+ * Shared between this component (useQuery) and the /workspaces route's
+ * beforeLoad (queryClient.ensureQueryData in src/router.tsx) so the redirect
+ * decision and the picker render off the same cache entry — after a
+ * successful beforeLoad the list is already cached and paints instantly.
+ */
+export const workspacesQueryOptions = queryOptions({
+  queryKey: ['workspaces'],
+  queryFn: async () => {
+    const { data, error } = await workspacesService.list()
+    if (error || !data) throw new Error(error ?? 'Failed to load workspaces')
+    return data
+  },
+})
 
 /**
  * Whether the picker should skip straight to a workspace instead of showing
@@ -24,60 +38,27 @@ export function resolveWorkspaceRedirect(workspaces: Workspace[], storedSlug: st
 
 const MAX_STAGGERED_ROWS = 10
 
+/**
+ * The auto-redirect (single workspace / stored last_workspace_slug) runs in
+ * the route's beforeLoad BEFORE this component ever mounts, so rendering
+ * here means the user genuinely has to pick. The loading/error branches only
+ * occur when beforeLoad's ensureQueryData failed (it falls through to the
+ * picker rather than bricking the route) and useQuery is retrying.
+ */
 export function WorkspacesScreen() {
   const navigate = useNavigate()
-  // `undefined` = not loaded yet, distinct from `null` (loaded, nothing stored).
-  const [storedSlug, setStoredSlug] = useState<string | null | undefined>(undefined)
-  // Starts true so the list never paints while a redirect might still fire;
-  // only the "you must choose" branch flips it off.
-  const [awaitingRedirectDecision, setAwaitingRedirectDecision] = useState(true)
-
-  const {
-    data: workspaces,
-    isLoading,
-    isError,
-  } = useQuery({
-    queryKey: ['workspaces'],
-    queryFn: async () => {
-      const { data, error } = await workspacesService.list()
-      if (error || !data) throw new Error(error ?? 'Failed to load workspaces')
-      return data
-    },
-  })
-
-  useEffect(() => {
-    let cancelled = false
-    void getLastWorkspaceSlug().then((slug) => {
-      if (!cancelled) setStoredSlug(slug)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!workspaces || storedSlug === undefined) return
-    const redirectSlug = resolveWorkspaceRedirect(workspaces, storedSlug)
-    if (redirectSlug) {
-      void setLastWorkspaceSlug(redirectSlug)
-      navigate({ to: '/w/$slug/support', params: { slug: redirectSlug } })
-      return
-    }
-    setAwaitingRedirectDecision(false)
-  }, [workspaces, storedSlug, navigate])
+  const { data: workspaces, isLoading, isError } = useQuery(workspacesQueryOptions)
 
   const handleSelect = (slug: string) => {
     void setLastWorkspaceSlug(slug)
     navigate({ to: '/w/$slug/support', params: { slug } })
   }
 
-  const showList = !isLoading && !isError && storedSlug !== undefined && !awaitingRedirectDecision
-
   return (
     <div className="flex min-h-dvh flex-col">
-      <TopBar title="Workspaces" large={showList} />
+      <TopBar title="Workspaces" large={Boolean(workspaces)} />
 
-      {!showList && !isError && (
+      {isLoading && (
         <div className="flex flex-1 items-center justify-center">
           <Spinner />
         </div>
@@ -90,14 +71,14 @@ export function WorkspacesScreen() {
         </div>
       )}
 
-      {showList && workspaces?.length === 0 && (
+      {workspaces?.length === 0 && (
         <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
           <p className="text-body">No workspaces yet</p>
           <p className="text-footnote text-muted-foreground">Ask a teammate to invite you, then pull to refresh.</p>
         </div>
       )}
 
-      {showList && workspaces && workspaces.length > 0 && (
+      {workspaces && workspaces.length > 0 && (
         <div className="flex-1 overflow-y-auto px-4 pb-[var(--safe-bottom)]">
           {workspaces.map((workspace, index) => (
             <motion.div

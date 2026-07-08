@@ -5,14 +5,21 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  isRedirect,
   redirect,
 } from '@tanstack/react-router'
 import { AppThemeProvider } from '@mobile/ui/theme-provider'
 import { ScreenStack } from '@mobile/navigation/screen-stack'
 import { useKeyboardInset } from '@mobile/lib/use-keyboard-inset'
+import { getLastWorkspaceSlug, setLastWorkspaceSlug } from '@mobile/lib/prefs'
+import { queryClient } from '@mobile/lib/queryClient'
 import { useAuthStore } from '@mobile/stores/auth-store'
 import { LoginScreen } from '@mobile/screens/login-screen'
-import { WorkspacesScreen } from '@mobile/screens/workspaces-screen'
+import {
+  WorkspacesScreen,
+  resolveWorkspaceRedirect,
+  workspacesQueryOptions,
+} from '@mobile/screens/workspaces-screen'
 import { InboxScreen } from '@mobile/screens/inbox-screen'
 import { ConversationScreen } from '@mobile/screens/conversation-screen'
 import { YouScreen } from '@mobile/screens/you-screen'
@@ -45,7 +52,31 @@ const loginRoute = createRoute({
 const workspacesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/workspaces',
-  beforeLoad: requireAuth,
+  // Runs the auto-redirect decision (single workspace / stored
+  // last_workspace_slug) BEFORE the picker component ever mounts, so a
+  // redirecting user never sees a spinner or list flash.
+  beforeLoad: async (opts) => {
+    requireAuth(opts)
+    // Only check when we know who's signed in — while auth is still loading
+    // (or the server is unreachable) just render the picker, whose query
+    // handles its own loading/error states.
+    if (!opts.context.auth.user) return
+    try {
+      const [workspaces, storedSlug] = await Promise.all([
+        queryClient.ensureQueryData(workspacesQueryOptions),
+        getLastWorkspaceSlug(),
+      ])
+      const slug = resolveWorkspaceRedirect(workspaces, storedSlug)
+      if (slug) {
+        void setLastWorkspaceSlug(slug)
+        throw redirect({ to: '/w/$slug/support', params: { slug } })
+      }
+    } catch (error) {
+      if (isRedirect(error)) throw error
+      // ensureQueryData failed (network etc.) — fall through to the picker,
+      // which surfaces the error/retry state instead of bricking the route.
+    }
+  },
   component: WorkspacesScreen,
 })
 
