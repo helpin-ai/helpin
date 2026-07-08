@@ -50,9 +50,12 @@ export function useEdgeSwipeBack({ enabled, onBack }: { enabled: boolean; onBack
       const dt = Math.max(1, performance.now() - startT)
       const commit = dx > el.clientWidth * COMMIT_RATIO || dx / dt > COMMIT_VELOCITY
       if (commit) {
+        // No gestureX reset after onBack(): gesture values are per screen
+        // instance, so this one belongs to the dying, already-swiped-off
+        // screen — snapping it back to x:0 would visually "un-dismiss" it
+        // before its exit replays. Fresh instances start at 0 anyway.
         animate(gestureX, el.clientWidth, { duration: 0.18, ease: 'easeOut' }).then(() => {
           onBack()
-          gestureX.set(0)
         })
       } else {
         animate(gestureX, 0, stackSpring)

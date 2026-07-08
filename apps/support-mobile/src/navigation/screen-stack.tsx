@@ -4,7 +4,9 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { stackSpring } from '@mobile/lib/motion'
 import { useEdgeSwipeBack } from './use-edge-swipe-back'
 
-export function resolveDirection(prevIndex: number, nextIndex: number): 'push' | 'pop' | 'replace' {
+type Direction = 'push' | 'pop' | 'replace'
+
+export function resolveDirection(prevIndex: number, nextIndex: number): Direction {
   if (nextIndex > prevIndex) return 'push'
   if (nextIndex < prevIndex) return 'pop'
   return 'replace'
@@ -19,6 +21,23 @@ export function backFallbackPath(pathname: string): string {
 /** Tab-level roots crossfade instead of sliding. */
 const TAB_ROOTS = [/^\/w\/[^/]+\/support$/, /^\/w\/[^/]+\/you$/]
 const isTabRoot = (path: string) => TAB_ROOTS.some((re) => re.test(path))
+
+// AnimatePresence keeps EXITING children as frozen element instances from
+// their last-present render — a static `variants` object is captured then,
+// so a pop would still exit with the push-flavored -25%. The only prop
+// AnimatePresence refreshes on exiting children is `custom`, so the slide
+// variants must be functions of it.
+const slideVariants = {
+  initial: (dir: Direction) => ({ x: dir === 'pop' ? '-25%' : '100%' }),
+  animate: { x: 0 },
+  exit: (dir: Direction) => ({ x: dir === 'pop' ? '100%' : '-25%' }),
+}
+
+const crossfadeVariants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+}
 
 /**
  * Per-screen gesture host. Rendered INSIDE the pathname-keyed motion.div so
@@ -70,26 +89,20 @@ export function ScreenStack() {
     else router.navigate({ to: backFallbackPath(pathname) })
   }, [router, pathname])
 
-  const variants = crossfade
-    ? {
-        initial: { opacity: 0 },
-        animate: { opacity: 1 },
-        exit: { opacity: 0 },
-      }
-    : {
-        initial: { x: direction === 'pop' ? '-25%' : '100%' },
-        animate: { x: 0 },
-        exit: { x: direction === 'pop' ? '100%' : '-25%' },
-      }
+  const variants = crossfade ? crossfadeVariants : slideVariants
 
   return (
     <div className="relative h-dvh overflow-hidden bg-background">
-      <AnimatePresence initial={false} mode="popLayout">
+      {/* `custom` on AnimatePresence is forwarded to exiting children (their
+          other props are frozen at their last-present render); `custom` on
+          the motion.div covers the entering instance. */}
+      <AnimatePresence initial={false} mode="popLayout" custom={direction}>
         {/* Outer div: Motion owns its transform (push/pop variants).
             Inner div: the gesture owns its transform (a plain motion value).
             Never let both write to the same element. */}
         <motion.div
           key={pathname}
+          custom={direction}
           className="absolute inset-0 bg-background"
           variants={variants}
           initial="initial"
