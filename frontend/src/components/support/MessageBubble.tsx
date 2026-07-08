@@ -290,6 +290,7 @@ interface MessageBubbleProps {
   receiptStatus?: 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null;
   fallbackAvatarUrl?: string;
   customerDisplayName?: string;
+  customerEmail?: string | null;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -300,6 +301,7 @@ export const MessageBubble = memo(function MessageBubble({
   receiptStatus,
   fallbackAvatarUrl,
   customerDisplayName,
+  customerEmail,
 }: MessageBubbleProps) {
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
@@ -691,9 +693,13 @@ export const MessageBubble = memo(function MessageBubble({
   const hasEmailBadge = message.via_channel === 'email';
   const inboundFromEmail = isCustomer ? emailAddressFromHeader(message.email_from) : '';
   const inboundReplyToEmail = isCustomer ? emailAddressFromHeader(message.email_reply_to) : '';
-  const inboundFromMatchesReplyTo = inboundFromEmail !== '' && inboundReplyToEmail !== '' && inboundFromEmail.toLowerCase() === inboundReplyToEmail.toLowerCase();
+  const inboundCustomerEmail = customerEmail?.trim() ?? '';
+  const inboundFromMatchesKnownCustomerEmail = inboundFromEmail !== '' && (
+    (inboundReplyToEmail !== '' && inboundFromEmail.toLowerCase() === inboundReplyToEmail.toLowerCase())
+    || (inboundCustomerEmail !== '' && inboundFromEmail.toLowerCase() === inboundCustomerEmail.toLowerCase())
+  );
   const inboundEmailBadgeLabel = inboundFromEmail
-    ? inboundFromMatchesReplyTo
+    ? inboundFromMatchesKnownCustomerEmail
       ? 'Received by email'
       : `Received by email from ${inboundFromEmail}`
     : 'Received via email';

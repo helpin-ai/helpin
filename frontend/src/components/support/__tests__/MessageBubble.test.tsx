@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { act, type ComponentProps } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -17,7 +17,11 @@ function findButtonByText(container: HTMLElement, text: string) {
   return Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes(text)) ?? null
 }
 
-function renderBubble(message: SupportMessage, receiptStatus?: 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null) {
+function renderBubble(
+  message: SupportMessage,
+  receiptStatus?: 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null,
+  extraProps: Partial<ComponentProps<typeof MessageBubble>> = {},
+) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -27,7 +31,7 @@ function renderBubble(message: SupportMessage, receiptStatus?: 'delivered' | 'se
     root.render(
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <MessageBubble message={message} receiptStatus={receiptStatus} />
+          <MessageBubble message={message} receiptStatus={receiptStatus} {...extraProps} />
         </TooltipProvider>
       </QueryClientProvider>,
     )
@@ -430,6 +434,30 @@ describe('MessageBubble', () => {
     }
 
     const rendered = renderBubble(message)
+    expect(rendered.container.textContent).toContain('Received by email')
+    expect(rendered.container.textContent).not.toContain('Received by email from taylor.visitor@example.com')
+    expect(findButtonByText(rendered.container, 'Received by email')).toBeTruthy()
+    rendered.cleanup()
+  })
+
+  it('shows a generic inbound email badge when from matches the conversation customer email', () => {
+    const message: SupportMessage = {
+      id: 'msg-customer-email-same-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Taylor Visitor',
+      content: 'Following up here.',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'email',
+      email_from: 'Taylor Visitor <taylor.visitor@example.com>',
+      email_reply_to: 'support-thread+123@example.com',
+      created_at: '2026-06-02T10:14:00.000Z',
+      updated_at: '2026-06-02T10:14:00.000Z',
+    }
+
+    const rendered = renderBubble(message, undefined, { customerEmail: 'taylor.visitor@example.com' })
     expect(rendered.container.textContent).toContain('Received by email')
     expect(rendered.container.textContent).not.toContain('Received by email from taylor.visitor@example.com')
     expect(findButtonByText(rendered.container, 'Received by email')).toBeTruthy()
