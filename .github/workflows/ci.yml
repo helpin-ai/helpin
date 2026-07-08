@@ -30,6 +30,7 @@ jobs:
       packages: ${{ steps.filter.outputs.packages }}
       helpcenter: ${{ steps.filter.outputs.helpcenter }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      mobile: ${{ steps.filter.outputs.mobile }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +51,7 @@ jobs:
             echo "packages=true" >> "$GITHUB_OUTPUT"
             echo "helpcenter=true" >> "$GITHUB_OUTPUT"
             echo "desktop=true" >> "$GITHUB_OUTPUT"
+            echo "mobile=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -68,6 +70,7 @@ jobs:
           PACKAGES=false
           HELPCENTER=false
           DESKTOP=false
+          MOBILE=false
 
           if echo "$CHANGED" | grep -qE '^server/|^\.github/workflows/ci\.yml$'; then
             SERVER=true
@@ -90,6 +93,14 @@ jobs:
           if echo "$CHANGED" | grep -qE '^apps/support-desktop/|^frontend/|^packages/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
             DESKTOP=true
           fi
+          # Mobile depends on its own app dir plus packages/support-core and
+          # packages/shared directly (no frontend/ dependency, unlike
+          # desktop) — gate on those, not all of packages/*, so an unrelated
+          # package change doesn't force a mobile run. Root/workspace config
+          # changes still gate everything, same as the other jobs.
+          if echo "$CHANGED" | grep -qE '^apps/support-mobile/|^packages/support-core/|^packages/shared/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
+            MOBILE=true
+          fi
 
           echo "server=$SERVER" >> "$GITHUB_OUTPUT"
           echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
@@ -97,7 +108,8 @@ jobs:
           echo "packages=$PACKAGES" >> "$GITHUB_OUTPUT"
           echo "helpcenter=$HELPCENTER" >> "$GITHUB_OUTPUT"
           echo "desktop=$DESKTOP" >> "$GITHUB_OUTPUT"
-          echo "Detected: server=$SERVER frontend=$FRONTEND admin=$ADMIN packages=$PACKAGES helpcenter=$HELPCENTER desktop=$DESKTOP"
+          echo "mobile=$MOBILE" >> "$GITHUB_OUTPUT"
+          echo "Detected: server=$SERVER frontend=$FRONTEND admin=$ADMIN packages=$PACKAGES helpcenter=$HELPCENTER desktop=$DESKTOP mobile=$MOBILE"
 
   # ------------------------- Server -------------------------
   server:
@@ -309,3 +321,37 @@ jobs:
         run: pnpm --filter @helpin-ai/widget-core build
       - name: Build support-desktop (tsc -b && vite build)
         run: pnpm --dir apps/support-desktop run build
+
+  # ------------------- Support Mobile (Tauri) ---------------
+  # Validates the web/TS side of the mobile shell only (typecheck + vitest
+  # for both the app and packages/support-core, which it consumes from
+  # source via a Vite/tsconfig alias — see apps/support-mobile/vite.config.ts
+  # — so no package build step is needed before these run, unlike the
+  # desktop job's widget-core dependency).
+  #
+  # Deliberately NOT running `cargo check` in `src-tauri/`: none of the
+  # existing jobs in this file set up a Rust toolchain (no
+  # `actions/checkout` + rustup/cargo step anywhere above), so adding one
+  # here would be new CI infrastructure, not a same-shape addition. Wiring a
+  # Rust toolchain (and eventually real Android/iOS builds) is scoped to a
+  # future release-pipeline job, not this per-PR web-only gate.
+  mobile-check:
+    name: Support Mobile CI
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck support-mobile
+        run: pnpm --dir apps/support-mobile run typecheck
+      - name: Test support-mobile
+        run: pnpm --dir apps/support-mobile run test
+      - name: Test support-core
+        run: pnpm --dir packages/support-core run test

@@ -177,3 +177,19 @@ export function routePushTap(data: Record<string, string>, navigate: (to: string
   const path = parseDeepLink(data.deep_link) ?? buildFallbackPath(data.workspace_slug, data.conversation_id)
   if (path) navigate(path)
 }
+
+/**
+ * URL-shaped counterpart to {@link routePushTap}, for the deep-link plugin's
+ * `onOpenUrl` callback (`helpin://w/{slug}/support/{id}` opened from outside
+ * the app — a link tapped in Slack, `adb`/`xcrun` device testing, etc.).
+ *
+ * This is a thin adapter, NOT a second parser: it hands the raw URL straight
+ * to {@link parseDeepLink} via `routePushTap`'s `deep_link` field, so segment
+ * validation (slash/`.`/`..`/segment-count checks) lives in exactly one
+ * place. Any scheme other than `helpin://w/...` (e.g. `https://`, garbage
+ * strings) falls through to `routePushTap`'s no-fallback-fields case, which
+ * already no-ops rather than throwing.
+ */
+export function routeDeepLinkUrl(url: string, navigate: (to: string) => void): void {
+  routePushTap({ deep_link: url }, navigate)
+}

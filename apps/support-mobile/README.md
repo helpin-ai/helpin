@@ -284,3 +284,58 @@ cargo check
       or navigate anywhere (current documented behavior — see
       `routePushTap`'s doc comment for why a slugless payload is a no-op
       rather than a best-effort guess).
+
+11. **OS-level deep links (Task 21 — `tauri-plugin-deep-link`,
+    `src/main.tsx`'s `onOpenUrl` wiring, `routeDeepLinkUrl` in
+    `src/push/push-registration.ts`)**: config was added text-only (no Rust
+    toolchain, no `gen/android`/`gen/apple` on this machine — see
+    SPIKE-VERIFY notes below); the pure URL-parsing wrapper is unit-tested,
+    but the OS→app handoff itself needs a real device/emulator and generated
+    native projects. Once `gen/android` and `gen/apple` exist (item 1 above)
+    and the app is installed on a device/emulator/simulator:
+    - **Android**:
+      ```bash
+      adb shell am start -a android.intent.action.VIEW -d "helpin://w/<slug>/support/<id>"
+      ```
+      Confirm this opens the app directly on that conversation (app backgrounded
+      or fully killed — try both). Confirm a plain `https://` URL is NOT
+      intercepted by this app (no `host`/App Link config was registered —
+      `helpin://` custom scheme only, see `SPIKE-VERIFY` below).
+    - **iOS**:
+      ```bash
+      xcrun simctl openurl booted "helpin://w/<slug>/support/<id>"
+      ```
+      Same expectations as Android: opens directly on the conversation, both
+      backgrounded and cold-start.
+    - **Malformed link**: try `helpin://w//support/` (empty slug) and confirm
+      the app opens to whatever its default landing screen is (Inbox/Login)
+      rather than crashing or showing a blank screen — `routeDeepLinkUrl`
+      should no-op and let normal routing take over.
+    - **Auth-gated queueing**: force-quit the app first (cold start), fire the
+      `adb`/`xcrun` command above, and confirm the navigation waits for auth
+      bootstrap and then either lands on the conversation (signed in) or is
+      silently dropped (signed out) — same contract as a cold-start push tap,
+      since both share `queueTapNavigation`/`flushPendingTap` in `main.tsx`.
+
+    **SPIKE-VERIFY** (config written text-only against the Tauri v2
+    deep-link plugin docs — https://v2.tauri.app/plugin/deep-linking/ — not
+    exercised on a real build):
+    - `tauri.conf.json`'s `plugins.deep-link.mobile` block uses the
+      documented "Custom scheme on mobile (no server required)" shape
+      (`{ "scheme": ["helpin"], "appLink": false }`, no `host`/`pathPrefix`).
+      Confirm `pnpm tauri android init`/`ios init` + a build actually
+      generates the Android intent-filter and iOS `CFBundleURLTypes` entries
+      for the `helpin` scheme from this config once `gen/` exists.
+    - `capabilities/default.json` adds `deep-link:default` but NOT an
+      explicit `core:event:default` — the existing capability already has
+      `core:default`, and `onPushTapped` (Task 19/20) successfully listens
+      for plugin events under that same `core:default` today, so the
+      assumption is it already covers `deep-link`'s `onOpenUrl` event too.
+      Confirm this holds; add `core:event:default` explicitly if `onOpenUrl`
+      doesn't fire on device.
+    - No desktop `plugins.deep-link.desktop` block was added — this app
+      targets Android/iOS only (see `README.md`'s Stack section), so desktop
+      runtime registration (`app.deep_link().register(...)`) was intentionally
+      left out per the plugin docs' guidance that iOS/Android must be
+      config-registered (no dynamic runtime registration on those platforms
+      anyway) and desktop isn't a shipped target for this app.

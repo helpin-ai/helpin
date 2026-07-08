@@ -1,7 +1,7 @@
 import type { invoke as InvokeFn } from '@tauri-apps/api/core'
 import type { getPushToken as GetPushTokenFn, onPushTokenChanged as OnPushTokenChangedFn } from '@helpin/plugin-push'
 import type { api as ApiClient } from '@mobile/lib/api'
-import { routePushTap } from '@mobile/push/push-registration'
+import { routeDeepLinkUrl, routePushTap } from '@mobile/push/push-registration'
 
 // Mocked locally (not in a shared setup file), same rationale as
 // haptics.test.ts: these fakes must never leak into other test files that
@@ -304,6 +304,39 @@ describe('routePushTap', () => {
     const navigate = vi.fn()
     routePushTap({ workspace_slug: '..', conversation_id: 'conv_1' }, navigate)
     routePushTap({ workspace_slug: 'acme', conversation_id: '.' }, navigate)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+})
+
+// `routeDeepLinkUrl` is the `onOpenUrl` (plugin-deep-link) counterpart to
+// `routePushTap`'s `deep_link` field: it's a thin wrapper that hands the raw
+// URL string to the SAME `deep_link` parsing path (see `routePushTap` above)
+// so there is exactly one parser/validator for `helpin://w/{slug}/support/{id}`
+// links. Segment validation (slashes, `.`/`..`, wrong segment count, etc.) is
+// already covered by the `routePushTap` suite above via the `deep_link`
+// field — these tests only cover what's NEW here: scheme handling.
+describe('routeDeepLinkUrl', () => {
+  test('valid helpin:// URL navigates to the parsed path', () => {
+    const navigate = vi.fn()
+    routeDeepLinkUrl('helpin://w/acme/support/conv_1', navigate)
+    expect(navigate).toHaveBeenCalledWith('/w/acme/support/conv_1')
+  })
+
+  test('https:// scheme (e.g. a universal-link-shaped URL): no navigation', () => {
+    const navigate = vi.fn()
+    routeDeepLinkUrl('https://helpin.ai/w/acme/support/conv_1', navigate)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  test('garbage / non-URL string: no navigation', () => {
+    const navigate = vi.fn()
+    routeDeepLinkUrl('not-a-url-at-all', navigate)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  test('empty string: no navigation', () => {
+    const navigate = vi.fn()
+    routeDeepLinkUrl('', navigate)
     expect(navigate).not.toHaveBeenCalled()
   })
 })

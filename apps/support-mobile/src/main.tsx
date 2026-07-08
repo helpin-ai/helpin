@@ -4,13 +4,14 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 import { Toaster } from 'sonner'
 import { configureSessionStorage, createBrowserSessionStorage } from '@helpin-ai/support-core'
+import { onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import { onPushTapped } from '@helpin/plugin-push'
 import { setupVisibilityRefresh, startTokenRefreshTimer, stopTokenRefreshTimer } from '@mobile/lib/api'
 import { isTauri } from '@mobile/lib/host'
 import { queryClient } from '@mobile/lib/queryClient'
 import { createTauriSessionStorage } from '@mobile/lib/session-storage'
 import { router } from '@mobile/router'
-import { routePushTap } from '@mobile/push/push-registration'
+import { routeDeepLinkUrl, routePushTap } from '@mobile/push/push-registration'
 import { bootstrapAuth, useAuthStore } from '@mobile/stores/auth-store'
 import './index.css'
 
@@ -52,12 +53,33 @@ function flushPendingTap() {
   router.navigate({ to })
 }
 
+/**
+ * Shared `navigate` callback for both tap sources below: queues the target
+ * path and immediately attempts a flush (a no-op if auth bootstrap is still
+ * `loading`, per {@link flushPendingTap}'s contract). One queue, not two —
+ * a push tap and a deep-link open are the same "route me to a conversation
+ * once we know who's signed in" problem.
+ */
+function queueTapNavigation(to: string) {
+  pendingTapTo = to
+  flushPendingTap()
+}
+
 if (isTauri()) {
   void onPushTapped((data) => {
-    routePushTap(data, (to) => {
-      pendingTapTo = to
-      flushPendingTap()
-    })
+    routePushTap(data, queueTapNavigation)
+  })
+
+  // `helpin://w/{slug}/support/{id}` opened from outside the app (OS deep
+  // link, `adb`/`xcrun` device testing, a link pasted in Slack). Per the
+  // plugin's docs, the callback receives an array of URLs "to be compatible
+  // with the macOS API" even though in practice it's almost always one — we
+  // route each through the same parser and let `routeDeepLinkUrl` no-op on
+  // anything that isn't a valid `helpin://w/{slug}/support/{id}` URL.
+  void onOpenUrl((urls) => {
+    for (const url of urls) {
+      routeDeepLinkUrl(url, queueTapNavigation)
+    }
   })
 }
 

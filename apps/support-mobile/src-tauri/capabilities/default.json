@@ -11,6 +11,7 @@
     "notification:allow-request-permission",
     "notification:allow-notify",
     "store:default",
-    "helpin-push:default"
+    "helpin-push:default",
+    "deep-link:default"
   ]
 }
