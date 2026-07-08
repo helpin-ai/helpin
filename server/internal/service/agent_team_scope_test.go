@@ -208,6 +208,8 @@ func setupAgentScopeTestDB(t *testing.T) *gorm.DB {
 			pause_reason text NOT NULL DEFAULT 'none',
 			triggered_by_user_id text,
 			status text NOT NULL DEFAULT 'queued',
+			external_runtime text,
+			external_runtime_id text,
 			task_queue text,
 			runner_pool text,
 			input text NOT NULL DEFAULT '{}',

@@ -147,59 +147,61 @@ function SingleStepCard({ step }: { step: CommandBarPlanStep }) {
   const tools = step.allowed_tools ?? [];
   const stepName = stepDisplayName(step);
   return (
-    <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2">
-      <div className="flex items-center gap-2">
+    <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5">
+      {/* One scan line: who runs, and where. */}
+      <div className="flex min-w-0 items-center gap-2">
         <BotIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate text-sm font-medium text-foreground">{stepName}</span>
-      </div>
-      {targetTitle ? (
-        <div className="mt-1.5 flex min-w-0 items-center gap-1.5 rounded-full border border-primary/20 bg-background/80 px-2 py-1 text-[11px] text-foreground">
-          <TargetIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-          <span className="shrink-0 rounded border border-border/70 px-1 py-0 text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
-            {targetTypeLabel(step.target.entity_type)}
+        {targetTitle ? (
+          <span className="ml-auto flex min-w-0 max-w-[55%] shrink items-center gap-1.5 rounded-full border border-border/60 bg-background/70 px-2 py-0.5 text-[11px]">
+            <TargetIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <span className="shrink-0 text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
+              {targetTypeLabel(step.target.entity_type)}
+            </span>
+            <span className="truncate font-medium text-foreground">{targetTitle}</span>
           </span>
-          <span className="truncate font-medium">{targetTitle}</span>
-        </div>
-      ) : null}
-      {desc ? (
-        <p className="mt-1.5 line-clamp-3 text-xs leading-snug text-muted-foreground">
-          {desc}
-        </p>
-      ) : null}
+        ) : null}
+      </div>
+
+      {/* The user's own words anchor the card; the generic goal line only
+          shows when there's no prompt to quote. */}
       {prompt ? (
-        <div className="mt-2 rounded border border-border/60 bg-background/70 px-2 py-1.5">
-          <div className="text-[10px] font-medium uppercase text-muted-foreground">Prompt</div>
-          <p className="mt-0.5 line-clamp-4 break-words text-[11px] leading-snug text-foreground/90">
-            {prompt}
-          </p>
-        </div>
+        <blockquote className="mt-2.5 border-l-2 border-orange-400/60 pl-2.5">
+          <p className="line-clamp-4 break-words text-xs leading-snug text-foreground/90">{prompt}</p>
+        </blockquote>
+      ) : desc ? (
+        <p className="mt-2.5 line-clamp-3 text-xs leading-snug text-muted-foreground">{desc}</p>
       ) : null}
+
       {planItems.length ? (
-        <div className="mt-2 rounded border border-border/60 bg-background/70 px-2 py-1.5">
-          <div className="text-[10px] font-medium uppercase text-muted-foreground">Plan</div>
-          <ol className="mt-1 list-decimal space-y-1 pl-4 text-[11px] leading-snug text-foreground/90">
-            {planItems.map((item, index) => (
-              <li key={`${index}-${item}`} className="break-words">
-                {item}
-              </li>
-            ))}
-          </ol>
-        </div>
+        <ol className="mt-2.5 space-y-1">
+          {planItems.map((item, index) => (
+            <li key={`${index}-${item}`} className="flex gap-2 text-xs leading-snug text-muted-foreground">
+              <span className="w-3.5 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted-foreground/60">
+                {index + 1}
+              </span>
+              <span className="min-w-0 break-words">{item}</span>
+            </li>
+          ))}
+        </ol>
       ) : null}
+
       {tools.length ? (
-        <div className="mt-2">
+        <div className="mt-2.5 border-t border-border/50 pt-1.5">
           <button
             type="button"
-            className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[11px] text-muted-foreground hover:bg-background/60 hover:text-foreground"
+            className="flex w-full items-center gap-1.5 rounded px-0.5 py-0.5 text-left text-[11px] text-muted-foreground hover:text-foreground"
             onClick={() => setToolsOpen((open) => !open)}
             aria-expanded={toolsOpen}
           >
             <Wrench01Icon className="h-3 w-3 shrink-0" />
-            <span className="font-medium text-foreground">{tools.length} tools selected</span>
-            <ArrowDown01Icon className={cn('ml-auto h-3 w-3 transition-transform', toolsOpen && 'rotate-180')} />
+            <span>
+              {tools.length} tool{tools.length === 1 ? '' : 's'}
+            </span>
+            <ArrowDown01Icon className={cn('h-3 w-3 transition-transform', toolsOpen && 'rotate-180')} />
           </button>
           {toolsOpen ? (
-            <div className="mt-1 flex flex-wrap gap-1 px-1.5">
+            <div className="mt-1.5 flex flex-wrap gap-1">
               {tools.map((tool) => (
                 <span key={tool} className="rounded border border-border/70 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
                   {tool}
@@ -550,10 +552,11 @@ function ActionRow({
           <Tick01Icon className="h-3 w-3" />
         )}
         {dispatching ? 'Starting…' : 'Approve & run'}
-        {!dispatching && runCount > 0 ? (
-          <span className="ml-1 opacity-70">
-            · {runCount} run{runCount === 1 ? '' : 's'}
-          </span>
+        {!dispatching && runCount > 1 ? (
+          <span className="ml-1 opacity-70">· {runCount} runs</span>
+        ) : null}
+        {!dispatching ? (
+          <kbd className="ml-1 rounded bg-white/20 px-1 font-sans text-[9px] font-normal leading-4">⌘↵</kbd>
         ) : null}
       </button>
       <button

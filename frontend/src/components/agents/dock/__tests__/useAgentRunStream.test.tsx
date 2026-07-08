@@ -131,4 +131,47 @@ describe('useAgentRunStream', () => {
 
     await waitForPending('interaction-2');
   });
+
+  it('hydrates live stream state from the event-list snapshot', async () => {
+    mocks.getRunSnapshot.mockResolvedValueOnce({
+      data: { stream_state_snapshot: null },
+      error: null,
+    });
+    mocks.listRunEvents.mockResolvedValueOnce({
+      data: {
+        events: [],
+        next_sequence_no: 0,
+        stream_state_snapshot: {
+          live_turn_segments: [{
+            segment_id: 'assistant-live-1:segment:1',
+            kind: 'assistant_message',
+            assistant_message: {
+              message_id: 'assistant-live-1',
+              content: 'Still inspecting the workspace',
+              status: 'streaming',
+              tool_calls: [],
+            },
+          }],
+        },
+      },
+      error: null,
+    });
+
+    await act(async () => {
+      root.render(<Probe />);
+    });
+
+    for (let i = 0; i < 20; i += 1) {
+      if (latestState?.streamState?.live_turn_segments[0]?.kind === 'assistant_message') break;
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+
+    const segment = latestState?.streamState?.live_turn_segments[0];
+    expect(segment?.kind).toBe('assistant_message');
+    if (segment?.kind === 'assistant_message') {
+      expect(segment.assistant_message.content).toBe('Still inspecting the workspace');
+    }
+  });
 });

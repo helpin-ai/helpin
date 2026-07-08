@@ -91,8 +91,9 @@ type CodingSessionEvent struct {
 }
 
 type CodingSessionEventListResponse struct {
-	Events         []CodingSessionEvent `json:"events"`
-	NextSequenceNo int                  `json:"next_sequence_no"`
+	Events              []CodingSessionEvent         `json:"events"`
+	NextSequenceNo      int                          `json:"next_sequence_no"`
+	StreamStateSnapshot *CodingSessionStreamSnapshot `json:"stream_state_snapshot,omitempty"`
 }
 
 func CodingSessionEventFromAgentRunMessage(run *AgentRun, message *AgentRunMessage) CodingSessionEvent {

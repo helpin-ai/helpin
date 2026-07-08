@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	agentruntime "github.com/helpin-ai/agent-runtime-go"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -798,6 +799,10 @@ type fakeGitHubMergeCall struct {
 	CommitMessage  string
 }
 
+func (f *fakeGitHubAppClient) MintInstallationToken(context.Context, string) (string, error) {
+	return "github-installation-token", nil
+}
+
 func (f *fakeGitHubAppClient) ListInstallationRepositories(context.Context, string) ([]githubapp.Repository, error) {
 	return nil, nil
 }
@@ -1132,6 +1137,63 @@ func TestEpicDeliveryBranchFlowEnsuresMergesAndOpensFinalPR(t *testing.T) {
 	}
 	if finalTarget.DeliveryState != "pr_open" {
 		t.Fatalf("final delivery state = %q, want pr_open", finalTarget.DeliveryState)
+	}
+}
+
+func TestResolveAgentRuntimeRepositorySpecForTaskDeliveryTarget(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	svc := newGitDeliveryStatusService(db, &fakeGitHubAppClient{})
+
+	spec, err := svc.ResolveAgentRuntimeRepositorySpec(context.Background(), "ws-1", agentruntime.TargetRef{
+		Type: "task",
+		ID:   "task-1",
+	}, "run-runtime-1")
+	if err != nil {
+		t.Fatalf("ResolveAgentRuntimeRepositorySpec returned error: %v", err)
+	}
+	if spec.CloneURL != "https://github.com/acme/api.git" {
+		t.Fatalf("unexpected clone URL: %q", spec.CloneURL)
+	}
+	if spec.Auth == nil || spec.Auth.Type != "github" || spec.Auth.Token != "github-installation-token" {
+		t.Fatalf("unexpected auth: %#v", spec.Auth)
+	}
+	if spec.BaseBranch != "main" || spec.WorkBranch != "hel-31-fix-merge-status" || spec.FinalizePolicy != agentruntime.RepositoryFinalizePushBranch {
+		t.Fatalf("unexpected branch/finalize spec: %#v", spec)
+	}
+	if spec.Metadata["workspace_id"] != "ws-1" || spec.Metadata["delivery_target_id"] != "target-1" {
+		t.Fatalf("unexpected metadata: %#v", spec.Metadata)
+	}
+}
+
+func TestResolveAgentRuntimeRepositorySpecForRepositoryFullName(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	svc := newGitDeliveryStatusService(db, &fakeGitHubAppClient{})
+
+	spec, err := svc.ResolveAgentRuntimeRepositorySpec(context.Background(), "ws-1", agentruntime.TargetRef{
+		Type: "repository",
+		ID:   "acme/api",
+		Metadata: map[string]interface{}{
+			"repo_full_name": "acme/api",
+			"base_branch":    "release",
+			"work_branch":    "agent/runtime-checkout",
+		},
+	}, "run-runtime-1")
+	if err != nil {
+		t.Fatalf("ResolveAgentRuntimeRepositorySpec returned error: %v", err)
+	}
+	if spec.CloneURL != "https://github.com/acme/api.git" {
+		t.Fatalf("unexpected clone URL: %q", spec.CloneURL)
+	}
+	if spec.Auth == nil || spec.Auth.Type != "github" || spec.Auth.Token != "github-installation-token" {
+		t.Fatalf("unexpected auth: %#v", spec.Auth)
+	}
+	if spec.BaseBranch != "release" || spec.WorkBranch != "agent/runtime-checkout" {
+		t.Fatalf("unexpected branch spec: %#v", spec)
+	}
+	if spec.Metadata["repository_id"] != "repo-1" || spec.Metadata["repo_full_name"] != "acme/api" {
+		t.Fatalf("unexpected metadata: %#v", spec.Metadata)
 	}
 }
 

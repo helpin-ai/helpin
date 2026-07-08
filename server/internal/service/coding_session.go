@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	agentruntime "github.com/helpin-ai/agent-runtime-go"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 	"github.com/helpin-ai/helpin/server/internal/worker"
@@ -170,8 +172,9 @@ func (s *AgentService) ListCodingSessionEvents(ctx context.Context, workspaceID,
 	}
 
 	return &model.CodingSessionEventListResponse{
-		Events:         events,
-		NextSequenceNo: nextSequenceNo,
+		Events:              events,
+		NextSequenceNo:      nextSequenceNo,
+		StreamStateSnapshot: s.codingSessionStreamSnapshot(ctx, run),
 	}, nil
 }
 
@@ -365,19 +368,7 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		return nil, err
 	}
 
-	var streamSnapshot *model.CodingSessionStreamSnapshot
-	if s.sessionSnapshotRepo != nil && run.Status != model.AgentRunStatusCompleted && run.Status != model.AgentRunStatusCancelled {
-		snapshotRecord, err := s.sessionSnapshotRepo.GetByRun(ctx, run.WorkspaceID, run.ID)
-		if err != nil {
-			return nil, err
-		}
-		if snapshotRecord != nil {
-			streamSnapshot, err = model.DecodeCodingSessionStreamSnapshot(snapshotRecord.SnapshotPayload)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
+	streamSnapshot := s.codingSessionStreamSnapshot(ctx, run)
 
 	var triggeredBy *model.CodingSessionActor
 	if run.TriggeredByUserID != nil && s.userRepo != nil {
@@ -429,6 +420,37 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 	session.Status = run.Status
 	session.PauseReason = run.PauseReason
 	return session, nil
+}
+
+func (s *AgentService) codingSessionStreamSnapshot(ctx context.Context, run *model.AgentRun) *model.CodingSessionStreamSnapshot {
+	if s == nil || s.sessionSnapshotRepo == nil || run == nil {
+		return nil
+	}
+	if run.Status == model.AgentRunStatusCompleted || run.Status == model.AgentRunStatusCancelled {
+		return nil
+	}
+	snapshotRecord, err := s.sessionSnapshotRepo.GetByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "load coding session stream snapshot failed",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+		)
+		return nil
+	}
+	if snapshotRecord == nil {
+		return nil
+	}
+	streamSnapshot, err := model.DecodeCodingSessionStreamSnapshot(snapshotRecord.SnapshotPayload)
+	if err != nil {
+		slog.WarnContext(ctx, "decode coding session stream snapshot failed",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+		)
+		return nil
+	}
+	return streamSnapshot
 }
 
 func (s *AgentService) markInteractionResolved(ctx context.Context, interaction *model.AgentRunInteraction, actorID string, responsePayload json.RawMessage, responseSchemaVersion string) error {
@@ -992,11 +1014,65 @@ func codingSessionEventFromArtifact(artifact model.AgentRunArtifact) (string, ma
 		return "repo.diff.updated", payload
 	case model.AgentRunArtifactTypeRunPlan:
 		return "activity.updated", payload
+	case model.AgentRunArtifactTypeToolCall:
+		mergeArtifactPayloadContent(payload)
+		switch strings.TrimSpace(metadataStringFromJSON(artifact.Metadata, "runtime_event_type")) {
+		case agentruntime.EventToolCallStarted:
+			return "tool.call.started", payload
+		case agentruntime.EventToolCallResult:
+			return "tool.call.result", payload
+		case agentruntime.EventToolCallFinished:
+			if artifactPayloadString(payload, "error") != "" {
+				return "tool.call.failed", payload
+			}
+			return "tool.call.completed", payload
+		default:
+			return "", nil
+		}
 	case worker.RunPreviewArtifactType:
 		return "preview.updated", payload
 	default:
 		return "", nil
 	}
+}
+
+func mergeArtifactPayloadContent(payload map[string]any) {
+	content, _ := payload["content"].(map[string]any)
+	if len(content) == 0 {
+		return
+	}
+	for key, value := range content {
+		if _, exists := payload[key]; exists {
+			continue
+		}
+		payload[key] = value
+	}
+}
+
+func artifactPayloadString(payload map[string]any, key string) string {
+	if len(payload) == 0 || strings.TrimSpace(key) == "" {
+		return ""
+	}
+	if value, ok := payload[key].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	content, _ := payload["content"].(map[string]any)
+	if value, ok := content[key].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
+func metadataStringFromJSON(raw json.RawMessage, key string) string {
+	if len(raw) == 0 || strings.TrimSpace(key) == "" {
+		return ""
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return ""
+	}
+	value, _ := metadata[key].(string)
+	return strings.TrimSpace(value)
 }
 
 func codingSessionEventFromInteraction(interaction model.AgentRunInteraction) (string, map[string]any, map[string]any) {

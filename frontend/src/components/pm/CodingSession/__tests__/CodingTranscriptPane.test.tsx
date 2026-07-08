@@ -4,7 +4,13 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CodingTranscriptPane } from '../CodingTranscriptPane';
-import type { AgentRunArtifact, CodingSession, CodingSessionInteraction, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
+import type {
+  AgentRunArtifact,
+  CodingSession,
+  CodingSessionInteraction,
+  CodingSessionLiveTurnSegment,
+  CodingSessionTranscriptMessage,
+} from '@/lib/pmTypes';
 
 const scrollToIndexMock = vi.hoisted(() => vi.fn());
 
@@ -225,6 +231,80 @@ describe('CodingTranscriptPane', () => {
     const composer = container.querySelector('textarea[placeholder^="Answer the agent"]');
     expect(composer?.className).toContain('focus-visible:border-ring/70');
     expect(composer?.className).toContain('focus-visible:ring-ring/15');
+  });
+
+  it('renders live assistant prose inline with live tool rows in coding sessions', () => {
+    const liveTurnSegments: CodingSessionLiveTurnSegment[] = [
+      {
+        segment_id: 'assistant-live:segment:1',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'assistant-live',
+          content: 'This streamed prose should render inline in the coding-session transcript.',
+          started_at: '2026-05-07T08:12:00Z',
+          status: 'streaming',
+          tool_calls: [],
+        },
+      },
+      {
+        segment_id: 'tool-1',
+        kind: 'tool_call',
+        tool_call: {
+          tool_call_id: 'tool-1',
+          parent_message_id: 'assistant-live',
+          tool_name: 'read_file',
+          args_text: '{"path":"Dockerfile"}',
+          status: 'running',
+          started_at: '2026-05-07T08:12:01Z',
+        },
+      },
+      {
+        segment_id: 'assistant-live:segment:2',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'assistant-live',
+          content: 'Second streamed chunk.',
+          started_at: '2026-05-07T08:12:02Z',
+          status: 'streaming',
+          tool_calls: [],
+        },
+      },
+    ];
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={{
+            message_id: 'assistant-live',
+            content: 'This streamed prose should render inline in the coding-session transcript.',
+            started_at: '2026-05-07T08:12:00Z',
+            status: 'streaming',
+            tool_calls: [],
+          }}
+          liveReasoningMessage={{
+            message_id: 'reasoning-live',
+            content: 'Hidden reasoning stream.',
+            started_at: '2026-05-07T08:12:00Z',
+            status: 'streaming',
+          }}
+          liveTurnSegments={liveTurnSegments}
+          loading={false}
+          session={buildSession({ status: 'running', pause_reason: 'none' })}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('This streamed prose should render inline in the coding-session transcript.');
+    expect(container.textContent).toContain('Second streamed chunk.');
+    expect(container.textContent).not.toContain('Hidden reasoning stream');
+    expect(container.textContent).toContain('Read Dockerfile');
+    expect(container.textContent.indexOf('This streamed prose should render inline')).toBeLessThan(
+      container.textContent.indexOf('Read Dockerfile'),
+    );
+    expect(container.textContent.indexOf('Read Dockerfile')).toBeLessThan(
+      container.textContent.indexOf('Second streamed chunk.'),
+    );
   });
 
   it('does not append review history artifacts to the main transcript', () => {

@@ -57,6 +57,10 @@ type CommandBarChatTurnRequest struct {
 	ThreadID    *string               `json:"thread_id,omitempty"`
 	Text        string                `json:"text"`
 	PageContext CommandBarPageContext `json:"page_context"`
+	// ClientTurnID correlates websocket progress events with the in-flight
+	// turn on the client that sent it. Optional; no progress is published
+	// without it.
+	ClientTurnID string `json:"client_turn_id,omitempty"`
 }
 
 type CommandBarPlanStep struct {

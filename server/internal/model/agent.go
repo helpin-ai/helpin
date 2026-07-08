@@ -182,6 +182,8 @@ type AgentRun struct {
 	Status            string          `json:"status" gorm:"not null;default:'queued'"`
 	WorkflowID        *string         `json:"workflow_id"`
 	WorkflowRunID     *string         `json:"workflow_run_id"`
+	ExternalRuntime   *string         `json:"external_runtime,omitempty" gorm:"uniqueIndex:idx_agent_runs_external_runtime_pair,priority:1,where:external_runtime_id IS NOT NULL"`
+	ExternalRuntimeID *string         `json:"external_runtime_id,omitempty" gorm:"uniqueIndex:idx_agent_runs_external_runtime_pair,priority:2,where:external_runtime_id IS NOT NULL"`
 	TaskQueue         *string         `json:"task_queue"`
 	RunnerPool        *string         `json:"runner_pool"`
 	AgentVersionID    *string         `json:"agent_version_id,omitempty" gorm:"type:uuid;index"`
@@ -491,6 +493,7 @@ const (
 	AgentRunPauseReasonHumanInput     = "human_input"
 	AgentRunPauseReasonHumanApproval  = "human_approval"
 	AgentRunPauseReasonAuthentication = "authentication"
+	AgentRunPauseReasonUserMessage    = "awaiting_user_message"
 )
 
 const (
@@ -543,7 +546,7 @@ func IsAgentRunActiveStatus(status string) bool {
 
 func normalizeAgentRunPauseReason(status string, pauseReason string, approvalState string, executionStage *string) string {
 	switch strings.TrimSpace(pauseReason) {
-	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval, AgentRunPauseReasonAuthentication:
+	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval, AgentRunPauseReasonAuthentication, AgentRunPauseReasonUserMessage:
 		return strings.TrimSpace(pauseReason)
 	}
 	if strings.TrimSpace(approvalState) == "pending" {

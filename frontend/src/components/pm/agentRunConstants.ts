@@ -41,6 +41,7 @@ export function getAgentRunDisplayStatus(run: Pick<AgentRun, 'status' | 'pause_r
     const pauseReason = getAgentRunPauseReason(run);
     if (pauseReason === 'human_approval') return 'awaiting_approval';
     if (pauseReason === 'authentication') return 'awaiting_auth';
+    if (pauseReason === 'awaiting_user_message') return 'awaiting_reply';
     return 'awaiting_input';
   }
   return run.status;

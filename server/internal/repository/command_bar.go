@@ -62,6 +62,29 @@ func (r *CommandBarPlanRepository) ListRecent(ctx context.Context, workspaceID, 
 	return plans, nil
 }
 
+// ListRunningUpdatedBefore returns running plans (across workspaces) whose
+// last update is older than the cutoff. It backs the stalled-plan sweep that
+// re-kicks the local step scheduler for plans no terminal-run finalizer has
+// advanced.
+func (r *CommandBarPlanRepository) ListRunningUpdatedBefore(ctx context.Context, cutoff time.Time, limit int) ([]model.CommandBarPlanRecord, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("command bar plan repository is not configured")
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var plans []model.CommandBarPlanRecord
+	if err := r.db.WithContext(ctx).
+		Where("status = ?", model.CommandBarPlanStatusRunning).
+		Where("updated_at < ?", cutoff).
+		Order("updated_at ASC").
+		Limit(limit).
+		Find(&plans).Error; err != nil {
+		return nil, fmt.Errorf("list running command bar plans: %w", err)
+	}
+	return plans, nil
+}
+
 // ListByEntity returns plans whose page_context targets the given entity
 // (e.g. an epic), regardless of which actor triggered them. This powers the
 // epic-visible delivery view, where anyone who can read the epic should see

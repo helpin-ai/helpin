@@ -12,6 +12,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 type InternalCommandDefinition struct {
@@ -41,7 +42,27 @@ type InternalCommandService struct {
 	settingsRepo         *repository.SettingsRepository
 	taskRepo             *repository.PMTaskRepository
 	taskLinkRepo         *repository.PMTaskLinkRepository
-	definitions          map[string]InternalCommandDefinition
+
+	supportMessageRepo        *repository.SupportMessageRepository
+	supportConversationRepo   *repository.SupportConversationRepository
+	supportEventPublisher     websocket.EventPublisher
+	crmContactService         *CRMContactService
+	crmSignalService          *CRMSignalService
+	docsSearchRepo            *repository.DocsSearchRepository
+	releaseFactsProvider      commandReleaseFactsProvider
+	docsChangeProposalService *DocsChangeProposalService
+	agentRunRepo              *repository.AgentRunRepository
+	agentRunArtifactRepo      *repository.AgentRunArtifactRepository
+
+	definitions map[string]InternalCommandDefinition
+}
+
+// commandReleaseFactsProvider is the narrow release-facts surface consumed by
+// command-backed release tools. *ReleaseFactsService satisfies it.
+type commandReleaseFactsProvider interface {
+	GetReleaseContext(ctx context.Context, workspaceID string, req model.GetReleaseContextRequest) (*model.ReleaseContextResult, error)
+	FindTasksForGitChanges(ctx context.Context, workspaceID string, req model.FindTasksForGitChangesRequest) (*model.FindTasksForGitChangesResult, error)
+	GetTaskContext(ctx context.Context, workspaceID string, req model.GetTaskContextRequest) (*model.GetTaskContextResult, error)
 }
 
 // SetPMAutomationService sets the PM automation service (breaks circular dependency).
@@ -92,6 +113,69 @@ func (s *InternalCommandService) SetDocsBlockService(blockSvc *DocsBlockService)
 		return
 	}
 	s.docsBlockService = blockSvc
+}
+
+// SetSupportDependencies wires support inbox reads/writes used by command-backed
+// support tools. The publisher is optional and used for conversation update events.
+func (s *InternalCommandService) SetSupportDependencies(
+	messageRepo *repository.SupportMessageRepository,
+	conversationRepo *repository.SupportConversationRepository,
+	publisher websocket.EventPublisher,
+) {
+	if s == nil {
+		return
+	}
+	s.supportMessageRepo = messageRepo
+	s.supportConversationRepo = conversationRepo
+	s.supportEventPublisher = publisher
+}
+
+// SetCRMReadServices wires read-only CRM listing services used by command-backed
+// CRM tools (contacts and buyer signals; deals use the existing deal service).
+func (s *InternalCommandService) SetCRMReadServices(contactService *CRMContactService, signalService *CRMSignalService) {
+	if s == nil {
+		return
+	}
+	s.crmContactService = contactService
+	s.crmSignalService = signalService
+}
+
+// SetDocsSearchRepository wires the docs full-text search used by docs.search_documents.
+func (s *InternalCommandService) SetDocsSearchRepository(repo *repository.DocsSearchRepository) {
+	if s == nil {
+		return
+	}
+	s.docsSearchRepo = repo
+}
+
+// SetReleaseFactsProvider wires release facts lookups used by release.* commands.
+func (s *InternalCommandService) SetReleaseFactsProvider(provider commandReleaseFactsProvider) {
+	if s == nil {
+		return
+	}
+	s.releaseFactsProvider = provider
+}
+
+// SetDocsChangeProposalService wires proposal persistence used by
+// docs.publish_document_change_proposal.
+func (s *InternalCommandService) SetDocsChangeProposalService(svc *DocsChangeProposalService) {
+	if s == nil {
+		return
+	}
+	s.docsChangeProposalService = svc
+}
+
+// SetAgentRunDependencies wires run lookups and artifact persistence used by
+// run-scoped commands (support draft staging and preview publication).
+func (s *InternalCommandService) SetAgentRunDependencies(
+	runRepo *repository.AgentRunRepository,
+	artifactRepo *repository.AgentRunArtifactRepository,
+) {
+	if s == nil {
+		return
+	}
+	s.agentRunRepo = runRepo
+	s.agentRunArtifactRepo = artifactRepo
 }
 
 func NewInternalCommandService(
@@ -1596,6 +1680,37 @@ func (s *InternalCommandService) registerDefaults() {
 			return mustJSON(result), nil
 		},
 	})
+	s.registerSupportCommands()
+	s.registerCRMReadCommands()
+	s.registerReleaseFactsCommands()
+	s.registerDocsRuntimeToolCommands()
+}
+
+// resolveCommandRun resolves the local agent run for a command context. The
+// runtime executor sends the external runtime run ID, while gateway/native
+// callers send the local run ID, so both are tried in order.
+func (s *InternalCommandService) resolveCommandRun(ctx context.Context, meta model.InternalCommandContext) (*model.AgentRun, error) {
+	if s.agentRunRepo == nil {
+		return nil, fmt.Errorf("agent run repository is not configured")
+	}
+	runID := strings.TrimSpace(meta.RunID)
+	if runID == "" {
+		return nil, fmt.Errorf("run_id is required")
+	}
+	run, err := s.agentRunRepo.GetByExternalRuntimeID(ctx, agentRuntimeName, runID)
+	if err != nil {
+		return nil, err
+	}
+	if run == nil {
+		run, err = s.agentRunRepo.GetByID(ctx, meta.WorkspaceID, runID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if run == nil || (strings.TrimSpace(meta.WorkspaceID) != "" && run.WorkspaceID != strings.TrimSpace(meta.WorkspaceID)) {
+		return nil, fmt.Errorf("run not found")
+	}
+	return run, nil
 }
 
 func fallbackActor(meta model.InternalCommandContext) string {

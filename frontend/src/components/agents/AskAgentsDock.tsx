@@ -107,6 +107,24 @@ function runMatchesRestoredThread(run: AgentRun, messages: ThreadMessage[]): boo
   );
 }
 
+function turnStageLabel(progress: { stage: string; tool: string } | null): string {
+  if (!progress) return 'Thinking…';
+  switch (progress.stage) {
+    case 'classifying':
+      return 'Understanding your request…';
+    case 'tool':
+      return progress.tool
+        ? `Running ${progress.tool.replaceAll('_', ' ').replaceAll('.', ' ')}…`
+        : 'Gathering workspace data…';
+    case 'composing':
+      return 'Writing the answer…';
+    case 'planning':
+      return 'Drafting a plan…';
+    default:
+      return 'Thinking…';
+  }
+}
+
 function pageContextKey(context: CommandBarPageContext | null | undefined): string {
   if (!context) return '';
   return JSON.stringify({
@@ -145,6 +163,13 @@ export function AskAgentsDock() {
   const [parsing, setParsing] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [intentResult, setIntentResult] = useState<CommandBarParseResponse | null>(null);
+  // The prompt that produced the current plan proposal. The input is cleared
+  // optimistically on send, so confirmPlan can't read it from `value`.
+  const planPromptRef = useRef('');
+  // In-flight turn correlation for websocket progress events, plus the last
+  // reported stage ("classifying", "tool", …) shown next to the spinner.
+  const activeTurnIdRef = useRef<string | null>(null);
+  const [turnStage, setTurnStage] = useState<{ stage: string; tool: string } | null>(null);
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [chatThreadId, setChatThreadId] = useState<string | null>(null);
   const [sessionPlanIds, setSessionPlanIds] = useState<Set<string>>(() => new Set());
@@ -311,6 +336,24 @@ export function AskAgentsDock() {
     setSelectedRunId(null);
     setIntentResult(null);
   }, [clearRuns, workspace?.id]);
+
+  // Live turn progress: the backend publishes command_bar_turn/progress
+  // websocket events (bridged to DOM by useRealtimeSync) while a chat turn
+  // is running; show the current stage next to the spinner.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | { entity_id?: string; data?: { client_turn_id?: string; stage?: string; tool?: string } }
+        | undefined;
+      const turnId = activeTurnIdRef.current;
+      if (!turnId) return;
+      const id = detail?.data?.client_turn_id ?? detail?.entity_id;
+      if (id !== turnId) return;
+      setTurnStage({ stage: detail?.data?.stage ?? '', tool: detail?.data?.tool ?? '' });
+    };
+    window.addEventListener('command_bar_turn-progress', handler);
+    return () => window.removeEventListener('command_bar_turn-progress', handler);
+  }, []);
 
   // Auto-scroll on new content.
   useEffect(() => {
@@ -532,13 +575,29 @@ export function AskAgentsDock() {
       }
       setParsing(true);
       setIntentResult(null);
+      // Optimistic turn: clear the input and show the question in the
+      // transcript immediately. If the turn fails, put the text back in the
+      // input so the user can retry without retyping.
+      const pendingId = `pending-user-${Date.now()}`;
+      const turnId = crypto.randomUUID();
+      activeTurnIdRef.current = turnId;
+      setTurnStage(null);
+      setValue('');
+      setMessages((prev) => [...prev, { kind: 'user', id: pendingId, text, ts: Date.now() }]);
+      const restoreFailedTurn = () => {
+        setMessages((prev) => prev.filter((m) => m.id !== pendingId));
+        setValue(text);
+        requestAnimationFrame(() => textareaRef.current?.focus());
+      };
       try {
         const res = await commandBarService.chatTurn(workspace.id, {
           thread_id: chatThreadId ?? undefined,
           text,
           page_context: dockPageContext,
+          client_turn_id: turnId,
         });
         if (res.error || !res.data) {
+          restoreFailedTurn();
           toast.error(res.error ?? 'Failed to ask agents');
           return;
         }
@@ -546,7 +605,7 @@ export function AskAgentsDock() {
         const userTs = Date.parse(res.data.user_message.created_at) || Date.now();
         const assistantTs = Date.parse(res.data.assistant_message.created_at) || userTs + 1;
         setMessages((prev) => [
-          ...prev,
+          ...prev.filter((m) => m.id !== pendingId),
           { kind: 'user', id: res.data!.user_message.id, text, ts: userTs },
           {
             kind: 'assistant',
@@ -558,6 +617,7 @@ export function AskAgentsDock() {
         ]);
         const proposal = res.data.proposal ?? res.data.assistant_message.proposal;
         if (proposal?.type === 'run_plan' && proposal.plan) {
+          planPromptRef.current = text;
           setIntentResult({
             status: 'plan',
             plan: proposal.plan,
@@ -572,7 +632,12 @@ export function AskAgentsDock() {
         } else {
           setIntentResult(null);
         }
+      } catch {
+        restoreFailedTurn();
+        toast.error('Failed to ask agents');
       } finally {
+        activeTurnIdRef.current = null;
+        setTurnStage(null);
         setParsing(false);
       }
     },
@@ -581,10 +646,13 @@ export function AskAgentsDock() {
 
   const confirmPlan = useCallback(async () => {
     if (!workspace?.id || !dockPageContext || !intentResult || intentResult.status !== 'plan') return;
+    // The input was cleared when the plan was requested, so use the prompt
+    // that produced this plan; fall back to whatever is typed now.
+    const promptText = planPromptRef.current.trim() || trimmed;
     setDispatching(true);
     try {
       const res = await commandBarService.dispatchPlan(workspace.id, {
-        text: trimmed,
+        text: promptText,
         page_context: dockPageContext,
         steps: intentResult.plan.steps,
       });
@@ -601,7 +669,7 @@ export function AskAgentsDock() {
             runIdsByStep: Object.fromEntries(res.data.runs.map((run, index) => [index, run.id])),
             planKind: intentResult.plan.plan_kind,
             status: 'running',
-            prompt: trimmed,
+            prompt: promptText,
             currentStepIndex: 0,
             createdAt: res.data.runs[0]?.created_at,
             updatedAt: res.data.runs[0]?.updated_at ?? res.data.runs[0]?.created_at,
@@ -1066,6 +1134,17 @@ export function AskAgentsDock() {
               );
             })}
 
+            {parsing ? (
+              <div className="flex items-center gap-2 px-1 py-0.5 text-sm text-muted-foreground animate-in fade-in duration-150">
+                <span className="flex items-center gap-1" aria-hidden="true">
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.3s] motion-reduce:animate-none" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.15s] motion-reduce:animate-none" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 motion-reduce:animate-none" />
+                </span>
+                <span role="status">{turnStageLabel(turnStage)}</span>
+              </div>
+            ) : null}
+
             {plan ? (
               <PlanPreview
                 plan={plan}
@@ -1075,6 +1154,11 @@ export function AskAgentsDock() {
                 dispatching={dispatching}
                 onConfirm={() => void confirmPlan()}
                 onEdit={() => {
+                  // Put the originating prompt back in the input for editing —
+                  // it was cleared optimistically on send.
+                  if (!value.trim() && planPromptRef.current) {
+                    setValue(planPromptRef.current);
+                  }
                   setIntentResult(null);
                   requestAnimationFrame(() => textareaRef.current?.focus());
                 }}

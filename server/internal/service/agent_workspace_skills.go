@@ -29,6 +29,7 @@ var (
 
 type skillPackageStore interface {
 	PutObject(ctx context.Context, key, contentType string, size int64, body io.Reader, publicRead bool) error
+	GetObject(ctx context.Context, key string) ([]byte, error)
 	DeleteObject(ctx context.Context, key string) error
 }
 

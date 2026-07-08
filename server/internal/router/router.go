@@ -44,6 +44,7 @@ type Handlers struct {
 	CommandBar          *handler.CommandBarHandler
 	Agent               *handler.AgentHandler
 	AgentToolGateway    *handler.AgentToolGatewayHandler
+	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
 	SupportInbox        *handler.SupportInboxHandler
 	SupportInboxView    *handler.SupportInboxViewHandler
 	SupportTag          *handler.SupportTagHandler
@@ -362,6 +363,17 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Route("/internal", func(r chi.Router) {
 			r.Use(middleware.RequireInternalAPISecret)
 			r.Get("/widget-tokens", h.SupportInboxWidget.GetWidgetTokens)
+			if h.AgentRuntimeHost != nil {
+				r.Route("/agent-runtime", func(r chi.Router) {
+					r.Post("/events", h.AgentRuntimeHost.ApplyEvent)
+					r.Post("/target-context", h.AgentRuntimeHost.ResolveTargetContext)
+					r.Post("/workspace/repository-spec", h.AgentRuntimeHost.ResolveRepositorySpec)
+					r.Post("/commands/execute", h.AgentRuntimeHost.ExecuteCommand)
+					r.Post("/skills/by-id", h.AgentRuntimeHost.ResolveSkillByID)
+					r.Post("/skills/active-by-key", h.AgentRuntimeHost.ResolveActiveSkillByKey)
+					r.Get("/skill-packages/objects/*", h.AgentRuntimeHost.GetSkillPackageObject)
+				})
+			}
 		})
 
 		if h.AgentToolGateway != nil {
@@ -1045,7 +1057,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agent-preset-versions/{id}", h.Agent.UpdateWorkspacePresetVersion)
 					r.With(requirePerm(authorization.PermPMEdit)).Delete("/agent-preset-versions/{id}", h.Agent.DeleteWorkspacePresetVersion)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-model-providers", h.Agent.ListModelProviders)
-					r.With(requirePerm(authorization.PermPMRead)).Get("/runner-health", h.Agent.GetRunnerHealth)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/tool-catalog", h.Agent.ListToolCatalog)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}", h.Agent.GetAgent)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/usage", h.Agent.GetAgentUsage)

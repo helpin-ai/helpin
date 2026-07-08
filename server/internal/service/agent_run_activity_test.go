@@ -9,7 +9,6 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	"gorm.io/gorm"
 )
 
@@ -18,17 +17,17 @@ func setupAgentRunActivityTest(t *testing.T) (*AgentService, *gormTestDB) {
 	db := newTestDB(t)
 	createAgentRunActivityTables(t, db)
 	svc := &AgentService{
-		agentRepo:        repository.NewAgentRepository(db),
-		runRepo:          repository.NewAgentRunRepository(db),
-		runMessageRepo:   repository.NewAgentRunMessageRepository(db),
-		taskRepo:         repository.NewPMTaskRepository(db),
-		epicRepo:         repository.NewPMEpicRepository(db),
-		conversationRepo: repository.NewSupportConversationRepository(db),
-		docsDocumentRepo: repository.NewDocsDocumentRepository(db),
-		crmContactRepo:   repository.NewCRMContactRepository(db),
-		crmDealRepo:      repository.NewCRMDealRepository(db),
-		activitySvc:      NewPMActivityService(repository.NewPMActivityRepository(db)),
-		runEngine:        &temporalapp.RunEngine{},
+		agentRepo:          repository.NewAgentRepository(db),
+		runRepo:            repository.NewAgentRunRepository(db),
+		runMessageRepo:     repository.NewAgentRunMessageRepository(db),
+		taskRepo:           repository.NewPMTaskRepository(db),
+		epicRepo:           repository.NewPMEpicRepository(db),
+		conversationRepo:   repository.NewSupportConversationRepository(db),
+		docsDocumentRepo:   repository.NewDocsDocumentRepository(db),
+		crmContactRepo:     repository.NewCRMContactRepository(db),
+		crmDealRepo:        repository.NewCRMDealRepository(db),
+		activitySvc:        NewPMActivityService(repository.NewPMActivityRepository(db)),
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 	return svc, &gormTestDB{DB: db}
 }
@@ -97,6 +96,8 @@ func createAgentRunActivityTables(t *testing.T, db *gorm.DB) {
 			status TEXT NOT NULL DEFAULT 'queued',
 			workflow_id TEXT,
 			workflow_run_id TEXT,
+			external_runtime TEXT,
+			external_runtime_id TEXT,
 			task_queue TEXT,
 			runner_pool TEXT,
 			agent_version_id TEXT,
@@ -507,15 +508,17 @@ func TestApproveRunLogsApprovingActorForEpicActivity(t *testing.T) {
 	seedAgentRunActivityAgent(t, testDB.DB, workspaceID, agentID)
 	heartbeat := time.Now()
 	seedAgentRunActivityRun(t, testDB.DB, &model.AgentRun{
-		ID:              runID,
-		WorkspaceID:     workspaceID,
-		AgentID:         agentID,
-		TargetType:      "epic",
-		TargetID:        epicID,
-		Status:          model.AgentRunStatusPaused,
-		PauseReason:     model.AgentRunPauseReasonHumanApproval,
-		ApprovalState:   "pending",
-		LastHeartbeatAt: &heartbeat,
+		ID:                runID,
+		WorkspaceID:       workspaceID,
+		AgentID:           agentID,
+		TargetType:        "epic",
+		TargetID:          epicID,
+		Status:            model.AgentRunStatusPaused,
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		ApprovalState:     "pending",
+		LastHeartbeatAt:   &heartbeat,
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_activity_approve"),
 	})
 
 	if _, err := svc.ApproveRun(ctx, workspaceID, runID, actorID, model.ApproveAgentRunRequest{}); err != nil {
@@ -542,15 +545,17 @@ func TestRequestRunChangesLogsActorForTaskActivity(t *testing.T) {
 
 	seedAgentRunActivityAgent(t, testDB.DB, workspaceID, agentID)
 	seedAgentRunActivityRun(t, testDB.DB, &model.AgentRun{
-		ID:            runID,
-		WorkspaceID:   workspaceID,
-		AgentID:       agentID,
-		TaskID:        &taskID,
-		TargetType:    "task",
-		TargetID:      taskID,
-		Status:        model.AgentRunStatusPaused,
-		PauseReason:   model.AgentRunPauseReasonHumanApproval,
-		ApprovalState: "pending",
+		ID:                runID,
+		WorkspaceID:       workspaceID,
+		AgentID:           agentID,
+		TaskID:            &taskID,
+		TargetType:        "task",
+		TargetID:          taskID,
+		Status:            model.AgentRunStatusPaused,
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		ApprovalState:     "pending",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_activity_changes"),
 	})
 
 	if _, err := svc.RequestRunChanges(ctx, workspaceID, runID, actorID, model.SendAgentRunRequestChangesRequest{Content: "Please simplify the plan."}); err != nil {
@@ -575,14 +580,16 @@ func TestSendRunMessageLogsNoteSnippetForTaskActivity(t *testing.T) {
 
 	seedAgentRunActivityAgent(t, testDB.DB, workspaceID, agentID)
 	seedAgentRunActivityRun(t, testDB.DB, &model.AgentRun{
-		ID:          runID,
-		WorkspaceID: workspaceID,
-		AgentID:     agentID,
-		TaskID:      &taskID,
-		TargetType:  "task",
-		TargetID:    taskID,
-		Status:      model.AgentRunStatusPaused,
-		PauseReason: model.AgentRunPauseReasonHumanInput,
+		ID:                runID,
+		WorkspaceID:       workspaceID,
+		AgentID:           agentID,
+		TaskID:            &taskID,
+		TargetType:        "task",
+		TargetID:          taskID,
+		Status:            model.AgentRunStatusPaused,
+		PauseReason:       model.AgentRunPauseReasonHumanInput,
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_activity_note"),
 	})
 
 	if _, err := svc.SendRunMessage(ctx, workspaceID, runID, actorID, model.SendAgentRunMessageRequest{Content: content}); err != nil {

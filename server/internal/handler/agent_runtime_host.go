@@ -1,0 +1,144 @@
+package handler
+
+import (
+	"errors"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+	agentruntime "github.com/helpin-ai/agent-runtime-go"
+
+	"github.com/helpin-ai/helpin/server/internal/service"
+)
+
+type AgentRuntimeHostHandler struct {
+	host       *service.AgentRuntimeHostService
+	projection *service.AgentRuntimeProjectionService
+}
+
+func NewAgentRuntimeHostHandler(host *service.AgentRuntimeHostService) *AgentRuntimeHostHandler {
+	return &AgentRuntimeHostHandler{host: host}
+}
+
+func (h *AgentRuntimeHostHandler) SetProjectionService(projection *service.AgentRuntimeProjectionService) *AgentRuntimeHostHandler {
+	if h != nil {
+		h.projection = projection
+	}
+	return h
+}
+
+func (h *AgentRuntimeHostHandler) ApplyEvent(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.projection == nil {
+		writeError(w, http.StatusServiceUnavailable, "agent runtime projection unavailable")
+		return
+	}
+	var event service.AgentRuntimeEventEnvelope
+	if err := decodeJSON(r, &event); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.projection.ApplyEvent(r.Context(), event); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
+}
+
+func (h *AgentRuntimeHostHandler) ResolveTargetContext(w http.ResponseWriter, r *http.Request) {
+	var req agentruntime.TargetContextRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.host.ResolveTargetContext(r.Context(), req)
+	if err != nil {
+		writeAgentRuntimeHostError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *AgentRuntimeHostHandler) ResolveRepositorySpec(w http.ResponseWriter, r *http.Request) {
+	var req agentruntime.PrepareWorkspaceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.host.ResolveRepositorySpec(r.Context(), req)
+	if err != nil {
+		writeAgentRuntimeHostError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *AgentRuntimeHostHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
+	var req agentruntime.CommandExecutionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.host.ExecuteCommand(r.Context(), req)
+	if err != nil {
+		writeAgentRuntimeHostError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *AgentRuntimeHostHandler) ResolveSkillByID(w http.ResponseWriter, r *http.Request) {
+	var req service.AgentRuntimeSkillLookupRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.host.ResolveSkillByID(r.Context(), req)
+	if err != nil {
+		writeAgentRuntimeHostError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *AgentRuntimeHostHandler) ResolveActiveSkillByKey(w http.ResponseWriter, r *http.Request) {
+	var req service.AgentRuntimeSkillLookupRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.host.ResolveActiveSkillByKey(r.Context(), req)
+	if err != nil {
+		writeAgentRuntimeHostError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *AgentRuntimeHostHandler) GetSkillPackageObject(w http.ResponseWriter, r *http.Request) {
+	objectKey := strings.TrimSpace(chi.URLParam(r, "*"))
+	if decoded, err := url.PathUnescape(objectKey); err == nil {
+		objectKey = decoded
+	}
+	payload, err := h.host.GetSkillPackageObject(r.Context(), objectKey)
+	if err != nil {
+		writeAgentRuntimeHostError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(payload)
+}
+
+func writeAgentRuntimeHostError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrAgentRuntimeHostBadRequest):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrAgentRuntimeHostForbidden):
+		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrAgentRuntimeHostNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, err.Error())
+	}
+}

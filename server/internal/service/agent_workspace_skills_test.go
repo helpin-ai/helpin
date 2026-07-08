@@ -36,6 +36,14 @@ func (f *fakeSkillPackageStore) PutObject(_ context.Context, key, _ string, _ in
 	return nil
 }
 
+func (f *fakeSkillPackageStore) GetObject(_ context.Context, key string) ([]byte, error) {
+	payload, ok := f.objects[key]
+	if !ok {
+		return nil, fmt.Errorf("object not found")
+	}
+	return append([]byte(nil), payload...), nil
+}
+
 func (f *fakeSkillPackageStore) DeleteObject(_ context.Context, key string) error {
 	f.deleted = append(f.deleted, key)
 	delete(f.objects, key)

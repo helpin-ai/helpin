@@ -3,7 +3,10 @@ import { agentService } from '@/lib/services/agentService';
 import {
   latestPendingCodingSessionInteraction,
 } from '@/components/pm/CodingSession/codingSessionUtils';
-import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
+import {
+  buildCodingSessionStreamState,
+  mergeCodingSessionStreamSnapshotSeed,
+} from '@/components/pm/CodingSession/codingSessionStream';
 import type {
   CodingSessionEvent,
   CodingSessionInteraction,
@@ -78,7 +81,10 @@ export function useAgentRunStream(
         agentService.listRunEvents(workspaceId, runId, seqRef.current),
       ]);
       if (cancelledRef.current) return;
-      snapshotRef.current = snap.data?.stream_state_snapshot ?? null;
+      snapshotRef.current = mergeCodingSessionStreamSnapshotSeed(
+        snap.data?.stream_state_snapshot ?? null,
+        ev.data?.stream_state_snapshot ?? null,
+      );
 
       if (ev.data?.events?.length) {
         eventsRef.current = mergeEvents(eventsRef.current, ev.data.events);

@@ -36,7 +36,7 @@ const AGENT_RUN_INVALIDATE_MS = 400
 /** Auto-clear typing indicator after this many ms without a refresh. */
 const TYPING_TIMEOUT_MS = 10_000
 const DOC_EDITING_TIMEOUT_MS = 20_000
-const AGENT_RUN_PAUSE_REASONS = new Set(['none', 'human_input', 'human_approval', 'authentication'])
+const AGENT_RUN_PAUSE_REASONS = new Set(['none', 'human_input', 'human_approval', 'authentication', 'awaiting_user_message'])
 const SUPPORT_CONVERSATION_STATUSES = new Set(['open', 'waiting_on_customer', 'resolved', 'spam'])
 
 function supportConversationStatusPatchFromEvent(event: WSEvent): SupportConversationStatusPatch | null {
@@ -173,8 +173,8 @@ function dispatchAgentRunCompatibilityEvents(event: WSEvent) {
     pause_reason: typeof event.data?.pause_reason === 'string' ? event.data.pause_reason : undefined,
   }
 
-  window.dispatchEvent(new CustomEvent('agent_run-updated', { detail }))
-  window.dispatchEvent(new CustomEvent('agent_run-created', { detail }))
+  const eventName = event.action === 'created' ? 'agent_run-created' : 'agent_run-updated'
+  window.dispatchEvent(new CustomEvent(eventName, { detail }))
 }
 
 export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
@@ -383,19 +383,24 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     } else if (event.entity === 'agent_run') {
       patchBoardTaskLatestRun(event)
       dispatchAgentRunCompatibilityEvents(event)
-      scheduleAgentRunInvalidation(queryKeys.automation.runsRoot(workspaceId))
-      scheduleAgentRunInvalidation(queryKeys.automation.activityRoot(workspaceId))
-      scheduleAgentRunInvalidation(queryKeys.automation.overview(workspaceId))
-      const eventAgentId = typeof event.data?.agent_id === 'string' ? event.data.agent_id : ''
-      if (eventAgentId) {
-        scheduleAgentRunInvalidation(queryKeys.automation.agent(workspaceId, eventAgentId))
-        scheduleAgentRunInvalidation(queryKeys.automation.agentUsage(workspaceId, eventAgentId))
-      } else {
-        scheduleAgentRunInvalidation(queryKeys.automation.agentsRoot(workspaceId))
-      }
-      if (event.parent_type === 'task' && event.parent_id) {
-        scheduleAgentRunInvalidation(queryKeys.pm.task(workspaceId, event.parent_id))
-        scheduleAgentRunInvalidation(['pm', workspaceId, 'tasks'])
+      const status = typeof event.data?.status === 'string' ? event.data.status : ''
+      const pauseReason = typeof event.data?.pause_reason === 'string' ? event.data.pause_reason : ''
+      const isActiveHeartbeat = event.action === 'updated' && status === 'running' && (!pauseReason || pauseReason === 'none')
+      if (!isActiveHeartbeat) {
+        scheduleAgentRunInvalidation(queryKeys.automation.runsRoot(workspaceId))
+        scheduleAgentRunInvalidation(queryKeys.automation.activityRoot(workspaceId))
+        scheduleAgentRunInvalidation(queryKeys.automation.overview(workspaceId))
+        const eventAgentId = typeof event.data?.agent_id === 'string' ? event.data.agent_id : ''
+        if (eventAgentId) {
+          scheduleAgentRunInvalidation(queryKeys.automation.agent(workspaceId, eventAgentId))
+          scheduleAgentRunInvalidation(queryKeys.automation.agentUsage(workspaceId, eventAgentId))
+        } else {
+          scheduleAgentRunInvalidation(queryKeys.automation.agentsRoot(workspaceId))
+        }
+        if (event.parent_type === 'task' && event.parent_id) {
+          scheduleAgentRunInvalidation(queryKeys.pm.task(workspaceId, event.parent_id))
+          scheduleAgentRunInvalidation(['pm', workspaceId, 'tasks'])
+        }
       }
     } else if (event.entity === 'crm_contact') {
       queryClient.invalidateQueries({ queryKey: queryKeys.crm.contacts(workspaceId) })

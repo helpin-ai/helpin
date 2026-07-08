@@ -84,12 +84,15 @@ export function CodingTranscriptPane({
     mode: 'answer',
     placeholder: messagePlaceholder,
   };
-  const visibleLiveSegments = liveTurnSegments.filter((segment) => {
-    if (segment.kind === 'assistant_message') {
-      return segment.assistant_message.content.trim().length > 0;
-    }
-    return !isToolName(segment.tool_call.tool_name, 'update_plan');
-  });
+  const visibleLiveSegments = useMemo(
+    () => liveTurnSegments.filter((segment) => {
+      if (segment.kind === 'assistant_message') {
+        return segment.assistant_message.content.trim().length > 0;
+      }
+      return !isToolName(segment.tool_call.tool_name, 'update_plan');
+    }),
+    [liveTurnSegments],
+  );
   const showLivePlaceholder = visibleLiveSegments.length === 0 && liveAssistantMessage?.status === 'streaming';
   const promptMessage = useMemo<CodingSessionTranscriptMessage | null>(() => {
     const sections = parsePromptArtifactSections(promptArtifact?.inline_content);
@@ -125,12 +128,12 @@ export function CodingTranscriptPane({
     () => collectSegments(
       {
         transcript_messages: transcriptMessages,
-        live_turn_segments: liveTurnSegments,
-        live_reasoning_message: liveReasoningMessage,
+        live_turn_segments: visibleLiveSegments,
+        live_reasoning_message: null,
       },
       { includeLive: true, include: ALL_SEGMENT_KINDS, leadingContext: promptMessage },
     ),
-    [transcriptMessages, liveTurnSegments, liveReasoningMessage, promptMessage],
+    [transcriptMessages, visibleLiveSegments, promptMessage],
   );
 
   // Build a flat list of virtual items: transcript segments plus the local
