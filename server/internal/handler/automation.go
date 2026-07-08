@@ -594,6 +594,7 @@ func (h *AutomationHandler) DraftCustomAgent(w http.ResponseWriter, r *http.Requ
 	}
 	result, err := h.agentService.DraftCustomAgentWithCatalog(
 		r.Context(),
+		workspaceID,
 		req,
 		h.agentService.ListToolCatalog().Tools,
 		skillCatalog.Skills,
