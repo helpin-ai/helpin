@@ -112,9 +112,9 @@ type firebaseFCMClient struct {
 }
 
 // NewFirebaseFCMClient wraps a Firebase Cloud Messaging client for use as an
-// FCMClient. Returns nil (typed as FCMClient) is the caller's responsibility
-// when FCM is not configured — this constructor always assumes client is
-// non-nil.
+// FCMClient. The caller must pass a non-nil messaging client — deciding
+// whether FCM is configured (and using a nil FCMClient otherwise) is the
+// caller's responsibility, not this constructor's.
 func NewFirebaseFCMClient(client *messaging.Client) FCMClient {
 	return &firebaseFCMClient{client: client}
 }

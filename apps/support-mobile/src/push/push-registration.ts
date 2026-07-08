@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { getPushToken, onPushTokenChanged } from '@helpin/plugin-push'
 import { api } from '@mobile/lib/api'
 import { isTauri } from '@mobile/lib/host'
+import { getPushPrimingPref } from '@mobile/lib/prefs'
 
 const PUSH_DEVICES_PATH = '/user/push-devices'
 
@@ -107,6 +108,12 @@ const UNREGISTER_TIMED_OUT = Symbol('unregister-timed-out')
  * call). Failures are swallowed and logged — sign-out must never block or
  * fail because a push-device delete didn't go through.
  *
+ * Early-returns unless the stored priming decision is `'enabled'` (see
+ * {@link getPushPrimingPref} in `src/lib/prefs.ts`): `getPushToken()` may
+ * trigger the OS notification-permission prompt on first call, and a user
+ * who never opted into push shouldn't see that prompt pop up during
+ * sign-out.
+ *
  * The DELETE is raced against a {@link UNREGISTER_TIMEOUT_MS} timeout
  * (support-core's fetch layer has no timeout of its own, and sign-out must
  * never hang on a dead network). When the timeout wins, the token may leak
@@ -115,6 +122,8 @@ const UNREGISTER_TIMED_OUT = Symbol('unregister-timed-out')
  */
 export async function unregisterPush(): Promise<void> {
   if (!isTauri()) return
+  const pref = await getPushPrimingPref()
+  if (pref?.decision !== 'enabled') return
   try {
     const token = await getPushToken()
     if (!token) return

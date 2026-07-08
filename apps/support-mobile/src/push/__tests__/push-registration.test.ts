@@ -1,6 +1,7 @@
 import type { invoke as InvokeFn } from '@tauri-apps/api/core'
 import type { getPushToken as GetPushTokenFn, onPushTokenChanged as OnPushTokenChangedFn } from '@helpin/plugin-push'
 import type { api as ApiClient } from '@mobile/lib/api'
+import type { getPushPrimingPref as GetPushPrimingPrefFn } from '@mobile/lib/prefs'
 import { routeColdStartUrls, routeDeepLinkUrl, routePushTap } from '@mobile/push/push-registration'
 
 // Mocked locally (not in a shared setup file), same rationale as
@@ -17,6 +18,10 @@ vi.mock('@helpin/plugin-push', () => ({
 
 vi.mock('@mobile/lib/api', () => ({
   api: { post: vi.fn(), del: vi.fn() },
+}))
+
+vi.mock('@mobile/lib/prefs', () => ({
+  getPushPrimingPref: vi.fn(),
 }))
 
 function markAsTauri() {
@@ -40,6 +45,7 @@ async function freshPushRegistration() {
   const core = await import('@tauri-apps/api/core')
   const plugin = await import('@helpin/plugin-push')
   const apiModule = await import('@mobile/lib/api')
+  const prefsModule = await import('@mobile/lib/prefs')
   const mod = await import('@mobile/push/push-registration')
 
   const mockInvoke = vi.mocked(core.invoke as typeof InvokeFn)
@@ -47,14 +53,20 @@ async function freshPushRegistration() {
   const mockOnPushTokenChanged = vi.mocked(plugin.onPushTokenChanged as typeof OnPushTokenChangedFn)
   const mockPost = vi.mocked((apiModule.api as typeof ApiClient).post)
   const mockDel = vi.mocked((apiModule.api as typeof ApiClient).del)
+  const mockGetPushPrimingPref = vi.mocked(prefsModule.getPushPrimingPref as typeof GetPushPrimingPrefFn)
 
   mockInvoke.mockReset().mockResolvedValue({ platform: 'ios', app_version: '1.2.3' })
   mockGetPushToken.mockReset()
   mockOnPushTokenChanged.mockReset().mockResolvedValue(vi.fn())
   mockPost.mockReset().mockResolvedValue({ data: null, error: null })
   mockDel.mockReset().mockResolvedValue({ data: null, error: null })
+  // Default to the "push already enabled" pref so the pre-existing
+  // registerForPush/unregisterPush tests (written before the priming gate
+  // existed) keep exercising their original behavior unchanged; tests that
+  // care about the gate itself override this explicitly.
+  mockGetPushPrimingPref.mockReset().mockResolvedValue({ decision: 'enabled', at: '2026-01-01T00:00:00Z' })
 
-  return { mod, mockInvoke, mockGetPushToken, mockOnPushTokenChanged, mockPost, mockDel }
+  return { mod, mockInvoke, mockGetPushToken, mockOnPushTokenChanged, mockPost, mockDel, mockGetPushPrimingPref }
 }
 
 beforeEach(() => {
@@ -188,6 +200,39 @@ describe('unregisterPush', () => {
     await mod.unregisterPush()
 
     expect(mockDel).not.toHaveBeenCalled()
+  })
+
+  test('no priming pref (push never enabled): does not call getPushToken (would trigger the OS permission prompt) or delete', async () => {
+    const { mod, mockGetPushToken, mockDel, mockGetPushPrimingPref } = await freshPushRegistration()
+    markAsTauri()
+    mockGetPushPrimingPref.mockResolvedValue(null)
+
+    await mod.unregisterPush()
+
+    expect(mockGetPushToken).not.toHaveBeenCalled()
+    expect(mockDel).not.toHaveBeenCalled()
+  })
+
+  test("priming pref is 'later' (declined, never enabled): does not call getPushToken or delete", async () => {
+    const { mod, mockGetPushToken, mockDel, mockGetPushPrimingPref } = await freshPushRegistration()
+    markAsTauri()
+    mockGetPushPrimingPref.mockResolvedValue({ decision: 'later', at: '2026-01-01T00:00:00Z' })
+
+    await mod.unregisterPush()
+
+    expect(mockGetPushToken).not.toHaveBeenCalled()
+    expect(mockDel).not.toHaveBeenCalled()
+  })
+
+  test("priming pref is 'enabled': existing behavior (deletes the current plugin token)", async () => {
+    const { mod, mockGetPushToken, mockDel, mockGetPushPrimingPref } = await freshPushRegistration()
+    markAsTauri()
+    mockGetPushPrimingPref.mockResolvedValue({ decision: 'enabled', at: '2026-01-01T00:00:00Z' })
+    mockGetPushToken.mockResolvedValue('token-abc')
+
+    await mod.unregisterPush()
+
+    expect(mockDel).toHaveBeenCalledWith('/user/push-devices', { token: 'token-abc' })
   })
 
   test('swallows failures (sign-out must never block on this)', async () => {

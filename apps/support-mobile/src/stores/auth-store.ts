@@ -47,11 +47,18 @@ export async function signOut(): Promise<void> {
   // are swallowed internally by unregisterPush(): sign-out must never fail
   // or hang because a push-device delete didn't go through.
   await unregisterPush()
-  await clearSession()
-  useAuthStore.setState({ user: null })
-  // Tear down realtime: RootRealtimeMount (router.tsx) keys its websocket on
-  // useWorkspaceStore's currentWorkspace.id. Leaving it populated after the
-  // tokens are cleared would keep a token-less socket looping reconnect
-  // attempts forever on the login screen.
-  useWorkspaceStore.getState().setCurrentWorkspace(null)
+  // clearSession() can throw (e.g. a storage adapter failure) — the finally
+  // block below ensures the app-visible auth/workspace state clears
+  // regardless, so the user always lands back on the login screen instead of
+  // getting stuck mid-sign-out.
+  try {
+    await clearSession()
+  } finally {
+    useAuthStore.setState({ user: null })
+    // Tear down realtime: RootRealtimeMount (router.tsx) keys its websocket on
+    // useWorkspaceStore's currentWorkspace.id. Leaving it populated after the
+    // tokens are cleared would keep a token-less socket looping reconnect
+    // attempts forever on the login screen.
+    useWorkspaceStore.getState().setCurrentWorkspace(null)
+  }
 }

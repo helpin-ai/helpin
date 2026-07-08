@@ -82,3 +82,22 @@ test('signOut clears the session, user, AND the workspace store (realtime teardo
   // populated, a token-less websocket would loop reconnects after logout.
   expect(useWorkspaceStore.getState().currentWorkspace).toBeNull()
 })
+
+test('signOut still clears the user and workspace stores even when clearSession() throws', async () => {
+  const baseStorage = createMemorySessionStorage({ accessToken: 'at', refreshToken: 'rt' })
+  configureSessionStorage({
+    ...baseStorage,
+    clearSession: () => {
+      throw new Error('storage adapter failure')
+    },
+  })
+  useAuthStore.setState({ user: testUser, loading: false, serverUnreachable: false })
+  useWorkspaceStore.getState().setCurrentWorkspace({ id: 'ws-1', slug: 'acme', name: 'Acme' })
+
+  await expect(signOut()).rejects.toThrow('storage adapter failure')
+
+  // The finally block must still run: a thrown clearSession() must never
+  // leave the app stuck mid-sign-out with stale user/workspace state.
+  expect(useAuthStore.getState().user).toBeNull()
+  expect(useWorkspaceStore.getState().currentWorkspace).toBeNull()
+})
