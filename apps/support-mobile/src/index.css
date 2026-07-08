@@ -180,3 +180,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.12s !important; transition-duration: 0.12s !important; }
 }
+
+/* Skeleton shimmer sweep, referenced by src/ui/skeleton.tsx via animate-[skeleton-shimmer_...]. */
+@keyframes skeleton-shimmer {
+  100% { transform: translateX(100%); }
+}
