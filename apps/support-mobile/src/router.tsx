@@ -7,13 +7,16 @@ import {
   createRouter,
   isRedirect,
   redirect,
+  useParams,
 } from '@tanstack/react-router'
 import { AppThemeProvider } from '@mobile/ui/theme-provider'
 import { ScreenStack } from '@mobile/navigation/screen-stack'
 import { useKeyboardInset } from '@mobile/lib/use-keyboard-inset'
+import { useMobileRealtime } from '@mobile/lib/use-mobile-realtime'
 import { getLastWorkspaceSlug, setLastWorkspaceSlug } from '@mobile/lib/prefs'
 import { queryClient } from '@mobile/lib/queryClient'
 import { useAuthStore } from '@mobile/stores/auth-store'
+import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 import { LoginScreen } from '@mobile/screens/login-screen'
 import {
   WorkspacesScreen,
@@ -127,10 +130,44 @@ declare module '@tanstack/react-router' {
   }
 }
 
+/**
+ * Realtime is mounted here — at the root, above `ScreenStack` — rather than
+ * inside `InboxScreen`/`ConversationScreen` or a `/w/$slug` layout route.
+ *
+ * `ScreenStack` keys its animated wrapper by `location.pathname`
+ * (see navigation/screen-stack.tsx), so ANY route component rendered through
+ * its `<Outlet/>` — including a hypothetical `/w/$slug` layout route nested
+ * under it — fully unmounts and remounts on every inbox <-> thread
+ * navigation (that's what drives the push/pop slide transitions). A layout
+ * route would therefore NOT actually persist the websocket across
+ * navigation; it would just move the reconnect-on-every-nav churn one level
+ * up. `RootComponent` is the one place in the tree that survives all of
+ * that, since it's rendered directly by `rootRoute`, above `ScreenStack`'s
+ * pathname-keyed subtree.
+ *
+ * `workspaceId` comes from `useWorkspaceStore` (populated by whichever
+ * screen resolves the workspace by slug — both InboxScreen and
+ * ConversationScreen set it) rather than re-fetching here, per the store's
+ * own doc comment anticipating this exact use. `conversationId` is read
+ * directly from router state via `useParams({ strict: false })` — the same
+ * "router-state read" already used by both screens — so it is non-null only
+ * while the conversation route is actually matched, with no extra
+ * zustand slice needed. `useMobileRealtime` itself no-ops safely with an
+ * empty `workspaceId` (e.g. on /login, /workspaces, before the workspace
+ * lookup resolves), so calling it unconditionally here is safe.
+ */
+function RootRealtimeMount() {
+  const { conversationId } = useParams({ strict: false })
+  const workspaceId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? '')
+  useMobileRealtime(workspaceId, conversationId ?? null)
+  return null
+}
+
 function RootComponent() {
   useKeyboardInset()
   return (
     <AppThemeProvider>
+      <RootRealtimeMount />
       <ScreenStack />
       {/* TabBar rendered inside ScreenStack chrome for tab-level routes only */}
     </AppThemeProvider>

@@ -12,10 +12,12 @@ import {
   type SupportConversation,
 } from '@helpin-ai/support-core'
 import { TopBar } from '@mobile/ui/top-bar'
+import { OfflineBanner } from '@mobile/ui/offline-banner'
 import { Pressable } from '@mobile/ui/pressable'
 import { EmptyState } from '@mobile/ui/empty-state'
 import { cn } from '@mobile/lib/cn'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
+import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 import { displayNameFor } from '@mobile/inbox/conversation-cell'
 import { MessageList, type MessageListHandle, type TypingIndicatorState } from '@mobile/thread/message-list'
 import { groupMessages } from '@mobile/thread/thread-helpers'
@@ -78,6 +80,21 @@ export function ConversationScreen() {
     enabled: !!slug,
   })
   const workspaceId = workspaceQuery.data?.id ?? ''
+
+  // Mirrors InboxScreen's effect: keeps `useWorkspaceStore` populated even
+  // when this screen is reached directly (e.g. a future deep link) rather
+  // than via the inbox, since the root-level realtime mount
+  // (router.tsx's RootRealtimeMount) reads workspaceId from that store.
+  const setCurrentWorkspace = useWorkspaceStore((s) => s.setCurrentWorkspace)
+  useEffect(() => {
+    if (workspaceQuery.data) {
+      setCurrentWorkspace({
+        id: workspaceQuery.data.id,
+        slug: workspaceQuery.data.slug,
+        name: workspaceQuery.data.name,
+      })
+    }
+  }, [workspaceQuery.data, setCurrentWorkspace])
 
   const cachedConversation = useConversationFromListCache(workspaceId, conversationId ?? null)
   const conversationQuery = useConversation(workspaceId, conversationId ?? null)
@@ -155,6 +172,8 @@ export function ConversationScreen() {
           </>
         }
       />
+
+      <OfflineBanner />
 
       <div className="relative min-h-0 flex-1">
         {showEmpty ? (

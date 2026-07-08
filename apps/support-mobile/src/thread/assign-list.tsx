@@ -20,7 +20,7 @@ export interface AssignListProps {
  * since the assign-user endpoint takes a user id, not a member id.
  */
 export function AssignList({ workspaceId, conversationId, currentUserId, onSelect }: AssignListProps) {
-  const { data: assignees, isLoading } = useConversationAssignees(workspaceId, conversationId)
+  const { data: assignees, isLoading, isError, refetch } = useConversationAssignees(workspaceId, conversationId)
   const assignableUsers = (assignees ?? []).filter((member) => !!member.user_id)
 
   return (
@@ -41,6 +41,19 @@ export function AssignList({ workspaceId, conversationId, currentUserId, onSelec
       {isLoading && (
         <div className="flex items-center justify-center px-4 py-3">
           <Spinner size={16} />
+        </div>
+      )}
+
+      {isError && (
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <span className="text-footnote text-muted-foreground">Couldn't load teammates</span>
+          <Pressable
+            haptic="selection"
+            onPress={() => void refetch()}
+            className="h-auto min-h-0 w-auto min-w-0 text-footnote font-medium text-primary"
+          >
+            Retry
+          </Pressable>
         </div>
       )}
 

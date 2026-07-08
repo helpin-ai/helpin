@@ -59,7 +59,7 @@ export function MailboxSheet({ workspaceId, open, onOpenChange, selectedMailboxI
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={onOpenChange} title="Mailboxes">
       <div className="flex items-center justify-center px-4 pb-2">
         <span className="text-headline">Mailboxes</span>
       </div>

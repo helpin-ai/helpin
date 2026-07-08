@@ -15,6 +15,7 @@ import {
 import { cn } from '@mobile/lib/cn'
 import { haptic } from '@mobile/lib/haptics'
 import { TopBar } from '@mobile/ui/top-bar'
+import { OfflineBanner } from '@mobile/ui/offline-banner'
 import { SegmentedControl, type Segment } from '@mobile/ui/segmented-control'
 import { Skeleton } from '@mobile/ui/skeleton'
 import { EmptyState } from '@mobile/ui/empty-state'
@@ -237,6 +238,8 @@ export function InboxScreen() {
             </Pressable>
           }
         />
+
+        <OfflineBanner />
 
         <div className="px-4 pb-2">
           <SegmentedControl

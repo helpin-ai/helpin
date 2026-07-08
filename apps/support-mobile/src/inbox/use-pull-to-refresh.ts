@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent, type RefObject } from 'react'
+import { useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react'
 import { haptic } from '@mobile/lib/haptics'
 import { activeGesture, claimGesture, releaseGesture } from './gesture-claim'
 
@@ -51,6 +51,18 @@ export function usePullToRefresh({ scrollRef, onRefresh }: UsePullToRefreshOptio
   const armedRef = useRef(false)
   const trackingRef = useRef(false)
   const claimedRef = useRef(false)
+
+  // Defensive: if the screen unmounts mid-gesture (e.g. navigating away
+  // before pointerup/pointercancel fires), release any claimed 'pull' token
+  // so it doesn't stay stuck forever and block row-swipe gestures elsewhere.
+  useEffect(() => {
+    return () => {
+      if (claimedRef.current) {
+        releaseGesture('pull')
+        claimedRef.current = false
+      }
+    }
+  }, [])
 
   const reset = () => {
     trackingRef.current = false

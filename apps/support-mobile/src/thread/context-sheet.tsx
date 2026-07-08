@@ -122,7 +122,7 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange }
 
   if (!conversation) {
     return (
-      <Sheet open={open} onOpenChange={onOpenChange} detents={CONTEXT_SHEET_DETENTS}>
+      <Sheet open={open} onOpenChange={onOpenChange} detents={CONTEXT_SHEET_DETENTS} title="Conversation options">
         <div className="flex flex-1 items-center justify-center px-4 pb-10">
           <Spinner size={20} />
         </div>
@@ -143,7 +143,13 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange }
     : undefined
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} detents={CONTEXT_SHEET_DETENTS} className="overflow-y-auto">
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      detents={CONTEXT_SHEET_DETENTS}
+      className="overflow-y-auto"
+      title="Conversation options"
+    >
       <div className="flex flex-1 flex-col overflow-y-auto pb-4">
         <div className="flex items-start gap-3 px-4 pb-4">
           <Avatar name={customerName} size={44} />
