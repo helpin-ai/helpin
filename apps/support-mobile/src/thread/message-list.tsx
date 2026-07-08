@@ -15,6 +15,18 @@ import type { ThreadItem } from './thread-helpers'
  */
 const NEAR_BOTTOM_PX = 300
 
+/**
+ * Tighter "pinned to bottom" threshold for the ResizeObserver that
+ * compensates content growth after the initial scroll — late-loading
+ * `<img>` attachments grow scrollHeight AFTER the mount-time auto-scroll
+ * fired, leaving it undershot (and Task 14's optimistic sends will grow
+ * content the same way). While the reader is within this distance of the
+ * bottom, any content-size growth instantly re-snaps to the bottom; once
+ * they scroll up past it, the observer stops forcing and the "New message"
+ * pill flow takes over.
+ */
+const PINNED_TO_BOTTOM_PX = 40
+
 export interface TypingIndicatorState {
   align: 'left' | 'right'
   label: string
@@ -99,6 +111,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const distanceRef = useRef(0)
   const pillShownRef = useRef(false)
   const initializedRef = useRef(false)
@@ -122,6 +135,28 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     initializedRef.current = true
     scrollToBottom('auto')
   }, [loading, items.length, scrollToBottom])
+
+  // While pinned to the bottom, keep it that way through content growth
+  // (image loads, expanders, optimistic sends) via a ResizeObserver on the
+  // inner content wrapper. distanceRef starts at 0, so the freshly-mounted
+  // list counts as pinned and image loads right after the initial
+  // auto-scroll get compensated. Deliberately keyed on `loading`: the
+  // scroll container only mounts once loading finishes, so the observer
+  // must (re)attach then. Disconnected on cleanup/unmount.
+  useEffect(() => {
+    const el = scrollRef.current
+    const content = contentRef.current
+    if (loading || !el || !content) return
+    const observer = new ResizeObserver(() => {
+      if (distanceRef.current > PINNED_TO_BOTTOM_PX) return
+      el.scrollTo({ top: el.scrollHeight })
+      // scrollTo doesn't always fire a scroll event synchronously — keep the
+      // pinned-distance bookkeeping accurate ourselves.
+      distanceRef.current = el.scrollHeight - el.scrollTop - el.clientHeight
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [loading])
 
   // New items appended after the initial paint: stick to bottom if the
   // reader was already there, otherwise surface the "New message" pill.
@@ -160,16 +195,21 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       onScroll={handleScroll}
       className="h-full overflow-y-auto px-3 pb-[max(var(--safe-bottom),16px)] pt-2"
     >
-      {items.map((item, index) =>
-        item.kind === 'day' ? (
-          <div key={`day-${index}`} className="my-3 flex justify-center">
-            <span className="rounded-full bg-muted px-2.5 py-1 text-caption text-muted-foreground">{item.label}</span>
-          </div>
-        ) : (
-          <ClusterView key={`cluster-${index}`} cluster={item} />
-        ),
-      )}
-      {typingIndicator && <TypingBubble align={typingIndicator.align} label={typingIndicator.label} />}
+      {/* Inner wrapper exists solely as the ResizeObserver target: the scroll
+          container itself has a fixed height, so content growth is only
+          observable on the child. */}
+      <div ref={contentRef}>
+        {items.map((item, index) =>
+          item.kind === 'day' ? (
+            <div key={`day-${index}`} className="my-3 flex justify-center">
+              <span className="rounded-full bg-muted px-2.5 py-1 text-caption text-muted-foreground">{item.label}</span>
+            </div>
+          ) : (
+            <ClusterView key={`cluster-${index}`} cluster={item} />
+          ),
+        )}
+        {typingIndicator && <TypingBubble align={typingIndicator.align} label={typingIndicator.label} />}
+      </div>
     </div>
   )
 })

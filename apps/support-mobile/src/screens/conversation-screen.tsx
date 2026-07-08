@@ -92,25 +92,31 @@ export function ConversationScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per (workspaceId, conversationId), not on every markRead identity change
   }, [workspaceId, conversationId])
 
-  const onlineVisitors = useSupportPresenceStore((s) => s.onlineVisitors)
-  const typingIndicators = useSupportPresenceStore((s) => s.typingIndicators)
-  const agentTyping = useSupportPresenceStore((s) => s.agentTyping)
-
-  const visitorOnline = !!(conversation?.anonymous_id && onlineVisitors[conversation.anonymous_id])
+  // Conversation-scoped presence slices: selecting the whole maps would
+  // re-render this screen for presence churn in OTHER conversations. Each
+  // selector returns the value for THIS conversation only (a boolean,
+  // a primitive, and a per-conversation object reference), so zustand's
+  // Object.is equality skips unrelated updates.
+  const anonymousId = conversation?.anonymous_id
+  const visitorOnline = useSupportPresenceStore((s) => !!(anonymousId && s.onlineVisitors[anonymousId]))
+  const customerTypingValue = useSupportPresenceStore((s) =>
+    conversationId ? s.typingIndicators[conversationId] : undefined,
+  )
+  const conversationAgentTyping = useSupportPresenceStore((s) =>
+    conversationId ? s.agentTyping[conversationId] : undefined,
+  )
 
   const typingIndicator: TypingIndicatorState | null = useMemo(() => {
     if (!conversationId) return null
-    const customerTypingValue = typingIndicators[conversationId]
     if (customerTypingValue !== undefined && customerTypingValue !== false) {
       return { align: 'left', label: `${conversation ? displayNameFor(conversation) : 'Customer'} is typing…` }
     }
-    const teammates = agentTyping[conversationId]
-    const firstTeammate = teammates ? Object.values(teammates)[0] : undefined
+    const firstTeammate = conversationAgentTyping ? Object.values(conversationAgentTyping)[0] : undefined
     if (firstTeammate) {
       return { align: 'right', label: `${firstTeammate.name ?? 'A teammate'} is typing…` }
     }
     return null
-  }, [conversationId, typingIndicators, agentTyping, conversation])
+  }, [conversationId, customerTypingValue, conversationAgentTyping, conversation])
 
   const messageListRef = useRef<MessageListHandle>(null)
   const [showNewMessagePill, setShowNewMessagePill] = useState(false)

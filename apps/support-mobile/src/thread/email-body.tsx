@@ -24,6 +24,23 @@ const EMAIL_HTML_CONFIG = {
   ALLOW_DATA_ATTR: false,
 }
 
+// Force rel="noopener noreferrer" on any target="_blank" anchor surviving
+// sanitization — defense-in-depth alongside the onClick interceptor below
+// (which routes through window.open with those flags, but middle-click /
+// long-press "open in new tab" paths bypass onClick). Registered once at
+// module scope; the flag guards against double-registration under HMR and
+// repeated test imports (DOMPurify hooks stack, they don't replace).
+const REL_HOOK_FLAG = '__helpinEmailRelHookRegistered'
+const purifyRegistry = DOMPurify as unknown as Record<string, unknown>
+if (!purifyRegistry[REL_HOOK_FLAG]) {
+  purifyRegistry[REL_HOOK_FLAG] = true
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName === 'A' && node.getAttribute('target') === '_blank') {
+      node.setAttribute('rel', 'noopener noreferrer')
+    }
+  })
+}
+
 function sanitize(html: string): string {
   return DOMPurify.sanitize(html, EMAIL_HTML_CONFIG)
 }
@@ -36,8 +53,13 @@ function sanitize(html: string): string {
 export function EmailBody({ html, subject, className }: EmailBodyProps) {
   const [expanded, setExpanded] = useState(false)
   const { visible, quoted } = useMemo(() => splitQuotedHtml(html), [html])
-  const sanitizedVisible = useMemo(() => sanitize(visible || html), [visible, html])
+  // Never fall back to the full `html` when `visible` is empty: a message
+  // whose quote marker is its very first node (a pure forward) has nothing
+  // above the fold — falling back would duplicate the entire quoted body
+  // above the expander. An empty visible section just renders no visible div.
+  const sanitizedVisible = useMemo(() => sanitize(visible), [visible])
   const sanitizedQuoted = useMemo(() => (quoted ? sanitize(quoted) : null), [quoted])
+  const hasVisible = sanitizedVisible.trim().length > 0
 
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const link = (event.target as HTMLElement).closest('a')
@@ -51,12 +73,14 @@ export function EmailBody({ html, subject, className }: EmailBodyProps) {
   return (
     <div className={cn('selectable min-w-0', className)}>
       {subject && <p className="mb-1 text-body font-semibold text-foreground">{subject}</p>}
-      <div
-        className="email-body min-w-0 text-body [&_a]:break-words [&_a]:text-primary [&_a]:underline [&_img]:max-w-full [&_img]:rounded-md [&_table]:max-w-full"
-        onClick={handleClick}
-        // eslint-disable-next-line react/no-danger -- sanitized above via DOMPurify
-        dangerouslySetInnerHTML={{ __html: sanitizedVisible }}
-      />
+      {hasVisible && (
+        <div
+          className="email-body min-w-0 text-body [&_a]:break-words [&_a]:text-primary [&_a]:underline [&_img]:max-w-full [&_img]:rounded-md [&_table]:max-w-full"
+          onClick={handleClick}
+          // eslint-disable-next-line react/no-danger -- sanitized above via DOMPurify
+          dangerouslySetInnerHTML={{ __html: sanitizedVisible }}
+        />
+      )}
       {sanitizedQuoted && (
         <>
           {expanded && (

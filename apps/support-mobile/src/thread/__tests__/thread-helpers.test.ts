@@ -80,6 +80,16 @@ describe('groupMessages', () => {
     expect(cluster.messages.map((m) => m.id)).toEqual(['m1', 'm2', 'm3'])
   })
 
+  test('a gap of exactly 3 minutes stays in the same cluster (break boundary is strictly greater-than)', () => {
+    const messages = [
+      message({ id: 'm1', sender_type: 'user', sender_user_id: 'u1', created_at: '2026-07-06T10:00:00.000Z' }),
+      message({ id: 'm2', sender_type: 'user', sender_user_id: 'u1', created_at: '2026-07-06T10:03:00.000Z' }),
+    ]
+    const items = groupMessages(messages)
+    const clusters = items.filter((item) => item.kind === 'cluster')
+    expect(clusters).toHaveLength(1)
+  })
+
   test('a gap of more than 3 minutes breaks the cluster', () => {
     const messages = [
       message({ id: 'm1', sender_type: 'user', sender_user_id: 'u1', created_at: '2026-07-06T10:00:00.000Z' }),
@@ -150,5 +160,19 @@ describe('splitQuotedHtml', () => {
     const result = splitQuotedHtml(html)
     expect(result.quoted).toBeNull()
     expect(result.visible).toBe(html)
+  })
+
+  test('a quote marker as the very first node yields an empty visible section and preserves the quoted content', () => {
+    const html = '<div class="gmail_quote">On Mon, Jane wrote:<blockquote>Forwarded body</blockquote></div>'
+    const result = splitQuotedHtml(html)
+    expect(result.visible).toBe('')
+    expect(result.quoted).toContain('Forwarded body')
+  })
+
+  test('collapses a gmail_signature wrapper (mirrors desktop COLLAPSIBLE_SELECTOR)', () => {
+    const html = '<p>Reply text</p><div class="gmail_signature">-- <br>Jane Doe</div>'
+    const result = splitQuotedHtml(html)
+    expect(result.visible).toBe('<p>Reply text</p>')
+    expect(result.quoted).toContain('gmail_signature')
   })
 })

@@ -115,7 +115,12 @@ const QUOTE_MARKER_SELECTOR = [
   'div#divRplyFwdMsg',
   'blockquote[type="cite"]',
   'div.yahoo_quoted',
+  "div[id='yahoo_quoted']",
   'div.protonmail_quote',
+  // Desktop's COLLAPSIBLE_SELECTOR also folds Gmail signature wrappers —
+  // mirror it so mobile collapses the same content desktop does.
+  '.gmail_signature',
+  '.gmail_signature_prefix',
 ].join(', ')
 
 /** Walks up from `el` to its top-level ancestor directly under `body`. */
