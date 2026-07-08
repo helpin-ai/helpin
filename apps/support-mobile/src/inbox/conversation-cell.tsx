@@ -1,4 +1,5 @@
 import { Mail, MessageCircle } from 'lucide-react'
+import { motion } from 'motion/react'
 import type { ComponentType } from 'react'
 import type { SupportConversation } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
@@ -27,6 +28,13 @@ function displayNameFor(conversation: SupportConversation): string {
 export interface ConversationCellProps {
   conversation: SupportConversation
   onPress: () => void
+  /**
+   * True for the brief window after a "Resolve" swipe commits — fades and
+   * shrinks the row in place so it doesn't just pop out from under the
+   * finger. The row is removed from the underlying list (via query
+   * invalidation) shortly after; the fade masks that abrupt disappearance.
+   */
+  isExiting?: boolean
 }
 
 /**
@@ -38,7 +46,7 @@ export interface ConversationCellProps {
  * and the name/preview color/weight change, so nothing shifts when a
  * conversation is marked read.
  */
-export function ConversationCell({ conversation, onPress }: ConversationCellProps) {
+export function ConversationCell({ conversation, onPress, isExiting }: ConversationCellProps) {
   const unread = isUnread(conversation)
   const displayName = displayNameFor(conversation)
   const preview = previewText(conversation)
@@ -47,7 +55,7 @@ export function ConversationCell({ conversation, onPress }: ConversationCellProp
   const statusBadge = conversation.status !== 'open' ? STATUS_BADGES[conversation.status] : undefined
 
   return (
-    <div
+    <motion.div
       role="button"
       tabIndex={0}
       data-testid="conversation-cell"
@@ -58,8 +66,10 @@ export function ConversationCell({ conversation, onPress }: ConversationCellProp
           onPress()
         }
       }}
+      animate={isExiting ? { opacity: 0, scale: 0.96 } : { opacity: 1, scale: 1 }}
+      transition={{ duration: 0.2 }}
       style={{ height: CONVERSATION_CELL_HEIGHT }}
-      className="box-border flex w-full cursor-pointer items-center gap-3 overflow-hidden border-b border-border/60 px-4 text-left active:bg-muted/50"
+      className="box-border flex w-full cursor-pointer items-center gap-3 overflow-hidden border-b border-border/60 bg-background px-4 text-left active:bg-muted/50"
     >
       {/* Fixed 16px leading gutter — width never changes; only the dot's opacity does. */}
       <div className="flex h-4 w-4 shrink-0 items-center justify-center">
@@ -110,6 +120,6 @@ export function ConversationCell({ conversation, onPress }: ConversationCellProp
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   )
 }

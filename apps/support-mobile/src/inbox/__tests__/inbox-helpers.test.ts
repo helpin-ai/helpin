@@ -36,7 +36,7 @@ describe('formatRelativeTime', () => {
   })
 
   test('more than 7 days ago formats as short month/day', () => {
-    expect(formatRelativeTime('2026-07-02T00:00:00.000Z', now)).toBe('Jul 2')
+    expect(formatRelativeTime('2026-06-29T00:00:00.000Z', now)).toBe('Jun 29')
   })
 
   test('a prior calendar year includes the year', () => {

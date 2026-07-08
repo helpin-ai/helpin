@@ -3,8 +3,16 @@ import { useParams, useRouter } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useMotionValue } from 'motion/react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ChevronsUpDown, Inbox as InboxIcon } from 'lucide-react'
-import { useConversations, useSupportMailboxes, useUnreadStats } from '@helpin-ai/support-core'
+import { Check, ChevronsUpDown, Inbox as InboxIcon, Mail, MailOpen } from 'lucide-react'
+import {
+  useConversations,
+  useMarkConversationRead,
+  useMarkConversationUnread,
+  useSupportMailboxes,
+  useUnreadStats,
+  useUpdateConversationStatus,
+} from '@helpin-ai/support-core'
+import { cn } from '@mobile/lib/cn'
 import { TopBar } from '@mobile/ui/top-bar'
 import { SegmentedControl, type Segment } from '@mobile/ui/segmented-control'
 import { Skeleton } from '@mobile/ui/skeleton'
@@ -16,7 +24,9 @@ import { workspacesService } from '@mobile/lib/services/workspaces-service'
 import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 import { ConversationCell } from '@mobile/inbox/conversation-cell'
 import { MailboxSheet } from '@mobile/inbox/mailbox-sheet'
-import { CONVERSATION_CELL_HEIGHT, filtersForSegment, type InboxSegment } from '@mobile/inbox/inbox-helpers'
+import { SwipeableRow, type SwipeAction } from '@mobile/inbox/swipeable-row'
+import { PULL_ARM_THRESHOLD, usePullToRefresh } from '@mobile/inbox/use-pull-to-refresh'
+import { CONVERSATION_CELL_HEIGHT, filtersForSegment, isUnread, type InboxSegment } from '@mobile/inbox/inbox-helpers'
 
 const SEGMENTS: Segment<InboxSegment>[] = [
   { value: 'mine', label: 'Mine' },
@@ -78,8 +88,32 @@ export function InboxScreen() {
   const unreadStats = useUnreadStats(workspaceId, selectedMailboxId)
   const mailboxesQuery = useSupportMailboxes(workspaceId)
   const filters = useMemo(() => filtersForSegment(segment, selectedMailboxId), [segment, selectedMailboxId])
-  const conversationsQuery = useConversations(workspaceId, filters)
+  // `keepPrevious` avoids a skeleton flash when switching segments/mailboxes —
+  // the previous page's data stays on screen (dimmed below) until the new
+  // page loads instead of getting torn down first.
+  const conversationsQuery = useConversations(workspaceId, filters, true)
   const conversations = conversationsQuery.data?.data ?? []
+  const markRead = useMarkConversationRead(workspaceId)
+  const markUnread = useMarkConversationUnread(workspaceId)
+  const updateStatus = useUpdateConversationStatus(workspaceId)
+
+  // Conversations mid-"Resolve" swipe: kept rendered (fading out) for a beat
+  // after commit rather than vanishing the instant the row disappears from
+  // the refetched list.
+  const [resolvingIds, setResolvingIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    setResolvingIds((prev) => {
+      if (prev.size === 0) return prev
+      const stillPresent = new Set(conversations.map((c) => c.id))
+      const next = new Set<string>()
+      let changed = false
+      prev.forEach((id) => {
+        if (stillPresent.has(id)) next.add(id)
+        else changed = true
+      })
+      return changed ? next : prev
+    })
+  }, [conversations])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollY = useMotionValue(0)
@@ -89,6 +123,14 @@ export function InboxScreen() {
     estimateSize: () => CONVERSATION_CELL_HEIGHT,
     overscan: 8,
   })
+
+  const pull = usePullToRefresh({
+    scrollRef,
+    onRefresh: async () => {
+      await Promise.all([conversationsQuery.refetch(), unreadStats.refetch()])
+    },
+  })
+  const pullSpinning = pull.refreshing || pull.pullDistance >= PULL_ARM_THRESHOLD
 
   // Current mailbox's name, or "Inbox" for the "All inboxes" scope / while the
   // mailbox list hasn't loaded yet.
@@ -118,7 +160,15 @@ export function InboxScreen() {
 
   return (
     <TabShell workspaceSlug={slug ?? ''} workspaceId={workspaceId}>
-      <div ref={scrollRef} onScroll={(e) => scrollY.set(e.currentTarget.scrollTop)} className="h-full overflow-y-auto">
+      <div
+        ref={scrollRef}
+        onScroll={(e) => scrollY.set(e.currentTarget.scrollTop)}
+        onPointerDown={pull.handlers.onPointerDown}
+        onPointerMove={pull.handlers.onPointerMove}
+        onPointerUp={pull.handlers.onPointerUp}
+        onPointerCancel={pull.handlers.onPointerCancel}
+        className="h-full overflow-y-auto"
+      >
         <TopBar
           large
           title={mailboxName}
@@ -151,6 +201,20 @@ export function InboxScreen() {
           />
         </div>
 
+        <div
+          style={{ height: pull.pullDistance }}
+          className="flex items-end justify-center overflow-hidden"
+        >
+          {(pull.pullDistance > 0 || pull.refreshing) && (
+            <div
+              className="pb-2"
+              style={pullSpinning ? undefined : { transform: `rotate(${pull.pullDistance * 2.6}deg)` }}
+            >
+              <Spinner className={pullSpinning ? undefined : 'animate-none'} />
+            </div>
+          )}
+        </div>
+
         {showSkeleton && <InboxSkeletonList />}
 
         {showError && (
@@ -179,9 +243,38 @@ export function InboxScreen() {
         )}
 
         {!showSkeleton && !showError && !showEmpty && (
-          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+          <div
+            style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
+            className={cn(
+              'transition-opacity duration-200',
+              conversationsQuery.isPlaceholderData && 'opacity-60',
+            )}
+          >
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const conversation = conversations[virtualRow.index]
+              const unread = isUnread(conversation)
+              const leadingAction: SwipeAction = unread
+                ? {
+                    label: 'Read',
+                    icon: MailOpen,
+                    tone: 'primary',
+                    onCommit: () => markRead.mutate(conversation.id),
+                  }
+                : {
+                    label: 'Unread',
+                    icon: Mail,
+                    tone: 'primary',
+                    onCommit: () => markUnread.mutate(conversation.id),
+                  }
+              const trailingAction: SwipeAction = {
+                label: 'Resolve',
+                icon: Check,
+                tone: 'success',
+                onCommit: () => {
+                  setResolvingIds((prev) => new Set(prev).add(conversation.id))
+                  updateStatus.mutate({ conversationId: conversation.id, status: 'resolved' })
+                },
+              }
               return (
                 <div
                   key={conversation.id}
@@ -195,10 +288,13 @@ export function InboxScreen() {
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <ConversationCell
-                    conversation={conversation}
-                    onPress={() => handleSelectConversation(conversation.id)}
-                  />
+                  <SwipeableRow leading={leadingAction} trailing={trailingAction}>
+                    <ConversationCell
+                      conversation={conversation}
+                      onPress={() => handleSelectConversation(conversation.id)}
+                      isExiting={resolvingIds.has(conversation.id)}
+                    />
+                  </SwipeableRow>
                 </div>
               )
             })}

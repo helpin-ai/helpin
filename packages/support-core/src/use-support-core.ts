@@ -27,7 +27,11 @@ function unwrapOrThrow<T>(value: { data: T | null; error: string | null }): T {
   return value.data
 }
 
-export function useConversations(workspaceId: string, filters?: ConversationFilters) {
+export function useConversations(
+  workspaceId: string,
+  filters?: ConversationFilters,
+  keepPrevious?: boolean,
+) {
   return useQuery({
     queryKey: [...supportQueryKeys.conversations(workspaceId), filters] as const,
     queryFn: async (): Promise<ConversationListResponse> => {
@@ -49,6 +53,7 @@ export function useConversations(workspaceId: string, filters?: ConversationFilt
     },
     enabled: !!workspaceId,
     staleTime: 15_000,
+    placeholderData: keepPrevious ? (prev: ConversationListResponse | undefined) => prev : undefined,
   })
 }
 

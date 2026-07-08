@@ -164,3 +164,34 @@ cargo check
      picker, and Sign Out requires a second tap ("Tap again to confirm" for
      ~3s, no modal) before it actually signs out and redirects to Login.
    - Repeat the visual pass in both OS light and dark themes.
+
+8. **Pull-to-refresh / swipeable-row on-device check** (Task 12 —
+   `src/inbox/use-pull-to-refresh.ts`, `src/inbox/swipeable-row.tsx`,
+   `src/screens/inbox-screen.tsx`) — jsdom only exercises the pure
+   `swipeState`/`rubberBand` math; the actual gesture feel needs a real
+   touchscreen:
+   - At the very top of the Inbox, pull down slowly and confirm the spinner
+     tracks the pull (rubber-banded, roughly half speed) and visibly rotates
+     as you drag; past ~70px it should snap to a continuous spin with a light
+     haptic tap ("armed"). Release before 70px and confirm it springs back
+     with no refresh. Release past 70px and confirm conversations + unread
+     counts refetch and the spinner clears once that settles.
+   - Confirm pull-to-refresh does **not** engage when the list is scrolled
+     down (only at scrollTop 0), including right after the large title has
+     collapsed and you scroll back up to exactly the top.
+   - On a conversation row, swipe right (leading) and left (trailing) and
+     confirm the underlay tracks your finger 1:1 with no visible lag/jump,
+     a light haptic at ~96px ("armed"), and that a full swipe past ~60% of
+     the row's width commits before you even lift your finger.
+   - Confirm a mostly-vertical drag on a row scrolls the list normally and
+     never reveals the swipe underlay (10px horizontal-dominance lock).
+   - Swipe to reveal one row, then start swiping a different row, and
+     confirm the first one snaps closed (only one row open at a time).
+   - In the "Mine" segment, swipe a row's Resolve action and confirm it
+     fades/shrinks in place rather than abruptly vanishing, and that it
+     disappears from "Mine" once the status update lands; toggle the
+     leading Read/Unread action and confirm the dot and typography update to
+     match without navigating away from the row.
+   - Switch segments (Mine/Unassigned/All) and confirm the previous list
+     stays visible (dimmed, not skeletons) while the new page loads, with
+     skeletons appearing only on the very first load of the screen.
