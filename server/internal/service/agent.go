@@ -4306,7 +4306,7 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		run.ApprovalState = "pending"
 	}
 	if !model.IsAgentRunPausedStatus(run.Status) {
-		return nil, nil, fmt.Errorf("run is not paused for human input")
+		return nil, nil, fmt.Errorf("this run is not waiting for input right now — it may have already resumed or finished; refresh to see its latest status")
 	}
 	if run.PauseReason == model.AgentRunPauseReasonAuthentication {
 		return nil, nil, fmt.Errorf("run is waiting for authentication")
