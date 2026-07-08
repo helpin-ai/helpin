@@ -13,7 +13,6 @@ import {
 } from '@helpin-ai/support-core'
 import { TopBar } from '@mobile/ui/top-bar'
 import { Pressable } from '@mobile/ui/pressable'
-import { Sheet } from '@mobile/ui/sheet'
 import { EmptyState } from '@mobile/ui/empty-state'
 import { cn } from '@mobile/lib/cn'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
@@ -21,6 +20,7 @@ import { displayNameFor } from '@mobile/inbox/conversation-cell'
 import { MessageList, type MessageListHandle, type TypingIndicatorState } from '@mobile/thread/message-list'
 import { groupMessages } from '@mobile/thread/thread-helpers'
 import { Composer } from '@mobile/thread/composer'
+import { ContextSheet } from '@mobile/thread/context-sheet'
 import { MessageCircle } from 'lucide-react'
 
 const STATUS_LABELS: Record<ConversationStatus, string> = {
@@ -197,15 +197,12 @@ export function ConversationScreen() {
         <Composer key={conversationId} workspaceId={workspaceId} conversationId={conversationId} />
       )}
 
-      <Sheet open={contextSheetOpen} onOpenChange={setContextSheetOpen}>
-        <div className="px-4 pb-4">
-          <p className="text-headline">{customerName}</p>
-          {conversation?.customer_email && (
-            <p className="mt-1 text-footnote text-muted-foreground">{conversation.customer_email}</p>
-          )}
-          {/* Task 15 replaces this placeholder with the full ContextSheet (customer profile, CRM/linked-task info, etc). */}
-        </div>
-      </Sheet>
+      <ContextSheet
+        workspaceId={workspaceId}
+        conversationId={conversationId ?? null}
+        open={contextSheetOpen}
+        onOpenChange={setContextSheetOpen}
+      />
     </div>
   )
 }

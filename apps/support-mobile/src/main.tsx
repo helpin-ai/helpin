@@ -2,6 +2,7 @@ import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
+import { Toaster } from 'sonner'
 import { configureSessionStorage, createBrowserSessionStorage } from '@helpin-ai/support-core'
 import { setupVisibilityRefresh, startTokenRefreshTimer, stopTokenRefreshTimer } from '@mobile/lib/api'
 import { isTauri } from '@mobile/lib/host'
@@ -41,10 +42,13 @@ function InnerApp() {
   }, [user, loading, serverUnreachable])
 
   return (
-    <RouterProvider
-      router={router}
-      context={{ auth: { user, loading, serverUnreachable } }}
-    />
+    <>
+      <RouterProvider
+        router={router}
+        context={{ auth: { user, loading, serverUnreachable } }}
+      />
+      <Toaster richColors position="top-center" />
+    </>
   )
 }
 
