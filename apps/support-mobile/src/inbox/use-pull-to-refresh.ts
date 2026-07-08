@@ -1,8 +1,12 @@
 import { useRef, useState, type PointerEvent, type RefObject } from 'react'
 import { haptic } from '@mobile/lib/haptics'
+import { activeGesture, claimGesture, releaseGesture } from './gesture-claim'
 
 /** Distance (px) of downward overscroll required to arm a refresh. */
 export const PULL_ARM_THRESHOLD = 70
+
+/** Raw downward delta (px) past which the hook claims the shared gesture token. */
+export const PULL_CLAIM_THRESHOLD = 10
 
 /** Rubber-band resistance applied to the raw pointer delta while pulling. */
 export function rubberBand(dy: number): number {
@@ -34,6 +38,11 @@ export interface UsePullToRefreshResult {
  * never fights a normal downward scroll mid-list. Uses Pointer Events so the
  * same code path drives touch, pen, and mouse-drag (handy for desktop preview
  * testing of the Tauri shell).
+ *
+ * Coordinates with SwipeableRow via the shared gesture-claim token: once a
+ * row swipe has locked horizontal intent, this hook zeroes its pull state and
+ * ignores the rest of the pointer stream; conversely it claims 'pull' once
+ * its own vertical pull passes PULL_CLAIM_THRESHOLD so rows back off.
  */
 export function usePullToRefresh({ scrollRef, onRefresh }: UsePullToRefreshOptions): UsePullToRefreshResult {
   const [pullDistance, setPullDistance] = useState(0)
@@ -41,11 +50,16 @@ export function usePullToRefresh({ scrollRef, onRefresh }: UsePullToRefreshOptio
   const startYRef = useRef<number | null>(null)
   const armedRef = useRef(false)
   const trackingRef = useRef(false)
+  const claimedRef = useRef(false)
 
   const reset = () => {
     trackingRef.current = false
     armedRef.current = false
     startYRef.current = null
+    if (claimedRef.current) {
+      releaseGesture('pull')
+      claimedRef.current = false
+    }
   }
 
   const onPointerDown = (event: PointerEvent) => {
@@ -59,6 +73,13 @@ export function usePullToRefresh({ scrollRef, onRefresh }: UsePullToRefreshOptio
 
   const onPointerMove = (event: PointerEvent) => {
     if (!trackingRef.current || startYRef.current === null) return
+    if (activeGesture() === 'row-swipe') {
+      // A row swipe owns this pointer stream — abandon the pull entirely
+      // (trackingRef stays false until the next pointerdown).
+      reset()
+      setPullDistance(0)
+      return
+    }
     const el = scrollRef.current
     if (el && el.scrollTop > 0) {
       // Scrolled away from the top mid-gesture — bail out cleanly.
@@ -70,6 +91,14 @@ export function usePullToRefresh({ scrollRef, onRefresh }: UsePullToRefreshOptio
     if (rawDelta <= 0) {
       setPullDistance(0)
       return
+    }
+    if (!claimedRef.current && rawDelta >= PULL_CLAIM_THRESHOLD) {
+      if (!claimGesture('pull')) {
+        reset()
+        setPullDistance(0)
+        return
+      }
+      claimedRef.current = true
     }
     const distance = rubberBand(rawDelta)
     setPullDistance(distance)

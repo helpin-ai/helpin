@@ -25,14 +25,21 @@ function displayNameFor(conversation: SupportConversation): string {
   return 'Anonymous'
 }
 
+/**
+ * How long the `isExiting` fade takes. The inbox screen waits exactly this
+ * long after a Resolve commit before removing the row from the rendered
+ * list, so keep the two in lockstep via this constant.
+ */
+export const CELL_EXIT_DURATION_MS = 200
+
 export interface ConversationCellProps {
   conversation: SupportConversation
   onPress: () => void
   /**
    * True for the brief window after a "Resolve" swipe commits — fades and
    * shrinks the row in place so it doesn't just pop out from under the
-   * finger. The row is removed from the underlying list (via query
-   * invalidation) shortly after; the fade masks that abrupt disappearance.
+   * finger. The inbox screen removes the row from the rendered list once the
+   * fade completes (CELL_EXIT_DURATION_MS).
    */
   isExiting?: boolean
 }
@@ -67,7 +74,7 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
         }
       }}
       animate={isExiting ? { opacity: 0, scale: 0.96 } : { opacity: 1, scale: 1 }}
-      transition={{ duration: 0.2 }}
+      transition={{ duration: CELL_EXIT_DURATION_MS / 1000 }}
       style={{ height: CONVERSATION_CELL_HEIGHT }}
       className="box-border flex w-full cursor-pointer items-center gap-3 overflow-hidden border-b border-border/60 bg-background px-4 text-left active:bg-muted/50"
     >

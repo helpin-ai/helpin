@@ -18,6 +18,7 @@ import {
 import { cn } from '@mobile/lib/cn'
 import { haptic } from '@mobile/lib/haptics'
 import { stackSpring } from '@mobile/lib/motion'
+import { claimGesture, releaseGesture } from './gesture-claim'
 
 /** Drag distance (px) past which a release commits the action. */
 export const SWIPE_ARM_THRESHOLD = 96
@@ -114,7 +115,15 @@ export function SwipeableRow({ leading, trailing, children, className }: Swipeab
   const [width, setWidth] = useState(0)
   const armedRef = useRef<SwipeGestureState>('idle')
   const committedRef = useRef(false)
+  const claimedRef = useRef(false)
   const intentRef = useRef<{ startX: number; startY: number; decided: boolean } | null>(null)
+
+  const releaseClaim = () => {
+    if (claimedRef.current) {
+      releaseGesture('row-swipe')
+      claimedRef.current = false
+    }
+  }
 
   useEffect(() => {
     const el = containerRef.current
@@ -137,6 +146,11 @@ export function SwipeableRow({ leading, trailing, children, className }: Swipeab
     openRows.add(close)
     return () => {
       openRows.delete(close)
+      // Never leave the shared token claimed by an unmounted row.
+      if (claimedRef.current) {
+        releaseGesture('row-swipe')
+        claimedRef.current = false
+      }
     }
   }, [])
 
@@ -167,6 +181,11 @@ export function SwipeableRow({ leading, trailing, children, className }: Swipeab
     if (Math.abs(dx) < INTENT_LOCK_THRESHOLD && Math.abs(dy) < INTENT_LOCK_THRESHOLD) return
     intent.decided = true
     if (Math.abs(dx) > Math.abs(dy)) {
+      // Horizontal intent locked — claim the shared pointer-gesture token so
+      // pull-to-refresh backs off. If the pull already owns it (vertical pull
+      // in progress), abandon the swipe for this gesture.
+      if (!claimGesture('row-swipe')) return
+      claimedRef.current = true
       closeOtherRows(closeRef.current)
       dragControls.start(event, { snapToCursor: false })
     }
@@ -177,7 +196,9 @@ export function SwipeableRow({ leading, trailing, children, className }: Swipeab
     if ((offset > 0 && !leading) || (offset < 0 && !trailing)) return
     const state = swipeState(offset, width)
     if (state !== armedRef.current) {
-      if (state === 'armed' || state === 'auto') haptic('impactLight')
+      // Light tap only on the idle→armed transition. armed→auto is silent
+      // (commit's impactMedium covers it) — max two haptics per gesture.
+      if (armedRef.current === 'idle' && state === 'armed') haptic('impactLight')
       armedRef.current = state
     }
     if (state === 'auto') {
@@ -192,6 +213,7 @@ export function SwipeableRow({ leading, trailing, children, className }: Swipeab
       commit(offset > 0 ? leading : trailing)
     }
     animate(x, 0, stackSpring)
+    releaseClaim()
   }
 
   const dragConstraints = {
@@ -206,6 +228,11 @@ export function SwipeableRow({ leading, trailing, children, className }: Swipeab
       style={{ touchAction: 'pan-y' }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
+      // Safety net: if the drag never started (claim without dragControls
+      // hand-off can't happen today, but a cancelled pointer can skip
+      // onDragEnd), make sure the token is freed when the pointer lifts.
+      onPointerUp={releaseClaim}
+      onPointerCancel={releaseClaim}
     >
       {leading && <ActionUnderlay action={leading} side="left" progress={x} />}
       {trailing && <ActionUnderlay action={trailing} side="right" progress={trailingProgress} />}

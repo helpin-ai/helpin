@@ -13,6 +13,7 @@ import {
   useUpdateConversationStatus,
 } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
+import { haptic } from '@mobile/lib/haptics'
 import { TopBar } from '@mobile/ui/top-bar'
 import { SegmentedControl, type Segment } from '@mobile/ui/segmented-control'
 import { Skeleton } from '@mobile/ui/skeleton'
@@ -22,7 +23,7 @@ import { Spinner } from '@mobile/ui/spinner'
 import { TabShell } from '@mobile/navigation/tab-bar'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
 import { useWorkspaceStore } from '@mobile/stores/workspace-store'
-import { ConversationCell } from '@mobile/inbox/conversation-cell'
+import { CELL_EXIT_DURATION_MS, ConversationCell } from '@mobile/inbox/conversation-cell'
 import { MailboxSheet } from '@mobile/inbox/mailbox-sheet'
 import { SwipeableRow, type SwipeAction } from '@mobile/inbox/swipeable-row'
 import { PULL_ARM_THRESHOLD, usePullToRefresh } from '@mobile/inbox/use-pull-to-refresh'
@@ -92,28 +93,80 @@ export function InboxScreen() {
   // the previous page's data stays on screen (dimmed below) until the new
   // page loads instead of getting torn down first.
   const conversationsQuery = useConversations(workspaceId, filters, true)
-  const conversations = conversationsQuery.data?.data ?? []
+  const rawConversations = useMemo(() => conversationsQuery.data?.data ?? [], [conversationsQuery.data])
   const markRead = useMarkConversationRead(workspaceId)
   const markUnread = useMarkConversationUnread(workspaceId)
   const updateStatus = useUpdateConversationStatus(workspaceId)
 
-  // Conversations mid-"Resolve" swipe: kept rendered (fading out) for a beat
-  // after commit rather than vanishing the instant the row disappears from
-  // the refetched list.
-  const [resolvingIds, setResolvingIds] = useState<Set<string>>(new Set())
+  // Resolve-swipe lifecycle per conversation id:
+  //   'fading'  — still rendered, cell fading out (CELL_EXIT_DURATION_MS)
+  //   'removed' — filtered out of the rendered list (no ghost full-height row
+  //               while the mutation/refetch is still in flight)
+  // Ids are dropped from the map when (a) the mutation errors (row reappears +
+  // error haptic), (b) the refetched list no longer contains the row, or
+  // (c) the refetched row is confirmed resolved server-side (e.g. the "All"
+  // segment keeps resolved conversations — show it again with its badge).
+  const [resolving, setResolving] = useState<Map<string, 'fading' | 'removed'>>(new Map())
+  const resolveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   useEffect(() => {
-    setResolvingIds((prev) => {
+    const timers = resolveTimersRef.current
+    return () => timers.forEach((timer) => clearTimeout(timer))
+  }, [])
+
+  useEffect(() => {
+    setResolving((prev) => {
       if (prev.size === 0) return prev
-      const stillPresent = new Set(conversations.map((c) => c.id))
-      const next = new Set<string>()
+      const byId = new Map(rawConversations.map((c) => [c.id, c]))
+      const next = new Map(prev)
       let changed = false
-      prev.forEach((id) => {
-        if (stillPresent.has(id)) next.add(id)
-        else changed = true
+      prev.forEach((stage, id) => {
+        const conversation = byId.get(id)
+        if (!conversation || (stage === 'removed' && conversation.status === 'resolved')) {
+          next.delete(id)
+          changed = true
+        }
       })
       return changed ? next : prev
     })
-  }, [conversations])
+  }, [rawConversations])
+
+  const conversations = useMemo(
+    () => rawConversations.filter((c) => resolving.get(c.id) !== 'removed'),
+    [rawConversations, resolving],
+  )
+
+  const handleResolve = (conversationId: string) => {
+    setResolving((prev) => new Map(prev).set(conversationId, 'fading'))
+    const timer = setTimeout(() => {
+      resolveTimersRef.current.delete(conversationId)
+      setResolving((prev) => {
+        // Skip if the mutation already errored (id gone) mid-fade.
+        if (prev.get(conversationId) !== 'fading') return prev
+        return new Map(prev).set(conversationId, 'removed')
+      })
+    }, CELL_EXIT_DURATION_MS)
+    resolveTimersRef.current.set(conversationId, timer)
+
+    updateStatus.mutate(
+      { conversationId, status: 'resolved' },
+      {
+        onError: () => {
+          const pending = resolveTimersRef.current.get(conversationId)
+          if (pending !== undefined) {
+            clearTimeout(pending)
+            resolveTimersRef.current.delete(conversationId)
+          }
+          setResolving((prev) => {
+            if (!prev.has(conversationId)) return prev
+            const next = new Map(prev)
+            next.delete(conversationId)
+            return next
+          })
+          haptic('notificationError')
+        },
+      },
+    )
+  }
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollY = useMotionValue(0)
@@ -270,10 +323,7 @@ export function InboxScreen() {
                 label: 'Resolve',
                 icon: Check,
                 tone: 'success',
-                onCommit: () => {
-                  setResolvingIds((prev) => new Set(prev).add(conversation.id))
-                  updateStatus.mutate({ conversationId: conversation.id, status: 'resolved' })
-                },
+                onCommit: () => handleResolve(conversation.id),
               }
               return (
                 <div
@@ -292,7 +342,7 @@ export function InboxScreen() {
                     <ConversationCell
                       conversation={conversation}
                       onPress={() => handleSelectConversation(conversation.id)}
-                      isExiting={resolvingIds.has(conversation.id)}
+                      isExiting={resolving.get(conversation.id) === 'fading'}
                     />
                   </SwipeableRow>
                 </div>
