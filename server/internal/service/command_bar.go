@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -19,6 +20,11 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
+
+// commandBarAICreditsExhaustedMessage is shown when the AI provider rejects
+// requests for billing reasons (402). It replaces a confusing silent downgrade
+// to read-only with a clear, actionable explanation.
+const commandBarAICreditsExhaustedMessage = "AI features are temporarily unavailable because this workspace's AI credits are exhausted. Ask a workspace admin to top up AI credits, then try again — running agents and answering questions need available credits."
 
 const maxCommandBarPlanSteps = 50
 const maxCommandBarDAGInitialFanOut = 10
@@ -493,6 +499,14 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 	s.publishChatTurnProgress(ctx, workspaceID, actorID, "classifying", "")
 	classification, err := s.classifyCommandBarChatIntent(ctx, workspaceID, effectiveText, pageContext, access, history)
 	if err != nil {
+		// Insufficient AI credits (provider 402) fails both the classifier and
+		// the read-only answer that uses the same provider, so don't silently
+		// degrade to a confusing read-only reply — tell the user plainly that
+		// AI credits are exhausted and what to do about it.
+		if errors.Is(err, llm.ErrInsufficientCredits) {
+			slog.ErrorContext(ctx, "ask agents chat unavailable: AI credits exhausted", "error", err, "workspace_id", workspaceID)
+			return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: commandBarAICreditsExhaustedMessage}, commandBarAICreditsExhaustedMessage, nil
+		}
 		slog.WarnContext(ctx, "ask agents chat intent classification failed", "error", err, "workspace_id", workspaceID)
 		answer, inlineContext := s.inlineReadOnlyAnswer(ctx, workspaceID, actorID, effectiveText, pageContext, access, history)
 		return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: answer, Context: inlineContext}, answer, nil

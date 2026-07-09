@@ -3,7 +3,14 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
+
+// ErrInsufficientCredits indicates the upstream LLM provider rejected the
+// request for billing reasons (HTTP 402 — insufficient credits or exhausted
+// quota). Callers use errors.Is to degrade with a clear, actionable message
+// instead of a generic failure.
+var ErrInsufficientCredits = errors.New("llm: insufficient credits")
 
 // Provider defines a model-agnostic LLM interface.
 type Provider interface {
