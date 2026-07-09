@@ -214,9 +214,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	if len(agent.ExecutionConfig) > 0 && strings.TrimSpace(string(agent.ExecutionConfig)) != "null" {
 		out.ExecutionConfig = append([]byte(nil), agent.ExecutionConfig...)
 	}
-	if agentRequiresRepositoryWorkspace(agent) {
-		out.ExecutionConfig = withRepositoryWorkspaceExecutionConfig(out.ExecutionConfig)
-	}
+	out.ExecutionConfig = withAgentRuntimeExecutionConfig(out.ExecutionConfig, agent)
 	if out.RuntimeKind == "" {
 		out.RuntimeKind = "native_sdk"
 	}
@@ -288,6 +286,12 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 		"target_type":   strings.TrimSpace(run.TargetType),
 		"target_id":     strings.TrimSpace(run.TargetID),
 		"helpin_run_id": strings.TrimSpace(run.ID),
+	}
+	if agent != nil && strings.TrimSpace(agent.PresetKey) != "" {
+		metadata["preset_key"] = strings.TrimSpace(agent.PresetKey)
+	}
+	if strings.TrimSpace(input.Stage) != "" {
+		metadata["planning_stage"] = strings.TrimSpace(input.Stage)
 	}
 	if run.RepositoryID != nil && strings.TrimSpace(*run.RepositoryID) != "" {
 		metadata["repository_id"] = strings.TrimSpace(*run.RepositoryID)
@@ -3598,6 +3602,10 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, fmt.Errorf("build task run input: %w", err)
 		}
+		payload, err = withAgentRunPlanningStage(payload, planningStageForDelegatedRun(agent, task, nil))
+		if err != nil {
+			return nil, fmt.Errorf("build task planning stage: %w", err)
+		}
 
 		run, err := s.createRun(ctx, createRunParams{
 			workspaceID:          workspaceID,
@@ -3641,9 +3649,19 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
-		payload, err := buildAgentRunInputPayload("epic", epic.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools)
+		additionalContext := req.AdditionalContext
+		if s.delegatesRunToAgentRuntime(agent, "epic") {
+			if launchContext := s.buildDelegatedEpicLaunchContext(ctx, epic, req.AdditionalContext); launchContext != "" {
+				additionalContext = &launchContext
+			}
+		}
+		payload, err := buildAgentRunInputPayload("epic", epic.ID, trigger, event, req.Output, additionalContext, req.AllowedTools)
 		if err != nil {
 			return nil, fmt.Errorf("build epic run input: %w", err)
+		}
+		payload, err = withAgentRunPlanningStage(payload, planningStageForDelegatedRun(agent, nil, epic))
+		if err != nil {
+			return nil, fmt.Errorf("build epic planning stage: %w", err)
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
