@@ -2693,7 +2693,8 @@ func (s *SupportAIService) planSupportQuery(ctx context.Context, history []model
 func (s *SupportAIService) searchSingleQuery(
 	ctx context.Context,
 	workspaceID, query string,
-	spaceIDs, contentSourceIDs []string,
+	docsSources []model.AgentKnowledgeSource,
+	contentSourceIDs []string,
 ) ([]KnowledgeSearchResult, error) {
 	// Create embedding for this query.
 	queryEmbedding := ""
@@ -2719,8 +2720,8 @@ func (s *SupportAIService) searchSingleQuery(
 	var results []KnowledgeSearchResult
 
 	// Search docs chunks.
-	if s.docsChunkRepo != nil && len(spaceIDs) > 0 {
-		docResults, err := s.docsChunkRepo.HybridSearch(ctx, workspaceID, spaceIDs, query, queryEmbedding, 12)
+	if s.docsChunkRepo != nil && len(docsSources) > 0 {
+		docResults, err := s.docsChunkRepo.HybridSearchKnowledgeSources(ctx, workspaceID, docsSources, query, queryEmbedding, 12)
 		if err != nil {
 			return nil, fmt.Errorf("docs hybrid search: %w", err)
 		}
@@ -2774,23 +2775,18 @@ func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID,
 		return nil, nil
 	}
 
-	// Resolve knowledge source IDs once (shared across all query variants).
-	var spaceIDs []string
+	// Resolve knowledge sources once (shared across all query variants).
+	var docsSources []model.AgentKnowledgeSource
 	if s.docsChunkRepo != nil && s.knowledgeRepo != nil {
 		sources, err := s.knowledgeRepo.ListByAgentID(ctx, agentID)
 		if err != nil {
 			return nil, err
 		}
-		seenSpaces := map[string]struct{}{}
 		for _, source := range sources {
 			if source.WorkspaceID != workspaceID {
 				continue
 			}
-			if _, ok := seenSpaces[source.SpaceID]; ok {
-				continue
-			}
-			seenSpaces[source.SpaceID] = struct{}{}
-			spaceIDs = append(spaceIDs, source.SpaceID)
+			docsSources = append(docsSources, source)
 		}
 	}
 
@@ -2804,7 +2800,7 @@ func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID,
 	}
 
 	// Nothing to search against.
-	if len(spaceIDs) == 0 && len(contentSourceIDs) == 0 {
+	if len(docsSources) == 0 && len(contentSourceIDs) == 0 {
 		return nil, nil
 	}
 
@@ -2822,7 +2818,7 @@ func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID,
 	for _, q := range queries {
 		q := q // capture loop variable
 		g.Go(func() error {
-			results, err := s.searchSingleQuery(gctx, workspaceID, q, spaceIDs, contentSourceIDs)
+			results, err := s.searchSingleQuery(gctx, workspaceID, q, docsSources, contentSourceIDs)
 			if err != nil {
 				return err
 			}

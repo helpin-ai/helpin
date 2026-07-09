@@ -20,6 +20,13 @@ func NewAgentKnowledgeSourceRepository(db *gorm.DB) *AgentKnowledgeSourceReposit
 	return &AgentKnowledgeSourceRepository{db: db}
 }
 
+// Transaction runs fn with a repository bound to a single database transaction.
+func (r *AgentKnowledgeSourceRepository) Transaction(ctx context.Context, fn func(*AgentKnowledgeSourceRepository) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(NewAgentKnowledgeSourceRepository(tx))
+	})
+}
+
 // ListByAgentID returns all knowledge source links for an agent.
 func (r *AgentKnowledgeSourceRepository) ListByAgentID(ctx context.Context, agentID string) ([]model.AgentKnowledgeSource, error) {
 	var sources []model.AgentKnowledgeSource
@@ -63,6 +70,11 @@ func (r *AgentKnowledgeSourceRepository) DeleteByAgentAndSpace(ctx context.Conte
 	return r.db.WithContext(ctx).
 		Where("agent_id = ? AND space_id = ?", agentID, spaceID).
 		Delete(&model.AgentKnowledgeSource{}).Error
+}
+
+// DeleteByID removes a knowledge source link by ID.
+func (r *AgentKnowledgeSourceRepository) DeleteByID(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.AgentKnowledgeSource{}).Error
 }
 
 // UpdateSyncState updates user-visible sync progress for a knowledge source.

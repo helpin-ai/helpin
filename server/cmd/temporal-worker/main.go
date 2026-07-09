@@ -92,6 +92,9 @@ func main() {
 	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS vector`).Error; err != nil {
 		fatalWithSentry("failed to enable vector extension", err)
 	}
+	if err := repository.MigrateAgentKnowledgeSourceSchema(db); err != nil {
+		fatalWithSentry("failed to migrate agent knowledge source schema", err)
+	}
 
 	realtimeInstanceID := ws.ResolveRealtimeInstanceID()
 	natsConn, jetstream, err := ws.ConnectJetStream(cfg.NatsURL, "helpin-temporal-worker-"+realtimeInstanceID)
@@ -509,6 +512,7 @@ func main() {
 		agentKnowledgeSourceRepo,
 		docsContentRepo,
 		docsSpaceRepo,
+		docsCollectionRepo,
 		docsHelpcenterRepo,
 		docsDocumentRepo,
 		supportEmbeddingProvider,
@@ -522,6 +526,7 @@ func main() {
 		supportEmbeddingProvider,
 		cfg.OpenAIEmbeddingModel,
 		contentCrawler,
+		s3Client,
 		nil,
 	)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)

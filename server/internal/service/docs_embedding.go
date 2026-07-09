@@ -30,6 +30,7 @@ type DocsEmbeddingService struct {
 	knowledgeRepo  *repository.AgentKnowledgeSourceRepository
 	contentRepo    *repository.DocsContentRepository
 	spaceRepo      *repository.DocsSpaceRepository
+	collectionRepo *repository.DocsCollectionRepository
 	helpcenterRepo *repository.DocsHelpcenterRepository
 	documentRepo   *repository.DocsDocumentRepository
 	embedder       llm.EmbeddingProvider
@@ -49,6 +50,7 @@ func NewDocsEmbeddingService(
 	knowledgeRepo *repository.AgentKnowledgeSourceRepository,
 	contentRepo *repository.DocsContentRepository,
 	spaceRepo *repository.DocsSpaceRepository,
+	collectionRepo *repository.DocsCollectionRepository,
 	helpcenterRepo *repository.DocsHelpcenterRepository,
 	documentRepo *repository.DocsDocumentRepository,
 	embedder llm.EmbeddingProvider,
@@ -64,6 +66,7 @@ func NewDocsEmbeddingService(
 		knowledgeRepo:  knowledgeRepo,
 		contentRepo:    contentRepo,
 		spaceRepo:      spaceRepo,
+		collectionRepo: collectionRepo,
 		helpcenterRepo: helpcenterRepo,
 		documentRepo:   documentRepo,
 		embedder:       embedder,
@@ -148,8 +151,8 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 	if err != nil {
 		return err
 	}
-	if space == nil || space.Type != model.SpaceTypeExternalCapable {
-		msg := "Only help center spaces can be indexed for support AI"
+	if space == nil || (space.Type != model.SpaceTypeExternalCapable && space.Type != model.SpaceTypeInternal) {
+		msg := "Only docs spaces can be indexed for support AI"
 		return s.updateAllSyncStates(ctx, sources, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil)
 	}
 
@@ -158,7 +161,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 		return err
 	}
 
-	publicDocs, err := s.helpcenterRepo.ListPublicDocumentsBySpace(ctx, workspaceID, spaceID)
+	publicDocs, err := s.listIndexableDocumentsBySpace(ctx, workspaceID, space)
 	if err != nil {
 		_ = s.markSourcesFailed(ctx, sources, err, &startedAt)
 		return err
@@ -166,6 +169,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 
 	keepDocumentIDs := make([]string, 0, len(publicDocs))
 	totalChunks := 0
+	chunksByDocumentID := make(map[string]int, len(publicDocs))
 
 	for idx, doc := range publicDocs {
 		keepDocumentIDs = append(keepDocumentIDs, doc.ID)
@@ -180,6 +184,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 				_ = s.markSourcesFailed(ctx, sources, err, &startedAt)
 				return err
 			}
+			chunksByDocumentID[doc.ID] = 0
 			continue
 		}
 
@@ -199,6 +204,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 				_ = s.markSourcesFailed(ctx, sources, err, &startedAt)
 				return err
 			}
+			chunksByDocumentID[doc.ID] = 0
 			continue
 		}
 
@@ -248,6 +254,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 		}
 
 		totalChunks += len(rows)
+		chunksByDocumentID[doc.ID] = len(rows)
 		progress := progressFor(idx+1, len(publicDocs))
 		if err := s.updateAllSyncStates(ctx, sources, model.KnowledgeSourceSyncRunning, progress, idx+1, totalChunks, nil, &startedAt, nil); err != nil {
 			return err
@@ -260,7 +267,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 	}
 
 	completedAt := time.Now()
-	return s.updateAllSyncStates(ctx, sources, model.KnowledgeSourceSyncReady, 100, len(publicDocs), totalChunks, nil, &startedAt, &completedAt)
+	return s.updateScopedSyncStates(ctx, sources, publicDocs, chunksByDocumentID, model.KnowledgeSourceSyncReady, 100, nil, &startedAt, &completedAt)
 }
 
 // RunSpaceSync performs a single full sync for a help-center space.
@@ -270,6 +277,107 @@ func (s *DocsEmbeddingService) RunSpaceSync(ctx context.Context, workspaceID, sp
 		return nil
 	}
 	return s.syncSpace(ctx, workspaceID, spaceID)
+}
+
+func (s *DocsEmbeddingService) listIndexableDocumentsBySpace(ctx context.Context, workspaceID string, space *model.DocsSpace) ([]model.DocsDocument, error) {
+	if space.Type == model.SpaceTypeExternalCapable {
+		return s.helpcenterRepo.ListPublicDocumentsBySpace(ctx, workspaceID, space.ID)
+	}
+	status := model.DocStatusPublished
+	return s.documentRepo.List(ctx, workspaceID, &space.ID, nil, &status, nil, "", false)
+}
+
+func (s *DocsEmbeddingService) updateScopedSyncStates(
+	ctx context.Context,
+	sources []model.AgentKnowledgeSource,
+	docs []model.DocsDocument,
+	chunksByDocumentID map[string]int,
+	status string,
+	progress int,
+	errMessage *string,
+	startedAt *time.Time,
+	completedAt *time.Time,
+) error {
+	collectionDescendants := map[string]map[string]struct{}{}
+	if s.collectionRepo != nil && len(sources) > 0 {
+		spaceCollections := map[string][]model.DocsCollection{}
+		for _, source := range sources {
+			if source.CollectionID == nil || *source.CollectionID == "" {
+				continue
+			}
+			if _, ok := spaceCollections[source.SpaceID]; !ok {
+				collections, err := s.collectionRepo.ListBySpace(ctx, source.SpaceID)
+				if err != nil {
+					return err
+				}
+				spaceCollections[source.SpaceID] = collections
+			}
+			collectionDescendants[*source.CollectionID] = docsCollectionDescendantSet(*source.CollectionID, spaceCollections[source.SpaceID])
+		}
+	}
+
+	for _, source := range sources {
+		documentCount := 0
+		chunkCount := 0
+		for _, doc := range docs {
+			if !docsKnowledgeSourceMatchesDocument(source, doc, collectionDescendants) {
+				continue
+			}
+			documentCount++
+			chunkCount += chunksByDocumentID[doc.ID]
+		}
+		if err := s.knowledgeRepo.UpdateSyncState(ctx, source.ID, status, progress, documentCount, chunkCount, errMessage, startedAt, completedAt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func docsKnowledgeSourceMatchesDocument(source model.AgentKnowledgeSource, doc model.DocsDocument, collectionDescendants map[string]map[string]struct{}) bool {
+	scopeType := source.ScopeType
+	if scopeType == "" {
+		scopeType = model.KnowledgeSourceScopeSpace
+	}
+	switch scopeType {
+	case model.KnowledgeSourceScopeSpace:
+		return doc.SpaceID == source.SpaceID
+	case model.KnowledgeSourceScopeCollection:
+		if source.CollectionID == nil || doc.CollectionID == nil {
+			return false
+		}
+		if *doc.CollectionID == *source.CollectionID {
+			return true
+		}
+		descendants := collectionDescendants[*source.CollectionID]
+		_, ok := descendants[*doc.CollectionID]
+		return ok
+	case model.KnowledgeSourceScopeArticle:
+		return source.DocumentID != nil && doc.ID == *source.DocumentID
+	default:
+		return false
+	}
+}
+
+func docsCollectionDescendantSet(rootID string, collections []model.DocsCollection) map[string]struct{} {
+	children := map[string][]string{}
+	for _, collection := range collections {
+		if collection.ParentCollectionID == nil {
+			continue
+		}
+		children[*collection.ParentCollectionID] = append(children[*collection.ParentCollectionID], collection.ID)
+	}
+	result := map[string]struct{}{}
+	queue := append([]string{}, children[rootID]...)
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		if _, seen := result[id]; seen {
+			continue
+		}
+		result[id] = struct{}{}
+		queue = append(queue, children[id]...)
+	}
+	return result
 }
 
 func (s *DocsEmbeddingService) blockChunks(ctx context.Context, documentID string) ([]string, []*string, error) {

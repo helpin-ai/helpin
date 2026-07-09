@@ -1029,6 +1029,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/content-sources", h.SupportAI.UpdateAgentContentSources)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources", h.SupportAI.ListContentSources)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/content-sources", h.SupportAI.CreateContentSource)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/content-sources/files", h.SupportAI.CreateContentSourceFileUpload)
+					r.With(requirePerm(authorization.PermPMEdit)).Patch("/content-sources/{contentSourceId}/file/confirm", h.SupportAI.ConfirmContentSourceFileUpload)
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/content-sources/{contentSourceId}", h.SupportAI.UpdateContentSource)
 					r.With(requirePerm(authorization.PermPMEdit)).Delete("/content-sources/{contentSourceId}", h.SupportAI.DeleteContentSource)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources/{contentSourceId}/pages", h.SupportAI.ListContentSourcePages)

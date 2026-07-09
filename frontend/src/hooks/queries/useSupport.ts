@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
+import { uploadToS3 } from '@/lib/api';
 import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
@@ -24,7 +25,9 @@ import type {
   AgentKnowledgeSource,
   SupportContentSource,
   SupportContentPage,
+  AgentKnowledgeSourceRequest,
   CreateSupportContentSourceRequest,
+  CreateSupportContentSourceFileUploadRequest,
   UpdateSupportContentSourceRequest,
   SupportInboxSettings,
   ConversationStatus,
@@ -1480,8 +1483,8 @@ export function useAgentKnowledgeSources(workspaceId: string, agentId?: string) 
 export function useUpdateAgentKnowledgeSources(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ agentId, spaceIds }: { agentId: string; spaceIds: string[] }) =>
-      agentService.updateKnowledgeSources(workspaceId, agentId, spaceIds).then(unwrap),
+    mutationFn: ({ agentId, sources }: { agentId: string; sources: AgentKnowledgeSourceRequest[] }) =>
+      agentService.updateKnowledgeSources(workspaceId, agentId, sources).then(unwrap),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.knowledgeSources(workspaceId, variables.agentId) });
     },
@@ -1560,6 +1563,32 @@ export function useCreateSupportContentSource(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to create content source', { description: error.message });
+    },
+  });
+}
+
+export function useCreateSupportContentSourceFile(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ file, name }: { file: File; name: string }) => {
+      const payload: CreateSupportContentSourceFileUploadRequest = {
+        name,
+        file_name: file.name,
+        file_size: file.size,
+        content_type: file.type || 'application/octet-stream',
+      };
+      const init = await unwrap(await agentService.createContentSourceFileUpload(workspaceId, payload));
+      const upload = await uploadToS3(init.upload_url, file);
+      if (!upload.ok) {
+        throw new Error(upload.error ?? 'Upload failed');
+      }
+      return unwrap(await agentService.confirmContentSourceFileUpload(workspaceId, init.source.id));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to upload file source', { description: error.message });
     },
   });
 }

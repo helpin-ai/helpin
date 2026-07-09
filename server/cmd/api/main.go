@@ -343,6 +343,11 @@ func main() {
 		slog.Info("startup: AutoMigrate disabled by RUN_AUTO_MIGRATE")
 	}
 
+	slog.Info("startup: running MigrateAgentKnowledgeSourceSchema")
+	if err := repository.MigrateAgentKnowledgeSourceSchema(db); err != nil {
+		fatalWithSentry("failed to migrate agent knowledge source schema", err)
+	}
+
 	slog.Info("startup: running MigrateAgentSchema")
 	if err := repository.MigrateAgentSchema(db); err != nil {
 		fatalWithSentry("failed to migrate agent schema", err)
@@ -1042,13 +1047,14 @@ func main() {
 		agentKnowledgeSourceRepo,
 		docsContentRepo,
 		docsSpaceRepo,
+		docsCollectionRepo,
 		docsHelpcenterRepo,
 		docsDocumentRepo,
 		supportEmbeddingProvider,
 		cfg.OpenAIEmbeddingModel,
 		runEngine,
 	)
-	agentKnowledgeSourceService := service.NewAgentKnowledgeSourceService(agentKnowledgeSourceRepo, docsSpaceRepo, docsEmbeddingService)
+	agentKnowledgeSourceService := service.NewAgentKnowledgeSourceService(agentKnowledgeSourceRepo, docsSpaceRepo, docsCollectionRepo, docsDocumentRepo, docsEmbeddingService)
 	supportContentSyncService := service.NewSupportContentSyncService(
 		supportContentSourceRepo,
 		supportContentPageRepo,
@@ -1056,6 +1062,7 @@ func main() {
 		supportEmbeddingProvider,
 		cfg.OpenAIEmbeddingModel,
 		contentCrawler,
+		s3Client,
 		runEngine,
 	)
 	supportContentSourceService := service.NewSupportContentSourceService(
@@ -1065,6 +1072,7 @@ func main() {
 		supportContentPageRepo,
 		supportContentChunkRepo,
 		supportContentSyncService,
+		s3Client,
 	)
 	agentContentSourceService := service.NewAgentContentSourceService(
 		agentContentSourceRepo,

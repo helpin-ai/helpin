@@ -753,7 +753,10 @@ export interface AIMessageMetadata {
 export interface AgentKnowledgeSource {
   id: string;
   agent_id: string;
+  scope_type?: 'space' | 'collection' | 'article';
   space_id: string;
+  collection_id?: string | null;
+  document_id?: string | null;
   workspace_id: string;
   sync_status: 'queued' | 'running' | 'ready' | 'failed' | 'stale' | 'disabled';
   sync_progress: number;
@@ -764,15 +767,29 @@ export interface AgentKnowledgeSource {
   last_sync_completed_at?: string | null;
   space_name?: string;
   space_type?: string;
+  collection_name?: string;
+  document_title?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentKnowledgeSourceRequest {
+  scope_type: 'space' | 'collection' | 'article';
+  space_id: string;
+  collection_id?: string | null;
+  document_id?: string | null;
 }
 
 export interface SupportContentSource {
   id: string;
   workspace_id: string;
   name: string;
+  source_type?: 'website' | 'file';
   start_url: string;
+  file_name?: string | null;
+  file_size?: number;
+  content_type?: string | null;
+  storage_key?: string | null;
   crawl_limit: number;
   crawl_depth: number;
   crawl_source: 'all' | 'sitemaps' | 'links';
@@ -832,6 +849,18 @@ export interface CreateSupportContentSourceRequest {
   modified_since?: string | null;
   json_prompt?: string | null;
   json_response_format?: unknown;
+}
+
+export interface CreateSupportContentSourceFileUploadRequest {
+  name: string;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+}
+
+export interface CreateSupportContentSourceFileUploadResponse {
+  source: SupportContentSource;
+  upload_url: string;
 }
 
 export interface UpdateSupportContentSourceRequest {

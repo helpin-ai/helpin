@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowRight01Icon,
   ViewIcon,
@@ -67,10 +67,22 @@ export function SupportContentSourcesField({
   workspaceId,
   agentId,
   disabled = false,
+  embedded = false,
+  createRequestToken = 0,
+  editRequestToken = 0,
+  editSourceId = '',
+  hideEmptyState = false,
+  renderList = true,
 }: {
   workspaceId: string;
   agentId?: string;
   disabled?: boolean;
+  embedded?: boolean;
+  createRequestToken?: number;
+  editRequestToken?: number;
+  editSourceId?: string;
+  hideEmptyState?: boolean;
+  renderList?: boolean;
 }) {
   const { data: sources = [], isLoading } = useSupportContentSources(workspaceId);
   const { data: selectedSourceIds = [], isLoading: selectedLoading } = useAgentContentSources(workspaceId, agentId);
@@ -106,6 +118,24 @@ export function SupportContentSourcesField({
     setAdvancedOpen(false);
     setWizardOpen(true);
   };
+
+  useEffect(() => {
+    if (createRequestToken > 0) {
+      openCreateWizard();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createRequestToken]);
+
+  useEffect(() => {
+    if (editRequestToken <= 0 || !editSourceId) {
+      return;
+    }
+    const source = sources.find((item) => item.id === editSourceId);
+    if (source) {
+      openEditWizard(source);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editRequestToken, editSourceId, sources]);
 
   const openEditWizard = (source: SupportContentSource) => {
     setEditingSource(source);
@@ -207,7 +237,7 @@ export function SupportContentSourcesField({
 
   if (isLoading || selectedLoading) {
     return (
-      <div className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
+      <div className={cn('space-y-3', !embedded && 'rounded-xl border border-border/70 bg-card p-4')}>
         <Skeleton className="h-16 rounded-lg" />
         <Skeleton className="h-24 rounded-lg" />
       </div>
@@ -216,7 +246,8 @@ export function SupportContentSourcesField({
 
   return (
     <>
-      <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
+      <div className={cn(embedded ? 'space-y-3' : 'overflow-hidden rounded-xl border border-border/70 bg-card', !renderList && 'hidden')}>
+        {!embedded && (
         <div className="flex flex-col gap-3 border-b border-border/70 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 space-y-1">
             <div className="flex items-center gap-2">
@@ -237,14 +268,16 @@ export function SupportContentSourcesField({
             Add website
           </Button>
         </div>
+        )}
 
-        <div className="space-y-3 p-4">
-          {!hasAgent && (
+        <div className={embedded ? 'space-y-3' : 'space-y-3 p-4'}>
+          {!hasAgent && (!hideEmptyState || sources.length > 0) && (
             <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
               Add, edit, and sync website content now. Attach these sources to support AI after you select a support agent in AI Assistant.
             </div>
           )}
           {sources.length === 0 ? (
+            hideEmptyState ? null : (
             <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-10 text-center">
               <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
                 <GlobeIcon className="h-5 w-5" />
@@ -254,6 +287,7 @@ export function SupportContentSourcesField({
                 Add a website to give your support AI access to its content when answering customer questions.
               </p>
             </div>
+            )
           ) : (
             sources.map((source) => {
               const selected = hasAgent && selectedSet.has(source.id);

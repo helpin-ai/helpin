@@ -118,14 +118,18 @@ export const agentService = {
   // Knowledge Sources
   listKnowledgeSources: (workspaceId: string, agentId: string) =>
     api.get<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`),
-  updateKnowledgeSources: (workspaceId: string, agentId: string, spaceIds: string[]) =>
-    api.put<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`, { space_ids: spaceIds }),
+  updateKnowledgeSources: (workspaceId: string, agentId: string, sources: import('../pmTypes').AgentKnowledgeSourceRequest[]) =>
+    api.put<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`, { sources }),
   reindexKnowledgeSource: (workspaceId: string, agentId: string, spaceId: string) =>
     api.post<{ status: string }>(`/pm/agents/${agentId}/knowledge-sources/${spaceId}/reindex${qs(workspaceId)}`, {}),
   listContentSources: (workspaceId: string) =>
     api.get<import('../pmTypes').SupportContentSource[]>(`/pm/content-sources${qs(workspaceId)}`),
   createContentSource: (workspaceId: string, payload: import('../pmTypes').CreateSupportContentSourceRequest) =>
     api.post<import('../pmTypes').SupportContentSource>(`/pm/content-sources${qs(workspaceId)}`, payload),
+  createContentSourceFileUpload: (workspaceId: string, payload: import('../pmTypes').CreateSupportContentSourceFileUploadRequest) =>
+    api.post<import('../pmTypes').CreateSupportContentSourceFileUploadResponse>(`/pm/content-sources/files${qs(workspaceId)}`, payload),
+  confirmContentSourceFileUpload: (workspaceId: string, contentSourceId: string) =>
+    api.patch<import('../pmTypes').SupportContentSource>(`/pm/content-sources/${contentSourceId}/file/confirm${qs(workspaceId)}`),
   updateContentSource: (workspaceId: string, contentSourceId: string, payload: import('../pmTypes').UpdateSupportContentSourceRequest) =>
     api.put<import('../pmTypes').SupportContentSource>(`/pm/content-sources/${contentSourceId}${qs(workspaceId)}`, payload),
   deleteContentSource: (workspaceId: string, contentSourceId: string) =>

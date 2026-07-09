@@ -73,7 +73,13 @@ func (h *SupportAIHandler) UpdateKnowledgeSources(w http.ResponseWriter, r *http
 		return
 	}
 
-	if err := h.knowledgeSourceSvc.Set(r.Context(), workspaceID, agentID, req.SpaceIDs); err != nil {
+	var err error
+	if len(req.Sources) > 0 {
+		err = h.knowledgeSourceSvc.SetScoped(r.Context(), workspaceID, agentID, req.Sources)
+	} else {
+		err = h.knowledgeSourceSvc.Set(r.Context(), workspaceID, agentID, req.SpaceIDs)
+	}
+	if err != nil {
 		slog.ErrorContext(r.Context(), "update knowledge sources failed", "error", err)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -145,6 +151,46 @@ func (h *SupportAIHandler) CreateContentSource(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, http.StatusCreated, source)
+}
+
+// CreateContentSourceFileUpload creates a file source and returns a presigned upload URL.
+func (h *SupportAIHandler) CreateContentSourceFileUpload(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	var req model.CreateSupportContentSourceFileUploadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.contentSourceSvc.CreateFileUpload(r.Context(), workspaceID, req)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "create content source file upload failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+// ConfirmContentSourceFileUpload queues indexing for an uploaded file source.
+func (h *SupportAIHandler) ConfirmContentSourceFileUpload(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	source, err := h.contentSourceSvc.ConfirmFileUpload(r.Context(), workspaceID, chi.URLParam(r, "contentSourceId"))
+	if err != nil {
+		slog.ErrorContext(r.Context(), "confirm content source file upload failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, source)
 }
 
 // UpdateContentSource updates a content source and queues re-indexing.
