@@ -15,9 +15,9 @@ import { cn } from '@/lib/utils';
  */
 function useSmoothText(target: string, enabled: boolean): string {
   const [revealed, setRevealed] = useState(enabled ? '' : target);
-  const revealedRef = useRef(revealed);
+  const shownRef = useRef(revealed);
   const rafRef = useRef<number | null>(null);
-  revealedRef.current = revealed;
+  shownRef.current = revealed;
 
   useEffect(() => {
     const cancel = () => {
@@ -29,23 +29,33 @@ function useSmoothText(target: string, enabled: boolean): string {
 
     // Not streaming, or the target diverged from what we've shown (a completion
     // that replaced the text rather than extended it): show it all immediately.
-    if (!enabled || !target.startsWith(revealedRef.current)) {
+    if (!enabled || !target.startsWith(shownRef.current)) {
       cancel();
-      if (revealedRef.current !== target) setRevealed(target);
+      if (shownRef.current !== target) {
+        shownRef.current = target;
+        setRevealed(target);
+      }
       return cancel;
     }
 
+    // Advance a length cursor synchronously inside the loop rather than reading
+    // it back from React state — the state only commits on re-render, so a frame
+    // that fires before the commit (or a synchronous requestAnimationFrame, e.g.
+    // in tests) would otherwise never make progress and recurse until the stack
+    // overflows. Tracking `shownLen` here guarantees the loop terminates.
+    let shownLen = shownRef.current.length;
     const step = () => {
-      const current = revealedRef.current;
-      if (current.length >= target.length) {
+      if (shownLen >= target.length) {
         rafRef.current = null;
         return;
       }
-      const remaining = target.length - current.length;
+      const remaining = target.length - shownLen;
       // Ease-out: reveal ~1/8th of the backlog per frame (min 2 chars) so a big
       // burst catches up quickly, a trickle reveals one-at-a-time smoothly.
-      const chars = Math.max(2, Math.ceil(remaining / 8));
-      setRevealed(target.slice(0, current.length + chars));
+      shownLen = Math.min(target.length, shownLen + Math.max(2, Math.ceil(remaining / 8)));
+      const next = target.slice(0, shownLen);
+      shownRef.current = next;
+      setRevealed(next);
       rafRef.current = requestAnimationFrame(step);
     };
     if (rafRef.current == null) rafRef.current = requestAnimationFrame(step);
@@ -118,7 +128,7 @@ export function MarkdownContent({
 }) {
   const shown = useSmoothText(content, streaming);
   return (
-    <div className={cn('text-sm leading-6 text-foreground', className)}>
+    <div className={cn('text-sm leading-6 text-foreground', streaming && 'markdown-caret', className)}>
       <Streamdown
         className="[&>*+*]:!mt-0"
         components={markdownComponents}
@@ -126,6 +136,7 @@ export function MarkdownContent({
         lineNumbers={false}
         mode={streaming ? 'streaming' : 'static'}
         isAnimating={streaming}
+        caret={streaming ? 'block' : undefined}
         parseIncompleteMarkdown={streaming}
         rehypePlugins={[
           defaultRehypePlugins.sanitize,
