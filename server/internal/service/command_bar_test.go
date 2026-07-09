@@ -603,6 +603,38 @@ func TestChatTurnClassifiesExplicitTaskStatusAsInlineReadOnly(t *testing.T) {
 	}
 }
 
+func TestChatTurnSurfacesInsufficientAICreditsClearly(t *testing.T) {
+	service, db, workspaceID, _ := setupCommandBarTargetResolutionTest(t)
+	ctx := context.Background()
+	createCommandBarChatTablesForTest(t, db)
+
+	// The provider is out of credits: the classifier call fails with a 402.
+	fakeLLM := &scriptedCommandBarLLM{err: fmt.Errorf("openai API error (status 402): no credits: %w", llm.ErrInsufficientCredits)}
+	service.llmProvider = fakeLLM
+	service.SetChatRepository(repository.NewCommandBarChatRepository(db))
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "Write a summary document of this week's tasks.",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalInlineAnswer {
+		t.Fatalf("expected inline answer proposal, got %#v", resp.Proposal)
+	}
+	if resp.Proposal.Plan != nil {
+		t.Fatalf("credit-exhausted turn should not create a run plan")
+	}
+	if resp.Proposal.Answer != commandBarAICreditsExhaustedMessage {
+		t.Fatalf("expected clear credits message, got %q", resp.Proposal.Answer)
+	}
+	// It must not attempt a second (also-doomed) read-only answer call.
+	if len(fakeLLM.requests) != 1 {
+		t.Fatalf("expected a single classifier call before short-circuiting, got %d", len(fakeLLM.requests))
+	}
+}
+
 func TestCommandBarAdditionalContextDoesNotIncludeRawUserRequest(t *testing.T) {
 	context := commandBarAdditionalContext(
 		"Execute your normal Forge role for the current target.",
