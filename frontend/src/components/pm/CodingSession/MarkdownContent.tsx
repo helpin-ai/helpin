@@ -1,7 +1,59 @@
-import type { ComponentPropsWithoutRef } from 'react';
+import { useEffect, useRef, useState, type ComponentPropsWithoutRef } from 'react';
 import { Streamdown, defaultRehypePlugins, type Components } from 'streamdown';
 
 import { cn } from '@/lib/utils';
+
+/**
+ * Reveals streamed text at a steady per-frame rate so large network deltas
+ * don't pop in as chunks — the smooth "typing" feel of ChatGPT/Claude.
+ *
+ * The reveal decouples the on-screen cadence from the delta cadence: it eases
+ * toward the target (faster when it's far behind so it never lags noticeably),
+ * and snaps instantly when streaming ends or the text is replaced (not appended,
+ * e.g. a completion that rewrites the message). Streamdown's incomplete-markdown
+ * handling keeps partial prefixes from flickering formatting.
+ */
+function useSmoothText(target: string, enabled: boolean): string {
+  const [revealed, setRevealed] = useState(enabled ? '' : target);
+  const revealedRef = useRef(revealed);
+  const rafRef = useRef<number | null>(null);
+  revealedRef.current = revealed;
+
+  useEffect(() => {
+    const cancel = () => {
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+
+    // Not streaming, or the target diverged from what we've shown (a completion
+    // that replaced the text rather than extended it): show it all immediately.
+    if (!enabled || !target.startsWith(revealedRef.current)) {
+      cancel();
+      if (revealedRef.current !== target) setRevealed(target);
+      return cancel;
+    }
+
+    const step = () => {
+      const current = revealedRef.current;
+      if (current.length >= target.length) {
+        rafRef.current = null;
+        return;
+      }
+      const remaining = target.length - current.length;
+      // Ease-out: reveal ~1/8th of the backlog per frame (min 2 chars) so a big
+      // burst catches up quickly, a trickle reveals one-at-a-time smoothly.
+      const chars = Math.max(2, Math.ceil(remaining / 8));
+      setRevealed(target.slice(0, current.length + chars));
+      rafRef.current = requestAnimationFrame(step);
+    };
+    if (rafRef.current == null) rafRef.current = requestAnimationFrame(step);
+    return cancel;
+  }, [target, enabled]);
+
+  return enabled ? revealed : target;
+}
 
 const markdownComponents: Components = {
   p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
@@ -64,6 +116,7 @@ export function MarkdownContent({
   className?: string;
   streaming?: boolean;
 }) {
+  const shown = useSmoothText(content, streaming);
   return (
     <div className={cn('text-sm leading-6 text-foreground', className)}>
       <Streamdown
@@ -79,7 +132,7 @@ export function MarkdownContent({
           defaultRehypePlugins.harden,
         ]}
       >
-        {content}
+        {shown}
       </Streamdown>
     </div>
   );
