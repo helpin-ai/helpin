@@ -604,6 +604,19 @@ func main() {
 	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
 	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
+	customerIOIdentityService := service.NewCustomerIOIdentityService(
+		service.NewCustomerIOTrackClient(service.CustomerIOTrackConfig{
+			SiteID:                   cfg.CustomerIOSiteID,
+			APIKey:                   cfg.CustomerIOTrackAPIKey,
+			Region:                   cfg.CustomerIORegion,
+			WorkspaceObjectTypeID:    cfg.CustomerIOWorkspaceObjectTypeID,
+			OrganizationObjectTypeID: cfg.CustomerIOOrganizationObjectTypeID,
+		}),
+		userRepo,
+		workspaceRepo,
+		orgRepo,
+		billingRepo,
+	)
 	stripeGateway := billingstripe.New(cfg.StripeSecretKey, cfg.StripeCreditBlockPriceID)
 	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
 	billingTestScenarioService := service.NewBillingTestScenarioService(db, billingService, time.Now)
@@ -614,6 +627,7 @@ func main() {
 		GrowthAnnual:   cfg.StripeGrowthAnnualPriceID,
 	})
 	billingService.SetWorkspaceRepository(workspaceRepo)
+	billingService.SetCustomerIOIdentityService(customerIOIdentityService)
 	aiUsageMeter := service.NewAIUsageMeter(billingService)
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
 	gitCredentialRepo := repository.NewGitCredentialRepository(db)
@@ -685,6 +699,7 @@ func main() {
 		fatalWithSentry("failed to initialize webauthn", err)
 	}
 	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, emailVerificationRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
+	authService.SetCustomerIOIdentityService(customerIOIdentityService)
 	passkeyService := service.NewPasskeyService(userRepo, passkeyRepo, jwtManager, passkeyWebAuthnClient, resolveTOTPEncryptionKey(cfg))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo, wsPublisher)
@@ -1196,6 +1211,7 @@ func main() {
 	_ = supportCoverageDigestService // wired to ticker in follow-up
 
 	orgService := service.NewOrganizationService(orgRepo)
+	orgService.SetCustomerIOIdentityService(customerIOIdentityService)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil)
@@ -1212,6 +1228,7 @@ func main() {
 	crmImportService.SetEntitlementService(entitlementService)
 	dealAutomationService.SetEntitlementService(entitlementService)
 	workspaceService.SetBillingService(billingService)
+	workspaceService.SetCustomerIOIdentityService(customerIOIdentityService)
 	workspaceService.SetPresenceProvider(wsHub.Presence)
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
 	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher).

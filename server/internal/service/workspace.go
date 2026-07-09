@@ -33,6 +33,7 @@ type WorkspaceService struct {
 	billingService      *BillingService
 	contextLLM          workspaceContextLLM
 	contextFetcher      WorkspaceContextFetcher
+	customerIOIdentity  *CustomerIOIdentityService
 	logger              *slog.Logger
 }
 
@@ -66,6 +67,10 @@ func (s *WorkspaceService) SetStatusOverrideRepo(repo *repository.SupportTeammat
 
 func (s *WorkspaceService) SetBillingService(billingService *BillingService) {
 	s.billingService = billingService
+}
+
+func (s *WorkspaceService) SetCustomerIOIdentityService(identity *CustomerIOIdentityService) {
+	s.customerIOIdentity = identity
 }
 
 func (s *WorkspaceService) SetContextGeneratorDependencies(llm workspaceContextLLM, fetcher WorkspaceContextFetcher) *WorkspaceService {
@@ -195,6 +200,10 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 	}
 
 	s.logger.InfoContext(ctx, "workspace created", "workspace_id", ws.ID, "name", ws.Name, "slug", ws.Slug)
+	if s.customerIOIdentity != nil {
+		s.customerIOIdentity.SyncUserByID(ctx, ownerID)
+		s.customerIOIdentity.SyncWorkspace(ctx, ws.ID, ownerID)
+	}
 
 	return &model.WorkspaceWithRole{
 		Workspace: *ws,
@@ -276,6 +285,9 @@ func (s *WorkspaceService) Update(ctx context.Context, id string, req model.Upda
 		return nil, err
 	}
 	s.logger.InfoContext(ctx, "workspace updated", "workspace_id", id)
+	if s.customerIOIdentity != nil {
+		s.customerIOIdentity.SyncWorkspace(ctx, id, actorID)
+	}
 	return ws, nil
 }
 

@@ -48,7 +48,7 @@ export const billingService = {
   },
 
   linkPaymentMethod: (wsId: string, data: LinkPaymentMethodRequest) =>
-    api.put(`/workspaces/${wsId}/billing/payment-method`, data),
+    api.put<WorkspaceBillingSummary>(`/workspaces/${wsId}/billing/payment-method`, data),
 
   checkout: (wsId: string, data: CheckoutRequest) =>
     api.post<CheckoutResponse>(`/workspaces/${wsId}/billing/checkout`, data),
@@ -69,7 +69,7 @@ export const billingService = {
     api.post<PortalResponse>(`/workspaces/${wsId}/billing/portal`, returnUrl ? { return_url: returnUrl } : {}),
 
   setOnDemand: (wsId: string, enabled: boolean) =>
-    api.put(`/workspaces/${wsId}/billing/on-demand`, { enabled }),
+    api.put<WorkspaceBillingSummary>(`/workspaces/${wsId}/billing/on-demand`, { enabled }),
 
   applyTestScenario: (wsId: string, scenario: BillingTestScenarioID) =>
     api.post<WorkspaceBillingSummary>(`/workspaces/${wsId}/billing/test-scenario`, { scenario }),

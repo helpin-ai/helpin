@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, CalendarDays } from 'lucide-react';
+
+const SIGNUP_URL = 'https://app.helpin.ai/register';
+const DEMO_URL = 'https://cal.com/helpin-ai/30min';
 
 const FOOTER_LINKS = {
   Legal: [
@@ -13,33 +15,6 @@ const FOOTER_LINKS = {
 };
 
 export function Footer() {
-  const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle' | 'submitting' | 'success'>('idle');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !email.includes('@')) return;
-    setStatus('submitting');
-    try {
-      const w = window as unknown as {
-        usermaven?: (cmd: string, ...args: unknown[]) => void;
-        _cio?: { identify: (obj: Record<string, unknown>) => void; track: (event: string, obj?: Record<string, unknown>) => void };
-      };
-      if (w.usermaven) {
-        w.usermaven('lead', { email });
-        w.usermaven('track', 'early_access_signup', { form_id: 'footer-cta', email });
-      }
-      if (w._cio) {
-        w._cio.identify({ id: email, email, created_at: Math.floor(Date.now() / 1000) });
-        w._cio.track('early_access_signup', { form_id: 'footer-cta' });
-      }
-      setStatus('success');
-      setEmail('');
-    } catch {
-      setStatus('idle');
-    }
-  };
-
   const pathname = usePathname();
   const isPricing = pathname === '/pricing';
 
@@ -54,52 +29,23 @@ export function Footer() {
           <div className="max-w-3xl mx-auto text-center">
             <h2 className="text-[clamp(2rem,4vw,3rem)] font-bold leading-[1.08] tracking-tight text-white mb-8">
               {isPricing
-                ? 'Your whole team. One platform. Start free today.'
+                ? 'Start with a 14-day Growth trial.'
                 : 'The way companies operate is changing, don\'t get left behind.'}
             </h2>
             <p className="text-[17px] text-white/50 leading-relaxed mb-10 max-w-lg mx-auto">
               {isPricing
-                ? 'Free plan available with all modules included. No credit card required. Upgrade anytime as your team grows.'
+                ? 'No card required. Try every module with AI agents, then choose Starter or Growth when you are ready.'
                 : 'Bring your project management, support, sales, and docs into one system — and let agents start moving work forward from day one.'}
             </p>
 
-            {isPricing ? (
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <Link href="https://app.helpin.ai" className="rounded-xl bg-white text-foreground px-8 py-3.5 text-[15px] font-semibold transition-all hover:shadow-lg hover:shadow-white/10 hover:-translate-y-0.5">
-                  Start free trial <ArrowRight className="inline h-4 w-4 ml-1" />
-                </Link>
-                <Link href="mailto:sales@helpin.ai" className="text-[15px] font-medium text-white/50 hover:text-white transition-colors">
-                  Talk to sales →
-                </Link>
-              </div>
-            ) : status === 'success' ? (
-              <p className="text-[15px] font-medium text-white/70">
-                You&apos;re on the list. We&apos;ll be in touch soon.
-              </p>
-            ) : (
-              <div className="w-full max-w-lg mx-auto">
-                <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 w-full rounded-[14px] p-2" style={{ background: 'oklch(1 0 0 / 0.08)', border: '1px solid oklch(1 0 0 / 0.1)' }}>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter your work email"
-                    required
-                    className="flex-1 px-4 py-3 rounded-lg text-[15px] outline-none"
-                    style={{ color: 'white', background: 'oklch(1 0 0 / 0.05)', border: '1px solid oklch(1 0 0 / 0.08)' }}
-                  />
-                  <button
-                    type="submit"
-                    disabled={status === 'submitting'}
-                    className="btn-primary whitespace-nowrap justify-center w-full sm:w-auto"
-                    style={{ background: 'white', color: 'var(--color-foreground)' }}
-                  >
-                    {status === 'submitting' ? 'Submitting...' : 'Get early access'}
-                    {status === 'idle' && <ArrowRight className="h-4 w-4" />}
-                  </button>
-                </form>
-              </div>
-            )}
+            <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <Link href={SIGNUP_URL} className="rounded-xl bg-white px-8 py-3.5 text-[15px] font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-white/10">
+                Start free trial <ArrowRight className="inline h-4 w-4 ml-1" />
+              </Link>
+              <Link href={DEMO_URL} className="rounded-xl border border-white/15 px-8 py-3.5 text-[15px] font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white">
+                Book a demo <CalendarDays className="inline h-4 w-4 ml-1" />
+              </Link>
+            </div>
           </div>
         </div>
 

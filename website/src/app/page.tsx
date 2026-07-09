@@ -2,76 +2,71 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, User, Layers, BookOpen, MessageCircle, Users, Zap, FileText, Search, AlertCircle, RefreshCw, UserPlus, Code2, CheckCircle, Rocket, Globe, Clock, Send, Target, TrendingUp, BarChart3, PenTool, Calendar, Shield, Share2 } from 'lucide-react';
+import { ArrowRight, CalendarDays, User, Layers, BookOpen, MessageCircle, Users, Zap, FileText, Search, AlertCircle, RefreshCw, UserPlus, Code2, CheckCircle, Rocket, Globe, Clock, Send, Target, TrendingUp, BarChart3, PenTool, Calendar, Shield, Share2 } from 'lucide-react';
 
-// ─── Early Access Form ───
+const SIGNUP_URL = 'https://app.helpin.ai/register';
+const DEMO_URL = 'https://cal.com/helpin-ai/30min';
 
-function EarlyAccessForm({ dark = false, id = 'early-access', bg }: { dark?: boolean; id?: string; bg?: string }) {
-  const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !email.includes('@')) return;
-    setStatus('submitting');
-
-    try {
-      const w = window as unknown as {
-        usermaven?: (cmd: string, ...args: unknown[]) => void;
-        _cio?: { identify: (obj: Record<string, unknown>) => void; track: (event: string, obj?: Record<string, unknown>) => void };
-      };
-      // Usermaven
-      if (w.usermaven) {
-        w.usermaven('lead', { email });
-        w.usermaven('track', 'early_access_signup', { form_id: id, email });
-      }
-      // Customer.io
-      if (w._cio) {
-        w._cio.identify({ id: email, email, created_at: Math.floor(Date.now() / 1000) });
-        w._cio.track('early_access_signup', { form_id: id });
-      }
-      setStatus('success');
-      setEmail('');
-    } catch {
-      setStatus('error');
+function trackMarketingCTA(action: string, source: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const w = window as unknown as {
+      usermaven?: (cmd: string, ...args: unknown[]) => void;
+      analytics?: { track: (event: string, obj?: Record<string, unknown>) => void };
+      _cio?: { track: (event: string, obj?: Record<string, unknown>) => void };
+    };
+    w.usermaven?.('track', action, { source });
+    if (typeof w.analytics?.track === 'function') {
+      w.analytics.track(action, { source });
+    } else {
+      w._cio?.track(action, { source });
     }
-  };
+  } catch {
+    // Tracking must never block navigation.
+  }
+}
 
-  if (status === 'success') {
-    return (
-      <div className={`text-[15px] font-medium ${dark ? 'text-white/70' : 'text-foreground'}`}>
-        You're on the list. We'll be in touch soon.
-      </div>
-    );
+function ConversionActions({ dark = false, source }: { dark?: boolean; source: string }) {
+  const primaryClassName = dark
+    ? 'rounded-xl bg-white px-6 py-3 text-[15px] font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-white/10'
+    : 'btn-primary justify-center';
+  const secondaryClassName = dark
+    ? 'rounded-xl border border-white/15 px-6 py-3 text-[15px] font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white'
+    : 'rounded-xl border border-border px-6 py-3 text-[15px] font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-muted/30';
+
+  return (
+    <div className="flex w-full max-w-lg flex-col gap-3 sm:flex-row sm:justify-center">
+      <Link
+        href={SIGNUP_URL}
+        className={primaryClassName}
+        onClick={() => trackMarketingCTA('website_start_trial_clicked', source)}
+      >
+        Start free trial
+        <ArrowRight className="h-4 w-4" />
+      </Link>
+      <Link
+        href={DEMO_URL}
+        className={secondaryClassName}
+        onClick={() => trackMarketingCTA('website_book_demo_clicked', source)}
+      >
+        Book a demo
+        <CalendarDays className="h-4 w-4" />
+      </Link>
+    </div>
+  );
+}
+
+function SignupCTA({ dark = false, source }: { dark?: boolean; source: string }) {
+  if (dark) {
+    return <ConversionActions dark source={source} />;
   }
 
   return (
     <div className="email-glow-wrapper w-full max-w-lg">
       <div className="email-glow-wrapper-glow" />
-      <form onSubmit={handleSubmit} className="relative z-10 flex flex-col sm:flex-row gap-3 w-full rounded-[14px] p-2" style={{ background: bg || (dark ? 'var(--color-foreground)' : 'var(--color-background)'), border: '1px solid oklch(0.12 0.02 55 / 0.08)' }}>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Enter your work email"
-          required
-          className="flex-1 px-4 py-3 rounded-lg text-[15px] outline-none"
-          style={{
-            color: dark ? 'white' : 'var(--color-foreground)',
-            background: dark ? 'oklch(1 0 0 / 0.05)' : 'white',
-            border: dark ? '1px solid oklch(1 0 0 / 0.08)' : '1px solid oklch(0.12 0.02 55 / 0.12)',
-          }}
-        />
-        <button
-          type="submit"
-          disabled={status === 'submitting'}
-          className="btn-primary whitespace-nowrap justify-center w-full sm:w-auto"
-          style={dark ? { background: 'white', color: 'var(--color-foreground)' } : {}}
-        >
-          {status === 'submitting' ? 'Submitting...' : 'Get early access'}
-          {status === 'idle' && <ArrowRight className="h-4 w-4" />}
-        </button>
-      </form>
+      <div className="relative z-10 rounded-[14px] p-2" style={{ background: 'var(--color-background)', border: '1px solid oklch(0.12 0.02 55 / 0.08)' }}>
+        <ConversionActions source={source} />
+      </div>
     </div>
   );
 }
@@ -904,7 +899,7 @@ export default function HomePage() {
             </Reveal>
             <Reveal>
               <div className="flex flex-col items-center gap-3">
-                <EarlyAccessForm id="hero" />
+                <SignupCTA source="home-hero" />
               </div>
             </Reveal>
           </div>
@@ -1181,7 +1176,7 @@ export default function HomePage() {
 
           {/* CTA */}
           <Reveal className="mt-14 flex justify-center px-4">
-            <EarlyAccessForm id="how-it-works" />
+            <SignupCTA source="home-how-it-works" />
           </Reveal>
         </div>
       </section>
@@ -1229,7 +1224,7 @@ export default function HomePage() {
               },
               {
                 q: 'What does it cost?',
-                a: 'Free during early access. No credit card required. Start with your full team today.',
+                a: 'New workspaces start with a no-card 14-day Growth trial. After the trial, choose Starter or Growth to keep the workspace active.',
               },
               {
                 q: 'How long does setup take?',

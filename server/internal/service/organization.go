@@ -10,12 +10,17 @@ import (
 
 // OrganizationService handles organization business logic.
 type OrganizationService struct {
-	orgRepo *repository.OrganizationRepository
+	orgRepo            *repository.OrganizationRepository
+	customerIOIdentity *CustomerIOIdentityService
 }
 
 // NewOrganizationService creates a new OrganizationService.
 func NewOrganizationService(orgRepo *repository.OrganizationRepository) *OrganizationService {
 	return &OrganizationService{orgRepo: orgRepo}
+}
+
+func (s *OrganizationService) SetCustomerIOIdentityService(identity *CustomerIOIdentityService) {
+	s.customerIOIdentity = identity
 }
 
 // requireAdminOrOwner checks that the user has owner or admin role in the org.
@@ -36,7 +41,12 @@ func (s *OrganizationService) Create(ctx context.Context, req model.CreateOrgani
 		return nil, fmt.Errorf("name and slug are required")
 	}
 
-	org, err := s.orgRepo.Create(ctx, req.Name, req.Slug, ownerID, req.LogoURL)
+	slug, err := nextAvailableOrganizationSlug(ctx, s.orgRepo, req.Slug)
+	if err != nil {
+		return nil, fmt.Errorf("resolve organization slug: %w", err)
+	}
+
+	org, err := s.orgRepo.Create(ctx, req.Name, slug, ownerID, req.LogoURL)
 	if err != nil {
 		return nil, fmt.Errorf("create organization: %w", err)
 	}
@@ -44,6 +54,10 @@ func (s *OrganizationService) Create(ctx context.Context, req model.CreateOrgani
 	_, err = s.orgRepo.AddMember(ctx, org.ID, ownerID, model.RoleOwner)
 	if err != nil {
 		return nil, fmt.Errorf("add owner as member: %w", err)
+	}
+	if s.customerIOIdentity != nil {
+		s.customerIOIdentity.SyncUserByID(ctx, ownerID)
+		s.customerIOIdentity.SyncOrganization(ctx, org.ID, ownerID)
 	}
 
 	return &model.OrganizationWithRole{
@@ -81,7 +95,14 @@ func (s *OrganizationService) Update(ctx context.Context, id, userID string, req
 	if err := s.requireAdminOrOwner(ctx, id, userID); err != nil {
 		return nil, err
 	}
-	return s.orgRepo.Update(ctx, id, req.Name, req.LogoURL)
+	org, err := s.orgRepo.Update(ctx, id, req.Name, req.LogoURL)
+	if err != nil {
+		return nil, err
+	}
+	if s.customerIOIdentity != nil {
+		s.customerIOIdentity.SyncOrganization(ctx, id, userID)
+	}
+	return org, nil
 }
 
 // Delete removes an organization. Only owner can delete.
@@ -133,7 +154,15 @@ func (s *OrganizationService) AddMember(ctx context.Context, orgID, actorID stri
 	if req.Role != model.RoleAdmin && req.Role != model.RoleMember {
 		return nil, fmt.Errorf("role must be 'admin' or 'member'")
 	}
-	return s.orgRepo.AddMember(ctx, orgID, req.UserID, req.Role)
+	member, err := s.orgRepo.AddMember(ctx, orgID, req.UserID, req.Role)
+	if err != nil {
+		return nil, err
+	}
+	if s.customerIOIdentity != nil {
+		s.customerIOIdentity.SyncUserByID(ctx, req.UserID)
+		s.customerIOIdentity.SyncOrganization(ctx, orgID, req.UserID)
+	}
+	return member, nil
 }
 
 // UpdateMember updates a member's role. Only owner or admin can update.
@@ -175,7 +204,13 @@ func (s *OrganizationService) UpdateMember(ctx context.Context, orgID, actorID, 
 			return fmt.Errorf("cannot demote the last owner")
 		}
 	}
-	return s.orgRepo.UpdateMemberRole(ctx, orgID, targetUserID, req.Role)
+	if err := s.orgRepo.UpdateMemberRole(ctx, orgID, targetUserID, req.Role); err != nil {
+		return err
+	}
+	if s.customerIOIdentity != nil {
+		s.customerIOIdentity.SyncOrganization(ctx, orgID, targetUserID)
+	}
+	return nil
 }
 
 // RemoveMember removes a member from an organization. Only owner or admin can remove.
@@ -201,7 +236,13 @@ func (s *OrganizationService) RemoveMember(ctx context.Context, orgID, actorID, 
 	if targetRole == model.RoleAdmin && actorRole != model.RoleOwner {
 		return fmt.Errorf("only owners can remove admins")
 	}
-	return s.orgRepo.RemoveMember(ctx, orgID, targetUserID)
+	if err := s.orgRepo.RemoveMember(ctx, orgID, targetUserID); err != nil {
+		return err
+	}
+	if s.customerIOIdentity != nil {
+		s.customerIOIdentity.SyncOrganization(ctx, orgID, actorID)
+	}
+	return nil
 }
 
 // GetMemberRole returns the role a user has in an organization.

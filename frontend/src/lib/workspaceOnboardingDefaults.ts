@@ -90,3 +90,13 @@ export function workspaceDefaultsFromUserEmail(email: string | null | undefined)
     websiteUrl: `https://${registrableDomain}`,
   };
 }
+
+export function workspaceDefaultsForCreation({
+  email,
+  useEmailDefaults,
+}: {
+  email: string | null | undefined;
+  useEmailDefaults: boolean;
+}): WorkspaceOnboardingDefaults {
+  return useEmailDefaults ? workspaceDefaultsFromUserEmail(email) : emptyDefaults;
+}

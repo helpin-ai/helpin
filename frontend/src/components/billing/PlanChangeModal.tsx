@@ -127,10 +127,6 @@ export function PlanChangeModal({
               );
             })}
           </div>
-
-          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            Stripe Checkout will collect and save the payment method for this subscription.
-          </div>
         </div>
 
         <DialogFooter>

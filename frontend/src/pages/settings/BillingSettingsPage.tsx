@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Ban,
   BarChart3,
@@ -240,17 +240,38 @@ const BILLING_TEST_SCENARIOS: Array<{
   },
 ];
 
-export function BillingSettingsPage() {
+export function BillingSettingsPage({
+  openPlanChooser = false,
+  onPlanChooserChange,
+}: {
+  openPlanChooser?: boolean;
+  onPlanChooserChange?: (open: boolean) => void;
+}) {
   return (
     <SettingsPageFrame section="billing">
       {({ workspaceId, permissions }) => (
-        <BillingSettingsContent workspaceId={workspaceId} editable={permissions.canManageSettings} />
+        <BillingSettingsContent
+          workspaceId={workspaceId}
+          editable={permissions.canManageSettings}
+          openPlanChooser={openPlanChooser}
+          onPlanChooserChange={onPlanChooserChange}
+        />
       )}
     </SettingsPageFrame>
   );
 }
 
-function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string; editable: boolean }) {
+function BillingSettingsContent({
+  workspaceId,
+  editable,
+  openPlanChooser,
+  onPlanChooserChange,
+}: {
+  workspaceId: string;
+  editable: boolean;
+  openPlanChooser: boolean;
+  onPlanChooserChange?: (open: boolean) => void;
+}) {
   const [choosingPlan, setChoosingPlan] = useState(false);
   const [selectedInterval, setSelectedInterval] = useState<BillingInterval>('annual');
   const [checkoutResult, setCheckoutResult] = useState<'success' | 'cancelled' | null>(null);
@@ -270,6 +291,15 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
   const setOnDemand = useSetBillingOnDemand(workspaceId);
   const applyTestScenario = useApplyBillingTestScenario(workspaceId);
 
+  const setPlanChooserOpen = useCallback((open: boolean) => {
+    setChoosingPlan(open);
+    onPlanChooserChange?.(open);
+  }, [onPlanChooserChange]);
+
+  useEffect(() => {
+    if (openPlanChooser) setChoosingPlan(true);
+  }, [openPlanChooser]);
+
   useEffect(() => {
     const url = new URL(window.location.href);
     const result = url.searchParams.get('billing');
@@ -288,7 +318,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
             setCheckoutResult(null);
             setCheckoutConfirming(false);
             setCheckoutConfirmationDelayed(false);
-            setChoosingPlan(false);
+            setPlanChooserOpen(false);
             toast.success('Plan updated.');
           },
           () => {
@@ -312,7 +342,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
       setCheckoutConfirmationDelayed(false);
       toast.info('Checkout was cancelled. No billing changes were made.');
     }
-  }, [confirmCheckout, refetch]);
+  }, [confirmCheckout, refetch, setPlanChooserOpen]);
 
   useEffect(() => {
     if (checkoutResult !== 'success' || !checkoutConfirming) return;
@@ -371,7 +401,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
     });
     if (!result) return;
     toast.success(result.pending_plan ? 'Plan change scheduled' : 'Plan updated');
-    setChoosingPlan(false);
+    setPlanChooserOpen(false);
   };
 
   const beginPaidPlanChange = async (plan: BillingPlan, interval: BillingInterval) => {
@@ -453,7 +483,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
             variant="outline"
             size="sm"
             className="w-fit shrink-0"
-            onClick={() => setChoosingPlan(false)}
+            onClick={() => setPlanChooserOpen(false)}
           >
             Back to overview
           </Button>
@@ -463,7 +493,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
         <BillingNoticeBanner
           billing={billing}
           onPortal={() => void openPortal('payment method management')}
-          onUpgrade={() => setChoosingPlan(true)}
+          onUpgrade={() => setPlanChooserOpen(true)}
           portalLoading={portal.isPending}
           actionDisabled={!canManageBilling}
         />
@@ -587,7 +617,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
         <BillingNoticeBanner
           billing={billing}
           onPortal={() => void openPortal('payment method management')}
-          onUpgrade={() => setChoosingPlan(true)}
+          onUpgrade={() => setPlanChooserOpen(true)}
           portalLoading={portal.isPending}
           actionDisabled={!canManageBilling}
         />
@@ -612,7 +642,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
                 <Badge variant="outline" className="shrink-0">Managed by Helpin</Badge>
               ) : !billing.locked ? (
                 <Button
-                  onClick={() => setChoosingPlan(true)}
+                  onClick={() => setPlanChooserOpen(true)}
                   disabled={!canManageBilling}
                   className="shrink-0"
                 >
@@ -620,7 +650,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
                 </Button>
               ) : (
                 <Button
-                  onClick={() => setChoosingPlan(true)}
+                  onClick={() => setPlanChooserOpen(true)}
                   disabled={!canManageBilling}
                   className="shrink-0"
                 >

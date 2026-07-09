@@ -1,10 +1,10 @@
 export type SignupRedirectTarget =
   | { to: string }
-  | { to: '/workspaces'; search: { create: true } };
+  | { to: '/onboarding'; search: { step: 'details' } };
 
 export function signupSuccessRedirect(redirect: string | null | undefined): SignupRedirectTarget {
   if (redirect) {
     return { to: redirect };
   }
-  return { to: '/workspaces', search: { create: true } };
+  return { to: '/onboarding', search: { step: 'details' } };
 }

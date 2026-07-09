@@ -4,6 +4,7 @@ import { authService } from '@/lib/services/authService';
 import { passkeyService } from '@/lib/services/passkeyService';
 import { stopTokenRefreshTimer } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
+import { resetAnalytics } from '@/lib/analytics';
 import { clearSession, hydrateSessionStorage, writeSession } from '@helpin-ai/support-core';
 
 interface AuthState {
@@ -26,6 +27,7 @@ interface AuthState {
 let _initializing = false;
 
 export async function clearClientSession() {
+  resetAnalytics();
   stopTokenRefreshTimer();
   queryClient.clear();
 

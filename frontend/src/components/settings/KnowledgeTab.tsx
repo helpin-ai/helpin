@@ -394,6 +394,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
 
     setGeneratingCompanyContext(true);
     const { data, error } = await workspacesService.generateCompanyProductDescription({
+      workspace_id: workspace.id,
       workspace_name: workspace.name,
       website_url: workspace.website_url,
     });
@@ -467,7 +468,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
                 <div>
                   <p className="text-sm font-medium">Company/Product Context</p>
                   <p className="text-xs text-muted-foreground">
-                    Used by Helpin AI agents as workspace-level context for support answers, docs, planning, automation, and product-aware work.
+                    Plain-text context used by Helpin AI agents for support answers, docs, planning, automation, and product-aware work.
                   </p>
                 </div>
               </div>
@@ -498,14 +499,14 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
         <CardContent className="space-y-3">
           <div className="space-y-2">
             <div>
-              <Label htmlFor="company-product-context">Company/Product description</Label>
+              <Label htmlFor="company-product-context">Company/Product context</Label>
             </div>
             <div className={shouldCollapseCompanyContext && !companyContextExpanded ? 'relative max-h-44 overflow-hidden' : 'relative'}>
               <Textarea
                 id="company-product-context"
                 value={companyDescription}
                 onChange={(event) => setCompanyDescription(event.target.value)}
-                placeholder="Describe what your company or product does, who it serves, and what problems it solves."
+                placeholder="Plain text about what your company or product does, who it serves, and what problems it solves."
                 rows={companyContextExpanded ? 14 : 8}
                 className={cn(
                   shouldCollapseCompanyContext && 'pb-10',

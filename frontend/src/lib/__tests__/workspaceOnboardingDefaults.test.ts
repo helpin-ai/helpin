@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { workspaceDefaultsFromUserEmail } from '../workspaceOnboardingDefaults';
+import { workspaceDefaultsForCreation, workspaceDefaultsFromUserEmail } from '../workspaceOnboardingDefaults';
 
 describe('workspaceOnboardingDefaults', () => {
   it('suggests workspace details from a company email domain', () => {
@@ -27,6 +27,28 @@ describe('workspaceOnboardingDefaults', () => {
       slug: '',
       workspaceKey: '',
       websiteUrl: '',
+    });
+  });
+
+  it('only uses company-email defaults for first-workspace onboarding', () => {
+    expect(workspaceDefaultsForCreation({
+      email: 'jane.doe@acme-labs.io',
+      useEmailDefaults: false,
+    })).toEqual({
+      name: '',
+      slug: '',
+      workspaceKey: '',
+      websiteUrl: '',
+    });
+
+    expect(workspaceDefaultsForCreation({
+      email: 'jane.doe@acme-labs.io',
+      useEmailDefaults: true,
+    })).toEqual({
+      name: 'Acme Labs',
+      slug: 'acme-labs',
+      workspaceKey: 'ACM',
+      websiteUrl: 'https://acme-labs.io',
     });
   });
 });

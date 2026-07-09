@@ -8,10 +8,12 @@ import { queryClient } from '@/lib/queryClient'
 import { clearClientSession, useAuthStore } from '@/stores/authStore'
 import { startTokenRefreshTimer, stopTokenRefreshTimer, setupVisibilityRefresh } from '@/lib/api'
 import { RoutePendingState } from '@/components/layout/RoutePendingState'
+import { identifyAnalyticsUser, initializeAppAnalytics } from '@/lib/analytics'
 import { routeTree } from './routeTree.gen'
 import './index.css'
 
 configureSessionStorage(createCookieSessionStorage())
+initializeAppAnalytics()
 
 function normalizePathname(pathname: string) {
   if (!pathname) return '/'
@@ -68,6 +70,7 @@ function InnerApp() {
       return
     }
 
+    identifyAnalyticsUser(user)
     startTokenRefreshTimer()
     const cleanupVisibilityRefresh = setupVisibilityRefresh()
     return () => {

@@ -143,6 +143,7 @@ type CreateWorkspaceRequest struct {
 type GenerateWorkspaceContextDescriptionRequest struct {
 	WorkspaceName string `json:"workspace_name"`
 	WebsiteURL    string `json:"website_url"`
+	WorkspaceID   string `json:"workspace_id,omitempty"`
 }
 
 // GenerateWorkspaceContextDescriptionResponse returns an editable markdown draft.

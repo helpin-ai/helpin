@@ -77,19 +77,30 @@ func (s *WorkspaceService) GenerateCompanyProductDescription(ctx context.Context
 		pageText = pageText[:workspaceContextMaxPromptChars]
 	}
 
-	resp, err := s.contextLLM.ChatCompletion(ctx, llm.ChatRequest{
-		SystemPrompt: "You draft compact, factual company/product context for AI agents. Use only the provided website text. Return markdown.",
+	meteringCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    strings.TrimSpace(req.WorkspaceID),
+		FeatureKey:     BillingFeatureCompanyProductContext,
+		IdempotencyKey: aiUsageIdempotencyKey(strings.TrimSpace(req.WorkspaceID), "company_product_context", aiUsageStableHash(strings.TrimSpace(req.WorkspaceName)+"|"+strings.TrimSpace(*websiteURL))),
+		Metadata: map[string]interface{}{
+			"workspace_name": strings.TrimSpace(req.WorkspaceName),
+			"website_url":    strings.TrimSpace(*websiteURL),
+		},
+	})
+
+	resp, err := s.contextLLM.ChatCompletion(meteringCtx, llm.ChatRequest{
+		SystemPrompt: "You draft compact, factual company/product context for AI agents. Use only the provided website text. Return plain text only.",
 		Messages: []llm.Message{{
 			Role: "user",
 			Content: fmt.Sprintf(`Draft company/product context for workspace %q.
 
-Write markdown with:
-- a brief opening summary
-- Core capabilities
-- Target users
-- Positioning, competitors, constraints, or product category when present
+Write compact plain text with short labeled sections when useful:
+Start with one unlabeled product summary pointer.
+Audience:
+Key capabilities:
+Positioning:
+Competitors:
 
-Use as few words as possible without dropping important product facts. Avoid repeated claims, generic marketing language, unsupported claims, and granular website details that should remain in website sources. Keep it useful for support, docs, planning, and engineering agents.
+Put "- " before each content pointer. Do not include a Product label. Use Competitors only when competitor names or alternatives are clearly present in the website text. Group related tools, channels, platforms, and integrations instead of listing every item. Use short lines and avoid long comma-separated lists. Do not use formatting syntax such as heading markers, bold markers, or code fences. Use as few words as possible without dropping important product facts. Avoid repeated claims, generic marketing language, unsupported claims, and granular website details that should remain in website sources. Keep it useful for support, docs, planning, and engineering agents.
 
 Website text:
 %s`, strings.TrimSpace(req.WorkspaceName), pageText),
@@ -100,7 +111,7 @@ Website text:
 	if err != nil {
 		return nil, fmt.Errorf("generate company/product context: %w", err)
 	}
-	description := strings.TrimSpace(resp.Content)
+	description := normalizeCompanyProductContextPlainText(resp.Content)
 	if description == "" {
 		return nil, fmt.Errorf("generated company/product context was empty")
 	}
@@ -108,6 +119,50 @@ Website text:
 		Description:           description,
 		CompanyProductContext: description,
 	}, nil
+}
+
+func normalizeCompanyProductContextPlainText(raw string) string {
+	cleaned := strings.ReplaceAll(raw, "\r\n", "\n")
+	cleaned = strings.ReplaceAll(cleaned, "\r", "\n")
+	cleaned = strings.ReplaceAll(cleaned, "**", "")
+	cleaned = strings.ReplaceAll(cleaned, "__", "")
+	lines := strings.Split(cleaned, "\n")
+	out := make([]string, 0, len(lines))
+	seenContent := false
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "```") {
+			continue
+		}
+		line = markdownHeadingRE.ReplaceAllString(line, "")
+		line = markdownNumberedListRE.ReplaceAllString(line, "- ")
+		line = normalizeCompanyProductContextLine(line, !seenContent)
+		if strings.TrimSpace(line) != "" {
+			seenContent = true
+		}
+		out = append(out, strings.TrimSpace(line))
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+func normalizeCompanyProductContextLine(line string, firstContentLine bool) string {
+	lower := strings.ToLower(line)
+	if lower == "product:" {
+		return ""
+	}
+	if firstContentLine && strings.HasPrefix(lower, "product:") {
+		return "- " + strings.TrimSpace(line[len("Product:"):])
+	}
+	if lower == "customers:" {
+		return "Audience:"
+	}
+	if strings.HasPrefix(lower, "customers:") {
+		return "Audience:\n- " + strings.TrimSpace(line[len("Customers:"):])
+	}
+	if strings.HasPrefix(line, "* ") || strings.HasPrefix(line, "+ ") {
+		return "- " + strings.TrimSpace(line[2:])
+	}
+	return line
 }
 
 func fetchWorkspaceContextPages(ctx context.Context, fetcher WorkspaceContextFetcher, baseURL string) string {
@@ -146,6 +201,9 @@ var (
 	scriptStyleRE = regexp.MustCompile(`(?is)<(script|style|noscript)[^>]*>.*?</(script|style|noscript)>`)
 	tagRE         = regexp.MustCompile(`(?s)<[^>]+>`)
 	spaceRE       = regexp.MustCompile(`\s+`)
+
+	markdownHeadingRE      = regexp.MustCompile(`^#{1,6}\s+`)
+	markdownNumberedListRE = regexp.MustCompile(`^\d+[.)]\s+`)
 )
 
 func htmlToPlainText(raw string) string {
