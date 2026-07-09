@@ -351,7 +351,7 @@ export function CodingTranscriptPane({
         </div>
       </div>
 
-      {(session?.pause_reason === 'authentication' || activeInteraction) ? (
+      {(session?.status === 'paused' || activeInteraction) ? (
         <InterruptionOverlay
           session={session ?? null}
           activeInteraction={activeInteraction ?? null}
@@ -520,6 +520,26 @@ function InterruptionOverlay({
         </div>
       ) : null}
 
+      {/*
+        The run has paused for approval but the interaction hasn't projected
+        into the event stream yet (backend reconstruction lags the status flip
+        by a beat). Show a placeholder so the drawer never looks empty/broken
+        while the real approval card is on its way.
+      */}
+      {session?.status === 'paused' && session?.pause_reason !== 'authentication' && !activeInteraction ? (
+        <div className="rounded-lg border border-border/80 bg-card p-4">
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+            Awaiting your approval
+          </div>
+          <div className="text-sm font-semibold">The agent paused for your approval</div>
+          <p className="mt-1 text-sm text-muted-foreground">Loading the approval details…</p>
+          <div className="mt-3 space-y-2" aria-hidden>
+            <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+          </div>
+        </div>
+      ) : null}
       {activeInteraction ? (
         <CodingInteractionCard
           interaction={activeInteraction}

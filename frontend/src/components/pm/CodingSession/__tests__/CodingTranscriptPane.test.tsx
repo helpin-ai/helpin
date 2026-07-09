@@ -207,6 +207,52 @@ describe('CodingTranscriptPane', () => {
     expect(container.textContent).toContain('Approve');
   });
 
+  it('shows an approval placeholder while a paused run has no projected interaction yet', () => {
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'paused', pause_reason: 'human_approval' })}
+          activeInteraction={null}
+          acting={null}
+          attachedPreview={null}
+          availablePreviewPanelKey={null}
+          onResolveInteraction={() => {}}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('The agent paused for your approval');
+    expect(container.textContent).toContain('Loading the approval details…');
+  });
+
+  it('does not show the approval placeholder for an authentication pause', () => {
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'paused', pause_reason: 'authentication' })}
+          activeInteraction={null}
+          acting={null}
+          attachedPreview={null}
+          availablePreviewPanelKey={null}
+          onResolveInteraction={() => {}}
+        />,
+      );
+    });
+
+    expect(container.textContent).not.toContain('Loading the approval details…');
+    expect(container.textContent).toContain('Authentication required');
+  });
+
   it('uses the subtle shared focus border on the main composer', () => {
     act(() => {
       root.render(
