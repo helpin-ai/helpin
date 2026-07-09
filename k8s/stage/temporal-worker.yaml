@@ -12,7 +12,10 @@ spec:
       maxUnavailable: 0
       maxSurge: 1
   minReadySeconds: 10
-  replicas: 1
+  # Agent execution moved to the standalone Agent Runtime Temporal namespace.
+  # Keep this retired deployment at zero during the drain window so rollback
+  # history remains visible without running an idle product worker.
+  replicas: 0
   selector:
     matchLabels:
       app: helpin-temporal-native-interactive
@@ -78,7 +81,7 @@ spec:
       maxUnavailable: 0
       maxSurge: 1
   minReadySeconds: 10
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: helpin-temporal-native-autonomous
@@ -144,7 +147,7 @@ spec:
       maxUnavailable: 0
       maxSurge: 1
   minReadySeconds: 10
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: helpin-temporal-opencode-autonomous
@@ -214,7 +217,7 @@ spec:
       maxUnavailable: 0
       maxSurge: 1
   minReadySeconds: 10
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: helpin-temporal-codex-autonomous
@@ -286,7 +289,7 @@ spec:
       maxUnavailable: 0
       maxSurge: 1
   minReadySeconds: 10
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: helpin-temporal-codex-interactive

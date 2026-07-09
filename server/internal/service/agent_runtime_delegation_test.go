@@ -1,7 +1,10 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -22,6 +25,63 @@ var delegationTargetTypes = []string{
 	"repository",
 	"support_conversation",
 	"support_coverage_gap",
+}
+
+func TestPlanningStageForDelegatedRun(t *testing.T) {
+	taskPlanner := &model.Agent{IsSystem: true, PresetKey: model.AgentPresetTaskPlanner}
+	if got := planningStageForDelegatedRun(taskPlanner, &model.PMTask{}, nil); got != model.PlanningStageTaskPlanDoc {
+		t.Fatalf("task planner stage = %q", got)
+	}
+
+	epicPlanner := &model.Agent{IsSystem: true, PresetKey: model.AgentPresetEpicPlanner}
+	if got := planningStageForDelegatedRun(epicPlanner, nil, &model.PMEpic{}); got != model.PlanningStageDraftSpec {
+		t.Fatalf("new epic planner stage = %q", got)
+	}
+	approvedVersion := "version-1"
+	if got := planningStageForDelegatedRun(epicPlanner, nil, &model.PMEpic{ApprovedSpecVersionID: &approvedVersion}); got != model.PlanningStagePlanTasks {
+		t.Fatalf("approved epic planner stage = %q", got)
+	}
+	if got := planningStageForDelegatedRun(epicPlanner, nil, &model.PMEpic{PlanningState: model.EpicPlanningStateReadyForTaskPlanning}); got != model.PlanningStagePlanTasks {
+		t.Fatalf("ready epic planner stage = %q", got)
+	}
+}
+
+func TestRuntimeStartRunRequestPropagatesPlannerSelectors(t *testing.T) {
+	payload, err := buildAgentRunInputPayload("epic", "epic-1", nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err = withAgentRunPlanningStage(payload, model.PlanningStagePlanTasks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "workspace-1", AgentID: "agent-1", TargetType: "epic", TargetID: "epic-1", Input: json.RawMessage(payload)}
+	agent := &model.Agent{ID: "agent-1", PresetKey: model.AgentPresetEpicPlanner}
+	req := runtimeStartRunRequest(run, agent)
+	if req.Metadata["preset_key"] != model.AgentPresetEpicPlanner || req.Metadata["planning_stage"] != model.PlanningStagePlanTasks {
+		t.Fatalf("missing planner selectors: %#v", req.Metadata)
+	}
+}
+
+func TestBuildDelegatedEpicLaunchContextIncludesDurableFacts(t *testing.T) {
+	description := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Reduce onboarding friction."}]}]}`
+	teamID := "team-1"
+	specID := "doc-1"
+	epic := &model.PMEpic{
+		ID:             "epic-1",
+		WorkspaceID:    "workspace-1",
+		Name:           "Onboarding",
+		Description:    &description,
+		TeamID:         &teamID,
+		SpecDocumentID: &specID,
+		PlanningState:  model.EpicPlanningStateAwaitingSpecApproval,
+	}
+	got := (&AgentService{}).buildDelegatedEpicLaunchContext(context.Background(), epic, strPtr("Keep scope narrow."))
+	for _, want := range []string{"Operator notes", "Keep scope narrow", "Epic: **Onboarding**", "Reduce onboarding friction", "planning_state=awaiting_spec_approval", "team_id=team-1", "spec_document_id=doc-1"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("context missing %q:\n%s", want, got)
+		}
+	}
 }
 
 func TestDelegatesRunToAgentRuntimeDelegatesEveryAgentAndTarget(t *testing.T) {

@@ -106,6 +106,9 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 	if values["reasoning_effort"] != "high" {
 		t.Fatalf("expected reasoning_effort preserved, got %#v", values)
 	}
+	if values["preset_key"] != model.AgentPresetCodeBuilder {
+		t.Fatalf("expected preset_key propagated, got %#v", values)
+	}
 
 	marketer := &model.Agent{
 		ID:          "agent-mira",
@@ -120,6 +123,42 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 		if _, ok := nonRepoValues["workspace"]; ok {
 			t.Fatalf("marketer must not get a workspace mode, got %#v", nonRepoValues)
 		}
+	}
+}
+
+func TestRuntimeAgentFromHelpinAgentPropagatesNativeToolBudget(t *testing.T) {
+	tests := []struct {
+		name  string
+		agent *model.Agent
+		want  float64
+	}{
+		{
+			name:  "system default",
+			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetMarketer, RuntimeKind: "native_sdk"},
+			want:  50,
+		},
+		{
+			name:  "planner",
+			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetEpicPlanner, RuntimeKind: "native_sdk"},
+			want:  300,
+		},
+		{
+			name:  "custom agent",
+			agent: &model.Agent{IsSystem: false, RuntimeKind: "native_sdk"},
+			want:  300,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := runtimeAgentFromHelpinAgent(tt.agent, "helpin")
+			var values map[string]interface{}
+			if err := json.Unmarshal(out.ExecutionConfig, &values); err != nil {
+				t.Fatalf("decode runtime execution config: %v", err)
+			}
+			if got := values["max_tool_steps"]; got != tt.want {
+				t.Fatalf("max_tool_steps = %#v, want %.0f", got, tt.want)
+			}
+		})
 	}
 }
 

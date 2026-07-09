@@ -253,6 +253,29 @@ describe('CodingTranscriptPane', () => {
     expect(container.textContent).toContain('Authentication required');
   });
 
+  it('does not label a human-input pause as awaiting approval', () => {
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'paused', pause_reason: 'human_input' })}
+          activeInteraction={null}
+          acting={null}
+          attachedPreview={null}
+          availablePreviewPanelKey={null}
+          onResolveInteraction={() => {}}
+        />,
+      );
+    });
+
+    expect(container.textContent).not.toContain('Awaiting your approval');
+    expect(container.textContent).not.toContain('The agent paused for your approval');
+  });
+
   it('uses the subtle shared focus border on the main composer', () => {
     act(() => {
       root.render(

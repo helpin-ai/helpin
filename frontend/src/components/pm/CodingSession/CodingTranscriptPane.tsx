@@ -351,7 +351,9 @@ export function CodingTranscriptPane({
         </div>
       </div>
 
-      {(session?.status === 'paused' || activeInteraction) ? (
+      {(session?.pause_reason === 'authentication'
+        || (session?.status === 'paused' && session?.pause_reason === 'human_approval')
+        || activeInteraction) ? (
         <InterruptionOverlay
           session={session ?? null}
           activeInteraction={activeInteraction ?? null}
@@ -526,7 +528,7 @@ function InterruptionOverlay({
         by a beat). Show a placeholder so the drawer never looks empty/broken
         while the real approval card is on its way.
       */}
-      {session?.status === 'paused' && session?.pause_reason !== 'authentication' && !activeInteraction ? (
+      {session?.status === 'paused' && session?.pause_reason === 'human_approval' && !activeInteraction ? (
         <div className="rounded-lg border border-border/80 bg-card p-4">
           <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
