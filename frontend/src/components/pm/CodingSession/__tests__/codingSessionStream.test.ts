@@ -636,18 +636,18 @@ describe('buildCodingSessionStreamState', () => {
     expect(renderedText.match(/Members should be able to create and edit epics\./g)).toHaveLength(1);
   });
 
-  it('does not render the same requested-changes note twice', () => {
+  it('dedupes the generated approval acknowledgment and shows what was approved', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({
-        id: 'msg-request-changes',
+        id: 'msg-approval-resume',
         type: 'user.message.completed',
         sequence_no: 12,
         runtime_metadata: { source: 'agent_run_message' },
         payload: {
-          message_id: 'message-request-changes-1',
-          content: 'Members should be able to create and edit epics.',
+          message_id: 'message-approval-resume-1',
+          content: 'Approved. Continue.',
           role: 'user',
-          message_type: 'request_changes',
+          message_type: 'approval',
           sequence_no: 12,
         },
       }),
@@ -659,24 +659,29 @@ describe('buildCodingSessionStreamState', () => {
           interaction_id: 'interaction-approval-1',
           interaction_kind: 'approval_request',
           status: 'resolved',
-          request_schema_version: 'helpin.v1',
+          request_schema_version: 'codex.v1',
+          title: 'Approve tool call',
+          summary: 'Command: rm -rf ./dist\nWorking directory: /repo\nReason: clean build',
           request_payload: {
-            title: 'Task Planning Document: Fix Epic Editing for Team Members',
+            command: 'rm -rf ./dist',
           },
           response_payload: {
-            decision: 'request_changes',
-            message: 'Members should be able to create and edit epics.',
+            decision: 'approve',
           },
         },
         runtime_metadata: { source: 'agent_run_interaction', interaction_kind: 'approval_request' },
       }),
     ]);
 
+    // Only the synthesized resolution survives — no duplicate "Approved. Continue." bubble.
     expect(state.transcript_messages.map((message) => message.message_type)).toEqual([
       'approval_request_resolution',
     ]);
     const renderedText = state.transcript_messages.map((message) => message.content).join('\n');
-    expect(renderedText.match(/Members should be able to create and edit epics\./g)).toHaveLength(1);
+    expect(renderedText).not.toContain('Approved. Continue.');
+    // The surviving message describes WHAT was approved, not a bare "approval request".
+    expect(renderedText).toContain('Command: rm -rf ./dist');
+    expect(renderedText).not.toContain('approval request');
   });
 
   it('falls back to tool_input for persisted historical tool segments', () => {

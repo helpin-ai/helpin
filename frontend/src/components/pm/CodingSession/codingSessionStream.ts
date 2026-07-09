@@ -588,7 +588,12 @@ function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEve
   const interactionKind = asString(payload.interaction_kind);
   if (interactionKind !== 'approval_request') return null;
 
-  const content = approvalRequestResolutionTranscriptContent(asRecord(payload.request_payload), asRecord(payload.response_payload));
+  const content = approvalRequestResolutionTranscriptContent(
+    asRecord(payload.request_payload),
+    asRecord(payload.response_payload),
+    asString(payload.summary),
+    asString(payload.title),
+  );
   if (!content) return null;
 
   const responsePayload = asRecord(payload.response_payload);
@@ -629,36 +634,53 @@ function removeDuplicateResolvedInteractionResumeMessage(
   transcriptMessages: CodingSessionTranscriptMessage[],
   event: CodingSessionEvent,
 ) {
-  const note = resolvedInteractionResponseNote(event);
   const messageType = resolvedInteractionResumeMessageType(event);
-  if (!note || !messageType) return;
+  if (!messageType) return;
+  const note = resolvedInteractionResponseNote(event);
+
+  // Only approval_request synthesizes a resolution message (describing the
+  // decision and what was approved). When it does, drop the resume message for
+  // the same decision even if there was no note — otherwise the generated
+  // acknowledgment ("Approved. Continue.") renders as a second bubble. For
+  // review_checkpoint (no synthesized resolution) keep the old behavior: dedup
+  // only the message that carries the note, never the sole representation.
+  const kind = asString(asRecord(event.payload)?.interaction_kind);
+  const dropWithoutNote = kind === 'approval_request';
+  if (!note && !dropWithoutNote) return;
 
   for (let index = transcriptMessages.length - 1; index >= 0; index -= 1) {
     const message = transcriptMessages[index];
-    if (
-      message.role === 'user'
-      && message.message_type === messageType
-      && message.content.trim() === note
-      && (message.sequence_no ?? 0) <= event.sequence_no
-    ) {
-      transcriptMessages.splice(index, 1);
-      return;
-    }
+    if (message.role !== 'user' || message.message_type !== messageType) continue;
+    if ((message.sequence_no ?? 0) > event.sequence_no) continue;
+    if (note && message.content.trim() !== note) continue;
+    transcriptMessages.splice(index, 1);
+    return;
   }
 }
 
 function approvalRequestResolutionTranscriptContent(
   requestPayload: Record<string, unknown> | null,
   responsePayload: Record<string, unknown> | null,
+  summary?: string,
+  topTitle?: string,
 ) {
   if (!responsePayload) return '';
   const decision = asString(responsePayload.decision);
   if (!decision) return '';
-  const title = asString(requestPayload?.title) ?? 'approval request';
+  // Describe WHAT was approved so the chat isn't a bare "Approved approval
+  // request." The interaction summary carries it (e.g. the codex command /
+  // "Approve create_document …"); fall back to a title, then nothing.
+  const descriptor = (
+    summary?.trim()
+    || asString(requestPayload?.title)?.trim()
+    || topTitle?.trim()
+    || ''
+  );
+  const verb = decision === 'approve' ? 'Approved' : 'Requested changes on';
   const note = asString(responsePayload.message);
-  const lines: string[] = [
-    decision === 'approve' ? `Approved ${title}.` : `Requested changes on ${title}.`,
-  ];
+  const lines: string[] = descriptor
+    ? [`${verb}:`, descriptor]
+    : [`${verb} the request.`];
   if (note) {
     lines.push('');
     lines.push(`Note: ${note}`);
