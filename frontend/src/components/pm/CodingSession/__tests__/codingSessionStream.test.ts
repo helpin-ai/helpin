@@ -176,8 +176,10 @@ describe('buildCodingSessionStreamState', () => {
     expect(state.activity_events.map((event) => event.type)).toEqual(['interaction.requested']);
   });
 
-  it('stitches whitespace-less assistant deltas into readable live text', () => {
-    const tokens = ['inspect', 'the', 'repository', 'structure', 'and', 'existing', 'HTTP', 'token/rate-limit', 'paths', 'first,', 'then', 'build', 'against', 'the', 'new', 'API.', 'If', 'it', 'breaks', 'I', "'ll", 'patch', '.'];
+  it('appends provider assistant deltas verbatim, preserving spacing and mid-word token splits', () => {
+    // The runtime emits verbatim deltas that already carry their own leading
+    // whitespace; token boundaries fall mid-word. We must not guess spacing.
+    const tokens = ['Bu', 'ffer', "'s", ' change', 'log', ' loaded', ' well', '.'];
     const state = buildCodingSessionStreamState([
       buildEvent({
         id: 'assistant-start',
@@ -193,15 +195,39 @@ describe('buildCodingSessionStreamState', () => {
       })),
     ]);
 
-    expect(state.live_assistant_message?.content).toBe(
-      "inspect the repository structure and existing HTTP token/rate-limit paths first, then build against the new API. If it breaks I'll patch.",
-    );
+    expect(state.live_assistant_message?.content).toBe("Buffer's changelog loaded well.");
     expect(state.live_turn_segments).toHaveLength(1);
     expect(state.live_turn_segments[0]).toMatchObject({
       kind: 'assistant_message',
-      assistant_message: {
-        content: "inspect the repository structure and existing HTTP token/rate-limit paths first, then build against the new API. If it breaks I'll patch.",
-      },
+      assistant_message: { content: "Buffer's changelog loaded well." },
+    });
+  });
+
+  it('does not duplicate the message when a completion follows verbatim streamed deltas', () => {
+    const tokens = ['Analy', 'zing', ' the', ' change', 'logs', ' now', '.'];
+    const state = buildCodingSessionStreamState([
+      buildEvent({ id: 'a-start', type: 'assistant.message.started', sequence_no: 1, payload: { message_id: 'm1' } }),
+      ...tokens.map((token, index) => buildEvent({
+        id: `a-delta-${index}`,
+        type: 'assistant.message.delta',
+        sequence_no: index + 2,
+        payload: { message_id: 'm1', text: token },
+      })),
+      buildEvent({
+        id: 'a-completed',
+        type: 'assistant.message.completed',
+        sequence_no: 20,
+        payload: { message_id: 'm1', text: 'Analyzing the changelogs now.' },
+      }),
+    ]);
+
+    // Streamed content is an exact prefix of the completed content, so the
+    // completion marks the single segment complete rather than re-appending.
+    expect(state.live_assistant_message?.content).toBe('Analyzing the changelogs now.');
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: { content: 'Analyzing the changelogs now.', status: 'completed' },
     });
   });
 

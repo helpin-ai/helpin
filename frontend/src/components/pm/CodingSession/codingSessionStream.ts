@@ -421,24 +421,17 @@ function appendAssistantSegment(
 
 function streamDelta(current: string, incoming: string) {
   if (!incoming) return '';
+  // Providers stream either cumulative snapshots or verbatim increments. The
+  // agent-runtime already normalizes this (nativeStreamDelta / codexAssistantDelta)
+  // and emits verbatim deltas that carry their own whitespace. We must append
+  // them verbatim: token boundaries fall mid-word ("Buf" + "fer" -> "Buffer"),
+  // so any guessed spacing corrupts the text (producing "Buf fer") and also
+  // breaks the startsWith invariant the completion path relies on (which then
+  // re-appends the full message and duplicates it).
   if (current && incoming.startsWith(current)) {
     return incoming.slice(current.length);
   }
-  if (shouldInsertStreamSpace(current, incoming)) {
-    return ` ${incoming}`;
-  }
   return incoming;
-}
-
-function shouldInsertStreamSpace(current: string, incoming: string) {
-  if (!current || !incoming) return false;
-  const last = current[current.length - 1] ?? '';
-  const first = incoming[0] ?? '';
-  if (/\s/.test(last) || /\s/.test(first)) return false;
-  if (/[.,;:!?()[\]{}'"`]/.test(first) && first !== '(' && first !== '[' && first !== '{') return false;
-  if (/[(\[{`]/.test(last)) return false;
-  if (/[.,;:!?]/.test(last)) return /[A-Za-z0-9]/.test(first);
-  return /[A-Za-z0-9]/.test(last) && /[A-Za-z0-9]/.test(first);
 }
 
 function deriveAssistantSegmentDelta(previousContent: string, fullContent: string) {
