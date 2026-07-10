@@ -62,6 +62,18 @@ Use an imperative verb followed by a concise purpose clause. Prefer familiar pro
 - Surface permission or entitlement blockers as compact status information, not as a second explanatory paragraph.
 - Preserve the existing hierarchy, colors, progress calculation, actions, and evidence behavior.
 
+### Collapsible journey sections
+
+- Render every journey as an independently collapsible section.
+- On each page load, expand only the first journey returned by the setup API and collapse all later journeys.
+- Do not persist expansion state between visits.
+- Allow multiple journeys to remain expanded at the same time; this is not a single-open accordion.
+- Keep the complete journey header visible while collapsed: accent indicator, maturity or `Power up` label, journey title, journey description, verified completion count, and expand/collapse chevron.
+- Make the full header a semantic button with `aria-expanded` and `aria-controls`; give the task list a stable matching `id`.
+- Rotate the chevron when expanded and respect reduced-motion preferences.
+- Do not render collapsed task rows in the page layout.
+- If the API journey order changes after a successful data refresh, preserve the user’s current toggles for existing journey keys and initialize only newly seen journeys as collapsed. A full page visit restores the default-first-open state.
+
 ## Customer support journey behavior
 
 The support journey measures durable support-system configuration rather than routine conversation volume. Remove test-resolution, first-resolution, repeat-resolution, and one-off AI-reply milestones.
@@ -123,4 +135,5 @@ Rewrite the first-release Foundation, Product delivery, Customer support, and Au
 - Assert the exact nine-key support order and the absence of the removed resolution and one-off AI-reply keys.
 - Test every support evidence predicate with workspace scoping, active-state requirements, public publication, successful knowledge indexing, non-empty agent selection, synthetic shared-inbox exclusion, and routing-target validity.
 - Test the support prerequisite graph, seven-task core denominator, each conjunctive maturity threshold, and every action-key route.
+- Add a frontend interaction test proving that only the first journey is expanded initially, sections toggle independently, multiple sections can remain open, and the trigger exposes correct accessible expanded/control state.
 - Run focused backend/frontend tests, TypeScript, and production builds.
