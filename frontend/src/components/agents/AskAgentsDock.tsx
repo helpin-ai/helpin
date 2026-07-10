@@ -12,6 +12,7 @@ import { ACTIVE_RUN_STATUSES, isPausedAgentRun } from '@/components/pm/agentRunC
 import { PromotionDialog } from '@/components/command-bar/PromotionDialog';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
+import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
 import type {
   AgentRun,
   CommandBarMessageSummary,
@@ -1135,14 +1136,9 @@ export function AskAgentsDock() {
             })}
 
             {parsing ? (
-              <div className="flex items-center gap-2 px-1 py-0.5 text-sm text-muted-foreground animate-in fade-in duration-150">
-                <span className="flex items-center gap-1" aria-hidden="true">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.3s] motion-reduce:animate-none" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.15s] motion-reduce:animate-none" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 motion-reduce:animate-none" />
-                </span>
-                <span role="status">{turnStageLabel(turnStage)}</span>
-              </div>
+              <StreamingStatusText className="px-1 py-0.5 animate-in fade-in duration-150">
+                {turnStageLabel(turnStage)}
+              </StreamingStatusText>
             ) : null}
 
             {plan ? (

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
   ArrowUp02Icon,
   Loading01Icon,
@@ -21,9 +20,9 @@ import type {
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
 import { useWorkspaceMembers } from '@/hooks/queries';
-import { formatCodingSessionElapsed } from './codingSessionPresentation';
 import type { CodingSessionComposerState } from './codingSessionComposer';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
+import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { CodingReviewHistoryPanel, type CodingReviewHistoryItem } from './CodingReviewHistoryPanel';
 import {
@@ -95,7 +94,6 @@ export function CodingTranscriptPane({
     }),
     [liveTurnSegments],
   );
-  const showLivePlaceholder = visibleLiveSegments.length === 0 && liveAssistantMessage?.status === 'streaming';
   const promptMessage = useMemo<CodingSessionTranscriptMessage | null>(() => {
     const sections = parsePromptArtifactSections(promptArtifact?.inline_content);
     const developerPrompt = sections.find((section) => section.label === 'Developer prompt');
@@ -137,13 +135,17 @@ export function CodingTranscriptPane({
     ),
     [transcriptMessages, visibleLiveSegments, promptMessage],
   );
+  const hasActiveStreamSegment = segments.some((segment) => (
+    (segment.kind === 'assistant' && segment.streaming)
+    || (segment.kind === 'tool' && segment.toolCall.status === 'running')
+  ));
+  const showStreamingStatus = session?.status === 'running' && !hasActiveStreamSegment;
 
   // Build a flat list of virtual items: transcript segments plus the local
-  // scroll affordances (live placeholder, running row, empty state, spacer).
+  // scroll affordances (streaming status, empty state, spacer).
   type VirtualItem =
     | { kind: 'segment'; segment: TranscriptSegment }
-    | { kind: 'placeholder' }
-    | { kind: 'running'; since: string }
+    | { kind: 'streaming-status' }
     | { kind: 'empty' }
     | { kind: 'bottom-spacer' };
 
@@ -152,12 +154,8 @@ export function CodingTranscriptPane({
     for (const segment of segments) {
       list.push({ kind: 'segment', segment });
     }
-    if (showLivePlaceholder) {
-      list.push({ kind: 'placeholder' });
-    }
-    const runningSince = session?.started_at ?? session?.created_at;
-    if (session?.status === 'running' && runningSince) {
-      list.push({ kind: 'running', since: runningSince });
+    if (showStreamingStatus) {
+      list.push({ kind: 'streaming-status' });
     }
     if (!loading && list.length === 0) {
       list.push({ kind: 'empty' });
@@ -168,10 +166,7 @@ export function CodingTranscriptPane({
     return list;
   }, [
     segments,
-    showLivePlaceholder,
-    session?.status,
-    session?.started_at,
-    session?.created_at,
+    showStreamingStatus,
     loading,
   ]);
 
@@ -288,14 +283,12 @@ export function CodingTranscriptPane({
             options={{ expandable: true, resolveActor: actorForMessage }}
           />
         );
-      case 'placeholder':
+      case 'streaming-status':
         return (
-          <div className="text-[13px] leading-6 text-muted-foreground" data-coding-session-live-placeholder>
-            Preparing reply…
-          </div>
+          <StreamingStatusText className="text-[13px]">
+            Thinking…
+          </StreamingStatusText>
         );
-      case 'running':
-        return <RunningActivityRow since={item.since} />;
       case 'empty':
         return (
           <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
@@ -655,72 +648,6 @@ function MessageInput({
         >
           {sending ? <Loading01Icon className="h-5 w-5 animate-spin" /> : <ArrowUp02Icon className="h-5 w-5" />}
         </Button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Running indicator ──────────────────────────────────────────────────────
-
-function formatElapsed(ms: number): string {
-  return formatCodingSessionElapsed(ms);
-}
-
-/** Subscribes to a 1-second tick so elapsed time stays live. */
-function useElapsedMs(since: string): number {
-  const origin = useMemo(() => new Date(since).getTime(), [since]);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(id);
-  }, [origin]);
-
-  if (!origin || Number.isNaN(origin)) return 0;
-  return Math.max(0, now - origin);
-}
-
-function RunningEllipsis() {
-  const [dotCount, setDotCount] = useState(1);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setDotCount((current) => current === 3 ? 1 : current + 1);
-    }, 500);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return (
-    <span aria-hidden className="inline-block w-[1.25em] text-left" data-agent-running-ellipsis>
-      {'.'.repeat(dotCount)}
-    </span>
-  );
-}
-
-function RunningActivityRow({ since }: { since: string }) {
-  const elapsed = useElapsedMs(since);
-  return (
-    <div className="flex gap-3" data-coding-session-running-activity>
-      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 shadow-sm">
-        <span
-          aria-hidden
-          className="absolute inset-0 animate-ping rounded-full bg-primary/20"
-          data-agent-running-halo
-        />
-        <UnicodeSpinner
-          name="braille"
-          className="agent-working-chroma relative text-base leading-none"
-          data-agent-working-spinner
-        />
-      </div>
-      <div className="min-w-0 flex-1 pb-4">
-        <div className="flex min-h-7 items-center gap-2">
-          <span className="text-xs font-medium text-foreground/80">
-            Agent running<RunningEllipsis />
-          </span>
-          <span className="text-[11px] tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
-        </div>
       </div>
     </div>
   );

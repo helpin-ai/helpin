@@ -23,11 +23,15 @@ function toolCall(overrides: Partial<CodingSessionLiveToolCall> = {}): CodingSes
   };
 }
 
-function assistantSegment(id: string, content: string): CodingSessionLiveTurnSegment {
+function assistantSegment(
+  id: string,
+  content: string,
+  status: 'streaming' | 'completed' = 'completed',
+): CodingSessionLiveTurnSegment {
   return {
     segment_id: id,
     kind: 'assistant_message',
-    assistant_message: { message_id: id, content, status: 'completed', tool_calls: [] },
+    assistant_message: { message_id: id, content, status, tool_calls: [] },
   };
 }
 
@@ -131,6 +135,50 @@ describe('collectSegments', () => {
     const live = collectSegments(input, { includeLive: true });
     expect(live.map((s) => s.kind)).toEqual(['reasoning', 'assistant']);
     expect(live[1]).toMatchObject({ kind: 'assistant', content: 'Live answer', streaming: true });
+  });
+
+  it('marks only the latest active assistant segment as streaming', () => {
+    const input = stream({
+      live_turn_segments: [
+        assistantSegment('live-a1', 'First streamed paragraph.', 'streaming'),
+        toolSegment('live-tool', toolCall({
+          tool_call_id: 'tc-live',
+          tool_name: 'read_file',
+          status: 'completed',
+        })),
+        assistantSegment('live-a2', 'Current streamed paragraph.', 'streaming'),
+      ],
+    });
+
+    const assistants = collectSegments(input, { includeLive: true })
+      .filter((segment) => segment.kind === 'assistant');
+
+    expect(assistants).toMatchObject([
+      { content: 'First streamed paragraph.', streaming: false },
+      { content: 'Current streamed paragraph.', streaming: true },
+    ]);
+  });
+
+  it('does not leave a text caret active while a later tool is running', () => {
+    const input = stream({
+      live_turn_segments: [
+        assistantSegment('live-a1', 'I will inspect that now.', 'streaming'),
+        toolSegment('live-tool', toolCall({
+          tool_call_id: 'tc-live',
+          tool_name: 'read_file',
+          status: 'running',
+        })),
+      ],
+    });
+
+    const assistant = collectSegments(input, { includeLive: true })
+      .find((segment) => segment.kind === 'assistant');
+
+    expect(assistant).toMatchObject({
+      kind: 'assistant',
+      content: 'I will inspect that now.',
+      streaming: false,
+    });
   });
 
   it('includes live tool-call snapshot segments in the transcript', () => {

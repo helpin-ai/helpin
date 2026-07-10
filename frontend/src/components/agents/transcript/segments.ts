@@ -100,6 +100,22 @@ export function collectSegments(
   const include = opts.include ?? ALL_SEGMENT_KINDS;
   const out: TranscriptSegment[] = [];
   const persistedAssistantContent = new Set<string>();
+  let activeStreamingAssistantSegmentId: string | null = null;
+
+  if (opts.includeLive) {
+    for (let index = stream.live_turn_segments.length - 1; index >= 0; index -= 1) {
+      const segment = stream.live_turn_segments[index];
+      if (segment.kind === 'assistant_message') {
+        if (!include.has('assistant')) continue;
+        if (segment.assistant_message.content.trim() && segment.assistant_message.status === 'streaming') {
+          activeStreamingAssistantSegmentId = segment.segment_id;
+        }
+        break;
+      }
+      if (!include.has('tool') || isToolName(segment.tool_call.tool_name, 'update_plan')) continue;
+      break;
+    }
+  }
 
   if (opts.leadingContext && include.has('context')) {
     out.push({ kind: 'context', id: `context:${opts.leadingContext.event_id}`, message: opts.leadingContext });
@@ -184,7 +200,7 @@ export function collectSegments(
             kind: 'assistant',
             id: `live:${segment.segment_id}`,
             content,
-            streaming: segment.assistant_message.status === 'streaming',
+            streaming: segment.segment_id === activeStreamingAssistantSegmentId,
           });
         }
       } else if (segment.kind === 'tool_call' && !isToolName(segment.tool_call.tool_name, 'update_plan')) {

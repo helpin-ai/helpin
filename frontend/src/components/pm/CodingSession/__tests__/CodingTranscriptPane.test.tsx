@@ -405,6 +405,8 @@ describe('CodingTranscriptPane', () => {
     expect(container.textContent.indexOf('Read Dockerfile')).toBeLessThan(
       container.textContent.indexOf('Second streamed chunk.'),
     );
+    expect(container.querySelectorAll('.markdown-caret')).toHaveLength(1);
+    expect(container.querySelector('[data-agent-streaming-status]')).toBeNull();
   });
 
   it('does not append review history artifacts to the main transcript', () => {
@@ -461,8 +463,7 @@ describe('CodingTranscriptPane', () => {
     expect(onSendMessage).not.toHaveBeenCalled();
   });
 
-  it('renders the running state as the latest activity row with the colorful spinner', () => {
-    vi.useFakeTimers();
+  it('renders one quiet text status before live output starts', () => {
     act(() => {
       root.render(
         <CodingTranscriptPane
@@ -476,27 +477,12 @@ describe('CodingTranscriptPane', () => {
       );
     });
 
-    const runningActivity = container.querySelector('[data-coding-session-running-activity]');
-    expect(runningActivity?.textContent).toContain('Agent running');
-    expect(runningActivity?.querySelector('[data-agent-working-spinner]')?.className).toContain('agent-working-chroma');
-    expect(runningActivity?.querySelector('[data-agent-working-spinner]')?.className).toContain('text-base');
-    expect(runningActivity?.querySelector('[data-agent-running-halo]')?.className).toContain('animate-ping');
-    const ellipsis = runningActivity?.querySelector('[data-agent-running-ellipsis]');
-    expect(ellipsis?.textContent).toBe('.');
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-    expect(ellipsis?.textContent).toBe('..');
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-    expect(ellipsis?.textContent).toBe('...');
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-    expect(ellipsis?.textContent).toBe('.');
-    expect(container.querySelector('[data-coding-session-running-footer]')).toBeNull();
-    vi.useRealTimers();
+    const streamingStatus = container.querySelector('[data-agent-streaming-status]');
+    expect(streamingStatus?.textContent).toBe('Thinking…');
+    expect(streamingStatus?.querySelector('.agent-streaming-text')).not.toBeNull();
+    expect(container.querySelectorAll('[data-agent-streaming-status]')).toHaveLength(1);
+    expect(container.querySelector('.animate-bounce')).toBeNull();
+    expect(container.querySelector('[data-agent-working-spinner]')).toBeNull();
   });
 
   it('auto-grows the main composer while typing', () => {
