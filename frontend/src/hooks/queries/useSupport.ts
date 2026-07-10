@@ -88,6 +88,7 @@ export type SupportConversationGlobalSearchFilters = SupportConversationSearchPa
 type SendMessagePayload = {
   content: string;
   is_internal?: boolean;
+  ai_assisted?: boolean;
   channels?: Array<'chat' | 'email'>;
   attachment_ids?: string[];
   cc_emails?: string[];

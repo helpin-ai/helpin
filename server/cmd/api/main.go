@@ -158,6 +158,11 @@ func main() {
 			&model.WorkspaceMember{},
 			&model.WorkspaceModuleGrant{},
 			&model.WorkspaceSettings{},
+			&model.SetupGoal{},
+			&model.SetupIntent{},
+			&model.SetupAchievement{},
+			&model.SetupActionIntent{},
+			&model.MemberSetupPreference{},
 			&model.WorkspaceBilling{},
 			&model.BillingCreditLedgerEntry{},
 			&model.StripeWebhookEvent{},
@@ -546,6 +551,7 @@ func main() {
 	passkeyRepo := repository.NewPasskeyRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
+	setupRepo := repository.NewSetupRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
 	moduleGrantRepo := repository.NewWorkspaceModuleGrantRepository(db)
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
@@ -1214,9 +1220,15 @@ func main() {
 	orgService.SetCustomerIOIdentityService(customerIOIdentityService)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
+	setupService := service.NewSetupService(setupRepo)
+	setupSuccessEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("SETUP_SUCCESS_ENABLED")), "true")
+	if setupSuccessEnabled {
+		workspaceService.SetSetupInitializer(setupService)
+	}
 	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil)
 	billingService.SetOrgRoleResolver(orgService)
 	entitlementService := service.NewEntitlementService(billingService)
+	setupService.SetEntitlementService(entitlementService)
 	pmImportService.SetEntitlementService(entitlementService)
 	supportInboxService.SetEntitlementService(entitlementService)
 	supportInboxTriageService.SetEntitlementService(entitlementService)
@@ -1293,6 +1305,10 @@ func main() {
 		RouteInboundSecretSet:     strings.TrimSpace(cfg.PostmarkRouteInboundWebhookSecret) != "",
 	}
 
+	var setupHandler *handler.SetupHandler
+	if setupSuccessEnabled {
+		setupHandler = handler.NewSetupHandler(setupService, authzService)
+	}
 	handlers := router.Handlers{
 		Health: handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
@@ -1304,6 +1320,7 @@ func main() {
 		Passkey:             handler.NewPasskeyHandler(passkeyService),
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
+		Setup:               setupHandler,
 		Billing:             handler.NewBillingHandler(billingService, cfg.StripeWebhookSecret, cfg.AppBaseURL, billingTestScenarioService, strings.EqualFold(os.Getenv("BILLING_TEST_SCENARIOS_ENABLED"), "true")),
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
 		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller, flowTemplateUninstaller),

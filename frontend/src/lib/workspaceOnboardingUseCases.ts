@@ -1,4 +1,5 @@
 import { trackAnalyticsEvent } from './analytics';
+import type { SetupGoalKey } from './setupTypes';
 
 export type WorkspaceOnboardingUseCase =
   | 'product_engineering'
@@ -53,6 +54,19 @@ export const ONBOARDING_USE_CASE_OPTIONS: WorkspaceOnboardingUseCaseOption[] = [
     replaces: 'Replaces HubSpot, Pipedrive, Salesforce',
   },
 ];
+
+const setupGoalByUseCase: Record<WorkspaceOnboardingUseCase, SetupGoalKey> = {
+  product_engineering: 'product_delivery',
+  team_project_management: 'product_delivery',
+  customer_support: 'customer_support',
+  help_center_docs: 'help_center_docs',
+  internal_docs: 'internal_docs',
+  sales_crm: 'sales_crm',
+};
+
+export function mapOnboardingUseCasesToSetupGoals(useCases: WorkspaceOnboardingUseCase[]): SetupGoalKey[] {
+  return [...new Set(useCases.map((useCase) => setupGoalByUseCase[useCase]))];
+}
 
 type TrackingTarget = {
   location?: { hostname?: string };

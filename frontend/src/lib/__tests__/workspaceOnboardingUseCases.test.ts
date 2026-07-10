@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   ONBOARDING_USE_CASE_OPTIONS,
+  mapOnboardingUseCasesToSetupGoals,
   trackWorkspaceOnboardingUseCases,
 } from '../workspaceOnboardingUseCases';
 
@@ -21,6 +22,15 @@ describe('workspaceOnboardingUseCases', () => {
     for (const option of ONBOARDING_USE_CASE_OPTIONS) {
       expect(option.replaces).toMatch(/^Replaces /);
     }
+  });
+
+  it('preserves selected intent in setup goals without duplicates', () => {
+    expect(mapOnboardingUseCasesToSetupGoals([
+      'product_engineering',
+      'team_project_management',
+      'customer_support',
+      'sales_crm',
+    ])).toEqual(['product_delivery', 'customer_support', 'sales_crm']);
   });
 
   it('sends selected use cases to Usermaven when the tracker is available', () => {

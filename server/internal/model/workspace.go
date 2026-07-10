@@ -129,14 +129,15 @@ type WorkspaceMFAPolicy struct {
 
 // CreateWorkspaceRequest is the payload for POST /api/workspaces.
 type CreateWorkspaceRequest struct {
-	Name                  string  `json:"name"`
-	Slug                  string  `json:"slug"`
-	WorkspaceKey          string  `json:"workspace_key"`
-	OrganizationID        string  `json:"organization_id"`
-	Description           *string `json:"description"`
-	CompanyProductContext *string `json:"company_product_context"`
-	WebsiteURL            *string `json:"website_url"`
-	Timezone              string  `json:"timezone"`
+	Name                  string   `json:"name"`
+	Slug                  string   `json:"slug"`
+	WorkspaceKey          string   `json:"workspace_key"`
+	OrganizationID        string   `json:"organization_id"`
+	Description           *string  `json:"description"`
+	CompanyProductContext *string  `json:"company_product_context"`
+	WebsiteURL            *string  `json:"website_url"`
+	Timezone              string   `json:"timezone"`
+	SetupGoals            []string `json:"setup_goals,omitempty"`
 }
 
 // GenerateWorkspaceContextDescriptionRequest asks Helpin to draft company/product context.

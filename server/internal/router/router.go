@@ -21,6 +21,7 @@ type Handlers struct {
 	Passkey             *handler.PasskeyHandler
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
+	Setup               *handler.SetupHandler
 	Billing             *handler.BillingHandler
 	Settings            *handler.SettingsHandler
 	Automation          *handler.AutomationHandler
@@ -460,6 +461,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/members/presence", h.Workspace.ListMemberPresence)
 				r.Get("/assignable-members", h.Workspace.ListAssignableMembers)
 				r.Get("/key-history", h.Workspace.GetKeyHistory)
+				if h.Setup != nil {
+					r.Get("/setup", h.Setup.Get)
+					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Put("/setup/goals", h.Setup.UpdateGoals)
+					r.Patch("/setup/me", h.Setup.UpdatePreference)
+					r.Post("/setup/recommendations/{taskKey}/start", h.Setup.StartRecommendation)
+				}
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Put("/members/{memberId}", h.Workspace.UpdateMember)
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Delete("/members/{memberId}", h.Workspace.RemoveMember)
 

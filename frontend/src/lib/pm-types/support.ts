@@ -894,6 +894,7 @@ export interface CreateConversationRequest {
 export interface CreateMessageRequest {
   content: string;
   is_internal?: boolean;
+  ai_assisted?: boolean;
   channels?: ('chat' | 'email')[];
   cc_emails?: string[];
   bcc_emails?: string[];

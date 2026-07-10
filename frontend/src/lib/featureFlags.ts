@@ -25,3 +25,8 @@ export function isModuleEnabled(moduleId: string, userEmail?: string): boolean {
   if (!userEmail) return false;
   return allowedEmails.includes(userEmail.toLowerCase());
 }
+
+// Development defaults on for local testing; production requires an explicit rollout flag.
+export function isSetupSuccessEnabled(): boolean {
+  return import.meta.env.DEV || import.meta.env.VITE_SETUP_SUCCESS_ENABLED === 'true';
+}

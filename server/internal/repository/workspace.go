@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -23,7 +24,8 @@ func NewWorkspaceRepository(db *gorm.DB) *WorkspaceRepository {
 }
 
 // Create inserts a new workspace.
-func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, workspaceKey, ownerID string, organizationID *string, description, companyProductContext, websiteURL *string, timezone string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, workspaceKey, ownerID string, organizationID *string, description, companyProductContext, websiteURL *string, timezone string, setupGoals []string) (*model.Workspace, error) {
+	setupGoalKeys, _ := json.Marshal(setupGoals)
 	ws := &model.Workspace{
 		Name:                  name,
 		Slug:                  slug,
@@ -35,7 +37,18 @@ func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, workspaceK
 		WebsiteURL:            websiteURL,
 		Timezone:              timezone,
 	}
-	if err := r.db.WithContext(ctx).Create(ws).Error; err != nil {
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(ws).Error; err != nil {
+			return err
+		}
+		if len(setupGoals) > 0 {
+			intent := model.SetupIntent{WorkspaceID: ws.ID, GoalKeys: string(setupGoalKeys)}
+			if err := tx.Create(&intent).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("create workspace: %w", err)
 	}
 	return ws, nil

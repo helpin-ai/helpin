@@ -20,9 +20,11 @@ import {
 } from '@/lib/workspaceOnboardingMode';
 import {
   ONBOARDING_USE_CASE_OPTIONS,
+  mapOnboardingUseCasesToSetupGoals,
   trackWorkspaceOnboardingUseCases,
   type WorkspaceOnboardingUseCase,
 } from '@/lib/workspaceOnboardingUseCases';
+import { isSetupSuccessEnabled } from '@/lib/featureFlags';
 import { WorkspaceSelector } from '@/components/workspace/WorkspaceSelector';
 import { HelpinLogo } from '@/components/layout/HelpinLogo';
 import type { OrganizationWithRole } from '@/lib/types';
@@ -384,11 +386,14 @@ export default function Workspaces({ dedicatedOnboarding = false }: { dedicatedO
   };
 
   const toggleUseCase = (useCase: WorkspaceOnboardingUseCase) => {
-    setSelectedUseCases((current) => (
-      current.includes(useCase)
-        ? current.filter((value) => value !== useCase)
-        : [...current, useCase]
-    ));
+    setSelectedUseCases((current) => {
+      if (current.includes(useCase)) return current.filter((value) => value !== useCase);
+      if (current.length >= 3) {
+        toast.info('Choose up to three priorities so your success guide stays focused.');
+        return current;
+      }
+      return [...current, useCase];
+    });
   };
 
   const continueFromUseCases = async () => {
@@ -448,6 +453,7 @@ export default function Workspaces({ dedicatedOnboarding = false }: { dedicatedO
       company_product_context: companyProductDescription.trim() || undefined,
       website_url: websiteUrl.trim() || undefined,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      setup_goals: mapOnboardingUseCasesToSetupGoals(selectedUseCases),
     });
     if (error) {
       setCreating(false);
@@ -598,7 +604,7 @@ export default function Workspaces({ dedicatedOnboarding = false }: { dedicatedO
     const ws = workspaceOverride ?? createdWorkspace;
     setDialogOpen(false);
     if (ws) {
-      void navigate({ to: `/w/${ws.slug}/pm/my-work` });
+      void navigate({ to: isFullPageOnboarding && isSetupSuccessEnabled() ? `/w/${ws.slug}/setup` : `/w/${ws.slug}/pm/my-work` });
     }
     setTimeout(resetWorkspaceDialog, 300);
   };

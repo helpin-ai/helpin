@@ -1059,6 +1059,21 @@ func TestSupportInboxServiceCreateConversationMessageBlocksEmailReplyUntilPrimar
 	if err != nil {
 		t.Fatalf("internal note should not be blocked: %v", err)
 	}
+	if err := db.Model(&model.SupportConversation{}).Where("id = ?", conversation.ID).
+		Update("primary_recipient_state", model.SupportPrimaryRecipientStateConfirmed).Error; err != nil {
+		t.Fatalf("confirm recipient for AI-assisted reply: %v", err)
+	}
+
+	aiAssisted, err := svc.CreateConversationMessage(ctx, workspaceID, conversation.ID, model.CreateMessageRequest{
+		Content:    "Here is the AI-polished response.",
+		AIAssisted: true,
+	}, "user", &actorID, nil, nil)
+	if err != nil {
+		t.Fatalf("AI-assisted reply: %v", err)
+	}
+	if !strings.Contains(aiAssisted.Metadata, `"ai_assisted":true`) {
+		t.Fatalf("AI-assisted reply metadata = %q", aiAssisted.Metadata)
+	}
 }
 
 func TestAgentServiceRunConversationAgentSkipsUnconfirmedPrimaryRecipient(t *testing.T) {

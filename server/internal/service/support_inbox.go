@@ -1994,6 +1994,15 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
 		msg.Metadata = string(metaJSON)
 	}
+	if req.AIAssisted {
+		metadata := map[string]any{}
+		if strings.TrimSpace(msg.Metadata) != "" {
+			_ = json.Unmarshal([]byte(msg.Metadata), &metadata)
+		}
+		metadata["ai_assisted"] = true
+		metaJSON, _ := json.Marshal(metadata)
+		msg.Metadata = string(metaJSON)
+	}
 	msg.Metadata = mergeSupportMessageMetadata(msg.Metadata, req.Channels, req.CCEmails, req.BCCEmails)
 	if s.linkPreviewService != nil {
 		s.linkPreviewService.EnrichMessage(ctx, msg)

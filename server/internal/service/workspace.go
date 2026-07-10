@@ -34,12 +34,17 @@ type WorkspaceService struct {
 	contextLLM          workspaceContextLLM
 	contextFetcher      WorkspaceContextFetcher
 	customerIOIdentity  *CustomerIOIdentityService
+	setupInitializer    WorkspaceSetupInitializer
 	logger              *slog.Logger
 }
 
 // WorkspaceDefaultsInitializer seeds default workspace-scoped data after creation.
 type WorkspaceDefaultsInitializer interface {
 	SeedWorkspaceDefaults(ctx context.Context, workspaceID, actorID string) error
+}
+
+type WorkspaceSetupInitializer interface {
+	InitializeSetupGoals(ctx context.Context, workspaceID, actorID string, goals []string) error
 }
 
 // NewWorkspaceService creates a new WorkspaceService.
@@ -73,6 +78,10 @@ func (s *WorkspaceService) SetCustomerIOIdentityService(identity *CustomerIOIden
 	s.customerIOIdentity = identity
 }
 
+func (s *WorkspaceService) SetSetupInitializer(initializer WorkspaceSetupInitializer) {
+	s.setupInitializer = initializer
+}
+
 func (s *WorkspaceService) SetContextGeneratorDependencies(llm workspaceContextLLM, fetcher WorkspaceContextFetcher) *WorkspaceService {
 	s.contextLLM = llm
 	s.contextFetcher = fetcher
@@ -83,6 +92,9 @@ func (s *WorkspaceService) SetContextGeneratorDependencies(llm workspaceContextL
 func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspaceRequest, ownerID string) (*model.WorkspaceWithRole, error) {
 	if req.Name == "" || req.Slug == "" {
 		return nil, fmt.Errorf("name and slug are required")
+	}
+	if _, err := NormalizeSetupGoals(req.SetupGoals); err != nil {
+		return nil, err
 	}
 
 	// Validate and normalize workspace key. Auto-generate from name if empty.
@@ -173,7 +185,7 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 		orgID = &req.OrganizationID
 	}
 
-	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, req.WorkspaceKey, ownerID, orgID, req.Description, req.CompanyProductContext, websiteURL, req.Timezone)
+	ws, err := s.workspaceRepo.Create(ctx, req.Name, req.Slug, req.WorkspaceKey, ownerID, orgID, req.Description, req.CompanyProductContext, websiteURL, req.Timezone, req.SetupGoals)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to create workspace", "error", err, "slug", req.Slug)
 		return nil, fmt.Errorf("create workspace: %w", err)
@@ -189,6 +201,14 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 		if err := s.defaultsInitializer.SeedWorkspaceDefaults(ctx, ws.ID, ownerID); err != nil {
 			s.logger.ErrorContext(ctx, "failed to seed workspace defaults", "error", err, "workspace_id", ws.ID)
 			return nil, fmt.Errorf("seed workspace defaults: %w", err)
+		}
+	}
+
+	if s.setupInitializer != nil {
+		if err := s.setupInitializer.InitializeSetupGoals(ctx, ws.ID, ownerID, req.SetupGoals); err != nil {
+			s.logger.ErrorContext(ctx, "failed to initialize setup goals", "error", err, "workspace_id", ws.ID)
+			// Workspace creation has already committed. Keep the successful creation
+			// response and let the setup read path reconcile missing goal rows.
 		}
 	}
 

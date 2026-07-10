@@ -26,6 +26,7 @@ import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authenticated/w/$slug/team-goals'
 import { Route as AuthenticatedWSlugTasksRouteImport } from './routes/_authenticated/w/$slug/tasks'
 import { Route as AuthenticatedWSlugSupportRouteImport } from './routes/_authenticated/w/$slug/support'
+import { Route as AuthenticatedWSlugSetupRouteImport } from './routes/_authenticated/w/$slug/setup'
 import { Route as AuthenticatedWSlugNotificationsRouteImport } from './routes/_authenticated/w/$slug/notifications'
 import { Route as AuthenticatedWSlugDocsRouteImport } from './routes/_authenticated/w/$slug/docs'
 import { Route as AuthenticatedWSlugDashboardRouteImport } from './routes/_authenticated/w/$slug/dashboard'
@@ -195,6 +196,11 @@ const AuthenticatedWSlugSupportRoute =
     path: '/support',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSetupRoute = AuthenticatedWSlugSetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => AuthenticatedWSlugRoute,
+} as any)
 const AuthenticatedWSlugNotificationsRoute =
   AuthenticatedWSlugNotificationsRouteImport.update({
     id: '/notifications',
@@ -704,6 +710,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/docs': typeof AuthenticatedWSlugDocsRouteWithChildren
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
+  '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
   '/w/$slug/support': typeof AuthenticatedWSlugSupportRouteWithChildren
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
@@ -800,6 +807,7 @@ export interface FileRoutesByTo {
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
+  '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
@@ -901,6 +909,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/_authenticated/w/$slug/docs': typeof AuthenticatedWSlugDocsRouteWithChildren
   '/_authenticated/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
+  '/_authenticated/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
   '/_authenticated/w/$slug/support': typeof AuthenticatedWSlugSupportRouteWithChildren
   '/_authenticated/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/_authenticated/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
@@ -1003,6 +1012,7 @@ export interface FileRouteTypes {
     | '/w/$slug/dashboard'
     | '/w/$slug/docs'
     | '/w/$slug/notifications'
+    | '/w/$slug/setup'
     | '/w/$slug/support'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
@@ -1099,6 +1109,7 @@ export interface FileRouteTypes {
     | '/share/$shareToken'
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
+    | '/w/$slug/setup'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
     | '/w/$slug'
@@ -1199,6 +1210,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/dashboard'
     | '/_authenticated/w/$slug/docs'
     | '/_authenticated/w/$slug/notifications'
+    | '/_authenticated/w/$slug/setup'
     | '/_authenticated/w/$slug/support'
     | '/_authenticated/w/$slug/tasks'
     | '/_authenticated/w/$slug/team-goals'
@@ -1413,6 +1425,13 @@ declare module '@tanstack/react-router' {
       path: '/support'
       fullPath: '/w/$slug/support'
       preLoaderRoute: typeof AuthenticatedWSlugSupportRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/setup': {
+      id: '/_authenticated/w/$slug/setup'
+      path: '/setup'
+      fullPath: '/w/$slug/setup'
+      preLoaderRoute: typeof AuthenticatedWSlugSetupRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/notifications': {
@@ -2118,6 +2137,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugDashboardRoute: typeof AuthenticatedWSlugDashboardRoute
   AuthenticatedWSlugDocsRoute: typeof AuthenticatedWSlugDocsRouteWithChildren
   AuthenticatedWSlugNotificationsRoute: typeof AuthenticatedWSlugNotificationsRoute
+  AuthenticatedWSlugSetupRoute: typeof AuthenticatedWSlugSetupRoute
   AuthenticatedWSlugSupportRoute: typeof AuthenticatedWSlugSupportRouteWithChildren
   AuthenticatedWSlugTasksRoute: typeof AuthenticatedWSlugTasksRoute
   AuthenticatedWSlugTeamGoalsRoute: typeof AuthenticatedWSlugTeamGoalsRoute
@@ -2180,6 +2200,7 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugDashboardRoute: AuthenticatedWSlugDashboardRoute,
   AuthenticatedWSlugDocsRoute: AuthenticatedWSlugDocsRouteWithChildren,
   AuthenticatedWSlugNotificationsRoute: AuthenticatedWSlugNotificationsRoute,
+  AuthenticatedWSlugSetupRoute: AuthenticatedWSlugSetupRoute,
   AuthenticatedWSlugSupportRoute: AuthenticatedWSlugSupportRouteWithChildren,
   AuthenticatedWSlugTasksRoute: AuthenticatedWSlugTasksRoute,
   AuthenticatedWSlugTeamGoalsRoute: AuthenticatedWSlugTeamGoalsRoute,
