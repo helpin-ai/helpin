@@ -51,6 +51,8 @@ All labels follow the established one-sentence “what to do + why it matters”
 
 Company context is the prerequisite for teammate participation. Team creation is applicable when a selected journey uses team-owned work. Do not require an invitation record.
 
+All three visible Foundation tasks are core. When `foundation.team_ready` is not applicable, the remaining company-context and teammate-joined tasks are the complete core denominator.
+
 ### Plan and ship team projects
 
 `team_project_management` and the existing `product_delivery` goal resolve to this single journey. Goal normalization deduplicates the aliases so it is never rendered twice. Existing stored `team_project_management` goals remain valid and migrate logically at read/update time without destructive data migration.
@@ -62,7 +64,7 @@ Company context is the prerequisite for teammate participation. Team creation is
 | 3 | `product.work_assigned` | Assign project work to teammates so every task has clear ownership. | A non-archived task in an epic or sprint has at least one `pm_task_owners` row. | `pm_tasks` → `/pm/tasks` |
 | 4 | `product.sprint_closeout_reviewable` | Close a sprint so the team can review what shipped and improve the next cycle. | At least one `pm_sprint_closeouts` row. | `pm_sprints` → `/pm/sprints` |
 | 5 | `product.repository_ready` | Connect a code repository so Helpin can link project work to what you ship. | An active, selected, non-deleted `git_repositories` row. | `git_settings` → `/settings/repositories` |
-| 6 | `product.agent_result_used` | Run an agent on project work so planning or review takes less manual effort. | A valuable completed agent run targets `task`, `epic`, or `repository` and has a non-empty `target_id`. This is workspace-shared, not member-specific. | `automation_agents` → `/automation/agents` |
+| 6 | `product.agent_result_used` | Run an agent on project work so planning or review takes less manual effort. | A valuable completed agent run targets `task`, `epic`, or `repository` and has a non-empty `target_id`. This is workspace-shared, not member-specific. | `product_agent` → `/automation/agents` |
 | 7 | `product.release_notes_flow_succeeded` | Run release-notes automation so customer updates are created from shipped work. | A completed trigger execution for the `release_notes_writer` template. | `automation_flows` → `/automation/flows` |
 
 Core progress uses tasks 1–4. Repository, agent, and release-notes steps are power capabilities. Dependencies: sprint planned requires project planned; work assigned and sprint closeout require sprint planned; release notes requires repository connected.
@@ -91,9 +93,9 @@ Without Help Center selected, Support has seven core tasks and nine visible task
 |---|---|---|---|---|
 | 1 | `help_center.space_ready` | Create a public help-center space so customer content has a clear home. | A non-deleted, non-system `docs_spaces` row has `type = 'external_capable'`. | `docs_home` → `/docs` |
 | 2 | `help_center.content_ready` | Create or import customer-facing articles so common questions are documented. | A non-deleted `docs_documents` row belongs to an external-capable space and joins `docs_contents` with `word_count > 0 OR TRIM(content_text) <> ''`. | `docs_home` → `/docs` |
-| 3 | `help_center.article_published` | Publish an article so customers can use it to solve a real question. | A joined `docs_helpcenter_articles` row has `public_published_at IS NOT NULL`. | `docs_home` → `/docs` |
+| 3 | `help_center.article_published` | Publish an article so customers can use it to solve a real question. | A `docs_helpcenter_articles` row with `public_published_at IS NOT NULL` joins through a non-deleted workspace `docs_documents` row to a non-deleted external-capable workspace `docs_spaces` row. | `help_center_article_publish` → `/docs` |
 | 4 | `help_center.site_published` | Publish your help center so customers can browse and search your documentation. | The workspace `docs_helpcenter_configs.is_published` value is true. | `help_center_settings` → `/settings/helpcenter` |
-| 5 | `help_center.widget_connected` | Add help-center content to live chat so customers can find answers before starting a conversation. | An active support widget installation has a non-empty `widget_help_space_ids` setting containing an existing external-capable space. | `support_live_chat` → `/settings/chat-general` |
+| 5 | `help_center.widget_connected` | Add help-center content to live chat so customers can find answers before starting a conversation. | An active support widget installation has a non-empty `widget_help_space_ids` setting containing an existing external-capable space. | `help_center_widget` → `/settings/chat-general` |
 
 Tasks 1–4 are core. Widget integration is a power capability. Dependencies follow the displayed order, except widget integration requires article and site publication.
 
@@ -103,10 +105,10 @@ Tasks 1–4 are core. Widget integration is a power capability. Dependencies fol
 |---|---|---|---|---|
 | 1 | `internal_docs.space_ready` | Create an internal knowledge space so company information has a trusted home. | A non-deleted, non-system `docs_spaces` row has `type = 'internal'`. | `docs_home` → `/docs` |
 | 2 | `internal_docs.content_ready` | Create or import internal documents so teammates can find essential information. | A non-deleted `docs_documents` row belongs to an internal space and joins `docs_contents` with `word_count > 0 OR TRIM(content_text) <> ''`. | `docs_home` → `/docs` |
-| 3 | `internal_docs.published` | Publish internal knowledge so it is available across the workspace. | An internal-space document has `status = 'published'` and `published_at IS NOT NULL`. | `docs_home` → `/docs` |
-| 4 | `internal_docs.ownership_ready` | Assign document owners and review dates so important knowledge stays current. | An internal-space document has `owner_id IS NOT NULL` and `next_review_at IS NOT NULL`. | `docs_home` → `/docs` |
-| 5 | `internal_docs.agent_connected` | Connect internal knowledge to an AI agent so it can answer with trusted company context. | `agent_knowledge_sources.sync_status = 'ready'` and (`indexed_documents > 0 OR indexed_chunks > 0`), joined by `space_id` and `workspace_id` to a non-deleted internal `docs_spaces` row and by `agent_id`/`workspace_id` to an agent in the same workspace. | `automation_agents` → `/automation/agents` |
-| 6 | `internal_docs.agent_succeeded` | Run the documentation agent on a real document so maintaining knowledge takes less manual effort. | A valuable completed `agent_runs` row targets `document` and joins an agent with `preset_key = 'documentation_agent'`. | `automation_agents` → `/automation/agents` |
+| 3 | `internal_docs.published` | Publish internal knowledge so it is available across the workspace. | A non-deleted workspace `docs_documents` row has `status = 'published'` and `published_at IS NOT NULL` and joins a non-deleted internal workspace `docs_spaces` row. | `docs_home` → `/docs` |
+| 4 | `internal_docs.ownership_ready` | Assign document owners and review dates so important knowledge stays current. | A non-deleted workspace document has `owner_id IS NOT NULL` and `next_review_at IS NOT NULL` and joins a non-deleted internal workspace space. | `docs_home` → `/docs` |
+| 5 | `internal_docs.agent_connected` | Connect internal knowledge to an AI agent so it can answer with trusted company context. | `agent_knowledge_sources.sync_status = 'ready'` and (`indexed_documents > 0 OR indexed_chunks > 0`), joined by `space_id` and `workspace_id` to a non-deleted internal `docs_spaces` row and by `agent_id`/`workspace_id` to an agent in the same workspace. | `internal_docs_agent_knowledge` → `/automation/agents` |
+| 6 | `internal_docs.agent_succeeded` | Run the documentation agent on a real document so maintaining knowledge takes less manual effort. | A valuable completed `agent_runs` row has `target_type = 'document'`, a non-empty `target_id`, joins that target to a same-workspace non-deleted document in a same-workspace non-deleted internal space, and joins its agent to the same workspace with `preset_key = 'documentation_agent'`. | `internal_docs_agent_run` → `/automation/agents` |
 
 Tasks 1–4 are core. Agent connection and successful document run are power capabilities. Dependencies follow the displayed order; the agent run requires agent-connected knowledge.
 
@@ -131,9 +133,9 @@ Tasks 1–4 are core. Email, autonomy, and signal-driven value are power capabil
 | Order | Key | Label | Completion evidence | Action |
 |---|---|---|---|---|
 | 1 | `automation.first_assisted_value` | Complete an agent run on real work so you can see where Helpin saves time. | A valuable completed agent run has persisted output or an artifact, a non-empty `target_id`, and target type `task`, `epic`, `repository`, `support_conversation`, `document`, `crm_deal`, `crm_contact`, or `crm_company`. | `automation_agents` → `/automation/agents` |
-| 2 | `automation.custom_agent_succeeded` | Run a custom agent successfully so it can handle work specific to your team. | A valuable completed run joins an agent with `is_system = false`. | `automation_agents` → `/automation/agents` |
+| 2 | `automation.custom_agent_succeeded` | Run a custom agent successfully so it can handle work specific to your team. | A valuable completed run joins an agent with `is_system = false`. | `automation_custom_agent` → `/automation/agents` |
 | 3 | `automation.flow_enabled` | Turn on an automation flow so repeat work can run automatically. | An enabled `automation_rules` row. | `automation_flows` → `/automation/flows` |
-| 4 | `automation.approval_guard_configured` | Require approval for sensitive agent actions so automation stays under human control. | A non-system agent has effective `approval_mode = 'always'`. | `automation_agents` → `/automation/agents` |
+| 4 | `automation.approval_guard_configured` | Require approval for sensitive agent actions so automation stays under human control. | A non-system agent has effective `approval_mode = 'always'`. | `automation_approval_guard` → `/automation/agents` |
 | 5 | `automation.triggered_value` | Complete a triggered or scheduled automation so value no longer depends on a manual start. | A completed `agent_trigger_executions` row. | `automation_flows` → `/automation/flows` |
 | 6 | `automation.reliable_unattended_value` | Run the same automation successfully over time so your team can trust it unattended. | The same enabled rule completes successfully on three distinct local days and has no newer failure. | `automation_flows` → `/automation/flows` |
 
@@ -178,23 +180,35 @@ Routes below are workspace-relative. `—` means no setup-specific entitlement; 
 | `pm_sprints` | Plan sprint | `/pm/sprints` | pm | `pm.edit` | — |
 | `pm_tasks` | Assign work | `/pm/tasks` | pm | `pm.edit` | — |
 | `git_settings` | Connect repository | `/settings/repositories` | pm | `integrations.connect` | — |
+| `product_agent` | Run planning agent | `/automation/agents` | automation + pm | `pm.edit` | — |
 | `docs_home` | Open Docs | `/docs` | docs | `docs.edit` | — |
-| `help_center_settings` | Publish help center | `/settings/helpcenter` | docs | `docs.publish` | — |
-| `support_live_chat` | Add to live chat | `/settings/chat-general` | support + docs | `support.admin` and `docs.read` | — |
+| `help_center_article_publish` | Publish article | `/docs` | docs | `docs.publish` | — |
+| `help_center_settings` | Publish help center | `/settings/helpcenter` | docs | `docs.admin` | — |
+| `help_center_widget` | Add to live chat | `/settings/chat-general` | support + docs | `support.admin` and `docs.read` | — |
+| `internal_docs_agent_knowledge` | Connect agent | `/automation/agents` | automation + docs | `docs.edit` | — |
+| `internal_docs_agent_run` | Run documentation agent | `/automation/agents` | automation + docs | `docs.edit` | — |
+| `support_email_inbox` | Connect email | `/settings/inboxes-routing?tab=email` | support | `support.admin` | — |
+| `support_live_chat` | Add live chat | `/settings/chat-general` | support | `support.admin` | — |
+| `support_help_docs` | Add help docs | `/docs` | docs | `docs.edit` | — |
+| `support_brand_knowledge` | Add knowledge | `/settings/knowledge` | support | `support.admin` | — |
+| `support_ai` | Activate AI agent | `/settings/support-ai-assistant` | support | `support.admin` | — |
+| `support_team_inboxes` | Create inbox | `/settings/inboxes-routing?tab=inboxes` | support | `support.admin` | — |
+| `support_routing` | Set up routing | `/settings/inboxes-routing?tab=routing` | support | `support.admin` | — |
+| `support_inbox` | Open inbox | `/support` | support | `support.edit` | — |
+| `support_coverage` | Review coverage | `/support/coverage` | support + docs | `support.edit` and `docs.edit` | — |
 | `crm_contacts` | Add contacts | `/crm/contacts` | crm | `crm.edit` | — |
 | `crm_companies` | Add companies | `/crm/companies` | crm | `crm.edit` | — |
 | `crm_pipelines` | Configure pipeline | `/settings/crm-pipelines` | crm | `crm.admin` | — |
 | `crm_deals` | Create deal | `/crm/deals` | crm | `crm.edit` | — |
-| `crm_email` | Connect inbox | `/settings/crm-email` | crm | `crm.admin` | — |
+| `crm_email` | Connect inbox | `/settings/crm-email` | crm | `crm.edit` | — |
 | `crm_autonomy` | Enable automation | `/settings/crm-autonomy` | crm | `crm.admin` | `deal_automation` |
 | `crm_review` | Review CRM activity | `/crm/review` | crm | `crm.edit` | `deal_automation` |
 | `automation_agents` | Run an agent | `/automation/agents` | automation | at least one of `pm.edit`, `docs.edit`, `crm.edit`, `support.edit` | — |
-| `automation_custom_agent` | Build custom agent | `/automation/agents` | automation | at least one relevant edit permission | `custom_agents` |
-| `automation_approval_guard` | Configure approvals | `/automation/agents` | automation | at least one relevant edit permission | `custom_agents` |
+| `automation_custom_agent` | Build custom agent | `/automation/agents` | automation | at least one of `pm.edit`, `docs.edit`, `crm.edit`, `support.edit` | `custom_agents` |
+| `automation_approval_guard` | Configure approvals | `/automation/agents` | automation | at least one of `pm.edit`, `docs.edit`, `crm.edit`, `support.edit` | `custom_agents` |
 | `automation_flows` | Build automation | `/automation/flows` | automation | `pm.admin.automations` | `automation_flows` |
-| `automation_scheduled_flows` | Review automation runs | `/automation/flows` | automation | `pm.admin.automations` | `automation_flows` + `agent_scheduling` |
 
-Product agent use and Internal Docs agent use use `automation_agents`; the eventual run is subject to the existing backend AI preflight and frontend upgrade dialog. Product release notes uses `automation_flows`. Automation custom-agent success uses `automation_custom_agent`; approval safeguard uses `automation_approval_guard`; triggered/reliable milestones use `automation_scheduled_flows`.
+The eventual agent run is subject to the existing backend AI preflight and frontend upgrade dialog. Product release notes, triggered success, and reliability use `automation_flows`; event-triggered rules can satisfy those milestones, so `agent_scheduling` is not a setup requirement. If the user chooses a cron trigger inside the destination, that surface independently enforces scheduling entitlement.
 
 ## Goal selection and ordering
 
