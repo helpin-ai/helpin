@@ -21,6 +21,7 @@ import { Route as JoinTokenRouteImport } from './routes/join/$token'
 import { Route as AuthenticatedWorkspacesRouteImport } from './routes/_authenticated/workspaces'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedWSlugRouteImport } from './routes/_authenticated/w/$slug'
+import { Route as AuthenticatedOauthAuthorizeRouteImport } from './routes/_authenticated/oauth/authorize'
 import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authenticated/w/$slug/index'
 import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authenticated/w/$slug/team-goals'
 import { Route as AuthenticatedWSlugTasksRouteImport } from './routes/_authenticated/w/$slug/tasks'
@@ -49,6 +50,7 @@ import { Route as AuthenticatedWSlugSettingsRepositoriesRouteImport } from './ro
 import { Route as AuthenticatedWSlugSettingsRedirectsRouteImport } from './routes/_authenticated/w/$slug/settings/redirects'
 import { Route as AuthenticatedWSlugSettingsRecurringTasksRouteImport } from './routes/_authenticated/w/$slug/settings/recurring-tasks'
 import { Route as AuthenticatedWSlugSettingsMembersRouteImport } from './routes/_authenticated/w/$slug/settings/members'
+import { Route as AuthenticatedWSlugSettingsMcpRouteImport } from './routes/_authenticated/w/$slug/settings/mcp'
 import { Route as AuthenticatedWSlugSettingsLabelsRouteImport } from './routes/_authenticated/w/$slug/settings/labels'
 import { Route as AuthenticatedWSlugSettingsKnowledgeRouteImport } from './routes/_authenticated/w/$slug/settings/knowledge'
 import { Route as AuthenticatedWSlugSettingsInboxesRoutingRouteImport } from './routes/_authenticated/w/$slug/settings/inboxes-routing'
@@ -167,6 +169,12 @@ const AuthenticatedWSlugRoute = AuthenticatedWSlugRouteImport.update({
   path: '/w/$slug',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedOauthAuthorizeRoute =
+  AuthenticatedOauthAuthorizeRouteImport.update({
+    id: '/oauth/authorize',
+    path: '/oauth/authorize',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedWSlugIndexRoute = AuthenticatedWSlugIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -329,6 +337,12 @@ const AuthenticatedWSlugSettingsMembersRoute =
   AuthenticatedWSlugSettingsMembersRouteImport.update({
     id: '/settings/members',
     path: '/settings/members',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsMcpRoute =
+  AuthenticatedWSlugSettingsMcpRouteImport.update({
+    id: '/settings/mcp',
+    path: '/settings/mcp',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsLabelsRoute =
@@ -691,6 +705,7 @@ export interface FileRoutesByFullPath {
   '/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
+  '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
@@ -742,6 +757,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/inboxes-routing': typeof AuthenticatedWSlugSettingsInboxesRoutingRoute
   '/w/$slug/settings/knowledge': typeof AuthenticatedWSlugSettingsKnowledgeRoute
   '/w/$slug/settings/labels': typeof AuthenticatedWSlugSettingsLabelsRoute
+  '/w/$slug/settings/mcp': typeof AuthenticatedWSlugSettingsMcpRoute
   '/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
@@ -790,6 +806,7 @@ export interface FileRoutesByTo {
   '/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
+  '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
@@ -836,6 +853,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/inboxes-routing': typeof AuthenticatedWSlugSettingsInboxesRoutingRoute
   '/w/$slug/settings/knowledge': typeof AuthenticatedWSlugSettingsKnowledgeRoute
   '/w/$slug/settings/labels': typeof AuthenticatedWSlugSettingsLabelsRoute
+  '/w/$slug/settings/mcp': typeof AuthenticatedWSlugSettingsMcpRoute
   '/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
@@ -886,6 +904,7 @@ export interface FileRoutesById {
   '/_authenticated/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
+  '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/_authenticated/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/_authenticated/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
@@ -937,6 +956,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/inboxes-routing': typeof AuthenticatedWSlugSettingsInboxesRoutingRoute
   '/_authenticated/w/$slug/settings/knowledge': typeof AuthenticatedWSlugSettingsKnowledgeRoute
   '/_authenticated/w/$slug/settings/labels': typeof AuthenticatedWSlugSettingsLabelsRoute
+  '/_authenticated/w/$slug/settings/mcp': typeof AuthenticatedWSlugSettingsMcpRoute
   '/_authenticated/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/_authenticated/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/_authenticated/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
@@ -987,6 +1007,7 @@ export interface FileRouteTypes {
     | '/workspaces'
     | '/join/$token'
     | '/share/$shareToken'
+    | '/oauth/authorize'
     | '/w/$slug'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
@@ -1038,6 +1059,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/inboxes-routing'
     | '/w/$slug/settings/knowledge'
     | '/w/$slug/settings/labels'
+    | '/w/$slug/settings/mcp'
     | '/w/$slug/settings/members'
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
@@ -1086,6 +1108,7 @@ export interface FileRouteTypes {
     | '/workspaces'
     | '/join/$token'
     | '/share/$shareToken'
+    | '/oauth/authorize'
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
     | '/w/$slug/tasks'
@@ -1132,6 +1155,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/inboxes-routing'
     | '/w/$slug/settings/knowledge'
     | '/w/$slug/settings/labels'
+    | '/w/$slug/settings/mcp'
     | '/w/$slug/settings/members'
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
@@ -1181,6 +1205,7 @@ export interface FileRouteTypes {
     | '/_authenticated/workspaces'
     | '/join/$token'
     | '/share/$shareToken'
+    | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
     | '/_authenticated/w/$slug/automation'
     | '/_authenticated/w/$slug/crm'
@@ -1232,6 +1257,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/inboxes-routing'
     | '/_authenticated/w/$slug/settings/knowledge'
     | '/_authenticated/w/$slug/settings/labels'
+    | '/_authenticated/w/$slug/settings/mcp'
     | '/_authenticated/w/$slug/settings/members'
     | '/_authenticated/w/$slug/settings/recurring-tasks'
     | '/_authenticated/w/$slug/settings/redirects'
@@ -1366,6 +1392,13 @@ declare module '@tanstack/react-router' {
       path: '/w/$slug'
       fullPath: '/w/$slug'
       preLoaderRoute: typeof AuthenticatedWSlugRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/oauth/authorize': {
+      id: '/_authenticated/oauth/authorize'
+      path: '/oauth/authorize'
+      fullPath: '/oauth/authorize'
+      preLoaderRoute: typeof AuthenticatedOauthAuthorizeRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/w/$slug/': {
@@ -1562,6 +1595,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/members'
       fullPath: '/w/$slug/settings/members'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsMembersRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/mcp': {
+      id: '/_authenticated/w/$slug/settings/mcp'
+      path: '/settings/mcp'
+      fullPath: '/w/$slug/settings/mcp'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsMcpRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/labels': {
@@ -2131,6 +2171,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsInboxesRoutingRoute: typeof AuthenticatedWSlugSettingsInboxesRoutingRoute
   AuthenticatedWSlugSettingsKnowledgeRoute: typeof AuthenticatedWSlugSettingsKnowledgeRoute
   AuthenticatedWSlugSettingsLabelsRoute: typeof AuthenticatedWSlugSettingsLabelsRoute
+  AuthenticatedWSlugSettingsMcpRoute: typeof AuthenticatedWSlugSettingsMcpRoute
   AuthenticatedWSlugSettingsMembersRoute: typeof AuthenticatedWSlugSettingsMembersRoute
   AuthenticatedWSlugSettingsRecurringTasksRoute: typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   AuthenticatedWSlugSettingsRedirectsRoute: typeof AuthenticatedWSlugSettingsRedirectsRoute
@@ -2207,6 +2248,7 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugSettingsKnowledgeRoute:
     AuthenticatedWSlugSettingsKnowledgeRoute,
   AuthenticatedWSlugSettingsLabelsRoute: AuthenticatedWSlugSettingsLabelsRoute,
+  AuthenticatedWSlugSettingsMcpRoute: AuthenticatedWSlugSettingsMcpRoute,
   AuthenticatedWSlugSettingsMembersRoute:
     AuthenticatedWSlugSettingsMembersRoute,
   AuthenticatedWSlugSettingsRecurringTasksRoute:
@@ -2248,12 +2290,14 @@ const AuthenticatedWSlugRouteWithChildren =
 interface AuthenticatedRouteChildren {
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedWorkspacesRoute: typeof AuthenticatedWorkspacesRoute
+  AuthenticatedOauthAuthorizeRoute: typeof AuthenticatedOauthAuthorizeRoute
   AuthenticatedWSlugRoute: typeof AuthenticatedWSlugRouteWithChildren
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedWorkspacesRoute: AuthenticatedWorkspacesRoute,
+  AuthenticatedOauthAuthorizeRoute: AuthenticatedOauthAuthorizeRoute,
   AuthenticatedWSlugRoute: AuthenticatedWSlugRouteWithChildren,
 }
 

@@ -166,47 +166,48 @@ func (AgentVersion) TableName() string { return "agent_versions" }
 
 // AgentRun represents a single execution run of an agent.
 type AgentRun struct {
-	ID                string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	AgentID           string          `json:"agent_id" gorm:"type:uuid;not null;index"`
-	TaskID            *string         `json:"task_id" gorm:"column:task_id;type:uuid"`
-	ConversationID    *string         `json:"conversation_id" gorm:"type:uuid"`
-	TargetType        string          `json:"target_type" gorm:"not null;default:'task';index"`
-	TargetID          string          `json:"target_id" gorm:"type:uuid;not null;index"`
-	RuntimeKind       string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
-	InvocationMode    string          `json:"invocation_mode" gorm:"not null;default:'autonomous'"`
-	ParentRunID       *string         `json:"parent_run_id" gorm:"type:uuid;index"`
-	HandoffState      *string         `json:"handoff_state"`
-	ApprovalState     string          `json:"approval_state" gorm:"not null;default:'not_required'"`
-	PauseReason       string          `json:"pause_reason" gorm:"not null;default:'none'"`
-	TriggeredByUserID *string         `json:"triggered_by_user_id" gorm:"type:uuid"`
-	Status            string          `json:"status" gorm:"not null;default:'queued'"`
-	WorkflowID        *string         `json:"workflow_id"`
-	WorkflowRunID     *string         `json:"workflow_run_id"`
-	ExternalRuntime   *string         `json:"external_runtime,omitempty" gorm:"uniqueIndex:idx_agent_runs_external_runtime_pair,priority:1,where:external_runtime_id IS NOT NULL"`
-	ExternalRuntimeID *string         `json:"external_runtime_id,omitempty" gorm:"uniqueIndex:idx_agent_runs_external_runtime_pair,priority:2,where:external_runtime_id IS NOT NULL"`
-	TaskQueue         *string         `json:"task_queue"`
-	RunnerPool        *string         `json:"runner_pool"`
-	AgentVersionID    *string         `json:"agent_version_id,omitempty" gorm:"type:uuid;index"`
-	RepositoryID      *string         `json:"repository_id" gorm:"type:uuid;index"`
-	RepoFullName      *string         `json:"repo_full_name"`
-	BaseBranch        *string         `json:"base_branch"`
-	WorkingBranch     *string         `json:"working_branch"`
-	DeliveryTargetID  *string         `json:"delivery_target_id" gorm:"type:uuid;index"`
-	ExecutionStage    *string         `json:"execution_stage"`
-	LastHeartbeatAt   *time.Time      `json:"last_heartbeat_at"`
-	Input             json.RawMessage `json:"input" gorm:"type:jsonb;not null;default:'{}'"`
-	OutputSummary     json.RawMessage `json:"output_summary" gorm:"type:jsonb;not null;default:'{}'"`
-	CachedInputTokens int             `json:"cached_input_tokens" gorm:"not null;default:0"`
-	InputTokens       int             `json:"input_tokens" gorm:"not null;default:0"`
-	OutputTokens      int             `json:"output_tokens" gorm:"not null;default:0"`
-	TokensUsed        int             `json:"tokens_used" gorm:"not null;default:0"`
-	ErrorMessage      *string         `json:"error_message"`
-	StartedAt         *time.Time      `json:"started_at"`
-	CompletedAt       *time.Time      `json:"completed_at"`
-	CreatedAt         time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
-	TargetInfo        *AgentRunTarget `json:"target_info,omitempty" gorm:"-"`
+	ID                string                  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string                  `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	AgentID           string                  `json:"agent_id" gorm:"type:uuid;not null;index"`
+	TaskID            *string                 `json:"task_id" gorm:"column:task_id;type:uuid"`
+	ConversationID    *string                 `json:"conversation_id" gorm:"type:uuid"`
+	TargetType        string                  `json:"target_type" gorm:"not null;default:'task';index"`
+	TargetID          string                  `json:"target_id" gorm:"type:uuid;not null;index"`
+	RuntimeKind       string                  `json:"runtime_kind" gorm:"not null;default:'opencode'"`
+	InvocationMode    string                  `json:"invocation_mode" gorm:"not null;default:'autonomous'"`
+	ParentRunID       *string                 `json:"parent_run_id" gorm:"type:uuid;index"`
+	HandoffState      *string                 `json:"handoff_state"`
+	ApprovalState     string                  `json:"approval_state" gorm:"not null;default:'not_required'"`
+	PauseReason       string                  `json:"pause_reason" gorm:"not null;default:'none'"`
+	TriggeredByUserID *string                 `json:"triggered_by_user_id" gorm:"type:uuid"`
+	Status            string                  `json:"status" gorm:"not null;default:'queued'"`
+	WorkflowID        *string                 `json:"workflow_id"`
+	WorkflowRunID     *string                 `json:"workflow_run_id"`
+	ExternalRuntime   *string                 `json:"external_runtime,omitempty" gorm:"uniqueIndex:idx_agent_runs_external_runtime_pair,priority:1,where:external_runtime_id IS NOT NULL"`
+	ExternalRuntimeID *string                 `json:"external_runtime_id,omitempty" gorm:"uniqueIndex:idx_agent_runs_external_runtime_pair,priority:2,where:external_runtime_id IS NOT NULL"`
+	TaskQueue         *string                 `json:"task_queue"`
+	RunnerPool        *string                 `json:"runner_pool"`
+	AgentVersionID    *string                 `json:"agent_version_id,omitempty" gorm:"type:uuid;index"`
+	RepositoryID      *string                 `json:"repository_id" gorm:"type:uuid;index"`
+	RepoFullName      *string                 `json:"repo_full_name"`
+	BaseBranch        *string                 `json:"base_branch"`
+	WorkingBranch     *string                 `json:"working_branch"`
+	DeliveryTargetID  *string                 `json:"delivery_target_id" gorm:"type:uuid;index"`
+	ExecutionStage    *string                 `json:"execution_stage"`
+	LastHeartbeatAt   *time.Time              `json:"last_heartbeat_at"`
+	Input             json.RawMessage         `json:"input" gorm:"type:jsonb;not null;default:'{}'"`
+	OutputSummary     json.RawMessage         `json:"output_summary" gorm:"type:jsonb;not null;default:'{}'"`
+	CachedInputTokens int                     `json:"cached_input_tokens" gorm:"not null;default:0"`
+	InputTokens       int                     `json:"input_tokens" gorm:"not null;default:0"`
+	OutputTokens      int                     `json:"output_tokens" gorm:"not null;default:0"`
+	TokensUsed        int                     `json:"tokens_used" gorm:"not null;default:0"`
+	ErrorMessage      *string                 `json:"error_message"`
+	StartedAt         *time.Time              `json:"started_at"`
+	CompletedAt       *time.Time              `json:"completed_at"`
+	CreatedAt         time.Time               `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time               `json:"updated_at" gorm:"autoUpdateTime"`
+	TargetInfo        *AgentRunTarget         `json:"target_info,omitempty" gorm:"-"`
+	MCPAttribution    *MCPAgentRunAttribution `json:"mcp_attribution,omitempty" gorm:"-"`
 }
 
 // AgentRunTarget is a computed sidecar with resolved display info for the

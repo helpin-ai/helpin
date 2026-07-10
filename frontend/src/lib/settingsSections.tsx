@@ -64,12 +64,14 @@ const Autonomy = hi(SlidersHorizontalIcon);
 const ChatWidget = hi(BubbleChatIcon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
+const MCP = hi(Robot01Icon);
 
 export type SettingsSection =
   | 'general'
   | 'members'
   | 'teams'
   | 'access'
+  | 'mcp'
   | 'billing'
   | 'repositories'
   | 'knowledge'
@@ -174,6 +176,14 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     icon: Access,
     group: 'Workspace',
     requiredPermission: 'module_access.manage',
+  },
+  {
+    id: 'mcp',
+    label: 'AI Clients',
+    description: 'Connect AI assistants to Helpin, control what they can access, and review their activity.',
+    icon: MCP,
+    group: 'Workspace',
+    requiredPermission: 'workspace.read',
   },
   {
     id: 'repositories',

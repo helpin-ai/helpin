@@ -1,0 +1,11 @@
+interface:
+  display_name: "CRM Pipeline Review"
+  short_description: "Review Helpin CRM pipeline context safely"
+  default_prompt: "Use $helpin-crm-pipeline-review to review the Helpin CRM pipeline and identify next actions."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "helpin"
+      description: "Workspace-bound Helpin product tools and agent delegation"
+      transport: "streamable_http"
+      url: "https://mcp.helpin.ai/mcp"

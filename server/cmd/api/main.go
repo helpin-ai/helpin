@@ -210,6 +210,16 @@ func main() {
 			&model.AgentRunMessage{},
 			&model.AgentRunArtifact{},
 			&model.AgentRunInteraction{},
+			&model.MCPWorkspacePolicy{},
+			&model.MCPClientRegistration{},
+			&model.MCPConnection{},
+			&model.MCPOAuthAuthorizationCode{},
+			&model.MCPRefreshToken{},
+			&model.MCPServicePrincipal{},
+			&model.MCPServiceToken{},
+			&model.MCPAuditEvent{},
+			&model.MCPIdempotencyRecord{},
+			&model.MCPAgentRunAttribution{},
 			&model.CommandBarPlanRecord{},
 			&model.CommandBarUnmetIntent{},
 			&model.CommandBarPlanDismissal{},
@@ -541,6 +551,10 @@ func main() {
 	passkeyRepo := repository.NewPasskeyRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
+	mcpRepo := repository.NewMCPRepository(db)
+	if err := mcpRepo.CleanupExpired(context.Background(), time.Now()); err != nil {
+		slog.Warn("MCP retention cleanup skipped", "error", err)
+	}
 	settingsRepo := repository.NewSettingsRepository(db)
 	moduleGrantRepo := repository.NewWorkspaceModuleGrantRepository(db)
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
@@ -1311,6 +1325,35 @@ func main() {
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
 	authzService.SetWorkspaceMFARepository(workspaceRepo)
+	agentService.SetMCPRepository(mcpRepo)
+	mcpService := service.NewMCPService(
+		mcpRepo,
+		workspaceRepo,
+		userRepo,
+		authzService,
+		jwtManager,
+		commandService,
+		agentService,
+		searchService,
+		pmTaskService,
+		docsDocumentService,
+		crmContactService,
+		crmDealService,
+		supportInboxService,
+		service.MCPServiceConfig{
+			AppBaseURL:           cfg.AppBaseURL,
+			IssuerURL:            cfg.MCPPublicBaseURL,
+			ResourceURL:          cfg.MCPPublicBaseURL + "/mcp",
+			ServerEnabled:        cfg.MCPServerEnabled,
+			OAuthEnabled:         cfg.MCPOAuthEnabled,
+			ServiceTokensEnabled: cfg.MCPServiceTokensEnabled,
+			PMWriteEnabled:       cfg.MCPPMWriteEnabled,
+			DocsWriteEnabled:     cfg.MCPDocsWriteEnabled,
+			AgentRunEnabled:      cfg.MCPAgentRunEnabled,
+			CRMEnabled:           cfg.MCPCRMEnabled,
+			SupportEnabled:       cfg.MCPSupportEnabled,
+		},
+	)
 	supportInboxService.SetAuthzService(authzService)
 	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
 	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
@@ -1388,6 +1431,7 @@ func main() {
 		Agent:               handler.NewAgentHandler(agentService),
 		AgentToolGateway:    handler.NewAgentToolGatewayHandler(agentToolGateway),
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
+		MCP:                 handler.NewMCPHandler(mcpService),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),

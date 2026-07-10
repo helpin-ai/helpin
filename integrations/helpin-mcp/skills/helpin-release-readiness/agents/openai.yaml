@@ -1,0 +1,11 @@
+interface:
+  display_name: "Release Readiness"
+  short_description: "Prepare a release from Helpin work and docs"
+  default_prompt: "Use $helpin-release-readiness to assess this release and prepare the remaining Helpin work."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "helpin"
+      description: "Workspace-bound Helpin product tools and agent delegation"
+      transport: "streamable_http"
+      url: "https://mcp.helpin.ai/mcp"
