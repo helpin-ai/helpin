@@ -16,7 +16,7 @@ Replace placeholder and low-value activity milestones with setup capabilities an
 - Retain maturity, stage, scope, core, and evidence data internally for API compatibility and analytics, but replace the old stage-based maturity algorithm with the universal completion algorithm below.
 - Journey headers show only accent, title, description, verified completion count, and collapse control.
 - Task rows show only the one-sentence action-and-reason label, personal/blocked status when applicable, completion state, and action.
-- Keep the existing first-expanded/all-later-collapsed behavior.
+- On initial page entry or workspace change, open only the first journey with an `available` or `needs_attention` task. Skip completed journeys, fall back to the first journey with blocked incomplete work, and keep every journey collapsed when all visible tasks are complete. Preserve manual toggles during same-workspace refreshes.
 - A genuine future placeholder may use the normal journey shell with `Not available yet`, no progress fraction, and no tasks. None of the currently selectable goals require this state.
 
 ## Low-value milestone removal

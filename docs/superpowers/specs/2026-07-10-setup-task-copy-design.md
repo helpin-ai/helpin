@@ -65,7 +65,11 @@ Use an imperative verb followed by a concise purpose clause. Prefer familiar pro
 ### Collapsible journey sections
 
 - Render every journey as an independently collapsible section.
-- After the first successful non-empty journey payload for a workspace, expand only that payload’s first journey key and initialize every later key as collapsed. Loading and empty payloads do not initialize expansion state.
+- After the first successful non-empty journey payload for a workspace, expand only the first journey containing a visible task with status `available` or `needs_attention`.
+- Skip journeys whose visible tasks are all `completed` when selecting the initial section.
+- If no actionable task exists, expand the first journey containing an incomplete `blocked` task so the customer can see what prevents progress.
+- If every visible task in every journey is complete, initialize every journey as collapsed; the page-level completion message remains the primary state.
+- Loading and empty payloads do not initialize expansion state.
 - Do not persist expansion state between visits.
 - Allow multiple journeys to remain expanded at the same time; this is not a single-open accordion.
 - Keep the complete journey header visible while collapsed: accent indicator, maturity or `Power up` label, journey title, journey description, verified completion count, and expand/collapse chevron.
@@ -73,7 +77,7 @@ Use an imperative verb followed by a concise purpose clause. Prefer familiar pro
 - Rotate the chevron when expanded and respect reduced-motion preferences.
 - Do not render collapsed task rows in the page layout or accessibility tree.
 - On later successful refreshes in the same workspace, preserve keyed toggles for existing journey keys regardless of order and initialize only newly seen keys as collapsed.
-- When the workspace ID changes, clear the prior workspace’s expansion state and reinitialize from the first successful non-empty payload for the new workspace. A full component remount/page visit follows the same first-only-open initialization.
+- When the workspace ID changes, clear the prior workspace’s expansion state and reinitialize from the first successful non-empty payload for the new workspace. A full component remount/page visit follows the same next-work-only initialization.
 
 ## Customer support journey behavior
 
@@ -136,5 +140,5 @@ Rewrite the first-release Foundation, Product delivery, Customer support, and Au
 - Assert the exact nine-key support order and the absence of the removed resolution and one-off AI-reply keys.
 - Test every support evidence predicate with workspace scoping, active-state requirements, public publication, successful knowledge indexing, non-empty agent selection, synthetic shared-inbox exclusion, and routing-target validity.
 - Test the support prerequisite graph, seven-task core denominator, each conjunctive maturity threshold, and every action-key route.
-- Add frontend interaction tests proving that only the first journey is expanded after the first successful payload; sections toggle independently; multiple sections can remain open; reordered existing keys retain their state; newly added keys start collapsed; changing workspace or remounting resets to first-only-open; collapsed task rows are absent from layout and the accessibility tree while header progress remains visible; trigger `aria-expanded`/`aria-controls` values match a stable controlled container; and the chevron uses reduced-motion-safe transition classes.
+- Add frontend interaction tests proving that the first actionable journey opens; completed journeys are skipped; `needs_attention` counts as actionable; a blocked journey is the fallback; all-complete payloads start fully collapsed; sections toggle independently; multiple sections can remain open; reordered existing keys retain their state; newly added keys start collapsed; changing workspace or remounting recalculates the next-work default; collapsed task rows are absent from layout and the accessibility tree while header progress remains visible; trigger `aria-expanded`/`aria-controls` values match a stable controlled container; and the chevron uses reduced-motion-safe transition classes.
 - Run focused backend/frontend tests, TypeScript, and production builds.
