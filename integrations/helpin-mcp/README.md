@@ -1,5 +1,7 @@
 # Helpin MCP workflow package
 
+See the [complete Helpin Public MCP capability and operations guide](../../docs/HELPIN_PUBLIC_MCP.md) for the architecture, tool catalog, authorization model, UI, limits, and rollout controls.
+
 Connect a remote MCP client to:
 
 ```text

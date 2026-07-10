@@ -8,7 +8,7 @@
 
 **Owners:** Product, Design, Frontend, Platform, Security, Developer Experience
 
-**Related documents:** [Helpin Public MCP Server PRD](./PRD-helpin-public-mcp-server.md), [Helpin Public MCP Server Implementation Plan](./plans/2026-07-10-helpin-public-mcp-server-plan.md)
+**Related documents:** [Helpin Public MCP Guide](./HELPIN_PUBLIC_MCP.md), [Helpin Public MCP Server PRD](./PRD-helpin-public-mcp-server.md), [Helpin Public MCP Server Implementation Plan](./plans/2026-07-10-helpin-public-mcp-server-plan.md)
 
 ---
 

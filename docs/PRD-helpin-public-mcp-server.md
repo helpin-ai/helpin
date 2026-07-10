@@ -12,6 +12,8 @@
 
 **Related UI PRD:** [Helpin MCP User Experience](./PRD-helpin-mcp-ui.md)
 
+**Implemented capability guide:** [Helpin Public MCP](./HELPIN_PUBLIC_MCP.md)
+
 **Related architecture:** [Internal Tools Framework](./internal-tools-framework.md), [Agents and Automation](./AGENTS_AND_AUTOMATION.md), [Coding Agent Runtime Flow](./CODING_AGENT_RUNTIME_FLOW.md)
 
 ---
