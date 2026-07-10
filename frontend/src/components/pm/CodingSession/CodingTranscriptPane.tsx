@@ -53,6 +53,7 @@ export function CodingTranscriptPane({
   onViewPreview,
   onAuthStart,
   onAuthCancel,
+  onApproveRun,
   onResolveInteraction,
 }: {
   promptArtifact?: AgentRunArtifact | null;
@@ -74,6 +75,7 @@ export function CodingTranscriptPane({
   onViewPreview?: (panelKey: string) => void;
   onAuthStart?: () => void;
   onAuthCancel?: () => void;
+  onApproveRun?: () => void;
   onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -364,6 +366,7 @@ export function CodingTranscriptPane({
           onViewPreview={onViewPreview}
           onAuthStart={onAuthStart ?? (() => {})}
           onAuthCancel={onAuthCancel ?? (() => {})}
+          onApproveRun={onApproveRun}
           onResolveInteraction={onResolveInteraction ?? (() => {})}
         />
       ) : null}
@@ -441,6 +444,7 @@ function InterruptionOverlay({
   reviewArtifacts,
   onAuthStart,
   onAuthCancel,
+  onApproveRun,
   onResolveInteraction,
 }: {
   session: CodingSession | null;
@@ -452,6 +456,7 @@ function InterruptionOverlay({
   onViewPreview?: (panelKey: string) => void;
   onAuthStart: () => void;
   onAuthCancel: () => void;
+  onApproveRun?: () => void;
   onResolveInteraction: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
   const authState = session?.auth_state;
@@ -522,13 +527,29 @@ function InterruptionOverlay({
         </div>
       ) : null}
 
+      {session?.status === 'paused' && session?.pause_reason === 'human_approval' && session?.approval_state === 'pending' && !activeInteraction ? (
+        <div className="rounded-lg border border-border/80 bg-card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">Approval required</div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Approve this run to let the agent begin.
+              </p>
+            </div>
+            <Button size="sm" onClick={onApproveRun} disabled={!onApproveRun || acting !== null}>
+              {acting === 'approve-run' ? 'Approving…' : 'Approve'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       {/*
         The run has paused for approval but the interaction hasn't projected
         into the event stream yet (backend reconstruction lags the status flip
         by a beat). Show a placeholder so the drawer never looks empty/broken
         while the real approval card is on its way.
       */}
-      {session?.status === 'paused' && session?.pause_reason === 'human_approval' && !activeInteraction ? (
+      {session?.status === 'paused' && session?.pause_reason === 'human_approval' && session?.approval_state !== 'pending' && !activeInteraction ? (
         <div className="rounded-lg border border-border/80 bg-card p-4">
           <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             <Loading01Icon className="h-3.5 w-3.5 animate-spin" />

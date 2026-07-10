@@ -47,6 +47,7 @@ function buildSession(overrides: Partial<CodingSession> = {}): CodingSession {
     invocation_mode: 'interactive',
     status: 'paused',
     pause_reason: 'authentication',
+    approval_state: 'not_required',
     title: 'Coding Session',
     capabilities: {
       live_text_streaming: true,

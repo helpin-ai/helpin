@@ -398,6 +398,7 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		InvocationMode:      run.InvocationMode,
 		Status:              run.Status,
 		PauseReason:         run.PauseReason,
+		ApprovalState:       run.ApprovalState,
 		ErrorMessage:        run.ErrorMessage,
 		ExecutionStage:      trimPtr(run.ExecutionStage),
 		LastHeartbeatAt:     run.LastHeartbeatAt,

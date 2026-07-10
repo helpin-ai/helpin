@@ -346,6 +346,9 @@ func TestGetCodingSessionIncludesLiveStreamSnapshotForActiveRuns(t *testing.T) {
 	if session.StreamStateSnapshot.LiveAssistantMessage.Content != "Inspecting workspace" {
 		t.Fatalf("unexpected snapshot content %#v", session.StreamStateSnapshot.LiveAssistantMessage)
 	}
+	if session.ApprovalState != "not_required" {
+		t.Fatalf("approval state = %q", session.ApprovalState)
+	}
 }
 
 func TestListCodingSessionEventsIncludesLiveStreamSnapshotForActiveRuns(t *testing.T) {

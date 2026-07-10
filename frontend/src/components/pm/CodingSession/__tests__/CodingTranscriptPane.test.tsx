@@ -73,6 +73,7 @@ function buildSession(overrides: Partial<CodingSession> = {}): CodingSession {
     invocation_mode: 'interactive',
     status: 'paused',
     pause_reason: 'human_approval',
+    approval_state: 'not_required',
     title: 'Docs Operator',
     capabilities: {
       live_text_streaming: true,
@@ -228,6 +229,36 @@ describe('CodingTranscriptPane', () => {
 
     expect(container.textContent).toContain('The agent paused for your approval');
     expect(container.textContent).toContain('Loading the approval details…');
+  });
+
+  it('shows run-level approval controls when execution is gated before an interaction exists', () => {
+    const onApproveRun = vi.fn();
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ approval_state: 'pending' })}
+          activeInteraction={null}
+          acting={null}
+          attachedPreview={null}
+          availablePreviewPanelKey={null}
+          onApproveRun={onApproveRun}
+          onResolveInteraction={() => {}}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Approve this run to let the agent begin.');
+    expect(container.textContent).not.toContain('Loading the approval details…');
+    const approveButton = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Approve');
+    expect(approveButton).toBeTruthy();
+    act(() => approveButton?.click());
+    expect(onApproveRun).toHaveBeenCalledTimes(1);
   });
 
   it('does not show the approval placeholder for an authentication pause', () => {
