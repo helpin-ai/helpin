@@ -116,6 +116,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	requireCommandBarEdit := func() func(http.Handler) http.Handler {
 		return authorization.RequireAnyPermission(authz, authorization.PermPMEdit, authorization.PermDocsEdit, authorization.PermCRMEdit)
 	}
+	requireAutomationRead := func() func(http.Handler) http.Handler {
+		return authorization.RequireAnyPermission(authz, authorization.PermPMRead, authorization.PermDocsRead, authorization.PermCRMRead, authorization.PermSupportRead)
+	}
+	requireAutomationEdit := func() func(http.Handler) http.Handler {
+		return authorization.RequireAnyPermission(authz, authorization.PermPMEdit, authorization.PermDocsEdit, authorization.PermCRMEdit, authorization.PermSupportEdit)
+	}
 	requireModule := func(module model.ModuleID) func(http.Handler) http.Handler {
 		return authorization.RequireModuleAccess(authz, module)
 	}
@@ -586,50 +592,50 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				r.Route("/library", func(r chi.Router) {
 					r.With(requirePerm(authorization.PermSettingsManage)).Get("/triggers", h.Automation.ListTriggerCatalog)
-					r.With(requirePerm(authorization.PermPMRead)).Get("/tools", h.Automation.ListToolCatalog)
+					r.With(requireAutomationRead()).Get("/tools", h.Automation.ListToolCatalog)
 					r.Route("/skills", func(r chi.Router) {
-						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListSkillCatalog)
-						r.With(requirePerm(authorization.PermPMEdit)).Post("/", h.Automation.CreateSkill)
-						r.With(requirePerm(authorization.PermPMEdit)).Post("/import", h.Automation.ImportSkill)
+						r.With(requireAutomationRead()).Get("/", h.Automation.ListSkillCatalog)
+						r.With(requireAutomationEdit()).Post("/", h.Automation.CreateSkill)
+						r.With(requireAutomationEdit()).Post("/import", h.Automation.ImportSkill)
 						r.Route("/{id}", func(r chi.Router) {
-							r.With(requirePerm(authorization.PermPMEdit)).Put("/", h.Automation.UpdateSkill)
-							r.With(requirePerm(authorization.PermPMEdit)).Delete("/", h.Automation.DeleteSkill)
+							r.With(requireAutomationEdit()).Put("/", h.Automation.UpdateSkill)
+							r.With(requireAutomationEdit()).Delete("/", h.Automation.DeleteSkill)
 						})
 					})
 				})
 
 				r.Route("/agents", func(r chi.Router) {
-					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListAgents)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/", h.Automation.CreateAgent)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/draft", h.Automation.DraftCustomAgent)
+					r.With(requireAutomationRead()).Get("/", h.Automation.ListAgents)
+					r.With(requireAutomationEdit()).Post("/", h.Automation.CreateAgent)
+					r.With(requireAutomationEdit()).Post("/draft", h.Automation.DraftCustomAgent)
 					r.Route("/{id}", func(r chi.Router) {
-						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetAgent)
-						r.With(requirePerm(authorization.PermPMEdit)).Put("/", h.Automation.UpdateAgent)
-						r.With(requirePerm(authorization.PermPMEdit)).Delete("/", h.Automation.DeleteAgent)
-						r.With(requirePerm(authorization.PermPMRead)).Get("/usage", h.Automation.GetAgentUsage)
-						r.With(requirePerm(authorization.PermPMRead)).Get("/analytics", h.Automation.GetAgentAnalytics)
-						r.With(requirePerm(authorization.PermPMRead)).Get("/versions", h.Automation.ListAgentVersions)
-						r.With(requirePerm(authorization.PermPMEdit)).Post("/versions", h.Automation.CreateAgentVersion)
-						r.With(requirePerm(authorization.PermPMEdit)).Put("/versions/{versionID}", h.Automation.UpdateAgentVersion)
-						r.With(requirePerm(authorization.PermPMEdit)).Post("/versions/{versionID}/activate", h.Automation.ActivateAgentVersion)
-						r.With(requirePerm(authorization.PermPMEdit)).Delete("/versions/{versionID}", h.Automation.DeleteAgentVersion)
+						r.With(requireAutomationRead()).Get("/", h.Automation.GetAgent)
+						r.With(requireAutomationEdit()).Put("/", h.Automation.UpdateAgent)
+						r.With(requireAutomationEdit()).Delete("/", h.Automation.DeleteAgent)
+						r.With(requireAutomationRead()).Get("/usage", h.Automation.GetAgentUsage)
+						r.With(requireAutomationRead()).Get("/analytics", h.Automation.GetAgentAnalytics)
+						r.With(requireAutomationRead()).Get("/versions", h.Automation.ListAgentVersions)
+						r.With(requireAutomationEdit()).Post("/versions", h.Automation.CreateAgentVersion)
+						r.With(requireAutomationEdit()).Put("/versions/{versionID}", h.Automation.UpdateAgentVersion)
+						r.With(requireAutomationEdit()).Post("/versions/{versionID}/activate", h.Automation.ActivateAgentVersion)
+						r.With(requireAutomationEdit()).Delete("/versions/{versionID}", h.Automation.DeleteAgentVersion)
 					})
 				})
 
 				r.Route("/runs", func(r chi.Router) {
-					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListRuns)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/", h.Automation.StartRun)
+					r.With(requireAutomationRead()).Get("/", h.Automation.ListRuns)
+					r.With(requireAutomationEdit()).Post("/", h.Automation.StartRun)
 					r.Route("/{id}", func(r chi.Router) {
-						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetRun)
-						r.With(requirePerm(authorization.PermPMRead)).Get("/messages", h.Automation.ListRunMessages)
-						r.With(requirePerm(authorization.PermPMEdit)).Post("/messages", h.Automation.SendRunMessage)
-						r.With(requirePerm(authorization.PermPMRead)).Get("/artifacts", h.Automation.ListRunArtifacts)
-						r.With(requirePerm(authorization.PermPMEdit)).Post("/resume", h.Automation.ResumeRun)
-						r.With(requirePerm(authorization.PermPMEdit)).Post("/continue", h.Automation.ContinueRun)
-						r.With(requirePerm(authorization.PermPMEdit)).Post("/approve", h.Automation.ApproveRun)
-						r.With(requirePerm(authorization.PermPMEdit)).Post("/request-changes", h.Automation.RequestRunChanges)
-						r.With(requirePerm(authorization.PermPMEdit)).Post("/cancel", h.Automation.CancelRun)
-						r.With(requirePerm(authorization.PermPMEdit)).Post("/handoff", h.Automation.HandoffRun)
+						r.With(requireAutomationRead()).Get("/", h.Automation.GetRun)
+						r.With(requireAutomationRead()).Get("/messages", h.Automation.ListRunMessages)
+						r.With(requireAutomationEdit()).Post("/messages", h.Automation.SendRunMessage)
+						r.With(requireAutomationRead()).Get("/artifacts", h.Automation.ListRunArtifacts)
+						r.With(requireAutomationEdit()).Post("/resume", h.Automation.ResumeRun)
+						r.With(requireAutomationEdit()).Post("/continue", h.Automation.ContinueRun)
+						r.With(requireAutomationEdit()).Post("/approve", h.Automation.ApproveRun)
+						r.With(requireAutomationEdit()).Post("/request-changes", h.Automation.RequestRunChanges)
+						r.With(requireAutomationEdit()).Post("/cancel", h.Automation.CancelRun)
+						r.With(requireAutomationEdit()).Post("/handoff", h.Automation.HandoffRun)
 					})
 				})
 			})

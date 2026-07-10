@@ -23,7 +23,7 @@ describe('resolveSetupAction', () => {
       automation_flows: resolveSetupAction('automation_flows', 'acme'),
       automation_agents: resolveSetupAction('automation_agents', 'acme'),
     }).toEqual({
-      workspace_context: '/w/acme/settings/general',
+      workspace_context: '/w/acme/settings/knowledge#company-context',
       workspace_teams: '/w/acme/settings/teams',
       workspace_members: '/w/acme/settings/members',
       pm_create_task: '/w/acme/pm/tasks',
@@ -42,6 +42,13 @@ describe('resolveSetupAction', () => {
       automation_flows: '/w/acme/automation/flows',
       automation_agents: '/w/acme/automation/agents',
     });
+  });
+
+  it('opens each required automation template directly', () => {
+    expect(resolveSetupAction('product_required_flow', 'acme')).toBe('/w/acme/automation/flows?template=stale_task_escalation');
+    expect(resolveSetupAction('help_center_required_flow', 'acme')).toBe('/w/acme/automation/flows?template=public_help_freshness_sweep');
+    expect(resolveSetupAction('internal_docs_required_flow', 'acme')).toBe('/w/acme/automation/flows?template=docs_freshness_sweep');
+    expect(resolveSetupAction('crm_required_flow', 'acme')).toBe('/w/acme/automation/flows?template=buying_signal_to_task');
   });
 
   it('does not invent a destination for an unknown action', () => {

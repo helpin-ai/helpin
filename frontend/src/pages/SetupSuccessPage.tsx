@@ -3,12 +3,15 @@ import { useNavigate } from '@tanstack/react-router';
 import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, Circle, Lock, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useSetup } from '@/hooks/queries';
+import { usePermissions, useSetup, useUpdateSetupGoals, useWorkspaceAccess } from '@/hooks/queries';
 import { resolveSetupAction } from '@/lib/setupActions';
 import { trackAnalyticsEvent } from '@/lib/analytics';
 import { setupService } from '@/lib/services/setupService';
-import type { SetupJourney, SetupTask } from '@/lib/setupTypes';
+import type { SetupGoalKey, SetupJourney, SetupTask } from '@/lib/setupTypes';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
@@ -20,16 +23,30 @@ function defaultExpandedJourney(journeys: SetupJourney[]) {
   return journeys.find((journey) => journey.tasks.some((task) => task.status === 'blocked'))?.key;
 }
 
+const SETUP_GOAL_OPTIONS: Array<{ key: SetupGoalKey; label: string }> = [
+  { key: 'product_delivery', label: 'Plan and ship team projects' },
+  { key: 'customer_support', label: 'Scale customer support' },
+  { key: 'help_center_docs', label: 'Publish help center docs' },
+  { key: 'internal_docs', label: 'Build internal knowledge' },
+  { key: 'sales_crm', label: 'Build a sales pipeline' },
+  { key: 'automation_mastery', label: 'Automate repeatable work' },
+];
+
 export function SetupSuccessPage() {
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
   const setup = useSetup(workspaceId);
+  const updateGoals = useUpdateSetupGoals(workspaceId);
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { has } = usePermissions(access);
   const trackedWorkspace = useRef<string | null>(null);
   const expansionWorkspace = useRef('');
   const expansionInitialized = useRef(false);
   const [expandedJourneys, setExpandedJourneys] = useState<Record<string, boolean>>({});
+  const [goalEditorOpen, setGoalEditorOpen] = useState(false);
+  const [draftGoals, setDraftGoals] = useState<SetupGoalKey[]>([]);
 
   const percent = useMemo(() => {
     if (!setup.data?.total_count) return 0;
@@ -103,6 +120,30 @@ export function SetupSuccessPage() {
     setExpandedJourneys((current) => ({ ...current, [journeyKey]: !current[journeyKey] }));
   };
 
+  const openGoalEditor = () => {
+    setDraftGoals(setup.data?.goals ?? []);
+    setGoalEditorOpen(true);
+  };
+
+  const toggleGoal = (key: SetupGoalKey) => {
+    setDraftGoals((current) => {
+      if (current.includes(key)) return current.filter((goal) => goal !== key);
+      if (current.length >= 3) {
+        toast.info('Choose up to three goals so your guide stays focused.');
+        return current;
+      }
+      return [...current, key];
+    });
+  };
+
+  const saveGoals = () => {
+    if (draftGoals.length === 0) {
+      toast.info('Choose at least one goal.');
+      return;
+    }
+    updateGoals.mutate(draftGoals, { onSuccess: () => setGoalEditorOpen(false) });
+  };
+
   if (setup.isLoading) return <SetupLoading />;
   if (setup.isError || !setup.data) {
     return (
@@ -124,7 +165,10 @@ export function SetupSuccessPage() {
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
             <Sparkles className="h-3.5 w-3.5" /> Setup & success
           </div>
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">Get your workspace set up for success.</h1>
+          <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Get your workspace set up for success.</h1>
+            {has('workspace.update') && <Button variant="outline" size="sm" onClick={openGoalEditor}>Edit goals</Button>}
+          </div>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
             Start with the basics, build a workflow that sticks, and automate repeat work when you’re ready.
           </p>
@@ -132,7 +176,7 @@ export function SetupSuccessPage() {
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
               <div className="h-full rounded-full bg-primary transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${percent}%` }} />
             </div>
-            <span className="w-28 text-right text-xs tabular-nums text-muted-foreground">{view.completed_count} of {view.total_count} verified</span>
+            <span className="w-40 text-right text-xs tabular-nums text-muted-foreground">{view.completed_count} of {view.total_count} core steps verified</span>
           </div>
         </header>
 
@@ -140,7 +184,7 @@ export function SetupSuccessPage() {
           {view.recommended ? (
             <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
               <div className="max-w-2xl">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Recommended next step</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">{percent >= 100 ? 'Next value step' : 'Recommended next step'}</p>
                 <h2 className="mt-3 text-2xl font-semibold tracking-tight">{view.recommended.title}</h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{view.recommended.reason}</p>
               </div>
@@ -169,6 +213,29 @@ export function SetupSuccessPage() {
         </div>
 
       </div>
+      <Dialog open={goalEditorOpen} onOpenChange={setGoalEditorOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit setup goals</DialogTitle>
+            <DialogDescription>Choose up to three outcomes. Workspace essentials and recommended automation remain available.</DialogDescription>
+          </DialogHeader>
+          <div className="divide-y rounded-lg border">
+            {SETUP_GOAL_OPTIONS.map((option) => {
+              const id = `setup-goal-${option.key}`;
+              return (
+                <Label key={option.key} htmlFor={id} className="flex cursor-pointer items-center gap-3 px-3 py-3 text-sm font-medium">
+                  <Checkbox id={id} checked={draftGoals.includes(option.key)} onCheckedChange={() => toggleGoal(option.key)} />
+                  <span>{option.label}</span>
+                </Label>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGoalEditorOpen(false)}>Cancel</Button>
+            <Button onClick={saveGoals} disabled={updateGoals.isPending}>{updateGoals.isPending ? 'Saving…' : 'Save goals'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
@@ -189,7 +256,7 @@ function JourneySection({ journey, expanded, onToggle, onAction }: { journey: Se
           <span className="mt-1 block text-sm leading-6 text-muted-foreground">{journey.description}</span>
         </span>
         <span className="flex shrink-0 items-center gap-3 text-xs tabular-nums text-muted-foreground">
-          {journey.completed_count}/{journey.total_count} complete
+          {journey.completed_count}/{journey.total_count} core complete
           <ChevronDown className={cn('h-4 w-4 transition-transform duration-200 motion-reduce:transition-none', expanded && 'rotate-180')} aria-hidden="true" />
         </span>
       </button>

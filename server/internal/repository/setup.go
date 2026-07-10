@@ -349,11 +349,15 @@ func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID stri
 		{"crm_contacts", "workspace_id = ?", &evidence.CRMContactCount},
 		{"crm_companies", "workspace_id = ?", &evidence.CRMCompanyCount},
 		{"crm_pipelines AS pipelines", "pipelines.workspace_id = ? AND EXISTS (SELECT 1 FROM crm_pipeline_stages stages WHERE stages.pipeline_id = pipelines.id AND stages.stage_type = 'open') AND EXISTS (SELECT 1 FROM crm_pipeline_stages stages WHERE stages.pipeline_id = pipelines.id AND stages.stage_type = 'won') AND EXISTS (SELECT 1 FROM crm_pipeline_stages stages WHERE stages.pipeline_id = pipelines.id AND stages.stage_type = 'lost')", &evidence.CRMPipelineCount},
-		{"crm_deals", "workspace_id = ? AND owner_member_id IS NOT NULL AND amount > 0 AND close_date IS NOT NULL", &evidence.CRMActionableDealCount},
+		{"crm_deals AS deals", "deals.workspace_id = ? AND deals.owner_member_id IS NOT NULL AND deals.amount > 0 AND deals.close_date IS NOT NULL AND EXISTS (SELECT 1 FROM crm_associations associations WHERE associations.workspace_id = deals.workspace_id AND ((associations.from_object_type = 'deal' AND associations.from_object_id = deals.id AND associations.to_object_type = 'contact') OR (associations.to_object_type = 'deal' AND associations.to_object_id = deals.id AND associations.from_object_type = 'contact')))", &evidence.CRMActionableDealCount},
 		{"crm_email_accounts", "workspace_id = ? AND is_active = true AND status = 'connected'", &evidence.CRMConnectedEmailCount},
 		{"crm_autonomy_settings", "workspace_id = ? AND enabled = true AND (auto_create_deals = true OR auto_progress_deals = true)", &evidence.CRMAutonomyEnabledCount},
 		{"crm_suggestions AS suggestions", "suggestions.workspace_id = ? AND suggestions.suggestion_type IN ('deal_create', 'deal_advance') AND suggestions.execution_status = 'succeeded' AND suggestions.executed_at IS NOT NULL AND suggestions.object_id IS NOT NULL AND EXISTS (SELECT 1 FROM crm_deals WHERE crm_deals.id = suggestions.object_id AND crm_deals.workspace_id = suggestions.workspace_id)", &evidence.CRMSignalValueCount},
 		{"agents", "workspace_id = ? AND is_system = false AND approval_mode = 'always'", &evidence.ApprovalGuardCount},
+		{"automation_rules", "workspace_id = ? AND enabled = true AND template_key IN ('release_notes_writer', 'stale_task_escalation', 'advance_on_approval')", &evidence.ProductRequiredFlowCount},
+		{"automation_rules", "workspace_id = ? AND enabled = true AND template_key = 'public_help_freshness_sweep'", &evidence.HelpCenterRequiredFlowCount},
+		{"automation_rules", "workspace_id = ? AND enabled = true AND template_key = 'docs_freshness_sweep'", &evidence.InternalDocsRequiredFlowCount},
+		{"automation_rules", "workspace_id = ? AND enabled = true AND template_key = 'buying_signal_to_task'", &evidence.CRMRequiredFlowCount},
 	}
 	for _, query := range setupCounts {
 		if err := r.db.WithContext(ctx).Table(query.table).Where(query.where, workspaceID).Count(query.dest).Error; err != nil {
@@ -461,7 +465,7 @@ func (r *SetupRepository) GetEvidenceSince(ctx context.Context, workspaceID stri
 		}
 	}
 	if err := r.db.WithContext(ctx).Table("agent_runs AS runs").Joins("JOIN agents ON agents.id = runs.agent_id").
-		Where(valuableRun+" AND agents.is_system = false", workspaceID, since).
+		Where(valuableRun+" AND agents.is_system = false AND agents.template_key IS NULL AND agents.template_instance_id IS NULL AND COALESCE(agents.source_template_key, '') = ''", workspaceID, since).
 		Count(&evidence.CustomAgentSuccessCount).Error; err != nil {
 		return model.SetupEvidence{}, fmt.Errorf("read custom agent setup evidence: %w", err)
 	}

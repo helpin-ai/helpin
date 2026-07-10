@@ -44,7 +44,6 @@ import {
   BookOpen01Icon,
   DollarCircleIcon,
   File01Icon,
-  FolderKanbanIcon,
   HeadphonesIcon,
   PlusSignIcon,
   Cancel01Icon,
@@ -114,7 +113,6 @@ const createInitialTeamDrafts = (): TeamDraft[] =>
 
 const useCaseIcons = {
   product_engineering: SourceCodeIcon,
-  team_project_management: FolderKanbanIcon,
   customer_support: HeadphonesIcon,
   help_center_docs: BookOpen01Icon,
   internal_docs: File01Icon,
@@ -123,7 +121,6 @@ const useCaseIcons = {
 
 const useCaseIconStyles = {
   product_engineering: 'border-sky-200 bg-sky-50 text-sky-700',
-  team_project_management: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   customer_support: 'border-amber-200 bg-amber-50 text-amber-700',
   help_center_docs: 'border-violet-200 bg-violet-50 text-violet-700',
   internal_docs: 'border-rose-200 bg-rose-50 text-rose-700',

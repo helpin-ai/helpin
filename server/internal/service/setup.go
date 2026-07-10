@@ -268,7 +268,7 @@ func inferSetupGoals(evidence model.SetupEvidence) []string {
 	if len(goals) < 3 && (evidence.InternalDocsSpaceCount > 0 || evidence.InternalDocsContentCount > 0 || evidence.InternalDocsPublishedCount > 0 || evidence.InternalAgentKnowledgeCount > 0) {
 		goals = append(goals, model.SetupGoalInternalDocs)
 	}
-	if len(goals) < 3 && (evidence.CRMContactCount > 0 || evidence.CRMCompanyCount > 0 || evidence.CRMPipelineCount > 0 || evidence.CRMActionableDealCount > 0 || evidence.CRMConnectedEmailCount > 0) {
+	if len(goals) < 3 && (evidence.CRMContactCount > 0 || evidence.CRMCompanyCount > 0 || evidence.CRMActionableDealCount > 0 || evidence.CRMConnectedEmailCount > 0) {
 		goals = append(goals, model.SetupGoalSalesCRM)
 	}
 	return goals

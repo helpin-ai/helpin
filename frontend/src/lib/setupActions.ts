@@ -1,5 +1,5 @@
 const setupActionRoutes: Record<string, (slug: string) => string> = {
-  workspace_context: (slug) => `/w/${slug}/settings/general`,
+  workspace_context: (slug) => `/w/${slug}/settings/knowledge#company-context`,
   workspace_teams: (slug) => `/w/${slug}/settings/teams`,
   workspace_members: (slug) => `/w/${slug}/settings/members`,
   pm_create_task: (slug) => `/w/${slug}/pm/tasks`,
@@ -34,6 +34,10 @@ const setupActionRoutes: Record<string, (slug: string) => string> = {
   automation_agents: (slug) => `/w/${slug}/automation/agents`,
   automation_custom_agent: (slug) => `/w/${slug}/automation/agents`,
   automation_approval_guard: (slug) => `/w/${slug}/automation/agents`,
+  product_required_flow: (slug) => `/w/${slug}/automation/flows?template=stale_task_escalation`,
+  help_center_required_flow: (slug) => `/w/${slug}/automation/flows?template=public_help_freshness_sweep`,
+  internal_docs_required_flow: (slug) => `/w/${slug}/automation/flows?template=docs_freshness_sweep`,
+  crm_required_flow: (slug) => `/w/${slug}/automation/flows?template=buying_signal_to_task`,
 };
 
 export function resolveSetupAction(key: string, slug: string) {

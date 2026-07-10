@@ -17,16 +17,12 @@ func TestBuildSetupViewRecommendsWorkspaceContextBeforeModuleWork(t *testing.T) 
 	if got, want := view.Recommended.TaskKey, "foundation.company_context_ready"; got != want {
 		t.Fatalf("recommended task = %q, want %q", got, want)
 	}
-	if got, want := len(view.Journeys), 7; got != want {
+	if got, want := len(view.Journeys), 3; got != want {
 		t.Fatalf("journey count = %d, want %d", got, want)
 	}
 	wantOrder := []string{
 		model.SetupGoalFoundation,
 		model.SetupGoalProductDelivery,
-		model.SetupGoalCustomerSupport,
-		model.SetupGoalHelpCenterDocs,
-		model.SetupGoalInternalDocs,
-		model.SetupGoalSalesCRM,
 		model.SetupGoalAutomationMastery,
 	}
 	for index, key := range wantOrder {
@@ -46,8 +42,8 @@ func TestSetupTaskLabelsExplainTheActionAndWhy(t *testing.T) {
 			}
 		}
 	}
-	if count != 43 {
-		t.Fatalf("catalog has %d tasks, want 43", count)
+	if count != 45 {
+		t.Fatalf("catalog has %d tasks, want 45", count)
 	}
 }
 
@@ -80,24 +76,24 @@ func TestSetupCatalogUsesOnlyHighValueJourneyTasks(t *testing.T) {
 			"foundation.company_context_ready", "foundation.team_ready", "foundation.member_joined",
 		},
 		model.SetupGoalProductDelivery: {
-			"product.project_planned", "product.sprint_planned", "product.work_assigned", "product.sprint_closeout_reviewable",
-			"product.repository_ready", "product.agent_result_used", "product.release_notes_flow_succeeded",
+			"product.project_planned", "product.sprint_planned", "product.work_assigned", "product.required_flow_enabled",
+			"product.sprint_closeout_reviewable", "product.repository_ready", "product.agent_result_used",
 		},
 		model.SetupGoalCustomerSupport: {
 			"support.email_inbox_connected", "support.live_chat_installed", "support.help_docs_ready", "support.brand_knowledge_ready",
 			"support.ai_agent_activated", "support.team_inbox_created", "support.routing_enabled", "support.pm_task_linked", "support.coverage_fix_applied",
 		},
 		model.SetupGoalHelpCenterDocs: {
-			"help_center.space_ready", "help_center.content_ready", "help_center.article_published", "help_center.site_published", "help_center.widget_connected",
+			"help_center.space_ready", "help_center.content_ready", "help_center.article_published", "help_center.site_published", "help_center.required_flow_enabled", "help_center.widget_connected",
 		},
 		model.SetupGoalInternalDocs: {
-			"internal_docs.space_ready", "internal_docs.content_ready", "internal_docs.published", "internal_docs.ownership_ready", "internal_docs.agent_connected", "internal_docs.agent_succeeded",
+			"internal_docs.space_ready", "internal_docs.content_ready", "internal_docs.published", "internal_docs.ownership_ready", "internal_docs.required_flow_enabled", "internal_docs.agent_connected", "internal_docs.agent_succeeded",
 		},
 		model.SetupGoalSalesCRM: {
-			"crm.contact_ready", "crm.company_ready", "crm.pipeline_ready", "crm.deal_ready", "crm.email_connected", "crm.autonomy_enabled", "crm.signal_value_proven",
+			"crm.contact_ready", "crm.company_ready", "crm.deal_ready", "crm.email_connected", "crm.required_flow_enabled", "crm.autonomy_enabled", "crm.signal_value_proven",
 		},
 		model.SetupGoalAutomationMastery: {
-			"automation.first_assisted_value", "automation.custom_agent_succeeded", "automation.flow_enabled", "automation.approval_guard_configured", "automation.triggered_value", "automation.reliable_unattended_value",
+			"automation.first_assisted_value", "automation.flow_enabled", "automation.approval_guard_configured", "automation.triggered_value", "automation.reliable_unattended_value", "automation.custom_agent_succeeded",
 		},
 	}
 	for goal, keys := range want {
@@ -243,6 +239,87 @@ func TestSupportSetupActionsUseSupportAndDocsPermissions(t *testing.T) {
 	}
 }
 
+func TestSetupActionsMatchDestinationAccessContracts(t *testing.T) {
+	full := SetupAccess{
+		Modules: map[string]bool{"pm": true, "docs": true, "crm": true, "support": true, "automation": true},
+		Permissions: map[string]bool{
+			"pm.edit": true, "pm.admin.automations": true,
+			"docs.read": true, "docs.edit": true, "docs.publish": true, "docs.admin": true,
+			"crm.edit": true, "crm.admin": true,
+			"support.admin": true,
+		},
+		Entitlements: map[string]bool{
+			string(EntitlementFeatureAutomationFlows): true,
+			string(EntitlementFeatureCustomAgents):    true,
+			string(EntitlementFeatureDealAutomation):  true,
+		},
+	}
+	for _, action := range []struct{ task, key string }{
+		{"help_center.article_published", "help_center_article_publish"},
+		{"help_center.site_published", "help_center_settings"},
+		{"help_center.widget_connected", "help_center_widget"},
+		{"product.required_flow_enabled", "product_required_flow"},
+		{"help_center.required_flow_enabled", "help_center_required_flow"},
+		{"internal_docs.required_flow_enabled", "internal_docs_required_flow"},
+		{"crm.required_flow_enabled", "crm_required_flow"},
+	} {
+		if allowed, reason := setupActionAllowed(action.task, action.key, full); !allowed {
+			t.Errorf("action %q blocked with full access: %s", action.key, reason)
+		}
+	}
+
+	withoutPublish := full
+	withoutPublish.Permissions = cloneSetupBoolMap(full.Permissions)
+	delete(withoutPublish.Permissions, "docs.publish")
+	if allowed, _ := setupActionAllowed("help_center.article_published", "help_center_article_publish", withoutPublish); allowed {
+		t.Fatal("article publishing allowed without docs.publish")
+	}
+
+	withoutDocsAdmin := full
+	withoutDocsAdmin.Permissions = cloneSetupBoolMap(full.Permissions)
+	delete(withoutDocsAdmin.Permissions, "docs.admin")
+	if allowed, _ := setupActionAllowed("help_center.site_published", "help_center_settings", withoutDocsAdmin); allowed {
+		t.Fatal("help-center settings allowed without docs.admin")
+	}
+
+	withoutSupport := full
+	withoutSupport.Modules = cloneSetupBoolMap(full.Modules)
+	delete(withoutSupport.Modules, "support")
+	if allowed, _ := setupActionAllowed("help_center.widget_connected", "help_center_widget", withoutSupport); allowed {
+		t.Fatal("widget connection allowed without Support module")
+	}
+
+	withoutAutomation := full
+	withoutAutomation.Modules = cloneSetupBoolMap(full.Modules)
+	delete(withoutAutomation.Modules, "automation")
+	if allowed, _ := setupActionAllowed("product.agent_result_used", "product_agent", withoutAutomation); allowed {
+		t.Fatal("product agent allowed without Automation module")
+	}
+
+	docsEditor := SetupAccess{Modules: map[string]bool{"automation": true, "docs": true}, Permissions: map[string]bool{"docs.edit": true}, Entitlements: map[string]bool{}}
+	if allowed, reason := setupActionAllowed("automation.first_assisted_value", "automation_agents", docsEditor); !allowed {
+		t.Fatalf("Docs editor agent action blocked: %s", reason)
+	}
+	crmEditor := SetupAccess{Modules: map[string]bool{"automation": true, "crm": true}, Permissions: map[string]bool{"crm.edit": true}, Entitlements: map[string]bool{}}
+	if allowed, reason := setupActionAllowed("automation.first_assisted_value", "automation_agents", crmEditor); !allowed {
+		t.Fatalf("CRM editor agent action blocked: %s", reason)
+	}
+
+	eventFlow := full
+	delete(eventFlow.Entitlements, string(EntitlementFeatureAgentScheduling))
+	if allowed, reason := setupActionAllowed("automation.triggered_value", "automation_flows", eventFlow); !allowed {
+		t.Fatalf("event flow incorrectly requires scheduling: %s", reason)
+	}
+}
+
+func cloneSetupBoolMap(source map[string]bool) map[string]bool {
+	result := make(map[string]bool, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
+}
+
 func completeSupportSetupEvidence() SetupEvidence {
 	return SetupEvidence{
 		SupportEmailInboxCount:    1,
@@ -344,6 +421,9 @@ func TestInferSetupGoalsUsesActualConfigurationAndKeepsEmptyWorkspaceNeutral(t *
 	if goals := inferSetupGoals(SetupEvidence{PlannedProjectCount: 1}); len(goals) != 1 || goals[0] != model.SetupGoalProductDelivery {
 		t.Fatalf("configured PM workspace goals = %v, want product delivery", goals)
 	}
+	if goals := inferSetupGoals(SetupEvidence{CRMPipelineCount: 1}); len(goals) != 0 {
+		t.Fatalf("a seeded pipeline must not infer CRM intent, got %v", goals)
+	}
 	goals := inferSetupGoals(SetupEvidence{PlannedProjectCount: 1, SupportEmailInboxCount: 1, EnabledAutomationCount: 1})
 	if len(goals) != 3 || goals[0] != model.SetupGoalProductDelivery || goals[1] != model.SetupGoalCustomerSupport || goals[2] != model.SetupGoalAutomationMastery {
 		t.Fatalf("strong evidence goals = %v", goals)
@@ -354,7 +434,7 @@ func TestBuildSetupViewUsesCoreDenominatorAndAdvancedMilestones(t *testing.T) {
 	evidence := SetupEvidence{
 		HasCompanyContext: true, TeamCount: 1,
 		PlannedProjectCount: 1, PlannedSprintCount: 1, AssignedProjectTaskCount: 1,
-		ConnectedRepositoryCount: 1, SprintCloseoutCount: 1, ProductAgentRunCount: 1, ReleaseNotesSuccessCount: 1,
+		ProductRequiredFlowCount: 1, ConnectedRepositoryCount: 1, SprintCloseoutCount: 1, ProductAgentRunCount: 1,
 	}
 	view := BuildSetupView(evidence, []string{model.SetupGoalProductDelivery}, model.MemberSetupPreference{})
 	journey := findSetupJourney(t, view, model.SetupGoalProductDelivery)
@@ -393,6 +473,67 @@ func TestBuildSetupViewUsesVerifiedAutomationOutcomes(t *testing.T) {
 	assertSetupTaskStatus(t, journey, "automation.triggered_value", model.SetupTaskCompleted)
 	if journey.Maturity != model.SetupMaturityAdvanced {
 		t.Fatalf("maturity = %q, want %q", journey.Maturity, model.SetupMaturityAdvanced)
+	}
+}
+
+func TestRequiredJourneyFlowsAreCoreAndGateLaterSetup(t *testing.T) {
+	tests := []struct {
+		goal      string
+		evidence  SetupEvidence
+		taskKey   string
+		coreTotal int
+	}{
+		{
+			goal:     model.SetupGoalProductDelivery,
+			evidence: SetupEvidence{PlannedProjectCount: 1, PlannedSprintCount: 1, AssignedProjectTaskCount: 1},
+			taskKey:  "product.required_flow_enabled", coreTotal: 4,
+		},
+		{
+			goal:     model.SetupGoalHelpCenterDocs,
+			evidence: SetupEvidence{HelpCenterSpaceCount: 1, HelpCenterContentCount: 1, PublicHelpDocCount: 1, HelpCenterSiteCount: 1},
+			taskKey:  "help_center.required_flow_enabled", coreTotal: 5,
+		},
+		{
+			goal:     model.SetupGoalInternalDocs,
+			evidence: SetupEvidence{InternalDocsSpaceCount: 1, InternalDocsContentCount: 1, InternalDocsPublishedCount: 1, InternalDocsOwnershipCount: 1},
+			taskKey:  "internal_docs.required_flow_enabled", coreTotal: 5,
+		},
+		{
+			goal:     model.SetupGoalSalesCRM,
+			evidence: SetupEvidence{CRMContactCount: 1, CRMCompanyCount: 1, CRMActionableDealCount: 1, CRMConnectedEmailCount: 1},
+			taskKey:  "crm.required_flow_enabled", coreTotal: 5,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.goal, func(t *testing.T) {
+			view := BuildSetupView(tt.evidence, []string{tt.goal}, model.MemberSetupPreference{})
+			journey := findSetupJourney(t, view, tt.goal)
+			task := findSetupTask(t, journey, tt.taskKey)
+			if !task.Core {
+				t.Fatalf("required flow %q is not core", tt.taskKey)
+			}
+			if task.Status != model.SetupTaskAvailable {
+				t.Fatalf("required flow %q status = %q, want available", tt.taskKey, task.Status)
+			}
+			if journey.TotalCount != tt.coreTotal || journey.CompletedCount != tt.coreTotal-1 {
+				t.Fatalf("core progress = %d/%d, want %d/%d", journey.CompletedCount, journey.TotalCount, tt.coreTotal-1, tt.coreTotal)
+			}
+		})
+	}
+}
+
+func TestAutomationSetupCompletesCoreWhenAssistedWorkAndFlowAreReady(t *testing.T) {
+	evidence := SetupEvidence{CompletedAgentRunCount: 1, EnabledAutomationCount: 1}
+	view := BuildSetupView(evidence, []string{model.SetupGoalAutomationMastery}, model.MemberSetupPreference{})
+	journey := findSetupJourney(t, view, model.SetupGoalAutomationMastery)
+	if journey.TotalCount != 2 || journey.CompletedCount != 2 {
+		t.Fatalf("automation core progress = %d/%d, want 2/2", journey.CompletedCount, journey.TotalCount)
+	}
+	if findSetupTask(t, journey, "automation.triggered_value").Core {
+		t.Fatal("triggered success must remain a value milestone, not block setup completion")
+	}
+	if got := journey.Tasks[len(journey.Tasks)-1].Key; got != "automation.custom_agent_succeeded" {
+		t.Fatalf("last automation task = %q, want custom-agent success", got)
 	}
 }
 

@@ -26,7 +26,7 @@ export function isModuleEnabled(moduleId: string, userEmail?: string): boolean {
   return allowedEmails.includes(userEmail.toLowerCase());
 }
 
-// Development defaults on for local testing; production requires an explicit rollout flag.
+// Coordinate with the backend SETUP_SUCCESS_ENABLED flag to avoid exposing a route the API has disabled.
 export function isSetupSuccessEnabled(): boolean {
-  return import.meta.env.DEV || import.meta.env.VITE_SETUP_SUCCESS_ENABLED === 'true';
+  return import.meta.env.VITE_SETUP_SUCCESS_ENABLED === 'true';
 }

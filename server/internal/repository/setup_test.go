@@ -82,9 +82,9 @@ func TestSetupRepositoryPersistsGoalsAndReadsVerifiedEvidence(t *testing.T) {
 		`INSERT INTO workspace_teams (id, workspace_id) VALUES ('team-1', 'workspace-1')`,
 		`INSERT INTO workspace_members (id, workspace_id, user_id, status) VALUES ('member-1', 'workspace-1', 'user-1', 'active'), ('member-2', 'workspace-1', 'user-2', 'active')`,
 		`INSERT INTO pm_tasks (id, workspace_id, completed, completed_at) VALUES ('task-1', 'workspace-1', 1, '2025-04-05T10:00:00Z'), ('task-2', 'workspace-1', 1, '2025-04-05T12:00:00Z')`,
-		`INSERT INTO agents (id, workspace_id, is_system, preset_key, approval_mode) VALUES ('agent-1', 'workspace-1', 0, '', 'always'), ('docs-agent', 'workspace-1', 1, 'documentation_agent', 'never')`,
-		`INSERT INTO agent_runs (id, workspace_id, agent_id, status, approval_state, target_type, target_id, triggered_by_user_id, output_summary, completed_at) VALUES ('run-1', 'workspace-1', 'agent-1', 'completed', 'approved', 'task', 'task-1', 'user-1', '{"result":"ok"}', '2025-04-05T10:00:00Z'), ('run-2', 'workspace-1', 'agent-1', 'completed', 'not_required', 'task', 'task-2', 'user-1', '{"result":"ok"}', '2025-04-05T12:00:00Z')`,
-		`INSERT INTO automation_rules (id, workspace_id, enabled) VALUES ('rule-1', 'workspace-1', 1)`,
+		`INSERT INTO agents (id, workspace_id, is_system, preset_key, approval_mode, template_key, template_instance_id, source_template_key) VALUES ('agent-1', 'workspace-1', 0, '', 'always', NULL, NULL, ''), ('docs-agent', 'workspace-1', 1, 'documentation_agent', 'never', NULL, NULL, ''), ('template-agent', 'workspace-1', 0, 'documentation_agent', 'always', 'release_notes_writer', 'instance-1', 'release_notes_writer')`,
+		`INSERT INTO agent_runs (id, workspace_id, agent_id, status, approval_state, target_type, target_id, triggered_by_user_id, output_summary, completed_at) VALUES ('run-1', 'workspace-1', 'agent-1', 'completed', 'approved', 'task', 'task-1', 'user-1', '{"result":"ok"}', '2025-04-05T10:00:00Z'), ('run-2', 'workspace-1', 'agent-1', 'completed', 'not_required', 'task', 'task-2', 'user-1', '{"result":"ok"}', '2025-04-05T12:00:00Z'), ('template-run', 'workspace-1', 'template-agent', 'completed', 'not_required', 'repository', 'repo-1', 'user-2', '{"result":"ok"}', '2025-04-05T13:00:00Z')`,
+		`INSERT INTO automation_rules (id, workspace_id, enabled, template_key) VALUES ('rule-1', 'workspace-1', 1, NULL), ('product-flow', 'workspace-1', 1, 'stale_task_escalation'), ('help-flow', 'workspace-1', 1, 'public_help_freshness_sweep'), ('docs-flow', 'workspace-1', 1, 'docs_freshness_sweep'), ('crm-flow', 'workspace-1', 1, 'buying_signal_to_task'), ('disabled-flow', 'workspace-1', 0, 'release_notes_writer'), ('other-flow', 'workspace-1', 1, 'run_on_a_schedule')`,
 		`INSERT INTO agent_trigger_executions (id, workspace_id, status) VALUES ('trigger-1', 'workspace-1', 'completed')`,
 		`INSERT INTO support_widget_sessions (id, workspace_id) VALUES ('session-1', 'workspace-1')`,
 		`INSERT INTO support_widget_installations (id, workspace_id, active, settings) VALUES ('install-1', 'workspace-1', 1, '{"ai_enabled":true,"ai_agent_id":"agent-1","triage_enabled":true,"widget_help_space_ids":["help-space"]}')`,
@@ -110,7 +110,8 @@ func TestSetupRepositoryPersistsGoalsAndReadsVerifiedEvidence(t *testing.T) {
 		`INSERT INTO crm_companies (id, workspace_id) VALUES ('company-1', 'workspace-1')`,
 		`INSERT INTO crm_pipelines (id, workspace_id) VALUES ('pipeline-1', 'workspace-1')`,
 		`INSERT INTO crm_pipeline_stages (id, pipeline_id, stage_type) VALUES ('stage-open', 'pipeline-1', 'open'), ('stage-won', 'pipeline-1', 'won'), ('stage-lost', 'pipeline-1', 'lost')`,
-		`INSERT INTO crm_deals (id, workspace_id, owner_member_id, amount, close_date) VALUES ('deal-1', 'workspace-1', 'member-1', 1000, '2025-05-01')`,
+		`INSERT INTO crm_deals (id, workspace_id, owner_member_id, amount, close_date) VALUES ('deal-1', 'workspace-1', 'member-1', 1000, '2025-05-01'), ('unassociated-deal', 'workspace-1', 'member-1', 2000, '2025-06-01')`,
+		`INSERT INTO crm_associations (id, workspace_id, from_object_type, from_object_id, to_object_type, to_object_id) VALUES ('contact-deal-1', 'workspace-1', 'contact', 'contact-1', 'deal', 'deal-1')`,
 		`INSERT INTO crm_email_accounts (id, workspace_id, is_active, status) VALUES ('crm-email-1', 'workspace-1', 1, 'connected')`,
 		`INSERT INTO crm_autonomy_settings (id, workspace_id, enabled, auto_create_deals, auto_progress_deals) VALUES ('autonomy-1', 'workspace-1', 1, 1, 1)`,
 		`INSERT INTO crm_suggestions (id, workspace_id, suggestion_type, status, execution_status, executed_at, object_id) VALUES ('suggestion-1', 'workspace-1', 'deal_create', 'accepted', 'succeeded', '2025-04-06T10:00:00Z', 'deal-1')`,
@@ -136,7 +137,7 @@ func TestSetupRepositoryPersistsGoalsAndReadsVerifiedEvidence(t *testing.T) {
 	if !evidence.HasCompanyContext || evidence.TeamCount != 1 || evidence.ActiveMemberCount != 2 {
 		t.Fatalf("foundation evidence = %+v", evidence)
 	}
-	if evidence.InitialWorkCount != 2 || evidence.CompletedTaskCount != 2 || evidence.CompletedTaskDayCount != 1 || evidence.CompletedAgentRunCount != 3 || evidence.TriggeredSuccessRunCount != 1 {
+	if evidence.InitialWorkCount != 2 || evidence.CompletedTaskCount != 2 || evidence.CompletedTaskDayCount != 1 || evidence.CompletedAgentRunCount != 4 || evidence.TriggeredSuccessRunCount != 1 {
 		t.Fatalf("outcome evidence = %+v", evidence)
 	}
 	if evidence.ValidatedSupportCount != 0 {
@@ -186,8 +187,14 @@ func TestSetupRepositoryPersistsGoalsAndReadsVerifiedEvidence(t *testing.T) {
 	if evidence.CRMContactCount != 1 || evidence.CRMCompanyCount != 1 || evidence.CRMPipelineCount != 1 || evidence.CRMActionableDealCount != 1 || evidence.CRMConnectedEmailCount != 1 || evidence.CRMAutonomyEnabledCount != 1 || evidence.CRMSignalValueCount != 1 {
 		t.Fatalf("CRM evidence = %+v", evidence)
 	}
-	if evidence.ApprovalGuardCount != 1 {
+	if evidence.ApprovalGuardCount != 2 {
 		t.Fatalf("approval guard evidence = %+v", evidence)
+	}
+	if evidence.ProductRequiredFlowCount != 1 || evidence.HelpCenterRequiredFlowCount != 1 || evidence.InternalDocsRequiredFlowCount != 1 || evidence.CRMRequiredFlowCount != 1 {
+		t.Fatalf("required flow evidence = %+v", evidence)
+	}
+	if evidence.CustomAgentSuccessCount != 2 {
+		t.Fatalf("custom agent success count = %d, want only the two runs from a user-created agent", evidence.CustomAgentSuccessCount)
 	}
 	if err := db.Exec(`UPDATE support_widget_installations SET settings = '{"ai_enabled":true,"ai_agent_id":"   ","triage_enabled":false}' WHERE workspace_id = 'workspace-1'`).Error; err != nil {
 		t.Fatalf("disable support AI and routing evidence: %v", err)
@@ -272,7 +279,7 @@ var setupTestSchema = []string{
 	`CREATE TABLE pm_task_owners (task_id TEXT NOT NULL, user_id TEXT NOT NULL)`,
 	`CREATE TABLE pm_sprint_closeouts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE git_repositories (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT 1, selected BOOLEAN NOT NULL DEFAULT 1, deleted_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
-	`CREATE TABLE agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL DEFAULT 0, preset_key TEXT NOT NULL DEFAULT '', approval_mode TEXT NOT NULL DEFAULT 'never')`,
+	`CREATE TABLE agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL DEFAULT 0, preset_key TEXT NOT NULL DEFAULT '', approval_mode TEXT NOT NULL DEFAULT 'never', template_key TEXT, template_instance_id TEXT, source_template_key TEXT NOT NULL DEFAULT '')`,
 	`CREATE TABLE agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, agent_id TEXT NOT NULL, status TEXT NOT NULL, approval_state TEXT NOT NULL DEFAULT 'not_required', target_type TEXT NOT NULL DEFAULT 'task', target_id TEXT NOT NULL DEFAULT '', triggered_by_user_id TEXT, output_summary TEXT NOT NULL DEFAULT '{}', completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE agent_run_artifacts (id TEXT PRIMARY KEY, workspace_id TEXT, run_id TEXT NOT NULL, artifact_type TEXT NOT NULL DEFAULT '', inline_content TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE automation_rules (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1, template_key TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
@@ -297,6 +304,7 @@ var setupTestSchema = []string{
 	`CREATE TABLE crm_pipelines (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 	`CREATE TABLE crm_pipeline_stages (id TEXT PRIMARY KEY, pipeline_id TEXT NOT NULL, stage_type TEXT NOT NULL)`,
 	`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner_member_id TEXT, amount REAL, close_date DATETIME)`,
+	`CREATE TABLE crm_associations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, from_object_type TEXT NOT NULL, from_object_id TEXT NOT NULL, to_object_type TEXT NOT NULL, to_object_id TEXT NOT NULL)`,
 	`CREATE TABLE crm_email_accounts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT 1, status TEXT NOT NULL)`,
 	`CREATE TABLE crm_autonomy_settings (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1, auto_create_deals BOOLEAN NOT NULL DEFAULT 1, auto_progress_deals BOOLEAN NOT NULL DEFAULT 1)`,
 	`CREATE TABLE crm_suggestions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, suggestion_type TEXT NOT NULL, status TEXT NOT NULL, execution_status TEXT, executed_at DATETIME, object_id TEXT)`,

@@ -457,7 +457,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
         onOpenAIAssistant={openAIAssistantSettings}
       />
 
-      <Card className={LINEAR_CARD_CLASS}>
+      <Card id="company-context" className={cn(LINEAR_CARD_CLASS, 'scroll-mt-6')}>
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 space-y-1">

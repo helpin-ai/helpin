@@ -10,6 +10,8 @@ export function useSetup(workspaceId?: string) {
     queryFn: async () => unwrap(await setupService.get(workspaceId!)),
     enabled: Boolean(workspaceId),
     staleTime: 15_000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
   });
 }
 

@@ -44,10 +44,10 @@ var setupJourneyCatalog = map[string]setupJourneyDefinition{
 			{"product.project_planned", "Create an epic with an owner and timeline so the team knows what it is delivering.", "", "Core", "pm_epics", "Plan epic", func(e SetupEvidence) bool { return e.PlannedProjectCount > 0 }},
 			{"product.sprint_planned", "Create a sprint with planned work so the team can execute a clear delivery cycle.", "", "Core", "pm_sprints", "Plan sprint", func(e SetupEvidence) bool { return e.PlannedSprintCount > 0 }},
 			{"product.work_assigned", "Assign project work to teammates so every task has clear ownership.", "", "Core", "pm_tasks", "Assign work", func(e SetupEvidence) bool { return e.AssignedProjectTaskCount > 0 }},
-			{"product.sprint_closeout_reviewable", "Close a sprint so the team can review what shipped and improve the next cycle.", "", "Core", "pm_sprints", "Review sprints", func(e SetupEvidence) bool { return e.SprintCloseoutCount > 0 }},
+			{"product.required_flow_enabled", "Enable a project automation so routine follow-up work runs consistently.", "", "Core", "product_required_flow", "Choose automation", func(e SetupEvidence) bool { return e.ProductRequiredFlowCount > 0 }},
+			{"product.sprint_closeout_reviewable", "Close a sprint so the team can review what shipped and improve the next cycle.", "", "Power", "pm_sprints", "Review sprints", func(e SetupEvidence) bool { return e.SprintCloseoutCount > 0 }},
 			{"product.repository_ready", "Connect a code repository so Helpin can link project work to what you ship.", "", "Power", "git_settings", "Connect repository", func(e SetupEvidence) bool { return e.ConnectedRepositoryCount > 0 }},
 			{"product.agent_result_used", "Run an agent on project work so planning or review takes less manual effort.", "", "Power", "product_agent", "Run planning agent", func(e SetupEvidence) bool { return e.ProductAgentRunCount > 0 }},
-			{"product.release_notes_flow_succeeded", "Run release-notes automation so customer updates are created from shipped work.", "", "Power", "automation_flows", "Build automation", func(e SetupEvidence) bool { return e.ReleaseNotesSuccessCount > 0 }},
 		},
 	},
 	model.SetupGoalCustomerSupport: {
@@ -76,6 +76,7 @@ var setupJourneyCatalog = map[string]setupJourneyDefinition{
 			{"help_center.content_ready", "Create or import customer-facing articles so common questions are documented.", "", "Core", "docs_home", "Open Docs", func(e SetupEvidence) bool { return e.HelpCenterContentCount > 0 }},
 			{"help_center.article_published", "Publish an article so customers can use it to solve a real question.", "", "Core", "help_center_article_publish", "Publish article", func(e SetupEvidence) bool { return e.PublicHelpDocCount > 0 }},
 			{"help_center.site_published", "Publish your help center so customers can browse and search your documentation.", "", "Core", "help_center_settings", "Publish help center", func(e SetupEvidence) bool { return e.HelpCenterSiteCount > 0 }},
+			{"help_center.required_flow_enabled", "Enable a public-help freshness sweep so customer articles stay accurate over time.", "", "Core", "help_center_required_flow", "Enable freshness sweep", func(e SetupEvidence) bool { return e.HelpCenterRequiredFlowCount > 0 }},
 			{"help_center.widget_connected", "Add help-center content to live chat so customers can find answers before starting a conversation.", "", "Power", "help_center_widget", "Add to live chat", func(e SetupEvidence) bool { return e.HelpCenterWidgetCount > 0 }},
 		},
 	},
@@ -88,6 +89,7 @@ var setupJourneyCatalog = map[string]setupJourneyDefinition{
 			{"internal_docs.content_ready", "Create or import internal documents so teammates can find essential information.", "", "Core", "docs_home", "Open Docs", func(e SetupEvidence) bool { return e.InternalDocsContentCount > 0 }},
 			{"internal_docs.published", "Publish internal knowledge so it is available across the workspace.", "", "Core", "docs_home", "Open Docs", func(e SetupEvidence) bool { return e.InternalDocsPublishedCount > 0 }},
 			{"internal_docs.ownership_ready", "Assign document owners and review dates so important knowledge stays current.", "", "Core", "docs_home", "Open Docs", func(e SetupEvidence) bool { return e.InternalDocsOwnershipCount > 0 }},
+			{"internal_docs.required_flow_enabled", "Enable an internal-docs freshness sweep so trusted knowledge stays current.", "", "Core", "internal_docs_required_flow", "Enable freshness sweep", func(e SetupEvidence) bool { return e.InternalDocsRequiredFlowCount > 0 }},
 			{"internal_docs.agent_connected", "Connect internal knowledge to an AI agent so it can answer with trusted company context.", "", "Power", "internal_docs_agent_knowledge", "Connect agent", func(e SetupEvidence) bool { return e.InternalAgentKnowledgeCount > 0 }},
 			{"internal_docs.agent_succeeded", "Run the documentation agent on a real document so maintaining knowledge takes less manual effort.", "", "Power", "internal_docs_agent_run", "Run documentation agent", func(e SetupEvidence) bool { return e.InternalDocAgentSuccessCount > 0 }},
 		},
@@ -99,9 +101,9 @@ var setupJourneyCatalog = map[string]setupJourneyDefinition{
 		tasks: []setupTaskDefinition{
 			{"crm.contact_ready", "Add or import a contact so customer conversations have useful sales context.", "", "Core", "crm_contacts", "Add contacts", func(e SetupEvidence) bool { return e.CRMContactCount > 0 }},
 			{"crm.company_ready", "Add or import a company so contacts and opportunities can be grouped by account.", "", "Core", "crm_companies", "Add companies", func(e SetupEvidence) bool { return e.CRMCompanyCount > 0 }},
-			{"crm.pipeline_ready", "Configure pipeline stages so every opportunity follows a consistent sales process.", "", "Core", "crm_pipelines", "Configure pipeline", func(e SetupEvidence) bool { return e.CRMPipelineCount > 0 }},
 			{"crm.deal_ready", "Create a deal with an owner, value, and close date so the opportunity is actionable.", "", "Core", "crm_deals", "Create deal", func(e SetupEvidence) bool { return e.CRMActionableDealCount > 0 }},
-			{"crm.email_connected", "Connect your sales inbox so Helpin can capture customer conversations and buying signals.", "", "Power", "crm_email", "Connect inbox", func(e SetupEvidence) bool { return e.CRMConnectedEmailCount > 0 }},
+			{"crm.email_connected", "Connect your sales inbox so Helpin can capture customer conversations and buying signals.", "", "Core", "crm_email", "Connect inbox", func(e SetupEvidence) bool { return e.CRMConnectedEmailCount > 0 }},
+			{"crm.required_flow_enabled", "Enable buyer-signal follow-up so strong customer intent becomes owned work.", "", "Core", "crm_required_flow", "Enable signal flow", func(e SetupEvidence) bool { return e.CRMRequiredFlowCount > 0 }},
 			{"crm.autonomy_enabled", "Enable CRM automation so Helpin can create or progress deals from strong customer signals.", "", "Power", "crm_autonomy", "Enable automation", func(e SetupEvidence) bool { return e.CRMAutonomyEnabledCount > 0 }},
 			{"crm.signal_value_proven", "Create or progress a deal from a detected customer signal so the pipeline updates itself.", "", "Power", "crm_review", "Review CRM activity", func(e SetupEvidence) bool { return e.CRMSignalValueCount > 0 }},
 		},
@@ -113,25 +115,16 @@ var setupJourneyCatalog = map[string]setupJourneyDefinition{
 		established: func(e SetupEvidence) bool { return e.CompletedAgentRunDayCount > 1 && e.TriggeredSuccessRunCount > 0 },
 		tasks: []setupTaskDefinition{
 			{"automation.first_assisted_value", "Complete an agent run on real work so you can see where Helpin saves time.", "", "Core", "automation_agents", "Run an agent", func(e SetupEvidence) bool { return e.CompletedAgentRunCount > 0 }},
-			{"automation.custom_agent_succeeded", "Run a custom agent successfully so it can handle work specific to your team.", "", "Power", "automation_custom_agent", "Build custom agent", func(e SetupEvidence) bool { return e.CustomAgentSuccessCount > 0 }},
 			{"automation.flow_enabled", "Turn on an automation flow so repeat work can run automatically.", "", "Core", "automation_flows", "Build automation", func(e SetupEvidence) bool { return e.EnabledAutomationCount > 0 }},
 			{"automation.approval_guard_configured", "Require approval for sensitive agent actions so automation stays under human control.", "", "Power", "automation_approval_guard", "Configure approvals", func(e SetupEvidence) bool { return e.ApprovalGuardCount > 0 }},
-			{"automation.triggered_value", "Complete a triggered or scheduled automation so value no longer depends on a manual start.", "", "Core", "automation_flows", "Review automation runs", func(e SetupEvidence) bool { return e.TriggeredSuccessRunCount > 0 }},
+			{"automation.triggered_value", "Complete a triggered or scheduled automation so value no longer depends on a manual start.", "", "Power", "automation_flows", "Review automation runs", func(e SetupEvidence) bool { return e.TriggeredSuccessRunCount > 0 }},
 			{"automation.reliable_unattended_value", "Run the same automation successfully over time so your team can trust it unattended.", "", "Power", "automation_flows", "Review automation runs", func(e SetupEvidence) bool { return e.ReliableAutomationCount > 0 }},
+			{"automation.custom_agent_succeeded", "Run a custom agent successfully so it can handle work specific to your team.", "", "Power", "automation_custom_agent", "Build custom agent", func(e SetupEvidence) bool { return e.CustomAgentSuccessCount > 0 }},
 		},
 	},
 }
 
 var setupPlaceholderCatalog = map[string]model.SetupPlaceholderGoal{}
-
-var setupJourneyOrder = []string{
-	model.SetupGoalProductDelivery,
-	model.SetupGoalCustomerSupport,
-	model.SetupGoalHelpCenterDocs,
-	model.SetupGoalInternalDocs,
-	model.SetupGoalSalesCRM,
-	model.SetupGoalAutomationMastery,
-}
 
 type SetupAccess struct {
 	Unrestricted bool
@@ -192,10 +185,8 @@ func BuildSetupViewWithState(evidenceByGoal map[string]SetupEvidence, goals []mo
 			keys = append(keys, key)
 		}
 	}
-	for _, key := range setupJourneyOrder {
-		if !containsSetupGoal(keys, key) {
-			keys = append(keys, key)
-		}
+	if !containsSetupGoal(keys, model.SetupGoalAutomationMastery) {
+		keys = append(keys, model.SetupGoalAutomationMastery)
 	}
 	view := model.SetupView{Goals: normalized, Preference: preference, Journeys: make([]model.SetupJourney, 0, len(keys))}
 	completedTasks := make(map[string]bool)
@@ -345,8 +336,8 @@ func setupPrerequisites(taskKey string) []string {
 		return []string{"product.project_planned"}
 	case "product.work_assigned", "product.sprint_closeout_reviewable":
 		return []string{"product.sprint_planned"}
-	case "product.release_notes_flow_succeeded":
-		return []string{"product.repository_ready"}
+	case "product.required_flow_enabled":
+		return []string{"product.work_assigned"}
 	case "support.ai_agent_activated":
 		return []string{"support.brand_knowledge_ready"}
 	case "support.routing_enabled":
@@ -359,6 +350,8 @@ func setupPrerequisites(taskKey string) []string {
 		return []string{"help_center.content_ready"}
 	case "help_center.site_published":
 		return []string{"help_center.article_published"}
+	case "help_center.required_flow_enabled":
+		return []string{"help_center.site_published"}
 	case "help_center.widget_connected":
 		return []string{"help_center.article_published", "help_center.site_published"}
 	case "internal_docs.content_ready":
@@ -367,12 +360,16 @@ func setupPrerequisites(taskKey string) []string {
 		return []string{"internal_docs.content_ready"}
 	case "internal_docs.ownership_ready":
 		return []string{"internal_docs.published"}
+	case "internal_docs.required_flow_enabled":
+		return []string{"internal_docs.ownership_ready"}
 	case "internal_docs.agent_connected":
 		return []string{"internal_docs.published"}
 	case "internal_docs.agent_succeeded":
 		return []string{"internal_docs.agent_connected"}
 	case "crm.deal_ready":
-		return []string{"crm.contact_ready", "crm.company_ready", "crm.pipeline_ready"}
+		return []string{"crm.contact_ready", "crm.company_ready"}
+	case "crm.required_flow_enabled":
+		return []string{"crm.deal_ready", "crm.email_connected"}
 	case "crm.autonomy_enabled":
 		return []string{"crm.email_connected"}
 	case "crm.signal_value_proven":
@@ -470,7 +467,12 @@ func setupActionAllowed(taskKey, actionKey string, access SetupAccess) (bool, st
 			return requirePerm("workspace.members.read")
 		}
 		return requirePerm("workspace.invites.manage")
-	case "pm_epics", "pm_sprints", "pm_tasks", "product_agent":
+	case "pm_epics", "pm_sprints", "pm_tasks":
+		return requirePerm("pm.edit")
+	case "product_agent":
+		if !access.Modules["pm"] || !access.Modules["automation"] {
+			return false, "Projects and Automation must be available in this workspace."
+		}
 		return requirePerm("pm.edit")
 	case "git_settings":
 		return requirePerm("integrations.connect")
@@ -497,14 +499,50 @@ func setupActionAllowed(taskKey, actionKey string, access SetupAccess) (bool, st
 			return false, "Ask a workspace admin to complete this step."
 		}
 		return requirePerm("docs.edit")
-	case "docs_home", "help_center_article_publish", "help_center_settings", "help_center_widget", "internal_docs_agent_knowledge", "internal_docs_agent_run":
+	case "docs_home":
 		if !access.Modules["docs"] {
 			return false, "Docs is not available to you in this workspace."
 		}
 		return requirePerm("docs.edit")
-	case "crm_contacts", "crm_companies", "crm_pipelines", "crm_deals", "crm_email", "crm_review":
+	case "help_center_article_publish":
+		if !access.Modules["docs"] {
+			return false, "Docs is not available to you in this workspace."
+		}
+		return requirePerm("docs.publish")
+	case "help_center_settings":
+		if !access.Modules["docs"] {
+			return false, "Docs is not available to you in this workspace."
+		}
+		return requirePerm("docs.admin")
+	case "help_center_widget":
+		if !access.Modules["docs"] || !access.Modules["support"] {
+			return false, "Docs and Support must be available in this workspace."
+		}
+		if !access.Permissions["docs.read"] {
+			return false, "You need Docs access to connect help content."
+		}
+		return requirePerm("support.admin")
+	case "internal_docs_agent_knowledge", "internal_docs_agent_run":
+		if !access.Modules["docs"] || !access.Modules["automation"] {
+			return false, "Docs and Automation must be available in this workspace."
+		}
+		return requirePerm("docs.edit")
+	case "crm_contacts", "crm_companies", "crm_deals", "crm_email":
 		if !access.Modules["crm"] {
 			return false, "CRM is not available to you in this workspace."
+		}
+		return requirePerm("crm.edit")
+	case "crm_pipelines":
+		if !access.Modules["crm"] {
+			return false, "CRM is not available to you in this workspace."
+		}
+		return requirePerm("crm.admin")
+	case "crm_review":
+		if !access.Modules["crm"] {
+			return false, "CRM is not available to you in this workspace."
+		}
+		if !access.Entitlements[string(EntitlementFeatureDealAutomation)] {
+			return false, "CRM automation requires the Growth plan."
 		}
 		return requirePerm("crm.edit")
 	case "crm_autonomy":
@@ -515,26 +553,26 @@ func setupActionAllowed(taskKey, actionKey string, access SetupAccess) (bool, st
 			return false, "CRM automation requires the Growth plan."
 		}
 		return requirePerm("crm.admin")
-	case "automation_agents", "automation_custom_agent", "automation_approval_guard", "automation_flows":
+	case "automation_agents", "automation_custom_agent", "automation_approval_guard":
 		if !access.Modules["automation"] {
 			return false, "Automation is not available to you in this workspace."
 		}
-		if (actionKey == "automation_agents" || actionKey == "automation_custom_agent") && !access.Permissions["pm.edit"] && !access.Permissions["support.edit"] {
+		if !access.Permissions["pm.edit"] && !access.Permissions["docs.edit"] && !access.Permissions["crm.edit"] && !access.Permissions["support.edit"] {
 			return false, "You need edit access to run an agent on workspace work."
 		}
-		if actionKey == "automation_flows" && !access.Entitlements[string(EntitlementFeatureAutomationFlows)] {
-			return false, "Automation flows require the Growth plan."
-		}
-		if actionKey == "automation_flows" && !access.Permissions["pm.admin.automations"] {
-			return false, "Ask a workspace admin to configure this automation."
-		}
-		if actionKey == "automation_custom_agent" && !access.Entitlements[string(EntitlementFeatureCustomAgents)] {
+		if (actionKey == "automation_custom_agent" || actionKey == "automation_approval_guard") && !access.Entitlements[string(EntitlementFeatureCustomAgents)] {
 			return false, "Custom agents require the Growth plan."
 		}
-		if taskKey == "automation.triggered_value" || taskKey == "automation.reliable_unattended_value" {
-			if !access.Entitlements[string(EntitlementFeatureAgentScheduling)] {
-				return false, "Scheduled automation requires the Growth plan."
-			}
+		return true, ""
+	case "automation_flows", "product_required_flow", "help_center_required_flow", "internal_docs_required_flow", "crm_required_flow":
+		if !access.Modules["automation"] {
+			return false, "Automation is not available to you in this workspace."
+		}
+		if !access.Entitlements[string(EntitlementFeatureAutomationFlows)] {
+			return false, "Automation flows require the Growth plan."
+		}
+		if !access.Permissions["pm.admin.automations"] {
+			return false, "Ask a workspace admin to configure this automation."
 		}
 		return true, ""
 	}
@@ -587,12 +625,12 @@ func isSetupCoreTask(key string) bool {
 func isSetupReadinessTask(key string) bool {
 	switch key {
 	case "foundation.company_context_ready", "foundation.team_ready", "foundation.member_joined",
-		"product.project_planned", "product.sprint_planned", "product.work_assigned", "product.repository_ready",
+		"product.project_planned", "product.sprint_planned", "product.work_assigned", "product.required_flow_enabled", "product.repository_ready",
 		"support.email_inbox_connected", "support.live_chat_installed", "support.help_docs_ready", "support.brand_knowledge_ready",
 		"support.ai_agent_activated", "support.team_inbox_created", "support.routing_enabled",
-		"help_center.space_ready", "help_center.content_ready", "help_center.article_published", "help_center.site_published", "help_center.widget_connected",
-		"internal_docs.space_ready", "internal_docs.content_ready", "internal_docs.published", "internal_docs.ownership_ready", "internal_docs.agent_connected",
-		"crm.contact_ready", "crm.company_ready", "crm.pipeline_ready", "crm.deal_ready", "crm.email_connected", "crm.autonomy_enabled",
+		"help_center.space_ready", "help_center.content_ready", "help_center.article_published", "help_center.site_published", "help_center.required_flow_enabled", "help_center.widget_connected",
+		"internal_docs.space_ready", "internal_docs.content_ready", "internal_docs.published", "internal_docs.ownership_ready", "internal_docs.required_flow_enabled", "internal_docs.agent_connected",
+		"crm.contact_ready", "crm.company_ready", "crm.deal_ready", "crm.email_connected", "crm.required_flow_enabled", "crm.autonomy_enabled",
 		"automation.flow_enabled", "automation.approval_guard_configured":
 		return true
 	default:

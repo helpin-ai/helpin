@@ -10,12 +10,19 @@ describe('workspaceOnboardingUseCases', () => {
   it('defines the product use cases shown during workspace onboarding', () => {
     expect(ONBOARDING_USE_CASE_OPTIONS.map((option) => option.value)).toEqual([
       'product_engineering',
-      'team_project_management',
       'customer_support',
       'help_center_docs',
       'internal_docs',
       'sales_crm',
     ]);
+  });
+
+  it('presents one canonical team-project journey', () => {
+    expect(ONBOARDING_USE_CASE_OPTIONS[0]).toMatchObject({
+      value: 'product_engineering',
+      label: 'Plan and ship team projects',
+    });
+    expect(ONBOARDING_USE_CASE_OPTIONS.some((option) => option.value === 'team_project_management')).toBe(false);
   });
 
   it('shows replacement tool examples for every use case', () => {
@@ -27,7 +34,6 @@ describe('workspaceOnboardingUseCases', () => {
   it('preserves selected intent in setup goals without duplicates', () => {
     expect(mapOnboardingUseCasesToSetupGoals([
       'product_engineering',
-      'team_project_management',
       'customer_support',
       'sales_crm',
     ])).toEqual(['product_delivery', 'customer_support', 'sales_crm']);

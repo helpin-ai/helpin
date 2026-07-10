@@ -38,6 +38,7 @@ afterEach(() => {
   container?.remove();
   container = null;
   workspace = { id: 'workspace-1', slug: 'acme' };
+	mutate.mockReset();
 });
 
 function journey(key: string, title: string, taskTitle: string): SetupJourney {
@@ -79,6 +80,32 @@ function journeyTrigger(title: string) {
 }
 
 describe('SetupSuccessPage journey sections', () => {
+	it('labels the finite denominator as core setup progress', () => {
+		setupView = view([journey('foundation', 'Workspace essentials', 'Add company details')]);
+		renderPage();
+
+		expect(container?.textContent).toContain('1 of 4 core steps verified');
+		expect(container?.textContent).toContain('1/2 core complete');
+	});
+
+	it('lets workspace managers update a focused set of goals', () => {
+		setupView = view([journey('foundation', 'Workspace essentials', 'Add company details')]);
+		renderPage();
+
+		const editGoals = Array.from(container?.querySelectorAll('button') ?? []).find((button) => button.textContent?.includes('Edit goals'));
+		act(() => editGoals?.click());
+		const supportLabel = Array.from(document.querySelectorAll('label')).find((label) => label.textContent?.includes('Scale customer support'));
+		const supportCheckbox = supportLabel?.querySelector('button[role="checkbox"]');
+		act(() => (supportCheckbox as HTMLButtonElement | null)?.click());
+		const save = Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.includes('Save goals'));
+		act(() => save?.click());
+
+		expect(mutate).toHaveBeenCalledWith(
+			['product_delivery', 'customer_support'],
+			expect.objectContaining({ onSuccess: expect.any(Function) }),
+		);
+	});
+
   it('opens only the first journey initially and toggles sections independently', () => {
     setupView = view([
       journey('foundation', 'Workspace essentials', 'Add company details'),
@@ -94,7 +121,7 @@ describe('SetupSuccessPage journey sections', () => {
     expect(first?.getAttribute('aria-expanded')).toBe('true');
     expect(second?.getAttribute('aria-expanded')).toBe('false');
     expect(third?.getAttribute('aria-expanded')).toBe('false');
-    expect(container?.textContent).toContain('1/2 complete');
+    expect(container?.textContent).toContain('1/2 core complete');
     expect(document.getElementById('setup-journey-tasks-foundation')?.hidden).toBe(false);
     expect(document.getElementById('setup-journey-tasks-customer_support')?.hidden).toBe(true);
 
@@ -143,7 +170,7 @@ describe('SetupSuccessPage journey sections', () => {
     const controlledId = supportTrigger?.getAttribute('aria-controls');
     const controlled = controlledId ? document.getElementById(controlledId) : null;
 
-    expect(supportTrigger?.textContent).toContain('1/2 complete');
+    expect(supportTrigger?.textContent).toContain('1/2 core complete');
     expect(controlledId).toBe('setup-journey-tasks-customer_support');
     expect(controlled?.hidden).toBe(true);
     expect(controlled?.querySelector('li')).not.toBeNull();

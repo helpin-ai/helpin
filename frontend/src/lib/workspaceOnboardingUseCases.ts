@@ -3,7 +3,6 @@ import type { SetupGoalKey } from './setupTypes';
 
 export type WorkspaceOnboardingUseCase =
   | 'product_engineering'
-  | 'team_project_management'
   | 'customer_support'
   | 'help_center_docs'
   | 'internal_docs'
@@ -19,15 +18,9 @@ export type WorkspaceOnboardingUseCaseOption = {
 export const ONBOARDING_USE_CASE_OPTIONS: WorkspaceOnboardingUseCaseOption[] = [
   {
     value: 'product_engineering',
-    label: 'Product & engineering work',
-    description: 'AI agents help plan work, draft specs, use repo context, and keep product execution moving.',
-    replaces: 'Replaces Jira, Linear, Shortcut',
-  },
-  {
-    value: 'team_project_management',
-    label: 'Team/project management',
-    description: 'AI agents help organize tasks, summarize progress, automate follow-ups, and support team workflows.',
-    replaces: 'Replaces Asana, Monday, Trello',
+    label: 'Plan and ship team projects',
+    description: 'Plan projects, assign work, run delivery cycles, and automate the follow-up that keeps teams moving.',
+    replaces: 'Replaces Jira, Linear, Asana',
   },
   {
     value: 'customer_support',
@@ -57,7 +50,6 @@ export const ONBOARDING_USE_CASE_OPTIONS: WorkspaceOnboardingUseCaseOption[] = [
 
 const setupGoalByUseCase: Record<WorkspaceOnboardingUseCase, SetupGoalKey> = {
   product_engineering: 'product_delivery',
-  team_project_management: 'product_delivery',
   customer_support: 'customer_support',
   help_center_docs: 'help_center_docs',
   internal_docs: 'internal_docs',
