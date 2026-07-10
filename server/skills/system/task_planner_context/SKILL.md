@@ -8,6 +8,7 @@ metadata:
     - request_user_input
   supported_runtimes:
     - native_sdk
+    - codex
 ---
 
 Treat the run as a transcript-driven loop. Decide the next step from the task, parent epic context, linked docs, comments, code context, tool results, and the current chat.

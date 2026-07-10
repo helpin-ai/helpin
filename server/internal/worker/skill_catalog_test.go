@@ -302,6 +302,10 @@ func TestTaskPlannerBundleUsesTaskPlanDocSkillStack(t *testing.T) {
 	if containsString(bundle.SkillKeys, "coding_task_decomposition") {
 		t.Fatalf("did not expect epic task-plan skill in task planner bundle, got %v", bundle.SkillKeys)
 	}
+	skill, ok := GetBuiltInSkill("coding_task_planning")
+	if !ok || !containsString(skill.SupportedRuntimes, "codex") {
+		t.Fatalf("task planning skill must support Codex, got %#v", skill.SupportedRuntimes)
+	}
 }
 
 func TestReviewAgentBundleDoesNotIncludePlannerSkills(t *testing.T) {
