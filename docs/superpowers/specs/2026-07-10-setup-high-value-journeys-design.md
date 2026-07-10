@@ -13,7 +13,7 @@ Replace placeholder and low-value activity milestones with setup capabilities an
 - Every selected goal renders as a normal collapsible journey in goal order.
 - Remove journey labels `Preparing`, `Ready`, `Activated`, `Established`, `Advanced`, and `Power up` from the UI.
 - Remove task-stage pills `Prepare`, `Activate`, `Repeat`, `Connect`, and `Prove value` from the UI.
-- Retain maturity, stage, scope, core, and evidence data internally for ordering, progress, recommendations, and analytics.
+- Retain maturity, stage, scope, core, and evidence data internally for API compatibility and analytics, but replace the old stage-based maturity algorithm with the universal completion algorithm below.
 - Journey headers show only accent, title, description, verified completion count, and collapse control.
 - Task rows show only the one-sentence action-and-reason label, personal/blocked status when applicable, completion state, and action.
 - Keep the existing first-expanded/all-later-collapsed behavior.
@@ -62,7 +62,7 @@ Company context is the prerequisite for teammate participation. Team creation is
 | 3 | `product.work_assigned` | Assign project work to teammates so every task has clear ownership. | A non-archived task in an epic or sprint has at least one `pm_task_owners` row. | `pm_tasks` → `/pm/tasks` |
 | 4 | `product.sprint_closeout_reviewable` | Close a sprint so the team can review what shipped and improve the next cycle. | At least one `pm_sprint_closeouts` row. | `pm_sprints` → `/pm/sprints` |
 | 5 | `product.repository_ready` | Connect a code repository so Helpin can link project work to what you ship. | An active, selected, non-deleted `git_repositories` row. | `git_settings` → `/settings/repositories` |
-| 6 | `product.agent_result_used` | Run an agent on project work so planning or review takes less manual effort. | A valuable completed agent run targets `task`, `epic`, or `repository`. This is workspace-shared, not member-specific. | `automation_agents` → `/automation/agents` |
+| 6 | `product.agent_result_used` | Run an agent on project work so planning or review takes less manual effort. | A valuable completed agent run targets `task`, `epic`, or `repository` and has a non-empty `target_id`. This is workspace-shared, not member-specific. | `automation_agents` → `/automation/agents` |
 | 7 | `product.release_notes_flow_succeeded` | Run release-notes automation so customer updates are created from shipped work. | A completed trigger execution for the `release_notes_writer` template. | `automation_flows` → `/automation/flows` |
 
 Core progress uses tasks 1–4. Repository, agent, and release-notes steps are power capabilities. Dependencies: sprint planned requires project planned; work assigned and sprint closeout require sprint planned; release notes requires repository connected.
@@ -81,14 +81,16 @@ Keep the approved nine support tasks and evidence unchanged:
 8. `support.pm_task_linked`
 9. `support.coverage_fix_applied`
 
-When `help_center_docs` is also selected, omit `support.help_docs_ready` from the support journey. The detailed help-center journey owns that setup capability and supplies the same underlying evidence.
+When `help_center_docs` is also selected, omit `support.help_docs_ready` from the support journey. The detailed help-center journey owns that setup capability and supplies the same underlying evidence. This rule is computed from the complete canonical selected-goal set before any journey is built, so saved goal order cannot affect it.
+
+Without Help Center selected, Support has seven core tasks and nine visible tasks. With Help Center selected, Support has six core tasks and eight visible tasks; the hidden help-doc task contributes neither journey nor global progress. `support.ai_agent_activated` checks `PublicHelpDocCount > 0` directly as its help-doc prerequisite plus the visible `support.brand_knowledge_ready` prerequisite, rather than depending on a hidden task key. Recommendations never point to the hidden key. Support uses the universal maturity algorithm against its adjusted visible core/power set.
 
 ### Publish help center docs
 
 | Order | Key | Label | Completion evidence | Action |
 |---|---|---|---|---|
 | 1 | `help_center.space_ready` | Create a public help-center space so customer content has a clear home. | A non-deleted, non-system `docs_spaces` row has `type = 'external_capable'`. | `docs_home` → `/docs` |
-| 2 | `help_center.content_ready` | Create or import customer-facing articles so common questions are documented. | A non-deleted `docs_documents` row belongs to an external-capable space. | `docs_home` → `/docs` |
+| 2 | `help_center.content_ready` | Create or import customer-facing articles so common questions are documented. | A non-deleted `docs_documents` row belongs to an external-capable space and joins `docs_contents` with `word_count > 0 OR TRIM(content_text) <> ''`. | `docs_home` → `/docs` |
 | 3 | `help_center.article_published` | Publish an article so customers can use it to solve a real question. | A joined `docs_helpcenter_articles` row has `public_published_at IS NOT NULL`. | `docs_home` → `/docs` |
 | 4 | `help_center.site_published` | Publish your help center so customers can browse and search your documentation. | The workspace `docs_helpcenter_configs.is_published` value is true. | `help_center_settings` → `/settings/helpcenter` |
 | 5 | `help_center.widget_connected` | Add help-center content to live chat so customers can find answers before starting a conversation. | An active support widget installation has a non-empty `widget_help_space_ids` setting containing an existing external-capable space. | `support_live_chat` → `/settings/chat-general` |
@@ -100,10 +102,10 @@ Tasks 1–4 are core. Widget integration is a power capability. Dependencies fol
 | Order | Key | Label | Completion evidence | Action |
 |---|---|---|---|---|
 | 1 | `internal_docs.space_ready` | Create an internal knowledge space so company information has a trusted home. | A non-deleted, non-system `docs_spaces` row has `type = 'internal'`. | `docs_home` → `/docs` |
-| 2 | `internal_docs.content_ready` | Create or import internal documents so teammates can find essential information. | A non-deleted `docs_documents` row belongs to an internal space. | `docs_home` → `/docs` |
+| 2 | `internal_docs.content_ready` | Create or import internal documents so teammates can find essential information. | A non-deleted `docs_documents` row belongs to an internal space and joins `docs_contents` with `word_count > 0 OR TRIM(content_text) <> ''`. | `docs_home` → `/docs` |
 | 3 | `internal_docs.published` | Publish internal knowledge so it is available across the workspace. | An internal-space document has `status = 'published'` and `published_at IS NOT NULL`. | `docs_home` → `/docs` |
 | 4 | `internal_docs.ownership_ready` | Assign document owners and review dates so important knowledge stays current. | An internal-space document has `owner_id IS NOT NULL` and `next_review_at IS NOT NULL`. | `docs_home` → `/docs` |
-| 5 | `internal_docs.agent_connected` | Connect internal knowledge to an AI agent so it can answer with trusted company context. | A ready `agent_knowledge_sources` row with indexed content references an internal space. | `automation_agents` → `/automation/agents` |
+| 5 | `internal_docs.agent_connected` | Connect internal knowledge to an AI agent so it can answer with trusted company context. | `agent_knowledge_sources.sync_status = 'ready'` and (`indexed_documents > 0 OR indexed_chunks > 0`), joined by `space_id` and `workspace_id` to a non-deleted internal `docs_spaces` row and by `agent_id`/`workspace_id` to an agent in the same workspace. | `automation_agents` → `/automation/agents` |
 | 6 | `internal_docs.agent_succeeded` | Run the documentation agent on a real document so maintaining knowledge takes less manual effort. | A valuable completed `agent_runs` row targets `document` and joins an agent with `preset_key = 'documentation_agent'`. | `automation_agents` → `/automation/agents` |
 
 Tasks 1–4 are core. Agent connection and successful document run are power capabilities. Dependencies follow the displayed order; the agent run requires agent-connected knowledge.
@@ -112,20 +114,23 @@ Tasks 1–4 are core. Agent connection and successful document run are power cap
 
 | Order | Key | Label | Completion evidence | Action |
 |---|---|---|---|---|
-| 1 | `crm.customer_data_ready` | Add or import contacts and companies so your team has customer context in one place. | At least one `crm_contacts` row and one `crm_companies` row exist for the workspace. | `crm_contacts` → `/crm/contacts` |
-| 2 | `crm.pipeline_ready` | Configure pipeline stages so every opportunity follows a consistent sales process. | A `crm_pipelines` row has at least one open, one won, and one lost `crm_pipeline_stages` row. | `crm_pipelines` → `/settings/crm-pipelines` |
-| 3 | `crm.deal_ready` | Create a deal with an owner, value, and close date so the opportunity is actionable. | A `crm_deals` row has `owner_member_id`, positive `amount`, and `close_date`. | `crm_deals` → `/crm/deals` |
-| 4 | `crm.email_connected` | Connect your sales inbox so Helpin can capture customer conversations and buying signals. | An active `crm_email_accounts` row has `status = 'connected'`. | `crm_email` → `/settings/crm-email` |
-| 5 | `crm.autonomy_enabled` | Enable CRM automation so Helpin can create or progress deals from strong customer signals. | `crm_autonomy_settings.enabled` is true and either `auto_create_deals` or `auto_progress_deals` is true. | `crm_autonomy` → `/settings/crm-autonomy` |
-| 6 | `crm.signal_value_proven` | Create or progress a deal from a detected customer signal so the pipeline updates itself. | An accepted `crm_suggestions` row has type `deal_create` or `deal_advance`; automatic executions already store accepted suggestions, so manual and automatic success share one predicate. | `crm_review` → `/crm/review` |
+| 1 | `crm.contact_ready` | Add or import a contact so customer conversations have useful sales context. | At least one `crm_contacts` row exists for the workspace. | `crm_contacts` → `/crm/contacts` |
+| 2 | `crm.company_ready` | Add or import a company so contacts and opportunities can be grouped by account. | At least one `crm_companies` row exists for the workspace. | `crm_companies` → `/crm/companies` |
+| 3 | `crm.pipeline_ready` | Configure pipeline stages so every opportunity follows a consistent sales process. | A workspace `crm_pipelines` row has at least one open, one won, and one lost `crm_pipeline_stages` row. | `crm_pipelines` → `/settings/crm-pipelines` |
+| 4 | `crm.deal_ready` | Create a deal with an owner, value, and close date so the opportunity is actionable. | A `crm_deals` row has `owner_member_id`, positive `amount`, and `close_date`. | `crm_deals` → `/crm/deals` |
+| 5 | `crm.email_connected` | Connect your sales inbox so Helpin can capture customer conversations and buying signals. | An active `crm_email_accounts` row has `status = 'connected'`. | `crm_email` → `/settings/crm-email` |
+| 6 | `crm.autonomy_enabled` | Enable CRM automation so Helpin can create or progress deals from strong customer signals. | `crm_autonomy_settings.enabled` is true and either `auto_create_deals` or `auto_progress_deals` is true. | `crm_autonomy` → `/settings/crm-autonomy` |
+| 7 | `crm.signal_value_proven` | Create or progress a deal from a detected customer signal so the pipeline updates itself. | A `crm_suggestions` row has type `deal_create` or `deal_advance`, `execution_status = 'succeeded'`, `executed_at IS NOT NULL`, and a non-null `object_id` referencing an existing workspace deal. | `crm_review` → `/crm/review` |
 
-Tasks 1–3 are core. Email, autonomy, and signal-driven value are power capabilities. Dependencies: deal requires customer data and pipeline; signal value requires connected email and enabled autonomy.
+Tasks 1–4 are core. Email, autonomy, and signal-driven value are power capabilities. Dependencies: deal requires contact, company, and pipeline; signal value requires connected email and enabled autonomy.
+
+`CRMSuggestion` gains durable `execution_status` (`pending`, `succeeded`, `failed`), `executed_at`, and `execution_error` fields via AutoMigrate. Manual acceptance records `accepted` intent, executes the action, then records `succeeded` only after the deal create/advance transaction succeeds; create stores the created deal in `object_type/object_id`, and advance stores the successfully updated deal. Failures record `failed` plus a safe error summary. Existing auto-create/auto-advance paths write accepted suggestions with `execution_status = 'succeeded'`, `executed_at`, and the affected deal ID. Historic accepted rows without execution status do not qualify.
 
 ### Automate repeatable work
 
 | Order | Key | Label | Completion evidence | Action |
 |---|---|---|---|---|
-| 1 | `automation.first_assisted_value` | Complete an agent run on real work so you can see where Helpin saves time. | A valuable completed agent run with persisted output or artifact. | `automation_agents` → `/automation/agents` |
+| 1 | `automation.first_assisted_value` | Complete an agent run on real work so you can see where Helpin saves time. | A valuable completed agent run has persisted output or an artifact, a non-empty `target_id`, and target type `task`, `epic`, `repository`, `support_conversation`, `document`, `crm_deal`, `crm_contact`, or `crm_company`. | `automation_agents` → `/automation/agents` |
 | 2 | `automation.custom_agent_succeeded` | Run a custom agent successfully so it can handle work specific to your team. | A valuable completed run joins an agent with `is_system = false`. | `automation_agents` → `/automation/agents` |
 | 3 | `automation.flow_enabled` | Turn on an automation flow so repeat work can run automatically. | An enabled `automation_rules` row. | `automation_flows` → `/automation/flows` |
 | 4 | `automation.approval_guard_configured` | Require approval for sensitive agent actions so automation stays under human control. | A non-system agent has effective `approval_mode = 'always'`. | `automation_agents` → `/automation/agents` |
@@ -134,27 +139,89 @@ Tasks 1–3 are core. Email, autonomy, and signal-driven value are power capabil
 
 Tasks 1, 3, and 5 are core. Custom agents, approval safeguards, and demonstrated reliability are power capabilities. Dependencies: custom agent and approval safeguard require the first useful run; triggered success requires an enabled flow; reliability requires triggered success.
 
+## Internal progress, stages, and maturity
+
+Task `stage` remains in the API for compatibility but no longer drives behavior. Assign `Core` to core tasks and `Power` to power tasks; neither value is rendered. Replace `setupMaturity(stages)` with one universal calculation over the journey’s currently visible tasks:
+
+- `preparing`: zero visible core tasks complete;
+- `ready`: at least one but not all visible core tasks complete;
+- `activated`: all visible core tasks complete and zero visible power tasks complete;
+- `established`: all visible core tasks and at least one but not all visible power tasks complete;
+- `advanced`: every visible task is complete. A journey with no power tasks becomes `advanced` when all core tasks complete.
+
+Completion includes current verified evidence or a durable achievement under the existing rules. A readiness/configuration task that was achieved and is no longer configured remains `needs_attention`; it counts as complete for the progress fraction but current evidence is required for prerequisite gating and recommendations.
+
+## Exact prerequisite graph
+
+Prerequisites gate actions and recommendations only. A task whose evidence is already complete remains completed even when an earlier prerequisite is currently absent.
+
+- Foundation: `foundation.member_joined` requires `foundation.company_context_ready`.
+- Product: `product.sprint_planned` requires `product.project_planned`; `product.work_assigned` and `product.sprint_closeout_reviewable` require `product.sprint_planned`; `product.release_notes_flow_succeeded` requires `product.repository_ready`.
+- Support: existing support dependencies remain, except `support.ai_agent_activated` requires current `PublicHelpDocCount > 0` plus `support.brand_knowledge_ready` when Help Center is selected; otherwise it requires visible `support.help_docs_ready` plus `support.brand_knowledge_ready`. `support.routing_enabled` requires `support.team_inbox_created`; `support.coverage_fix_applied` requires `support.ai_agent_activated`.
+- Help Center: `help_center.content_ready` requires `help_center.space_ready`; `help_center.article_published` requires `help_center.content_ready`; `help_center.site_published` requires `help_center.article_published`; `help_center.widget_connected` requires both `help_center.article_published` and `help_center.site_published`.
+- Internal Docs: each task requires the immediately previous task in displayed order.
+- CRM: `crm.deal_ready` requires `crm.contact_ready`, `crm.company_ready`, and `crm.pipeline_ready`; `crm.email_connected` has no prerequisite; `crm.autonomy_enabled` requires `crm.email_connected`; `crm.signal_value_proven` requires both `crm.email_connected` and `crm.autonomy_enabled`.
+- Automation: `automation.custom_agent_succeeded` and `automation.approval_guard_configured` require `automation.first_assisted_value`; `automation.triggered_value` requires `automation.flow_enabled`; `automation.reliable_unattended_value` requires `automation.triggered_value`.
+
+`foundation.team_ready` is applicable only when the canonical selected-goal set contains `product_delivery` or `automation_mastery`. `foundation.member_joined` is applicable whenever at least one non-foundation goal is selected.
+
+## Action and access matrix
+
+Routes below are workspace-relative. `—` means no setup-specific entitlement; destination surfaces continue enforcing their own billing and AI-usage checks before any run starts.
+
+| Action key | CTA label | Route | Module | Required permission(s) | Setup entitlement |
+|---|---|---|---|---|---|
+| `workspace_context` | Add context | `/settings/general` | workspace | `workspace.update` | — |
+| `workspace_teams` | Create team | `/settings/teams` | workspace | `team.manage` | — |
+| `workspace_members` | View members | `/settings/members` | workspace | `workspace.members.read` | — |
+| `pm_epics` | Plan epic | `/pm/epics` | pm | `pm.edit` | — |
+| `pm_sprints` | Plan sprint | `/pm/sprints` | pm | `pm.edit` | — |
+| `pm_tasks` | Assign work | `/pm/tasks` | pm | `pm.edit` | — |
+| `git_settings` | Connect repository | `/settings/repositories` | pm | `integrations.connect` | — |
+| `docs_home` | Open Docs | `/docs` | docs | `docs.edit` | — |
+| `help_center_settings` | Publish help center | `/settings/helpcenter` | docs | `docs.publish` | — |
+| `support_live_chat` | Add to live chat | `/settings/chat-general` | support + docs | `support.admin` and `docs.read` | — |
+| `crm_contacts` | Add contacts | `/crm/contacts` | crm | `crm.edit` | — |
+| `crm_companies` | Add companies | `/crm/companies` | crm | `crm.edit` | — |
+| `crm_pipelines` | Configure pipeline | `/settings/crm-pipelines` | crm | `crm.admin` | — |
+| `crm_deals` | Create deal | `/crm/deals` | crm | `crm.edit` | — |
+| `crm_email` | Connect inbox | `/settings/crm-email` | crm | `crm.admin` | — |
+| `crm_autonomy` | Enable automation | `/settings/crm-autonomy` | crm | `crm.admin` | `deal_automation` |
+| `crm_review` | Review CRM activity | `/crm/review` | crm | `crm.edit` | `deal_automation` |
+| `automation_agents` | Run an agent | `/automation/agents` | automation | at least one of `pm.edit`, `docs.edit`, `crm.edit`, `support.edit` | — |
+| `automation_custom_agent` | Build custom agent | `/automation/agents` | automation | at least one relevant edit permission | `custom_agents` |
+| `automation_approval_guard` | Configure approvals | `/automation/agents` | automation | at least one relevant edit permission | `custom_agents` |
+| `automation_flows` | Build automation | `/automation/flows` | automation | `pm.admin.automations` | `automation_flows` |
+| `automation_scheduled_flows` | Review automation runs | `/automation/flows` | automation | `pm.admin.automations` | `automation_flows` + `agent_scheduling` |
+
+Product agent use and Internal Docs agent use use `automation_agents`; the eventual run is subject to the existing backend AI preflight and frontend upgrade dialog. Product release notes uses `automation_flows`. Automation custom-agent success uses `automation_custom_agent`; approval safeguard uses `automation_approval_guard`; triggered/reliable milestones use `automation_scheduled_flows`.
+
 ## Goal selection and ordering
 
 - Foundation is always first.
 - Selected real journeys follow the customer’s saved goal order.
 - Automation remains a featured final journey when not selected, but the UI does not label it `Power up`.
-- Normalize `team_project_management` to `product_delivery` and remove the duplicate goal option from the selector. Rename the option and journey to `Plan and ship team projects`.
+- Canonicalize `team_project_management` to `product_delivery` in every path: onboarding `SetupIntent`, stored `SetupGoal` reads, GET response construction, and update payload normalization. Canonicalize before deduplication and before the three-goal maximum validation. Preserve the position of the first alias occurrence when both forms appear, return only `product_delivery`, and on the next goal update pause/remove the redundant legacy active row so it cannot reappear. Alias-only and canonical-only work unchanged. Alias plus three other distinct goals is four canonical goals and is rejected; alias plus canonical plus two others is three and is accepted.
+- Remove the duplicate Team projects option from the selector. Rename the canonical `product_delivery` option and journey to `Plan and ship team projects`.
 - Remove the placeholder catalog and placeholder-goal response section once all four current goals are real.
 - Preserve the maximum of three selected non-foundation goals.
 
 ## Permissions and unavailable actions
 
-- PM actions require the existing PM edit/integration permissions.
-- Docs create/edit tasks require Docs edit; publication tasks require Docs publish; imports remain available through the Docs surface and follow its existing import permission.
-- CRM setup tasks require CRM edit or CRM admin according to the destination surface.
-- Automation tasks retain module, entitlement, AI usage, and admin checks already applied by their launch surfaces.
+- Apply the exact action matrix above in `setupActionAllowed`; do not infer permissions from journey names.
+- Imports remain available through their destination surfaces and continue to require the existing import permissions when the customer chooses import rather than create.
+- Automation tasks retain destination-level AI usage preflight and upgrade-dialog behavior. Merely opening the destination does not consume AI usage.
 - A completed task remains visible even if the current member cannot launch its action. An incomplete inaccessible task is blocked with the existing compact admin/plan explanation.
 
 ## Verification
 
 - Catalog tests assert exact journey order, task order, copy, core membership, dependencies, and removed-key absence.
 - Repository tests seed qualifying and non-qualifying rows for every new predicate, including workspace scoping, soft deletion, required fields, status, joined ownership, public/internal space type, indexed knowledge, agent preset, CRM stage coverage, accepted signal suggestions, and approval mode.
-- Goal normalization tests prove the team-project alias cannot render a duplicate journey and stored legacy goals remain readable.
-- Frontend tests prove the placeholder block and all maturity/stage labels are absent, every real selected goal renders as a collapsible journey, shared help-doc setup is not duplicated, and new action keys resolve to existing routes.
+- Goal normalization tests cover pending intent, stored-row read, GET response, and updates for alias-only, canonical-only, both aliases in either order, alias plus canonical plus two other goals, and alias plus three other distinct goals.
+- Frontend/service tests prove order-independent Support/Help Center deduplication, its six-versus-seven support core denominator, current-evidence AI prerequisite, hidden-task recommendation exclusion, and no global double-counting.
+- Repository tests prove empty docs do not qualify, internal agent sources use the exact ready/indexed/workspace joins, accepted-but-failed CRM suggestions do not qualify, successful suggestions carry a real deal ID, and agent runs require a qualifying non-empty target.
+- Frontend tests prove the placeholder block and all maturity/stage labels are absent, every real selected goal renders as a collapsible journey, shared help-doc setup is not duplicated, and every action key/CTA resolves to the specified route.
+- Access tests cover every action matrix row, including cross-module requirements, entitlements, blocked reasons, and destination-level AI-preflight delegation.
+- Catalog/reference tests assert all removed task keys are absent from tasks, prerequisites, core/readiness sets, recommendations, member-evidence loading, and new achievement writes; historical stored achievements remain tolerated.
+- Maturity tests exercise every universal threshold, journeys with and without power tasks, and the adjusted support task set.
 - Run focused Go service/repository tests, frontend interaction/action tests, Go build, and TypeScript validation. Do not repeat the full frontend production build for copy- or mapping-only iterations.
