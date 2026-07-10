@@ -212,76 +212,33 @@ function isEmptyStreamSnapshot(snapshot?: CodingSessionStreamSnapshot | null) {
       && !snapshot.current_plan);
 }
 
-function chooseAssistantSnapshotMessage(
-  current?: CodingSessionLiveAssistantMessage | null,
-  incoming?: CodingSessionLiveAssistantMessage | null,
-) {
-  if (!incoming) return cloneAssistantMessage(current);
-  if (!current) return cloneAssistantMessage(incoming);
-  if (current.message_id !== incoming.message_id) return cloneAssistantMessage(incoming);
-  return cloneAssistantMessage(
-    incoming.content.length >= current.content.length ? incoming : current,
-  );
-}
-
-function chooseReasoningSnapshotMessage(
-  current?: CodingSessionLiveReasoningMessage | null,
-  incoming?: CodingSessionLiveReasoningMessage | null,
-) {
-  if (!incoming) return cloneReasoningMessage(current);
-  if (!current) return cloneReasoningMessage(incoming);
-  if (current.message_id !== incoming.message_id) return cloneReasoningMessage(incoming);
-  const incomingScore = incoming.content.length + (incoming.encrypted_value ? incoming.encrypted_value.length : 0);
-  const currentScore = current.content.length + (current.encrypted_value ? current.encrypted_value.length : 0);
-  return cloneReasoningMessage(incomingScore >= currentScore ? incoming : current);
-}
-
-function mergeSnapshotSegments(
-  current?: CodingSessionLiveTurnSegment[] | null,
-  incoming?: CodingSessionLiveTurnSegment[] | null,
-) {
-  const merged: CodingSessionLiveTurnSegment[] = [];
-  const indexes = new Map<string, number>();
-  const addSegment = (segment: CodingSessionLiveTurnSegment) => {
-    const cloned = cloneLiveTurnSegment(segment);
-    const existingIndex = indexes.get(cloned.segment_id);
-    if (typeof existingIndex === 'number') {
-      merged[existingIndex] = cloned;
-      return;
-    }
-    indexes.set(cloned.segment_id, merged.length);
-    merged.push(cloned);
-  };
-  for (const segment of current ?? []) addSegment(segment);
-  for (const segment of incoming ?? []) addSegment(segment);
-  return merged;
-}
-
 export function mergeCodingSessionStreamSnapshotSeed(
   current?: CodingSessionStreamSnapshot | null,
   incoming?: CodingSessionStreamSnapshot | null,
 ): CodingSessionStreamSnapshot | null {
-  if (isEmptyStreamSnapshot(incoming)) return cloneStreamSnapshot(current);
-  if (isEmptyStreamSnapshot(current)) return cloneStreamSnapshot(incoming);
+  // A snapshot response is authoritative, not an event batch. Unioning two
+  // refreshes retained obsolete segment generations whenever the projector
+  // changed a segment id. Replayed websocket deltas then appeared after that
+  // stale generation as clipped duplicate prose (for example "ffer has…").
+  //
+  // An empty response is authoritative too: it is how terminal persistence
+  // clears the in-progress stream. Keeping `current` here left the final live
+  // transcript mounted forever beside the persisted transcript.
+  if (isEmptyStreamSnapshot(incoming)) return null;
 
-  const liveAssistantMessage = chooseAssistantSnapshotMessage(
-    current?.live_assistant_message,
-    incoming?.live_assistant_message,
-  );
-  const liveReasoningMessage = chooseReasoningSnapshotMessage(
-    current?.live_reasoning_message,
-    incoming?.live_reasoning_message,
-  );
-  const liveTurnSegments = mergeSnapshotSegments(current?.live_turn_segments, incoming?.live_turn_segments);
-  const currentPlan = incoming?.current_plan ?? current?.current_plan;
+  const next = cloneStreamSnapshot(incoming);
+  if (!next) return null;
 
-  const merged: CodingSessionStreamSnapshot = {
-    ...(liveAssistantMessage ? { live_assistant_message: liveAssistantMessage } : {}),
-    ...(liveReasoningMessage ? { live_reasoning_message: liveReasoningMessage } : {}),
-    ...(liveTurnSegments.length > 0 ? { live_turn_segments: liveTurnSegments } : {}),
-    ...(currentPlan ? { current_plan: { ...currentPlan, plan: currentPlan.plan.map((step) => ({ ...step })) } } : {}),
-  };
-  return isEmptyStreamSnapshot(merged) ? null : merged;
+  // Plans are durable run state rather than an append-only turn timeline. Some
+  // runtime projectors omit an unchanged plan from a subsequent snapshot, so
+  // retaining only that field is safe and avoids a distracting plan flicker.
+  if (!next.current_plan && current?.current_plan) {
+    next.current_plan = {
+      ...current.current_plan,
+      plan: current.current_plan.plan.map((step) => ({ ...step })),
+    };
+  }
+  return next;
 }
 
 function parseLiveToolCall(value: unknown): CodingSessionLiveToolCall | null {
@@ -432,6 +389,35 @@ function streamDelta(current: string, incoming: string) {
     return incoming.slice(current.length);
   }
   return incoming;
+}
+
+function consumeSnapshotAssistantDelta(coveredContent: string, incomingDelta: string) {
+  if (!coveredContent || !incomingDelta) {
+    return { consumed: false, remaining: coveredContent };
+  }
+
+  if (coveredContent.startsWith(incomingDelta)) {
+    return {
+      consumed: true,
+      remaining: coveredContent.slice(incomingDelta.length),
+    };
+  }
+
+  // A refreshed snapshot can arrive after the websocket subscription starts.
+  // In that race the local event list may begin in the middle of a message,
+  // while the snapshot already contains its complete prefix. Seek forward to
+  // the observed delta instead of appending it as a new segment. Token deltas
+  // routinely begin mid-word, which is the source of fragments such as
+  // "have…" / "ffer…" in the transcript.
+  const offset = coveredContent.indexOf(incomingDelta);
+  if (offset >= 0) {
+    return {
+      consumed: true,
+      remaining: coveredContent.slice(offset + incomingDelta.length),
+    };
+  }
+
+  return { consumed: false, remaining: coveredContent };
 }
 
 function deriveAssistantSegmentDelta(previousContent: string, fullContent: string) {
@@ -947,10 +933,13 @@ export function buildCodingSessionStreamState(
         const previousContent = liveAssistantMessage.content;
         // Use raw coalescing (not asString) to preserve whitespace-only deltas like " " or " found".
         let deltaContent = typeof payload.content === 'string' ? payload.content : (typeof payload.text === 'string' ? payload.text : '');
-        const coveredSnapshotPrefix = snapshotAssistantDeltaCoverage.get(messageID);
-        if (deltaContent && coveredSnapshotPrefix?.startsWith(deltaContent)) {
-          snapshotAssistantDeltaCoverage.set(messageID, coveredSnapshotPrefix.slice(deltaContent.length));
-          break;
+        const coveredSnapshotContent = snapshotAssistantDeltaCoverage.get(messageID);
+        if (deltaContent && coveredSnapshotContent) {
+          const coverage = consumeSnapshotAssistantDelta(coveredSnapshotContent, deltaContent);
+          if (coverage.consumed) {
+            snapshotAssistantDeltaCoverage.set(messageID, coverage.remaining);
+            break;
+          }
         }
         deltaContent = streamDelta(liveAssistantMessage.content, deltaContent);
         liveAssistantMessage.content += deltaContent;

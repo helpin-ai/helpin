@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { codingSessionApprovalStatesByPreviewKey } from '../codingSessionUtils';
+import {
+  codingSessionApprovalStatesByPreviewKey,
+  isPersistedCodingSessionEvent,
+  maxPersistedCodingSessionSequence,
+} from '../codingSessionUtils';
 import type { CodingSessionEvent } from '@/lib/pmTypes';
 
 function interactionEvent(
@@ -58,5 +62,55 @@ describe('codingSessionApprovalStatesByPreviewKey', () => {
       resolvedBy: 'user-1',
       note: 'Split this into two smaller tasks.',
     });
+  });
+});
+
+describe('persisted coding-session event cursors', () => {
+  function event(
+    id: string,
+    sequenceNo: number,
+    source?: string,
+  ): CodingSessionEvent {
+    return {
+      id,
+      session_id: 'session-1',
+      run_id: 'run-1',
+      sequence_no: sequenceNo,
+      timestamp: '2026-07-10T10:00:00Z',
+      type: 'assistant.message.delta',
+      runtime_kind: 'native_sdk',
+      payload: {},
+      runtime_metadata: source ? { source } : undefined,
+    };
+  }
+
+  it.each([
+    ['agent_run_message', 'message persistence'],
+    ['agent_run_artifact', 'artifact persistence'],
+    ['agent_run_interaction', 'interaction persistence'],
+    ['agent_run', 'run persistence'],
+  ])('recognizes the %s REST projection source (%s)', (source) => {
+    expect(isPersistedCodingSessionEvent(event('custom-id', 12, source))).toBe(true);
+  });
+
+  it.each([
+    'agent_runtime',
+    'native_sdk',
+    'temporal_worker',
+    'websocket',
+  ])('does not treat live source %s as a REST pagination cursor', (source) => {
+    expect(isPersistedCodingSessionEvent(event('live-event', 1_700_000_000, source))).toBe(false);
+  });
+
+  it.each(['msg:1', 'artifact:1', 'interaction:1', 'run:1'])('keeps persisted id-prefix compatibility for %s', (id) => {
+    expect(isPersistedCodingSessionEvent(event(id, 7))).toBe(true);
+  });
+
+  it('ignores a much larger runtime sequence when advancing the persisted cursor', () => {
+    expect(maxPersistedCodingSessionSequence([
+      event('msg:1', 14, 'agent_run_message'),
+      event('runtime-delta', 1_700_000_123, 'agent_runtime'),
+      event('artifact:1', 15, 'agent_run_artifact'),
+    ])).toBe(15);
   });
 });

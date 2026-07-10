@@ -121,6 +121,10 @@ export function CodingTranscriptPane({
       sequence_no: Number.MIN_SAFE_INTEGER,
     };
   }, [promptArtifact, session?.created_at, session?.run_id, session?.system_prompt]);
+  const includeLive = !session
+    || session.status === 'queued'
+    || session.status === 'running'
+    || session.status === 'paused';
 
   // Flatten the reconciled stream into one ordered segment list shared with the
   // Ask Agents dock. The slider shows every kind and renders rows expandable.
@@ -131,9 +135,9 @@ export function CodingTranscriptPane({
         live_turn_segments: visibleLiveSegments,
         live_reasoning_message: null,
       },
-      { includeLive: true, include: ALL_SEGMENT_KINDS, leadingContext: promptMessage },
+      { includeLive, include: ALL_SEGMENT_KINDS, leadingContext: promptMessage },
     ),
-    [transcriptMessages, visibleLiveSegments, promptMessage],
+    [transcriptMessages, visibleLiveSegments, promptMessage, includeLive],
   );
   const hasActiveStreamSegment = segments.some((segment) => (
     (segment.kind === 'assistant' && segment.streaming)
@@ -173,6 +177,12 @@ export function CodingTranscriptPane({
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollContainerRef.current,
+    getItemKey: (index) => {
+      const item = items[index];
+      if (!item) return `missing:${index}`;
+      if (item.kind === 'segment') return `segment:${item.segment.kind}:${item.segment.id}`;
+      return item.kind;
+    },
     estimateSize: () => 120,
     overscan: 8,
   });

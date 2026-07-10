@@ -476,6 +476,87 @@ func TestAgentRuntimeProjectionCancelsPendingInteractionsOnTerminalEvent(t *test
 	}
 }
 
+func TestAgentRuntimeProjectionCleansUpDurableTerminalStreamSnapshots(t *testing.T) {
+	for _, eventType := range []string{agentruntime.EventRunCompleted, agentruntime.EventRunCancelled} {
+		t.Run(eventType, func(t *testing.T) {
+			now := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
+			run := &model.AgentRun{
+				ID:          "helpin-run-terminal-snapshot-" + strings.ReplaceAll(eventType, ".", "-"),
+				WorkspaceID: "ws-1",
+				AgentID:     "agent-1",
+				Status:      model.AgentRunStatusRunning,
+				PauseReason: model.AgentRunPauseReasonNone,
+			}
+			runRepo := &fakeAgentRuntimeProjectionRunRepo{byID: map[string]*model.AgentRun{run.ID: run}}
+			snapshotRepo := &fakeAgentRuntimeProjectionSessionSnapshotRepo{
+				record: &model.CodingSessionStateSnapshot{
+					ID:          "snapshot-1",
+					WorkspaceID: run.WorkspaceID,
+					RunID:       run.ID,
+				},
+			}
+			svc := &AgentRuntimeProjectionService{
+				runRepo:             runRepo,
+				sessionSnapshotRepo: snapshotRepo,
+				now:                 func() time.Time { return now },
+			}
+
+			if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+				RunID:     "runtime-terminal-snapshot",
+				HostRunID: run.ID,
+				Type:      eventType,
+				SentAt:    now,
+				Data:      map[string]any{},
+			}); err != nil {
+				t.Fatalf("ApplyEvent(%s) returned error: %v", eventType, err)
+			}
+
+			if snapshotRepo.deletes != 1 || snapshotRepo.record != nil {
+				t.Fatalf("terminal snapshot cleanup = deletes:%d record:%#v, want one delete and nil record", snapshotRepo.deletes, snapshotRepo.record)
+			}
+		})
+	}
+}
+
+func TestAgentRuntimeProjectionRetainsFailedStreamSnapshotForRecovery(t *testing.T) {
+	now := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
+	run := &model.AgentRun{
+		ID:          "helpin-run-failed-snapshot",
+		WorkspaceID: "ws-1",
+		AgentID:     "agent-1",
+		Status:      model.AgentRunStatusRunning,
+		PauseReason: model.AgentRunPauseReasonNone,
+	}
+	snapshotRepo := &fakeAgentRuntimeProjectionSessionSnapshotRepo{
+		record: &model.CodingSessionStateSnapshot{
+			ID:          "snapshot-failed",
+			WorkspaceID: run.WorkspaceID,
+			RunID:       run.ID,
+		},
+	}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: &fakeAgentRuntimeProjectionRunRepo{
+			byID: map[string]*model.AgentRun{run.ID: run},
+		},
+		sessionSnapshotRepo: snapshotRepo,
+		now:                 func() time.Time { return now },
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID:     "runtime-failed-snapshot",
+		HostRunID: run.ID,
+		Type:      agentruntime.EventRunFailed,
+		SentAt:    now,
+		Data:      map[string]any{"error": "provider disconnected"},
+	}); err != nil {
+		t.Fatalf("ApplyEvent failed returned error: %v", err)
+	}
+
+	if snapshotRepo.deletes != 0 || snapshotRepo.record == nil {
+		t.Fatalf("failed snapshot should be retained, got deletes:%d record:%#v", snapshotRepo.deletes, snapshotRepo.record)
+	}
+}
+
 func TestAgentRuntimeProjectionMirrorsAssistantMessageCompletedIdempotently(t *testing.T) {
 	run := &model.AgentRun{
 		ID:                "helpin-run-message",

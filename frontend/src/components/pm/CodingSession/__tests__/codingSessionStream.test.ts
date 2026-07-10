@@ -1034,7 +1034,7 @@ describe('buildCodingSessionStreamState', () => {
     ]);
   });
 
-  it('merges refreshed stream snapshots without dropping queued segments', () => {
+  it('treats a refreshed stream snapshot as authoritative instead of unioning stale generations', () => {
     const current: CodingSessionStreamSnapshot = {
       live_assistant_message: {
         message_id: 'assistant-queued',
@@ -1085,10 +1085,153 @@ describe('buildCodingSessionStreamState', () => {
     expect(merged?.live_turn_segments.map((segment) => (
       segment.kind === 'assistant_message' ? segment.assistant_message.content : segment.tool_call.tool_name
     ))).toEqual([
-      'Queued. Preparing workspace.',
       'Starting runtime.',
     ]);
     expect(merged?.live_assistant_message?.message_id).toBe('assistant-running');
+  });
+
+  it.each([null, undefined, {}])('clears stale live content when the refreshed snapshot is empty (%s)', (incoming) => {
+    const current: CodingSessionStreamSnapshot = {
+      live_assistant_message: {
+        message_id: 'assistant-stale',
+        content: 'This turn has already been persisted.',
+        status: 'completed',
+        tool_calls: [],
+      },
+      live_turn_segments: [{
+        segment_id: 'assistant-stale:segment:1',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'assistant-stale',
+          content: 'This turn has already been persisted.',
+          status: 'completed',
+          tool_calls: [],
+        },
+      }],
+    };
+
+    expect(mergeCodingSessionStreamSnapshotSeed(
+      current,
+      incoming as CodingSessionStreamSnapshot | null | undefined,
+    )).toBeNull();
+  });
+
+  it('retains an unchanged plan without retaining obsolete live turns', () => {
+    const current: CodingSessionStreamSnapshot = {
+      current_plan: {
+        plan: [{ step: 'Research competitors', status: 'in_progress' }],
+      },
+      live_turn_segments: [{
+        segment_id: 'old-segment',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'old-message',
+          content: 'Old snapshot generation.',
+          status: 'completed',
+          tool_calls: [],
+        },
+      }],
+    };
+    const incoming: CodingSessionStreamSnapshot = {
+      live_turn_segments: [{
+        segment_id: 'new-segment',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'new-message',
+          content: 'Current snapshot generation.',
+          status: 'streaming',
+          tool_calls: [],
+        },
+      }],
+    };
+
+    const merged = mergeCodingSessionStreamSnapshotSeed(current, incoming);
+
+    expect(merged?.current_plan).toEqual(current.current_plan);
+    expect(merged?.live_turn_segments).toHaveLength(1);
+    expect(merged?.live_turn_segments[0]).toMatchObject({ segment_id: 'new-segment' });
+  });
+
+  it('does not replay a websocket history that begins midway through snapshot text', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'delta-midword',
+        type: 'assistant.message.delta',
+        sequence_no: 100,
+        payload: { message_id: 'assistant-buffer', content: 'ffer has launched' },
+      }),
+      buildEvent({
+        id: 'delta-tail',
+        type: 'assistant.message.delta',
+        sequence_no: 101,
+        payload: { message_id: 'assistant-buffer', content: ' a new feature.' },
+      }),
+    ], {
+      live_assistant_message: {
+        message_id: 'assistant-buffer',
+        content: 'Buffer has launched a new feature.',
+        status: 'streaming',
+        tool_calls: [],
+      },
+      live_turn_segments: [{
+        segment_id: 'assistant-buffer:segment:1',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'assistant-buffer',
+          content: 'Buffer has launched a new feature.',
+          status: 'streaming',
+          tool_calls: [],
+        },
+      }],
+    });
+
+    expect(state.live_assistant_message?.content).toBe('Buffer has launched a new feature.');
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: { content: 'Buffer has launched a new feature.' },
+    });
+  });
+
+  it('appends genuinely new deltas after consuming a mid-message snapshot overlap', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'delta-overlap',
+        type: 'assistant.message.delta',
+        sequence_no: 100,
+        payload: { message_id: 'assistant-buffer', content: 'ffer' },
+      }),
+      buildEvent({
+        id: 'delta-new',
+        type: 'assistant.message.delta',
+        sequence_no: 101,
+        payload: { message_id: 'assistant-buffer', content: ' is publishing now.' },
+      }),
+    ], {
+      live_assistant_message: {
+        message_id: 'assistant-buffer',
+        content: 'Buffer',
+        status: 'streaming',
+        tool_calls: [],
+      },
+      live_turn_segments: [{
+        segment_id: 'assistant-buffer:segment:1',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'assistant-buffer',
+          content: 'Buffer',
+          status: 'streaming',
+          tool_calls: [],
+        },
+      }],
+    });
+
+    expect(state.live_assistant_message?.content).toBe('Buffer is publishing now.');
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: { content: 'Buffer is publishing now.' },
+    });
   });
 
   it('reconciles task-plan document steps from completed publish and review actions', () => {

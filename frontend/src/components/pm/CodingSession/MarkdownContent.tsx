@@ -14,10 +14,18 @@ import { cn } from '@/lib/utils';
  * handling keeps partial prefixes from flickering formatting.
  */
 function useSmoothText(target: string, enabled: boolean): string {
-  const [revealed, setRevealed] = useState(enabled ? '' : target);
+  // Hydrated snapshots and an already-open stream should never replay from an
+  // empty string when the row mounts. Show the first observed chunk
+  // immediately, then smooth only subsequent appended deltas. This mirrors
+  // ChatGPT/Claude: network bursts are eased, but reopening a live run does not
+  // visibly retype its history.
+  const [revealed, setRevealed] = useState(target);
   const shownRef = useRef(revealed);
   const rafRef = useRef<number | null>(null);
-  shownRef.current = revealed;
+
+  useEffect(() => {
+    shownRef.current = revealed;
+  }, [revealed]);
 
   useEffect(() => {
     const cancel = () => {
@@ -105,16 +113,22 @@ const markdownComponents: Components = {
       {children}
     </pre>
   ),
-  code: ({ className: codeClassName, children, node: _node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => (
-    <code className={cn('text-[12px]', codeClassName)} {...props}>
-      {children}
-    </code>
-  ),
-  inlineCode: ({ children, node: _node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => (
-    <code className="rounded bg-muted px-1 py-0.5 text-[12px]" {...props}>
-      {children}
-    </code>
-  ),
+  code: ({ className: codeClassName, children, node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => {
+    void node;
+    return (
+      <code className={cn('text-[12px]', codeClassName)} {...props}>
+        {children}
+      </code>
+    );
+  },
+  inlineCode: ({ children, node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => {
+    void node;
+    return (
+      <code className="rounded bg-muted px-1 py-0.5 text-[12px]" {...props}>
+        {children}
+      </code>
+    );
+  },
 };
 
 export function MarkdownContent({

@@ -234,6 +234,139 @@ describe('collectSegments', () => {
     ]);
   });
 
+  it.each([
+    'I have a web search result for the competitor digest.',
+    'ffer has launched a new publishing workflow for teams.',
+    'web search result for the competitor digest',
+  ])('reconciles a clipped live fragment with its complete persisted turn: %s', (liveFragment) => {
+    const persistedContent = liveFragment.startsWith('ffer')
+      ? 'Buffer has launched a new publishing workflow for teams.'
+      : 'I have a web search result for the competitor digest.';
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [message({
+          event_id: 'persisted-complete',
+          content: persistedContent,
+        })],
+        live_turn_segments: [assistantSegment('live-partial', liveFragment, 'streaming')],
+      }),
+      { includeLive: true },
+    );
+
+    expect(segments).toEqual([{
+      kind: 'assistant',
+      id: 'persisted-complete',
+      content: persistedContent,
+    }]);
+  });
+
+  it('uses the cumulative live timeline to keep persisted prose interleaved with tools', () => {
+    const first = 'I will research competitor updates and prepare the digest.';
+    const second = 'Buffer has launched a new publishing workflow for teams.';
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [
+          message({ event_id: 'persisted-first', content: first, sequence_no: 1 }),
+          message({ event_id: 'persisted-second', content: second, sequence_no: 2 }),
+        ],
+        live_turn_segments: [
+          assistantSegment('live-first', first),
+          toolSegment('live-crawl', toolCall({
+            tool_call_id: 'runtime-crawl',
+            tool_name: 'crawl_url',
+            args_text: '{"url":"https://buffer.com/news"}',
+          })),
+          assistantSegment('live-second', 'ffer has launched a new publishing workflow for teams.'),
+        ],
+      }),
+      { includeLive: true },
+    );
+
+    expect(segments.map((segment) => (
+      segment.kind === 'assistant' ? segment.content : segment.toolCall.tool_name
+    ))).toEqual([
+      first,
+      'crawl_url',
+      second,
+    ]);
+    expect(segments.filter((segment) => segment.kind === 'assistant')).toHaveLength(2);
+  });
+
+  it('dedupes a persisted and live tool call by operation even when projector ids and result state differ', () => {
+    const persistedTool = toolCall({
+      tool_call_id: 'persisted-generated-id',
+      tool_name: 'crawl_url',
+      args_text: '{"url":"https://example.com"}',
+      status: 'completed',
+      result: { content: 'Fetched page', output_summary: 'Fetched page' },
+    });
+    const liveTool = toolCall({
+      tool_call_id: 'runtime-native-id',
+      tool_name: 'crawl_url',
+      args_text: '{"url":"https://example.com"}',
+      status: 'running',
+    });
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [message({
+          event_id: 'persisted-message',
+          content: 'Researching the source.',
+          tool_calls: [persistedTool],
+        })],
+        live_turn_segments: [
+          assistantSegment('live-message', 'Researching the source.'),
+          toolSegment('live-tool', liveTool),
+        ],
+      }),
+      { includeLive: true },
+    );
+
+    const tools = segments.filter((segment) => segment.kind === 'tool');
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).toMatchObject({
+      kind: 'tool',
+      id: 'persisted-generated-id',
+      toolCall: { status: 'completed' },
+    });
+  });
+
+  it('matches repeated identical assistant turns one-to-one without dropping either occurrence', () => {
+    const repeated = 'The source was checked successfully.';
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [
+          message({ event_id: 'persisted-1', content: repeated, sequence_no: 1 }),
+          message({ event_id: 'persisted-2', content: repeated, sequence_no: 2 }),
+        ],
+        live_turn_segments: [
+          assistantSegment('live-1', repeated),
+          assistantSegment('live-2', repeated),
+        ],
+      }),
+      { includeLive: true },
+    );
+
+    expect(segments).toMatchObject([
+      { kind: 'assistant', id: 'persisted-1', content: repeated },
+      { kind: 'assistant', id: 'persisted-2', content: repeated },
+    ]);
+  });
+
+  it('does not fuzzy-match unrelated short replies', () => {
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [message({ event_id: 'persisted', content: 'Done and ready.' })],
+        live_turn_segments: [assistantSegment('live', 'Done', 'streaming')],
+      }),
+      { includeLive: true },
+    );
+
+    expect(segments).toMatchObject([
+      { kind: 'assistant', id: 'persisted', content: 'Done and ready.' },
+      { kind: 'assistant', id: 'live:live', content: 'Done', streaming: true },
+    ]);
+  });
+
   it('scopes kinds via the include set (dock = assistant + tool only)', () => {
     const input = stream({
       transcript_messages: [

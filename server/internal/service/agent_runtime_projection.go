@@ -521,6 +521,23 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 				return err
 			}
 		}
+		// Completed and cancelled runs have a durable transcript at this point;
+		// their cumulative live snapshot is no longer useful and can otherwise
+		// grow indefinitely in coding_session_state_snapshots. Failed snapshots
+		// are intentionally retained because they carry the last recoverable plan
+		// and diagnostic stream state shown by the failed-run UI.
+		if s.sessionSnapshotRepo != nil && (strings.TrimSpace(event.Type) == agentruntime.EventRunCompleted ||
+			strings.TrimSpace(event.Type) == agentruntime.EventRunCancelled) {
+			if err := s.sessionSnapshotRepo.DeleteByRun(ctx, run.WorkspaceID, run.ID); err != nil {
+				slog.WarnContext(ctx, "delete terminal coding session stream snapshot failed",
+					"run_id", run.ID,
+					"workspace_id", run.WorkspaceID,
+					"runtime_run_id", strings.TrimSpace(event.RunID),
+					"event_type", event.Type,
+					"error", err,
+				)
+			}
+		}
 	}
 	if usage, ok := eventUsage(event); ok {
 		if applyRuntimeUsage(run, usage) {

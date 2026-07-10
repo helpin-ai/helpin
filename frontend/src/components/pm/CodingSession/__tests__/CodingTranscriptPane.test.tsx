@@ -485,6 +485,42 @@ describe('CodingTranscriptPane', () => {
     expect(container.querySelector('[data-agent-working-spinner]')).toBeNull();
   });
 
+  it.each(['completed', 'failed', 'cancelled'] as const)('does not render stale live snapshot rows after a %s run', (status) => {
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[buildTranscriptMessage({
+            event_id: 'persisted-final',
+            content: 'The final persisted response.',
+          })]}
+          liveAssistantMessage={{
+            message_id: 'stale-live',
+            content: 'Obsolete live response.',
+            status: 'completed',
+            tool_calls: [],
+          }}
+          liveReasoningMessage={null}
+          liveTurnSegments={[{
+            segment_id: 'stale-live:segment:1',
+            kind: 'assistant_message',
+            assistant_message: {
+              message_id: 'stale-live',
+              content: 'Obsolete live response.',
+              status: 'completed',
+              tool_calls: [],
+            },
+          }]}
+          loading={false}
+          session={buildSession({ status, pause_reason: 'none' })}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('The final persisted response.');
+    expect(container.textContent).not.toContain('Obsolete live response.');
+    expect(container.querySelector('.markdown-caret')).toBeNull();
+  });
+
   it('auto-grows the main composer while typing', () => {
     act(() => {
       root.render(
