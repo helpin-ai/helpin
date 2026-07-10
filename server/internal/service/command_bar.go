@@ -393,12 +393,29 @@ func (s *CommandBarService) ConfirmChatCreateAgent(ctx context.Context, workspac
 	if len(req.AllowedTools) > 0 || len(req.AllowedTargets) > 0 {
 		return nil, fmt.Errorf("agent proposal tool and target overrides are not supported")
 	}
-	agent, err := s.agentService.CreateAgent(ctx, commandBarCreateAgentRequestFromDraft(workspaceID, *proposal.Draft, req), actorID)
+	var agent *model.Agent
+	if proposal.CreatedAgentID != "" {
+		agent, err = s.agentService.GetAgent(ctx, workspaceID, proposal.CreatedAgentID)
+	} else {
+		agent, err = s.agentService.CreateAgent(ctx, commandBarCreateAgentRequestFromDraft(workspaceID, *proposal.Draft, req), actorID)
+		if err == nil {
+			proposal.CreatedAgentID = agent.ID
+			err = s.chatRepo.UpdateMessageProposal(ctx, workspaceID, message.ID, proposal)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
 	resp := &model.ConfirmCommandBarChatCreateAgentResponse{Agent: *agent}
 	if proposal.Type == model.CommandBarProposalCreateAgentAndRun {
+		if proposal.CreatedRunID != "" {
+			run, getRunErr := s.agentService.GetAgentRun(ctx, workspaceID, proposal.CreatedRunID)
+			if getRunErr != nil {
+				return nil, getRunErr
+			}
+			resp.Run = run
+			return resp, nil
+		}
 		target := proposal.RunTarget
 		if target == nil {
 			return nil, fmt.Errorf("create-and-run proposal is missing a run target")
@@ -412,6 +429,10 @@ func (s *CommandBarService) ConfirmChatCreateAgent(ctx context.Context, workspac
 			AdditionalContext: &instructions,
 		}, actorID)
 		if err != nil {
+			return nil, err
+		}
+		proposal.CreatedRunID = run.ID
+		if err := s.chatRepo.UpdateMessageProposal(ctx, workspaceID, message.ID, proposal); err != nil {
 			return nil, err
 		}
 		resp.Run = run

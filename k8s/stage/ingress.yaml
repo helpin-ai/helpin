@@ -14,12 +14,44 @@ spec:
   - hosts:
     - api.stage.helpin.ai
     - helpcenter-stage.helpin.ai
+    - mcp.stage.helpin.ai
     secretName: cert-stage-helpin-wildcard
   rules:
   - host: api.stage.helpin.ai
     http:
       paths:
       - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: helpin-server-svc
+            port:
+              number: 8080
+  - host: mcp.stage.helpin.ai
+    http:
+      paths:
+      - path: /mcp
+        pathType: Prefix
+        backend:
+          service:
+            name: helpin-server-svc
+            port:
+              number: 8080
+      - path: /.well-known/oauth-authorization-server
+        pathType: Exact
+        backend:
+          service:
+            name: helpin-server-svc
+            port:
+              number: 8080
+      - path: /.well-known/oauth-protected-resource
+        pathType: Exact
+        backend:
+          service:
+            name: helpin-server-svc
+            port:
+              number: 8080
+      - path: /api/mcp/oauth
         pathType: Prefix
         backend:
           service:

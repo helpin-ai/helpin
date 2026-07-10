@@ -475,6 +475,7 @@ type AgentService struct {
 	aiUsageMeter               *AIUsageMeter
 	agentRuntimeClient         agentRuntimeSignalClient
 	agentRuntimeLaunchEnabled  bool
+	mcpRepo                    *repository.MCPRepository
 }
 
 type agentRuntimeSignalClient interface {
@@ -594,6 +595,12 @@ func (s *AgentService) SetAgentTemplateRepository(repo *repository.AgentTemplate
 // SetUserRepository injects the user repository so coding sessions can hydrate the triggering actor.
 func (s *AgentService) SetUserRepository(repo *repository.UserRepository) *AgentService {
 	s.userRepo = repo
+	return s
+}
+
+// SetMCPRepository enables MCP-origin attribution on normal agent-run read models.
+func (s *AgentService) SetMCPRepository(repo *repository.MCPRepository) *AgentService {
+	s.mcpRepo = repo
 	return s
 }
 
@@ -3236,6 +3243,7 @@ func (s *AgentService) GetAgentRun(ctx context.Context, workspaceID, runID strin
 	single := []model.AgentRun{*run}
 	s.enrichRunTargets(ctx, workspaceID, single)
 	run.TargetInfo = single[0].TargetInfo
+	run.MCPAttribution = single[0].MCPAttribution
 	return run, nil
 }
 
@@ -5911,6 +5919,7 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 	if len(runs) == 0 || workspaceID == "" {
 		return
 	}
+	s.enrichMCPRunAttributions(ctx, workspaceID, runs)
 
 	taskIDs := make([]string, 0, len(runs))
 	epicIDs := make([]string, 0, len(runs))
@@ -6083,6 +6092,29 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 			continue
 		}
 		run.TargetInfo = info
+	}
+}
+
+func (s *AgentService) enrichMCPRunAttributions(ctx context.Context, workspaceID string, runs []model.AgentRun) {
+	if s.mcpRepo == nil || len(runs) == 0 {
+		return
+	}
+	runIDs := make([]string, 0, len(runs))
+	for idx := range runs {
+		runIDs = append(runIDs, runs[idx].ID)
+	}
+	attributions, err := s.mcpRepo.ListRunAttributions(ctx, workspaceID, runIDs)
+	if err != nil {
+		slog.WarnContext(ctx, "load MCP run attributions", "workspace_id", workspaceID, "error", err)
+		return
+	}
+	byRunID := make(map[string]*model.MCPAgentRunAttribution, len(attributions))
+	for idx := range attributions {
+		attribution := attributions[idx]
+		byRunID[attribution.RunID] = &attribution
+	}
+	for idx := range runs {
+		runs[idx].MCPAttribution = byRunID[runs[idx].ID]
 	}
 }
 

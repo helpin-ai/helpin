@@ -1,0 +1,11 @@
+interface:
+  display_name: "Feature to Delivery"
+  short_description: "Turn product intent into linked Helpin delivery"
+  default_prompt: "Use $helpin-feature-to-delivery to turn this feature request into a Helpin PRD and implementation tasks."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "helpin"
+      description: "Workspace-bound Helpin product tools and agent delegation"
+      transport: "streamable_http"
+      url: "https://mcp.helpin.ai/mcp"

@@ -1,0 +1,11 @@
+interface:
+  display_name: "Docs Maintenance"
+  short_description: "Find and improve stale Helpin documentation"
+  default_prompt: "Use $helpin-docs-maintenance to find related Helpin docs and prepare bounded documentation updates."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "helpin"
+      description: "Workspace-bound Helpin product tools and agent delegation"
+      transport: "streamable_http"
+      url: "https://mcp.helpin.ai/mcp"

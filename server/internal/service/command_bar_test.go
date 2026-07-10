@@ -2703,6 +2703,48 @@ func TestConfirmChatCreateAgentRejectsToolTargetOverrides(t *testing.T) {
 	}
 }
 
+func TestConfirmChatCreateAgentPersistsResolutionAndIsIdempotent(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	chatRepo := repository.NewCommandBarChatRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	service := NewCommandBarService(&AgentService{agentRepo: agentRepo}, nil, nil, nil, nil).SetChatRepository(chatRepo)
+	messageID := seedCommandBarCreateAgentProposal(t, ctx, chatRepo, workspaceID, "actor-1")
+
+	first, err := service.ConfirmChatCreateAgent(ctx, workspaceID, "actor-1", messageID, model.ConfirmCommandBarChatProposalRequest{})
+	if err != nil {
+		t.Fatalf("confirm create agent: %v", err)
+	}
+	second, err := service.ConfirmChatCreateAgent(ctx, workspaceID, "actor-1", messageID, model.ConfirmCommandBarChatProposalRequest{})
+	if err != nil {
+		t.Fatalf("confirm resolved create agent: %v", err)
+	}
+	if first.Agent.ID == "" || second.Agent.ID != first.Agent.ID {
+		t.Fatalf("expected repeated confirmation to return agent %q, got %q", first.Agent.ID, second.Agent.ID)
+	}
+
+	var agentCount int64
+	if err := db.Model(&model.Agent{}).Where("workspace_id = ?", workspaceID).Count(&agentCount).Error; err != nil {
+		t.Fatalf("count agents: %v", err)
+	}
+	if agentCount != 1 {
+		t.Fatalf("expected one agent after repeated confirmation, got %d", agentCount)
+	}
+
+	message, err := chatRepo.GetMessage(ctx, workspaceID, messageID)
+	if err != nil {
+		t.Fatalf("get proposal message: %v", err)
+	}
+	proposal, err := decodeCommandBarProposal(message.ProposalJSON)
+	if err != nil {
+		t.Fatalf("decode persisted proposal: %v", err)
+	}
+	if proposal == nil || proposal.CreatedAgentID != first.Agent.ID {
+		t.Fatalf("expected proposal to persist created agent %q, got %#v", first.Agent.ID, proposal)
+	}
+}
+
 func TestChatTurnRunPlanProposalUsesExistingParser(t *testing.T) {
 	db := setupCommandBarPlanTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -4054,7 +4096,7 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME
 		)`,
 		`CREATE TABLE agents (
-			id TEXT PRIMARY KEY,
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,

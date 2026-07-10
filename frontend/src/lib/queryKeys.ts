@@ -56,6 +56,14 @@ export const queryKeys = {
     targetRuns: (wsId: string, targetType: string, targetId: string) => ['automation', wsId, 'runs', 'target', targetType, targetId] as const,
   },
 
+  mcp: {
+    root: (wsId: string) => ['mcp', wsId] as const,
+    dashboard: (wsId: string) => ['mcp', wsId, 'dashboard'] as const,
+    activity: (wsId: string) => ['mcp', wsId, 'activity'] as const,
+    serviceTokens: (wsId: string, principalId: string) => ['mcp', wsId, 'service-principals', principalId, 'tokens'] as const,
+    authorization: (query: object) => ['mcp', 'authorization', query] as const,
+  },
+
   pm: {
     workflows: (wsId: string) => ['pm', wsId, 'workflows'] as const,
     epicStates: (wsId: string) => ['pm', wsId, 'epicStates'] as const,
