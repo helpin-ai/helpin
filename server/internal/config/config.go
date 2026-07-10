@@ -288,7 +288,7 @@ func Load() (*Config, error) {
 		PostmarkRouteInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
 		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "on.helpin.email")),
 		AppBaseURL:                             appBaseURL,
-		MCPServerEnabled:                       parseBoolEnv(os.Getenv("MCP_SERVER_ENABLED")),
+		MCPServerEnabled:                       parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVER_ENABLED")),
 		MCPOAuthEnabled:                        parseBoolEnvDefaultTrue(os.Getenv("MCP_OAUTH_ENABLED")),
 		MCPServiceTokensEnabled:                parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVICE_TOKENS_ENABLED")),
 		MCPPMWriteEnabled:                      parseBoolEnvDefaultTrue(os.Getenv("MCP_PM_WRITE_ENABLED")),
