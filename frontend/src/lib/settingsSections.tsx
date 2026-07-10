@@ -179,8 +179,8 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   },
   {
     id: 'mcp',
-    label: 'AI Clients',
-    description: 'Connect AI assistants to Helpin, control what they can access, and review their activity.',
+    label: 'MCP',
+    description: 'Connect AI tools to Helpin, control what they can access, and review their activity.',
     icon: MCP,
     group: 'Workspace',
     requiredPermission: 'workspace.read',

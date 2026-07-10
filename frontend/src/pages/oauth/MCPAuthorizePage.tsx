@@ -141,7 +141,7 @@ function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
             <Alert>
               <LockIcon className="h-4 w-4" />
               <AlertTitle>Helpin remains authoritative</AlertTitle>
-              <AlertDescription>Your current role, team access, enabled modules, and workspace policy are checked again on every tool call. You can revoke this connection in AI Clients settings.</AlertDescription>
+              <AlertDescription>Your current role, team access, enabled modules, and workspace policy are checked again on every tool call. You can revoke this connection in MCP settings.</AlertDescription>
             </Alert>
           </>
         )}

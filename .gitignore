@@ -1,5 +1,6 @@
 # Go
 server/api
+server/api.out
 server/migrate
 server/bin/
 server/tmp/

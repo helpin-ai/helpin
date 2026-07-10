@@ -21,7 +21,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { BotIcon, Copy01Icon, Delete01Icon, Key01Icon, Loading01Icon } from '@/lib/icons';
+import { ArrowDown01Icon, ArrowRight01Icon, BotIcon, Copy01Icon, Delete01Icon, Key01Icon, Loading01Icon, LockIcon } from '@/lib/icons';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import {
   useCreateMCPServicePrincipal,
@@ -81,7 +81,7 @@ export function MCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPane
   if (dashboardQuery.isError || !dashboard) {
     return (
       <Alert variant="destructive">
-        <AlertTitle>Could not load AI client settings</AlertTitle>
+        <AlertTitle>Could not load MCP settings</AlertTitle>
         <AlertDescription>{dashboardQuery.error?.message ?? 'Try refreshing the page.'}</AlertDescription>
       </Alert>
     );
@@ -92,25 +92,25 @@ export function MCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPane
       <div>
         <div className="flex items-center gap-2">
           <BotIcon className="h-5 w-5 text-muted-foreground" />
-          <h2 className="text-xl font-semibold">AI Clients &amp; MCP</h2>
+          <h2 className="text-xl font-semibold">MCP</h2>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Connect AI assistants to {workspaceName || 'this workspace'}, control their access, and review activity.
+          Connect Claude, ChatGPT, Cursor, or any MCP-compatible tool to {workspaceName || 'this workspace'} — so your AI can read projects, answer from your docs, and act on your behalf.
         </p>
       </div>
 
       {!dashboard.platform_enabled ? (
         <Alert>
-          <AlertTitle>AI client access is not available in this environment</AlertTitle>
+          <AlertTitle>AI tool connections are not available in this environment</AlertTitle>
           <AlertDescription>The platform rollout switch is off. Existing connections can still be reviewed and revoked.</AlertDescription>
         </Alert>
       ) : !dashboard.policy.enabled ? (
         <Alert>
-          <AlertTitle>External AI clients are off</AlertTitle>
+          <AlertTitle>Connections to AI tools are turned off</AlertTitle>
           <AlertDescription>
             {dashboard.can_manage
-              ? 'Enable MCP in Workspace policy before authorizing a client.'
-              : 'A workspace manager must enable MCP before you can connect a client.'}
+              ? 'Turn on AI tool access in the Permissions tab before connecting Claude, ChatGPT, Cursor, VS Code, or another MCP-compatible tool. Helpin roles and workspace permissions still apply.'
+              : 'A workspace manager must turn on AI tool access before you can connect Claude, ChatGPT, Cursor, VS Code, or another MCP-compatible tool.'}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -119,13 +119,13 @@ export function MCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPane
         <TabsList variant="line" className="max-w-full overflow-x-auto">
           <TabsTrigger value="setup">Setup</TabsTrigger>
           <TabsTrigger value="connections">Connections</TabsTrigger>
-          {dashboard.can_manage ? <TabsTrigger value="service-accounts">Service accounts</TabsTrigger> : null}
+          {dashboard.can_manage ? <TabsTrigger value="service-accounts">Automations</TabsTrigger> : null}
           {dashboard.can_view_activity ? <TabsTrigger value="activity">Activity</TabsTrigger> : null}
-          {dashboard.can_manage ? <TabsTrigger value="policy">Workspace policy</TabsTrigger> : null}
+          {dashboard.can_manage ? <TabsTrigger value="policy">Permissions</TabsTrigger> : null}
         </TabsList>
 
         <TabsContent value="setup" className="mt-4">
-          <MCPSetup dashboard={dashboard} />
+          <MCPSetup dashboard={dashboard} workspaceName={workspaceName} onManagePermissions={dashboard.can_manage ? () => setTab('policy') : undefined} />
         </TabsContent>
         <TabsContent value="connections" className="mt-4">
           <MCPConnections workspaceId={workspaceId} dashboard={dashboard} />
@@ -150,72 +150,113 @@ export function MCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPane
   );
 }
 
-function MCPSetup({ dashboard }: { dashboard: MCPDashboard }) {
+const READ_ONLY_BADGE_CLASS = 'border-emerald-200/70 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300';
+
+function MCPSetup({ dashboard, workspaceName, onManagePermissions }: { dashboard: MCPDashboard; workspaceName: string; onManagePermissions?: () => void }) {
+  const [showJson, setShowJson] = useState(false);
   const copy = async (value: string, label: string) => {
     await navigator.clipboard.writeText(value);
-    toast.success(`${label} copied`);
+    toast.success(label);
   };
   const json = JSON.stringify({ mcpServers: { helpin: { url: dashboard.mcp_url } } }, null, 2);
+  const neverConnected = dashboard.connections.length === 0;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,1fr)]">
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader>
-          <CardTitle className="text-base">Connect an AI client</CardTitle>
-          <CardDescription>Use the hosted endpoint below. OAuth will ask you to choose this workspace and narrow access.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="space-y-2">
-            <Label htmlFor="mcp-url">MCP server URL</Label>
-            <div className="flex gap-2">
-              <Input id="mcp-url" value={dashboard.mcp_url} readOnly className="font-mono text-xs" />
-              <Button type="button" variant="outline" size="icon" onClick={() => void copy(dashboard.mcp_url, 'Server URL')}>
-                <Copy01Icon className="h-4 w-4" />
-                <span className="sr-only">Copy server URL</span>
-              </Button>
+    <div className="space-y-3">
+      {neverConnected ? (
+        <p className="text-sm text-muted-foreground">No AI tools connected yet. It takes about a minute to set up your first one.</p>
+      ) : null}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,1fr)]">
+        <Card className={LINEAR_CARD_CLASS}>
+          <CardHeader>
+            <CardTitle className="text-base">Connect a tool</CardTitle>
+            <CardDescription>Paste this URL into your AI tool's MCP settings. The first time it connects, you'll sign in, pick a workspace, and approve exactly what it can access.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="mcp-url">Connection URL <span className="font-normal text-muted-foreground">(MCP)</span></Label>
+              <div className="flex gap-2">
+                <Input
+                  id="mcp-url"
+                  value={dashboard.mcp_url}
+                  readOnly
+                  className="cursor-pointer font-mono text-xs"
+                  title="Click to copy"
+                  onClick={() => void copy(dashboard.mcp_url, 'Copied')}
+                />
+                <Button type="button" variant="outline" size="icon" onClick={() => void copy(dashboard.mcp_url, 'Copied')}>
+                  <Copy01Icon className="h-4 w-4" />
+                  <span className="sr-only">Copy connection URL</span>
+                </Button>
+              </div>
             </div>
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <Label>JSON configuration</Label>
-              <Button type="button" variant="ghost" size="sm" onClick={() => void copy(json, 'Configuration')}>
-                <Copy01Icon className="mr-1.5 h-3.5 w-3.5" /> Copy
-              </Button>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <Label>Manual configuration</Label>
+                  <p className="mt-0.5 text-xs text-muted-foreground">For tools that use a JSON config file.</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  {showJson ? (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void copy(json, 'Configuration copied')}>
+                      <Copy01Icon className="mr-1.5 h-3.5 w-3.5" /> Copy
+                    </Button>
+                  ) : null}
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setShowJson((value) => !value)}>
+                    {showJson ? <ArrowDown01Icon className="mr-1.5 h-3.5 w-3.5" /> : <ArrowRight01Icon className="mr-1.5 h-3.5 w-3.5" />}
+                    {showJson ? 'Hide JSON config' : 'Show JSON config'}
+                  </Button>
+                </div>
+              </div>
+              {showJson ? (
+                <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs leading-5">{json}</pre>
+              ) : null}
             </div>
-            <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs leading-5">{json}</pre>
-          </div>
-          <ol className="space-y-2 text-sm text-muted-foreground">
-            <li><span className="mr-2 font-medium text-foreground">1.</span>Add the URL in Codex, Claude, Cursor, VS Code, or another remote MCP client.</li>
-            <li><span className="mr-2 font-medium text-foreground">2.</span>Sign in to Helpin and select one workspace.</li>
-            <li><span className="mr-2 font-medium text-foreground">3.</span>Review scopes and keep read-only access unless writes are needed.</li>
-          </ol>
-        </CardContent>
-      </Card>
+            <ol className="space-y-2 text-sm text-muted-foreground">
+              <li><span className="mr-2 font-medium text-foreground">1.</span>Add the URL to Claude, ChatGPT, Cursor, VS Code, or any MCP-compatible tool.</li>
+              <li><span className="mr-2 font-medium text-foreground">2.</span>Sign in and choose a workspace when prompted.</li>
+              <li><span className="mr-2 font-medium text-foreground">3.</span>Approve access — everything starts read-only, and you can expand or revoke it anytime.</li>
+            </ol>
+          </CardContent>
+        </Card>
 
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader>
-          <CardTitle className="text-base">Effective workspace access</CardTitle>
-          <CardDescription>Every call is still checked against your current Helpin role and module access.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Status</span>
-            <Badge variant={dashboard.can_use_mcp ? 'secondary' : 'outline'}>{dashboard.can_use_mcp ? 'Enabled' : 'Disabled'}</Badge>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Default mode</span>
-            <Badge variant="outline">{dashboard.policy.enforce_read_only ? 'Read only' : 'Client request'}</Badge>
-          </div>
-          <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Allowed toolsets</p>
-            <div className="flex flex-wrap gap-1.5">
-              {dashboard.policy.allowed_toolsets.map((toolset) => (
-                <Badge key={toolset} variant="outline">{TOOLSET_LABELS[toolset] ?? toolset}</Badge>
-              ))}
+        <Card className={`${LINEAR_CARD_CLASS} lg:self-start`}>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-1.5 text-base">
+              <LockIcon className="h-4 w-4 text-muted-foreground" />
+              What connected tools can do
+            </CardTitle>
+            <CardDescription>Tools can never see more than you can. Every request runs with your role and permissions in {workspaceName || 'this workspace'}.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2.5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Status</span>
+              <Badge variant={dashboard.can_use_mcp ? 'secondary' : 'outline'}>{dashboard.can_use_mcp ? 'Enabled' : 'Disabled'}</Badge>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Default access</span>
+              {dashboard.policy.enforce_read_only ? (
+                <Badge variant="outline" className={READ_ONLY_BADGE_CLASS}>Read-only</Badge>
+              ) : (
+                <Badge variant="outline">Requested access</Badge>
+              )}
+            </div>
+            <div className="pt-0.5">
+              <p className="mb-1.5 text-sm text-muted-foreground">Can use</p>
+              <div className="flex flex-wrap gap-1.5">
+                {dashboard.policy.allowed_toolsets.map((toolset) => (
+                  <Badge key={toolset} variant="outline">{TOOLSET_LABELS[toolset] ?? toolset}</Badge>
+                ))}
+              </div>
+              {onManagePermissions ? (
+                <button type="button" className="mt-2.5 text-sm text-primary hover:underline" onClick={onManagePermissions}>
+                  Manage permissions →
+                </button>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -243,8 +284,8 @@ function MCPConnections({ workspaceId, dashboard }: { workspaceId: string; dashb
 
   const handleRevokeWorkspace = async () => {
     const accepted = await confirm({
-      title: 'Revoke all AI client access?',
-      description: 'Every user connection, refresh token, service account, and service token in this workspace will stop working immediately.',
+      title: 'Revoke all AI tool access?',
+      description: 'Every connected tool, sign-in session, automation account, and credential in this workspace will stop working immediately.',
       confirmText: 'Revoke all access',
       variant: 'destructive',
     });
@@ -269,15 +310,15 @@ function MCPConnections({ workspaceId, dashboard }: { workspaceId: string; dashb
       </CardHeader>
       <CardContent className="p-0">
         {dashboard.connections.length === 0 ? (
-          <EmptyState title="No connections yet" description="Add the MCP server URL to an AI client to start OAuth setup." />
+          <EmptyState title="No connections yet" description="Add the connection URL to an AI tool to start the secure sign-in flow." />
         ) : (
           <Table>
-            <TableHeader><TableRow><TableHead>Client</TableHead><TableHead>Access</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead><TableHead className="w-16" /></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Tool or automation</TableHead><TableHead>Access</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead><TableHead className="w-16" /></TableRow></TableHeader>
             <TableBody>
               {dashboard.connections.map((connection) => (
                 <TableRow key={connection.id}>
                   <TableCell><div className="font-medium">{connection.client_name}</div><div className="text-xs text-muted-foreground">Connected {relativeDate(connection.created_at)}</div></TableCell>
-                  <TableCell><div className="flex flex-wrap gap-1"><Badge variant="outline">{connection.read_only ? 'Read only' : 'Bounded writes'}</Badge>{connection.toolsets.map((item) => <Badge key={item} variant="secondary">{TOOLSET_LABELS[item] ?? item}</Badge>)}</div></TableCell>
+                  <TableCell><div className="flex flex-wrap gap-1"><Badge variant="outline" className={connection.read_only ? READ_ONLY_BADGE_CLASS : undefined}>{connection.read_only ? 'Read-only' : 'Bounded writes'}</Badge>{connection.toolsets.map((item) => <Badge key={item} variant="secondary">{TOOLSET_LABELS[item] ?? item}</Badge>)}</div></TableCell>
                   <TableCell className="text-muted-foreground">{connection.last_used_at ? relativeDate(connection.last_used_at) : 'Never'}</TableCell>
                   <TableCell><Badge variant={connection.status === 'active' ? 'secondary' : 'outline'}>{connection.status}</Badge></TableCell>
                   <TableCell>
@@ -305,12 +346,12 @@ function MCPServiceAccounts({ workspaceId, dashboard }: { workspaceId: string; d
   const confirm = useConfirm();
 
   const handleRevoke = async (principal: MCPServicePrincipal) => {
-    if (!await confirm({ title: `Revoke ${principal.name}?`, description: 'All tokens for this service account will stop working.', confirmText: 'Revoke service account', variant: 'destructive' })) return;
+    if (!await confirm({ title: `Revoke ${principal.name}?`, description: 'All credentials for this automation account will stop working.', confirmText: 'Revoke automation', variant: 'destructive' })) return;
     try {
       await revoke.mutateAsync(principal.id);
-      toast.success('Service account revoked');
+      toast.success('Automation account revoked');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not revoke service account');
+      toast.error(error instanceof Error ? error.message : 'Could not revoke automation account');
     }
   };
 
@@ -319,15 +360,15 @@ function MCPServiceAccounts({ workspaceId, dashboard }: { workspaceId: string; d
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>
           <div className="flex items-start justify-between gap-4">
-            <div><CardTitle className="text-base">Service accounts</CardTitle><CardDescription>Restricted credentials for headless automations. Secrets are shown once.</CardDescription></div>
-            <Button size="sm" onClick={() => setCreateOpen(true)} disabled={!dashboard.policy.service_accounts_enabled}>Create service account</Button>
+            <div><CardTitle className="text-base">Automation accounts</CardTitle><CardDescription>Restricted credentials for workflows that run without a person signing in. Secrets are shown once.</CardDescription></div>
+            <Button size="sm" onClick={() => setCreateOpen(true)} disabled={!dashboard.policy.service_accounts_enabled}>Create automation account</Button>
           </div>
         </CardHeader>
         <CardContent className="p-0">
           {!dashboard.policy.service_accounts_enabled ? (
-            <EmptyState title="Service accounts are disabled" description="Enable them in Workspace policy before creating a credential." />
+            <EmptyState title="Automation accounts are disabled" description="Allow them in the Permissions tab before creating a credential." />
           ) : dashboard.service_principals.length === 0 ? (
-            <EmptyState title="No service accounts" description="Create one for a narrowly scoped, non-interactive workflow." />
+            <EmptyState title="No automation accounts" description="Create one for a narrowly scoped workflow that runs without a person signing in." />
           ) : (
             <Table>
               <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Access</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead><TableHead className="w-28" /></TableRow></TableHeader>
@@ -335,7 +376,7 @@ function MCPServiceAccounts({ workspaceId, dashboard }: { workspaceId: string; d
                 {dashboard.service_principals.map((principal) => (
                   <TableRow key={principal.id}>
                     <TableCell><div className="font-medium">{principal.name}</div><div className="max-w-64 truncate text-xs text-muted-foreground">{principal.description || 'No description'}</div></TableCell>
-                    <TableCell><Badge variant="outline">{principal.read_only ? 'Read only' : 'Bounded writes'}</Badge></TableCell>
+                    <TableCell><Badge variant="outline" className={principal.read_only ? READ_ONLY_BADGE_CLASS : undefined}>{principal.read_only ? 'Read-only' : 'Bounded writes'}</Badge></TableCell>
                     <TableCell className="text-muted-foreground">{principal.last_used_at ? relativeDate(principal.last_used_at) : 'Never'}</TableCell>
                     <TableCell><Badge variant={principal.status === 'active' ? 'secondary' : 'outline'}>{principal.status}</Badge></TableCell>
                     <TableCell><div className="flex justify-end gap-1">{principal.status === 'active' ? <><Button variant="ghost" size="icon-sm" onClick={() => setSelected(principal)}><Key01Icon className="h-4 w-4" /><span className="sr-only">Create token</span></Button><Button variant="ghost" size="icon-sm" onClick={() => void handleRevoke(principal)}><Delete01Icon className="h-4 w-4" /><span className="sr-only">Revoke</span></Button></> : null}</div></TableCell>
@@ -356,14 +397,14 @@ function MCPServiceAccounts({ workspaceId, dashboard }: { workspaceId: string; d
 function MCPActivity({ dashboard, events, loading }: { dashboard: MCPDashboard; events: import('@/lib/mcpTypes').MCPAuditEvent[]; loading: boolean }) {
   return (
     <Card className={LINEAR_CARD_CLASS}>
-      <CardHeader><CardTitle className="text-base">MCP activity</CardTitle><CardDescription>Sanitized outcomes and hashes are stored; raw tool inputs and outputs are not shown here.</CardDescription></CardHeader>
+      <CardHeader><CardTitle className="text-base">AI tool activity</CardTitle><CardDescription>Review what connected tools have done in this workspace. Raw tool inputs and outputs are never stored.</CardDescription></CardHeader>
       <CardContent className="p-0">
         {loading ? <div className="space-y-2 p-5"><Skeleton className="h-9" /><Skeleton className="h-9" /><Skeleton className="h-9" /></div> : events.length === 0 ? (
-          <EmptyState title="No MCP activity" description={dashboard.policy.enabled ? 'Calls will appear here after a connected client uses Helpin.' : 'Enable MCP before clients can create activity.'} />
+          <EmptyState title="No AI tool activity" description={dashboard.policy.enabled ? 'Actions will appear here after a connected tool uses Helpin.' : 'Allow AI tools before they can create activity.'} />
         ) : (
           <Table>
-            <TableHeader><TableRow><TableHead>Event</TableHead><TableHead>Client</TableHead><TableHead>Outcome</TableHead><TableHead>Duration</TableHead><TableHead>Time</TableHead></TableRow></TableHeader>
-            <TableBody>{events.map((event) => <TableRow key={event.id}><TableCell><div className="font-medium">{event.tool_name || event.event_type}</div>{event.reason_code ? <div className="text-xs text-muted-foreground">{event.reason_code.replaceAll('_', ' ')}</div> : null}</TableCell><TableCell>{event.client_name || 'Unknown client'}</TableCell><TableCell><Badge variant={event.outcome === 'success' ? 'secondary' : event.outcome === 'error' ? 'destructive' : 'outline'}>{event.outcome}</Badge></TableCell><TableCell className="text-muted-foreground">{event.duration_ms == null ? '—' : `${event.duration_ms} ms`}</TableCell><TableCell className="text-muted-foreground">{relativeDate(event.created_at)}</TableCell></TableRow>)}</TableBody>
+            <TableHeader><TableRow><TableHead>Event</TableHead><TableHead>Tool or automation</TableHead><TableHead>Outcome</TableHead><TableHead>Duration</TableHead><TableHead>Time</TableHead></TableRow></TableHeader>
+            <TableBody>{events.map((event) => <TableRow key={event.id}><TableCell><div className="font-medium">{event.tool_name || event.event_type}</div>{event.reason_code ? <div className="text-xs text-muted-foreground">{event.reason_code.replaceAll('_', ' ')}</div> : null}</TableCell><TableCell>{event.client_name || 'Unknown tool'}</TableCell><TableCell><Badge variant={event.outcome === 'success' ? 'secondary' : event.outcome === 'error' ? 'destructive' : 'outline'}>{event.outcome}</Badge></TableCell><TableCell className="text-muted-foreground">{event.duration_ms == null ? '—' : `${event.duration_ms} ms`}</TableCell><TableCell className="text-muted-foreground">{relativeDate(event.created_at)}</TableCell></TableRow>)}</TableBody>
           </Table>
         )}
       </CardContent>
@@ -387,27 +428,27 @@ function MCPPolicyEditor({ workspaceId, dashboard }: { workspaceId: string; dash
   const save = async () => {
     try {
       await update.mutateAsync(policy);
-      toast.success('MCP policy saved');
+      toast.success('Permissions saved');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not save MCP policy');
+      toast.error(error instanceof Error ? error.message : 'Could not save permissions');
     }
   };
 
   return (
     <div className="space-y-4">
       <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader><CardTitle className="text-base">Workspace controls</CardTitle><CardDescription>Policy changes are applied again on every tool discovery and call.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-base">AI tool access controls</CardTitle><CardDescription>Choose which parts of Helpin connected tools may use. Access is checked again on every action.</CardDescription></CardHeader>
         <CardContent className="divide-y">
-          <PolicySwitch label="Enable MCP" description="Allow members to authorize external AI clients for this workspace." checked={policy.enabled} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, enabled: checked }))} />
-          <PolicySwitch label="Enforce read-only connections" description="Remove write scopes even when a client requests them." checked={policy.enforce_read_only} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, enforce_read_only: checked }))} />
-          <PolicySwitch label="Allow service accounts" description="Let managers create restricted tokens for headless workflows." checked={policy.service_accounts_enabled} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, service_accounts_enabled: checked }))} />
+          <PolicySwitch label="Allow AI tools and automations" description="Let members connect MCP-compatible tools to this workspace. Their Helpin roles and module permissions still apply." checked={policy.enabled} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, enabled: checked }))} />
+          <PolicySwitch label="Keep connections read only" description="Connected tools can find and summarize work but cannot create or update it." checked={policy.enforce_read_only} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, enforce_read_only: checked }))} />
+          <PolicySwitch label="Allow automation accounts" description="Let managers create restricted credentials for workflows that run without a person signing in." checked={policy.service_accounts_enabled} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, service_accounts_enabled: checked }))} />
         </CardContent>
       </Card>
       <div className="grid gap-4 lg:grid-cols-2">
-        <PolicyChecklist title="Allowed toolsets" description="Clients can request a subset of these product areas." values={dashboard.available_toolsets} selected={policy.allowed_toolsets} labels={TOOLSET_LABELS} onToggle={(value, checked) => toggle('allowed_toolsets', value, checked)} />
+        <PolicyChecklist title="Allowed product areas" description="Connected tools can request a subset of these areas." values={dashboard.available_toolsets} selected={policy.allowed_toolsets} labels={TOOLSET_LABELS} onToggle={(value, checked) => toggle('allowed_toolsets', value, checked)} />
         <PolicyChecklist title="Allowed OAuth scopes" description="Users may narrow these during consent, never expand them." values={dashboard.available_scopes} selected={policy.allowed_scopes} labels={SCOPE_LABELS} onToggle={(value, checked) => toggle('allowed_scopes', value, checked)} />
       </div>
-      <div className="flex justify-end"><Button onClick={() => void save()} disabled={update.isPending || policy.allowed_toolsets.length === 0 || policy.allowed_scopes.length === 0}>{update.isPending ? <Loading01Icon className="mr-2 h-4 w-4 animate-spin" /> : null}Save policy</Button></div>
+      <div className="flex justify-end"><Button onClick={() => void save()} disabled={update.isPending || policy.allowed_toolsets.length === 0 || policy.allowed_scopes.length === 0}>{update.isPending ? <Loading01Icon className="mr-2 h-4 w-4 animate-spin" /> : null}Save permissions</Button></div>
     </div>
   );
 }
@@ -427,13 +468,13 @@ function CreateServiceAccountDialog({ open, onOpenChange, workspaceId, dashboard
       onSecret(result.secret);
       setName(''); setDescription('');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not create service account');
+      toast.error(error instanceof Error ? error.message : 'Could not create automation account');
     }
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Create service account</DialogTitle><DialogDescription>Create a read-only credential first. You can create a different account later if a workflow needs writes.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Create automation account</DialogTitle><DialogDescription>Create a read-only credential first. You can create a different account later if a workflow needs to update work.</DialogDescription></DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2"><Label htmlFor="service-name">Name</Label><Input id="service-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Release notes workflow" maxLength={100} /></div>
           <div className="space-y-2"><Label htmlFor="service-description">Description</Label><Textarea id="service-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Where this credential is used" /></div>

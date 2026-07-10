@@ -543,5 +543,8 @@ describe('AskAgentsDock chat', () => {
     });
 
     expect(mocks.confirmChatCreateAgent).toHaveBeenCalledWith('ws-1', 'proposal-msg');
+    await waitForText('Agent created');
+    expect([...document.body.querySelectorAll('button')]
+      .some((candidate) => candidate.textContent?.includes('Create agent'))).toBe(false);
   });
 });

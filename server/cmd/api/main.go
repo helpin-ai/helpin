@@ -210,16 +210,10 @@ func main() {
 			&model.AgentRunMessage{},
 			&model.AgentRunArtifact{},
 			&model.AgentRunInteraction{},
-			&model.MCPWorkspacePolicy{},
-			&model.MCPClientRegistration{},
-			&model.MCPConnection{},
-			&model.MCPOAuthAuthorizationCode{},
-			&model.MCPRefreshToken{},
-			&model.MCPServicePrincipal{},
-			&model.MCPServiceToken{},
-			&model.MCPAuditEvent{},
-			&model.MCPIdempotencyRecord{},
-			&model.MCPAgentRunAttribution{},
+			// Public MCP tables are intentionally excluded. Their constraints,
+			// partial indexes, and retention fields are owned exclusively by
+			// versioned migration 202607100003_public_mcp.sql. Letting GORM
+			// reconcile those tables can attempt incompatible constraint changes.
 			&model.CommandBarPlanRecord{},
 			&model.CommandBarUnmetIntent{},
 			&model.CommandBarPlanDismissal{},

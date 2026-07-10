@@ -22,7 +22,7 @@ describe('getSettingsSidebarGroups', () => {
     expect(visibleSectionIDs(false)).not.toContain('command-intents');
   });
 
-  it('places AI Clients after Access when workspace read is allowed', () => {
+  it('places MCP after Access when workspace read is allowed', () => {
     const workspaceGroup = getSettingsSidebarGroups(true, new Set(['workspace.read', 'module_access.manage']))
       .find((group) => group.label === 'Workspace');
 
@@ -31,7 +31,7 @@ describe('getSettingsSidebarGroups', () => {
     expect(sections.indexOf('repositories')).toBe(sections.indexOf('mcp') + 1);
   });
 
-  it('hides AI Clients without workspace read permission', () => {
+  it('hides MCP without workspace read permission', () => {
     const sections = getSettingsSidebarGroups(true, new Set(['module_access.manage']))
       .flatMap((group) => group.sections.map((section) => section.id));
 
