@@ -52,6 +52,7 @@ type agentRuntimeProjectionMessageRepository interface {
 	ListByRun(ctx context.Context, workspaceID, runID string) ([]model.AgentRunMessage, error)
 	NextSequence(ctx context.Context, workspaceID, runID string) (int, error)
 	Create(ctx context.Context, message *model.AgentRunMessage) error
+	Update(ctx context.Context, message *model.AgentRunMessage) error
 }
 
 type agentRuntimeProjectionArtifactRepository interface {
@@ -1132,7 +1133,17 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 		return err
 	}
 	for _, message := range existing {
-		if agentRunMessageHasRuntimeMessageID(message, runtimeMessageID) || agentRunMessageMatchesRuntimeMessage(message, runtimeMessage, runtimeMessageID) {
+		if agentRunMessageHasRuntimeMessageID(message, runtimeMessageID) {
+			if !applyRuntimeMessageProjection(&message, runtimeMessage, runtimeMessageID) {
+				return nil
+			}
+			if err := s.runMessageRepo.Update(ctx, &message); err != nil {
+				return err
+			}
+			s.runRepo.Notify(ctx, run)
+			return nil
+		}
+		if agentRunMessageMatchesRuntimeMessage(message, runtimeMessage, runtimeMessageID) {
 			return nil
 		}
 	}
@@ -1169,6 +1180,56 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 	}
 	s.runRepo.Notify(ctx, run)
 	return nil
+}
+
+func applyRuntimeMessageProjection(message *model.AgentRunMessage, runtimeMessage AgentRuntimeMessage, runtimeMessageID string) bool {
+	if message == nil {
+		return false
+	}
+	role := strings.TrimSpace(runtimeMessage.Role)
+	if role == "" {
+		role = "assistant"
+	}
+	messageType := strings.TrimSpace(runtimeMessage.MessageType)
+	if messageType == "" {
+		messageType = "message"
+	}
+	if role == "assistant" && messageType == "message" && strings.TrimSpace(message.MessageType) == "assistant_turn" {
+		messageType = "assistant_turn"
+	}
+	content := strings.TrimSpace(runtimeMessage.Content)
+	contentBlocks := annotateRuntimeMessageBlocks(runtimeMessage.ContentBlocks, runtimeMessageID, content)
+	var turnSegments json.RawMessage
+	if role == "assistant" {
+		turnSegments = runtimeMessageTurnSegments(runtimeMessageID, content, runtimeMessage.ToolInvocations)
+	}
+
+	changed := false
+	if message.Role != role {
+		message.Role = role
+		changed = true
+	}
+	if message.Content != content {
+		message.Content = content
+		changed = true
+	}
+	if message.MessageType != messageType {
+		message.MessageType = messageType
+		changed = true
+	}
+	if !agentRuntimeProjectionJSONRawEqual(message.ContentBlocks, contentBlocks) {
+		message.ContentBlocks = contentBlocks
+		changed = true
+	}
+	if !agentRuntimeProjectionJSONRawEqual(message.TurnSegments, turnSegments) {
+		message.TurnSegments = turnSegments
+		changed = true
+	}
+	if !agentRuntimeProjectionJSONRawEqual(message.ToolInvocations, runtimeMessage.ToolInvocations) {
+		message.ToolInvocations = runtimeMessage.ToolInvocations
+		changed = true
+	}
+	return changed
 }
 
 func (s *AgentRuntimeProjectionService) createRuntimeArtifact(ctx context.Context, run *model.AgentRun, runtimeArtifact AgentRuntimeArtifact) error {

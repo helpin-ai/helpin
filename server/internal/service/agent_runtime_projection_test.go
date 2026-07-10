@@ -112,6 +112,7 @@ func (c *fakeAgentRuntimeProjectionUsageConsumer) ConsumeCredits(_ context.Conte
 type fakeAgentRuntimeProjectionMessageRepo struct {
 	messages []model.AgentRunMessage
 	creates  int
+	updates  int
 }
 
 func (r *fakeAgentRuntimeProjectionMessageRepo) ListByRun(_ context.Context, _, _ string) ([]model.AgentRunMessage, error) {
@@ -124,6 +125,18 @@ func (r *fakeAgentRuntimeProjectionMessageRepo) NextSequence(_ context.Context, 
 
 func (r *fakeAgentRuntimeProjectionMessageRepo) Create(_ context.Context, message *model.AgentRunMessage) error {
 	r.creates++
+	r.messages = append(r.messages, *message)
+	return nil
+}
+
+func (r *fakeAgentRuntimeProjectionMessageRepo) Update(_ context.Context, message *model.AgentRunMessage) error {
+	r.updates++
+	for index := range r.messages {
+		if r.messages[index].ID == message.ID {
+			r.messages[index] = *message
+			return nil
+		}
+	}
 	r.messages = append(r.messages, *message)
 	return nil
 }
@@ -1240,7 +1253,7 @@ func TestAgentRuntimeProjectionTerminalEventBackfillsRuntimeTranscript(t *testin
 	}
 }
 
-func TestAgentRuntimeProjectionTerminalBackfillDedupesLiveAssistantMessageByRuntimeMessageID(t *testing.T) {
+func TestAgentRuntimeProjectionTerminalBackfillUpdatesChangedLiveAssistantMessageByRuntimeMessageID(t *testing.T) {
 	completedAt := time.Date(2026, 7, 2, 15, 15, 0, 0, time.UTC)
 	run := &model.AgentRun{
 		ID:                "helpin-run-terminal-live-dedupe",
@@ -1262,7 +1275,7 @@ func TestAgentRuntimeProjectionTerminalBackfillDedupesLiveAssistantMessageByRunt
 				ID:               "store-msg-1",
 				RuntimeMessageID: "event-msg-1",
 				Role:             "assistant",
-				Content:          "Same answer.",
+				Content:          "Final answer from the completed turn.",
 				MessageType:      "message",
 				CreatedAt:        completedAt,
 			}},
@@ -1280,7 +1293,7 @@ func TestAgentRuntimeProjectionTerminalBackfillDedupesLiveAssistantMessageByRunt
 		Type:  "assistant_message_completed",
 		Data: map[string]any{
 			"message_id": "event-msg-1",
-			"content":    "Same answer.",
+			"content":    "Opening progress message.",
 		},
 	}); err != nil {
 		t.Fatalf("ApplyEvent assistant returned error: %v", err)
@@ -1293,7 +1306,16 @@ func TestAgentRuntimeProjectionTerminalBackfillDedupesLiveAssistantMessageByRunt
 		t.Fatalf("ApplyEvent completed returned error: %v", err)
 	}
 	if messageRepo.creates != 1 || len(messageRepo.messages) != 1 {
-		t.Fatalf("expected terminal backfill to dedupe live message, creates=%d messages=%#v", messageRepo.creates, messageRepo.messages)
+		t.Fatalf("expected terminal backfill to retain one live message, creates=%d messages=%#v", messageRepo.creates, messageRepo.messages)
+	}
+	if messageRepo.updates != 1 {
+		t.Fatalf("expected terminal backfill to update changed live message, updates=%d", messageRepo.updates)
+	}
+	if messageRepo.messages[0].Content != "Final answer from the completed turn." {
+		t.Fatalf("terminal backfill content = %q", messageRepo.messages[0].Content)
+	}
+	if messageRepo.messages[0].MessageType != "assistant_turn" {
+		t.Fatalf("terminal backfill message type = %q", messageRepo.messages[0].MessageType)
 	}
 	if !agentRunMessageHasRuntimeMessageID(messageRepo.messages[0], "event-msg-1") {
 		t.Fatalf("message missing event runtime id: %s", string(messageRepo.messages[0].ContentBlocks))
