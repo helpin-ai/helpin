@@ -14,12 +14,12 @@ A warm editorial canvas becomes a living operating system: quiet work signals tr
 - Headline, with an intentional line break: `One system. Every team.` then `AI agents that move work forward.`
 - Supporting copy: `Helpin connects project management, customer support, CRM, and docs—giving your team and AI agents the shared context to plan, resolve, follow up, and ship.`
 - Primary CTA: `Start free trial`
-- Secondary CTA: `Watch it work`, implemented as a button that restarts the animation. On stacked mobile layouts it first scrolls the visualization into view, then restarts it.
+- Secondary CTA: `Watch it work`, implemented as a button that restarts the animation. On stacked mobile layouts it first scrolls the visualization into view, then restarts it. The control is hidden when reduced motion is requested because the final static state is already shown.
 - Small reassurance: no credit card required.
 
 ## Composition
 
-The hero fills at least the first viewport beneath the existing Helpin navigation. At desktop widths, its minimum height is `calc(100dvh - 72px)` and its content fits without vertical scrolling at 1440×900 and 1280×720. Copy is left-aligned in a narrow, calm column. The right side is dominated by a bespoke animated system visualization, not a dashboard screenshot or a collection of cards.
+The hero fills at least the first viewport beneath the existing Helpin navigation. The current shared navbar renders at 60px (28px logo plus 32px vertical padding), so the hero defines `--marketing-nav-height: 60px` and uses `min-height: calc(100dvh - var(--marketing-nav-height))` at desktop widths. Its content fits without vertical scrolling at 1440×900 and 1280×720. Copy is left-aligned in a narrow, calm column. The right side is dominated by a bespoke animated system visualization, not a dashboard screenshot or a collection of cards.
 
 The visualization has three layers:
 
@@ -69,7 +69,7 @@ With `prefers-reduced-motion: reduce`, all copy staggering, packet travel, core 
 - Run website typecheck and production build.
 - Test at 1440×900, 1280×720, 390×844, 320×568, and a short mobile-landscape viewport; verify 200% zoom without content loss.
 - Verify keyboard-only operation, visible focus, contrast, and the full reduced-motion static state.
-- Confirm animation loop, restart control, CTA links, and first-viewport fit.
+- Confirm the one-shot animation sequence, motionless resolved state, restart control, CTA links, and first-viewport fit.
 
 ## Out of scope
 
