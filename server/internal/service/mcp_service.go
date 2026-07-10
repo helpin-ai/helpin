@@ -256,7 +256,7 @@ func (s *MCPService) Policy(ctx context.Context, workspaceID string) (*model.MCP
 	}
 	return &model.MCPWorkspacePolicy{
 		WorkspaceID:            workspaceID,
-		Enabled:                false,
+		Enabled:                true,
 		EnforceReadOnly:        true,
 		ServiceAccountsEnabled: false,
 		AllowedToolsets:        mustMCPJSON(DefaultMCPToolsets()),

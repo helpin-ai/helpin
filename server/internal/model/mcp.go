@@ -19,7 +19,7 @@ const (
 // MCPWorkspacePolicy controls public MCP access for one workspace.
 type MCPWorkspacePolicy struct {
 	WorkspaceID            string          `json:"workspace_id" gorm:"type:uuid;primaryKey"`
-	Enabled                bool            `json:"enabled" gorm:"not null;default:false"`
+	Enabled                bool            `json:"enabled" gorm:"not null;default:true"`
 	EnforceReadOnly        bool            `json:"enforce_read_only" gorm:"not null;default:true"`
 	ServiceAccountsEnabled bool            `json:"service_accounts_enabled" gorm:"not null;default:false"`
 	AllowedToolsets        json.RawMessage `json:"allowed_toolsets" gorm:"type:jsonb;not null;default:'[\"context\",\"pm\",\"docs\",\"agents\"]'"`
