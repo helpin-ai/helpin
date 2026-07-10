@@ -944,6 +944,7 @@ func setupInstallerTestDB(t *testing.T) *gorm.DB {
 			workspace_id text NOT NULL,
 			is_system boolean NOT NULL DEFAULT false,
 			name text NOT NULL,
+			icon_key text NOT NULL DEFAULT '',
 			preset_key text,
 			preset_version_key text,
 			source_preset_key text,

@@ -39,7 +39,7 @@ agent:
       {{raw_configuration_json}}
     allowed_tools: [update_plan, web_search_exa, fetch_url, crawl_url, create_document, link_document_to_object, list_workspace_teams, list_team_workflows_with_stages, create_task]
     allowed_targets: [workspace, document, task]
-    approval_mode: always
+    approval_mode: never
 trigger:
   type: cron
 inputs:

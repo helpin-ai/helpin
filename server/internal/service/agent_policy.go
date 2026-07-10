@@ -48,6 +48,26 @@ func normalizeJSONSlice(raw json.RawMessage) json.RawMessage {
 
 var supportedAgentReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh"}
 var supportedAgentServiceTiers = []string{"fast", "flex"}
+var supportedAgentIconKeys = []string{
+	"violet_star", "ocean_orbit", "forest_cap", "sunset_flame",
+	"rose_wave", "teal_signal", "sky_quill", "amber_lens",
+}
+
+func normalizeAgentIconKey(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if slices.Contains(supportedAgentIconKeys, value) {
+		return value
+	}
+	return ""
+}
+
+func validateAgentIconKey(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" || normalizeAgentIconKey(value) != "" {
+		return nil
+	}
+	return fmt.Errorf("icon_key %q is not supported", value)
+}
 
 func jsonSliceIsEmpty(raw json.RawMessage) bool {
 	if len(raw) == 0 {
@@ -92,6 +112,7 @@ func normalizeAgentRecord(agent *model.Agent) {
 	if agent == nil {
 		return
 	}
+	agent.IconKey = normalizeAgentIconKey(agent.IconKey)
 
 	presetKey := ""
 	presetVersionKey := ""

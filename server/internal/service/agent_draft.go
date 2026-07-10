@@ -206,10 +206,10 @@ func validateCustomAgentDraft(
 
 func normalizeDraftApprovalMode(value string) string {
 	switch strings.TrimSpace(value) {
-	case "never", "preset_default":
+	case "never", "mutating_tools", "preset_default":
 		return strings.TrimSpace(value)
 	default:
-		return "always"
+		return "mutating_tools"
 	}
 }
 
@@ -312,7 +312,7 @@ Choose only these skills:
 
 Defaults:
 - role: Custom Agent
-- approval_mode: always unless the user explicitly asks for immediate autonomous execution
+- approval_mode: mutating_tools unless the user explicitly asks to approve before any work or to execute writes without approval
 - runtime_kind: native_sdk
 - provider: anthropic
 - model: empty string unless the user explicitly names a model

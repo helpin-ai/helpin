@@ -2074,7 +2074,7 @@ func commandBarCreateAgentRequestFromDraft(workspaceID string, draft model.Custo
 	runtimeKind := firstNonEmptyString(strings.TrimSpace(draft.RuntimeKind), "native_sdk")
 	provider := strings.TrimSpace(draft.Provider)
 	modelName := strings.TrimSpace(draft.Model)
-	approvalMode := firstNonEmptyString(strings.TrimSpace(draft.ApprovalMode), "always")
+	approvalMode := firstNonEmptyString(strings.TrimSpace(draft.ApprovalMode), "mutating_tools")
 	invocationMode := firstNonEmptyString(strings.TrimSpace(draft.DefaultInvocationMode), "interactive")
 	maxRuns := draft.MaxConcurrentRuns
 	if maxRuns <= 0 {

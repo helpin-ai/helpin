@@ -42,6 +42,7 @@ type Agent struct {
 	WorkspaceID                string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	IsSystem                   bool            `json:"is_system" gorm:"not null;default:false"`
 	Name                       string          `json:"name" gorm:"not null"`
+	IconKey                    string          `json:"icon_key" gorm:"not null;default:''"`
 	PresetKey                  string          `json:"preset_key"`
 	PresetVersionKey           string          `json:"preset_version_key"`
 	SourcePresetKey            string          `json:"source_preset_key"`
@@ -267,6 +268,7 @@ func (AgentTriggerExecution) TableName() string { return "agent_trigger_executio
 type CreateAgentRequest struct {
 	WorkspaceID           string          `json:"workspace_id"`
 	Name                  string          `json:"name"`
+	IconKey               *string         `json:"icon_key"`
 	PresetKey             *string         `json:"preset_key"`
 	PresetVersionKey      *string         `json:"preset_version_key"`
 	Role                  string          `json:"role"`
@@ -328,6 +330,7 @@ type CustomAgentDraftLLMResponse struct {
 // UpdateAgentRequest is the payload for updating an agent.
 type UpdateAgentRequest struct {
 	Name                  *string         `json:"name"`
+	IconKey               *string         `json:"icon_key"`
 	PresetKey             *string         `json:"preset_key"`
 	PresetVersionKey      *string         `json:"preset_version_key"`
 	Role                  *string         `json:"role"`

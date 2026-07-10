@@ -2679,6 +2679,11 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	if req.PresetVersionKey != nil && strings.TrimSpace(*req.PresetVersionKey) != "" {
 		return nil, fmt.Errorf("custom agents cannot specify preset_version_key")
 	}
+	if req.IconKey != nil {
+		if err := validateAgentIconKey(*req.IconKey); err != nil {
+			return nil, err
+		}
+	}
 
 	skills := req.Skills.Normalize()
 	if skills == nil {
@@ -2714,6 +2719,7 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	agent := &model.Agent{
 		WorkspaceID:                req.WorkspaceID,
 		Name:                       strings.TrimSpace(req.Name),
+		IconKey:                    normalizeAgentIconKey(stringOrDefault(req.IconKey, "")),
 		PresetKey:                  "",
 		PresetVersionKey:           "",
 		SourcePresetKey:            "",
@@ -2806,6 +2812,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		if req.Skills != nil {
 			return nil, fmt.Errorf("system agent skills are preset-owned")
 		}
+		if req.IconKey != nil {
+			return nil, fmt.Errorf("system agent icon is preset-owned")
+		}
 	} else {
 		if req.PresetKey != nil && strings.TrimSpace(*req.PresetKey) != "" {
 			return nil, fmt.Errorf("custom agents cannot specify preset_key")
@@ -2814,10 +2823,18 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 			return nil, fmt.Errorf("custom agents cannot specify preset_version_key")
 		}
 	}
+	if req.IconKey != nil {
+		if err := validateAgentIconKey(*req.IconKey); err != nil {
+			return nil, err
+		}
+	}
 
 	presetChanged := false
 	if req.Name != nil {
 		agent.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.IconKey != nil {
+		agent.IconKey = normalizeAgentIconKey(*req.IconKey)
 	}
 	if req.PresetKey != nil && agent.IsSystem {
 		agent.PresetKey = normalizePresetKey(*req.PresetKey)
