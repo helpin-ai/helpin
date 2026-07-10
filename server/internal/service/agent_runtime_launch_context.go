@@ -17,8 +17,10 @@ import (
 const delegatedTaskPlanDocumentContextLimit = 12000
 
 const (
-	delegatedEpicSpecContextLimit = 16000
-	delegatedEpicTaskContextLimit = 50
+	delegatedEpicSpecContextLimit  = 16000
+	delegatedEpicTaskContextLimit  = 50
+	agentRepositoryAccessReadOnly  = "read_only"
+	agentRepositoryAccessReadWrite = "read_write"
 )
 
 // agentRequiresRepositoryWorkspace reports whether delegated runs for this
@@ -82,6 +84,17 @@ func withAgentRuntimeExecutionConfig(config json.RawMessage, agent *model.Agent)
 		}
 	}
 	if agent != nil {
+		workspaceValue, _ := values["workspace"].(map[string]interface{})
+		if workspaceValue == nil {
+			workspaceValue = map[string]interface{}{}
+		}
+		workspaceValue["access"] = agentRepositoryAccessMode(agent)
+		values["workspace"] = workspaceValue
+		if strings.TrimSpace(agent.EffectivePresetKey()) == model.AgentPresetTaskPlanner {
+			values["completion"] = map[string]interface{}{
+				"required_tools": []string{worker.ToolPublishTaskPlanDoc},
+			}
+		}
 		if presetKey := strings.TrimSpace(agent.EffectivePresetKey()); presetKey != "" {
 			values["preset_key"] = presetKey
 		}
@@ -94,6 +107,23 @@ func withAgentRuntimeExecutionConfig(config json.RawMessage, agent *model.Agent)
 		return config
 	}
 	return payload
+}
+
+func agentRepositoryAccessMode(agent *model.Agent) string {
+	if agent == nil {
+		return agentRepositoryAccessReadOnly
+	}
+	switch strings.TrimSpace(agent.EffectivePresetKey()) {
+	case model.AgentPresetCodeBuilder, model.AgentPresetReviewAgent:
+		return agentRepositoryAccessReadWrite
+	}
+	for _, toolName := range worker.NormalizeToolNames(parseJSONStringSlice(agent.AllowedTools)) {
+		switch toolName {
+		case "write_file", "edit_file", "apply_patch", "create_branch", "commit_and_push", "open_pr":
+			return agentRepositoryAccessReadWrite
+		}
+	}
+	return agentRepositoryAccessReadOnly
 }
 
 func withAgentRunPlanningStage(payload []byte, stage string) ([]byte, error) {

@@ -469,7 +469,7 @@ func (e *CodexExecutor) sandboxModeFor(execCtx *ExecutionContext) string {
 
 func codexSandboxMode(execCtx *ExecutionContext) string {
 	resolved := resolvedProfileFor(execCtx)
-	if resolved.RequiresRepo || len(resolved.Commands) > 0 || hasRepoMutationTools(resolved.Tools) {
+	if hasRepoMutationTools(resolved.Tools) {
 		return "workspace-write"
 	}
 	return "read-only"
