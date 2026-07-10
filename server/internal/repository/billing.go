@@ -183,17 +183,17 @@ func (r *BillingRepository) ConsumeCredits(ctx context.Context, workspaceID stri
 		}
 
 		if billing.Status == model.BillingStatusTrialExpired || billing.Status == model.BillingStatusUnpaid || billing.Status == model.BillingStatusCanceled {
-			return fmt.Errorf("workspace is locked; choose a plan to reactivate it")
+			return model.ErrBillingWorkspaceLocked
 		}
 		nextUsed := billing.CreditsUsed + credits
 		onDemandAvailable := billing.Status == model.BillingStatusActive &&
 			billing.StripeCustomerID != nil &&
 			billing.StripeSubscriptionID != nil
 		if nextUsed > billing.IncludedCredits && !billing.OnDemandEnabled {
-			return fmt.Errorf("AI usage exhausted")
+			return model.ErrAIUsageExhausted
 		}
 		if nextUsed > billing.IncludedCredits && !onDemandAvailable {
-			return fmt.Errorf("extra AI usage is not available")
+			return model.ErrExtraAIUsageUnavailable
 		}
 
 		if nextUsed > billing.IncludedCredits {
@@ -201,7 +201,7 @@ func (r *BillingRepository) ConsumeCredits(ctx context.Context, workspaceID stri
 			newBlocks := requiredBlocks - billing.OnDemandBlocksInvoiced
 			if newBlocks > 0 {
 				if chargeOnDemand == nil {
-					return fmt.Errorf("extra AI usage billing is not configured")
+					return model.ErrExtraAIUsageBillingUnconfigured
 				}
 				if err := chargeOnDemand(&billing, requiredBlocks, newBlocks); err != nil {
 					return err

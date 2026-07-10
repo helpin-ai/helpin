@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -684,6 +685,30 @@ func (r *AgentRunMessageRepository) Create(ctx context.Context, message *model.A
 	return nil
 }
 
+// Update replaces the mutable transcript fields of an existing run message.
+func (r *AgentRunMessageRepository) Update(ctx context.Context, message *model.AgentRunMessage) error {
+	if message == nil {
+		return nil
+	}
+	sanitizeAgentRunMessageForPostgres(message)
+	updates := map[string]any{
+		"role":             message.Role,
+		"content":          message.Content,
+		"message_type":     message.MessageType,
+		"content_blocks":   message.ContentBlocks,
+		"turn_segments":    message.TurnSegments,
+		"tool_invocations": message.ToolInvocations,
+		"token_usage":      message.TokenUsage,
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRunMessage{}).
+		Where("workspace_id = ? AND run_id = ? AND id = ?", message.WorkspaceID, message.RunID, message.ID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update agent run message: %w", err)
+	}
+	return nil
+}
+
 // GetByID returns a single run.
 func (r *AgentRunRepository) GetByID(ctx context.Context, workspaceID, id string) (*model.AgentRun, error) {
 	var run model.AgentRun
@@ -706,6 +731,50 @@ func (r *AgentRunRepository) GetByIDAny(ctx context.Context, id string) (*model.
 		return nil, fmt.Errorf("get agent run: %w", err)
 	}
 	return &run, nil
+}
+
+// GetByExternalRuntimeID returns a run linked to an external runtime run ID.
+func (r *AgentRunRepository) GetByExternalRuntimeID(ctx context.Context, externalRuntime, externalRuntimeID string) (*model.AgentRun, error) {
+	externalRuntime = strings.TrimSpace(externalRuntime)
+	externalRuntimeID = strings.TrimSpace(externalRuntimeID)
+	if externalRuntime == "" || externalRuntimeID == "" {
+		return nil, nil
+	}
+	var run model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("external_runtime = ? AND external_runtime_id = ?", externalRuntime, externalRuntimeID).
+		First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get agent run by external runtime id: %w", err)
+	}
+	return &run, nil
+}
+
+// ListActiveByExternalRuntime returns non-terminal mapped runs old enough to reconcile.
+func (r *AgentRunRepository) ListActiveByExternalRuntime(ctx context.Context, externalRuntime string, olderThan time.Time, limit int) ([]model.AgentRun, error) {
+	externalRuntime = strings.TrimSpace(externalRuntime)
+	if externalRuntime == "" {
+		return []model.AgentRun{}, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	var runs []model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("external_runtime = ? AND external_runtime_id IS NOT NULL AND status IN ?", externalRuntime, []string{
+			model.AgentRunStatusQueued,
+			model.AgentRunStatusRunning,
+			model.AgentRunStatusPaused,
+		}).
+		Where("updated_at < ?", olderThan).
+		Order("updated_at ASC").
+		Limit(limit).
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list active agent runs by external runtime: %w", err)
+	}
+	return runs, nil
 }
 
 // ListByIDs returns runs in a workspace for a set of IDs.
@@ -794,6 +863,21 @@ func (r *AgentRunRepository) Update(ctx context.Context, run *model.AgentRun) er
 	return nil
 }
 
+// UpdateOutputSummary updates only the run output summary.
+func (r *AgentRunRepository) UpdateOutputSummary(ctx context.Context, runID string, outputSummary json.RawMessage) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("agent run repository is not configured")
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("id = ?", runID).
+		Update("output_summary", outputSummary).
+		Error; err != nil {
+		return fmt.Errorf("update agent run output summary: %w", err)
+	}
+	return nil
+}
+
 // GetByWorkflowID returns a run by temporal workflow ID.
 func (r *AgentRunRepository) GetByWorkflowID(ctx context.Context, workflowID string) (*model.AgentRun, error) {
 	var run model.AgentRun
@@ -819,6 +903,25 @@ func (r *AgentRunRepository) UpdateStage(ctx context.Context, workspaceID, runID
 		Where("workspace_id = ? AND id = ?", workspaceID, runID).
 		Updates(updates).Error; err != nil {
 		return fmt.Errorf("update agent run stage: %w", err)
+	}
+	return nil
+}
+
+// UpdateRuntimeResumeState updates local bookkeeping fields after a delegated
+// runtime resume. Runtime event projection owns status and pause fields.
+func (r *AgentRunRepository) UpdateRuntimeResumeState(ctx context.Context, workspaceID, runID, approvalState, stage string, heartbeatAt *time.Time) error {
+	updates := map[string]any{
+		"approval_state":  approvalState,
+		"execution_stage": stage,
+	}
+	if heartbeatAt != nil {
+		updates["last_heartbeat_at"] = heartbeatAt
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, runID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update agent run runtime resume state: %w", err)
 	}
 	return nil
 }

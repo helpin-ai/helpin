@@ -42,6 +42,7 @@ type Agent struct {
 	WorkspaceID                string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	IsSystem                   bool            `json:"is_system" gorm:"not null;default:false"`
 	Name                       string          `json:"name" gorm:"not null"`
+	IconKey                    string          `json:"icon_key" gorm:"not null;default:''"`
 	PresetKey                  string          `json:"preset_key"`
 	PresetVersionKey           string          `json:"preset_version_key"`
 	SourcePresetKey            string          `json:"source_preset_key"`
@@ -182,6 +183,8 @@ type AgentRun struct {
 	Status            string          `json:"status" gorm:"not null;default:'queued'"`
 	WorkflowID        *string         `json:"workflow_id"`
 	WorkflowRunID     *string         `json:"workflow_run_id"`
+	ExternalRuntime   *string         `json:"external_runtime,omitempty" gorm:"uniqueIndex:idx_agent_runs_external_runtime_pair,priority:1,where:external_runtime_id IS NOT NULL"`
+	ExternalRuntimeID *string         `json:"external_runtime_id,omitempty" gorm:"uniqueIndex:idx_agent_runs_external_runtime_pair,priority:2,where:external_runtime_id IS NOT NULL"`
 	TaskQueue         *string         `json:"task_queue"`
 	RunnerPool        *string         `json:"runner_pool"`
 	AgentVersionID    *string         `json:"agent_version_id,omitempty" gorm:"type:uuid;index"`
@@ -265,6 +268,7 @@ func (AgentTriggerExecution) TableName() string { return "agent_trigger_executio
 type CreateAgentRequest struct {
 	WorkspaceID           string          `json:"workspace_id"`
 	Name                  string          `json:"name"`
+	IconKey               *string         `json:"icon_key"`
 	PresetKey             *string         `json:"preset_key"`
 	PresetVersionKey      *string         `json:"preset_version_key"`
 	Role                  string          `json:"role"`
@@ -326,6 +330,7 @@ type CustomAgentDraftLLMResponse struct {
 // UpdateAgentRequest is the payload for updating an agent.
 type UpdateAgentRequest struct {
 	Name                  *string         `json:"name"`
+	IconKey               *string         `json:"icon_key"`
 	PresetKey             *string         `json:"preset_key"`
 	PresetVersionKey      *string         `json:"preset_version_key"`
 	Role                  *string         `json:"role"`
@@ -491,6 +496,7 @@ const (
 	AgentRunPauseReasonHumanInput     = "human_input"
 	AgentRunPauseReasonHumanApproval  = "human_approval"
 	AgentRunPauseReasonAuthentication = "authentication"
+	AgentRunPauseReasonUserMessage    = "awaiting_user_message"
 )
 
 const (
@@ -543,7 +549,7 @@ func IsAgentRunActiveStatus(status string) bool {
 
 func normalizeAgentRunPauseReason(status string, pauseReason string, approvalState string, executionStage *string) string {
 	switch strings.TrimSpace(pauseReason) {
-	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval, AgentRunPauseReasonAuthentication:
+	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval, AgentRunPauseReasonAuthentication, AgentRunPauseReasonUserMessage:
 		return strings.TrimSpace(pauseReason)
 	}
 	if strings.TrimSpace(approvalState) == "pending" {

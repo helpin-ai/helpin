@@ -67,6 +67,7 @@ const AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
 
 const AWAITING_INPUT_LABELS: Record<string, string> = {
   human_input: 'Awaiting your input',
+  awaiting_user_message: 'Awaiting your reply',
   human_approval: 'Awaiting approval',
   authentication: 'Needs auth',
 };

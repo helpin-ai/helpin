@@ -113,7 +113,8 @@ func (h *CommandBarHandler) ChatTurn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
-	resp, err := h.commandBarService.ChatTurnWithAccess(r.Context(), workspaceID, actorID, req, access)
+	ctx := service.WithCommandBarTurnProgress(r.Context(), req.ClientTurnID)
+	resp, err := h.commandBarService.ChatTurnWithAccess(ctx, workspaceID, actorID, req, access)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

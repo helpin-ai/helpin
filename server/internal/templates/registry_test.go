@@ -260,6 +260,9 @@ func TestEmbeddedCompetitorsChangelogTemplateUsesNewIdentity(t *testing.T) {
 	if tmpl.Agent.Create == nil || len(tmpl.Agent.Create.Skills) != 1 || tmpl.Agent.Create.Skills[0] != "competitors_changelog_tracking_report" {
 		t.Fatalf("expected renamed skill ref, got %+v", tmpl.Agent.Create)
 	}
+	if tmpl.Agent.Create.ApprovalMode != "never" {
+		t.Fatalf("approval mode = %q, want never", tmpl.Agent.Create.ApprovalMode)
+	}
 }
 
 func TestEmbeddedCompetitorsChangelogTemplateCreatesOneDocumentWithContent(t *testing.T) {

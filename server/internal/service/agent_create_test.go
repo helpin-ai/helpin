@@ -54,6 +54,37 @@ func TestCreateAgentDefaultsToCodeBuilderPreset(t *testing.T) {
 	}
 }
 
+func TestCustomAgentIconCanBeCreatedAndUpdated(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	svc := &AgentService{agentRepo: repository.NewAgentRepository(db)}
+
+	req := modelCreateAgentRequest(nil)
+	req.IconKey = agentTestStringPtr("violet_star")
+	created, err := svc.CreateAgent(context.Background(), req, "user-1")
+	if err != nil {
+		t.Fatalf("CreateAgent returned error: %v", err)
+	}
+	if created.IconKey != "violet_star" {
+		t.Fatalf("created.IconKey = %q, want violet_star", created.IconKey)
+	}
+
+	updated, err := svc.UpdateAgent(context.Background(), "ws-test", created.ID, model.UpdateAgentRequest{
+		IconKey: agentTestStringPtr("ocean_orbit"),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateAgent returned error: %v", err)
+	}
+	if updated.IconKey != "ocean_orbit" {
+		t.Fatalf("updated.IconKey = %q, want ocean_orbit", updated.IconKey)
+	}
+
+	if _, err := svc.UpdateAgent(context.Background(), "ws-test", created.ID, model.UpdateAgentRequest{
+		IconKey: agentTestStringPtr("forge"),
+	}, "user-1"); err == nil {
+		t.Fatal("expected named product-agent icon key to be rejected")
+	}
+}
+
 func TestCreatePlannerPersistsDefaultSystemPrompt(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -1653,6 +1684,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			icon_key TEXT NOT NULL DEFAULT '',
 			preset_key TEXT,
 			preset_version_key TEXT,
 			source_preset_key TEXT,

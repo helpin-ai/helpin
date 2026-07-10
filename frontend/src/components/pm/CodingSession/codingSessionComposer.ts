@@ -81,12 +81,12 @@ export function resolveCodingSessionComposerState(
   }
 
   if (session.status === 'paused') {
-    if (session.pause_reason === 'human_input') {
+    if (session.pause_reason === 'human_input' || session.pause_reason === 'awaiting_user_message') {
       return {
         visible: true,
         enabled: true,
         mode: 'answer',
-        placeholder: 'Answer the agent...',
+        placeholder: session.pause_reason === 'awaiting_user_message' ? 'Reply to continue this chat...' : 'Answer the agent...',
       };
     }
 

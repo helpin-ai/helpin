@@ -22,6 +22,25 @@ func (p *capturedGatewayEventPublisher) Publish(event websocket.Event) {
 	p.events = append(p.events, event)
 }
 
+func TestGatewayRequiresApprovalByAgentMode(t *testing.T) {
+	tests := []struct {
+		mode string
+		want bool
+	}{
+		{mode: "never", want: false},
+		{mode: "mutating_tools", want: true},
+		{mode: "always", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.mode, func(t *testing.T) {
+			if got := gatewayRequiresApproval(&model.Agent{ApprovalMode: tt.mode}); got != tt.want {
+				t.Fatalf("gatewayRequiresApproval() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAgentToolGatewayPersistsPlannerArtifacts(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	ctx := context.Background()

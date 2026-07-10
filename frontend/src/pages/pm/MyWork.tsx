@@ -75,6 +75,7 @@ function getAgentRunLabel(task: Task) {
   if (task.latest_run_status === 'paused') {
     if (task.latest_run_pause_reason === 'human_approval') return 'Agent needs approval';
     if (task.latest_run_pause_reason === 'authentication') return 'Agent needs auth';
+    if (task.latest_run_pause_reason === 'awaiting_user_message') return 'Agent awaiting reply';
     return 'Agent needs input';
   }
   return AGENT_RUN_LABEL[task.latest_run_status] ?? `Agent ${task.latest_run_status}`;

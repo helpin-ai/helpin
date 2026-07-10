@@ -376,6 +376,9 @@ func TestCreateAgentFromCompetitiveIntelTemplateCreatesCronStarterFlow(t *testin
 	if result.Agent.SourceTemplateKey != model.AgentTemplateTypeCompetitiveIntel {
 		t.Fatalf("expected source_template_key %q, got %q", model.AgentTemplateTypeCompetitiveIntel, result.Agent.SourceTemplateKey)
 	}
+	if result.Agent.ApprovalMode != "never" {
+		t.Fatalf("expected never approval mode, got %q", result.Agent.ApprovalMode)
+	}
 	if result.Agent.SystemPrompt == nil || !strings.Contains(*result.Agent.SystemPrompt, "You are a competitors changelog tracking agent for Usermaven") || !strings.Contains(*result.Agent.SystemPrompt, "Do not plan or perform discovery of configuration variables") || !strings.Contains(*result.Agent.SystemPrompt, `- competitors: jasper.ai, writesonic.ai`) || !strings.Contains(*result.Agent.SystemPrompt, `"target_company": "Usermaven"`) || !strings.Contains(*result.Agent.SystemPrompt, `"schedule_preset": "daily"`) || !strings.Contains(*result.Agent.SystemPrompt, `"destination_team_id": "team-marketing"`) || strings.Contains(*result.Agent.SystemPrompt, "{{target_company}}") {
 		t.Fatalf("expected configured system prompt, got %+v", result.Agent.SystemPrompt)
 	}

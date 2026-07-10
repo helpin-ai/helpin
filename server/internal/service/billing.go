@@ -229,6 +229,7 @@ type BillingCreditConsumption struct {
 	Credits        int
 	IdempotencyKey string
 	Metadata       map[string]any
+	AllowOverage   bool
 }
 
 type BillingCreditPreflight struct {
@@ -388,7 +389,7 @@ func (s *BillingService) CanReserveWorkspaceSeat(ctx context.Context, workspaceI
 		return err
 	}
 	if billing != nil && billingStatusLocked(billing.Status) {
-		return fmt.Errorf("workspace is locked; choose a plan to reactivate it")
+		return model.ErrBillingWorkspaceLocked
 	}
 	return nil
 }
@@ -405,14 +406,14 @@ func (s *BillingService) PreflightCredits(ctx context.Context, input BillingCred
 		return err
 	}
 	if summary.Locked {
-		return errors.New("workspace is locked; choose a plan to reactivate it")
+		return model.ErrBillingWorkspaceLocked
 	}
 	nextUsed := summary.CreditsUsed + input.Credits
 	if nextUsed > summary.IncludedCredits && !summary.OnDemandEnabled {
-		return errors.New("AI usage exhausted")
+		return model.ErrAIUsageExhausted
 	}
 	if nextUsed > summary.IncludedCredits && !summary.OnDemandAvailable {
-		return errors.New("extra AI usage is not available")
+		return model.ErrExtraAIUsageUnavailable
 	}
 	return nil
 }
@@ -1105,14 +1106,14 @@ func (s *BillingService) ConsumeCredits(ctx context.Context, input BillingCredit
 		return nil, err
 	}
 	if summary.Locked {
-		return nil, errors.New("workspace is locked; choose a plan to reactivate it")
+		return nil, model.ErrBillingWorkspaceLocked
 	}
 	nextUsed := summary.CreditsUsed + input.Credits
-	if nextUsed > summary.IncludedCredits && !summary.OnDemandEnabled {
-		return nil, errors.New("AI usage exhausted")
+	if nextUsed > summary.IncludedCredits && !summary.OnDemandEnabled && !input.AllowOverage {
+		return nil, model.ErrAIUsageExhausted
 	}
-	if nextUsed > summary.IncludedCredits && !summary.OnDemandAvailable {
-		return nil, errors.New("extra AI usage is not available")
+	if nextUsed > summary.IncludedCredits && !summary.OnDemandAvailable && !input.AllowOverage {
+		return nil, model.ErrExtraAIUsageUnavailable
 	}
 
 	metadata, err := json.Marshal(input.Metadata)

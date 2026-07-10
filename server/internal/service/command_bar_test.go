@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -14,8 +15,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/temporalapp"
-	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -52,25 +51,6 @@ func (s *scriptedCommandBarLLM) ChatCompletion(ctx context.Context, req llm.Chat
 		return &llm.ChatResponse{Content: response}, nil
 	}
 	return &llm.ChatResponse{Content: s.response}, nil
-}
-
-type commandBarSignalTemporalClient struct {
-	tclient.Client
-	err           error
-	signalName    string
-	workflowID    string
-	signaledRunID string
-}
-
-func (c *commandBarSignalTemporalClient) SignalWorkflow(_ context.Context, workflowID, workflowRunID, signalName string, arg interface{}) error {
-	c.workflowID = workflowID
-	c.signalName = signalName
-	payload, ok := arg.(temporalapp.CommandBarRunCompletedSignal)
-	if !ok {
-		return fmt.Errorf("unexpected command bar signal payload type %T", arg)
-	}
-	c.signaledRunID = payload.RunID
-	return c.err
 }
 
 func TestParseExplicitNamedAgentsPreservesRequestOrder(t *testing.T) {
@@ -620,6 +600,38 @@ func TestChatTurnClassifiesExplicitTaskStatusAsInlineReadOnly(t *testing.T) {
 	output := string(toolContext.ToolCalls[0].Output)
 	if !strings.Contains(output, `"task_key":"USE-90"`) || !strings.Contains(output, `"completed":false`) {
 		t.Fatalf("expected resolved USE-90 task output, got %s", output)
+	}
+}
+
+func TestChatTurnSurfacesInsufficientAICreditsClearly(t *testing.T) {
+	service, db, workspaceID, _ := setupCommandBarTargetResolutionTest(t)
+	ctx := context.Background()
+	createCommandBarChatTablesForTest(t, db)
+
+	// The provider is out of credits: the classifier call fails with a 402.
+	fakeLLM := &scriptedCommandBarLLM{err: fmt.Errorf("openai API error (status 402): no credits: %w", llm.ErrInsufficientCredits)}
+	service.llmProvider = fakeLLM
+	service.SetChatRepository(repository.NewCommandBarChatRepository(db))
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "Write a summary document of this week's tasks.",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalInlineAnswer {
+		t.Fatalf("expected inline answer proposal, got %#v", resp.Proposal)
+	}
+	if resp.Proposal.Plan != nil {
+		t.Fatalf("credit-exhausted turn should not create a run plan")
+	}
+	if resp.Proposal.Answer != commandBarAICreditsExhaustedMessage {
+		t.Fatalf("expected clear credits message, got %q", resp.Proposal.Answer)
+	}
+	// It must not attempt a second (also-doomed) read-only answer call.
+	if len(fakeLLM.requests) != 1 {
+		t.Fatalf("expected a single classifier call before short-circuiting, got %d", len(fakeLLM.requests))
 	}
 }
 
@@ -1446,6 +1458,281 @@ func TestCreateRunPreflightsAICreditsBeforeQueueingRun(t *testing.T) {
 	}
 	if total != 0 || len(runs) != 0 {
 		t.Fatalf("expected no queued run after failed preflight, total=%d runs=%#v", total, runs)
+	}
+}
+
+func seedCreateRunAgentRow(t *testing.T, db *gorm.DB, agent *model.Agent) {
+	t.Helper()
+	now := time.Now().UTC()
+	execConfig := strings.TrimSpace(string(agent.ExecutionConfig))
+	if execConfig == "" {
+		execConfig = "{}"
+	}
+	allowedTools := strings.TrimSpace(string(agent.AllowedTools))
+	if allowedTools == "" {
+		allowedTools = "[]"
+	}
+	allowedTargets := strings.TrimSpace(string(agent.AllowedTargets))
+	if allowedTargets == "" {
+		allowedTargets = "[]"
+	}
+	allowedCommands := strings.TrimSpace(string(agent.AllowedCommands))
+	if allowedCommands == "" {
+		allowedCommands = "[]"
+	}
+	skills, err := json.Marshal(agent.Skills.Normalize())
+	if err != nil {
+		t.Fatalf("marshal agent skills: %v", err)
+	}
+	if err := db.Exec(`
+		INSERT INTO agents (
+			id, workspace_id, is_system, name, preset_key, status, runtime_kind,
+			skills, trigger_mode, provider, model, execution_config, system_prompt,
+			allowed_tools, allowed_commands, allowed_targets, approval_mode,
+			max_concurrent_runs, default_invocation_mode, tokens_used_this_month,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		agent.ID,
+		agent.WorkspaceID,
+		agent.IsSystem,
+		agent.Name,
+		agent.PresetKey,
+		agent.Status,
+		agent.RuntimeKind,
+		string(skills),
+		defaultString(agent.TriggerMode, "manual"),
+		agent.Provider,
+		agent.Model,
+		execConfig,
+		agent.SystemPrompt,
+		allowedTools,
+		allowedCommands,
+		allowedTargets,
+		agent.ApprovalMode,
+		agent.MaxConcurrentRuns,
+		agent.DefaultInvocationMode,
+		agent.TokensUsedThisMonth,
+		now,
+		now,
+	).Error; err != nil {
+		t.Fatalf("seed agent row: %v", err)
+	}
+}
+
+func TestCreateRunDelegatesMiraWorkspaceRunToAgentRuntime(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	service := (&AgentService{
+		runRepo:            runRepo,
+		agentRepo:          agentRepo,
+		agentRuntimeClient: runtimeClient,
+	}).SetAgentRuntimeLaunchEnabled(true)
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	prompt := "You are Mira."
+	provider := "openai"
+	modelName := "gpt-5.5"
+	agent := &model.Agent{
+		ID:                    "33333333-3333-3333-3333-333333333333",
+		WorkspaceID:           workspaceID,
+		Name:                  "Mira",
+		PresetKey:             model.AgentPresetMarketer,
+		RuntimeKind:           "native_sdk",
+		Provider:              &provider,
+		Model:                 &modelName,
+		SystemPrompt:          &prompt,
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeInteractive,
+		AllowedTargets:        json.RawMessage(`["workspace","document"]`),
+		AllowedTools:          json.RawMessage(`["update_plan","request_user_input"]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{{Key: "marketing_context_setup"}},
+		ExecutionConfig:       model.JSONBlob(`{"reasoning_effort":"medium"}`),
+		MaxConcurrentRuns:     1,
+	}
+	seedCreateRunAgentRow(t, db, agent)
+	additionalContext := "Prepare a short launch plan."
+	payload, err := buildAgentRunInputPayload("workspace", workspaceID, manualRunTriggerContext(), nil, nil, &additionalContext, []string{"update_plan"})
+	if err != nil {
+		t.Fatalf("build payload: %v", err)
+	}
+
+	run, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          agent,
+		targetType:     "workspace",
+		targetID:       workspaceID,
+		actorID:        &actorID,
+		input:          payload,
+		invocationMode: model.InvocationModeInteractive,
+	})
+	if err != nil {
+		t.Fatalf("createRun() error = %v", err)
+	}
+	if len(runtimeClient.upsertAgents) != 1 {
+		t.Fatalf("expected one runtime agent upsert, got %d", len(runtimeClient.upsertAgents))
+	}
+	upsert := runtimeClient.upsertAgents[0]
+	if upsert.ID != agent.ID || upsert.AppID != "helpin" || upsert.Name != "Mira" || upsert.SystemPrompt != prompt {
+		t.Fatalf("unexpected upserted agent: %#v", upsert)
+	}
+	if !slices.Equal(upsert.AllowedTargets, []string{"workspace", "document"}) || !slices.Equal(upsert.AllowedTools, []string{"update_plan", "request_user_input"}) {
+		t.Fatalf("unexpected upserted permissions: targets=%#v tools=%#v", upsert.AllowedTargets, upsert.AllowedTools)
+	}
+	if len(upsert.Skills) != 1 || upsert.Skills[0].Key != "marketing_context_setup" {
+		t.Fatalf("expected runtime skill refs, got %#v", upsert.Skills)
+	}
+	if len(runtimeClient.startRunCalls) != 1 {
+		t.Fatalf("expected one runtime start call, got %d", len(runtimeClient.startRunCalls))
+	}
+	start := runtimeClient.startRunCalls[0]
+	if start.HostRunID != run.ID || start.AgentID != agent.ID || start.Target.Type != "workspace" || start.Target.ID != workspaceID {
+		t.Fatalf("unexpected runtime start request: %#v", start)
+	}
+	if start.ExternalActorID != actorID || start.Mode != model.InvocationModeInteractive || start.ExecutionMode != agentRuntimeExecutionModeDurable || start.Instructions != additionalContext {
+		t.Fatalf("unexpected runtime start mode/actor/instructions: %#v", start)
+	}
+	if !slices.Equal(start.AllowedTools, []string{"update_plan"}) {
+		t.Fatalf("unexpected start allowed tools: %#v", start.AllowedTools)
+	}
+	if start.TurnPolicy.Mode != agentRuntimeTurnCompleteOnFinish {
+		t.Fatalf("expected completion turn policy, got %#v", start.TurnPolicy)
+	}
+	if start.Metadata["workspace_id"] != workspaceID || start.Metadata["helpin_run_id"] != run.ID || start.Target.Metadata["workspace_id"] != workspaceID {
+		t.Fatalf("unexpected runtime metadata: metadata=%#v target=%#v", start.Metadata, start.Target.Metadata)
+	}
+
+	reloaded, err := runRepo.GetByID(ctx, workspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if reloaded.ExternalRuntime == nil || *reloaded.ExternalRuntime != agentRuntimeName || reloaded.ExternalRuntimeID == nil || *reloaded.ExternalRuntimeID != "run_runtime_1" {
+		t.Fatalf("expected delegated runtime mapping, got external_runtime=%v external_runtime_id=%v", reloaded.ExternalRuntime, reloaded.ExternalRuntimeID)
+	}
+	if reloaded.WorkflowID != nil || reloaded.WorkflowRunID != nil {
+		t.Fatalf("expected no Helpin Temporal workflow IDs, got %v/%v", reloaded.WorkflowID, reloaded.WorkflowRunID)
+	}
+}
+
+func TestCreateRunRetriesDelegatedRuntimeStartOnce(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	runtimeClient := &fakeAgentRuntimeSignalClient{startRunErrs: []error{errors.New("runtime timeout")}}
+	service := (&AgentService{
+		runRepo:            runRepo,
+		agentRepo:          agentRepo,
+		agentRuntimeClient: runtimeClient,
+	}).SetAgentRuntimeLaunchEnabled(true)
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	agent := &model.Agent{
+		ID:                    "22222222-2222-2222-2222-222222222222",
+		WorkspaceID:           workspaceID,
+		Name:                  "Mira",
+		PresetKey:             model.AgentPresetMarketer,
+		RuntimeKind:           "native_sdk",
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+		AllowedTargets:        json.RawMessage(`["workspace"]`),
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		MaxConcurrentRuns:     1,
+	}
+	seedCreateRunAgentRow(t, db, agent)
+
+	run, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          agent,
+		targetType:     "workspace",
+		targetID:       workspaceID,
+		input:          []byte(`{"target":{"target_type":"workspace","target_id":"11111111-1111-1111-1111-111111111111"}}`),
+		invocationMode: model.InvocationModeAutonomous,
+	})
+	if err != nil {
+		t.Fatalf("createRun() error = %v", err)
+	}
+	if len(runtimeClient.startRunCalls) != 2 {
+		t.Fatalf("expected runtime start retry, got %d calls", len(runtimeClient.startRunCalls))
+	}
+	if runtimeClient.startRunCalls[0].HostRunID != run.ID || runtimeClient.startRunCalls[1].HostRunID != run.ID {
+		t.Fatalf("retry should preserve host_run_id, calls=%#v", runtimeClient.startRunCalls)
+	}
+	reloaded, err := runRepo.GetByID(ctx, workspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if reloaded.ExternalRuntimeID == nil || *reloaded.ExternalRuntimeID != "run_runtime_1" || reloaded.Status != model.AgentRunStatusQueued {
+		t.Fatalf("expected delegated mapping after retry, got %#v", reloaded)
+	}
+}
+
+func TestCreateRunMarksDelegatedMiraRunFailedWhenRuntimeStartFails(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	runtimeClient := &fakeAgentRuntimeSignalClient{startRunErr: errors.New("runtime unavailable")}
+	service := (&AgentService{
+		runRepo:            runRepo,
+		agentRepo:          agentRepo,
+		agentRuntimeClient: runtimeClient,
+	}).SetAgentRuntimeLaunchEnabled(true)
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	agent := &model.Agent{
+		ID:                    "22222222-2222-2222-2222-222222222222",
+		WorkspaceID:           workspaceID,
+		Name:                  "Mira",
+		PresetKey:             model.AgentPresetMarketer,
+		RuntimeKind:           "native_sdk",
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+		AllowedTargets:        json.RawMessage(`["workspace"]`),
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		MaxConcurrentRuns:     1,
+	}
+	seedCreateRunAgentRow(t, db, agent)
+	_, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          agent,
+		targetType:     "workspace",
+		targetID:       workspaceID,
+		input:          []byte(`{"target":{"target_type":"workspace","target_id":"11111111-1111-1111-1111-111111111111"}}`),
+		invocationMode: model.InvocationModeAutonomous,
+	})
+	if err == nil || !strings.Contains(err.Error(), "runtime unavailable") {
+		t.Fatalf("expected runtime start error, got %v", err)
+	}
+	runs, total, err := runRepo.ListByWorkspace(ctx, workspaceID, model.PMPagination{Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if total != 1 || len(runs) != 1 {
+		t.Fatalf("expected one failed run, total=%d runs=%#v", total, runs)
+	}
+	failed := runs[0]
+	if failed.Status != model.AgentRunStatusFailed || failed.ExecutionStage == nil || *failed.ExecutionStage != "failed_to_start" || failed.ErrorMessage == nil || !strings.Contains(*failed.ErrorMessage, "runtime unavailable") {
+		t.Fatalf("unexpected failed run state: %#v", failed)
+	}
+	if failed.ExternalRuntime != nil || failed.ExternalRuntimeID != nil {
+		t.Fatalf("failed runtime start should not stamp external mapping, got %v/%v", failed.ExternalRuntime, failed.ExternalRuntimeID)
+	}
+	var status string
+	if err := db.WithContext(ctx).Raw("SELECT status FROM agents WHERE workspace_id = ? AND id = ?", workspaceID, agent.ID).Scan(&status).Error; err != nil {
+		t.Fatalf("query agent status: %v", err)
+	}
+	if status != "idle" {
+		t.Fatalf("expected agent to be idle after failed runtime start, got %q", status)
 	}
 }
 
@@ -3130,108 +3417,13 @@ func TestAdvanceTaskPipelinePlanSchedulesFallbackWithoutRunEngine(t *testing.T) 
 	}
 }
 
-func TestAdvanceTaskPipelinePlanSignalsOnlyWithRunEngine(t *testing.T) {
+func TestAdvanceTaskPipelinePlanCompletesWhenAllRunsTerminal(t *testing.T) {
 	db := setupCommandBarPlanTestDB(t)
 	runRepo := repository.NewAgentRunRepository(db)
 	planRepo := repository.NewCommandBarPlanRepository(db)
-	temporalClient := &commandBarSignalTemporalClient{}
 	service := &AgentService{
 		runRepo:            runRepo,
 		commandBarPlanRepo: planRepo,
-		runEngine:          temporalapp.NewRunEngine(temporalClient, "test"),
-	}
-
-	ctx := context.Background()
-	workspaceID := "11111111-1111-1111-1111-111111111111"
-	planID := "22222222-2222-2222-2222-222222222222"
-	forgeAgentID := "33333333-3333-3333-3333-333333333333"
-	lensAgentID := "44444444-4444-4444-4444-444444444444"
-	forgeRunID := "55555555-5555-5555-5555-555555555555"
-	taskID := "66666666-6666-6666-6666-666666666666"
-	pageContext := model.CommandBarPageContext{EntityType: "epic", EntityID: "epic-1", DisplayTitle: "Epic 1"}
-	steps := []model.CommandBarPlanStep{
-		{
-			AgentID:      forgeAgentID,
-			AgentName:    "Forge",
-			PlanKind:     model.CommandBarPlanKindTaskPipeline,
-			Target:       model.CommandBarPageContext{EntityType: "task", EntityID: taskID, DisplayTitle: "Task 1"},
-			Instructions: "Build task 1.",
-		},
-		{
-			AgentID:              lensAgentID,
-			AgentName:            "Lens",
-			PlanKind:             model.CommandBarPlanKindTaskPipeline,
-			Target:               model.CommandBarPageContext{EntityType: "task", EntityID: taskID, DisplayTitle: "Task 1"},
-			Instructions:         "Review task 1.",
-			DependsOnStepIndexes: []int{0},
-		},
-	}
-	plan, err := newCommandBarPlanRecord(workspaceID, "", planID, "run forge then lens", pageContext, steps)
-	if err != nil {
-		t.Fatalf("build plan record: %v", err)
-	}
-	runIDs, _ := json.Marshal(map[int]string{0: forgeRunID})
-	plan.RunIDsByStep = runIDs
-	plan.RunCount = 2
-	if err := planRepo.Create(ctx, plan); err != nil {
-		t.Fatalf("create plan: %v", err)
-	}
-
-	trigger, err := buildCommandBarTriggerContext("run forge then lens", pageContext, steps, 0, planID)
-	if err != nil {
-		t.Fatalf("build trigger: %v", err)
-	}
-	input, _ := json.Marshal(model.AgentRunInputPayload{Trigger: trigger})
-	if err := runRepo.Create(ctx, &model.AgentRun{
-		ID:             forgeRunID,
-		WorkspaceID:    workspaceID,
-		AgentID:        forgeAgentID,
-		TargetType:     "task",
-		TargetID:       taskID,
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeAutonomous,
-		ApprovalState:  "not_required",
-		PauseReason:    model.AgentRunPauseReasonNone,
-		Status:         model.AgentRunStatusCompleted,
-		Input:          input,
-		OutputSummary:  json.RawMessage("{}"),
-	}); err != nil {
-		t.Fatalf("create forge run: %v", err)
-	}
-
-	if _, err := service.AdvanceCommandBarPlanAfterRun(ctx, forgeRunID); err != nil {
-		t.Fatalf("advance task pipeline run: %v", err)
-	}
-	if temporalClient.workflowID != temporalapp.WorkflowIDForCommandBarPlan(planID) {
-		t.Fatalf("expected signal to command bar workflow, got %q", temporalClient.workflowID)
-	}
-	if temporalClient.signalName != temporalapp.WorkflowSignalCommandBarRun {
-		t.Fatalf("expected command bar run signal, got %q", temporalClient.signalName)
-	}
-	if temporalClient.signaledRunID != forgeRunID {
-		t.Fatalf("expected signal run id %q, got %q", forgeRunID, temporalClient.signaledRunID)
-	}
-	updated, err := planRepo.GetByID(ctx, workspaceID, planID)
-	if err != nil {
-		t.Fatalf("get plan: %v", err)
-	}
-	if updated.Status != model.CommandBarPlanStatusRunning {
-		t.Fatalf("expected signal-only path to leave plan running, got %q", updated.Status)
-	}
-	if got := decodeCommandBarPlanRunIDs(updated.RunIDsByStep); strings.TrimSpace(got[1]) != "" {
-		t.Fatalf("expected signal-only path not to start Lens directly, got run ids %#v", got)
-	}
-}
-
-func TestAdvanceTaskPipelinePlanFallsBackWhenSignalFails(t *testing.T) {
-	db := setupCommandBarPlanTestDB(t)
-	runRepo := repository.NewAgentRunRepository(db)
-	planRepo := repository.NewCommandBarPlanRepository(db)
-	temporalClient := &commandBarSignalTemporalClient{err: fmt.Errorf("workflow not found")}
-	service := &AgentService{
-		runRepo:            runRepo,
-		commandBarPlanRepo: planRepo,
-		runEngine:          temporalapp.NewRunEngine(temporalClient, "test"),
 	}
 
 	ctx := context.Background()
@@ -3296,15 +3488,12 @@ func TestAdvanceTaskPipelinePlanFallsBackWhenSignalFails(t *testing.T) {
 	if _, err := service.AdvanceCommandBarPlanAfterRun(ctx, runTwoID); err != nil {
 		t.Fatalf("advance task pipeline run: %v", err)
 	}
-	if temporalClient.signaledRunID != runTwoID {
-		t.Fatalf("expected signal attempt for run %q, got %q", runTwoID, temporalClient.signaledRunID)
-	}
 	updated, err := planRepo.GetByID(ctx, workspaceID, planID)
 	if err != nil {
 		t.Fatalf("get plan: %v", err)
 	}
 	if updated.Status != model.CommandBarPlanStatusCompleted {
-		t.Fatalf("expected fallback to complete task pipeline plan, got %q", updated.Status)
+		t.Fatalf("expected local advancement to complete task pipeline plan, got %q", updated.Status)
 	}
 }
 
@@ -3433,6 +3622,7 @@ func setupCommandBarTargetResolutionTest(t *testing.T) (*CommandBarService, *gor
 		workspace_id TEXT NOT NULL,
 		is_system BOOLEAN NOT NULL DEFAULT 0,
 		name TEXT NOT NULL,
+		icon_key TEXT NOT NULL DEFAULT '',
 		preset_key TEXT,
 		preset_version_key TEXT,
 		source_preset_key TEXT,
@@ -3759,9 +3949,9 @@ func TestRetryPlanFromStepAcceptsRunningPlanWithNoActiveRuns(t *testing.T) {
 	}
 
 	// Zombie (running plan, cancelled run): must pass the running gate and
-	// only fail later on the missing temporal engine in this test harness.
+	// only fail later in the retry pipeline in this partial test harness.
 	_, err = service.RetryPlanFromStep(ctx, workspaceID, "actor-2", planID, model.CommandBarRetryPlanRequest{StepIndex: 0})
-	if err == nil || !strings.Contains(err.Error(), "orchestration is not configured") {
+	if err != nil && strings.Contains(err.Error(), "active runs") {
 		t.Fatalf("expected zombie plan to pass the running gate, got %v", err)
 	}
 
@@ -3802,6 +3992,8 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			status TEXT NOT NULL DEFAULT 'queued',
 			workflow_id TEXT,
 			workflow_run_id TEXT,
+			external_runtime TEXT,
+			external_runtime_id TEXT,
 			task_queue TEXT,
 			runner_pool TEXT,
 			agent_version_id TEXT,
@@ -3866,6 +4058,7 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			icon_key TEXT NOT NULL DEFAULT '',
 			preset_key TEXT,
 			preset_version_key TEXT,
 			source_preset_key TEXT,
@@ -3975,4 +4168,61 @@ func seedCommandBarThreadWithWorkingContext(t *testing.T, ctx context.Context, r
 		t.Fatalf("create command bar message: %v", err)
 	}
 	return thread.ID
+}
+
+func TestShouldCreateReusableAgentFromChat(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{
+			name: "create an agent with changelog wording routes to creation",
+			text: "Create an agent to review the competitors changelog and produce a doc afterwards.",
+			want: true,
+		},
+		{
+			name: "want an agent to phrasing",
+			text: "I want an agent to watch our support inbox",
+			want: true,
+		},
+		{
+			name: "build an agent phrasing",
+			text: "build an agent for release notes",
+			want: true,
+		},
+		{
+			name: "reusable agent phrasing",
+			text: "save this as a reusable agent",
+			want: true,
+		},
+		{
+			name: "running an existing agent is not creation",
+			text: "run the changelog agent to summarize this doc",
+			want: false,
+		},
+		{
+			name: "asking an agent a question is not creation",
+			text: "ask the support agent to check open tickets",
+			want: false,
+		},
+		{
+			name: "plain summary request is not creation",
+			text: "summarize the changelog of the api repo",
+			want: false,
+		},
+		{
+			name: "empty text is not creation",
+			text: "  ",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldCreateReusableAgentFromChat(tt.text); got != tt.want {
+				t.Errorf("shouldCreateReusableAgentFromChat(%q) = %v, want %v", tt.text, got, tt.want)
+			}
+		})
+	}
 }

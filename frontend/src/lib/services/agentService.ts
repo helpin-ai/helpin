@@ -23,7 +23,6 @@ import type {
   SendAgentRunMessageRequest,
   SendAgentRunRequestChangesRequest,
   PaginatedResponse,
-  RunnerHealth,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -54,8 +53,6 @@ export const agentService = {
     api.del<void>(`/pm/agent-preset-versions/${versionId}${qs(workspaceId)}`),
   listModelProviders: (workspaceId: string) =>
     api.get<AgentModelProviderOption[]>(`/pm/agent-model-providers${qs(workspaceId)}`),
-  getRunnerHealth: (workspaceId: string) =>
-    api.get<RunnerHealth>(`/pm/runner-health${qs(workspaceId)}`),
   runTask: (workspaceId: string, taskId: string, payload?: StartAgentRunRequest) =>
     api.post<AgentRun>(`/pm/tasks/${taskId}/run-agent${qs(workspaceId)}`, payload ?? {}),
   runEpic: (workspaceId: string, epicId: string, payload: StartAgentRunRequest) =>

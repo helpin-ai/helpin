@@ -376,6 +376,13 @@ func main() {
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	runRepo.SetTriggerExecutionRepository(triggerExecutionRepo)
+	var agentRuntimeClient *service.AgentRuntimeClient
+	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
+		agentRuntimeClient, err = service.NewAgentRuntimeClient(cfg.AgentRuntimeBaseURL, cfg.AgentRuntimeAppID, cfg.AgentRuntimeServiceToken, nil)
+		if err != nil {
+			fatalWithSentry("failed to initialize agent runtime client", err)
+		}
+	}
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmRecurringTemplateService := service.NewPMRecurringTemplateService(
 		recurringRepo,
@@ -461,7 +468,6 @@ func main() {
 		docsContentRepo,
 		docsVersionRepo,
 		docsLinkRepo,
-		runEngine,
 		gitService,
 		pmStoryService,
 		pmActivityService,
@@ -474,7 +480,10 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmDealRepo)
+	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+	if agentRuntimeClient != nil {
+		agentService.SetAgentRuntimeClient(agentRuntimeClient)
+	}
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
@@ -544,6 +553,22 @@ func main() {
 	commandService.SetCRMEnrichmentService(crmEnrichmentService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	commandService.SetDocsBlockService(docsBlockService)
+	commandService.SetSupportDependencies(supportMessageRepo, conversationRepo, wsPublisher)
+	commandService.SetCRMReadServices(
+		service.NewCRMContactService(crmContactRepo),
+		service.NewCRMSignalService(crmSignalRepo, crmSummaryService),
+	)
+	commandService.SetDocsSearchRepository(docsSearchRepo)
+	commandService.SetDocsChangeProposalService(service.NewDocsChangeProposalService(
+		docsChangeProposalRepo,
+		docsDocumentRepo,
+		docsContentService,
+		docsBlockService,
+		nil,
+		nil,
+	))
+	commandService.SetAgentRunDependencies(runRepo, artifactRepo)
+	commandService.SetReleaseFactsProvider(releaseFactsService)
 	activities = temporalapp.NewAgentRunActivities(
 		runRepo,
 		runMessageRepo,
@@ -609,6 +634,7 @@ func main() {
 	ruleEngine.SetHealthObserver(automationHealthService)
 	ruleEngine.SetTriggerExecutionRepository(triggerExecutionRepo)
 	activities.SetRuleEngine(ruleEngine)
+
 	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
 	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)
 	coverageActivities := temporalapp.NewCoverageGapActivities(supportCoverageEnrichmentService, supportCoverageService)
@@ -680,23 +706,9 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		WorkerStopTimeout:                  temporalWorkerStopTimeout,
 	}
 	w := tworker.New(client, taskQueue, options)
-	w.RegisterWorkflow(temporalapp.AgentRunWorkflow)
-	w.RegisterWorkflow(temporalapp.CommandBarPlanWorkflow)
-	w.RegisterActivityWithOptions(activities.PrepareRunActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.PrepareRunActivity",
-	})
-	w.RegisterActivityWithOptions(activities.ExecuteRunActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.ExecuteRunActivity",
-	})
-	w.RegisterActivityWithOptions(activities.MarkRunFailedActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.MarkRunFailedActivity",
-	})
-	w.RegisterActivityWithOptions(activities.AdvanceCommandBarPlanActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.AdvanceCommandBarPlanActivity",
-	})
-	w.RegisterActivityWithOptions(activities.StartReadyCommandBarPlanStepsActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.StartReadyCommandBarPlanStepsActivity",
-	})
+	// Agent execution is fully delegated to the agent-runtime service —
+	// AgentRunWorkflow / CommandBarPlanWorkflow and their activities are no
+	// longer registered. This worker hosts product background jobs only.
 
 	// Register email sync workflow and activities.
 	w.RegisterWorkflow(temporalapp.EmailSyncWorkflow)

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -17,8 +18,13 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/temporalapp"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
+
+// commandBarAICreditsExhaustedMessage is shown when the AI provider rejects
+// requests for billing reasons (402). It replaces a confusing silent downgrade
+// to read-only with a clear, actionable explanation.
+const commandBarAICreditsExhaustedMessage = "AI features are temporarily unavailable because this workspace's AI credits are exhausted. Ask a workspace admin to top up AI credits, then try again — running agents and answering questions need available credits."
 
 const maxCommandBarPlanSteps = 50
 const maxCommandBarDAGInitialFanOut = 10
@@ -158,6 +164,7 @@ type CommandBarService struct {
 	commandRouterLLMMaxTokens              int
 	commandRouterLLMTimeout                time.Duration
 	commandRouterOpenRouterProviderOptions json.RawMessage
+	wsPublisher                            *websocket.Publisher
 }
 
 func NewCommandBarService(agentService *AgentService, planRepo *repository.CommandBarPlanRepository, unmetRepo *repository.CommandBarUnmetIntentRepository, dismissalRepo *repository.CommandBarPlanDismissalRepository, llmProvider llm.Provider) *CommandBarService {
@@ -199,6 +206,52 @@ func (s *CommandBarService) SetChatRepository(repo *repository.CommandBarChatRep
 		s.chatRepo = repo
 	}
 	return s
+}
+
+func (s *CommandBarService) SetWebsocketPublisher(publisher *websocket.Publisher) *CommandBarService {
+	if s != nil {
+		s.wsPublisher = publisher
+	}
+	return s
+}
+
+type commandBarTurnProgressKey struct{}
+
+// WithCommandBarTurnProgress tags the context with the client-supplied turn
+// ID so progress events published deeper in the chat turn can be correlated
+// by the dock that initiated the request.
+func WithCommandBarTurnProgress(ctx context.Context, clientTurnID string) context.Context {
+	clientTurnID = strings.TrimSpace(clientTurnID)
+	if clientTurnID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, commandBarTurnProgressKey{}, clientTurnID)
+}
+
+// publishChatTurnProgress emits a lightweight websocket event describing what
+// the chat turn is doing right now ("classifying", "tool", "composing", …).
+// No-op unless the request carried a client_turn_id and a publisher is wired.
+func (s *CommandBarService) publishChatTurnProgress(ctx context.Context, workspaceID, actorID, stage, tool string) {
+	if s == nil || s.wsPublisher == nil {
+		return
+	}
+	clientTurnID, _ := ctx.Value(commandBarTurnProgressKey{}).(string)
+	if clientTurnID == "" {
+		return
+	}
+	data, _ := json.Marshal(map[string]string{
+		"client_turn_id": clientTurnID,
+		"stage":          stage,
+		"tool":           tool,
+	})
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "progress",
+		Entity:      "command_bar_turn",
+		EntityID:    clientTurnID,
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+		Data:        data,
+	})
 }
 
 func (s *CommandBarService) SetInternalCommandService(commandService *InternalCommandService) *CommandBarService {
@@ -426,7 +479,14 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 	if denied := commandBarDeniedReadOnlyDomainAnswer(effectiveText, access); denied != "" {
 		return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: denied}, denied, nil
 	}
+	// Explicit "create an agent" phrasing wins over the planner shortcut and
+	// the LLM classifier: the user has already named their intent.
+	if shouldCreateReusableAgentFromChat(effectiveText) {
+		s.publishChatTurnProgress(ctx, workspaceID, actorID, "planning", "")
+		return s.commandBarCreateAgentChatProposal(ctx, workspaceID, effectiveText, pageContext)
+	}
 	if commandBarShouldUseRunPlannerBeforeInline(effectiveText, pageContext) {
+		s.publishChatTurnProgress(ctx, workspaceID, actorID, "planning", "")
 		proposal, content, handled, err := s.commandBarRunPlanProposalFromParse(ctx, workspaceID, actorID, effectiveText, pageContext)
 		if err != nil {
 			return nil, "", err
@@ -436,8 +496,17 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 		}
 	}
 
+	s.publishChatTurnProgress(ctx, workspaceID, actorID, "classifying", "")
 	classification, err := s.classifyCommandBarChatIntent(ctx, workspaceID, effectiveText, pageContext, access, history)
 	if err != nil {
+		// Insufficient AI credits (provider 402) fails both the classifier and
+		// the read-only answer that uses the same provider, so don't silently
+		// degrade to a confusing read-only reply — tell the user plainly that
+		// AI credits are exhausted and what to do about it.
+		if errors.Is(err, llm.ErrInsufficientCredits) {
+			slog.ErrorContext(ctx, "ask agents chat unavailable: AI credits exhausted", "error", err, "workspace_id", workspaceID)
+			return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: commandBarAICreditsExhaustedMessage}, commandBarAICreditsExhaustedMessage, nil
+		}
 		slog.WarnContext(ctx, "ask agents chat intent classification failed", "error", err, "workspace_id", workspaceID)
 		answer, inlineContext := s.inlineReadOnlyAnswer(ctx, workspaceID, actorID, effectiveText, pageContext, access, history)
 		return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: answer, Context: inlineContext}, answer, nil
@@ -462,12 +531,9 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 		}
 		proposal := &model.CommandBarProposal{Type: model.CommandBarProposalClarification, Answer: answer, Reason: strings.TrimSpace(classification.Reason)}
 		return proposal, answer, nil
-	default:
-		if classification == nil && shouldCreateReusableAgentFromChat(effectiveText) {
-			return s.commandBarCreateAgentChatProposal(ctx, workspaceID, effectiveText, pageContext)
-		}
 	}
 
+	s.publishChatTurnProgress(ctx, workspaceID, actorID, "planning", "")
 	proposal, content, handled, err := s.commandBarRunPlanProposalFromParse(ctx, workspaceID, actorID, effectiveText, pageContext)
 	if err != nil {
 		return nil, "", err
@@ -509,7 +575,7 @@ func (s *CommandBarService) commandBarCreateAgentChatProposal(ctx context.Contex
 	if s == nil || s.agentService == nil {
 		return nil, "", fmt.Errorf("agent service is not configured")
 	}
-	draft, err := s.agentService.DraftCustomAgent(ctx, model.CustomAgentDraftRequest{Description: text})
+	draft, err := s.agentService.DraftCustomAgent(ctx, workspaceID, model.CustomAgentDraftRequest{Description: text})
 	if err != nil {
 		return nil, "", err
 	}
@@ -633,6 +699,11 @@ func (s *CommandBarService) inlineReadOnlyAnswer(ctx context.Context, workspaceI
 	historyWorkingContext := commandBarWorkingContextFromHistory(history)
 	toolCalls := make([]commandBarReadOnlyToolCall, 0, 4)
 	for i := 0; i < 4; i++ {
+		if i == 0 {
+			s.publishChatTurnProgress(ctx, workspaceID, actorID, "thinking", "")
+		} else {
+			s.publishChatTurnProgress(ctx, workspaceID, actorID, "composing", "")
+		}
 		toolResultJSON, _ := json.Marshal(toolCalls)
 		workingContextJSON, _ := json.Marshal(commandBarWorkingContextWithToolCalls(historyWorkingContext, toolCalls))
 		resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
@@ -697,6 +768,7 @@ Tool results so far: %s`, text, string(contextJSON), string(historyJSON), string
 			return answer, commandBarReadOnlyToolContextJSON(toolCalls, commandBarWorkingContextWithToolCalls(historyWorkingContext, toolCalls))
 		case "tool_call":
 			call := commandBarReadOnlyToolCall{Tool: strings.TrimSpace(turn.Tool), Input: normalizeCommandBarToolInput(turn.Input)}
+			s.publishChatTurnProgress(ctx, workspaceID, actorID, "tool", call.Tool)
 			output, err := s.executeCommandBarReadOnlyTool(ctx, workspaceID, actorID, pageContext, access, call.Tool, call.Input)
 			if err != nil {
 				call.Error = err.Error()
@@ -1860,18 +1932,32 @@ func fullCommandBarChatAccess() CommandBarChatAccess {
 	}
 }
 
+// shouldCreateReusableAgentFromChat reports whether the text explicitly asks
+// to create a reusable agent. Requires a creation verb (or want/need) next to
+// "agent" so run requests like "run the changelog agent to summarize this doc"
+// keep flowing to the classifier.
 func shouldCreateReusableAgentFromChat(text string) bool {
 	lower := strings.ToLower(strings.TrimSpace(text))
 	return containsAny(lower,
 		"create an agent",
+		"create a new agent",
 		"create agent",
 		"make an agent",
-		"make agent",
+		"make a new agent",
 		"build an agent",
 		"save an agent",
+		"save as an agent",
+		"save this as an agent",
+		"set up an agent",
+		"setup an agent",
+		"add an agent",
+		"define an agent",
+		"new agent that",
+		"want an agent to",
+		"want an agent that",
+		"need an agent to",
+		"need an agent that",
 		"reusable agent",
-		"agent that",
-		"agent to",
 	)
 }
 
@@ -1988,7 +2074,7 @@ func commandBarCreateAgentRequestFromDraft(workspaceID string, draft model.Custo
 	runtimeKind := firstNonEmptyString(strings.TrimSpace(draft.RuntimeKind), "native_sdk")
 	provider := strings.TrimSpace(draft.Provider)
 	modelName := strings.TrimSpace(draft.Model)
-	approvalMode := firstNonEmptyString(strings.TrimSpace(draft.ApprovalMode), "always")
+	approvalMode := firstNonEmptyString(strings.TrimSpace(draft.ApprovalMode), "mutating_tools")
 	invocationMode := firstNonEmptyString(strings.TrimSpace(draft.DefaultInvocationMode), "interactive")
 	maxRuns := draft.MaxConcurrentRuns
 	if maxRuns <= 0 {
@@ -2770,13 +2856,7 @@ func (s *CommandBarService) DispatchPlan(ctx context.Context, workspaceID, actor
 	}
 	planKind := commandBarPlanKindForSteps(steps)
 	if planKind == model.CommandBarPlanKindTaskPipeline || planKind == model.CommandBarPlanKindDAG {
-		if s.agentService.runEngine == nil {
-			if s.planRepo != nil {
-				_ = s.planRepo.MarkFailed(ctx, workspaceID, planID, "Temporal command-bar orchestration is not configured")
-			}
-			return nil, fmt.Errorf("temporal command-bar orchestration is not configured")
-		}
-		if _, _, err := s.agentService.runEngine.StartCommandBarPlan(ctx, temporalapp.CommandBarPlanWorkflowInput{
+		if _, err := s.agentService.startReadyCommandBarPlanSteps(ctx, CommandBarPlanInput{
 			WorkspaceID: workspaceID,
 			ActorID:     actorID,
 			PlanID:      planID,
@@ -3196,7 +3276,7 @@ func (s *CommandBarService) ResumePlan(ctx context.Context, workspaceID, actorID
 	if err := json.Unmarshal(plan.Steps, &steps); err != nil {
 		return nil, fmt.Errorf("decode command bar plan steps: %w", err)
 	}
-	progress, err := s.agentService.StartReadyCommandBarPlanSteps(ctx, temporalapp.CommandBarPlanWorkflowInput{
+	progress, err := s.agentService.startReadyCommandBarPlanSteps(ctx, CommandBarPlanInput{
 		WorkspaceID: workspaceID,
 		ActorID:     actorID,
 		PlanID:      plan.ID,
@@ -3335,9 +3415,6 @@ func (s *CommandBarService) retryFailedDAGRuns(ctx context.Context, workspaceID,
 	if s == nil || s.planRepo == nil || s.agentService == nil || s.agentService.runRepo == nil {
 		return nil, fmt.Errorf("command bar plan service is not configured")
 	}
-	if s.agentService.runEngine == nil {
-		return nil, fmt.Errorf("temporal command-bar orchestration is not configured")
-	}
 
 	runIDsByStep := decodeCommandBarPlanRunIDs(plan.RunIDsByStep)
 	runIDs := make([]string, 0, len(runIDsByStep))
@@ -3378,7 +3455,7 @@ func (s *CommandBarService) retryFailedDAGRuns(ctx context.Context, workspaceID,
 		return nil, err
 	}
 
-	progress, err := s.agentService.StartReadyCommandBarPlanSteps(ctx, temporalapp.CommandBarPlanWorkflowInput{
+	progress, err := s.agentService.startReadyCommandBarPlanSteps(ctx, CommandBarPlanInput{
 		WorkspaceID: workspaceID,
 		ActorID:     actorID,
 		PlanID:      plan.ID,
@@ -3689,13 +3766,21 @@ func (s *AgentService) startCommandBarPlanStep(ctx context.Context, workspaceID,
 	if strings.TrimSpace(actorID) != "" {
 		actor = &actorID
 	}
-	return s.startTargetRun(ctx, workspaceID, target.EntityType, target.EntityID, model.StartAgentRunRequest{
+	// allowActiveParentRun: a next step chained from its parent run must never
+	// conflict with that parent. For delegated (agent-runtime) children the
+	// parent's terminal status may not be persisted yet when the finalizer
+	// advances the plan, so the parent can still look active in the database.
+	return s.startTargetRunWithOptions(ctx, workspaceID, target.EntityType, target.EntityID, model.StartAgentRunRequest{
 		AgentID:           agentID,
 		AdditionalContext: &additionalContext,
 		AllowedTools:      step.AllowedTools,
-	}, actor, triggerContext, event, parentRunID)
+	}, actor, triggerContext, event, parentRunID, startTargetRunOptions{allowActiveParentRun: parentRunID != nil})
 }
 
+// AdvanceCommandBarPlanAfterRun advances the command-bar plan that owns the
+// given terminal run, loading the run's persisted state. Temporal
+// AgentRunWorkflow calls this (via AdvanceCommandBarPlanActivity) after the
+// terminal status is already persisted.
 func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, completedRunID string) (*model.AgentRun, error) {
 	if s == nil || s.runRepo == nil {
 		return nil, nil
@@ -3708,26 +3793,31 @@ func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, comple
 	if err != nil || run == nil {
 		return nil, err
 	}
+	return s.advanceCommandBarPlanForRun(ctx, run)
+}
+
+// AdvanceCommandBarPlanForDelegatedRun advances the command-bar plan for a
+// delegated agent-runtime run whose terminal status is only known in memory:
+// the projection dispatches finalizers before persisting the terminal row, so
+// re-loading the run here would observe a stale (still active) status.
+func (s *AgentService) AdvanceCommandBarPlanForDelegatedRun(ctx context.Context, run *model.AgentRun) (*model.AgentRun, error) {
+	if s == nil || s.runRepo == nil || run == nil {
+		return nil, nil
+	}
+	return s.advanceCommandBarPlanForRun(ctx, run)
+}
+
+// advanceCommandBarPlanForRun advances the owning command-bar plan using the
+// caller-provided run as the authoritative view of the terminal transition.
+func (s *AgentService) advanceCommandBarPlanForRun(ctx context.Context, run *model.AgentRun) (*model.AgentRun, error) {
 	payload, ok := commandBarRunPayload(run)
 	if !ok {
 		return nil, nil
 	}
 	planKind := commandBarPlanKindForSteps(payload.Steps)
 	if planKind == model.CommandBarPlanKindTaskPipeline || planKind == model.CommandBarPlanKindDAG {
-		if s.runEngine != nil && payload.PlanID != "" {
-			if err := s.runEngine.SignalCommandBarPlanRunCompleted(ctx, payload.PlanID, completedRunID); err == nil {
-				return nil, nil
-			} else {
-				slog.WarnContext(ctx, "command bar plan signal failed; running scheduler fallback",
-					"error", err,
-					"workspace_id", run.WorkspaceID,
-					"plan_id", payload.PlanID,
-					"run_id", completedRunID,
-				)
-			}
-		}
 		if s.commandBarPlanRepo != nil && payload.PlanID != "" {
-			if _, err := s.StartReadyCommandBarPlanSteps(ctx, temporalapp.CommandBarPlanWorkflowInput{
+			if _, err := s.startReadyCommandBarPlanSteps(ctx, CommandBarPlanInput{
 				WorkspaceID: run.WorkspaceID,
 				ActorID:     derefString(run.TriggeredByUserID),
 				PlanID:      payload.PlanID,
@@ -3800,17 +3890,17 @@ func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, comple
 	return nextRun, nil
 }
 
-func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput) (*temporalapp.CommandBarPlanProgress, error) {
-	progress := &temporalapp.CommandBarPlanProgress{Status: model.CommandBarPlanStatusRunning}
+func (s *AgentService) startReadyCommandBarPlanSteps(ctx context.Context, input CommandBarPlanInput) (*CommandBarPlanProgress, error) {
+	progress := &CommandBarPlanProgress{Status: model.CommandBarPlanStatusRunning}
 	if s == nil || s.commandBarPlanRepo == nil || s.runRepo == nil {
-		return &temporalapp.CommandBarPlanProgress{Terminal: true, Status: "not_configured"}, nil
+		return &CommandBarPlanProgress{Terminal: true, Status: "not_configured"}, nil
 	}
 	plan, err := s.commandBarPlanRepo.GetByID(ctx, input.WorkspaceID, input.PlanID)
 	if err != nil || plan == nil {
 		return progress, err
 	}
 	if plan.Status == model.CommandBarPlanStatusCancelled || plan.Status == model.CommandBarPlanStatusFailed || plan.Status == model.CommandBarPlanStatusCompleted {
-		return &temporalapp.CommandBarPlanProgress{Terminal: true, Status: plan.Status}, nil
+		return &CommandBarPlanProgress{Terminal: true, Status: plan.Status}, nil
 	}
 
 	steps := input.Steps
@@ -3846,7 +3936,7 @@ func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input 
 		if run.Status == model.AgentRunStatusFailed || run.Status == model.AgentRunStatusCancelled {
 			payload := commandBarTriggerContextPayload{PlanID: input.PlanID, Steps: steps, StepIndex: commandBarStepIndexForRun(runIDsByStep, run.ID)}
 			_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, commandBarTerminalRunMessage(&run, payload, string(run.Status)))
-			return &temporalapp.CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusFailed}, nil
+			return &CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusFailed}, nil
 		}
 	}
 
@@ -3861,7 +3951,7 @@ func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input 
 	}
 	if allCompleted {
 		_ = s.commandBarPlanRepo.MarkCompleted(ctx, input.WorkspaceID, input.PlanID)
-		return &temporalapp.CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusCompleted}, nil
+		return &CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusCompleted}, nil
 	}
 
 	started := 0
@@ -3881,7 +3971,7 @@ func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input 
 			return progress, nil
 		}
 		if latestPlan.Status == model.CommandBarPlanStatusCancelled || latestPlan.Status == model.CommandBarPlanStatusFailed || latestPlan.Status == model.CommandBarPlanStatusCompleted {
-			return &temporalapp.CommandBarPlanProgress{Terminal: true, Status: latestPlan.Status}, nil
+			return &CommandBarPlanProgress{Terminal: true, Status: latestPlan.Status}, nil
 		}
 		latestRunIDsByStep := decodeCommandBarPlanRunIDs(latestPlan.RunIDsByStep)
 		if existingRunID := strings.TrimSpace(latestRunIDsByStep[index]); existingRunID != "" {
@@ -3919,7 +4009,7 @@ func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input 
 	}
 	if started == 0 && activeCount == 0 && !observedConcurrentProgress {
 		_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, "Command-bar plan has no runnable steps; check task dependencies for a cycle or missing completed prerequisite.")
-		return &temporalapp.CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusFailed}, nil
+		return &CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusFailed}, nil
 	}
 	return progress, nil
 }
@@ -4024,7 +4114,7 @@ type commandBarOrchestrationOutput struct {
 	FinalPullRequestURL string `json:"final_pull_request_url,omitempty"`
 }
 
-func (s *AgentService) startCommandBarOrchestrationStep(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput, steps []model.CommandBarPlanStep, stepIndex int, parentRunID *string) (*model.AgentRun, error) {
+func (s *AgentService) startCommandBarOrchestrationStep(ctx context.Context, input CommandBarPlanInput, steps []model.CommandBarPlanStep, stepIndex int, parentRunID *string) (*model.AgentRun, error) {
 	step := steps[stepIndex]
 	now := time.Now()
 	triggerContext, err := buildCommandBarTriggerContext(input.Prompt, input.PageContext, steps, stepIndex, input.PlanID)
@@ -4083,7 +4173,7 @@ func (s *AgentService) startCommandBarOrchestrationStep(ctx context.Context, inp
 	return updated, nil
 }
 
-func (s *AgentService) advanceRunningCommandBarOrchestrationRun(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput, steps []model.CommandBarPlanStep, stepIndex int, run *model.AgentRun) (*model.AgentRun, error) {
+func (s *AgentService) advanceRunningCommandBarOrchestrationRun(ctx context.Context, input CommandBarPlanInput, steps []model.CommandBarPlanStep, stepIndex int, run *model.AgentRun) (*model.AgentRun, error) {
 	if run == nil || run.Status != model.AgentRunStatusRunning {
 		return run, nil
 	}
@@ -4114,7 +4204,7 @@ func (s *AgentService) advanceRunningCommandBarOrchestrationRun(ctx context.Cont
 	return s.executeCommandBarOrchestrationRun(ctx, input, steps, stepIndex, run)
 }
 
-func (s *AgentService) executeCommandBarOrchestrationRun(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput, steps []model.CommandBarPlanStep, stepIndex int, run *model.AgentRun) (*model.AgentRun, error) {
+func (s *AgentService) executeCommandBarOrchestrationRun(ctx context.Context, input CommandBarPlanInput, steps []model.CommandBarPlanStep, stepIndex int, run *model.AgentRun) (*model.AgentRun, error) {
 	if s.gitService == nil {
 		return nil, fmt.Errorf("git service is not configured")
 	}
@@ -4200,7 +4290,7 @@ func commandBarIsMergeConflict(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "merge conflict")
 }
 
-func (s *AgentService) startCommandBarMergeConflictResolution(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput, steps []model.CommandBarPlanStep, stepIndex int, run *model.AgentRun, mergeErr error) (*model.AgentRun, error) {
+func (s *AgentService) startCommandBarMergeConflictResolution(ctx context.Context, input CommandBarPlanInput, steps []model.CommandBarPlanStep, stepIndex int, run *model.AgentRun, mergeErr error) (*model.AgentRun, error) {
 	var existing commandBarOrchestrationOutput
 	_ = json.Unmarshal(run.OutputSummary, &existing)
 	if existing.ConflictAttempt >= 1 && existing.ConflictRunID != "" {
@@ -4322,6 +4412,12 @@ func (s *AgentService) advanceFanOutCommandBarPlan(ctx context.Context, run *mod
 	}
 	allCompleted := true
 	for _, item := range runs {
+		if item.ID == run.ID {
+			// The caller's run carries the authoritative status: for delegated
+			// runs the finalizer dispatches before the terminal row update
+			// persists, so the freshly listed sibling row can still be stale.
+			item = *run
+		}
 		switch item.Status {
 		case model.AgentRunStatusCompleted:
 		case model.AgentRunStatusFailed:

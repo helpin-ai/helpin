@@ -38,6 +38,7 @@ function buildSession(overrides: Partial<CodingSession> = {}): CodingSession {
     invocation_mode: 'manual',
     status: 'completed',
     pause_reason: 'none',
+    approval_state: 'not_required',
     title: 'Forge',
     capabilities: {
       can_cancel: true,

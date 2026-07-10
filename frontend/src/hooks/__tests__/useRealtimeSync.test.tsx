@@ -382,7 +382,7 @@ describe('useRealtimeSync task ordering events', () => {
     })
 
     expect(updated).toHaveBeenCalledTimes(1)
-    expect(created).toHaveBeenCalledTimes(1)
+    expect(created).not.toHaveBeenCalled()
     expect((updated.mock.calls[0]?.[0] as CustomEvent).detail).toEqual(expect.objectContaining({
       entity_id: 'run-2',
       parent_type: 'task',

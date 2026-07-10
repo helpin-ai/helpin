@@ -33,7 +33,16 @@ export function sortCodingSessionEvents(events: CodingSessionEvent[]) {
 
 export function isPersistedCodingSessionEvent(event: CodingSessionEvent) {
   const source = typeof event.runtime_metadata?.source === 'string' ? event.runtime_metadata.source.trim() : '';
-  if (source.length > 0) return true;
+  // Only events synthesized by the REST event-list endpoint advance its
+  // pagination cursor. Raw runtime/websocket events also carry a `source`, but
+  // their sequence numbers belong to a different stream; treating them as the
+  // REST cursor can skip persisted assistant messages after a reconnect.
+  if (
+    source === 'agent_run_message'
+    || source === 'agent_run_artifact'
+    || source === 'agent_run_interaction'
+    || source === 'agent_run'
+  ) return true;
   return (
     event.id.startsWith('msg:')
     || event.id.startsWith('artifact:')

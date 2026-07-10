@@ -42,6 +42,7 @@ func (AgentTemplate) TableName() string { return "agent_templates" }
 
 type CreateAgentFromTemplateOverrides struct {
 	Role                  *string         `json:"role,omitempty"`
+	IconKey               *string         `json:"icon_key,omitempty"`
 	RuntimeKind           *string         `json:"runtime_kind,omitempty"`
 	Skills                *AgentSkillRefs `json:"skills,omitempty"`
 	Provider              *string         `json:"provider,omitempty"`

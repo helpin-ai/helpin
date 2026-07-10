@@ -116,6 +116,31 @@ func TestLoadAllowsCodexHelpinAPIBaseURLOverride(t *testing.T) {
 	}
 }
 
+func TestLoadAgentRuntimeConfig(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("AGENT_RUNTIME_BASE_URL", " https://runtime.internal/ ")
+	t.Setenv("AGENT_RUNTIME_SERVICE_TOKEN", " runtime-token ")
+	t.Setenv("AGENT_RUNTIME_APP_ID", " helpin-stage ")
+	t.Setenv("AGENT_RUNTIME_LAUNCH_ENABLED", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.AgentRuntimeBaseURL != "https://runtime.internal" {
+		t.Fatalf("unexpected runtime base URL: %q", cfg.AgentRuntimeBaseURL)
+	}
+	if cfg.AgentRuntimeServiceToken != "runtime-token" {
+		t.Fatalf("unexpected runtime token: %q", cfg.AgentRuntimeServiceToken)
+	}
+	if cfg.AgentRuntimeAppID != "helpin-stage" {
+		t.Fatalf("unexpected runtime app id: %q", cfg.AgentRuntimeAppID)
+	}
+	if !cfg.AgentRuntimeLaunchEnabled {
+		t.Fatal("expected runtime launch flag")
+	}
+}
+
 func TestLoadRejectsInvalidCommandRouterOpenRouterProviderOptions(t *testing.T) {
 	setRequiredConfigEnv(t)
 	t.Setenv("COMMAND_ROUTER_OPENROUTER_PROVIDER_OPTIONS", `{not-json}`)

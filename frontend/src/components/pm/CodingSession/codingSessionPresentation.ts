@@ -52,6 +52,7 @@ export function codingSessionStatusLabel({
       if (executionStage === 'awaiting_review') return 'Awaiting review';
       return 'Awaiting approval';
     }
+    if (pauseReason === 'awaiting_user_message') return 'Awaiting reply';
     if (pauseReason === 'authentication') return 'Awaiting sign-in';
     return 'Awaiting input';
   }

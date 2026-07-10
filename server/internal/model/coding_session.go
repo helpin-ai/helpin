@@ -18,6 +18,7 @@ type CodingSession struct {
 	InvocationMode      string                       `json:"invocation_mode"`
 	Status              string                       `json:"status"`
 	PauseReason         string                       `json:"pause_reason"`
+	ApprovalState       string                       `json:"approval_state"`
 	ErrorMessage        *string                      `json:"error_message,omitempty"`
 	ExecutionStage      *string                      `json:"execution_stage,omitempty"`
 	LastHeartbeatAt     *time.Time                   `json:"last_heartbeat_at,omitempty"`
@@ -91,8 +92,9 @@ type CodingSessionEvent struct {
 }
 
 type CodingSessionEventListResponse struct {
-	Events         []CodingSessionEvent `json:"events"`
-	NextSequenceNo int                  `json:"next_sequence_no"`
+	Events              []CodingSessionEvent         `json:"events"`
+	NextSequenceNo      int                          `json:"next_sequence_no"`
+	StreamStateSnapshot *CodingSessionStreamSnapshot `json:"stream_state_snapshot,omitempty"`
 }
 
 func CodingSessionEventFromAgentRunMessage(run *AgentRun, message *AgentRunMessage) CodingSessionEvent {

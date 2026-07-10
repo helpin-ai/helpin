@@ -53,7 +53,7 @@ function isStreamingTurnEventType(type: string) {
 function isSidecarActivityEvent(event: CodingSessionEvent) {
   if (isStreamingTurnEventType(event.type)) return false;
   if (event.type === 'user.message.completed' || event.type === 'assistant.message.completed') return false;
-  if (event.type === 'plan.updated') return false;
+  if (event.type === 'plan.updated' || event.type === 'activity.updated') return false;
   return true;
 }
 
@@ -212,76 +212,33 @@ function isEmptyStreamSnapshot(snapshot?: CodingSessionStreamSnapshot | null) {
       && !snapshot.current_plan);
 }
 
-function chooseAssistantSnapshotMessage(
-  current?: CodingSessionLiveAssistantMessage | null,
-  incoming?: CodingSessionLiveAssistantMessage | null,
-) {
-  if (!incoming) return cloneAssistantMessage(current);
-  if (!current) return cloneAssistantMessage(incoming);
-  if (current.message_id !== incoming.message_id) return cloneAssistantMessage(incoming);
-  return cloneAssistantMessage(
-    incoming.content.length >= current.content.length ? incoming : current,
-  );
-}
-
-function chooseReasoningSnapshotMessage(
-  current?: CodingSessionLiveReasoningMessage | null,
-  incoming?: CodingSessionLiveReasoningMessage | null,
-) {
-  if (!incoming) return cloneReasoningMessage(current);
-  if (!current) return cloneReasoningMessage(incoming);
-  if (current.message_id !== incoming.message_id) return cloneReasoningMessage(incoming);
-  const incomingScore = incoming.content.length + (incoming.encrypted_value ? incoming.encrypted_value.length : 0);
-  const currentScore = current.content.length + (current.encrypted_value ? current.encrypted_value.length : 0);
-  return cloneReasoningMessage(incomingScore >= currentScore ? incoming : current);
-}
-
-function mergeSnapshotSegments(
-  current?: CodingSessionLiveTurnSegment[] | null,
-  incoming?: CodingSessionLiveTurnSegment[] | null,
-) {
-  const merged: CodingSessionLiveTurnSegment[] = [];
-  const indexes = new Map<string, number>();
-  const addSegment = (segment: CodingSessionLiveTurnSegment) => {
-    const cloned = cloneLiveTurnSegment(segment);
-    const existingIndex = indexes.get(cloned.segment_id);
-    if (typeof existingIndex === 'number') {
-      merged[existingIndex] = cloned;
-      return;
-    }
-    indexes.set(cloned.segment_id, merged.length);
-    merged.push(cloned);
-  };
-  for (const segment of current ?? []) addSegment(segment);
-  for (const segment of incoming ?? []) addSegment(segment);
-  return merged;
-}
-
 export function mergeCodingSessionStreamSnapshotSeed(
   current?: CodingSessionStreamSnapshot | null,
   incoming?: CodingSessionStreamSnapshot | null,
 ): CodingSessionStreamSnapshot | null {
-  if (isEmptyStreamSnapshot(incoming)) return cloneStreamSnapshot(current);
-  if (isEmptyStreamSnapshot(current)) return cloneStreamSnapshot(incoming);
+  // A snapshot response is authoritative, not an event batch. Unioning two
+  // refreshes retained obsolete segment generations whenever the projector
+  // changed a segment id. Replayed websocket deltas then appeared after that
+  // stale generation as clipped duplicate prose (for example "ffer has…").
+  //
+  // An empty response is authoritative too: it is how terminal persistence
+  // clears the in-progress stream. Keeping `current` here left the final live
+  // transcript mounted forever beside the persisted transcript.
+  if (isEmptyStreamSnapshot(incoming)) return null;
 
-  const liveAssistantMessage = chooseAssistantSnapshotMessage(
-    current?.live_assistant_message,
-    incoming?.live_assistant_message,
-  );
-  const liveReasoningMessage = chooseReasoningSnapshotMessage(
-    current?.live_reasoning_message,
-    incoming?.live_reasoning_message,
-  );
-  const liveTurnSegments = mergeSnapshotSegments(current?.live_turn_segments, incoming?.live_turn_segments);
-  const currentPlan = incoming?.current_plan ?? current?.current_plan;
+  const next = cloneStreamSnapshot(incoming);
+  if (!next) return null;
 
-  const merged: CodingSessionStreamSnapshot = {
-    ...(liveAssistantMessage ? { live_assistant_message: liveAssistantMessage } : {}),
-    ...(liveReasoningMessage ? { live_reasoning_message: liveReasoningMessage } : {}),
-    ...(liveTurnSegments.length > 0 ? { live_turn_segments: liveTurnSegments } : {}),
-    ...(currentPlan ? { current_plan: { ...currentPlan, plan: currentPlan.plan.map((step) => ({ ...step })) } } : {}),
-  };
-  return isEmptyStreamSnapshot(merged) ? null : merged;
+  // Plans are durable run state rather than an append-only turn timeline. Some
+  // runtime projectors omit an unchanged plan from a subsequent snapshot, so
+  // retaining only that field is safe and avoids a distracting plan flicker.
+  if (!next.current_plan && current?.current_plan) {
+    next.current_plan = {
+      ...current.current_plan,
+      plan: current.current_plan.plan.map((step) => ({ ...step })),
+    };
+  }
+  return next;
 }
 
 function parseLiveToolCall(value: unknown): CodingSessionLiveToolCall | null {
@@ -419,6 +376,50 @@ function appendAssistantSegment(
   return assistantSegment;
 }
 
+function streamDelta(current: string, incoming: string) {
+  if (!incoming) return '';
+  // Providers stream either cumulative snapshots or verbatim increments. The
+  // agent-runtime already normalizes this (nativeStreamDelta / codexAssistantDelta)
+  // and emits verbatim deltas that carry their own whitespace. We must append
+  // them verbatim: token boundaries fall mid-word ("Buf" + "fer" -> "Buffer"),
+  // so any guessed spacing corrupts the text (producing "Buf fer") and also
+  // breaks the startsWith invariant the completion path relies on (which then
+  // re-appends the full message and duplicates it).
+  if (current && incoming.startsWith(current)) {
+    return incoming.slice(current.length);
+  }
+  return incoming;
+}
+
+function consumeSnapshotAssistantDelta(coveredContent: string, incomingDelta: string) {
+  if (!coveredContent || !incomingDelta) {
+    return { consumed: false, remaining: coveredContent };
+  }
+
+  if (coveredContent.startsWith(incomingDelta)) {
+    return {
+      consumed: true,
+      remaining: coveredContent.slice(incomingDelta.length),
+    };
+  }
+
+  // A refreshed snapshot can arrive after the websocket subscription starts.
+  // In that race the local event list may begin in the middle of a message,
+  // while the snapshot already contains its complete prefix. Seek forward to
+  // the observed delta instead of appending it as a new segment. Token deltas
+  // routinely begin mid-word, which is the source of fragments such as
+  // "have…" / "ffer…" in the transcript.
+  const offset = coveredContent.indexOf(incomingDelta);
+  if (offset >= 0) {
+    return {
+      consumed: true,
+      remaining: coveredContent.slice(offset + incomingDelta.length),
+    };
+  }
+
+  return { consumed: false, remaining: coveredContent };
+}
+
 function deriveAssistantSegmentDelta(previousContent: string, fullContent: string) {
   if (!fullContent) return null;
   if (!previousContent) return fullContent;
@@ -443,6 +444,16 @@ function appendOrMarkCompletedAssistantSegment(
     return;
   }
 
+  if (fullContent.trim() && fullContent !== previousContent) {
+    const firstSegment = firstAssistantSegment(segments, messageID);
+    if (firstSegment) {
+      firstSegment.content = fullContent;
+      firstSegment.status = 'completed';
+      firstSegment.completed_at = timestamp;
+      return;
+    }
+  }
+
   const segment = latestAssistantSegment(segments, messageID);
   if (segment) {
     segment.status = 'completed';
@@ -456,6 +467,14 @@ function appendOrMarkCompletedAssistantSegment(
     fallback.status = 'completed';
     fallback.completed_at = timestamp;
   }
+}
+
+function firstAssistantSegment(segments: CodingSessionLiveTurnSegment[], messageID: string) {
+  for (const segment of segments) {
+    if (segment.kind !== 'assistant_message') continue;
+    if (segment.assistant_message.message_id === messageID) return segment.assistant_message;
+  }
+  return null;
 }
 
 function ensureToolCallSegment(
@@ -555,7 +574,12 @@ function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEve
   const interactionKind = asString(payload.interaction_kind);
   if (interactionKind !== 'approval_request') return null;
 
-  const content = approvalRequestResolutionTranscriptContent(asRecord(payload.request_payload), asRecord(payload.response_payload));
+  const content = approvalRequestResolutionTranscriptContent(
+    asRecord(payload.request_payload),
+    asRecord(payload.response_payload),
+    asString(payload.summary),
+    asString(payload.title),
+  );
   if (!content) return null;
 
   const responsePayload = asRecord(payload.response_payload);
@@ -596,36 +620,53 @@ function removeDuplicateResolvedInteractionResumeMessage(
   transcriptMessages: CodingSessionTranscriptMessage[],
   event: CodingSessionEvent,
 ) {
-  const note = resolvedInteractionResponseNote(event);
   const messageType = resolvedInteractionResumeMessageType(event);
-  if (!note || !messageType) return;
+  if (!messageType) return;
+  const note = resolvedInteractionResponseNote(event);
+
+  // Only approval_request synthesizes a resolution message (describing the
+  // decision and what was approved). When it does, drop the resume message for
+  // the same decision even if there was no note — otherwise the generated
+  // acknowledgment ("Approved. Continue.") renders as a second bubble. For
+  // review_checkpoint (no synthesized resolution) keep the old behavior: dedup
+  // only the message that carries the note, never the sole representation.
+  const kind = asString(asRecord(event.payload)?.interaction_kind);
+  const dropWithoutNote = kind === 'approval_request';
+  if (!note && !dropWithoutNote) return;
 
   for (let index = transcriptMessages.length - 1; index >= 0; index -= 1) {
     const message = transcriptMessages[index];
-    if (
-      message.role === 'user'
-      && message.message_type === messageType
-      && message.content.trim() === note
-      && (message.sequence_no ?? 0) <= event.sequence_no
-    ) {
-      transcriptMessages.splice(index, 1);
-      return;
-    }
+    if (message.role !== 'user' || message.message_type !== messageType) continue;
+    if ((message.sequence_no ?? 0) > event.sequence_no) continue;
+    if (note && message.content.trim() !== note) continue;
+    transcriptMessages.splice(index, 1);
+    return;
   }
 }
 
 function approvalRequestResolutionTranscriptContent(
   requestPayload: Record<string, unknown> | null,
   responsePayload: Record<string, unknown> | null,
+  summary?: string,
+  topTitle?: string,
 ) {
   if (!responsePayload) return '';
   const decision = asString(responsePayload.decision);
   if (!decision) return '';
-  const title = asString(requestPayload?.title) ?? 'approval request';
+  // Describe WHAT was approved so the chat isn't a bare "Approved approval
+  // request." The interaction summary carries it (e.g. the codex command /
+  // "Approve create_document …"); fall back to a title, then nothing.
+  const descriptor = (
+    summary?.trim()
+    || asString(requestPayload?.title)?.trim()
+    || topTitle?.trim()
+    || ''
+  );
+  const verb = decision === 'approve' ? 'Approved' : 'Requested changes on';
   const note = asString(responsePayload.message);
-  const lines: string[] = [
-    decision === 'approve' ? `Approved ${title}.` : `Requested changes on ${title}.`,
-  ];
+  const lines: string[] = descriptor
+    ? [`${verb}:`, descriptor]
+    : [`${verb} the request.`];
   if (note) {
     lines.push('');
     lines.push(`Note: ${note}`);
@@ -891,12 +932,16 @@ export function buildCodingSessionStreamState(
         liveAssistantMessage = ensureAssistantMessage(liveAssistantMessage, messageID, event.timestamp);
         const previousContent = liveAssistantMessage.content;
         // Use raw coalescing (not asString) to preserve whitespace-only deltas like " " or " found".
-        const deltaContent = typeof payload.content === 'string' ? payload.content : (typeof payload.text === 'string' ? payload.text : '');
-        const coveredSnapshotPrefix = snapshotAssistantDeltaCoverage.get(messageID);
-        if (deltaContent && coveredSnapshotPrefix?.startsWith(deltaContent)) {
-          snapshotAssistantDeltaCoverage.set(messageID, coveredSnapshotPrefix.slice(deltaContent.length));
-          break;
+        let deltaContent = typeof payload.content === 'string' ? payload.content : (typeof payload.text === 'string' ? payload.text : '');
+        const coveredSnapshotContent = snapshotAssistantDeltaCoverage.get(messageID);
+        if (deltaContent && coveredSnapshotContent) {
+          const coverage = consumeSnapshotAssistantDelta(coveredSnapshotContent, deltaContent);
+          if (coverage.consumed) {
+            snapshotAssistantDeltaCoverage.set(messageID, coverage.remaining);
+            break;
+          }
         }
+        deltaContent = streamDelta(liveAssistantMessage.content, deltaContent);
         liveAssistantMessage.content += deltaContent;
         liveAssistantMessage.status = 'streaming';
         if (deltaContent || previousContent.length === 0) {
@@ -910,7 +955,7 @@ export function buildCodingSessionStreamState(
         liveAssistantMessage = ensureAssistantMessage(liveAssistantMessage, messageID, event.timestamp);
         const previousContent = liveAssistantMessage.content;
         const content = firstNonEmptyString(asString(payload.content), asString(payload.text));
-        if (content && content.length >= liveAssistantMessage.content.length) {
+        if (content) {
           liveAssistantMessage.content = content;
         }
         liveAssistantMessage.status = 'completed';
@@ -935,7 +980,8 @@ export function buildCodingSessionStreamState(
       case 'reasoning.message.delta': {
         const messageID = asString(payload.message_id) ?? liveReasoningMessage?.message_id ?? `reasoning:${event.id}`;
         liveReasoningMessage = ensureReasoningMessage(liveReasoningMessage, messageID, event.timestamp);
-        const reasoningDelta = typeof payload.content === 'string' ? payload.content : (typeof payload.text === 'string' ? payload.text : '');
+        const rawReasoningDelta = typeof payload.content === 'string' ? payload.content : (typeof payload.text === 'string' ? payload.text : '');
+        const reasoningDelta = streamDelta(liveReasoningMessage.content, rawReasoningDelta);
         liveReasoningMessage.content += reasoningDelta;
         liveReasoningMessage.encrypted_value = firstNonEmptyString(
           asString(payload.encrypted_value),

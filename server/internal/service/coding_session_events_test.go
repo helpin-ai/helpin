@@ -346,6 +346,83 @@ func TestGetCodingSessionIncludesLiveStreamSnapshotForActiveRuns(t *testing.T) {
 	if session.StreamStateSnapshot.LiveAssistantMessage.Content != "Inspecting workspace" {
 		t.Fatalf("unexpected snapshot content %#v", session.StreamStateSnapshot.LiveAssistantMessage)
 	}
+	if session.ApprovalState != "not_required" {
+		t.Fatalf("approval state = %q", session.ApprovalState)
+	}
+}
+
+func TestListCodingSessionEventsIncludesLiveStreamSnapshotForActiveRuns(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	snapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
+
+	now := time.Now().UTC()
+	run := &model.AgentRun{
+		ID:             "run-event-snapshot",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "story",
+		TargetID:       "story-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	payload, err := model.EncodeCodingSessionStreamSnapshot(&model.CodingSessionStreamSnapshot{
+		LiveTurnSegments: []model.CodingSessionLiveTurnSegment{{
+			SegmentID: "tool-1",
+			Kind:      "tool_call",
+			ToolCall: &model.CodingSessionLiveToolCall{
+				ToolCallID: "tool-1",
+				ToolName:   "read_file",
+				Status:     "running",
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("encode snapshot: %v", err)
+	}
+	if err := snapshotRepo.Upsert(context.Background(), &model.CodingSessionStateSnapshot{
+		ID:              "snapshot-event-1",
+		WorkspaceID:     run.WorkspaceID,
+		RunID:           run.ID,
+		SchemaVersion:   model.CodingSessionStateSnapshotSchemaVersionV1,
+		SnapshotPayload: payload,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}); err != nil {
+		t.Fatalf("upsert snapshot: %v", err)
+	}
+
+	svc := &AgentService{
+		runRepo:             runRepo,
+		runMessageRepo:      runMessageRepo,
+		artifactRepo:        artifactRepo,
+		sessionSnapshotRepo: snapshotRepo,
+	}
+
+	events, err := svc.ListCodingSessionEvents(context.Background(), run.WorkspaceID, run.ID, 0)
+	if err != nil {
+		t.Fatalf("ListCodingSessionEvents returned error: %v", err)
+	}
+	if events.StreamStateSnapshot == nil || len(events.StreamStateSnapshot.LiveTurnSegments) != 1 {
+		t.Fatalf("expected stream snapshot on event list, got %#v", events.StreamStateSnapshot)
+	}
+	if got := events.StreamStateSnapshot.LiveTurnSegments[0].ToolCall.ToolName; got != "read_file" {
+		t.Fatalf("unexpected snapshot tool name %q", got)
+	}
 }
 
 func TestGetCodingSessionIncludesStreamSnapshotForFailedRuns(t *testing.T) {
@@ -663,6 +740,95 @@ func TestListCodingSessionEventsIncludesPersistedTurnSegmentsOnAssistantMessages
 	}
 	if len(decoded) != 2 || decoded[0].AssistantMessage == nil || decoded[0].AssistantMessage.Content != "Inspecting files.\n" {
 		t.Fatalf("unexpected decoded turn segments %#v", decoded)
+	}
+}
+
+func TestListCodingSessionEventsIncludesRuntimeToolCallArtifacts(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+	now := time.Now().UTC()
+	run := &model.AgentRun{
+		ID:             "run-events-runtime-tool",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "workspace",
+		TargetID:       "ws-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	started := `{"tool_call_id":"tool-1","tool_name":"fetch_url","args_text":"{\"url\":\"https://example.com\"}","parent_message_id":"assistant-1"}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-tool-started",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeToolCall,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &started,
+		Metadata:      json.RawMessage(`{"runtime_event_type":"tool_call_started"}`),
+		SequenceNo:    1,
+		CreatedAt:     now.Add(time.Second),
+	}); err != nil {
+		t.Fatalf("create started artifact: %v", err)
+	}
+	completed := `{"tool_call_id":"tool-1","tool_name":"fetch_url","output_summary":"Fetched page","duration_ms":42,"parent_message_id":"assistant-1"}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-tool-completed",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeToolCall,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &completed,
+		Metadata:      json.RawMessage(`{"runtime_event_type":"tool_call_finished"}`),
+		SequenceNo:    2,
+		CreatedAt:     now.Add(2 * time.Second),
+	}); err != nil {
+		t.Fatalf("create completed artifact: %v", err)
+	}
+
+	svc := &AgentService{
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+	}
+	events, err := svc.ListCodingSessionEvents(context.Background(), run.WorkspaceID, run.ID, 0)
+	if err != nil {
+		t.Fatalf("ListCodingSessionEvents returned error: %v", err)
+	}
+
+	var startedEvent, completedEvent *model.CodingSessionEvent
+	for index := range events.Events {
+		switch events.Events[index].Type {
+		case "tool.call.started":
+			startedEvent = &events.Events[index]
+		case "tool.call.completed":
+			completedEvent = &events.Events[index]
+		}
+	}
+	if startedEvent == nil || completedEvent == nil {
+		t.Fatalf("expected tool call events, got %#v", events.Events)
+	}
+	if startedEvent.Payload["tool_call_id"] != "tool-1" || startedEvent.Payload["tool_name"] != "fetch_url" {
+		t.Fatalf("expected flattened started payload, got %#v", startedEvent.Payload)
+	}
+	if completedEvent.Payload["output_summary"] != "Fetched page" {
+		t.Fatalf("expected flattened completed payload, got %#v", completedEvent.Payload)
 	}
 }
 

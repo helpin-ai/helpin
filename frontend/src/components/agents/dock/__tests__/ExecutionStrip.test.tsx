@@ -4,16 +4,20 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ExecutionStrip } from '../ExecutionStrip';
-import type { AgentRun } from '@/lib/pmTypes';
+import type { AgentRun, CodingSessionInteraction } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from '@/stores/commandBarStore';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const mocks = vi.hoisted(() => ({
+  pendingInteraction: null as CodingSessionInteraction | null,
+}));
 
 vi.mock('../useAgentRunStream', () => ({
   useAgentRunStream: () => ({
     streamState: null,
     currentPlan: null,
-    pendingInteraction: null,
+    pendingInteraction: mocks.pendingInteraction,
     clearPendingInteraction: vi.fn(),
     refetch: vi.fn(),
   }),
@@ -26,6 +30,7 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
+  mocks.pendingInteraction = null;
 });
 
 afterEach(() => {
@@ -217,6 +222,32 @@ describe('ExecutionStrip actions', () => {
 
     expect(buttonNamed('Cancel')).toBeTruthy();
     expect(buttonNamed('Open')).toBeTruthy();
+  });
+
+  it('does not show stale pending approval controls for a completed run', () => {
+    mocks.pendingInteraction = {
+      interaction_id: 'interaction-1',
+      interaction_kind: 'command_execution_approval',
+      status: 'pending',
+      request_schema_version: 'codex.v2',
+      request_payload: { command: 'git push' },
+      title: 'Codex needs approval',
+    };
+
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="run"
+          workspaceId="ws-1"
+          run={run({ status: 'completed' })}
+          defaultOpen
+          onAction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).not.toContain('Codex needs approval');
+    expect(container.textContent).toContain('Re-run');
   });
 
   it('labels automation flow runs with the flow name while running', () => {

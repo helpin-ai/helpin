@@ -20,6 +20,26 @@ func TestResolveAgentProfileUsesInteractiveNativeQueue(t *testing.T) {
 	}
 }
 
+func TestResolveApprovalStateByMode(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+		want string
+	}{
+		{name: "no approval", mode: "never", want: "not_required"},
+		{name: "mutating tools", mode: "mutating_tools", want: "not_required"},
+		{name: "before run and tools", mode: "always", want: "pending"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ResolveApprovalState(ResolvedProfile{ApprovalMode: tt.mode}); got != tt.want {
+				t.Fatalf("ResolveApprovalState() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolveAgentProfileUsesOpenCodeQueue(t *testing.T) {
 	agent := &model.Agent{
 		PresetKey:   model.AgentPresetCodeBuilder,

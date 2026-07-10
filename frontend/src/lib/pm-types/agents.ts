@@ -16,15 +16,24 @@ export type AgentPresetKey =
   | 'review_agent'
   | 'command_agent';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
+export type AgentIconKey =
+  | 'violet_star'
+  | 'ocean_orbit'
+  | 'forest_cap'
+  | 'sunset_flame'
+  | 'rose_wave'
+  | 'teal_signal'
+  | 'sky_quill'
+  | 'amber_lens';
 export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
 export type AgentTargetType = 'task' | 'support_conversation' | 'support_coverage_gap' | 'epic' | 'document' | 'crm_deal' | 'repository' | 'workspace';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
-export type AgentApprovalMode = 'preset_default' | 'never' | 'always';
+export type AgentApprovalMode = 'preset_default' | 'never' | 'mutating_tools' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
 export type AgentInvocationMode = 'interactive' | 'autonomous';
-export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication';
+export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication' | 'awaiting_user_message';
 export type CodexAuthStateStatus = 'required' | 'pending' | 'connected' | 'failed' | 'cancelled';
 export type AgentReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 export type AgentServiceTier = 'fast' | 'flex';
@@ -39,6 +48,7 @@ export interface Agent {
   workspace_id: string;
   is_system: boolean;
   name: string;
+  icon_key?: AgentIconKey;
   preset_key?: AgentPresetKey;
   preset_version_key?: string;
   source_template_id?: string;
@@ -266,6 +276,8 @@ export interface CommandBarChatTurnRequest {
   thread_id?: string;
   text: string;
   page_context: CommandBarPageContext;
+  /** Correlates websocket turn-progress events with this in-flight turn. */
+  client_turn_id?: string;
 }
 
 export type CommandBarParseResponse =
@@ -592,6 +604,7 @@ export interface AgentRunArtifact {
 export interface CreateAgentRequest {
   workspace_id: string;
   name: string;
+  icon_key?: AgentIconKey;
   preset_key?: AgentPresetKey;
   preset_version_key?: string;
   role?: string;
@@ -700,6 +713,7 @@ export interface AgentTemplateStarterFlowField {
 
 export interface CreateAgentFromTemplateOverrides {
   role?: string;
+  icon_key?: AgentIconKey;
   runtime_kind?: AgentRuntimeKind;
   skills?: AgentSkillRef[];
   provider?: AgentModelProvider;
@@ -744,6 +758,7 @@ export interface CreateAgentFromTemplateResponse {
 
 export interface UpdateAgentRequest {
   name?: string;
+  icon_key?: AgentIconKey;
   preset_key?: AgentPresetKey;
   preset_version_key?: string;
   role?: string;
@@ -920,40 +935,6 @@ export interface AgentModelProviderOption {
   supported_reasoning_efforts?: AgentReasoningEffort[];
   supports_service_tier: boolean;
   supported_service_tiers?: AgentServiceTier[];
-}
-
-export interface RunnerHealth {
-  namespace?: string;
-  temporal_configured: boolean;
-  generated_at?: string;
-  queues: RunnerQueueHealth[];
-  active_runs: RunnerActiveRun[];
-}
-
-export interface RunnerQueueHealth {
-  name: string;
-  concurrency: number;
-  queued_runs: number;
-  running_runs: number;
-  awaiting_approval_runs: number;
-  active_runs: number;
-  latest_heartbeat_at?: string;
-}
-
-export interface RunnerActiveRun {
-  id: string;
-  agent_id: string;
-  target_type: string;
-  target_id: string;
-  status: AgentRunStatus;
-  task_queue: string;
-  runner_pool: string;
-  execution_stage?: string;
-  last_heartbeat_at?: string;
-  started_at?: string;
-  created_at: string;
-  workflow_id?: string;
-  stale: boolean;
 }
 
 // ── Support ─────────────────────────────────────────────────────────

@@ -87,6 +87,9 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusPaymentRequired {
+			return nil, fmt.Errorf("openai API error (status %d): %s: %w", resp.StatusCode, string(respBody), ErrInsufficientCredits)
+		}
 		return nil, fmt.Errorf("openai API error (status %d): %s", resp.StatusCode, string(respBody))
 	}
 

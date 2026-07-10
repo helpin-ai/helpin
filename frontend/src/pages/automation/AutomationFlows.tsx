@@ -53,6 +53,7 @@ import { buildAutomationActivityPath } from '@/lib/automationUi';
 import { getAgentTeamIds, isAgentVisibleToActor } from '@/lib/agentAccess';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { cn } from '@/lib/utils';
+import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 export type AutomationFlowsSearch = {
@@ -176,12 +177,6 @@ const SCHEDULE_MONTH_DAY_OPTIONS = Array.from({ length: 31 }, (_, idx) => {
   const day = String(idx + 1);
   return { value: day, label: day };
 });
-
-const TEMPLATE_APPROVAL_OPTIONS: { value: AgentApprovalMode; label: string; description: string }[] = [
-  { value: 'always', label: 'Review before starting', description: 'A team member approves each run before the agent starts.' },
-  { value: 'never', label: 'Start automatically', description: 'Runs begin as soon as the flow trigger fires.' },
-  { value: 'preset_default', label: 'Use agent default', description: 'Use the default approval behavior for this agent profile.' },
-];
 
 type ParsedSimpleSchedule = {
   frequency: FlowDraft['scheduleFrequency'];
@@ -817,7 +812,7 @@ function defaultTemplateAgentSetup(template: FlowTemplateManifest, inputs: Recor
   return {
     name: templateAgentName(template),
     system_prompt: defaultTemplateAgentInstructions(template, inputs),
-    approval_mode: (template.agent.create.approval_mode as AgentApprovalMode | undefined) ?? 'always',
+    approval_mode: (template.agent.create.approval_mode as AgentApprovalMode | undefined) ?? 'mutating_tools',
     allowed_targets: (template.agent.create.allowed_targets ?? ['task']) as AgentTargetType[],
     allowed_tools: normalizeToolList(template.agent.create.allowed_tools ?? []),
     skills: (template.agent.create.skills ?? []).map((key) => ({ key })),
@@ -3684,7 +3679,7 @@ function FlowTemplateInstallDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {TEMPLATE_APPROVAL_OPTIONS.map((option) => (
+                      {AGENT_APPROVAL_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
@@ -3692,7 +3687,7 @@ function FlowTemplateInstallDialog({
                     </SelectContent>
                   </Select>
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    {TEMPLATE_APPROVAL_OPTIONS.find((option) => option.value === agentSetup.approval_mode)?.description}
+                    {agentApprovalDescription(agentSetup.approval_mode)}
                   </p>
                 </div>
               </div>

@@ -97,6 +97,7 @@ type AIUsageMeterInput struct {
 	ReasoningTokens   int
 	CachedInputTokens int
 	Metadata          map[string]interface{}
+	AllowOverage      bool
 }
 
 type aiUsageMeteringContextKey struct{}
@@ -236,6 +237,27 @@ func (m *AIUsageMeter) Preflight(ctx context.Context, input AIUsageMeterInput) e
 	})
 }
 
+func (m *AIUsageMeter) PreflightUsage(ctx context.Context, input AIUsageMeterInput) error {
+	if m == nil || m.consumer == nil {
+		return fmt.Errorf("ai usage meter billing consumer is required")
+	}
+	units := CalculateAIUsageUnits(AIUsageCalculation{
+		FeatureKey:        input.FeatureKey,
+		InputTokens:       input.InputTokens,
+		OutputTokens:      input.OutputTokens,
+		ReasoningTokens:   input.ReasoningTokens,
+		CachedInputTokens: input.CachedInputTokens,
+	})
+	if units == 0 {
+		return nil
+	}
+	return m.consumer.PreflightCredits(ctx, BillingCreditPreflight{
+		WorkspaceID: input.WorkspaceID,
+		FeatureKey:  input.FeatureKey,
+		Credits:     units,
+	})
+}
+
 func (m *AIUsageMeter) Consume(ctx context.Context, input AIUsageMeterInput) (*BillingSummary, error) {
 	if m == nil || m.consumer == nil {
 		return nil, fmt.Errorf("ai usage meter billing consumer is required")
@@ -271,6 +293,7 @@ func (m *AIUsageMeter) Consume(ctx context.Context, input AIUsageMeterInput) (*B
 		Credits:        units,
 		IdempotencyKey: input.IdempotencyKey,
 		Metadata:       metadata,
+		AllowOverage:   input.AllowOverage,
 	})
 }
 

@@ -31,6 +31,12 @@ type Config struct {
 	TemporalTLSServerName string
 	NatsURL               string
 
+	// Agent Runtime sidecar/service integration (optional; disabled when base URL is empty).
+	AgentRuntimeBaseURL       string
+	AgentRuntimeServiceToken  string
+	AgentRuntimeAppID         string
+	AgentRuntimeLaunchEnabled bool
+
 	// S3 / object storage (optional — attachments disabled if not set)
 	AWSAccessKeyID     string
 	AWSSecretAccessKey string
@@ -222,6 +228,10 @@ func Load() (*Config, error) {
 		TemporalTLSEnabled:                     temporalTLSEnabled,
 		TemporalTLSServerName:                  strings.TrimSpace(os.Getenv("TEMPORAL_TLS_SERVER_NAME")),
 		NatsURL:                                strings.TrimSpace(firstNonEmpty(os.Getenv("NATS_URL"), "nats://localhost:4222")),
+		AgentRuntimeBaseURL:                    strings.TrimRight(strings.TrimSpace(os.Getenv("AGENT_RUNTIME_BASE_URL")), "/"),
+		AgentRuntimeServiceToken:               strings.TrimSpace(os.Getenv("AGENT_RUNTIME_SERVICE_TOKEN")),
+		AgentRuntimeAppID:                      strings.TrimSpace(firstNonEmpty(os.Getenv("AGENT_RUNTIME_APP_ID"), "helpin")),
+		AgentRuntimeLaunchEnabled:              parseBoolEnv(os.Getenv("AGENT_RUNTIME_LAUNCH_ENABLED")),
 		AWSAccessKeyID:                         os.Getenv("AWS_ACCESS_KEY_ID"),
 		AWSSecretAccessKey:                     os.Getenv("AWS_SECRET_ACCESS_KEY"),
 		AWSBucket:                              os.Getenv("AWS_S3_BUCKET_NAME"),

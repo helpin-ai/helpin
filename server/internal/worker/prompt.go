@@ -156,6 +156,7 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 			parts = append(parts, "- Use the provided tools to read, write, and search files.")
 		case hasRepoAccess:
 			parts = append(parts, "- Use the provided tools to inspect the repository and search for relevant context. Keep repository interactions read-only.")
+			parts = append(parts, "- If repository inspection is needed but repository tools report that no workspace lease exists, use target context when it identifies a repo; otherwise call list_repositories, ask which repo or repos to inspect when ambiguous, then call checkout_repository or checkout_repositories. Use repo_alias when reading from multiple checked-out repos.")
 		}
 		if (story != nil || epic != nil) && hasRepoAccess {
 			parts = append(parts, fmt.Sprintf("- Start by locating the relevant code with `%s`, `%s`, `%s`, or `%s` before reading large files.",

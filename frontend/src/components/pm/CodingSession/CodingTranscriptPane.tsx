@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
   ArrowUp02Icon,
   Loading01Icon,
@@ -21,9 +20,9 @@ import type {
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
 import { useWorkspaceMembers } from '@/hooks/queries';
-import { formatCodingSessionElapsed } from './codingSessionPresentation';
 import type { CodingSessionComposerState } from './codingSessionComposer';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
+import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { CodingReviewHistoryPanel, type CodingReviewHistoryItem } from './CodingReviewHistoryPanel';
 import {
@@ -53,6 +52,7 @@ export function CodingTranscriptPane({
   onViewPreview,
   onAuthStart,
   onAuthCancel,
+  onApproveRun,
   onResolveInteraction,
 }: {
   promptArtifact?: AgentRunArtifact | null;
@@ -74,6 +74,7 @@ export function CodingTranscriptPane({
   onViewPreview?: (panelKey: string) => void;
   onAuthStart?: () => void;
   onAuthCancel?: () => void;
+  onApproveRun?: () => void;
   onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -84,13 +85,15 @@ export function CodingTranscriptPane({
     mode: 'answer',
     placeholder: messagePlaceholder,
   };
-  const visibleLiveSegments = liveTurnSegments.filter((segment) => {
-    if (segment.kind === 'assistant_message') {
-      return segment.assistant_message.content.trim().length > 0;
-    }
-    return !isToolName(segment.tool_call.tool_name, 'update_plan');
-  });
-  const showLivePlaceholder = visibleLiveSegments.length === 0 && liveAssistantMessage?.status === 'streaming';
+  const visibleLiveSegments = useMemo(
+    () => liveTurnSegments.filter((segment) => {
+      if (segment.kind === 'assistant_message') {
+        return segment.assistant_message.content.trim().length > 0;
+      }
+      return !isToolName(segment.tool_call.tool_name, 'update_plan');
+    }),
+    [liveTurnSegments],
+  );
   const promptMessage = useMemo<CodingSessionTranscriptMessage | null>(() => {
     const sections = parsePromptArtifactSections(promptArtifact?.inline_content);
     const developerPrompt = sections.find((section) => section.label === 'Developer prompt');
@@ -118,6 +121,10 @@ export function CodingTranscriptPane({
       sequence_no: Number.MIN_SAFE_INTEGER,
     };
   }, [promptArtifact, session?.created_at, session?.run_id, session?.system_prompt]);
+  const includeLive = !session
+    || session.status === 'queued'
+    || session.status === 'running'
+    || session.status === 'paused';
 
   // Flatten the reconciled stream into one ordered segment list shared with the
   // Ask Agents dock. The slider shows every kind and renders rows expandable.
@@ -125,20 +132,24 @@ export function CodingTranscriptPane({
     () => collectSegments(
       {
         transcript_messages: transcriptMessages,
-        live_turn_segments: liveTurnSegments,
-        live_reasoning_message: liveReasoningMessage,
+        live_turn_segments: visibleLiveSegments,
+        live_reasoning_message: null,
       },
-      { includeLive: true, include: ALL_SEGMENT_KINDS, leadingContext: promptMessage },
+      { includeLive, include: ALL_SEGMENT_KINDS, leadingContext: promptMessage },
     ),
-    [transcriptMessages, liveTurnSegments, liveReasoningMessage, promptMessage],
+    [transcriptMessages, visibleLiveSegments, promptMessage, includeLive],
   );
+  const hasActiveStreamSegment = segments.some((segment) => (
+    (segment.kind === 'assistant' && segment.streaming)
+    || (segment.kind === 'tool' && segment.toolCall.status === 'running')
+  ));
+  const showStreamingStatus = session?.status === 'running' && !hasActiveStreamSegment;
 
   // Build a flat list of virtual items: transcript segments plus the local
-  // scroll affordances (live placeholder, running row, empty state, spacer).
+  // scroll affordances (streaming status, empty state, spacer).
   type VirtualItem =
     | { kind: 'segment'; segment: TranscriptSegment }
-    | { kind: 'placeholder' }
-    | { kind: 'running'; since: string }
+    | { kind: 'streaming-status' }
     | { kind: 'empty' }
     | { kind: 'bottom-spacer' };
 
@@ -147,12 +158,8 @@ export function CodingTranscriptPane({
     for (const segment of segments) {
       list.push({ kind: 'segment', segment });
     }
-    if (showLivePlaceholder) {
-      list.push({ kind: 'placeholder' });
-    }
-    const runningSince = session?.started_at ?? session?.created_at;
-    if (session?.status === 'running' && runningSince) {
-      list.push({ kind: 'running', since: runningSince });
+    if (showStreamingStatus) {
+      list.push({ kind: 'streaming-status' });
     }
     if (!loading && list.length === 0) {
       list.push({ kind: 'empty' });
@@ -163,16 +170,19 @@ export function CodingTranscriptPane({
     return list;
   }, [
     segments,
-    showLivePlaceholder,
-    session?.status,
-    session?.started_at,
-    session?.created_at,
+    showStreamingStatus,
     loading,
   ]);
 
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollContainerRef.current,
+    getItemKey: (index) => {
+      const item = items[index];
+      if (!item) return `missing:${index}`;
+      if (item.kind === 'segment') return `segment:${item.segment.kind}:${item.segment.id}`;
+      return item.kind;
+    },
     estimateSize: () => 120,
     overscan: 8,
   });
@@ -283,14 +293,12 @@ export function CodingTranscriptPane({
             options={{ expandable: true, resolveActor: actorForMessage }}
           />
         );
-      case 'placeholder':
+      case 'streaming-status':
         return (
-          <div className="text-[13px] leading-6 text-muted-foreground" data-coding-session-live-placeholder>
-            Preparing reply…
-          </div>
+          <StreamingStatusText className="text-[13px]">
+            Thinking…
+          </StreamingStatusText>
         );
-      case 'running':
-        return <RunningActivityRow since={item.since} />;
       case 'empty':
         return (
           <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
@@ -348,7 +356,9 @@ export function CodingTranscriptPane({
         </div>
       </div>
 
-      {(session?.pause_reason === 'authentication' || activeInteraction) ? (
+      {(session?.pause_reason === 'authentication'
+        || (session?.status === 'paused' && session?.pause_reason === 'human_approval')
+        || activeInteraction) ? (
         <InterruptionOverlay
           session={session ?? null}
           activeInteraction={activeInteraction ?? null}
@@ -359,6 +369,7 @@ export function CodingTranscriptPane({
           onViewPreview={onViewPreview}
           onAuthStart={onAuthStart ?? (() => {})}
           onAuthCancel={onAuthCancel ?? (() => {})}
+          onApproveRun={onApproveRun}
           onResolveInteraction={onResolveInteraction ?? (() => {})}
         />
       ) : null}
@@ -436,6 +447,7 @@ function InterruptionOverlay({
   reviewArtifacts,
   onAuthStart,
   onAuthCancel,
+  onApproveRun,
   onResolveInteraction,
 }: {
   session: CodingSession | null;
@@ -447,6 +459,7 @@ function InterruptionOverlay({
   onViewPreview?: (panelKey: string) => void;
   onAuthStart: () => void;
   onAuthCancel: () => void;
+  onApproveRun?: () => void;
   onResolveInteraction: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
   const authState = session?.auth_state;
@@ -517,6 +530,42 @@ function InterruptionOverlay({
         </div>
       ) : null}
 
+      {session?.status === 'paused' && session?.pause_reason === 'human_approval' && session?.approval_state === 'pending' && !activeInteraction ? (
+        <div className="rounded-lg border border-border/80 bg-card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">Approval required</div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Approve this run to let the agent begin.
+              </p>
+            </div>
+            <Button size="sm" onClick={onApproveRun} disabled={!onApproveRun || acting !== null}>
+              {acting === 'approve-run' ? 'Approving…' : 'Approve'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {/*
+        The run has paused for approval but the interaction hasn't projected
+        into the event stream yet (backend reconstruction lags the status flip
+        by a beat). Show a placeholder so the drawer never looks empty/broken
+        while the real approval card is on its way.
+      */}
+      {session?.status === 'paused' && session?.pause_reason === 'human_approval' && session?.approval_state !== 'pending' && !activeInteraction ? (
+        <div className="rounded-lg border border-border/80 bg-card p-4">
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+            Awaiting your approval
+          </div>
+          <div className="text-sm font-semibold">The agent paused for your approval</div>
+          <p className="mt-1 text-sm text-muted-foreground">Loading the approval details…</p>
+          <div className="mt-3 space-y-2" aria-hidden>
+            <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+          </div>
+        </div>
+      ) : null}
       {activeInteraction ? (
         <CodingInteractionCard
           interaction={activeInteraction}
@@ -609,72 +658,6 @@ function MessageInput({
         >
           {sending ? <Loading01Icon className="h-5 w-5 animate-spin" /> : <ArrowUp02Icon className="h-5 w-5" />}
         </Button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Running indicator ──────────────────────────────────────────────────────
-
-function formatElapsed(ms: number): string {
-  return formatCodingSessionElapsed(ms);
-}
-
-/** Subscribes to a 1-second tick so elapsed time stays live. */
-function useElapsedMs(since: string): number {
-  const origin = useMemo(() => new Date(since).getTime(), [since]);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(id);
-  }, [origin]);
-
-  if (!origin || Number.isNaN(origin)) return 0;
-  return Math.max(0, now - origin);
-}
-
-function RunningEllipsis() {
-  const [dotCount, setDotCount] = useState(1);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setDotCount((current) => current === 3 ? 1 : current + 1);
-    }, 500);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return (
-    <span aria-hidden className="inline-block w-[1.25em] text-left" data-agent-running-ellipsis>
-      {'.'.repeat(dotCount)}
-    </span>
-  );
-}
-
-function RunningActivityRow({ since }: { since: string }) {
-  const elapsed = useElapsedMs(since);
-  return (
-    <div className="flex gap-3" data-coding-session-running-activity>
-      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 shadow-sm">
-        <span
-          aria-hidden
-          className="absolute inset-0 animate-ping rounded-full bg-primary/20"
-          data-agent-running-halo
-        />
-        <UnicodeSpinner
-          name="braille"
-          className="agent-working-chroma relative text-base leading-none"
-          data-agent-working-spinner
-        />
-      </div>
-      <div className="min-w-0 flex-1 pb-4">
-        <div className="flex min-h-7 items-center gap-2">
-          <span className="text-xs font-medium text-foreground/80">
-            Agent running<RunningEllipsis />
-          </span>
-          <span className="text-[11px] tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
-        </div>
       </div>
     </div>
   );

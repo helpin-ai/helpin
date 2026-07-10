@@ -712,6 +712,8 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			email TEXT NOT NULL,
 			password_hash TEXT NOT NULL,
 			full_name TEXT NOT NULL,
+			email_verified_at DATETIME,
+			google_subject TEXT,
 			avatar_url TEXT,
 			avatar_style TEXT,
 			avatar_seed TEXT,
