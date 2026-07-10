@@ -34,12 +34,12 @@ Use an imperative verb followed by a concise purpose clause. Prefer familiar pro
 | `support.email_inbox_connected` | Connect your support email inbox so customer emails arrive in Helpin. |
 | `support.live_chat_installed` | Add Helpin live chat to your website so customers can contact you instantly. |
 | `support.help_docs_ready` | Import or create public help docs so customers can find answers themselves. |
-| `support.brand_knowledge_ready` | Add brand knowledge sources so the AI support agent gives accurate, on-brand answers. |
+| `support.brand_knowledge_ready` | Add and sync a brand knowledge source so the AI support agent gives accurate, on-brand answers. |
 | `support.ai_agent_activated` | Activate the AI support agent so common customer questions can be answered automatically. |
-| `support.team_inbox_created` | Create team inboxes so conversations have clear ownership. |
+| `support.team_inbox_created` | Create a team inbox so conversations have clear ownership. |
 | `support.routing_enabled` | Turn on automatic routing so every conversation reaches the right team. |
-| `support.pm_task_linked` | Create a task from a customer issue so feedback becomes product work. |
-| `support.coverage_gap_resolved` | Resolve coverage gaps so the AI answers more questions and your resolution rate improves. |
+| `support.pm_task_linked` | Create or link a task from a customer issue so feedback becomes product work. |
+| `support.coverage_fix_applied` | Review a coverage gap and apply a fix so the AI can answer more customer questions. |
 | `automation.target_ready` | Choose real work to automate so the result will be useful. |
 | `automation.first_assisted_value` | Complete your first agent run to see how Helpin can save time. |
 | `automation.repeat_assisted_value` | Complete another useful agent run to make AI part of your workflow. |
@@ -73,16 +73,43 @@ Use this order and completion evidence:
 | 1 | Email inbox | At least one active support email route. |
 | 2 | Live chat | An active widget installation has received at least one widget session, proving the widget was used outside its setup screen. |
 | 3 | Public help docs | At least one public help-center article is published in the workspace. |
-| 4 | Brand knowledge | At least one support or agent knowledge source exists in the workspace. |
-| 5 | AI support agent | Widget settings have AI enabled with a selected support agent. |
-| 6 | Team inbox | At least one active support mailbox exists. |
-| 7 | Automatic routing | Automated routing is enabled and at least one active routing rule or inbox AI-routing prompt targets an active team inbox. |
+| 4 | Brand knowledge | At least one `support_content_sources` row in the workspace has `sync_status = 'ready'` and indexed content (`indexed_pages > 0` or `indexed_chunks > 0`). Docs-backed agent knowledge does not satisfy this task, keeping it distinct from public help docs. |
+| 5 | AI support agent | An active widget installation has JSON settings with `ai_enabled = true` and a non-empty `ai_agent_id`. |
+| 6 | Team inbox | At least one active `support_mailboxes` row exists. The shared inbox is a synthetic UI view, not a row, and therefore cannot satisfy this task. |
+| 7 | Automatic routing | An active widget installation has `triage_enabled = true`, an active team inbox exists, and either (a) an active `support_triage_rules` row targets an active inbox or (b) an active triage-eligible inbox has a non-empty `routing_prompt` or `description` for AI routing. Assignment mode alone does not satisfy routing. |
 | 8 | Customer issue task | A support conversation is linked to a product task. |
 | 9 | Coverage gap | At least one coverage recommendation has been applied. |
 
-The first seven tasks are the core setup denominator. The task-linking and coverage-gap steps are advanced value milestones. Support activation is reached when the AI support agent is active; established maturity requires team inboxes and automatic routing; advanced maturity additionally requires the task-linking and coverage-gap outcomes.
+The first seven tasks are the core setup denominator. The task-linking and coverage-gap steps are advanced value milestones.
 
-Actions deep-link to the relevant product surfaces: email forwarding, chat widget, Docs, knowledge settings, AI Assistant, team inboxes, routing, support inbox, and coverage.
+Maturity is conjunctive and never skips an earlier threshold:
+
+- `preparing`: email inbox or live chat is incomplete;
+- `ready`: email inbox and live chat are complete, but at least one of public help docs, brand knowledge, or AI support agent is incomplete;
+- `activated`: tasks 1–5 are complete, but team inbox or automatic routing is incomplete;
+- `established`: tasks 1–7 are complete, but task linking or coverage improvement is incomplete;
+- `advanced`: all nine tasks are complete.
+
+Display order does not force unrelated setup work into a linear lock. Exact prerequisites are:
+
+- `support.ai_agent_activated` requires both `support.help_docs_ready` and `support.brand_knowledge_ready`;
+- `support.routing_enabled` requires `support.team_inbox_created`;
+- `support.coverage_fix_applied` requires `support.ai_agent_activated`;
+- all other support tasks have no prerequisite. In particular, task linking has no single channel prerequisite because either email or live chat can supply the customer issue.
+
+Exact action mappings are:
+
+| Task | Action key | Workspace-relative route |
+|---|---|---|
+| `support.email_inbox_connected` | `support_email_inbox` | `/settings/inboxes-routing?tab=email` |
+| `support.live_chat_installed` | `support_live_chat` | `/settings/chat-general` |
+| `support.help_docs_ready` | `support_help_docs` | `/docs` |
+| `support.brand_knowledge_ready` | `support_brand_knowledge` | `/settings/knowledge` |
+| `support.ai_agent_activated` | `support_ai` | `/settings/support-ai-assistant` |
+| `support.team_inbox_created` | `support_team_inboxes` | `/settings/inboxes-routing?tab=inboxes` |
+| `support.routing_enabled` | `support_routing` | `/settings/inboxes-routing?tab=routing` |
+| `support.pm_task_linked` | `support_inbox` | `/support` |
+| `support.coverage_fix_applied` | `support_coverage` | `/support/coverage` |
 
 ## Scope
 
@@ -93,4 +120,7 @@ Rewrite the first-release Foundation, Product delivery, Customer support, and Au
 - Add a catalog-level regression test that asserts the exact approved label for every task key above.
 - Add a frontend regression check that exposes and renders only the task label, never the legacy description.
 - Verify task labels wrap without truncation and remain accessible at narrow widths.
+- Assert the exact nine-key support order and the absence of the removed resolution and one-off AI-reply keys.
+- Test every support evidence predicate with workspace scoping, active-state requirements, public publication, successful knowledge indexing, non-empty agent selection, synthetic shared-inbox exclusion, and routing-target validity.
+- Test the support prerequisite graph, seven-task core denominator, each conjunctive maturity threshold, and every action-key route.
 - Run focused backend/frontend tests, TypeScript, and production builds.
