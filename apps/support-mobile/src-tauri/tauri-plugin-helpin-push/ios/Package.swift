@@ -20,9 +20,23 @@ import PackageDescription
 //   package's own iOS floor to match (also matches this app's
 //   `tauri.conf.json` `minimumSystemVersion: "15.0"`, so no new
 //   constraint is introduced).
+//
+// UPDATE: the version bump alone did not fix it — the identical error
+// persisted. Root cause is one level down the stack: `tauri ios dev` does
+// not propagate MACOSX_DEPLOYMENT_TARGET to plugin build scripts
+// (tauri-apps/tauri #4704, #14083), so swift-rs's SwiftLinker falls back
+// to its own old default (10.13) for the build's macOS side regardless of
+// what any dependency's manifest declares. Fixed at the source in
+// `../build.rs` (sets MACOSX_DEPLOYMENT_TARGET explicitly before calling
+// into tauri_plugin::Builder). Declaring `.macOS(.v10_15)` here too is a
+// low-risk second line of defense: it gives this package itself a modern
+// macOS floor in case SPM's own graph validation also consults this
+// package's declared platforms (this plugin is only ever built for iOS in
+// practice via `ios_path("ios")` in build.rs; declaring macOS support here
+// does not change that).
 let package = Package(
     name: "tauri-plugin-helpin-push",
-    platforms: [.iOS(.v15)],
+    platforms: [.iOS(.v15), .macOS(.v10_15)],
     products: [
         .library(
             name: "tauri-plugin-helpin-push",
