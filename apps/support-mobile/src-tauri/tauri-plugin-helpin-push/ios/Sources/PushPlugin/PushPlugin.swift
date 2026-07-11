@@ -28,22 +28,30 @@ class PushPlugin: Plugin, MessagingDelegate, UNUserNotificationCenterDelegate {
     /// reloads doesn't drop an unconsumed payload.
     static var bufferedTapPayload: [String: String]?
 
-    override init() {
-        super.init()
-        // SPIKE-VERIFY: confirm `FirebaseApp.configure()` belongs here
-        // (guarded so repeated `Plugin` instantiation across
-        // window/scene reloads doesn't double-configure) versus requiring
-        // the generated `gen/apple` AppDelegate to call it before Tauri's
-        // plugin registration runs — Tauri iOS plugins don't get their own
-        // AppDelegate lifecycle hook, so this may need to move to a manual
-        // edit of `gen/apple/<App>/AppDelegate.swift` instead (documented
-        // as a manual Xcode step in the plugin README either way, since
-        // `GoogleService-Info.plist` also has to be added to the Xcode
-        // project manually).
+    /// True once `FirebaseApp.configure()` has actually run against a real
+    /// `GoogleService-Info.plist`. Firebase's SDK calls `fatalError`
+    /// (an uncatchable process abort, not a Swift throw) if `configure()`
+    /// runs with no valid config resource in the bundle — which is the
+    /// current state until the Task 19a hardware spike adds real Firebase
+    /// credentials. Every Messaging-dependent path below must check this
+    /// first and degrade gracefully instead of touching `Messaging.messaging()`,
+    /// which itself assumes a configured `FirebaseApp` exists.
+    private static let firebaseConfigured: Bool = {
+        guard Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil else {
+            NSLog("[helpin-push] GoogleService-Info.plist not found — push disabled until Task 19a adds Firebase credentials.")
+            return false
+        }
         if FirebaseApp.app() == nil {
             FirebaseApp.configure()
         }
-        Messaging.messaging().delegate = self
+        return true
+    }()
+
+    override init() {
+        super.init()
+        if PushPlugin.firebaseConfigured {
+            Messaging.messaging().delegate = self
+        }
         UNUserNotificationCenter.current().delegate = self
     }
 
@@ -63,6 +71,12 @@ class PushPlugin: Plugin, MessagingDelegate, UNUserNotificationCenterDelegate {
     }
 
     @objc public func getPushToken(_ invoke: Invoke) throws {
+        guard PushPlugin.firebaseConfigured else {
+            var ret = JSObject()
+            ret["token"] = nil
+            invoke.resolve(ret)
+            return
+        }
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound, .badge]
         ) { _, _ in
