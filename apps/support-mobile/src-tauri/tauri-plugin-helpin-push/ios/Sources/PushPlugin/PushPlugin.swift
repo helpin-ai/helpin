@@ -48,9 +48,13 @@ class PushPlugin: Plugin, MessagingDelegate, UNUserNotificationCenterDelegate {
     }
 
     @objc public func takePendingTap(_ invoke: Invoke) throws {
-        let ret = JSObject()
+        var ret = JSObject()
         if let payload = PushPlugin.bufferedTapPayload {
-            ret["tap"] = payload
+            // `payload` is `[String: String]`; JSObject's values are `any
+            // JSValue`, so a plain String-keyed/valued Dictionary doesn't
+            // satisfy it directly even though String itself conforms to
+            // JSValue — map it explicitly into a JSValue-valued dictionary.
+            ret["tap"] = payload.mapValues { $0 as JSValue }
         } else {
             ret["tap"] = nil
         }
@@ -82,7 +86,7 @@ class PushPlugin: Plugin, MessagingDelegate, UNUserNotificationCenterDelegate {
             // wiring exists, `Messaging.messaging().token` below may never
             // resolve on a real device.
             Messaging.messaging().token { token, error in
-                let ret = JSObject()
+                var ret = JSObject()
                 if let token = token, error == nil {
                     ret["token"] = token
                 } else {
@@ -97,7 +101,11 @@ class PushPlugin: Plugin, MessagingDelegate, UNUserNotificationCenterDelegate {
 
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         guard let token = fcmToken else { return }
-        trigger("push-token-changed", data: ["token": token])
+        // `trigger` can throw; this delegate method's signature is fixed by
+        // the MessagingDelegate protocol (not `throws`), and a failure to
+        // emit this event isn't fatal (the JS side just misses one token
+        // refresh), so discard the error rather than propagate it.
+        try? trigger("push-token-changed", data: ["token": token])
     }
 
     // MARK: - UNUserNotificationCenterDelegate
@@ -115,7 +123,11 @@ class PushPlugin: Plugin, MessagingDelegate, UNUserNotificationCenterDelegate {
         // listener exists). The JS side dedupes if the same payload arrives
         // through both paths.
         PushPlugin.bufferedTapPayload = payload
-        trigger("push-tapped", data: payload)
+        // Same throws/type-mismatch reasoning as the token-changed trigger
+        // and takePendingTap above: `trigger` can throw from a non-throwing
+        // delegate method (discard via `try?`), and `payload` (`[String:
+        // String]`) needs mapping into a JSValue-valued dictionary.
+        try? trigger("push-tapped", data: payload.mapValues { $0 as JSValue })
         // SPIKE-VERIFY: confirm this delegate callback fires for a
         // cold-start tap too (delivered once the app finishes launching),
         // and not only for warm taps — if cold-start delivery instead
