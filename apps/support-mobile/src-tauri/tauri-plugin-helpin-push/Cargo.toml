@@ -6,6 +6,7 @@ edition = "2021"
 authors = ["Helpin"]
 license = "MIT OR Apache-2.0"
 rust-version = "1.77.2"
+links = "tauri-plugin-helpin-push"
 
 [dependencies]
 tauri = { version = "2" }
