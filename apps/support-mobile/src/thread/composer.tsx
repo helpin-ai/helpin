@@ -361,7 +361,8 @@ export function Composer({
             ]}
             value={draft.mode}
             onChange={(mode) => setMode(conversationId, mode)}
-            className="w-[132px] p-0.5"
+            size="sm"
+            className="w-[104px]"
           />
           <div className="ml-auto flex items-center gap-0.5">
             <Pressable
