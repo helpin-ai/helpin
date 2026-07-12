@@ -133,7 +133,16 @@ function InnerApp() {
         router={router}
         context={{ auth: { user, loading, serverUnreachable } }}
       />
-      <Toaster richColors position="top-center" />
+      {/* Offset below the notch/status bar + the app's ~52px top bar so toasts
+          (e.g. "Resolved · Undo") float as a clean banner instead of rendering
+          under the safe-area. `mobileOffset` is the one that applies in the
+          webview's mobile viewport. */}
+      <Toaster
+        richColors
+        position="top-center"
+        offset={{ top: 'calc(env(safe-area-inset-top, 0px) + 60px)' }}
+        mobileOffset={{ top: 'calc(env(safe-area-inset-top, 0px) + 60px)' }}
+      />
     </>
   )
 }
