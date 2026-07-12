@@ -13,9 +13,16 @@ import { cn } from '@mobile/lib/cn'
 import { Avatar } from '@mobile/ui/avatar'
 import { CONVERSATION_CELL_HEIGHT, formatRelativeTime, isUnread, previewText } from './inbox-helpers'
 
-const CHANNEL_ICONS: Partial<Record<SupportConversation['source'], ComponentType<{ className?: string }>>> = {
+const CHANNEL_ICONS: Partial<
+  Record<SupportConversation['source'], ComponentType<{ className?: string; 'aria-label'?: string }>>
+> = {
   email: Mail,
   widget: MessageCircle,
+}
+
+const CHANNEL_LABELS: Partial<Record<SupportConversation['source'], string>> = {
+  email: 'Email',
+  widget: 'Live chat',
 }
 
 /** Flow states that mean the conversation is queued and waiting on a human. Mirrors web's HUMAN_QUEUE_FLOW_STATES. */
@@ -139,11 +146,6 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
     >
       <div className="relative shrink-0">
         <Avatar name={displayName} size={44} />
-        {ChannelIcon && (
-          <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-background text-muted-foreground ring-2 ring-background">
-            <ChannelIcon className="h-2.5 w-2.5" />
-          </span>
-        )}
         {isVisitorOnline && (
           <span
             aria-label="Visitor online"
@@ -153,17 +155,25 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
-        {/* Name + time */}
+        {/* Channel icon + name + time */}
         <div className="flex items-center justify-between gap-2">
-          <span
-            data-testid="conversation-name"
-            className={cn(
-              'min-w-0 flex-1 truncate text-body text-foreground',
-              visual.usesUnreadTypography ? 'font-semibold' : 'font-medium',
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            {ChannelIcon && (
+              <ChannelIcon
+                aria-label={CHANNEL_LABELS[conversation.source]}
+                className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+              />
             )}
-          >
-            {displayName}
-          </span>
+            <span
+              data-testid="conversation-name"
+              className={cn(
+                'min-w-0 truncate text-body text-foreground',
+                visual.usesUnreadTypography ? 'font-semibold' : 'font-medium',
+              )}
+            >
+              {displayName}
+            </span>
+          </div>
           <span data-testid="conversation-time" className="shrink-0 text-footnote tnum text-muted-foreground">
             {time}
           </span>
