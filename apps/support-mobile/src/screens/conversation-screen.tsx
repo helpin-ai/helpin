@@ -222,6 +222,7 @@ export function ConversationScreen() {
         title={conversationTitle}
         subtitle={subtitle}
         onBack={handleBack}
+        titleAlign="left"
         onTitlePress={() => setContextSheetOpen(true)}
         titleSlot={
           <>

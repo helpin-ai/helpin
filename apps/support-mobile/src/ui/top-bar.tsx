@@ -23,6 +23,13 @@ export interface TopBarProps {
   titleSlot?: ReactNode
   /** Makes the compact title area tappable (e.g. opening a context sheet). Ignored when `large` is true. */
   onTitlePress?: () => void
+  /**
+   * `center` (default) centers the title between the leading/trailing slots.
+   * `left` places it in-flow, left-aligned next to the back button — better for
+   * long, subject-led titles with trailing actions (the conversation header).
+   * Ignored when `large` is true.
+   */
+  titleAlign?: 'center' | 'left'
 }
 
 export function TopBar({
@@ -36,7 +43,12 @@ export function TopBar({
   className,
   titleSlot,
   onTitlePress,
+  titleAlign = 'center',
 }: TopBarProps) {
+  const leftAligned = titleAlign === 'left'
+  const titlePositionClass = leftAligned
+    ? 'min-w-0 flex-1 items-start px-1 text-left'
+    : 'absolute inset-x-12 items-center text-center'
   // Always call the hooks (rules of hooks) even when `large`/`scrollY` aren't in play;
   // the fallback motion value just never changes, so the derived transforms stay static.
   const fallbackScrollY = useMotionValue(0)
@@ -74,7 +86,7 @@ export function TopBar({
             <Pressable
               aria-label={title}
               onPress={onTitlePress}
-              className="absolute inset-x-12 flex min-h-0 min-w-0 flex-col items-center justify-center text-center"
+              className={cn('flex min-h-0 min-w-0 flex-col justify-center', titlePositionClass)}
             >
               {titleSlot ?? (
                 <>
@@ -84,7 +96,7 @@ export function TopBar({
               )}
             </Pressable>
           ) : (
-            <div className="pointer-events-none absolute inset-x-12 flex flex-col items-center text-center">
+            <div className={cn('flex flex-col justify-center', leftAligned ? '' : 'pointer-events-none', titlePositionClass)}>
               {titleSlot ?? (
                 <>
                   <span className="text-headline">{title}</span>
