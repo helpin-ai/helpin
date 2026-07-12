@@ -84,6 +84,33 @@ export function useSupportMailboxes(workspaceId: string) {
   })
 }
 
+export function useSupportInboxViewCounts(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: supportQueryKeys.inboxViewCounts(workspaceId),
+    queryFn: async () => unwrapOrThrow(await supportService.listInboxViewCounts(workspaceId)),
+    enabled: !!workspaceId && enabled,
+    staleTime: 15_000,
+  })
+}
+
+export function useSupportBuiltinInboxViews(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: supportQueryKeys.builtinInboxViews(workspaceId),
+    queryFn: async () => unwrapOrThrow(await supportService.listBuiltinInboxViews(workspaceId)),
+    enabled: !!workspaceId && enabled,
+    staleTime: 30_000,
+  })
+}
+
+export function useSupportInboxViews(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: supportQueryKeys.inboxViews(workspaceId),
+    queryFn: async () => unwrapOrThrow(await supportService.listInboxViews(workspaceId)),
+    enabled: !!workspaceId && enabled,
+    staleTime: 30_000,
+  })
+}
+
 export function useMailboxMembers(workspaceId: string, mailboxId?: string | null) {
   return useQuery({
     queryKey: supportQueryKeys.mailboxMembers(workspaceId, mailboxId ?? ''),

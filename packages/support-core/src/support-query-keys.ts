@@ -13,4 +13,7 @@ export const supportQueryKeys = {
     ['support', wsId, 'conversations', conversationId, 'visitor-context'] as const,
   assignees: (wsId: string, conversationId: string) =>
     ['support', wsId, 'conversations', conversationId, 'assignees'] as const,
+  inboxViewCounts: (wsId: string) => ['support', wsId, 'inbox-view-counts'] as const,
+  builtinInboxViews: (wsId: string) => ['support', wsId, 'builtin-inbox-views'] as const,
+  inboxViews: (wsId: string) => ['support', wsId, 'inbox-views'] as const,
 } as const

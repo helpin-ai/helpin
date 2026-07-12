@@ -214,3 +214,34 @@ export interface AssignableMember {
   avatar_background_mode?: string
   avatar_background_color?: string
 }
+
+/**
+ * Per-view count from GET /support/inbox/views/counts.
+ * Verified against server/internal/model/support_inbox_view.go:47-51.
+ * `view_id` matches a builtin or custom view's `id` (see SupportInboxView).
+ */
+export interface SupportInboxViewCount {
+  view_id: string
+  total_count: number
+  unread_count: number
+}
+
+/**
+ * A builtin or custom inbox view from GET /support/inbox/views (custom) or
+ * /support/inbox/views/builtin (builtin). Verified against
+ * server/internal/model/support_inbox_view.go:15-25.
+ * Builtin views carry `view_key` = "nav:<navFilter>" (e.g. "nav:waiting") or
+ * "team:<mailboxId>"; custom views have no `view_key`.
+ */
+export interface SupportInboxView {
+  id: string
+  workspace_id: string
+  name: string
+  filters: unknown
+  is_shared: boolean
+  view_type: string
+  view_key?: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+}

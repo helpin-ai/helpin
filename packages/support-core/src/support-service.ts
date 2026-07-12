@@ -5,6 +5,8 @@ import type {
   ConversationStatus,
   SupportConversation,
   SupportInboxScopeListResponse,
+  SupportInboxView,
+  SupportInboxViewCount,
   SupportMailbox,
   SupportMailboxMember,
   SupportMessage,
@@ -126,6 +128,12 @@ export const supportService = {
   },
   listInboxScopes: (workspaceId: string) =>
     getApi().get<SupportInboxScopeListResponse>(`/support/inbox/mailboxes/scopes${qs(workspaceId)}`),
+  listInboxViewCounts: (workspaceId: string) =>
+    getApi().get<SupportInboxViewCount[]>(`/support/inbox/views/counts${qs(workspaceId)}`),
+  listBuiltinInboxViews: (workspaceId: string) =>
+    getApi().get<SupportInboxView[]>(`/support/inbox/views/builtin${qs(workspaceId)}`),
+  listInboxViews: (workspaceId: string) =>
+    getApi().get<SupportInboxView[]>(`/support/inbox/views${qs(workspaceId)}`),
   listMailboxes: (workspaceId: string) =>
     getApi().get<SupportMailbox[]>(`/support/inbox/mailboxes${qs(workspaceId)}`),
   listMailboxMembers: (workspaceId: string, mailboxId: string) =>
