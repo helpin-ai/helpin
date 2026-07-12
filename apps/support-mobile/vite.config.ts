@@ -72,6 +72,14 @@ export default defineConfig(({ mode }) => {
           find: '@/components/support/supportSystemEvent',
           replacement: path.resolve(__dirname, '../../frontend/src/components/support/supportSystemEvent.ts'),
         },
+        {
+          find: '@/components/support/shortcutFiltering',
+          replacement: path.resolve(__dirname, '../../frontend/src/components/support/shortcutFiltering.ts'),
+        },
+        {
+          find: '@/components/support/shortcutVariables',
+          replacement: path.resolve(__dirname, '../../frontend/src/components/support/shortcutVariables.ts'),
+        },
       ],
     },
     server: {

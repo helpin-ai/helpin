@@ -11,6 +11,7 @@ vi.mock('@helpin-ai/support-core', () => ({
   useSupportPresenceStore: (selector: (s: { wsSend: null; wsConnected: boolean }) => unknown) =>
     selector({ wsSend: null, wsConnected: false }),
   useRewriteSupportDraft: () => ({ mutateAsync: vi.fn() }),
+  useSupportCannedResponses: () => ({ data: [], isPending: false }),
 }))
 
 vi.mock('@mobile/lib/haptics', () => ({

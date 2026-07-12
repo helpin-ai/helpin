@@ -1,6 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Sparkles, Undo2, X } from 'lucide-react'
-import { useRewriteSupportDraft, useSendMessage, type SupportAIRewriteOperation } from '@helpin-ai/support-core'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Sparkles, Undo2, X, Zap } from 'lucide-react'
+import {
+  useRewriteSupportDraft,
+  useSendMessage,
+  useSupportCannedResponses,
+  type SupportAIRewriteOperation,
+  type SupportCannedResponse,
+} from '@helpin-ai/support-core'
+import { filterShortcuts, stripShortcutContent } from '@/components/support/shortcutFiltering'
+import { resolveShortcutVariables, type ShortcutVariableContext } from '@/components/support/shortcutVariables'
 import { cn } from '@mobile/lib/cn'
 import { haptic } from '@mobile/lib/haptics'
 import { Pressable } from '@mobile/ui/pressable'
@@ -10,6 +18,8 @@ import type { FailedSend } from './failed-sends-reducer'
 import { SendButton, type SendButtonState } from './send-button'
 import { useTypingBroadcast } from './use-typing-broadcast'
 import { AIToolsSheet } from './ai-tools-sheet'
+import { CannedResponsesSheet } from './canned-responses-sheet'
+import { cannedToPlainText, detectShortcutToken, replaceRange } from './canned-shortcuts'
 
 /** How long the "Rewritten · Undo" bar stays before auto-dismissing. */
 const UNDO_VISIBLE_MS = 6000
@@ -17,6 +27,8 @@ const UNDO_VISIBLE_MS = 6000
 export interface ComposerProps {
   workspaceId: string
   conversationId: string
+  /** Context for resolving canned-response variables ({{customer.first_name}}, …). */
+  variableContext?: ShortcutVariableContext
 }
 
 /**
@@ -45,7 +57,9 @@ const SENT_STATE_MS = 400
  * so an extra imperative call from the composer would be redundant at best
  * and premature (pre-append) at worst.
  */
-export function Composer({ workspaceId, conversationId }: ComposerProps) {
+const EMPTY_VARIABLE_CONTEXT: ShortcutVariableContext = {}
+
+export function Composer({ workspaceId, conversationId, variableContext = EMPTY_VARIABLE_CONTEXT }: ComposerProps) {
   const draft = useDraftStore((state) => state.drafts[conversationId] ?? DEFAULT_DRAFT)
   const setText = useDraftStore((state) => state.setText)
   const setMode = useDraftStore((state) => state.setMode)
@@ -100,6 +114,34 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
     haptic('impactLight')
   }
 
+  // Canned responses: insert via a searchable sheet (⚡ button) or inline by
+  // typing `!code`. Variables like {{customer.first_name}} are resolved from
+  // the conversation + the signed-in agent + workspace.
+  const cannedQuery = useSupportCannedResponses(workspaceId)
+  const cannedResponses = cannedQuery.data ?? []
+  const [cannedSheetOpen, setCannedSheetOpen] = useState(false)
+  const [cursor, setCursor] = useState(0)
+  const pendingCaretRef = useRef<number | null>(null)
+
+  // The active `!token` under the caret drives the inline suggestion list.
+  const activeToken = useMemo(() => detectShortcutToken(draft.text, cursor), [draft.text, cursor])
+  const inlineSuggestions = useMemo(
+    () => (activeToken ? filterShortcuts(cannedResponses, activeToken.query, 6) : []),
+    [activeToken, cannedResponses],
+  )
+
+  function insertCanned(response: SupportCannedResponse, range?: { start: number; end: number }) {
+    const resolved = cannedToPlainText(resolveShortcutVariables(response.content, variableContext))
+    const from = range?.start ?? cursor
+    const to = range?.end ?? cursor
+    const edit = replaceRange(draft.text, from, to, resolved)
+    setText(conversationId, edit.text)
+    pendingCaretRef.current = edit.cursor
+    setCursor(edit.cursor)
+    if (!isNote) notifyTyping(edit.text)
+    haptic('selection')
+  }
+
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // Synchronous re-entrancy lock: `phase` is async React state, so two taps
@@ -119,6 +161,14 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
     if (!el) return
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT_PX)}px`
+    // Restore the caret after a programmatic insert (canned response), so the
+    // cursor lands right after the inserted text instead of at the end.
+    if (pendingCaretRef.current !== null) {
+      const caret = pendingCaretRef.current
+      pendingCaretRef.current = null
+      el.focus()
+      el.setSelectionRange(caret, caret)
+    }
   }, [draft.text])
 
   useEffect(
@@ -240,6 +290,15 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
           />
           <div className="ml-auto flex items-center gap-0.5">
             <Pressable
+              aria-label="Canned responses"
+              haptic="selection"
+              disabled={phase === 'sending'}
+              onPress={() => setCannedSheetOpen(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-primary active:bg-primary/10 disabled:opacity-40"
+            >
+              <Zap className="h-5 w-5" />
+            </Pressable>
+            <Pressable
               aria-label="AI writing tools"
               haptic="selection"
               disabled={trimmed.length === 0 || phase === 'sending' || busyOperation !== null}
@@ -250,6 +309,27 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
             </Pressable>
           </div>
         </div>
+
+        {inlineSuggestions.length > 0 && activeToken && (
+          <div className="mx-3 mb-1 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-background shadow-lg">
+            {inlineSuggestions.map((response) => (
+              <button
+                key={response.id}
+                type="button"
+                onClick={() => insertCanned(response, { start: activeToken.start, end: activeToken.end })}
+                className="flex w-full flex-col gap-0.5 border-b border-border/40 px-3 py-2 text-left last:border-0 active:bg-muted"
+              >
+                <span className="flex items-center gap-1.5 text-footnote font-semibold text-primary">
+                  <Zap className="h-3 w-3" />
+                  {response.short_code}
+                </span>
+                <span className="line-clamp-1 text-footnote text-muted-foreground">
+                  {stripShortcutContent(response.content)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-2 px-3 pb-2">
           <textarea
             ref={textareaRef}
@@ -258,8 +338,10 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
             onChange={(event) => {
               const next = event.target.value
               setText(conversationId, next)
+              setCursor(event.target.selectionStart ?? next.length)
               if (!isNote) notifyTyping(next)
             }}
+            onSelect={(event) => setCursor(event.currentTarget.selectionStart ?? 0)}
             placeholder={isNote ? 'Internal note…' : 'Reply…'}
             style={{ minHeight: MIN_TEXTAREA_HEIGHT_PX, maxHeight: MAX_TEXTAREA_HEIGHT_PX }}
             className="flex-1 resize-none overflow-y-auto rounded-2xl border border-input bg-background px-3 py-2 text-body text-foreground outline-none placeholder:text-muted-foreground"
@@ -273,6 +355,17 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
         onOpenChange={setAiSheetOpen}
         busyOperation={busyOperation}
         onSelect={(operation) => void handleRewrite(operation)}
+      />
+
+      <CannedResponsesSheet
+        open={cannedSheetOpen}
+        onOpenChange={setCannedSheetOpen}
+        responses={cannedResponses}
+        loading={cannedQuery.isPending}
+        onSelect={(response) => {
+          insertCanned(response)
+          setCannedSheetOpen(false)
+        }}
       />
     </div>
   )

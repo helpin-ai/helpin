@@ -31,7 +31,9 @@
       "@/stores/supportInboxStore": ["../../frontend/src/stores/supportInboxStore.ts"],
       "@/components/support/helpers": ["../../frontend/src/components/support/helpers.ts"],
       "@/components/support/conversationRowVisual": ["../../frontend/src/components/support/conversationRowVisual.ts"],
-      "@/components/support/supportSystemEvent": ["../../frontend/src/components/support/supportSystemEvent.ts"]
+      "@/components/support/supportSystemEvent": ["../../frontend/src/components/support/supportSystemEvent.ts"],
+      "@/components/support/shortcutFiltering": ["../../frontend/src/components/support/shortcutFiltering.ts"],
+      "@/components/support/shortcutVariables": ["../../frontend/src/components/support/shortcutVariables.ts"]
     }
   },
   "include": ["src"]

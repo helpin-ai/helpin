@@ -18,6 +18,8 @@ import { EmptyState } from '@mobile/ui/empty-state'
 import { cn } from '@mobile/lib/cn'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
 import { useWorkspaceStore } from '@mobile/stores/workspace-store'
+import { useAuthStore } from '@mobile/stores/auth-store'
+import type { ShortcutVariableContext } from '@/components/support/shortcutVariables'
 import { displayNameFor } from '@mobile/inbox/conversation-cell'
 import { MessageList, type MessageListHandle, type TypingIndicatorState } from '@mobile/thread/message-list'
 import { computeSupportReceipt, groupMessages } from '@mobile/thread/thread-helpers'
@@ -104,6 +106,18 @@ export function ConversationScreen() {
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data])
   const items = useMemo(() => groupMessages(messages), [messages])
   const receipt = useMemo(() => computeSupportReceipt(messages, conversation), [messages, conversation])
+
+  const agentUser = useAuthStore((s) => s.user)
+  const workspaceName = useWorkspaceStore((s) => s.currentWorkspace?.name)
+  const variableContext = useMemo<ShortcutVariableContext>(
+    () => ({
+      customer: { fullName: conversation?.customer_name, email: conversation?.customer_email },
+      agent: { fullName: agentUser?.full_name, email: agentUser?.email },
+      workspaceName,
+      conversationSubject: conversation?.subject,
+    }),
+    [conversation?.customer_name, conversation?.customer_email, conversation?.subject, agentUser?.full_name, agentUser?.email, workspaceName],
+  )
 
   const markRead = useMarkConversationRead(workspaceId)
   useEffect(() => {
@@ -221,7 +235,12 @@ export function ConversationScreen() {
           append effect reacting to the optimistic append, not wired from
           the composer. */}
       {workspaceId && conversationId && (
-        <Composer key={conversationId} workspaceId={workspaceId} conversationId={conversationId} />
+        <Composer
+          key={conversationId}
+          workspaceId={workspaceId}
+          conversationId={conversationId}
+          variableContext={variableContext}
+        />
       )}
 
       <ContextSheet
