@@ -39,6 +39,31 @@ export default defineConfig(({ mode }) => {
             './src-tauri/tauri-plugin-helpin-push/guest-js/index.ts',
           ),
         },
+        // Read-in-place reuse of the web support "rulebook" (pure logic only).
+        // Explicit per-path aliases — deliberately NOT a blanket `@ → frontend/src`,
+        // so web UI can never be accidentally imported into the mobile bundle. The
+        // mobile inbox derives every view's server query from the web's own
+        // `buildConversationListRequestFilters`, guaranteeing identical results.
+        {
+          find: '@/lib/supportInboxFilters',
+          replacement: path.resolve(__dirname, '../../frontend/src/lib/supportInboxFilters.ts'),
+        },
+        {
+          find: '@/lib/supportInboxRouting',
+          replacement: path.resolve(__dirname, '../../frontend/src/lib/supportInboxRouting.ts'),
+        },
+        {
+          find: '@/lib/pmTypes',
+          replacement: path.resolve(__dirname, '../../frontend/src/lib/pmTypes.ts'),
+        },
+        {
+          find: '@/stores/supportInboxStore',
+          replacement: path.resolve(__dirname, '../../frontend/src/stores/supportInboxStore.ts'),
+        },
+        {
+          find: '@/components/support/helpers',
+          replacement: path.resolve(__dirname, '../../frontend/src/components/support/helpers.ts'),
+        },
       ],
     },
     server: {

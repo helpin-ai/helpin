@@ -1,0 +1,44 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`web support rulebook is importable and deterministic per view > view ai_active produces stable request filters 1`] = `
+{
+  "ai": "handling",
+}
+`;
+
+exports[`web support rulebook is importable and deterministic per view > view inbox produces stable request filters 1`] = `
+{
+  "filter": "inbox",
+  "mailbox_id": "shared",
+}
+`;
+
+exports[`web support rulebook is importable and deterministic per view > view mine produces stable request filters 1`] = `
+{
+  "filter": "mine",
+}
+`;
+
+exports[`web support rulebook is importable and deterministic per view > view resolved produces stable request filters 1`] = `
+{
+  "filter": "resolved",
+}
+`;
+
+exports[`web support rulebook is importable and deterministic per view > view resolved_by_ai produces stable request filters 1`] = `
+{
+  "ai": "resolved",
+}
+`;
+
+exports[`web support rulebook is importable and deterministic per view > view spam produces stable request filters 1`] = `
+{
+  "status": "spam",
+}
+`;
+
+exports[`web support rulebook is importable and deterministic per view > view waiting produces stable request filters 1`] = `
+{
+  "status": "waiting_on_customer",
+}
+`;
