@@ -61,7 +61,10 @@ function DrawerRow({
   onPress: () => void
 }) {
   const Icon = iconForSelection(item.selection)
-  const badge = formatBadgeCount(item.count)
+  // Mirror the web sidebar: the number is the TOTAL (workload) count; a red dot
+  // signals unread.
+  const badge = formatBadgeCount(item.count.total)
+  const hasUnread = item.count.unread > 0
   return (
     <Pressable
       haptic="selection"
@@ -84,14 +87,24 @@ function DrawerRow({
       >
         {item.label}
       </span>
-      {badge && (
-        <span
-          className={cn(
-            'shrink-0 rounded-full px-2 py-0.5 text-footnote tnum',
-            active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
+      {(badge || hasUnread) && (
+        <span className="flex shrink-0 items-center gap-1.5">
+          {hasUnread && (
+            <span
+              aria-label={`${item.count.unread > 99 ? '99+' : item.count.unread} unread`}
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
+            />
           )}
-        >
-          {badge}
+          {badge && (
+            <span
+              className={cn(
+                'rounded-full px-2 py-0.5 text-footnote tnum',
+                active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
+              )}
+            >
+              {badge}
+            </span>
+          )}
         </span>
       )}
     </Pressable>

@@ -33,16 +33,16 @@ describe('count resolution', () => {
     { view_id: 'v-inbox', total_count: 10, unread_count: 3 },
     { view_id: 'v-cust', total_count: 5, unread_count: 2 },
   ]
-  test('joins view_key -> id -> view_id', () => {
-    expect(resolveViewCount('inbox', builtins, counts)).toBe(3)
+  test('joins view_key -> id -> view_id, returning total + unread', () => {
+    expect(resolveViewCount('inbox', builtins, counts)).toEqual({ total: 10, unread: 3 })
   })
-  test('returns 0 when the view or its count is missing', () => {
-    expect(resolveViewCount('mine', builtins, counts)).toBe(0)
-    expect(resolveViewCount('waiting', builtins, counts)).toBe(0)
+  test('returns zeros when the view or its count is missing', () => {
+    expect(resolveViewCount('mine', builtins, counts)).toEqual({ total: 0, unread: 0 })
+    expect(resolveViewCount('waiting', builtins, counts)).toEqual({ total: 0, unread: 0 })
   })
   test('custom view count keyed by its own id', () => {
-    expect(resolveCustomViewCount('v-cust', counts)).toBe(2)
-    expect(resolveCustomViewCount('nope', counts)).toBe(0)
+    expect(resolveCustomViewCount('v-cust', counts)).toEqual({ total: 5, unread: 2 })
+    expect(resolveCustomViewCount('nope', counts)).toEqual({ total: 0, unread: 0 })
   })
 })
 
@@ -53,7 +53,7 @@ describe('buildDrawerGroups', () => {
   test('always includes Views + AI, omits empty Custom/Team sections', () => {
     const groups = buildDrawerGroups({ builtinViews: builtins, counts, customViews: [] })
     expect(groups.map((g) => g.title)).toEqual(['Views', 'AI'])
-    expect(groups[0].items[0]).toMatchObject({ label: 'Inbox', count: 3 })
+    expect(groups[0].items[0]).toMatchObject({ label: 'Inbox', count: { total: 10, unread: 3 } })
   })
 
   test('adds Custom views and Team inboxes when present', () => {
@@ -68,14 +68,14 @@ describe('buildDrawerGroups', () => {
     })
     expect(groups.map((g) => g.title)).toEqual(['Views', 'AI', 'Custom views', 'Team inboxes'])
     const team = groups.find((g) => g.title === 'Team inboxes')!
-    expect(team.items[0]).toMatchObject({ label: 'Billing', count: 7 })
+    expect(team.items[0]).toMatchObject({ label: 'Billing', count: { total: 7, unread: 7 } })
     expect(team.items[0].selection).toMatchObject({ kind: 'mailbox', mailboxId: 'm1' })
   })
 })
 
 describe('isItemActive', () => {
   test('matches builtin by navFilter and mailbox by id', () => {
-    const inboxItem = { key: 'builtin:inbox', label: 'Inbox', count: 0, selection: { kind: 'builtin' as const, navFilter: 'inbox' as const, mailboxId: 'all' } }
+    const inboxItem = { key: 'builtin:inbox', label: 'Inbox', count: { total: 0, unread: 0 }, selection: { kind: 'builtin' as const, navFilter: 'inbox' as const, mailboxId: 'all' } }
     expect(isItemActive(inboxItem, { kind: 'builtin', navFilter: 'inbox', mailboxId: 'all' })).toBe(true)
     expect(isItemActive(inboxItem, { kind: 'builtin', navFilter: 'mine', mailboxId: 'all' })).toBe(false)
   })

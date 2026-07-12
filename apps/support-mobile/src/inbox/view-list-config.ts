@@ -21,8 +21,22 @@ export const BUILTIN_VIEW_ORDER: { navFilter: NavFilter; group: 'views' | 'ai' }
   { navFilter: 'resolved_by_ai', group: 'ai' },
 ]
 
+/** A view's badge data: `total` is the number shown; `unread > 0` drives the red dot (mirrors web). */
+export interface ViewCount {
+  total: number
+  unread: number
+}
+
+const ZERO_COUNT: ViewCount = { total: 0, unread: 0 }
+
+function countFor(viewId: string | undefined, counts: SupportInboxViewCount[]): ViewCount {
+  const entry = viewId ? counts.find((c) => c.view_id === viewId) : undefined
+  if (!entry) return ZERO_COUNT
+  return { total: entry.total_count ?? 0, unread: entry.unread_count ?? 0 }
+}
+
 /**
- * Unread count for a builtin view. Joins nav filter → builtin view record
+ * Count for a builtin view. Joins nav filter → builtin view record
  * (`view_key === "nav:<filter>"`) → its `id` → the count entry's `view_id`.
  * Matches how the web resolves builtin view counts.
  */
@@ -30,21 +44,20 @@ export function resolveViewCount(
   navFilter: NavFilter,
   builtinViews: SupportInboxView[],
   counts: SupportInboxViewCount[],
-): number {
+): ViewCount {
   const view = builtinViews.find((v) => v.view_key === `nav:${navFilter}`)
-  if (!view) return 0
-  return counts.find((c) => c.view_id === view.id)?.unread_count ?? 0
+  return countFor(view?.id, counts)
 }
 
-/** Unread count for a custom view (its own `id` is the `view_id`). */
-export function resolveCustomViewCount(viewId: string, counts: SupportInboxViewCount[]): number {
-  return counts.find((c) => c.view_id === viewId)?.unread_count ?? 0
+/** Count for a custom view (its own `id` is the `view_id`). */
+export function resolveCustomViewCount(viewId: string, counts: SupportInboxViewCount[]): ViewCount {
+  return countFor(viewId, counts)
 }
 
 export interface DrawerItem {
   key: string
   label: string
-  count: number
+  count: ViewCount
   selection: ViewSelection
 }
 
@@ -110,7 +123,7 @@ export function buildDrawerGroups(args: {
       items: teamInboxes.map((scope) => ({
         key: `mailbox:${scope.id}`,
         label: scope.name,
-        count: scope.unread_count,
+        count: { total: scope.total_count ?? scope.unread_count, unread: scope.unread_count },
         selection: { kind: 'mailbox', mailboxId: scope.id, mailboxName: scope.name },
       })),
     })

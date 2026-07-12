@@ -34,14 +34,15 @@ beforeEach(() => {
 
 const active: ViewSelection = { kind: 'builtin', navFilter: 'inbox', mailboxId: 'all' }
 
-test('renders the Views and AI groups with labels and unread counts', () => {
+test('renders the Views and AI groups with the total count number and an unread dot', () => {
   render(<ViewsDrawer open onOpenChange={vi.fn()} workspaceId="ws" activeSelection={active} onSelect={vi.fn()} />)
   expect(screen.getByText('Views')).toBeTruthy()
   expect(screen.getByText('AI')).toBeTruthy()
   expect(screen.getByText('Inbox')).toBeTruthy()
   expect(screen.getByText('AI Handling')).toBeTruthy()
-  // Inbox has 4 unread.
-  expect(screen.getByText('4')).toBeTruthy()
+  // Inbox: the number badge is the TOTAL (9), with a red dot for the 4 unread (mirrors web).
+  expect(screen.getByText('9')).toBeTruthy()
+  expect(screen.getByLabelText('4 unread')).toBeTruthy()
 })
 
 test('selecting a row fires onSelect with the selection and closes the drawer', () => {

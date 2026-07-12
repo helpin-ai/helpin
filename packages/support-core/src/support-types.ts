@@ -151,6 +151,8 @@ export interface SupportInboxScope {
   is_shared: boolean
   is_default: boolean
   unread_count: number
+  /** Total (workload) count — the number the sidebar badge shows; unread drives the dot. */
+  total_count?: number
   active: boolean
   linked_team_id?: string | null
 }
