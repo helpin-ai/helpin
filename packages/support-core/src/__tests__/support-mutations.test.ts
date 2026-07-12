@@ -16,6 +16,7 @@ type FakeApi = {
   get: ReturnType<typeof vi.fn>
   post: ReturnType<typeof vi.fn>
   put: ReturnType<typeof vi.fn>
+  del: ReturnType<typeof vi.fn>
 }
 
 function makeFakeApi(): FakeApi {
@@ -23,6 +24,7 @@ function makeFakeApi(): FakeApi {
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
+    del: vi.fn(),
   }
 }
 

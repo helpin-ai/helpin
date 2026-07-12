@@ -9,6 +9,7 @@ import {
   useMarkConversationRead,
   useSupportInstallation,
   useSupportPresenceStore,
+  useUpdateConversationStatus,
   type ConversationListResponse,
   type ConversationStatus,
   type SupportConversation,
@@ -28,19 +29,16 @@ import { MessageList, type MessageListHandle, type TypingIndicatorState } from '
 import { computeSupportReceipt, groupMessages } from '@mobile/thread/thread-helpers'
 import { Composer } from '@mobile/thread/composer'
 import { ContextSheet } from '@mobile/thread/context-sheet'
-import { MessageCircle } from 'lucide-react'
+import { ConversationActionsSheet } from '@mobile/thread/conversation-actions-sheet'
+import { haptic } from '@mobile/lib/haptics'
+import { CheckCircle2, MessageCircle, MoreHorizontal } from 'lucide-react'
+import { toast } from 'sonner'
 
 const STATUS_LABELS: Record<ConversationStatus, string> = {
   open: 'Open',
   waiting_on_customer: 'Waiting on customer',
   resolved: 'Resolved',
   spam: 'Spam',
-}
-
-function assigneeLabel(conversation: SupportConversation): string | null {
-  if (conversation.assigned_user_id || conversation.assigned_agent_id) return 'Assigned'
-  if (conversation.ai_state === 'pending') return 'AI handling'
-  return 'Unassigned'
 }
 
 /**
@@ -186,6 +184,8 @@ export function ConversationScreen() {
   const messageListRef = useRef<MessageListHandle>(null)
   const [showNewMessagePill, setShowNewMessagePill] = useState(false)
   const [contextSheetOpen, setContextSheetOpen] = useState(false)
+  const [actionsSheetOpen, setActionsSheetOpen] = useState(false)
+  const updateStatus = useUpdateConversationStatus(workspaceId)
 
   const handleBack = () => {
     if (router.history.canGoBack()) router.history.back()
@@ -193,30 +193,65 @@ export function ConversationScreen() {
   }
 
   const customerName = conversation ? displayNameFor(conversation) : 'Conversation'
+  // Web-style: the subject is the title; the customer + status is the subtitle.
+  // Falls back to the customer name when there's no subject (common for chat).
+  const conversationTitle = conversation?.subject?.trim() || customerName
   const subtitle = conversation
-    ? [STATUS_LABELS[conversation.status], assigneeLabel(conversation)].filter(Boolean).join(' · ')
+    ? [customerName, STATUS_LABELS[conversation.status]].filter(Boolean).join(' · ')
     : undefined
+  const isResolved = conversation?.status === 'resolved'
+
+  const handleToggleResolve = () => {
+    if (!conversation || !conversationId || updateStatus.isPending) return
+    haptic('selection')
+    updateStatus.mutate(
+      { conversationId, status: isResolved ? 'open' : 'resolved' },
+      { onError: () => toast.error('Could not update conversation') },
+    )
+  }
 
   const showEmpty = !workspaceQuery.isPending && !conversationQuery.isPending && !conversation && conversationQuery.isError
 
   return (
     <div className="flex h-dvh flex-col bg-background">
       <TopBar
-        title={customerName}
+        title={conversationTitle}
         subtitle={subtitle}
         onBack={handleBack}
         onTitlePress={() => setContextSheetOpen(true)}
         titleSlot={
           <>
-            <span className="flex items-center gap-1.5">
-              <span className="max-w-[180px] truncate text-headline">{customerName}</span>
-              <span
-                aria-hidden
-                className={cn('h-2 w-2 shrink-0 rounded-full', visitorOnline ? 'bg-emerald-500' : 'bg-transparent')}
-              />
-            </span>
-            {subtitle && <span className="max-w-[220px] truncate text-footnote text-muted-foreground">{subtitle}</span>}
+            <span className="max-w-[200px] truncate text-headline">{conversationTitle}</span>
+            {subtitle && (
+              <span className="flex items-center gap-1 text-footnote text-muted-foreground">
+                {visitorOnline && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />}
+                <span className="max-w-[220px] truncate">{subtitle}</span>
+              </span>
+            )}
           </>
+        }
+        trailing={
+          conversation && (
+            <>
+              <Pressable
+                aria-label={isResolved ? 'Reopen conversation' : 'Resolve conversation'}
+                haptic="selection"
+                onPress={handleToggleResolve}
+                disabled={updateStatus.isPending}
+                className="flex h-9 w-9 items-center justify-center rounded-full active:bg-muted disabled:opacity-40"
+              >
+                <CheckCircle2 className={cn('h-6 w-6', isResolved ? 'text-green-500' : 'text-muted-foreground')} />
+              </Pressable>
+              <Pressable
+                aria-label="Conversation actions"
+                haptic="selection"
+                onPress={() => setActionsSheetOpen(true)}
+                className="flex h-9 w-9 items-center justify-center rounded-full active:bg-muted"
+              >
+                <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
+              </Pressable>
+            </>
+          )
         }
       />
 
@@ -283,6 +318,16 @@ export function ConversationScreen() {
         open={contextSheetOpen}
         onOpenChange={setContextSheetOpen}
       />
+
+      {conversation && (
+        <ConversationActionsSheet
+          open={actionsSheetOpen}
+          onOpenChange={setActionsSheetOpen}
+          workspaceId={workspaceId}
+          conversation={conversation}
+          onLeave={handleBack}
+        />
+      )}
     </div>
   )
 }

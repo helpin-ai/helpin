@@ -302,6 +302,46 @@ export function useSupportCannedResponses(workspaceId: string, enabled = true) {
   })
 }
 
+export function useUpdateConversationSubject(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ conversationId, subject }: { conversationId: string; subject: string }) =>
+      unwrapOrThrow(await supportService.updateConversationSubject(workspaceId, conversationId, subject)),
+    onSuccess: (_data, { conversationId }) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+    },
+  })
+}
+
+export function useMoveConversation(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ conversationId, mailboxId }: { conversationId: string; mailboxId: string | null }) =>
+      unwrapOrThrow(await supportService.moveConversation(workspaceId, conversationId, mailboxId)),
+    onSuccess: (_data, { conversationId }) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxScopes(workspaceId) })
+    },
+  })
+}
+
+export function useDeleteConversation(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (conversationId: string) => {
+      const res = await supportService.deleteConversation(workspaceId, conversationId)
+      if (res.error) throw new Error(res.error)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.unreadStats(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxScopes(workspaceId) })
+    },
+  })
+}
+
 export function useSupportInstallation(workspaceId: string, enabled = true) {
   return useQuery({
     queryKey: supportQueryKeys.installation(workspaceId),

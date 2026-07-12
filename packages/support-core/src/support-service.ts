@@ -23,6 +23,7 @@ type ApiLike = {
   get: <T>(path: string) => Promise<ApiResponse<T>>
   post: <T>(path: string, body?: unknown) => Promise<ApiResponse<T>>
   put: <T>(path: string, body?: unknown) => Promise<ApiResponse<T>>
+  del: <T>(path: string, body?: unknown) => Promise<ApiResponse<T>>
 }
 
 /**
@@ -138,6 +139,16 @@ export const supportService = {
     getApi().get<SupportCannedResponse[]>(`/support/inbox/canned-responses${qs(workspaceId)}`),
   getInstallation: (workspaceId: string) =>
     getApi().get<SupportInstallation>(`/support/inbox/installations${qs(workspaceId)}`),
+  updateConversationSubject: (workspaceId: string, conversationId: string, subject: string) =>
+    getApi().put<SupportConversation>(`/support/inbox/conversations/${conversationId}/subject${qs(workspaceId)}`, {
+      subject,
+    }),
+  moveConversation: (workspaceId: string, conversationId: string, mailboxId: string | null) =>
+    getApi().post<SupportConversation>(`/support/inbox/conversations/${conversationId}/move${qs(workspaceId)}`, {
+      mailbox_id: mailboxId,
+    }),
+  deleteConversation: (workspaceId: string, conversationId: string) =>
+    getApi().del<void>(`/support/inbox/conversations/${conversationId}${qs(workspaceId)}`),
   rewriteConversationDraft: (workspaceId: string, conversationId: string, payload: SupportAIRewriteDraftRequest) =>
     getApi().post<SupportAIRewriteDraftResponse>(
       `/support/inbox/conversations/${conversationId}/rewrite-draft${qs(workspaceId)}`,

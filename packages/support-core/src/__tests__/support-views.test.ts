@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { configureSupportApi, supportService } from '../support-service'
 
 function makeFakeApi() {
-  return { get: vi.fn().mockResolvedValue({ data: [], error: null }), post: vi.fn(), put: vi.fn() }
+  return { get: vi.fn().mockResolvedValue({ data: [], error: null }), post: vi.fn(), put: vi.fn(), del: vi.fn() }
 }
 
 describe('support inbox view endpoints', () => {
