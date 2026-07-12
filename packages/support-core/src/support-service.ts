@@ -58,22 +58,56 @@ function getApi(): ApiLike {
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`
 
+/**
+ * Superset of the web's `ConversationListRequestFilters`
+ * (frontend/src/lib/supportInboxFilters.ts) plus the mobile-legacy `priority`
+ * and `ai_state` fields. Every present, non-empty field is serialized to the
+ * `/support/inbox/conversations` query with its own key name so the mobile
+ * inbox — which derives these via the web's `buildConversationListRequestFilters`
+ * — sends a query identical to the web app for every view.
+ */
 export interface ConversationFilters {
   status?: string
+  /** CSV of statuses (e.g. "open,waiting_on_customer"). */
+  statuses?: string
   priority?: string
   filter?: string
   /**
-   * Server-side "assigned_to" filter (CSV-capable, but the mobile client only
-   * ever sends a single value: "unassigned" — see
-   * server/internal/repository/support_inbox.go:966 and
-   * server/internal/handler/support_inbox.go:71). There is no `filter=unassigned`
-   * value server-side; unassigned is only expressed through this param.
+   * Server-side "assigned_to" filter (CSV-capable). There is no
+   * `filter=unassigned` value server-side; unassigned is only expressed here.
    */
   assigned_to?: string
   mailbox_id?: string | null
+  /** CSV of mailbox ids. */
+  mailbox_ids?: string
+  /** Web param name for AI-state filtering (CSV, or "none"). */
+  ai?: string
+  /** Legacy single AI-state param (kept for existing mobile callers). */
   ai_state?: string
   flow_state?: string
+  search?: string
+  sort?: string
+  tag_ids?: string
+  system_tags?: string
 }
+
+// Serialized in a fixed order for stable, comparable query strings.
+const CONVERSATION_FILTER_KEYS = [
+  'status',
+  'statuses',
+  'priority',
+  'filter',
+  'mailbox_id',
+  'mailbox_ids',
+  'ai',
+  'ai_state',
+  'flow_state',
+  'search',
+  'assigned_to',
+  'sort',
+  'tag_ids',
+  'system_tags',
+] as const
 
 export const supportService = {
   listConversations: (
@@ -81,15 +115,13 @@ export const supportService = {
     filters?: ConversationFilters,
   ) => {
     let path = `/support/inbox/conversations${qs(workspaceId)}`
-    if (filters?.status) path += `&status=${filters.status}`
-    if (filters?.priority) path += `&priority=${filters.priority}`
-    if (filters?.filter) path += `&filter=${filters.filter}`
-    if (filters?.assigned_to) path += `&assigned_to=${encodeURIComponent(filters.assigned_to)}`
-    if (filters?.mailbox_id && filters.mailbox_id !== 'all') {
-      path += `&mailbox_id=${encodeURIComponent(filters.mailbox_id)}`
+    for (const key of CONVERSATION_FILTER_KEYS) {
+      const value = filters?.[key]
+      if (value == null || value === '') continue
+      // Preserve prior behavior: a mailbox_id of "all" means "no scope".
+      if (key === 'mailbox_id' && value === 'all') continue
+      path += `&${key}=${encodeURIComponent(String(value))}`
     }
-    if (filters?.ai_state) path += `&ai_state=${encodeURIComponent(filters.ai_state)}`
-    if (filters?.flow_state) path += `&flow_state=${encodeURIComponent(filters.flow_state)}`
     return getApi().get<ConversationListResponse>(path)
   },
   listInboxScopes: (workspaceId: string) =>
