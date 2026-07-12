@@ -135,8 +135,8 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
           onPress()
         }
       }}
-      animate={isExiting ? { opacity: 0, scale: 0.96 } : { opacity: 1, scale: 1 }}
-      transition={{ duration: CELL_EXIT_DURATION_MS / 1000 }}
+      animate={isExiting ? { opacity: 0, x: 56, scale: 0.98 } : { opacity: 1, x: 0, scale: 1 }}
+      transition={{ duration: CELL_EXIT_DURATION_MS / 1000, ease: 'easeOut' }}
       style={{ height: CONVERSATION_CELL_HEIGHT }}
       className={cn(
         'box-border flex w-full cursor-pointer items-center gap-3 overflow-hidden border-b border-border/60 px-4 text-left active:bg-muted/50',

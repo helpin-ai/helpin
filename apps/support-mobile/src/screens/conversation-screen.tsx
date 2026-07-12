@@ -24,6 +24,7 @@ import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 import { useAuthStore } from '@mobile/stores/auth-store'
 import type { ShortcutVariableContext } from '@/components/support/shortcutVariables'
 import type { MentionMember } from '@mobile/thread/mentions'
+import { useResolvedTransitionStore } from '@mobile/stores/resolved-transition-store'
 import { displayNameFor } from '@mobile/inbox/conversation-cell'
 import { MessageList, type MessageListHandle, type TypingIndicatorState } from '@mobile/thread/message-list'
 import { computeSupportReceipt, groupMessages } from '@mobile/thread/thread-helpers'
@@ -205,12 +206,26 @@ export function ConversationScreen() {
     : undefined
   const isResolved = conversation?.status === 'resolved'
 
+  const markResolved = useResolvedTransitionStore((s) => s.markResolved)
   const handleToggleResolve = () => {
     if (!conversation || !conversationId || updateStatus.isPending) return
+    const resolving = !isResolved
     haptic('selection')
     updateStatus.mutate(
-      { conversationId, status: isResolved ? 'open' : 'resolved' },
-      { onError: () => toast.error('Could not update conversation') },
+      { conversationId, status: resolving ? 'resolved' : 'open' },
+      {
+        onSuccess: () => {
+          // Resolving clears the conversation from the queue: hand it to the
+          // inbox to animate out + offer Undo, then pop back to the list.
+          // Reopening just flips the status in place (stay on the thread).
+          if (resolving) {
+            haptic('notificationSuccess')
+            markResolved(conversationId)
+            handleBack()
+          }
+        },
+        onError: () => toast.error('Could not update conversation'),
+      },
     )
   }
 

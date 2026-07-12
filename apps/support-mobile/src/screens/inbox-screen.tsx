@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -24,8 +24,10 @@ import { Pressable } from '@mobile/ui/pressable'
 import { Spinner } from '@mobile/ui/spinner'
 import { TabShell } from '@mobile/navigation/tab-bar'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
+import { toast } from 'sonner'
 import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 import { useSupportViewStore } from '@mobile/stores/support-view-store'
+import { useResolvedTransitionStore } from '@mobile/stores/resolved-transition-store'
 import { CELL_EXIT_DURATION_MS, ConversationCell } from '@mobile/inbox/conversation-cell'
 import { ViewsDrawer } from '@mobile/inbox/views-drawer'
 import { selectionTitle, selectionToConversationFilters } from '@mobile/inbox/use-inbox-filters'
@@ -154,38 +156,70 @@ export function InboxScreen() {
     [rawConversations, resolving],
   )
 
-  const handleResolve = (conversationId: string) => {
+  // Seed the fade-out → remove lifecycle for a row (shared by swipe-resolve and
+  // the "resolved from the thread" transition).
+  const beginExit = useCallback((conversationId: string) => {
     setResolving((prev) => new Map(prev).set(conversationId, 'fading'))
     const timer = setTimeout(() => {
       resolveTimersRef.current.delete(conversationId)
       setResolving((prev) => {
-        // Skip if the mutation already errored (id gone) mid-fade.
         if (prev.get(conversationId) !== 'fading') return prev
         return new Map(prev).set(conversationId, 'removed')
       })
     }, CELL_EXIT_DURATION_MS)
     resolveTimersRef.current.set(conversationId, timer)
+  }, [])
 
+  // Cancel a pending exit (mutation error, or Undo) so the row reappears.
+  const cancelExit = useCallback((conversationId: string) => {
+    const pending = resolveTimersRef.current.get(conversationId)
+    if (pending !== undefined) {
+      clearTimeout(pending)
+      resolveTimersRef.current.delete(conversationId)
+    }
+    setResolving((prev) => {
+      if (!prev.has(conversationId)) return prev
+      const next = new Map(prev)
+      next.delete(conversationId)
+      return next
+    })
+  }, [])
+
+  const handleResolve = (conversationId: string) => {
+    beginExit(conversationId)
     updateStatus.mutate(
       { conversationId, status: 'resolved' },
       {
         onError: () => {
-          const pending = resolveTimersRef.current.get(conversationId)
-          if (pending !== undefined) {
-            clearTimeout(pending)
-            resolveTimersRef.current.delete(conversationId)
-          }
-          setResolving((prev) => {
-            if (!prev.has(conversationId)) return prev
-            const next = new Map(prev)
-            next.delete(conversationId)
-            return next
-          })
+          cancelExit(conversationId)
           haptic('notificationError')
         },
       },
     )
   }
+
+  const handleUndoResolve = useCallback(
+    (conversationId: string) => {
+      cancelExit(conversationId)
+      updateStatus.mutate({ conversationId, status: 'open' })
+      haptic('impactLight')
+    },
+    [cancelExit, updateStatus],
+  )
+
+  // A conversation resolved from the thread screen: animate it out of the list
+  // and offer Undo (the status change already happened server-side).
+  const pendingResolvedId = useResolvedTransitionStore((s) => s.pendingResolvedId)
+  const clearResolvedTransition = useResolvedTransitionStore((s) => s.clear)
+  useEffect(() => {
+    if (!pendingResolvedId) return
+    const id = pendingResolvedId
+    clearResolvedTransition()
+    beginExit(id)
+    toast.success('Resolved', {
+      action: { label: 'Undo', onClick: () => handleUndoResolve(id) },
+    })
+  }, [pendingResolvedId, clearResolvedTransition, beginExit, handleUndoResolve])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
