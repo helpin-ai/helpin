@@ -349,3 +349,13 @@ before mobile `init`.
       left out per the plugin docs' guidance that iOS/Android must be
       config-registered (no dynamic runtime registration on those platforms
       anyway) and desktop isn't a shipped target for this app.
+
+### Views drawer (on-device verification)
+
+- [ ] Tap the menu (hamburger) button in the inbox top bar → drawer slides in from the left with groups Views / AI / Custom views / Team inboxes.
+- [ ] Swipe in from the very left edge of the inbox → drawer opens (does not fight vertical pull-to-refresh or row swipe actions).
+- [ ] Each row shows its unread count badge; counts match the web app for the same view.
+- [ ] Select a view (e.g. Waiting) → drawer closes, top-bar title updates, and the conversation list shows the SAME conversations as that view on web (spot-check Inbox, Mine, Waiting, Resolved side by side with web).
+- [ ] Select a team inbox and a custom view → list scopes correctly.
+- [ ] Active view is highlighted in the drawer; scrim tap and left-swipe both dismiss it.
+- [ ] With OS "Reduce Motion" on, the drawer crossfades instead of sliding.

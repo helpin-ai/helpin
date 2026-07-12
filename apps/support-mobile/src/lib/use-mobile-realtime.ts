@@ -50,9 +50,21 @@ const RESUME_GAP_MS = 60_000
  * reconnects on its own.
  */
 export function useMobileRealtime(workspaceId: string, selectedConversationId: string | null): void {
-  useSupportRealtime({ apiBase: API_BASE, workspaceId, selectedConversationId })
-
   const queryClient = useQueryClient()
+
+  // The shared controller already invalidates conversations / unread-stats /
+  // inbox-scopes on events; the per-view counts (a mobile-added query) aren't
+  // known to it, so refresh them here on each meaningful event so the drawer
+  // badges stay live.
+  useSupportRealtime({
+    apiBase: API_BASE,
+    workspaceId,
+    selectedConversationId,
+    onEvent: () => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxViewCounts(workspaceId) })
+    },
+  })
+
   const hiddenAtRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -71,6 +83,7 @@ export function useMobileRealtime(workspaceId: string, selectedConversationId: s
       if (hiddenAt !== null && Date.now() - hiddenAt >= RESUME_GAP_MS) {
         queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
         queryClient.invalidateQueries({ queryKey: supportQueryKeys.unreadStats(workspaceId) })
+        queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxViewCounts(workspaceId) })
       }
     }
 

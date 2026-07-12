@@ -3,12 +3,11 @@ import { useParams, useRouter } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useMotionValue } from 'motion/react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Check, ChevronsUpDown, Inbox as InboxIcon, Mail, MailOpen } from 'lucide-react'
+import { Check, Inbox as InboxIcon, Mail, MailOpen, Menu } from 'lucide-react'
 import {
   useConversations,
   useMarkConversationRead,
   useMarkConversationUnread,
-  useSupportMailboxes,
   useUnreadStats,
   useUpdateConversationStatus,
 } from '@helpin-ai/support-core'
@@ -20,7 +19,6 @@ import { PermissionPrimingSheet } from '@mobile/push/permission-priming-sheet'
 import { useAuthStore } from '@mobile/stores/auth-store'
 import { TopBar } from '@mobile/ui/top-bar'
 import { OfflineBanner } from '@mobile/ui/offline-banner'
-import { SegmentedControl, type Segment } from '@mobile/ui/segmented-control'
 import { Skeleton } from '@mobile/ui/skeleton'
 import { EmptyState } from '@mobile/ui/empty-state'
 import { Pressable } from '@mobile/ui/pressable'
@@ -28,17 +26,13 @@ import { Spinner } from '@mobile/ui/spinner'
 import { TabShell } from '@mobile/navigation/tab-bar'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
 import { useWorkspaceStore } from '@mobile/stores/workspace-store'
+import { useSupportViewStore } from '@mobile/stores/support-view-store'
 import { CELL_EXIT_DURATION_MS, ConversationCell } from '@mobile/inbox/conversation-cell'
-import { MailboxSheet } from '@mobile/inbox/mailbox-sheet'
+import { ViewsDrawer } from '@mobile/inbox/views-drawer'
+import { selectionTitle, selectionToConversationFilters } from '@mobile/inbox/use-inbox-filters'
 import { SwipeableRow, type SwipeAction } from '@mobile/inbox/swipeable-row'
 import { PULL_ARM_THRESHOLD, usePullToRefresh } from '@mobile/inbox/use-pull-to-refresh'
-import { CONVERSATION_CELL_HEIGHT, filtersForSegment, isUnread, type InboxSegment } from '@mobile/inbox/inbox-helpers'
-
-const SEGMENTS: Segment<InboxSegment>[] = [
-  { value: 'mine', label: 'Mine' },
-  { value: 'unassigned', label: 'Unassigned' },
-  { value: 'all', label: 'All' },
-]
+import { CONVERSATION_CELL_HEIGHT, isUnread } from '@mobile/inbox/inbox-helpers'
 
 function InboxSkeletonList() {
   return (
@@ -87,9 +81,10 @@ export function InboxScreen() {
     }
   }, [workspace, setCurrentWorkspace])
 
-  const [segment, setSegment] = useState<InboxSegment>('mine')
-  const [selectedMailboxId, setSelectedMailboxId] = useState<string | null>(null)
-  const [mailboxSheetOpen, setMailboxSheetOpen] = useState(false)
+  const selection = useSupportViewStore((s) => s.selection)
+  const setSelection = useSupportViewStore((s) => s.setSelection)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const edgeStart = useRef<{ x: number; y: number } | null>(null)
 
   // Push-notification permission priming: first time a signed-in user lands
   // on Inbox (after the workspace has resolved), show the priming sheet —
@@ -111,12 +106,13 @@ export function InboxScreen() {
     }
   }, [workspace, user])
 
-  const unreadStats = useUnreadStats(workspaceId, selectedMailboxId)
-  const mailboxesQuery = useSupportMailboxes(workspaceId)
-  const filters = useMemo(() => filtersForSegment(segment, selectedMailboxId), [segment, selectedMailboxId])
-  // `keepPrevious` avoids a skeleton flash when switching segments/mailboxes —
-  // the previous page's data stays on screen (dimmed below) until the new
-  // page loads instead of getting torn down first.
+  const unreadStats = useUnreadStats(workspaceId)
+  // Reuse the web's own filter rulebook so each view returns identical
+  // conversations to the web app (see use-inbox-filters).
+  const filters = useMemo(() => selectionToConversationFilters(selection), [selection])
+  // `keepPrevious` avoids a skeleton flash when switching views — the previous
+  // view's data stays on screen (dimmed below) until the new one loads instead
+  // of getting torn down first.
   const conversationsQuery = useConversations(workspaceId, filters, true)
   const rawConversations = useMemo(() => conversationsQuery.data?.data ?? [], [conversationsQuery.data])
   const markRead = useMarkConversationRead(workspaceId)
@@ -210,12 +206,7 @@ export function InboxScreen() {
   })
   const pullSpinning = pull.refreshing || pull.pullDistance >= PULL_ARM_THRESHOLD
 
-  // Current mailbox's name, or "Inbox" for the "All inboxes" scope / while the
-  // mailbox list hasn't loaded yet.
-  const mailboxName = useMemo(() => {
-    if (!selectedMailboxId || selectedMailboxId === 'all') return 'Inbox'
-    return mailboxesQuery.data?.find((m) => m.id === selectedMailboxId)?.name ?? 'Inbox'
-  }, [selectedMailboxId, mailboxesQuery.data])
+  const currentTitle = selectionTitle(selection)
 
   const isWorkspaceLoading = workspaceQuery.isPending
   const isWorkspaceError = workspaceQuery.isError
@@ -249,37 +240,21 @@ export function InboxScreen() {
       >
         <TopBar
           large
-          title={mailboxName}
+          title={currentTitle}
           scrollY={scrollY}
-          trailing={
+          leading={
             <Pressable
-              aria-label="Choose mailbox"
+              aria-label="Open views menu"
               haptic="selection"
-              onPress={() => setMailboxSheetOpen(true)}
+              onPress={() => setDrawerOpen(true)}
               className="flex items-center justify-center rounded-full"
             >
-              <ChevronsUpDown className="h-5 w-5 text-muted-foreground" />
+              <Menu className="h-6 w-6 text-foreground" />
             </Pressable>
           }
         />
 
         <OfflineBanner />
-
-        <div className="px-4 pb-2">
-          <SegmentedControl
-            segments={SEGMENTS.map((s) => ({
-              ...s,
-              count:
-                s.value === 'mine'
-                  ? unreadStats.data?.my_inbox
-                  : s.value === 'unassigned'
-                    ? unreadStats.data?.unassigned
-                    : unreadStats.data?.total,
-            }))}
-            value={segment}
-            onChange={setSegment}
-          />
-        </div>
 
         <div
           style={{ height: pull.pullDistance }}
@@ -379,12 +354,43 @@ export function InboxScreen() {
         )}
       </div>
 
-      <MailboxSheet
+      {/* Left-edge strip: swipe in from the very edge to open the views drawer.
+          A dedicated 16px zone so it never competes with the list's vertical
+          pull-to-refresh or the rows' horizontal swipe actions. */}
+      <button
+        type="button"
+        aria-hidden
+        tabIndex={-1}
+        className="fixed inset-y-0 left-0 z-20 w-4"
+        onPointerDown={(e) => {
+          edgeStart.current = { x: e.clientX, y: e.clientY }
+        }}
+        onPointerMove={(e) => {
+          const start = edgeStart.current
+          if (!start) return
+          const dx = e.clientX - start.x
+          const dy = e.clientY - start.y
+          if (dx > 24 && dx > Math.abs(dy)) {
+            edgeStart.current = null
+            haptic('selection')
+            setDrawerOpen(true)
+          }
+        }}
+        onPointerUp={() => {
+          edgeStart.current = null
+        }}
+        onPointerCancel={() => {
+          edgeStart.current = null
+        }}
+      />
+
+      <ViewsDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
         workspaceId={workspaceId}
-        open={mailboxSheetOpen}
-        onOpenChange={setMailboxSheetOpen}
-        selectedMailboxId={selectedMailboxId}
-        onSelect={setSelectedMailboxId}
+        workspaceName={workspace?.name}
+        activeSelection={selection}
+        onSelect={setSelection}
       />
 
       <PermissionPrimingSheet open={primingSheetOpen} onOpenChange={setPrimingSheetOpen} />

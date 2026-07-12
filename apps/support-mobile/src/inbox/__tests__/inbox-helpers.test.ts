@@ -1,5 +1,5 @@
 import type { SupportConversation } from '@helpin-ai/support-core'
-import { filtersForSegment, formatRelativeTime, isUnread, previewText } from '../inbox-helpers'
+import { formatRelativeTime, isUnread, previewText } from '../inbox-helpers'
 
 function conversation(overrides: Partial<SupportConversation> = {}): SupportConversation {
   return {
@@ -76,25 +76,3 @@ describe('isUnread', () => {
   })
 })
 
-describe('filtersForSegment', () => {
-  test('mine maps to filter=mine', () => {
-    expect(filtersForSegment('mine', null)).toEqual({ filter: 'mine' })
-  })
-
-  test('unassigned maps to assigned_to=unassigned (there is no filter=unassigned server-side)', () => {
-    expect(filtersForSegment('unassigned', null)).toEqual({ assigned_to: 'unassigned' })
-  })
-
-  test('all sends no filter/assigned_to', () => {
-    expect(filtersForSegment('all', null)).toEqual({})
-  })
-
-  test('a selected mailbox is merged into every segment', () => {
-    expect(filtersForSegment('mine', 'mb-1')).toEqual({ filter: 'mine', mailbox_id: 'mb-1' })
-    expect(filtersForSegment('all', 'mb-1')).toEqual({ mailbox_id: 'mb-1' })
-  })
-
-  test('a mailboxId of "all" is treated the same as null', () => {
-    expect(filtersForSegment('all', 'all')).toEqual({})
-  })
-})

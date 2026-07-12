@@ -8,6 +8,8 @@ export interface TopBarProps {
   title: string
   subtitle?: string
   onBack?: () => void
+  /** Custom leading content (e.g. a menu button). Ignored when `onBack` is set. */
+  leading?: ReactNode
   trailing?: ReactNode
   large?: boolean
   /** Scroll offset motion value driving the large-title collapse; ignored when `large` is false. */
@@ -27,6 +29,7 @@ export function TopBar({
   title,
   subtitle,
   onBack,
+  leading,
   trailing,
   large,
   scrollY,
@@ -47,7 +50,7 @@ export function TopBar({
       <div className="pt-[var(--safe-top)]">
         <div className="relative flex h-[52px] items-center px-2">
           <div className="z-10 flex min-w-[44px] items-center">
-            {onBack && (
+            {onBack ? (
               <Pressable
                 aria-label="Back"
                 onPress={onBack}
@@ -55,6 +58,8 @@ export function TopBar({
               >
                 <ChevronLeft className="h-6 w-6" />
               </Pressable>
+            ) : (
+              leading
             )}
           </div>
 
