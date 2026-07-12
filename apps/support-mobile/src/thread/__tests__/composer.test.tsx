@@ -6,6 +6,10 @@ import { useDraftStore } from '../draft-store'
 
 vi.mock('@helpin-ai/support-core', () => ({
   useSendMessage: vi.fn(),
+  // Typing broadcast reads wsSend/wsConnected via a selector; return a
+  // disconnected state so the composer's typing hook is a no-op here.
+  useSupportPresenceStore: (selector: (s: { wsSend: null; wsConnected: boolean }) => unknown) =>
+    selector({ wsSend: null, wsConnected: false }),
 }))
 
 vi.mock('@mobile/lib/haptics', () => ({

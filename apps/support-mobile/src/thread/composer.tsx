@@ -7,6 +7,7 @@ import { SegmentedControl } from '@mobile/ui/segmented-control'
 import { DEFAULT_DRAFT, useDraftStore, type ComposerMode } from './draft-store'
 import type { FailedSend } from './failed-sends-reducer'
 import { SendButton, type SendButtonState } from './send-button'
+import { useTypingBroadcast } from './use-typing-broadcast'
 
 export interface ComposerProps {
   workspaceId: string
@@ -49,6 +50,14 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
 
   const sendMessage = useSendMessage(workspaceId, conversationId)
   const [phase, setPhase] = useState<'idle' | 'sending' | 'sent'>('idle')
+
+  const isNote = draft.mode === 'note'
+  // Broadcast "agent is typing" to teammates + the customer while composing a
+  // reply (never in note mode). Emits `stop` on send, switch-to-note, or leave.
+  const { notifyTyping, stopTyping } = useTypingBroadcast(conversationId, !isNote)
+  useEffect(() => {
+    if (isNote) stopTyping()
+  }, [isNote, stopTyping])
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -119,14 +128,13 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
     // retry chip below (persisted alongside the draft), not back in the
     // (now-empty) input.
     clearDraft(conversationId)
+    stopTyping()
     void attemptSend(content, mode)
   }
 
   function handleRetry(failedSend: FailedSend) {
     void attemptSend(failedSend.content, failedSend.mode, failedSend.id)
   }
-
-  const isNote = draft.mode === 'note'
 
   return (
     <div className="flex flex-col">
@@ -180,7 +188,11 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
             ref={textareaRef}
             rows={1}
             value={draft.text}
-            onChange={(event) => setText(conversationId, event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value
+              setText(conversationId, next)
+              if (!isNote) notifyTyping(next)
+            }}
             placeholder={isNote ? 'Internal note…' : 'Reply…'}
             style={{ minHeight: MIN_TEXTAREA_HEIGHT_PX, maxHeight: MAX_TEXTAREA_HEIGHT_PX }}
             className="flex-1 resize-none overflow-y-auto rounded-2xl border border-input bg-background px-3 py-2 text-body text-foreground outline-none placeholder:text-muted-foreground"
