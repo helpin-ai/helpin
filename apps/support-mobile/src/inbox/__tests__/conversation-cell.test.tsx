@@ -27,15 +27,19 @@ test('renders customer name, preview, and relative time', () => {
   expect(screen.getByTestId('conversation-time').textContent).toBeTruthy()
 })
 
-test('unread dot is hidden (opacity-0) when the conversation is read', () => {
+test('no unread count badge when the conversation is read', () => {
   render(<ConversationCell conversation={conversation({ unread_count: 0 })} onPress={vi.fn()} />)
-  expect(screen.getByTestId('unread-dot').className).toContain('opacity-0')
-  expect(screen.getByTestId('unread-dot').className).not.toContain('opacity-100')
+  expect(screen.queryByTestId('unread-count')).toBeNull()
 })
 
-test('unread dot is visible (opacity-100) when the conversation has unread messages', () => {
+test('shows the unread count badge (with the count) when there are unread messages', () => {
   render(<ConversationCell conversation={conversation({ unread_count: 2 })} onPress={vi.fn()} />)
-  expect(screen.getByTestId('unread-dot').className).toContain('opacity-100')
+  expect(screen.getByTestId('unread-count').textContent).toBe('2')
+})
+
+test('caps the unread count badge at 99+', () => {
+  render(<ConversationCell conversation={conversation({ unread_count: 150 })} onPress={vi.fn()} />)
+  expect(screen.getByTestId('unread-count').textContent).toBe('99+')
 })
 
 test('unread conversations render the preview with unread typography', () => {
@@ -43,17 +47,78 @@ test('unread conversations render the preview with unread typography', () => {
   expect(screen.getByTestId('conversation-preview').className).toContain('font-medium')
 })
 
+test('open + unread conversations get the needs-action row tint', () => {
+  render(<ConversationCell conversation={conversation({ status: 'open', unread_count: 1 })} onPress={vi.fn()} />)
+  expect(screen.getByTestId('conversation-cell').className).toContain('bg-primary')
+})
+
+test('open + awaiting-reply conversations get the needs-action row tint even when read', () => {
+  render(
+    <ConversationCell
+      conversation={conversation({ status: 'open', unread_count: 0, awaiting_reply: true })}
+      onPress={vi.fn()}
+    />,
+  )
+  expect(screen.getByTestId('conversation-cell').className).toContain('bg-primary')
+})
+
 test('falls back to "No messages yet" when there is no last message', () => {
   render(<ConversationCell conversation={conversation({ last_message: undefined })} onPress={vi.fn()} />)
   expect(screen.getByTestId('conversation-preview').textContent).toBe('No messages yet')
 })
 
-test('shows a status badge only when the conversation is not open', () => {
+test('renders an internal note with a "Note:" label and the stripped body', () => {
+  render(<ConversationCell conversation={conversation({ last_message: 'Note: called the customer back' })} onPress={vi.fn()} />)
+  const preview = screen.getByTestId('conversation-preview')
+  expect(preview.textContent).toContain('Note:')
+  expect(preview.textContent).toContain('called the customer back')
+})
+
+test('shows a resolved indicator only when the conversation is resolved', () => {
   const { rerender } = render(<ConversationCell conversation={conversation({ status: 'open' })} onPress={vi.fn()} />)
-  expect(screen.queryByText('Resolved')).toBeNull()
+  expect(screen.queryByLabelText('Resolved')).toBeNull()
 
   rerender(<ConversationCell conversation={conversation({ status: 'resolved' })} onPress={vi.fn()} />)
-  expect(screen.getByText('Resolved')).toBeDefined()
+  expect(screen.getByLabelText('Resolved')).toBeDefined()
+})
+
+test('shows an AI-resolved badge when resolved by AI', () => {
+  render(<ConversationCell conversation={conversation({ status: 'open', ai_state: 'resolved' })} onPress={vi.fn()} />)
+  expect(screen.getByLabelText('Resolved by AI')).toBeDefined()
+})
+
+test('shows the AI handoff badge when system-tagged', () => {
+  render(<ConversationCell conversation={conversation({ system_tags: ['ai_handoff'] })} onPress={vi.fn()} />)
+  expect(screen.getByLabelText('AI handed off to team')).toBeDefined()
+})
+
+test('renders coloured tags with an overflow chip', () => {
+  render(
+    <ConversationCell
+      conversation={conversation({
+        tags: [
+          { id: 't1', name: 'VIP', color: '#2563eb' },
+          { id: 't2', name: 'Billing', color: '#16a34a' },
+          { id: 't3', name: 'Urgent', color: '#dc2626' },
+        ],
+      })}
+      onPress={vi.fn()}
+    />,
+  )
+  expect(screen.getByText('VIP')).toBeDefined()
+  expect(screen.getByText('Billing')).toBeDefined()
+  expect(screen.queryByText('Urgent')).toBeNull()
+  expect(screen.getByText('+1')).toBeDefined()
+})
+
+test('renders a waiting-for-human pill for queued conversations', () => {
+  render(<ConversationCell conversation={conversation({ flow_state: 'queued_for_human' })} onPress={vi.fn()} />)
+  expect(screen.getByText(/Waiting for human/)).toBeDefined()
+})
+
+test('shows the team-replied indicator when the last message is from an agent', () => {
+  render(<ConversationCell conversation={conversation({ last_message_sender_type: 'agent' })} onPress={vi.fn()} />)
+  expect(screen.getByLabelText('Team replied')).toBeDefined()
 })
 
 test('fires onPress when the cell is clicked', () => {

@@ -29,7 +29,8 @@
       "@/lib/supportInboxRouting": ["../../frontend/src/lib/supportInboxRouting.ts"],
       "@/lib/pmTypes": ["../../frontend/src/lib/pmTypes.ts"],
       "@/stores/supportInboxStore": ["../../frontend/src/stores/supportInboxStore.ts"],
-      "@/components/support/helpers": ["../../frontend/src/components/support/helpers.ts"]
+      "@/components/support/helpers": ["../../frontend/src/components/support/helpers.ts"],
+      "@/components/support/conversationRowVisual": ["../../frontend/src/components/support/conversationRowVisual.ts"]
     }
   },
   "include": ["src"]

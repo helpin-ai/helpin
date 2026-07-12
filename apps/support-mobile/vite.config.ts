@@ -64,6 +64,10 @@ export default defineConfig(({ mode }) => {
           find: '@/components/support/helpers',
           replacement: path.resolve(__dirname, '../../frontend/src/components/support/helpers.ts'),
         },
+        {
+          find: '@/components/support/conversationRowVisual',
+          replacement: path.resolve(__dirname, '../../frontend/src/components/support/conversationRowVisual.ts'),
+        },
       ],
     },
     server: {

@@ -29,6 +29,14 @@ export interface SupportConversationTriage {
   updated_at: string
 }
 
+/** A workspace-scoped, user-authored support tag. `color` is a hex string (e.g. `#2563eb`). */
+export interface SupportTag {
+  id: string
+  workspace_id?: string
+  name: string
+  color?: string | null
+}
+
 export interface SupportConversation {
   id: string
   workspace_id: string
@@ -64,6 +72,15 @@ export interface SupportConversation {
   ai_turn_count?: number
   customer_requested_human_at?: string
   last_message?: string
+  /** Sender type of the most recent message: 'contact' | 'user' | 'agent' | 'system'. */
+  last_message_sender_type?: string | null
+  last_message_sender_display_name?: string | null
+  /** True when the latest inbound message is still awaiting a team reply. */
+  awaiting_reply?: boolean
+  /** Product-owned system tags on the conversation, e.g. 'ai_handoff', 'ai_resolved'. */
+  system_tags?: string[]
+  /** User-authored, workspace-scoped tags with optional colours. */
+  tags?: SupportTag[]
   unread_count?: number
   mailbox_name?: string | null
   mailbox_handle?: string | null

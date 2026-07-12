@@ -1,10 +1,16 @@
-import { Mail, MessageCircle } from 'lucide-react'
+import { Bot, CheckCircle2, CornerUpLeft, Eye, Mail, MessageCircle } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { ComponentType } from 'react'
 import type { SupportConversation } from '@helpin-ai/support-core'
+import { useSupportPresenceStore } from '@helpin-ai/support-core'
+import {
+  getConversationRowVisualState,
+  getSupportTagPillStyle,
+  isNotePreview,
+  stripNotePrefix,
+} from '@/components/support/conversationRowVisual'
 import { cn } from '@mobile/lib/cn'
 import { Avatar } from '@mobile/ui/avatar'
-import { Badge, type BadgeTone } from '@mobile/ui/badge'
 import { CONVERSATION_CELL_HEIGHT, formatRelativeTime, isUnread, previewText } from './inbox-helpers'
 
 const CHANNEL_ICONS: Partial<Record<SupportConversation['source'], ComponentType<{ className?: string }>>> = {
@@ -12,11 +18,10 @@ const CHANNEL_ICONS: Partial<Record<SupportConversation['source'], ComponentType
   widget: MessageCircle,
 }
 
-const STATUS_BADGES: Partial<Record<SupportConversation['status'], { label: string; tone: BadgeTone }>> = {
-  waiting_on_customer: { label: 'Waiting', tone: 'warning' },
-  resolved: { label: 'Resolved', tone: 'success' },
-  spam: { label: 'Spam', tone: 'neutral' },
-}
+/** Flow states that mean the conversation is queued and waiting on a human. Mirrors web's HUMAN_QUEUE_FLOW_STATES. */
+const HUMAN_QUEUE_FLOW_STATES = new Set(['queued_for_human', 'after_hours_queue'])
+
+const MAX_VISIBLE_TAGS = 2
 
 /** A conversation's display name — customer name, else email, else a short visitor id, else "Anonymous". */
 export function displayNameFor(conversation: SupportConversation): string {
@@ -33,6 +38,17 @@ export function displayNameFor(conversation: SupportConversation): string {
  */
 export const CELL_EXIT_DURATION_MS = 200
 
+/** Three animated dots — customer/agent is typing. */
+function TypingDots() {
+  return (
+    <span aria-label="typing" className="inline-flex items-center gap-0.5 rounded-full bg-foreground/10 px-1.5 py-1">
+      <span className="h-1 w-1 animate-bounce rounded-full bg-foreground/50 [animation-delay:0ms]" />
+      <span className="h-1 w-1 animate-bounce rounded-full bg-foreground/50 [animation-delay:150ms]" />
+      <span className="h-1 w-1 animate-bounce rounded-full bg-foreground/50 [animation-delay:300ms]" />
+    </span>
+  )
+}
+
 export interface ConversationCellProps {
   conversation: SupportConversation
   onPress: () => void
@@ -48,23 +64,55 @@ export interface ConversationCellProps {
 /**
  * Fixed 84px row — the virtualizer's `estimateSize` (inbox-screen.tsx) depends
  * on this exact height, so the outer element must never grow or shrink based
- * on content (hence `overflow-hidden` + 2-line preview clamp).
+ * on content (hence `overflow-hidden` + line clamps).
  *
- * Read vs. unread share the identical layout; only the leading dot's opacity
- * and the name/preview color/weight change, so nothing shifts when a
- * conversation is marked read.
+ * Signals mirror the web conversation row (see ConversationRow.tsx): unread
+ * count badge, "needs team action" row tint, internal-note label, agent-reply
+ * indicator, AI handoff / resolved badges, waiting-for-human pill, coloured
+ * tags, plus live presence (customer/agent typing, viewing agents, visitor
+ * online) read from the shared support presence store.
  */
 export function ConversationCell({ conversation, onPress, isExiting }: ConversationCellProps) {
-  const unread = isUnread(conversation)
   const displayName = displayNameFor(conversation)
   const preview = previewText(conversation)
   const time = formatRelativeTime(conversation.updated_at)
   const ChannelIcon = CHANNEL_ICONS[conversation.source]
-  const statusBadge = conversation.status !== 'open' ? STATUS_BADGES[conversation.status] : undefined
+  const unread = isUnread(conversation)
+  const unreadCount = conversation.unread_count ?? 0
+  const visual = getConversationRowVisualState(conversation)
+
+  // Live presence (populated by useSupportRealtime, which the inbox runs).
+  const customerTyping = useSupportPresenceStore((s) => s.typingIndicators[conversation.id])
+  const isCustomerTyping = typeof customerTyping === 'string'
+  const agentTypingMap = useSupportPresenceStore((s) => s.agentTyping[conversation.id])
+  const firstAgentTyping = agentTypingMap ? Object.values(agentTypingMap)[0] : undefined
+  const isAgentTyping = !!firstAgentTyping
+  const viewingCount = useSupportPresenceStore((s) => s.viewingAgents[conversation.id]?.length ?? 0)
+  const isVisitorOnline = useSupportPresenceStore((s) =>
+    conversation.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false,
+  )
+
+  const systemTags = conversation.system_tags ?? []
+  const hasAIHandoff = systemTags.includes('ai_handoff')
+  const hasAIResolved =
+    systemTags.includes('ai_resolved') ||
+    conversation.flow_state === 'resolved_by_ai' ||
+    conversation.ai_state === 'resolved'
+  const isWaitingForHuman = !!conversation.flow_state && HUMAN_QUEUE_FLOW_STATES.has(conversation.flow_state)
+  const waitSince = conversation.customer_requested_human_at || conversation.ai_escalated_at || conversation.updated_at
+  const hasAgentReplyPreview =
+    conversation.last_message_sender_type === 'user' || conversation.last_message_sender_type === 'agent'
+  const agentFirstName = firstAgentTyping?.name?.split(' ')[0] || 'Agent'
+  const isNote = isNotePreview(conversation.last_message)
+
+  const tags = conversation.tags ?? []
+  const visibleTags = tags.slice(0, MAX_VISIBLE_TAGS)
+  const hiddenTagCount = Math.max(0, tags.length - visibleTags.length)
+  const hasSecondaryRow = isWaitingForHuman || tags.length > 0
+
   // Explicit label so VoiceOver/TalkBack announce "«name», «preview», «time»,
-  // unread" (A8) instead of the default accessible-name-from-subtree
-  // computation, which would otherwise also pick up the Avatar's initials
-  // text node ("AL") ahead of the name.
+  // unread" instead of the default subtree computation (which also picks up
+  // avatar initials). Kept plain/stable regardless of live-presence overlays.
   const cellLabel = [displayName, preview, time, unread ? 'unread' : null].filter(Boolean).join(', ')
 
   return (
@@ -83,19 +131,12 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
       animate={isExiting ? { opacity: 0, scale: 0.96 } : { opacity: 1, scale: 1 }}
       transition={{ duration: CELL_EXIT_DURATION_MS / 1000 }}
       style={{ height: CONVERSATION_CELL_HEIGHT }}
-      className="box-border relative flex w-full cursor-pointer items-center gap-3 overflow-hidden border-b border-border/60 bg-background px-4 text-left active:bg-muted/50"
+      className={cn(
+        'box-border flex w-full cursor-pointer items-center gap-3 overflow-hidden border-b border-border/60 px-4 text-left active:bg-muted/50',
+        // "Needs team action" (open + unread/awaiting reply) gets a subtle tint, mirroring web.
+        visual.needsTeamAction ? 'bg-primary/[0.06]' : 'bg-background',
+      )}
     >
-      {/* Unread dot lives in the left padding (absolute) rather than its own
-          column, so the avatar sits at the normal edge inset and read rows
-          don't show an empty leading gutter. Only its opacity changes. */}
-      <span
-        data-testid="unread-dot"
-        className={cn(
-          'absolute left-1.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-[var(--unread-dot)] transition-opacity',
-          unread ? 'opacity-100' : 'opacity-0',
-        )}
-      />
-
       <div className="relative shrink-0">
         <Avatar name={displayName} size={44} />
         {ChannelIcon && (
@@ -103,13 +144,23 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
             <ChannelIcon className="h-2.5 w-2.5" />
           </span>
         )}
+        {isVisitorOnline && (
+          <span
+            aria-label="Visitor online"
+            className="absolute -left-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background"
+          />
+        )}
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+        {/* Name + time */}
         <div className="flex items-center justify-between gap-2">
           <span
             data-testid="conversation-name"
-            className="min-w-0 flex-1 truncate text-body font-semibold text-foreground"
+            className={cn(
+              'min-w-0 flex-1 truncate text-body text-foreground',
+              visual.usesUnreadTypography ? 'font-semibold' : 'font-medium',
+            )}
           >
             {displayName}
           </span>
@@ -117,22 +168,103 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
             {time}
           </span>
         </div>
-        <div className="flex items-start justify-between gap-2">
+
+        {/* Preview + trailing indicator */}
+        <div className="flex items-center justify-between gap-2">
           <p
             data-testid="conversation-preview"
             className={cn(
-              'line-clamp-2 min-w-0 flex-1 text-footnote',
-              unread ? 'font-medium text-foreground' : 'text-muted-foreground',
+              'flex min-w-0 flex-1 items-center gap-1 text-footnote',
+              hasSecondaryRow ? 'line-clamp-1' : 'line-clamp-2',
+              visual.usesUnreadTypography ? 'font-medium text-foreground/80' : 'text-muted-foreground',
             )}
           >
-            {preview}
+            {isCustomerTyping ? (
+              <span className="min-w-0 truncate italic text-muted-foreground">{customerTyping || 'typing…'}</span>
+            ) : isAgentTyping ? (
+              <span className="min-w-0 truncate italic text-primary/80">{agentFirstName} is typing…</span>
+            ) : isNote ? (
+              <>
+                <span className="shrink-0 font-medium text-amber-600 dark:text-amber-400">Note:</span>
+                <span className="min-w-0 truncate text-muted-foreground">
+                  {stripNotePrefix(conversation.last_message ?? '')}
+                </span>
+              </>
+            ) : (
+              <>
+                {hasAgentReplyPreview && (
+                  <CornerUpLeft aria-label="Team replied" className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+                )}
+                <span className="min-w-0 truncate">{preview}</span>
+              </>
+            )}
           </p>
-          {statusBadge && (
-            <Badge tone={statusBadge.tone} className="mt-0.5 shrink-0">
-              {statusBadge.label}
-            </Badge>
-          )}
+
+          {/* Trailing status/activity — mirrors web's exclusive indicator chain. */}
+          <div className="flex shrink-0 items-center gap-1">
+            {hasAIHandoff && (
+              <span
+                aria-label="AI handed off to team"
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300"
+              >
+                <Bot className="h-2.5 w-2.5" />
+              </span>
+            )}
+            {isCustomerTyping || isAgentTyping ? (
+              <TypingDots />
+            ) : unread ? (
+              <span
+                data-testid="unread-count"
+                className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
+              >
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            ) : viewingCount > 0 ? (
+              <span
+                aria-label={`${viewingCount} viewing`}
+                className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                {viewingCount}
+              </span>
+            ) : hasAIResolved ? (
+              <span
+                aria-label="Resolved by AI"
+                className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300"
+              >
+                <Bot className="h-3 w-3" />
+              </span>
+            ) : conversation.status === 'resolved' ? (
+              <CheckCircle2 aria-label="Resolved" className="h-5 w-5 text-green-500" />
+            ) : null}
+          </div>
         </div>
+
+        {/* Secondary row: waiting-for-human pill + coloured tags (only when present). */}
+        {hasSecondaryRow && (
+          <div className="mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden">
+            {isWaitingForHuman && (
+              <span className="inline-flex shrink-0 items-center rounded-full border border-amber-200/70 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+                Waiting for human · {formatRelativeTime(waitSince)}
+              </span>
+            )}
+            {visibleTags.map((tag) => (
+              <span
+                key={tag.id}
+                title={tag.name}
+                style={getSupportTagPillStyle(tag.color)}
+                className="inline-flex max-w-[7rem] shrink-0 items-center rounded-full border border-border/70 bg-background/70 px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+              >
+                <span className="min-w-0 truncate">{tag.name}</span>
+              </span>
+            ))}
+            {hiddenTagCount > 0 && (
+              <span className="inline-flex shrink-0 items-center rounded-full border border-border/70 bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
+                +{hiddenTagCount}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </motion.div>
   )
