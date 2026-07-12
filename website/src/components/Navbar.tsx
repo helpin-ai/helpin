@@ -5,9 +5,9 @@ import Link from 'next/link';
 import { Menu, X } from 'lucide-react';
 
 const SIGNUP_URL = 'https://app.helpin.ai/register';
-const DEMO_URL = 'https://cal.com/helpin-ai/30min';
 
 const NAV_LINKS: { label: string; href: string }[] = [
+  { label: 'Agents', href: '/#agents' },
   { label: 'Pricing', href: '/pricing' },
 ];
 
@@ -54,12 +54,6 @@ export function Navbar() {
             Log in
           </Link>
           <Link
-            href={DEMO_URL}
-            className="text-[15px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Book a demo
-          </Link>
-          <Link
             href={SIGNUP_URL}
             className="rounded-xl bg-foreground px-5 py-2.5 text-[15px] font-semibold text-background transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-foreground/10"
           >
@@ -95,13 +89,6 @@ export function Navbar() {
               onClick={() => setMobileOpen(false)}
             >
               Log in
-            </Link>
-            <Link
-              href={DEMO_URL}
-              className="rounded-xl border border-border px-4 py-2.5 text-center text-sm font-semibold text-foreground"
-              onClick={() => setMobileOpen(false)}
-            >
-              Book a demo
             </Link>
             <Link
               href={SIGNUP_URL}

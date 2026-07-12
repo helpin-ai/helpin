@@ -2,10 +2,9 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Check, ArrowRight, CalendarDays, Zap, Users, Building2, Layers, MessageCircle, BarChart3, FileText, Search, Code2, CheckCircle, Send } from 'lucide-react';
+import { Check, ArrowRight, Zap, Users, Building2, Layers, MessageCircle, BarChart3, FileText, Search, Code2, CheckCircle, Send } from 'lucide-react';
 
 const SIGNUP_URL = 'https://app.helpin.ai/register';
-const DEMO_URL = 'https://cal.com/helpin-ai/30min';
 
 const PLANS = [
   {
@@ -193,29 +192,10 @@ export default function PricingPage() {
       <section className="pt-20 md:pt-28 pb-16 text-center">
         <div className="mx-auto max-w-4xl px-6 lg:px-8">
           <h1 className="text-[clamp(2.25rem,5vw,4.75rem)] font-bold tracking-[-0.04em] leading-[1.0] text-foreground mb-6">
-            Pay for output,<br />not headcount.
+            Focus on Growth,<br />not the seat count.
           </h1>
           <p className="text-[17px] text-muted-foreground leading-relaxed max-w-2xl mx-auto mb-14">
-            Your whole team gets PM, Support, Sales, and Docs — with AI agents that plan, build, triage, and follow up. No per-seat pricing.
-          </p>
-
-          <div className="mb-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link
-              href={SIGNUP_URL}
-              className="rounded-xl bg-foreground px-6 py-3 text-[15px] font-semibold text-background transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-foreground/10"
-            >
-              Start free trial <ArrowRight className="inline h-4 w-4 ml-1" />
-            </Link>
-            <Link
-              href={DEMO_URL}
-              className="rounded-xl border border-border px-6 py-3 text-[15px] font-semibold text-foreground transition-colors hover:border-foreground/20 hover:bg-muted/30"
-            >
-              Book a demo <CalendarDays className="inline h-4 w-4 ml-1" />
-            </Link>
-          </div>
-
-          <p className="mb-14 text-sm font-medium text-muted-foreground">
-            Start with a no-card 14-day Growth trial. Before or after the trial, choose Starter or Growth to keep the workspace active.
+            Bring projects, support, sales, and docs into one workspace—with AI agents that help every team get more done.
           </p>
 
           {/* What's included strip */}

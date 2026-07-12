@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, CalendarDays, User, Layers, BookOpen, MessageCircle, Users, Zap, FileText, Search, AlertCircle, RefreshCw, UserPlus, Code2, CheckCircle, Rocket, Globe, Clock, Send, Target, TrendingUp, BarChart3, PenTool, Calendar, Shield, Share2 } from 'lucide-react';
+import { ArrowRight, User, Layers, BookOpen, MessageCircle, Users, Zap, FileText, Search, AlertCircle, RefreshCw, UserPlus, Code2, CheckCircle, Rocket, Globe, Clock, Send, Target, TrendingUp, BarChart3, PenTool, Calendar, Shield, Share2 } from 'lucide-react';
 
 const SIGNUP_URL = 'https://app.helpin.ai/register';
 const DEMO_URL = 'https://cal.com/helpin-ai/30min';
@@ -26,7 +26,8 @@ function trackMarketingCTA(action: string, source: string) {
   }
 }
 
-function ConversionActions({ dark = false, source }: { dark?: boolean; source: string }) {
+function ConversionActions({ dark = false, source, glowPrimary = false }: { dark?: boolean; source: string; glowPrimary?: boolean }) {
+  const actionLayout = 'inline-flex shrink-0 items-center justify-center whitespace-nowrap';
   const primaryClassName = dark
     ? 'rounded-xl bg-white px-6 py-3 text-[15px] font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-white/10'
     : 'btn-primary justify-center';
@@ -34,23 +35,35 @@ function ConversionActions({ dark = false, source }: { dark?: boolean; source: s
     ? 'rounded-xl border border-white/15 px-6 py-3 text-[15px] font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white'
     : 'rounded-xl border border-border px-6 py-3 text-[15px] font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-muted/30';
 
+  const primaryAction = (
+    <Link
+      href={SIGNUP_URL}
+      className={`${primaryClassName} ${actionLayout} ${glowPrimary ? 'h-full w-full' : 'h-12'}`}
+      onClick={() => trackMarketingCTA('website_start_trial_clicked', source)}
+    >
+      Start free trial
+      <ArrowRight className="h-4 w-4" />
+    </Link>
+  );
+
   return (
     <div className="flex w-full max-w-lg flex-col gap-3 sm:flex-row sm:justify-center">
-      <Link
-        href={SIGNUP_URL}
-        className={primaryClassName}
-        onClick={() => trackMarketingCTA('website_start_trial_clicked', source)}
-      >
-        Start free trial
-        <ArrowRight className="h-4 w-4" />
-      </Link>
+      {glowPrimary ? (
+        <div className="email-glow-wrapper h-12 shrink-0 w-full sm:w-auto">
+          <div className="email-glow-wrapper-glow" />
+          <div className="relative z-10 h-full rounded-[14px]" style={{ background: 'var(--color-background)' }}>
+            {primaryAction}
+          </div>
+        </div>
+      ) : primaryAction}
       <Link
         href={DEMO_URL}
-        className={secondaryClassName}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`${secondaryClassName} ${actionLayout} h-12`}
         onClick={() => trackMarketingCTA('website_book_demo_clicked', source)}
       >
         Book a demo
-        <CalendarDays className="h-4 w-4" />
       </Link>
     </div>
   );
@@ -61,14 +74,7 @@ function SignupCTA({ dark = false, source }: { dark?: boolean; source: string })
     return <ConversionActions dark source={source} />;
   }
 
-  return (
-    <div className="email-glow-wrapper w-full max-w-lg">
-      <div className="email-glow-wrapper-glow" />
-      <div className="relative z-10 rounded-[14px] p-2" style={{ background: 'var(--color-background)', border: '1px solid oklch(0.12 0.02 55 / 0.08)' }}>
-        <ConversionActions source={source} />
-      </div>
-    </div>
-  );
+  return <ConversionActions source={source} glowPrimary />;
 }
 
 // ─── Reveal hook ───
@@ -633,7 +639,7 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
               left: CX - 50, top: CY - 50,
               width: 100, height: 100,
               borderRadius: '50%',
-              background: `radial-gradient(circle, oklch(0.48 0.15 155 / ${convergeT * 0.15}), transparent 70%)`,
+              background: `radial-gradient(circle, color-mix(in oklch, var(--color-pop) ${convergeT * 15}%, transparent), transparent 70%)`,
               transform: `scale(${1 + convergeT * 2})`,
               pointerEvents: 'none',
             }} />
@@ -681,7 +687,7 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
               left: CX - 20, top: CY - 20,
               width: 40, height: 40,
               borderRadius: '50%',
-              border: '1.5px solid oklch(0.48 0.15 155 / 0.18)',
+              border: '1.5px solid color-mix(in oklch, var(--color-pop) 18%, transparent)',
               transformOrigin: 'center',
               animation: aliveT >= 1 ? `orbital-pulse-ring 4s ease-out ${i * 2}s infinite` : 'none',
               opacity: aliveT >= 1 ? 1 : 0,
@@ -704,7 +710,7 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
               <div style={{
                 width: 8, height: 8, borderRadius: '50%',
                 background: 'var(--color-pop)',
-                boxShadow: '0 0 12px oklch(0.48 0.15 155 / 0.8), 0 0 24px oklch(0.48 0.15 155 / 0.4)',
+                boxShadow: '0 0 12px color-mix(in oklch, var(--color-pop) 80%, transparent), 0 0 24px color-mix(in oklch, var(--color-pop) 40%, transparent)',
               }} />
             </div>
           )}
@@ -866,7 +872,7 @@ function ProblemSolutionSection() {
 
 export default function HomePage() {
   return (
-    <main>
+    <main className="home-coral">
 
       {/* ══════════════════════════════════
           HERO
@@ -875,7 +881,7 @@ export default function HomePage() {
         {/* Temple geometric pattern — extends behind navbar */}
         <div className="absolute -top-20 left-0 right-0 -bottom-16 pointer-events-none" aria-hidden="true">
           <div className="absolute inset-0" style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='152' height='152' viewBox='0 0 152 152'%3E%3Cg fill-rule='evenodd'%3E%3Cg id='temple' fill='%234a8c6f' fill-opacity='0.06'%3E%3Cpath d='M152 150v2H0v-2h28v-8H8v-20H0v-2h8V80h42v20h20v42H30v8h90v-8H80v-42h20V80h42v40h8V30h-8v40h-42V50H80V8h40V0h2v8h20v20h8V0h2v150zm-2 0v-28h-8v20h-20v8h28zM82 30v18h18V30H82zm20 18h20v20h18V30h-20V10H82v18h20v20zm0 2v18h18V50h-18zm20-22h18V10h-18v18zm-54 92v-18H50v18h18zm-20-18H28V82H10v38h20v20h38v-18H48v-20zm0-2V82H30v18h18zm-20 22H10v18h18v-18zm54 0v18h38v-20h20V82h-18v20h-20v20H82zm18-20H82v18h18v-18zm2-2h18V82h-18v18zm20 40v-18h18v18h-18zM30 0h-2v8H8v20H0v2h8v40h42V50h20V8H30V0zm20 48h18V30H50v18zm18-20H48v20H28v20H10V30h20V10h38v18zM30 50h18v18H30V50zm-2-40H10v18h18V10z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='152' height='152' viewBox='0 0 152 152'%3E%3Cg fill-rule='evenodd'%3E%3Cg id='temple' fill='%23d96d55' fill-opacity='0.055'%3E%3Cpath d='M152 150v2H0v-2h28v-8H8v-20H0v-2h8V80h42v20h20v42H30v8h90v-8H80v-42h20V80h42v40h8V30h-8v40h-42V50H80V8h40V0h2v8h20v20h8V0h2v150zm-2 0v-28h-8v20h-20v8h28zM82 30v18h18V30H82zm20 18h20v20h18V30h-20V10H82v18h20v20zm0 2v18h18V50h-18zm20-22h18V10h-18v18zm-54 92v-18H50v18h18zm-20-18H28V82H10v38h20v20h38v-18H48v-20zm0-2V82H30v18h18v-18zm-20 22H10v18h18v-18zm54 0v18h38v-20h20V82h-18v20h-20v20H82zm18-20H82v18h18v-18zm2-2h18V82h-18v18zm20 40v-18h18v18h-18zM30 0h-2v8H8v20H0v2h8v40h42V50h20V8H30V0zm20 48h18V30H50v18zm18-20H48v20H28v20H10V30h20V10h38v18zM30 50h18v18H30V50zm-2-40H10v18h18V10z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
           }} />
           {/* Radial fade — visible at edges, hidden in center */}
           <div className="absolute inset-0" style={{
@@ -888,8 +894,10 @@ export default function HomePage() {
           <div className="text-center mb-14">
             <Reveal>
               <h1 className="text-[clamp(2.25rem,5vw,4.75rem)] font-bold tracking-[-0.04em] leading-[1.0] text-foreground mb-6">
-                <span className="block">One system. Every team.</span>
-                <span className="block font-display" style={{ marginTop: '0.15em' }}>AI agents that do the work.</span>
+                <span className="block">Bring every team together.</span>
+                <span className="block" style={{ marginTop: '0.15em' }}>
+                  Put <span className="relative inline-block">AI agents<svg aria-hidden="true" style={{ position: 'absolute', bottom: -3, left: -2, width: 'calc(100% + 4px)', height: 10, overflow: 'visible' }} viewBox="0 0 100 10" preserveAspectRatio="none"><path d="M2 8C12 3 20 9 30 4C40 9 50 2 60 8C70 3 80 9 90 4C95 2 98 5 98 5" stroke="var(--color-pop)" strokeWidth="2.5" strokeLinecap="round" fill="none" /></svg></span> to work.
+                </span>
               </h1>
             </Reveal>
             <Reveal>
@@ -900,6 +908,7 @@ export default function HomePage() {
             <Reveal>
               <div className="flex flex-col items-center gap-3">
                 <SignupCTA source="home-hero" />
+                <p className="text-sm font-medium text-muted-foreground">No credit card required.</p>
               </div>
             </Reveal>
           </div>
@@ -908,7 +917,11 @@ export default function HomePage() {
           <div className="mt-16" />
           <Reveal>
             <div className="hidden md:block">
-              <AIWorkflowVisual />
+              <div className="wf-stage">
+                <div className="wf-stage-content">
+                  <AIWorkflowVisual />
+                </div>
+              </div>
             </div>
             {/* Mobile: simplified module list */}
             <div className="md:hidden flex flex-col items-center gap-3 py-8">
@@ -916,7 +929,7 @@ export default function HomePage() {
                 <span className="text-[10px] font-bold uppercase tracking-wider text-background">Helpin</span>
               </div>
               <div className="flex flex-wrap justify-center gap-2">
-                {['Support', 'PM', 'Docs', 'Knowledge', 'CRM', 'Customer'].map((m) => (
+                {['Support', 'PM', 'Docs', 'Company Knowledge', 'CRM'].map((m) => (
                   <span key={m} className="text-[12px] font-medium text-muted-foreground px-3 py-1.5 rounded-full border border-border bg-background">
                     {m}
                   </span>
@@ -964,7 +977,7 @@ export default function HomePage() {
       {/* ══════════════════════════════════
           AGENT ROSTER
           ══════════════════════════════════ */}
-      <section className="relative border-t border-border" id="agents">
+      <section id="agents" className="relative scroll-mt-20 border-t border-border">
         <div className="mx-auto max-w-7xl px-6 lg:px-8 py-16 md:py-32">
 
           <Reveal className="mb-6 text-center max-w-3xl mx-auto">
@@ -1043,7 +1056,7 @@ export default function HomePage() {
                   style={{ boxShadow: '0 12px 40px oklch(0.12 0.02 55 / 0.25), 0 4px 12px oklch(0.12 0.02 55 / 0.1)' }}>
                   <span className="text-[14px] font-bold uppercase tracking-wider text-background">Helpin</span>
                 </div>
-                <span className="inline-block text-[12px] font-bold uppercase tracking-widest rounded-full px-5 py-2" style={{ color: 'oklch(0.45 0.15 155)', background: 'oklch(0.45 0.15 155 / 0.08)' }}>After</span>
+                <span className="inline-block text-[12px] font-bold uppercase tracking-widest rounded-full px-5 py-2" style={{ color: 'var(--color-pop)', background: 'var(--color-pop-light)' }}>After</span>
               </div>
             </div>
           </Reveal>
@@ -1254,12 +1267,11 @@ export default function HomePage() {
 // Hybrid HTML cards + SVG constellation with triple-layer comet signals
 
 const WF_DATA = [
-  { id: 'support',   module: 'Support',    action: 'Ticket triaged',       dot: '#e11d48', svg: { x: 120, y: 75 },  css: { left: '13.3%', top: '15.6%' },  activateAt: 1, signalAt: 1, signalDir: 'in'  as const, packet: 'Login bug' },
-  { id: 'pm',        module: 'PM',         action: 'Task created',         dot: '#2563eb', svg: { x: 450, y: 32 },  css: { left: '50%',   top: '6.7%' },   activateAt: 4, signalAt: 4, signalDir: 'out' as const, packet: 'Create task' },
-  { id: 'crm',       module: 'Sales',      action: 'Account flagged',      dot: '#ea580c', svg: { x: 450, y: 448 }, css: { left: '50%',   top: '93.3%' },  activateAt: 5, signalAt: 5, signalDir: 'out' as const, packet: 'Flag risk' },
-  { id: 'docs',      module: 'Docs',       action: 'Guide updated',        dot: '#16a34a', svg: { x: 780, y: 75 },  css: { left: '86.7%', top: '15.6%' },  activateAt: 6, signalAt: 6, signalDir: 'out' as const, packet: 'Update doc' },
-  { id: 'knowledge', module: 'Knowledge',  action: '3 matches found',      dot: '#9333ea', svg: { x: 120, y: 405 }, css: { left: '13.3%', top: '84.4%' },  activateAt: 7, signalAt: 7, signalDir: 'out' as const, packet: 'Find related' },
-  { id: 'customer',  module: 'Customer',   action: 'Update sent',           dot: '#0891b2', svg: { x: 780, y: 405 }, css: { left: '86.7%', top: '84.4%' },  activateAt: 8, signalAt: 8, signalDir: 'out' as const, packet: 'Investigating' },
+  { id: 'support',   module: 'Support',    action: 'Ticket triaged',       dot: '#e11d48', svg: { x: 145.7, y: 172.0 }, css: { left: '16.19%', top: '35.83%' }, activateAt: 1, signalAt: 1, signalDir: 'in'  as const, packet: 'SSO issue reported' },
+  { id: 'pm',        module: 'PM',         action: 'Task created',         dot: '#2563eb', svg: { x: 450, y: 20 },      css: { left: '50%',    top: '4.17%' },  activateAt: 6, signalAt: 6, signalDir: 'out' as const, packet: 'Urgent task created' },
+  { id: 'docs',      module: 'Docs',       action: 'Help doc updated',     dot: '#16a34a', svg: { x: 754.3, y: 172.0 }, css: { left: '83.81%', top: '35.83%' }, activateAt: 7, signalAt: 7, signalDir: 'out' as const, packet: 'Help doc updated' },
+  { id: 'crm',       module: 'Sales',      action: 'Renewal risk flagged', dot: '#ea580c', svg: { x: 638.1, y: 418.0 }, css: { left: '70.90%', top: '87.08%' }, activateAt: 4, signalAt: 4, signalDir: 'in'  as const, packet: 'Renewal risk detected' },
+  { id: 'knowledge', module: 'Company Knowledge', action: 'Workaround found', dot: '#9333ea', svg: { x: 261.9, y: 418.0 }, css: { left: '29.10%', top: '87.08%' }, activateAt: 5, signalAt: 5, signalDir: 'in' as const, packet: 'Workaround found' },
 ];
 
 const WF_CTR = { x: 450, y: 240 };
@@ -1282,9 +1294,11 @@ function wfCurveReversed(x1: number, y1: number, x2: number, y2: number) {
   return `M ${x2} ${y2} Q ${qx} ${qy} ${x1} ${y1}`;
 }
 
-function TravelingPacket({ pathD, label, color, duration = 2200 }: { pathD: string; label: string; color?: string; duration?: number }) {
+function TravelingPacket({ pathD, label, color, duration = 1900 }: { pathD: string; label: string; color?: string; duration?: number }) {
   const pathRef = useRef<SVGPathElement>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [midpoint, setMidpoint] = useState<{ x: number; y: number } | null>(null);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     const el = pathRef.current;
@@ -1298,6 +1312,13 @@ function TravelingPacket({ pathD, label, color, duration = 2200 }: { pathD: stri
     const trimStart = startDist < endDist ? 36 : 0;
     const trimEnd = endDist < startDist ? 36 : 0;
     const usableLen = totalLen - trimStart - trimEnd;
+    const nodeClearance = 105;
+    const hubClearance = 50;
+    const startsAtHub = startDist < endDist;
+    const labelStart = startsAtHub ? hubClearance : nodeClearance;
+    const labelEnd = startsAtHub ? nodeClearance : hubClearance;
+    const labelUsableLen = Math.max(0, totalLen - labelStart - labelEnd);
+    setMidpoint(el.getPointAtLength(labelStart + labelUsableLen * 0.5));
 
     const start = performance.now();
     let raf: number;
@@ -1306,6 +1327,7 @@ function TravelingPacket({ pathD, label, color, duration = 2200 }: { pathD: stri
       const t = Math.min((now - start) / duration, 1);
       const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
       const pt = el.getPointAtLength(trimStart + eased * usableLen);
+      setProgress(t);
       setPos({ x: pt.x, y: pt.y });
       if (t < 1) raf = requestAnimationFrame(tick);
     };
@@ -1316,26 +1338,45 @@ function TravelingPacket({ pathD, label, color, duration = 2200 }: { pathD: stri
   return (
     <>
       <path ref={pathRef} d={pathD} fill="none" stroke="none" />
-      {pos && (() => {
-        const w = Math.max(48, label.length * 6.5 + 20);
+      {pos && midpoint && (() => {
+        const w = Math.max(52, label.length * 6.1 + 18);
         const hw = w / 2;
+        const enterProgress = Math.min(progress / 0.15, 1);
+        const exitProgress = Math.min((1 - progress) / 0.18, 1);
+        const labelVisibility = Math.min(enterProgress, exitProgress);
+        const easedVisibility = 1 - Math.pow(1 - labelVisibility, 3);
+        const labelScale = 0.96 + easedVisibility * 0.04;
+        const labelLift = progress < 0.15
+          ? (1 - easedVisibility) * 4
+          : progress > 0.82
+            ? -(1 - easedVisibility) * 3
+            : 0;
         return (
-          <g transform={`translate(${pos.x}, ${pos.y})`}>
-            {/* Shadow */}
-            <rect x={-hw + 1} y="-8" width={w - 2} height="18" rx="9"
-              fill={color ? `${color}20` : 'oklch(0.12 0.02 55 / 0.1)'} />
-            {/* Pastel background */}
-            <rect x={-hw} y="-10" width={w} height="20" rx="10"
-              fill={color ? `${color}30` : 'var(--color-pop-light)'}
-              stroke={color ? `${color}50` : 'var(--color-pop)'}
-              strokeWidth="1.5" />
-            {/* Text */}
-            <text x="0" y="3.5" textAnchor="middle"
-              fill={color || 'var(--color-pop)'} fontSize="8.5" fontWeight="800" fontFamily="var(--font-sans)"
-              style={{ letterSpacing: '0.02em' }}>
-              {label}
-            </text>
-          </g>
+          <>
+            {/* A compact pulse carries direction while the action remains readable. */}
+            <g className="wf-packet-pulse" transform={`translate(${pos.x}, ${pos.y})`}>
+              <circle r="8" fill={color ? `${color}22` : 'color-mix(in oklch, var(--color-pop) 14%, transparent)'} />
+              <circle r="4" fill={color || 'var(--color-pop)'} />
+              <circle r="1.5" fill="white" />
+            </g>
+
+            {/* Stationary path label — offset above the pulse so neither obscures the other. */}
+            <g className="wf-packet-label"
+              transform={`translate(${midpoint.x}, ${midpoint.y - 15 + labelLift}) scale(${labelScale})`}
+              style={{ opacity: easedVisibility }}>
+              <rect x={-hw + 1} y="-9" width={w - 2} height="22" rx="8"
+                fill="oklch(0.12 0.02 55 / 0.08)" />
+              <rect x={-hw} y="-11" width={w} height="22" rx="8"
+                fill="oklch(0.995 0.002 75 / 0.96)"
+                stroke={color ? `${color}70` : 'var(--color-pop)'}
+                strokeWidth="1" />
+              <text x="0" y="3" textAnchor="middle"
+                fill="oklch(0.19 0.025 155)" fontSize="9.5" fontWeight="750" fontFamily="var(--font-sans)"
+                style={{ letterSpacing: '0.01em' }}>
+                {label}
+              </text>
+            </g>
+          </>
         );
       })()}
     </>
@@ -1346,22 +1387,20 @@ function getNodeActions(id: string, step: number): { text: string; done: boolean
   const actions: { text: string; done: boolean }[] = [];
   if (id === 'support') {
     if (step >= 1) actions.push({ text: 'Ticket received', done: step >= 3 });
-    if (step >= 4) actions.push({ text: 'Triaged by AI', done: step >= 4 });
-    if (step >= 12) actions.push({ text: 'Resolved', done: true });
+    if (step >= 4) actions.push({ text: 'Impact assessed', done: step >= 6 });
+    if (step >= 9 && step < 12) actions.push({ text: 'Workaround ready', done: true });
+    if (step >= 12) actions.push({ text: 'Workaround sent', done: true });
+    if (step >= 12) actions.push({ text: 'Customer unblocked', done: true });
   } else if (id === 'pm') {
-    if (step >= 5) actions.push({ text: 'Task created', done: step >= 6 });
-    if (step >= 6) actions.push({ text: 'Assigned to sprint', done: step >= 9 });
-    if (step >= 9) actions.push({ text: 'Bug fixed', done: true });
+    if (step >= 7) actions.push({ text: 'Urgent task created', done: true });
+    if (step >= 8) actions.push({ text: 'Assigned to Platform', done: true });
   } else if (id === 'crm') {
-    if (step >= 6) actions.push({ text: 'Account flagged', done: step >= 7 });
-    if (step >= 7) actions.push({ text: 'Risk alert sent', done: true });
+    if (step >= 5) actions.push({ text: 'Renewal risk flagged', done: true });
+    if (step >= 10) actions.push({ text: 'Owner notified', done: true });
   } else if (id === 'docs') {
-    if (step >= 7) actions.push({ text: 'Guide updated', done: true });
+    if (step >= 8) actions.push({ text: 'Help doc updated', done: true });
   } else if (id === 'knowledge') {
-    if (step >= 8) actions.push({ text: '3 matches found', done: true });
-  } else if (id === 'customer') {
-    if (step >= 9) actions.push({ text: 'Update sent', done: step >= 12 });
-    if (step >= 12) actions.push({ text: 'Issue resolved', done: true });
+    if (step >= 6) actions.push({ text: 'Workaround found', done: true });
   }
   return actions;
 }
@@ -1377,11 +1416,11 @@ function WfMicroUI({ id, on, step }: { id: string; on: boolean; step: number }) 
         transition: 'background 0.4s ease',
       }}>
         <p className="text-[11px] font-medium leading-snug" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
-          Login not working on mobile
+          SSO setup is blocking our launch
         </p>
       </div>
       <p className="text-[9px] mt-1" style={t('oklch(0.12 0.02 55 / 0.4)', 'oklch(0.12 0.02 55 / 0.1)')}>
-        Sarah K. · Acme Corp
+        Maya R. · Acme Corp
       </p>
     </div>
   );
@@ -1398,11 +1437,11 @@ function WfMicroUI({ id, on, step }: { id: string; on: boolean; step: number }) 
         transition: 'background 0.4s ease',
       }} />
       <div className="px-2 py-1.5 min-w-0">
-        <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
-          Fix mobile auth token refresh
+        <p className="wf-pm-task-title text-[11px] font-medium leading-snug" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
+          Prevent SSO mapping failures
         </p>
         <p className="text-[9px]" style={t('oklch(0.12 0.02 55 / 0.4)', 'oklch(0.12 0.02 55 / 0.1)')}>
-          Sprint 14 · Urgent
+          Platform · Urgent
         </p>
       </div>
     </div>
@@ -1423,7 +1462,7 @@ function WfMicroUI({ id, on, step }: { id: string; on: boolean; step: number }) 
       </div>
       <div className="px-2 py-1.5">
         <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
-          Mobile auth guide
+          Enterprise SSO setup
         </p>
         <p className="text-[9px]" style={t('oklch(0.12 0.02 55 / 0.4)', 'oklch(0.12 0.02 55 / 0.1)')}>
           Updated automatically
@@ -1447,13 +1486,13 @@ function WfMicroUI({ id, on, step }: { id: string; on: boolean; step: number }) 
           <span className="text-[8px] font-bold" style={t('oklch(0.4 0.08 50)', 'oklch(0.12 0.02 55 / 0.12)')}>AC</span>
         </div>
         <div className="min-w-0">
-          <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>Acme Corp · $48k</p>
+          <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>Acme Corp · $48k ARR</p>
           <div className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{
               background: on ? '#f59e0b' : 'oklch(0.88 0.005 75)',
               transition: 'background 0.4s ease',
             }} />
-            <span className="text-[9px]" style={t('oklch(0.55 0.12 70)', 'oklch(0.12 0.02 55 / 0.1)')}>At risk</span>
+            <span className="text-[9px]" style={t('oklch(0.55 0.12 70)', 'oklch(0.12 0.02 55 / 0.1)')}>Renewal in 18 days</span>
           </div>
         </div>
       </div>
@@ -1468,7 +1507,7 @@ function WfMicroUI({ id, on, step }: { id: string; on: boolean; step: number }) 
       transition: 'all 0.4s ease',
     }}>
       <p className="text-[11px] font-medium truncate" style={t('oklch(0.15 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
-        Mobile login issues
+        SAML certificate mapping
       </p>
       <div className="flex items-center gap-1.5 mt-1">
         <div className="h-1 flex-1 rounded-full overflow-hidden" style={{
@@ -1476,44 +1515,15 @@ function WfMicroUI({ id, on, step }: { id: string; on: boolean; step: number }) 
           transition: 'background 0.4s ease',
         }}>
           <div className="h-full rounded-full" style={{
-            width: on ? '92%' : '0%',
+            width: on ? '94%' : '0%',
             background: 'oklch(0.55 0.15 300)',
             transition: 'width 0.9s cubic-bezier(0.16,1,0.3,1) 0.15s',
           }} />
         </div>
-        <span className="text-[9px] font-semibold shrink-0" style={t('oklch(0.5 0.15 300)', 'transparent')}>92%</span>
+        <span className="text-[9px] font-semibold shrink-0" style={t('oklch(0.5 0.15 300)', 'transparent')}>94%</span>
       </div>
     </div>
   );
-
-  /* ── Customer: first = investigating, after return = resolved ── */
-  if (id === 'customer') {
-    const resolved = step >= 11;
-    return (
-      <div className="rounded-md px-2.5 py-2 flex items-center gap-2" style={{
-        background: on ? (resolved ? 'oklch(0.95 0.04 160)' : 'oklch(0.95 0.02 55)') : 'oklch(0.96 0.005 75 / 0.4)',
-        border: `1px solid ${on ? (resolved ? 'oklch(0.88 0.06 160)' : 'oklch(0.90 0.01 55)') : 'oklch(0.94 0.005 75 / 0.4)'}`,
-        transition: 'all 0.4s ease',
-      }}>
-        <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center" style={{
-          background: on ? (resolved ? 'oklch(0.45 0.15 160)' : 'oklch(0.6 0.12 55)') : 'oklch(0.88 0.005 75)',
-          transition: 'background 0.4s ease',
-        }}>
-          <span className="text-[10px] font-bold" style={{ color: on ? '#fff' : 'transparent', transition: 'color 0.4s ease' }}>
-            {resolved ? '\u2713' : '\u2026'}
-          </span>
-        </div>
-        <div className="min-w-0">
-          <p className="text-[11px] font-medium" style={t(resolved ? 'oklch(0.2 0.05 160)' : 'oklch(0.2 0.02 55)', 'oklch(0.15 0.02 55 / 0.18)')}>
-            {resolved ? 'Resolved' : 'Investigating'}
-          </p>
-          <p className="text-[9px]" style={t(resolved ? 'oklch(0.35 0.08 160)' : 'oklch(0.4 0.02 55)', 'oklch(0.12 0.02 55 / 0.1)')}>
-            {resolved ? 'Fixed in 8 min' : 'Looking into it'}
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   return null;
 }
@@ -1566,8 +1576,8 @@ function AIWorkflowVisual() {
             <feComposite in="SourceGraphic" in2="b" operator="over" />
           </filter>
           <radialGradient id="wf-ambient" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="oklch(0.48 0.15 155 / 0.06)" />
-            <stop offset="100%" stopColor="oklch(0.48 0.15 155 / 0)" />
+            <stop offset="0%" stopColor="color-mix(in oklch, var(--color-pop) 6%, transparent)" />
+            <stop offset="100%" stopColor="color-mix(in oklch, var(--color-pop) 0%, transparent)" />
           </radialGradient>
           {/* Mask: hide lines inside center circle */}
           <mask id="wf-center-mask">
@@ -1622,61 +1632,73 @@ function AIWorkflowVisual() {
           );
         })}
 
-        {/* ── Return packets (closing the loop) ── */}
+        {/* ── Helpin prepares the response in Support ── */}
+        {step === 8 && (
+          <TravelingPacket key={`pkt-progress-${step}`}
+            pathD={wfCurveReversed(WF_DATA[0].svg.x, WF_DATA[0].svg.y, cx, cy)}
+            label="Workaround ready" color={WF_DATA[0].dot} />
+        )}
+
+        {/* ── Sales owner is alerted before the customer reply goes out ── */}
         {step === 9 && (
-          <TravelingPacket key={`pkt-return-done-${step}`}
-            pathD={wfCurve(WF_DATA[1].svg.x, WF_DATA[1].svg.y, cx, cy)}
-            label="Done ✓" color="#16a34a" />
+          <TravelingPacket key={`pkt-owner-notified-${step}`}
+            pathD={wfCurveReversed(WF_DATA[3].svg.x, WF_DATA[3].svg.y, cx, cy)}
+            label="Owner notified" color={WF_DATA[3].dot} />
         )}
         {step === 11 && (
           <TravelingPacket key={`pkt-return-resolved-${step}`}
             pathD={wfCurveReversed(WF_DATA[0].svg.x, WF_DATA[0].svg.y, cx, cy)}
-            label="Resolved" color="#16a34a" />
+            label="Workaround sent" color="#16a34a" />
         )}
 
         {/* ── Center AI hub ── */}
         <g>
           <circle cx={cx} cy={cy} r={68}
-            stroke={centerOn ? 'oklch(0.48 0.15 155 / 0.1)' : 'oklch(0.12 0.02 55 / 0.03)'}
+            stroke={centerOn ? 'color-mix(in oklch, var(--color-pop) 10%, transparent)' : 'oklch(0.12 0.02 55 / 0.03)'}
             strokeWidth="1" strokeDasharray="6 10" className="wf-ring-outer"
             style={{ transition: 'stroke 1s ease' }} />
           <circle cx={cx} cy={cy} r={50}
-            stroke={centerOn ? 'oklch(0.48 0.15 155 / 0.2)' : 'oklch(0.12 0.02 55 / 0.04)'}
+            stroke={centerOn ? 'color-mix(in oklch, var(--color-pop) 20%, transparent)' : 'oklch(0.12 0.02 55 / 0.04)'}
             strokeWidth="1" strokeDasharray="3 6" className="wf-ring-inner"
             style={{ transition: 'stroke 0.8s ease' }} />
 
           {(step === 2 || step === 3 || step === 9 || step === 10 || step === 12) && (
             <>
               <circle key={`p1-${step}`} cx={cx} cy={cy} r={34}
-                stroke="oklch(0.48 0.15 155 / 0.3)" strokeWidth="1.5" className="wf-pulse" />
+                stroke="color-mix(in oklch, var(--color-pop) 30%, transparent)" strokeWidth="1.5" className="wf-pulse" />
               <circle key={`p2-${step}`} cx={cx} cy={cy} r={34}
-                stroke="oklch(0.48 0.15 155 / 0.18)" strokeWidth="1" className="wf-pulse"
+                stroke="color-mix(in oklch, var(--color-pop) 18%, transparent)" strokeWidth="1" className="wf-pulse"
                 style={{ animationDelay: '0.3s' }} />
             </>
           )}
 
           <circle cx={cx} cy={cy} r={36}
-            fill={processing ? 'oklch(0.48 0.15 155 / 0.12)' : centerOn ? 'oklch(0.48 0.15 155 / 0.06)' : 'oklch(0.12 0.02 55 / 0.012)'}
-            stroke={processing ? 'oklch(0.48 0.15 155 / 0.35)' : centerOn ? 'oklch(0.48 0.15 155 / 0.22)' : 'oklch(0.12 0.02 55 / 0.05)'}
+            fill={processing ? 'color-mix(in oklch, var(--color-pop) 12%, transparent)' : centerOn ? 'color-mix(in oklch, var(--color-pop) 6%, transparent)' : 'oklch(0.12 0.02 55 / 0.012)'}
+            stroke={processing ? 'color-mix(in oklch, var(--color-pop) 35%, transparent)' : centerOn ? 'color-mix(in oklch, var(--color-pop) 22%, transparent)' : 'oklch(0.12 0.02 55 / 0.05)'}
             strokeWidth="1" className="wf-core-breathe"
             style={{ transition: 'fill 0.3s ease, stroke 0.3s ease' }} />
 
           {/* HELPIN AI text — hidden during processing */}
           <text x={cx} y={cy - 6} textAnchor="middle" dominantBaseline="middle"
             fontSize="9" fontWeight="700" letterSpacing="0.14em"
-            fill={processing ? 'transparent' : centerOn ? 'oklch(0.48 0.15 155 / 0.8)' : 'oklch(0.12 0.02 55 / 0.2)'}
+            fill={processing ? 'transparent' : centerOn ? 'color-mix(in oklch, var(--color-pop) 80%, transparent)' : 'oklch(0.12 0.02 55 / 0.2)'}
             style={{ transition: 'fill 0.3s ease', fontFamily: 'var(--font-sans)' }}>HELPIN</text>
           <text x={cx} y={cy + 10} textAnchor="middle" dominantBaseline="middle"
             fontSize="15" fontWeight="800" letterSpacing="0.2em"
-            fill={processing ? 'transparent' : centerOn ? 'oklch(0.48 0.15 155)' : 'oklch(0.12 0.02 55 / 0.15)'}
+            fill={processing ? 'transparent' : centerOn ? 'var(--color-pop)' : 'oklch(0.12 0.02 55 / 0.15)'}
             style={{ transition: 'fill 0.3s ease', fontFamily: 'var(--font-sans)' }}>AI</text>
 
           {/* Processing label */}
           <text x={cx} y={cy + 2} textAnchor="middle" dominantBaseline="middle"
             fontSize="10" fontWeight="600" letterSpacing="0.06em"
-            fill={processing ? 'oklch(0.48 0.15 155)' : 'transparent'}
+            fill={processing ? 'var(--color-pop)' : 'transparent'}
             style={{ transition: 'fill 0.3s ease', fontFamily: 'var(--font-sans)' }}>
-            {step === 3 ? 'Triaging...' : step === 10 ? 'Resolving...' : ''}
+            {step === 3 ? 'Assessing...' : step === 10 ? (
+              <>
+                <tspan x={cx} y={cy - 5} fontSize="9" letterSpacing="0.04em">Closing</tspan>
+                <tspan x={cx} y={cy + 7} fontSize="9" letterSpacing="0.04em">loop...</tspan>
+              </>
+            ) : ''}
           </text>
         </g>
 
@@ -1686,7 +1708,7 @@ function AIWorkflowVisual() {
           return (
             <circle key={`anchor-${n.id}`}
               cx={n.svg.x} cy={n.svg.y} r={3}
-              fill={on ? 'oklch(0.48 0.15 155 / 0.5)' : 'oklch(0.12 0.02 55 / 0.06)'}
+              fill={on ? 'color-mix(in oklch, var(--color-pop) 50%, transparent)' : 'oklch(0.12 0.02 55 / 0.06)'}
               style={{ transition: 'fill 0.4s ease' }} />
           );
         })}
@@ -1697,13 +1719,13 @@ function AIWorkflowVisual() {
         {WF_DATA.map((n) => {
           const on = step >= n.activateAt && step > 0;
           return (
-            <div key={`card-${n.id}`} className={`wf-card ${on ? 'on' : ''}`}
+            <div key={`card-${n.id}`} className={`wf-card wf-card-${n.id} ${on ? 'on' : ''}`}
               style={{ left: n.css.left, top: n.css.top }}>
               {/* Module label */}
               <div className="flex items-center gap-1.5 mb-1.5">
                 <span className="w-1.5 h-1.5 rounded-full shrink-0"
                   style={{ background: on ? n.dot : 'oklch(0.12 0.02 55 / 0.12)', transition: 'background 0.4s ease' }} />
-                <span className="text-[9px] font-semibold tracking-wide"
+                <span className="text-[11px] font-semibold tracking-wide"
                   style={{ color: on ? 'oklch(0.12 0.02 55 / 0.6)' : 'oklch(0.12 0.02 55 / 0.2)', transition: 'color 0.4s ease' }}>
                   {n.module}
                 </span>
@@ -1716,11 +1738,13 @@ function AIWorkflowVisual() {
                   <div key={ai} className="flex items-center gap-1"
                     style={{ opacity: 1, transition: 'opacity 0.3s ease' }}>
                     <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{
-                      background: action.done ? 'oklch(0.48 0.15 155)' : 'oklch(0.55 0.12 55)',
+                      background: action.done ? 'var(--color-pop)' : 'oklch(0.55 0.12 55)',
                     }} />
                     <span className="text-[10px] font-medium" style={{
                       color: action.done ? 'oklch(0.12 0.02 55 / 0.4)' : 'oklch(0.12 0.02 55 / 0.55)',
                       textDecoration: action.done ? 'line-through' : 'none',
+                      textDecorationColor: action.done ? 'oklch(0.12 0.02 55 / 0.16)' : 'transparent',
+                      textDecorationThickness: '1px',
                     }}>{action.text}</span>
                   </div>
                 ))}

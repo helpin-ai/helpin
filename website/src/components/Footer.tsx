@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowRight, CalendarDays } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 
 const SIGNUP_URL = 'https://app.helpin.ai/register';
 const DEMO_URL = 'https://cal.com/helpin-ai/30min';
@@ -32,9 +32,9 @@ export function Footer() {
                 ? 'Start with a 14-day Growth trial.'
                 : 'The way companies operate is changing, don\'t get left behind.'}
             </h2>
-            <p className="text-[17px] text-white/50 leading-relaxed mb-10 max-w-lg mx-auto">
+            <p className="text-[17px] text-white/75 leading-relaxed mb-10 max-w-lg mx-auto">
               {isPricing
-                ? 'No card required. Try every module with AI agents, then choose Starter or Growth when you are ready.'
+                ? 'Try every module with AI agents, then choose Starter or Growth when you are ready.'
                 : 'Bring your project management, support, sales, and docs into one system — and let agents start moving work forward from day one.'}
             </p>
 
@@ -42,10 +42,11 @@ export function Footer() {
               <Link href={SIGNUP_URL} className="rounded-xl bg-white px-8 py-3.5 text-[15px] font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-white/10">
                 Start free trial <ArrowRight className="inline h-4 w-4 ml-1" />
               </Link>
-              <Link href={DEMO_URL} className="rounded-xl border border-white/15 px-8 py-3.5 text-[15px] font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white">
-                Book a demo <CalendarDays className="inline h-4 w-4 ml-1" />
+              <Link href={DEMO_URL} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-white/15 px-8 py-3.5 text-[15px] font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white">
+                Book a demo
               </Link>
             </div>
+            <p className="mt-4 text-sm font-medium text-white/60">No credit card required.</p>
           </div>
         </div>
 
@@ -61,7 +62,7 @@ export function Footer() {
               <Link href="/">
                 <img src="/logos/helpin-light-mode-logo.svg" alt="Helpin" className="h-9 brightness-0 invert" />
               </Link>
-              <p className="mt-4 text-sm leading-relaxed text-white/50 max-w-xs">
+              <p className="mt-4 text-sm leading-relaxed text-white/70 max-w-xs">
                 PM, CRM, support, sales & docs — connected
                 by AI agents that do the work.
               </p>
@@ -75,7 +76,7 @@ export function Footer() {
                     <li key={link.href}>
                       <Link
                         href={link.href}
-                        className="text-sm text-white/40 hover:text-white transition-colors"
+                        className="text-sm text-white/60 hover:text-white transition-colors"
                       >
                         {link.label}
                       </Link>
@@ -86,7 +87,7 @@ export function Footer() {
             ))}
           </div>
 
-          <div className="mt-10 border-t border-white/10 pt-6 flex flex-wrap items-center justify-between gap-4 text-[13px] text-white/30">
+          <div className="mt-10 border-t border-white/10 pt-6 flex flex-wrap items-center justify-between gap-4 text-[13px] text-white/60">
             <span>&copy; {new Date().getFullYear()} Helpin. All rights reserved.</span>
             <div className="flex gap-6">
               <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>

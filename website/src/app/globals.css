@@ -27,7 +27,27 @@
   --color-terracotta: oklch(0.52 0.12 32);
 }
 
+/* Homepage-only brand color study: warm coral. */
+.home-coral {
+  --color-pop: oklch(0.62 0.17 32);
+  --color-pop-light: oklch(0.62 0.17 32 / 0.08);
+  --color-pop-medium: oklch(0.62 0.17 32 / 0.18);
+}
+
+.home-coral .btn-pop:hover {
+  box-shadow: 0 8px 30px oklch(0.62 0.17 32 / 0.28);
+}
+
+.home-coral .wf-card.on {
+  box-shadow: 0 8px 28px oklch(0.62 0.17 32 / 0.08),
+              0 1px 3px oklch(0.12 0.02 55 / 0.04);
+}
+
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     font-family: var(--font-sans);
     color: var(--color-foreground);
@@ -54,6 +74,12 @@
   @media (max-width: 768px) {
     body::after {
       display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
     }
   }
 }
@@ -283,6 +309,56 @@
    AI Workflow Visual
    ═══════════════════════════════════════════ */
 
+.wf-stage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: clamp(0.75rem, 1.5vw, 1.25rem);
+  border: 1px solid color-mix(in oklch, var(--color-pop) 16%, transparent);
+  border-radius: 1.875rem;
+  background:
+    linear-gradient(145deg, oklch(1 0 0 / 0.9), color-mix(in oklch, var(--color-pop) 4%, oklch(0.98 0.003 75 / 0.76)));
+  box-shadow:
+    0 2.75rem 6rem color-mix(in oklch, var(--color-pop) 10%, transparent),
+    inset 0 1px 0 oklch(1 0 0 / 0.9);
+}
+
+.wf-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background-image:
+    linear-gradient(color-mix(in oklch, var(--color-pop) 4.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklch, var(--color-pop) 4.5%, transparent) 1px, transparent 1px);
+  background-size: 3.5rem 3.5rem;
+  mask-image: radial-gradient(ellipse at center, black 8%, transparent 78%);
+}
+
+.wf-stage::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 70%;
+  aspect-ratio: 1;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in oklch, var(--color-pop) 14%, transparent), color-mix(in oklch, var(--color-pop) 3.5%, transparent) 40%, transparent 70%);
+  transform: translate(-50%, -50%);
+  animation: wf-stage-ambient 8s ease-in-out infinite;
+}
+
+.wf-stage-content {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes wf-stage-ambient {
+  0%, 100% { opacity: 0.72; transform: translate(-50%, -50%) scale(0.96); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+}
+
 @keyframes wf-rotate {
   to { transform: rotate(360deg); }
 }
@@ -333,6 +409,19 @@
 .wf-pulse {
   animation: wf-pulse-expand 1.4s ease-out forwards;
   transform-origin: 450px 240px;
+}
+
+@keyframes wf-packet-halo {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+.wf-packet-label {
+  filter: drop-shadow(0 5px 8px oklch(0.12 0.02 55 / 0.09));
+}
+
+.wf-packet-pulse circle:first-child {
+  animation: wf-packet-halo 0.8s ease-in-out infinite;
 }
 
 /* ═══════════════════════════════════════════
@@ -449,7 +538,7 @@
 .wf-card {
   position: absolute;
   transform: translate(-50%, -50%);
-  width: clamp(145px, 18vw, 200px);
+  width: clamp(220px, 22vw, 236px);
   padding: 8px;
   background: oklch(0.995 0.002 75);
   border: 1px solid oklch(0.91 0.008 75);
@@ -468,6 +557,15 @@
   transform: translate(-50%, calc(-50% - 4px));
 }
 
+/* Center-axis nodes grow toward the hub instead of crossing the stage edge. */
+.wf-card-pm {
+  transform: translate(-50%, 0);
+}
+
+.wf-card-pm.on {
+  transform: translate(-50%, -4px);
+}
+
 /* ═══════════════════════════════════════════
    Reduced Motion
    ═══════════════════════════════════════════ */
@@ -480,6 +578,9 @@
     .wf-signal-path,
     .wf-flow-in,
     .wf-pulse,
+    .wf-packet-label,
+    .wf-packet-pulse circle:first-child,
+    .wf-stage::after,
     .reveal,
     .reveal-left,
     .reveal-right,
