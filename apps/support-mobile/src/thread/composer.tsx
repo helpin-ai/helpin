@@ -17,9 +17,11 @@ import { DEFAULT_DRAFT, useDraftStore, type ComposerMode } from './draft-store'
 import type { FailedSend } from './failed-sends-reducer'
 import { SendButton, type SendButtonState } from './send-button'
 import { useTypingBroadcast } from './use-typing-broadcast'
+import { Avatar } from '@mobile/ui/avatar'
 import { AIToolsSheet } from './ai-tools-sheet'
 import { CannedResponsesSheet } from './canned-responses-sheet'
 import { cannedToPlainText, detectShortcutToken, replaceRange } from './canned-shortcuts'
+import { detectMentionToken, mentionSuggestions, type MentionMember, type MentionSuggestion, type MentionToken } from './mentions'
 
 /** How long the "Rewritten · Undo" bar stays before auto-dismissing. */
 const UNDO_VISIBLE_MS = 6000
@@ -29,6 +31,8 @@ export interface ComposerProps {
   conversationId: string
   /** Context for resolving canned-response variables ({{customer.first_name}}, …). */
   variableContext?: ShortcutVariableContext
+  /** Teammates mentionable in internal notes (empty disables @mentions). */
+  mentionMembers?: MentionMember[]
 }
 
 /**
@@ -59,7 +63,14 @@ const SENT_STATE_MS = 400
  */
 const EMPTY_VARIABLE_CONTEXT: ShortcutVariableContext = {}
 
-export function Composer({ workspaceId, conversationId, variableContext = EMPTY_VARIABLE_CONTEXT }: ComposerProps) {
+const EMPTY_MEMBERS: MentionMember[] = []
+
+export function Composer({
+  workspaceId,
+  conversationId,
+  variableContext = EMPTY_VARIABLE_CONTEXT,
+  mentionMembers = EMPTY_MEMBERS,
+}: ComposerProps) {
   const draft = useDraftStore((state) => state.drafts[conversationId] ?? DEFAULT_DRAFT)
   const setText = useDraftStore((state) => state.setText)
   const setMode = useDraftStore((state) => state.setMode)
@@ -139,6 +150,25 @@ export function Composer({ workspaceId, conversationId, variableContext = EMPTY_
     pendingCaretRef.current = edit.cursor
     setCursor(edit.cursor)
     if (!isNote) notifyTyping(edit.text)
+    haptic('selection')
+  }
+
+  // @mentions — internal notes only, teammate handles inserted as plain text
+  // (`@handle `), which the note renderer highlights (see splitMentionSegments).
+  const mentionToken = useMemo(
+    () => (isNote ? detectMentionToken(draft.text, cursor) : null),
+    [isNote, draft.text, cursor],
+  )
+  const mentionItems = useMemo(
+    () => (mentionToken ? mentionSuggestions(mentionToken.query, mentionMembers, 6) : []),
+    [mentionToken, mentionMembers],
+  )
+
+  function insertMention(item: MentionSuggestion, token: MentionToken) {
+    const edit = replaceRange(draft.text, token.start, token.end, `@${item.handle}`)
+    setText(conversationId, edit.text)
+    pendingCaretRef.current = edit.cursor
+    setCursor(edit.cursor)
     haptic('selection')
   }
 
@@ -310,7 +340,24 @@ export function Composer({ workspaceId, conversationId, variableContext = EMPTY_
           </div>
         </div>
 
-        {inlineSuggestions.length > 0 && activeToken && (
+        {mentionToken && mentionItems.length > 0 ? (
+          <div className="mx-3 mb-1 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-background shadow-lg">
+            {mentionItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => insertMention(item, mentionToken)}
+                className="flex w-full items-center gap-2.5 border-b border-border/40 px-3 py-2 text-left last:border-0 active:bg-muted"
+              >
+                <Avatar name={item.label} src={item.avatarUrl ?? undefined} size={28} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-footnote font-medium">{item.label}</span>
+                  <span className="block truncate text-caption text-muted-foreground">@{item.handle}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : activeToken && inlineSuggestions.length > 0 ? (
           <div className="mx-3 mb-1 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-background shadow-lg">
             {inlineSuggestions.map((response) => (
               <button
@@ -329,7 +376,7 @@ export function Composer({ workspaceId, conversationId, variableContext = EMPTY_
               </button>
             ))}
           </div>
-        )}
+        ) : null}
         <div className="flex items-end gap-2 px-3 pb-2">
           <textarea
             ref={textareaRef}
@@ -342,7 +389,7 @@ export function Composer({ workspaceId, conversationId, variableContext = EMPTY_
               if (!isNote) notifyTyping(next)
             }}
             onSelect={(event) => setCursor(event.currentTarget.selectionStart ?? 0)}
-            placeholder={isNote ? 'Internal note…' : 'Reply…'}
+            placeholder={isNote ? 'Internal note… (@ to mention)' : 'Reply…'}
             style={{ minHeight: MIN_TEXTAREA_HEIGHT_PX, maxHeight: MAX_TEXTAREA_HEIGHT_PX }}
             className="flex-1 resize-none overflow-y-auto rounded-2xl border border-input bg-background px-3 py-2 text-body text-foreground outline-none placeholder:text-muted-foreground"
           />

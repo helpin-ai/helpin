@@ -40,7 +40,7 @@ test('reply mode shows the "Reply…" placeholder; switching to Note tints the c
 
   fireEvent.click(screen.getByRole('button', { name: 'Note' }))
 
-  expect(screen.getByPlaceholderText('Internal note…')).toBeDefined()
+  expect(screen.getByPlaceholderText(/Internal note…/)).toBeDefined()
   expect(useDraftStore.getState().drafts['conv-1']?.mode).toBe('note')
 })
 
@@ -69,7 +69,7 @@ test('sending trims content and maps note mode to is_internal, clears the draft 
   render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
 
   fireEvent.click(screen.getByRole('button', { name: 'Note' }))
-  fireEvent.change(screen.getByPlaceholderText('Internal note…'), { target: { value: '  internal thought  ' } })
+  fireEvent.change(screen.getByPlaceholderText(/Internal note…/), { target: { value: '  internal thought  ' } })
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
   // Draft text clears the instant Send is pressed, before the network resolves.
@@ -156,7 +156,7 @@ test('a failed NOTE keeps is_internal: true through the chip round-trip on retry
   render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
 
   fireEvent.click(screen.getByRole('button', { name: 'Note' }))
-  fireEvent.change(screen.getByPlaceholderText('Internal note…'), { target: { value: 'secret note' } })
+  fireEvent.change(screen.getByPlaceholderText(/Internal note…/), { target: { value: 'secret note' } })
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
   await waitFor(() => expect(screen.getByText('secret note')).toBeDefined())
   expect(mutateAsync).toHaveBeenNthCalledWith(1, { content: 'secret note', is_internal: true })
