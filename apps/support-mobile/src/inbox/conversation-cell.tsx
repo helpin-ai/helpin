@@ -83,18 +83,18 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
       animate={isExiting ? { opacity: 0, scale: 0.96 } : { opacity: 1, scale: 1 }}
       transition={{ duration: CELL_EXIT_DURATION_MS / 1000 }}
       style={{ height: CONVERSATION_CELL_HEIGHT }}
-      className="box-border flex w-full cursor-pointer items-center gap-3 overflow-hidden border-b border-border/60 bg-background px-4 text-left active:bg-muted/50"
+      className="box-border relative flex w-full cursor-pointer items-center gap-3 overflow-hidden border-b border-border/60 bg-background px-4 text-left active:bg-muted/50"
     >
-      {/* Fixed 16px leading gutter — width never changes; only the dot's opacity does. */}
-      <div className="flex h-4 w-4 shrink-0 items-center justify-center">
-        <span
-          data-testid="unread-dot"
-          className={cn(
-            'h-2 w-2 rounded-full bg-[var(--unread-dot)] transition-opacity',
-            unread ? 'opacity-100' : 'opacity-0',
-          )}
-        />
-      </div>
+      {/* Unread dot lives in the left padding (absolute) rather than its own
+          column, so the avatar sits at the normal edge inset and read rows
+          don't show an empty leading gutter. Only its opacity changes. */}
+      <span
+        data-testid="unread-dot"
+        className={cn(
+          'absolute left-1.5 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-[var(--unread-dot)] transition-opacity',
+          unread ? 'opacity-100' : 'opacity-0',
+        )}
+      />
 
       <div className="relative shrink-0">
         <Avatar name={displayName} size={44} />
@@ -121,7 +121,7 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
           <p
             data-testid="conversation-preview"
             className={cn(
-              'line-clamp-2 min-w-0 flex-1 text-body leading-[18px]',
+              'line-clamp-2 min-w-0 flex-1 text-footnote',
               unread ? 'font-medium text-foreground' : 'text-muted-foreground',
             )}
           >

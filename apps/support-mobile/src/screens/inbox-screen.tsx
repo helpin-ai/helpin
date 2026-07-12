@@ -42,7 +42,6 @@ function InboxSkeletonList() {
           style={{ height: CONVERSATION_CELL_HEIGHT }}
           className="box-border flex w-full items-center gap-3 border-b border-border/60 px-4"
         >
-          <div className="w-4 shrink-0" />
           <Skeleton className="h-11 w-11 shrink-0 rounded-full" />
           <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
             <div className="flex items-center justify-between gap-2">
