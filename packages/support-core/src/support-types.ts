@@ -29,6 +29,33 @@ export interface SupportConversationTriage {
   updated_at: string
 }
 
+/** AI draft-rewrite operations offered in the composer (mirrors web). */
+export type SupportAIRewriteOperation = 'expand' | 'rephrase' | 'fix_grammar' | 'more_friendly' | 'more_formal'
+
+export interface SupportAIRewriteDraftRequest {
+  content: string
+  operation: SupportAIRewriteOperation
+}
+
+export interface SupportAIRewriteDraftResponse {
+  content: string
+  operation: SupportAIRewriteOperation
+  provider: string
+  model: string
+}
+
+/** A saved canned response / shortcut. `short_code` starts with `!` (e.g. `!thanks`). */
+export interface SupportCannedResponse {
+  id: string
+  workspace_id: string
+  short_code: string
+  content: string
+  tag: string
+  created_by_id: string | null
+  created_at: string
+  updated_at: string
+}
+
 /** A workspace-scoped, user-authored support tag. `color` is a hex string (e.g. `#2563eb`). */
 export interface SupportTag {
   id: string

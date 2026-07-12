@@ -9,6 +9,8 @@ import type {
   AssignableMember,
   ConversationListResponse,
   ConversationStatus,
+  SupportAIRewriteDraftRequest,
+  SupportAIRewriteDraftResponse,
   SupportConversation,
   SupportMessage,
 } from './support-types'
@@ -287,6 +289,24 @@ export function useMarkConversationRead(workspaceId: string) {
       )
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.unreadStats(workspaceId) })
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxScopes(workspaceId) })
+    },
+  })
+}
+
+export function useSupportCannedResponses(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: supportQueryKeys.cannedResponses(workspaceId),
+    queryFn: async () => unwrapOrThrow(await supportService.listCannedResponses(workspaceId)),
+    enabled: enabled && !!workspaceId,
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useRewriteSupportDraft(workspaceId: string, conversationId: string | null) {
+  return useMutation<SupportAIRewriteDraftResponse, Error, SupportAIRewriteDraftRequest>({
+    mutationFn: async (payload) => {
+      if (!conversationId) throw new Error('No conversation selected')
+      return unwrapOrThrow(await supportService.rewriteConversationDraft(workspaceId, conversationId, payload))
     },
   })
 }

@@ -3,6 +3,9 @@ import type {
   AssignableMember,
   ConversationListResponse,
   ConversationStatus,
+  SupportAIRewriteDraftRequest,
+  SupportAIRewriteDraftResponse,
+  SupportCannedResponse,
   SupportConversation,
   SupportInboxScopeListResponse,
   SupportInboxView,
@@ -130,6 +133,13 @@ export const supportService = {
     getApi().get<SupportInboxScopeListResponse>(`/support/inbox/mailboxes/scopes${qs(workspaceId)}`),
   listInboxViewCounts: (workspaceId: string) =>
     getApi().get<SupportInboxViewCount[]>(`/support/inbox/views/counts${qs(workspaceId)}`),
+  listCannedResponses: (workspaceId: string) =>
+    getApi().get<SupportCannedResponse[]>(`/support/inbox/canned-responses${qs(workspaceId)}`),
+  rewriteConversationDraft: (workspaceId: string, conversationId: string, payload: SupportAIRewriteDraftRequest) =>
+    getApi().post<SupportAIRewriteDraftResponse>(
+      `/support/inbox/conversations/${conversationId}/rewrite-draft${qs(workspaceId)}`,
+      payload,
+    ),
   listBuiltinInboxViews: (workspaceId: string) =>
     getApi().get<SupportInboxView[]>(`/support/inbox/views/builtin${qs(workspaceId)}`),
   listInboxViews: (workspaceId: string) =>

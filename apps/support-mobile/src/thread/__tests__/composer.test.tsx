@@ -10,6 +10,7 @@ vi.mock('@helpin-ai/support-core', () => ({
   // disconnected state so the composer's typing hook is a no-op here.
   useSupportPresenceStore: (selector: (s: { wsSend: null; wsConnected: boolean }) => unknown) =>
     selector({ wsSend: null, wsConnected: false }),
+  useRewriteSupportDraft: () => ({ mutateAsync: vi.fn() }),
 }))
 
 vi.mock('@mobile/lib/haptics', () => ({

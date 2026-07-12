@@ -1,13 +1,18 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
-import { useSendMessage } from '@helpin-ai/support-core'
+import { Sparkles, Undo2, X } from 'lucide-react'
+import { useRewriteSupportDraft, useSendMessage, type SupportAIRewriteOperation } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
 import { haptic } from '@mobile/lib/haptics'
+import { Pressable } from '@mobile/ui/pressable'
 import { SegmentedControl } from '@mobile/ui/segmented-control'
 import { DEFAULT_DRAFT, useDraftStore, type ComposerMode } from './draft-store'
 import type { FailedSend } from './failed-sends-reducer'
 import { SendButton, type SendButtonState } from './send-button'
 import { useTypingBroadcast } from './use-typing-broadcast'
+import { AIToolsSheet } from './ai-tools-sheet'
+
+/** How long the "Rewritten · Undo" bar stays before auto-dismissing. */
+const UNDO_VISIBLE_MS = 6000
 
 export interface ComposerProps {
   workspaceId: string
@@ -58,6 +63,42 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
   useEffect(() => {
     if (isNote) stopTyping()
   }, [isNote, stopTyping])
+
+  // AI writing tools: rewrite the draft, non-destructively (Undo restores the
+  // pre-rewrite text). `undoText` holds the text to restore while the bar shows.
+  const rewriteDraft = useRewriteSupportDraft(workspaceId, conversationId)
+  const [aiSheetOpen, setAiSheetOpen] = useState(false)
+  const [busyOperation, setBusyOperation] = useState<SupportAIRewriteOperation | null>(null)
+  const [undoText, setUndoText] = useState<string | null>(null)
+  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => { if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current) }, [])
+
+  async function handleRewrite(operation: SupportAIRewriteOperation) {
+    const source = draft.text.trim()
+    if (!source || busyOperation) return
+    setBusyOperation(operation)
+    try {
+      const result = await rewriteDraft.mutateAsync({ content: source, operation })
+      setText(conversationId, result.content)
+      setUndoText(source)
+      if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current)
+      undoTimeoutRef.current = setTimeout(() => setUndoText(null), UNDO_VISIBLE_MS)
+      haptic('notificationSuccess')
+      setAiSheetOpen(false)
+    } catch {
+      haptic('notificationError')
+    } finally {
+      setBusyOperation(null)
+    }
+  }
+
+  function handleUndoRewrite() {
+    if (undoText === null) return
+    setText(conversationId, undoText)
+    setUndoText(null)
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current)
+    haptic('impactLight')
+  }
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const sentTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -172,7 +213,22 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
           isNote ? 'bg-amber-500/10' : 'bg-background',
         )}
       >
-        <div className="flex items-center px-3 pt-2 pb-1.5">
+        {undoText !== null && (
+          <div className="flex items-center gap-2 px-3 pt-2 text-footnote text-muted-foreground">
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1 truncate">Draft rewritten</span>
+            <button
+              type="button"
+              onClick={handleUndoRewrite}
+              className="flex shrink-0 items-center gap-1 font-medium text-primary underline-offset-2 active:underline"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+              Undo
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-center gap-1 px-3 pt-2 pb-1.5">
           <SegmentedControl<ComposerMode>
             segments={[
               { value: 'reply', label: 'Reply' },
@@ -182,6 +238,17 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
             onChange={(mode) => setMode(conversationId, mode)}
             className="w-40"
           />
+          <div className="ml-auto flex items-center gap-0.5">
+            <Pressable
+              aria-label="AI writing tools"
+              haptic="selection"
+              disabled={trimmed.length === 0 || phase === 'sending' || busyOperation !== null}
+              onPress={() => setAiSheetOpen(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-primary active:bg-primary/10 disabled:opacity-40"
+            >
+              <Sparkles className="h-5 w-5" />
+            </Pressable>
+          </div>
         </div>
         <div className="flex items-end gap-2 px-3 pb-2">
           <textarea
@@ -200,6 +267,13 @@ export function Composer({ workspaceId, conversationId }: ComposerProps) {
           <SendButton state={buttonState} onPress={handleSendPress} />
         </div>
       </div>
+
+      <AIToolsSheet
+        open={aiSheetOpen}
+        onOpenChange={setAiSheetOpen}
+        busyOperation={busyOperation}
+        onSelect={(operation) => void handleRewrite(operation)}
+      />
     </div>
   )
 }
