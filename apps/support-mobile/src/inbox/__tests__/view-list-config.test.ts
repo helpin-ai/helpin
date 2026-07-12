@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'vitest'
-import type { SupportInboxView, SupportInboxViewCount } from '@helpin-ai/support-core'
+import type { SupportInboxView, SupportInboxViewCount, UnreadStats } from '@helpin-ai/support-core'
 import {
   BUILTIN_VIEW_ORDER,
   buildDrawerGroups,
+  builtinViewCount,
   isItemActive,
   resolveCustomViewCount,
-  resolveViewCount,
 } from '../view-list-config'
 
 function builtinView(navKey: string, id: string): SupportInboxView {
@@ -14,6 +14,12 @@ function builtinView(navKey: string, id: string): SupportInboxView {
     view_type: 'default', view_key: `nav:${navKey}`, created_by: 'u',
     created_at: '', updated_at: '',
   }
+}
+
+const STATS: UnreadStats = {
+  total: 0, my_inbox: 0, unassigned: 0,
+  inbox: 3, mine: 1, waiting: 0, ai_active: 2,
+  inbox_total: 10, mine_total: 4, waiting_total: 5, ai_active_total: 6,
 }
 
 describe('builtin order + grouping', () => {
@@ -28,47 +34,50 @@ describe('builtin order + grouping', () => {
 })
 
 describe('count resolution', () => {
-  const builtins = [builtinView('inbox', 'v-inbox'), builtinView('waiting', 'v-waiting')]
-  const counts: SupportInboxViewCount[] = [
-    { view_id: 'v-inbox', total_count: 10, unread_count: 3 },
-    { view_id: 'v-cust', total_count: 5, unread_count: 2 },
-  ]
-  test('joins view_key -> id -> view_id, returning total + unread', () => {
-    expect(resolveViewCount('inbox', builtins, counts)).toEqual({ total: 10, unread: 3 })
+  const counts: SupportInboxViewCount[] = [{ view_id: 'v-cust', total_count: 5, unread_count: 2 }]
+
+  test('builtin views source from unread-stats: number = *_total, dot = unread', () => {
+    expect(builtinViewCount('inbox', STATS)).toEqual({ total: 10, unread: 3 })
+    expect(builtinViewCount('mine', STATS)).toEqual({ total: 4, unread: 1 })
+    expect(builtinViewCount('waiting', STATS)).toEqual({ total: 5, unread: 0 })
+    expect(builtinViewCount('ai_active', STATS)).toEqual({ total: 6, unread: 2 })
   })
-  test('returns zeros when the view or its count is missing', () => {
-    expect(resolveViewCount('mine', builtins, counts)).toEqual({ total: 0, unread: 0 })
-    expect(resolveViewCount('waiting', builtins, counts)).toEqual({ total: 0, unread: 0 })
+  test('resolved / spam / ai-resolved show no badge (zeros), matching web', () => {
+    expect(builtinViewCount('resolved', STATS)).toEqual({ total: 0, unread: 0 })
+    expect(builtinViewCount('spam', STATS)).toEqual({ total: 0, unread: 0 })
+    expect(builtinViewCount('resolved_by_ai', STATS)).toEqual({ total: 0, unread: 0 })
   })
-  test('custom view count keyed by its own id', () => {
+  test('returns zeros when stats are missing', () => {
+    expect(builtinViewCount('inbox', undefined)).toEqual({ total: 0, unread: 0 })
+  })
+  test('custom view count keyed by its own id (views/counts endpoint)', () => {
     expect(resolveCustomViewCount('v-cust', counts)).toEqual({ total: 5, unread: 2 })
     expect(resolveCustomViewCount('nope', counts)).toEqual({ total: 0, unread: 0 })
   })
 })
 
 describe('buildDrawerGroups', () => {
-  const builtins = [builtinView('inbox', 'v-inbox')]
-  const counts: SupportInboxViewCount[] = [{ view_id: 'v-inbox', total_count: 10, unread_count: 3 }]
-
   test('always includes Views + AI, omits empty Custom/Team sections', () => {
-    const groups = buildDrawerGroups({ builtinViews: builtins, counts, customViews: [] })
+    const groups = buildDrawerGroups({ unreadStats: STATS, counts: [], customViews: [] })
     expect(groups.map((g) => g.title)).toEqual(['Views', 'AI'])
     expect(groups[0].items[0]).toMatchObject({ label: 'Inbox', count: { total: 10, unread: 3 } })
   })
 
   test('adds Custom views and Team inboxes when present', () => {
     const groups = buildDrawerGroups({
-      builtinViews: builtins,
-      counts,
+      unreadStats: STATS,
+      counts: [{ view_id: 'v-cust', total_count: 5, unread_count: 2 }],
       customViews: [{ ...builtinView('x', 'v-cust'), view_key: null, name: 'VIPs' }],
       scopes: {
         shared_inbox: { id: 's', name: 'Shared', handle: '', icon: '', is_shared: true, is_default: true, unread_count: 0, active: true },
-        mailboxes: [{ id: 'm1', name: 'Billing', handle: '', icon: '', is_shared: false, is_default: false, unread_count: 7, active: true }],
+        mailboxes: [{ id: 'm1', name: 'Billing', handle: '', icon: '', is_shared: false, is_default: false, unread_count: 7, total_count: 12, active: true }],
       },
     })
     expect(groups.map((g) => g.title)).toEqual(['Views', 'AI', 'Custom views', 'Team inboxes'])
+    const custom = groups.find((g) => g.title === 'Custom views')!
+    expect(custom.items[0]).toMatchObject({ label: 'VIPs', count: { total: 5, unread: 2 } })
     const team = groups.find((g) => g.title === 'Team inboxes')!
-    expect(team.items[0]).toMatchObject({ label: 'Billing', count: { total: 7, unread: 7 } })
+    expect(team.items[0]).toMatchObject({ label: 'Billing', count: { total: 12, unread: 7 } })
     expect(team.items[0].selection).toMatchObject({ kind: 'mailbox', mailboxId: 'm1' })
   })
 })

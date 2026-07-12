@@ -50,7 +50,12 @@ export function useConversations(
         page: 1,
         per_page: 50,
         total_pages: 1,
-        meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_active: 0 } },
+        meta: {
+          unread: {
+            total: 0, my_inbox: 0, unassigned: 0, ai_active: 0,
+            inbox: 0, mine: 0, waiting: 0, inbox_total: 0, mine_total: 0, waiting_total: 0, ai_active_total: 0,
+          },
+        },
       }
     },
     enabled: !!workspaceId,

@@ -141,6 +141,15 @@ export interface UnreadStats {
   my_inbox: number
   unassigned: number
   ai_active: number
+  // Per-view unread + total (workload) counts — the sidebar/drawer badges.
+  // Verified against server/internal/model.UnreadStats (support_inbox.go:179).
+  inbox: number
+  mine: number
+  waiting: number
+  inbox_total: number
+  mine_total: number
+  waiting_total: number
+  ai_active_total: number
 }
 
 export interface SupportInboxScope {

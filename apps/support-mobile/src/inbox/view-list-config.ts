@@ -3,6 +3,7 @@ import type {
   SupportInboxScopeListResponse,
   SupportInboxView,
   SupportInboxViewCount,
+  UnreadStats,
 } from '@helpin-ai/support-core'
 import { BUILTIN_VIEW_LABELS, type ViewSelection } from './use-inbox-filters'
 
@@ -36,17 +37,25 @@ function countFor(viewId: string | undefined, counts: SupportInboxViewCount[]): 
 }
 
 /**
- * Count for a builtin view. Joins nav filter → builtin view record
- * (`view_key === "nav:<filter>"`) → its `id` → the count entry's `view_id`.
- * Matches how the web resolves builtin view counts.
+ * Count for a builtin view, sourced exactly like the web sidebar: Inbox / Mine /
+ * Waiting / AI Handling come from the unread-stats endpoint (number = `*_total`
+ * workload, dot = unread). Resolved / Spam / AI Resolved intentionally show NO
+ * badge — web omits them too (their `total` is undefined there).
  */
-export function resolveViewCount(
-  navFilter: NavFilter,
-  builtinViews: SupportInboxView[],
-  counts: SupportInboxViewCount[],
-): ViewCount {
-  const view = builtinViews.find((v) => v.view_key === `nav:${navFilter}`)
-  return countFor(view?.id, counts)
+export function builtinViewCount(navFilter: NavFilter, stats?: UnreadStats): ViewCount {
+  if (!stats) return ZERO_COUNT
+  switch (navFilter) {
+    case 'inbox':
+      return { total: stats.inbox_total, unread: stats.inbox }
+    case 'mine':
+      return { total: stats.mine_total, unread: stats.mine }
+    case 'waiting':
+      return { total: stats.waiting_total, unread: stats.waiting }
+    case 'ai_active':
+      return { total: stats.ai_active_total, unread: stats.ai_active }
+    default:
+      return ZERO_COUNT
+  }
 }
 
 /** Count for a custom view (its own `id` is the `view_id`). */
@@ -74,17 +83,17 @@ export interface DrawerGroup {
  * counts sourced from inbox scopes.
  */
 export function buildDrawerGroups(args: {
-  builtinViews: SupportInboxView[]
+  unreadStats?: UnreadStats
   counts: SupportInboxViewCount[]
   customViews: SupportInboxView[]
   scopes?: SupportInboxScopeListResponse
 }): DrawerGroup[] {
-  const { builtinViews, counts, customViews, scopes } = args
+  const { unreadStats, counts, customViews, scopes } = args
 
   const itemFor = (navFilter: NavFilter): DrawerItem => ({
     key: `builtin:${navFilter}`,
     label: BUILTIN_VIEW_LABELS[navFilter],
-    count: resolveViewCount(navFilter, builtinViews, counts),
+    count: builtinViewCount(navFilter, unreadStats),
     selection: { kind: 'builtin', navFilter, mailboxId: 'all' },
   })
 

@@ -13,9 +13,9 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
   useInboxScopes,
-  useSupportBuiltinInboxViews,
   useSupportInboxViewCounts,
   useSupportInboxViews,
+  useUnreadStats,
 } from '@helpin-ai/support-core'
 import type { NavFilter } from '@/stores/supportInboxStore'
 import { cn } from '@mobile/lib/cn'
@@ -72,39 +72,34 @@ function DrawerRow({
       onPress={onPress}
       className={cn(
         'mx-2 flex min-h-[44px] items-center gap-3 rounded-xl px-3 text-left transition-colors',
-        active ? 'bg-primary/10' : 'active:bg-muted',
+        active ? 'bg-primary/[0.06]' : 'active:bg-muted',
       )}
     >
       <Icon
         className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-primary' : 'text-muted-foreground')}
         strokeWidth={active ? 2.4 : 2}
       />
-      <span
-        className={cn(
-          'flex-1 truncate text-body',
-          active ? 'font-semibold text-primary' : 'text-foreground',
+      {/* Label + unread dot together on the left; the count number sits on the
+          far right — mirrors the web sidebar. */}
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span className={cn('truncate text-body', active ? 'font-semibold text-primary' : 'text-foreground')}>
+          {item.label}
+        </span>
+        {hasUnread && (
+          <span
+            aria-label={`${item.count.unread > 99 ? '99+' : item.count.unread} unread`}
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
+          />
         )}
-      >
-        {item.label}
       </span>
-      {(badge || hasUnread) && (
-        <span className="flex shrink-0 items-center gap-1.5">
-          {hasUnread && (
-            <span
-              aria-label={`${item.count.unread > 99 ? '99+' : item.count.unread} unread`}
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
-            />
+      {badge && (
+        <span
+          className={cn(
+            'shrink-0 rounded-full px-2 py-0.5 text-footnote tnum',
+            active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
           )}
-          {badge && (
-            <span
-              className={cn(
-                'rounded-full px-2 py-0.5 text-footnote tnum',
-                active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
-              )}
-            >
-              {badge}
-            </span>
-          )}
+        >
+          {badge}
         </span>
       )}
     </Pressable>
@@ -134,14 +129,16 @@ export function ViewsDrawer({
   onSelect,
 }: ViewsDrawerProps) {
   const reduced = useReducedMotion()
-  const { data: builtinViews = [] } = useSupportBuiltinInboxViews(workspaceId, open)
+  // Builtin view counts come from unread-stats (like web); custom views from the
+  // views/counts endpoint; team inboxes from the inbox scopes.
+  const { data: unreadStats } = useUnreadStats(workspaceId, undefined, open)
   const { data: counts = [] } = useSupportInboxViewCounts(workspaceId, open)
   const { data: customViews = [] } = useSupportInboxViews(workspaceId, open)
   const scopes = useInboxScopes(workspaceId, open)
   const loadingSections = scopes.isLoading
 
   const groups = buildDrawerGroups({
-    builtinViews,
+    unreadStats,
     counts,
     customViews,
     scopes: scopes.data,

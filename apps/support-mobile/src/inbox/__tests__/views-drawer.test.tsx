@@ -1,33 +1,32 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import {
   useInboxScopes,
-  useSupportBuiltinInboxViews,
   useSupportInboxViewCounts,
   useSupportInboxViews,
+  useUnreadStats,
 } from '@helpin-ai/support-core'
 import { ViewsDrawer } from '../views-drawer'
 import type { ViewSelection } from '../use-inbox-filters'
 
 vi.mock('@helpin-ai/support-core', () => ({
-  useSupportBuiltinInboxViews: vi.fn(),
+  useUnreadStats: vi.fn(),
   useSupportInboxViewCounts: vi.fn(),
   useSupportInboxViews: vi.fn(),
   useInboxScopes: vi.fn(),
 }))
 vi.mock('@mobile/lib/haptics', () => ({ haptic: vi.fn() }))
 
-const mockBuiltins = vi.mocked(useSupportBuiltinInboxViews)
+const mockUnreadStats = vi.mocked(useUnreadStats)
 const mockCounts = vi.mocked(useSupportInboxViewCounts)
 const mockCustom = vi.mocked(useSupportInboxViews)
 const mockScopes = vi.mocked(useInboxScopes)
 
-function builtin(navKey: string, id: string) {
-  return { id, workspace_id: 'ws', name: navKey, filters: {}, is_shared: false, view_type: 'default', view_key: `nav:${navKey}`, created_by: 'u', created_at: '', updated_at: '' }
-}
-
 beforeEach(() => {
-  mockBuiltins.mockReturnValue({ data: [builtin('inbox', 'v-inbox'), builtin('waiting', 'v-waiting')] } as never)
-  mockCounts.mockReturnValue({ data: [{ view_id: 'v-inbox', total_count: 9, unread_count: 4 }] } as never)
+  // Inbox builtin count now comes from unread-stats: number = inbox_total (9), dot = inbox unread (4).
+  mockUnreadStats.mockReturnValue({
+    data: { total: 0, my_inbox: 0, unassigned: 0, inbox: 4, mine: 0, waiting: 0, ai_active: 0, inbox_total: 9, mine_total: 0, waiting_total: 0, ai_active_total: 0 },
+  } as never)
+  mockCounts.mockReturnValue({ data: [] } as never)
   mockCustom.mockReturnValue({ data: [] } as never)
   mockScopes.mockReturnValue({ data: undefined, isLoading: false } as never)
 })
