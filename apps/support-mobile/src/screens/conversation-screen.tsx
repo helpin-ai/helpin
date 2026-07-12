@@ -4,8 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   isSupportConversationListQueryKey,
   useConversation,
+  useConversationAssignees,
   useConversationMessages,
-  useMailboxMembers,
   useMarkConversationRead,
   useSupportInstallation,
   useSupportPresenceStore,
@@ -110,18 +110,22 @@ export function ConversationScreen() {
 
   const agentUser = useAuthStore((s) => s.user)
   const workspaceName = useWorkspaceStore((s) => s.currentWorkspace?.name)
-  // Teammates mentionable in internal notes (the conversation's mailbox members).
-  const mailboxMembersQuery = useMailboxMembers(workspaceId, conversation?.mailbox_id ?? null)
+  // Teammates mentionable in internal notes. Uses the conversation's assignable
+  // members (workspace-wide for shared inboxes, mailbox-scoped otherwise), so
+  // @mentions work in every conversation — not just team-inbox ones.
+  const assignableQuery = useConversationAssignees(workspaceId, conversationId ?? null)
   const mentionMembers = useMemo<MentionMember[]>(
     () =>
-      (mailboxMembersQuery.data ?? []).map((member) => ({
-        id: member.workspace_member_id,
-        user_id: member.user_id,
-        email: member.email,
-        display_name: member.display_name,
-        avatar_url: member.avatar_url,
-      })),
-    [mailboxMembersQuery.data],
+      (assignableQuery.data ?? [])
+        .filter((member) => !!member.user_id)
+        .map((member) => ({
+          id: member.id,
+          user_id: member.user_id,
+          email: member.email,
+          display_name: member.display_name,
+          avatar_url: member.avatar_url,
+        })),
+    [assignableQuery.data],
   )
 
   // Email-fallback: a reply to a widget conversation whose visitor is offline is
