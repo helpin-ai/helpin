@@ -1,4 +1,4 @@
-import { Check, Send } from 'lucide-react'
+import { ArrowRight, Check } from 'lucide-react'
 import { cn } from '@mobile/lib/cn'
 import { Pressable } from '@mobile/ui/pressable'
 import { Spinner } from '@mobile/ui/spinner'
@@ -48,7 +48,7 @@ export function SendButton({ state, onPress }: SendButtonProps) {
       ) : state === 'sent' ? (
         <Check className="h-4 w-4" />
       ) : (
-        <Send className="h-4 w-4" />
+        <ArrowRight className="h-5 w-5" />
       )}
     </Pressable>
   )
