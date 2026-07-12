@@ -302,6 +302,15 @@ export function useSupportCannedResponses(workspaceId: string, enabled = true) {
   })
 }
 
+export function useSupportInstallation(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: supportQueryKeys.installation(workspaceId),
+    queryFn: async () => unwrapOrThrow(await supportService.getInstallation(workspaceId)),
+    enabled: enabled && !!workspaceId,
+    staleTime: 60_000,
+  })
+}
+
 export function useRewriteSupportDraft(workspaceId: string, conversationId: string | null) {
   return useMutation<SupportAIRewriteDraftResponse, Error, SupportAIRewriteDraftRequest>({
     mutationFn: async (payload) => {

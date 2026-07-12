@@ -44,6 +44,21 @@ export interface SupportAIRewriteDraftResponse {
   model: string
 }
 
+/** Widget installation + settings. Only the fields the mobile app needs are typed. */
+export interface SupportInstallation {
+  id: string
+  workspace_id: string
+  widget_key: string
+  active: boolean
+  settings: {
+    /** When true, replies to an offline widget visitor are delivered by email. */
+    email_fallback_enabled?: boolean
+    [key: string]: unknown
+  }
+  created_at: string
+  updated_at: string
+}
+
 /** A saved canned response / shortcut. `short_code` starts with `!` (e.g. `!thanks`). */
 export interface SupportCannedResponse {
   id: string

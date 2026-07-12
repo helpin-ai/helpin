@@ -20,11 +20,28 @@ import { useTypingBroadcast } from './use-typing-broadcast'
 import { Avatar } from '@mobile/ui/avatar'
 import { AIToolsSheet } from './ai-tools-sheet'
 import { CannedResponsesSheet } from './canned-responses-sheet'
+import { EmailConfirmSheet } from './email-confirm-sheet'
 import { cannedToPlainText, detectShortcutToken, replaceRange } from './canned-shortcuts'
 import { detectMentionToken, mentionSuggestions, type MentionMember, type MentionSuggestion, type MentionToken } from './mentions'
 
 /** How long the "Rewritten · Undo" bar stays before auto-dismissing. */
 const UNDO_VISIBLE_MS = 6000
+
+const emailConfirmSkipKey = (workspaceId: string) => `support_email_confirm_skip:${workspaceId}`
+function isEmailConfirmSkipped(workspaceId: string): boolean {
+  try {
+    return localStorage.getItem(emailConfirmSkipKey(workspaceId)) === '1'
+  } catch {
+    return false
+  }
+}
+function persistEmailConfirmSkip(workspaceId: string): void {
+  try {
+    localStorage.setItem(emailConfirmSkipKey(workspaceId), '1')
+  } catch {
+    /* storage unavailable — skip is session-only */
+  }
+}
 
 export interface ComposerProps {
   workspaceId: string
@@ -33,6 +50,8 @@ export interface ComposerProps {
   variableContext?: ShortcutVariableContext
   /** Teammates mentionable in internal notes (empty disables @mentions). */
   mentionMembers?: MentionMember[]
+  /** True when a reply will be delivered by email (offline widget visitor) — triggers a send confirm. */
+  willSendAsEmail?: boolean
 }
 
 /**
@@ -70,6 +89,7 @@ export function Composer({
   conversationId,
   variableContext = EMPTY_VARIABLE_CONTEXT,
   mentionMembers = EMPTY_MEMBERS,
+  willSendAsEmail = false,
 }: ComposerProps) {
   const draft = useDraftStore((state) => state.drafts[conversationId] ?? DEFAULT_DRAFT)
   const setText = useDraftStore((state) => state.setText)
@@ -239,18 +259,43 @@ export function Composer({
     }
   }
 
+  // Email-fallback send confirm: a reply to an offline widget visitor goes out
+  // as an email — confirm before sending (unless the agent opted out).
+  const [emailConfirmOpen, setEmailConfirmOpen] = useState(false)
+  const [dontAskAgain, setDontAskAgain] = useState(false)
+  const [emailConfirmSkipped, setEmailConfirmSkipped] = useState(() => isEmailConfirmSkipped(workspaceId))
+  const pendingSendRef = useRef<{ content: string; mode: ComposerMode } | null>(null)
+
+  function commitSend(content: string, mode: ComposerMode) {
+    // Clear the draft the instant a send is confirmed — mirrors the optimistic
+    // bubble appearing instantly. If it later fails, the content isn't lost: it
+    // lives on in the failedSends retry chip (persisted with the draft).
+    clearDraft(conversationId)
+    stopTyping()
+    void attemptSend(content, mode)
+  }
+
   function handleSendPress() {
     if (trimmed.length === 0 || sendingRef.current) return
     const content = trimmed
     const mode = draft.mode
-    // Clear the draft the instant a send is confirmed by the user (tapping
-    // Send) — mirrors the optimistic bubble appearing instantly. If the send
-    // later fails, the content isn't lost: it lives on in the failedSends
-    // retry chip below (persisted alongside the draft), not back in the
-    // (now-empty) input.
-    clearDraft(conversationId)
-    stopTyping()
-    void attemptSend(content, mode)
+    if (mode === 'reply' && willSendAsEmail && !emailConfirmSkipped) {
+      pendingSendRef.current = { content, mode }
+      setEmailConfirmOpen(true)
+      return
+    }
+    commitSend(content, mode)
+  }
+
+  function handleConfirmEmailSend() {
+    const pending = pendingSendRef.current
+    pendingSendRef.current = null
+    setEmailConfirmOpen(false)
+    if (dontAskAgain) {
+      persistEmailConfirmSkip(workspaceId)
+      setEmailConfirmSkipped(true)
+    }
+    if (pending) commitSend(pending.content, pending.mode)
   }
 
   function handleRetry(failedSend: FailedSend) {
@@ -413,6 +458,15 @@ export function Composer({
           insertCanned(response)
           setCannedSheetOpen(false)
         }}
+      />
+
+      <EmailConfirmSheet
+        open={emailConfirmOpen}
+        onOpenChange={setEmailConfirmOpen}
+        customerEmail={variableContext.customer?.email ?? undefined}
+        dontAskAgain={dontAskAgain}
+        onToggleDontAskAgain={() => setDontAskAgain((value) => !value)}
+        onConfirm={handleConfirmEmailSend}
       />
     </div>
   )

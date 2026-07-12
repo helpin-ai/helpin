@@ -8,6 +8,7 @@ import type {
   SupportCannedResponse,
   SupportConversation,
   SupportInboxScopeListResponse,
+  SupportInstallation,
   SupportInboxView,
   SupportInboxViewCount,
   SupportMailbox,
@@ -135,6 +136,8 @@ export const supportService = {
     getApi().get<SupportInboxViewCount[]>(`/support/inbox/views/counts${qs(workspaceId)}`),
   listCannedResponses: (workspaceId: string) =>
     getApi().get<SupportCannedResponse[]>(`/support/inbox/canned-responses${qs(workspaceId)}`),
+  getInstallation: (workspaceId: string) =>
+    getApi().get<SupportInstallation>(`/support/inbox/installations${qs(workspaceId)}`),
   rewriteConversationDraft: (workspaceId: string, conversationId: string, payload: SupportAIRewriteDraftRequest) =>
     getApi().post<SupportAIRewriteDraftResponse>(
       `/support/inbox/conversations/${conversationId}/rewrite-draft${qs(workspaceId)}`,

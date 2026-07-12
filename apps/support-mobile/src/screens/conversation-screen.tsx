@@ -7,6 +7,7 @@ import {
   useConversationMessages,
   useMailboxMembers,
   useMarkConversationRead,
+  useSupportInstallation,
   useSupportPresenceStore,
   type ConversationListResponse,
   type ConversationStatus,
@@ -124,6 +125,22 @@ export function ConversationScreen() {
       })),
     [mailboxMembersQuery.data],
   )
+
+  // Email-fallback: a reply to a widget conversation whose visitor is offline is
+  // delivered by email (when the widget has email fallback enabled). Mirrors the
+  // web thread's `emailFallbackHint`; drives the composer's send confirm.
+  const installationQuery = useSupportInstallation(workspaceId)
+  const isVisitorOnline = useSupportPresenceStore((s) =>
+    conversation?.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false,
+  )
+  const willSendAsEmail = useMemo(() => {
+    const email = conversation?.customer_email?.trim()
+    if (!conversation || !installationQuery.data?.settings?.email_fallback_enabled || !email) return false
+    if (conversation.email_unsubscribed) return false
+    if (conversation.status === 'resolved' || conversation.status === 'spam') return false
+    if (conversation.anonymous_id && isVisitorOnline) return false
+    return true
+  }, [conversation, installationQuery.data, isVisitorOnline])
   const variableContext = useMemo<ShortcutVariableContext>(
     () => ({
       customer: { fullName: conversation?.customer_name, email: conversation?.customer_email },
@@ -256,6 +273,7 @@ export function ConversationScreen() {
           conversationId={conversationId}
           variableContext={variableContext}
           mentionMembers={mentionMembers}
+          willSendAsEmail={willSendAsEmail}
         />
       )}
 
