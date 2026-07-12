@@ -119,6 +119,41 @@ describe('groupMessages', () => {
     const clusters = items.filter((item) => item.kind === 'cluster')
     expect(clusters).toHaveLength(2)
   })
+
+  test('a system message becomes a standalone system item, never a sender cluster', () => {
+    const messages = [
+      message({ id: 'm1', sender_type: 'user', sender_user_id: 'u1', message_type: 'system', content: 'assigned to Ada' }),
+    ]
+    const items = groupMessages(messages)
+    expect(items.filter((item) => item.kind === 'cluster')).toHaveLength(0)
+    const systemItems = items.filter((item) => item.kind === 'system')
+    expect(systemItems).toHaveLength(1)
+    const systemItem = systemItems[0]
+    if (systemItem.kind !== 'system') throw new Error('expected system item')
+    expect(systemItem.message.id).toBe('m1')
+  })
+
+  test('a system message breaks the surrounding sender cluster', () => {
+    const messages = [
+      message({ id: 'm1', sender_type: 'user', sender_user_id: 'u1', created_at: '2026-07-06T10:00:00.000Z' }),
+      message({ id: 'm2', sender_type: 'user', sender_user_id: 'u1', message_type: 'system', content: 'resolved', created_at: '2026-07-06T10:01:00.000Z' }),
+      message({ id: 'm3', sender_type: 'user', sender_user_id: 'u1', created_at: '2026-07-06T10:02:00.000Z' }),
+    ]
+    const items = groupMessages(messages)
+    // m1 and m3 must NOT merge across the system event: two clusters, one system item.
+    expect(items.filter((item) => item.kind === 'cluster')).toHaveLength(2)
+    expect(items.filter((item) => item.kind === 'system')).toHaveLength(1)
+  })
+
+  test('the cluster carries the sender avatar url from its first message', () => {
+    const messages = [
+      message({ id: 'm1', sender_type: 'user', sender_user_id: 'u1', sender_avatar_url: 'https://cdn/a.png', sender_display_name: 'Ada' }),
+    ]
+    const cluster = groupMessages(messages).find((item) => item.kind === 'cluster')
+    if (!cluster || cluster.kind !== 'cluster') throw new Error('expected cluster')
+    expect(cluster.senderAvatarUrl).toBe('https://cdn/a.png')
+    expect(cluster.senderName).toBe('Ada')
+  })
 })
 
 describe('splitQuotedHtml', () => {

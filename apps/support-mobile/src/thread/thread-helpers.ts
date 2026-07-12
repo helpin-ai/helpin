@@ -2,7 +2,14 @@ import type { MessageSenderType, SupportMessage } from '@helpin-ai/support-core'
 
 export type ThreadItem =
   | { kind: 'day'; label: string }
-  | { kind: 'cluster'; senderType: MessageSenderType; senderName: string; messages: SupportMessage[] }
+  | { kind: 'system'; message: SupportMessage }
+  | {
+      kind: 'cluster'
+      senderType: MessageSenderType
+      senderName: string
+      senderAvatarUrl?: string
+      messages: SupportMessage[]
+    }
 
 /** Consecutive same-sender messages within this gap collapse into one cluster. */
 const CLUSTER_GAP_MS = 3 * 60_000
@@ -73,6 +80,18 @@ export function groupMessages(messages: SupportMessage[]): ThreadItem[] {
       lastMessage = null
     }
 
+    // System events (assigned, resolved, mailbox moved, ...) are narration, not
+    // a chat turn — they are never bucketed into a sender cluster (which would
+    // wrongly show an agent/team name header above them, unlike the web thread).
+    // They stand alone and break any in-progress cluster.
+    if (message.message_type === 'system') {
+      items.push({ kind: 'system', message })
+      currentCluster = null
+      currentClusterKey = null
+      lastMessage = message
+      continue
+    }
+
     const key = clusterKey(message)
     const gapMs = lastMessage
       ? new Date(message.created_at).getTime() - new Date(lastMessage.created_at).getTime()
@@ -84,6 +103,7 @@ export function groupMessages(messages: SupportMessage[]): ThreadItem[] {
         kind: 'cluster',
         senderType: message.sender_type,
         senderName: senderNameFor(message),
+        senderAvatarUrl: message.sender_avatar_url,
         messages: [message],
       }
       currentClusterKey = key

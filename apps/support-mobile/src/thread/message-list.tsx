@@ -80,16 +80,35 @@ function TypingBubble({ align, label }: TypingIndicatorState) {
 }
 
 function ClusterView({ cluster }: { cluster: Extract<ThreadItem, { kind: 'cluster' }> }) {
+  // Internal notes render as a full-width amber card with no avatar (mirrors
+  // web, where the note branch has no avatar column). A cluster is homogeneous
+  // in `is_internal`, so the first message decides.
+  if (cluster.messages[0]?.is_internal) {
+    return (
+      <div className="mb-3 flex flex-col gap-1">
+        {cluster.messages.map((message) => (
+          <MessageBubble key={message.id} message={message} align="left" />
+        ))}
+      </div>
+    )
+  }
+
   const align = cluster.senderType === 'customer' ? 'left' : 'right'
   const isAI = cluster.senderType === 'ai'
+  // Crisp-style: one avatar per group, sitting inline at the bottom of the
+  // bubble column (customer on the left, our side on the right). No visible
+  // sender-name header — the name is the avatar's native tooltip, like web.
   return (
-    <div className="mb-3">
-      <div className={cn('mb-1 flex items-center gap-1.5 px-1', align === 'right' && 'flex-row-reverse')}>
-        <Avatar name={cluster.senderName} size={18} />
-        <span className="text-footnote font-medium text-muted-foreground">{cluster.senderName}</span>
-        {isAI && <Sparkles className="h-3 w-3 text-primary" aria-hidden />}
+    <div className={cn('mb-3 flex items-end gap-2', align === 'right' && 'flex-row-reverse')}>
+      <div title={cluster.senderName} className="relative shrink-0">
+        <Avatar name={cluster.senderName} src={cluster.senderAvatarUrl} size={28} />
+        {isAI && (
+          <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background ring-2 ring-background">
+            <Sparkles className="h-2.5 w-2.5 text-primary" aria-hidden />
+          </span>
+        )}
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
         {cluster.messages.map((message) => (
           <MessageBubble key={message.id} message={message} align={align} />
         ))}
@@ -216,6 +235,8 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
             <div key={`day-${index}`} className="my-3 flex justify-center">
               <span className="rounded-full bg-muted px-2.5 py-1 text-caption text-muted-foreground">{item.label}</span>
             </div>
+          ) : item.kind === 'system' ? (
+            <MessageBubble key={`system-${index}`} message={item.message} align="left" />
           ) : (
             <ClusterView key={`cluster-${index}`} cluster={item} />
           ),
