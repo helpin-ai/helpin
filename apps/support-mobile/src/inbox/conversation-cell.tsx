@@ -181,34 +181,35 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
 
         {/* Preview + trailing indicator */}
         <div className="flex items-center justify-between gap-2">
-          <p
-            data-testid="conversation-preview"
-            className={cn(
-              'flex min-w-0 flex-1 items-center gap-1 text-footnote',
-              hasSecondaryRow ? 'line-clamp-1' : 'line-clamp-2',
-              visual.usesUnreadTypography ? 'font-medium text-foreground/80' : 'text-muted-foreground',
+          {/* The reply icon is a flex sibling of the clamped text (not inside it):
+              a leading icon inside a line-clamp box gets pushed onto its own
+              line, wrapping the preview to the next line. */}
+          <div className="flex min-w-0 flex-1 items-start gap-1">
+            {hasAgentReplyPreview && !isCustomerTyping && !isAgentTyping && !isNote && (
+              <CornerUpLeft aria-label="Team replied" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
             )}
-          >
-            {isCustomerTyping ? (
-              <span className="min-w-0 truncate italic text-muted-foreground">{customerTyping || 'typing…'}</span>
-            ) : isAgentTyping ? (
-              <span className="min-w-0 truncate italic text-primary/80">{agentFirstName} is typing…</span>
-            ) : isNote ? (
-              <>
-                <span className="shrink-0 font-medium text-amber-600 dark:text-amber-400">Note:</span>
-                <span className="min-w-0 truncate text-muted-foreground">
+            <p
+              data-testid="conversation-preview"
+              className={cn(
+                'min-w-0 flex-1 text-footnote',
+                hasSecondaryRow ? 'line-clamp-1' : 'line-clamp-2',
+                visual.usesUnreadTypography ? 'font-medium text-foreground/80' : 'text-muted-foreground',
+              )}
+            >
+              {isCustomerTyping ? (
+                <span className="italic text-muted-foreground">{customerTyping || 'typing…'}</span>
+              ) : isAgentTyping ? (
+                <span className="italic text-primary/80">{agentFirstName} is typing…</span>
+              ) : isNote ? (
+                <>
+                  <span className="font-medium text-amber-600 dark:text-amber-400">Note: </span>
                   {stripNotePrefix(conversation.last_message ?? '')}
-                </span>
-              </>
-            ) : (
-              <>
-                {hasAgentReplyPreview && (
-                  <CornerUpLeft aria-label="Team replied" className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-                )}
-                <span className="min-w-0 truncate">{preview}</span>
-              </>
-            )}
-          </p>
+                </>
+              ) : (
+                preview
+              )}
+            </p>
+          </div>
 
           {/* Trailing status/activity — mirrors web's exclusive indicator chain. */}
           <div className="flex shrink-0 items-center gap-1">

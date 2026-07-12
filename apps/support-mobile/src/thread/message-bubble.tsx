@@ -152,7 +152,7 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
   // not a chat turn — a centered pill with humanized text + an optional badge.
   if (message.message_type === 'system') {
     const text = getSupportSystemEventText(message.system_event_type, message.content, senderName)
-    const segments = toSupportSystemEventSegments(message.system_event_type, text)
+    const segments = toSupportSystemEventSegments(message.system_event_type, text, { extended: true })
     const badge = getSupportSystemEventBadge(message.system_event_type, message.content)
     content = (
       <div className="flex justify-center py-1">
