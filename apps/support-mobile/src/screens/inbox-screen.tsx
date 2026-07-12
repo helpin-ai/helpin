@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { useMotionValue } from 'motion/react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Check, Inbox as InboxIcon, Mail, MailOpen, Menu } from 'lucide-react'
+import { Check, ChevronDown, Inbox as InboxIcon, Mail, MailOpen, Menu } from 'lucide-react'
 import {
   useConversations,
   useMarkConversationRead,
@@ -190,7 +189,6 @@ export function InboxScreen() {
   }
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  const scrollY = useMotionValue(0)
   const virtualizer = useVirtualizer({
     count: conversations.length,
     getScrollElement: () => scrollRef.current,
@@ -231,7 +229,6 @@ export function InboxScreen() {
     <TabShell workspaceSlug={slug ?? ''} workspaceId={workspaceId}>
       <div
         ref={scrollRef}
-        onScroll={(e) => scrollY.set(e.currentTarget.scrollTop)}
         onPointerDown={pull.handlers.onPointerDown}
         onPointerMove={pull.handlers.onPointerMove}
         onPointerUp={pull.handlers.onPointerUp}
@@ -239,17 +236,20 @@ export function InboxScreen() {
         className="h-full overflow-y-auto"
       >
         <TopBar
-          large
           title={currentTitle}
-          scrollY={scrollY}
+          // Title lives inline next to the menu button (drawer nav pattern),
+          // so suppress the top bar's own centered title slot.
+          titleSlot={<></>}
           leading={
             <Pressable
-              aria-label="Open views menu"
+              aria-label={`Current view: ${currentTitle}. Open views menu`}
               haptic="selection"
               onPress={() => setDrawerOpen(true)}
-              className="flex items-center justify-center rounded-full"
+              className="flex min-w-0 max-w-[72vw] items-center gap-1.5 rounded-full py-1 pr-1.5"
             >
-              <Menu className="h-6 w-6 text-foreground" />
+              <Menu className="h-6 w-6 shrink-0 text-foreground" />
+              <span className="truncate text-headline">{currentTitle}</span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
             </Pressable>
           }
         />
