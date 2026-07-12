@@ -195,11 +195,22 @@ export interface SupportMessage {
   content: string
   /** "reply" | "csat_survey" | "system" — server/internal/model/support_inbox.go:293. */
   message_type?: string
+  /**
+   * For system messages (`message_type === 'system'`), the specific event —
+   * e.g. 'assigned', 'agent_assigned', 'resolved', 'ai_escalated',
+   * 'triage_routed', 'tag_added'. Drives humanized narration + badges.
+   */
+  system_event_type?: string
   is_internal: boolean
   metadata?: string
   via_channel?: 'email' | 'widget' | null
   email_notified_at?: string
   email_read_at?: string
+  /** Postmark delivery lifecycle for outbound email replies. */
+  email_delivery_status?: 'sent' | 'delivered' | 'opened' | 'bounced' | 'spam_complaint' | string
+  /** Inbound email envelope addresses (customer messages received by email). */
+  email_from?: string
+  email_reply_to?: string
   attachments?: SupportAttachmentPayload[]
   /**
    * Sanitized HTML body — only populated for inbound email messages

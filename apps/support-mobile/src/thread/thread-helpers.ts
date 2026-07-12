@@ -118,6 +118,68 @@ export function groupMessages(messages: SupportMessage[]): ThreadItem[] {
   return items
 }
 
+export interface TextSegment {
+  text: string
+  mention?: boolean
+}
+
+/**
+ * Splits text into plain runs and @mention runs. Mirrors the web thread's
+ * `renderMentionHighlights` (MessageBubble.tsx) so mentions in internal notes
+ * highlight identically on mobile.
+ */
+export function splitMentionSegments(content: string): TextSegment[] {
+  const regex = /@([a-zA-Z0-9][a-zA-Z0-9._-]*)/g
+  const segments: TextSegment[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) segments.push({ text: content.slice(lastIndex, match.index) })
+    segments.push({ text: match[0], mention: true })
+    lastIndex = match.index + match[0].length
+  }
+  if (lastIndex < content.length) segments.push({ text: content.slice(lastIndex) })
+  return segments
+}
+
+export type SupportReceiptStatus = 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email'
+
+/**
+ * Derives the read-receipt state for the last outbound (our-side, public,
+ * non-system) reply in a thread. Mirrors the web thread's `receiptMessageId` +
+ * `receiptStatus` derivation (MessageThread.tsx) — kept in sync by hand; this
+ * is a tiny, stable pure function not worth threading through the 1000-line web
+ * component's aliasing.
+ */
+export function computeSupportReceipt(
+  messages: SupportMessage[],
+  conversation: { source?: string; contact_last_seen_at?: string } | null | undefined,
+): { receiptMessageId: string | null; receiptStatus: SupportReceiptStatus | null } {
+  let receiptMessageId: string | null = null
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i]
+    if (!m.is_internal && m.sender_type !== 'customer' && (!m.message_type || m.message_type === 'reply')) {
+      receiptMessageId = m.id
+      break
+    }
+  }
+  if (!receiptMessageId || !conversation) return { receiptMessageId: null, receiptStatus: null }
+  const msg = messages.find((m) => m.id === receiptMessageId)
+  if (!msg) return { receiptMessageId: null, receiptStatus: null }
+
+  let receiptStatus: SupportReceiptStatus | null = null
+  if (msg.email_read_at) receiptStatus = 'read_email'
+  else if (msg.email_delivery_status === 'opened') receiptStatus = 'read_email'
+  else if (msg.email_delivery_status === 'delivered') receiptStatus = 'delivered_email'
+  else {
+    const seen = conversation.contact_last_seen_at
+    if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(msg.created_at)) receiptStatus = 'read'
+    else if (msg.email_notified_at) receiptStatus = 'sent_email'
+    else if (conversation.source === 'widget') receiptStatus = 'delivered'
+  }
+  return { receiptMessageId, receiptStatus }
+}
+
 /**
  * Selectors matching known quoted-reply wrappers. Mirrors
  * server/internal/email/inboundhtml/convert.go's `quotedReplySelectors`

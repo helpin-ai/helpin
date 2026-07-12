@@ -30,7 +30,8 @@
       "@/lib/pmTypes": ["../../frontend/src/lib/pmTypes.ts"],
       "@/stores/supportInboxStore": ["../../frontend/src/stores/supportInboxStore.ts"],
       "@/components/support/helpers": ["../../frontend/src/components/support/helpers.ts"],
-      "@/components/support/conversationRowVisual": ["../../frontend/src/components/support/conversationRowVisual.ts"]
+      "@/components/support/conversationRowVisual": ["../../frontend/src/components/support/conversationRowVisual.ts"],
+      "@/components/support/supportSystemEvent": ["../../frontend/src/components/support/supportSystemEvent.ts"]
     }
   },
   "include": ["src"]

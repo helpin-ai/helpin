@@ -1,6 +1,7 @@
-import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { Fragment, memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { supportSystemEventDisplayContent, toSupportSystemEventSegments } from './supportSystemEvent';
 import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon, ZapIcon } from '@/lib/icons';
 import { EmailDetailModal } from './EmailDetailModal';
 import { MessageActionsContextMenu, MessageActionsMenu } from './MessageActionsMenu';
@@ -52,10 +53,6 @@ function containsMarkdownTable(content: string): boolean {
   return /\|(?:[^\n|]+\|){1,}[^\n]*\n\|(?:\s*[-:]+\s*\|){1,}/m.test(content) || /<table[\s>]/i.test(content);
 }
 
-function firstDisplayNamePart(name?: string | null): string {
-  return name?.trim().split(/\s+/)[0] ?? '';
-}
-
 function emailAddressFromHeader(value?: string | null): string {
   const trimmed = value?.trim() ?? '';
   if (!trimmed) return '';
@@ -63,92 +60,23 @@ function emailAddressFromHeader(value?: string | null): string {
   return (match?.[1] ?? trimmed).trim();
 }
 
-function supportSystemEventDisplayContent(eventType: string | undefined, content: string, senderName: string): string {
-  const actor = firstDisplayNamePart(senderName);
-  switch (eventType) {
-    case 'assigned':
-      return content.trim() || (actor ? `${actor} assigned this conversation.` : 'Conversation assigned.');
-    case 'agent_assigned':
-      return actor ? `${actor} assigned this conversation to an AI agent.` : 'Assigned to an AI agent.';
-    case 'unassigned':
-      return actor ? `${actor} moved this conversation to unassigned.` : 'Moved to unassigned.';
-    case 'took':
-      return actor ? `${actor} took this conversation.` : 'A teammate took this conversation.';
-    default:
-      return content;
-  }
-}
-
-function renderAssignedSystemEventContent(content: string): ReactNode {
-  const match = content.match(/^(.*\bassigned this conversation to\s+)([^.]+)(\.)$/);
-  if (!match) return content;
-
-  const [, prefix, targetName, suffix] = match;
+// System-event narration + emphasis rules live in the shared, JSX-free
+// supportSystemEvent module (also read in place by the mobile app). Here we map
+// its segments to <strong> markup.
+function renderSupportAuditSystemEventContent(eventType: string | undefined, content: string): ReactNode {
+  const segments = toSupportSystemEventSegments(eventType, content);
+  if (segments.length === 1 && !segments[0].bold) return content;
   return (
     <>
-      {prefix}
-      <strong className="font-semibold text-foreground">{targetName}</strong>
-      {suffix}
+      {segments.map((segment, index) =>
+        segment.bold ? (
+          <strong key={index} className="font-semibold text-foreground">{segment.text}</strong>
+        ) : (
+          <Fragment key={index}>{segment.text}</Fragment>
+        ),
+      )}
     </>
   );
-}
-
-function boldSupportSystemValue(value: string): ReactNode {
-  return <strong className="font-semibold text-foreground">{value}</strong>;
-}
-
-function renderBoldedSupportMatches(content: string, pattern: RegExp): ReactNode {
-  const parts: ReactNode[] = [];
-  let lastIndex = 0;
-  let key = 0;
-  for (const match of content.matchAll(pattern)) {
-    if (match.index === undefined) continue;
-    const [fullMatch, prefix, value, suffix] = match;
-    const valueIndex = match.index + prefix.length;
-    if (valueIndex > lastIndex) {
-      parts.push(content.slice(lastIndex, valueIndex));
-    }
-    parts.push(<strong key={key++} className="font-semibold text-foreground">{value}</strong>);
-    lastIndex = match.index + fullMatch.length - suffix.length;
-  }
-  if (lastIndex < content.length) {
-    parts.push(content.slice(lastIndex));
-  }
-  return parts.length > 1 ? <>{parts}</> : content;
-}
-
-function renderSupportAuditSystemEventContent(eventType: string | undefined, content: string): ReactNode {
-  if (eventType === 'assigned') {
-    return renderAssignedSystemEventContent(content);
-  }
-
-  if (eventType === 'email_recipients_updated') {
-    return renderBoldedSupportMatches(
-      content,
-      /(\b(?:made|added|removed)\s+)(\S+@\S+?)(\s+(?:the primary recipient|to Cc|from Cc)\.)/g,
-    );
-  }
-
-  if (eventType === 'tag_added' || eventType === 'tag_removed') {
-    return renderBoldedSupportMatches(content, /(\b(?:added|removed) tag\s+)([^.]+)(\.)/g);
-  }
-
-  if (eventType === 'task_created') {
-    const taskMatch = content.match(/^(.*\bcreated task\s+)(#[^:\s]+)(?::\s+(.+))?(\.)$/);
-    if (taskMatch) {
-      const [, prefix, taskKey, taskName, suffix] = taskMatch;
-      return (
-        <>
-          {prefix}
-          {boldSupportSystemValue(taskKey)}
-          {taskName ? <>: {boldSupportSystemValue(taskName)}</> : null}
-          {suffix}
-        </>
-      );
-    }
-  }
-
-  return content;
 }
 
 const markdownComponents = {

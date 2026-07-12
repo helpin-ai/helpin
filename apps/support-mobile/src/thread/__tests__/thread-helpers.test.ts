@@ -1,5 +1,5 @@
 import type { SupportMessage } from '@helpin-ai/support-core'
-import { formatDayLabel, groupMessages, splitQuotedHtml } from '../thread-helpers'
+import { computeSupportReceipt, formatDayLabel, groupMessages, splitMentionSegments, splitQuotedHtml } from '../thread-helpers'
 
 function message(overrides: Partial<SupportMessage> = {}): SupportMessage {
   return {
@@ -153,6 +153,59 @@ describe('groupMessages', () => {
     if (!cluster || cluster.kind !== 'cluster') throw new Error('expected cluster')
     expect(cluster.senderAvatarUrl).toBe('https://cdn/a.png')
     expect(cluster.senderName).toBe('Ada')
+  })
+})
+
+describe('splitMentionSegments', () => {
+  test('splits @mentions out as their own segments', () => {
+    const segments = splitMentionSegments('hey @ada and @bob-1 please look')
+    expect(segments.filter((s) => s.mention).map((s) => s.text)).toEqual(['@ada', '@bob-1'])
+    expect(segments.map((s) => s.text).join('')).toBe('hey @ada and @bob-1 please look')
+  })
+
+  test('returns a single plain segment when there are no mentions', () => {
+    expect(splitMentionSegments('no mentions here')).toEqual([{ text: 'no mentions here' }])
+  })
+})
+
+describe('computeSupportReceipt', () => {
+  function outbound(overrides: Partial<SupportMessage> = {}): SupportMessage {
+    return message({ id: 'r1', sender_type: 'user', is_internal: false, message_type: 'reply', ...overrides })
+  }
+
+  test('targets the last outbound public reply, skipping notes/system/customer', () => {
+    const messages = [
+      outbound({ id: 'r1' }),
+      message({ id: 'note', sender_type: 'user', is_internal: true }),
+      message({ id: 'sys', sender_type: 'user', message_type: 'system' }),
+      message({ id: 'cust', sender_type: 'customer' }),
+    ]
+    const { receiptMessageId } = computeSupportReceipt(messages, { source: 'widget' })
+    expect(receiptMessageId).toBe('r1')
+  })
+
+  test('email opened → read_email', () => {
+    const { receiptStatus } = computeSupportReceipt([outbound({ email_delivery_status: 'opened' })], { source: 'email' })
+    expect(receiptStatus).toBe('read_email')
+  })
+
+  test('widget seen after the reply → read', () => {
+    const { receiptStatus } = computeSupportReceipt(
+      [outbound({ created_at: '2026-07-06T10:00:00.000Z' })],
+      { source: 'widget', contact_last_seen_at: '2026-07-06T10:05:00.000Z' },
+    )
+    expect(receiptStatus).toBe('read')
+  })
+
+  test('widget with no seen cursor → delivered', () => {
+    const { receiptStatus } = computeSupportReceipt([outbound()], { source: 'widget' })
+    expect(receiptStatus).toBe('delivered')
+  })
+
+  test('no outbound reply → null', () => {
+    const { receiptMessageId, receiptStatus } = computeSupportReceipt([message({ sender_type: 'customer' })], { source: 'widget' })
+    expect(receiptMessageId).toBeNull()
+    expect(receiptStatus).toBeNull()
   })
 })
 

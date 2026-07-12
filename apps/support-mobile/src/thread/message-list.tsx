@@ -4,7 +4,7 @@ import { cn } from '@mobile/lib/cn'
 import { Avatar } from '@mobile/ui/avatar'
 import { Skeleton } from '@mobile/ui/skeleton'
 import { MessageBubble } from './message-bubble'
-import type { ThreadItem } from './thread-helpers'
+import type { SupportReceiptStatus, ThreadItem } from './thread-helpers'
 
 /**
  * Distance-from-bottom (px) threshold from the design spec: "New message
@@ -41,6 +41,9 @@ export interface MessageListProps {
   items: ThreadItem[]
   loading?: boolean
   typingIndicator?: TypingIndicatorState | null
+  /** The id of the last outbound reply that carries a read receipt, and its status. */
+  receiptMessageId?: string | null
+  receiptStatus?: SupportReceiptStatus | null
   /** Fires when the list decides the floating "New message" pill should show/hide — the pill itself is rendered by the screen (it floats above the composer, which is screen-level layout). */
   onShowNewMessagePillChange?: (show: boolean) => void
 }
@@ -79,7 +82,17 @@ function TypingBubble({ align, label }: TypingIndicatorState) {
   )
 }
 
-function ClusterView({ cluster }: { cluster: Extract<ThreadItem, { kind: 'cluster' }> }) {
+function ClusterView({
+  cluster,
+  receiptMessageId,
+  receiptStatus,
+}: {
+  cluster: Extract<ThreadItem, { kind: 'cluster' }>
+  receiptMessageId?: string | null
+  receiptStatus?: SupportReceiptStatus | null
+}) {
+  const receiptFor = (id: string) => (id === receiptMessageId ? receiptStatus : undefined)
+
   // Internal notes render as a full-width amber card with no avatar (mirrors
   // web, where the note branch has no avatar column). A cluster is homogeneous
   // in `is_internal`, so the first message decides.
@@ -110,7 +123,7 @@ function ClusterView({ cluster }: { cluster: Extract<ThreadItem, { kind: 'cluste
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         {cluster.messages.map((message) => (
-          <MessageBubble key={message.id} message={message} align={align} />
+          <MessageBubble key={message.id} message={message} align={align} receiptStatus={receiptFor(message.id)} />
         ))}
       </div>
     </div>
@@ -126,7 +139,7 @@ function ClusterView({ cluster }: { cluster: Extract<ThreadItem, { kind: 'cluste
  * message" pill.
  */
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { items, loading, typingIndicator, onShowNewMessagePillChange },
+  { items, loading, typingIndicator, receiptMessageId, receiptStatus, onShowNewMessagePillChange },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -238,7 +251,12 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           ) : item.kind === 'system' ? (
             <MessageBubble key={`system-${index}`} message={item.message} align="left" />
           ) : (
-            <ClusterView key={`cluster-${index}`} cluster={item} />
+            <ClusterView
+              key={`cluster-${index}`}
+              cluster={item}
+              receiptMessageId={receiptMessageId}
+              receiptStatus={receiptStatus}
+            />
           ),
         )}
         {typingIndicator && <TypingBubble align={typingIndicator.align} label={typingIndicator.label} />}

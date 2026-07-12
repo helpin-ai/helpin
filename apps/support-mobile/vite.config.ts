@@ -68,6 +68,10 @@ export default defineConfig(({ mode }) => {
           find: '@/components/support/conversationRowVisual',
           replacement: path.resolve(__dirname, '../../frontend/src/components/support/conversationRowVisual.ts'),
         },
+        {
+          find: '@/components/support/supportSystemEvent',
+          replacement: path.resolve(__dirname, '../../frontend/src/components/support/supportSystemEvent.ts'),
+        },
       ],
     },
     server: {

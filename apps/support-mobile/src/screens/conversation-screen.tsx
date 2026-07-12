@@ -20,7 +20,7 @@ import { workspacesService } from '@mobile/lib/services/workspaces-service'
 import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 import { displayNameFor } from '@mobile/inbox/conversation-cell'
 import { MessageList, type MessageListHandle, type TypingIndicatorState } from '@mobile/thread/message-list'
-import { groupMessages } from '@mobile/thread/thread-helpers'
+import { computeSupportReceipt, groupMessages } from '@mobile/thread/thread-helpers'
 import { Composer } from '@mobile/thread/composer'
 import { ContextSheet } from '@mobile/thread/context-sheet'
 import { MessageCircle } from 'lucide-react'
@@ -103,6 +103,7 @@ export function ConversationScreen() {
   const messagesQuery = useConversationMessages(workspaceId, conversationId ?? null)
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data])
   const items = useMemo(() => groupMessages(messages), [messages])
+  const receipt = useMemo(() => computeSupportReceipt(messages, conversation), [messages, conversation])
 
   const markRead = useMarkConversationRead(workspaceId)
   useEffect(() => {
@@ -188,6 +189,8 @@ export function ConversationScreen() {
             items={items}
             loading={messagesQuery.isPending}
             typingIndicator={typingIndicator}
+            receiptMessageId={receipt.receiptMessageId}
+            receiptStatus={receipt.receiptStatus}
             onShowNewMessagePillChange={setShowNewMessagePill}
           />
         )}

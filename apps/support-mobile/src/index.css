@@ -194,3 +194,58 @@ body {
   0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
   40% { transform: scale(1); opacity: 1; }
 }
+
+/* @mention highlight inside internal notes — mirrors the web thread. */
+.mention-highlight {
+  color: oklch(0.45 0.2 260);
+  font-weight: 500;
+  background: oklch(0.55 0.15 260 / 0.1);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.25em;
+}
+.dark .mention-highlight {
+  color: oklch(0.75 0.16 260);
+  background: oklch(0.55 0.15 260 / 0.15);
+}
+
+/* Markdown message bodies (react-markdown output) — mirrors the web thread's
+   `.prose-chat` so bold/lists/code/tables render identically. */
+.prose-chat { font-size: inherit; line-height: 1.45; }
+.prose-chat p { margin: 0 0 0.5em; }
+.prose-chat p:last-child { margin-bottom: 0; }
+.prose-chat strong { font-weight: 600; }
+.prose-chat strong, .prose-chat em { color: inherit; }
+.prose-chat code {
+  background: var(--muted);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.3em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+.prose-chat pre {
+  background: oklch(0.145 0 0);
+  color: oklch(0.93 0 0);
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  overflow-x: auto;
+  margin: 0.4em 0;
+}
+.prose-chat pre code { background: transparent; padding: 0; color: inherit; font-size: 0.85em; }
+.prose-chat ul, .prose-chat ol { padding-left: 1.2em; margin: 0.3em 0; }
+.prose-chat ul { list-style: disc; }
+.prose-chat ol { list-style: decimal; }
+.prose-chat li + li { margin-top: 0.15em; }
+.prose-chat blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 0.75rem;
+  color: var(--muted-foreground);
+  margin: 0.3em 0;
+}
+.prose-chat a { text-decoration: underline; }
+.chat-markdown-table-wrap { overflow-x: auto; margin: 0.4em 0; }
+.chat-markdown-table-wrap table { border-collapse: collapse; font-size: 0.9em; }
+.chat-markdown-table-wrap th, .chat-markdown-table-wrap td {
+  border: 1px solid var(--border);
+  padding: 0.25em 0.5em;
+  text-align: left;
+}
