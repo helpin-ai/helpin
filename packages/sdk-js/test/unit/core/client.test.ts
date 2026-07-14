@@ -138,6 +138,16 @@ describe('HelpinClient', () => {
     });
   });
 
+  describe('shutdown', () => {
+    it('rotates the anonymous visitor identity', () => {
+      const resetSpy = vi.spyOn(client, 'reset');
+
+      client.shutdown();
+
+      expect(resetSpy).toHaveBeenCalledWith(true);
+    });
+  });
+
   describe('track method', () => {
     it('should track an event with correct payload', () => {
       const eventName = 'test_event';

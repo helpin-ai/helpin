@@ -307,6 +307,7 @@ App calls helpin("shutdown")
         |
         v
 Helpin clears widget session
+and rotates browser identity
         |
         v
 Next visitor starts anonymous

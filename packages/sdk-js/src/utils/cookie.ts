@@ -17,7 +17,10 @@ export class CookieManager {
     const expires = `expires=${date.toUTCString()}`;
     const secureFlag = secure ? '; Secure' : '';
     const httpOnlyFlag = httpOnly ? '; HttpOnly' : '';
-    document.cookie = `${name}=${value};${expires};path=/;domain=${this.cookieDomain}${secureFlag}${httpOnlyFlag}`;
+    const domainFlag = this.shouldSetDomainAttribute()
+      ? `; domain=${this.cookieDomain}`
+      : '';
+    document.cookie = `${name}=${encodeURIComponent(value)}; ${expires}; path=/${domainFlag}; SameSite=Lax${secureFlag}${httpOnlyFlag}`;
   }
 
   get(name: string): string | null {
@@ -33,7 +36,15 @@ export class CookieManager {
   }
 
   delete(name: string, path: string = '/'): void {
-    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=${path};domain=${this.cookieDomain}`;
+    const domainFlag = this.shouldSetDomainAttribute()
+      ? `; domain=${this.cookieDomain}`
+      : '';
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=${path}${domainFlag}; SameSite=Lax`;
+  }
+
+  private shouldSetDomainAttribute(): boolean {
+    const domain = this.cookieDomain.replace(/^\./, '');
+    return domain !== '' && domain !== 'localhost' && !this.isIpAddress(domain);
   }
 
   private getCookieDomain(): string {
