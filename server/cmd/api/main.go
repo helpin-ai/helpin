@@ -992,6 +992,7 @@ func main() {
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmTaskRepo, docsDocumentRepo, wsPublisher)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
 	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
+	tlsAskService := service.NewTLSAskService(docsHelpcenterRepo, cfg.TLSAskExtraAllowedDomains)
 
 	// Tiered cache for hot public help-center reads. L1 is an in-process LRU;
 	// L2 is Redis when available so cache entries survive pod restarts and
@@ -1490,6 +1491,7 @@ func main() {
 			service.NewSupportCoverageDraftService(supportCoverageRepo, docsDocumentService, docsContentService, docsVersionService, llmProvider),
 			supportCoverageClusterRebuildService,
 		),
+		TLSAsk: handler.NewTLSAskHandler(tlsAskService),
 	}
 
 	// Set support event recorder on DocsHandler after handler creation.

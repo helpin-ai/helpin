@@ -52,6 +52,7 @@ type Handlers struct {
 	SupportInboxWidget  *handler.SupportInboxWidgetHandler
 	Git                 *handler.GitHandler
 	Docs                *handler.DocsHandler
+	TLSAsk              *handler.TLSAskHandler
 	Notification        *handler.NotificationHandler
 	UserNotifSettings   *handler.UserNotificationSettingsHandler
 	CRMContact          *handler.CRMContactHandler
@@ -199,8 +200,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			MaxAge:           3600,
 		}))
 
-		// Help Center domain verification (Caddy on_demand_tls)
-		r.Get("/verify-domain", h.Docs.VerifyDomain)
+		// Caddy on-demand TLS "ask" check (200 = issue certificate, 404 = deny)
+		r.Get("/verify-domain", h.TLSAsk.Verify)
 
 		// Public Help Center routes
 		r.Route("/{subdomain}", func(r chi.Router) {
@@ -271,8 +272,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// so this keeps the durable attachment ID as the app-controlled image URL.
 		r.Get("/pm/attachments/{id}/content", h.PMAttachment.Content)
 
-		// ---- Help Center domain verification (Caddy on_demand_tls) ----
-		r.Get("/hc/verify-domain", h.Docs.VerifyDomain)
+		// ---- Caddy on-demand TLS "ask" check ----
+		r.Get("/hc/verify-domain", h.TLSAsk.Verify)
 
 		// ---- Public Help Center routes (no JWT) ----
 		r.Route("/hc/{subdomain}", func(r chi.Router) {
