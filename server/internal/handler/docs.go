@@ -1808,30 +1808,6 @@ func (h *DocsHandler) resolveRequestedPublicLocale(w http.ResponseWriter, r *htt
 	return "", false
 }
 
-// VerifyDomain checks if a domain is registered for on_demand_tls (Caddy).
-func (h *DocsHandler) VerifyDomain(w http.ResponseWriter, r *http.Request) {
-	domain := r.URL.Query().Get("domain")
-	if domain == "" {
-		w.WriteHeader(http.StatusForbidden)
-		return
-	}
-	// Allow our own domains always.
-	if domain == "helpcenter.helpin.ai" ||
-		domain == "helpcenter-stage.helpin.ai" ||
-		strings.HasSuffix(domain, ".helpin.center") ||
-		strings.HasSuffix(domain, ".stage.helpin.center") {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	// Check if domain is registered as a custom_domain in our DB.
-	cfg, err := h.helpcenterSvc.GetConfigByCustomDomain(r.Context(), domain)
-	if err != nil || cfg == nil {
-		w.WriteHeader(http.StatusForbidden)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
 func (h *DocsHandler) PublicGetConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := h.resolveSubdomain(w, r)
 	if cfg == nil {
