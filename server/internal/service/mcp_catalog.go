@@ -118,12 +118,15 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 
 func specialMCPToolDefinitions() []MCPToolDefinition {
 	object := func(properties map[string]any, required ...string) map[string]any {
-		return map[string]any{
+		schema := map[string]any{
 			"type":                 "object",
 			"properties":           properties,
-			"required":             required,
 			"additionalProperties": false,
 		}
+		if len(required) > 0 {
+			schema["required"] = required
+		}
+		return schema
 	}
 	page := map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "default": 25}
 	return []MCPToolDefinition{
