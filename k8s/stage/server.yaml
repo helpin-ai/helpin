@@ -32,12 +32,16 @@ spec:
           emptyDir: {}
       containers:
         - name: helpin-server
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.263-rc.1
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.265-rc.2
           envFrom:
             - secretRef:
                 name: helpin-secrets
           env:
             - name: RUN_AUTO_MIGRATE
+              value: "true"
+            - name: MCP_PUBLIC_BASE_URL
+              value: "https://mcp.stage.helpin.ai"
+            - name: MCP_SERVER_ENABLED
               value: "true"
           resources:
             requests:

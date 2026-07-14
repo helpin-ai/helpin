@@ -152,6 +152,8 @@ type CommandBarProposal struct {
 	Reason          string                   `json:"reason,omitempty"`
 	Suggestions     []string                 `json:"suggestions,omitempty"`
 	Guardrails      []CommandBarGuardrail    `json:"guardrails,omitempty"`
+	CreatedAgentID  string                   `json:"created_agent_id,omitempty"`
+	CreatedRunID    string                   `json:"created_run_id,omitempty"`
 }
 
 type CommandBarThreadSummary struct {

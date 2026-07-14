@@ -100,6 +100,9 @@ function AgentRunRow({
   const agentName = agent?.name ?? 'Agent';
   const displayStatus = getAgentRunDisplayStatus(run);
   const statusLabel = STATUS_LABELS[displayStatus] ?? displayStatus;
+  const mcpAttribution = (run as AgentRun & {
+    mcp_attribution?: { client_name: string; connection_id?: string; service_principal_id?: string };
+  }).mcp_attribution;
 
   return (
     <div className="rounded-lg border border-border/60 bg-card/80">
@@ -120,6 +123,11 @@ function AgentRunRow({
               <Badge variant="outline" className="text-[10px]">
                 {run.invocation_mode}
               </Badge>
+              {mcpAttribution ? (
+                <Badge variant="outline" className="text-[10px]">
+                  MCP · {mcpAttribution.client_name || 'AI client'}
+                </Badge>
+              ) : null}
             </div>
             <p className="text-xs text-muted-foreground">
               {formatTarget(run)} • {run.id.slice(0, 8)}

@@ -1,0 +1,31 @@
+{
+  "name": "helpin-mcp-workflows",
+  "version": "1.0.0",
+  "mcp_url": "https://mcp.helpin.ai/mcp",
+  "transport": "streamable_http",
+  "authentication": ["oauth_2_1_pkce", "restricted_service_token"],
+  "prompts": [
+    "plan_feature",
+    "prepare_release",
+    "delegate_to_helpin_agent",
+    "triage_customer_issue",
+    "docs_maintenance",
+    "review_pipeline"
+  ],
+  "skills": [
+    "helpin-feature-to-delivery",
+    "helpin-release-readiness",
+    "helpin-delegate-agent",
+    "helpin-support-to-product",
+    "helpin-docs-maintenance",
+    "helpin-crm-pipeline-review"
+  ],
+  "excluded_actions": [
+    "record_deletion",
+    "customer_message_send",
+    "docs_publish",
+    "workspace_security_change",
+    "member_management",
+    "integration_management"
+  ]
+}

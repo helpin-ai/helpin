@@ -64,6 +64,12 @@ Meaning:
 
 For destructive renames like Story -> Task, `RUN_AUTO_MIGRATE` must be `false` during the cutover release.
 
+Public MCP tables are an explicit exception: migration
+`202607100003_public_mcp.sql` owns their constraints and indexes, so they are
+excluded from the API's AutoMigrate model list in every environment. The normal
+startup flow and `RUN_AUTO_MIGRATE=true` behavior remain unchanged for all
+other models.
+
 ### ArgoCD / Kubernetes integration
 
 Migration hook manifests:

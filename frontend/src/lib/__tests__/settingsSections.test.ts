@@ -22,6 +22,22 @@ describe('getSettingsSidebarGroups', () => {
     expect(visibleSectionIDs(false)).not.toContain('command-intents');
   });
 
+  it('places MCP after Access when workspace read is allowed', () => {
+    const workspaceGroup = getSettingsSidebarGroups(true, new Set(['workspace.read', 'module_access.manage']))
+      .find((group) => group.label === 'Workspace');
+
+    const sections = workspaceGroup?.sections.map((section) => section.id) ?? [];
+    expect(sections.indexOf('mcp')).toBe(sections.indexOf('access') + 1);
+    expect(sections.indexOf('repositories')).toBe(sections.indexOf('mcp') + 1);
+  });
+
+  it('hides MCP without workspace read permission', () => {
+    const sections = getSettingsSidebarGroups(true, new Set(['module_access.manage']))
+      .flatMap((group) => group.sections.map((section) => section.id));
+
+    expect(sections).not.toContain('mcp');
+  });
+
   it('puts AI Assistant first in support settings', () => {
     const supportGroup = getSettingsSidebarGroups(true).find((group) => group.label === 'Support');
 

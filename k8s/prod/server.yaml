@@ -39,6 +39,10 @@ spec:
           env:
             - name: RUN_AUTO_MIGRATE
               value: "true"
+            - name: MCP_PUBLIC_BASE_URL
+              value: "https://mcp.helpin.ai"
+            - name: MCP_SERVER_ENABLED
+              value: "true"
           resources:
             requests:
               cpu: 750m

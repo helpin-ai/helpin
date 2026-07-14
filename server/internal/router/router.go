@@ -45,6 +45,7 @@ type Handlers struct {
 	Agent               *handler.AgentHandler
 	AgentToolGateway    *handler.AgentToolGatewayHandler
 	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
+	MCP                 *handler.MCPHandler
 	SupportInbox        *handler.SupportInboxHandler
 	SupportInboxView    *handler.SupportInboxViewHandler
 	SupportTag          *handler.SupportTagHandler
@@ -141,6 +142,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		MaxAge:           3600,
 	})).Get("/view_headers", h.Health.ViewHeaders)
 	r.Get("/health", h.Health.Check)
+	if h.MCP != nil {
+		r.Get("/.well-known/oauth-authorization-server", h.MCP.AuthorizationServerMetadata)
+		r.Get("/.well-known/oauth-protected-resource", h.MCP.ProtectedResourceMetadata)
+		r.Handle("/mcp", http.HandlerFunc(h.MCP.Protocol))
+	}
 
 	// ---- Public widget routes for client.helpin.ai (no JWT, open CORS) ----
 	// Mounted at /widget (outside /api) so the ingress path /widget/* works directly.
@@ -233,6 +239,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/auth/reset-password", h.Auth.ResetPassword)
 		r.Post("/auth/refresh", h.Auth.RefreshToken)
 		r.Post("/auth/signout", h.Auth.Signout)
+		if h.MCP != nil {
+			r.Post("/mcp/oauth/register", h.MCP.RegisterClient)
+			r.Get("/mcp/oauth/authorize", h.MCP.AuthorizeRedirect)
+			r.Post("/mcp/oauth/token", h.MCP.Token)
+			r.Post("/mcp/oauth/revoke", h.MCP.RevokeToken)
+		}
 		r.Get("/health", h.Health.Check)
 		r.Get("/system/ensure-cors", h.Health.EnsureStorageCORS)
 		r.Get("/invitations/info", h.Invite.GetInfo)
@@ -398,6 +410,24 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Protected routes ----
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(jwtManager))
+			if h.MCP != nil {
+				r.Get("/mcp/oauth/request", h.MCP.AuthorizationRequest)
+				r.Post("/mcp/oauth/authorize", h.MCP.Authorize)
+				r.Route("/mcp", func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceID)
+					r.Use(wsActive)
+					r.Get("/", h.MCP.Dashboard)
+					r.With(requirePerm(authorization.PermSettingsManage)).Put("/policy", h.MCP.UpdatePolicy)
+					r.With(requirePerm(authorization.PermSettingsManage)).Delete("/connections", h.MCP.RevokeWorkspaceAccess)
+					r.Delete("/connections/{connectionID}", h.MCP.RevokeConnection)
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/activity", h.MCP.Activity)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/service-principals", h.MCP.CreateServicePrincipal)
+					r.With(requirePerm(authorization.PermSettingsManage)).Delete("/service-principals/{principalID}", h.MCP.RevokeServicePrincipal)
+					r.With(requirePerm(authorization.PermSettingsManage)).Get("/service-principals/{principalID}/tokens", h.MCP.ListServiceTokens)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/service-principals/{principalID}/tokens", h.MCP.RotateServiceToken)
+					r.With(requirePerm(authorization.PermSettingsManage)).Delete("/service-principals/{principalID}/tokens/{tokenID}", h.MCP.RevokeServiceToken)
+				})
+			}
 
 			// Auth / profile
 			r.Get("/auth/me", h.Auth.Me)

@@ -1,0 +1,11 @@
+interface:
+  display_name: "Delegate to Helpin"
+  short_description: "Delegate durable work to a Helpin agent"
+  default_prompt: "Use $helpin-delegate-agent to choose a Helpin agent, start a run, and follow it to completion."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "helpin"
+      description: "Workspace-bound Helpin product tools and agent delegation"
+      transport: "streamable_http"
+      url: "https://mcp.helpin.ai/mcp"

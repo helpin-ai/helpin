@@ -328,6 +328,8 @@ export interface CommandBarProposal {
   reason?: string;
   suggestions?: string[];
   guardrails?: Array<{ type: string; severity: string; message: string }>;
+  created_agent_id?: string;
+  created_run_id?: string;
 }
 
 export interface CommandBarThreadSummary {

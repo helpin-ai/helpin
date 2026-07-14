@@ -96,6 +96,15 @@ type Config struct {
 	PostmarkRouteInboundWebhookSecret string
 	SupportEmailRouteDomain           string
 	AppBaseURL                        string
+	MCPServerEnabled                  bool
+	MCPOAuthEnabled                   bool
+	MCPServiceTokensEnabled           bool
+	MCPPMWriteEnabled                 bool
+	MCPDocsWriteEnabled               bool
+	MCPAgentRunEnabled                bool
+	MCPCRMEnabled                     bool
+	MCPSupportEnabled                 bool
+	MCPPublicBaseURL                  string
 	WebAuthnRPID                      string
 	WebAuthnRPOrigins                 []string
 	PlatformAdminEmails               []string
@@ -279,6 +288,15 @@ func Load() (*Config, error) {
 		PostmarkRouteInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
 		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "on.helpin.email")),
 		AppBaseURL:                             appBaseURL,
+		MCPServerEnabled:                       parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVER_ENABLED")),
+		MCPOAuthEnabled:                        parseBoolEnvDefaultTrue(os.Getenv("MCP_OAUTH_ENABLED")),
+		MCPServiceTokensEnabled:                parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVICE_TOKENS_ENABLED")),
+		MCPPMWriteEnabled:                      parseBoolEnvDefaultTrue(os.Getenv("MCP_PM_WRITE_ENABLED")),
+		MCPDocsWriteEnabled:                    parseBoolEnvDefaultTrue(os.Getenv("MCP_DOCS_WRITE_ENABLED")),
+		MCPAgentRunEnabled:                     parseBoolEnvDefaultTrue(os.Getenv("MCP_AGENT_RUN_ENABLED")),
+		MCPCRMEnabled:                          parseBoolEnvDefaultTrue(os.Getenv("MCP_CRM_ENABLED")),
+		MCPSupportEnabled:                      parseBoolEnvDefaultTrue(os.Getenv("MCP_SUPPORT_ENABLED")),
+		MCPPublicBaseURL:                       strings.TrimRight(strings.TrimSpace(firstNonEmpty(os.Getenv("MCP_PUBLIC_BASE_URL"), appBaseURL)), "/"),
 		WebAuthnRPID:                           webAuthnRPID,
 		WebAuthnRPOrigins:                      webAuthnRPOrigins,
 		PlatformAdminEmails:                    parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
