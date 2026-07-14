@@ -217,17 +217,22 @@ export class HelpinClient {
       ...(storedIdentity || {}),
       ...userProps,
     });
+    const email = identity.email || storedIdentity?.email;
+    const name = identity.name || getStoredIdentityName(storedIdentity);
+    const firstName = identity.firstName || storedIdentity?.firstName;
+    const lastName = identity.lastName || storedIdentity?.lastName;
+    const userId =
+      typeof persistedUserId === 'string'
+        ? persistedUserId
+        : typeof userProps.id === 'string'
+          ? userProps.id
+          : undefined;
     const user = {
-      email: identity.email || storedIdentity?.email,
-      name: identity.name || getStoredIdentityName(storedIdentity),
-      firstName: identity.firstName || storedIdentity?.firstName,
-      lastName: identity.lastName || storedIdentity?.lastName,
-      userId:
-        typeof persistedUserId === 'string'
-          ? persistedUserId
-          : typeof userProps.id === 'string'
-            ? userProps.id
-            : undefined,
+      ...(email ? { email } : {}),
+      ...(name ? { name } : {}),
+      ...(firstName ? { firstName } : {}),
+      ...(lastName ? { lastName } : {}),
+      ...(userId ? { userId } : {}),
     };
 
     if (!user.email && !user.name && !user.userId) {
@@ -784,10 +789,9 @@ export class HelpinClient {
   }
 
   public shutdown(): void {
-    if (this.hasBootedWidget) {
-      this.widgetController?.shutdown();
-    }
+    this.widgetController?.shutdown();
     this.hasBootedWidget = false;
+    void this.reset(true);
   }
 
   public show(): void {

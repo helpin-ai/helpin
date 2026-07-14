@@ -101,8 +101,8 @@ func TestSupportInboxServiceWidgetSessionLifecycle(t *testing.T) {
 	if identified.CityName == nil || *identified.CityName != "San Francisco" {
 		t.Fatalf("city_name = %v, want %q", identified.CityName, "San Francisco")
 	}
-	if remaining := time.Until(identified.ExpiresAt); remaining < (29*24*time.Hour) || remaining > (31*24*time.Hour) {
-		t.Fatalf("expires_at remaining = %v, want about 30 days", remaining)
+	if remaining := time.Until(identified.ExpiresAt); remaining < (6*24*time.Hour) || remaining > (8*24*time.Hour) {
+		t.Fatalf("expires_at remaining = %v, want about 7 days", remaining)
 	}
 
 	fetched, err := svc.GetWidgetSession(ctx, identified.SessionToken)
@@ -351,6 +351,61 @@ func TestSupportInboxServiceGetWidgetSessionRejectsExpired(t *testing.T) {
 
 	if _, err := svc.GetWidgetSession(ctx, expired.SessionToken); err == nil || !strings.Contains(err.Error(), "session expired") {
 		t.Fatalf("GetWidgetSession error = %v, want expired", err)
+	}
+}
+
+func TestSupportInboxServiceGetWidgetSessionExtendsActiveSessionNearExpiry(t *testing.T) {
+	db := newTestDB(t)
+
+	const workspaceID = "ws-widget-extend-expiry"
+	seedWorkspace(t, db, workspaceID, "Widget Extend Expiry WS", "widget-extend-expiry", "user-123")
+
+	ctx := context.Background()
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	svc := NewSupportInboxService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		sessionRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	session := &model.SupportWidgetSession{
+		WorkspaceID:  workspaceID,
+		SessionToken: "extend-expiry-session-token",
+		AnonymousID:  "anon-extend-expiry",
+		IsAnonymous:  true,
+		ExpiresAt:    time.Now().Add(15 * time.Minute),
+	}
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create widget session: %v", err)
+	}
+
+	beforeRefresh := time.Now()
+	refreshed, err := svc.GetWidgetSession(ctx, session.SessionToken)
+	if err != nil {
+		t.Fatalf("GetWidgetSession: %v", err)
+	}
+	if refreshed.ExpiresAt.Before(beforeRefresh.Add(59 * time.Minute)) {
+		t.Fatalf("expires_at = %v, want at least about one hour from activity", refreshed.ExpiresAt)
+	}
+
+	stored, err := sessionRepo.GetByToken(ctx, session.SessionToken)
+	if err != nil {
+		t.Fatalf("GetByToken: %v", err)
+	}
+	if stored == nil || !stored.ExpiresAt.Equal(refreshed.ExpiresAt) {
+		t.Fatalf("stored expires_at = %v, refreshed expires_at = %v", stored, refreshed.ExpiresAt)
 	}
 }
 
