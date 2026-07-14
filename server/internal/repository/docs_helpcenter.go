@@ -107,6 +107,20 @@ func (r *DocsHelpcenterRepository) GetConfigByCustomDomain(ctx context.Context, 
 	return &cfg, nil
 }
 
+// CustomDomainRegistered reports whether any help center config claims the
+// domain. It selects nothing but existence so the deny path stays a single
+// hit on the partial unique index idx_docs_hc_config_custom_domain.
+func (r *DocsHelpcenterRepository) CustomDomainRegistered(ctx context.Context, domain string) (bool, error) {
+	var exists bool
+	err := r.db.WithContext(ctx).
+		Raw("SELECT EXISTS(SELECT 1 FROM docs_helpcenter_configs WHERE custom_domain = ?)", domain).
+		Scan(&exists).Error
+	if err != nil {
+		return false, fmt.Errorf("check helpcenter custom domain: %w", err)
+	}
+	return exists, nil
+}
+
 // UpsertConfig creates or updates the help center config.
 func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID string, updates map[string]interface{}) (*model.DocsHelpcenterConfig, error) {
 	existing, err := r.GetConfig(ctx, workspaceID)

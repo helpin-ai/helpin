@@ -164,6 +164,11 @@ type Config struct {
 	// Docs ordering: when true, reads/writes use fractional sort_key
 	// instead of integer position. Enable after backfill completes.
 	DocsOrderingUseSortKey bool
+
+	// TLSAskExtraAllowedDomains lists additional hostnames approved by the Caddy
+	// on-demand TLS ask endpoint. Entries prefixed with "." or "*." match as
+	// suffixes; anything else matches exactly.
+	TLSAskExtraAllowedDomains []string
 }
 
 // Load reads configuration from environment variables.
@@ -335,6 +340,7 @@ func Load() (*Config, error) {
 		StripeCreditBlockPriceID:               strings.TrimSpace(os.Getenv("STRIPE_CREDIT_BLOCK_PRICE_ID")),
 		AgentPreviewDebug:                      parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 		DocsOrderingUseSortKey:                 parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
+		TLSAskExtraAllowedDomains:              parseCSV(os.Getenv("TLS_ASK_EXTRA_ALLOWED_DOMAINS")),
 	}, nil
 }
 
