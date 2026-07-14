@@ -123,6 +123,13 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 		if err != nil {
 			return nil, err
 		}
+		// Stored value must match what the TLS ask endpoint looks up, or the
+		// domain can never get a certificate issued.
+		if normalized != nil {
+			if _, err := NormalizeTLSAskDomain(*normalized); err != nil {
+				return nil, fmt.Errorf("custom domain must be a valid hostname without port or wildcard")
+			}
+		}
 		customDomain = normalized
 		updates["custom_domain"] = normalized
 	}
@@ -876,7 +883,7 @@ func normalizeHelpcenterPublicHost(value *string, label string) (*string, error)
 	if trimmed == "" {
 		return nil, nil
 	}
-	lower := strings.ToLower(trimmed)
+	lower := strings.TrimSuffix(strings.ToLower(trimmed), ".")
 	if strings.Contains(lower, "://") || strings.ContainsAny(lower, `/\`) || strings.ContainsAny(lower, " \t\r\n") {
 		return nil, fmt.Errorf("%s must be a hostname without scheme or path", label)
 	}
