@@ -130,3 +130,26 @@ func TestPublicMCPToolCatalogIsBoundedAndExcludesDeferredActions(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicMCPToolCatalogSerializesValidRequiredArrays(t *testing.T) {
+	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	service := &MCPService{commands: commands}
+
+	for _, tool := range service.buildToolCatalog() {
+		encoded, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("marshal input schema for %q: %v", tool.Name, err)
+		}
+		var schema map[string]any
+		if err := json.Unmarshal(encoded, &schema); err != nil {
+			t.Fatalf("unmarshal input schema for %q: %v", tool.Name, err)
+		}
+		required, present := schema["required"]
+		if !present {
+			continue
+		}
+		if _, ok := required.([]any); !ok {
+			t.Fatalf("tool %q serialized required as %T, want array", tool.Name, required)
+		}
+	}
+}
