@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -36,7 +37,30 @@ func (r *MCPRepository) GetPolicy(ctx context.Context, workspaceID string) (*mod
 
 // UpsertPolicy creates or updates the workspace policy.
 func (r *MCPRepository) UpsertPolicy(ctx context.Context, policy *model.MCPWorkspacePolicy) error {
-	if err := r.db.WithContext(ctx).Save(policy).Error; err != nil {
+	now := time.Now()
+	if policy.CreatedAt.IsZero() {
+		policy.CreatedAt = now
+	}
+	policy.UpdatedAt = now
+	values := map[string]any{
+		"workspace_id":             policy.WorkspaceID,
+		"enabled":                  policy.Enabled,
+		"enforce_read_only":        policy.EnforceReadOnly,
+		"service_accounts_enabled": policy.ServiceAccountsEnabled,
+		"allowed_toolsets":         policy.AllowedToolsets,
+		"allowed_scopes":           policy.AllowedScopes,
+		"updated_by":               policy.UpdatedBy,
+		"created_at":               policy.CreatedAt,
+		"updated_at":               policy.UpdatedAt,
+	}
+	if err := r.db.WithContext(ctx).Model(&model.MCPWorkspacePolicy{}).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "workspace_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"enabled", "enforce_read_only", "service_accounts_enabled",
+				"allowed_toolsets", "allowed_scopes", "updated_by", "updated_at",
+			}),
+		}).Create(values).Error; err != nil {
 		return fmt.Errorf("upsert MCP workspace policy: %w", err)
 	}
 	return nil
@@ -65,7 +89,43 @@ func (r *MCPRepository) GetClient(ctx context.Context, clientID string) (*model.
 
 // CreateConnection persists an authorized user connection.
 func (r *MCPRepository) CreateConnection(ctx context.Context, connection *model.MCPConnection) error {
-	if err := r.db.WithContext(ctx).Create(connection).Error; err != nil {
+	now := time.Now()
+	if len(connection.Scopes) == 0 {
+		connection.Scopes = []byte("[]")
+	}
+	if len(connection.Toolsets) == 0 {
+		connection.Toolsets = []byte("[]")
+	}
+	if connection.Status == "" {
+		connection.Status = model.MCPConnectionStatusActive
+	}
+	if connection.TokenVersion == 0 {
+		connection.TokenVersion = 1
+	}
+	if connection.CreatedAt.IsZero() {
+		connection.CreatedAt = now
+	}
+	if connection.UpdatedAt.IsZero() {
+		connection.UpdatedAt = now
+	}
+	values := map[string]any{
+		"id":            connection.ID,
+		"workspace_id":  connection.WorkspaceID,
+		"user_id":       connection.UserID,
+		"client_id":     connection.ClientID,
+		"client_name":   connection.ClientName,
+		"scopes":        connection.Scopes,
+		"toolsets":      connection.Toolsets,
+		"read_only":     connection.ReadOnly,
+		"status":        connection.Status,
+		"token_version": connection.TokenVersion,
+		"last_used_at":  connection.LastUsedAt,
+		"revoked_at":    connection.RevokedAt,
+		"revoked_by":    connection.RevokedBy,
+		"created_at":    connection.CreatedAt,
+		"updated_at":    connection.UpdatedAt,
+	}
+	if err := r.db.WithContext(ctx).Model(&model.MCPConnection{}).Create(values).Error; err != nil {
 		return fmt.Errorf("create MCP connection: %w", err)
 	}
 	return nil
@@ -269,7 +329,40 @@ func (r *MCPRepository) RevokeRefreshTokensForConnection(ctx context.Context, co
 
 // CreateServicePrincipal persists a service identity.
 func (r *MCPRepository) CreateServicePrincipal(ctx context.Context, principal *model.MCPServicePrincipal) error {
-	if err := r.db.WithContext(ctx).Create(principal).Error; err != nil {
+	now := time.Now()
+	if len(principal.Scopes) == 0 {
+		principal.Scopes = []byte("[]")
+	}
+	if len(principal.Toolsets) == 0 {
+		principal.Toolsets = []byte("[]")
+	}
+	if principal.Status == "" {
+		principal.Status = model.MCPServicePrincipalStatusActive
+	}
+	if principal.CreatedAt.IsZero() {
+		principal.CreatedAt = now
+	}
+	if principal.UpdatedAt.IsZero() {
+		principal.UpdatedAt = now
+	}
+	values := map[string]any{
+		"id":            principal.ID,
+		"workspace_id":  principal.WorkspaceID,
+		"name":          principal.Name,
+		"description":   principal.Description,
+		"actor_user_id": principal.ActorUserID,
+		"scopes":        principal.Scopes,
+		"toolsets":      principal.Toolsets,
+		"read_only":     principal.ReadOnly,
+		"status":        principal.Status,
+		"expires_at":    principal.ExpiresAt,
+		"last_used_at":  principal.LastUsedAt,
+		"revoked_at":    principal.RevokedAt,
+		"created_by":    principal.CreatedBy,
+		"created_at":    principal.CreatedAt,
+		"updated_at":    principal.UpdatedAt,
+	}
+	if err := r.db.WithContext(ctx).Model(&model.MCPServicePrincipal{}).Create(values).Error; err != nil {
 		return fmt.Errorf("create MCP service principal: %w", err)
 	}
 	return nil

@@ -83,6 +83,35 @@ func TestConstrainMCPGrantAppliesPolicyAndReadOnly(t *testing.T) {
 	}
 }
 
+func TestConstrainMCPGrantPreservesApprovedWriteScopes(t *testing.T) {
+	service := &MCPService{}
+	policy := &model.MCPWorkspacePolicy{
+		AllowedToolsets: mustMCPJSON([]string{MCPToolsetContext, MCPToolsetDocs, MCPToolsetAgents}),
+		AllowedScopes: mustMCPJSON([]string{
+			MCPScopeContextRead, MCPScopeDocsRead, MCPScopeDocsWrite,
+			MCPScopeAgentsRead, MCPScopeAgentsRun,
+		}),
+		EnforceReadOnly: false,
+	}
+	toolsets, scopes, readOnly, err := service.constrainGrant(
+		policy,
+		[]string{MCPToolsetContext, MCPToolsetDocs, MCPToolsetAgents},
+		[]string{
+			MCPScopeContextRead, MCPScopeDocsRead, MCPScopeDocsWrite,
+			MCPScopeAgentsRead, MCPScopeAgentsRun,
+		},
+		false,
+	)
+	if err != nil {
+		t.Fatalf("constrainGrant() error = %v", err)
+	}
+	if readOnly || !containsMCPValue(scopes, MCPScopeDocsWrite) ||
+		!containsMCPValue(scopes, MCPScopeAgentsRun) ||
+		!containsMCPValue(toolsets, MCPToolsetDocs) {
+		t.Fatalf("constrainGrant() = toolsets %v scopes %v readOnly %v", toolsets, scopes, readOnly)
+	}
+}
+
 func TestPlatformToolFlagsFilterRiskyCapabilities(t *testing.T) {
 	service := &MCPService{config: MCPServiceConfig{
 		PMWriteEnabled: false, DocsWriteEnabled: true, AgentRunEnabled: false,
