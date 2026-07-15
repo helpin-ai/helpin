@@ -17,6 +17,11 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
+const (
+	widgetSessionTTL               = 7 * 24 * time.Hour
+	widgetSessionActivityExtension = time.Hour
+)
+
 // CreateWidgetSession creates a new session for external widget chat.
 // Always creates a new session — multiple concurrent sessions per visitor are allowed.
 func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey string, anonymousID string, customerName, customerEmail *string, userAgent, pageURL, timezone, locale *string) (*model.SupportWidgetSession, error) {
@@ -51,7 +56,7 @@ func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey
 		Timezone:      timezone,
 		Locale:        locale,
 		IPAddress:     clientIP,
-		ExpiresAt:     time.Now().Add(30 * 24 * time.Hour),
+		ExpiresAt:     time.Now().Add(widgetSessionTTL),
 	}
 	if geoLookup != nil {
 		session.CountryCode = stringPtrOrNil(geoLookup.CountryCode)
@@ -79,8 +84,16 @@ func (s *SupportInboxService) GetWidgetSession(ctx context.Context, token string
 	if session.RevokedAt != nil {
 		return nil, fmt.Errorf("session revoked")
 	}
-	if time.Now().After(session.ExpiresAt) {
+	now := time.Now().UTC()
+	if now.After(session.ExpiresAt) {
 		return nil, fmt.Errorf("session expired")
+	}
+	nextExpiry := now.Add(widgetSessionActivityExtension)
+	if session.ExpiresAt.Before(nextExpiry) {
+		if err := s.sessionRepo.ExtendExpiryByToken(ctx, session.SessionToken, nextExpiry); err != nil {
+			return nil, err
+		}
+		session.ExpiresAt = nextExpiry
 	}
 	s.refreshWidgetSessionGeo(ctx, session)
 	s.touchWidgetSessionActivity(ctx, session.SessionToken)

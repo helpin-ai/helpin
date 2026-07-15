@@ -173,7 +173,7 @@ function initializeNamespacedClient(
     if (method === 'id') {
       const userData = args[1];
       if (userData?.email && widgetManager.isActive() && widgetManager.getCurrentEmail() !== userData.email) {
-        widgetManager.shutdown();
+        client.shutdown();
       }
     }
 
@@ -184,7 +184,7 @@ function initializeNamespacedClient(
     // Widget methods
     const widgetMethods: Record<string, Function> = {
       boot: (settings: WidgetSettings) => widgetManager.boot(settings),
-      shutdown: () => widgetManager.shutdown(),
+      shutdown: () => client.shutdown(),
       show: () => widgetManager.show(),
       hide: () => widgetManager.hide(),
       open: () => widgetManager.open(),
@@ -366,7 +366,7 @@ if (isWindowAvailable()) {
         // Widget methods
         const widgetMethods: Record<string, Function> = {
           boot: (settings: WidgetSettings) => widgetManager.boot(settings),
-          shutdown: () => widgetManager.shutdown(),
+          shutdown: () => analyticsClient ? analyticsClient.shutdown() : widgetManager.shutdown(),
           show: () => widgetManager.show(),
           hide: () => widgetManager.hide(),
           open: () => widgetManager.open(),
@@ -396,7 +396,7 @@ if (isWindowAvailable()) {
           if (method === 'id') {
             const userData = args[1];
             if (userData?.email && widgetManager.isActive() && widgetManager.getCurrentEmail() !== userData.email) {
-              widgetManager.shutdown();
+              analyticsClient.shutdown();
             }
           }
           return (analyticsClient as any)[method].apply(analyticsClient, args.slice(1));

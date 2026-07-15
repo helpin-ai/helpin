@@ -32,11 +32,20 @@ export function getOrCreateAnonymousId(widgetKey: string): string {
   }
 
   const tenYearsInDays = 365 * 10;
-  cookieManager.set(cookieName, id, tenYearsInDays);
+  cookieManager.set(cookieName, id, tenYearsInDays, shouldUseSecureCookies());
   return id;
 }
 
-// ─── Widget Session Persistence (localStorage) ──────────────────────
+/** Clears the durable browser visitor ID. Used by shutdown on customer logout. */
+export function clearAnonymousId(widgetKey: string): void {
+  try {
+    cookieManager.delete(`helpin_aid_${widgetKey}`);
+  } catch {
+    // ignore
+  }
+}
+
+// ─── Widget Session Persistence (root-domain cookie) ────────────────
 
 export interface StoredSession {
   session_token: string;
@@ -44,20 +53,36 @@ export interface StoredSession {
 }
 
 /**
- * Reads a stored widget session from localStorage.
- * Returns null if not found or expired.
+ * Reads a stored widget session from the shared root-domain cookie.
+ * Legacy origin-scoped localStorage sessions are migrated on first read.
  */
 export function getStoredSession(widgetKey: string): StoredSession | null {
+  const cookieName = `helpin_session_${widgetKey}`;
   try {
-    const raw = localStorage.getItem(`helpin_ws_${widgetKey}`);
-    if (!raw) return null;
-    const session: StoredSession = JSON.parse(raw);
-    if (!session.session_token || !session.expires_at) return null;
-    // Client-side expiry check
-    if (new Date(session.expires_at) <= new Date()) {
+    const raw = cookieManager.get(cookieName);
+    if (raw) {
+      const session = parseStoredSession(raw);
+      if (!session) {
+        cookieManager.delete(cookieName);
+      } else {
+        return session;
+      }
+    }
+  } catch {
+    cookieManager.delete(cookieName);
+  }
+
+  // Backwards-compatible migration from the old origin-scoped storage key.
+  try {
+    const legacyRaw = localStorage.getItem(`helpin_ws_${widgetKey}`);
+    if (!legacyRaw) return null;
+    const session = parseStoredSession(legacyRaw);
+    if (!session) {
       clearSession(widgetKey);
       return null;
     }
+
+    persistSession(widgetKey, session.session_token, session.expires_at);
     return session;
   } catch {
     return null;
@@ -65,28 +90,68 @@ export function getStoredSession(widgetKey: string): StoredSession | null {
 }
 
 /**
- * Persists a widget session token to localStorage.
+ * Persists a widget session token in a root-domain cookie so the same active
+ * conversation can be restored across sibling subdomains.
  */
 export function persistSession(widgetKey: string, sessionToken: string, expiresAt: string): void {
+  const expiry = new Date(expiresAt);
+  const remainingMs = expiry.getTime() - Date.now();
+  if (!sessionToken || !Number.isFinite(expiry.getTime()) || remainingMs <= 0) {
+    clearSession(widgetKey);
+    return;
+  }
+
+  const cookieName = `helpin_session_${widgetKey}`;
+  const serialized = JSON.stringify({ session_token: sessionToken, expires_at: expiresAt });
+  let cookiePersisted = false;
   try {
-    localStorage.setItem(
-      `helpin_ws_${widgetKey}`,
-      JSON.stringify({ session_token: sessionToken, expires_at: expiresAt })
+    cookieManager.set(
+      cookieName,
+      serialized,
+      remainingMs / (24 * 60 * 60 * 1000),
+      typeof window !== 'undefined' && window.location.protocol === 'https:',
     );
+    cookiePersisted = cookieManager.get(cookieName) === serialized;
   } catch {
-    // localStorage may be full or unavailable
+    // Cookies may be unavailable due to browser policy.
+  }
+
+  try {
+    if (cookiePersisted) {
+      localStorage.removeItem(`helpin_ws_${widgetKey}`);
+    } else {
+      // Preserve same-origin continuity when the browser rejects cookies.
+      localStorage.setItem(`helpin_ws_${widgetKey}`, serialized);
+    }
+  } catch {
+    // Ignore localStorage persistence and cleanup failures.
   }
 }
 
 /**
- * Clears the stored widget session from localStorage.
+ * Clears both the current session cookie and the legacy localStorage key.
  */
 export function clearSession(widgetKey: string): void {
+  try {
+    cookieManager.delete(`helpin_session_${widgetKey}`);
+  } catch {
+    // ignore
+  }
   try {
     localStorage.removeItem(`helpin_ws_${widgetKey}`);
   } catch {
     // ignore
   }
+}
+
+function parseStoredSession(raw: string): StoredSession | null {
+  const session: unknown = JSON.parse(raw);
+  if (!session || typeof session !== 'object') return null;
+  const candidate = session as Partial<StoredSession>;
+  if (typeof candidate.session_token !== 'string' || typeof candidate.expires_at !== 'string') return null;
+  const expiresAt = new Date(candidate.expires_at);
+  if (!Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date()) return null;
+  return candidate as StoredSession;
 }
 
 // ─── Identified User Persistence (cookie-based, cross-subdomain) ────
@@ -111,6 +176,7 @@ export function persistIdentity(widgetKey: string, email: string, _name: string,
       `helpin_uid_${widgetKey}`,
       JSON.stringify({ email, firstName: firstName.trim(), lastName: lastName.trim() }),
       IDENTITY_COOKIE_TTL_DAYS,
+      shouldUseSecureCookies(),
     );
   } catch {
     // cookie may be unavailable
@@ -209,4 +275,8 @@ function generateUUID(): string {
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+function shouldUseSecureCookies(): boolean {
+  return typeof window !== 'undefined' && window.location.protocol === 'https:';
 }

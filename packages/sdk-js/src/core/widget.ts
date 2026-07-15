@@ -5,6 +5,7 @@ import widgetStyles from '@helpin-ai/widget-core/styles?inline';
 import { isBot } from '../utils/bot-detect';
 import {
   getOrCreateAnonymousId,
+  clearAnonymousId,
   getStoredSession,
   persistSession,
   clearSession,
@@ -215,25 +216,29 @@ export class WidgetManager {
   shutdown(): void {
     this.isShutdown = true;
 
-    // 1. Revoke session — prefer WS, fall back to HTTP
+    // 1. Revoke session over WS and with a keepalive HTTP request. The HTTP
+    // request is intentional even when WS is open: closing the socket directly
+    // after session:revoke is not guaranteed to flush the final frame.
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:revoke', {});
-      this.disconnectWebSocket();
-    } else {
-      if (this.sessionToken && this.host) {
-        const url = this.host.startsWith('http') ? this.host : `https://${this.host}`;
-        fetch(`${url}/widget/session/revoke`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_token: this.sessionToken }),
-        }).catch(() => {}); // best-effort
-      }
     }
+    if (this.sessionToken && this.host) {
+      const url = this.host.startsWith('http') ? this.host : `https://${this.host}`;
+      fetch(`${url}/widget/session/revoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_token: this.sessionToken }),
+        keepalive: true,
+      }).catch(() => {}); // best-effort
+    }
+    this.disconnectWebSocket();
 
-    // 2. Clear persisted session + identity (but NOT anonymous_id cookie)
+    // 2. Clear persisted session + identity and rotate the browser visitor on
+    // the next boot to prevent history leaking on shared-device logout.
     if (this.widgetKey) {
       clearSession(this.widgetKey);
       clearIdentity(this.widgetKey);
+      clearAnonymousId(this.widgetKey);
       clearConfigCache(this.widgetKey);
       try { localStorage.removeItem(`helpin_prechat_${this.widgetKey}`); } catch { /* ignore */ }
     }
@@ -258,6 +263,7 @@ export class WidgetManager {
     this.config = null;
     this.widgetConfig = null;
     this.isVisible = false;
+    this.anonymousId = null;
     this.sessionToken = null;
     this.isOpen = false;
     this.unreadCount = 0;
@@ -1498,7 +1504,7 @@ export class WidgetManager {
         const payload = data.data;
         this.sessionToken = payload.session_token;
 
-        // Persist session to localStorage
+        // Persist session to a shared root-domain cookie.
         if (this.widgetKey && payload.session_token && payload.expires_at) {
           persistSession(this.widgetKey, payload.session_token, payload.expires_at);
         }
@@ -1834,7 +1840,10 @@ export class WidgetManager {
       }
 
       case 'pong':
-        // Server acknowledged keepalive ping — no action needed.
+        // Refresh the cookie expiry when the server extends an active session.
+        if (this.widgetKey && this.sessionToken && data.data?.expires_at) {
+          persistSession(this.widgetKey, this.sessionToken, data.data.expires_at);
+        }
         break;
 
       case 'config:updated': {
