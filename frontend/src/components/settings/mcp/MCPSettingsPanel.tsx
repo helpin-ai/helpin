@@ -40,6 +40,7 @@ import type {
   MCPServiceTokenSecret,
   UpdateMCPPolicyRequest,
 } from '@/lib/mcpTypes';
+import { ensureMCPWriteScopes, hasMCPWriteScope } from '@/lib/mcpPolicy';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 
 type MCPSettingsPanelProps = {
@@ -265,6 +266,12 @@ function MCPConnections({ workspaceId, dashboard }: { workspaceId: string; dashb
   const revoke = useRevokeMCPConnection(workspaceId);
   const revokeWorkspace = useRevokeMCPWorkspaceAccess(workspaceId);
   const confirm = useConfirm();
+  const policyAllowsWrites = !dashboard.policy.enforce_read_only
+    && hasMCPWriteScope(dashboard.policy.allowed_scopes);
+  const activeConnectionNeedsReconnect = dashboard.connections.some((connection) => (
+    connection.status === 'active'
+    && (connection.read_only || !hasMCPWriteScope(connection.scopes))
+  ));
 
   const handleRevoke = async (id: string, name: string) => {
     const accepted = await confirm({
@@ -299,42 +306,56 @@ function MCPConnections({ workspaceId, dashboard }: { workspaceId: string; dashb
   };
 
   return (
-    <Card className={LINEAR_CARD_CLASS}>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div><CardTitle className="text-base">{dashboard.can_manage ? 'Workspace connections' : 'My connections'}</CardTitle><CardDescription>Connections are bound to this workspace. Revocation is immediate.</CardDescription></div>
-          {dashboard.can_manage && (dashboard.connections.some((item) => item.status === 'active') || dashboard.service_principals.some((item) => item.status === 'active')) ? (
-            <Button type="button" variant="outline" size="sm" disabled={revokeWorkspace.isPending} onClick={() => void handleRevokeWorkspace()}>Revoke all</Button>
-          ) : null}
-        </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        {dashboard.connections.length === 0 ? (
-          <EmptyState title="No connections yet" description="Add the connection URL to an AI tool to start the secure sign-in flow." />
-        ) : (
-          <Table>
-            <TableHeader><TableRow><TableHead>Tool or automation</TableHead><TableHead>Access</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead><TableHead className="w-16" /></TableRow></TableHeader>
-            <TableBody>
-              {dashboard.connections.map((connection) => (
-                <TableRow key={connection.id}>
-                  <TableCell><div className="font-medium">{connection.client_name}</div><div className="text-xs text-muted-foreground">Connected {relativeDate(connection.created_at)}</div></TableCell>
-                  <TableCell><div className="flex flex-wrap gap-1"><Badge variant="outline" className={connection.read_only ? READ_ONLY_BADGE_CLASS : undefined}>{connection.read_only ? 'Read-only' : 'Bounded writes'}</Badge>{connection.toolsets.map((item) => <Badge key={item} variant="secondary">{TOOLSET_LABELS[item] ?? item}</Badge>)}</div></TableCell>
-                  <TableCell className="text-muted-foreground">{connection.last_used_at ? relativeDate(connection.last_used_at) : 'Never'}</TableCell>
-                  <TableCell><Badge variant={connection.status === 'active' ? 'secondary' : 'outline'}>{connection.status}</Badge></TableCell>
-                  <TableCell>
-                    {connection.status === 'active' ? (
-                      <Button type="button" variant="ghost" size="icon-sm" disabled={revoke.isPending} onClick={() => void handleRevoke(connection.id, connection.client_name)}>
-                        <Delete01Icon className="h-4 w-4" /><span className="sr-only">Revoke {connection.client_name}</span>
-                      </Button>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      {policyAllowsWrites && activeConnectionNeedsReconnect ? (
+        <Alert>
+          <AlertTitle>Reconnect to use write actions</AlertTitle>
+          <AlertDescription>
+            Workspace policy now permits bounded writes, but at least one active connection still has a read-only grant. Remove and add that connection again, then turn off Read-only connection and approve the write permissions during consent.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div><CardTitle className="text-base">{dashboard.can_manage ? 'Workspace connections' : 'My connections'}</CardTitle><CardDescription>Connections are bound to this workspace. Revocation is immediate.</CardDescription></div>
+            {dashboard.can_manage && (dashboard.connections.some((item) => item.status === 'active') || dashboard.service_principals.some((item) => item.status === 'active')) ? (
+              <Button type="button" variant="outline" size="sm" disabled={revokeWorkspace.isPending} onClick={() => void handleRevokeWorkspace()}>Revoke all</Button>
+            ) : null}
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {dashboard.connections.length === 0 ? (
+            <EmptyState title="No connections yet" description="Add the connection URL to an AI tool to start the secure sign-in flow." />
+          ) : (
+            <Table>
+              <TableHeader><TableRow><TableHead>Tool or automation</TableHead><TableHead>Access</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead><TableHead className="w-16" /></TableRow></TableHeader>
+              <TableBody>
+                {dashboard.connections.map((connection) => {
+                  const connectionHasWrites = !connection.read_only
+                    && hasMCPWriteScope(connection.scopes);
+                  return (
+                    <TableRow key={connection.id}>
+                      <TableCell><div className="font-medium">{connection.client_name}</div><div className="text-xs text-muted-foreground">Connected {relativeDate(connection.created_at)}</div></TableCell>
+                      <TableCell><div className="flex flex-wrap gap-1"><Badge variant="outline" className={connectionHasWrites ? undefined : READ_ONLY_BADGE_CLASS}>{connectionHasWrites ? 'Bounded writes' : 'Read-only'}</Badge>{connection.toolsets.map((item) => <Badge key={item} variant="secondary">{TOOLSET_LABELS[item] ?? item}</Badge>)}</div></TableCell>
+                      <TableCell className="text-muted-foreground">{connection.last_used_at ? relativeDate(connection.last_used_at) : 'Never'}</TableCell>
+                      <TableCell><Badge variant={connection.status === 'active' ? 'secondary' : 'outline'}>{connection.status}</Badge></TableCell>
+                      <TableCell>
+                        {connection.status === 'active' ? (
+                          <Button type="button" variant="ghost" size="icon-sm" disabled={revoke.isPending} onClick={() => void handleRevoke(connection.id, connection.client_name)}>
+                            <Delete01Icon className="h-4 w-4" /><span className="sr-only">Revoke {connection.client_name}</span>
+                          </Button>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -422,8 +443,44 @@ function MCPPolicyEditor({ workspaceId, dashboard }: { workspaceId: string; dash
   });
   const update = useUpdateMCPPolicy(workspaceId);
 
-  const toggle = (field: 'allowed_toolsets' | 'allowed_scopes', value: string, checked: boolean) => {
-    setPolicy((current) => ({ ...current, [field]: checked ? [...current[field], value] : current[field].filter((item) => item !== value) }));
+  const setBoundedWrites = (enabled: boolean) => {
+    setPolicy((current) => ({
+      ...current,
+      enforce_read_only: !enabled,
+      allowed_scopes: enabled
+        ? ensureMCPWriteScopes(
+            current.allowed_scopes,
+            current.allowed_toolsets,
+            dashboard.available_scopes,
+          )
+        : current.allowed_scopes,
+    }));
+  };
+  const toggleToolset = (value: string, checked: boolean) => {
+    setPolicy((current) => {
+      const allowedToolsets = checked
+        ? [...current.allowed_toolsets, value]
+        : current.allowed_toolsets.filter((item) => item !== value);
+      return {
+        ...current,
+        allowed_toolsets: allowedToolsets,
+        allowed_scopes: current.enforce_read_only
+          ? current.allowed_scopes
+          : ensureMCPWriteScopes(
+              current.allowed_scopes,
+              allowedToolsets,
+              dashboard.available_scopes,
+            ),
+      };
+    });
+  };
+  const toggleScope = (value: string, checked: boolean) => {
+    setPolicy((current) => ({
+      ...current,
+      allowed_scopes: checked
+        ? [...current.allowed_scopes, value]
+        : current.allowed_scopes.filter((item) => item !== value),
+    }));
   };
   const save = async () => {
     try {
@@ -440,14 +497,20 @@ function MCPPolicyEditor({ workspaceId, dashboard }: { workspaceId: string; dash
         <CardHeader><CardTitle className="text-base">AI tool access controls</CardTitle><CardDescription>Choose which parts of Helpin connected tools may use. Access is checked again on every action.</CardDescription></CardHeader>
         <CardContent className="divide-y">
           <PolicySwitch label="Allow AI tools and automations" description="Let members connect MCP-compatible tools to this workspace. Their Helpin roles and module permissions still apply." checked={policy.enabled} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, enabled: checked }))} />
-          <PolicySwitch label="Keep connections read only" description="Connected tools can find and summarize work but cannot create or update it." checked={policy.enforce_read_only} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, enforce_read_only: checked }))} />
+          <PolicySwitch label="Allow bounded writes" description="Allow new connections to request create and update actions in the selected product areas. Existing connections must reconnect, turn off read-only during consent, and approve the write permissions." checked={!policy.enforce_read_only} onCheckedChange={setBoundedWrites} />
           <PolicySwitch label="Allow automation accounts" description="Let managers create restricted credentials for workflows that run without a person signing in." checked={policy.service_accounts_enabled} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, service_accounts_enabled: checked }))} />
         </CardContent>
       </Card>
       <div className="grid gap-4 lg:grid-cols-2">
-        <PolicyChecklist title="Allowed product areas" description="Connected tools can request a subset of these areas." values={dashboard.available_toolsets} selected={policy.allowed_toolsets} labels={TOOLSET_LABELS} onToggle={(value, checked) => toggle('allowed_toolsets', value, checked)} />
-        <PolicyChecklist title="Allowed OAuth scopes" description="Users may narrow these during consent, never expand them." values={dashboard.available_scopes} selected={policy.allowed_scopes} labels={SCOPE_LABELS} onToggle={(value, checked) => toggle('allowed_scopes', value, checked)} />
+        <PolicyChecklist title="Allowed product areas" description="Connected tools can request a subset of these areas." values={dashboard.available_toolsets} selected={policy.allowed_toolsets} labels={TOOLSET_LABELS} onToggle={toggleToolset} />
+        <PolicyChecklist title="Allowed OAuth scopes" description="Users may narrow these during consent, never expand them." values={dashboard.available_scopes} selected={policy.allowed_scopes} labels={SCOPE_LABELS} onToggle={toggleScope} />
       </div>
+      {!policy.enforce_read_only && !hasMCPWriteScope(policy.allowed_scopes) ? (
+        <Alert>
+          <AlertTitle>Writes are still unavailable</AlertTitle>
+          <AlertDescription>Select at least one create, update, or agent-run permission. Without a write scope, new connections remain effectively read-only.</AlertDescription>
+        </Alert>
+      ) : null}
       <div className="flex justify-end"><Button onClick={() => void save()} disabled={update.isPending || policy.allowed_toolsets.length === 0 || policy.allowed_scopes.length === 0}>{update.isPending ? <Loading01Icon className="mr-2 h-4 w-4 animate-spin" /> : null}Save permissions</Button></div>
     </div>
   );

@@ -12,6 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { BotIcon, Loading01Icon, LockIcon } from '@/lib/icons';
 import { useAuthorizeMCP, useMCPAuthorizationRequest } from '@/hooks/queries/useMCP';
 import type { MCPAuthorizationQuery, MCPAuthorizationRequest } from '@/lib/mcpTypes';
+import { hasMCPWriteScope, isMCPWriteScope } from '@/lib/mcpPolicy';
 
 const SCOPE_LABELS: Record<string, string> = {
   'helpin.context.read': 'Read workspace context',
@@ -51,13 +52,13 @@ export function MCPAuthorizePage({ query }: { query: MCPAuthorizationQuery }) {
 }
 
 function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
+  const clientRequestedWrites = hasMCPWriteScope(request.requested_scopes);
   const [workspaceId, setWorkspaceId] = useState(request.workspaces[0]?.id ?? '');
   const [scopes, setScopes] = useState(request.requested_scopes);
   const [toolsets, setToolsets] = useState(request.proposed_toolsets);
-  const [readOnly, setReadOnly] = useState(request.read_only_recommended);
+  const [readOnly, setReadOnly] = useState(request.read_only_recommended || !clientRequestedWrites);
   const authorize = useAuthorizeMCP();
-  const writeScope = (scope: string) => scope.endsWith('.write') || scope === 'helpin.agents.run';
-  const effectiveScopes = readOnly ? scopes.filter((scope) => !writeScope(scope)) : scopes;
+  const effectiveScopes = readOnly ? scopes.filter((scope) => !isMCPWriteScope(scope)) : scopes;
   const selectedWorkspace = request.workspaces.find((workspace) => workspace.id === workspaceId);
 
   const approve = async () => {
@@ -106,15 +107,15 @@ function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
             </div>
 
             <div className="flex items-start justify-between gap-5 rounded-lg border p-4">
-              <div><p className="text-sm font-medium">Read-only connection</p><p className="mt-1 text-sm text-muted-foreground">Recommended. The client can find context but cannot change records or start agents.</p></div>
-              <Switch checked={readOnly} onCheckedChange={setReadOnly} />
+              <div><p className="text-sm font-medium">Read-only connection</p><p className="mt-1 text-sm text-muted-foreground">{clientRequestedWrites ? 'Recommended. The client can find context but cannot change records or start agents.' : 'Required because this client did not request any write permissions.'}</p></div>
+              <Switch checked={readOnly} disabled={!clientRequestedWrites} onCheckedChange={setReadOnly} />
             </div>
 
             <div className="space-y-3">
               <div><p className="text-sm font-medium">Permissions</p><p className="text-sm text-muted-foreground">Remove anything this client does not need.</p></div>
               <div className="space-y-3">
                 {request.requested_scopes.map((scope) => {
-                  const disabled = readOnly && writeScope(scope);
+                  const disabled = readOnly && isMCPWriteScope(scope);
                   return (
                     <label key={scope} className="flex items-start gap-3 text-sm">
                       <Checkbox
@@ -122,7 +123,7 @@ function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
                         disabled={disabled}
                         onCheckedChange={(checked) => setScopes((values) => checked === true ? [...values, scope] : values.filter((value) => value !== scope))}
                       />
-                      <span><span className={disabled ? 'text-muted-foreground line-through' : ''}>{SCOPE_LABELS[scope] ?? scope}</span>{writeScope(scope) ? <Badge variant="outline" className="ml-2">Write</Badge> : null}</span>
+                      <span><span className={disabled ? 'text-muted-foreground line-through' : ''}>{SCOPE_LABELS[scope] ?? scope}</span>{isMCPWriteScope(scope) ? <Badge variant="outline" className="ml-2">Write</Badge> : null}</span>
                     </label>
                   );
                 })}
