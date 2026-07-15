@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -63,6 +64,70 @@ func TestMCPRefreshRotationIsAtomic(t *testing.T) {
 	}
 }
 
+func TestMCPCreateConnectionPreservesWritableGrant(t *testing.T) {
+	repo := setupMCPRepositoryTest(t)
+	ctx := context.Background()
+	connection := &model.MCPConnection{
+		ID: "connection-write", WorkspaceID: "workspace-1", UserID: "user-1",
+		ClientID: "client-1", ClientName: "Test client",
+		Scopes:   json.RawMessage(`["helpin.docs.read","helpin.docs.write"]`),
+		Toolsets: json.RawMessage(`["docs"]`), ReadOnly: false,
+		Status: model.MCPConnectionStatusActive, TokenVersion: 1,
+	}
+	if err := repo.CreateConnection(ctx, connection); err != nil {
+		t.Fatalf("CreateConnection() error = %v", err)
+	}
+	stored, err := repo.GetConnection(ctx, connection.ID)
+	if err != nil || stored == nil {
+		t.Fatalf("GetConnection() = %#v, %v", stored, err)
+	}
+	if stored.ReadOnly {
+		t.Fatal("GetConnection().ReadOnly = true, want false for approved write grant")
+	}
+}
+
+func TestMCPUpsertPolicyPreservesFalseFlagsOnFirstWrite(t *testing.T) {
+	repo := setupMCPRepositoryTest(t)
+	ctx := context.Background()
+	policy := &model.MCPWorkspacePolicy{
+		WorkspaceID: "workspace-1", Enabled: false, EnforceReadOnly: false,
+		AllowedToolsets: json.RawMessage(`["context","docs"]`),
+		AllowedScopes:   json.RawMessage(`["helpin.context.read","helpin.docs.write"]`),
+	}
+	if err := repo.UpsertPolicy(ctx, policy); err != nil {
+		t.Fatalf("UpsertPolicy() error = %v", err)
+	}
+	stored, err := repo.GetPolicy(ctx, policy.WorkspaceID)
+	if err != nil || stored == nil {
+		t.Fatalf("GetPolicy() = %#v, %v", stored, err)
+	}
+	if stored.Enabled || stored.EnforceReadOnly {
+		t.Fatalf("GetPolicy() flags = enabled %v, enforce read-only %v; want false, false", stored.Enabled, stored.EnforceReadOnly)
+	}
+}
+
+func TestMCPCreateServicePrincipalPreservesWritableGrant(t *testing.T) {
+	repo := setupMCPRepositoryTest(t)
+	ctx := context.Background()
+	principal := &model.MCPServicePrincipal{
+		ID: "principal-write", WorkspaceID: "workspace-1", Name: "Writer",
+		ActorUserID: "user-1", CreatedBy: "user-1",
+		Scopes:   json.RawMessage(`["helpin.pm.read","helpin.pm.write"]`),
+		Toolsets: json.RawMessage(`["pm"]`), ReadOnly: false,
+		Status: model.MCPServicePrincipalStatusActive,
+	}
+	if err := repo.CreateServicePrincipal(ctx, principal); err != nil {
+		t.Fatalf("CreateServicePrincipal() error = %v", err)
+	}
+	stored, err := repo.GetServicePrincipal(ctx, principal.ID)
+	if err != nil || stored == nil {
+		t.Fatalf("GetServicePrincipal() = %#v, %v", stored, err)
+	}
+	if stored.ReadOnly {
+		t.Fatal("GetServicePrincipal().ReadOnly = true, want false for approved write grant")
+	}
+}
+
 func TestMCPAgentRunSafetyCounts(t *testing.T) {
 	repo := setupMCPRepositoryTest(t)
 	ctx := context.Background()
@@ -99,11 +164,12 @@ func setupMCPRepositoryTest(t *testing.T) *MCPRepository {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	statements := []string{
+		`CREATE TABLE mcp_workspace_policies (workspace_id text primary key, enabled boolean not null default true, enforce_read_only boolean not null default true, service_accounts_enabled boolean not null default false, allowed_toolsets text not null default '[]', allowed_scopes text not null default '[]', updated_by text, created_at datetime not null default current_timestamp, updated_at datetime not null default current_timestamp)`,
 		`CREATE TABLE mcp_oauth_authorization_codes (id text primary key, code_hash text unique not null, connection_id text not null, client_id text not null, redirect_uri text not null, code_challenge text not null, code_challenge_method text not null, expires_at datetime not null, consumed_at datetime, created_at datetime)`,
 		`CREATE TABLE mcp_refresh_tokens (id text primary key, token_hash text unique not null, family_id text not null, connection_id text not null, expires_at datetime not null, consumed_at datetime, revoked_at datetime, replaced_by_id text, created_at datetime)`,
 		`CREATE TABLE mcp_audit_events (id text primary key, workspace_id text not null, user_id text, event_type text not null, tool_name text, outcome text not null, created_at datetime not null)`,
-		`CREATE TABLE mcp_connections (id text primary key, user_id text not null)`,
-		`CREATE TABLE mcp_service_principals (id text primary key, actor_user_id text not null)`,
+		`CREATE TABLE mcp_connections (id text primary key, workspace_id text not null default '', user_id text not null, client_id text not null default '', client_name text not null default '', scopes text not null default '[]', toolsets text not null default '[]', read_only boolean not null default true, status text not null default 'active', token_version integer not null default 1, last_used_at datetime, revoked_at datetime, revoked_by text, created_at datetime not null default current_timestamp, updated_at datetime not null default current_timestamp)`,
+		`CREATE TABLE mcp_service_principals (id text primary key, workspace_id text not null default '', name text not null default '', description text, actor_user_id text not null, scopes text not null default '[]', toolsets text not null default '[]', read_only boolean not null default true, status text not null default 'active', expires_at datetime, last_used_at datetime, revoked_at datetime, created_by text not null default '', created_at datetime not null default current_timestamp, updated_at datetime not null default current_timestamp)`,
 		`CREATE TABLE agent_runs (id text primary key, status text not null)`,
 		`CREATE TABLE mcp_agent_run_attributions (run_id text primary key, workspace_id text not null, connection_id text, service_principal_id text)`,
 	}
