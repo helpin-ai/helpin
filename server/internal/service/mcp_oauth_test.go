@@ -143,35 +143,50 @@ func TestPublicMCPToolCatalogIsBoundedAndExcludesDeferredActions(t *testing.T) {
 	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	service := &MCPService{commands: commands}
 	catalog := service.buildToolCatalog()
-	if len(catalog) != 34 {
-		t.Fatalf("buildToolCatalog() returned %d tools, want 34", len(catalog))
+	if len(catalog) != 45 {
+		t.Fatalf("buildToolCatalog() returned %d tools, want 45", len(catalog))
 	}
-	expectedDocsNavigation := map[string]bool{
-		"list_spaces":       false,
-		"list_collections":  false,
-		"create_space":      true,
-		"create_collection": true,
+	expectedTools := map[string]struct {
+		toolset  string
+		mutating bool
+	}{
+		"list_spaces":                {MCPToolsetDocs, false},
+		"list_collections":           {MCPToolsetDocs, false},
+		"create_space":               {MCPToolsetDocs, true},
+		"create_collection":          {MCPToolsetDocs, true},
+		"update_space":               {MCPToolsetDocs, true},
+		"update_collection":          {MCPToolsetDocs, true},
+		"move_document":              {MCPToolsetDocs, true},
+		"link_document_to_object":    {MCPToolsetDocs, true},
+		"update_task":                {MCPToolsetPM, true},
+		"create_task_batch":          {MCPToolsetPM, true},
+		"set_task_dependencies":      {MCPToolsetPM, true},
+		"list_task_checklist":        {MCPToolsetPM, false},
+		"create_task_checklist_item": {MCPToolsetPM, true},
+		"update_task_checklist_item": {MCPToolsetPM, true},
+		"get_task_context":           {MCPToolsetPM, false},
 	}
 	deferred := map[string]bool{
-		"write_document_content": true,
-		"draft_support_reply":    true,
-		"send_support_reply":     true,
-		"publish_prd_draft":      true,
-		"delete_task":            true,
+		"write_document_content":     true,
+		"draft_support_reply":        true,
+		"send_support_reply":         true,
+		"publish_prd_draft":          true,
+		"delete_task":                true,
+		"delete_task_checklist_item": true,
 	}
 	for _, tool := range catalog {
-		if mutating, ok := expectedDocsNavigation[tool.Name]; ok {
-			if tool.Toolset != MCPToolsetDocs || tool.Mutating != mutating {
+		if expected, ok := expectedTools[tool.Name]; ok {
+			if tool.Toolset != expected.toolset || tool.Mutating != expected.mutating {
 				t.Fatalf("tool %q = toolset %q mutating %v", tool.Name, tool.Toolset, tool.Mutating)
 			}
-			delete(expectedDocsNavigation, tool.Name)
+			delete(expectedTools, tool.Name)
 		}
 		if deferred[tool.Name] {
 			t.Fatalf("buildToolCatalog() exposed deferred action %q", tool.Name)
 		}
 	}
-	if len(expectedDocsNavigation) != 0 {
-		t.Fatalf("buildToolCatalog() missing Docs navigation tools: %v", expectedDocsNavigation)
+	if len(expectedTools) != 0 {
+		t.Fatalf("buildToolCatalog() missing selected tools: %v", expectedTools)
 	}
 }
 

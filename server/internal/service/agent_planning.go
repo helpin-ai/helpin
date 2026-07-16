@@ -73,6 +73,12 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := &epicWithStats.Epic
+	if epic.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("epic not found")
+	}
+	if err := requireTeamAccess(ctx, epic.TeamID); err != nil {
+		return nil, fmt.Errorf("epic not found")
+	}
 	if epic.SpecDocumentID == nil || strings.TrimSpace(*epic.SpecDocumentID) == "" {
 		return nil, fmt.Errorf("epic does not have a product spec document yet")
 	}
@@ -202,6 +208,12 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := &epicWithStats.Epic
+	if epic.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("epic not found")
+	}
+	if err := requireTeamAccess(ctx, epic.TeamID); err != nil {
+		return nil, fmt.Errorf("epic not found")
+	}
 	teamID, err := plannerTaskTeamID(epic)
 	if err != nil {
 		return nil, err
@@ -460,6 +472,12 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := &epicWithStats.Epic
+	if epic.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("epic not found")
+	}
+	if err := requireTeamAccess(ctx, epic.TeamID); err != nil {
+		return nil, fmt.Errorf("epic not found")
+	}
 	teamID, err := plannerTaskTeamID(epic)
 	if err != nil {
 		return nil, err

@@ -150,17 +150,22 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 			"type": "object",
 			"properties": map[string]any{
 				"dependencies": map[string]any{
-					"type": "array",
+					"type":     "array",
+					"minItems": 1,
+					"maxItems": 100,
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
 							"source_task_id": map[string]any{"type": "string"},
 							"target_task_id": map[string]any{"type": "string"},
 						},
+						"required":             []string{"source_task_id", "target_task_id"},
+						"additionalProperties": false,
 					},
 				},
 			},
-			"required": []string{"dependencies"},
+			"required":             []string{"dependencies"},
+			"additionalProperties": false,
 		},
 	},
 	{
@@ -285,6 +290,41 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		},
 	},
 	{
+		CommandName: "docs.create_space",
+		Alias:       "create_space",
+		Category:    "Docs",
+		Description: "Create a Docs space in the current workspace without publishing content.",
+		InputSchema: docsCreateSpaceSchema(),
+	},
+	{
+		CommandName: "docs.create_collection",
+		Alias:       "create_collection",
+		Category:    "Docs",
+		Description: "Create a top-level or nested collection in an existing Docs space.",
+		InputSchema: docsCreateCollectionSchema(),
+	},
+	{
+		CommandName: "docs.update_space",
+		Alias:       "update_space",
+		Category:    "Docs",
+		Description: "Update bounded metadata for an existing Docs space.",
+		InputSchema: docsUpdateSpaceSchema(),
+	},
+	{
+		CommandName: "docs.update_collection",
+		Alias:       "update_collection",
+		Category:    "Docs",
+		Description: "Update or reparent an existing Docs collection.",
+		InputSchema: docsUpdateCollectionSchema(),
+	},
+	{
+		CommandName: "docs.move_document",
+		Alias:       "move_document",
+		Category:    "Docs",
+		Description: "Move a document to another Docs space or collection.",
+		InputSchema: docsMoveDocumentSchema(),
+	},
+	{
 		CommandName: "docs.link_document_to_object",
 		Alias:       "link_document_to_object",
 		Category:    "Docs",
@@ -299,6 +339,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				"linked_object_type": map[string]any{
 					"type":        "string",
 					"description": "The linked object type such as epic or task",
+					"enum":        []string{"epic", "task", "deal", "crm_deal"},
 				},
 				"linked_object_id": map[string]any{
 					"type":        "string",
@@ -307,9 +348,11 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				"link_context": map[string]any{
 					"type":        "string",
 					"description": "Optional link context, defaults to attached",
+					"enum":        []string{"attached", "mentioned", "created_from", "linked_in_content"},
 				},
 			},
-			"required": []string{"document_id", "linked_object_type", "linked_object_id"},
+			"required":             []string{"document_id", "linked_object_type", "linked_object_id"},
+			"additionalProperties": false,
 		},
 	},
 	{
@@ -556,6 +599,82 @@ func createTaskBatchSchema() map[string]any {
 				"items":       taskSchema,
 			},
 		},
+	}
+}
+
+func docsCreateSpaceSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name":                map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
+			"slug":                map[string]any{"type": "string", "maxLength": 200},
+			"icon":                map[string]any{"type": "string", "maxLength": 100},
+			"visibility":          map[string]any{"type": "string", "enum": []string{"workspace_wide", "team_only"}},
+			"type":                map[string]any{"type": "string", "enum": []string{"internal", "external_capable"}},
+			"default_review_days": map[string]any{"type": "integer", "minimum": 1, "maximum": 3650},
+		},
+		"required":             []string{"name"},
+		"additionalProperties": false,
+	}
+}
+
+func docsCreateCollectionSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"space_id":             map[string]any{"type": "string"},
+			"name":                 map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
+			"slug":                 map[string]any{"type": "string", "maxLength": 200},
+			"description":          map[string]any{"type": "string", "maxLength": 5000},
+			"icon":                 map[string]any{"type": "string", "maxLength": 100},
+			"parent_collection_id": map[string]any{"type": "string"},
+		},
+		"required":             []string{"space_id", "name"},
+		"additionalProperties": false,
+	}
+}
+
+func docsUpdateSpaceSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"space_id":            map[string]any{"type": "string"},
+			"name":                map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
+			"icon":                map[string]any{"type": "string", "maxLength": 100},
+			"visibility":          map[string]any{"type": "string", "enum": []string{"workspace_wide", "team_only"}},
+			"default_review_days": map[string]any{"type": "integer", "minimum": 1, "maximum": 3650},
+		},
+		"required":             []string{"space_id"},
+		"additionalProperties": false,
+	}
+}
+
+func docsUpdateCollectionSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"collection_id":        map[string]any{"type": "string"},
+			"name":                 map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
+			"description":          map[string]any{"type": "string", "maxLength": 5000},
+			"icon":                 map[string]any{"type": "string", "maxLength": 100},
+			"position":             map[string]any{"type": "integer", "minimum": 0},
+			"parent_collection_id": map[string]any{"type": "string"},
+		},
+		"required":             []string{"collection_id"},
+		"additionalProperties": false,
+	}
+}
+
+func docsMoveDocumentSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"document_id":   map[string]any{"type": "string"},
+			"space_id":      map[string]any{"type": "string"},
+			"collection_id": map[string]any{"type": "string"},
+		},
+		"required":             []string{"document_id", "space_id"},
+		"additionalProperties": false,
 	}
 }
 

@@ -1142,6 +1142,7 @@ func main() {
 	commandService.SetSettingsRepository(settingsRepo)
 	commandService.SetCRMEnrichmentService(crmEnrichmentService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
+	commandService.SetDocsOrganizationServices(docsSpaceService, docsCollectionService)
 	commandService.SetDocsBlockService(docsBlockService)
 	commandService.SetSupportDependencies(supportMessageRepo, supportConversationRepo, wsPublisher)
 	commandService.SetCRMReadServices(crmContactService, crmSignalService)
@@ -1320,6 +1321,8 @@ func main() {
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
 	authzService.SetWorkspaceMFARepository(workspaceRepo)
+	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
+	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
 	agentService.SetMCPRepository(mcpRepo)
 	mcpService := service.NewMCPService(
 		mcpRepo,
@@ -1334,6 +1337,9 @@ func main() {
 		docsDocumentService,
 		docsSpaceService,
 		docsCollectionService,
+		docsLinkService,
+		docsEntityReferenceResolverService,
+		pmChecklistItemService,
 		crmContactService,
 		crmDealService,
 		supportInboxService,
@@ -1352,8 +1358,6 @@ func main() {
 		},
 	)
 	supportInboxService.SetAuthzService(authzService)
-	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
-	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
 
 	// Inject authorization into WebSocket handler for workspace access checks.
 	wsHandler.SetAuthzService(authzService)
