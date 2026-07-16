@@ -143,8 +143,14 @@ func TestPublicMCPToolCatalogIsBoundedAndExcludesDeferredActions(t *testing.T) {
 	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	service := &MCPService{commands: commands}
 	catalog := service.buildToolCatalog()
-	if len(catalog) != 30 {
-		t.Fatalf("buildToolCatalog() returned %d tools, want 30", len(catalog))
+	if len(catalog) != 34 {
+		t.Fatalf("buildToolCatalog() returned %d tools, want 34", len(catalog))
+	}
+	expectedDocsNavigation := map[string]bool{
+		"list_spaces":       false,
+		"list_collections":  false,
+		"create_space":      true,
+		"create_collection": true,
 	}
 	deferred := map[string]bool{
 		"write_document_content": true,
@@ -154,9 +160,18 @@ func TestPublicMCPToolCatalogIsBoundedAndExcludesDeferredActions(t *testing.T) {
 		"delete_task":            true,
 	}
 	for _, tool := range catalog {
+		if mutating, ok := expectedDocsNavigation[tool.Name]; ok {
+			if tool.Toolset != MCPToolsetDocs || tool.Mutating != mutating {
+				t.Fatalf("tool %q = toolset %q mutating %v", tool.Name, tool.Toolset, tool.Mutating)
+			}
+			delete(expectedDocsNavigation, tool.Name)
+		}
 		if deferred[tool.Name] {
 			t.Fatalf("buildToolCatalog() exposed deferred action %q", tool.Name)
 		}
+	}
+	if len(expectedDocsNavigation) != 0 {
+		t.Fatalf("buildToolCatalog() missing Docs navigation tools: %v", expectedDocsNavigation)
 	}
 }
 

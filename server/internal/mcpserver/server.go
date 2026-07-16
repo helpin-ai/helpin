@@ -21,7 +21,7 @@ import (
 
 const (
 	_serverName    = "helpin"
-	_serverVersion = "1.0.0"
+	_serverVersion = "1.1.0"
 	_maxBodyBytes  = 1024 * 1024
 )
 
@@ -214,7 +214,7 @@ func (h *Handler) addWorkflowPrompts(server *mcp.Server, tools []service.MCPTool
 		{
 			name: "docs_maintenance", title: "Maintain Helpin documentation",
 			description:  "Find stale Helpin documentation and prepare safe draft updates.",
-			text:         "Search and read the relevant Helpin documents and linked product work. Identify stale or unsupported claims before editing. Use the narrowest available draft mutation with a stable idempotency key. Do not publish, unpublish, or delete documentation.",
+			text:         "List Docs spaces and collections before choosing a location. Search and read the relevant Helpin documents and linked product work. Identify stale or unsupported claims before editing. Use the narrowest available draft mutation with a stable idempotency key. Create a space or collection only when the user requested a new location. Do not publish, unpublish, or delete documentation.",
 			requiredTool: "list_documents",
 		},
 		{

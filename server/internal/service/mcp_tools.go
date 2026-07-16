@@ -200,6 +200,57 @@ func (s *MCPService) executeSpecialMCPTool(
 		}
 		return &MCPToolResult{Summary: "Task " + task.Task.Name + " loaded.", Data: task}, nil
 
+	case "list_spaces":
+		spaces, err := s.spaces.List(ctx, principal.WorkspaceID, actor)
+		if err != nil {
+			return nil, err
+		}
+		return &MCPToolResult{
+			Summary: fmt.Sprintf("Returned %d Docs spaces.", len(spaces)),
+			Data:    map[string]any{"items": spaces, "total": len(spaces)},
+		}, nil
+
+	case "list_collections":
+		var input struct {
+			SpaceID string `json:"space_id"`
+		}
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		if input.SpaceID != "" {
+			space, err := s.accessibleMCPDocsSpace(ctx, principal, actor, input.SpaceID)
+			if err != nil {
+				return nil, err
+			}
+			if space == nil {
+				return nil, ErrMCPNotFound
+			}
+			collections, err := s.collections.List(ctx, space.ID)
+			if err != nil {
+				return nil, err
+			}
+			return &MCPToolResult{
+				Summary: fmt.Sprintf("Returned %d Docs collections.", len(collections)),
+				Data:    map[string]any{"items": collections, "total": len(collections)},
+			}, nil
+		}
+		spaces, err := s.spaces.List(ctx, principal.WorkspaceID, actor)
+		if err != nil {
+			return nil, err
+		}
+		collections := make([]model.DocsCollection, 0)
+		for _, space := range spaces {
+			items, err := s.collections.List(ctx, space.ID)
+			if err != nil {
+				return nil, err
+			}
+			collections = append(collections, items...)
+		}
+		return &MCPToolResult{
+			Summary: fmt.Sprintf("Returned %d Docs collections.", len(collections)),
+			Data:    map[string]any{"items": collections, "total": len(collections)},
+		}, nil
+
 	case "get_document":
 		var input struct {
 			DocumentID string `json:"document_id"`
@@ -215,6 +266,61 @@ func (s *MCPService) executeSpecialMCPTool(
 			return nil, ErrMCPNotFound
 		}
 		return &MCPToolResult{Summary: "Document " + document.Title + " loaded.", Data: document}, nil
+
+	case "create_space":
+		var input model.CreateDocsSpaceRequest
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		input.Name = strings.TrimSpace(input.Name)
+		space, err := s.spaces.Create(ctx, principal.WorkspaceID, input, principal.UserID)
+		if err != nil {
+			return nil, err
+		}
+		return &MCPToolResult{
+			Summary: "Docs space " + space.Name + " created.",
+			Data:    space,
+		}, nil
+
+	case "create_collection":
+		var input struct {
+			SpaceID            string  `json:"space_id"`
+			Name               string  `json:"name"`
+			Slug               *string `json:"slug"`
+			Description        *string `json:"description"`
+			Icon               *string `json:"icon"`
+			ParentCollectionID *string `json:"parent_collection_id"`
+		}
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		space, err := s.accessibleMCPDocsSpace(ctx, principal, actor, input.SpaceID)
+		if err != nil {
+			return nil, err
+		}
+		if space == nil {
+			return nil, ErrMCPNotFound
+		}
+		collection, err := s.collections.Create(
+			ctx,
+			principal.WorkspaceID,
+			space.ID,
+			model.CreateDocsCollectionRequest{
+				Name:               strings.TrimSpace(input.Name),
+				Slug:               input.Slug,
+				Description:        input.Description,
+				Icon:               input.Icon,
+				ParentCollectionID: input.ParentCollectionID,
+			},
+			principal.UserID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		return &MCPToolResult{
+			Summary: "Docs collection " + collection.Name + " created.",
+			Data:    collection,
+		}, nil
 
 	case "get_crm_contact":
 		var input struct {
@@ -421,6 +527,22 @@ func normalizeMCPLimit(limit int) int {
 		return 100
 	}
 	return limit
+}
+
+func (s *MCPService) accessibleMCPDocsSpace(
+	ctx context.Context,
+	principal *model.MCPPrincipal,
+	actor *authorization.Actor,
+	spaceID string,
+) (*model.DocsSpaceWithTeams, error) {
+	space, err := s.spaces.Get(ctx, spaceID, actor)
+	if err != nil {
+		return nil, err
+	}
+	if space == nil || space.WorkspaceID != principal.WorkspaceID {
+		return nil, nil
+	}
+	return space, nil
 }
 
 func mcpPrincipalKey(principal *model.MCPPrincipal) string {
