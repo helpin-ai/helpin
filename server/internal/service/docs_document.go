@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/helpin-ai/helpin/server/internal/iconcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/ordering"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -82,6 +83,11 @@ func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, re
 	if space.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("space does not belong to this workspace")
 	}
+	normalizedIcon, err := iconcatalog.NormalizeNew(req.Icon)
+	if err != nil {
+		return nil, fmt.Errorf("icon: %w", err)
+	}
+	req.Icon = normalizedIcon
 
 	// Sanitize optional UUID fields: treat empty strings as nil.
 	collectionID := req.CollectionID
@@ -203,8 +209,14 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 		updates["excerpt"] = *req.Excerpt
 		shouldRefreshTranslations = true
 	}
-	if req.Icon != nil {
-		updates["icon"] = *req.Icon
+	if normalizedIcon, changed, err := iconcatalog.NormalizeUpdate(req.Icon, doc.Icon); err != nil {
+		return nil, fmt.Errorf("icon: %w", err)
+	} else if changed {
+		if normalizedIcon == nil {
+			updates["icon"] = nil
+		} else {
+			updates["icon"] = *normalizedIcon
+		}
 	}
 	if req.Tags != nil {
 		updates["tags"] = model.DocsStringArray(req.Tags)

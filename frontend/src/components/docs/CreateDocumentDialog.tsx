@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useCreateDocsDocument, useDocsSpaces, useDocsCollections } from '@/hooks/queries'
-import { ICON_MAP } from '@/components/ui/icon-picker'
+import { StoredIcon } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
 import { CollectionTreePicker } from '@/components/docs/CollectionTreePicker'
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog'
@@ -135,11 +135,10 @@ export function CreateDocumentDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {(spaces ?? []).map((s) => {
-                    const SpaceIcon = s.icon ? ICON_MAP[s.icon] : null;
                     return (
                       <SelectItem key={s.id} value={s.id}>
                         <span className="inline-flex items-center gap-1.5">
-                          {SpaceIcon && <SpaceIcon className="h-4 w-4 shrink-0" />}
+                          {s.icon ? <StoredIcon name={s.icon} className="h-4 w-4 shrink-0" /> : null}
                           <span>{s.name}</span>
                         </span>
                       </SelectItem>

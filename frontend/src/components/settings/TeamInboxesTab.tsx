@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ICON_MAP } from '@/components/ui/icon-picker';
+import { StoredIcon } from '@/components/ui/icon-picker';
 import { useArchiveMailbox, useReorderMailboxes, useSupportMailboxes, useUpdateMailbox } from '@/hooks/queries/useSupport';
 import type { SupportMailbox } from '@/lib/pmTypes';
 import { queryKeys } from '@/lib/queryKeys';
@@ -55,8 +55,6 @@ function SortableMailboxItem({
     transition,
   };
 
-  const MailboxIcon = ICON_MAP[mailbox.icon] ?? ICON_MAP.inbox;
-
   return (
     <div
       ref={setNodeRef}
@@ -76,7 +74,11 @@ function SortableMailboxItem({
         ) : (
           <span className="h-5 w-5 shrink-0" />
         )}
-        {MailboxIcon ? <MailboxIcon className="h-4 w-4 text-muted-foreground" /> : null}
+        <StoredIcon
+          name={mailbox.icon}
+          className="h-4 w-4 text-muted-foreground"
+          fallback={<InboxIcon className="h-4 w-4 text-muted-foreground" />}
+        />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <p className="truncate font-medium">{mailbox.name}</p>

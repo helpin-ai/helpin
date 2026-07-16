@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/iconcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -220,6 +221,24 @@ func (s *MCPService) executeSpecialMCPTool(
 			"modules": modules,
 		}
 		return &MCPToolResult{Summary: "Connected to " + workspace.Name + " as " + user.FullName + ".", Data: data, Links: map[string]string{"workspace": s.config.AppBaseURL + "/w/" + workspace.Slug}}, nil
+
+	case "search_icons":
+		var input struct {
+			Query string `json:"query"`
+			Limit int    `json:"limit"`
+		}
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		items := iconcatalog.Search(input.Query, input.Limit)
+		return &MCPToolResult{
+			Summary: fmt.Sprintf("Returned %d canonical icons.", len(items)),
+			Data: map[string]any{
+				"items":           items,
+				"total":           len(items),
+				"catalog_version": iconcatalog.Version(),
+			},
+		}, nil
 
 	case "search_workspace":
 		var input struct {

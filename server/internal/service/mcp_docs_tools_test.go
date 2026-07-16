@@ -7,8 +7,28 @@ import (
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/iconcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+func TestExecuteSpecialMCPSearchIcons(t *testing.T) {
+	service := &MCPService{}
+	result, err := service.executeSpecialMCPTool(
+		context.Background(), &model.MCPPrincipal{}, nil, "search_icons",
+		json.RawMessage(`{"query":"rocket","limit":3}`),
+	)
+	if err != nil {
+		t.Fatalf("executeSpecialMCPTool() error = %v", err)
+	}
+	data, ok := result.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("search_icons data = %T", result.Data)
+	}
+	items, ok := data["items"].([]iconcatalog.SearchResult)
+	if !ok || len(items) == 0 || len(items) > 3 || items[0].ID != "rocket" {
+		t.Fatalf("search_icons items = %#v", data["items"])
+	}
+}
 
 func TestExecuteSpecialMCPListSpaces(t *testing.T) {
 	service, principal, actor, spaces, _ := setupMCPDocsToolTest()
