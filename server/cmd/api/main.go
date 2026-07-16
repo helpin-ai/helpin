@@ -1332,6 +1332,8 @@ func main() {
 		searchService,
 		pmTaskService,
 		docsDocumentService,
+		docsSpaceService,
+		docsCollectionService,
 		crmContactService,
 		crmDealService,
 		supportInboxService,

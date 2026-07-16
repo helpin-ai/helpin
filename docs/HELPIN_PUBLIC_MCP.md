@@ -232,11 +232,15 @@ The fully enabled catalog contains exactly 30 tools. `tools/list` returns only t
 
 | Tool | Mode | What it does | Helpin check |
 | --- | --- | --- | --- |
+| `list_spaces` | Read | Lists Docs spaces visible to the connected actor | `PermDocsRead` + Docs module |
+| `list_collections` | Read | Lists visible Docs collections, optionally within one space | `PermDocsRead` + Docs module |
 | `search_documents` | Read | Searches documents using the existing Helpin document search | `PermDocsRead` + Docs module |
 | `list_documents` | Read | Lists bounded document metadata | `PermDocsRead` + Docs module |
 | `read_document` | Read | Reads document content through the canonical command contract | `PermDocsRead` + Docs module |
 | `get_document_blocks` | Read | Returns addressable document blocks for precise updates | `PermDocsRead` + Docs module |
 | `get_document` | Read | Loads one document record and verifies workspace ownership | `PermDocsRead` + Docs module |
+| `create_space` | Write | Creates an internal or external-capable Docs space without publishing content | `PermDocsEdit` + Docs module |
+| `create_collection` | Write | Creates a top-level or nested collection in an accessible space | `PermDocsEdit` + Docs module |
 | `create_document` | Write | Creates a document through the existing Helpin domain behavior | `PermDocsEdit` + Docs module |
 | `update_document_block` | Write | Updates a specific block using the addressable block contract | `PermDocsEdit` + Docs module |
 

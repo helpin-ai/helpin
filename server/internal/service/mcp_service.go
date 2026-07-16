@@ -63,6 +63,17 @@ type MCPServiceConfig struct {
 	SupportEnabled       bool
 }
 
+type mcpDocsSpaceService interface {
+	List(context.Context, string, *authorization.Actor) ([]model.DocsSpaceWithTeams, error)
+	Get(context.Context, string, *authorization.Actor) (*model.DocsSpaceWithTeams, error)
+	Create(context.Context, string, model.CreateDocsSpaceRequest, string) (*model.DocsSpaceWithTeams, error)
+}
+
+type mcpDocsCollectionService interface {
+	List(context.Context, string) ([]model.DocsCollection, error)
+	Create(context.Context, string, string, model.CreateDocsCollectionRequest, string) (*model.DocsCollection, error)
+}
+
 // MCPService is the public MCP authorization and product execution boundary.
 type MCPService struct {
 	repo          *repository.MCPRepository
@@ -75,6 +86,8 @@ type MCPService struct {
 	search        *SearchService
 	tasks         *PMTaskService
 	documents     *DocsDocumentService
+	spaces        mcpDocsSpaceService
+	collections   mcpDocsCollectionService
 	crmContacts   *CRMContactService
 	crmDeals      *CRMDealService
 	support       *SupportInboxService
@@ -95,6 +108,8 @@ func NewMCPService(
 	search *SearchService,
 	tasks *PMTaskService,
 	documents *DocsDocumentService,
+	spaces *DocsSpaceService,
+	collections *DocsCollectionService,
 	crmContacts *CRMContactService,
 	crmDeals *CRMDealService,
 	support *SupportInboxService,
@@ -111,6 +126,8 @@ func NewMCPService(
 		search:        search,
 		tasks:         tasks,
 		documents:     documents,
+		spaces:        spaces,
+		collections:   collections,
 		crmContacts:   crmContacts,
 		crmDeals:      crmDeals,
 		support:       support,
