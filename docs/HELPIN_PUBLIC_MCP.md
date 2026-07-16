@@ -207,7 +207,7 @@ CRM and Support must be explicitly allowed by workspace policy and requested dur
 
 ## 7. Complete v1 tool catalog
 
-The fully enabled catalog contains exactly 30 tools. `tools/list` returns only the subset currently allowed for the principal.
+The fully enabled catalog contains exactly 34 tools. `tools/list` returns only the subset currently allowed for the principal.
 
 ### 7.1 Workspace context and search
 
