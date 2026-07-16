@@ -249,7 +249,8 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 				"icon": map[string]any{
 					"type":        "string",
-					"description": "Optional icon for the document",
+					"maxLength":   100,
+					"description": "Canonical icon ID. Public MCP callers should use search_icons to discover valid values, or omit this field.",
 				},
 				"tags": map[string]any{
 					"type":        "array",

@@ -15,6 +15,7 @@ import (
 // Help-center cache TTLs. Short enough that stale content stays bounded;
 // long enough that a hot space amortizes its DB cost across many readers.
 const (
+	hcCacheNamespace     = "hc-icons-v2"
 	hcConfigCacheTTL     = 5 * time.Minute
 	hcNavCacheTTL        = 5 * time.Minute
 	hcSpacesCacheTTL     = 5 * time.Minute
@@ -303,7 +304,8 @@ func (s *DocsHelpcenterService) setHelpcenterCachedJSON(ctx context.Context, key
 }
 
 func hcCacheKey(parts ...string) string {
-	encoded := make([]string, 0, len(parts))
+	encoded := make([]string, 0, len(parts)+1)
+	encoded = append(encoded, base64.RawURLEncoding.EncodeToString([]byte(hcCacheNamespace)))
 	for _, part := range parts {
 		encoded = append(encoded, base64.RawURLEncoding.EncodeToString([]byte(part)))
 	}

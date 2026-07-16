@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/iconcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/ordering"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -117,6 +118,11 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 	if newDepth > maxCollectionDepth {
 		return nil, ErrDocsCollectionDepthExceeded
 	}
+	normalizedIcon, err := iconcatalog.NormalizeNew(req.Icon)
+	if err != nil {
+		return nil, fmt.Errorf("icon: %w", err)
+	}
+	req.Icon = normalizedIcon
 
 	slug := slugify(req.Name)
 	if req.Slug != nil && *req.Slug != "" {
@@ -236,8 +242,14 @@ func (s *DocsCollectionService) Update(ctx context.Context, id string, req model
 		updates["description"] = *req.Description
 		shouldRefreshTranslations = true
 	}
-	if req.Icon != nil {
-		updates["icon"] = *req.Icon
+	if normalizedIcon, changed, err := iconcatalog.NormalizeUpdate(req.Icon, current.Icon); err != nil {
+		return nil, fmt.Errorf("icon: %w", err)
+	} else if changed {
+		if normalizedIcon == nil {
+			updates["icon"] = nil
+		} else {
+			updates["icon"] = *normalizedIcon
+		}
 	}
 	if req.Position != nil {
 		updates["position"] = *req.Position

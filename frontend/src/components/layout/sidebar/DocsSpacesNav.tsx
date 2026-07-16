@@ -1,7 +1,7 @@
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Collapsible } from 'radix-ui';
 import { ArrowRight01Icon, HelpCircleIcon, MoreVerticalIcon, FolderOpenIcon, InboxIcon, PlusSignIcon, PencilEdit01Icon, Delete01Icon } from '@/lib/icons';
-import { ICON_MAP } from '@/components/ui/icon-picker';
+import { StoredIcon } from '@/components/ui/icon-picker';
 import { useDocsCollections, useDocsDocuments, useDocsSpaces, useDeleteDocsSpace, useDeleteDocsCollection } from '@/hooks/queries';
 import type { DocsCollection, DocsSpace } from '@/lib/docsTypes';
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog';
@@ -31,14 +31,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { SidebarSectionAction } from './SidebarSectionAction';
 
 function SidebarCollectionIcon({ name }: { name?: string | null }) {
-  if (name) {
-    const Icon = ICON_MAP[name];
-    if (Icon) {
-      return <Icon className="h-3.5 w-3.5" />;
-    }
-  }
-
-  return <FolderOpenIcon className="h-3.5 w-3.5" />;
+  return (
+    <StoredIcon
+      name={name}
+      className="h-3.5 w-3.5"
+      fallback={<FolderOpenIcon className="h-3.5 w-3.5" />}
+    />
+  );
 }
 
 function DocsSpaceCollections({

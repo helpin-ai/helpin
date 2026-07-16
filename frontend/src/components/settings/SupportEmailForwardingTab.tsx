@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ICON_MAP } from '@/components/ui/icon-picker';
+import { StoredIcon } from '@/components/ui/icon-picker';
 import {
   useCreateSupportEmailRoute,
   useDisableSupportEmailRoute,
@@ -228,12 +228,17 @@ function MailboxEmailRouteRow({
   onDisable: (route: SupportEmailRoute) => void | Promise<void>;
   onCopy: (address: string) => void | Promise<void>;
 }) {
-  const MailboxIcon = ICON_MAP[mailbox.icon] ?? ICON_MAP.inbox;
   return (
     <EmailRouteRow
       title={mailbox.name}
       description={mailbox.linked_team_name ? `Linked to ${mailbox.linked_team_name}` : 'Team inbox'}
-      icon={MailboxIcon ? <MailboxIcon className="h-4 w-4 text-muted-foreground" /> : <InboxIcon className="h-4 w-4 text-muted-foreground" />}
+      icon={
+        <StoredIcon
+          name={mailbox.icon}
+          className="h-4 w-4 text-muted-foreground"
+          fallback={<InboxIcon className="h-4 w-4 text-muted-foreground" />}
+        />
+      }
       route={route}
       busy={busy}
       onEnable={onEnable}

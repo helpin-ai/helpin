@@ -11,7 +11,7 @@ import { DocsLink } from '@/components/DocsLink'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Footer } from '@/components/layout/Footer'
 import { MobileNav } from '@/components/navigation/MobileNav'
-import { PhIcon } from '@/components/PhIcon'
+import { PublicIcon } from '@/components/PublicIcon'
 import type { HomepageFeaturedCard } from '@/lib/types'
 
 export function LocalizedHomePage() {
@@ -130,7 +130,7 @@ export function LocalizedHomePage() {
 }
 
 function CardIcon({ name }: { name: string }) {
-  return <PhIcon name={name} size={36} weight="duotone" />
+  return <PublicIcon name={name} size={36} />
 }
 
 function FeaturedCard({
