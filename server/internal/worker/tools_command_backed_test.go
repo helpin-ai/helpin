@@ -47,6 +47,33 @@ func TestUpdateStoryStateToolUsesInternalCommandExecutorWhenAvailable(t *testing
 	}
 }
 
+func TestCreateCollectionToolUsesInternalCommandExecutorWhenAvailable(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	called := false
+	ctx := &ExecutionContext{
+		Context:      context.Background(),
+		WorkspaceID:  "ws-1",
+		AgentID:      "agent-quill",
+		RunID:        "run-1",
+		AllowedTools: map[string]bool{"create_collection": true},
+		Services: &ServiceBridge{ExecuteInternalCommand: func(_ context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
+			called = true
+			if name != "docs.create_collection" || meta.WorkspaceID != "ws-1" || meta.TargetType != "workspace" || meta.TargetID != "ws-1" {
+				t.Fatalf("unexpected command %q meta %#v", name, meta)
+			}
+			return json.RawMessage(`{"id":"collection-1"}`), nil
+		}},
+	}
+
+	output, err := registry.ExecuteAllowed(ctx, "create_collection", json.RawMessage(`{"space_id":"space-1","name":"Guides"}`))
+	if err != nil {
+		t.Fatalf("ExecuteAllowed returned error: %v", err)
+	}
+	if !called || output != `{"id":"collection-1"}` {
+		t.Fatalf("called = %v, output = %q", called, output)
+	}
+}
+
 func TestCreateTaskToolUsesInternalCommandExecutorWhenAvailable(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	called := false

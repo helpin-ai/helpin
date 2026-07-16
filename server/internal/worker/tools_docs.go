@@ -68,6 +68,45 @@ func toolListSpaces(ctx *ExecutionContext, input json.RawMessage) (string, error
 	return toCompactJSONString(summaries), nil
 }
 
+func toolCreateSpace(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	return executeDocsOrganizationCommand(ctx, "workspace", ctx.WorkspaceID, "docs.create_space", "create space", input)
+}
+
+func toolCreateCollection(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	return executeDocsOrganizationCommand(ctx, "workspace", ctx.WorkspaceID, "docs.create_collection", "create collection", input)
+}
+
+func toolUpdateSpace(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	return executeDocsOrganizationCommand(ctx, "workspace", ctx.WorkspaceID, "docs.update_space", "update space", input)
+}
+
+func toolUpdateCollection(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	return executeDocsOrganizationCommand(ctx, "workspace", ctx.WorkspaceID, "docs.update_collection", "update collection", input)
+}
+
+func toolMoveDocument(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	var params struct {
+		DocumentID string `json:"document_id"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	if strings.TrimSpace(params.DocumentID) == "" {
+		return "", fmt.Errorf("document_id is required")
+	}
+	return executeDocsOrganizationCommand(ctx, "document", params.DocumentID, "docs.move_document", "move document", input)
+}
+
+func executeDocsOrganizationCommand(ctx *ExecutionContext, targetType, targetID, commandName, action string, input json.RawMessage) (string, error) {
+	if output, ok, err := executeInternalCommand(ctx, targetType, targetID, commandName, input); ok {
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", action, err)
+		}
+		return string(output), nil
+	}
+	return "", fmt.Errorf("docs organization mutation is not available for this agent")
+}
+
 // resolveDefaultDocsSpace picks a space for create_document when the caller did
 // not supply one. A single space is used automatically; when several exist the
 // agent must choose, so we return the options in the error for it to surface to

@@ -207,7 +207,7 @@ CRM and Support must be explicitly allowed by workspace policy and requested dur
 
 ## 7. Complete v1 tool catalog
 
-The fully enabled catalog contains exactly 34 tools. `tools/list` returns only the subset currently allowed for the principal.
+The fully enabled catalog contains exactly 45 tools. `tools/list` returns only the subset currently allowed for the principal.
 
 ### 7.1 Workspace context and search
 
@@ -224,9 +224,16 @@ The fully enabled catalog contains exactly 34 tools. `tools/list` returns only t
 | --- | --- | --- | --- |
 | `list_tasks` | Read | Lists bounded task records | `PermPMRead` + PM module |
 | `get_task` | Read | Loads one task by ID and verifies workspace ownership | `PermPMRead` + PM module |
+| `get_task_context` | Read | Loads bounded task context; linked Docs/content additionally require Docs read, and Git links require context/integration read | `PermPMRead` + PM module |
+| `list_task_checklist` | Read | Lists checklist items for an accessible task | `PermPMRead` + PM module |
 | `create_task` | Write | Creates a task through the canonical Helpin command layer | `PermPMEdit` + PM module |
+| `create_task_batch` | Write | Creates up to 50 implementation-ready tasks in one accessible epic | `PermPMEdit` + PM module |
+| `update_task` | Write | Updates bounded editable task fields without deleting or archiving the task | `PermPMEdit` + PM module |
 | `add_task_comment` | Write | Adds a task comment with normal Helpin activity behavior | `PermPMEdit` + PM module |
 | `update_task_state` | Write | Moves a task through an allowed workflow transition | `PermPMEdit` + PM module |
+| `set_task_dependencies` | Write | Creates validated, cycle-free dependency links between accessible tasks | `PermPMEdit` + PM module |
+| `create_task_checklist_item` | Write | Adds a checklist item to an accessible task | `PermPMEdit` + PM module |
+| `update_task_checklist_item` | Write | Updates checklist text, completion, or position without deleting the item | `PermPMEdit` + PM module |
 
 ### 7.3 Documents
 
@@ -241,7 +248,11 @@ The fully enabled catalog contains exactly 34 tools. `tools/list` returns only t
 | `get_document` | Read | Loads one document record and verifies workspace ownership | `PermDocsRead` + Docs module |
 | `create_space` | Write | Creates an internal or external-capable Docs space without publishing content | `PermDocsEdit` + Docs module |
 | `create_collection` | Write | Creates a top-level or nested collection in an accessible space | `PermDocsEdit` + Docs module |
+| `update_space` | Write | Updates bounded metadata for an accessible Docs space | `PermDocsEdit` + Docs module |
+| `update_collection` | Write | Updates or reparents an accessible Docs collection | `PermDocsEdit` + Docs module |
 | `create_document` | Write | Creates a document through the existing Helpin domain behavior | `PermDocsEdit` + Docs module |
+| `move_document` | Write | Moves an accessible document to a validated space or collection | `PermDocsEdit` + Docs module |
+| `link_document_to_object` | Write | Links an accessible document to an accessible Helpin object | `PermDocsEdit` + Docs module |
 | `update_document_block` | Write | Updates a specific block using the addressable block contract | `PermDocsEdit` + Docs module |
 
 ### 7.4 CRM

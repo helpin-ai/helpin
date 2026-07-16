@@ -21,7 +21,7 @@ import (
 
 const (
 	_serverName    = "helpin"
-	_serverVersion = "1.1.0"
+	_serverVersion = "1.2.0"
 	_maxBodyBytes  = 1024 * 1024
 )
 

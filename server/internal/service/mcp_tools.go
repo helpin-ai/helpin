@@ -120,6 +120,37 @@ func (s *MCPService) executeAuthorizedMCPTool(
 	arguments json.RawMessage,
 ) (*MCPToolResult, error) {
 	if tool.CommandName != "" {
+		var taskContextInput *model.GetTaskContextRequest
+		if tool.Name == "get_task_context" {
+			var input model.GetTaskContextRequest
+			if err := decodeMCPArguments(arguments, &input); err != nil {
+				return nil, err
+			}
+			for _, taskID := range input.TaskIDs {
+				task, err := s.accessibleMCPTask(ctx, principal, taskID)
+				if err != nil {
+					return nil, err
+				}
+				if task == nil {
+					return nil, ErrMCPNotFound
+				}
+			}
+			if input.IncludeLinkedDocs {
+				if !containsMCPValue(principal.Toolsets, MCPToolsetDocs) || !containsMCPValue(principal.Scopes, MCPScopeDocsRead) ||
+					!s.authz.Can(actor, authorization.PermDocsRead) {
+					return nil, ErrMCPForbidden
+				}
+				allowed, err := s.authz.CanAccessModule(ctx, actor, model.ModuleDocs)
+				if err != nil || !allowed {
+					return nil, ErrMCPForbidden
+				}
+			}
+			if input.IncludeGitLinks && (!containsMCPValue(principal.Toolsets, MCPToolsetContext) ||
+				!containsMCPValue(principal.Scopes, MCPScopeContextRead) || !s.authz.Can(actor, authorization.PermIntegrationsEnumerate)) {
+				return nil, ErrMCPForbidden
+			}
+			taskContextInput = &input
+		}
 		output, err := s.commands.Execute(ctx, model.InternalCommandContext{
 			WorkspaceID: principal.WorkspaceID,
 			ActorID:     principal.UserID,
@@ -127,6 +158,28 @@ func (s *MCPService) executeAuthorizedMCPTool(
 		}, tool.CommandName, arguments)
 		if err != nil {
 			return nil, err
+		}
+		if taskContextInput != nil {
+			var data model.GetTaskContextResult
+			if err := json.Unmarshal(output, &data); err != nil {
+				return nil, fmt.Errorf("decode task context command output: %w", err)
+			}
+			if taskContextInput.IncludeLinkedDocs {
+				for taskIndex := range data.Tasks {
+					visible := make([]model.TaskContextDocument, 0, len(data.Tasks[taskIndex].LinkedDocs))
+					for _, linkedDocument := range data.Tasks[taskIndex].LinkedDocs {
+						document, err := s.accessibleMCPDocument(ctx, principal, actor, linkedDocument.DocumentID)
+						if err != nil {
+							return nil, err
+						}
+						if document != nil {
+							visible = append(visible, linkedDocument)
+						}
+					}
+					data.Tasks[taskIndex].LinkedDocs = visible
+				}
+			}
+			return &MCPToolResult{Summary: tool.Title + " completed.", Data: data}, nil
 		}
 		var data any
 		if err := json.Unmarshal(output, &data); err != nil {
@@ -191,14 +244,133 @@ func (s *MCPService) executeSpecialMCPTool(
 		if err := decodeMCPArguments(arguments, &input); err != nil {
 			return nil, err
 		}
-		task, err := s.tasks.GetByID(ctx, input.TaskID)
+		task, err := s.accessibleMCPTask(ctx, principal, input.TaskID)
 		if err != nil {
 			return nil, err
 		}
-		if task.Task.WorkspaceID != principal.WorkspaceID {
+		if task == nil {
 			return nil, ErrMCPNotFound
 		}
 		return &MCPToolResult{Summary: "Task " + task.Task.Name + " loaded.", Data: task}, nil
+
+	case "update_task":
+		var input struct {
+			TaskID string `json:"task_id"`
+			model.UpdateTaskRequest
+		}
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		current, err := s.accessibleMCPTask(ctx, principal, input.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		if current == nil {
+			return nil, ErrMCPNotFound
+		}
+		updated, err := s.tasks.Update(ctx, input.TaskID, input.UpdateTaskRequest, principal.UserID)
+		if err != nil {
+			return nil, err
+		}
+		return &MCPToolResult{Summary: "Task " + updated.Task.Name + " updated.", Data: updated}, nil
+
+	case "create_task_batch":
+		var input struct {
+			EpicID string               `json:"epic_id"`
+			Tasks  []model.ProposedTask `json:"tasks"`
+		}
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		tasks, err := s.taskBatches.CreateEpicTaskBatch(ctx, principal.WorkspaceID, input.EpicID, principal.UserID, input.Tasks)
+		if err != nil {
+			return nil, err
+		}
+		items := make([]map[string]any, 0, len(tasks))
+		for index, task := range tasks {
+			items = append(items, map[string]any{"ref": input.Tasks[index].Ref, "task_id": task.ID, "name": task.Name})
+		}
+		return &MCPToolResult{Summary: fmt.Sprintf("Created %d tasks.", len(items)), Data: map[string]any{"items": items, "total": len(items)}}, nil
+
+	case "list_task_checklist":
+		var input struct {
+			TaskID string `json:"task_id"`
+		}
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		task, err := s.accessibleMCPTask(ctx, principal, input.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		if task == nil {
+			return nil, ErrMCPNotFound
+		}
+		items, err := s.checklists.List(ctx, input.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		return &MCPToolResult{Summary: fmt.Sprintf("Returned %d checklist items.", len(items)), Data: map[string]any{"items": items, "total": len(items)}}, nil
+
+	case "create_task_checklist_item":
+		var input struct {
+			TaskID   string `json:"task_id"`
+			Text     string `json:"text"`
+			Position *int   `json:"position"`
+		}
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		task, err := s.accessibleMCPTask(ctx, principal, input.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		if task == nil {
+			return nil, ErrMCPNotFound
+		}
+		item, err := s.checklists.Create(ctx, input.TaskID, model.CreateChecklistItemRequest{Text: input.Text, Position: input.Position}, principal.WorkspaceID, principal.UserID)
+		if err != nil {
+			return nil, err
+		}
+		return &MCPToolResult{Summary: "Checklist item created.", Data: item}, nil
+
+	case "update_task_checklist_item":
+		var input struct {
+			TaskID          string  `json:"task_id"`
+			ChecklistItemID string  `json:"checklist_item_id"`
+			Text            *string `json:"text"`
+			Completed       *bool   `json:"completed"`
+			Position        *int    `json:"position"`
+		}
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		task, err := s.accessibleMCPTask(ctx, principal, input.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		if task == nil {
+			return nil, ErrMCPNotFound
+		}
+		items, err := s.checklists.List(ctx, input.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		found := false
+		for _, item := range items {
+			if item.ID == input.ChecklistItemID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, ErrMCPNotFound
+		}
+		item, err := s.checklists.Update(ctx, input.ChecklistItemID, model.UpdateChecklistItemRequest{Text: input.Text, Completed: input.Completed, Position: input.Position}, principal.WorkspaceID, principal.UserID)
+		if err != nil {
+			return nil, err
+		}
+		return &MCPToolResult{Summary: "Checklist item updated.", Data: item}, nil
 
 	case "list_spaces":
 		spaces, err := s.spaces.List(ctx, principal.WorkspaceID, actor)
@@ -258,11 +430,11 @@ func (s *MCPService) executeSpecialMCPTool(
 		if err := decodeMCPArguments(arguments, &input); err != nil {
 			return nil, err
 		}
-		document, err := s.documents.Get(ctx, input.DocumentID)
+		document, err := s.accessibleMCPDocument(ctx, principal, actor, input.DocumentID)
 		if err != nil {
 			return nil, err
 		}
-		if document.WorkspaceID != principal.WorkspaceID {
+		if document == nil {
 			return nil, ErrMCPNotFound
 		}
 		return &MCPToolResult{Summary: "Document " + document.Title + " loaded.", Data: document}, nil
@@ -321,6 +493,153 @@ func (s *MCPService) executeSpecialMCPTool(
 			Summary: "Docs collection " + collection.Name + " created.",
 			Data:    collection,
 		}, nil
+
+	case "update_space":
+		var input struct {
+			SpaceID string `json:"space_id"`
+			model.UpdateDocsSpaceRequest
+		}
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		space, err := s.accessibleMCPDocsSpace(ctx, principal, actor, input.SpaceID)
+		if err != nil {
+			return nil, err
+		}
+		if space == nil {
+			return nil, ErrMCPNotFound
+		}
+		updated, err := s.spaces.Update(ctx, space.ID, input.UpdateDocsSpaceRequest)
+		if err != nil {
+			return nil, err
+		}
+		return &MCPToolResult{Summary: "Docs space " + updated.Name + " updated.", Data: updated}, nil
+
+	case "update_collection":
+		var input struct {
+			CollectionID string `json:"collection_id"`
+			model.UpdateDocsCollectionRequest
+		}
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		collection, err := s.accessibleMCPDocsCollection(ctx, principal, actor, input.CollectionID)
+		if err != nil {
+			return nil, err
+		}
+		if collection == nil {
+			return nil, ErrMCPNotFound
+		}
+		if input.ParentCollectionID != nil {
+			space, err := s.accessibleMCPDocsSpace(ctx, principal, actor, collection.SpaceID)
+			if err != nil {
+				return nil, err
+			}
+			if space == nil {
+				return nil, ErrMCPNotFound
+			}
+			if space.Type == model.SpaceTypeExternalCapable {
+				return nil, fmt.Errorf("public Help Center collections cannot be reparented through public MCP")
+			}
+		}
+		updated, err := s.collections.Update(ctx, collection.ID, input.UpdateDocsCollectionRequest)
+		if err != nil {
+			return nil, err
+		}
+		return &MCPToolResult{Summary: "Docs collection " + updated.Name + " updated.", Data: updated}, nil
+
+	case "move_document":
+		var input struct {
+			DocumentID   string  `json:"document_id"`
+			SpaceID      string  `json:"space_id"`
+			CollectionID *string `json:"collection_id"`
+		}
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		document, err := s.accessibleMCPDocument(ctx, principal, actor, input.DocumentID)
+		if err != nil {
+			return nil, err
+		}
+		if document == nil {
+			return nil, ErrMCPNotFound
+		}
+		targetSpace, err := s.accessibleMCPDocsSpace(ctx, principal, actor, input.SpaceID)
+		if err != nil {
+			return nil, err
+		}
+		if targetSpace == nil {
+			return nil, ErrMCPNotFound
+		}
+		if document.Status == model.DocStatusPublished && document.SpaceID != targetSpace.ID {
+			return nil, fmt.Errorf("published documents cannot be moved between spaces through public MCP")
+		}
+		if input.CollectionID != nil && strings.TrimSpace(*input.CollectionID) != "" {
+			collection, err := s.accessibleMCPDocsCollection(ctx, principal, actor, *input.CollectionID)
+			if err != nil {
+				return nil, err
+			}
+			if collection == nil || collection.SpaceID != targetSpace.ID {
+				return nil, ErrMCPNotFound
+			}
+		}
+		updated, err := s.documents.Move(ctx, document.ID, model.MoveDocsDocumentRequest{SpaceID: targetSpace.ID, CollectionID: input.CollectionID})
+		if err != nil {
+			return nil, err
+		}
+		return &MCPToolResult{Summary: "Document " + updated.Title + " moved.", Data: updated}, nil
+
+	case "link_document_to_object":
+		var input struct {
+			DocumentID       string `json:"document_id"`
+			LinkedObjectType string `json:"linked_object_type"`
+			LinkedObjectID   string `json:"linked_object_id"`
+			LinkContext      string `json:"link_context"`
+		}
+		if err := decodeMCPArguments(arguments, &input); err != nil {
+			return nil, err
+		}
+		document, err := s.accessibleMCPDocument(ctx, principal, actor, input.DocumentID)
+		if err != nil {
+			return nil, err
+		}
+		if document == nil {
+			return nil, ErrMCPNotFound
+		}
+		switch input.LinkedObjectType {
+		case model.LinkedObjectEpic, model.LinkedObjectTask:
+			if !containsMCPValue(principal.Toolsets, MCPToolsetPM) || !containsMCPValue(principal.Scopes, MCPScopePMRead) {
+				return nil, ErrMCPForbidden
+			}
+		case model.LinkedObjectSupportConversation:
+			if !containsMCPValue(principal.Toolsets, MCPToolsetSupport) || !containsMCPValue(principal.Scopes, MCPScopeSupportRead) {
+				return nil, ErrMCPForbidden
+			}
+		case model.LinkedObjectDeal, model.LinkedObjectContact, model.LinkedObjectCompany:
+			if !containsMCPValue(principal.Toolsets, MCPToolsetCRM) || !containsMCPValue(principal.Scopes, MCPScopeCRMRead) {
+				return nil, ErrMCPForbidden
+			}
+		default:
+			return nil, ErrMCPInvalidArguments
+		}
+		resolved, err := s.docsRefs.Resolve(ctx, principal.WorkspaceID, model.ResolveDocsEntityRefsRequest{Refs: []model.DocsEntityRefRequest{{EntityType: input.LinkedObjectType, EntityID: input.LinkedObjectID}}})
+		if err != nil {
+			return nil, err
+		}
+		if len(resolved.Refs) != 1 || resolved.Refs[0].Status != docsEntityRefStatusAvailable {
+			if len(resolved.Refs) == 1 && resolved.Refs[0].Access == docsEntityRefAccessRedacted {
+				return nil, ErrMCPForbidden
+			}
+			return nil, ErrMCPNotFound
+		}
+		if input.LinkContext == "" {
+			input.LinkContext = model.LinkContextAttached
+		}
+		link, err := s.docsLinks.Create(ctx, principal.WorkspaceID, document.ID, model.CreateDocsLinkRequest{LinkedObjectType: input.LinkedObjectType, LinkedObjectID: input.LinkedObjectID, LinkContext: input.LinkContext}, principal.UserID)
+		if err != nil {
+			return nil, err
+		}
+		return &MCPToolResult{Summary: "Document linked.", Data: link}, nil
 
 	case "get_crm_contact":
 		var input struct {
@@ -543,6 +862,61 @@ func (s *MCPService) accessibleMCPDocsSpace(
 		return nil, nil
 	}
 	return space, nil
+}
+
+func (s *MCPService) accessibleMCPDocsCollection(
+	ctx context.Context,
+	principal *model.MCPPrincipal,
+	actor *authorization.Actor,
+	collectionID string,
+) (*model.DocsCollection, error) {
+	collection, err := s.collections.Get(ctx, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	if collection == nil || collection.WorkspaceID != principal.WorkspaceID {
+		return nil, nil
+	}
+	space, err := s.accessibleMCPDocsSpace(ctx, principal, actor, collection.SpaceID)
+	if err != nil || space == nil {
+		return nil, err
+	}
+	return collection, nil
+}
+
+func (s *MCPService) accessibleMCPDocument(
+	ctx context.Context,
+	principal *model.MCPPrincipal,
+	actor *authorization.Actor,
+	documentID string,
+) (*model.DocsDocument, error) {
+	document, err := s.documents.Get(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if document == nil || document.WorkspaceID != principal.WorkspaceID {
+		return nil, nil
+	}
+	space, err := s.accessibleMCPDocsSpace(ctx, principal, actor, document.SpaceID)
+	if err != nil || space == nil {
+		return nil, err
+	}
+	return document, nil
+}
+
+func (s *MCPService) accessibleMCPTask(
+	ctx context.Context,
+	principal *model.MCPPrincipal,
+	taskID string,
+) (*model.TaskDetail, error) {
+	task, err := s.tasks.GetByID(ctx, strings.TrimSpace(taskID))
+	if err != nil {
+		return nil, err
+	}
+	if task == nil || task.Task.WorkspaceID != principal.WorkspaceID {
+		return nil, nil
+	}
+	return task, nil
 }
 
 func mcpPrincipalKey(principal *model.MCPPrincipal) string {

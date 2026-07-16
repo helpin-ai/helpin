@@ -28,6 +28,28 @@ func TestWriteDocumentContentCommandSupportsDocumentTarget(t *testing.T) {
 	t.Fatalf("expected docs.write_document_content to support target type document, got %#v", def.SupportedTargetTypes)
 }
 
+func TestTaskDependencyGraphHasCycle(t *testing.T) {
+	if taskDependencyGraphHasCycle(map[string][]string{"task-a": {"task-b"}, "task-b": {"task-c"}}) {
+		t.Fatal("acyclic dependency graph reported a cycle")
+	}
+	if !taskDependencyGraphHasCycle(map[string][]string{"task-a": {"task-b"}, "task-b": {"task-c"}, "task-c": {"task-a"}}) {
+		t.Fatal("cyclic dependency graph was accepted")
+	}
+}
+
+func TestDocsOrganizationCommandsAreExposedToRuntimeAgents(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	for _, commandName := range []string{"docs.create_space", "docs.create_collection", "docs.update_space", "docs.update_collection", "docs.move_document"} {
+		definition, ok := svc.Definition(commandName)
+		if !ok {
+			t.Fatalf("missing command %q", commandName)
+		}
+		if definition.Tool == nil || definition.Tool.Alias == "" || !definition.Mutating {
+			t.Fatalf("command %q metadata = %#v", commandName, definition.Tool)
+		}
+	}
+}
+
 func TestWriteDocumentContentCommandRejectsEmptyContent(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 

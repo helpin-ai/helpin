@@ -67,11 +67,42 @@ type mcpDocsSpaceService interface {
 	List(context.Context, string, *authorization.Actor) ([]model.DocsSpaceWithTeams, error)
 	Get(context.Context, string, *authorization.Actor) (*model.DocsSpaceWithTeams, error)
 	Create(context.Context, string, model.CreateDocsSpaceRequest, string) (*model.DocsSpaceWithTeams, error)
+	Update(context.Context, string, model.UpdateDocsSpaceRequest) (*model.DocsSpaceWithTeams, error)
 }
 
 type mcpDocsCollectionService interface {
+	Get(context.Context, string) (*model.DocsCollection, error)
 	List(context.Context, string) ([]model.DocsCollection, error)
 	Create(context.Context, string, string, model.CreateDocsCollectionRequest, string) (*model.DocsCollection, error)
+	Update(context.Context, string, model.UpdateDocsCollectionRequest) (*model.DocsCollection, error)
+}
+
+type mcpDocsDocumentService interface {
+	Get(context.Context, string) (*model.DocsDocument, error)
+	Move(context.Context, string, model.MoveDocsDocumentRequest) (*model.DocsDocument, error)
+}
+
+type mcpDocsLinkService interface {
+	Create(context.Context, string, string, model.CreateDocsLinkRequest, string) (*model.DocsLink, error)
+}
+
+type mcpDocsReferenceResolver interface {
+	Resolve(context.Context, string, model.ResolveDocsEntityRefsRequest) (*model.ResolveDocsEntityRefsResponse, error)
+}
+
+type mcpPMTaskService interface {
+	GetByID(context.Context, string) (*model.TaskDetail, error)
+	Update(context.Context, string, model.UpdateTaskRequest, string) (*model.TaskDetail, error)
+}
+
+type mcpPMChecklistService interface {
+	List(context.Context, string) ([]model.PMChecklistItem, error)
+	Create(context.Context, string, model.CreateChecklistItemRequest, string, string) (*model.PMChecklistItem, error)
+	Update(context.Context, string, model.UpdateChecklistItemRequest, string, string) (*model.PMChecklistItem, error)
+}
+
+type mcpTaskBatchCreator interface {
+	CreateEpicTaskBatch(context.Context, string, string, string, []model.ProposedTask) ([]model.PMTask, error)
 }
 
 // MCPService is the public MCP authorization and product execution boundary.
@@ -83,11 +114,15 @@ type MCPService struct {
 	jwt           *auth.JWTManager
 	commands      *InternalCommandService
 	agents        *AgentService
+	taskBatches   mcpTaskBatchCreator
 	search        *SearchService
-	tasks         *PMTaskService
-	documents     *DocsDocumentService
+	tasks         mcpPMTaskService
+	documents     mcpDocsDocumentService
 	spaces        mcpDocsSpaceService
 	collections   mcpDocsCollectionService
+	docsLinks     mcpDocsLinkService
+	docsRefs      mcpDocsReferenceResolver
+	checklists    mcpPMChecklistService
 	crmContacts   *CRMContactService
 	crmDeals      *CRMDealService
 	support       *SupportInboxService
@@ -110,6 +145,9 @@ func NewMCPService(
 	documents *DocsDocumentService,
 	spaces *DocsSpaceService,
 	collections *DocsCollectionService,
+	docsLinks *DocsLinkService,
+	docsRefs *DocsEntityReferenceResolverService,
+	checklists *PMChecklistItemService,
 	crmContacts *CRMContactService,
 	crmDeals *CRMDealService,
 	support *SupportInboxService,
@@ -123,11 +161,15 @@ func NewMCPService(
 		jwt:           jwt,
 		commands:      commands,
 		agents:        agents,
+		taskBatches:   agents,
 		search:        search,
 		tasks:         tasks,
 		documents:     documents,
 		spaces:        spaces,
 		collections:   collections,
+		docsLinks:     docsLinks,
+		docsRefs:      docsRefs,
+		checklists:    checklists,
 		crmContacts:   crmContacts,
 		crmDeals:      crmDeals,
 		support:       support,
