@@ -546,8 +546,12 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		"customer_message_length", len(strings.TrimSpace(supportMessagePromptText(*msg))),
 	)
 
-	// 6. Confirmation detection — before generating a new reply
-	if aiTurnCount > 0 && isConfirmationMessage(msg.Content) {
+	customerPromptText := supportMessagePromptText(*msg)
+
+	// 6. Confirmation detection — before generating a new reply. Requires a
+	// prior substantive AI turn (answer/clarify); a greeting alone leaves
+	// nothing to confirm as resolved.
+	if countSubstantiveAITurns(historyForPrompt, agentID) > 0 && isConfirmationMessage(msg.Content) {
 		now := time.Now()
 		_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
 			"ai_state":           "resolved",
@@ -561,6 +565,33 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"conversation_id", conversationID,
 			"message_id", msg.ID,
 		)
+		return nil
+	}
+
+	// 6.5 Pre-router — deterministic short-circuit for conversational
+	// non-questions (greetings, opening gratitude). Replies without invoking
+	// triage, planner, retrieval, or the answer model: zero LLM calls, and
+	// the reply is marked kind=greeting so it never counts as an answer
+	// attempt in metrics.
+	if decision := preRouteSupportMessage(customerPromptText, aiTurnCount); decision.Outcome != preRouteProceed {
+		slog.InfoContext(ctx, "support AI pre-router short-circuit",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"outcome", string(decision.Outcome),
+			"reason", decision.Reason,
+		)
+		if !publicReplyMode {
+			// Internal-note mode: a human replies; drafting a note for a
+			// greeting is noise, so just mark the message handled.
+			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
+			return nil
+		}
+		aiMsg, err := s.publishAIReply(ctx, workspaceID, conversationID, agentID, decision.Reply, supportPreRouterModelName, 0, 0.95, nil, supportReplyKindGreeting, "", "", supportStateProgressing, conv.CustomerEmail, conv.CustomerPhone)
+		if err != nil {
+			return err
+		}
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, &aiMsg.ID, 0)
 		return nil
 	}
 
@@ -596,7 +627,6 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	}
 
 	// 8. Hard escalation rules check
-	customerPromptText := supportMessagePromptText(*msg)
 	if reason := checkHardEscalation(customerPromptText); reason != "" {
 		slog.InfoContext(ctx, "support AI hard escalation rule matched",
 			"workspace_id", workspaceID,

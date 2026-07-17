@@ -516,6 +516,17 @@ The context builder must enforce privacy boundaries and minimize unnecessary per
 
 ### 8.2 Intent and evidence planner
 
+#### Pre-router
+
+A cheap deterministic or small-model pre-router runs before the planner and keeps non-questions out of the retrieval pipeline entirely:
+
+- greetings, thanks, and closings receive a lightweight conversational reply with no retrieval or evidence stages
+- explicit human requests trigger immediate handoff
+- abusive or highly frustrated messages trigger handoff with a sentiment flag
+- confirmations and follow-ups reuse the existing conversation context before any new retrieval
+
+The pre-router consumes at most one small-model call and must not add more than its own latency guardrail (100 ms deterministic, 800 ms model-assisted) to Section 15 budgets. Everything else proceeds to the planner.
+
 The planner produces a structured contract, not only search strings.
 
 Example:
@@ -550,6 +561,7 @@ The server owns a versioned `IntentDefinitionRegistry`. Each intent definition s
 
 - a stable intent ID and schema version
 - allowed answer types and risk tiers
+- an evidence mode: `slots`, `procedural`, `sufficiency`, or `diagnostic`
 - stable evidence-field IDs
 - field type, required/optional status, and cardinality
 - deterministic validators for currencies, numbers, dates, URLs, enums, and units
@@ -576,6 +588,17 @@ required_evidence:
     type: url
 ```
 
+#### Evidence modes
+
+Slot-based fact checking is a special mode for factual intents, not the spine of the system. The universal completeness question is: did we retrieve content that substantively addresses the request, and did the answer stay inside it? Each intent declares one mode:
+
+- `slots` — enumerable required facts (pricing, limits, feature availability). Strict per-field coverage as in the example above; a missing field triggers the targeted retry.
+- `procedural` — how-to and setup requests. Completeness means the retrieved steps match the user's stated goal and product area, not a fact checklist.
+- `sufficiency` — conceptual and overview questions ("what is X", "how does Y work"). Completeness is a topical-sufficiency judgment against the request; no fact slots are fabricated for these intents.
+- `diagnostic` — troubleshooting. Completeness requires a symptom match in the evidence; when symptoms are ambiguous or account-specific, the default is one clarifying question or handoff rather than a generic answer.
+
+The validator applies the same branching: `slots` intents get field-level verification, all other modes get the sufficiency and grounding checks. A planner must never route a conceptual question through slot checking; the registry, not the model, decides the mode.
+
 Planner output is validated against the selected registry version with JSON Schema or an equivalent typed decoder. An unknown intent or evidence-field ID is rejected and mapped to the generic intent policy; it never falls through to fuzzy string matching. The trace records the registry version used for each answer. Initial definitions are code-owned and reviewed like API contracts. Validated workspace extensions may be added later without allowing arbitrary planner-defined fields.
 
 Platform-owned initial intents may include:
@@ -590,6 +613,7 @@ Platform-owned initial intents may include:
 - `account_specific_action`
 - `competitor_comparison`
 - `how_to`
+- `conceptual_general`
 - `unknown`
 
 Workspaces may extend or map topics through policy configuration without changing server code.
