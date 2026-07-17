@@ -23,7 +23,7 @@ const (
 	chunkOverlapChars            = 200
 )
 
-// DocsEmbeddingService keeps pgvector-backed help-center chunks in sync.
+// DocsEmbeddingService keeps pgvector-backed support knowledge chunks in sync.
 type DocsEmbeddingService struct {
 	chunkRepo      *repository.DocsChunkRepository
 	blockRepo      *repository.DocsBlockRepository
@@ -72,7 +72,7 @@ func NewDocsEmbeddingService(
 	}
 }
 
-// QueueKnowledgeSourceSync schedules a sync for one selected help-center source.
+// QueueKnowledgeSourceSync schedules a sync for one selected docs source.
 func (s *DocsEmbeddingService) QueueKnowledgeSourceSync(ctx context.Context, knowledgeSourceID string) error {
 	if s == nil || s.knowledgeRepo == nil {
 		return nil
@@ -84,7 +84,7 @@ func (s *DocsEmbeddingService) QueueKnowledgeSourceSync(ctx context.Context, kno
 	return s.QueueSpaceSync(ctx, source.WorkspaceID, source.SpaceID)
 }
 
-// QueueDocumentSync schedules a sync for the containing help-center space after a doc change.
+// QueueDocumentSync schedules a sync for the containing docs space after a doc change.
 func (s *DocsEmbeddingService) QueueDocumentSync(ctx context.Context, documentID string) error {
 	if s == nil || s.documentRepo == nil {
 		return nil
@@ -96,7 +96,7 @@ func (s *DocsEmbeddingService) QueueDocumentSync(ctx context.Context, documentID
 	return s.QueueSpaceSync(ctx, doc.WorkspaceID, doc.SpaceID)
 }
 
-// QueueSpaceSync schedules a sync for all selected knowledge sources on a help-center space.
+// QueueSpaceSync schedules a sync for all selected knowledge sources on a docs space.
 func (s *DocsEmbeddingService) QueueSpaceSync(ctx context.Context, workspaceID, spaceID string) error {
 	if s == nil || s.knowledgeRepo == nil {
 		return nil
@@ -148,8 +148,8 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 	if err != nil {
 		return err
 	}
-	if space == nil || space.Type != model.SpaceTypeExternalCapable {
-		msg := "Only help center spaces can be indexed for support AI"
+	if space == nil || space.WorkspaceID != workspaceID || !isSupportKnowledgeSpaceType(space.Type) {
+		msg := "Only internal and help center spaces can be indexed for support AI"
 		return s.updateAllSyncStates(ctx, sources, model.KnowledgeSourceSyncDisabled, 0, 0, 0, &msg, nil, nil)
 	}
 
@@ -158,16 +158,16 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 		return err
 	}
 
-	publicDocs, err := s.helpcenterRepo.ListPublicDocumentsBySpace(ctx, workspaceID, spaceID)
+	eligibleDocs, err := s.listEligibleDocuments(ctx, workspaceID, *space)
 	if err != nil {
 		_ = s.markSourcesFailed(ctx, sources, err, &startedAt)
 		return err
 	}
 
-	keepDocumentIDs := make([]string, 0, len(publicDocs))
+	keepDocumentIDs := make([]string, 0, len(eligibleDocs))
 	totalChunks := 0
 
-	for idx, doc := range publicDocs {
+	for idx, doc := range eligibleDocs {
 		keepDocumentIDs = append(keepDocumentIDs, doc.ID)
 
 		content, err := s.contentRepo.GetByDocumentID(ctx, doc.ID)
@@ -248,7 +248,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 		}
 
 		totalChunks += len(rows)
-		progress := progressFor(idx+1, len(publicDocs))
+		progress := progressFor(idx+1, len(eligibleDocs))
 		if err := s.updateAllSyncStates(ctx, sources, model.KnowledgeSourceSyncRunning, progress, idx+1, totalChunks, nil, &startedAt, nil); err != nil {
 			return err
 		}
@@ -260,10 +260,27 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 	}
 
 	completedAt := time.Now()
-	return s.updateAllSyncStates(ctx, sources, model.KnowledgeSourceSyncReady, 100, len(publicDocs), totalChunks, nil, &startedAt, &completedAt)
+	return s.updateAllSyncStates(ctx, sources, model.KnowledgeSourceSyncReady, 100, len(eligibleDocs), totalChunks, nil, &startedAt, &completedAt)
 }
 
-// RunSpaceSync performs a single full sync for a help-center space.
+func (s *DocsEmbeddingService) listEligibleDocuments(ctx context.Context, workspaceID string, space model.DocsSpace) ([]model.DocsDocument, error) {
+	switch space.Type {
+	case model.SpaceTypeInternal:
+		if s.documentRepo == nil {
+			return nil, fmt.Errorf("docs document repository is not configured")
+		}
+		return s.documentRepo.ListPublishedBySpace(ctx, workspaceID, space.ID)
+	case model.SpaceTypeExternalCapable:
+		if s.helpcenterRepo == nil {
+			return nil, fmt.Errorf("docs help center repository is not configured")
+		}
+		return s.helpcenterRepo.ListPublicDocumentsBySpace(ctx, workspaceID, space.ID)
+	default:
+		return nil, fmt.Errorf("unsupported docs space type %q", space.Type)
+	}
+}
+
+// RunSpaceSync performs a single full sync for a selected docs space.
 // This is intended to run inside a durable Temporal activity.
 func (s *DocsEmbeddingService) RunSpaceSync(ctx context.Context, workspaceID, spaceID string) error {
 	if s == nil {

@@ -27,6 +27,7 @@ type DocsChunkSearchResult struct {
 	ID            string  `json:"id"`
 	WorkspaceID   string  `json:"workspace_id"`
 	SpaceID       string  `json:"space_id"`
+	SpaceType     string  `json:"space_type"`
 	DocumentID    string  `json:"document_id"`
 	BlockID       *string `json:"block_id,omitempty"`
 	ChunkIndex    int     `json:"chunk_index"`
@@ -79,7 +80,7 @@ func (r *DocsChunkRepository) DeleteByDocumentIDs(ctx context.Context, documentI
 	return r.db.WithContext(ctx).Where("document_id IN ?", documentIDs).Delete(&model.DocsChunk{}).Error
 }
 
-// DeleteBySpaceExceptDocuments removes stale chunks for docs no longer eligible in a help-center space.
+// DeleteBySpaceExceptDocuments removes stale chunks for docs no longer eligible in a selected space.
 func (r *DocsChunkRepository) DeleteBySpaceExceptDocuments(ctx context.Context, workspaceID, spaceID string, keepDocumentIDs []string) error {
 	query := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND space_id = ?", workspaceID, spaceID)
@@ -159,33 +160,29 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID str
 	}
 
 	if r.db.Dialector.Name() != "postgres" {
-		var chunks []model.DocsChunk
+		var results []DocsChunkSearchResult
 		if err := r.db.WithContext(ctx).
-			Where("workspace_id = ? AND space_id IN ?", workspaceID, spaceIDs).
-			Order("updated_at DESC").
+			Table("docs_chunks AS c").
+			Select("c.id, c.workspace_id, c.space_id, s.type AS space_type, c.document_id, c.block_id, c.chunk_index, c.title, c.content").
+			Joins("JOIN docs_documents d ON d.id = c.document_id").
+			Joins("JOIN docs_spaces s ON s.id = c.space_id").
+			Joins("LEFT JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
+			Where("c.workspace_id = ? AND c.space_id IN ?", workspaceID, spaceIDs).
+			Where("d.status = ? AND d.deleted_at IS NULL", model.DocStatusPublished).
+			Where("(s.type = ? OR (s.type = ? AND ha.public_published_at IS NOT NULL))", model.SpaceTypeInternal, model.SpaceTypeExternalCapable).
+			Order("c.updated_at DESC").
 			Limit(limit).
-			Find(&chunks).Error; err != nil {
+			Scan(&results).Error; err != nil {
 			return nil, err
 		}
-		results := make([]DocsChunkSearchResult, 0, len(chunks))
-		for _, chunk := range chunks {
-			results = append(results, DocsChunkSearchResult{
-				ID:           chunk.ID,
-				WorkspaceID:  chunk.WorkspaceID,
-				SpaceID:      chunk.SpaceID,
-				DocumentID:   chunk.DocumentID,
-				BlockID:      chunk.BlockID,
-				ChunkIndex:   chunk.ChunkIndex,
-				Title:        chunk.Title,
-				Content:      chunk.Content,
-				LexicalScore: 1,
-			})
+		for idx := range results {
+			results[idx].LexicalScore = 1
 		}
 		return results, nil
 	}
 
 	sql := `
-		SELECT c.id, c.workspace_id, c.space_id, c.document_id, c.block_id, c.chunk_index, c.title, c.content,
+		SELECT c.id, c.workspace_id, c.space_id, s.type AS space_type, c.document_id, c.block_id, c.chunk_index, c.title, c.content,
 		       ts_rank(
 		         setweight(to_tsvector('english', COALESCE(c.title, '')), 'A') ||
 		         setweight(to_tsvector('english', COALESCE(c.content, '')), 'B'),
@@ -193,12 +190,13 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID str
 		       ) AS lexical_score
 		FROM docs_chunks c
 		JOIN docs_documents d ON d.id = c.document_id
-		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		JOIN docs_spaces s ON s.id = c.space_id
+		LEFT JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
 		WHERE c.workspace_id = ?
 		  AND c.space_id IN ?
 		  AND d.status = 'published'
 		  AND d.deleted_at IS NULL
-		  AND ha.public_published_at IS NOT NULL
+		  AND (s.type = 'internal' OR (s.type = 'external_capable' AND ha.public_published_at IS NOT NULL))
 		  AND (
 		    to_tsvector('english', COALESCE(c.title, '')) ||
 		    to_tsvector('english', COALESCE(c.content, ''))
@@ -218,16 +216,17 @@ func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID stri
 		embeddingModel = defaultChunkEmbeddingModel
 	}
 	sql := `
-		SELECT c.id, c.workspace_id, c.space_id, c.document_id, c.block_id, c.chunk_index, c.title, c.content,
+		SELECT c.id, c.workspace_id, c.space_id, s.type AS space_type, c.document_id, c.block_id, c.chunk_index, c.title, c.content,
 		       GREATEST(0, 1 - (c.embedding <=> CAST(? AS vector))) AS vector_score
 		FROM docs_chunks c
 		JOIN docs_documents d ON d.id = c.document_id
-		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		JOIN docs_spaces s ON s.id = c.space_id
+		LEFT JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
 		WHERE c.workspace_id = ?
 		  AND c.space_id IN ?
 		  AND d.status = 'published'
 		  AND d.deleted_at IS NULL
-		  AND ha.public_published_at IS NOT NULL
+		  AND (s.type = 'internal' OR (s.type = 'external_capable' AND ha.public_published_at IS NOT NULL))
 		  AND c.embedding_provider = ?
 		  AND c.embedding_model = ?
 		  AND c.embedding_version = ?
