@@ -26,7 +26,8 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 
 	bestVector := 0.0
 	bestLexical := 0.0
-	retrievedDocs := map[string]struct{}{}
+	retrievedPublicDocs := map[string]struct{}{}
+	hasInternalGrounding := false
 	for _, result := range searchResults {
 		if result.VectorScore > bestVector {
 			bestVector = result.VectorScore
@@ -34,7 +35,11 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 		if result.LexicalScore > bestLexical {
 			bestLexical = result.LexicalScore
 		}
-		retrievedDocs[result.ReferenceID] = struct{}{}
+		if result.IsInternal {
+			hasInternalGrounding = true
+		} else {
+			retrievedPublicDocs[result.ReferenceID] = struct{}{}
+		}
 	}
 
 	// ts_rank scores are typically small; normalize them into a 0-1 band.
@@ -43,14 +48,22 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 
 	citedDocs := map[string]struct{}{}
 	for _, docID := range response.SourceDocIDs {
-		if _, ok := retrievedDocs[docID]; ok {
+		if _, ok := retrievedPublicDocs[docID]; ok {
 			citedDocs[docID] = struct{}{}
 		}
 	}
 
 	sourceCoverage := 0.0
-	if len(retrievedDocs) > 0 {
-		sourceCoverage = clamp01(float64(len(citedDocs)) / float64(minInt(len(retrievedDocs), 3)))
+	coveredSources := len(citedDocs)
+	retrievedSources := len(retrievedPublicDocs)
+	if hasInternalGrounding {
+		// Internal sources cannot be cited in a customer-facing response, so
+		// their presence counts as implicit coverage without requiring an ID.
+		coveredSources++
+		retrievedSources++
+	}
+	if retrievedSources > 0 {
+		sourceCoverage = clamp01(float64(coveredSources) / float64(minInt(retrievedSources, 3)))
 	}
 
 	return (retrievalQuality * 0.4) +

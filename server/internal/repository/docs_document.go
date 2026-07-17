@@ -137,6 +137,18 @@ func (r *DocsDocumentRepository) ListByIDs(ctx context.Context, workspaceID stri
 	return docs, nil
 }
 
+// ListPublishedBySpace returns internally published documents in a docs space.
+func (r *DocsDocumentRepository) ListPublishedBySpace(ctx context.Context, workspaceID, spaceID string) ([]model.DocsDocument, error) {
+	var docs []model.DocsDocument
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND space_id = ? AND status = ? AND deleted_at IS NULL", workspaceID, spaceID, model.DocStatusPublished).
+		Order("updated_at DESC").
+		Find(&docs).Error; err != nil {
+		return nil, fmt.Errorf("list published docs by space: %w", err)
+	}
+	return docs, nil
+}
+
 // List returns documents for a workspace with optional filters.
 func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID *string, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
 	query := r.db.WithContext(ctx).

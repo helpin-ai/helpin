@@ -4,11 +4,11 @@ import "testing"
 
 func TestEvaluateConfidence(t *testing.T) {
 	tests := []struct {
-		name        string
+		name          string
 		searchResults []KnowledgeSearchResult
-		response    *AIResponseContract
-		isGreeting  bool
-		wantAbove   bool // want confidence >= 0.7 (the default AIConfidenceThreshold)
+		response      *AIResponseContract
+		isGreeting    bool
+		wantAbove     bool // want confidence >= 0.7 (the default AIConfidenceThreshold)
 	}{
 		{
 			name:          "greeting with no retrieval hits answers confidently",
@@ -43,6 +43,15 @@ func TestEvaluateConfidence(t *testing.T) {
 				{ReferenceID: "doc-1", VectorScore: 0.95, LexicalScore: 0},
 			},
 			response:   &AIResponseContract{CanAnswer: true, SourceDocIDs: []string{"doc-1"}, Confidence: 0.9},
+			isGreeting: false,
+			wantAbove:  true,
+		},
+		{
+			name: "non-greeting answer grounded in high-relevance internal retrieval does not require a citation",
+			searchResults: []KnowledgeSearchResult{
+				{ReferenceID: "internal-doc", IsInternal: true, VectorScore: 0.95},
+			},
+			response:   &AIResponseContract{CanAnswer: true, SourceDocIDs: nil, Confidence: 0.9},
 			isGreeting: false,
 			wantAbove:  true,
 		},
