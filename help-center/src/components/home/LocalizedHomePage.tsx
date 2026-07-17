@@ -110,7 +110,7 @@ export function LocalizedHomePage() {
             />
           </button>
 
-          {cards.length > 0 && (
+          {cards.length > 0 ? (
             <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2">
               {cards.map((card, i) => (
                 <FeaturedCard
@@ -120,6 +120,16 @@ export function LocalizedHomePage() {
                   multilingualEnabled={multilingualEnabled}
                 />
               ))}
+            </div>
+          ) : (
+            <div className="mt-12 rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center">
+              <p className="text-[15px] font-medium text-foreground">
+                No help spaces configured yet
+              </p>
+              <p className="mt-1.5 text-[13.5px] text-muted-foreground">
+                Content will appear here once spaces are published to this Help
+                Center.
+              </p>
             </div>
           )}
           <Footer />
