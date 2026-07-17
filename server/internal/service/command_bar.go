@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -629,14 +630,9 @@ func (s *CommandBarService) classifyCommandBarChatIntent(ctx context.Context, wo
 		return nil, nil
 	}
 	tools := s.executableReadOnlyToolCards(access)
-	var agents []model.CommandBarAgent
-	if s.agentService != nil && s.agentService.agentRepo != nil {
-		list, err := s.agentService.ListAgents(ctx, workspaceID)
-		if err == nil {
-			agents = commandBarAllAgentCandidates(list)
-		} else {
-			slog.WarnContext(ctx, "ask agents chat classifier could not list agents", "error", err, "workspace_id", workspaceID)
-		}
+	agents, err := s.commandBarAgentsForActor(ctx, workspaceID, "", access)
+	if err != nil {
+		slog.WarnContext(ctx, "ask agents chat classifier could not list agents", "error", err, "workspace_id", workspaceID)
 	}
 	contextJSON, _ := json.Marshal(pageContext)
 	historyJSON, _ := json.Marshal(commandBarChatHistoryForClassifier(history))
@@ -667,6 +663,7 @@ Choose exactly one route:
 
 Policy:
 - Prefer "inline_read_only" for read-only workspace questions when the available non-mutating tools can fetch the data.
+- Agent discovery, comparison, and recommendation questions are read-only. Route them to "inline_read_only" unless the user explicitly asks to run an agent.
 - A resolved task, document, CRM object, or workspace page context is enough target context for inline read-only status questions.
 - Do not route to one-shot merely because live data is needed; inline read-only tools are live data tools.
 - If the user needs current external evidence, industry trends, online research, web search, or fetched URLs, route "inline_read_only" only when an inline web/search/fetch tool is listed. Otherwise route "one_shot_command" so the user can approve a Command Agent with web tools.
@@ -714,8 +711,13 @@ func (s *CommandBarService) inlineReadOnlyAnswer(ctx context.Context, workspaceI
 		return fallbackInlineReadOnlyAnswer(text, pageContext), nil
 	}
 	tools := s.executableReadOnlyToolCards(access)
+	agents, err := s.commandBarAgentsForActor(ctx, workspaceID, actorID, access)
+	if err != nil {
+		slog.WarnContext(ctx, "ask agents read-only chat could not list agents", "error", err, "workspace_id", workspaceID)
+	}
 	contextJSON, _ := json.Marshal(pageContext)
 	toolJSON, _ := json.Marshal(tools)
+	agentJSON, _ := json.Marshal(commandBarChatClassifierAgentCards(agents))
 	historyJSON, _ := json.Marshal(commandBarInlineChatHistoryForLLM(history))
 	historyWorkingContext := commandBarWorkingContextFromHistory(history)
 	toolCalls := make([]commandBarReadOnlyToolCall, 0, 4)
@@ -746,6 +748,7 @@ For live workspace data, request one allowed read-only tool at a time, wait for 
 If the user asks to summarize, compare, rank, or choose from referenced entities and the available context is too shallow, fetch richer read-only detail for the referenced set first.
 Respect the domain of the current question. If the user asks about documents/docs, do not answer from PM task result sets; use Docs tools or ask a clarification. If the user asks about tasks, do not answer from Docs result sets.
 Never claim that a tool was executed unless a tool result is present.
+For questions about available agents or which agent to use, recommend only agents present in the verified available-agent catalog. Use their exact names and do not invent agent roles. The list_agents tool returns the same actor-filtered catalog.
 Never request or simulate mutating actions. If the user asks for mutation, reusable agents, chains, DAGs, or long-running work, do not answer inline.
 Return JSON only with one of:
 {"type":"tool_call","tool":"tool_name","input":{...}}
@@ -758,7 +761,8 @@ Page context: %s
 Recent chat history: %s
 Working context: %s
 Available executable read-only tools: %s
-Tool results so far: %s`, text, string(contextJSON), string(historyJSON), string(workingContextJSON), string(toolJSON), string(toolResultJSON)),
+Verified available saved/system/custom agents: %s
+Tool results so far: %s`, text, string(contextJSON), string(historyJSON), string(workingContextJSON), string(toolJSON), string(agentJSON), string(toolResultJSON)),
 			}},
 			Temperature:     0,
 			MaxTokens:       900,
@@ -1849,13 +1853,41 @@ func (s *CommandBarService) executeCommandBarReadOnlyTool(ctx context.Context, w
 	}
 	targetType := firstNonEmptyString(strings.TrimSpace(pageContext.EntityType), "workspace")
 	targetID := firstNonEmptyString(strings.TrimSpace(pageContext.EntityID), workspaceID)
+	actor := commandBarRequestActor(ctx, workspaceID, actorID, access)
 	return s.commandService.Execute(ctx, model.InternalCommandContext{
-		WorkspaceID: workspaceID,
-		ActorID:     actorID,
-		ActorRole:   access.ActorRole,
-		TargetType:  targetType,
-		TargetID:    targetID,
+		WorkspaceID:  workspaceID,
+		ActorID:      actorID,
+		ActorRole:    actor.Role,
+		ActorTeamIDs: actor.TeamIDs(),
+		TargetType:   targetType,
+		TargetID:     targetID,
 	}, def.Name, input)
+}
+
+func (s *CommandBarService) commandBarAgentsForActor(ctx context.Context, workspaceID, actorID string, access CommandBarChatAccess) ([]model.CommandBarAgent, error) {
+	if s == nil || s.agentService == nil || s.agentService.agentRepo == nil {
+		return nil, nil
+	}
+	agents, err := s.agentService.ListAgentsForActor(ctx, workspaceID, commandBarRequestActor(ctx, workspaceID, actorID, access))
+	if err != nil {
+		return nil, err
+	}
+	return commandBarAllAgentCandidates(agents), nil
+}
+
+func commandBarRequestActor(ctx context.Context, workspaceID, actorID string, access CommandBarChatAccess) *authorization.Actor {
+	if actor := authorization.GetActor(ctx); actor != nil {
+		workspaceMatches := strings.TrimSpace(actor.WorkspaceID) == "" || actor.WorkspaceID == workspaceID
+		userMatches := strings.TrimSpace(actorID) == "" || strings.TrimSpace(actor.UserID) == "" || actor.UserID == actorID
+		if workspaceMatches && userMatches {
+			return actor
+		}
+	}
+	return &authorization.Actor{
+		UserID:      strings.TrimSpace(actorID),
+		WorkspaceID: strings.TrimSpace(workspaceID),
+		Role:        strings.TrimSpace(access.ActorRole),
+	}
 }
 
 func (s *CommandBarService) commandBarReadOnlyToolDefinition(toolName string) (InternalCommandDefinition, bool) {
@@ -5300,6 +5332,10 @@ func commandBarAgentCandidate(agent model.Agent, allowedTargets []string) model.
 		Description:    commandBarAgentDescription(agent),
 		PresetKey:      normalizePresetKey(agent.PresetKey),
 		Role:           agent.Role,
+		Status:         agent.Status,
+		RuntimeKind:    agent.RuntimeKind,
+		IsSystem:       agent.IsSystem,
+		SupportedModes: slices.Clone(agent.SupportedModes),
 		AllowedTargets: normalizeCommandBarTargetTypes(allowedTargets),
 		AllowedTools:   parseJSONStringSlice(agent.AllowedTools),
 	}
