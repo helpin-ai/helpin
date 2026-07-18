@@ -13,9 +13,14 @@ type DocsChunk struct {
 	DocumentID          string          `json:"document_id" gorm:"type:uuid;not null;index:idx_docs_chunk_ws_space_doc,priority:3;uniqueIndex:idx_docs_chunk_doc_order,priority:1"`
 	BlockID             *string         `json:"block_id,omitempty" gorm:"type:uuid;index"`
 	ChunkIndex          int             `json:"chunk_index" gorm:"not null;uniqueIndex:idx_docs_chunk_doc_order,priority:2"`
+	SectionKey          string          `json:"section_key" gorm:"size:64;not null;default:'';index"`
+	HeadingPath         string          `json:"heading_path" gorm:"type:text;not null;default:''"`
 	BlockRange          json.RawMessage `json:"block_range,omitempty" gorm:"type:jsonb"`
 	Title               string          `json:"title" gorm:"not null"`
 	Content             string          `json:"content" gorm:"type:text;not null"`
+	SearchContent       string          `json:"search_content" gorm:"type:text;not null;default:''"`
+	PreviousChunkIndex  *int            `json:"previous_chunk_index,omitempty"`
+	NextChunkIndex      *int            `json:"next_chunk_index,omitempty"`
 	ContentHash         string          `json:"content_hash" gorm:"size:64;not null;index"`
 	Embedding           string          `json:"-" gorm:"type:vector(1536);not null"`
 	EmbeddingProvider   string          `json:"embedding_provider" gorm:"not null;default:'openai'"`

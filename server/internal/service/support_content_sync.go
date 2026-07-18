@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	htmlstd "html"
 	"log/slog"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -178,7 +180,7 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 			return err
 		}
 
-		chunks := chunkDocumentText(contentText)
+		chunks := chunkStructuredDocument(title, contentText)
 		if len(chunks) == 0 {
 			return s.chunkRepo.ReplacePageChunks(ctx, savedPage.ID, nil)
 		}
@@ -186,7 +188,7 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
 			Provider: "openai",
 			Model:    s.embeddingModel,
-			Inputs:   chunks,
+			Inputs:   structuredChunkSearchInputs(chunks),
 		})
 		if err != nil {
 			slog.WarnContext(ctx, "skipping page: embedding failed", "page_id", savedPage.ID, "url", savedPage.URL, "error", err)
@@ -210,16 +212,23 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 			}
 			safeTitle := strings.ToValidUTF8(savedPage.Title, "")
 			safeURL := strings.ToValidUTF8(savedPage.URL, "")
-			safeChunk := strings.ToValidUTF8(chunk, "")
+			safeChunk := strings.ToValidUTF8(chunk.Content, "")
+			safeSearchContent := strings.ToValidUTF8(chunk.SearchContent, "")
+			previous, next := neighborChunkIndexes(chunkIndex, len(chunks))
 			rows = append(rows, model.SupportContentChunk{
 				WorkspaceID:         source.WorkspaceID,
 				ContentSourceID:     source.ID,
 				PageID:              savedPage.ID,
 				ChunkIndex:          chunkIndex,
+				SectionKey:          chunk.SectionKey,
+				HeadingPath:         chunk.HeadingPath,
 				Title:               safeTitle,
 				URL:                 safeURL,
 				Content:             safeChunk,
-				ContentHash:         hashChunk(safeTitle, safeChunk),
+				SearchContent:       safeSearchContent,
+				PreviousChunkIndex:  previous,
+				NextChunkIndex:      next,
+				ContentHash:         hashChunk(safeTitle, safeSearchContent),
 				Embedding:           formatVector(resp.Vectors[chunkIndex]),
 				EmbeddingProvider:   "openai",
 				EmbeddingModel:      s.embeddingModel,
@@ -385,7 +394,7 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 			continue
 		}
 
-		chunks := chunkDocumentText(page.ContentText)
+		chunks := chunkStructuredDocument(page.Title, page.ContentText)
 		if len(chunks) == 0 {
 			_ = s.chunkRepo.ReplacePageChunks(ctx, page.ID, nil)
 			continue
@@ -394,7 +403,7 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 		resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
 			Provider: "openai",
 			Model:    s.embeddingModel,
-			Inputs:   chunks,
+			Inputs:   structuredChunkSearchInputs(chunks),
 		})
 		if err != nil {
 			slog.WarnContext(ctx, "skipping page: embedding failed", "page_id", page.ID, "url", page.URL, "error", err)
@@ -415,16 +424,23 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 			}
 			safeTitle := strings.ToValidUTF8(page.Title, "")
 			safeURL := strings.ToValidUTF8(page.URL, "")
-			safeChunk := strings.ToValidUTF8(chunk, "")
+			safeChunk := strings.ToValidUTF8(chunk.Content, "")
+			safeSearchContent := strings.ToValidUTF8(chunk.SearchContent, "")
+			previous, next := neighborChunkIndexes(chunkIndex, len(chunks))
 			rows = append(rows, model.SupportContentChunk{
 				WorkspaceID:         source.WorkspaceID,
 				ContentSourceID:     source.ID,
 				PageID:              page.ID,
 				ChunkIndex:          chunkIndex,
+				SectionKey:          chunk.SectionKey,
+				HeadingPath:         chunk.HeadingPath,
 				Title:               safeTitle,
 				URL:                 safeURL,
 				Content:             safeChunk,
-				ContentHash:         hashChunk(safeTitle, safeChunk),
+				SearchContent:       safeSearchContent,
+				PreviousChunkIndex:  previous,
+				NextChunkIndex:      next,
+				ContentHash:         hashChunk(safeTitle, safeSearchContent),
 				Embedding:           formatVector(resp.Vectors[chunkIndex]),
 				EmbeddingProvider:   "openai",
 				EmbeddingModel:      s.embeddingModel,
@@ -498,7 +514,9 @@ func mustMarshalJSON(value any) json.RawMessage {
 }
 
 var (
-	htmlTagPattern = regexp.MustCompile(`<[^>]+>`)
+	htmlTagPattern          = regexp.MustCompile(`<[^>]+>`)
+	htmlBlockPattern        = regexp.MustCompile(`(?i)</?(?:p|div|li|br|section|article|header|footer|table|tr|ul|ol)[^>]*>`)
+	htmlHeadingBlockPattern = regexp.MustCompile(`(?is)<h([1-6])[^>]*>(.*?)</h[1-6]>`)
 	// Markdown images: ![alt text](url) → keep alt text only.
 	mdImagePattern = regexp.MustCompile(`!\[([^\]]*)\]\([^)]+\)`)
 	// HTML <img> tags (self-closing or not).
@@ -510,9 +528,21 @@ var (
 )
 
 func stripHTML(raw string) string {
-	replaced := htmlTagPattern.ReplaceAllString(raw, " ")
-	replaced = strings.NewReplacer("&nbsp;", " ", "&amp;", "&", "&lt;", "<", "&gt;", ">", "&#39;", "'", "&quot;", `"`).Replace(replaced)
-	return replaced
+	withHeadings := htmlHeadingBlockPattern.ReplaceAllStringFunc(raw, func(match string) string {
+		parts := htmlHeadingBlockPattern.FindStringSubmatch(match)
+		if len(parts) != 3 {
+			return match
+		}
+		level, err := strconv.Atoi(parts[1])
+		if err != nil || level < 1 || level > 6 {
+			level = 2
+		}
+		heading := strings.Join(strings.Fields(htmlTagPattern.ReplaceAllString(parts[2], " ")), " ")
+		return "\n" + strings.Repeat("#", level) + " " + heading + "\n"
+	})
+	withBlocks := htmlBlockPattern.ReplaceAllString(withHeadings, "\n")
+	replaced := htmlTagPattern.ReplaceAllString(withBlocks, " ")
+	return htmlstd.UnescapeString(replaced)
 }
 
 func normalizeContentText(value string) string {
@@ -526,7 +556,24 @@ func normalizeContentText(value string) string {
 	cleaned = mdImageLinkPattern.ReplaceAllString(cleaned, "$1")
 	cleaned = mdImagePattern.ReplaceAllString(cleaned, "$1")
 
-	return strings.Join(strings.Fields(strings.TrimSpace(cleaned)), " ")
+	cleaned = strings.ReplaceAll(cleaned, "\r\n", "\n")
+	cleaned = strings.ReplaceAll(cleaned, "\r", "\n")
+	lines := strings.Split(cleaned, "\n")
+	normalized := make([]string, 0, len(lines))
+	lastBlank := true
+	for _, line := range lines {
+		line = strings.Join(strings.Fields(strings.TrimSpace(line)), " ")
+		if line == "" {
+			if !lastBlank {
+				normalized = append(normalized, "")
+				lastBlank = true
+			}
+			continue
+		}
+		normalized = append(normalized, line)
+		lastBlank = false
+	}
+	return strings.TrimSpace(strings.Join(normalized, "\n"))
 }
 
 // sanitizeJSONUTF8 strips invalid UTF-8 byte sequences from a JSON payload.

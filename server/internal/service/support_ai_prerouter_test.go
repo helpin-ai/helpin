@@ -1,107 +1,18 @@
 package service
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/gorm"
 )
-
-// ---------------------------------------------------------------------------
-// Unit tests: pre-route classification
-// ---------------------------------------------------------------------------
-
-// Real customer messages observed in production (usermaven workspace) are
-// marked with "prod:". The pre-router must never swallow a substantive one.
-func TestPreRouteSupportMessage(t *testing.T) {
-	tests := []struct {
-		name        string
-		content     string
-		aiTurnCount int
-		want        preRouteOutcome
-	}{
-		// Greetings — short-circuit on first contact.
-		{name: "prod: bare hi", content: "Hi", aiTurnCount: 0, want: preRouteGreet},
-		{name: "prod: bare hello", content: "Hello", aiTurnCount: 0, want: preRouteGreet},
-		{name: "hey with punctuation", content: "Hey!!", aiTurnCount: 0, want: preRouteGreet},
-		{name: "hi with emoji", content: "Hi 👋", aiTurnCount: 0, want: preRouteGreet},
-		{name: "hi there", content: "hi there", aiTurnCount: 0, want: preRouteGreet},
-		{name: "good morning", content: "Good morning", aiTurnCount: 0, want: preRouteGreet},
-		{name: "hello good morning", content: "Hello good morning!", aiTurnCount: 0, want: preRouteGreet},
-		{name: "hey team", content: "Hey team", aiTurnCount: 0, want: preRouteGreet},
-		{name: "all caps hi", content: "HI", aiTurnCount: 0, want: preRouteGreet},
-
-		// Opening gratitude — lightweight acknowledgement.
-		{name: "bare thanks", content: "Thanks!", aiTurnCount: 0, want: preRouteGratitude},
-		{name: "thank you so much", content: "thank you so much", aiTurnCount: 0, want: preRouteGratitude},
-		{name: "ok thanks", content: "ok thanks", aiTurnCount: 0, want: preRouteGratitude},
-		{name: "ty", content: "ty", aiTurnCount: 0, want: preRouteGratitude},
-
-		// Mid-conversation: never short-circuit (nudges, confirmations).
-		{name: "hello nudge mid-conversation", content: "hello??", aiTurnCount: 2, want: preRouteProceed},
-		{name: "thanks mid-conversation", content: "thanks", aiTurnCount: 1, want: preRouteProceed},
-
-		// Substantive messages — all must proceed to the full pipeline.
-		{name: "prod: guest posting", content: "DO YOU ALLOW GUEST POSTING?", aiTurnCount: 0, want: preRouteProceed},
-		{name: "prod: plan picker template", content: `Help me choose a Usermaven plan. My answer: "I want to understand how people use my website or product." Based on this, the Growth plan looks like the best fit`, aiTurnCount: 0, want: preRouteProceed},
-		{name: "prod: greeting plus question", content: "hi, can we filter analytics dashboard by contact segments?", aiTurnCount: 0, want: preRouteProceed},
-		{name: "prod: hi how to cancel", content: "Hi. How to cancel the subscription?", aiTurnCount: 0, want: preRouteProceed},
-		{name: "prod: hi cancel plan", content: "Hi, we'd like to cancel the plan we have", aiTurnCount: 0, want: preRouteProceed},
-		{name: "prod: mcp question", content: "does usermaven have an MCP?", aiTurnCount: 0, want: preRouteProceed},
-		{name: "prod: gibberish with hello", content: "Hello.order.mr", aiTurnCount: 0, want: preRouteProceed},
-		{name: "prod: b2c question", content: "do u deal with b2c", aiTurnCount: 0, want: preRouteProceed},
-		{name: "prod: cancel plan", content: "Cancel plan", aiTurnCount: 0, want: preRouteProceed},
-		{name: "prod: product feedback", content: "Suggest changes to product UX", aiTurnCount: 0, want: preRouteProceed},
-		{name: "prod: wordpress bug report", content: "The WordPress plugin isn't working. I have the necessary connections set up, but it isn't recording any events.", aiTurnCount: 0, want: preRouteProceed},
-		{name: "prod: google ads integration", content: "Hi there, I'm wanting to integrate google ads using the integration feature. It is saying the integration link is expired when I try it - any ideas?", aiTurnCount: 0, want: preRouteProceed},
-		{name: "prod: mcp workspaces", content: "i need to connect several workspaces with claude via mcp it seems that only allows one", aiTurnCount: 0, want: preRouteProceed},
-		{name: "greeting word inside sentence", content: "Please tell Waqar I said hi", aiTurnCount: 0, want: preRouteProceed},
-		{name: "empty message", content: "", aiTurnCount: 0, want: preRouteProceed},
-		{name: "emoji only", content: "👋", aiTurnCount: 0, want: preRouteProceed},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := preRouteSupportMessage(tt.content, tt.aiTurnCount)
-			if got.Outcome != tt.want {
-				t.Errorf("preRouteSupportMessage(%q, turns=%d) = %q, want %q", tt.content, tt.aiTurnCount, got.Outcome, tt.want)
-			}
-			if got.Outcome != preRouteProceed && strings.TrimSpace(got.Reply) == "" {
-				t.Errorf("short-circuit outcome %q must carry a reply", got.Outcome)
-			}
-		})
-	}
-}
-
-func TestIsPureGreetingEdgeCases(t *testing.T) {
-	tests := []struct {
-		content string
-		want    bool
-	}{
-		{"good morning", true},
-		{"good day", true},
-		{"good", false},         // no time-of-day, no core greeting
-		{"morning", false},      // filler alone is not a greeting
-		{"yo", true},
-		{"there team", false},   // fillers without a core word
-		{"hi hi hi hi hi hi hi", false}, // over token cap
-	}
-	for _, tt := range tests {
-		if got := isPureGreeting(tt.content); got != tt.want {
-			t.Errorf("isPureGreeting(%q) = %v, want %v", tt.content, got, tt.want)
-		}
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Unit tests: hardened confirmation detection
@@ -170,8 +81,8 @@ func TestCountSubstantiveAITurns(t *testing.T) {
 // End-to-end: HandleIncomingMessage through the pre-router (sqlite)
 // ---------------------------------------------------------------------------
 
-// recordingLLMStub records every chat call. The pre-router contract is that
-// short-circuited messages produce ZERO calls.
+// recordingLLMStub records every chat call. Every customer message must invoke
+// the LLM pre-router; short-circuited routes skip only the generation call.
 type recordingLLMStub struct {
 	mu       sync.Mutex
 	calls    []llm.ChatRequest
@@ -341,14 +252,15 @@ func (e *preRouterTestEnv) listMessages(t *testing.T) []model.SupportMessage {
 
 func TestHandleIncomingMessageGreetingShortCircuit(t *testing.T) {
 	env := setupPreRouterEnv(t, "ai_first")
+	env.stub.response = `{"route":"conversational","reply":"Hello! How can I help?","intent":"unknown","subject":"","language":"en","risk":"general","required_evidence":[],"context_action":"new_issue","issue_key":"greeting","issue_summary":"Customer greeted support.","progress_signal":"new_issue","standalone_query":"","search_queries":[],"reason":"greeting"}`
 	msg := env.sendCustomerMessage(t, "Hi")
 
 	if err := env.svc.HandleIncomingMessage(context.Background(), env.wsID, env.convo.ID, msg); err != nil {
 		t.Fatalf("HandleIncomingMessage: %v", err)
 	}
 
-	if n := env.stub.callCount(); n != 0 {
-		t.Fatalf("greeting must not invoke the LLM, got %d calls", n)
+	if n := env.stub.callCount(); n != 1 {
+		t.Fatalf("greeting must invoke only the LLM pre-router, got %d calls", n)
 	}
 	msgs := env.listMessages(t)
 	var aiMsg *model.SupportMessage
@@ -360,8 +272,8 @@ func TestHandleIncomingMessageGreetingShortCircuit(t *testing.T) {
 	if aiMsg == nil {
 		t.Fatalf("expected an AI greeting reply, messages: %d", len(msgs))
 	}
-	if aiMsg.Content != supportPreRouterGreetingReply {
-		t.Errorf("greeting content = %q, want %q", aiMsg.Content, supportPreRouterGreetingReply)
+	if aiMsg.Content != "Hello! How can I help?" {
+		t.Errorf("greeting content = %q", aiMsg.Content)
 	}
 	var meta AIMessageMetadata
 	if err := json.Unmarshal([]byte(aiMsg.Metadata), &meta); err != nil {
@@ -370,8 +282,8 @@ func TestHandleIncomingMessageGreetingShortCircuit(t *testing.T) {
 	if meta.AIReplyKind != supportReplyKindGreeting {
 		t.Errorf("reply kind = %q, want %q", meta.AIReplyKind, supportReplyKindGreeting)
 	}
-	if meta.AIModel != supportPreRouterModelName {
-		t.Errorf("model = %q, want %q", meta.AIModel, supportPreRouterModelName)
+	if meta.AIModel != "planner-test-model" {
+		t.Errorf("model = %q, want planner-test-model", meta.AIModel)
 	}
 	if meta.AITokensUsed != 0 {
 		t.Errorf("tokens used = %d, want 0", meta.AITokensUsed)
@@ -396,7 +308,7 @@ func TestHandleIncomingMessageGreetingShortCircuit(t *testing.T) {
 
 func TestHandleIncomingMessageSubstantiveReachesPlanner(t *testing.T) {
 	env := setupPreRouterEnv(t, "internal_note")
-	env.stub.response = `{"decision":"handoff","reason":"account_specific_action","issue_key":"cancel-subscription","issue_summary":"Customer wants to cancel"}`
+	env.stub.response = `{"route":"handoff","reply":"I’ll connect you with the team.","intent":"unknown","subject":"subscription","language":"en","risk":"general","required_evidence":[],"context_action":"new_issue","issue_key":"cancel_subscription","issue_summary":"Customer wants to cancel.","progress_signal":"new_issue","standalone_query":"","search_queries":[],"reason":"account_specific_action"}`
 	msg := env.sendCustomerMessage(t, "Hi. How to cancel the subscription?")
 
 	if err := env.svc.HandleIncomingMessage(context.Background(), env.wsID, env.convo.ID, msg); err != nil {
@@ -420,31 +332,37 @@ func TestHandleIncomingMessageSubstantiveReachesPlanner(t *testing.T) {
 
 func TestHandleIncomingMessageGreetingInNoteModeSkipsSilently(t *testing.T) {
 	env := setupPreRouterEnv(t, "internal_note")
+	env.stub.response = `{"route":"conversational","reply":"Hello! How can I help?","intent":"unknown","subject":"","language":"en","risk":"general","required_evidence":[],"context_action":"new_issue","issue_key":"greeting","issue_summary":"Customer greeted support.","progress_signal":"new_issue","standalone_query":"","search_queries":[],"reason":"greeting"}`
 	msg := env.sendCustomerMessage(t, "Hello")
 
 	if err := env.svc.HandleIncomingMessage(context.Background(), env.wsID, env.convo.ID, msg); err != nil {
 		t.Fatalf("HandleIncomingMessage: %v", err)
 	}
-	if n := env.stub.callCount(); n != 0 {
-		t.Fatalf("greeting must not invoke the LLM, got %d calls", n)
+	if n := env.stub.callCount(); n != 1 {
+		t.Fatalf("greeting must invoke only the LLM pre-router, got %d calls", n)
 	}
+	foundNote := false
 	for _, m := range env.listMessages(t) {
-		if m.SenderType == "ai" {
-			t.Fatalf("internal-note mode must not auto-reply to a greeting, got AI message %q", m.Content)
+		if m.SenderType == "ai" && m.IsInternal {
+			foundNote = true
 		}
+	}
+	if !foundNote {
+		t.Fatal("internal-note mode should create an LLM-authored greeting suggestion")
 	}
 }
 
 func TestHandleIncomingMessageThanksAfterAnswerResolves(t *testing.T) {
 	env := setupPreRouterEnv(t, "ai_first")
+	env.stub.response = `{"route":"confirmation","reply":"You’re welcome!","intent":"unknown","subject":"export","language":"en","risk":"general","required_evidence":[],"context_action":"confirm_previous","issue_key":"export","issue_summary":"Customer confirmed the export answer.","progress_signal":"same_issue_new_info","standalone_query":"","search_queries":[],"reason":"confirmed"}`
 	env.seedAITurn(t, supportReplyKindAnswer, "You can export from Settings → Data export.")
 	msg := env.sendCustomerMessage(t, "Thanks!")
 
 	if err := env.svc.HandleIncomingMessage(context.Background(), env.wsID, env.convo.ID, msg); err != nil {
 		t.Fatalf("HandleIncomingMessage: %v", err)
 	}
-	if n := env.stub.callCount(); n != 0 {
-		t.Fatalf("confirmation must not invoke the LLM, got %d calls", n)
+	if n := env.stub.callCount(); n != 1 {
+		t.Fatalf("confirmation must invoke only the LLM pre-router, got %d calls", n)
 	}
 	conv := env.reloadConversation(t)
 	if conv.AIState == nil || *conv.AIState != "resolved" {
@@ -458,9 +376,33 @@ func TestHandleIncomingMessageThanksAfterAnswerResolves(t *testing.T) {
 	}
 }
 
+func TestHandleIncomingMessageConfirmationInNoteModeDoesNotResolve(t *testing.T) {
+	env := setupPreRouterEnv(t, "internal_note")
+	env.stub.response = `{"route":"confirmation","reply":"You’re welcome!","intent":"unknown","subject":"export","language":"en","risk":"general","required_evidence":[],"context_action":"confirm_previous","issue_key":"export","issue_summary":"Customer confirmed the export answer.","progress_signal":"same_issue_new_info","standalone_query":"","search_queries":[],"reason":"confirmed"}`
+	env.seedAITurn(t, supportReplyKindAnswer, "You can export from Settings → Data export.")
+	msg := env.sendCustomerMessage(t, "Thanks!")
+
+	if err := env.svc.HandleIncomingMessage(context.Background(), env.wsID, env.convo.ID, msg); err != nil {
+		t.Fatalf("HandleIncomingMessage: %v", err)
+	}
+	conv := env.reloadConversation(t)
+	if conv.AIState != nil && *conv.AIState == "resolved" {
+		t.Fatal("internal-note shadow mode must not resolve the live conversation")
+	}
+	foundNote := false
+	for _, message := range env.listMessages(t) {
+		if message.SenderType == "ai" && message.IsInternal && strings.Contains(message.Content, "You’re welcome!") {
+			foundNote = true
+		}
+	}
+	if !foundNote {
+		t.Fatal("internal-note mode should preserve the confirmation as a suggestion")
+	}
+}
+
 func TestHandleIncomingMessageNegativeFeedbackDoesNotResolve(t *testing.T) {
 	env := setupPreRouterEnv(t, "internal_note")
-	env.stub.response = `{"decision":"handoff","reason":"needs_human_help"}`
+	env.stub.response = `{"route":"handoff","reply":"I’ll connect you with the team.","intent":"unknown","subject":"","language":"en","risk":"general","required_evidence":[],"context_action":"continue","issue_key":"unhelpful_answer","issue_summary":"Customer says the previous answer was not helpful.","progress_signal":"same_issue_repeat","standalone_query":"","search_queries":[],"reason":"needs_human_help"}`
 	env.seedAITurn(t, supportReplyKindAnswer, "Try clearing your cache.")
 	msg := env.sendCustomerMessage(t, "not helpful at all")
 
@@ -475,8 +417,8 @@ func TestHandleIncomingMessageNegativeFeedbackDoesNotResolve(t *testing.T) {
 
 func TestHandleIncomingMessageThanksAfterGreetingOnlyDoesNotResolve(t *testing.T) {
 	env := setupPreRouterEnv(t, "internal_note")
-	env.stub.response = `{"decision":"handoff","reason":"unclear_request"}`
-	env.seedAITurn(t, supportReplyKindGreeting, supportPreRouterGreetingReply)
+	env.stub.response = `{"route":"confirmation","reply":"You’re welcome!","intent":"unknown","subject":"","language":"en","risk":"general","required_evidence":[],"context_action":"confirm_previous","issue_key":"greeting","issue_summary":"Customer thanked support after a greeting.","progress_signal":"same_issue_new_info","standalone_query":"","search_queries":[],"reason":"confirmed"}`
+	env.seedAITurn(t, supportReplyKindGreeting, "Hello! How can I help?")
 	msg := env.sendCustomerMessage(t, "thanks")
 
 	if err := env.svc.HandleIncomingMessage(context.Background(), env.wsID, env.convo.ID, msg); err != nil {
@@ -486,121 +428,4 @@ func TestHandleIncomingMessageThanksAfterGreetingOnlyDoesNotResolve(t *testing.T
 	if conv.AIState != nil && *conv.AIState == "resolved" {
 		t.Fatalf("thanks after a greeting-only turn must not count as a confirmed resolution")
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Live-model oracle evaluation (requires ANTHROPIC_API_KEY; skipped otherwise)
-//
-// Replays the real production messages through a small Claude model acting as
-// an independent classifier and asserts the deterministic pre-router agrees.
-// Run with: go test ./internal/service/ -run TestPreRouterLiveModelOracle -v
-// ---------------------------------------------------------------------------
-
-func TestPreRouterLiveModelOracle(t *testing.T) {
-	apiKey := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
-	if apiKey == "" {
-		apiKey = readEnvFileKey(t, "ANTHROPIC_API_KEY")
-	}
-	if apiKey == "" {
-		t.Skip("ANTHROPIC_API_KEY not set; skipping live-model oracle evaluation")
-	}
-	provider := llm.NewClaudeProvider(apiKey)
-	if provider == nil {
-		t.Fatal("nil Claude provider")
-	}
-
-	cases := []struct {
-		content string
-		want    string // greeting | gratitude | substantive
-	}{
-		{"Hi", "greeting"},
-		{"Hello", "greeting"},
-		{"Hey team", "greeting"},
-		{"Good morning", "greeting"},
-		{"Thanks!", "gratitude"},
-		{"thank you so much", "gratitude"},
-		{"DO YOU ALLOW GUEST POSTING?", "substantive"},
-		{"hi, can we filter analytics dashboard by contact segments?", "substantive"},
-		{"Hi. How to cancel the subscription?", "substantive"},
-		{"does usermaven have an MCP?", "substantive"},
-		{"do u deal with b2c", "substantive"},
-		{"Cancel plan", "substantive"},
-		{"The WordPress plugin isn't working. I have the necessary connections set up, but it isn't recording any events.", "substantive"},
-		{`Help me choose a Usermaven plan. My answer: "I want to understand how people use my website or product." Based on this, the Growth plan looks like the best fit`, "substantive"},
-	}
-
-	systemPrompt := `You classify the FIRST customer message of a support conversation.
-Reply with a single JSON object: {"category": "<greeting|gratitude|substantive>"}.
-- "greeting": the message is ONLY a salutation with no request or content.
-- "gratitude": the message is ONLY an expression of thanks with no request.
-- "substantive": anything containing a question, request, problem, or any other content.`
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	disagreements := 0
-	for _, tc := range cases {
-		deterministic := "substantive"
-		switch preRouteSupportMessage(tc.content, 0).Outcome {
-		case preRouteGreet:
-			deterministic = "greeting"
-		case preRouteGratitude:
-			deterministic = "gratitude"
-		}
-		if deterministic != tc.want {
-			t.Errorf("deterministic router: %q classified as %s, want %s", tc.content, deterministic, tc.want)
-		}
-
-		resp, err := provider.ChatCompletion(ctx, llm.ChatRequest{
-			Model:        "claude-haiku-4-5",
-			SystemPrompt: systemPrompt,
-			Messages:     []llm.Message{{Role: "user", Content: tc.content}},
-			MaxTokens:    64,
-			JSONMode:     true,
-			JSONSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"category": map[string]any{"type": "string", "enum": []string{"greeting", "gratitude", "substantive"}},
-				},
-				"required": []string{"category"},
-			},
-		})
-		if err != nil {
-			t.Fatalf("live model call failed for %q: %v", tc.content, err)
-		}
-		var out struct {
-			Category string `json:"category"`
-		}
-		if err := json.Unmarshal([]byte(strings.TrimSpace(resp.Content)), &out); err != nil {
-			t.Fatalf("parse oracle response %q: %v", resp.Content, err)
-		}
-		if out.Category != deterministic {
-			disagreements++
-			t.Logf("DISAGREEMENT on %q: deterministic=%s oracle=%s", tc.content, deterministic, out.Category)
-		}
-	}
-	if disagreements > 0 {
-		t.Errorf("live-model oracle disagreed on %d/%d cases", disagreements, len(cases))
-	}
-}
-
-// readEnvFileKey scans server/.env for a key without loading the whole file
-// into the process environment.
-func readEnvFileKey(t *testing.T, key string) string {
-	t.Helper()
-	for _, candidate := range []string{".env", filepath.Join("..", "..", ".env")} {
-		f, err := os.Open(candidate)
-		if err != nil {
-			continue
-		}
-		defer f.Close()
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if v, ok := strings.CutPrefix(line, key+"="); ok {
-				return strings.Trim(strings.TrimSpace(v), `"'`)
-			}
-		}
-	}
-	return ""
 }

@@ -1,160 +1,90 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-// ---------------------------------------------------------------------------
-// Pre-router: deterministic short-circuit for non-questions.
-//
-// Runs before triage, planning, and retrieval so that greetings and other
-// conversational non-questions never consume an LLM call or count as answer
-// attempts. Anything with substantive content must fall through to the full
-// pipeline — when in doubt, proceed.
-// ---------------------------------------------------------------------------
-
-const (
-	// supportPreRouterModelName labels pre-router replies in message metadata
-	// so analytics can separate them from model-generated answers.
-	supportPreRouterModelName = "pre-router"
-
-	// Maximum tokens for a message to be considered a pure greeting/gratitude.
-	preRouteMaxTokens = 6
-
-	supportPreRouterGreetingReply  = "Hello! What can I help you with today?"
-	supportPreRouterGratitudeReply = "You're welcome! If anything else comes up, just send a message here."
-)
-
-type preRouteOutcome string
-
-const (
-	// preRouteProceed means the message has (or may have) substantive content
-	// and must go through the full pipeline.
-	preRouteProceed preRouteOutcome = "proceed"
-	// preRouteGreet short-circuits with a lightweight greeting reply.
-	preRouteGreet preRouteOutcome = "greet"
-	// preRouteGratitude short-circuits with a lightweight closing reply when
-	// there is no prior substantive AI turn to confirm as resolved.
-	preRouteGratitude preRouteOutcome = "gratitude"
-)
-
-type preRouteDecision struct {
-	Outcome preRouteOutcome
-	Reason  string
-	Reply   string
-}
-
-// preRouteSupportMessage classifies an incoming customer message before any
-// LLM stage. Greeting short-circuits apply only on first contact
-// (aiTurnCount == 0): a mid-conversation "hello??" is a nudge that the full
-// pipeline (repetition/frustration signals) should see, not a fresh greeting.
-func preRouteSupportMessage(content string, aiTurnCount int) preRouteDecision {
-	switch {
-	case aiTurnCount == 0 && isPureGreeting(content):
-		return preRouteDecision{
-			Outcome: preRouteGreet,
-			Reason:  "pure_greeting",
-			Reply:   supportPreRouterGreetingReply,
-		}
-	case aiTurnCount == 0 && isPureGratitude(content):
-		// Conversation opened with thanks (e.g. after reading a help article).
-		// Nothing to resolve; acknowledge without invoking the pipeline.
-		return preRouteDecision{
-			Outcome: preRouteGratitude,
-			Reason:  "pure_gratitude",
-			Reply:   supportPreRouterGratitudeReply,
-		}
-	default:
-		return preRouteDecision{Outcome: preRouteProceed}
+// publishAIConversationalReply publishes a non-answer AI message. Social turns
+// keep the conversation in AI handling without consuming an answer turn;
+// confirmations retain the resolved state applied by the caller.
+func (s *SupportAIService) publishAIConversationalReply(
+	ctx context.Context,
+	workspaceID string,
+	conversationID string,
+	agentID string,
+	content string,
+	modelName string,
+	tokensUsed int,
+	confidence float64,
+	route string,
+	replyKind string,
+	customerEmail *string,
+	customerPhone *string,
+) (*model.SupportMessage, error) {
+	metadata := AIMessageMetadata{
+		AIAutoReply:  true,
+		AIConfidence: confidence,
+		AIModel:      modelName,
+		AITokensUsed: tokensUsed,
+		AIAgentID:    agentID,
+		AIReplyKind:  replyKind,
+		AIPreRoute:   route,
 	}
-}
-
-// Core greeting words — at least one must be present.
-var preRouteGreetingCore = map[string]struct{}{
-	"hi": {}, "hello": {}, "hey": {}, "heya": {}, "hiya": {},
-	"howdy": {}, "greetings": {}, "yo": {},
-}
-
-// Filler words allowed alongside greeting words without making the message
-// substantive ("hi there", "hello good morning", "hey team").
-var preRouteGreetingFiller = map[string]struct{}{
-	"there": {}, "team": {}, "everyone": {}, "all": {}, "guys": {},
-	"folks": {}, "friends": {}, "dear": {}, "support": {},
-	"good": {}, "morning": {}, "afternoon": {}, "evening": {}, "day": {},
-}
-
-// isPureGreeting reports whether the message consists solely of greeting
-// words. "Hi, how do I cancel my plan?" is NOT a greeting — every token must
-// belong to the greeting vocabulary. Punctuation and emoji are ignored by
-// tokenization, so "Hi 👋" still matches.
-func isPureGreeting(content string) bool {
-	tokens := tokenizeWords(content)
-	if len(tokens) == 0 || len(tokens) > preRouteMaxTokens {
-		return false
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, fmt.Errorf("marshal conversational AI metadata: %w", err)
 	}
-	hasCore := false
-	timeOfDay := false
-	hasGood := false
-	for _, tok := range tokens {
-		if _, ok := preRouteGreetingCore[tok]; ok {
-			hasCore = true
+
+	aiMsg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "ai",
+		SenderAgentID:     &agentID,
+		SenderDisplayName: strPtr(helpinAIDisplayName),
+		Content:           stripConversationPII(strings.TrimSpace(content), customerEmail, customerPhone),
+		MessageType:       "reply",
+		Metadata:          string(metadataJSON),
+	}
+	if s.linkPreviewService != nil {
+		s.linkPreviewService.EnrichMessage(ctx, aiMsg)
+	}
+	if err := s.messageRepo.Create(ctx, aiMsg); err != nil {
+		return nil, fmt.Errorf("create conversational AI message: %w", err)
+	}
+	if replyKind != supportReplyKindConfirm && s.conversationRepo != nil {
+		pending := "pending"
+		_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
+			"ai_state":          &pending,
+			"assigned_agent_id": &agentID,
+			"flow_state":        model.SupportConversationFlowStateAIHandling,
+		})
+	}
+	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, aiMsg, "ai:"+agentID))
+	return aiMsg, nil
+}
+
+// hasImmediateAIAnswerToConfirm reports whether the most recent public
+// conversational turn was an answer from the configured AI agent. Historical
+// answers and clarifying questions cannot resolve a newer, unanswered request.
+func hasImmediateAIAnswerToConfirm(history []model.SupportMessage, agentID string) bool {
+	for i := len(history) - 1; i >= 0; i-- {
+		msg := history[i]
+		if msg.MessageType == "system" || msg.IsInternal || strings.TrimSpace(msg.Content) == "" {
 			continue
 		}
-		if _, ok := preRouteGreetingFiller[tok]; ok {
-			switch tok {
-			case "good":
-				hasGood = true
-			case "morning", "afternoon", "evening", "day":
-				timeOfDay = true
-			}
-			continue
-		}
-		return false // any non-greeting token makes it substantive
+		return isAIReplyFromAgent(msg, agentID) && inferAIReplyKind(msg) == supportReplyKindAnswer
 	}
-	// "good morning" counts as a greeting even without hi/hello.
-	return hasCore || (hasGood && timeOfDay)
+	return false
 }
 
-// Core gratitude words — at least one must be present.
-var preRouteGratitudeCore = map[string]struct{}{
-	"thanks": {}, "thank": {}, "thx": {}, "ty": {}, "cheers": {},
-	"thankyou": {}, "merci": {}, "gracias": {},
-}
-
-// Filler words allowed alongside gratitude words ("thank you so much", "ok
-// thanks", "thanks a lot").
-var preRouteGratitudeFiller = map[string]struct{}{
-	"you": {}, "u": {}, "so": {}, "very": {}, "much": {}, "a": {}, "lot": {},
-	"ok": {}, "okay": {}, "cool": {}, "anyway": {}, "again": {}, "for": {},
-	"that": {}, "this": {}, "the": {}, "help": {}, "info": {},
-}
-
-// isPureGratitude reports whether the message is only an expression of
-// thanks with no new content.
-func isPureGratitude(content string) bool {
-	tokens := tokenizeWords(content)
-	if len(tokens) == 0 || len(tokens) > preRouteMaxTokens {
-		return false
-	}
-	hasCore := false
-	for _, tok := range tokens {
-		if _, ok := preRouteGratitudeCore[tok]; ok {
-			hasCore = true
-			continue
-		}
-		if _, ok := preRouteGratitudeFiller[tok]; ok {
-			continue
-		}
-		return false
-	}
-	return hasCore
-}
-
-// countSubstantiveAITurns counts AI turns that carried substance (answers or
-// clarifications). Greeting turns do not qualify a later "thanks" as a
-// resolution confirmation — there was nothing to confirm.
+// countSubstantiveAITurns is retained for conversation analytics and tests. It
+// does not route messages; the LLM pre-router owns language classification.
 func countSubstantiveAITurns(history []model.SupportMessage, agentID string) int {
 	count := 0
 	for _, msg := range history {
@@ -182,6 +112,22 @@ var confirmationNegationTokens = map[string]struct{}{
 	"unhelpful": {}, "nothing": {}, "unfortunately": {}, "cannot": {},
 	"dont": {}, "doesnt": {}, "didnt": {}, "isnt": {}, "wasnt": {},
 	"wont": {}, "cant": {}, "t": {}, "issue": {}, "problem": {}, "error": {},
+	"broken": {}, "wrong": {}, "fail": {}, "failed": {}, "failing": {},
+	"missing": {}, "unable": {},
+}
+
+// confirmationAllowedTokens makes confirmation recognition a whole-utterance
+// grammar. A positive phrase surrounded by a new request must not resolve the
+// conversation merely because it is short or lacks a question mark.
+var confirmationAllowedTokens = map[string]struct{}{
+	"a": {}, "all": {}, "awesome": {}, "cheers": {}, "cool": {}, "excellent": {},
+	"for": {}, "good": {}, "got": {}, "great": {}, "help": {}, "helped": {},
+	"helpful": {}, "i": {}, "info": {}, "information": {}, "is": {}, "it": {},
+	"lot": {}, "makes": {}, "me": {}, "much": {}, "needed": {}, "now": {},
+	"oh": {}, "ok": {}, "okay": {}, "perfect": {}, "resolved": {}, "s": {},
+	"sense": {}, "so": {}, "solved": {}, "thanks": {}, "thank": {}, "that": {},
+	"the": {}, "this": {}, "very": {}, "what": {}, "worked": {}, "works": {},
+	"yep": {}, "yes": {}, "you": {}, "your": {},
 }
 
 // confirmationPhrases are matched as whole tokenized phrases.
@@ -211,6 +157,9 @@ func isConfirmationMessage(content string) bool {
 	}
 	for _, w := range words {
 		if _, blocked := confirmationNegationTokens[w]; blocked {
+			return false
+		}
+		if _, allowed := confirmationAllowedTokens[w]; !allowed {
 			return false
 		}
 	}

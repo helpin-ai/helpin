@@ -51,6 +51,9 @@ type Config struct {
 	OpenAIAPIKey             string
 	OpenAIBaseURL            string
 	OpenAIEmbeddingModel     string
+	SupportRerankerURL       string
+	SupportRerankerModel     string
+	SupportRerankerAPIKey    string
 	OpenRouterAPIKey         string
 	OpenRouterBaseURL        string
 	OpenCodePath             string
@@ -257,6 +260,9 @@ func Load() (*Config, error) {
 		OpenAIAPIKey:                           strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
 		OpenAIBaseURL:                          strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
 		OpenAIEmbeddingModel:                   strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_MODEL")),
+		SupportRerankerURL:                     strings.TrimRight(strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_URL")), "/"),
+		SupportRerankerModel:                   strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_MODEL")),
+		SupportRerankerAPIKey:                  strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_API_KEY")),
 		OpenRouterAPIKey:                       strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")),
 		OpenRouterBaseURL:                      strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")),
 		OpenCodePath:                           strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),

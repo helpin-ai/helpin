@@ -148,6 +148,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.AIResponseMode != nil {
 		current.AIResponseMode = *patch.AIResponseMode
 	}
+	if patch.AIPreRouterMode != nil {
+		current.AIPreRouterMode = *patch.AIPreRouterMode
+	}
 	if patch.AIMaxFollowups != nil {
 		current.AIMaxFollowups = *patch.AIMaxFollowups
 	}
@@ -368,6 +371,14 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	validResponseMode := map[string]bool{"ai_first": true, "internal_note": true, "off": true}
 	if settings.AIResponseMode != "" && !validResponseMode[settings.AIResponseMode] {
 		return fmt.Errorf("ai_response_mode must be ai_first, internal_note, or off")
+	}
+	validPreRouterMode := map[string]bool{
+		model.SupportAIPreRouterModeOff:     true,
+		model.SupportAIPreRouterModeShadow:  true,
+		model.SupportAIPreRouterModeEnabled: true,
+	}
+	if !validPreRouterMode[settings.AIPreRouterMode] {
+		return fmt.Errorf("ai_pre_router_mode must be off, shadow, or enabled")
 	}
 	if settings.ReplyTimePreset != "" && !model.IsValidSupportReplyTimePreset(settings.ReplyTimePreset) {
 		return fmt.Errorf("reply_time_preset must be few_minutes, few_hours, same_day, or custom")

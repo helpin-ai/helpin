@@ -119,6 +119,14 @@ export const agentService = {
     api.put<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`, { space_ids: spaceIds }),
   reindexKnowledgeSource: (workspaceId: string, agentId: string, spaceId: string) =>
     api.post<{ status: string }>(`/pm/agents/${agentId}/knowledge-sources/${spaceId}/reindex${qs(workspaceId)}`, {}),
+  listCuratedGuidance: (workspaceId: string, agentId: string) =>
+    api.get<import('../pmTypes').CuratedGuidance[]>(`/pm/agents/${agentId}/curated-guidance${qs(workspaceId)}`),
+  createCuratedGuidance: (workspaceId: string, agentId: string, payload: import('../pmTypes').CreateCuratedGuidanceRequest) =>
+    api.post<import('../pmTypes').CuratedGuidance>(`/pm/agents/${agentId}/curated-guidance${qs(workspaceId)}`, payload),
+  updateCuratedGuidance: (workspaceId: string, agentId: string, guidanceId: string, payload: import('../pmTypes').UpdateCuratedGuidanceRequest) =>
+    api.put<import('../pmTypes').CuratedGuidance>(`/pm/agents/${agentId}/curated-guidance/${guidanceId}${qs(workspaceId)}`, payload),
+  deleteCuratedGuidance: (workspaceId: string, agentId: string, guidanceId: string) =>
+    api.del<void>(`/pm/agents/${agentId}/curated-guidance/${guidanceId}${qs(workspaceId)}`),
   listContentSources: (workspaceId: string) =>
     api.get<import('../pmTypes').SupportContentSource[]>(`/pm/content-sources${qs(workspaceId)}`),
   createContentSource: (workspaceId: string, payload: import('../pmTypes').CreateSupportContentSourceRequest) =>

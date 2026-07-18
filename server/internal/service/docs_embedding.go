@@ -17,7 +17,7 @@ import (
 
 const (
 	defaultDocsEmbeddingModel    = "text-embedding-3-small"
-	contentChunkEmbeddingVersion = "content-chunk-v1"
+	contentChunkEmbeddingVersion = "content-chunk-v2"
 	docsEmbeddingDimensions      = 1536
 	chunkSizeChars               = 1200
 	chunkOverlapChars            = 200
@@ -183,15 +183,13 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 			continue
 		}
 
-		chunks := chunkDocumentText(content.ContentText)
-		blockIDs := make([]*string, len(chunks))
+		chunks := chunkStructuredDocument(doc.Title, content.ContentText)
 		if s.blockRepo != nil {
-			if blockChunks, ids, err := s.blockChunks(ctx, doc.ID); err != nil {
+			if blocks, err := s.blockRepo.ListByDocument(ctx, doc.ID, false); err != nil {
 				_ = s.markSourcesFailed(ctx, sources, err, &startedAt)
 				return err
-			} else if len(blockChunks) > 0 {
-				chunks = blockChunks
-				blockIDs = ids
+			} else if structuredBlocks := chunkStructuredBlocks(doc.Title, blocks); len(structuredBlocks) > 0 {
+				chunks = structuredBlocks
 			}
 		}
 		if len(chunks) == 0 {
@@ -205,7 +203,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 		resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
 			Provider: "openai",
 			Model:    s.embeddingModel,
-			Inputs:   chunks,
+			Inputs:   structuredChunkSearchInputs(chunks),
 		})
 		if err != nil {
 			_ = s.markSourcesFailed(ctx, sources, err, &startedAt)
@@ -226,15 +224,21 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 
 		rows := make([]model.DocsChunk, 0, len(chunks))
 		for chunkIndex, chunk := range chunks {
+			previous, next := neighborChunkIndexes(chunkIndex, len(chunks))
 			rows = append(rows, model.DocsChunk{
 				WorkspaceID:         workspaceID,
 				SpaceID:             spaceID,
 				DocumentID:          doc.ID,
-				BlockID:             blockIDs[chunkIndex],
+				BlockID:             chunk.BlockID,
 				ChunkIndex:          chunkIndex,
+				SectionKey:          chunk.SectionKey,
+				HeadingPath:         chunk.HeadingPath,
 				Title:               doc.Title,
-				Content:             chunk,
-				ContentHash:         hashChunk(doc.Title, chunk),
+				Content:             chunk.Content,
+				SearchContent:       chunk.SearchContent,
+				PreviousChunkIndex:  previous,
+				NextChunkIndex:      next,
+				ContentHash:         hashChunk(doc.Title, chunk.SearchContent),
 				Embedding:           formatVector(resp.Vectors[chunkIndex]),
 				EmbeddingProvider:   "openai",
 				EmbeddingModel:      s.embeddingModel,

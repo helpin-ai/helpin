@@ -22,6 +22,9 @@ import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type {
   AgentKnowledgeSource,
+  CuratedGuidance,
+  CreateCuratedGuidanceRequest,
+  UpdateCuratedGuidanceRequest,
   SupportContentSource,
   SupportContentPage,
   CreateSupportContentSourceRequest,
@@ -1474,6 +1477,54 @@ export function useAgentKnowledgeSources(workspaceId: string, agentId?: string) 
         ? 2_000
         : false;
     },
+  });
+}
+
+export function useCuratedGuidance(workspaceId: string, agentId?: string) {
+  return useQuery({
+    queryKey: queryKeys.agents.curatedGuidance(workspaceId, agentId ?? ''),
+    queryFn: async (): Promise<CuratedGuidance[]> => unwrap(await agentService.listCuratedGuidance(workspaceId, agentId!)),
+    enabled: !!workspaceId && !!agentId,
+    staleTime: 60_000,
+  });
+}
+
+export function useCreateCuratedGuidance(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, payload }: { agentId: string; payload: CreateCuratedGuidanceRequest }) =>
+      agentService.createCuratedGuidance(workspaceId, agentId, payload).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.curatedGuidance(workspaceId, variables.agentId) });
+      toast.success('Pinned answer created');
+    },
+    onError: (error: Error) => toast.error('Failed to create pinned answer', { description: error.message }),
+  });
+}
+
+export function useUpdateCuratedGuidance(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, guidanceId, payload }: { agentId: string; guidanceId: string; payload: UpdateCuratedGuidanceRequest }) =>
+      agentService.updateCuratedGuidance(workspaceId, agentId, guidanceId, payload).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.curatedGuidance(workspaceId, variables.agentId) });
+      toast.success('Pinned answer updated');
+    },
+    onError: (error: Error) => toast.error('Failed to update pinned answer', { description: error.message }),
+  });
+}
+
+export function useDeleteCuratedGuidance(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, guidanceId }: { agentId: string; guidanceId: string }) =>
+      agentService.deleteCuratedGuidance(workspaceId, agentId, guidanceId).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.curatedGuidance(workspaceId, variables.agentId) });
+      toast.success('Pinned answer removed');
+    },
+    onError: (error: Error) => toast.error('Failed to remove pinned answer', { description: error.message }),
   });
 }
 
