@@ -299,6 +299,7 @@ type SupportAIService struct {
 	embeddingModel                 string
 	queryExpansionModel            string
 	queryExpansionProvider         string
+	queryExpansionTimeout          time.Duration
 	docsChunkRepo                  *repository.DocsChunkRepository
 	knowledgeRepo                  *repository.AgentKnowledgeSourceRepository
 	contentChunkRepo               *repository.SupportContentChunkRepository
@@ -372,6 +373,14 @@ func NewSupportAIService(
 		redis:                  redisClient,
 		db:                     db,
 	}
+}
+
+// SetQueryExpansionTimeout sets the maximum duration of the support query-planning call.
+func (s *SupportAIService) SetQueryExpansionTimeout(timeout time.Duration) {
+	if s == nil || timeout <= 0 {
+		return
+	}
+	s.queryExpansionTimeout = timeout
 }
 
 func (s *SupportAIService) SetSupportRoutingDependencies(
@@ -793,7 +802,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	plannerFallback := false
 	if err != nil {
 		plannerFallback = true
-		slog.WarnContext(ctx, "support query planning failed; failing closed to human handoff",
+		slog.WarnContext(ctx, "support query planning failed; using grounded retrieval fallback",
 			"error", err,
 			"workspace_id", workspaceID,
 			"conversation_id", conversationID,
@@ -801,10 +810,6 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"customer_message_preview", safeLogPreview(msg.Content, 120),
 		)
 		queryPlan = defaultSupportQueryPlan(customerPromptText)
-		queryPlan.Route = supportDecisionHandoff
-		queryPlan.Decision = supportDecisionHandoff
-		queryPlan.SearchQueries = []string{}
-		queryPlan.Reason = "planner_unavailable"
 	}
 
 	// Language understanding always happens in the LLM pre-router. These
@@ -2225,10 +2230,6 @@ func (s *SupportAIService) previewSupportReply(
 		fallbackUsed = true
 		plannerError = plannerErr.Error()
 		queryPlan = defaultSupportQueryPlan(customerMessage)
-		queryPlan.Route = supportDecisionHandoff
-		queryPlan.Decision = supportDecisionHandoff
-		queryPlan.SearchQueries = []string{}
-		queryPlan.Reason = "planner_unavailable"
 	}
 
 	response := &model.SupportAIPreviewResponse{
@@ -3157,7 +3158,7 @@ func (s *SupportAIService) planSupportQuery(ctx context.Context, history []model
 
 	transcript := buildConversationTranscript(history, 8)
 	conversationState := marshalSupportConversationState(history)
-	plannerCtx, cancelPlanner := context.WithTimeout(ctx, 900*time.Millisecond)
+	plannerCtx, cancelPlanner := context.WithTimeout(ctx, s.queryPlannerTimeout())
 	defer cancelPlanner()
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(plannerCtx, AIUsageMeteringContext{
 		WorkspaceID:    customerMessage.WorkspaceID,
@@ -3206,6 +3207,13 @@ func (s *SupportAIService) planSupportQuery(ctx context.Context, history []model
 		"reason", normalized.Reason,
 	)
 	return normalized, totalTokens, nil
+}
+
+func (s *SupportAIService) queryPlannerTimeout() time.Duration {
+	if s != nil && s.queryExpansionTimeout > 0 {
+		return s.queryExpansionTimeout
+	}
+	return 10 * time.Second
 }
 
 // searchSingleQuery runs embedding + hybrid search for a single query string

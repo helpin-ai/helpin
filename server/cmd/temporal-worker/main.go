@@ -342,6 +342,7 @@ func main() {
 		wsPublisher, jetstream, redisClient, db,
 		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
 	)
+	supportAIService.SetQueryExpansionTimeout(time.Duration(cfg.QueryExpansionTimeoutMS) * time.Millisecond)
 	supportAIService.SetSupportRoutingDependencies(workspaceRepo, nil, supportTeammateStatusOverrideRepo)
 	supportAIService.SetMailboxRepository(supportMailboxRepo)
 	supportAIService.SetTriageService(supportInboxTriageService)
