@@ -6,25 +6,34 @@ import (
 	"testing"
 )
 
-func TestOpenAIProviderBuildChatCompletionBodyUsesMaxCompletionTokensForGPT5(t *testing.T) {
-	provider := NewOpenAIProvider("test-key", "https://api.openai.com/v1", "")
-	body := provider.buildChatCompletionBody(
-		"gpt-5.5",
-		[]map[string]any{{"role": "user", "content": "hello"}},
-		123,
-		0.1,
-		true,
-		nil,
-	)
+func TestOpenAIProviderBuildChatCompletionBodyOmitsTemperatureForGPT5(t *testing.T) {
+	models := []string{"gpt-5.6-luna", "gpt-5.6-terra"}
 
-	if _, ok := body["max_completion_tokens"]; !ok {
-		t.Fatalf("expected max_completion_tokens in request body, got %#v", body)
-	}
-	if _, ok := body["max_tokens"]; ok {
-		t.Fatalf("did not expect max_tokens for GPT-5 request body, got %#v", body)
-	}
-	if _, ok := body["response_format"]; !ok {
-		t.Fatalf("expected JSON mode response_format in request body, got %#v", body)
+	for _, modelName := range models {
+		t.Run(modelName, func(t *testing.T) {
+			provider := NewOpenAIProvider("test-key", "https://api.openai.com/v1", "")
+			body := provider.buildChatCompletionBody(
+				modelName,
+				[]map[string]any{{"role": "user", "content": "hello"}},
+				123,
+				0.1,
+				true,
+				nil,
+			)
+
+			if _, ok := body["max_completion_tokens"]; !ok {
+				t.Fatalf("expected max_completion_tokens in request body, got %#v", body)
+			}
+			if _, ok := body["max_tokens"]; ok {
+				t.Fatalf("did not expect max_tokens for GPT-5 request body, got %#v", body)
+			}
+			if _, ok := body["temperature"]; ok {
+				t.Fatalf("did not expect temperature for GPT-5 request body, got %#v", body)
+			}
+			if _, ok := body["response_format"]; !ok {
+				t.Fatalf("expected JSON mode response_format in request body, got %#v", body)
+			}
+		})
 	}
 }
 
@@ -44,6 +53,9 @@ func TestOpenAIProviderBuildChatCompletionBodyUsesMaxTokensForNonGPT5(t *testing
 	}
 	if _, ok := body["max_completion_tokens"]; ok {
 		t.Fatalf("did not expect max_completion_tokens for non-GPT-5 request body, got %#v", body)
+	}
+	if temperature, ok := body["temperature"].(float64); !ok || temperature != 0.1 {
+		t.Fatalf("expected temperature 0.1 for non-GPT-5 request body, got %#v", body)
 	}
 	if _, ok := body["response_format"]; ok {
 		t.Fatalf("did not expect response_format when JSON mode is off, got %#v", body)
