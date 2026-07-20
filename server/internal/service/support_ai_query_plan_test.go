@@ -128,6 +128,9 @@ func TestPlanSupportQueryResolvesFollowUpFromContext(t *testing.T) {
 	if len(provider.requests) != 1 {
 		t.Fatalf("planner calls = %d, want 1", len(provider.requests))
 	}
+	if !provider.requests[0].JSONSchemaStrict || provider.requests[0].JSONSchema == nil {
+		t.Fatalf("expected planner to request strict structured output, got %#v", provider.requests[0])
+	}
 }
 
 func TestPlanSupportQueryHonorsConfiguredTimeout(t *testing.T) {

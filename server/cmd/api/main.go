@@ -89,6 +89,7 @@ func main() {
 			gormlogger.Config{
 				SlowThreshold:             200 * time.Millisecond,
 				IgnoreRecordNotFoundError: true,
+				ParameterizedQueries:      true,
 				LogLevel:                  gormlogger.Warn,
 			},
 		),

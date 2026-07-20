@@ -10,7 +10,6 @@ const (
 	supportIntentBillingTax         = "billing_tax"
 	supportIntentUnknown            = "unknown"
 
-	supportEvidenceModeSlots       = "slots"
 	supportEvidenceModeSufficiency = "sufficiency"
 
 	supportRiskCommercial = "time_sensitive_commercial"
@@ -29,42 +28,16 @@ type SupportIntentDefinition struct {
 
 var supportIntentRegistryV1 = map[string]SupportIntentDefinition{
 	supportIntentPricingGeneral: {
-		ID:           supportIntentPricingGeneral,
-		Version:      supportIntentRegistryVersion,
-		EvidenceMode: supportEvidenceModeSlots,
-		Risk:         supportRiskCommercial,
-		RequiredEvidence: []string{
-			"plan_names",
-			"starting_prices",
-			"billing_cadence",
-			"enterprise_status",
-			"canonical_url",
-		},
+		ID: supportIntentPricingGeneral, Version: supportIntentRegistryVersion,
+		EvidenceMode: supportEvidenceModeSufficiency, Risk: supportRiskCommercial,
 	},
 	supportIntentPlanRecommendation: {
-		ID:           supportIntentPlanRecommendation,
-		Version:      supportIntentRegistryVersion,
-		EvidenceMode: supportEvidenceModeSlots,
-		Risk:         supportRiskCommercial,
-		RequiredEvidence: []string{
-			"customer_needs",
-			"recommended_plan",
-			"recommendation_basis",
-			"applicable_limits",
-			"canonical_url",
-		},
+		ID: supportIntentPlanRecommendation, Version: supportIntentRegistryVersion,
+		EvidenceMode: supportEvidenceModeSufficiency, Risk: supportRiskCommercial,
 	},
 	supportIntentBillingTax: {
-		ID:           supportIntentBillingTax,
-		Version:      supportIntentRegistryVersion,
-		EvidenceMode: supportEvidenceModeSlots,
-		Risk:         supportRiskCommercial,
-		RequiredEvidence: []string{
-			"advertised_price_tax_status",
-			"tax_location_basis",
-			"checkout_total_qualifier",
-			"canonical_url",
-		},
+		ID: supportIntentBillingTax, Version: supportIntentRegistryVersion,
+		EvidenceMode: supportEvidenceModeSufficiency, Risk: supportRiskCommercial,
 	},
 	supportIntentUnknown: {
 		ID:               supportIntentUnknown,
@@ -86,25 +59,10 @@ func supportIntentDefinition(intent string) SupportIntentDefinition {
 }
 
 func normalizeSupportIntent(intent string, proposedEvidence []string) SupportIntentDefinition {
-	definition := supportIntentDefinition(intent)
-	if definition.ID == supportIntentUnknown {
-		return definition
-	}
-
-	allowed := make(map[string]struct{}, len(definition.RequiredEvidence))
-	for _, fieldID := range definition.RequiredEvidence {
-		allowed[fieldID] = struct{}{}
-	}
-	for _, fieldID := range proposedEvidence {
-		fieldID = strings.ToLower(strings.TrimSpace(fieldID))
-		if fieldID == "" {
-			continue
-		}
-		if _, ok := allowed[fieldID]; !ok {
-			return supportIntentDefinition(supportIntentUnknown)
-		}
-	}
-	return definition
+	// Evidence sufficiency is assessed by the answer model against the retrieved
+	// sources. Customer-specific products cannot be represented safely by a
+	// server-owned list of required pricing, billing, or plan fields.
+	return supportIntentDefinition(intent)
 }
 
 func supportIntentIDs() []string {
@@ -114,19 +72,4 @@ func supportIntentIDs() []string {
 		supportIntentBillingTax,
 		supportIntentUnknown,
 	}
-}
-
-func supportEvidenceFieldIDs() []string {
-	seen := map[string]struct{}{}
-	fields := []string{}
-	for _, intent := range supportIntentIDs() {
-		for _, fieldID := range supportIntentRegistryV1[intent].RequiredEvidence {
-			if _, ok := seen[fieldID]; ok {
-				continue
-			}
-			seen[fieldID] = struct{}{}
-			fields = append(fields, fieldID)
-		}
-	}
-	return fields
 }

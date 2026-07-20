@@ -558,6 +558,19 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if lens.Model == nil || *lens.Model != "gpt-5.5" {
 		t.Fatalf("expected lens model gpt-5.5, got %+v", lens.Model)
 	}
+	supportAgent, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetSupportAgent)
+	if err != nil {
+		t.Fatalf("GetSystemByPreset returned error: %v", err)
+	}
+	if supportAgent == nil {
+		t.Fatal("expected system support agent")
+	}
+	if supportAgent.Provider == nil || *supportAgent.Provider != model.AgentModelProviderOpenAI {
+		t.Fatalf("expected support agent provider openai, got %+v", supportAgent.Provider)
+	}
+	if supportAgent.Model == nil || *supportAgent.Model != "gpt-5.6-terra" {
+		t.Fatalf("expected support agent model gpt-5.6-terra, got %+v", supportAgent.Model)
+	}
 	docsAgent, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetDocumentationAgent)
 	if err != nil {
 		t.Fatalf("GetSystemByPreset returned error: %v", err)

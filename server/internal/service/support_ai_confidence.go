@@ -53,17 +53,13 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 		}
 	}
 
+	// Candidate retrieval deliberately includes diverse alternatives. Do not
+	// penalize a grounded answer for declining to cite irrelevant candidates;
+	// claim validation separately verifies that the sources actually support
+	// the rendered answer.
 	sourceCoverage := 0.0
-	coveredSources := len(citedDocs)
-	retrievedSources := len(retrievedPublicDocs)
-	if hasInternalGrounding {
-		// Internal sources cannot be cited in a customer-facing response, so
-		// their presence counts as implicit coverage without requiring an ID.
-		coveredSources++
-		retrievedSources++
-	}
-	if retrievedSources > 0 {
-		sourceCoverage = clamp01(float64(coveredSources) / float64(minInt(retrievedSources, 3)))
+	if len(citedDocs) > 0 || hasInternalGrounding {
+		sourceCoverage = 1
 	}
 
 	return (retrievalQuality * 0.4) +
@@ -84,13 +80,6 @@ func clamp01(value float64) float64 {
 
 func maxFloat(a, b float64) float64 {
 	if a > b {
-		return a
-	}
-	return b
-}
-
-func minInt(a, b int) int {
-	if a < b {
 		return a
 	}
 	return b

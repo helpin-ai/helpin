@@ -47,6 +47,18 @@ func TestEvaluateConfidence(t *testing.T) {
 			wantAbove:  true,
 		},
 		{
+			name: "relevant cited sources are not diluted by unrelated retrieval candidates",
+			searchResults: []KnowledgeSearchResult{
+				{ReferenceID: "pricing", VectorScore: 0.458},
+				{ReferenceID: "candidate-2", VectorScore: 0.43},
+				{ReferenceID: "candidate-3", VectorScore: 0.42},
+				{ReferenceID: "candidate-4", VectorScore: 0.41},
+			},
+			response:   &AIResponseContract{CanAnswer: true, SourceDocIDs: []string{"pricing"}, Confidence: 0.98},
+			isGreeting: false,
+			wantAbove:  true,
+		},
+		{
 			name: "non-greeting answer grounded in high-relevance internal retrieval does not require a citation",
 			searchResults: []KnowledgeSearchResult{
 				{ReferenceID: "internal-doc", IsInternal: true, VectorScore: 0.95},

@@ -633,7 +633,11 @@ func (s *SupportAIService) PublishAIRequest(ctx context.Context, workspaceID, co
 // HandleIncomingMessage processes a customer message for AI auto-reply.
 func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceID, conversationID string, msg *model.SupportMessage) error {
 	pipelineStartedAt := time.Now()
-	pipelineDeadline := pipelineStartedAt.Add(12 * time.Second)
+	// Triage, planning, retrieval, answer generation, and an optional grounding
+	// repair all share this budget. GPT-5.6 commonly needs several seconds for
+	// each structured response, so a 12-second end-to-end deadline caused valid
+	// feature questions to time out after successful retrieval.
+	pipelineDeadline := pipelineStartedAt.Add(20 * time.Second)
 	stageLatencies := map[string]int64{}
 
 	// 1. Load settings
@@ -1054,29 +1058,8 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"search_query_previews", safeLogPreviewList(queryPlan.SearchQueries, 4, 100),
 		)
 	}
-	evidenceCoverage := evaluateSupportEvidenceCoverage(queryPlan, searchResults)
+	evidenceCoverage := supportEvidenceCoverage{Found: map[string][]string{}, Missing: []string{}}
 	retrievalRetried := false
-	retrySkippedForBudget := false
-	if len(evidenceCoverage.Missing) > 0 && time.Until(pipelineDeadline) >= 1500*time.Millisecond {
-		retryQueries := targetedEvidenceQueries(queryPlan, evidenceCoverage.Missing)
-		if len(retryQueries) > 0 {
-			retryResults, retryErr := s.loadKnowledgeChunks(ctx, workspaceID, agentID, queryPlan.Language, retryQueries)
-			if retryErr != nil {
-				slog.WarnContext(ctx, "support AI targeted evidence retrieval failed",
-					"error", retryErr,
-					"workspace_id", workspaceID,
-					"conversation_id", conversationID,
-					"missing_evidence", evidenceCoverage.Missing,
-				)
-			} else {
-				retrievalRetried = true
-				searchResults = mergeKnowledgeResults(queryPlan.StandaloneQuery, searchResults, retryResults)
-				evidenceCoverage = evaluateSupportEvidenceCoverage(queryPlan, searchResults)
-			}
-		}
-	} else if len(evidenceCoverage.Missing) > 0 {
-		retrySkippedForBudget = true
-	}
 	stageLatencies["retrieval"] = time.Since(retrievalStartedAt).Milliseconds()
 	slog.InfoContext(ctx, "support AI retrieval completed",
 		"workspace_id", workspaceID,
@@ -1086,8 +1069,8 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		"search_result_count", len(searchResults),
 		"evidence_found", evidenceCoverage.Found,
 		"evidence_missing", evidenceCoverage.Missing,
-		"targeted_retry", retrievalRetried,
-		"retry_skipped_for_budget", retrySkippedForBudget,
+		"targeted_retry", false,
+		"retry_skipped_for_budget", false,
 		"retrieval_latency_ms", stageLatencies["retrieval"],
 		"top_results", summarizeKnowledgeResults(searchResults, 5),
 	)
@@ -1108,49 +1091,11 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"required_evidence":        queryPlan.RequiredEvidence,
 			"evidence_found":           evidenceCoverage.Found,
 			"evidence_missing":         evidenceCoverage.Missing,
-			"targeted_retry":           retrievalRetried,
-			"retry_skipped_for_budget": retrySkippedForBudget,
+			"targeted_retry":           false,
+			"retry_skipped_for_budget": false,
 			"retrieval_latency_ms":     stageLatencies["retrieval"],
 		},
 	})
-	if queryPlan.EvidenceMode == supportEvidenceModeSlots && len(evidenceCoverage.Missing) > 0 {
-		stageLatencies["total"] = time.Since(pipelineStartedAt).Milliseconds()
-		s.recordSupportAIFailureTrace(ctx, workspaceID, conversationID, msg.ID, queryPlan, searchResults, 0, model.SupportCoverageFailureMissingContent, map[string]any{
-			"failure_stage":            "evidence_completeness",
-			"evidence_found":           evidenceCoverage.Found,
-			"evidence_missing":         evidenceCoverage.Missing,
-			"retrieval_retried":        retrievalRetried,
-			"retry_skipped_for_budget": retrySkippedForBudget,
-			"stage_latency_ms":         stageLatencies,
-		})
-		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
-		if !publicReplyMode {
-			note, noteErr := s.publishAIInternalNote(
-				ctx, workspaceID, conversationID, agentID,
-				"AI could not verify the required evidence: "+strings.Join(evidenceCoverage.Missing, ", ")+".",
-				s.queryPlannerModelName(), plannerTokens, 0, nil, "handoff",
-				queryPlan.IssueKey, queryPlan.IssueSummary, "",
-				conv.CustomerEmail, conv.CustomerPhone,
-			)
-			if noteErr != nil {
-				return noteErr
-			}
-			if err := s.processingRepo.MarkCompleted(ctx, processing.ID, &note.ID, plannerTokens); err != nil {
-				return fmt.Errorf("complete incomplete-evidence note processing: %w", err)
-			}
-			return nil
-		}
-		if err := s.EscalateToHumanForMessageWithIssue(
-			ctx, workspaceID, conversationID, msg.ID, "evidence_incomplete",
-			queryPlan.IssueKey, queryPlan.IssueSummary,
-		); err != nil {
-			return err
-		}
-		if err := s.processingRepo.MarkCompleted(ctx, processing.ID, nil, plannerTokens); err != nil {
-			return fmt.Errorf("complete incomplete-evidence processing: %w", err)
-		}
-		return nil
-	}
 	contextResults := selectSupportEvidenceContext(queryPlan, evidenceCoverage, searchResults, 8)
 	knowledgeContext := buildKnowledgeContext(contextResults)
 
@@ -1200,6 +1145,40 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	response.SourceDocIDs = publicSourceDocIDs(response.SourceDocIDs, searchResults)
 	validationStartedAt := time.Now()
 	answerValidation := validateSupportAnswer(queryPlan, evidenceCoverage, searchResults, response)
+	if response.CanAnswer && len(searchResults) > 0 && answerValidation.Outcome != supportValidationPass && time.Until(pipelineDeadline) >= 2500*time.Millisecond {
+		repairCtx, cancelRepair := context.WithDeadline(ctx, pipelineDeadline)
+		repaired, repairTokens, repairErr := s.generateResponseWithPlanRevision(
+			repairCtx, agent, conv, historyForPrompt, knowledgeContext, *msg,
+			providerName, modelName, queryPlan,
+			buildSupportAnswerRevisionInstruction(response, answerValidation),
+		)
+		cancelRepair()
+		tokensUsed += repairTokens
+		if repairErr != nil {
+			slog.WarnContext(ctx, "support AI answer repair failed",
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"message_id", msg.ID,
+				"validation_reasons", answerValidation.Reasons,
+				"error", repairErr,
+			)
+		} else {
+			repaired.SourceDocIDs = publicSourceDocIDs(repaired.SourceDocIDs, searchResults)
+			repairedValidation := validateSupportAnswer(queryPlan, evidenceCoverage, searchResults, repaired)
+			slog.InfoContext(ctx, "support AI answer repair evaluated",
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"message_id", msg.ID,
+				"original_validation_reasons", answerValidation.Reasons,
+				"validation_outcome", repairedValidation.Outcome,
+				"validation_reasons", repairedValidation.Reasons,
+				"unsupported_claim_previews", supportUnsupportedClaimPreviews(repairedValidation.UnsupportedClaims),
+			)
+			response = repaired
+			answerValidation = repairedValidation
+		}
+		stageLatencies["generation"] = time.Since(generationStartedAt).Milliseconds()
+	}
 	stageLatencies["validation"] = time.Since(validationStartedAt).Milliseconds()
 	stageLatencies["total"] = time.Since(pipelineStartedAt).Milliseconds()
 	if answerValidation.Outcome != supportValidationPass {
@@ -1253,6 +1232,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		"total_tokens_used", totalTokens,
 		"validation_outcome", answerValidation.Outcome,
 		"validation_reasons", answerValidation.Reasons,
+		"unsupported_claim_previews", supportUnsupportedClaimPreviews(answerValidation.UnsupportedClaims),
 		"supported_claims", answerValidation.SupportedClaimCount,
 		"material_claims", answerValidation.MaterialClaimCount,
 		"numeric_claims_checked", answerValidation.NumericClaimsChecked,
@@ -2279,22 +2259,7 @@ func (s *SupportAIService) previewSupportReply(
 		response.Retrieval.Error = retrievalErr.Error()
 		searchResults = nil
 	}
-	coverage := evaluateSupportEvidenceCoverage(queryPlan, searchResults)
-	if len(coverage.Missing) > 0 && time.Until(previewDeadline) >= 1500*time.Millisecond {
-		retryQueries := targetedEvidenceQueries(queryPlan, coverage.Missing)
-		if len(retryQueries) > 0 {
-			retryResults, retryErr := s.loadKnowledgeChunks(ctx, workspaceID, agent.ID, queryPlan.Language, retryQueries)
-			if retryErr != nil {
-				if response.Retrieval.Error == "" {
-					response.Retrieval.Error = retryErr.Error()
-				}
-			} else {
-				response.Retrieval.TargetedRetry = true
-				searchResults = mergeKnowledgeResults(queryPlan.StandaloneQuery, searchResults, retryResults)
-				coverage = evaluateSupportEvidenceCoverage(queryPlan, searchResults)
-			}
-		}
-	}
+	coverage := supportEvidenceCoverage{Found: map[string][]string{}, Missing: []string{}}
 	response.Retrieval.EvidenceFound = coverage.Found
 	response.Retrieval.EvidenceMissing = cloneStringSlice(coverage.Missing)
 	if maxResults > 0 && len(searchResults) > maxResults {
@@ -2304,15 +2269,6 @@ func (s *SupportAIService) previewSupportReply(
 	response.Retrieval.Results = previewSearchResults(searchResults)
 
 	if !includeAnswer {
-		if queryPlan.EvidenceMode == supportEvidenceModeSlots && len(coverage.Missing) > 0 {
-			response.FinalDecision = supportDecisionHandoff
-			response.FinalReason = "evidence_incomplete"
-		}
-		return response, nil
-	}
-	if queryPlan.EvidenceMode == supportEvidenceModeSlots && len(coverage.Missing) > 0 {
-		response.FinalDecision = supportDecisionHandoff
-		response.FinalReason = "evidence_incomplete"
 		return response, nil
 	}
 
@@ -2397,11 +2353,29 @@ func (s *SupportAIService) generateResponseWithPlan(
 	modelName string,
 	plan SupportQueryPlanContract,
 ) (*AIResponseContract, int, error) {
+	return s.generateResponseWithPlanRevision(ctx, agent, conv, history, knowledgeContext, customerMessage, providerName, modelName, plan, "")
+}
+
+func (s *SupportAIService) generateResponseWithPlanRevision(
+	ctx context.Context,
+	agent *model.Agent,
+	conv *model.SupportConversation,
+	history []model.SupportMessage,
+	knowledgeContext string,
+	customerMessage model.SupportMessage,
+	providerName string,
+	modelName string,
+	plan SupportQueryPlanContract,
+	revisionInstruction string,
+) (*AIResponseContract, int, error) {
 	if s == nil || s.llmProvider == nil {
 		return nil, 0, fmt.Errorf("support chat LLM provider is not configured")
 	}
 
 	systemPrompt := buildAISystemPromptWithPlan(agent, knowledgeContext, plan)
+	if strings.TrimSpace(revisionInstruction) != "" {
+		systemPrompt += "\n\nREVISION REQUIRED:\n" + revisionInstruction
+	}
 
 	messages := make([]llm.Message, 0, len(history)+1)
 	messages = append(messages, buildConversationMessages(history)...)
@@ -2429,14 +2403,15 @@ func (s *SupportAIService) generateResponseWithPlan(
 			"message_id":      messageID,
 		},
 	}), llm.ChatRequest{
-		SystemPrompt: systemPrompt,
-		Messages:     messages,
-		Provider:     providerName,
-		Model:        modelName,
-		Temperature:  0.3,
-		MaxTokens:    1024,
-		JSONMode:     true,
-		JSONSchema:   supportAnswerJSONSchema(),
+		SystemPrompt:     systemPrompt,
+		Messages:         messages,
+		Provider:         providerName,
+		Model:            modelName,
+		Temperature:      0.3,
+		MaxTokens:        1024,
+		JSONMode:         true,
+		JSONSchema:       supportAnswerJSONSchema(),
+		JSONSchemaStrict: true,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -3027,6 +3002,30 @@ func isTemplateLikeAIContent(content string) bool {
 	}
 }
 
+func buildSupportAnswerRevisionInstruction(response *AIResponseContract, validation supportAnswerValidation) string {
+	previousJSON, _ := json.Marshal(response)
+	return fmt.Sprintf(`The previous draft failed grounding validation.
+Validation reasons: %s
+Unsupported claim previews: %s
+Previous draft: %s
+
+Review the knowledge chunks again and return a corrected complete JSON response. Remove or rewrite every unsupported claim. Preserve supported useful information. Every material factual claim must cite an exact EVIDENCE_ID, and every number in the customer-facing content must appear in its cited evidence.`,
+		strings.Join(validation.Reasons, ", "),
+		strings.Join(supportUnsupportedClaimPreviews(validation.UnsupportedClaims), " | "),
+		string(previousJSON),
+	)
+}
+
+func supportUnsupportedClaimPreviews(claims []AIResponseClaim) []string {
+	previews := make([]string, 0, len(claims))
+	for _, claim := range claims {
+		if preview := safeLogPreview(claim.Text, 160); preview != "" {
+			previews = append(previews, preview)
+		}
+	}
+	return previews
+}
+
 // buildAISystemPrompt constructs the LLM system prompt with knowledge articles.
 func buildAISystemPrompt(agent *model.Agent, knowledgeContext string) string {
 	return buildAISystemPromptWithPlan(agent, knowledgeContext, defaultSupportQueryPlan(""))
@@ -3045,17 +3044,11 @@ func buildAISystemPromptWithPlan(agent *model.Agent, knowledgeContext string, pl
 		sb.WriteString(*agent.SystemPrompt + "\n\n")
 	}
 
-	sb.WriteString(fmt.Sprintf(`ACTIVE EVIDENCE CONTRACT:
-- Intent: %s
-- Subject: %s
-- Evidence mode: %s
-- Required evidence fields: %s
-
-INSTRUCTIONS:
+	sb.WriteString(`INSTRUCTIONS:
 - You are a friendly, helpful support agent. Always be warm, conversational, and proactive.
 - For support, product, troubleshooting, pricing, policy, or feature questions, answer only from the provided knowledge chunks and the conversation context.
-- If any required evidence field is not supported by the supplied chunks, set can_answer=false. Do not replace a missing price or limit with a generic link.
-- For sufficiency mode, answer only the portion directly supported by the chunks. Set can_answer=false when there is no material support.
+- Review the supplied chunks and answer every portion of the question they materially support. A partial but useful grounded answer is preferable to a handoff.
+- Set can_answer=false only when the chunks contain no material support for the request or when the request requires an account-specific action.
 - Never use general knowledge to invent product behavior, workflows, integrations, pricing, policies, or troubleshooting steps.
 - Ask a human to take over whenever the customer needs account-specific actions (billing changes, password resets, accessing their data) or when the knowledge contains nothing relevant at all.
 - If you have already told the customer you will connect them with a team member, do not repeat that message. Acknowledge their follow-up briefly, for example: "A team member will be with you shortly."
@@ -3063,7 +3056,7 @@ INSTRUCTIONS:
 - INTERNAL knowledge chunks may guide the answer. You may paraphrase customer-safe facts from them, but never name, cite, link to, or reveal an internal source, its title, or its identifiers.
 - Only include document IDs from PUBLIC knowledge chunks in source_doc_ids. INTERNAL chunks intentionally do not provide a document ID.
 - Every material factual claim must appear in claims with one or more exact EVIDENCE_ID values from the supplied chunks.
-- evidence_coverage maps every supported required-evidence field to the exact EVIDENCE_ID values that support it.
+- evidence_coverage is retained for response compatibility and should be an empty object.
 - Never output an EVIDENCE_ID in source_doc_ids; that field only accepts PUBLIC DOC_ID values.
 - Copy numbers, currencies, billing cadences, limits, and tax qualifiers exactly from evidence. Never calculate or infer missing commercial values.
 - NEVER include customer email addresses, phone numbers, account IDs, or payment details in your response.
@@ -3076,9 +3069,9 @@ RESPONSE FORMAT (respond with valid JSON only):
     "source_doc_ids": [],
 	"confidence": 0.95,
 	"claims": [{"text": "<one material claim>", "evidence_ids": ["<EVIDENCE_ID>"]}],
-	"evidence_coverage": {"<required_field>": ["<EVIDENCE_ID>"]}
+	"evidence_coverage": {}
 }
-`, plan.Intent, plan.Subject, plan.EvidenceMode, strings.Join(plan.RequiredEvidence, ", ")))
+`)
 
 	if knowledgeContext != "" {
 		sb.WriteString("\nKNOWLEDGE BASE CHUNKS:\n")
@@ -3114,7 +3107,6 @@ Rules:
 - For answer, produce one standalone_query and 2 to 4 diverse search_queries.
 - For conversational, confirmation, clarify, and handoff, search_queries must be empty.
 - subject is the canonical product, company, plan, or policy entity the customer is asking about. For implicit "your" or "our" commercial questions, derive it from trusted support product context. Use an empty string only when no subject is identifiable.
-- required_evidence contains only registered field IDs relevant to the selected intent. It may be empty; the server owns the final field list.
 - language is the lowercase BCP-47 language tag of the customer's current request, such as "en" or "de". Use an empty string only when it cannot be identified.
 - issue_key is a short stable snake_case label. issue_summary is one short sentence.
 - progress_signal is exactly new_issue, same_issue_new_info, same_issue_repeat, or same_issue_unclear.
@@ -3184,10 +3176,11 @@ func (s *SupportAIService) planSupportQuery(ctx context.Context, history []model
 				}, buildSupportCustomerContentParts(customerMessage)...),
 			},
 		},
-		Temperature: 0.1,
-		MaxTokens:   384,
-		JSONMode:    true,
-		JSONSchema:  supportPlannerJSONSchema(),
+		Temperature:      0.1,
+		MaxTokens:        384,
+		JSONMode:         true,
+		JSONSchema:       supportPlannerJSONSchema(),
+		JSONSchemaStrict: true,
 	})
 	if err != nil {
 		return fallback, 0, err
@@ -3599,7 +3592,7 @@ func parseSupportQueryPlan(raw string) (SupportQueryPlanContract, error) {
 	}
 
 	requiredFields := []string{
-		"route", "reply", "intent", "subject", "language", "risk", "required_evidence",
+		"route", "reply", "intent", "subject", "language", "risk",
 		"context_action", "issue_key", "issue_summary", "progress_signal",
 		"standalone_query", "search_queries", "reason",
 	}
@@ -3607,6 +3600,9 @@ func parseSupportQueryPlan(raw string) (SupportQueryPlanContract, error) {
 	for _, field := range requiredFields {
 		allowedFields[field] = struct{}{}
 	}
+	// Accept an empty legacy field during rolling upgrades. New planner schemas
+	// no longer ask the model to invent a server-specific evidence checklist.
+	allowedFields["required_evidence"] = struct{}{}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(candidate), &fields); err != nil {
 		return SupportQueryPlanContract{}, err
@@ -3666,15 +3662,8 @@ func parseSupportQueryPlan(raw string) (SupportQueryPlanContract, error) {
 	if contract.Language != "" && normalizeSupportLanguage(contract.Language) == "" {
 		return SupportQueryPlanContract{}, fmt.Errorf("support planner language %q is invalid", contract.Language)
 	}
-	seenEvidence := map[string]struct{}{}
-	for _, field := range contract.RequiredEvidence {
-		if !supportStringListContains(supportEvidenceFieldIDs(), field) {
-			return SupportQueryPlanContract{}, fmt.Errorf("unsupported support evidence field %q", field)
-		}
-		if _, duplicate := seenEvidence[field]; duplicate {
-			return SupportQueryPlanContract{}, fmt.Errorf("duplicate support evidence field %q", field)
-		}
-		seenEvidence[field] = struct{}{}
+	if len(contract.RequiredEvidence) != 0 {
+		return SupportQueryPlanContract{}, fmt.Errorf("support planner required_evidence is no longer supported")
 	}
 	return contract, nil
 }
@@ -3817,6 +3806,9 @@ func normalizeSupportQueryPlan(plan SupportQueryPlanContract, customerMessage st
 			standalone = current
 		}
 		searchQueries := dedupeQueries(append([]string{standalone}, plan.SearchQueries...))
+		if len(searchQueries) > 4 {
+			searchQueries = searchQueries[:4]
+		}
 		if len(searchQueries) == 0 && standalone != "" {
 			searchQueries = []string{standalone}
 		}
@@ -3834,12 +3826,6 @@ func normalizeSupportQueryPlan(plan SupportQueryPlanContract, customerMessage st
 			Reason:          normalizedPlannerReason(plan.Reason, "resolved_from_context"),
 		}
 		applyRegistry(&result)
-		if result.Risk == supportRiskCommercial && result.Subject == "" {
-			result.Route = supportDecisionHandoff
-			result.Decision = supportDecisionHandoff
-			result.SearchQueries = []string{}
-			result.Reason = "commercial_subject_missing"
-		}
 		return result
 	}
 }

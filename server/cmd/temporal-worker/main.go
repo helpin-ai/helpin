@@ -20,6 +20,7 @@ import (
 	tworker "go.temporal.io/sdk/worker"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 
 	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/config"
@@ -75,7 +76,17 @@ func main() {
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  cfg.DatabaseURL,
 		PreferSimpleProtocol: true,
-	}), &gorm.Config{})
+	}), &gorm.Config{
+		Logger: gormlogger.New(
+			slog.NewLogLogger(slog.Default().Handler(), slog.LevelWarn),
+			gormlogger.Config{
+				SlowThreshold:             time.Second,
+				IgnoreRecordNotFoundError: true,
+				ParameterizedQueries:      true,
+				LogLevel:                  gormlogger.Warn,
+			},
+		),
+	})
 	if err != nil {
 		fatalWithSentry("failed to connect to database", err)
 	}

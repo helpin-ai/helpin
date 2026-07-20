@@ -61,7 +61,7 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 		modelName = req.Model
 	}
 
-	body := p.buildChatCompletionBody(modelName, messages, maxTokens, req.Temperature, req.JSONMode, req.ProviderOptions)
+	body := p.buildChatCompletionBody(modelName, messages, maxTokens, req.Temperature, req.JSONMode, req.JSONSchema, req.JSONSchemaStrict, req.ProviderOptions)
 
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
@@ -128,6 +128,8 @@ func (p *OpenAIProvider) buildChatCompletionBody(
 	maxTokens int,
 	temperature float64,
 	jsonMode bool,
+	jsonSchema map[string]any,
+	jsonSchemaStrict bool,
 	providerOptions json.RawMessage,
 ) map[string]interface{} {
 	body := map[string]interface{}{
@@ -143,7 +145,16 @@ func (p *OpenAIProvider) buildChatCompletionBody(
 		body["max_tokens"] = maxTokens
 		body["temperature"] = temperature
 	}
-	if jsonMode {
+	if jsonMode && jsonSchemaStrict && len(jsonSchema) > 0 {
+		body["response_format"] = map[string]any{
+			"type": "json_schema",
+			"json_schema": map[string]any{
+				"name":   "helpin_structured_response",
+				"strict": true,
+				"schema": jsonSchema,
+			},
+		}
+	} else if jsonMode {
 		body["response_format"] = map[string]string{"type": "json_object"}
 	}
 	return body
