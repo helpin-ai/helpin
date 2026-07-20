@@ -199,8 +199,8 @@ func (r *SupportContentChunkRepository) lexicalSearch(ctx context.Context, works
 		  %s
 		  %s
 		  AND (
-		    to_tsvector('english', COALESCE(c.title, '')) ||
-		    to_tsvector('english', COALESCE(NULLIF(c.search_content, ''), c.content, ''))
+		    setweight(to_tsvector('english', COALESCE(c.title, '')), 'A') ||
+		    setweight(to_tsvector('english', COALESCE(NULLIF(c.search_content, ''), c.content, '')), 'B')
 		  ) @@ to_tsquery('english', ?)
 		ORDER BY lexical_score DESC, c.updated_at DESC
 		LIMIT ?
@@ -244,7 +244,7 @@ func (r *SupportContentChunkRepository) vectorSearch(ctx context.Context, worksp
 		  AND c.embedding_model = ?
 		  AND c.embedding_version IN ?
 		  AND c.embedding_dimensions = ?
-		ORDER BY (c.embedding <=> CAST(? AS vector)) + 0 ASC, c.updated_at DESC
+		ORDER BY c.embedding <=> CAST(? AS vector) ASC
 		LIMIT ?
 	`, agentJoin, sourcePredicate, agentPredicate)
 	var results []SupportContentChunkSearchResult

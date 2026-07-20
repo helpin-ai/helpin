@@ -12,9 +12,11 @@ import (
 type scriptedSupportPreviewLLM struct {
 	responses []llm.ChatResponse
 	errs      []error
+	requests  []llm.ChatRequest
 }
 
-func (f *scriptedSupportPreviewLLM) ChatCompletion(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+func (f *scriptedSupportPreviewLLM) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	f.requests = append(f.requests, req)
 	if len(f.errs) > 0 {
 		err := f.errs[0]
 		f.errs = f.errs[1:]
@@ -109,19 +111,20 @@ func TestPreviewSupportReplyGreetSkipsRetrievalAndAnswer(t *testing.T) {
 }
 
 func TestPreviewSupportReplyRejectsAnswerWithoutEvidence(t *testing.T) {
-	svc := &SupportAIService{
-		llmProvider: &scriptedSupportPreviewLLM{
-			responses: []llm.ChatResponse{
-				{
-					Content:    `{"route":"answer","reply":"","intent":"unknown","subject":"Publer and ContentStudio","language":"en","risk":"general","required_evidence":[],"context_action":"continue","issue_key":"pricing_comparison","issue_summary":"Customer wants a pricing comparison.","progress_signal":"same_issue_new_info","standalone_query":"Publer vs ContentStudio pricing","search_queries":["Publer vs ContentStudio pricing"],"reason":"resolved_from_context"}`,
-					TokensUsed: llm.TokenUsage{InputTokens: 12, OutputTokens: 7},
-				},
-				{
-					Content:    `{"content":"ContentStudio offers a 7-day free trial and annual discounts.","can_answer":true,"source_doc_ids":[],"confidence":0.95}`,
-					TokensUsed: llm.TokenUsage{InputTokens: 20, OutputTokens: 14},
-				},
+	provider := &scriptedSupportPreviewLLM{
+		responses: []llm.ChatResponse{
+			{
+				Content:    `{"route":"answer","reply":"","intent":"unknown","subject":"Publer and ContentStudio","language":"en","risk":"general","required_evidence":[],"context_action":"continue","issue_key":"pricing_comparison","issue_summary":"Customer wants a pricing comparison.","progress_signal":"same_issue_new_info","standalone_query":"Publer vs ContentStudio pricing","search_queries":["Publer vs ContentStudio pricing"],"reason":"resolved_from_context"}`,
+				TokensUsed: llm.TokenUsage{InputTokens: 12, OutputTokens: 7},
+			},
+			{
+				Content:    `{"content":"ContentStudio offers a 7-day free trial and annual discounts.","can_answer":true,"source_doc_ids":[],"confidence":0.95}`,
+				TokensUsed: llm.TokenUsage{InputTokens: 20, OutputTokens: 14},
 			},
 		},
+	}
+	svc := &SupportAIService{
+		llmProvider:            provider,
 		queryExpansionModel:    "gpt-5.5",
 		queryExpansionProvider: "openai",
 	}
@@ -158,6 +161,9 @@ func TestPreviewSupportReplyRejectsAnswerWithoutEvidence(t *testing.T) {
 	}
 	if resp.Answer.SourceDocIDs == nil {
 		t.Fatal("expected answer.source_doc_ids to be an empty slice, got nil")
+	}
+	if len(provider.requests) != 2 || !provider.requests[1].JSONSchemaStrict || provider.requests[1].JSONSchema == nil {
+		t.Fatalf("final support answer must use strict structured output: %+v", provider.requests)
 	}
 }
 

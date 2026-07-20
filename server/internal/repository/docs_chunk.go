@@ -259,8 +259,8 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID, ag
 		  AND (s.type = 'internal' OR (s.type = 'external_capable' AND ha.public_published_at IS NOT NULL))
 		  %s
 		  AND (
-		    to_tsvector('english', COALESCE(c.title, '')) ||
-		    to_tsvector('english', COALESCE(NULLIF(c.search_content, ''), c.content, ''))
+		    setweight(to_tsvector('english', COALESCE(c.title, '')), 'A') ||
+		    setweight(to_tsvector('english', COALESCE(NULLIF(c.search_content, ''), c.content, '')), 'B')
 		  ) @@ to_tsquery('english', ?)
 		ORDER BY lexical_score DESC, c.updated_at DESC
 		LIMIT ?
@@ -305,7 +305,7 @@ func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID, age
 		  AND c.embedding_model = ?
 		  AND c.embedding_version IN ?
 		  AND c.embedding_dimensions = ?
-		ORDER BY (c.embedding <=> CAST(? AS vector)) + 0 ASC, c.updated_at DESC
+		ORDER BY c.embedding <=> CAST(? AS vector) ASC
 		LIMIT ?
 	`, agentJoin, agentPredicate)
 	var results []DocsChunkSearchResult

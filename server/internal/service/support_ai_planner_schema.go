@@ -5,7 +5,7 @@ func supportPlannerJSONSchema() map[string]any {
 		"type":                 "object",
 		"additionalProperties": false,
 		"required": []string{
-			"route", "reply", "intent", "subject", "language", "risk", "required_evidence",
+			"route", "reply", "intent", "subject", "language", "risk",
 			"context_action", "issue_key", "issue_summary", "progress_signal",
 			"standalone_query", "search_queries", "reason",
 		},
@@ -24,14 +24,6 @@ func supportPlannerJSONSchema() map[string]any {
 			"risk": map[string]any{
 				"type": "string",
 				"enum": []string{supportRiskCommercial, supportRiskGeneral},
-			},
-			"required_evidence": map[string]any{
-				"type":        "array",
-				"uniqueItems": true,
-				"items": map[string]any{
-					"type": "string",
-					"enum": supportEvidenceFieldIDs(),
-				},
 			},
 			"context_action": map[string]any{
 				"type": "string",

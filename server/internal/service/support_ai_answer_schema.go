@@ -11,9 +11,8 @@ func supportAnswerJSONSchema() map[string]any {
 			"content":    map[string]any{"type": "string"},
 			"can_answer": map[string]any{"type": "boolean"},
 			"source_doc_ids": map[string]any{
-				"type":        "array",
-				"uniqueItems": true,
-				"items":       map[string]any{"type": "string"},
+				"type":  "array",
+				"items": map[string]any{"type": "string"},
 			},
 			"confidence": map[string]any{
 				"type":    "number",
@@ -29,20 +28,16 @@ func supportAnswerJSONSchema() map[string]any {
 					"properties": map[string]any{
 						"text": map[string]any{"type": "string"},
 						"evidence_ids": map[string]any{
-							"type":        "array",
-							"uniqueItems": true,
-							"items":       map[string]any{"type": "string"},
+							"type":  "array",
+							"items": map[string]any{"type": "string"},
 						},
 					},
 				},
 			},
 			"evidence_coverage": map[string]any{
-				"type": "object",
-				"additionalProperties": map[string]any{
-					"type":        "array",
-					"uniqueItems": true,
-					"items":       map[string]any{"type": "string"},
-				},
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties":           map[string]any{},
 			},
 		},
 	}

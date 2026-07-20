@@ -12,10 +12,10 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-func TestNormalizeSupportIntentRejectsInventedEvidenceField(t *testing.T) {
-	definition := normalizeSupportIntent(supportIntentPricingGeneral, []string{"starting_prices", "secret_discount"})
-	if definition.ID != supportIntentUnknown || definition.EvidenceMode != supportEvidenceModeSufficiency {
-		t.Fatalf("invented field should downgrade to unknown sufficiency mode: %+v", definition)
+func TestNormalizeSupportIntentUsesSourceSufficiencyForEveryCompany(t *testing.T) {
+	definition := normalizeSupportIntent(supportIntentPricingGeneral, []string{"company_specific_field"})
+	if definition.ID != supportIntentPricingGeneral || definition.EvidenceMode != supportEvidenceModeSufficiency || len(definition.RequiredEvidence) != 0 {
+		t.Fatalf("pricing should be evaluated from retrieved sources without hard-coded fields: %+v", definition)
 	}
 }
 
@@ -70,13 +70,11 @@ func TestCrawlRecordTextPreservesMarkdownAndHTMLSections(t *testing.T) {
 	}
 }
 
-func TestPricingEvidenceCoverageAndValidation(t *testing.T) {
+func TestPricingAnswerIsValidatedAgainstRetrievedSources(t *testing.T) {
 	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
-		Route:            supportDecisionAnswer,
-		Intent:           supportIntentPricingGeneral,
-		Subject:          "Usermaven",
-		RequiredEvidence: []string{"starting_prices"},
-		StandaloneQuery:  "What is your pricing?",
+		Route:           supportDecisionAnswer,
+		Intent:          supportIntentPricingGeneral,
+		StandaloneQuery: "What is your pricing?",
 	}, "What is your pricing?")
 	results := []KnowledgeSearchResult{{
 		ID:          "price-1",
@@ -86,9 +84,8 @@ func TestPricingEvidenceCoverageAndValidation(t *testing.T) {
 		URL:         "https://example.test/pricing",
 		Content:     "Usermaven Growth plan starts at $49 per month. Enterprise uses custom pricing; contact sales.",
 	}}
-	coverage := evaluateSupportEvidenceCoverage(plan, results)
-	if len(coverage.Missing) != 0 {
-		t.Fatalf("expected complete pricing evidence, missing %v", coverage.Missing)
+	if plan.Decision != supportDecisionAnswer || plan.EvidenceMode != supportEvidenceModeSufficiency || len(plan.RequiredEvidence) != 0 {
+		t.Fatalf("pricing should proceed to source-grounded generation: %+v", plan)
 	}
 	response := &AIResponseContract{
 		Content:      "The Growth plan starts at $49 per month. Enterprise pricing is custom.",
@@ -99,58 +96,33 @@ func TestPricingEvidenceCoverageAndValidation(t *testing.T) {
 			{Text: "The Growth plan starts at $49 per month.", EvidenceIDs: []string{"price-1"}},
 			{Text: "Enterprise pricing is custom.", EvidenceIDs: []string{"price-1"}},
 		},
-		EvidenceCoverage: map[string][]string{
-			"plan_names":        {"price-1"},
-			"starting_prices":   {"price-1"},
-			"billing_cadence":   {"price-1"},
-			"enterprise_status": {"price-1"},
-			"canonical_url":     {"price-1"},
-		},
+		EvidenceCoverage: map[string][]string{},
 	}
-	validation := validateSupportAnswer(plan, coverage, results, response)
+	validation := validateSupportAnswer(plan, supportEvidenceCoverage{Found: map[string][]string{}}, results, response)
 	if validation.Outcome != supportValidationPass {
 		t.Fatalf("expected supported answer to pass: %+v", validation)
 	}
 
 	response.Content = "The Growth plan starts at $79 per month."
 	response.Claims = []AIResponseClaim{{Text: response.Content, EvidenceIDs: []string{"price-1"}}}
-	validation = validateSupportAnswer(plan, coverage, results, response)
+	validation = validateSupportAnswer(plan, supportEvidenceCoverage{Found: map[string][]string{}}, results, response)
 	if validation.Outcome != supportValidationNumeric {
 		t.Fatalf("unsupported price must fail numeric validation: %+v", validation)
 	}
 }
 
-func TestCommercialEvidenceCoverageRejectsWrongProductSubject(t *testing.T) {
-	competitor := []KnowledgeSearchResult{{
-		ID: "ga4", Title: "Google Analytics 4 pricing", URL: "https://example.test/analytics-tools",
-		Content: "Google Analytics 4 has a free plan and GA4 360 starts at $50,000 per year. Enterprise customers contact sales.",
-	}}
-	for _, subject := range []string{"Usermaven", "Usermaven pricing", "Usermaven analytics product"} {
-		plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
-			Route:           supportDecisionAnswer,
-			Intent:          supportIntentPricingGeneral,
-			Subject:         subject,
-			StandaloneQuery: "Usermaven pricing",
-		}, "What is your pricing?")
-		coverage := evaluateSupportEvidenceCoverage(plan, competitor)
-		if len(coverage.Found["starting_prices"]) != 0 || !supportStringListContains(coverage.Missing, "starting_prices") {
-			t.Fatalf("competitor evidence satisfied %q pricing: %+v", subject, coverage)
-		}
-	}
-}
-
-func TestCommercialPlanWithoutSubjectFailsClosed(t *testing.T) {
+func TestCommercialPlanWithoutSubjectStillRetrievesSources(t *testing.T) {
 	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
 		Route:           supportDecisionAnswer,
 		Intent:          supportIntentPricingGeneral,
 		StandaloneQuery: "What is your pricing?",
 	}, "What is your pricing?")
-	if plan.Decision != supportDecisionHandoff || plan.Reason != "commercial_subject_missing" || len(plan.SearchQueries) != 0 {
-		t.Fatalf("subjectless commercial plan did not fail closed: %+v", plan)
+	if plan.Decision != supportDecisionAnswer || len(plan.SearchQueries) == 0 {
+		t.Fatalf("subjectless commercial question should be answered from retrieved sources: %+v", plan)
 	}
 }
 
-func TestValidationRejectsUnmappedRequiredFieldAndUncitedNumber(t *testing.T) {
+func TestValidationRejectsUncitedNumber(t *testing.T) {
 	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
 		Route:           supportDecisionAnswer,
 		Intent:          supportIntentPricingGeneral,
@@ -161,7 +133,6 @@ func TestValidationRejectsUnmappedRequiredFieldAndUncitedNumber(t *testing.T) {
 		{ID: "cited", Title: "Usermaven Pricing", URL: "https://usermaven.com/pricing", Content: "Growth starts at $49 per month. Enterprise has custom pricing."},
 		{ID: "uncited", Title: "Legacy", Content: "An old plan cost $99 per month."},
 	}
-	coverage := evaluateSupportEvidenceCoverage(plan, results)
 	response := &AIResponseContract{
 		Content:    "Growth starts at $99 per month. Enterprise has custom pricing.",
 		CanAnswer:  true,
@@ -169,23 +140,15 @@ func TestValidationRejectsUnmappedRequiredFieldAndUncitedNumber(t *testing.T) {
 		Claims: []AIResponseClaim{
 			{Text: "Growth starts at $99 per month.", EvidenceIDs: []string{"cited"}},
 		},
-		EvidenceCoverage: map[string][]string{
-			"plan_names":        {"cited"},
-			"starting_prices":   {"cited"},
-			"billing_cadence":   {"cited"},
-			"enterprise_status": {"cited"},
-		},
+		EvidenceCoverage: map[string][]string{},
 	}
-	validation := validateSupportAnswer(plan, coverage, results, response)
+	validation := validateSupportAnswer(plan, supportEvidenceCoverage{Found: map[string][]string{}}, results, response)
 	if validation.Outcome != supportValidationNumeric {
 		t.Fatalf("uncited retrieved number must not validate: %+v", validation)
 	}
-	if !supportStringListContains(validation.Reasons, "unmapped_required_evidence:canonical_url") {
-		t.Fatalf("missing required evidence mapping was not reported: %+v", validation)
-	}
 }
 
-func TestValidationDoesNotTrustUnrelatedCuratedGuidanceClaim(t *testing.T) {
+func TestValidationRejectsUnknownEvidenceID(t *testing.T) {
 	plan := defaultSupportQueryPlan("Does every plan include unlimited projects?")
 	results := []KnowledgeSearchResult{{
 		ID: "guidance-1", SourceType: knowledgeSourceTypeGuidance,
@@ -195,45 +158,42 @@ func TestValidationDoesNotTrustUnrelatedCuratedGuidanceClaim(t *testing.T) {
 		Content:   "Every plan includes unlimited projects.",
 		CanAnswer: true,
 		Claims: []AIResponseClaim{{
-			Text: "Every plan includes unlimited projects.", EvidenceIDs: []string{"guidance-1"},
+			Text: "Every plan includes unlimited projects.", EvidenceIDs: []string{"missing-guidance"},
 		}},
 	}
 	validation := validateSupportAnswer(plan, supportEvidenceCoverage{Found: map[string][]string{}}, results, response)
 	if validation.Outcome != supportValidationUngrounded {
-		t.Fatalf("unrelated guidance claim must fail grounding: %+v", validation)
+		t.Fatalf("unknown evidence ID must fail grounding: %+v", validation)
 	}
 }
 
-func TestValidationRequiresClaimsToCoverTheRenderedAnswer(t *testing.T) {
-	plan := defaultSupportQueryPlan("What is included?")
-	results := []KnowledgeSearchResult{{ID: "doc-1", Content: "Growth starts at $49 per month."}}
+func TestValidationAcceptsSourceMappedParaphrase(t *testing.T) {
+	plan := defaultSupportQueryPlan("What is your pricing?")
+	results := []KnowledgeSearchResult{{ID: "doc-1", Content: "Monthly YearlySave up to 34%"}}
 	response := &AIResponseContract{
-		Content:   "Growth starts at $49 per month and every plan includes unlimited projects.",
+		Content:   "Yearly billing is advertised as saving up to 34%.",
 		CanAnswer: true,
 		Claims: []AIResponseClaim{{
-			Text: "Growth starts at $49 per month.", EvidenceIDs: []string{"doc-1"},
+			Text: "Yearly billing is advertised as saving up to 34%.", EvidenceIDs: []string{"doc-1"},
 		}},
 	}
 	validation := validateSupportAnswer(plan, supportEvidenceCoverage{Found: map[string][]string{}}, results, response)
-	if validation.Outcome != supportValidationUngrounded || !supportStringListContains(validation.Reasons, "response_claims_incomplete") {
-		t.Fatalf("unmapped rendered claim must fail grounding: %+v", validation)
+	if validation.Outcome != supportValidationPass {
+		t.Fatalf("strict source mapping plus exact numeric evidence should accept paraphrases: %+v", validation)
 	}
 }
 
-func TestSelectSupportEvidenceContextKeepsRequiredFields(t *testing.T) {
-	plan := SupportQueryPlanContract{RequiredEvidence: []string{"starting_prices", "enterprise_status"}}
+func TestSelectSupportEvidenceContextUsesRetrievalRank(t *testing.T) {
+	plan := SupportQueryPlanContract{}
 	results := []KnowledgeSearchResult{
 		{ID: "top", CombinedScore: 1},
 		{ID: "price", CombinedScore: 0.2},
 		{ID: "enterprise", CombinedScore: 0.1},
 	}
-	coverage := supportEvidenceCoverage{Found: map[string][]string{
-		"starting_prices":   {"price"},
-		"enterprise_status": {"enterprise"},
-	}}
+	coverage := supportEvidenceCoverage{Found: map[string][]string{}}
 	selected := selectSupportEvidenceContext(plan, coverage, results, 2)
-	if len(selected) != 2 || selected[0].ID != "price" || selected[1].ID != "enterprise" {
-		t.Fatalf("required evidence was not prioritized: %+v", selected)
+	if len(selected) != 2 || selected[0].ID != "top" || selected[1].ID != "price" {
+		t.Fatalf("retrieval order should be preserved: %+v", selected)
 	}
 }
 

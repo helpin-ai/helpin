@@ -303,6 +303,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	reviewerProfile := worker.GetRuntimeProfile(model.AgentPresetReviewAgent)
 	supportProfile := worker.GetRuntimeProfile(model.AgentPresetSupportAgent)
 	documentationProfile := worker.GetRuntimeProfile(model.AgentPresetDocumentationAgent)
+	supportAgentProvider := model.AgentModelProviderOpenAI
+	supportAgentModel := "gpt-5.6-terra"
 	codeBuilderProvider := model.AgentModelProviderOpenAI
 	codeBuilderModel := "gpt-5.5"
 	reviewAgentProvider := model.AgentModelProviderOpenAI
@@ -410,6 +412,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Support conversation triage and reply drafting with review by default.",
 			DefaultRole:           "Support Agent",
 			RuntimeKind:           "codex",
+			Provider:              &supportAgentProvider,
+			Model:                 &supportAgentModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(supportProfile.AllowedTools),
