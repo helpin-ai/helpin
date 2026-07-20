@@ -29,6 +29,23 @@ func TestLoadDefaultsCommandRouterToOpenRouterGeminiFlashLite(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultsQueryExpansionToGPT56Luna(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("QUERY_EXPANSION_MODEL", "")
+	t.Setenv("QUERY_EXPANSION_PROVIDER", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.QueryExpansionProvider != "openai" {
+		t.Fatalf("unexpected query expansion provider: %q", cfg.QueryExpansionProvider)
+	}
+	if cfg.QueryExpansionModel != "gpt-5.6-luna" {
+		t.Fatalf("unexpected query expansion model: %q", cfg.QueryExpansionModel)
+	}
+}
+
 func TestLoadAllowsCommandRouterDefaultsToBeOverridden(t *testing.T) {
 	setRequiredConfigEnv(t)
 	t.Setenv("COMMAND_ROUTER_LLM_PROVIDER", "anthropic")

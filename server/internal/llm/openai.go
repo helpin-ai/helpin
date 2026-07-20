@@ -131,9 +131,8 @@ func (p *OpenAIProvider) buildChatCompletionBody(
 	providerOptions json.RawMessage,
 ) map[string]interface{} {
 	body := map[string]interface{}{
-		"model":       modelName,
-		"messages":    messages,
-		"temperature": temperature,
+		"model":    modelName,
+		"messages": messages,
 	}
 	if len(providerOptions) > 0 && strings.TrimSpace(string(providerOptions)) != "" {
 		body["provider"] = json.RawMessage(providerOptions)
@@ -142,6 +141,7 @@ func (p *OpenAIProvider) buildChatCompletionBody(
 		body["max_completion_tokens"] = maxTokens
 	} else {
 		body["max_tokens"] = maxTokens
+		body["temperature"] = temperature
 	}
 	if jsonMode {
 		body["response_format"] = map[string]string{"type": "json_object"}
