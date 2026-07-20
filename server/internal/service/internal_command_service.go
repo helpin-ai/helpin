@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -306,6 +307,40 @@ func taskDependencyGraphHasCycle(graph map[string][]string) bool {
 }
 
 func (s *InternalCommandService) registerDefaults() {
+	s.register(InternalCommandDefinition{
+		Name:                 "agents.list_agents",
+		Module:               "workspace",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "document", "deal", "crm_deal", "contact", "crm_contact", "company", "conversation", "support_conversation", "repository"},
+		Tool: &commandtools.RuntimeToolMetadata{
+			CommandName: "agents.list_agents",
+			Alias:       "list_agents",
+			Category:    "Agents",
+			Description: "List saved, built-in, and custom agents visible to the current actor. Use this before recommending which agent should handle a request.",
+			InputSchema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"required":             []string{},
+				"additionalProperties": false,
+			},
+		},
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.agentService == nil {
+				return nil, fmt.Errorf("agent service is not configured")
+			}
+			if len(input) > 0 {
+				var req struct{}
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse list agents input: %w", err)
+				}
+			}
+			agents, err := s.agentService.ListAgentsForActor(ctx, meta.WorkspaceID, internalCommandActor(meta))
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(commandBarAllAgentCandidates(agents)), nil
+		},
+	})
 	s.register(InternalCommandDefinition{
 		Name:                 "workspace.list_teams",
 		Module:               "workspace",
@@ -1820,6 +1855,22 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerReleaseFactsCommands()
 	s.registerDocsRuntimeToolCommands()
 	s.registerDocsOrganizationCommands()
+}
+
+func internalCommandActor(meta model.InternalCommandContext) *authorization.Actor {
+	memberships := make([]authorization.TeamRole, 0, len(meta.ActorTeamIDs))
+	for _, teamID := range meta.ActorTeamIDs {
+		teamID = strings.TrimSpace(teamID)
+		if teamID != "" {
+			memberships = append(memberships, authorization.TeamRole{TeamID: teamID})
+		}
+	}
+	return &authorization.Actor{
+		UserID:          strings.TrimSpace(meta.ActorID),
+		WorkspaceID:     strings.TrimSpace(meta.WorkspaceID),
+		Role:            strings.TrimSpace(meta.ActorRole),
+		TeamMemberships: memberships,
+	}
 }
 
 // resolveCommandRun resolves the local agent run for a command context. The

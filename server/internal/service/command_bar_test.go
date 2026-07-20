@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -2135,6 +2136,97 @@ func TestInlineReadOnlyChatUsesModelRequestedTools(t *testing.T) {
 	}
 	if !strings.Contains(string(toolContext.ToolCalls[1].Output), `"total":1`) || strings.Contains(string(toolContext.ToolCalls[1].Output), "Launch campaign") {
 		t.Fatalf("expected team-filtered task output, got %s", string(toolContext.ToolCalls[1].Output))
+	}
+}
+
+func TestInlineReadOnlyChatGroundsAgentRecommendationsInActorVisibleCatalog(t *testing.T) {
+	db := setupAgentScopeTestDB(t)
+	workspaceID := "ws-1"
+	seedAgentScopeAgent(t, db, model.Agent{
+		ID:                    "quill-agent",
+		WorkspaceID:           workspaceID,
+		IsSystem:              true,
+		Name:                  "Quill",
+		PresetKey:             model.AgentPresetDocumentationAgent,
+		Role:                  "Documentation Agent",
+		Status:                "idle",
+		RuntimeKind:           "codex",
+		AllowedTargets:        json.RawMessage(`["workspace","document","repository"]`),
+		AllowedTools:          json.RawMessage(`["list_documents","read_document","checkout_repository"]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "never",
+		DefaultInvocationMode: "interactive",
+	})
+	seedAgentScopeAgent(t, db, model.Agent{
+		ID:                    "hidden-agent",
+		WorkspaceID:           workspaceID,
+		Name:                  "Hidden Team Writer",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		AllowedTargets:        json.RawMessage(`["document"]`),
+		AllowedTools:          json.RawMessage(`["read_document"]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "always",
+		DefaultInvocationMode: "interactive",
+		TeamIDs:               []string{"team-b"},
+	})
+
+	agentService := &AgentService{agentRepo: repository.NewAgentRepository(db)}
+	commandService := NewInternalCommandService(agentService, nil, nil, nil, nil, nil, nil, nil)
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"type":"tool_call","tool":"list_agents","input":{}}`,
+		`{"type":"final","answer":"Use Quill, the Documentation Agent, to research and write the Usermaven MCP documentation."}`,
+	}}
+	service := NewCommandBarService(agentService, nil, nil, nil, fakeLLM).
+		SetInternalCommandService(commandService)
+	ctx := authorization.WithActor(context.Background(), &authorization.Actor{
+		UserID:      "actor-1",
+		WorkspaceID: workspaceID,
+		Role:        "member",
+		TeamMemberships: []authorization.TeamRole{
+			{TeamID: "team-a", Role: "member"},
+		},
+	})
+	classifierLLM := &scriptedCommandBarLLM{response: `{"route":"inline_read_only","reason":"agent recommendation","confidence":0.99}`}
+	classifierService := NewCommandBarService(agentService, nil, nil, nil, classifierLLM).
+		SetInternalCommandService(commandService)
+	classification, err := classifierService.classifyCommandBarChatIntent(ctx, workspaceID, "Which agents should I use to document our Usermaven MCP server?", model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID}, CommandBarChatAccess{CanReadPM: true, CanReadDocs: true, ActorRole: "member"}, nil)
+	if err != nil || classification == nil || classification.Route != "inline_read_only" {
+		t.Fatalf("expected inline agent-discovery classification, classification=%#v err=%v", classification, err)
+	}
+	classifierPrompt := classifierLLM.requests[0].Messages[0].Content
+	if !strings.Contains(classifierPrompt, `"name":"Quill"`) || strings.Contains(classifierPrompt, "Hidden Team Writer") {
+		t.Fatalf("classifier did not receive actor-filtered catalog: %s", classifierPrompt)
+	}
+
+	answer, inlineContext := service.inlineReadOnlyAnswer(ctx, workspaceID, "actor-1", "Which agents should I use to document our Usermaven MCP server?", model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID}, CommandBarChatAccess{CanReadPM: true, CanReadDocs: true, ActorRole: "member"}, nil)
+	if !strings.Contains(answer, "Quill") {
+		t.Fatalf("expected Quill recommendation, got %q", answer)
+	}
+	if len(fakeLLM.requests) != 2 {
+		t.Fatalf("expected list_agents tool turn then final answer, got %d requests", len(fakeLLM.requests))
+	}
+	firstPrompt := fakeLLM.requests[0].Messages[0].Content
+	if !strings.Contains(firstPrompt, `"name":"Quill"`) || !strings.Contains(firstPrompt, `"name":"list_agents"`) {
+		t.Fatalf("expected verified Quill catalog and list_agents tool in prompt, got %s", firstPrompt)
+	}
+	if strings.Contains(firstPrompt, "Hidden Team Writer") {
+		t.Fatalf("actor-inaccessible agent leaked into prompt: %s", firstPrompt)
+	}
+	var toolContext commandBarReadOnlyToolContext
+	if err := json.Unmarshal(inlineContext, &toolContext); err != nil {
+		t.Fatalf("decode inline context: %v", err)
+	}
+	if len(toolContext.ToolCalls) != 1 || toolContext.ToolCalls[0].Tool != "list_agents" {
+		t.Fatalf("expected one list_agents call, got %#v", toolContext.ToolCalls)
+	}
+	toolOutput := string(toolContext.ToolCalls[0].Output)
+	if !strings.Contains(toolOutput, `"name":"Quill"`) || strings.Contains(toolOutput, "Hidden Team Writer") {
+		t.Fatalf("expected actor-filtered list_agents output, got %s", toolOutput)
 	}
 }
 

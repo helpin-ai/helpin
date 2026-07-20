@@ -182,6 +182,85 @@ func TestListWorkspaceTeamsCommandMetadataAndOutput(t *testing.T) {
 	}
 }
 
+func TestListAgentsCommandReturnsOnlyActorVisibleAgents(t *testing.T) {
+	db := setupAgentScopeTestDB(t)
+	seedAgentScopeAgent(t, db, model.Agent{
+		ID:                    "quill-agent",
+		WorkspaceID:           "ws-1",
+		IsSystem:              true,
+		Name:                  "Quill",
+		PresetKey:             model.AgentPresetDocumentationAgent,
+		Role:                  "Documentation Agent",
+		Status:                "idle",
+		RuntimeKind:           "codex",
+		AllowedTargets:        json.RawMessage(`["workspace","document","repository"]`),
+		AllowedTools:          json.RawMessage(`["list_documents","read_document","checkout_repository"]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "never",
+		DefaultInvocationMode: "interactive",
+	})
+	seedAgentScopeAgent(t, db, model.Agent{
+		ID:                    "team-a-agent",
+		WorkspaceID:           "ws-1",
+		Name:                  "Team A Agent",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		AllowedTargets:        json.RawMessage(`["task"]`),
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "always",
+		DefaultInvocationMode: "interactive",
+		TeamIDs:               []string{"team-a"},
+	})
+	seedAgentScopeAgent(t, db, model.Agent{
+		ID:                    "hidden-agent",
+		WorkspaceID:           "ws-1",
+		Name:                  "Hidden Team Agent",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		AllowedTargets:        json.RawMessage(`["task"]`),
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "always",
+		DefaultInvocationMode: "interactive",
+		TeamIDs:               []string{"team-b"},
+	})
+
+	agentService := &AgentService{agentRepo: repository.NewAgentRepository(db)}
+	svc := NewInternalCommandService(agentService, nil, nil, nil, nil, nil, nil, nil)
+	def, ok := svc.Definition("agents.list_agents")
+	if !ok || def.Tool == nil || def.Tool.Alias != "list_agents" || def.Mutating {
+		t.Fatalf("unexpected list_agents definition: %#v", def)
+	}
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID:  "ws-1",
+		ActorID:      "actor-1",
+		ActorRole:    "member",
+		ActorTeamIDs: []string{"team-a"},
+		TargetType:   "workspace",
+		TargetID:     "ws-1",
+	}, "agents.list_agents", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("agents.list_agents returned error: %v", err)
+	}
+	var agents []model.CommandBarAgent
+	if err := json.Unmarshal(output, &agents); err != nil {
+		t.Fatalf("unmarshal agents: %v\n%s", err, string(output))
+	}
+	if len(agents) != 2 || agents[0].Name != "Quill" || agents[1].Name != "Team A Agent" {
+		t.Fatalf("agents = %#v, want Quill and Team A Agent", agents)
+	}
+	if agents[0].PresetKey != model.AgentPresetDocumentationAgent || !agents[0].IsSystem {
+		t.Fatalf("expected grounded Quill metadata, got %#v", agents[0])
+	}
+}
+
 func TestListTasksSupportsOptionalOwnerFilters(t *testing.T) {
 	db := newTestDB(t)
 	seedUser(t, db, "actor-1", "actor@example.com", "Actor", "hash")

@@ -768,6 +768,41 @@ export interface AgentKnowledgeSource {
   updated_at: string;
 }
 
+export type CuratedGuidanceIntent = 'pricing_general' | 'plan_recommendation' | 'billing_tax' | 'unknown';
+export type CuratedGuidanceStatus = 'active' | 'disabled';
+
+export interface CuratedGuidance {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  title: string;
+  question_patterns: string[];
+  answer: string;
+  intent: CuratedGuidanceIntent;
+  topics: string[];
+  language: string;
+  status: CuratedGuidanceStatus;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCuratedGuidanceRequest {
+  title: string;
+  question_patterns: string[];
+  answer: string;
+  intent: CuratedGuidanceIntent;
+  topics: string[];
+  language: string;
+  valid_from?: string | null;
+  valid_until?: string | null;
+}
+
+export interface UpdateCuratedGuidanceRequest extends Partial<CreateCuratedGuidanceRequest> {
+  status?: CuratedGuidanceStatus;
+}
+
 export interface SupportContentSource {
   id: string;
   workspace_id: string;

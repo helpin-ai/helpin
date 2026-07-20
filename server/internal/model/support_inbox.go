@@ -1062,6 +1062,15 @@ type BusinessHoursDay struct {
 	Enabled bool   `json:"enabled"`
 }
 
+const (
+	// SupportAIPreRouterModeOff is retained for persisted-settings compatibility.
+	SupportAIPreRouterModeOff = "off"
+	// SupportAIPreRouterModeShadow is retained for rollout telemetry compatibility.
+	SupportAIPreRouterModeShadow = "shadow"
+	// SupportAIPreRouterModeEnabled runs the LLM pre-router for every AI-handled message.
+	SupportAIPreRouterModeEnabled = "enabled"
+)
+
 // SupportInboxSettings holds all widget configuration stored as JSONB.
 type SupportInboxSettings struct {
 	// Identity Capture
@@ -1079,6 +1088,7 @@ type SupportInboxSettings struct {
 	AIAgentID             *string `json:"ai_agent_id"`
 	AIConfidenceThreshold float64 `json:"ai_confidence_threshold"` // 0.0–1.0
 	AIResponseMode        string  `json:"ai_response_mode"`        // "ai_first" | "internal_note" | "off"
+	AIPreRouterMode       string  `json:"ai_pre_router_mode"`      // "off" | "shadow" | "enabled"
 	AIMaxFollowups        int     `json:"ai_max_followups"`        // max stalled same-issue AI attempts before forced handoff (default: 5)
 	AIAutoResolveTimeout  int     `json:"ai_auto_resolve_timeout"` // hours before assumed resolution (default: 24, 0 = disabled)
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
@@ -1182,6 +1192,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIAgentID:                     nil,
 		AIConfidenceThreshold:         0.7,
 		AIResponseMode:                "ai_first",
+		AIPreRouterMode:               SupportAIPreRouterModeEnabled,
 		AIMaxFollowups:                5,
 		AIAutoResolveTimeout:          24,
 		ShowTalkToHuman:               true,
@@ -1254,6 +1265,7 @@ type UpdateInstallationSettingsRequest struct {
 	AIAgentID                       *string                     `json:"ai_agent_id,omitempty"`
 	AIConfidenceThreshold           *float64                    `json:"ai_confidence_threshold,omitempty"`
 	AIResponseMode                  *string                     `json:"ai_response_mode,omitempty"`
+	AIPreRouterMode                 *string                     `json:"ai_pre_router_mode,omitempty"`
 	AIMaxFollowups                  *int                        `json:"ai_max_followups,omitempty"`
 	AIAutoResolveTimeout            *int                        `json:"ai_auto_resolve_timeout,omitempty"`
 	ShowTalkToHuman                 *bool                       `json:"show_talk_to_human,omitempty"`
@@ -1350,7 +1362,16 @@ type SupportAIPreviewResponse struct {
 }
 
 type SupportAIPreviewQueryPlan struct {
+	Route              string   `json:"route"`
 	Decision           string   `json:"decision"`
+	Intent             string   `json:"intent"`
+	Subject            string   `json:"subject"`
+	Language           string   `json:"language"`
+	Risk               string   `json:"risk"`
+	RequiredEvidence   []string `json:"required_evidence"`
+	EvidenceMode       string   `json:"evidence_mode"`
+	RegistryVersion    int      `json:"registry_version"`
+	ContextAction      string   `json:"context_action"`
 	IssueKey           string   `json:"issue_key"`
 	IssueSummary       string   `json:"issue_summary"`
 	ProgressSignal     string   `json:"progress_signal"`
@@ -1365,10 +1386,13 @@ type SupportAIPreviewQueryPlan struct {
 }
 
 type SupportAIPreviewRetrieval struct {
-	QueryCount  int                            `json:"query_count"`
-	ResultCount int                            `json:"result_count"`
-	Results     []SupportAIPreviewSearchResult `json:"results"`
-	Error       string                         `json:"error,omitempty"`
+	QueryCount      int                            `json:"query_count"`
+	ResultCount     int                            `json:"result_count"`
+	EvidenceFound   map[string][]string            `json:"evidence_found"`
+	EvidenceMissing []string                       `json:"evidence_missing"`
+	TargetedRetry   bool                           `json:"targeted_retry"`
+	Results         []SupportAIPreviewSearchResult `json:"results"`
+	Error           string                         `json:"error,omitempty"`
 }
 
 type SupportAIPreviewSearchResult struct {
@@ -1392,6 +1416,10 @@ type SupportAIPreviewAnswer struct {
 	TokensUsed         int      `json:"tokens_used"`
 	Provider           string   `json:"provider"`
 	Model              string   `json:"model"`
+	ValidationOutcome  string   `json:"validation_outcome"`
+	ValidationReasons  []string `json:"validation_reasons"`
+	MaterialClaims     int      `json:"material_claims"`
+	SupportedClaims    int      `json:"supported_claims"`
 }
 
 // WidgetToken is the token format expected by the events-pipeline rust-capture service.
