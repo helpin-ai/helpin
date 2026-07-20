@@ -189,6 +189,12 @@ func TestPreviewSupportReplySurfacesPlannerFallback(t *testing.T) {
 	if resp.QueryPlan.Error == "" {
 		t.Fatal("expected planner error to be populated")
 	}
+	if resp.QueryPlan.Decision != supportDecisionAnswer {
+		t.Fatalf("planner fallback decision = %q, want %q", resp.QueryPlan.Decision, supportDecisionAnswer)
+	}
+	if len(resp.QueryPlan.SearchQueries) != 1 || resp.QueryPlan.SearchQueries[0] != "pricing" {
+		t.Fatalf("planner fallback search queries = %#v, want pricing query", resp.QueryPlan.SearchQueries)
+	}
 }
 
 func TestGenerateResponseRejectsTemplatePlaceholder(t *testing.T) {

@@ -132,8 +132,9 @@ type Config struct {
 	CRMLLMModel    string
 
 	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.6-luna)
-	QueryExpansionModel    string
-	QueryExpansionProvider string
+	QueryExpansionModel     string
+	QueryExpansionProvider  string
+	QueryExpansionTimeoutMS int
 
 	// Command bar intent routing LLM (optional — defaults to router default provider)
 	CommandRouterLLMProvider               string
@@ -326,6 +327,7 @@ func Load() (*Config, error) {
 		CRMLLMModel:                            os.Getenv("CRM_LLM_MODEL"),
 		QueryExpansionModel:                    strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.6-luna")),
 		QueryExpansionProvider:                 strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
+		QueryExpansionTimeoutMS:                parsePositiveIntEnv(os.Getenv("QUERY_EXPANSION_TIMEOUT_MS"), 10000),
 		CommandRouterLLMProvider:               strings.TrimSpace(firstNonEmpty(os.Getenv("COMMAND_ROUTER_LLM_PROVIDER"), defaultCommandRouterLLMProvider)),
 		CommandRouterLLMModel:                  strings.TrimSpace(firstNonEmpty(os.Getenv("COMMAND_ROUTER_LLM_MODEL"), defaultCommandRouterLLMModel)),
 		CommandRouterLLMMaxTokens:              parsePositiveIntEnv(os.Getenv("COMMAND_ROUTER_LLM_MAX_TOKENS"), 900),

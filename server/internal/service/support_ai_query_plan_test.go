@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -11,6 +13,13 @@ import (
 type scriptedSupportPlannerLLM struct {
 	responses []llm.ChatResponse
 	requests  []llm.ChatRequest
+}
+
+type blockingSupportPlannerLLM struct{}
+
+func (f *blockingSupportPlannerLLM) ChatCompletion(ctx context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
 }
 
 func (f *scriptedSupportPlannerLLM) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
@@ -118,6 +127,29 @@ func TestPlanSupportQueryResolvesFollowUpFromContext(t *testing.T) {
 	}
 	if len(provider.requests) != 1 {
 		t.Fatalf("planner calls = %d, want 1", len(provider.requests))
+	}
+}
+
+func TestPlanSupportQueryHonorsConfiguredTimeout(t *testing.T) {
+	svc := &SupportAIService{
+		llmProvider:            &blockingSupportPlannerLLM{},
+		queryExpansionModel:    "gpt-5.6-luna",
+		queryExpansionProvider: "openai",
+		queryExpansionTimeout:  20 * time.Millisecond,
+	}
+
+	startedAt := time.Now()
+	_, _, err := svc.planSupportQuery(
+		context.Background(),
+		nil,
+		model.SupportMessage{SenderType: "customer", Content: "pricing"},
+		"",
+	)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("planSupportQuery() error = %v, want context deadline exceeded", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("planSupportQuery() elapsed = %v, configured timeout was not honored", elapsed)
 	}
 }
 

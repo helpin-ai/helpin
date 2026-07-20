@@ -44,6 +44,9 @@ func TestLoadDefaultsQueryExpansionToGPT56Luna(t *testing.T) {
 	if cfg.QueryExpansionModel != "gpt-5.6-luna" {
 		t.Fatalf("unexpected query expansion model: %q", cfg.QueryExpansionModel)
 	}
+	if cfg.QueryExpansionTimeoutMS != 10000 {
+		t.Fatalf("unexpected query expansion timeout: %d", cfg.QueryExpansionTimeoutMS)
+	}
 }
 
 func TestLoadAllowsCommandRouterDefaultsToBeOverridden(t *testing.T) {
