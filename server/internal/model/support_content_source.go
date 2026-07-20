@@ -92,9 +92,14 @@ type SupportContentChunk struct {
 	ContentSourceID     string    `json:"content_source_id" gorm:"type:uuid;not null;index:idx_support_content_chunk_ws_source_page,priority:2;index"`
 	PageID              string    `json:"page_id" gorm:"type:uuid;not null;index:idx_support_content_chunk_ws_source_page,priority:3;uniqueIndex:idx_support_content_chunk_page_order,priority:1"`
 	ChunkIndex          int       `json:"chunk_index" gorm:"not null;uniqueIndex:idx_support_content_chunk_page_order,priority:2"`
+	SectionKey          string    `json:"section_key" gorm:"size:64;not null;default:'';index"`
+	HeadingPath         string    `json:"heading_path" gorm:"type:text;not null;default:''"`
 	Title               string    `json:"title" gorm:"not null"`
 	URL                 string    `json:"url" gorm:"type:text;not null"`
 	Content             string    `json:"content" gorm:"type:text;not null"`
+	SearchContent       string    `json:"search_content" gorm:"type:text;not null;default:''"`
+	PreviousChunkIndex  *int      `json:"previous_chunk_index,omitempty"`
+	NextChunkIndex      *int      `json:"next_chunk_index,omitempty"`
 	ContentHash         string    `json:"content_hash" gorm:"size:64;not null;index"`
 	Embedding           string    `json:"-" gorm:"type:vector(1536);not null"`
 	EmbeddingProvider   string    `json:"embedding_provider" gorm:"not null;default:'openai'"`

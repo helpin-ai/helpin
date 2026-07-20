@@ -339,6 +339,7 @@ func main() {
 			&model.SupportContentSource{},
 			&model.SupportContentPage{},
 			&model.SupportContentChunk{},
+			&model.CuratedGuidance{},
 		); err != nil {
 			fatalWithSentry("failed to auto-migrate", err)
 		}
@@ -357,6 +358,10 @@ func main() {
 		`CREATE INDEX IF NOT EXISTS idx_docs_chunks_fts ON docs_chunks USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(content, '')), 'B')))`,
 		`CREATE INDEX IF NOT EXISTS idx_support_content_chunks_embedding_ivfflat ON support_content_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)`,
 		`CREATE INDEX IF NOT EXISTS idx_support_content_chunks_fts ON support_content_chunks USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(content, '')), 'B')))`,
+		`CREATE INDEX IF NOT EXISTS idx_docs_chunks_fts_v2 ON docs_chunks USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(NULLIF(search_content, ''), content, '')), 'B')))`,
+		`CREATE INDEX IF NOT EXISTS idx_support_content_chunks_fts_v2 ON support_content_chunks USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(NULLIF(search_content, ''), content, '')), 'B')))`,
+		`CREATE INDEX IF NOT EXISTS idx_curated_guidance_embedding_ivfflat ON curated_guidance USING ivfflat (embedding vector_cosine_ops) WITH (lists = 20) WHERE embedding IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_curated_guidance_fts ON curated_guidance USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(array_to_string(question_patterns, ' '), '')), 'A') || setweight(to_tsvector('english', COALESCE(answer, '')), 'B')))`,
 	} {
 		if err := db.Exec(stmt).Error; err != nil {
 			slog.Warn("failed to create docs chunk index", "error", err, "stmt", stmt)
@@ -648,6 +653,7 @@ func main() {
 	agentContentSourceRepo := repository.NewAgentContentSourceRepository(db)
 	supportContentPageRepo := repository.NewSupportContentPageRepository(db)
 	supportContentChunkRepo := repository.NewSupportContentChunkRepository(db)
+	curatedGuidanceRepo := repository.NewCuratedGuidanceRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
@@ -1091,6 +1097,12 @@ func main() {
 		supportContentSourceRepo,
 		supportContentSyncService,
 	)
+	curatedGuidanceService := service.NewCuratedGuidanceService(
+		curatedGuidanceRepo,
+		agentRepo,
+		supportEmbeddingProvider,
+		cfg.OpenAIEmbeddingModel,
+	)
 
 	crmContactService := service.NewCRMContactService(crmContactRepo)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
@@ -1248,6 +1260,10 @@ func main() {
 	supportAIService.SetMailboxRepository(supportMailboxRepo)
 	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
+	supportAIService.SetCuratedGuidanceRepository(curatedGuidanceRepo)
+	if reranker := service.NewHTTPSupportKnowledgeReranker(cfg.SupportRerankerURL, cfg.SupportRerankerModel, cfg.SupportRerankerAPIKey); reranker != nil {
+		supportAIService.SetKnowledgeReranker(reranker)
+	}
 	if strings.TrimSpace(cfg.AnthropicAPIKey) != "" {
 		supportAIService.SetTaskDraftLLM(service.NewEinoSupportTaskDraftLLM(cfg.AnthropicAPIKey, "claude-sonnet-4-6"))
 	}
@@ -1437,7 +1453,7 @@ func main() {
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),
 		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),
-		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService),
+		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService, curatedGuidanceService),
 		SupportAttachment:   handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),
 		PostmarkInbound:     handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkReplyInboundWebhookSecret, cfg.PostmarkRouteInboundWebhookSecret),
 		EmailImageProxy:     handler.NewEmailImageProxyHandler(),
