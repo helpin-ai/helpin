@@ -11,7 +11,6 @@ import { Favicon } from '@/components/ui/favicon';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SupportContentSourcesField } from './SupportContentSourcesField';
 import { SupportKnowledgeSourcesField } from './SupportKnowledgeSourcesField';
-import { CuratedGuidanceField } from './CuratedGuidanceField';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import { toast } from 'sonner';
 
@@ -198,24 +197,6 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
           disabled={updateKnowledgeSources.isPending}
         />
       </div>
-
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <BookOpen01Icon className="h-4 w-4" />
-            </div>
-            <div>
-              <CardTitle className="text-base">Canonical answers</CardTitle>
-              <p className="mt-0.5 text-xs text-muted-foreground">Pin short answers for the questions where wording and facts must be exact.</p>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <CuratedGuidanceField workspaceId={workspaceId} agentId={chatWidgetAgentId || undefined} />
-          {!chatWidgetAgentId && <p className="mt-3 text-sm text-muted-foreground">Select a support agent in AI Assistant to pin answers.</p>}
-        </CardContent>
-      </Card>
 
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>
