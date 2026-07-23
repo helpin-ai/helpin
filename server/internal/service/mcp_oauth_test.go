@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -109,6 +110,87 @@ func TestConstrainMCPGrantPreservesApprovedWriteScopes(t *testing.T) {
 		!containsMCPValue(scopes, MCPScopeAgentsRun) ||
 		!containsMCPValue(toolsets, MCPToolsetDocs) {
 		t.Fatalf("constrainGrant() = toolsets %v scopes %v readOnly %v", toolsets, scopes, readOnly)
+	}
+}
+
+func TestConstrainMCPGrantWithoutWriteScopeIsReadOnly(t *testing.T) {
+	service := &MCPService{}
+	policy := &model.MCPWorkspacePolicy{
+		AllowedToolsets: mustMCPJSON([]string{MCPToolsetContext, MCPToolsetDocs}),
+		AllowedScopes:   mustMCPJSON([]string{MCPScopeContextRead, MCPScopeDocsRead}),
+		EnforceReadOnly: false,
+	}
+	_, scopes, readOnly, err := service.constrainGrant(
+		policy,
+		[]string{MCPToolsetContext, MCPToolsetDocs},
+		[]string{MCPScopeContextRead, MCPScopeDocsRead},
+		false,
+	)
+	if err != nil {
+		t.Fatalf("constrainGrant() error = %v", err)
+	}
+	if !readOnly || hasMCPWriteScope(scopes) {
+		t.Fatalf("constrainGrant() = scopes %v readOnly %v, want effective read-only", scopes, readOnly)
+	}
+}
+
+func TestMCPAuthorizationWorkspaceAccessReportsPolicyRestrictions(t *testing.T) {
+	tests := []struct {
+		name         string
+		policy       model.MCPWorkspacePolicy
+		wantScopes   []string
+		wantToolsets []string
+		wantReadOnly bool
+	}{
+		{
+			name: "workspace policy forces read-only",
+			policy: model.MCPWorkspacePolicy{
+				AllowedToolsets: mustMCPJSON([]string{MCPToolsetContext, MCPToolsetDocs}),
+				AllowedScopes: mustMCPJSON([]string{
+					MCPScopeContextRead, MCPScopeDocsRead, MCPScopeDocsWrite,
+				}),
+				EnforceReadOnly: true,
+			},
+			wantScopes:   []string{MCPScopeContextRead, MCPScopeDocsRead, MCPScopeDocsWrite},
+			wantToolsets: []string{MCPToolsetContext, MCPToolsetDocs},
+			wantReadOnly: true,
+		},
+		{
+			name: "workspace permits requested writes",
+			policy: model.MCPWorkspacePolicy{
+				AllowedToolsets: mustMCPJSON([]string{MCPToolsetContext, MCPToolsetDocs}),
+				AllowedScopes: mustMCPJSON([]string{
+					MCPScopeContextRead, MCPScopeDocsRead, MCPScopeDocsWrite,
+				}),
+				EnforceReadOnly: false,
+			},
+			wantScopes:   []string{MCPScopeContextRead, MCPScopeDocsRead, MCPScopeDocsWrite},
+			wantToolsets: []string{MCPToolsetContext, MCPToolsetDocs},
+		},
+	}
+	requestedScopes := []string{
+		MCPScopeContextRead, MCPScopePMRead,
+		MCPScopeDocsRead, MCPScopeDocsWrite,
+	}
+	proposedToolsets := []string{MCPToolsetContext, MCPToolsetPM, MCPToolsetDocs}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			scopes, toolsets, readOnly := mcpAuthorizationWorkspaceAccess(
+				&test.policy,
+				requestedScopes,
+				proposedToolsets,
+			)
+			if !slices.Equal(scopes, test.wantScopes) {
+				t.Errorf("scopes = %v, want %v", scopes, test.wantScopes)
+			}
+			if !slices.Equal(toolsets, test.wantToolsets) {
+				t.Errorf("toolsets = %v, want %v", toolsets, test.wantToolsets)
+			}
+			if readOnly != test.wantReadOnly {
+				t.Errorf("readOnly = %v, want %v", readOnly, test.wantReadOnly)
+			}
+		})
 	}
 }
 

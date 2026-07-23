@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -41,6 +41,7 @@ import type {
   UpdateMCPPolicyRequest,
 } from '@/lib/mcpTypes';
 import { ensureMCPWriteScopes, hasMCPWriteScope } from '@/lib/mcpPolicy';
+import { cn } from '@/lib/utils';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 
 type MCPSettingsPanelProps = {
@@ -332,12 +333,24 @@ function MCPConnections({ workspaceId, dashboard }: { workspaceId: string; dashb
               <TableHeader><TableRow><TableHead>Tool or automation</TableHead><TableHead>Access</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead><TableHead className="w-16" /></TableRow></TableHeader>
               <TableBody>
                 {dashboard.connections.map((connection) => {
+                  const grantHasWriteScopes = hasMCPWriteScope(connection.scopes);
                   const connectionHasWrites = !connection.read_only
-                    && hasMCPWriteScope(connection.scopes);
+                    && grantHasWriteScopes
+                    && connection.effective_read_only !== true;
+                  const accessNote = connectionHasWrites
+                    ? null
+                    : !policyAllowsWrites
+                      ? 'Workspace permissions currently do not allow writes.'
+                      : connection.read_only || !grantHasWriteScopes
+                        ? 'Reconnect and approve write permissions to expand this grant.'
+                        : 'Writes are currently restricted by role, module access, or a platform setting.';
                   return (
                     <TableRow key={connection.id}>
                       <TableCell><div className="font-medium">{connection.client_name}</div><div className="text-xs text-muted-foreground">Connected {relativeDate(connection.created_at)}</div></TableCell>
-                      <TableCell><div className="flex flex-wrap gap-1"><Badge variant="outline" className={connectionHasWrites ? undefined : READ_ONLY_BADGE_CLASS}>{connectionHasWrites ? 'Bounded writes' : 'Read-only'}</Badge>{connection.toolsets.map((item) => <Badge key={item} variant="secondary">{TOOLSET_LABELS[item] ?? item}</Badge>)}</div></TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1"><Badge variant="outline" className={connectionHasWrites ? undefined : READ_ONLY_BADGE_CLASS}>{connectionHasWrites ? 'Bounded writes' : 'Read-only'}</Badge>{connection.toolsets.map((item) => <Badge key={item} variant="secondary">{TOOLSET_LABELS[item] ?? item}</Badge>)}</div>
+                        {accessNote ? <p className="mt-1 text-xs text-muted-foreground">{accessNote}</p> : null}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">{connection.last_used_at ? relativeDate(connection.last_used_at) : 'Never'}</TableCell>
                       <TableCell><Badge variant={connection.status === 'active' ? 'secondary' : 'outline'}>{connection.status}</Badge></TableCell>
                       <TableCell>
@@ -397,7 +410,7 @@ function MCPServiceAccounts({ workspaceId, dashboard }: { workspaceId: string; d
                 {dashboard.service_principals.map((principal) => (
                   <TableRow key={principal.id}>
                     <TableCell><div className="font-medium">{principal.name}</div><div className="max-w-64 truncate text-xs text-muted-foreground">{principal.description || 'No description'}</div></TableCell>
-                    <TableCell><Badge variant="outline" className={principal.read_only ? READ_ONLY_BADGE_CLASS : undefined}>{principal.read_only ? 'Read-only' : 'Bounded writes'}</Badge></TableCell>
+                    <TableCell><Badge variant="outline" className={principal.read_only || principal.effective_read_only === true ? READ_ONLY_BADGE_CLASS : undefined}>{principal.read_only || principal.effective_read_only === true ? 'Read-only' : 'Bounded writes'}</Badge></TableCell>
                     <TableCell className="text-muted-foreground">{principal.last_used_at ? relativeDate(principal.last_used_at) : 'Never'}</TableCell>
                     <TableCell><Badge variant={principal.status === 'active' ? 'secondary' : 'outline'}>{principal.status}</Badge></TableCell>
                     <TableCell><div className="flex justify-end gap-1">{principal.status === 'active' ? <><Button variant="ghost" size="icon-sm" onClick={() => setSelected(principal)}><Key01Icon className="h-4 w-4" /><span className="sr-only">Create token</span></Button><Button variant="ghost" size="icon-sm" onClick={() => void handleRevoke(principal)}><Delete01Icon className="h-4 w-4" /><span className="sr-only">Revoke</span></Button></> : null}</div></TableCell>
@@ -434,6 +447,9 @@ function MCPActivity({ dashboard, events, loading }: { dashboard: MCPDashboard; 
 }
 
 function MCPPolicyEditor({ workspaceId, dashboard }: { workspaceId: string; dashboard: MCPDashboard }) {
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(
+    () => new Set(['access-controls']),
+  );
   const [policy, setPolicy] = useState<UpdateMCPPolicyRequest>({
     enabled: dashboard.policy.enabled,
     enforce_read_only: dashboard.policy.enforce_read_only,
@@ -442,6 +458,14 @@ function MCPPolicyEditor({ workspaceId, dashboard }: { workspaceId: string; dash
     allowed_scopes: dashboard.policy.allowed_scopes,
   });
   const update = useUpdateMCPPolicy(workspaceId);
+  const toggleSection = (section: string) => {
+    setExpandedSections((current) => {
+      const next = new Set(current);
+      if (next.has(section)) next.delete(section);
+      else next.add(section);
+      return next;
+    });
+  };
 
   const setBoundedWrites = (enabled: boolean) => {
     setPolicy((current) => ({
@@ -492,19 +516,35 @@ function MCPPolicyEditor({ workspaceId, dashboard }: { workspaceId: string; dash
   };
 
   return (
-    <div className="space-y-4">
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader><CardTitle className="text-base">AI tool access controls</CardTitle><CardDescription>Choose which parts of Helpin connected tools may use. Access is checked again on every action.</CardDescription></CardHeader>
-        <CardContent className="divide-y">
+    <div className="space-y-3">
+      <MCPPolicySection
+        title="AI tool access controls"
+        description="Choose whether members can connect tools, approve writes, or create automation accounts."
+        expanded={expandedSections.has('access-controls')}
+        onToggle={() => toggleSection('access-controls')}
+      >
+        <div className="divide-y">
           <PolicySwitch label="Allow AI tools and automations" description="Let members connect MCP-compatible tools to this workspace. Their Helpin roles and module permissions still apply." checked={policy.enabled} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, enabled: checked }))} />
           <PolicySwitch label="Allow bounded writes" description="Allow new connections to request create and update actions in the selected product areas. Existing connections must reconnect, turn off read-only during consent, and approve the write permissions." checked={!policy.enforce_read_only} onCheckedChange={setBoundedWrites} />
           <PolicySwitch label="Allow automation accounts" description="Let managers create restricted credentials for workflows that run without a person signing in." checked={policy.service_accounts_enabled} onCheckedChange={(checked) => setPolicy((value) => ({ ...value, service_accounts_enabled: checked }))} />
-        </CardContent>
-      </Card>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <PolicyChecklist title="Allowed product areas" description="Connected tools can request a subset of these areas." values={dashboard.available_toolsets} selected={policy.allowed_toolsets} labels={TOOLSET_LABELS} onToggle={toggleToolset} />
-        <PolicyChecklist title="Allowed OAuth scopes" description="Users may narrow these during consent, never expand them." values={dashboard.available_scopes} selected={policy.allowed_scopes} labels={SCOPE_LABELS} onToggle={toggleScope} />
-      </div>
+        </div>
+      </MCPPolicySection>
+      <MCPPolicySection
+        title="Allowed product areas"
+        description={`${policy.allowed_toolsets.length} of ${dashboard.available_toolsets.length} selected. Connected tools can request a subset of these areas.`}
+        expanded={expandedSections.has('product-areas')}
+        onToggle={() => toggleSection('product-areas')}
+      >
+        <PolicyChecklist values={dashboard.available_toolsets} selected={policy.allowed_toolsets} labels={TOOLSET_LABELS} onToggle={toggleToolset} />
+      </MCPPolicySection>
+      <MCPPolicySection
+        title="Allowed OAuth scopes"
+        description={`${policy.allowed_scopes.length} of ${dashboard.available_scopes.length} selected. Users may narrow these during consent, never expand them.`}
+        expanded={expandedSections.has('oauth-scopes')}
+        onToggle={() => toggleSection('oauth-scopes')}
+      >
+        <PolicyChecklist values={dashboard.available_scopes} selected={policy.allowed_scopes} labels={SCOPE_LABELS} onToggle={toggleScope} />
+      </MCPPolicySection>
       {!policy.enforce_read_only && !hasMCPWriteScope(policy.allowed_scopes) ? (
         <Alert>
           <AlertTitle>Writes are still unavailable</AlertTitle>
@@ -569,8 +609,25 @@ function PolicySwitch({ label, description, checked, onCheckedChange }: { label:
   return <div className="flex items-start justify-between gap-5 py-4 first:pt-0 last:pb-0"><div><p className="text-sm font-medium">{label}</p><p className="mt-1 text-sm text-muted-foreground">{description}</p></div><Switch checked={checked} onCheckedChange={onCheckedChange} /></div>;
 }
 
-function PolicyChecklist({ title, description, values, selected, labels, onToggle }: { title: string; description: string; values: string[]; selected: string[]; labels: Record<string, string>; onToggle: (value: string, checked: boolean) => void }) {
-  return <Card className={LINEAR_CARD_CLASS}><CardHeader><CardTitle className="text-base">{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="space-y-3">{values.map((value) => <CheckRow key={value} label={labels[value] ?? value} checked={selected.includes(value)} onCheckedChange={(checked) => onToggle(value, checked)} />)}</CardContent></Card>;
+function MCPPolicySection({ title, description, expanded, onToggle, children }: { title: string; description: string; expanded: boolean; onToggle: () => void; children: ReactNode }) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-border/70 bg-card">
+      <button type="button" className="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-muted/40" aria-expanded={expanded} onClick={onToggle}>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">{title}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+        </div>
+        <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-180')} />
+      </button>
+      <div className="accordion-animate" data-open={expanded}>
+        <div><div className="border-t px-5 py-4">{children}</div></div>
+      </div>
+    </section>
+  );
+}
+
+function PolicyChecklist({ values, selected, labels, onToggle }: { values: string[]; selected: string[]; labels: Record<string, string>; onToggle: (value: string, checked: boolean) => void }) {
+  return <div className="grid gap-3 sm:grid-cols-2">{values.map((value) => <CheckRow key={value} label={labels[value] ?? value} checked={selected.includes(value)} onCheckedChange={(checked) => onToggle(value, checked)} />)}</div>;
 }
 
 function CheckRow({ label, checked, onCheckedChange }: { label: string; checked: boolean; onCheckedChange: (checked: boolean) => void }) {

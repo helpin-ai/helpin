@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { BotIcon, Loading01Icon, LockIcon } from '@/lib/icons';
 import { useAuthorizeMCP, useMCPAuthorizationRequest } from '@/hooks/queries/useMCP';
 import type { MCPAuthorizationQuery, MCPAuthorizationRequest } from '@/lib/mcpTypes';
-import { hasMCPWriteScope, isMCPWriteScope } from '@/lib/mcpPolicy';
+import { getMCPConsentAccess, hasMCPWriteScope, isMCPWriteScope } from '@/lib/mcpPolicy';
 
 const SCOPE_LABELS: Record<string, string> = {
   'helpin.context.read': 'Read workspace context',
@@ -58,17 +58,22 @@ function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
   const [toolsets, setToolsets] = useState(request.proposed_toolsets);
   const [readOnly, setReadOnly] = useState(request.read_only_recommended || !clientRequestedWrites);
   const authorize = useAuthorizeMCP();
-  const effectiveScopes = readOnly ? scopes.filter((scope) => !isMCPWriteScope(scope)) : scopes;
   const selectedWorkspace = request.workspaces.find((workspace) => workspace.id === workspaceId);
+  const effectiveAccess = getMCPConsentAccess(scopes, toolsets, selectedWorkspace, readOnly);
+  const workspaceRestricted = selectedWorkspace ? (
+    (clientRequestedWrites && selectedWorkspace.read_only_required)
+    || selectedWorkspace.allowed_scopes.length < request.requested_scopes.length
+    || selectedWorkspace.allowed_toolsets.length < request.proposed_toolsets.length
+  ) : false;
 
   const approve = async () => {
     try {
       const result = await authorize.mutateAsync({
         query: request.query,
         workspace_id: workspaceId,
-        scopes: effectiveScopes,
-        toolsets,
-        read_only: readOnly,
+        scopes: effectiveAccess.scopes,
+        toolsets: effectiveAccess.toolsets,
+        read_only: effectiveAccess.readOnly,
       });
       window.location.assign(result.redirect_url);
     } catch {
@@ -107,15 +112,30 @@ function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
             </div>
 
             <div className="flex items-start justify-between gap-5 rounded-lg border p-4">
-              <div><p className="text-sm font-medium">Read-only connection</p><p className="mt-1 text-sm text-muted-foreground">{clientRequestedWrites ? 'Recommended. The client can find context but cannot change records or start agents.' : 'Required because this client did not request any write permissions.'}</p></div>
-              <Switch checked={readOnly} disabled={!clientRequestedWrites} onCheckedChange={setReadOnly} />
+              <div>
+                <p className="text-sm font-medium">Read-only connection</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {!clientRequestedWrites
+                    ? 'Required because this client did not request any write permissions.'
+                    : selectedWorkspace?.read_only_required
+                      ? `Required by ${selectedWorkspace.name}'s workspace policy.`
+                      : 'Recommended. Turn this off to approve the write permissions listed below.'}
+                </p>
+              </div>
+              <Switch
+                checked={effectiveAccess.readOnly}
+                disabled={!effectiveAccess.canRequestWrites}
+                onCheckedChange={setReadOnly}
+              />
             </div>
 
             <div className="space-y-3">
               <div><p className="text-sm font-medium">Permissions</p><p className="text-sm text-muted-foreground">Remove anything this client does not need.</p></div>
               <div className="space-y-3">
                 {request.requested_scopes.map((scope) => {
-                  const disabled = readOnly && isMCPWriteScope(scope);
+                  const blockedByWorkspace = !selectedWorkspace?.allowed_scopes.includes(scope);
+                  const disabled = blockedByWorkspace
+                    || (effectiveAccess.readOnly && isMCPWriteScope(scope));
                   return (
                     <label key={scope} className="flex items-start gap-3 text-sm">
                       <Checkbox
@@ -123,7 +143,11 @@ function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
                         disabled={disabled}
                         onCheckedChange={(checked) => setScopes((values) => checked === true ? [...values, scope] : values.filter((value) => value !== scope))}
                       />
-                      <span><span className={disabled ? 'text-muted-foreground line-through' : ''}>{SCOPE_LABELS[scope] ?? scope}</span>{isMCPWriteScope(scope) ? <Badge variant="outline" className="ml-2">Write</Badge> : null}</span>
+                      <span>
+                        <span className={disabled ? 'text-muted-foreground line-through' : ''}>{SCOPE_LABELS[scope] ?? scope}</span>
+                        {isMCPWriteScope(scope) ? <Badge variant="outline" className="ml-2">Write</Badge> : null}
+                        {blockedByWorkspace ? <span className="ml-2 text-xs text-muted-foreground">Not allowed by workspace</span> : null}
+                      </span>
                     </label>
                   );
                 })}
@@ -133,11 +157,31 @@ function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
             <div className="space-y-3">
               <div><p className="text-sm font-medium">Product areas</p><p className="text-sm text-muted-foreground">Only tools in selected areas will be visible to the client.</p></div>
               <div className="grid gap-3 sm:grid-cols-2">
-                {request.proposed_toolsets.map((toolset) => (
-                  <label key={toolset} className="flex items-center gap-2.5 text-sm"><Checkbox checked={toolsets.includes(toolset)} onCheckedChange={(checked) => setToolsets((values) => checked === true ? [...values, toolset] : values.filter((value) => value !== toolset))} />{TOOLSET_LABELS[toolset] ?? toolset}</label>
-                ))}
+                {request.proposed_toolsets.map((toolset) => {
+                  const blockedByWorkspace = !selectedWorkspace?.allowed_toolsets.includes(toolset);
+                  return (
+                    <label key={toolset} className="flex items-center gap-2.5 text-sm">
+                      <Checkbox
+                        checked={!blockedByWorkspace && toolsets.includes(toolset)}
+                        disabled={blockedByWorkspace}
+                        onCheckedChange={(checked) => setToolsets((values) => checked === true ? [...values, toolset] : values.filter((value) => value !== toolset))}
+                      />
+                      <span className={blockedByWorkspace ? 'text-muted-foreground line-through' : ''}>{TOOLSET_LABELS[toolset] ?? toolset}</span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
+
+            {workspaceRestricted ? (
+              <Alert>
+                <LockIcon className="h-4 w-4" />
+                <AlertTitle>Workspace restrictions applied</AlertTitle>
+                <AlertDescription>
+                  The connection will receive only the permissions this workspace allows. Change workspace MCP permissions before authorizing if this client needs broader access.
+                </AlertDescription>
+              </Alert>
+            ) : null}
 
             <Alert>
               <LockIcon className="h-4 w-4" />
@@ -151,7 +195,7 @@ function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
       </CardContent>
       <CardFooter className="flex items-center justify-between border-t pt-5">
         <Button variant="ghost" onClick={deny}>Cancel</Button>
-        <Button onClick={() => void approve()} disabled={!selectedWorkspace || effectiveScopes.length === 0 || toolsets.length === 0 || authorize.isPending}>
+        <Button onClick={() => void approve()} disabled={!selectedWorkspace || effectiveAccess.scopes.length === 0 || effectiveAccess.toolsets.length === 0 || authorize.isPending}>
           {authorize.isPending ? <Loading01Icon className="mr-2 h-4 w-4 animate-spin" /> : null}
           Authorize {selectedWorkspace?.name ?? 'workspace'}
         </Button>

@@ -5,6 +5,7 @@ import { unwrap } from '@/lib/queryUtils';
 import type {
   CreateMCPServicePrincipalRequest,
   MCPAuthorizationQuery,
+  MCPAuthorizationRequest,
   MCPDashboard,
   UpdateMCPPolicyRequest,
 } from '@/lib/mcpTypes';
@@ -21,6 +22,24 @@ function sanitizeDashboard(value: MCPDashboard): MCPDashboard {
       allowed_toolsets: Array.isArray(value.policy.allowed_toolsets) ? value.policy.allowed_toolsets : [],
       allowed_scopes: Array.isArray(value.policy.allowed_scopes) ? value.policy.allowed_scopes : [],
     },
+  };
+}
+
+function sanitizeAuthorizationRequest(value: MCPAuthorizationRequest): MCPAuthorizationRequest {
+  return {
+    ...value,
+    workspaces: value.workspaces.map((workspace) => ({
+      ...workspace,
+      allowed_scopes: Array.isArray(workspace.allowed_scopes)
+        ? workspace.allowed_scopes
+        : value.requested_scopes,
+      allowed_toolsets: Array.isArray(workspace.allowed_toolsets)
+        ? workspace.allowed_toolsets
+        : value.proposed_toolsets,
+      read_only_required: typeof workspace.read_only_required === 'boolean'
+        ? workspace.read_only_required
+        : true,
+    })),
   };
 }
 
@@ -109,7 +128,9 @@ export function useRevokeMCPServiceToken(workspaceId: string, principalId: strin
 export function useMCPAuthorizationRequest(query: MCPAuthorizationQuery, enabled = true) {
   return useQuery({
     queryKey: queryKeys.mcp.authorization(query),
-    queryFn: async () => unwrap(await mcpService.getAuthorizationRequest(query)),
+    queryFn: async () => sanitizeAuthorizationRequest(
+      unwrap(await mcpService.getAuthorizationRequest(query)),
+    ),
     enabled: enabled && Boolean(query.client_id && query.redirect_uri && query.state && query.code_challenge),
     retry: false,
   });

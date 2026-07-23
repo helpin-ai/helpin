@@ -283,11 +283,38 @@ func (s *MCPService) GetDashboard(ctx context.Context, workspaceID, userID strin
 	if err != nil {
 		return nil, err
 	}
+	for index := range connections {
+		effectiveReadOnly := s.isEffectivelyReadOnly(
+			ctx,
+			connectionPrincipal(&connections[index]),
+			connections[index].Status == model.MCPConnectionStatusActive,
+		)
+		connections[index].EffectiveReadOnly = &effectiveReadOnly
+	}
 	var servicePrincipals []model.MCPServicePrincipal
 	if canManage {
 		servicePrincipals, err = s.repo.ListServicePrincipals(ctx, workspaceID)
 		if err != nil {
 			return nil, err
+		}
+		for index := range servicePrincipals {
+			principal := &servicePrincipals[index]
+			effectiveReadOnly := s.isEffectivelyReadOnly(
+				ctx,
+				&model.MCPPrincipal{
+					Kind:               model.MCPPrincipalKindService,
+					WorkspaceID:        principal.WorkspaceID,
+					UserID:             principal.ActorUserID,
+					ServicePrincipalID: principal.ID,
+					ClientName:         principal.Name,
+					Scopes:             decodeMCPStrings(principal.Scopes),
+					Toolsets:           decodeMCPStrings(principal.Toolsets),
+					ReadOnly:           principal.ReadOnly,
+				},
+				principal.Status == model.MCPServicePrincipalStatusActive &&
+					(principal.ExpiresAt == nil || principal.ExpiresAt.After(time.Now())),
+			)
+			principal.EffectiveReadOnly = &effectiveReadOnly
 		}
 	}
 	return &MCPDashboard{
@@ -635,10 +662,33 @@ func (s *MCPService) constrainGrant(policy *model.MCPWorkspacePolicy, requestedT
 		return nil, nil, true, fmt.Errorf("requested access is not allowed by workspace policy")
 	}
 	readOnly = readOnly || policy.EnforceReadOnly
+	if !hasMCPWriteGrant(scopes, toolsets) {
+		readOnly = true
+	}
 	if readOnly {
 		scopes = filterMCPReadScopes(scopes)
 	}
 	return toolsets, scopes, readOnly, nil
+}
+
+func (s *MCPService) isEffectivelyReadOnly(
+	ctx context.Context,
+	principal *model.MCPPrincipal,
+	active bool,
+) bool {
+	if !active {
+		return true
+	}
+	effective, actor, err := s.resolveEffectivePrincipal(ctx, principal)
+	if err != nil || effective.ReadOnly {
+		return true
+	}
+	for _, tool := range s.tools {
+		if tool.Mutating && s.canUseTool(ctx, effective, actor, tool) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *MCPService) createServiceToken(ctx context.Context, principal *model.MCPServicePrincipal, userID string) (*model.MCPServiceTokenSecret, error) {
@@ -769,11 +819,37 @@ func containsMCPValue(values []string, target string) bool { return slices.Conta
 func filterMCPReadScopes(scopes []string) []string {
 	result := make([]string, 0, len(scopes))
 	for _, scope := range scopes {
-		if !strings.HasSuffix(scope, ".write") && scope != MCPScopeAgentsRun {
+		if !isMCPWriteScope(scope) {
 			result = append(result, scope)
 		}
 	}
 	return result
+}
+
+func hasMCPWriteScope(scopes []string) bool {
+	for _, scope := range scopes {
+		if isMCPWriteScope(scope) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMCPWriteGrant(scopes, toolsets []string) bool {
+	for _, scope := range scopes {
+		if !isMCPWriteScope(scope) {
+			continue
+		}
+		scopeToolsets := toolsetsForMCPScopes([]string{scope})
+		if len(scopeToolsets) > 0 && containsMCPValue(toolsets, scopeToolsets[0]) {
+			return true
+		}
+	}
+	return false
+}
+
+func isMCPWriteScope(scope string) bool {
+	return strings.HasSuffix(scope, ".write") || scope == MCPScopeAgentsRun
 }
 
 func decodeMCPStrings(raw json.RawMessage) []string {
