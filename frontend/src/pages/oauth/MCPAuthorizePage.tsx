@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Favicon } from '@/components/ui/favicon';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -30,6 +31,11 @@ const SCOPE_LABELS: Record<string, string> = {
 const TOOLSET_LABELS: Record<string, string> = {
   context: 'Workspace context', pm: 'Projects & tasks', docs: 'Docs', crm: 'CRM', support: 'Support', agents: 'Helpin agents',
 };
+
+function formatWorkspaceRole(role: string) {
+  const normalized = role.trim().replaceAll('_', ' ');
+  return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Member';
+}
 
 export function MCPAuthorizePage({ query }: { query: MCPAuthorizationQuery }) {
   useTitle('Authorize AI Client');
@@ -105,8 +111,57 @@ function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
             <div className="space-y-2">
               <Label htmlFor="oauth-workspace">Workspace</Label>
               <Select value={workspaceId} onValueChange={setWorkspaceId}>
-                <SelectTrigger id="oauth-workspace"><SelectValue placeholder="Choose a workspace" /></SelectTrigger>
-                <SelectContent>{request.workspaces.map((workspace) => <SelectItem key={workspace.id} value={workspace.id}>{workspace.name} · {workspace.role}</SelectItem>)}</SelectContent>
+                <SelectTrigger
+                  id="oauth-workspace"
+                  className="min-h-14 w-full rounded-lg border-border bg-background px-3 py-2 data-[size=default]:h-auto hover:bg-muted/30"
+                >
+                  {selectedWorkspace ? (
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+                      <Favicon
+                        name={selectedWorkspace.name}
+                        className="h-8 w-8 rounded-md"
+                        fallbackClassName="text-xs"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">{selectedWorkspace.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {selectedWorkspace.slug} · {formatWorkspaceRole(selectedWorkspace.role)}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <SelectValue placeholder="Choose a workspace" />
+                  )}
+                </SelectTrigger>
+                <SelectContent
+                  position="popper"
+                  align="start"
+                  className="w-[var(--radix-select-trigger-width)]"
+                >
+                  {request.workspaces.map((workspace) => (
+                    <SelectItem
+                      key={workspace.id}
+                      value={workspace.id}
+                      textValue={`${workspace.name} ${workspace.slug} ${workspace.role}`}
+                      className="py-2"
+                    >
+                      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                        <Favicon
+                          name={workspace.name}
+                          className="h-8 w-8 rounded-md"
+                          fallbackClassName="text-xs"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium">{workspace.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">{workspace.slug}</p>
+                        </div>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {formatWorkspaceRole(workspace.role)}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">This connection cannot switch to another workspace later.</p>
             </div>
