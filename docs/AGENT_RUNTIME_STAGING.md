@@ -4,6 +4,11 @@ Ops runbook for enabling delegated Helpin agent runs on staging
 (stage.helpin.ai) against the shared `agent-runtime` service. Local setup lives
 in `docs/AGENT_RUNTIME_LOCAL.md`; this document covers staging only.
 
+> Current architecture: Agent Runtime is Helpin's only agent executor. Setting
+> `AGENT_RUNTIME_LAUNCH_ENABLED=false` does not roll back to an in-process
+> executor; it makes new agent run starts fail. Before changing the flag,
+> verify runtime availability and use the runtime's own rollback controls.
+
 ## Topology
 
 | Component | Where | Deployed by | Env source |
@@ -145,12 +150,11 @@ needed; all four keys are Doppler-only (ops-pending action):
 | `AGENT_RUNTIME_BASE_URL` | `http://agent-runtime.agent-runtime.svc.cluster.local:8090` |
 | `AGENT_RUNTIME_SERVICE_TOKEN` | same value as the runtime's `AGENT_RUNTIME_SERVICE_TOKEN` |
 | `AGENT_RUNTIME_APP_ID` | `helpin` |
-| `AGENT_RUNTIME_LAUNCH_ENABLED` | `false` (initial deploy; flipped in Step 6) |
+| `AGENT_RUNTIME_LAUNCH_ENABLED` | `true` (required; false/unset disables agent execution) |
 | `INTERNAL_API_SECRET` | must already exist; same value embedded in the runtime app-config tokens |
 
 Redeploy/restart the Helpin server and temporal-worker deployments so they pick
-up the env. With the flag `false`, behavior is unchanged: all runs stay on the
-in-process Temporal executor.
+up the environment. The flag must be true before launching agent runs.
 
 ## Step 5 — NATS sharing requirement
 
@@ -171,11 +175,11 @@ in-process Temporal executor.
 
 1. Runtime config deployed and verified (Steps 1–2).
 2. Helpin `/api/internal/...` verified 401 from outside (Step 3).
-3. Helpin env present with `AGENT_RUNTIME_LAUNCH_ENABLED=false` (Step 4).
-4. Flip `AGENT_RUNTIME_LAUNCH_ENABLED=true` in the STAGING Helpin Doppler
-   config only (never prod in this slice) and restart Helpin server +
-   temporal-worker.
-5. Smoke test: launch a marketer-preset workspace run (current pilot surface)
+3. Confirm `AGENT_RUNTIME_LAUNCH_ENABLED=true` in the STAGING Helpin Doppler
+   config and restart Helpin server + temporal-worker.
+4. Confirm an authenticated runtime capabilities request succeeds before
+   launching a run.
+5. Smoke test: launch a marketer-preset workspace run
    on staging and confirm in the Helpin DB:
    - `agent_runs.external_runtime = 'agent-runtime'`
    - `agent_runs.external_runtime_id` set, no Helpin `workflow_id`
@@ -186,9 +190,9 @@ in-process Temporal executor.
 
 ## Rollback
 
-- Flip `AGENT_RUNTIME_LAUNCH_ENABLED=false` in the staging Helpin Doppler
-  config and restart Helpin server + temporal-worker. New runs immediately go
-  back to the in-process Temporal executor.
+- Do not use `AGENT_RUNTIME_LAUNCH_ENABLED=false` as a rollback: it disables
+  new run starts because no in-process executor exists. Roll back the runtime
+  deployment/configuration while keeping the Helpin flag enabled.
 - In-flight delegated runs are NOT orphaned: the runtime keeps executing them
   and the Helpin projection consumer (which runs regardless of the launch flag)
   finishes projecting their terminal state.

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
+	workerpkg "github.com/helpin-ai/helpin/server/internal/agentcontract"
 )
 
 func TestBuildClaudeMessageRequestUsesToolChoiceForJSONMode(t *testing.T) {

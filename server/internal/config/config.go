@@ -13,7 +13,6 @@ const (
 	defaultCommandRouterLLMProvider                  = "openrouter"
 	defaultCommandRouterLLMModel                     = "google/gemini-3.1-flash-lite"
 	defaultCommandRouterOpenRouterProviderOptionsRaw = `{"order":["google-vertex/global"],"allow_fallbacks":false}`
-	defaultCodexHelpinMCPBridgePath                  = "/usr/local/bin/helpin-mcp-bridge"
 )
 
 // Config holds all application configuration loaded from environment variables.
@@ -46,33 +45,23 @@ type Config struct {
 	AWSPublicBaseURL   string // Optional public asset base URL (R2 custom domain / CDN)
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
-	AnthropicAPIKey          string
-	AnthropicBaseURL         string
-	OpenAIAPIKey             string
-	OpenAIBaseURL            string
-	OpenAIEmbeddingModel     string
-	SupportRerankerURL       string
-	SupportRerankerModel     string
-	SupportRerankerAPIKey    string
-	OpenRouterAPIKey         string
-	OpenRouterBaseURL        string
-	OpenCodePath             string
-	CodexPath                string
-	CodexModel               string
-	CodexSandboxMode         string
-	CodexOpenAIAuthMode      string
-	CodexEnableChatGPTOAuth  bool
-	CodexChatGPTAccessToken  string
-	CodexChatGPTAccountID    string
-	CodexChatGPTPlanType     string
-	CodexAuthEncryptionKey   string
-	CodexHelpinAPIBaseURL    string
-	CodexHelpinMCPBridgePath string
-	BraveSearchAPIKey        string
-	ExaSearchAPIKey          string
-	CloudflareAccountID      string
-	CloudflareAPIToken       string
-	CloudflareAPIBaseURL     string
+	AnthropicAPIKey         string
+	AnthropicBaseURL        string
+	OpenAIAPIKey            string
+	OpenAIBaseURL           string
+	OpenAIEmbeddingModel    string
+	SupportRerankerURL      string
+	SupportRerankerModel    string
+	SupportRerankerAPIKey   string
+	OpenRouterAPIKey        string
+	OpenRouterBaseURL       string
+	CodexOpenAIAuthMode     string
+	CodexEnableChatGPTOAuth bool
+	CodexChatGPTAccessToken string
+	CodexChatGPTAccountID   string
+	CloudflareAccountID     string
+	CloudflareAPIToken      string
+	CloudflareAPIBaseURL    string
 
 	// Website content crawler (optional — controls crawl engine and proxy)
 	CrawlerMode      string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
@@ -266,20 +255,10 @@ func Load() (*Config, error) {
 		SupportRerankerAPIKey:                  strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_API_KEY")),
 		OpenRouterAPIKey:                       strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")),
 		OpenRouterBaseURL:                      strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")),
-		OpenCodePath:                           strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),
-		CodexPath:                              strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_PATH"), "codex")),
-		CodexModel:                             strings.TrimSpace(os.Getenv("CODEX_MODEL")),
-		CodexSandboxMode:                       strings.TrimSpace(os.Getenv("CODEX_SANDBOX_MODE")),
 		CodexOpenAIAuthMode:                    strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_OPENAI_AUTH_MODE"), "api_key")),
 		CodexEnableChatGPTOAuth:                parseBoolEnv(os.Getenv("CODEX_ENABLE_CHATGPT_OAUTH")),
 		CodexChatGPTAccessToken:                strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCESS_TOKEN")),
 		CodexChatGPTAccountID:                  strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCOUNT_ID")),
-		CodexChatGPTPlanType:                   strings.TrimSpace(os.Getenv("CODEX_CHATGPT_PLAN_TYPE")),
-		CodexAuthEncryptionKey:                 strings.TrimSpace(os.Getenv("CODEX_AUTH_ENCRYPTION_KEY")),
-		CodexHelpinAPIBaseURL:                  codexHelpinAPIBaseURL(os.Getenv("CODEX_HELPIN_API_BASE_URL"), port),
-		CodexHelpinMCPBridgePath:               codexHelpinMCPBridgePath(os.Getenv("CODEX_HELPIN_MCP_BRIDGE_PATH")),
-		BraveSearchAPIKey:                      strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
-		ExaSearchAPIKey:                        strings.TrimSpace(os.Getenv("EXA_API_KEY")),
 		CloudflareAccountID:                    strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
 		CloudflareAPIToken:                     strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),
 		CloudflareAPIBaseURL:                   strings.TrimSpace(os.Getenv("CLOUDFLARE_API_BASE_URL")),
@@ -359,36 +338,6 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func codexHelpinMCPBridgePath(raw string) string {
-	raw = strings.TrimSpace(os.ExpandEnv(raw))
-	if raw != "" {
-		return raw
-	}
-	for _, candidate := range []string{
-		"bin/helpin-mcp-bridge",
-		"../bin/helpin-mcp-bridge",
-		"../../bin/helpin-mcp-bridge",
-		defaultCodexHelpinMCPBridgePath,
-	} {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-	}
-	return defaultCodexHelpinMCPBridgePath
-}
-
-func codexHelpinAPIBaseURL(raw, port string) string {
-	raw = strings.TrimRight(strings.TrimSpace(os.ExpandEnv(raw)), "/")
-	if raw != "" {
-		return raw
-	}
-	port = strings.TrimSpace(port)
-	if port == "" {
-		port = "8080"
-	}
-	return "http://127.0.0.1:" + port + "/api"
 }
 
 func parsePositiveIntEnv(value string, fallback int) int {

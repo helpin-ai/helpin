@@ -11,9 +11,9 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func seedApprovalArtifacts(t *testing.T, artifactRepo *repository.AgentRunArtifactRepository, workspaceID, runID string, assistantSequenceNo int, now time.Time, previewContent string) {
@@ -318,26 +318,37 @@ func TestSendRunMessageResolvesLatestPendingCodexInputInteraction(t *testing.T) 
 
 func TestResolveCodingSessionInteractionPreservesNativeCodexApprovalPayload(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 
 	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-1", "ws-1", false, "Code Builder", model.AgentPresetCodeBuilder, "Builder", "idle", "codex",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
 	run := &model.AgentRun{
-		ID:              "run-codex-approval",
-		WorkspaceID:     "ws-1",
-		AgentID:         "agent-1",
-		TargetType:      "story",
-		TargetID:        "story-1",
-		RuntimeKind:     "codex",
-		InvocationMode:  model.InvocationModeInteractive,
-		ApprovalState:   "pending",
-		PauseReason:     model.AgentRunPauseReasonHumanApproval,
-		Status:          model.AgentRunStatusPaused,
-		LastHeartbeatAt: &now,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                "run-codex-approval",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_codex_approval"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "story",
+		TargetID:          "story-1",
+		RuntimeKind:       "codex",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		LastHeartbeatAt:   &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -377,11 +388,14 @@ func TestResolveCodingSessionInteractionPreservesNativeCodexApprovalPayload(t *t
 		t.Fatalf("create interaction: %v", err)
 	}
 
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentService{
-		runRepo:         runRepo,
-		runMessageRepo:  runMessageRepo,
-		artifactRepo:    artifactRepo,
-		interactionRepo: interactionRepo,
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		interactionRepo:    interactionRepo,
+		agentRuntimeClient: runtimeClient,
 	}
 
 	responsePayload := json.RawMessage(`{"decision":"acceptForSession"}`)
@@ -400,6 +414,12 @@ func TestResolveCodingSessionInteractionPreservesNativeCodexApprovalPayload(t *t
 	if got := string(interaction.ResponsePayload); got != string(responsePayload) {
 		t.Fatalf("expected native response payload to be preserved, got %s", got)
 	}
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one agent runtime resume call, got %#v", runtimeClient.resumeCalls)
+	}
+	if got := string(runtimeClient.resumeCalls[0].req.ResponsePayload); got != string(responsePayload) {
+		t.Fatalf("expected native response payload on runtime resume, got %s", got)
+	}
 	if interaction.ResolvedBy == nil || *interaction.ResolvedBy != "user-1" {
 		t.Fatalf("expected resolved_by to be set, got %#v", interaction.ResolvedBy)
 	}
@@ -409,7 +429,7 @@ func TestResolveCodingSessionInteractionPreservesNativeCodexApprovalPayload(t *t
 		t.Fatalf("get run: %v", err)
 	}
 	if updatedRun.Status != model.AgentRunStatusPaused || updatedRun.PauseReason != model.AgentRunPauseReasonHumanApproval {
-		t.Fatalf("expected live codex run to remain paused until the worker resumes, got %#v", updatedRun)
+		t.Fatalf("expected codex run to remain paused until runtime projection resumes it, got %#v", updatedRun)
 	}
 
 	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)

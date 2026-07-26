@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"strings"
 
+	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 // delegatedTaskPlanDocumentContextLimit mirrors the Temporal path's plan-doc

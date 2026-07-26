@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
+	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func ListAgentPresets() []model.AgentPresetDefinition {

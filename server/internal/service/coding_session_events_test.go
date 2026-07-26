@@ -12,7 +12,6 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestListCodingSessionEventsSkipsLegacyInteractionArtifactsWhenInteractionsExist(t *testing.T) {
@@ -945,9 +944,9 @@ func TestGetCodingSessionDiffUsesRunWorkspace(t *testing.T) {
 	}
 
 	defer func() {
-		_ = worker.CleanupWorkspaceForRun(run.ID)
+		_ = os.RemoveAll(filepath.Dir(legacyAgentWorkspacePath(run.ID)))
 	}()
-	workDir := worker.PersistentWorkspacePathForRun(run.ID)
+	workDir := legacyAgentWorkspacePath(run.ID)
 	_ = os.RemoveAll(filepath.Dir(workDir))
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		t.Fatalf("mkdir workdir: %v", err)

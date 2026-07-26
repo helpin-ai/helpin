@@ -3831,9 +3831,8 @@ func (s *AgentService) startCommandBarPlanStep(ctx context.Context, workspaceID,
 }
 
 // AdvanceCommandBarPlanAfterRun advances the command-bar plan that owns the
-// given terminal run, loading the run's persisted state. Temporal
-// AgentRunWorkflow calls this (via AdvanceCommandBarPlanActivity) after the
-// terminal status is already persisted.
+// given terminal run, loading the run's persisted state. Agent Runtime
+// finalization calls this after the terminal status is already persisted.
 func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, completedRunID string) (*model.AgentRun, error) {
 	if s == nil || s.runRepo == nil {
 		return nil, nil

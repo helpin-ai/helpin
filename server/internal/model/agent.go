@@ -492,6 +492,8 @@ const (
 	AgentRunStatusCancelled = "cancelled"
 )
 
+const AgentRunArtifactTypeToolCall = "tool_call"
+
 const (
 	AgentRunPauseReasonNone           = "none"
 	AgentRunPauseReasonHumanInput     = "human_input"

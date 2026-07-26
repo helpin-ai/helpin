@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
+	workerpkg "github.com/helpin-ai/helpin/server/internal/agentcontract"
 )
 
 const claudeJSONToolName = "emit_json_response"

@@ -16,12 +16,12 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 type supportRunSummary struct {
@@ -37,7 +37,6 @@ type supportDraftReply struct {
 
 const stuckPostRunThreshold = 2 * time.Minute
 const staleQueuedRunThreshold = 30 * time.Second
-const liveCodexPauseHeartbeatFreshThreshold = 2 * time.Minute
 const defaultSystemEpicPlannerName = "Atlas"
 
 var ErrAssignedAgentNotFound = errors.New("assigned agent not found")
@@ -461,7 +460,6 @@ type AgentService struct {
 	notificationService        *NotificationService
 	wsPublisher                *websocket.Publisher
 	ruleEngine                 *AutomationRuleEngine
-	codexAuthManager           *worker.CodexAuthManager
 	anthropicAPIKey            string
 	openAIAPIKey               string
 	openRouterAPIKey           string
@@ -569,11 +567,6 @@ func (s *AgentService) SetModelProviderConfig(
 	s.codexChatGPTOAuthEnabled = codexChatGPTOAuthEnabled
 	s.codexChatGPTAccessToken = strings.TrimSpace(codexChatGPTAccessToken)
 	s.codexChatGPTAccountID = strings.TrimSpace(codexChatGPTAccountID)
-	return s
-}
-
-func (s *AgentService) SetCodexAuthManager(manager *worker.CodexAuthManager) *AgentService {
-	s.codexAuthManager = manager
 	return s
 }
 
@@ -4188,38 +4181,15 @@ func (s *AgentService) StartCodexDeviceCodeAuth(ctx context.Context, workspaceID
 	if err := s.ensureRunSupportsCodexDeviceCode(run, agent); err != nil {
 		return nil, err
 	}
-	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
-		runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeCodexAuthClient)
-		if !ok || runtimeClient == nil {
-			return nil, fmt.Errorf("agent runtime codex auth client is not configured")
-		}
-		authState, err := runtimeClient.StartCodexDeviceCodeAuth(ctx, runtimeRunID)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.applyCodexAuthState(ctx, workspaceID, runID, actorID, authState, authState != nil && authState.State == model.CodexAuthStateConnected); err != nil {
-			return nil, err
-		}
-		return authState, nil
+	runtimeRunID, ok := agentRuntimeRunID(run)
+	if !ok {
+		return nil, fmt.Errorf("run is not managed by the agent runtime")
 	}
-
-	if s.codexAuthManager == nil {
-		return nil, fmt.Errorf("codex device-code auth is not configured")
+	runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeCodexAuthClient)
+	if !ok || runtimeClient == nil {
+		return nil, fmt.Errorf("agent runtime codex auth client is not configured")
 	}
-
-	authState, err := s.codexAuthManager.StartDeviceCode(ctx, run, agent, func(callbackCtx context.Context, state *model.CodexAuthState) {
-		if state == nil {
-			return
-		}
-		if err := s.applyCodexAuthState(callbackCtx, workspaceID, runID, actorID, state, state.State == model.CodexAuthStateConnected); err != nil {
-			slog.ErrorContext(callbackCtx, "failed to apply codex auth state update",
-				"error", err,
-				"workspace_id", workspaceID,
-				"run_id", runID,
-				"state", state.State,
-			)
-		}
-	})
+	authState, err := runtimeClient.StartCodexDeviceCodeAuth(ctx, runtimeRunID)
 	if err != nil {
 		return nil, err
 	}
@@ -4237,26 +4207,22 @@ func (s *AgentService) CancelCodexDeviceCodeAuth(ctx context.Context, workspaceI
 	if err := s.ensureRunSupportsCodexDeviceCode(run, agent); err != nil {
 		return nil, err
 	}
-	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
-		runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeCodexAuthClient)
-		if !ok || runtimeClient == nil {
-			return nil, fmt.Errorf("agent runtime codex auth client is not configured")
-		}
-		authState, err := runtimeClient.CancelCodexDeviceCodeAuth(ctx, runtimeRunID)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.applyCodexAuthState(ctx, workspaceID, runID, actorID, authState, false); err != nil {
-			return nil, err
-		}
-		return authState, nil
+	runtimeRunID, ok := agentRuntimeRunID(run)
+	if !ok {
+		return nil, fmt.Errorf("run is not managed by the agent runtime")
 	}
-
-	if s.codexAuthManager == nil {
-		return nil, fmt.Errorf("codex device-code auth is not configured")
+	runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeCodexAuthClient)
+	if !ok || runtimeClient == nil {
+		return nil, fmt.Errorf("agent runtime codex auth client is not configured")
 	}
-
-	return s.codexAuthManager.CancelDeviceCode(ctx, runID)
+	authState, err := runtimeClient.CancelCodexDeviceCodeAuth(ctx, runtimeRunID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyCodexAuthState(ctx, workspaceID, runID, actorID, authState, false); err != nil {
+		return nil, err
+	}
+	return authState, nil
 }
 
 // ResumeRun resumes a paused interactive run using one generic intent path.
@@ -4504,31 +4470,6 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 	s.logTargetAgentRunActivity(ctx, run, actorID, agentRunActivityActionForResumeIntent(intent), agentRunActivityExtraForMessage(intent, message))
 	s.publishRunEvent(run, actorID)
 	return run, message, nil
-}
-
-func (s *AgentService) shouldUseLiveCodexPausePath(ctx context.Context, run *model.AgentRun) (bool, error) {
-	if s == nil || run == nil || s.artifactRepo == nil {
-		return false, nil
-	}
-	if strings.TrimSpace(run.RuntimeKind) != "codex" {
-		return false, nil
-	}
-	if !model.IsAgentRunPausedStatus(run.Status) {
-		return false, nil
-	}
-	switch run.PauseReason {
-	case model.AgentRunPauseReasonHumanApproval, model.AgentRunPauseReasonHumanInput:
-	default:
-		return false, nil
-	}
-	if run.LastHeartbeatAt == nil || time.Since(run.LastHeartbeatAt.UTC()) > liveCodexPauseHeartbeatFreshThreshold {
-		return false, nil
-	}
-	snapshot, err := worker.LoadCodexSessionSnapshot(ctx, s.artifactRepo, run)
-	if err != nil {
-		return false, err
-	}
-	return snapshot != nil && snapshot.HasPendingRequest, nil
 }
 
 func normalizeResumeIntent(intent string) string {
@@ -4798,9 +4739,6 @@ func (s *AgentService) ensureRunSupportsCodexDeviceCode(run *model.AgentRun, age
 	if provider != model.AgentModelProviderOpenAI {
 		return fmt.Errorf("codex device-code auth only supports provider openai")
 	}
-	if !s.isCodexOpenAIDeviceCodeEnabled() {
-		return fmt.Errorf("CODEX_OPENAI_AUTH_MODE must be %q to use device-code auth", "chatgpt_device_code")
-	}
 	return nil
 }
 
@@ -4817,45 +4755,11 @@ func (s *AgentService) applyCodexAuthState(ctx context.Context, workspaceID, run
 		return err
 	}
 
-	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
-		return s.applyDelegatedCodexAuthState(ctx, workspaceID, runID, actorID, runtimeRunID, authState, autoResume)
+	runtimeRunID, ok := agentRuntimeRunID(run)
+	if !ok {
+		return fmt.Errorf("run is not managed by the agent runtime")
 	}
-
-	now := time.Now()
-	run.ErrorMessage = nil
-	switch strings.TrimSpace(authState.State) {
-	case model.CodexAuthStateConnected:
-		run.Status = model.AgentRunStatusRunning
-		run.PauseReason = model.AgentRunPauseReasonNone
-		run.ExecutionStage = strPtr("auth_completed")
-		run.LastHeartbeatAt = &now
-		run.CompletedAt = nil
-		if run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
-			run.ApprovalState = "not_required"
-		}
-		if err := s.runRepo.Update(ctx, run); err != nil {
-			return err
-		}
-		if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.TaskID); err != nil {
-			return err
-		}
-	default:
-		run.Status = model.AgentRunStatusPaused
-		run.PauseReason = model.AgentRunPauseReasonAuthentication
-		run.ExecutionStage = strPtr("awaiting_auth")
-		run.LastHeartbeatAt = &now
-		run.CompletedAt = nil
-		if run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
-			run.ApprovalState = "not_required"
-		}
-		if err := s.runRepo.Update(ctx, run); err != nil {
-			return err
-		}
-	}
-
-	s.publishRunEvent(run, actorID)
-	s.publishCodexAuthStateEvent(run, authState, actorID)
-	return nil
+	return s.applyDelegatedCodexAuthState(ctx, workspaceID, runID, actorID, runtimeRunID, authState, autoResume)
 }
 
 func (s *AgentService) applyDelegatedCodexAuthState(ctx context.Context, workspaceID, runID, actorID, runtimeRunID string, authState *model.CodexAuthState, autoResume bool) error {
@@ -6334,15 +6238,6 @@ func (s *AgentService) isCodexOpenAIConfigured() bool {
 		return strings.TrimSpace(s.openAIAPIKey) != ""
 	case "chatgpt_oauth", "oauth", "chatgpt", "chatgpt-auth":
 		return s.codexChatGPTOAuthEnabled && strings.TrimSpace(s.codexChatGPTAccessToken) != "" && strings.TrimSpace(s.codexChatGPTAccountID) != ""
-	case "chatgpt_device_code", "device_code", "chatgpt-device", "chatgpt-device-code", "chatgpt-managed":
-		return true
-	default:
-		return false
-	}
-}
-
-func (s *AgentService) isCodexOpenAIDeviceCodeEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(s.codexOpenAIAuthMode)) {
 	case "chatgpt_device_code", "device_code", "chatgpt-device", "chatgpt-device-code", "chatgpt-managed":
 		return true
 	default:

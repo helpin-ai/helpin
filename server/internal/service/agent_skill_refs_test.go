@@ -7,9 +7,9 @@ import (
 
 	"gorm.io/gorm"
 
+	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestCreateAgentResolvesBuiltInSkillRefs(t *testing.T) {

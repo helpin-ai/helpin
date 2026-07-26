@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 
+	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/agentskills"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func (s *AgentService) resolveAgentSkills(ctx context.Context, agent *model.Agent) (agentskills.Resolution, error) {

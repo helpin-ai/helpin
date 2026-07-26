@@ -14,9 +14,9 @@ import (
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
+	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func (s *AgentService) GetCodingSession(ctx context.Context, workspaceID, sessionID string) (*model.CodingSession, error) {
@@ -196,7 +196,7 @@ func (s *AgentService) GetCodingSessionDiff(ctx context.Context, workspaceID, se
 		return nil, err
 	}
 
-	workDir := worker.PersistentWorkspacePathForRun(run.ID)
+	workDir := legacyAgentWorkspacePath(run.ID)
 	if info, statErr := os.Stat(workDir); statErr == nil && info.IsDir() {
 		args := []string{"diff", "--no-ext-diff", "--"}
 		if strings.TrimSpace(path) != "" {
@@ -271,35 +271,10 @@ func (s *AgentService) ResolveCodingSessionInteraction(ctx context.Context, work
 		responseSchemaVersion = model.AgentRunInteractionSchemaVersionHelpinV1
 	}
 	followupMessage := strings.TrimSpace(derefString(req.FollowupMessage))
-	liveCodexPause, err := s.shouldUseLiveCodexPausePath(ctx, run)
-	if err != nil {
-		return nil, err
-	}
 
 	previousInteraction := *interaction
 	if err := s.markInteractionResolved(ctx, interaction, actorID, responsePayload, responseSchemaVersion); err != nil {
 		return nil, err
-	}
-
-	if liveCodexPause && strings.TrimSpace(run.RuntimeKind) == "codex" && interactionUsesNativeCodexResume(interaction) {
-		if followupMessage != "" {
-			if _, err := s.createRunMessage(ctx, run, "user", interactionMessageTypeForIntent(resolveIntentForInteraction(interaction, responsePayload)), followupMessage); err != nil {
-				_ = s.restorePendingInteraction(ctx, &previousInteraction)
-				return nil, err
-			}
-		}
-		if err := s.persistResolvedInteractionArtifacts(ctx, run, interaction, actorID); err != nil {
-			slog.ErrorContext(ctx, "failed to persist resolved interaction artifacts",
-				"error", err,
-				"workspace_id", run.WorkspaceID,
-				"run_id", run.ID,
-				"interaction_id", interaction.ID,
-				"interaction_kind", interaction.InteractionKind,
-			)
-		}
-		s.clearAgentAttentionNotification(ctx, run)
-		s.publishResolvedInteractionEvent(run, interaction, actorID)
-		return interaction, nil
 	}
 
 	resumeReq, err := resumeRequestForResolvedInteraction(interaction, responsePayload, followupMessage)
@@ -322,24 +297,6 @@ func (s *AgentService) ResolveCodingSessionInteraction(ctx context.Context, work
 	}
 	s.publishResolvedInteractionEvent(run, interaction, actorID)
 	return interaction, nil
-}
-
-func interactionUsesNativeCodexResume(interaction *model.AgentRunInteraction) bool {
-	if interaction == nil {
-		return false
-	}
-	if strings.TrimSpace(interaction.RuntimeKind) != "codex" {
-		return false
-	}
-	switch strings.TrimSpace(interaction.InteractionKind) {
-	case model.AgentRunInteractionKindRequestUserInput,
-		model.AgentRunInteractionKindCommandExecutionApproval,
-		model.AgentRunInteractionKindFileChangeApproval,
-		model.AgentRunInteractionKindPermissionsApproval:
-		return true
-	default:
-		return false
-	}
 }
 
 func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentRun) (*model.CodingSession, error) {
@@ -919,7 +876,7 @@ func (s *AgentService) resolveCodingSessionRepoState(ctx context.Context, run *m
 		state.Branch = stringPtrIfNotEmpty(strings.TrimSpace(derefString(run.BaseBranch)))
 	}
 
-	workDir := worker.PersistentWorkspacePathForRun(run.ID)
+	workDir := legacyAgentWorkspacePath(run.ID)
 	if info, err := os.Stat(workDir); err == nil && info.IsDir() {
 		if repoName := strings.TrimSpace(derefString(run.RepoFullName)); repoName != "" {
 			state.RepoName = &repoName

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 // registerDocsRuntimeToolCommands registers command-backed variants of the

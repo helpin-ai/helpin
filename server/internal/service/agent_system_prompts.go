@@ -3,8 +3,8 @@ package service
 import (
 	"strings"
 
+	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func promptMatchesDefault(presetKey string, prompt *string) bool {

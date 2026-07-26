@@ -43,7 +43,6 @@ type Handlers struct {
 	Search              *handler.SearchHandler
 	CommandBar          *handler.CommandBarHandler
 	Agent               *handler.AgentHandler
-	AgentToolGateway    *handler.AgentToolGatewayHandler
 	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
 	MCP                 *handler.MCPHandler
 	SupportInbox        *handler.SupportInboxHandler
@@ -388,13 +387,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				})
 			}
 		})
-
-		if h.AgentToolGateway != nil {
-			r.Route("/agent-run-tools", func(r chi.Router) {
-				r.Get("/tools", h.AgentToolGateway.ListTools)
-				r.Post("/call", h.AgentToolGateway.CallTool)
-			})
-		}
 
 		// ---- Platform admin routes (audited before auth so denied attempts are logged) ----
 		r.Route("/admin", func(r chi.Router) {
