@@ -3,7 +3,7 @@ package service
 import (
 	"strings"
 
-	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -107,7 +107,7 @@ func legacyPromptIsManaged(presetKey string, prompt *string) bool {
 }
 
 func defaultSystemPromptForPreset(presetKey string) *string {
-	return worker.BuiltInPresetPrompt(normalizePresetKey(presetKey))
+	return agentcontract.BuiltInPresetPrompt(normalizePresetKey(presetKey))
 }
 
 func mergeLegacyPlanningNotes(prompt, legacyPlanningNotes *string) *string {
@@ -125,7 +125,7 @@ func mergeLegacyPlanningNotes(prompt, legacyPlanningNotes *string) *string {
 
 func syncManagedSystemPromptForPreset(presetKey string, systemPrompt, legacyPlanningNotes *string, instructionTemplateVersion string) (*string, string) {
 	normalizedPresetKey := normalizePresetKey(presetKey)
-	currentVersion := strings.TrimSpace(worker.BuiltInPresetInstructionTemplateVersion(normalizedPresetKey))
+	currentVersion := strings.TrimSpace(agentcontract.BuiltInPresetInstructionTemplateVersion(normalizedPresetKey))
 	if currentVersion == "" {
 		return trimPtr(systemPrompt), strings.TrimSpace(instructionTemplateVersion)
 	}

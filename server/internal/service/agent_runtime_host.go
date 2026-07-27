@@ -9,7 +9,7 @@ import (
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
-	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -376,7 +376,7 @@ func (s *AgentRuntimeHostService) ResolveSkillByID(ctx context.Context, req Agen
 	}
 	if strings.HasPrefix(skillID, agentRuntimeHelpinBuiltInSkillIDPrefix) {
 		key := strings.TrimPrefix(skillID, agentRuntimeHelpinBuiltInSkillIDPrefix)
-		definition, ok := worker.GetBuiltInSkill(key)
+		definition, ok := agentcontract.GetBuiltInSkill(key)
 		if !ok {
 			return nil, fmt.Errorf("%w: workspace skill not found", ErrAgentRuntimeHostNotFound)
 		}
@@ -411,7 +411,7 @@ func (s *AgentRuntimeHostService) ResolveActiveSkillByKey(ctx context.Context, r
 			return runtimeWorkspaceSkill(skill), nil
 		}
 	}
-	if definition, ok := worker.GetBuiltInSkill(key); ok {
+	if definition, ok := agentcontract.GetBuiltInSkill(key); ok {
 		return runtimeBuiltInWorkspaceSkill(definition)
 	}
 	if workspaceID == "" {
@@ -469,11 +469,11 @@ func (s *AgentRuntimeHostService) GetSkillPackageObject(ctx context.Context, obj
 	}
 	if strings.HasPrefix(objectKey, agentRuntimeHelpinBuiltInSkillObjectPrefix) {
 		key := strings.TrimSuffix(strings.TrimPrefix(objectKey, agentRuntimeHelpinBuiltInSkillObjectPrefix), ".zip")
-		definition, ok := worker.GetBuiltInSkill(key)
+		definition, ok := agentcontract.GetBuiltInSkill(key)
 		if !ok {
 			return nil, fmt.Errorf("%w: workspace skill package not found", ErrAgentRuntimeHostNotFound)
 		}
-		archive, _, _, err := worker.BuildSkillArchive(definition)
+		archive, _, _, err := agentcontract.BuildSkillArchive(definition)
 		if err != nil {
 			return nil, err
 		}
@@ -523,8 +523,8 @@ func runtimeWorkspaceSkill(skill *model.WorkspaceSkill) *AgentRuntimeWorkspaceSk
 	}
 }
 
-func runtimeBuiltInWorkspaceSkill(definition worker.SkillDefinition) (*AgentRuntimeWorkspaceSkill, error) {
-	archive, checksum, filename, err := worker.BuildSkillArchive(definition)
+func runtimeBuiltInWorkspaceSkill(definition agentcontract.SkillDefinition) (*AgentRuntimeWorkspaceSkill, error) {
+	archive, checksum, filename, err := agentcontract.BuildSkillArchive(definition)
 	if err != nil {
 		return nil, err
 	}
@@ -547,7 +547,7 @@ func runtimeBuiltInWorkspaceSkill(definition worker.SkillDefinition) (*AgentRunt
 	}, nil
 }
 
-func runtimeSkillInterfaceJSON(value worker.SkillInterface) json.RawMessage {
+func runtimeSkillInterfaceJSON(value agentcontract.SkillInterface) json.RawMessage {
 	payload := map[string]interface{}{}
 	if strings.TrimSpace(value.DisplayName) != "" {
 		payload["display_name"] = strings.TrimSpace(value.DisplayName)
@@ -570,7 +570,7 @@ func runtimeSkillInterfaceJSON(value worker.SkillInterface) json.RawMessage {
 	return mustMarshalRuntimeHostJSON(payload)
 }
 
-func runtimeSkillPolicyJSON(value worker.SkillPolicy) json.RawMessage {
+func runtimeSkillPolicyJSON(value agentcontract.SkillPolicy) json.RawMessage {
 	payload := map[string]interface{}{}
 	if value.AllowImplicitInvocation != nil {
 		payload["allow_implicit_invocation"] = *value.AllowImplicitInvocation

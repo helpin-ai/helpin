@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -16,7 +16,7 @@ func TestSelectNativeActiveSkillsEpicDraftSpecSelectsPRDSkills(t *testing.T) {
 		{Key: "epic_planning_state_routing"},
 		{Key: "engineering_planner_operating_rules"},
 	}
-	definitions := []worker.SkillDefinition{
+	definitions := []agentcontract.SkillDefinition{
 		{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
 		{Key: "product_prd_authorship", SourceKind: "built_in", Instructions: "prd"},
 		{Key: "coding_task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
@@ -45,7 +45,7 @@ func TestSelectNativeActiveSkillsEpicPlanTasksSelectsTaskSkills(t *testing.T) {
 		{Key: "coding_task_decomposition"},
 		{Key: "epic_planning_state_routing"},
 	}
-	definitions := []worker.SkillDefinition{
+	definitions := []agentcontract.SkillDefinition{
 		{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
 		{Key: "product_prd_authorship", SourceKind: "built_in", Instructions: "prd"},
 		{Key: "coding_task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
@@ -69,7 +69,7 @@ func TestSelectNativeActiveSkillsKeepsWorkspaceSkillsDefaultActive(t *testing.T)
 		{Key: "prd_task_plan_approval"},
 		{SkillID: &skillID, Key: "workspace_planner_extension"},
 	}
-	definitions := []worker.SkillDefinition{
+	definitions := []agentcontract.SkillDefinition{
 		{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
 		{Key: "workspace_planner_extension", SourceKind: model.WorkspaceSkillSourceWorkspace, Instructions: "workspace"},
 	}
@@ -96,7 +96,7 @@ func TestSelectNativeActiveSkillsDocumentationSupportTargetSelectsSupportGapSkil
 		{Key: "post_release_docs_update"},
 		{Key: "support_gap_docs_update"},
 	}
-	definitions := []worker.SkillDefinition{
+	definitions := []agentcontract.SkillDefinition{
 		{Key: "docs_architecture_review", SourceKind: "built_in", Instructions: "ia"},
 		{Key: "public_help_doc_writing", SourceKind: "built_in", Instructions: "help-writing"},
 		{Key: "api_reference_doc_writing", SourceKind: "built_in", Instructions: "api-writing"},
@@ -125,7 +125,7 @@ func TestSelectNativeActiveSkillsFallsBackToFullSetForUnknownStage(t *testing.T)
 		{Key: "prd_task_plan_approval"},
 		{Key: "product_prd_authorship"},
 	}
-	definitions := []worker.SkillDefinition{
+	definitions := []agentcontract.SkillDefinition{
 		{Key: "prd_task_plan_approval", SourceKind: "built_in", Instructions: "approval"},
 		{Key: "product_prd_authorship", SourceKind: "built_in", Instructions: "prd"},
 	}

@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -257,7 +257,7 @@ func helpinSkillRefSupportsRuntime(ref model.AgentSkillRef, runtimeKind string) 
 	if runtimeKind == "" || ref.SkillID != nil {
 		return true
 	}
-	definition, ok := worker.GetBuiltInSkill(ref.Key)
+	definition, ok := agentcontract.GetBuiltInSkill(ref.Key)
 	if !ok {
 		return true
 	}
@@ -1829,9 +1829,9 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		version.InstructionPreamble = &preamble
 		version.InstructionSkills = mustJSONStringSlice(skills)
 		availableSkills := parseJSONStringSlice(json.RawMessage(version.AvailableSkills))
-		compiled := worker.CompilePresetInstructionsWithAvailableSkills(preamble, skills, availableSkills)
+		compiled := agentcontract.CompilePresetInstructionsWithAvailableSkills(preamble, skills, availableSkills)
 		version.SystemPrompt = &compiled
-		version.InstructionTemplateVersion = worker.InstructionTemplateVersionForPresetWithAvailableSkills(preamble, skills, availableSkills)
+		version.InstructionTemplateVersion = agentcontract.InstructionTemplateVersionForPresetWithAvailableSkills(preamble, skills, availableSkills)
 	} else {
 		version.SystemPrompt = trimPtr(basePreset.SystemPrompt)
 	}
@@ -1895,13 +1895,13 @@ func filterAvailableSkillsForAllowedTools(availableSkills, allowedTools, instruc
 	}
 	instructionSet := make(map[string]struct{}, len(instructionSkills))
 	for _, skillKey := range instructionSkills {
-		skillKey = worker.CanonicalBuiltInSkillKey(skillKey)
+		skillKey = agentcontract.CanonicalBuiltInSkillKey(skillKey)
 		if skillKey != "" {
 			instructionSet[skillKey] = struct{}{}
 		}
 	}
 	allowedSet := make(map[string]struct{}, len(allowedTools))
-	for _, toolName := range worker.NormalizeToolNames(allowedTools) {
+	for _, toolName := range agentcontract.NormalizeToolNames(allowedTools) {
 		allowedSet[toolName] = struct{}{}
 	}
 	filtered := make([]string, 0, len(availableSkills))
@@ -1910,16 +1910,16 @@ func filterAvailableSkillsForAllowedTools(availableSkills, allowedTools, instruc
 		if skillKey == "" {
 			continue
 		}
-		if _, ok := instructionSet[worker.CanonicalBuiltInSkillKey(skillKey)]; ok {
+		if _, ok := instructionSet[agentcontract.CanonicalBuiltInSkillKey(skillKey)]; ok {
 			continue
 		}
-		definition, ok := worker.GetBuiltInSkill(skillKey)
+		definition, ok := agentcontract.GetBuiltInSkill(skillKey)
 		if !ok {
 			filtered = append(filtered, skillKey)
 			continue
 		}
 		supported := true
-		for _, requiredTool := range worker.NormalizeToolNames(definition.RequiredTools) {
+		for _, requiredTool := range agentcontract.NormalizeToolNames(definition.RequiredTools) {
 			if _, ok := allowedSet[requiredTool]; !ok {
 				supported = false
 				break
@@ -2507,9 +2507,9 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 			}
 			version.InstructionPreamble = &preamble
 			version.InstructionSkills = mustJSONStringSlice(skills)
-			compiled := worker.CompilePresetInstructionsWithAvailableSkills(preamble, skills, availableSkills)
+			compiled := agentcontract.CompilePresetInstructionsWithAvailableSkills(preamble, skills, availableSkills)
 			version.SystemPrompt = &compiled
-			version.InstructionTemplateVersion = worker.InstructionTemplateVersionForPresetWithAvailableSkills(preamble, skills, availableSkills)
+			version.InstructionTemplateVersion = agentcontract.InstructionTemplateVersionForPresetWithAvailableSkills(preamble, skills, availableSkills)
 		} else {
 			version.SystemPrompt = trimPtr(currentPreset.SystemPrompt)
 			version.InstructionTemplateVersion = strings.TrimSpace(currentPreset.InstructionTemplateVersion)
@@ -2604,7 +2604,7 @@ func (s *AgentService) DeleteWorkspacePresetVersion(ctx context.Context, workspa
 
 // ListToolCatalog returns the tool catalog with categories and preset mappings.
 func (s *AgentService) ListToolCatalog() model.ToolCatalogResponse {
-	catalog := worker.ListToolCatalog()
+	catalog := agentcontract.ListToolCatalog()
 	presets := ListAgentPresets()
 	for idx := range catalog.Tools {
 		tool := &catalog.Tools[idx]
@@ -3594,7 +3594,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, err
 		}
-		resolved := worker.ResolveAgentProfile(agent, resolveInvocationMode(agent))
+		resolved := agentcontract.ResolveAgentProfile(agent, resolveInvocationMode(agent))
 
 		var delivery *model.TaskDeliveryTarget
 		if s.gitService != nil {
@@ -4548,10 +4548,10 @@ func buildInteractionResponsePayload(interaction *model.AgentRunInteraction, res
 	case model.AgentRunInteractionSchemaVersionCodexV2:
 		switch strings.TrimSpace(interaction.InteractionKind) {
 		case model.AgentRunInteractionKindRequestUserInput:
-			payload, err := worker.BuildCodexUserInputResponseFromPayload(interaction.RequestPayload, content)
+			payload, err := agentcontract.BuildCodexUserInputResponseFromPayload(interaction.RequestPayload, content)
 			return payload, model.AgentRunInteractionSchemaVersionCodexV2, err
 		case model.AgentRunInteractionKindCommandExecutionApproval, model.AgentRunInteractionKindFileChangeApproval, model.AgentRunInteractionKindPermissionsApproval:
-			payload, err := worker.BuildCodexApprovalResponseFromPayload(
+			payload, err := agentcontract.BuildCodexApprovalResponseFromPayload(
 				codexPendingKindForInteraction(strings.TrimSpace(interaction.InteractionKind)),
 				interaction.RequestPayload,
 				resolvedIntent == model.AgentRunResumeIntentApprove,
@@ -4739,6 +4739,9 @@ func (s *AgentService) ensureRunSupportsCodexDeviceCode(run *model.AgentRun, age
 	if provider != model.AgentModelProviderOpenAI {
 		return fmt.Errorf("codex device-code auth only supports provider openai")
 	}
+	// Agent Runtime owns the effective Codex auth mode. Do not gate this request
+	// on Helpin's provider-discovery configuration: the runtime validates its
+	// own mode and returns the authoritative error if device auth is disabled.
 	return nil
 }
 
@@ -4885,8 +4888,8 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	}
 
 	content := append(json.RawMessage(nil), preview.Content...)
-	if strings.EqualFold(strings.TrimSpace(approval.Phase), "tasks") && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
-		normalizedContent, err := worker.NormalizeTaskPlanPreviewContent(content)
+	if strings.EqualFold(strings.TrimSpace(approval.Phase), "tasks") && strings.EqualFold(strings.TrimSpace(preview.Format), agentcontract.PreviewFormatJSON) {
+		normalizedContent, err := agentcontract.NormalizeTaskPlanPreviewContent(content)
 		if err != nil {
 			if approvedPreviewDebugEnabled() {
 				slog.ErrorContext(ctx, "approved task plan preview normalization failed during approval persistence",
@@ -4932,11 +4935,11 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	return s.saveJSONArtifact(ctx, run, model.AgentRunArtifactTypeApprovedPreview, "json", payload)
 }
 
-func latestApprovalCheckpoint(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, int, *model.ApprovalRequest, *worker.PublishedPreview, error) {
+func latestApprovalCheckpoint(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, int, *model.ApprovalRequest, *agentcontract.PublishedPreview, error) {
 	return latestApprovalCheckpointFromArtifacts(messages, artifacts)
 }
 
-func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, int, *model.ApprovalRequest, *worker.PublishedPreview, error) {
+func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, int, *model.ApprovalRequest, *agentcontract.PublishedPreview, error) {
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
 		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeHumanApprovalRequest || artifact.InlineContent == nil {
@@ -4970,11 +4973,11 @@ func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, art
 func normalizeApprovalPreviewPanelKey(value string) string {
 	key := strings.ToLower(strings.TrimSpace(value))
 	switch key {
-	case worker.ToolPublishPRDDraft:
+	case agentcontract.ToolPublishPRDDraft:
 		return "prd_draft"
-	case worker.ToolPublishTaskPlan:
+	case agentcontract.ToolPublishTaskPlan:
 		return "task_plan"
-	case worker.ToolPublishTaskPlanDoc:
+	case agentcontract.ToolPublishTaskPlanDoc:
 		return "task_plan_doc"
 	default:
 		return key
@@ -4990,7 +4993,7 @@ func isCanonicalApprovalPreviewPanelKey(value string) bool {
 	}
 }
 
-func latestRunPreviewArtifactForApproval(artifacts []model.AgentRunArtifact, assistantSequenceNo int, approval *model.ApprovalRequest) (*worker.PublishedPreview, error) {
+func latestRunPreviewArtifactForApproval(artifacts []model.AgentRunArtifact, assistantSequenceNo int, approval *model.ApprovalRequest) (*agentcontract.PublishedPreview, error) {
 	panelKey := ""
 	if approval != nil {
 		panelKey = normalizeApprovalPreviewPanelKey(approval.PreviewPanelKey)
@@ -5020,15 +5023,15 @@ func latestRunPreviewArtifactForApproval(artifacts []model.AgentRunArtifact, ass
 	return latestRunPreviewArtifact(artifacts, "")
 }
 
-func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey string) (*worker.PublishedPreview, error) {
+func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey string) (*agentcontract.PublishedPreview, error) {
 	targetKey := normalizeApprovalPreviewPanelKey(panelKey)
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
-		if strings.TrimSpace(artifact.ArtifactType) != worker.RunPreviewArtifactType || artifact.InlineContent == nil {
+		if strings.TrimSpace(artifact.ArtifactType) != agentcontract.RunPreviewArtifactType || artifact.InlineContent == nil {
 			continue
 		}
 
-		var payload worker.PublishedPreview
+		var payload agentcontract.PublishedPreview
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
 			return nil, fmt.Errorf("parse run preview artifact: %w", err)
 		}
@@ -5040,22 +5043,22 @@ func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey strin
 	return nil, nil
 }
 
-func latestRunPreviewArtifactForAssistantSequence(artifacts []model.AgentRunArtifact, assistantSequenceNo int, panelKey string) (*worker.PublishedPreview, int, error) {
+func latestRunPreviewArtifactForAssistantSequence(artifacts []model.AgentRunArtifact, assistantSequenceNo int, panelKey string) (*agentcontract.PublishedPreview, int, error) {
 	if assistantSequenceNo <= 0 {
 		return nil, 0, nil
 	}
 	targetKey := normalizeApprovalPreviewPanelKey(panelKey)
 	matchCount := 0
-	var firstMatch *worker.PublishedPreview
+	var firstMatch *agentcontract.PublishedPreview
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
-		if strings.TrimSpace(artifact.ArtifactType) != worker.RunPreviewArtifactType || artifact.InlineContent == nil {
+		if strings.TrimSpace(artifact.ArtifactType) != agentcontract.RunPreviewArtifactType || artifact.InlineContent == nil {
 			continue
 		}
 		if artifactAssistantMessageSequenceNo(artifact) != assistantSequenceNo {
 			continue
 		}
-		var payload worker.PublishedPreview
+		var payload agentcontract.PublishedPreview
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
 			return nil, 0, fmt.Errorf("parse run preview artifact: %w", err)
 		}
@@ -5285,8 +5288,8 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 
-	resolved := worker.ResolveAgentProfile(params.agent, params.invocationMode)
-	approvalState := worker.ResolveApprovalState(resolved)
+	resolved := agentcontract.ResolveAgentProfile(params.agent, params.invocationMode)
+	approvalState := agentcontract.ResolveApprovalState(resolved)
 
 	run := &model.AgentRun{
 		ID:                uuid.NewString(),

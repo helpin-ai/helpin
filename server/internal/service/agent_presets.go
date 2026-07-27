@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -143,16 +143,16 @@ func presetDefinitionForAgent(agent *model.Agent) (model.AgentPresetDefinition, 
 
 func applyBuiltInPresetInstructionMetadata(presets []model.AgentPresetDefinition) []model.AgentPresetDefinition {
 	for idx := range presets {
-		bundle, ok := worker.BuiltInPresetSkillBundleForPreset(presets[idx].Key)
+		bundle, ok := agentcontract.BuiltInPresetSkillBundleForPreset(presets[idx].Key)
 		if !ok {
 			continue
 		}
 		presets[idx].InstructionPreamble = bundle.Preamble
 		presets[idx].InstructionSkills = append([]string(nil), bundle.CoreSkillKeys...)
 		presets[idx].AvailableSkills = append([]string(nil), bundle.AvailableSkillKeys...)
-		presets[idx].InstructionTemplateVersion = worker.BuiltInPresetInstructionTemplateVersion(presets[idx].Key)
+		presets[idx].InstructionTemplateVersion = agentcontract.BuiltInPresetInstructionTemplateVersion(presets[idx].Key)
 		if presets[idx].SystemPrompt == nil {
-			presets[idx].SystemPrompt = worker.BuiltInPresetPrompt(presets[idx].Key)
+			presets[idx].SystemPrompt = agentcontract.BuiltInPresetPrompt(presets[idx].Key)
 		}
 	}
 	return presets
@@ -211,7 +211,7 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 		definition.RuntimeKind = runtime
 	}
 	if len(version.AllowedTools) > 0 {
-		definition.AllowedTools = worker.NormalizeToolNames(parseJSONStringSlice(version.AllowedTools))
+		definition.AllowedTools = agentcontract.NormalizeToolNames(parseJSONStringSlice(version.AllowedTools))
 	}
 	if len(version.AllowedTargets) > 0 {
 		if targets := parseJSONStringSlice(version.AllowedTargets); targets != nil {
@@ -298,11 +298,11 @@ func runtimeAllowedForPreset(presetKey, runtimeKind string) bool {
 }
 
 func agentPresetDefinitions() []model.AgentPresetDefinition {
-	productPlannerProfile := worker.GetRuntimeProfile(model.AgentPresetEpicPlanner)
-	engineerProfile := worker.GetRuntimeProfile(model.AgentPresetCodeBuilder)
-	reviewerProfile := worker.GetRuntimeProfile(model.AgentPresetReviewAgent)
-	supportProfile := worker.GetRuntimeProfile(model.AgentPresetSupportAgent)
-	documentationProfile := worker.GetRuntimeProfile(model.AgentPresetDocumentationAgent)
+	productPlannerProfile := agentcontract.GetRuntimeProfile(model.AgentPresetEpicPlanner)
+	engineerProfile := agentcontract.GetRuntimeProfile(model.AgentPresetCodeBuilder)
+	reviewerProfile := agentcontract.GetRuntimeProfile(model.AgentPresetReviewAgent)
+	supportProfile := agentcontract.GetRuntimeProfile(model.AgentPresetSupportAgent)
+	documentationProfile := agentcontract.GetRuntimeProfile(model.AgentPresetDocumentationAgent)
 	supportAgentProvider := model.AgentModelProviderOpenAI
 	supportAgentModel := "gpt-5.6-terra"
 	codeBuilderProvider := model.AgentModelProviderOpenAI
@@ -325,17 +325,17 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	reviewPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
 	commandAgentPrompt := "You are Command Agent, a one-shot workspace operator for confirmed command-bar runs. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward."
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
-		worker.ToolUpdatePlan,
-		worker.ToolPublishPRDDraft,
-		worker.ToolPublishTaskPlan,
-		worker.ToolRequestUserInput,
-		worker.ToolRequestApproval,
+		agentcontract.ToolUpdatePlan,
+		agentcontract.ToolPublishPRDDraft,
+		agentcontract.ToolPublishTaskPlan,
+		agentcontract.ToolRequestUserInput,
+		agentcontract.ToolRequestApproval,
 	)
 	taskPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
-		worker.ToolUpdatePlan,
-		worker.ToolPublishTaskPlanDoc,
-		worker.ToolRequestUserInput,
-		worker.ToolRequestApproval,
+		agentcontract.ToolUpdatePlan,
+		agentcontract.ToolPublishTaskPlanDoc,
+		agentcontract.ToolRequestUserInput,
+		agentcontract.ToolRequestApproval,
 	)
 	taskPlannerTools = slices.DeleteFunc(taskPlannerTools, func(toolName string) bool {
 		return toolName == "list_epic_tasks"
@@ -394,7 +394,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          []string{worker.ToolListAvailableSkills, worker.ToolSearchAvailableSkills, worker.ToolReadSkill, "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"},
+			AllowedTools:          []string{agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill, "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"},
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
@@ -457,9 +457,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			DefaultTriggerMode:  "manual",
 			AllowedTriggerModes: []string{"manual"},
 			AllowedTools: []string{
-				worker.ToolListAvailableSkills,
-				worker.ToolSearchAvailableSkills,
-				worker.ToolReadSkill,
+				agentcontract.ToolListAvailableSkills,
+				agentcontract.ToolSearchAvailableSkills,
+				agentcontract.ToolReadSkill,
 				"update_plan",
 				"request_user_input",
 				"request_approval",
@@ -506,7 +506,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			ApprovalMode:          "always",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime("codex"),
-			SystemPrompt:          worker.BuiltInPresetPrompt(model.AgentPresetMarketer),
+			SystemPrompt:          agentcontract.BuiltInPresetPrompt(model.AgentPresetMarketer),
 		},
 		{
 			Key:                   model.AgentPresetCodeBuilder,
@@ -587,12 +587,12 @@ func filterPresetTools(base []string, required ...string) []string {
 	filtered := make([]string, 0, len(base))
 	for _, toolName := range base {
 		switch toolName {
-		case worker.ToolPreviewMarkdown,
-			worker.ToolPreviewJSON,
-			worker.ToolPublishPreview,
-			worker.ToolPublishPRDDraft,
-			worker.ToolPublishTaskPlan,
-			worker.ToolPublishTaskPlanDoc:
+		case agentcontract.ToolPreviewMarkdown,
+			agentcontract.ToolPreviewJSON,
+			agentcontract.ToolPublishPreview,
+			agentcontract.ToolPublishPRDDraft,
+			agentcontract.ToolPublishTaskPlan,
+			agentcontract.ToolPublishTaskPlanDoc:
 			if !requiredSet[toolName] {
 				continue
 			}

@@ -203,6 +203,18 @@ The script checks the live pod's effective flag and then queries that
 environment's database for active unmapped runs. It does not print the
 database URL.
 
+Removing Deployment objects from the manifest does not delete objects already
+in Kubernetes. After the slimmed Temporal worker manifest is applied, delete
+all five zero-replica agent worker Deployments explicitly in each environment:
+
+```bash
+scripts/agent-runtime-retirement/delete-retired-deployments.sh <staging-kubectl-context> --confirm
+scripts/agent-runtime-retirement/delete-retired-deployments.sh <production-kubectl-context> --confirm
+```
+
+The script uses explicit Deployment names and `--ignore-not-found`; it does not
+touch the surviving `helpin-temporal-automation` Deployment.
+
 ---
 
 ## 4. Demolition inventory — `server/internal/worker/`
@@ -405,8 +417,8 @@ HTML, link previews all use `x/net/html`), `github.com/google/uuid`
      runs/messages/artifacts/interactions/usage/billing;
    - terminal finalizers (`agent_runtime_finalizers.go`) — support draft send,
      repository delivery, planning output, completed-rules, agent status;
-   - host adapters — target context + skills (`agent_runtime_host.go`), tool
-     gateway (`agent_tool_gateway.go`), internal-command providers;
+   - host adapters — target context + skills (`agent_runtime_host.go`) and
+     internal-command providers;
    - neutral helper packages from section 4.1 (skills, tool names, artifact
      extraction, contracts);
    - `server/internal/worker/` **does not exist**, and `temporalapp` contains

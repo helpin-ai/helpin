@@ -11,7 +11,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -24,7 +24,7 @@ func seedApprovalArtifacts(t *testing.T, artifactRepo *repository.AgentRunArtifa
 		ID:            fmt.Sprintf("artifact-run-preview-%s-%d", runID, assistantSequenceNo),
 		WorkspaceID:   workspaceID,
 		RunID:         runID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -117,11 +117,11 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolPublishPreview,
+				ToolName: agentcontract.ToolPublishPreview,
 				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nDraft body"}`),
 			},
 			{
-				ToolName: worker.ToolRequestHumanApproval,
+				ToolName: agentcontract.ToolRequestHumanApproval,
 				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`),
 			},
 		}),
@@ -198,7 +198,7 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 	if err := json.Unmarshal([]byte(derefString(approvedArtifact.InlineContent)), &approved); err != nil {
 		t.Fatalf("unmarshal approved preview artifact: %v", err)
 	}
-	if approved.Phase != "prd" || approved.PanelKey != "prd_draft" || approved.Format != worker.PreviewFormatMarkdown {
+	if approved.Phase != "prd" || approved.PanelKey != "prd_draft" || approved.Format != agentcontract.PreviewFormatMarkdown {
 		t.Fatalf("unexpected approved preview payload: %#v", approved)
 	}
 }
@@ -938,11 +938,11 @@ func TestSendRunMessageTreatsLongApprovalPhraseAsNormalUserReply(t *testing.T) {
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolPublishPreview,
+				ToolName: agentcontract.ToolPublishPreview,
 				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nDraft body"}`),
 			},
 			{
-				ToolName: worker.ToolRequestHumanApproval,
+				ToolName: agentcontract.ToolRequestHumanApproval,
 				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`),
 			},
 		}),
@@ -1031,11 +1031,11 @@ func TestSendRunMessageApprovalPrefersAssistantLinkedPreviewArtifact(t *testing.
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolPublishPreview,
+				ToolName: agentcontract.ToolPublishPreview,
 				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nStale invocation draft"}`),
 			},
 			{
-				ToolName: worker.ToolRequestHumanApproval,
+				ToolName: agentcontract.ToolRequestHumanApproval,
 				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`),
 			},
 		}),
@@ -1049,7 +1049,7 @@ func TestSendRunMessageApprovalPrefersAssistantLinkedPreviewArtifact(t *testing.
 		ID:            "artifact-run-preview-linked",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -1169,7 +1169,7 @@ func TestSendRunMessageApprovalUsesApprovalArtifactWithoutToolInvocations(t *tes
 		ID:            "artifact-run-preview-linked-2",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -1267,7 +1267,7 @@ func TestMaybePersistApprovedInteractivePreviewWithoutAssistantMessageRow(t *tes
 		ID:            "artifact-run-preview-tool-only",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -1377,11 +1377,11 @@ func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolPublishPreview,
+				ToolName: agentcontract.ToolPublishPreview,
 				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nDraft body"}`),
 			},
 			{
-				ToolName: worker.ToolRequestHumanApproval,
+				ToolName: agentcontract.ToolRequestHumanApproval,
 				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`),
 			},
 		}),
@@ -1766,7 +1766,7 @@ func TestSendRunMessagePersistsApprovedPreviewFromRunArtifactWhenToolsSplitAcros
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolPublishPreview,
+				ToolName: agentcontract.ToolPublishPreview,
 				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nDraft body"}`),
 			},
 		}),
@@ -1783,7 +1783,7 @@ func TestSendRunMessagePersistsApprovedPreviewFromRunArtifactWhenToolsSplitAcros
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolRequestHumanApproval,
+				ToolName: agentcontract.ToolRequestHumanApproval,
 				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review draft"}`),
 			},
 		}),
@@ -1797,7 +1797,7 @@ func TestSendRunMessagePersistsApprovedPreviewFromRunArtifactWhenToolsSplitAcros
 		ID:            "artifact-run-preview",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -1855,7 +1855,7 @@ func TestSendRunMessagePersistsApprovedPreviewFromRunArtifactWhenToolsSplitAcros
 	if err := json.Unmarshal([]byte(derefString(approvedArtifact.InlineContent)), &approved); err != nil {
 		t.Fatalf("unmarshal approved preview: %v", err)
 	}
-	if approved.PanelKey != "prd_draft" || approved.Format != worker.PreviewFormatMarkdown {
+	if approved.PanelKey != "prd_draft" || approved.Format != agentcontract.PreviewFormatMarkdown {
 		t.Fatalf("unexpected approved preview payload: %#v", approved)
 	}
 }
@@ -1907,11 +1907,11 @@ func TestSendRunMessagePersistsApprovedTaskDocPreviewWhenApprovalUsesPublishTool
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolPublishTaskPlanDoc,
+				ToolName: agentcontract.ToolPublishTaskPlanDoc,
 				Input:    json.RawMessage(`{"content":"# Plan\n\nInstrument Kafka producer metrics."}`),
 			},
 			{
-				ToolName: worker.ToolRequestApproval,
+				ToolName: agentcontract.ToolRequestApproval,
 				Input:    json.RawMessage(`{"phase":"task_doc","preview_panel_key":"publish_task_plan_doc","title":"Approve task planning document","summary":"Review it"}`),
 			},
 		}),
@@ -1925,7 +1925,7 @@ func TestSendRunMessagePersistsApprovedTaskDocPreviewWhenApprovalUsesPublishTool
 		ID:            "artifact-task-doc-preview",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -1983,7 +1983,7 @@ func TestSendRunMessagePersistsApprovedTaskDocPreviewWhenApprovalUsesPublishTool
 	if err := json.Unmarshal([]byte(derefString(approvedArtifact.InlineContent)), &approved); err != nil {
 		t.Fatalf("unmarshal approved preview: %v", err)
 	}
-	if approved.Phase != "task_doc" || approved.PanelKey != "task_plan_doc" || approved.Format != worker.PreviewFormatMarkdown {
+	if approved.Phase != "task_doc" || approved.PanelKey != "task_plan_doc" || approved.Format != agentcontract.PreviewFormatMarkdown {
 		t.Fatalf("unexpected approved preview payload: %#v", approved)
 	}
 	if string(approved.Content) != `"# Plan\n\nInstrument Kafka producer metrics."` {
@@ -2034,7 +2034,7 @@ func TestSendRunMessagePersistsApprovedTaskDocPreviewWhenApprovalUsesUnknownPane
 		ID:            "artifact-task-doc-uuid-preview",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -2356,7 +2356,7 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolRequestHumanApproval,
+				ToolName: agentcontract.ToolRequestHumanApproval,
 				Input:    json.RawMessage(`{"phase":"tasks","title":"Approve task plan","summary":"Review the current breakdown"}`),
 			},
 		}),
@@ -2376,7 +2376,7 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 		ID:            "artifact-run-preview-story-plan",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,

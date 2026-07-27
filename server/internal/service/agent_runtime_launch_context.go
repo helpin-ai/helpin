@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
-	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
@@ -27,7 +27,7 @@ const (
 // agent must execute inside a prepared repository clone. It is keyed strictly
 // off the agent's preset runtime profile (code_builder / review_agent set
 // RequiresRepo); custom agents never match because
-// worker.GetRuntimeProfile falls back to code_builder for unknown names, so
+// agentcontract.GetRuntimeProfile falls back to code_builder for unknown names, so
 // the resolved profile name must round-trip the preset key exactly.
 func agentRequiresRepositoryWorkspace(agent *model.Agent) bool {
 	if agent == nil {
@@ -37,7 +37,7 @@ func agentRequiresRepositoryWorkspace(agent *model.Agent) bool {
 	if preset == "" {
 		return false
 	}
-	profile := worker.GetRuntimeProfile(preset)
+	profile := agentcontract.GetRuntimeProfile(preset)
 	return profile.Name == preset && profile.RequiresRepo
 }
 
@@ -92,14 +92,14 @@ func withAgentRuntimeExecutionConfig(config json.RawMessage, agent *model.Agent)
 		values["workspace"] = workspaceValue
 		if strings.TrimSpace(agent.EffectivePresetKey()) == model.AgentPresetTaskPlanner {
 			values["completion"] = map[string]interface{}{
-				"required_tools": []string{worker.ToolPublishTaskPlanDoc},
+				"required_tools": []string{agentcontract.ToolPublishTaskPlanDoc},
 			}
 		}
 		if presetKey := strings.TrimSpace(agent.EffectivePresetKey()); presetKey != "" {
 			values["preset_key"] = presetKey
 		}
 		if strings.TrimSpace(agent.RuntimeKind) == "native_sdk" {
-			values["max_tool_steps"] = worker.DefaultWorkflowConfigForAgent(agent).MaxIterations
+			values["max_tool_steps"] = agentcontract.DefaultWorkflowConfigForAgent(agent).MaxIterations
 		}
 	}
 	payload, err := json.Marshal(values)
@@ -117,7 +117,7 @@ func agentRepositoryAccessMode(agent *model.Agent) string {
 	case model.AgentPresetCodeBuilder, model.AgentPresetReviewAgent:
 		return agentRepositoryAccessReadWrite
 	}
-	for _, toolName := range worker.NormalizeToolNames(parseJSONStringSlice(agent.AllowedTools)) {
+	for _, toolName := range agentcontract.NormalizeToolNames(parseJSONStringSlice(agent.AllowedTools)) {
 		switch toolName {
 		case "write_file", "edit_file", "apply_patch", "create_branch", "commit_and_push", "open_pr":
 			return agentRepositoryAccessReadWrite
@@ -170,7 +170,7 @@ func planningStageForDelegatedRun(agent *model.Agent, task *model.PMTask, epic *
 }
 
 // buildDelegatedTaskLaunchContext assembles, at launch time, the task context
-// a local Temporal run builds at execution time (worker.BuildUserPrompt task
+// a local Temporal run builds at execution time (agentcontract.BuildUserPrompt task
 // sections + temporalapp buildTaskExecutionInstructions): operator notes,
 // task name and description, parent epic background, repository branch
 // values, and the canonical plan document content. Delegated runs need this
@@ -341,7 +341,7 @@ func (s *AgentService) delegatedLinkedDocsSection(ctx context.Context, workspace
 }
 
 // delegatedTaskEpicSections mirrors the parent-epic background block of
-// worker.BuildUserPrompt for a task-scoped run.
+// agentcontract.BuildUserPrompt for a task-scoped run.
 func (s *AgentService) delegatedTaskEpicSections(ctx context.Context, task *model.PMTask) []string {
 	epicID := strings.TrimSpace(derefString(task.EpicID))
 	if epicID == "" || s.epicRepo == nil {

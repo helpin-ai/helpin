@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
@@ -53,7 +53,7 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 			InputSchema: commandPreviewMarkdownSchema("Required. The full markdown PRD draft body under review."),
 		},
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return s.executePublishRunPreview(ctx, meta, worker.ToolPublishPRDDraft, input)
+			return s.executePublishRunPreview(ctx, meta, agentcontract.ToolPublishPRDDraft, input)
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -68,7 +68,7 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 			InputSchema: commandPreviewMarkdownSchema("Required. The full markdown task planning document body under review, for example \"# Outcome\\n...\"."),
 		},
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return s.executePublishRunPreview(ctx, meta, worker.ToolPublishTaskPlanDoc, input)
+			return s.executePublishRunPreview(ctx, meta, agentcontract.ToolPublishTaskPlanDoc, input)
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -134,12 +134,12 @@ func (s *InternalCommandService) executePublishRunPreview(ctx context.Context, m
 	if err != nil {
 		return nil, err
 	}
-	previews := worker.ExtractPublishedPreviews([]model.ToolInvocation{{ToolName: toolName, Input: input}})
+	previews := agentcontract.ExtractPublishedPreviews([]model.ToolInvocation{{ToolName: toolName, Input: input}})
 	if len(previews) == 0 {
 		return nil, fmt.Errorf("%s is missing content; include the markdown body in \"content\"", toolName)
 	}
 	for _, preview := range previews {
-		if err := s.appendCommandRunArtifact(ctx, run, worker.RunPreviewArtifactType, "json", preview); err != nil {
+		if err := s.appendCommandRunArtifact(ctx, run, agentcontract.RunPreviewArtifactType, "json", preview); err != nil {
 			return nil, err
 		}
 	}

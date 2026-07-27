@@ -212,3 +212,6 @@ up the environment. The flag must be true before launching agent runs.
       `AGENT_RUNTIME_*` keys and confirm `INTERNAL_API_SECRET`.
 - [ ] Restart staging Helpin server + temporal-worker deployments.
 - [ ] Flag flip to `true` after verification, staging only.
+- [ ] After applying the slimmed Temporal worker manifest, run
+      `scripts/agent-runtime-retirement/delete-retired-deployments.sh <staging-kubectl-context> --confirm`
+      so the five removed zero-replica Deployment objects do not linger.

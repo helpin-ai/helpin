@@ -84,6 +84,9 @@ func normalizePublishedPreviewRequest(req PublishedPreviewRequest, decodeErr err
 	if title == "" {
 		title = defaultPreviewTitle(panelKey)
 	}
+	if title == "" {
+		return nil, fmt.Errorf("title is required")
+	}
 	format := normalizePreviewFormat(req.Format)
 	if format == "" {
 		format = inferPreviewFormat(&req)

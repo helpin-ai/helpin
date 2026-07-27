@@ -390,7 +390,7 @@ func TestDelegatedCodexAuthConnectedResumesRuntimeWithoutLocalStatusClobber(t *t
 	}
 }
 
-func TestStartCodexDeviceCodeAuthForAgentRuntimeRunUsesRuntimeAuthManager(t *testing.T) {
+func TestStartCodexDeviceCodeAuthDefersAuthModeValidationToRuntime(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
@@ -410,7 +410,7 @@ func TestStartCodexDeviceCodeAuthForAgentRuntimeRunUsesRuntimeAuthManager(t *tes
 		agentRepo:                agentRepo,
 		runRepo:                  runRepo,
 		agentRuntimeClient:       runtimeClient,
-		codexOpenAIAuthMode:      "chatgpt_device_code",
+		codexOpenAIAuthMode:      "api_key",
 		codexChatGPTOAuthEnabled: true,
 	}
 

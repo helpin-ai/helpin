@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	worker "github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -612,20 +612,20 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 
 	tools := parseJSONStringSlice(agent.AllowedTools)
 	for _, required := range []string{
-		worker.ToolUpdatePlan,
-		worker.ToolRequestApproval,
-		worker.ToolPublishPRDDraft,
-		worker.ToolPublishTaskPlan,
+		agentcontract.ToolUpdatePlan,
+		agentcontract.ToolRequestApproval,
+		agentcontract.ToolPublishPRDDraft,
+		agentcontract.ToolPublishTaskPlan,
 	} {
 		if !slices.Contains(tools, required) {
 			t.Fatalf("expected migrated tool list to contain %q, got %v", required, tools)
 		}
 	}
 	for _, unexpected := range []string{
-		worker.ToolPublishPreview,
-		worker.ToolPreviewMarkdown,
-		worker.ToolPreviewJSON,
-		worker.ToolPublishTaskPlanDoc,
+		agentcontract.ToolPublishPreview,
+		agentcontract.ToolPreviewMarkdown,
+		agentcontract.ToolPreviewJSON,
+		agentcontract.ToolPublishTaskPlanDoc,
 	} {
 		if slices.Contains(tools, unexpected) {
 			t.Fatalf("expected migrated tool list to exclude %q, got %v", unexpected, tools)
@@ -646,21 +646,21 @@ func TestNormalizeAgentRecordStripsGenericPreviewToolsFromTaskPlanner(t *testing
 	normalizeAgentRecord(agent)
 
 	tools := parseJSONStringSlice(agent.AllowedTools)
-	if !slices.Contains(tools, worker.ToolPublishTaskPlanDoc) {
-		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolPublishTaskPlanDoc, tools)
+	if !slices.Contains(tools, agentcontract.ToolPublishTaskPlanDoc) {
+		t.Fatalf("expected sanitized tool list to keep %q, got %v", agentcontract.ToolPublishTaskPlanDoc, tools)
 	}
-	if !slices.Contains(tools, worker.ToolUpdatePlan) {
-		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolUpdatePlan, tools)
+	if !slices.Contains(tools, agentcontract.ToolUpdatePlan) {
+		t.Fatalf("expected sanitized tool list to keep %q, got %v", agentcontract.ToolUpdatePlan, tools)
 	}
-	if !slices.Contains(tools, worker.ToolRequestApproval) {
-		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolRequestApproval, tools)
+	if !slices.Contains(tools, agentcontract.ToolRequestApproval) {
+		t.Fatalf("expected sanitized tool list to keep %q, got %v", agentcontract.ToolRequestApproval, tools)
 	}
 	for _, unexpected := range []string{
-		worker.ToolPreviewMarkdown,
-		worker.ToolPreviewJSON,
-		worker.ToolPublishPreview,
-		worker.ToolPublishPRDDraft,
-		worker.ToolPublishTaskPlan,
+		agentcontract.ToolPreviewMarkdown,
+		agentcontract.ToolPreviewJSON,
+		agentcontract.ToolPublishPreview,
+		agentcontract.ToolPublishPRDDraft,
+		agentcontract.ToolPublishTaskPlan,
 		"write_document_content",
 	} {
 		if slices.Contains(tools, unexpected) {
@@ -686,20 +686,20 @@ func TestNormalizeAgentRecordStripsTaskPlannerPreviewToolsFromEpicPlanner(t *tes
 
 	tools := parseJSONStringSlice(agent.AllowedTools)
 	for _, required := range []string{
-		worker.ToolUpdatePlan,
-		worker.ToolRequestApproval,
-		worker.ToolPublishPRDDraft,
-		worker.ToolPublishTaskPlan,
+		agentcontract.ToolUpdatePlan,
+		agentcontract.ToolRequestApproval,
+		agentcontract.ToolPublishPRDDraft,
+		agentcontract.ToolPublishTaskPlan,
 	} {
 		if !slices.Contains(tools, required) {
 			t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
 		}
 	}
 	for _, unexpected := range []string{
-		worker.ToolPreviewMarkdown,
-		worker.ToolPreviewJSON,
-		worker.ToolPublishPreview,
-		worker.ToolPublishTaskPlanDoc,
+		agentcontract.ToolPreviewMarkdown,
+		agentcontract.ToolPreviewJSON,
+		agentcontract.ToolPublishPreview,
+		agentcontract.ToolPublishTaskPlanDoc,
 		"create_task_batch",
 	} {
 		if slices.Contains(tools, unexpected) {
@@ -728,7 +728,7 @@ func TestNormalizeAgentRecordStripsRepositoryEditToolsFromPlannerPresets(t *test
 					t.Fatalf("expected sanitized tool list to exclude %q, got %v", unexpected, tools)
 				}
 			}
-			for _, required := range []string{"read_file", "search_documents", worker.ToolUpdatePlan, worker.ToolRequestApproval} {
+			for _, required := range []string{"read_file", "search_documents", agentcontract.ToolUpdatePlan, agentcontract.ToolRequestApproval} {
 				if !slices.Contains(tools, required) {
 					t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
 				}
@@ -753,7 +753,7 @@ func TestNormalizeAgentRecordStripsListEpicTasksFromTaskPlanner(t *testing.T) {
 	if slices.Contains(tools, "list_epic_tasks") {
 		t.Fatalf("expected sanitized task planner tool list to exclude list_epic_tasks, got %v", tools)
 	}
-	for _, required := range []string{"read_file", "search_documents", worker.ToolUpdatePlan, worker.ToolRequestApproval, worker.ToolPublishTaskPlanDoc} {
+	for _, required := range []string{"read_file", "search_documents", agentcontract.ToolUpdatePlan, agentcontract.ToolRequestApproval, agentcontract.ToolPublishTaskPlanDoc} {
 		if !slices.Contains(tools, required) {
 			t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
 		}
