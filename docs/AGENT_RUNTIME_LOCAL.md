@@ -15,6 +15,7 @@ to IPv6 first while the runtime listens on IPv4.
 AGENT_RUNTIME_BASE_URL=http://127.0.0.1:8090
 AGENT_RUNTIME_SERVICE_TOKEN=dev-token
 AGENT_RUNTIME_APP_ID=helpin
+AGENT_RUNTIME_EVENT_PROTOCOL=v2
 AGENT_RUNTIME_LAUNCH_ENABLED=true
 ```
 
@@ -36,6 +37,7 @@ port. If Helpin is on `:8080`, use:
   "apps": [
     {
       "app_id": "helpin",
+      "event_protocol": "v2",
       "context_endpoint": "http://127.0.0.1:8080/api/internal/agent-runtime/target-context",
       "context_token": "dev-token",
       "workspace_provider": {

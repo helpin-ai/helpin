@@ -15,7 +15,7 @@ import type {
  * user/review-decision are surface-scoped extras.
  */
 export type TranscriptSegment =
-  | { kind: 'assistant'; id: string; content: string; streaming?: boolean }
+  | { kind: 'assistant'; id: string; messageId?: string; content: string; streaming?: boolean }
   | { kind: 'tool'; id: string; toolCall: CodingSessionLiveToolCall }
   | { kind: 'reasoning'; id: string; reasoning: CodingSessionLiveReasoningMessage }
   | { kind: 'status'; id: string; message: CodingSessionTranscriptMessage }
@@ -71,26 +71,6 @@ function isReviewDecisionMessage(message: CodingSessionTranscriptMessage): boole
   );
 }
 
-function normalizedAssistantContent(content: string): string {
-  return content.trim().replace(/\s+/g, ' ');
-}
-
-function assistantContentRepresentsSameTurn(persistedContent: string, liveContent: string): boolean {
-  const persisted = normalizedAssistantContent(persistedContent);
-  const live = normalizedAssistantContent(liveContent);
-  if (!persisted || !live) return false;
-  if (persisted === live) return true;
-
-  // During a snapshot/websocket race the available live fragment can be either
-  // a prefix (completion arrived first) or a suffix/middle fragment (the local
-  // websocket history began mid-message). Only use containment for a
-  // meaningful fragment so ordinary short replies such as "Done" do not
-  // accidentally consume a different turn.
-  const shorter = persisted.length <= live.length ? persisted : live;
-  const longer = persisted.length > live.length ? persisted : live;
-  return shorter.length >= 16 && longer.includes(shorter);
-}
-
 /** Identity key for deduping a persisted tool call against the turn timeline. */
 function toolCallTimelineKey(toolCall: CodingSessionLiveToolCall): string {
   return [
@@ -98,13 +78,6 @@ function toolCallTimelineKey(toolCall: CodingSessionLiveToolCall): string {
     toolCall.args_text.trim(),
     toolCall.result?.output_summary?.trim() ?? '',
     toolCall.result?.content?.trim() ?? '',
-  ].join('\n');
-}
-
-function toolCallIdentityKey(toolCall: CodingSessionLiveToolCall): string {
-  return [
-    canonicalToolName(toolCall.tool_name).toLowerCase(),
-    toolCall.args_text.trim(),
   ].join('\n');
 }
 
@@ -190,7 +163,12 @@ export function collectSegments(
         if (segment.kind === 'assistant_message') {
           const content = segment.assistant_message.content.trim();
           if (content && include.has('assistant')) {
-            pushPersistedAssistant({ kind: 'assistant', id: segment.segment_id, content });
+            pushPersistedAssistant({
+              kind: 'assistant',
+              id: segment.segment_id,
+              messageId: segment.assistant_message.message_id || message.message_id,
+              content,
+            });
           }
         } else if (segment.kind === 'tool_call' && !isToolName(segment.tool_call.tool_name, 'update_plan')) {
           seenToolKeys.add(toolCallTimelineKey(segment.tool_call));
@@ -211,7 +189,7 @@ export function collectSegments(
 
     if (message.content.trim() && include.has('assistant')) {
       const content = message.content.trim();
-      pushPersistedAssistant({ kind: 'assistant', id: message.event_id, content });
+      pushPersistedAssistant({ kind: 'assistant', id: message.event_id, messageId: message.message_id, content });
     }
     if (include.has('tool')) {
       for (const toolCall of message.tool_calls ?? []) {
@@ -238,7 +216,7 @@ export function collectSegments(
 
         const persisted = persistedAssistantSegments.find((candidate) => (
           !matchedPersistedIndexes.has(candidate.outIndex)
-          && assistantContentRepresentsSameTurn(candidate.segment.content, content)
+          && candidate.segment.messageId === segment.assistant_message.message_id
         ));
         if (persisted) {
           matchedPersistedIndexes.add(persisted.outIndex);
@@ -251,18 +229,15 @@ export function collectSegments(
         liveOut.push({
           kind: 'assistant',
           id: `live:${segment.segment_id}`,
+          messageId: segment.assistant_message.message_id,
           content,
           streaming: segment.segment_id === activeStreamingAssistantSegmentId,
         });
       } else if (segment.kind === 'tool_call' && !isToolName(segment.tool_call.tool_name, 'update_plan')) {
         if (!include.has('tool')) continue;
-        const liveIdentityKey = toolCallIdentityKey(segment.tool_call);
         const persisted = persistedToolSegments.find((candidate) => (
           !matchedPersistedIndexes.has(candidate.outIndex)
-          && (
-            candidate.segment.toolCall.tool_call_id === segment.tool_call.tool_call_id
-            || toolCallIdentityKey(candidate.segment.toolCall) === liveIdentityKey
-          )
+          && candidate.segment.toolCall.tool_call_id === segment.tool_call.tool_call_id
         ));
         if (persisted) {
           matchedPersistedIndexes.add(persisted.outIndex);

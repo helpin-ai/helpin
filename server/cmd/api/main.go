@@ -838,7 +838,7 @@ func main() {
 	pmTaskService.SetGitService(gitService)
 	var agentRuntimeClient *service.AgentRuntimeClient
 	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
-		agentRuntimeClient, err = service.NewAgentRuntimeClient(cfg.AgentRuntimeBaseURL, cfg.AgentRuntimeAppID, cfg.AgentRuntimeServiceToken, nil)
+		agentRuntimeClient, err = service.NewAgentRuntimeClient(cfg.AgentRuntimeBaseURL, cfg.AgentRuntimeAppID, cfg.AgentRuntimeServiceToken, nil, cfg.AgentRuntimeEventProtocol)
 		if err != nil {
 			fatalWithSentry("failed to initialize agent runtime client", err)
 		}
@@ -1185,6 +1185,7 @@ func main() {
 			wsPublisher,
 		).SetRepositoryDeliveryService(gitService).SetCommandBarPlanAdvancer(agentService)
 		agentRuntimeProjectionService = service.NewAgentRuntimeProjectionService(agentRunRepo, cfg.AgentRuntimeAppID).
+			SetEventProtocol(cfg.AgentRuntimeEventProtocol).
 			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
 			SetTranscriptRepositories(agentRunMessageRepo, agentRunArtifactRepo, agentRunInteractionRepo).
 			SetCodingSessionSnapshotRepository(codingSessionStateSnapshotRepo).

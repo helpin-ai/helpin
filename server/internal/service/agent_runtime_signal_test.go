@@ -26,10 +26,12 @@ type fakeAgentRuntimeSignalClient struct {
 	listMessageCalls     []string
 	listArtifactCalls    []string
 	listInteractionCalls []string
+	listV2EventCalls     []int64
 	getRuns              map[string]*AgentRuntimeRun
 	messages             map[string][]AgentRuntimeMessage
 	artifacts            map[string][]AgentRuntimeArtifact
 	interactions         map[string][]AgentRuntimeInteraction
+	v2Events             map[string][]AgentRuntimeEventEnvelope
 	getErr               error
 	listErr              error
 	upsertErr            error
@@ -95,6 +97,20 @@ func (c *fakeAgentRuntimeSignalClient) ListMessages(_ context.Context, runtimeRu
 		return nil, c.listErr
 	}
 	return append([]AgentRuntimeMessage(nil), c.messages[runtimeRunID]...), nil
+}
+
+func (c *fakeAgentRuntimeSignalClient) ListV2Events(_ context.Context, runtimeRunID string, afterSequence int64) (*AgentRuntimeEventListResponse, error) {
+	c.listV2EventCalls = append(c.listV2EventCalls, afterSequence)
+	if c.listErr != nil {
+		return nil, c.listErr
+	}
+	events := make([]AgentRuntimeEventEnvelope, 0)
+	for _, event := range c.v2Events[runtimeRunID] {
+		if event.SequenceNo > afterSequence {
+			events = append(events, event)
+		}
+	}
+	return &AgentRuntimeEventListResponse{Events: events}, nil
 }
 
 func (c *fakeAgentRuntimeSignalClient) ListArtifacts(_ context.Context, runtimeRunID string) ([]AgentRuntimeArtifact, error) {
@@ -344,6 +360,40 @@ func TestCancelRunForAgentRuntimeRunSignalsRuntimeBeforeLocalCancel(t *testing.T
 	}
 	if updated.Status != model.AgentRunStatusRunning || updated.CompletedAt != nil {
 		t.Fatalf("expected projection-owned status to remain running until event projection, got status=%s completed_at=%v", updated.Status, updated.CompletedAt)
+	}
+}
+
+func TestCancelRunWithoutRuntimeMappingSignalsRuntimeByHostRunID(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	now := time.Now().UTC()
+	seedAgentRuntimeSignalAgent(t, db, now)
+	run := seedAgentRuntimeSignalRun(t, runRepo, model.AgentRunStatusRunning, model.AgentRunPauseReasonNone, "not_required", now)
+	run.ExternalRuntime = nil
+	run.ExternalRuntimeID = nil
+	if err := runRepo.Update(context.Background(), run); err != nil {
+		t.Fatalf("remove runtime mapping: %v", err)
+	}
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	svc := &AgentService{
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		agentRuntimeClient: runtimeClient,
+	}
+
+	updated, err := svc.CancelRun(context.Background(), "ws-1", run.ID, "user-1")
+	if err != nil {
+		t.Fatalf("CancelRun returned error: %v", err)
+	}
+	if len(runtimeClient.cancelCalls) != 1 || runtimeClient.cancelCalls[0] != run.ID {
+		t.Fatalf("expected runtime cancel by host run id %q, got %#v", run.ID, runtimeClient.cancelCalls)
+	}
+	if updated.Status != model.AgentRunStatusRunning || updated.CompletedAt != nil {
+		t.Fatalf("expected projection-owned status to remain running until event projection, got status=%s completed_at=%v", updated.Status, updated.CompletedAt)
+	}
+	if updated.ExecutionStage == nil || *updated.ExecutionStage != "cancelling" {
+		t.Fatalf("expected cancelling execution stage, got %#v", updated.ExecutionStage)
 	}
 }
 

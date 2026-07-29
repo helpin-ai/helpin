@@ -124,6 +124,7 @@ func TestStageIntoStagesBuiltInSkillPackageReferences(t *testing.T) {
 		"grep",
 		"run_command",
 		"web_search_exa",
+		"fetch_url",
 		"create_task",
 	}, nil, nil, destRoot)
 	if err != nil {

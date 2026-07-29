@@ -235,6 +235,8 @@ func TestDependencyAuditorSkillReferencesExecutionDocs(t *testing.T) {
 		"ecosystems/java.md",
 		"verification.md",
 		"Compare against direct manifest declarations",
+		"Use `fetch_url` for exact public registry and advisory API GET requests",
+		"Do not invoke `curl` or `wget` through `run_command`",
 	} {
 		if !strings.Contains(skill.Instructions, snippet) {
 			t.Fatalf("expected dependency auditor instructions to contain %q\n%s", snippet, skill.Instructions)

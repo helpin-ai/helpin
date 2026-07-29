@@ -82,6 +82,9 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	if competitiveIntel.SystemPrompt == nil || !strings.Contains(*competitiveIntel.SystemPrompt, "{{target_company}}") || !strings.Contains(*competitiveIntel.SystemPrompt, "{{raw_configuration_json}}") {
 		t.Fatalf("expected competitive template prompt placeholders, got %+v", competitiveIntel.SystemPrompt)
 	}
+	if !strings.Contains(*competitiveIntel.SystemPrompt, "runtime's built-in web search") || !strings.Contains(*competitiveIntel.SystemPrompt, "not evidence that a competitor has no public changelog") {
+		t.Fatalf("competitive template must preserve runtime search fallback semantics, got %+v", competitiveIntel.SystemPrompt)
+	}
 	var competitiveAllowedTools []string
 	if err := json.Unmarshal(competitiveIntel.AllowedTools, &competitiveAllowedTools); err != nil {
 		t.Fatalf("unmarshal competitive allowed tools: %v", err)
@@ -128,6 +131,13 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	}
 	if dependencyAuditor.SystemPrompt == nil || !strings.Contains(*dependencyAuditor.SystemPrompt, "{{ecosystems}}") || !strings.Contains(*dependencyAuditor.SystemPrompt, "{{raw_configuration_json}}") {
 		t.Fatalf("expected dependency template prompt placeholders, got %+v", dependencyAuditor.SystemPrompt)
+	}
+	var dependencyAllowedTools []string
+	if err := json.Unmarshal(dependencyAuditor.AllowedTools, &dependencyAllowedTools); err != nil {
+		t.Fatalf("unmarshal dependency allowed tools: %v", err)
+	}
+	if !slices.Contains(dependencyAllowedTools, "fetch_url") {
+		t.Fatalf("expected dependency template allowed tools to include fetch_url, got %v", dependencyAllowedTools)
 	}
 	var dependencyTargets []string
 	if err := json.Unmarshal(dependencyAuditor.AllowedTargets, &dependencyTargets); err != nil {

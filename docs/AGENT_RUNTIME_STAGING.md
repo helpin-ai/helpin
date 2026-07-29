@@ -45,6 +45,7 @@ config. Set/verify:
 | `AGENT_RUNTIME_APP_CONFIG` | merged JSON, see below | Append the `helpin` entry to the EXISTING value. Do not touch the usermaven object. |
 | `AGENT_RUNTIME_EVENT_SINK` | `log,nats` | Enables NATS publishing alongside logs. |
 | `AGENT_RUNTIME_NATS_URL` | same NATS URL as Helpin's `NATS_URL` | See "NATS sharing" below. |
+| `EXA_API_KEY` | Exa provider key | Required when Helpin agents enable `web_search_exa`. Restart both the runtime API and durable worker after adding or rotating it. |
 
 ### `AGENT_RUNTIME_APP_CONFIG` value (canonical)
 
@@ -206,8 +207,8 @@ up the environment. The flag must be true before launching agent runs.
 - [ ] Runtime Doppler (project behind `doppler-agent-runtime-api`, staging
       config): set `AGENT_RUNTIME_SERVICE_TOKEN`, merged
       `AGENT_RUNTIME_APP_CONFIG` (usermaven preserved), `AGENT_RUNTIME_EVENT_SINK`,
-      `AGENT_RUNTIME_NATS_URL`.
-- [ ] ArgoCD sync of the `agent-runtime` staging app + pod restart.
+      `AGENT_RUNTIME_NATS_URL`, and `EXA_API_KEY` when Exa search is enabled.
+- [ ] ArgoCD sync of the `agent-runtime` staging app + API and worker pod restart.
 - [ ] Helpin Doppler (`helpin-secrets` source, staging config): set the four
       `AGENT_RUNTIME_*` keys and confirm `INTERNAL_API_SECRET`.
 - [ ] Restart staging Helpin server + temporal-worker deployments.

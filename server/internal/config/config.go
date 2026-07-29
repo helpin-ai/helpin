@@ -34,6 +34,7 @@ type Config struct {
 	AgentRuntimeBaseURL       string
 	AgentRuntimeServiceToken  string
 	AgentRuntimeAppID         string
+	AgentRuntimeEventProtocol string
 	AgentRuntimeLaunchEnabled bool
 
 	// S3 / object storage (optional — attachments disabled if not set)
@@ -238,6 +239,7 @@ func Load() (*Config, error) {
 		AgentRuntimeBaseURL:                    strings.TrimRight(strings.TrimSpace(os.Getenv("AGENT_RUNTIME_BASE_URL")), "/"),
 		AgentRuntimeServiceToken:               strings.TrimSpace(os.Getenv("AGENT_RUNTIME_SERVICE_TOKEN")),
 		AgentRuntimeAppID:                      strings.TrimSpace(firstNonEmpty(os.Getenv("AGENT_RUNTIME_APP_ID"), "helpin")),
+		AgentRuntimeEventProtocol:              strings.ToLower(strings.TrimSpace(firstNonEmpty(os.Getenv("AGENT_RUNTIME_EVENT_PROTOCOL"), "v1"))),
 		AgentRuntimeLaunchEnabled:              parseBoolEnv(os.Getenv("AGENT_RUNTIME_LAUNCH_ENABLED")),
 		AWSAccessKeyID:                         os.Getenv("AWS_ACCESS_KEY_ID"),
 		AWSSecretAccessKey:                     os.Getenv("AWS_SECRET_ACCESS_KEY"),

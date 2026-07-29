@@ -197,6 +197,7 @@ function cloneLiveTurnSegments(segments?: CodingSessionLiveTurnSegment[] | null)
 function cloneStreamSnapshot(snapshot?: CodingSessionStreamSnapshot | null): CodingSessionStreamSnapshot | null {
   if (!snapshot) return null;
   return {
+    ...(snapshot.through_sequence ? { through_sequence: snapshot.through_sequence } : {}),
     ...(snapshot.live_assistant_message ? { live_assistant_message: cloneAssistantMessage(snapshot.live_assistant_message)! } : {}),
     ...(snapshot.live_reasoning_message ? { live_reasoning_message: cloneReasoningMessage(snapshot.live_reasoning_message)! } : {}),
     ...(snapshot.live_turn_segments ? { live_turn_segments: cloneLiveTurnSegments(snapshot.live_turn_segments) } : {}),
@@ -679,13 +680,9 @@ function liveAssistantMatchesTranscript(
   transcriptMessages: CodingSessionTranscriptMessage[],
 ) {
   if (liveAssistant.status !== 'completed') return false;
-  const liveContent = liveAssistant.content.trim();
-  if (!liveContent) return false;
-
   return transcriptMessages.some((message) => (
     message.role === 'assistant'
-    && message.timestamp >= (liveAssistant.started_at ?? '')
-    && message.content.trim() === liveContent
+    && message.message_id === liveAssistant.message_id
   ));
 }
 
@@ -853,7 +850,12 @@ export function buildCodingSessionStreamState(
   events: CodingSessionEvent[],
   snapshot?: CodingSessionStreamSnapshot | null,
 ): CodingSessionStreamState {
-  const sortedEvents = sortCodingSessionEvents(events);
+  const throughSequence = snapshot?.through_sequence ?? 0;
+  const sortedEvents = sortCodingSessionEvents(events.filter((event) => !(
+    throughSequence > 0
+    && event.runtime_metadata?.source === 'agent-runtime-v2'
+    && event.sequence_no <= throughSequence
+  )));
   const transcriptMessages: CodingSessionTranscriptMessage[] = [];
   const activityEvents: CodingSessionEvent[] = [];
   let liveAssistantMessage = cloneAssistantMessage(snapshot?.live_assistant_message);
@@ -861,22 +863,26 @@ export function buildCodingSessionStreamState(
   const liveTurnSegments = cloneLiveTurnSegments(snapshot?.live_turn_segments);
   let currentPlanLive: RunPlanArtifact | null = parsePlanArtifactValue(snapshot?.current_plan);
   const snapshotAssistantDeltaCoverage = new Map<string, string>();
-  for (const segment of snapshot?.live_turn_segments ?? []) {
-    if (segment.kind !== 'assistant_message') continue;
-    const messageID = segment.assistant_message.message_id;
-    if (!messageID || !segment.assistant_message.content) continue;
-    snapshotAssistantDeltaCoverage.set(
-      messageID,
-      `${snapshotAssistantDeltaCoverage.get(messageID) ?? ''}${segment.assistant_message.content}`,
-    );
-  }
-  if (snapshot?.live_assistant_message?.message_id && snapshot.live_assistant_message.content) {
-    const existingCoverage = snapshotAssistantDeltaCoverage.get(snapshot.live_assistant_message.message_id);
-    if (!existingCoverage || snapshot.live_assistant_message.content.length > existingCoverage.length) {
+  // V2 uses an exact sequence watermark. The content-coverage fallback remains
+  // only for legacy v1 snapshots, which have no ordering metadata.
+  if (throughSequence === 0) {
+    for (const segment of snapshot?.live_turn_segments ?? []) {
+      if (segment.kind !== 'assistant_message') continue;
+      const messageID = segment.assistant_message.message_id;
+      if (!messageID || !segment.assistant_message.content) continue;
       snapshotAssistantDeltaCoverage.set(
-        snapshot.live_assistant_message.message_id,
-        snapshot.live_assistant_message.content,
+        messageID,
+        `${snapshotAssistantDeltaCoverage.get(messageID) ?? ''}${segment.assistant_message.content}`,
       );
+    }
+    if (snapshot?.live_assistant_message?.message_id && snapshot.live_assistant_message.content) {
+      const existingCoverage = snapshotAssistantDeltaCoverage.get(snapshot.live_assistant_message.message_id);
+      if (!existingCoverage || snapshot.live_assistant_message.content.length > existingCoverage.length) {
+        snapshotAssistantDeltaCoverage.set(
+          snapshot.live_assistant_message.message_id,
+          snapshot.live_assistant_message.content,
+        );
+      }
     }
   }
 
@@ -1122,7 +1128,6 @@ export function buildCodingSessionStreamState(
 
   if (liveAssistantMessage && liveAssistantMatchesTranscript(liveAssistantMessage, transcriptMessages)) {
     liveAssistantMessage = null;
-    liveTurnSegments.length = 0;
   }
 
   if (

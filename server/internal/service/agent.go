@@ -4127,49 +4127,42 @@ func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, co
 
 // CancelRun cancels a queued, running, or approval-pending agent run.
 func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorID string) (*model.AgentRun, error) {
-	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+	// Read the persisted row directly. GetAgentRun performs stale-run
+	// reconciliation, which can mark an unmapped queued row failed before we
+	// get the chance to recover its runtime execution through host_run_id.
+	run, err := s.runRepo.GetByID(ctx, workspaceID, runID)
 	if err != nil {
 		return nil, err
+	}
+	if run == nil {
+		return nil, fmt.Errorf("agent run not found")
 	}
 	if !model.IsAgentRunActiveStatus(run.Status) {
 		return nil, fmt.Errorf("only queued, running, or paused runs can be cancelled")
 	}
-	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
-		if s.agentRuntimeClient == nil {
-			return nil, fmt.Errorf("agent runtime client is not configured")
-		}
-		if _, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID); err != nil {
-			return nil, fmt.Errorf("cancel agent runtime run: %w", err)
-		}
-		now := time.Now()
-		if err := s.runRepo.UpdateStage(ctx, workspaceID, run.ID, "cancelling", &now); err != nil {
-			return nil, err
-		}
-		if refreshed, err := s.runRepo.GetByID(ctx, workspaceID, run.ID); err == nil && refreshed != nil {
-			run = refreshed
-		}
-		_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
-		s.logTargetAgentRunActivity(ctx, run, actorID, "cancelled", nil)
-		s.publishRunEvent(run, actorID)
-		return run, nil
+	if s.agentRuntimeClient == nil {
+		return nil, fmt.Errorf("agent runtime client is not configured")
 	}
-
-	// Legacy row without a runtime mapping (pre-delegation drain leftovers):
-	// there is no executor to signal; flip the local status so the run stops
-	// occupying the agent.
+	runtimeRunID, mapped := agentRuntimeRunID(run)
+	if !mapped {
+		// Agent Runtime is the only executor. If Helpin did not persist the
+		// returned runtime ID (for example, after a split-brain start), recover
+		// through the host_run_id that was supplied when the run was started.
+		runtimeRunID = strings.TrimSpace(run.ID)
+	}
+	if _, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID); err != nil {
+		return nil, fmt.Errorf("cancel agent runtime run: %w", err)
+	}
 	now := time.Now()
-	run.Status = "cancelled"
-	run.PauseReason = model.AgentRunPauseReasonNone
-	run.CompletedAt = &now
-	run.ExecutionStage = strPtr("cancelled")
-	if err := s.runRepo.Update(ctx, run); err != nil {
+	if err := s.runRepo.UpdateStage(ctx, workspaceID, run.ID, "cancelling", &now); err != nil {
 		return nil, err
 	}
-
+	if refreshed, err := s.runRepo.GetByID(ctx, workspaceID, run.ID); err == nil && refreshed != nil {
+		run = refreshed
+	}
 	_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
 	s.logTargetAgentRunActivity(ctx, run, actorID, "cancelled", nil)
 	s.publishRunEvent(run, actorID)
-
 	return run, nil
 }
 

@@ -476,7 +476,7 @@ func TestAgentRuntimeProjectionCancelsPendingInteractionsOnTerminalEvent(t *test
 	}
 }
 
-func TestAgentRuntimeProjectionCleansUpDurableTerminalStreamSnapshots(t *testing.T) {
+func TestAgentRuntimeProjectionRetainsDurableTerminalStreamSnapshots(t *testing.T) {
 	for _, eventType := range []string{agentruntime.EventRunCompleted, agentruntime.EventRunCancelled} {
 		t.Run(eventType, func(t *testing.T) {
 			now := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
@@ -498,6 +498,7 @@ func TestAgentRuntimeProjectionCleansUpDurableTerminalStreamSnapshots(t *testing
 			svc := &AgentRuntimeProjectionService{
 				runRepo:             runRepo,
 				sessionSnapshotRepo: snapshotRepo,
+				eventProtocol:       "v2",
 				now:                 func() time.Time { return now },
 			}
 
@@ -511,8 +512,8 @@ func TestAgentRuntimeProjectionCleansUpDurableTerminalStreamSnapshots(t *testing
 				t.Fatalf("ApplyEvent(%s) returned error: %v", eventType, err)
 			}
 
-			if snapshotRepo.deletes != 1 || snapshotRepo.record != nil {
-				t.Fatalf("terminal snapshot cleanup = deletes:%d record:%#v, want one delete and nil record", snapshotRepo.deletes, snapshotRepo.record)
+			if snapshotRepo.deletes != 0 || snapshotRepo.record == nil {
+				t.Fatalf("terminal snapshot retention = deletes:%d record:%#v, want no delete and a durable record", snapshotRepo.deletes, snapshotRepo.record)
 			}
 		})
 	}
@@ -623,27 +624,42 @@ func TestAgentRuntimeProjectionPersistsCodingSessionStreamSnapshot(t *testing.T)
 		runRepo:             runRepo,
 		sessionSnapshotRepo: snapshotRepo,
 		wsPublisher:         publisher,
+		eventProtocol:       "v2",
 		now:                 time.Now,
 	}
 
 	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
-		EventID: "event-assistant-started",
-		RunID:   "run_runtime_stream",
-		Type:    "assistant_message_started",
-		Data:    map[string]any{"message_id": "runtime-message-1"},
+		EventID:    "event-assistant-started",
+		RunID:      "run_runtime_stream",
+		SequenceNo: 1,
+		Type:       "assistant_message_started",
+		Data:       map[string]any{"message_id": "runtime-message-1"},
 	}); err != nil {
 		t.Fatalf("ApplyEvent started returned error: %v", err)
 	}
 	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
-		EventID: "event-assistant-delta",
-		RunID:   "run_runtime_stream",
-		Type:    "assistant_message_delta",
+		EventID:    "event-assistant-delta",
+		RunID:      "run_runtime_stream",
+		SequenceNo: 2,
+		Type:       "assistant_message_delta",
 		Data: map[string]any{
 			"message_id": "runtime-message-1",
 			"content":    "Working through the task.",
 		},
 	}); err != nil {
 		t.Fatalf("ApplyEvent delta returned error: %v", err)
+	}
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		EventID:    "event-assistant-delta",
+		RunID:      "run_runtime_stream",
+		SequenceNo: 2,
+		Type:       "assistant_message_delta",
+		Data: map[string]any{
+			"message_id": "runtime-message-1",
+			"content":    "Working through the task.",
+		},
+	}); err != nil {
+		t.Fatalf("ApplyEvent duplicate delta returned error: %v", err)
 	}
 
 	if snapshotRepo.upserts != 2 || snapshotRepo.record == nil {
@@ -655,6 +671,9 @@ func TestAgentRuntimeProjectionPersistsCodingSessionStreamSnapshot(t *testing.T)
 	}
 	if snapshot.LiveAssistantMessage == nil || snapshot.LiveAssistantMessage.Content != "Working through the task." || snapshot.LiveAssistantMessage.Status != "streaming" {
 		t.Fatalf("unexpected live assistant message: %#v", snapshot.LiveAssistantMessage)
+	}
+	if snapshot.ThroughSequence != 2 {
+		t.Fatalf("unexpected v2 snapshot watermark: %d", snapshot.ThroughSequence)
 	}
 	if len(snapshot.LiveTurnSegments) != 1 || snapshot.LiveTurnSegments[0].AssistantMessage == nil || snapshot.LiveTurnSegments[0].AssistantMessage.Content != "Working through the task." {
 		t.Fatalf("unexpected live turn segments: %#v", snapshot.LiveTurnSegments)
@@ -674,6 +693,29 @@ func TestAgentRuntimeProjectionPersistsCodingSessionStreamSnapshot(t *testing.T)
 	}
 	if liveEvent.Type != "assistant.message.delta" || liveEvent.Payload["content"] != "Working through the task." {
 		t.Fatalf("unexpected live event payload: %#v", liveEvent)
+	}
+	if liveEvent.RuntimeMetadata["source"] != "agent-runtime-v2" {
+		t.Fatalf("unexpected live event source: %#v", liveEvent.RuntimeMetadata)
+	}
+}
+
+func TestRuntimeCodingSessionEventPayloadPreservesDeltaWhitespace(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    map[string]any
+		wantRaw string
+	}{
+		{name: "leading space", data: map[string]any{"text": " world", "content": " world"}, wantRaw: " world"},
+		{name: "whitespace only", data: map[string]any{"text": " ", "content": " "}, wantRaw: " "},
+		{name: "content fallback", data: map[string]any{"content": " next"}, wantRaw: " next"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := runtimeCodingSessionEventPayload(AgentRuntimeEventEnvelope{Data: tt.data})
+			if payload["text"] != tt.wantRaw || payload["content"] != tt.wantRaw {
+				t.Fatalf("delta whitespace changed: text=%q content=%q", payload["text"], payload["content"])
+			}
+		})
 	}
 }
 
@@ -1163,6 +1205,72 @@ func TestAgentRuntimeProjectionReconcileMappedRunsAppliesFetchedRuntimeState(t *
 	}
 	if run.InputTokens != 12 || run.CachedInputTokens != 3 || run.OutputTokens != 8 || run.TokensUsed != 23 {
 		t.Fatalf("expected usage from runtime summary, got input=%d cached=%d output=%d total=%d", run.InputTokens, run.CachedInputTokens, run.OutputTokens, run.TokensUsed)
+	}
+}
+
+func TestAgentRuntimeProjectionReconcileReplaysMissedV2EventsFromCursor(t *testing.T) {
+	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	run := &model.AgentRun{
+		ID:                "helpin-run-v2-replay",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		Status:            model.AgentRunStatusQueued,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("runtime-run-v2-replay"),
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byID:       map[string]*model.AgentRun{run.ID: run},
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|runtime-run-v2-replay": run},
+		active:     []model.AgentRun{*run},
+	}
+	runtimeClient := &fakeAgentRuntimeSignalClient{
+		getRuns: map[string]*AgentRuntimeRun{
+			"runtime-run-v2-replay": {
+				ID:        "runtime-run-v2-replay",
+				AppID:     "helpin",
+				HostRunID: run.ID,
+				Status:    model.AgentRunStatusRunning,
+				UpdatedAt: now,
+			},
+		},
+		v2Events: map[string][]AgentRuntimeEventEnvelope{
+			"runtime-run-v2-replay": {
+				{AppID: "helpin", RunID: "runtime-run-v2-replay", HostRunID: run.ID, Type: agentruntime.EventRunStarted, SequenceNo: 1, SentAt: now},
+				{AppID: "helpin", RunID: "runtime-run-v2-replay", HostRunID: run.ID, Type: agentruntime.EventAssistantMessageStarted, SequenceNo: 2, SentAt: now, Data: map[string]any{"message_id": "assistant-1"}},
+				{AppID: "helpin", RunID: "runtime-run-v2-replay", HostRunID: run.ID, Type: agentruntime.EventAssistantMessageDelta, SequenceNo: 3, SentAt: now, Data: map[string]any{"message_id": "assistant-1", "text": "hello"}},
+			},
+		},
+	}
+	snapshotRepo := &fakeAgentRuntimeProjectionSessionSnapshotRepo{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:             runRepo,
+		agentRuntimeClient:  runtimeClient,
+		sessionSnapshotRepo: snapshotRepo,
+		eventProtocol:       "v2",
+		now:                 func() time.Time { return now.Add(time.Minute) },
+	}
+
+	if err := svc.ReconcileMappedRuns(context.Background(), time.Second, 10); err != nil {
+		t.Fatalf("first ReconcileMappedRuns returned error: %v", err)
+	}
+	if err := svc.ReconcileMappedRuns(context.Background(), time.Second, 10); err != nil {
+		t.Fatalf("second ReconcileMappedRuns returned error: %v", err)
+	}
+	if run.Status != model.AgentRunStatusRunning {
+		t.Fatalf("expected replay to advance queued run, got %s", run.Status)
+	}
+	if len(runtimeClient.listV2EventCalls) != 2 || runtimeClient.listV2EventCalls[0] != 0 || runtimeClient.listV2EventCalls[1] != 3 {
+		t.Fatalf("expected incremental replay cursors [0 3], got %#v", runtimeClient.listV2EventCalls)
+	}
+	if snapshotRepo.record == nil {
+		t.Fatal("expected replayed stream snapshot")
+	}
+	snapshot, err := model.DecodeCodingSessionStreamSnapshot(snapshotRepo.record.SnapshotPayload)
+	if err != nil {
+		t.Fatalf("decode replayed snapshot: %v", err)
+	}
+	if snapshot == nil || snapshot.LiveAssistantMessage == nil || snapshot.LiveAssistantMessage.Content != "hello" || snapshot.ThroughSequence != 3 {
+		t.Fatalf("unexpected replayed snapshot: %#v", snapshot)
 	}
 }
 
@@ -1687,6 +1795,21 @@ func TestRuntimeMessageTurnSegmentsMapsInvocations(t *testing.T) {
 	}
 	if runtimeMessageTurnSegments("msg-2", "text only", nil) != nil {
 		t.Fatal("no invocations must produce no segments")
+	}
+}
+
+func TestRuntimeMessageTurnSegmentsPreservesCodexPreambleBeforeTool(t *testing.T) {
+	invocations := []byte(`[{"tool_call_id":"tool-1","tool_name":"read_file","input":{"path":"a.md"},"output_summary":"12 lines","assistant_before_tool":true}]`)
+	payload := runtimeMessageTurnSegments("msg-preamble", "I will inspect the file.", invocations)
+	var segments []model.CodingSessionLiveTurnSegment
+	if err := json.Unmarshal(payload, &segments); err != nil {
+		t.Fatalf("unmarshal segments: %v", err)
+	}
+	if len(segments) != 2 || segments[0].Kind != "assistant_message" || segments[1].Kind != "tool_call" {
+		t.Fatalf("expected assistant preamble followed by tool, got %#v", segments)
+	}
+	if segments[1].SegmentID != "tool-1" || segments[1].ToolCall == nil || segments[1].ToolCall.ToolCallID != "tool-1" {
+		t.Fatalf("expected stable tool identity, got %#v", segments[1])
 	}
 }
 
