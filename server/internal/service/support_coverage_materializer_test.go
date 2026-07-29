@@ -176,6 +176,14 @@ func TestCoverageMaterializerReclassifiesStrongKBMatchAsRetrievalFailure(t *test
 	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	coverageRepo := repository.NewSupportCoverageRepository(db)
 	seedMaterializerDocsSpace(t, db, "space-public", "ws-1")
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status)
+		VALUES (?, ?, ?, ?, ?)`, "doc-reset", "ws-1", "space-public", "Password reset email troubleshooting", model.DocStatusPublished).Error; err != nil {
+		t.Fatalf("seed docs document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_helpcenter_articles (document_id, public_published_at)
+		VALUES (?, CURRENT_TIMESTAMP)`, "doc-reset").Error; err != nil {
+		t.Fatalf("seed public docs article: %v", err)
+	}
 	if err := db.Create(&model.DocsChunk{
 		ID:          "doc-chunk-reset",
 		WorkspaceID: "ws-1",
@@ -451,9 +459,14 @@ func seedMaterializerDocsSpace(t *testing.T, db *gorm.DB, id, workspaceID string
 		document_id TEXT NOT NULL,
 		block_id TEXT,
 		chunk_index INTEGER NOT NULL,
+		section_key TEXT NOT NULL DEFAULT '',
+		heading_path TEXT NOT NULL DEFAULT '',
 		block_range TEXT,
 		title TEXT NOT NULL,
 		content TEXT NOT NULL,
+		search_content TEXT NOT NULL DEFAULT '',
+		previous_chunk_index INTEGER,
+		next_chunk_index INTEGER,
 		content_hash TEXT NOT NULL DEFAULT '',
 		embedding TEXT NOT NULL DEFAULT '',
 		embedding_provider TEXT NOT NULL DEFAULT 'openai',
@@ -464,6 +477,22 @@ func seedMaterializerDocsSpace(t *testing.T, db *gorm.DB, id, workspaceID string
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`).Error; err != nil {
 		t.Fatalf("create docs_chunks: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_documents (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		space_id TEXT NOT NULL,
+		title TEXT NOT NULL,
+		status TEXT NOT NULL,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create docs_documents: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_helpcenter_articles (
+		document_id TEXT PRIMARY KEY,
+		public_published_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create docs_helpcenter_articles: %v", err)
 	}
 	if err := db.Create(&model.DocsSpace{
 		ID:          id,

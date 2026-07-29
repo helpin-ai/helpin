@@ -114,6 +114,10 @@ vi.mock('@/components/ui/date-picker', () => ({
   ),
 }))
 
+vi.mock('@/components/billing/UpgradeRequiredDialog', () => ({
+  UpgradeRequiredDialog: () => null,
+}))
+
 vi.mock('@/components/pm/LabelPicker', () => ({
   LabelPicker: () => <div />,
 }))

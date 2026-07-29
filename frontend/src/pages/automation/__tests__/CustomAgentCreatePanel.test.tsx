@@ -182,7 +182,7 @@ describe('CustomAgentCreatePanel', () => {
 
     expect(container?.textContent).toContain('Agent name');
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
-      approval_mode: 'always',
+      approval_mode: 'mutating_tools',
       runtime_kind: 'codex',
       default_invocation_mode: 'interactive',
     }));

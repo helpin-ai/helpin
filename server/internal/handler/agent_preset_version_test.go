@@ -242,6 +242,7 @@ func newAgentPresetVersionTestHandler(t *testing.T) (*AgentHandler, *gorm.DB) {
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			icon_key TEXT NOT NULL DEFAULT '',
 			preset_key TEXT,
 			preset_version_key TEXT,
 			source_preset_key TEXT,
