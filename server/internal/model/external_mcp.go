@@ -39,7 +39,7 @@ type ExternalMCPServer struct {
 	AuthType               string            `json:"auth_type" gorm:"not null"`
 	Status                 string            `json:"status" gorm:"not null;index"`
 	Enabled                bool              `json:"enabled" gorm:"not null;default:true"`
-	OAuthScopes            json.RawMessage   `json:"oauth_scopes" gorm:"type:jsonb;not null;default:'[]'"`
+	OAuthScopes            json.RawMessage   `json:"oauth_scopes" gorm:"column:oauth_scopes;type:jsonb;not null;default:'[]'"`
 	RemoteIdentity         json.RawMessage   `json:"remote_identity,omitempty" gorm:"type:jsonb;not null;default:'{}'"`
 	AuthorizedByUserID     *string           `json:"authorized_by_user_id,omitempty" gorm:"type:uuid"`
 	AccessTokenExpiresAt   *time.Time        `json:"access_token_expires_at,omitempty"`
