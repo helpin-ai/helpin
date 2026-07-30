@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ensureMCPWriteScopes, hasMCPWriteScope, isMCPWriteScope } from '@/lib/mcpPolicy';
+import {
+  ensureMCPWriteScopes,
+  getMCPConsentAccess,
+  hasMCPWriteGrant,
+  hasMCPWriteScope,
+  isMCPWriteScope,
+} from '@/lib/mcpPolicy';
 
 const AVAILABLE_SCOPES = [
   'helpin.context.read',
@@ -42,5 +48,43 @@ describe('MCP policy scope helpers', () => {
     expect(isMCPWriteScope('helpin.agents.run')).toBe(true);
     expect(hasMCPWriteScope(['helpin.context.read', 'helpin.pm.read'])).toBe(false);
     expect(hasMCPWriteScope(['helpin.context.read', 'helpin.crm.write'])).toBe(true);
+    expect(hasMCPWriteGrant(['helpin.docs.write'], ['docs'])).toBe(true);
+    expect(hasMCPWriteGrant(['helpin.docs.write'], ['context'])).toBe(false);
+  });
+
+  it('applies selected workspace restrictions before authorization', () => {
+    expect(getMCPConsentAccess(
+      ['helpin.context.read', 'helpin.pm.read', 'helpin.pm.write', 'helpin.docs.read'],
+      ['context', 'pm', 'docs'],
+      {
+        allowed_scopes: ['helpin.context.read', 'helpin.pm.read', 'helpin.pm.write'],
+        allowed_toolsets: ['context', 'pm'],
+        read_only_required: false,
+      },
+      false,
+    )).toEqual({
+      scopes: ['helpin.context.read', 'helpin.pm.read', 'helpin.pm.write'],
+      toolsets: ['context', 'pm'],
+      readOnly: false,
+      canRequestWrites: true,
+    });
+  });
+
+  it('does not promise writes when workspace policy forces read-only', () => {
+    expect(getMCPConsentAccess(
+      ['helpin.context.read', 'helpin.docs.read', 'helpin.docs.write'],
+      ['context', 'docs'],
+      {
+        allowed_scopes: ['helpin.context.read', 'helpin.docs.read', 'helpin.docs.write'],
+        allowed_toolsets: ['context', 'docs'],
+        read_only_required: true,
+      },
+      false,
+    )).toEqual({
+      scopes: ['helpin.context.read', 'helpin.docs.read'],
+      toolsets: ['context', 'docs'],
+      readOnly: true,
+      canRequestWrites: false,
+    });
   });
 });

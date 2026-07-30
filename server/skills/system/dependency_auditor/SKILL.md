@@ -23,6 +23,7 @@ metadata:
   - Cross-ecosystem verification: `verification.md`
 - If bundled reference files are unavailable in the current runtime, follow the mandatory rules summarized in this file and do not improvise beyond verified registry/advisory data.
 - Prefer pinned verification surfaces: Go proxy or `go list -m -u -json`, crates.io API, PyPI JSON API, npm registry metadata, Maven Central search/metadata, and OSV.dev for advisories. Use official release/changelog sources only as fallback or additional context.
+- Use `fetch_url` for exact public registry and advisory API GET requests. Do not invoke `curl` or `wget` through `run_command`; if `fetch_url` and the preferred ecosystem CLI are unavailable, mark the dependency unresolvable instead of bypassing the command policy.
 - Never guess versions, dates, release notes, or security findings. If a dependency cannot be verified, mark it unresolvable in the final summary and do not create a task for it.
 - Classify every discovered direct dependency as `up_to_date`, `outdated`, or `unresolvable`.
 - For outdated dependencies, gather 3 to 5 material changes between the current and latest verified versions. Prefer official release notes, changelogs, registry pages, repository releases, and advisory databases.

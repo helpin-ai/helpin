@@ -405,7 +405,7 @@ describe('CodingTranscriptPane', () => {
     expect(container.textContent.indexOf('Read Dockerfile')).toBeLessThan(
       container.textContent.indexOf('Second streamed chunk.'),
     );
-    expect(container.querySelectorAll('.markdown-caret')).toHaveLength(1);
+    expect(container.querySelectorAll('.markdown-caret')).toHaveLength(0);
     expect(container.querySelector('[data-agent-streaming-status]')).toBeNull();
   });
 

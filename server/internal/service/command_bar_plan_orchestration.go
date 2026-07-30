@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 )
 
 // CommandBarPlanInput identifies a command-bar parent plan for the local
@@ -109,27 +108,4 @@ func (s *AgentService) StartCommandBarPlanSweep(ctx context.Context, interval, s
 			slog.ErrorContext(ctx, "command bar plan sweep failed", "error", err)
 		}
 	}
-}
-
-// StartReadyCommandBarPlanSteps satisfies temporalapp.CommandBarPlanAdvancer so
-// in-flight CommandBarPlanWorkflow histories stay replayable during the drain
-// window. New code paths call startReadyCommandBarPlanSteps directly; this
-// wrapper is deleted with the temporalapp agent-run machinery.
-func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput) (*temporalapp.CommandBarPlanProgress, error) {
-	progress, err := s.startReadyCommandBarPlanSteps(ctx, CommandBarPlanInput{
-		WorkspaceID: input.WorkspaceID,
-		ActorID:     input.ActorID,
-		PlanID:      input.PlanID,
-		Prompt:      input.Prompt,
-		PageContext: input.PageContext,
-		Steps:       input.Steps,
-	})
-	if progress == nil || err != nil {
-		return nil, err
-	}
-	return &temporalapp.CommandBarPlanProgress{
-		Terminal: progress.Terminal,
-		Status:   progress.Status,
-		Started:  progress.Started,
-	}, nil
 }

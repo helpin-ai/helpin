@@ -310,7 +310,7 @@ describe('buildCodingSessionStreamState', () => {
         sequence_no: 2,
         runtime_metadata: { source: 'agent_run_message' },
         payload: {
-          message_id: 'assistant-persisted-1',
+          message_id: 'assistant-live-1',
           content: 'Done',
           role: 'assistant',
           tool_invocations: [
@@ -355,7 +355,11 @@ describe('buildCodingSessionStreamState', () => {
     ]);
 
     expect(state.live_assistant_message).toBeNull();
-    expect(state.live_turn_segments).toHaveLength(0);
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: { message_id: 'assistant-live-1', content: 'Done' },
+    });
     expect(state.transcript_messages).toHaveLength(1);
     expect(state.transcript_messages[0]?.tool_calls).toHaveLength(1);
     expect(state.transcript_messages[0]?.tool_calls?.[0]).toMatchObject({
@@ -364,6 +368,97 @@ describe('buildCodingSessionStreamState', () => {
       result: {
         content: 'Updated a.go',
       },
+    });
+  });
+
+  it('keeps earlier Codex text and tool segments when the final message becomes persisted', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'final-persisted',
+        type: 'assistant.message.completed',
+        sequence_no: 1,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'msg-final',
+          content: 'The repository is ready.',
+          role: 'assistant',
+        },
+      }),
+      buildEvent({
+        id: 'preamble-started',
+        type: 'assistant.message.started',
+        sequence_no: 1_700_000_001,
+        payload: { message_id: 'msg-preamble' },
+      }),
+      buildEvent({
+        id: 'preamble-delta',
+        type: 'assistant.message.delta',
+        sequence_no: 1_700_000_002,
+        payload: { message_id: 'msg-preamble', content: 'I will inspect the repository.' },
+      }),
+      buildEvent({
+        id: 'preamble-completed',
+        type: 'assistant.message.completed',
+        sequence_no: 1_700_000_003,
+        payload: { message_id: 'msg-preamble', content: 'I will inspect the repository.' },
+      }),
+      buildEvent({
+        id: 'tool-started',
+        type: 'tool.call.started',
+        sequence_no: 1_700_000_004,
+        payload: {
+          tool_call_id: 'tool-list',
+          tool_name: 'run_command',
+          parent_message_id: 'msg-preamble',
+          args_text: '{"command":"ls"}',
+        },
+      }),
+      buildEvent({
+        id: 'tool-completed',
+        type: 'tool.call.completed',
+        sequence_no: 1_700_000_005,
+        payload: {
+          tool_call_id: 'tool-list',
+          tool_name: 'run_command',
+          parent_message_id: 'msg-preamble',
+          content: 'README.md',
+        },
+      }),
+      buildEvent({
+        id: 'final-started',
+        type: 'assistant.message.started',
+        sequence_no: 1_700_000_006,
+        payload: { message_id: 'msg-final' },
+      }),
+      buildEvent({
+        id: 'final-delta',
+        type: 'assistant.message.delta',
+        sequence_no: 1_700_000_007,
+        payload: { message_id: 'msg-final', content: 'The repository is ready.' },
+      }),
+      buildEvent({
+        id: 'final-completed',
+        type: 'assistant.message.completed',
+        sequence_no: 1_700_000_008,
+        payload: { message_id: 'msg-final', content: 'The repository is ready.' },
+      }),
+    ]);
+
+    expect(state.live_assistant_message).toBeNull();
+    expect(state.live_turn_segments.map((segment) => segment.kind)).toEqual([
+      'assistant_message',
+      'tool_call',
+      'assistant_message',
+    ]);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      assistant_message: {
+        message_id: 'msg-preamble',
+        content: 'I will inspect the repository.',
+      },
+    });
+    expect(state.live_turn_segments[1]).toMatchObject({
+      segment_id: 'tool-list',
+      tool_call: { tool_call_id: 'tool-list', status: 'completed' },
     });
   });
 
@@ -1454,5 +1549,49 @@ describe('buildCodingSessionStreamState', () => {
         output_summary: 'Fetched page',
       },
     });
+  });
+
+  it('uses the v2 snapshot watermark instead of replaying covered deltas', () => {
+    const snapshot: CodingSessionStreamSnapshot = {
+      through_sequence: 2,
+      live_assistant_message: {
+        message_id: 'assistant-1',
+        content: 'Hello',
+        status: 'streaming',
+        tool_calls: [],
+      },
+      live_turn_segments: [{
+        segment_id: 'assistant-1',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'assistant-1',
+          content: 'Hello',
+          status: 'streaming',
+          tool_calls: [],
+        },
+      }],
+    };
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'covered-delta',
+        type: 'assistant.message.delta',
+        sequence_no: 2,
+        runtime_metadata: { source: 'agent-runtime-v2' },
+        payload: { message_id: 'assistant-1', content: 'Hello' },
+      }),
+      buildEvent({
+        id: 'new-delta',
+        type: 'assistant.message.delta',
+        sequence_no: 3,
+        runtime_metadata: { source: 'agent-runtime-v2' },
+        payload: { message_id: 'assistant-1', content: ' world' },
+      }),
+    ], snapshot);
+
+    expect(state.live_assistant_message?.content).toBe('Hello world');
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]?.kind === 'assistant_message'
+      ? state.live_turn_segments[0].assistant_message.content
+      : '').toBe('Hello world');
   });
 });

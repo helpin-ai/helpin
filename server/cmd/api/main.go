@@ -48,7 +48,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	appwebauthn "github.com/helpin-ai/helpin/server/internal/webauthn"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
-	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func main() {
@@ -594,7 +593,6 @@ func main() {
 	commandBarPlanDismissalRepo := repository.NewCommandBarPlanDismissalRepository(db)
 	commandBarChatRepo := repository.NewCommandBarChatRepository(db)
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
-	codexWorkspaceAuthRepo := repository.NewCodexWorkspaceAuthRepository(db)
 	pmTaskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
 	supportInboxViewRepo := repository.NewSupportInboxViewRepository(db)
@@ -818,23 +816,6 @@ func main() {
 		slog.Info("Temporal configured", "address", cfg.TemporalAddress, "namespace", cfg.TemporalNamespace)
 	}
 	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
-	codexWorkspaceAuthStore := workerpkg.NewCodexWorkspaceAuthStore(codexWorkspaceAuthRepo, resolveCodexAuthEncryptionKey(cfg))
-	if strings.TrimSpace(cfg.CodexOpenAIAuthMode) == "chatgpt_device_code" && codexWorkspaceAuthStore == nil {
-		slog.Warn("Codex workspace auth persistence disabled; set CODEX_AUTH_ENCRYPTION_KEY or a valid CRM_ENCRYPTION_KEY for durable device-code auth")
-	}
-	codexAuthManager := workerpkg.NewCodexAuthManager(workerpkg.CodexRuntimeConfig{
-		Path:                      cfg.CodexPath,
-		DefaultModel:              cfg.CodexModel,
-		OpenAIAPIKey:              cfg.OpenAIAPIKey,
-		OpenAIBaseURL:             cfg.OpenAIBaseURL,
-		OpenAIAuthMode:            cfg.CodexOpenAIAuthMode,
-		EnableManagedChatGPTOAuth: cfg.CodexEnableChatGPTOAuth,
-		ChatGPTAccessToken:        cfg.CodexChatGPTAccessToken,
-		ChatGPTAccountID:          cfg.CodexChatGPTAccountID,
-		ChatGPTPlanType:           cfg.CodexChatGPTPlanType,
-		OpenRouterAPIKey:          cfg.OpenRouterAPIKey,
-		OpenRouterBaseURL:         cfg.OpenRouterBaseURL,
-	}, agentRunArtifactRepo, codexWorkspaceAuthStore)
 
 	gitService := service.NewGitService(
 		gitIntegrationRepo,
@@ -857,7 +838,7 @@ func main() {
 	pmTaskService.SetGitService(gitService)
 	var agentRuntimeClient *service.AgentRuntimeClient
 	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
-		agentRuntimeClient, err = service.NewAgentRuntimeClient(cfg.AgentRuntimeBaseURL, cfg.AgentRuntimeAppID, cfg.AgentRuntimeServiceToken, nil)
+		agentRuntimeClient, err = service.NewAgentRuntimeClient(cfg.AgentRuntimeBaseURL, cfg.AgentRuntimeAppID, cfg.AgentRuntimeServiceToken, nil, cfg.AgentRuntimeEventProtocol)
 		if err != nil {
 			fatalWithSentry("failed to initialize agent runtime client", err)
 		}
@@ -896,7 +877,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+	).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
@@ -1177,15 +1158,6 @@ func main() {
 	commandBarService.SetInternalCommandService(commandService).
 		SetReadOnlyDataServices(docsDocumentService, crmDealService, crmContactService, crmCompanyService)
 	ruleEngine.SetCommandService(commandService)
-	agentToolGateway := service.NewAgentToolGateway(
-		agentRunRepo,
-		agentRepo,
-		agentRunArtifactRepo,
-		agentRunInteractionRepo,
-		commandService,
-		jwtManager,
-		wsPublisher,
-	)
 	agentRuntimeHostService := service.NewAgentRuntimeHostService(
 		cfg.AgentRuntimeAppID,
 		agentRunRepo,
@@ -1213,6 +1185,7 @@ func main() {
 			wsPublisher,
 		).SetRepositoryDeliveryService(gitService).SetCommandBarPlanAdvancer(agentService)
 		agentRuntimeProjectionService = service.NewAgentRuntimeProjectionService(agentRunRepo, cfg.AgentRuntimeAppID).
+			SetEventProtocol(cfg.AgentRuntimeEventProtocol).
 			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
 			SetTranscriptRepositories(agentRunMessageRepo, agentRunArtifactRepo, agentRunInteractionRepo).
 			SetCodingSessionSnapshotRepository(codingSessionStateSnapshotRepo).
@@ -1448,7 +1421,6 @@ func main() {
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:               handler.NewAgentHandler(agentService),
-		AgentToolGateway:    handler.NewAgentToolGatewayHandler(agentToolGateway),
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
 		MCP:                 handler.NewMCPHandler(mcpService),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
@@ -1810,23 +1782,6 @@ func fatalWithSentry(message string, err error, attrs ...any) {
 	slog.Error(message, logAttrs...)
 	observability.Flush(2 * time.Second)
 	os.Exit(1)
-}
-
-func resolveCodexAuthEncryptionKey(cfg *config.Config) []byte {
-	if cfg == nil {
-		return nil
-	}
-	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CodexAuthEncryptionKey)); err != nil {
-		slog.Warn("invalid CODEX_AUTH_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
-	} else if len(key) == 32 {
-		return key
-	}
-	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
-		slog.Warn("invalid CRM_ENCRYPTION_KEY for Codex workspace auth fallback (must be a 32-byte hex-encoded AES key)", "error", err)
-	} else if len(key) == 32 {
-		return key
-	}
-	return nil
 }
 
 func resolveTOTPEncryptionKey(cfg *config.Config) []byte {

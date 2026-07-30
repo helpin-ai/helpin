@@ -15,23 +15,17 @@ to IPv6 first while the runtime listens on IPv4.
 AGENT_RUNTIME_BASE_URL=http://127.0.0.1:8090
 AGENT_RUNTIME_SERVICE_TOKEN=dev-token
 AGENT_RUNTIME_APP_ID=helpin
+AGENT_RUNTIME_EVENT_PROTOCOL=v2
 AGENT_RUNTIME_LAUNCH_ENABLED=true
 ```
 
-`AGENT_RUNTIME_LAUNCH_ENABLED=true` delegates these run surfaces to Agent Runtime:
+`AGENT_RUNTIME_LAUNCH_ENABLED=true` sends every agent run with an agent and
+target to Agent Runtime. Agent Runtime is the only execution path for native,
+Codex, and OpenCode agents across every supported preset and target.
 
-- marketer preset: workspace targets
-- documentation_agent preset: workspace + document targets
-- crm_operator preset: workspace + crm_contact / crm_company / crm_deal targets
-- custom agents (no preset, `runtime_kind = native_sdk`): workspace / document / crm_* targets
-
-Task, story, epic, repository, support_conversation, and support_coverage_gap
-targets — and all other presets (code_builder, review_agent, epic_planner,
-task_planner, support_agent, command_agent) — continue through the in-process
-Temporal executor. Codex/opencode custom agents also stay local (their auth and
-interaction handling live in the local executor). The predicate is the
-preset→target map in `server/internal/service/agent.go`
-(`agentRuntimePresetDelegatedTargets` / `agentRuntimeCustomAgentDelegatedTargets`).
+If the flag is false or unset, Helpin fails new run starts loudly. There is no
+in-process Temporal fallback. Keep the flag enabled anywhere agent execution
+is expected to work.
 
 ## Runtime App Config
 
@@ -43,6 +37,7 @@ port. If Helpin is on `:8080`, use:
   "apps": [
     {
       "app_id": "helpin",
+      "event_protocol": "v2",
       "context_endpoint": "http://127.0.0.1:8080/api/internal/agent-runtime/target-context",
       "context_token": "dev-token",
       "workspace_provider": {
@@ -215,12 +210,12 @@ instruction stamping, workspace-mode injection, interactive review turn
 policy) and the updated predicate matrix in
 `agent_runtime_delegation_test.go`.
 
-## Planner parity blockers (epic_planner / task_planner — not flipped)
+## Historical planner parity blockers (obsolete after hard cutover)
 
-Planner presets stay on the local Temporal executor. Flipping them today would
-produce planner runs that start without planning context, without phase
-guidance, and whose approved plans never materialize. Blockers, in dependency
-order:
+This section records the blockers that existed before Helpin retired local
+agent execution. It does not describe current routing: planner runs now use
+Agent Runtime, and the old Temporal planner implementation has been removed
+from Helpin. The pre-cutover blockers were:
 
 1. **Execution-time context assembly** — `temporalapp/planner_context_assembly.go`
    (+ `planning_domain_documents.go`, `planning_code_context.go`) builds the

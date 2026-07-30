@@ -692,13 +692,14 @@ func (r *AgentRunMessageRepository) Update(ctx context.Context, message *model.A
 	}
 	sanitizeAgentRunMessageForPostgres(message)
 	updates := map[string]any{
-		"role":             message.Role,
-		"content":          message.Content,
-		"message_type":     message.MessageType,
-		"content_blocks":   message.ContentBlocks,
-		"turn_segments":    message.TurnSegments,
-		"tool_invocations": message.ToolInvocations,
-		"token_usage":      message.TokenUsage,
+		"runtime_message_id": message.RuntimeMessageID,
+		"role":               message.Role,
+		"content":            message.Content,
+		"message_type":       message.MessageType,
+		"content_blocks":     message.ContentBlocks,
+		"turn_segments":      message.TurnSegments,
+		"tool_invocations":   message.ToolInvocations,
+		"token_usage":        message.TokenUsage,
 	}
 	if err := r.db.WithContext(ctx).
 		Model(&model.AgentRunMessage{}).

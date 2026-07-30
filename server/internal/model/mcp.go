@@ -48,21 +48,23 @@ func (MCPClientRegistration) TableName() string { return "mcp_client_registratio
 
 // MCPConnection records a user-authorized, workspace-bound MCP client connection.
 type MCPConnection struct {
-	ID           string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID  string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	UserID       string          `json:"user_id" gorm:"type:uuid;not null;index"`
-	ClientID     string          `json:"client_id" gorm:"not null;index"`
-	ClientName   string          `json:"client_name" gorm:"not null"`
-	Scopes       json.RawMessage `json:"scopes" gorm:"type:jsonb;not null;default:'[]'"`
-	Toolsets     json.RawMessage `json:"toolsets" gorm:"type:jsonb;not null;default:'[]'"`
-	ReadOnly     bool            `json:"read_only" gorm:"not null;default:true"`
-	Status       string          `json:"status" gorm:"not null;default:'active';index"`
-	TokenVersion int             `json:"-" gorm:"not null;default:1"`
-	LastUsedAt   *time.Time      `json:"last_used_at,omitempty"`
-	RevokedAt    *time.Time      `json:"revoked_at,omitempty"`
-	RevokedBy    *string         `json:"revoked_by,omitempty" gorm:"type:uuid"`
-	CreatedAt    time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt    time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID          string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	UserID      string          `json:"user_id" gorm:"type:uuid;not null;index"`
+	ClientID    string          `json:"client_id" gorm:"not null;index"`
+	ClientName  string          `json:"client_name" gorm:"not null"`
+	Scopes      json.RawMessage `json:"scopes" gorm:"type:jsonb;not null;default:'[]'"`
+	Toolsets    json.RawMessage `json:"toolsets" gorm:"type:jsonb;not null;default:'[]'"`
+	ReadOnly    bool            `json:"read_only" gorm:"not null;default:true"`
+	// EffectiveReadOnly reflects current workspace policy, RBAC, modules, and rollout flags.
+	EffectiveReadOnly *bool      `json:"effective_read_only,omitempty" gorm:"-"`
+	Status            string     `json:"status" gorm:"not null;default:'active';index"`
+	TokenVersion      int        `json:"-" gorm:"not null;default:1"`
+	LastUsedAt        *time.Time `json:"last_used_at,omitempty"`
+	RevokedAt         *time.Time `json:"revoked_at,omitempty"`
+	RevokedBy         *string    `json:"revoked_by,omitempty" gorm:"type:uuid"`
+	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 // TableName returns the MCP connection table name.
@@ -111,13 +113,15 @@ type MCPServicePrincipal struct {
 	Scopes      json.RawMessage `json:"scopes" gorm:"type:jsonb;not null;default:'[]'"`
 	Toolsets    json.RawMessage `json:"toolsets" gorm:"type:jsonb;not null;default:'[]'"`
 	ReadOnly    bool            `json:"read_only" gorm:"not null;default:true"`
-	Status      string          `json:"status" gorm:"not null;default:'active';index"`
-	ExpiresAt   *time.Time      `json:"expires_at,omitempty"`
-	LastUsedAt  *time.Time      `json:"last_used_at,omitempty"`
-	RevokedAt   *time.Time      `json:"revoked_at,omitempty"`
-	CreatedBy   string          `json:"created_by" gorm:"type:uuid;not null"`
-	CreatedAt   time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	// EffectiveReadOnly reflects current workspace policy, RBAC, modules, and rollout flags.
+	EffectiveReadOnly *bool      `json:"effective_read_only,omitempty" gorm:"-"`
+	Status            string     `json:"status" gorm:"not null;default:'active';index"`
+	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
+	LastUsedAt        *time.Time `json:"last_used_at,omitempty"`
+	RevokedAt         *time.Time `json:"revoked_at,omitempty"`
+	CreatedBy         string     `json:"created_by" gorm:"type:uuid;not null"`
+	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 // TableName returns the MCP service-principal table name.

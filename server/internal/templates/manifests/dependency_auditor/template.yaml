@@ -1,5 +1,5 @@
 key: engineering_dependency_auditor
-version: 1
+version: 2
 name: Dependency Auditor
 icon: package
 short_description: Reviews repository dependencies on a schedule and saves an audit report.
@@ -29,6 +29,8 @@ agent:
 
       Scan only the configured ecosystems. Ignore indirect or transitive dependencies unless include_indirect is true. Do not modify files or open upgrade PRs.
 
+      Use fetch_url for exact public registry and advisory API GET requests. Do not invoke curl or wget through run_command.
+
       Repositories may contain more than one language ecosystem. Scan every selected ecosystem in the same run and deduplicate findings within each ecosystem identity.
 
       Always create a Docs report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Dependency audit - <scope/context>`. Use the repository full name, repository name, or scanned ecosystem summary for `<scope/context>`. Call create_document exactly once with the complete report content. Do not repeat the document title as the first heading or opening line in the document body. Include the scanned ecosystems, notable outdated direct dependencies, risk/impact, suggested upgrade order, and a clear "No actionable dependency updates found" section when the audit is clean.
@@ -37,7 +39,7 @@ agent:
 
       Raw configuration:
       {{raw_configuration_json}}
-    allowed_tools: [update_plan, list_directory, read_file, read_files, read_file_range, search_files, ripgrep, grep, run_command, web_search_exa, create_document, link_document_to_object, create_task]
+    allowed_tools: [update_plan, list_directory, read_file, read_files, read_file_range, search_files, ripgrep, grep, run_command, web_search_exa, fetch_url, create_document, link_document_to_object, create_task]
     allowed_targets: [repository, document]
     approval_mode: always
 trigger:

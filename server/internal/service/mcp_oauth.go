@@ -49,10 +49,13 @@ type MCPAuthorizationQuery struct {
 
 // MCPAuthorizationWorkspace is a workspace option that does not expose billing data.
 type MCPAuthorizationWorkspace struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
-	Role string `json:"role"`
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Slug             string   `json:"slug"`
+	Role             string   `json:"role"`
+	AllowedScopes    []string `json:"allowed_scopes"`
+	AllowedToolsets  []string `json:"allowed_toolsets"`
+	ReadOnlyRequired bool     `json:"read_only_required"`
 }
 
 // MCPAuthorizationRequest is the backend-authoritative consent-screen model.
@@ -156,11 +159,18 @@ func (s *MCPService) GetAuthorizationRequest(ctx context.Context, userID string,
 		if !policy.Enabled {
 			continue
 		}
-		if len(intersectMCPValues(requestedScopes, decodeMCPStrings(policy.AllowedScopes))) == 0 {
+		allowedScopes, allowedToolsets, readOnlyRequired := mcpAuthorizationWorkspaceAccess(
+			policy,
+			requestedScopes,
+			proposedToolsets,
+		)
+		if len(allowedScopes) == 0 || len(allowedToolsets) == 0 {
 			continue
 		}
 		options = append(options, MCPAuthorizationWorkspace{
 			ID: workspace.ID, Name: workspace.Name, Slug: workspace.Slug, Role: workspace.Role,
+			AllowedScopes: allowedScopes, AllowedToolsets: allowedToolsets,
+			ReadOnlyRequired: readOnlyRequired,
 		})
 	}
 	return &MCPAuthorizationRequest{
@@ -171,6 +181,34 @@ func (s *MCPService) GetAuthorizationRequest(ctx context.Context, userID string,
 		Workspaces:          options,
 		ReadOnlyRecommended: true,
 	}, nil
+}
+
+func mcpAuthorizationWorkspaceAccess(
+	policy *model.MCPWorkspacePolicy,
+	requestedScopes, proposedToolsets []string,
+) ([]string, []string, bool) {
+	allowedScopes := intersectMCPValues(
+		requestedScopes,
+		decodeMCPStrings(policy.AllowedScopes),
+	)
+	allowedToolsets := intersectMCPValues(
+		proposedToolsets,
+		decodeMCPStrings(policy.AllowedToolsets),
+	)
+	readOnlyRequired := policy.EnforceReadOnly ||
+		!hasMCPWriteGrant(allowedScopes, allowedToolsets)
+	grantableScopes := allowedScopes
+	if readOnlyRequired {
+		grantableScopes = filterMCPReadScopes(grantableScopes)
+	}
+	allowedToolsets = intersectMCPValues(
+		allowedToolsets,
+		toolsetsForMCPScopes(grantableScopes),
+	)
+	if len(grantableScopes) == 0 || len(allowedToolsets) == 0 {
+		return nil, nil, readOnlyRequired
+	}
+	return allowedScopes, allowedToolsets, readOnlyRequired
 }
 
 // Authorize creates a workspace-bound connection and single-use PKCE code.

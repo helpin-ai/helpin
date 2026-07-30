@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func normalizeModelProvider(provider string) string {
@@ -268,26 +268,26 @@ func parseAndValidateExecutionConfig(agent *model.Agent) (model.AgentExecutionCo
 
 func migrateLegacyPreviewTools(raw json.RawMessage, presetKey string) json.RawMessage {
 	tools := parseJSONStringSlice(raw)
-	if len(tools) == 0 || !slices.Contains(tools, worker.ToolPublishPreview) {
+	if len(tools) == 0 || !slices.Contains(tools, agentcontract.ToolPublishPreview) {
 		return raw
 	}
-	if slices.Contains(tools, worker.ToolPublishPRDDraft) || slices.Contains(tools, worker.ToolPublishTaskPlan) || slices.Contains(tools, worker.ToolPublishTaskPlanDoc) {
+	if slices.Contains(tools, agentcontract.ToolPublishPRDDraft) || slices.Contains(tools, agentcontract.ToolPublishTaskPlan) || slices.Contains(tools, agentcontract.ToolPublishTaskPlanDoc) {
 		return raw
 	}
 
 	migrated := make([]string, 0, len(tools)+3)
 	for _, toolName := range tools {
 		switch toolName {
-		case worker.ToolPublishPreview, worker.ToolPreviewMarkdown, worker.ToolPreviewJSON, worker.ToolPublishPRDDraft, worker.ToolPublishTaskPlan, worker.ToolPublishTaskPlanDoc:
+		case agentcontract.ToolPublishPreview, agentcontract.ToolPreviewMarkdown, agentcontract.ToolPreviewJSON, agentcontract.ToolPublishPRDDraft, agentcontract.ToolPublishTaskPlan, agentcontract.ToolPublishTaskPlanDoc:
 			continue
 		}
 		migrated = append(migrated, toolName)
 	}
 	switch normalizePresetKey(presetKey) {
 	case model.AgentPresetEpicPlanner:
-		migrated = append(migrated, worker.ToolPublishPRDDraft, worker.ToolPublishTaskPlan)
+		migrated = append(migrated, agentcontract.ToolPublishPRDDraft, agentcontract.ToolPublishTaskPlan)
 	case model.AgentPresetTaskPlanner:
-		migrated = append(migrated, worker.ToolPublishTaskPlanDoc)
+		migrated = append(migrated, agentcontract.ToolPublishTaskPlanDoc)
 	}
 	return mustJSONStringSlice(migrated)
 }
@@ -297,7 +297,7 @@ func normalizeAllowedToolsJSON(raw json.RawMessage) json.RawMessage {
 	if len(tools) == 0 {
 		return raw
 	}
-	normalized := worker.NormalizeToolNames(tools)
+	normalized := agentcontract.NormalizeToolNames(tools)
 	if len(normalized) == 0 {
 		return json.RawMessage("[]")
 	}
@@ -321,16 +321,16 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 	switch normalizePresetKey(presetKey) {
 	case model.AgentPresetEpicPlanner:
 		policy.requiredTools = []string{
-			worker.ToolUpdatePlan,
-			worker.ToolRequestApproval,
-			worker.ToolPublishPRDDraft,
-			worker.ToolPublishTaskPlan,
+			agentcontract.ToolUpdatePlan,
+			agentcontract.ToolRequestApproval,
+			agentcontract.ToolPublishPRDDraft,
+			agentcontract.ToolPublishTaskPlan,
 		}
 		policy.disallowedExtraTools = []string{
-			worker.ToolPreviewMarkdown,
-			worker.ToolPreviewJSON,
-			worker.ToolPublishPreview,
-			worker.ToolPublishTaskPlanDoc,
+			agentcontract.ToolPreviewMarkdown,
+			agentcontract.ToolPreviewJSON,
+			agentcontract.ToolPublishPreview,
+			agentcontract.ToolPublishTaskPlanDoc,
 			"ensure_epic_spec_doc",
 			"ensure_task_plan_doc",
 			"write_document_content",
@@ -345,16 +345,16 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 		}
 	case model.AgentPresetTaskPlanner:
 		policy.requiredTools = []string{
-			worker.ToolUpdatePlan,
-			worker.ToolRequestApproval,
-			worker.ToolPublishTaskPlanDoc,
+			agentcontract.ToolUpdatePlan,
+			agentcontract.ToolRequestApproval,
+			agentcontract.ToolPublishTaskPlanDoc,
 		}
 		policy.disallowedExtraTools = []string{
-			worker.ToolPreviewMarkdown,
-			worker.ToolPreviewJSON,
-			worker.ToolPublishPreview,
-			worker.ToolPublishPRDDraft,
-			worker.ToolPublishTaskPlan,
+			agentcontract.ToolPreviewMarkdown,
+			agentcontract.ToolPreviewJSON,
+			agentcontract.ToolPublishPreview,
+			agentcontract.ToolPublishPRDDraft,
+			agentcontract.ToolPublishTaskPlan,
 			"ensure_epic_spec_doc",
 			"ensure_task_plan_doc",
 			"write_document_content",
@@ -539,7 +539,7 @@ func validateAgentTarget(agent *model.Agent, targetType string) error {
 	if err := validateAgentPresetKey(agent.EffectivePresetKey()); err != nil {
 		return err
 	}
-	resolved := worker.ResolveAgentProfile(agent, agent.DefaultInvocationMode)
+	resolved := agentcontract.ResolveAgentProfile(agent, agent.DefaultInvocationMode)
 	if len(resolved.TargetTypes) == 0 {
 		return fmt.Errorf("agent is not runnable")
 	}

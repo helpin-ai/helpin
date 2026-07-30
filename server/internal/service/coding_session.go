@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,9 +12,9 @@ import (
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func (s *AgentService) GetCodingSession(ctx context.Context, workspaceID, sessionID string) (*model.CodingSession, error) {
@@ -191,28 +189,8 @@ func (s *AgentService) GetCodingSessionRepo(ctx context.Context, workspaceID, se
 }
 
 func (s *AgentService) GetCodingSessionDiff(ctx context.Context, workspaceID, sessionID, path string) (*model.CodingSessionDiff, error) {
-	run, err := s.GetAgentRun(ctx, workspaceID, sessionID)
-	if err != nil {
+	if _, err := s.GetAgentRun(ctx, workspaceID, sessionID); err != nil {
 		return nil, err
-	}
-
-	workDir := worker.PersistentWorkspacePathForRun(run.ID)
-	if info, statErr := os.Stat(workDir); statErr == nil && info.IsDir() {
-		args := []string{"diff", "--no-ext-diff", "--"}
-		if strings.TrimSpace(path) != "" {
-			args = append(args, strings.TrimSpace(path))
-		}
-		cmd := exec.CommandContext(ctx, "git", args...)
-		cmd.Dir = workDir
-		out, err := cmd.CombinedOutput()
-		if err == nil {
-			diffPath := strings.TrimSpace(path)
-			return &model.CodingSessionDiff{
-				Path:        stringPtrIfNotEmpty(diffPath),
-				Diff:        string(out),
-				IsTruncated: false,
-			}, nil
-		}
 	}
 
 	artifacts, err := s.ListRunArtifacts(ctx, workspaceID, sessionID)
@@ -271,35 +249,10 @@ func (s *AgentService) ResolveCodingSessionInteraction(ctx context.Context, work
 		responseSchemaVersion = model.AgentRunInteractionSchemaVersionHelpinV1
 	}
 	followupMessage := strings.TrimSpace(derefString(req.FollowupMessage))
-	liveCodexPause, err := s.shouldUseLiveCodexPausePath(ctx, run)
-	if err != nil {
-		return nil, err
-	}
 
 	previousInteraction := *interaction
 	if err := s.markInteractionResolved(ctx, interaction, actorID, responsePayload, responseSchemaVersion); err != nil {
 		return nil, err
-	}
-
-	if liveCodexPause && strings.TrimSpace(run.RuntimeKind) == "codex" && interactionUsesNativeCodexResume(interaction) {
-		if followupMessage != "" {
-			if _, err := s.createRunMessage(ctx, run, "user", interactionMessageTypeForIntent(resolveIntentForInteraction(interaction, responsePayload)), followupMessage); err != nil {
-				_ = s.restorePendingInteraction(ctx, &previousInteraction)
-				return nil, err
-			}
-		}
-		if err := s.persistResolvedInteractionArtifacts(ctx, run, interaction, actorID); err != nil {
-			slog.ErrorContext(ctx, "failed to persist resolved interaction artifacts",
-				"error", err,
-				"workspace_id", run.WorkspaceID,
-				"run_id", run.ID,
-				"interaction_id", interaction.ID,
-				"interaction_kind", interaction.InteractionKind,
-			)
-		}
-		s.clearAgentAttentionNotification(ctx, run)
-		s.publishResolvedInteractionEvent(run, interaction, actorID)
-		return interaction, nil
 	}
 
 	resumeReq, err := resumeRequestForResolvedInteraction(interaction, responsePayload, followupMessage)
@@ -322,24 +275,6 @@ func (s *AgentService) ResolveCodingSessionInteraction(ctx context.Context, work
 	}
 	s.publishResolvedInteractionEvent(run, interaction, actorID)
 	return interaction, nil
-}
-
-func interactionUsesNativeCodexResume(interaction *model.AgentRunInteraction) bool {
-	if interaction == nil {
-		return false
-	}
-	if strings.TrimSpace(interaction.RuntimeKind) != "codex" {
-		return false
-	}
-	switch strings.TrimSpace(interaction.InteractionKind) {
-	case model.AgentRunInteractionKindRequestUserInput,
-		model.AgentRunInteractionKindCommandExecutionApproval,
-		model.AgentRunInteractionKindFileChangeApproval,
-		model.AgentRunInteractionKindPermissionsApproval:
-		return true
-	default:
-		return false
-	}
 }
 
 func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentRun) (*model.CodingSession, error) {
@@ -919,21 +854,6 @@ func (s *AgentService) resolveCodingSessionRepoState(ctx context.Context, run *m
 		state.Branch = stringPtrIfNotEmpty(strings.TrimSpace(derefString(run.BaseBranch)))
 	}
 
-	workDir := worker.PersistentWorkspacePathForRun(run.ID)
-	if info, err := os.Stat(workDir); err == nil && info.IsDir() {
-		if repoName := strings.TrimSpace(derefString(run.RepoFullName)); repoName != "" {
-			state.RepoName = &repoName
-		}
-		if branch := gitCurrentBranch(ctx, workDir); branch != "" {
-			state.Branch = &branch
-		}
-		files := gitChangedFiles(ctx, workDir)
-		state.ChangedFiles = files
-		state.ChangedFileCount = len(files)
-		state.IsDirty = len(files) > 0
-		return state, nil
-	}
-
 	if summary := parseChangedFilesFromOutputSummary(run.OutputSummary); len(summary) > 0 {
 		state.ChangedFiles = summary
 		state.ChangedFileCount = len(summary)
@@ -1030,7 +950,7 @@ func codingSessionEventFromArtifact(artifact model.AgentRunArtifact) (string, ma
 		default:
 			return "", nil
 		}
-	case worker.RunPreviewArtifactType:
+	case agentcontract.RunPreviewArtifactType:
 		return "preview.updated", payload
 	default:
 		return "", nil
@@ -1326,58 +1246,6 @@ func parseChangedFilesFromOutputSummary(raw json.RawMessage) []model.CodingSessi
 		}
 	}
 	return files
-}
-
-func gitCurrentBranch(ctx context.Context, workDir string) string {
-	out, err := exec.CommandContext(ctx, "git", "-C", workDir, "branch", "--show-current").CombinedOutput()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
-func gitChangedFiles(ctx context.Context, workDir string) []model.CodingSessionRepoFile {
-	out, err := exec.CommandContext(ctx, "git", "-C", workDir, "status", "--porcelain").CombinedOutput()
-	if err != nil {
-		return nil
-	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	files := make([]model.CodingSessionRepoFile, 0, len(lines))
-	for _, line := range lines {
-		line = strings.TrimRight(line, "\r\n")
-		if strings.TrimSpace(line) == "" || len(line) < 4 {
-			continue
-		}
-		statusCode := strings.TrimSpace(line[:2])
-		path := strings.TrimSpace(line[3:])
-		if path == "" {
-			continue
-		}
-		files = append(files, model.CodingSessionRepoFile{
-			Path:   path,
-			Status: gitStatusLabel(statusCode),
-		})
-	}
-	return files
-}
-
-func gitStatusLabel(code string) string {
-	switch {
-	case strings.Contains(code, "A"):
-		return "added"
-	case strings.Contains(code, "D"):
-		return "deleted"
-	case strings.Contains(code, "R"):
-		return "renamed"
-	case strings.Contains(code, "M"):
-		return "modified"
-	case strings.Contains(code, "U"):
-		return "unmerged"
-	case strings.Contains(code, "?"):
-		return "untracked"
-	default:
-		return "modified"
-	}
 }
 
 func codingSessionStringValue(value any) string {

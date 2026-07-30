@@ -1,77 +1,7 @@
-import { useEffect, useRef, useState, type ComponentPropsWithoutRef } from 'react';
+import type { ComponentPropsWithoutRef } from 'react';
 import { Streamdown, defaultRehypePlugins, type Components } from 'streamdown';
 
 import { cn } from '@/lib/utils';
-
-/**
- * Reveals streamed text at a steady per-frame rate so large network deltas
- * don't pop in as chunks — the smooth "typing" feel of ChatGPT/Claude.
- *
- * The reveal decouples the on-screen cadence from the delta cadence: it eases
- * toward the target (faster when it's far behind so it never lags noticeably),
- * and snaps instantly when streaming ends or the text is replaced (not appended,
- * e.g. a completion that rewrites the message). Streamdown's incomplete-markdown
- * handling keeps partial prefixes from flickering formatting.
- */
-function useSmoothText(target: string, enabled: boolean): string {
-  // Hydrated snapshots and an already-open stream should never replay from an
-  // empty string when the row mounts. Show the first observed chunk
-  // immediately, then smooth only subsequent appended deltas. This mirrors
-  // ChatGPT/Claude: network bursts are eased, but reopening a live run does not
-  // visibly retype its history.
-  const [revealed, setRevealed] = useState(target);
-  const shownRef = useRef(revealed);
-  const rafRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    shownRef.current = revealed;
-  }, [revealed]);
-
-  useEffect(() => {
-    const cancel = () => {
-      if (rafRef.current != null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-    };
-
-    // Not streaming, or the target diverged from what we've shown (a completion
-    // that replaced the text rather than extended it): show it all immediately.
-    if (!enabled || !target.startsWith(shownRef.current)) {
-      cancel();
-      if (shownRef.current !== target) {
-        shownRef.current = target;
-        setRevealed(target);
-      }
-      return cancel;
-    }
-
-    // Advance a length cursor synchronously inside the loop rather than reading
-    // it back from React state — the state only commits on re-render, so a frame
-    // that fires before the commit (or a synchronous requestAnimationFrame, e.g.
-    // in tests) would otherwise never make progress and recurse until the stack
-    // overflows. Tracking `shownLen` here guarantees the loop terminates.
-    let shownLen = shownRef.current.length;
-    const step = () => {
-      if (shownLen >= target.length) {
-        rafRef.current = null;
-        return;
-      }
-      const remaining = target.length - shownLen;
-      // Ease-out: reveal ~1/8th of the backlog per frame (min 2 chars) so a big
-      // burst catches up quickly, a trickle reveals one-at-a-time smoothly.
-      shownLen = Math.min(target.length, shownLen + Math.max(2, Math.ceil(remaining / 8)));
-      const next = target.slice(0, shownLen);
-      shownRef.current = next;
-      setRevealed(next);
-      rafRef.current = requestAnimationFrame(step);
-    };
-    if (rafRef.current == null) rafRef.current = requestAnimationFrame(step);
-    return cancel;
-  }, [target, enabled]);
-
-  return enabled ? revealed : target;
-}
 
 const markdownComponents: Components = {
   p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
@@ -140,24 +70,22 @@ export function MarkdownContent({
   className?: string;
   streaming?: boolean;
 }) {
-  const shown = useSmoothText(content, streaming);
   return (
-    <div className={cn('text-sm leading-6 text-foreground', streaming && 'markdown-caret', className)}>
+    <div className={cn('text-sm leading-6 text-foreground', className)}>
       <Streamdown
         className="[&>*+*]:!mt-0"
         components={markdownComponents}
         controls={false}
         lineNumbers={false}
         mode={streaming ? 'streaming' : 'static'}
-        isAnimating={streaming}
-        caret={streaming ? 'block' : undefined}
+        isAnimating={false}
         parseIncompleteMarkdown={streaming}
         rehypePlugins={[
           defaultRehypePlugins.sanitize,
           defaultRehypePlugins.harden,
         ]}
       >
-        {shown}
+        {content}
       </Streamdown>
     </div>
   );

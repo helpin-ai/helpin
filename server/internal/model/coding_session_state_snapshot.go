@@ -596,39 +596,7 @@ func codingSessionStreamDelta(current, incoming string) string {
 	if current != "" && strings.HasPrefix(incoming, current) {
 		return incoming[len(current):]
 	}
-	if codingSessionShouldInsertStreamSpace(current, incoming) {
-		return " " + incoming
-	}
 	return incoming
-}
-
-func codingSessionShouldInsertStreamSpace(current, incoming string) bool {
-	if current == "" || incoming == "" {
-		return false
-	}
-	last := rune(current[len(current)-1])
-	first := rune(incoming[0])
-	if codingSessionIsStreamWhitespace(last) || codingSessionIsStreamWhitespace(first) {
-		return false
-	}
-	if strings.ContainsRune(".,;:!?)]}'\"`", first) {
-		return false
-	}
-	if strings.ContainsRune("([{`", last) {
-		return false
-	}
-	if strings.ContainsRune(".,;:!?", last) {
-		return codingSessionIsStreamWord(first)
-	}
-	return codingSessionIsStreamWord(last) && codingSessionIsStreamWord(first)
-}
-
-func codingSessionIsStreamWhitespace(value rune) bool {
-	return value == ' ' || value == '\n' || value == '\t' || value == '\r'
-}
-
-func codingSessionIsStreamWord(value rune) bool {
-	return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9')
 }
 
 func latestCodingSessionAssistantSegment(segments []CodingSessionLiveTurnSegment, messageID string) *CodingSessionLiveAssistantMessage {

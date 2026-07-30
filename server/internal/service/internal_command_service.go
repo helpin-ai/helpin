@@ -894,6 +894,7 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("name and team_id are required")
 			}
 
+			req.EpicID = stringPtrOrNil(commandDerefString(req.EpicID))
 			if req.EpicID == nil && strings.TrimSpace(meta.TargetType) == "epic" && strings.TrimSpace(meta.TargetID) != "" {
 				req.EpicID = stringPtrOrNil(meta.TargetID)
 			}
@@ -903,6 +904,7 @@ func (s *InternalCommandService) registerDefaults() {
 			req.WorkflowID = stringPtrOrNil(commandDerefString(req.WorkflowID))
 			req.StateID = stringPtrOrNil(commandDerefString(req.StateID))
 			req.OwnerMemberIDs = commandTrimStringSlice(req.OwnerMemberIDs)
+			req.LabelIDs = commandTrimStringSlice(req.LabelIDs)
 
 			var deadline *time.Time
 			if req.Deadline != nil {

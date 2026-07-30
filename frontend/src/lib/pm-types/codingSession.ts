@@ -236,6 +236,7 @@ export type CodingSessionLiveTurnSegment =
   | CodingSessionLiveToolCallSegment;
 
 export interface CodingSessionStreamSnapshot {
+  through_sequence?: number;
   live_assistant_message?: CodingSessionLiveAssistantMessage;
   live_reasoning_message?: CodingSessionLiveReasoningMessage;
   live_turn_segments?: CodingSessionLiveTurnSegment[];

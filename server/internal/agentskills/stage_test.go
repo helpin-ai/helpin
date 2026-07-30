@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 type stageTestLookup struct {
@@ -39,7 +39,7 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	}
 	destRoot := filepath.Join(t.TempDir(), "skills")
 
-	resolution, err := StageInto(context.Background(), "ws_123", agent, []string{worker.ToolRequestApproval, worker.ToolRequestReviewCheckpoint}, nil, nil, destRoot)
+	resolution, err := StageInto(context.Background(), "ws_123", agent, []string{agentcontract.ToolRequestApproval, agentcontract.ToolRequestReviewCheckpoint}, nil, nil, destRoot)
 	if err != nil {
 		t.Fatalf("stage skills: %v", err)
 	}
@@ -53,10 +53,10 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	if !strings.Contains(string(payload), "prd_task_plan_approval") {
 		t.Fatalf("expected staged skill markdown to contain skill key, got %q", string(payload))
 	}
-	if !strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval)+"`") {
+	if !strings.Contains(string(payload), "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestApproval)+"`") {
 		t.Fatalf("expected staged skill markdown to use runtime approval tool name, got %q", string(payload))
 	}
-	if strings.Contains(string(payload), "`"+worker.ToolRequestApproval+"`") {
+	if strings.Contains(string(payload), "`"+agentcontract.ToolRequestApproval+"`") {
 		t.Fatalf("expected staged skill markdown not to expose bare approval tool name, got %q", string(payload))
 	}
 }
@@ -124,6 +124,7 @@ func TestStageIntoStagesBuiltInSkillPackageReferences(t *testing.T) {
 		"grep",
 		"run_command",
 		"web_search_exa",
+		"fetch_url",
 		"create_task",
 	}, nil, nil, destRoot)
 	if err != nil {
@@ -177,8 +178,8 @@ func TestStageIntoStagesSecurityTriageBuiltInSkillPackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read staged security triage SKILL.md: %v", err)
 	}
-	if !strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt("scan_gitleaks")+"`") ||
-		!strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt("ensure_task_label")+"`") {
+	if !strings.Contains(string(payload), "`"+agentcontract.RuntimeToolNameForPrompt("scan_gitleaks")+"`") ||
+		!strings.Contains(string(payload), "`"+agentcontract.RuntimeToolNameForPrompt("ensure_task_label")+"`") {
 		t.Fatalf("expected staged security triage skill to contain scanner and label tools, got %q", string(payload))
 	}
 	if _, err := os.Stat(filepath.Join(destRoot, "01-security_triage", "semgrep", "helpin-security.yml")); err != nil {
@@ -187,19 +188,19 @@ func TestStageIntoStagesSecurityTriageBuiltInSkillPackage(t *testing.T) {
 }
 
 func TestStageIntoStagesWorkspaceSkillArchive(t *testing.T) {
-	definition := worker.SkillDefinition{
+	definition := agentcontract.SkillDefinition{
 		Key:          "workspace_review",
 		Title:        "Workspace Review",
 		Description:  "Review changes for the workspace.",
 		Instructions: "Inspect the repo, call `update_plan`, and produce a review summary.",
 		SourceKind:   model.WorkspaceSkillSourceWorkspace,
 	}
-	archive, checksum, filename, err := worker.BuildSkillArchive(definition)
+	archive, checksum, filename, err := agentcontract.BuildSkillArchive(definition)
 	if err != nil {
 		t.Fatalf("build archive: %v", err)
 	}
 	skillID := "skill-123"
-	versionKey := worker.SkillVersionForBytes(archive)
+	versionKey := agentcontract.SkillVersionForBytes(archive)
 	objectKey := "workspaces/ws_123/skills/skill-123/" + filename
 	lookup := &stageTestLookup{
 		byID: map[string]*model.WorkspaceSkill{
@@ -239,10 +240,10 @@ func TestStageIntoStagesWorkspaceSkillArchive(t *testing.T) {
 	if !strings.Contains(string(payload), definition.Description) {
 		t.Fatalf("expected staged workspace skill markdown to contain description, got %q", string(payload))
 	}
-	if !strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt(worker.ToolUpdatePlan)+"`") {
+	if !strings.Contains(string(payload), "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolUpdatePlan)+"`") {
 		t.Fatalf("expected staged workspace skill markdown to use runtime update_plan tool name, got %q", string(payload))
 	}
-	if strings.Contains(string(payload), "`"+worker.ToolUpdatePlan+"`") {
+	if strings.Contains(string(payload), "`"+agentcontract.ToolUpdatePlan+"`") {
 		t.Fatalf("expected staged workspace skill markdown not to expose bare update_plan tool name, got %q", string(payload))
 	}
 }

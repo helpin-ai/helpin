@@ -175,6 +175,24 @@ func TestEmbeddedSystemRegistryLoads(t *testing.T) {
 	}
 }
 
+func TestEmbeddedDependencyAuditorAllowsGuardedRegistryFetches(t *testing.T) {
+	registry, err := LoadSystemRegistry()
+	if err != nil {
+		t.Fatalf("LoadSystemRegistry returned error: %v", err)
+	}
+	tmpl, ok := registry.Get("engineering_dependency_auditor")
+	if !ok {
+		t.Fatal("engineering_dependency_auditor template not found")
+	}
+	if tmpl.Agent.Create == nil || !containsString(tmpl.Agent.Create.AllowedTools, "fetch_url") {
+		t.Fatalf("dependency auditor allowed tools = %#v, want fetch_url", tmpl.Agent.Create)
+	}
+	prompt := embeddedTemplatePrompt(tmpl)
+	if !strings.Contains(prompt, "Do not invoke curl or wget through run_command") {
+		t.Fatalf("dependency auditor prompt must direct registry requests through fetch_url:\n%s", prompt)
+	}
+}
+
 func TestEmbeddedReportTemplatesUseStandardTitlePattern(t *testing.T) {
 	registry, err := LoadSystemRegistry()
 	if err != nil {
@@ -262,6 +280,9 @@ func TestEmbeddedCompetitorsChangelogTemplateUsesNewIdentity(t *testing.T) {
 	}
 	if tmpl.Agent.Create.ApprovalMode != "never" {
 		t.Fatalf("approval mode = %q, want never", tmpl.Agent.Create.ApprovalMode)
+	}
+	if !strings.Contains(tmpl.Agent.Create.SystemPrompt, "runtime's built-in web search") || !strings.Contains(tmpl.Agent.Create.SystemPrompt, "not evidence that a competitor has no public changelog") {
+		t.Fatalf("competitive research prompt must support runtime-native search and reject false no-changelog conclusions:\n%s", tmpl.Agent.Create.SystemPrompt)
 	}
 }
 

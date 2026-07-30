@@ -55,6 +55,10 @@ vi.mock('@/lib/services/agentService', () => ({
   },
 }))
 
+vi.mock('@/components/billing/UpgradeRequiredDialog', () => ({
+  UpgradeRequiredDialog: () => null,
+}))
+
 vi.mock('../ReplyComposer', () => ({
   ReplyComposer: () => <div data-testid="reply-composer" />,
 }))

@@ -29,6 +29,7 @@ type AgentRuntimeMessage = agentruntime.AgentRunMessage
 type AgentRuntimeArtifact = agentruntime.AgentRunArtifact
 type AgentRuntimeInteraction = agentruntime.AgentRunInteraction
 type AgentRuntimeEventEnvelope = agentruntime.EventEnvelope
+type AgentRuntimeEventListResponse = agentruntime.EventListResponse
 
 // AgentRuntimeClient is Helpin's host-side client for delegated Agent Runtime
 // runs. It intentionally uses only /v1 routes; /internal runtime routes are not
@@ -38,15 +39,21 @@ type AgentRuntimeClient struct {
 	appID  string
 }
 
-func NewAgentRuntimeClient(baseURL, appID, token string, httpClient *http.Client) (*AgentRuntimeClient, error) {
+func NewAgentRuntimeClient(baseURL, appID, token string, httpClient *http.Client, eventProtocol ...string) (*AgentRuntimeClient, error) {
 	if strings.TrimSpace(appID) == "" {
 		return nil, fmt.Errorf("agent runtime app ID is required")
 	}
-	client, err := agentruntime.NewClient(
-		baseURL,
+	options := []agentruntime.ClientOption{
 		agentruntime.WithAppID(appID),
 		agentruntime.WithServiceToken(token),
 		agentruntime.WithHTTPClient(httpClient),
+	}
+	if len(eventProtocol) > 0 {
+		options = append(options, agentruntime.WithEventProtocol(eventProtocol[0]))
+	}
+	client, err := agentruntime.NewClient(
+		baseURL,
+		options...,
 	)
 	if err != nil {
 		return nil, err
@@ -87,6 +94,13 @@ func (c *AgentRuntimeClient) GetRun(ctx context.Context, runtimeRunID string) (*
 
 func (c *AgentRuntimeClient) ListMessages(ctx context.Context, runtimeRunID string) ([]AgentRuntimeMessage, error) {
 	return c.client.ListMessages(ctx, runtimeRunID)
+}
+
+// ListV2Events reads the durable ordered event log. NATS remains the low-
+// latency path; this endpoint lets the projection repair a missed delivery or
+// a consumer restart without reconstructing provider-specific output.
+func (c *AgentRuntimeClient) ListV2Events(ctx context.Context, runtimeRunID string, afterSequence int64) (*AgentRuntimeEventListResponse, error) {
+	return c.client.ListV2Events(ctx, runtimeRunID, afterSequence)
 }
 
 func (c *AgentRuntimeClient) ListArtifacts(ctx context.Context, runtimeRunID string) ([]AgentRuntimeArtifact, error) {
