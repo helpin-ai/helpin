@@ -36,6 +36,11 @@ func TestAgentRuntimeClientStartRunUsesV1AuthAndHostRunID(t *testing.T) {
 		HostRunID: "helpin-run-1",
 		AgentID:   "agent-runtime-agent-1",
 		Target:    AgentRuntimeTargetRef{Type: "task", ID: "task-1"},
+		MCPServers: []ExternalMCPRunServer{{
+			ServerID: "customer-io", ServerName: "customer_io", Transport: "streamable_http", URL: "https://mcp.customer.io/mcp",
+			Tools:      []ExternalMCPRunTool{{Name: "cio_read_api", Access: "read"}},
+			Credential: &ExternalMCPRunCredential{Type: "bearer_token", AccessToken: "run-secret"},
+		}},
 	})
 	if err != nil {
 		t.Fatalf("start run: %v", err)
@@ -49,6 +54,9 @@ func TestAgentRuntimeClientStartRunUsesV1AuthAndHostRunID(t *testing.T) {
 	if gotBody.AppID != "helpin" || gotBody.HostRunID != "helpin-run-1" {
 		t.Fatalf("unexpected start body: %#v", gotBody)
 	}
+	if len(gotBody.MCPServers) != 1 || gotBody.MCPServers[0].Credential == nil || gotBody.MCPServers[0].Credential.AccessToken != "run-secret" {
+		t.Fatalf("MCP attachment not forwarded: %#v", gotBody.MCPServers)
+	}
 	if run.ID != "run-runtime-1" || run.HostRunID != "helpin-run-1" {
 		t.Fatalf("unexpected run response: %#v", run)
 	}
@@ -57,6 +65,41 @@ func TestAgentRuntimeClientStartRunUsesV1AuthAndHostRunID(t *testing.T) {
 func TestAgentRuntimeClientRequiresAppID(t *testing.T) {
 	if _, err := NewAgentRuntimeClient("http://runtime.test", " ", "runtime-token", nil); err == nil {
 		t.Fatal("expected missing app ID error")
+	}
+}
+
+func TestAgentRuntimeClientRotatesOnlyCredential(t *testing.T) {
+	var gotMethod, gotPath, gotQuery, gotProtocol string
+	var gotBody struct {
+		Credential ExternalMCPRunCredential `json:"credential"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.EscapedPath()
+		gotQuery = r.URL.RawQuery
+		gotProtocol = r.Header.Get("X-Agent-Runtime-Event-Protocol")
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Errorf("decode credential rotation: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"run_id": "runtime/run", "server_id": "server one"})
+	}))
+	defer server.Close()
+
+	client, err := NewAgentRuntimeClient(server.URL, "helpin", "runtime-token", server.Client(), "v2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.UpdateRunMCPCredential(context.Background(), "runtime/run", "server one", ExternalMCPRunCredential{Type: "bearer_token", AccessToken: "replacement"}); err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodPut || gotPath != "/v1/runs/runtime%2Frun/mcp-servers/server%20one/credential" || gotQuery != "app_id=helpin" {
+		t.Fatalf("unexpected rotation request: %s %s?%s", gotMethod, gotPath, gotQuery)
+	}
+	if gotProtocol != "v2" {
+		t.Fatalf("event protocol header = %q", gotProtocol)
+	}
+	if gotBody.Credential.Type != "bearer_token" || gotBody.Credential.AccessToken != "replacement" {
+		t.Fatalf("credential body = %#v", gotBody.Credential)
 	}
 }
 

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -43,6 +43,7 @@ import type {
 import { ensureMCPWriteScopes, hasMCPWriteScope } from '@/lib/mcpPolicy';
 import { cn } from '@/lib/utils';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
+import { ExternalMCPSettings } from './ExternalMCPSettings';
 
 type MCPSettingsPanelProps = {
   workspaceId: string;
@@ -72,6 +73,57 @@ const SCOPE_LABELS: Record<string, string> = {
 };
 
 export function MCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPanelProps) {
+  const initialTab = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'ai-clients'
+    ? 'ai-clients'
+    : 'external';
+  const [section, setSection] = useState(initialTab);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthResult = params.get('external_mcp_oauth');
+    if (!oauthResult) return;
+    if (oauthResult === 'connected') {
+      toast.success(params.get('external_mcp_resume') === 'failed'
+        ? 'Server connected. A paused run could not be resumed automatically.'
+        : 'External MCP server connected');
+    } else {
+      toast.error('External MCP authorization was not completed');
+    }
+    params.delete('external_mcp_oauth');
+    params.delete('external_mcp_server_id');
+    params.delete('external_mcp_resume');
+    const query = params.toString();
+    window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="flex items-center gap-2">
+          <BotIcon className="h-5 w-5 text-muted-foreground" />
+          <h2 className="text-xl font-semibold">Model Context Protocol</h2>
+        </div>
+        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+          Connect external systems for Helpin agents, or connect outside AI clients to {workspaceName || 'this workspace'}.
+        </p>
+      </div>
+      <Tabs value={section} onValueChange={setSection}>
+        <TabsList variant="line" className="max-w-full overflow-x-auto">
+          <TabsTrigger value="external">External servers</TabsTrigger>
+          <TabsTrigger value="ai-clients">AI clients</TabsTrigger>
+        </TabsList>
+        <TabsContent value="external" className="mt-4">
+          <ExternalMCPSettings workspaceId={workspaceId} workspaceName={workspaceName} />
+        </TabsContent>
+        <TabsContent value="ai-clients" className="mt-4">
+          <InboundMCPSettingsPanel workspaceId={workspaceId} workspaceName={workspaceName} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function InboundMCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPanelProps) {
   const dashboardQuery = useMCPDashboard(workspaceId);
   const dashboard = dashboardQuery.data;
   const [tab, setTab] = useState('setup');
@@ -91,16 +143,6 @@ export function MCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPane
 
   return (
     <div className="space-y-4">
-      <div>
-        <div className="flex items-center gap-2">
-          <BotIcon className="h-5 w-5 text-muted-foreground" />
-          <h2 className="text-xl font-semibold">MCP</h2>
-        </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Connect Claude, ChatGPT, Cursor, or any MCP-compatible tool to {workspaceName || 'this workspace'} — so your AI can read projects, answer from your docs, and act on your behalf.
-        </p>
-      </div>
-
       {!dashboard.platform_enabled ? (
         <Alert>
           <AlertTitle>AI tool connections are not available in this environment</AlertTitle>

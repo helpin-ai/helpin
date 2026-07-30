@@ -25,7 +25,11 @@ func (s *AgentService) DraftCustomAgent(ctx context.Context, workspaceID string,
 	if err != nil {
 		return nil, err
 	}
-	return s.DraftCustomAgentWithCatalog(ctx, workspaceID, req, s.ListToolCatalog().Tools, skillCatalog.Skills)
+	toolCatalog, err := s.ListToolCatalogForWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return s.DraftCustomAgentWithCatalog(ctx, workspaceID, req, toolCatalog.Tools, skillCatalog.Skills)
 }
 
 func (s *AgentService) DraftCustomAgentWithCatalog(

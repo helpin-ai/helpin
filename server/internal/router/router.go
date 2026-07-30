@@ -45,6 +45,7 @@ type Handlers struct {
 	Agent               *handler.AgentHandler
 	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
 	MCP                 *handler.MCPHandler
+	ExternalMCP         *handler.ExternalMCPHandler
 	SupportInbox        *handler.SupportInboxHandler
 	SupportInboxView    *handler.SupportInboxViewHandler
 	SupportTag          *handler.SupportTagHandler
@@ -419,6 +420,21 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSettingsManage)).Get("/service-principals/{principalID}/tokens", h.MCP.ListServiceTokens)
 					r.With(requirePerm(authorization.PermSettingsManage)).Post("/service-principals/{principalID}/tokens", h.MCP.RotateServiceToken)
 					r.With(requirePerm(authorization.PermSettingsManage)).Delete("/service-principals/{principalID}/tokens/{tokenID}", h.MCP.RevokeServiceToken)
+				})
+			}
+			if h.ExternalMCP != nil {
+				r.Get("/external-mcp/oauth/callback", h.ExternalMCP.OAuthCallback)
+				r.Route("/external-mcp", func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceID)
+					r.Use(wsActive)
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/providers", h.ExternalMCP.Providers)
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/servers", h.ExternalMCP.ListServers)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/servers", h.ExternalMCP.CreateServer)
+					r.With(requirePerm(authorization.PermSettingsManage)).Put("/servers/{serverID}", h.ExternalMCP.UpdateServer)
+					r.With(requirePerm(authorization.PermSettingsManage)).Delete("/servers/{serverID}", h.ExternalMCP.DeleteServer)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/servers/{serverID}/oauth/start", h.ExternalMCP.StartOAuth)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/servers/{serverID}/tools/refresh", h.ExternalMCP.RefreshTools)
+					r.With(requirePerm(authorization.PermSettingsManage)).Put("/servers/{serverID}/tools", h.ExternalMCP.UpdateTools)
 				})
 			}
 

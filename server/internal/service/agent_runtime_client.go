@@ -21,7 +21,9 @@ const (
 type AgentRuntimeTargetRef = agentruntime.TargetRef
 type AgentRuntimeAgent = agentruntime.Agent
 type AgentRuntimeSkillRef = agentruntime.SkillRef
+
 type AgentRuntimeStartRunRequest = agentruntime.StartRunRequest
+
 type AgentRuntimeTurnPolicy = agentruntime.TurnPolicy
 type AgentRuntimeResumeRunRequest = agentruntime.ResumeRunRequest
 type AgentRuntimeRun = agentruntime.AgentRun
@@ -58,10 +60,7 @@ func NewAgentRuntimeClient(baseURL, appID, token string, httpClient *http.Client
 	if err != nil {
 		return nil, err
 	}
-	return &AgentRuntimeClient{
-		client: client,
-		appID:  strings.TrimSpace(appID),
-	}, nil
+	return &AgentRuntimeClient{client: client, appID: strings.TrimSpace(appID)}, nil
 }
 
 func (c *AgentRuntimeClient) AppID() string {
@@ -86,6 +85,13 @@ func (c *AgentRuntimeClient) UpsertAgent(ctx context.Context, agent AgentRuntime
 
 func (c *AgentRuntimeClient) StartRun(ctx context.Context, req AgentRuntimeStartRunRequest) (*AgentRuntimeRun, error) {
 	return c.client.StartRun(ctx, req)
+}
+
+// UpdateRunMCPCredential rotates only an already-attached server credential;
+// the runtime rejects URL or tool-policy changes through this endpoint.
+func (c *AgentRuntimeClient) UpdateRunMCPCredential(ctx context.Context, runtimeRunID, serverID string, credential ExternalMCPRunCredential) error {
+	_, err := c.client.UpdateRunMCPCredential(ctx, runtimeRunID, serverID, agentruntime.UpdateRunMCPCredentialRequest{Credential: credential})
+	return err
 }
 
 func (c *AgentRuntimeClient) GetRun(ctx context.Context, runtimeRunID string) (*AgentRuntimeRun, error) {

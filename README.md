@@ -160,6 +160,8 @@ The shared dataset was also cleaned up:
 
 The canonical doc for the current backend model and near-term proposal is [docs/AGENTS_AND_AUTOMATION.md](docs/AGENTS_AND_AUTOMATION.md).
 
+Workspace-owned outbound MCP servers for agents are documented in [docs/EXTERNAL_MCP_SERVERS.md](docs/EXTERNAL_MCP_SERVERS.md). Public inbound MCP for outside AI clients remains documented separately in [docs/HELPIN_PUBLIC_MCP.md](docs/HELPIN_PUBLIC_MCP.md).
+
 Current truth:
 
 - `agent_run` is the durable execution primitive
