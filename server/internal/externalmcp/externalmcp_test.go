@@ -3,11 +3,13 @@ package externalmcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -176,5 +178,38 @@ func TestListToolsForwardsCredentialAndClassifiesReadOnlyHint(t *testing.T) {
 	}
 	if len(tools) != 1 || tools[0].Name != "read_customer" || !tools[0].ReadOnly || tools[0].SchemaHash == "" || !strings.Contains(string(tools[0].InputSchema), "object") {
 		t.Fatalf("unexpected tools: %#v", tools)
+	}
+}
+
+func TestListToolsBlocksAndReportsCrossHostRedirect(t *testing.T) {
+	var requests atomic.Int32
+	var redirectedRequests atomic.Int32
+	var redirectTarget string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Host == strings.TrimPrefix(redirectTarget, "http://") {
+			redirectedRequests.Add(1)
+		}
+		http.Redirect(w, r, redirectTarget+"/mcp", http.StatusTemporaryRedirect)
+	}))
+	defer server.Close()
+	redirectTarget = server.URL
+	endpoint := strings.Replace(server.URL, "127.0.0.1", "localhost", 1) + "/mcp"
+
+	client, err := NewClient(endpoint, []string{"localhost", "127.0.0.1"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.ListTools(context.Background(), http.Header{"Authorization": []string{"Bearer test-secret"}})
+	var remoteErr *RemoteError
+	if !errors.As(err, &remoteErr) {
+		t.Fatalf("ListTools error = %T %v, want RemoteError", err, err)
+	}
+	if remoteErr.Status != http.StatusTemporaryRedirect || remoteErr.Code != "remote_redirect" ||
+		RedirectTarget(err) != redirectTarget+"/mcp" {
+		t.Fatalf("unexpected redirect error: %#v", remoteErr)
+	}
+	if requests.Load() == 0 || redirectedRequests.Load() != 0 {
+		t.Fatalf("request count = %d, redirected requests = %d; redirect must remain blocked", requests.Load(), redirectedRequests.Load())
 	}
 }

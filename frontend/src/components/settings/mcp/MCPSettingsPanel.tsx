@@ -87,7 +87,7 @@ export function MCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPane
         ? 'Server connected. A paused run could not be resumed automatically.'
         : 'External MCP server connected');
     } else {
-      toast.error('External MCP authorization was not completed');
+      toast.error('External MCP connection could not be completed. Check the server status for details.');
     }
     params.delete('external_mcp_oauth');
     params.delete('external_mcp_server_id');

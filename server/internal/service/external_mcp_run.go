@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -37,17 +38,21 @@ func (s *ExternalMCPService) SyncTools(ctx context.Context, workspaceID, serverI
 	}
 	discovered, err := client.ListTools(ctx, headers)
 	if err != nil {
-		switch {
-		case externalmcp.IsStatus(err, 401):
-			if server.AuthType == model.ExternalMCPAuthOAuth {
-				s.markReauthorizationRequired(ctx, server, "remote_unauthorized")
-			} else {
-				s.setServerFailure(ctx, server, model.ExternalMCPStatusError, "credential_rejected", "The MCP server rejected the configured credential")
+		if message, redirected := externalMCPCrossHostRedirectMessage(err); redirected {
+			s.setServerFailure(ctx, server, model.ExternalMCPStatusError, "mcp_endpoint_redirect", message)
+		} else {
+			switch {
+			case externalmcp.IsStatus(err, 401):
+				if server.AuthType == model.ExternalMCPAuthOAuth {
+					s.markReauthorizationRequired(ctx, server, "remote_unauthorized")
+				} else {
+					s.setServerFailure(ctx, server, model.ExternalMCPStatusError, "credential_rejected", "The MCP server rejected the configured credential")
+				}
+			case externalmcp.IsStatus(err, 403):
+				s.setServerFailure(ctx, server, model.ExternalMCPStatusRemoteDisabled, "remote_disabled", "The MCP server rejected access; verify it is enabled in the provider")
+			default:
+				s.setServerFailure(ctx, server, model.ExternalMCPStatusError, "tool_sync_failed", "Tool discovery failed")
 			}
-		case externalmcp.IsStatus(err, 403):
-			s.setServerFailure(ctx, server, model.ExternalMCPStatusRemoteDisabled, "remote_disabled", "The MCP server rejected access; verify it is enabled in the provider")
-		default:
-			s.setServerFailure(ctx, server, model.ExternalMCPStatusError, "tool_sync_failed", "Tool discovery failed")
 		}
 		return err
 	}
@@ -79,6 +84,15 @@ func (s *ExternalMCPService) SyncTools(ctx context.Context, workspaceID, serverI
 		"status": model.ExternalMCPStatusConnected, "last_tool_sync_at": now, "last_health_checked_at": now,
 		"last_error_code": nil, "last_error_message": nil, "auth_incident_key": nil, "auth_incident_notified_at": nil,
 	})
+}
+
+func externalMCPCrossHostRedirectMessage(err error) (string, bool) {
+	target := externalmcp.RedirectTarget(err)
+	parsed, parseErr := url.Parse(target)
+	if parseErr != nil || parsed.Hostname() == "" {
+		return "", false
+	}
+	return "The MCP endpoint redirected to " + parsed.Hostname() + ". Credentials were not forwarded. Remove this installation and reconnect using the provider's canonical endpoint.", true
 }
 
 // ResolveRunAttachments turns selected catalog aliases into the exact runtime

@@ -43,6 +43,11 @@ var customerIOReadTools = map[string]bool{
 	"cio_auth_status": true,
 }
 
+const (
+	customerIOMCPEndpointUS = "https://mcp.customer.io/mcp"
+	customerIOMCPEndpointEU = "https://mcp-eu.customer.io/mcp"
+)
+
 // ExternalMCPService owns durable workspace installation state and browser
 // OAuth. Decrypted secrets exist only within bounded request/run preparation.
 type ExternalMCPService struct {
@@ -91,8 +96,8 @@ func (s *ExternalMCPService) Enabled() bool { return s != nil && s.cfg.Enabled }
 
 func (s *ExternalMCPService) Providers() []ExternalMCPProviderOption {
 	providers := []ExternalMCPProviderOption{
-		{Provider: model.ExternalMCPProviderCustomerIO, Region: "us", Name: "Customer.io (US)", EndpointURL: "https://mcp.customer.io/mcp", AuthType: model.ExternalMCPAuthOAuth, DefaultScopes: []string{"read"}, OptionalScopes: []string{"read:sensitive", "write", "write:live", "configure"}},
-		{Provider: model.ExternalMCPProviderCustomerIO, Region: "eu", Name: "Customer.io (EU)", EndpointURL: "https://mcp-eu.customer.io/mcp", AuthType: model.ExternalMCPAuthOAuth, DefaultScopes: []string{"read"}, OptionalScopes: []string{"read:sensitive", "write", "write:live", "configure"}},
+		{Provider: model.ExternalMCPProviderCustomerIO, Region: "us", Name: "Customer.io (US)", EndpointURL: customerIOMCPEndpointUS, AuthType: model.ExternalMCPAuthOAuth, DefaultScopes: []string{"read"}, OptionalScopes: []string{"read:sensitive", "write", "write:live", "configure"}},
+		{Provider: model.ExternalMCPProviderCustomerIO, Region: "eu", Name: "Customer.io (EU)", EndpointURL: customerIOMCPEndpointEU, AuthType: model.ExternalMCPAuthOAuth, DefaultScopes: []string{"read"}, OptionalScopes: []string{"read:sensitive", "write", "write:live", "configure"}},
 	}
 	if s != nil && s.cfg.CustomServersEnabled {
 		providers = append(providers, ExternalMCPProviderOption{Provider: model.ExternalMCPProviderCustom, Name: "Custom MCP server"})

@@ -27,8 +27,8 @@ type DiscoveredTool struct {
 // ListTools initializes a short-lived MCP session and retrieves all paginated
 // tools. The caller supplies decrypted headers only in memory.
 func (c *Client) ListTools(ctx context.Context, headers http.Header) ([]DiscoveredTool, error) {
-	status := 0
-	httpClient := c.clientWithHeaders(headers, &status)
+	outcome := &requestOutcome{}
+	httpClient := c.clientWithHeaders(headers, outcome)
 	client := mcp.NewClient(&mcp.Implementation{Name: "helpin", Version: "1.0"}, &mcp.ClientOptions{})
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:             c.Endpoint(),
@@ -38,7 +38,7 @@ func (c *Client) ListTools(ctx context.Context, headers http.Header) ([]Discover
 	}
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
-		return nil, safeMCPError("connection", status)
+		return nil, safeMCPError("connection", outcome)
 	}
 	defer session.Close()
 
@@ -50,7 +50,7 @@ func (c *Client) ListTools(ctx context.Context, headers http.Header) ([]Discover
 		}
 		result, err := session.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
 		if err != nil {
-			return nil, safeMCPError("tool discovery", status)
+			return nil, safeMCPError("tool discovery", outcome)
 		}
 		for _, tool := range result.Tools {
 			if tool == nil || strings.TrimSpace(tool.Name) == "" {
@@ -80,12 +80,15 @@ func (c *Client) ListTools(ctx context.Context, headers http.Header) ([]Discover
 	return discovered, nil
 }
 
-func safeMCPError(operation string, status int) error {
+func safeMCPError(operation string, outcome *requestOutcome) error {
+	status, redirectTarget := outcome.snapshot()
 	code := "remote_protocol_error"
 	if status == http.StatusUnauthorized {
 		code = "authentication_required"
 	} else if status == http.StatusForbidden {
 		code = "remote_forbidden"
+	} else if status >= http.StatusMultipleChoices && status < http.StatusBadRequest && redirectTarget != "" {
+		code = "remote_redirect"
 	}
-	return &RemoteError{Operation: operation, Status: status, Code: code}
+	return &RemoteError{Operation: operation, Status: status, Code: code, RedirectTarget: redirectTarget}
 }

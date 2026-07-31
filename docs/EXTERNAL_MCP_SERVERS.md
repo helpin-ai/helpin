@@ -29,6 +29,14 @@ Durable OAuth credentials do not belong in Agent Runtime. Agent Runtime receives
 
 An agent never receives every tool merely because a server is installed in the workspace. Installation, workspace tool enablement, agent `allowed_tools`, and the run attachment are separate gates.
 
+## Generic servers versus presets
+
+Helpin does not need provider-specific protocol code for a standards-compliant HTTP MCP server. With `EXTERNAL_MCP_CUSTOM_SERVERS_ENABLED=true`, a workspace manager can supply an operator-approved endpoint and choose OAuth, bearer-token, custom-header, or unauthenticated access. The same discovery, credential lifecycle, tool policy, and per-run attachment path is used for every server.
+
+A provider preset is optional product metadata: a friendly name, canonical endpoint, suggested scopes, and—when justified—a reviewed read/write classification. Customer.io is included as the reference preset, but the MCP and OAuth implementations beneath it are generic.
+
+Operator host approval remains explicit in both Helpin and Agent Runtime. This is configuration rather than integration code, and prevents a workspace-supplied URL from becoming an unrestricted server-side request primitive. Provider-specific code should be reserved for a genuinely non-standard OAuth flow or other behavior that cannot be expressed through the generic contract.
+
 ## Tool names and mutation policy
 
 The saved/runtime alias is deterministic:
@@ -61,6 +69,8 @@ Helpin implements the MCP authorization discovery sequence:
 
 Normal access-token expiry is refreshed silently before tool discovery or a run. Refresh rotation is serialized with a database row lock so two Helpin instances do not race a rotating refresh token.
 
+Credential-bearing MCP requests do not follow cross-host redirects. Helpin records the sanitized destination host as `mcp_endpoint_redirect` and asks the manager to reconnect with the provider's canonical endpoint. This behavior is generic for every MCP server and prevents bearer or header credentials from leaking through an unexpected redirect.
+
 If refresh is rejected or the provider revokes consent:
 
 - the installation becomes `reauthorization_required`;
@@ -79,6 +89,8 @@ The preset follows [Customer.io's current MCP setup documentation](https://docs.
 | --- | --- |
 | US | `https://mcp.customer.io/mcp` |
 | EU | `https://mcp-eu.customer.io/mcp` |
+
+Choose the endpoint that matches the Customer.io account's data region. If Customer.io redirects the authenticated MCP request to the other region, Helpin's generic cross-host redirect protection identifies the canonical host without forwarding the bearer credential.
 
 Supported scope choices:
 

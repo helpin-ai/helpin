@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/publicsuffix"
@@ -24,9 +25,10 @@ const maxResponseBytes = 1 << 20
 // RemoteError is safe to surface; it intentionally excludes response bodies,
 // headers, URLs with query strings, and credentials.
 type RemoteError struct {
-	Operation string
-	Status    int
-	Code      string
+	Operation      string
+	Status         int
+	Code           string
+	RedirectTarget string
 }
 
 func (e *RemoteError) Error() string {
@@ -39,6 +41,17 @@ func (e *RemoteError) Error() string {
 func IsStatus(err error, status int) bool {
 	var remoteErr *RemoteError
 	return errors.As(err, &remoteErr) && remoteErr.Status == status || mcpauth.IsStatus(err, status)
+}
+
+// RedirectTarget returns a sanitized redirect URL without query parameters,
+// fragments, or user information. Redirects are still blocked; callers can
+// use this only to produce a safe, actionable connection error.
+func RedirectTarget(err error) string {
+	var remoteErr *RemoteError
+	if !errors.As(err, &remoteErr) {
+		return ""
+	}
+	return remoteErr.RedirectTarget
 }
 
 // Client is a server-scoped, SSRF-hardened HTTP/MCP client.
@@ -241,7 +254,7 @@ func isLocalHostname(host string) bool {
 type headerRoundTripper struct {
 	base    http.RoundTripper
 	headers http.Header
-	status  *int
+	outcome *requestOutcome
 }
 
 func (t headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -253,15 +266,52 @@ func (t headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		}
 	}
 	resp, err := t.base.RoundTrip(clone)
-	if resp != nil && t.status != nil {
-		*t.status = resp.StatusCode
+	if resp != nil && t.outcome != nil {
+		t.outcome.record(resp)
 	}
 	return resp, err
 }
 
-func (c *Client) clientWithHeaders(headers http.Header, status *int) *http.Client {
+type requestOutcome struct {
+	mu             sync.Mutex
+	status         int
+	redirectTarget string
+}
+
+func (o *requestOutcome) record(resp *http.Response) {
+	if o == nil || resp == nil {
+		return
+	}
+	target := ""
+	if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+		if location, err := resp.Location(); err == nil && location.User == nil &&
+			(location.Scheme == "https" || location.Scheme == "http") && location.Hostname() != "" {
+			location.RawQuery = ""
+			location.ForceQuery = false
+			location.Fragment = ""
+			if sanitized := location.String(); len(sanitized) <= 2048 {
+				target = sanitized
+			}
+		}
+	}
+	o.mu.Lock()
+	o.status = resp.StatusCode
+	o.redirectTarget = target
+	o.mu.Unlock()
+}
+
+func (o *requestOutcome) snapshot() (int, string) {
+	if o == nil {
+		return 0, ""
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.status, o.redirectTarget
+}
+
+func (c *Client) clientWithHeaders(headers http.Header, outcome *requestOutcome) *http.Client {
 	base := c.httpClient.Transport
 	clone := *c.httpClient
-	clone.Transport = headerRoundTripper{base: base, headers: headers.Clone(), status: status}
+	clone.Transport = headerRoundTripper{base: base, headers: headers.Clone(), outcome: outcome}
 	return &clone
 }

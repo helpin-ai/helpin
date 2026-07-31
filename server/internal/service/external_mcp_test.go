@@ -2,8 +2,10 @@ package service
 
 import (
 	"encoding/base64"
+	"strings"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/externalmcp"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -45,6 +47,24 @@ func TestExternalMCPServerNameIsRuntimeSafe(t *testing.T) {
 	name := externalMCPServerName("Customer.io — EU Production")
 	if !validExternalMCPName.MatchString(name) {
 		t.Fatalf("unsafe server name %q", name)
+	}
+}
+
+func TestExternalMCPCrossHostRedirectIsActionable(t *testing.T) {
+	err := &externalmcp.RemoteError{
+		Operation:      "connection",
+		Status:         307,
+		Code:           "remote_redirect",
+		RedirectTarget: "https://canonical.mcp.example/mcp",
+	}
+	message, ok := externalMCPCrossHostRedirectMessage(err)
+	if !ok || !strings.Contains(message, "canonical.mcp.example") || !strings.Contains(message, "Credentials were not forwarded") {
+		t.Fatalf("externalMCPCrossHostRedirectMessage() = %q, %t", message, ok)
+	}
+
+	err.RedirectTarget = "not a URL"
+	if message, ok := externalMCPCrossHostRedirectMessage(err); ok || message != "" {
+		t.Fatalf("unexpected message for invalid redirect: %q, %t", message, ok)
 	}
 }
 
