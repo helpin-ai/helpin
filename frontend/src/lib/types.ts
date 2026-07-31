@@ -85,6 +85,7 @@ export interface Workspace {
   organization_id?: string;
   role?: string;
   description?: string;
+  company_product_context?: string;
   website_url?: string;
   logo_url?: string;
   timezone: string;

@@ -808,6 +808,7 @@ type CreateConversationWithMessageResponse struct {
 type CreateMessageRequest struct {
 	Content       string   `json:"content"`
 	IsInternal    bool     `json:"is_internal"`
+	AIAssisted    bool     `json:"ai_assisted,omitempty"`
 	MessageType   string   `json:"message_type"` // reply, csat_survey, system
 	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 	Channels      []string `json:"channels,omitempty"`

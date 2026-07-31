@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Ban,
   BarChart3,
@@ -39,6 +39,7 @@ import { useApplyBillingTestScenario, useBillingCheckout, useBillingPlanChange, 
 import type { BillingTestScenarioID, PlanChangePreview } from '@/lib/billingTypes';
 import type { BillingInterval, BillingPlan, WorkspaceBillingSummary } from '@/lib/types';
 import { SettingsPageFrame } from './SettingsPageFrame';
+import { getBillingNoticePresentation } from './billingNoticePresentation';
 
 const PLAN_OPTIONS: Array<{
   id: BillingPlan;
@@ -239,17 +240,38 @@ const BILLING_TEST_SCENARIOS: Array<{
   },
 ];
 
-export function BillingSettingsPage() {
+export function BillingSettingsPage({
+  openPlanChooser = false,
+  onPlanChooserChange,
+}: {
+  openPlanChooser?: boolean;
+  onPlanChooserChange?: (open: boolean) => void;
+}) {
   return (
     <SettingsPageFrame section="billing">
       {({ workspaceId, permissions }) => (
-        <BillingSettingsContent workspaceId={workspaceId} editable={permissions.canManageSettings} />
+        <BillingSettingsContent
+          workspaceId={workspaceId}
+          editable={permissions.canManageSettings}
+          openPlanChooser={openPlanChooser}
+          onPlanChooserChange={onPlanChooserChange}
+        />
       )}
     </SettingsPageFrame>
   );
 }
 
-function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string; editable: boolean }) {
+function BillingSettingsContent({
+  workspaceId,
+  editable,
+  openPlanChooser,
+  onPlanChooserChange,
+}: {
+  workspaceId: string;
+  editable: boolean;
+  openPlanChooser: boolean;
+  onPlanChooserChange?: (open: boolean) => void;
+}) {
   const [choosingPlan, setChoosingPlan] = useState(false);
   const [selectedInterval, setSelectedInterval] = useState<BillingInterval>('annual');
   const [checkoutResult, setCheckoutResult] = useState<'success' | 'cancelled' | null>(null);
@@ -269,6 +291,15 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
   const setOnDemand = useSetBillingOnDemand(workspaceId);
   const applyTestScenario = useApplyBillingTestScenario(workspaceId);
 
+  const setPlanChooserOpen = useCallback((open: boolean) => {
+    setChoosingPlan(open);
+    onPlanChooserChange?.(open);
+  }, [onPlanChooserChange]);
+
+  useEffect(() => {
+    if (openPlanChooser) setChoosingPlan(true);
+  }, [openPlanChooser]);
+
   useEffect(() => {
     const url = new URL(window.location.href);
     const result = url.searchParams.get('billing');
@@ -287,7 +318,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
             setCheckoutResult(null);
             setCheckoutConfirming(false);
             setCheckoutConfirmationDelayed(false);
-            setChoosingPlan(false);
+            setPlanChooserOpen(false);
             toast.success('Plan updated.');
           },
           () => {
@@ -311,7 +342,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
       setCheckoutConfirmationDelayed(false);
       toast.info('Checkout was cancelled. No billing changes were made.');
     }
-  }, [confirmCheckout, refetch]);
+  }, [confirmCheckout, refetch, setPlanChooserOpen]);
 
   useEffect(() => {
     if (checkoutResult !== 'success' || !checkoutConfirming) return;
@@ -370,7 +401,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
     });
     if (!result) return;
     toast.success(result.pending_plan ? 'Plan change scheduled' : 'Plan updated');
-    setChoosingPlan(false);
+    setPlanChooserOpen(false);
   };
 
   const beginPaidPlanChange = async (plan: BillingPlan, interval: BillingInterval) => {
@@ -452,14 +483,20 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
             variant="outline"
             size="sm"
             className="w-fit shrink-0"
-            onClick={() => setChoosingPlan(false)}
+            onClick={() => setPlanChooserOpen(false)}
           >
             Back to overview
           </Button>
         </div>
 
         <CheckoutReturnNotice result={checkoutResult} confirming={checkoutConfirming} delayed={checkoutConfirmationDelayed} onRefresh={() => void refetch()} />
-        <BillingNoticeBanner billing={billing} onPortal={() => void openPortal('payment method management')} portalLoading={portal.isPending} />
+        <BillingNoticeBanner
+          billing={billing}
+          onPortal={() => void openPortal('payment method management')}
+          onUpgrade={() => setPlanChooserOpen(true)}
+          portalLoading={portal.isPending}
+          actionDisabled={!canManageBilling}
+        />
         <PendingBillingNotice
           billing={billing}
           editable={canManageBilling}
@@ -577,7 +614,13 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
           </div>
         )}
         <CheckoutReturnNotice result={checkoutResult} confirming={checkoutConfirming} delayed={checkoutConfirmationDelayed} onRefresh={() => void refetch()} />
-        <BillingNoticeBanner billing={billing} onPortal={() => void openPortal('payment method management')} portalLoading={portal.isPending} />
+        <BillingNoticeBanner
+          billing={billing}
+          onPortal={() => void openPortal('payment method management')}
+          onUpgrade={() => setPlanChooserOpen(true)}
+          portalLoading={portal.isPending}
+          actionDisabled={!canManageBilling}
+        />
         <Card className="overflow-hidden">
           <CardContent className="p-0">
             <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -599,7 +642,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
                 <Badge variant="outline" className="shrink-0">Managed by Helpin</Badge>
               ) : !billing.locked ? (
                 <Button
-                  onClick={() => setChoosingPlan(true)}
+                  onClick={() => setPlanChooserOpen(true)}
                   disabled={!canManageBilling}
                   className="shrink-0"
                 >
@@ -607,7 +650,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
                 </Button>
               ) : (
                 <Button
-                  onClick={() => setChoosingPlan(true)}
+                  onClick={() => setPlanChooserOpen(true)}
                   disabled={!canManageBilling}
                   className="shrink-0"
                 >
@@ -923,46 +966,51 @@ function AnnualBillingNudge({
 function BillingNoticeBanner({
   billing,
   onPortal,
+  onUpgrade,
   portalLoading,
+  actionDisabled,
 }: {
   billing: WorkspaceBillingSummary;
   onPortal: () => void;
+  onUpgrade: () => void;
   portalLoading: boolean;
+  actionDisabled: boolean;
 }) {
-  if (billing.billing_notice_type === 'payment_failed' || billing.status === 'past_due') {
+  const notice = getBillingNoticePresentation(billing);
+  if (!notice) return null;
+
+  if (notice.kind === 'payment') {
     return (
       <div className="flex flex-col gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <p className="font-medium">Payment needs attention</p>
-            <p className="mt-1">
-              {billing.billing_notice_message || 'Payment failed. Update your payment method to keep this workspace active.'}
-            </p>
+            <p className="font-medium">{notice.title}</p>
+            <p className="mt-1">{notice.message}</p>
           </div>
         </div>
         <Button size="sm" variant="destructive" onClick={onPortal} disabled={portalLoading || !billing.manage_billing_enabled} className="shrink-0">
           {portalLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Update payment
+          {notice.actionLabel}
         </Button>
       </div>
     );
   }
 
-  const trialEnd = billing.trial_will_end_at || billing.trial_ends_at;
-  if (billing.billing_notice_type === 'trial_will_end' && trialEnd) {
-    return (
-      <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+  return (
+    <div className="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-3">
         <CalendarClock className="mt-0.5 h-4 w-4 shrink-0" />
         <div>
-          <p className="font-medium">Trial ending soon</p>
-          <p className="mt-1">Your Growth plan trial ends on {formatDate(trialEnd)}. Choose a plan to keep Growth plan limits active.</p>
+          <p className="font-medium">{notice.title}</p>
+          <p className="mt-1">{notice.message}</p>
         </div>
       </div>
-    );
-  }
-
-  return null;
+      <Button size="sm" onClick={onUpgrade} disabled={actionDisabled} className="shrink-0">
+        {notice.actionLabel}
+      </Button>
+    </div>
+  );
 }
 
 function CheckoutReturnNotice({
@@ -1445,7 +1493,7 @@ function planActionState(
     return { kind: 'current', label: 'Current plan' };
   }
   if (billing.locked || !billing.stripe_subscription_id) {
-    return { kind: 'upgrade', label: billing.locked ? 'Reactivate' : 'Upgrade' };
+    return { kind: 'upgrade', label: billing.status === 'trial_expired' ? 'Upgrade' : billing.locked ? 'Reactivate' : 'Upgrade' };
   }
   const targetRank = planRank(targetPlan);
   const currentRank = planRank(billing.plan);
@@ -1538,6 +1586,7 @@ function periodCopy(billing: WorkspaceBillingSummary): string {
 function nextChargeMetricLabel(billing: WorkspaceBillingSummary): string {
   if (billing.plan === 'founder') return 'Usage resets';
   if (hasScheduledCancellation(billing)) return 'Ends on';
+  if (billing.status === 'trial_expired') return 'Upgrade';
   if (billing.locked) return 'Reactivate';
   if (billing.trialing) return 'Trial ends';
   return 'Next charge';

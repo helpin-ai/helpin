@@ -21,8 +21,20 @@ vi.mock('@/components/ui/dialog', () => ({
 }))
 
 vi.mock('../EmailBodyRenderer', () => ({
-  EmailBodyRenderer: ({ html, collapsedByDefault }: { html: string; collapsedByDefault?: boolean }) => (
-    <div data-collapsed-by-default={String(!!collapsedByDefault)} dangerouslySetInnerHTML={{ __html: html }} />
+  EmailBodyRenderer: ({
+    html,
+    collapsedByDefault,
+    constrainHeight,
+  }: {
+    html: string;
+    collapsedByDefault?: boolean;
+    constrainHeight?: boolean;
+  }) => (
+    <div
+      data-collapsed-by-default={String(!!collapsedByDefault)}
+      data-constrain-height={String(constrainHeight ?? true)}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   ),
 }))
 
@@ -117,6 +129,7 @@ describe('EmailDetailModal', () => {
     expect(rendered.container.textContent).not.toContain('<root@customer.example>')
     expect(rendered.container.querySelector('[data-testid="email-body-scroll"]')?.className).toContain('pb-8')
     expect(rendered.container.querySelector('[data-collapsed-by-default]')?.getAttribute('data-collapsed-by-default')).toBe('false')
+    expect(rendered.container.querySelector('[data-constrain-height]')?.getAttribute('data-constrain-height')).toBe('false')
     expect(rendered.container.innerHTML).toContain('Prior quoted content')
     expect(rendered.container.textContent).not.toContain('Show technical details')
 

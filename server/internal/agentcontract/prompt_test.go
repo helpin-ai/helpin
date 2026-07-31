@@ -113,6 +113,40 @@ func TestBuildUserPromptIncludesArtifactContext(t *testing.T) {
 	}
 }
 
+func TestBuildUserPromptIncludesWorkspaceContext(t *testing.T) {
+	prompt := BuildUserPromptWithRunInput(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+		&model.AgentRunInputPayload{
+			WorkspaceContext: &model.AgentRunWorkspaceContext{
+				Name:                  "Acme",
+				WebsiteURL:            "https://acme.com",
+				CompanyProductContext: "Acme helps support and product teams answer customers with repo-aware context.",
+			},
+		},
+	)
+
+	for _, want := range []string{
+		"Workspace Context",
+		"Workspace: **Acme**",
+		"Website: https://acme.com",
+		"Acme helps support and product teams",
+		"Use this as high-level workspace context.",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
 func TestBuildUserPromptTaskPlannerUsesNeutralPlanningContext(t *testing.T) {
 	prompt := BuildUserPrompt(
 		nil,

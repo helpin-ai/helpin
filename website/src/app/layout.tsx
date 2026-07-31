@@ -80,20 +80,31 @@ export default function RootLayout({
         `}</Script>
 
         {/* Customer.io */}
-        <Script id="cio-init" strategy="afterInteractive">{`
-          var _cio = _cio || [];
-          (function(){
-            var a,b,c;a=function(f){return function(){_cio.push([f].concat(Array.prototype.slice.call(arguments,0)))}};b=["load","identify","sidentify","track","page"];for(c=0;c<b.length;c++){_cio[b[c]]=a(b[c])};
-          })();
+        <Script id="cio-tracker" strategy="afterInteractive">{`
+          !function(){
+            var i,o,a=window.analytics=window.analytics||[];
+            if(!a.initialize)if(a.invoked)window.console&&console.error&&console.error("Customer.io snippet included twice.");
+            else{
+              a.invoked=!0;
+              a.methods=["trackSubmit","trackClick","trackLink","trackForm","pageview","identify","reset","group","track","ready","alias","debug","page","once","off","on","addSourceMiddleware","addIntegrationMiddleware","setAnonymousId","addDestinationMiddleware"];
+              a.factory=function(i){return function(){var o=Array.prototype.slice.call(arguments);return o.unshift(i),a.push(o),a}};
+              for(i=0;i<a.methods.length;i++)o=a.methods[i],a[o]=a.factory(o);
+              a.load=function(i,o){
+                var n,t=document.createElement("script");
+                t.type="text/javascript";
+                t.async=!0;
+                t.src="https://cdp.customer.io/v1/analytics-js/snippet/"+i+"/analytics.min.js";
+                n=document.getElementsByTagName("script")[0];
+                n.parentNode.insertBefore(t,n);
+                a._writeKey=i;
+                a._loadOptions=o;
+              };
+              a.SNIPPET_VERSION="4.15.3";
+              a.load("a3fced22111b6be05726");
+              a.page();
+            }
+          }();
         `}</Script>
-        <Script
-          id="cio-tracker"
-          strategy="afterInteractive"
-          data-site-id="a3fced22111b6be05726"
-          data-use-array-params="true"
-          data-auto-track-page="true"
-          src="https://assets.customer.io/assets/track.js"
-        />
       </body>
     </html>
   );

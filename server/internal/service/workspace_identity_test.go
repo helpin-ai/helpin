@@ -735,6 +735,7 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			owner_id TEXT NOT NULL,
 			organization_id TEXT,
 			description TEXT,
+			company_product_context TEXT,
 			website_url TEXT,
 			logo_url TEXT,
 			timezone TEXT NOT NULL,

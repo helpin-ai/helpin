@@ -81,6 +81,7 @@ import { SocialPlatformIcon } from '@/components/docs/helpcenter/SocialPlatformI
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { crmSearchService } from '@/lib/services/crmService';
 import { supportService } from '@/lib/services/supportService';
+import { BILLING_CHOOSE_PLAN_SEARCH } from '@/lib/billingNavigation';
 import { useTitle } from '@/hooks/useTitle';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { cn } from '@/lib/utils';
@@ -1046,7 +1047,11 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   };
 
   const goBack = () => navigate({ to: '/w/$slug/crm/contacts', params: { slug: wsSlug } });
-  const goToBilling = () => navigate({ to: '/w/$slug/settings/billing', params: { slug: wsSlug } });
+  const goToBilling = () => navigate({
+    to: '/w/$slug/settings/billing',
+    params: { slug: wsSlug },
+    search: BILLING_CHOOSE_PLAN_SEARCH,
+  });
   const toggleExpandedSection = (section: ContactSidebarSection) => {
     setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
   };

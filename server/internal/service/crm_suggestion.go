@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -136,8 +137,27 @@ func (s *CRMSuggestionService) AcceptSuggestion(ctx context.Context, id string, 
 	}
 
 	// Execute the action based on suggestion type
-	if err := s.executeSuggestionAction(ctx, suggestion); err != nil {
-		slog.Error("failed to execute suggestion action", "error", err, "suggestion_id", id, "type", suggestion.SuggestionType)
+	objectID, executionErr := s.executeSuggestionAction(ctx, suggestion)
+	now := time.Now().UTC()
+	suggestion.ExecutedAt = &now
+	if executionErr != nil {
+		suggestion.ExecutionStatus = model.CRMSuggestionExecutionFailed
+		message := executionErr.Error()
+		suggestion.ExecutionError = &message
+	} else {
+		suggestion.ExecutionStatus = model.CRMSuggestionExecutionSucceeded
+		suggestion.ExecutionError = nil
+		if objectID != nil {
+			objectType := "deal"
+			suggestion.ObjectType = &objectType
+			suggestion.ObjectID = objectID
+		}
+	}
+	if err := s.suggestionRepo.Update(ctx, suggestion); err != nil {
+		return nil, err
+	}
+	if executionErr != nil {
+		slog.Error("failed to execute suggestion action", "error", executionErr, "suggestion_id", id, "type", suggestion.SuggestionType)
 		// Don't revert - the suggestion is accepted, action execution is best-effort
 	}
 
@@ -161,32 +181,36 @@ func (s *CRMSuggestionService) DismissSuggestion(ctx context.Context, id string)
 	return suggestion, nil
 }
 
-func (s *CRMSuggestionService) executeSuggestionAction(ctx context.Context, suggestion *model.CRMSuggestion) error {
+func (s *CRMSuggestionService) executeSuggestionAction(ctx context.Context, suggestion *model.CRMSuggestion) (*string, error) {
 	suggestionContext := map[string]interface{}(suggestion.Context)
 
 	switch suggestion.SuggestionType {
 	case model.CRMSuggestionDealCreate:
 		return s.executeDealCreate(ctx, suggestion.WorkspaceID, suggestionContext)
 	case model.CRMSuggestionDealAdvance:
-		return s.executeDealAdvance(ctx, suggestionContext)
+		if err := s.executeDealAdvance(ctx, suggestionContext); err != nil {
+			return nil, err
+		}
+		dealID, _ := suggestionContext["deal_id"].(string)
+		return &dealID, nil
 	default:
-		return nil // Other types don't have automatic actions
+		return nil, nil
 	}
 }
 
-func (s *CRMSuggestionService) executeDealCreate(ctx context.Context, workspaceID string, suggestionContext map[string]interface{}) error {
+func (s *CRMSuggestionService) executeDealCreate(ctx context.Context, workspaceID string, suggestionContext map[string]interface{}) (*string, error) {
 	dealName, _ := suggestionContext["deal_name"].(string)
 	pipelineID, _ := suggestionContext["pipeline_id"].(string)
 	stageID, _ := suggestionContext["stage_id"].(string)
 	contactID, _ := suggestionContext["contact_id"].(string)
 
 	if dealName == "" || pipelineID == "" || stageID == "" {
-		return fmt.Errorf("missing required deal context fields")
+		return nil, fmt.Errorf("missing required deal context fields")
 	}
 
 	displayID, err := s.dealRepo.GetNextDisplayID(ctx, workspaceID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	deal := &model.CRMDeal{
@@ -203,7 +227,7 @@ func (s *CRMSuggestionService) executeDealCreate(ctx context.Context, workspaceI
 	}
 
 	if err := s.dealRepo.Create(ctx, deal); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Create contact association
@@ -221,7 +245,7 @@ func (s *CRMSuggestionService) executeDealCreate(ctx context.Context, workspaceI
 	}
 
 	slog.Info("executed deal_create suggestion", "deal_id", deal.ID, "deal_name", dealName)
-	return nil
+	return &deal.ID, nil
 }
 
 func (s *CRMSuggestionService) executeDealAdvance(ctx context.Context, suggestionContext map[string]interface{}) error {

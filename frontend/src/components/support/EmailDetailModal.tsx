@@ -178,7 +178,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
               <div className="mt-6 min-h-0 border-t border-border/60 pt-6">
                 <div data-testid="email-body-scroll" className="max-h-[46vh] min-h-0 overflow-y-auto pb-8 pr-1">
                   {htmlBody ? (
-                    <EmailBodyRenderer html={htmlBody} collapsedByDefault={false} />
+                    <EmailBodyRenderer html={htmlBody} collapsedByDefault={false} constrainHeight={false} />
                   ) : textBody ? (
                     <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
                       {textBody}

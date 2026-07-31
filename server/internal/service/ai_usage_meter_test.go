@@ -52,6 +52,7 @@ func TestSetupAIUsageFeaturesAreNotChargeable(t *testing.T) {
 		BillingFeatureFlowSetup,
 		BillingFeatureAgentPromptImprovement,
 		BillingFeatureDataImportSetup,
+		BillingFeatureCompanyProductContext,
 	} {
 		feature, ok := AIUsageFeature(key)
 		if !ok {

@@ -158,6 +158,11 @@ func main() {
 			&model.WorkspaceMember{},
 			&model.WorkspaceModuleGrant{},
 			&model.WorkspaceSettings{},
+			&model.SetupGoal{},
+			&model.SetupIntent{},
+			&model.SetupAchievement{},
+			&model.SetupActionIntent{},
+			&model.MemberSetupPreference{},
 			&model.WorkspaceBilling{},
 			&model.BillingCreditLedgerEntry{},
 			&model.StripeWebhookEvent{},
@@ -346,6 +351,11 @@ func main() {
 		slog.Info("startup: AutoMigrate complete")
 	} else {
 		slog.Info("startup: AutoMigrate disabled by RUN_AUTO_MIGRATE")
+	}
+
+	slog.Info("startup: running MigrateAgentKnowledgeSourceSchema")
+	if err := repository.MigrateAgentKnowledgeSourceSchema(db); err != nil {
+		fatalWithSentry("failed to migrate agent knowledge source schema", err)
 	}
 
 	slog.Info("startup: running MigrateAgentSchema")
@@ -554,6 +564,7 @@ func main() {
 	if err := mcpRepo.CleanupExpired(context.Background(), time.Now()); err != nil {
 		slog.Warn("MCP retention cleanup skipped", "error", err)
 	}
+	setupRepo := repository.NewSetupRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
 	moduleGrantRepo := repository.NewWorkspaceModuleGrantRepository(db)
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
@@ -611,6 +622,19 @@ func main() {
 	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
 	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
+	customerIOIdentityService := service.NewCustomerIOIdentityService(
+		service.NewCustomerIOTrackClient(service.CustomerIOTrackConfig{
+			SiteID:                   cfg.CustomerIOSiteID,
+			APIKey:                   cfg.CustomerIOTrackAPIKey,
+			Region:                   cfg.CustomerIORegion,
+			WorkspaceObjectTypeID:    cfg.CustomerIOWorkspaceObjectTypeID,
+			OrganizationObjectTypeID: cfg.CustomerIOOrganizationObjectTypeID,
+		}),
+		userRepo,
+		workspaceRepo,
+		orgRepo,
+		billingRepo,
+	)
 	stripeGateway := billingstripe.New(cfg.StripeSecretKey, cfg.StripeCreditBlockPriceID)
 	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
 	billingTestScenarioService := service.NewBillingTestScenarioService(db, billingService, time.Now)
@@ -621,6 +645,7 @@ func main() {
 		GrowthAnnual:   cfg.StripeGrowthAnnualPriceID,
 	})
 	billingService.SetWorkspaceRepository(workspaceRepo)
+	billingService.SetCustomerIOIdentityService(customerIOIdentityService)
 	aiUsageMeter := service.NewAIUsageMeter(billingService)
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
 	gitCredentialRepo := repository.NewGitCredentialRepository(db)
@@ -693,6 +718,7 @@ func main() {
 		fatalWithSentry("failed to initialize webauthn", err)
 	}
 	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, emailVerificationRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
+	authService.SetCustomerIOIdentityService(customerIOIdentityService)
 	passkeyService := service.NewPasskeyService(userRepo, passkeyRepo, jwtManager, passkeyWebAuthnClient, resolveTOTPEncryptionKey(cfg))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo, wsPublisher)
@@ -877,7 +903,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+	).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
@@ -1043,19 +1069,20 @@ func main() {
 		cfg.CrawlerProxyURLs,
 		slog.Default(),
 	)
-	docsEmbeddingService := service.NewDocsEmbeddingService(
+	docsEmbeddingService := service.NewDocsEmbeddingServiceWithCollections(
 		docsChunkRepo,
 		docsBlockRepo,
 		agentKnowledgeSourceRepo,
 		docsContentRepo,
 		docsSpaceRepo,
+		docsCollectionRepo,
 		docsHelpcenterRepo,
 		docsDocumentRepo,
 		supportEmbeddingProvider,
 		cfg.OpenAIEmbeddingModel,
 		runEngine,
 	)
-	agentKnowledgeSourceService := service.NewAgentKnowledgeSourceService(agentKnowledgeSourceRepo, docsSpaceRepo, docsEmbeddingService)
+	agentKnowledgeSourceService := service.NewAgentKnowledgeSourceServiceWithScopes(agentKnowledgeSourceRepo, docsSpaceRepo, docsCollectionRepo, docsDocumentRepo, docsEmbeddingService)
 	supportContentSyncService := service.NewSupportContentSyncService(
 		supportContentSourceRepo,
 		supportContentPageRepo,
@@ -1063,6 +1090,7 @@ func main() {
 		supportEmbeddingProvider,
 		cfg.OpenAIEmbeddingModel,
 		contentCrawler,
+		s3Client,
 		runEngine,
 	)
 	supportContentSourceService := service.NewSupportContentSourceService(
@@ -1072,6 +1100,7 @@ func main() {
 		supportContentPageRepo,
 		supportContentChunkRepo,
 		supportContentSyncService,
+		s3Client,
 	)
 	agentContentSourceService := service.NewAgentContentSourceService(
 		agentContentSourceRepo,
@@ -1273,10 +1302,18 @@ func main() {
 	_ = supportCoverageDigestService // wired to ticker in follow-up
 
 	orgService := service.NewOrganizationService(orgRepo)
+	orgService.SetCustomerIOIdentityService(customerIOIdentityService)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
+	setupService := service.NewSetupService(setupRepo)
+	setupSuccessEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("SETUP_SUCCESS_ENABLED")), "true")
+	if setupSuccessEnabled {
+		workspaceService.SetSetupInitializer(setupService)
+	}
+	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil)
 	billingService.SetOrgRoleResolver(orgService)
 	entitlementService := service.NewEntitlementService(billingService)
+	setupService.SetEntitlementService(entitlementService)
 	pmImportService.SetEntitlementService(entitlementService)
 	supportInboxService.SetEntitlementService(entitlementService)
 	supportInboxTriageService.SetEntitlementService(entitlementService)
@@ -1288,6 +1325,7 @@ func main() {
 	crmImportService.SetEntitlementService(entitlementService)
 	dealAutomationService.SetEntitlementService(entitlementService)
 	workspaceService.SetBillingService(billingService)
+	workspaceService.SetCustomerIOIdentityService(customerIOIdentityService)
 	workspaceService.SetPresenceProvider(wsHub.Presence)
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
 	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher).
@@ -1386,6 +1424,10 @@ func main() {
 		RouteInboundSecretSet:     strings.TrimSpace(cfg.PostmarkRouteInboundWebhookSecret) != "",
 	}
 
+	var setupHandler *handler.SetupHandler
+	if setupSuccessEnabled {
+		setupHandler = handler.NewSetupHandler(setupService, authzService)
+	}
 	handlers := router.Handlers{
 		Health: handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
@@ -1397,6 +1439,7 @@ func main() {
 		Passkey:             handler.NewPasskeyHandler(passkeyService),
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
+		Setup:               setupHandler,
 		Billing:             handler.NewBillingHandler(billingService, cfg.StripeWebhookSecret, cfg.AppBaseURL, billingTestScenarioService, strings.EqualFold(os.Getenv("BILLING_TEST_SCENARIOS_ENABLED"), "true")),
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
 		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller, flowTemplateUninstaller),
@@ -1580,6 +1623,34 @@ func main() {
 		}
 	}()
 
+	// Start background ticker for Helpin-managed trial expiry (daily).
+	billingTrialExpiryDone := make(chan struct{})
+	go func() {
+		runBillingTrialExpirySweep := func() {
+			count, err := billingService.ExpireOverdueTrials(context.Background())
+			if err != nil {
+				slog.Error("billing trial expiry sweep failed", "error", err)
+				return
+			}
+			if count > 0 {
+				slog.Info("billing trial expiry sweep complete", "expired_count", count)
+			}
+		}
+
+		runBillingTrialExpirySweep()
+
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				runBillingTrialExpirySweep()
+			case <-billingTrialExpiryDone:
+				return
+			}
+		}
+	}()
+
 	// Start email fallback workers only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc
 	if redisClient != nil && replyEmailClient != nil {
@@ -1681,6 +1752,7 @@ func main() {
 	}
 	close(digestDone)
 	close(supportReplyEmailDone)
+	close(billingTrialExpiryDone)
 	close(cleanupDone)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

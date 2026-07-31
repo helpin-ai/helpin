@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { Moon02Icon, Sun01Icon } from '@/lib/icons';
 import { isModuleEnabled } from '@/lib/featureFlags';
 import type { WorkspaceModule } from '@/lib/types';
@@ -37,8 +37,9 @@ export function SidebarRail({
             return isModuleEnabled(item.id, userEmail)
           })
           .map((item) => (
+            <Fragment key={item.id}>
+            {item.separatorBefore && <div className="my-1 h-px w-8 bg-border" aria-hidden="true" />}
             <button
-              key={item.id}
               type="button"
               aria-label={item.label}
               onClick={() => onRailSelect(item.defaultLink)}
@@ -48,12 +49,15 @@ export function SidebarRail({
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <div className={`relative flex h-7 w-9 items-center justify-center rounded-md transition-colors ${
-                activeRail === item.id
-                  ? 'bg-foreground text-background'
-                  : 'hover:bg-muted/80'
-              }`}>
-                <item.icon className="h-4 w-4" />
+              <div className={item.progressPercent !== undefined
+                ? 'flex h-8 w-8 items-center justify-center rounded-full p-0.5 text-[9px] font-bold tabular-nums text-foreground'
+                : `relative flex h-7 w-9 items-center justify-center rounded-md transition-colors ${activeRail === item.id ? 'bg-foreground text-background' : 'hover:bg-muted/80'}`
+              } style={item.progressPercent !== undefined ? {
+                background: `conic-gradient(var(--color-emerald-500) ${item.progressPercent}%, var(--muted) 0)`,
+              } : undefined}>
+                {item.progressPercent !== undefined
+                  ? <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f0f0f2] dark:bg-sidebar">{item.progressPercent}%</span>
+                  : <item.icon className="h-4 w-4" />}
                 {item.indicator && (
                   <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500" />
                 )}
@@ -67,6 +71,7 @@ export function SidebarRail({
                 activeRail === item.id ? 'font-medium' : ''
               }`}>{item.label}</span>
             </button>
+            </Fragment>
           ))}
       </div>
 

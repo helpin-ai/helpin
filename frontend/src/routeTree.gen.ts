@@ -20,12 +20,14 @@ import { Route as ShareShareTokenRouteImport } from './routes/share/$shareToken'
 import { Route as JoinTokenRouteImport } from './routes/join/$token'
 import { Route as AuthenticatedWorkspacesRouteImport } from './routes/_authenticated/workspaces'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
+import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedWSlugRouteImport } from './routes/_authenticated/w/$slug'
 import { Route as AuthenticatedOauthAuthorizeRouteImport } from './routes/_authenticated/oauth/authorize'
 import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authenticated/w/$slug/index'
 import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authenticated/w/$slug/team-goals'
 import { Route as AuthenticatedWSlugTasksRouteImport } from './routes/_authenticated/w/$slug/tasks'
 import { Route as AuthenticatedWSlugSupportRouteImport } from './routes/_authenticated/w/$slug/support'
+import { Route as AuthenticatedWSlugSetupRouteImport } from './routes/_authenticated/w/$slug/setup'
 import { Route as AuthenticatedWSlugNotificationsRouteImport } from './routes/_authenticated/w/$slug/notifications'
 import { Route as AuthenticatedWSlugDocsRouteImport } from './routes/_authenticated/w/$slug/docs'
 import { Route as AuthenticatedWSlugDashboardRouteImport } from './routes/_authenticated/w/$slug/dashboard'
@@ -164,6 +166,11 @@ const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedWSlugRoute = AuthenticatedWSlugRouteImport.update({
   id: '/w/$slug',
   path: '/w/$slug',
@@ -197,6 +204,11 @@ const AuthenticatedWSlugSupportRoute =
     path: '/support',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSetupRoute = AuthenticatedWSlugSetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => AuthenticatedWSlugRoute,
+} as any)
 const AuthenticatedWSlugNotificationsRoute =
   AuthenticatedWSlugNotificationsRouteImport.update({
     id: '/notifications',
@@ -701,6 +713,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
@@ -712,6 +725,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/docs': typeof AuthenticatedWSlugDocsRouteWithChildren
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
+  '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
   '/w/$slug/support': typeof AuthenticatedWSlugSupportRouteWithChildren
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
@@ -802,6 +816,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
@@ -809,6 +824,7 @@ export interface FileRoutesByTo {
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
+  '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
@@ -900,6 +916,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
@@ -911,6 +928,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/_authenticated/w/$slug/docs': typeof AuthenticatedWSlugDocsRouteWithChildren
   '/_authenticated/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
+  '/_authenticated/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
   '/_authenticated/w/$slug/support': typeof AuthenticatedWSlugSupportRouteWithChildren
   '/_authenticated/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/_authenticated/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
@@ -1003,6 +1021,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/verify-email'
+    | '/onboarding'
     | '/profile'
     | '/workspaces'
     | '/join/$token'
@@ -1014,6 +1033,7 @@ export interface FileRouteTypes {
     | '/w/$slug/dashboard'
     | '/w/$slug/docs'
     | '/w/$slug/notifications'
+    | '/w/$slug/setup'
     | '/w/$slug/support'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
@@ -1104,6 +1124,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/verify-email'
+    | '/onboarding'
     | '/profile'
     | '/workspaces'
     | '/join/$token'
@@ -1111,6 +1132,7 @@ export interface FileRouteTypes {
     | '/oauth/authorize'
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
+    | '/w/$slug/setup'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
     | '/w/$slug'
@@ -1201,6 +1223,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/verify-email'
+    | '/_authenticated/onboarding'
     | '/_authenticated/profile'
     | '/_authenticated/workspaces'
     | '/join/$token'
@@ -1212,6 +1235,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/dashboard'
     | '/_authenticated/w/$slug/docs'
     | '/_authenticated/w/$slug/notifications'
+    | '/_authenticated/w/$slug/setup'
     | '/_authenticated/w/$slug/support'
     | '/_authenticated/w/$slug/tasks'
     | '/_authenticated/w/$slug/team-goals'
@@ -1387,6 +1411,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProfileRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/onboarding': {
+      id: '/_authenticated/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/w/$slug': {
       id: '/_authenticated/w/$slug'
       path: '/w/$slug'
@@ -1427,6 +1458,13 @@ declare module '@tanstack/react-router' {
       path: '/support'
       fullPath: '/w/$slug/support'
       preLoaderRoute: typeof AuthenticatedWSlugSupportRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/setup': {
+      id: '/_authenticated/w/$slug/setup'
+      path: '/setup'
+      fullPath: '/w/$slug/setup'
+      preLoaderRoute: typeof AuthenticatedWSlugSetupRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/notifications': {
@@ -2139,6 +2177,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugDashboardRoute: typeof AuthenticatedWSlugDashboardRoute
   AuthenticatedWSlugDocsRoute: typeof AuthenticatedWSlugDocsRouteWithChildren
   AuthenticatedWSlugNotificationsRoute: typeof AuthenticatedWSlugNotificationsRoute
+  AuthenticatedWSlugSetupRoute: typeof AuthenticatedWSlugSetupRoute
   AuthenticatedWSlugSupportRoute: typeof AuthenticatedWSlugSupportRouteWithChildren
   AuthenticatedWSlugTasksRoute: typeof AuthenticatedWSlugTasksRoute
   AuthenticatedWSlugTeamGoalsRoute: typeof AuthenticatedWSlugTeamGoalsRoute
@@ -2202,6 +2241,7 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugDashboardRoute: AuthenticatedWSlugDashboardRoute,
   AuthenticatedWSlugDocsRoute: AuthenticatedWSlugDocsRouteWithChildren,
   AuthenticatedWSlugNotificationsRoute: AuthenticatedWSlugNotificationsRoute,
+  AuthenticatedWSlugSetupRoute: AuthenticatedWSlugSetupRoute,
   AuthenticatedWSlugSupportRoute: AuthenticatedWSlugSupportRouteWithChildren,
   AuthenticatedWSlugTasksRoute: AuthenticatedWSlugTasksRoute,
   AuthenticatedWSlugTeamGoalsRoute: AuthenticatedWSlugTeamGoalsRoute,
@@ -2288,6 +2328,7 @@ const AuthenticatedWSlugRouteWithChildren =
   AuthenticatedWSlugRoute._addFileChildren(AuthenticatedWSlugRouteChildren)
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedWorkspacesRoute: typeof AuthenticatedWorkspacesRoute
   AuthenticatedOauthAuthorizeRoute: typeof AuthenticatedOauthAuthorizeRoute
@@ -2295,6 +2336,7 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedWorkspacesRoute: AuthenticatedWorkspacesRoute,
   AuthenticatedOauthAuthorizeRoute: AuthenticatedOauthAuthorizeRoute,

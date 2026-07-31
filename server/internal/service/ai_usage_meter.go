@@ -40,6 +40,7 @@ const (
 	BillingFeatureFlowSetup               = "flow_setup"
 	BillingFeatureAgentPromptImprovement  = "agent_prompt_improvement"
 	BillingFeatureDataImportSetup         = "data_import_setup"
+	BillingFeatureCompanyProductContext   = "company_product_context_generation"
 )
 
 // AIUsageCalculation is the normalized token usage input for internal AI usage
@@ -151,6 +152,7 @@ var aiUsageFeatures = map[string]AIUsageFeatureDefinition{
 	BillingFeatureFlowSetup:               {FeatureKey: BillingFeatureFlowSetup, Label: "Flow setup", Category: "Setup", Chargeable: false},
 	BillingFeatureAgentPromptImprovement:  {FeatureKey: BillingFeatureAgentPromptImprovement, Label: "Agent prompt improvement", Category: "Setup", Chargeable: false},
 	BillingFeatureDataImportSetup:         {FeatureKey: BillingFeatureDataImportSetup, Label: "Data import setup", Category: "Setup", Chargeable: false},
+	BillingFeatureCompanyProductContext:   {FeatureKey: BillingFeatureCompanyProductContext, Label: "Company/product context generation", Category: "Setup", Chargeable: false},
 }
 
 func NewAIUsageMeter(consumer aiUsageCreditConsumer) *AIUsageMeter {
@@ -182,7 +184,14 @@ func AIUsageMeteringFromContext(ctx context.Context) (AIUsageMeteringContext, bo
 	if !ok {
 		return AIUsageMeteringContext{}, false
 	}
-	return input, input.WorkspaceID != "" && input.FeatureKey != "" && input.IdempotencyKey != ""
+	if input.FeatureKey == "" || input.IdempotencyKey == "" {
+		return input, false
+	}
+	feature, featureKnown := AIUsageFeature(input.FeatureKey)
+	if input.WorkspaceID == "" && (!featureKnown || feature.Chargeable) {
+		return input, false
+	}
+	return input, true
 }
 
 func (p *MeteredLLMProvider) ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {

@@ -295,6 +295,7 @@ type BillingService struct {
 	priceConf     BillingPriceConfig
 	orgRoles      orgBillingRoleResolver
 	workspaceRepo *repository.WorkspaceRepository
+	customerIO    *CustomerIOIdentityService
 }
 
 func NewBillingService(repo *repository.BillingRepository, gateway BillingStripeGateway, now func() time.Time) *BillingService {
@@ -310,6 +311,10 @@ func (s *BillingService) SetPriceConfig(config BillingPriceConfig) {
 
 func (s *BillingService) SetWorkspaceRepository(repo *repository.WorkspaceRepository) {
 	s.workspaceRepo = repo
+}
+
+func (s *BillingService) SetCustomerIOIdentityService(identity *CustomerIOIdentityService) {
+	s.customerIO = identity
 }
 
 func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceID string) (*BillingSummary, error) {
@@ -346,6 +351,7 @@ func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceI
 		if err := s.addSeatEntitlements(ctx, summary); err != nil {
 			return nil, err
 		}
+		s.syncCustomerIOWorkspace(ctx, workspaceID)
 		return summary, nil
 	}
 
@@ -369,6 +375,7 @@ func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceI
 	if err := s.addSeatEntitlements(ctx, summary); err != nil {
 		return nil, err
 	}
+	s.syncCustomerIOWorkspace(ctx, workspaceID)
 	return summary, nil
 }
 
@@ -436,6 +443,7 @@ func (s *BillingService) SetOnDemandEnabled(ctx context.Context, workspaceID str
 	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
 		return nil, err
 	}
+	s.syncCustomerIOWorkspace(ctx, workspaceID)
 	summary := s.summary(billing)
 	if err := s.addSeatEntitlements(ctx, summary); err != nil {
 		return nil, err
@@ -509,14 +517,16 @@ func (s *BillingService) ConfirmCheckoutSession(ctx context.Context, workspaceID
 		return nil, fmt.Errorf("checkout session price is not configured for Helpin billing")
 	}
 	periodEnd := session.CurrentPeriodEnd
+	if session.CurrentPeriodStart.IsZero() {
+		session.CurrentPeriodStart = s.now().UTC()
+	}
 	if periodEnd.IsZero() {
-		now := s.now()
+		now := session.CurrentPeriodStart
 		if interval == "annual" {
 			periodEnd = now.AddDate(1, 0, 0)
 		} else {
 			periodEnd = now.AddDate(0, 1, 0)
 		}
-		session.CurrentPeriodStart = now
 	}
 	return s.ApplyStripeSubscriptionUpdate(ctx, BillingStripeSubscriptionUpdate{
 		EventID:              "checkout.session.sync:" + session.ID,
@@ -532,6 +542,13 @@ func (s *BillingService) ConfirmCheckoutSession(ctx context.Context, workspaceID
 		CurrentPeriodEnd:     periodEnd,
 		CancelAtPeriodEnd:    session.CancelAtPeriodEnd,
 	})
+}
+
+func (s *BillingService) ExpireOverdueTrials(ctx context.Context) (int64, error) {
+	if s.repo == nil {
+		return 0, nil
+	}
+	return s.repo.ExpireOverdueTrials(ctx, s.now().UTC())
 }
 
 func (s *BillingService) PreviewWorkspacePlanChange(ctx context.Context, input BillingPlanChangeRequest) (*BillingPlanChangePreview, error) {
@@ -694,6 +711,7 @@ func (s *BillingService) ChangeWorkspacePlan(ctx context.Context, input BillingP
 	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
 		return nil, err
 	}
+	s.syncCustomerIOWorkspace(ctx, input.WorkspaceID)
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -737,6 +755,7 @@ func (s *BillingService) ResumeWorkspaceSubscription(ctx context.Context, worksp
 	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
 		return nil, err
 	}
+	s.syncCustomerIOWorkspace(ctx, workspaceID)
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -799,6 +818,7 @@ func (s *BillingService) CancelWorkspaceSubscriptionImmediately(ctx context.Cont
 	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
 		return err
 	}
+	s.syncCustomerIOWorkspace(ctx, workspaceID)
 	return nil
 }
 
@@ -901,6 +921,7 @@ func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, upda
 			return nil, err
 		}
 	}
+	s.syncCustomerIOWorkspace(ctx, update.WorkspaceID)
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -941,6 +962,7 @@ func (s *BillingService) ApplyStripeInvoicePaymentFailed(ctx context.Context, ev
 			return nil, err
 		}
 	}
+	s.syncCustomerIOWorkspace(ctx, billing.WorkspaceID)
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -982,6 +1004,7 @@ func (s *BillingService) ApplyStripeInvoicePaymentSucceeded(ctx context.Context,
 			return nil, err
 		}
 	}
+	s.syncCustomerIOWorkspace(ctx, billing.WorkspaceID)
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -1031,7 +1054,15 @@ func (s *BillingService) ApplyStripeTrialWillEnd(ctx context.Context, event Bill
 			return nil, err
 		}
 	}
+	s.syncCustomerIOWorkspace(ctx, billing.WorkspaceID)
 	return s.summaryWithEntitlements(ctx, billing)
+}
+
+func (s *BillingService) syncCustomerIOWorkspace(ctx context.Context, workspaceID string) {
+	if s.customerIO == nil || strings.TrimSpace(workspaceID) == "" {
+		return
+	}
+	s.customerIO.SyncWorkspace(ctx, workspaceID, "")
 }
 
 func (s *BillingService) billingForStripeInvoiceEvent(ctx context.Context, event BillingStripeInvoiceEvent) (*model.WorkspaceBilling, error) {

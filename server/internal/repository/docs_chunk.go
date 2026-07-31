@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -39,6 +40,13 @@ type DocsChunkSearchResult struct {
 	LexicalScore  float64 `json:"lexical_score"`
 	VectorScore   float64 `json:"vector_score"`
 	CombinedScore float64 `json:"combined_score"`
+}
+
+// DocsKnowledgeScopeFilter is the searchable docs scope derived from selected knowledge sources.
+type DocsKnowledgeScopeFilter struct {
+	FullSpaceIDs  []string
+	CollectionIDs []string
+	DocumentIDs   []string
 }
 
 // NewDocsChunkRepository creates a new DocsChunkRepository.
@@ -149,6 +157,22 @@ func (r *DocsChunkRepository) HybridSearchForAgent(ctx context.Context, workspac
 	return r.hybridSearch(ctx, workspaceID, agentID, spaceIDs, query, queryEmbedding, embeddingModel, limit)
 }
 
+// HybridSearchKnowledgeSources performs hybrid retrieval constrained by an
+// agent's selected space, collection, and article knowledge-source scopes.
+func (r *DocsChunkRepository) HybridSearchKnowledgeSources(
+	ctx context.Context,
+	workspaceID string,
+	agentID string,
+	sources []model.AgentKnowledgeSource,
+	query string,
+	queryEmbedding string,
+	embeddingModel string,
+	limit int,
+) ([]DocsChunkSearchResult, error) {
+	filter := BuildDocsKnowledgeScopeFilter(sources)
+	return r.hybridSearchWithScopeFilter(ctx, workspaceID, agentID, filter, query, queryEmbedding, embeddingModel, limit)
+}
+
 func (r *DocsChunkRepository) HybridSearchWithEmbeddingModel(
 	ctx context.Context,
 	workspaceID string,
@@ -171,24 +195,37 @@ func (r *DocsChunkRepository) hybridSearch(
 	embeddingModel string,
 	limit int,
 ) ([]DocsChunkSearchResult, error) {
+	return r.hybridSearchWithScopeFilter(ctx, workspaceID, agentID, DocsKnowledgeScopeFilter{FullSpaceIDs: spaceIDs}, query, queryEmbedding, embeddingModel, limit)
+}
+
+func (r *DocsChunkRepository) hybridSearchWithScopeFilter(
+	ctx context.Context,
+	workspaceID string,
+	agentID string,
+	filter DocsKnowledgeScopeFilter,
+	query string,
+	queryEmbedding string,
+	embeddingModel string,
+	limit int,
+) ([]DocsChunkSearchResult, error) {
 	if limit <= 0 {
 		limit = 8
 	}
-	if len(spaceIDs) == 0 || query == "" {
+	if filter.empty() || query == "" {
 		return []DocsChunkSearchResult{}, nil
 	}
 	if embeddingModel == "" {
 		embeddingModel = defaultChunkEmbeddingModel
 	}
 
-	lexical, err := r.lexicalSearch(ctx, workspaceID, agentID, spaceIDs, query, max(limit*4, 12))
+	lexical, err := r.lexicalSearch(ctx, workspaceID, agentID, filter, query, max(limit*4, 12))
 	if err != nil {
 		return nil, err
 	}
 
 	vector := []DocsChunkSearchResult{}
 	if queryEmbedding != "" && r.db.Dialector.Name() == "postgres" {
-		vector, err = r.vectorSearch(ctx, workspaceID, agentID, spaceIDs, queryEmbedding, embeddingModel, max(limit*4, 12))
+		vector, err = r.vectorSearch(ctx, workspaceID, agentID, filter, queryEmbedding, embeddingModel, max(limit*4, 12))
 		if err != nil {
 			return nil, err
 		}
@@ -201,7 +238,7 @@ func (r *DocsChunkRepository) hybridSearch(
 	return fused, nil
 }
 
-func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID, agentID string, spaceIDs []string, query string, limit int) ([]DocsChunkSearchResult, error) {
+func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID, agentID string, filter DocsKnowledgeScopeFilter, query string, limit int) ([]DocsChunkSearchResult, error) {
 	tsQuery := toTSQuery(query)
 	if tsQuery == "" {
 		return []DocsChunkSearchResult{}, nil
@@ -215,13 +252,19 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID, ag
 			Joins("JOIN docs_documents d ON d.id = c.document_id").
 			Joins("JOIN docs_spaces s ON s.id = c.space_id").
 			Joins("LEFT JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
-			Where("c.workspace_id = ? AND c.space_id IN ?", workspaceID, spaceIDs).
+			Where("c.workspace_id = ?", workspaceID).
 			Where("d.status = ? AND d.deleted_at IS NULL", model.DocStatusPublished).
 			Where("(s.type = ? OR (s.type = ? AND ha.public_published_at IS NOT NULL))", model.SpaceTypeInternal, model.SpaceTypeExternalCapable)
 		if agentID != "" {
-			dbQuery = dbQuery.Joins("JOIN agent_knowledge_sources aks ON aks.space_id = c.space_id AND aks.workspace_id = c.workspace_id").
-				Where("aks.agent_id = ? AND aks.sync_status <> ?", agentID, model.KnowledgeSourceSyncDisabled)
+			dbQuery = dbQuery.Where(`EXISTS (
+				SELECT 1 FROM agent_knowledge_sources aks
+				WHERE aks.space_id = c.space_id
+				  AND aks.workspace_id = c.workspace_id
+				  AND aks.agent_id = ?
+				  AND aks.sync_status <> ?
+			)`, agentID, model.KnowledgeSourceSyncDisabled)
 		}
+		dbQuery = applySQLiteDocsScopeFilter(dbQuery, filter)
 		if err := dbQuery.
 			Order("c.updated_at DESC").
 			Limit(limit).
@@ -234,12 +277,17 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID, ag
 		return results, nil
 	}
 
-	agentJoin := ""
 	agentPredicate := ""
 	if agentID != "" {
-		agentJoin = "JOIN agent_knowledge_sources aks ON aks.space_id = c.space_id AND aks.workspace_id = c.workspace_id"
-		agentPredicate = "AND aks.agent_id = ? AND aks.sync_status <> 'disabled'"
+		agentPredicate = `AND EXISTS (
+		  SELECT 1 FROM agent_knowledge_sources aks
+		  WHERE aks.space_id = c.space_id
+		    AND aks.workspace_id = c.workspace_id
+		    AND aks.agent_id = ?
+		    AND aks.sync_status <> 'disabled'
+		)`
 	}
+	scopePredicate, scopeArgs := postgresDocsScopePredicate(workspaceID, filter)
 	sql := fmt.Sprintf(`
 		SELECT c.id, c.workspace_id, c.space_id, s.type AS space_type, c.document_id, c.block_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.content,
 		       ts_rank(
@@ -251,9 +299,8 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID, ag
 		JOIN docs_documents d ON d.id = c.document_id
 		JOIN docs_spaces s ON s.id = c.space_id
 		LEFT JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
-		%s
 		WHERE c.workspace_id = ?
-		  AND c.space_id IN ?
+		  AND %s
 		  AND d.status = 'published'
 		  AND d.deleted_at IS NULL
 		  AND (s.type = 'internal' OR (s.type = 'external_capable' AND ha.public_published_at IS NOT NULL))
@@ -264,9 +311,10 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID, ag
 		  ) @@ to_tsquery('english', ?)
 		ORDER BY lexical_score DESC, c.updated_at DESC
 		LIMIT ?
-	`, agentJoin, agentPredicate)
+	`, scopePredicate, agentPredicate)
 	var results []DocsChunkSearchResult
-	args := []any{tsQuery, workspaceID, spaceIDs}
+	args := []any{tsQuery, workspaceID}
+	args = append(args, scopeArgs...)
 	if agentID != "" {
 		args = append(args, agentID)
 	}
@@ -277,16 +325,21 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID, ag
 	return results, nil
 }
 
-func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID, agentID string, spaceIDs []string, queryEmbedding string, embeddingModel string, limit int) ([]DocsChunkSearchResult, error) {
+func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID, agentID string, filter DocsKnowledgeScopeFilter, queryEmbedding string, embeddingModel string, limit int) ([]DocsChunkSearchResult, error) {
 	if embeddingModel == "" {
 		embeddingModel = defaultChunkEmbeddingModel
 	}
-	agentJoin := ""
 	agentPredicate := ""
 	if agentID != "" {
-		agentJoin = "JOIN agent_knowledge_sources aks ON aks.space_id = c.space_id AND aks.workspace_id = c.workspace_id"
-		agentPredicate = "AND aks.agent_id = ? AND aks.sync_status <> 'disabled'"
+		agentPredicate = `AND EXISTS (
+		  SELECT 1 FROM agent_knowledge_sources aks
+		  WHERE aks.space_id = c.space_id
+		    AND aks.workspace_id = c.workspace_id
+		    AND aks.agent_id = ?
+		    AND aks.sync_status <> 'disabled'
+		)`
 	}
+	scopePredicate, scopeArgs := postgresDocsScopePredicate(workspaceID, filter)
 	sql := fmt.Sprintf(`
 		SELECT c.id, c.workspace_id, c.space_id, s.type AS space_type, c.document_id, c.block_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.content,
 		       GREATEST(0, 1 - (c.embedding <=> CAST(? AS vector))) AS vector_score
@@ -294,9 +347,8 @@ func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID, age
 		JOIN docs_documents d ON d.id = c.document_id
 		JOIN docs_spaces s ON s.id = c.space_id
 		LEFT JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
-		%s
 		WHERE c.workspace_id = ?
-		  AND c.space_id IN ?
+		  AND %s
 		  AND d.status = 'published'
 		  AND d.deleted_at IS NULL
 		  AND (s.type = 'internal' OR (s.type = 'external_capable' AND ha.public_published_at IS NOT NULL))
@@ -307,9 +359,10 @@ func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID, age
 		  AND c.embedding_dimensions = ?
 		ORDER BY c.embedding <=> CAST(? AS vector) ASC
 		LIMIT ?
-	`, agentJoin, agentPredicate)
+	`, scopePredicate, agentPredicate)
 	var results []DocsChunkSearchResult
-	args := []any{queryEmbedding, workspaceID, spaceIDs}
+	args := []any{queryEmbedding, workspaceID}
+	args = append(args, scopeArgs...)
 	if agentID != "" {
 		args = append(args, agentID)
 	}
@@ -318,6 +371,102 @@ func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID, age
 		return nil, fmt.Errorf("vector chunk search: %w", err)
 	}
 	return results, nil
+}
+
+// BuildDocsKnowledgeScopeFilter turns selected source rows into a compact retrieval filter.
+func BuildDocsKnowledgeScopeFilter(sources []model.AgentKnowledgeSource) DocsKnowledgeScopeFilter {
+	fullSpaces := map[string]struct{}{}
+	collections := map[string]struct{}{}
+	documents := map[string]struct{}{}
+	for _, source := range sources {
+		scopeType := strings.TrimSpace(source.ScopeType)
+		if scopeType == "" {
+			scopeType = model.KnowledgeSourceScopeSpace
+		}
+		switch scopeType {
+		case model.KnowledgeSourceScopeSpace:
+			if source.SpaceID != "" {
+				fullSpaces[source.SpaceID] = struct{}{}
+			}
+		case model.KnowledgeSourceScopeCollection:
+			if source.CollectionID != nil && strings.TrimSpace(*source.CollectionID) != "" {
+				collections[strings.TrimSpace(*source.CollectionID)] = struct{}{}
+			}
+		case model.KnowledgeSourceScopeArticle:
+			if source.DocumentID != nil && strings.TrimSpace(*source.DocumentID) != "" {
+				documents[strings.TrimSpace(*source.DocumentID)] = struct{}{}
+			}
+		}
+	}
+	return DocsKnowledgeScopeFilter{
+		FullSpaceIDs:  mapKeys(fullSpaces),
+		CollectionIDs: mapKeys(collections),
+		DocumentIDs:   mapKeys(documents),
+	}
+}
+
+func (f DocsKnowledgeScopeFilter) empty() bool {
+	return len(f.FullSpaceIDs) == 0 && len(f.CollectionIDs) == 0 && len(f.DocumentIDs) == 0
+}
+
+func applySQLiteDocsScopeFilter(query *gorm.DB, filter DocsKnowledgeScopeFilter) *gorm.DB {
+	conditions := []string{}
+	args := []any{}
+	if len(filter.FullSpaceIDs) > 0 {
+		conditions = append(conditions, "c.space_id IN ?")
+		args = append(args, filter.FullSpaceIDs)
+	}
+	if len(filter.CollectionIDs) > 0 {
+		conditions = append(conditions, "d.collection_id IN ?")
+		args = append(args, filter.CollectionIDs)
+	}
+	if len(filter.DocumentIDs) > 0 {
+		conditions = append(conditions, "c.document_id IN ?")
+		args = append(args, filter.DocumentIDs)
+	}
+	if len(conditions) == 0 {
+		return query.Where("1 = 0")
+	}
+	return query.Where("("+strings.Join(conditions, " OR ")+")", args...)
+}
+
+func postgresDocsScopePredicate(workspaceID string, filter DocsKnowledgeScopeFilter) (string, []any) {
+	conditions := []string{}
+	args := []any{}
+	if len(filter.FullSpaceIDs) > 0 {
+		conditions = append(conditions, "c.space_id IN ?")
+		args = append(args, filter.FullSpaceIDs)
+	}
+	if len(filter.CollectionIDs) > 0 {
+		conditions = append(conditions, `d.collection_id IN (
+			WITH RECURSIVE scoped_collections AS (
+				SELECT id FROM docs_collections WHERE workspace_id = ? AND id IN ?
+				UNION ALL
+				SELECT child.id
+				FROM docs_collections child
+				JOIN scoped_collections parent ON child.parent_collection_id = parent.id
+				WHERE child.deleted_at IS NULL
+			)
+			SELECT id FROM scoped_collections
+		)`)
+		args = append(args, workspaceID, filter.CollectionIDs)
+	}
+	if len(filter.DocumentIDs) > 0 {
+		conditions = append(conditions, "c.document_id IN ?")
+		args = append(args, filter.DocumentIDs)
+	}
+	if len(conditions) == 0 {
+		return "1 = 0", nil
+	}
+	return "(" + strings.Join(conditions, " OR ") + ")", args
+}
+
+func mapKeys(values map[string]struct{}) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func fuseChunkResults(lexical []DocsChunkSearchResult, vector []DocsChunkSearchResult) []DocsChunkSearchResult {

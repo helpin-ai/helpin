@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"path/filepath"
 	"strings"
+
+	"github.com/google/uuid"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -20,6 +23,7 @@ type SupportContentSourceService struct {
 	pageRepo    *repository.SupportContentPageRepository
 	chunkRepo   *repository.SupportContentChunkRepository
 	syncService *SupportContentSyncService
+	objectStore supportContentObjectStore
 }
 
 func NewSupportContentSourceService(
@@ -29,6 +33,7 @@ func NewSupportContentSourceService(
 	pageRepo *repository.SupportContentPageRepository,
 	chunkRepo *repository.SupportContentChunkRepository,
 	syncService *SupportContentSyncService,
+	objectStore supportContentObjectStore,
 ) *SupportContentSourceService {
 	return &SupportContentSourceService{
 		repo:        repo,
@@ -37,6 +42,7 @@ func NewSupportContentSourceService(
 		pageRepo:    pageRepo,
 		chunkRepo:   chunkRepo,
 		syncService: syncService,
+		objectStore: objectStore,
 	}
 }
 
@@ -60,6 +66,52 @@ func (s *SupportContentSourceService) Create(ctx context.Context, workspaceID st
 	return s.repo.GetByID(ctx, source.ID)
 }
 
+func (s *SupportContentSourceService) CreateFileUpload(ctx context.Context, workspaceID string, req model.CreateSupportContentSourceFileUploadRequest) (*model.CreateSupportContentSourceFileUploadResponse, error) {
+	if s.objectStore == nil {
+		return nil, fmt.Errorf("file storage is not configured")
+	}
+
+	sourceID := uuid.NewString()
+	req.StorageKey = buildSupportContentFileStorageKey(workspaceID, sourceID, req.FileName)
+	source, err := normalizeSupportContentFileUploadRequest(workspaceID, req)
+	if err != nil {
+		return nil, err
+	}
+	source.ID = sourceID
+	if err := s.repo.Create(ctx, source); err != nil {
+		return nil, err
+	}
+
+	uploadURL, err := s.objectStore.GeneratePresignedPutURL(*source.StorageKey, *source.ContentType, source.FileSize, s.objectStore.HasPublicURL())
+	if err != nil {
+		_ = s.repo.Delete(ctx, source.ID)
+		return nil, fmt.Errorf("generate upload URL: %w", err)
+	}
+	return &model.CreateSupportContentSourceFileUploadResponse{
+		Source:    *source,
+		UploadURL: uploadURL,
+	}, nil
+}
+
+func (s *SupportContentSourceService) ConfirmFileUpload(ctx context.Context, workspaceID, id string) (*model.SupportContentSource, error) {
+	source, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if source == nil || source.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("content source not found in workspace")
+	}
+	if source.SourceType != model.ContentSourceTypeFile {
+		return nil, fmt.Errorf("content source is not a file source")
+	}
+	if s.syncService != nil {
+		if err := s.syncService.QueueSourceSync(ctx, workspaceID, id); err != nil {
+			return nil, err
+		}
+	}
+	return s.repo.GetByID(ctx, id)
+}
+
 func (s *SupportContentSourceService) Update(ctx context.Context, workspaceID, id string, req model.UpdateSupportContentSourceRequest) (*model.SupportContentSource, error) {
 	existing, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -67,6 +119,9 @@ func (s *SupportContentSourceService) Update(ctx context.Context, workspaceID, i
 	}
 	if existing == nil || existing.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("content source not found in workspace")
+	}
+	if existing.SourceType == model.ContentSourceTypeFile {
+		return nil, fmt.Errorf("file sources cannot be edited")
 	}
 
 	updates, err := normalizeSupportContentSourceUpdate(*existing, req)
@@ -109,6 +164,9 @@ func (s *SupportContentSourceService) Delete(ctx context.Context, workspaceID, i
 	}
 	if err := s.pageRepo.DeleteByContentSourceID(ctx, id); err != nil {
 		return err
+	}
+	if existing.SourceType == model.ContentSourceTypeFile && s.objectStore != nil && existing.StorageKey != nil && strings.TrimSpace(*existing.StorageKey) != "" {
+		_ = s.objectStore.DeleteObject(ctx, strings.TrimSpace(*existing.StorageKey))
 	}
 	return s.repo.Delete(ctx, id)
 }
@@ -271,6 +329,7 @@ func normalizeSupportContentSourceCreate(workspaceID string, req model.CreateSup
 	source := &model.SupportContentSource{
 		WorkspaceID:          workspaceID,
 		Name:                 name,
+		SourceType:           model.ContentSourceTypeWebsite,
 		StartURL:             startURL,
 		CrawlLimit:           defaultIfZero(req.CrawlLimit, 100),
 		CrawlDepth:           defaultIfZero(req.CrawlDepth, 2),
@@ -292,6 +351,84 @@ func normalizeSupportContentSourceCreate(workspaceID string, req model.CreateSup
 		return nil, fmt.Errorf("json_prompt is required when JSON format is enabled")
 	}
 	return source, nil
+}
+
+const maxKnowledgeFileSize = 50 * 1024 * 1024
+
+func normalizeSupportContentFileUploadRequest(workspaceID string, req model.CreateSupportContentSourceFileUploadRequest) (*model.SupportContentSource, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	fileName := strings.TrimSpace(req.FileName)
+	if fileName == "" {
+		return nil, fmt.Errorf("file_name is required")
+	}
+	if req.FileSize <= 0 {
+		return nil, fmt.Errorf("file_size must be positive")
+	}
+	if req.FileSize > maxKnowledgeFileSize {
+		return nil, fmt.Errorf("file exceeds maximum size of %s", formatByteLimit(maxKnowledgeFileSize))
+	}
+	contentType, err := normalizeKnowledgeFileContentType(req.ContentType, fileName)
+	if err != nil {
+		return nil, err
+	}
+	storageKey := strings.TrimSpace(req.StorageKey)
+	if storageKey == "" {
+		return nil, fmt.Errorf("storage_key is required")
+	}
+	return &model.SupportContentSource{
+		WorkspaceID:          workspaceID,
+		Name:                 name,
+		SourceType:           model.ContentSourceTypeFile,
+		StartURL:             "file://" + fileName,
+		FileName:             &fileName,
+		FileSize:             req.FileSize,
+		ContentType:          &contentType,
+		StorageKey:           &storageKey,
+		CrawlLimit:           1,
+		CrawlDepth:           0,
+		CrawlSource:          model.ContentSourceDiscoveryAll,
+		Formats:              model.DocsStringArray{model.ContentSourceFormatMarkdown},
+		Render:               false,
+		IncludeExternalLinks: false,
+		IncludeSubdomains:    false,
+		CrawlPurposes:        model.DocsStringArray{model.ContentSourcePurposeSearch, model.ContentSourcePurposeAIInput},
+		MaxAgeSeconds:        86400,
+		SyncStatus:           model.KnowledgeSourceSyncQueued,
+	}, nil
+}
+
+func normalizeKnowledgeFileContentType(raw, fileName string) (string, error) {
+	contentType := strings.TrimSpace(strings.ToLower(raw))
+	if contentType == "" || contentType == "application/octet-stream" {
+		switch strings.ToLower(filepath.Ext(fileName)) {
+		case ".pdf":
+			contentType = "application/pdf"
+		case ".md", ".markdown":
+			contentType = "text/markdown"
+		case ".txt":
+			contentType = "text/plain"
+		case ".csv":
+			contentType = "text/csv"
+		}
+	}
+	switch contentType {
+	case "application/pdf", "text/plain", "text/markdown", "text/x-markdown", "text/csv":
+		return contentType, nil
+	default:
+		return "", fmt.Errorf("unsupported file type %s", strings.TrimSpace(raw))
+	}
+}
+
+func buildSupportContentFileStorageKey(workspaceID, sourceID, fileName string) string {
+	safeName := strings.TrimSpace(filepath.Base(fileName))
+	safeName = strings.NewReplacer("/", "-", "\\", "-", "\x00", "").Replace(safeName)
+	if safeName == "" || safeName == "." {
+		safeName = "source-file"
+	}
+	return fmt.Sprintf("workspaces/%s/knowledge-sources/%s/%s", workspaceID, sourceID, safeName)
 }
 
 func normalizeSupportContentSourceUpdate(existing model.SupportContentSource, req model.UpdateSupportContentSourceRequest) (map[string]any, error) {

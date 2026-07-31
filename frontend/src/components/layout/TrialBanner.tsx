@@ -1,16 +1,15 @@
-import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { daysUntil } from '@/lib/billingUtils';
+import { BILLING_CHOOSE_PLAN_SEARCH } from '@/lib/billingNavigation';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useOrganizationStore } from '@/stores/organizationStore';
 import {
   useWorkspaceBilling,
   useWorkspaceAccess,
   usePermissions,
-  useBillingCards,
 } from '@/hooks/queries';
-import { PlanChangeModal } from '@/components/billing/PlanChangeModal';
 
 /**
  * Subtle trial nudge shown in the sidebar footer for the active workspace
@@ -18,25 +17,20 @@ import { PlanChangeModal } from '@/components/billing/PlanChangeModal';
  * get an Upgrade button, others get a gentle note.
  */
 export function TrialBanner({ collapsed = false }: { collapsed?: boolean }) {
+  const navigate = useNavigate();
   const workspaceId = useWorkspaceStore((s) => s.currentWorkspace?.id);
-  const workspaceName = useWorkspaceStore((s) => s.currentWorkspace?.name ?? '');
-  const orgId = useOrganizationStore((s) => s.currentOrganization?.id);
+  const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug);
   const isOrgOwner = useOrganizationStore((s) => s.currentOrganization?.role === 'owner');
 
   const { data: billing } = useWorkspaceBilling(workspaceId);
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canManageSettings } = usePermissions(access);
-  const { data: cards = [] } = useBillingCards(isOrgOwner ? orgId : undefined);
-
-  const [planOpen, setPlanOpen] = useState(false);
 
   if (!billing || billing.status !== 'trialing') return null;
 
   const canManage = (billing.manage_billing_enabled ?? false) || canManageSettings || isOrgOwner;
   const days = daysUntil(billing.trial_ends_at);
   const urgent = days <= 3;
-
-  const orgDefaultCardId = cards.find((c) => c.is_org_default)?.id ?? null;
 
   if (collapsed) {
     return (
@@ -77,21 +71,18 @@ export function TrialBanner({ collapsed = false }: { collapsed?: boolean }) {
             size="sm"
             variant={urgent ? 'default' : 'outline'}
             className="mt-2 h-7 w-full text-xs"
-            onClick={() => setPlanOpen(true)}
+            disabled={!workspaceSlug}
+            onClick={() => {
+              if (!workspaceSlug) return;
+              void navigate({
+                to: '/w/$slug/settings/billing',
+                params: { slug: workspaceSlug },
+                search: BILLING_CHOOSE_PLAN_SEARCH,
+              });
+            }}
           >
             Upgrade
           </Button>
-          {planOpen && (
-            <PlanChangeModal
-              open={planOpen}
-              onOpenChange={setPlanOpen}
-              workspaceId={billing.workspace_id}
-              workspaceName={workspaceName}
-              currentPlan={billing.plan}
-              cards={cards}
-              defaultCardId={orgDefaultCardId}
-            />
-          )}
         </>
       ) : (
         <div className="mt-1 text-muted-foreground">Ask your workspace owner to upgrade.</div>

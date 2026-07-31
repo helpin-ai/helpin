@@ -1,9 +1,11 @@
-import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
+import { createFileRoute, Outlet, redirect, useLocation } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui/button'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { currentPathForLoginRedirect, storeRedirectAfterLogin } from '@/lib/authRedirect'
 import { EmailVerificationBanner } from '@/components/auth/EmailVerificationBanner'
+import { shouldShowEmailVerificationBanner } from '@/lib/emailVerificationBanner'
+import { getAuthenticatedLayoutStyle } from '@/lib/authenticatedLayout'
 
 export const Route = createFileRoute('/_authenticated')({
   beforeLoad: ({ context, location }) => {
@@ -23,6 +25,14 @@ function AuthenticatedLayout() {
   const { auth } = Route.useRouteContext()
   const user = useAuthStore((state) => state.user)
   const [retrying, setRetrying] = useState(false)
+  const [topBannerHeight, setTopBannerHeight] = useState(0)
+  const topBannerRef = useRef<HTMLDivElement>(null)
+  const location = useLocation()
+  const showEmailVerificationBanner = shouldShowEmailVerificationBanner({
+    emailVerified: user?.email_verified,
+    pathname: location.pathname,
+    search: location.search as Record<string, unknown>,
+  })
 
   const handleRetry = async () => {
     setRetrying(true)
@@ -54,10 +64,36 @@ function AuthenticatedLayout() {
     )
   }
 
+  useEffect(() => {
+    if (!showEmailVerificationBanner) {
+      setTopBannerHeight(0)
+      return
+    }
+
+    const node = topBannerRef.current
+    if (!node) return
+
+    const updateHeight = () => setTopBannerHeight(node.getBoundingClientRect().height)
+    updateHeight()
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateHeight)
+      return () => window.removeEventListener('resize', updateHeight)
+    }
+
+    const observer = new ResizeObserver(updateHeight)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [showEmailVerificationBanner])
+
   return (
-    <>
-      <EmailVerificationBanner emailVerified={user?.email_verified} />
+    <div style={getAuthenticatedLayoutStyle(topBannerHeight)}>
+      {showEmailVerificationBanner && (
+        <div ref={topBannerRef}>
+          <EmailVerificationBanner emailVerified={user?.email_verified} />
+        </div>
+      )}
       <Outlet />
-    </>
+    </div>
   )
 }

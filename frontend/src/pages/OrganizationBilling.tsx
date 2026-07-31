@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useOrganizationStore } from '@/stores/organizationStore';
 import {
@@ -39,11 +39,6 @@ export default function OrganizationBilling() {
   const [manageCard, setManageCard] = useState<WSCard | null>(null);
   const [planCard, setPlanCard] = useState<WSCard | null>(null);
   const [search, setSearch] = useState('');
-
-  const orgDefaultCardId = useMemo(
-    () => cards.find((c) => c.is_org_default)?.id ?? null,
-    [cards],
-  );
 
   if (isLoading || !billing) {
     return (
@@ -109,7 +104,7 @@ export default function OrganizationBilling() {
         <TabsContent value="cards" className="space-y-3">
           {cards.length === 0 ? (
             <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
-              No saved cards yet.
+              Saved cards appear here after a workspace is upgraded through Stripe Checkout.
             </div>
           ) : (
             cards.map((card: PaymentMethod) => (
@@ -142,8 +137,6 @@ export default function OrganizationBilling() {
           workspaceId={planCard.workspace_id}
           workspaceName={planCard.workspace_name}
           currentPlan={planCard.plan}
-          cards={cards}
-          defaultCardId={orgDefaultCardId}
         />
       )}
     </div>

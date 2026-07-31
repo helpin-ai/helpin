@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { billingService } from '@/lib/services/billingService';
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
+import { trackWorkspaceBillingEvent } from '@/lib/analytics';
 import type {
   CheckoutRequest,
   ConfirmCheckoutRequest,
@@ -101,7 +102,12 @@ export function useLinkPaymentMethod(orgId?: string) {
       if (res.error) throw new Error(res.error);
       return res.data;
     },
-    onSuccess: invalidate,
+    onSuccess: (summary, vars) => {
+      trackWorkspaceBillingEvent('workspace_billing_payment_method_linked', vars.wsId, summary, {
+        has_payment_method: !!vars.data.payment_method_id,
+      });
+      invalidate();
+    },
   });
 }
 
@@ -113,7 +119,12 @@ export function useSetOnDemand(orgId?: string) {
       if (res.error) throw new Error(res.error);
       return res.data;
     },
-    onSuccess: invalidate,
+    onSuccess: (summary, vars) => {
+      trackWorkspaceBillingEvent('workspace_billing_on_demand_changed', vars.wsId, summary, {
+        on_demand_enabled: vars.enabled,
+      });
+      invalidate();
+    },
   });
 }
 
@@ -131,6 +142,14 @@ export function useBillingCheckout(boundWsId?: string) {
       const data = 'data' in vars ? vars.data : vars;
       return unwrap(await billingService.checkout(wsId, data));
     },
+    onSuccess: (_session, vars) => {
+      const wsId = 'wsId' in vars ? vars.wsId : boundWsId;
+      const data = 'data' in vars ? vars.data : vars;
+      trackWorkspaceBillingEvent('workspace_billing_checkout_started', wsId, null, {
+        target_plan: data.plan,
+        target_interval: data.interval,
+      });
+    },
   });
 }
 
@@ -140,6 +159,7 @@ export function useConfirmBillingCheckout(wsId?: string) {
     mutationFn: async (data: ConfirmCheckoutRequest) =>
       unwrap(await billingService.confirmCheckout(wsId!, data)),
     onSuccess: (summary) => {
+      trackWorkspaceBillingEvent('workspace_billing_checkout_confirmed', wsId, summary);
       if (wsId) qc.setQueryData(queryKeys.billing.workspace(wsId), summary);
     },
   });
@@ -166,7 +186,8 @@ export function useBillingPlanChange(wsId?: string) {
   return useMutation({
     mutationFn: async (data: PlanChangeRequest) =>
       unwrap(await billingService.changePlan(wsId!, data)),
-    onSuccess: () => {
+    onSuccess: (summary) => {
+      trackWorkspaceBillingEvent('workspace_billing_plan_changed', wsId, summary);
       if (wsId) qc.invalidateQueries({ queryKey: queryKeys.billing.workspace(wsId) });
     },
   });
@@ -184,6 +205,7 @@ export function useResumeBillingSubscription(wsId?: string) {
   return useMutation({
     mutationFn: async () => unwrap(await billingService.resumeSubscription(wsId!)),
     onSuccess: (summary) => {
+      trackWorkspaceBillingEvent('workspace_billing_subscription_resumed', wsId, summary);
       if (wsId) qc.setQueryData(queryKeys.billing.workspace(wsId), summary);
     },
   });
@@ -198,7 +220,10 @@ export function useSetBillingOnDemand(wsId?: string) {
       if (res.error) throw new Error(res.error);
       return res.data;
     },
-    onSuccess: () => {
+    onSuccess: (summary, enabled) => {
+      trackWorkspaceBillingEvent('workspace_billing_on_demand_changed', wsId, summary, {
+        on_demand_enabled: enabled,
+      });
       if (wsId) qc.invalidateQueries({ queryKey: queryKeys.billing.workspace(wsId) });
     },
   });

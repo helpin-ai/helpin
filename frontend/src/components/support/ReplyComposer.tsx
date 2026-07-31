@@ -821,6 +821,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
 
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aiAssistedRef = useRef(false);
   const isTypingRef = useRef(false);
   const isNote = replyMode === 'note';
   const isNoteRef = useRef(isNote);
@@ -1474,6 +1475,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
     await sendMutation.mutateAsync({
       content: markdown || ' ',
       is_internal: isInternal,
+      ...(!isInternal && aiAssistedRef.current ? { ai_assisted: true } : {}),
       ...(!isInternal && primaryEmail ? { channels: ['email' as const] } : {}),
       ...(!isInternal && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
       ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
@@ -1482,6 +1484,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
     // Clean up preview URLs
     pendingAttachments.forEach((a) => { if (a.previewUrl && a.previewObjectUrl) URL.revokeObjectURL(a.previewUrl); });
     setPendingAttachments([]);
+		aiAssistedRef.current = false;
     editor.commands.clearContent();
     clearDraft(conversationId);
     editor.commands.focus();
@@ -1520,6 +1523,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
 
       editor.commands.setContent(rewritten.content);
       editor.commands.focus('end');
+			aiAssistedRef.current = true;
     } catch (error) {
       const reason = getUpgradeRequiredReason(error);
       if (reason) onUpgradeRequired?.(reason);

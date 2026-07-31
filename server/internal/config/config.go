@@ -152,6 +152,13 @@ type Config struct {
 	StripeGrowthAnnualPriceID   string
 	StripeCreditBlockPriceID    string
 
+	// Customer.io Track API (optional — backend identity/object sync disabled if unset)
+	CustomerIOSiteID                   string
+	CustomerIOTrackAPIKey              string
+	CustomerIORegion                   string
+	CustomerIOWorkspaceObjectTypeID    string
+	CustomerIOOrganizationObjectTypeID string
+
 	// Agent preview debugging (optional — targeted diagnostics for preview persistence/apply)
 	AgentPreviewDebug bool
 
@@ -327,6 +334,11 @@ func Load() (*Config, error) {
 		StripeGrowthMonthlyPriceID:             strings.TrimSpace(os.Getenv("STRIPE_GROWTH_MONTHLY_PRICE_ID")),
 		StripeGrowthAnnualPriceID:              strings.TrimSpace(os.Getenv("STRIPE_GROWTH_ANNUAL_PRICE_ID")),
 		StripeCreditBlockPriceID:               strings.TrimSpace(os.Getenv("STRIPE_CREDIT_BLOCK_PRICE_ID")),
+		CustomerIOSiteID:                       strings.TrimSpace(os.Getenv("CUSTOMER_IO_SITE_ID")),
+		CustomerIOTrackAPIKey:                  strings.TrimSpace(os.Getenv("CUSTOMER_IO_TRACK_API_KEY")),
+		CustomerIORegion:                       strings.TrimSpace(firstNonEmpty(os.Getenv("CUSTOMER_IO_REGION"), "us")),
+		CustomerIOWorkspaceObjectTypeID:        strings.TrimSpace(firstNonEmpty(os.Getenv("CUSTOMER_IO_WORKSPACE_OBJECT_TYPE_ID"), "1")),
+		CustomerIOOrganizationObjectTypeID:     strings.TrimSpace(firstNonEmpty(os.Getenv("CUSTOMER_IO_ORGANIZATION_OBJECT_TYPE_ID"), "2")),
 		AgentPreviewDebug:                      parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 		DocsOrderingUseSortKey:                 parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
 		TLSAskExtraAllowedDomains:              parseCSV(os.Getenv("TLS_ASK_EXTRA_ALLOWED_DOMAINS")),

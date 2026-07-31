@@ -11,6 +11,7 @@ import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMem
 import { useContactsSearchParams } from '@/hooks/useContactsSearchParams';
 import { useInfiniteContacts } from '@/hooks/useInfiniteContacts';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
+import { BILLING_CHOOSE_PLAN_SEARCH } from '@/lib/billingNavigation';
 import { queryKeys } from '@/lib/queryKeys';
 import { crmContactService } from '@/lib/services/crmService';
 import { ContactsTable } from '@/components/crm/ContactsTable';
@@ -86,7 +87,11 @@ export function ContactsPage() {
   };
   const handleUpgradeClick = () => {
     if (!wsSlug) return;
-    void navigate({ to: '/w/$slug/settings/billing', params: { slug: wsSlug } });
+    void navigate({
+      to: '/w/$slug/settings/billing',
+      params: { slug: wsSlug },
+      search: BILLING_CHOOSE_PLAN_SEARCH,
+    });
   };
 
   const handleSeedContacts = async () => {

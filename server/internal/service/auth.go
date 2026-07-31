@@ -64,6 +64,7 @@ type AuthService struct {
 	jwtManager            *auth.JWTManager
 	s3Client              *storage.S3Client
 	emailClient           authEmailSender
+	customerIOIdentity    *CustomerIOIdentityService
 	appBaseURL            string
 	encryptionKey         []byte
 	logger                *slog.Logger
@@ -95,6 +96,10 @@ func NewAuthService(
 		encryptionKey:         append([]byte(nil), encryptionKey...),
 		logger:                slog.Default().With("service", "auth"),
 	}
+}
+
+func (s *AuthService) SetCustomerIOIdentityService(identity *CustomerIOIdentityService) {
+	s.customerIOIdentity = identity
 }
 
 // Signup creates a new user account and returns auth tokens.
@@ -144,6 +149,9 @@ func (s *AuthService) Signup(ctx context.Context, req model.SignupRequest) (*mod
 
 	// Auto-create a default organization for the new user.
 	s.autoCreateOrganization(ctx, user)
+	if s.customerIOIdentity != nil {
+		s.customerIOIdentity.SyncUser(ctx, user)
+	}
 
 	return &model.AuthResponse{
 		AccessToken:  accessToken,
@@ -191,6 +199,9 @@ func (s *AuthService) SignInWithGoogle(ctx context.Context, identity GoogleIdent
 			return nil, fmt.Errorf("create google user: %w", err)
 		}
 		s.autoCreateOrganization(ctx, user)
+		if s.customerIOIdentity != nil {
+			s.customerIOIdentity.SyncUser(ctx, user)
+		}
 	} else {
 		if user.GoogleSubject == nil || *user.GoogleSubject == "" {
 			user, err = s.userRepo.LinkGoogleSubject(ctx, user.ID, subject)
@@ -203,6 +214,9 @@ func (s *AuthService) SignInWithGoogle(ctx context.Context, identity GoogleIdent
 			if err != nil {
 				return nil, err
 			}
+		}
+		if s.customerIOIdentity != nil {
+			s.customerIOIdentity.SyncUser(ctx, user)
 		}
 	}
 
@@ -228,7 +242,11 @@ func (s *AuthService) autoCreateOrganization(ctx context.Context, user *model.Us
 		firstName = "My"
 	}
 	orgName := firstName + "'s Organization"
-	orgSlug := slugifyOrg(orgName)
+	orgSlug, err := nextAvailableOrganizationSlug(ctx, s.organizationRepo, slugifyOrg(orgName))
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to resolve organization slug", "error", err, "user_id", user.ID)
+		return
+	}
 
 	org, err := s.organizationRepo.Create(ctx, orgName, orgSlug, user.ID, nil)
 	if err != nil {
@@ -237,6 +255,9 @@ func (s *AuthService) autoCreateOrganization(ctx context.Context, user *model.Us
 	}
 	if _, err := s.organizationRepo.AddMember(ctx, org.ID, user.ID, "owner"); err != nil {
 		s.logger.ErrorContext(ctx, "failed to add user as org owner", "error", err, "org_id", org.ID, "user_id", user.ID)
+	}
+	if s.customerIOIdentity != nil {
+		s.customerIOIdentity.SyncOrganization(ctx, org.ID, user.ID)
 	}
 	s.logger.InfoContext(ctx, "auto-created organization", "org_id", org.ID, "org_name", orgName, "user_id", user.ID)
 }

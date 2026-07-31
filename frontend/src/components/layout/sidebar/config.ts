@@ -35,6 +35,7 @@ import { isWorkspaceSupportRoute } from '@/lib/workspaceRoutes';
 import type { NavGroup, RailId, RailItem } from './types';
 
 export function deriveActiveRail(pathname: string): RailId {
+  if (pathname.endsWith('/setup')) return 'setup';
   if (pathname.includes('/settings')) return 'settings';
   if (isWorkspaceSupportRoute(pathname)) return 'support';
   if (pathname.includes('/crm')) return 'crm';
@@ -60,8 +61,8 @@ export const projectCreateOptions = [
   { key: 'objective' as const, label: 'Objective', icon: Target01Icon, pages: ['objectives'] },
 ];
 
-export function buildRailItems(wsSlug: string, totalSupportUnread: number): RailItem[] {
-  return [
+export function buildRailItems(wsSlug: string, totalSupportUnread: number, setupProgress?: number): RailItem[] {
+  const items: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanbanIcon, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'crm', label: 'CRM', icon: Briefcase01Icon, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: Message01Icon, defaultLink: `/w/${wsSlug}/support`, indicator: Boolean(totalSupportUnread) },
@@ -69,6 +70,10 @@ export function buildRailItems(wsSlug: string, totalSupportUnread: number): Rail
     { id: 'docs', label: 'Docs', icon: File01Icon, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Setting07Icon, defaultLink: buildSettingsRoutePath(wsSlug, 'profile') },
   ];
+  if (setupProgress !== undefined) {
+    items.push({ id: 'setup', label: 'Setup', icon: CheckmarkCircle02Icon, defaultLink: `/w/${wsSlug}/setup`, progressPercent: Math.max(0, Math.min(100, setupProgress)), separatorBefore: true });
+  }
+  return items;
 }
 
 export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, permissionSet?: Set<string>, agentAttentionCount = 0): Record<RailId, NavGroup[]> {
@@ -138,6 +143,7 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, 
         icon: section.icon,
       })),
     })),
+    setup: [],
   };
 }
 

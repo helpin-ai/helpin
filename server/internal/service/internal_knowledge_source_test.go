@@ -171,7 +171,10 @@ func newInternalKnowledgeTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE agent_knowledge_sources (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			agent_id TEXT NOT NULL,
+			scope_type TEXT NOT NULL DEFAULT 'space',
 			space_id TEXT NOT NULL,
+			collection_id TEXT,
+			document_id TEXT,
 			workspace_id TEXT NOT NULL,
 			sync_status TEXT NOT NULL DEFAULT 'queued',
 			sync_progress INTEGER NOT NULL DEFAULT 0,
@@ -182,7 +185,7 @@ func newInternalKnowledgeTestDB(t *testing.T) *gorm.DB {
 			last_sync_completed_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME,
-			UNIQUE(agent_id, space_id)
+			UNIQUE(agent_id, scope_type, space_id, collection_id, document_id)
 		)`,
 		`CREATE TABLE docs_documents (
 			id TEXT PRIMARY KEY,

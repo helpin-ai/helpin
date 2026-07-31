@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
 import { loginRedirectFromSearch } from '@/lib/authRedirect';
+import { signupSuccessRedirect } from '@/lib/signupRedirect';
 
 export default function Register() {
   useTitle('Sign Up');
@@ -30,10 +31,11 @@ export default function Register() {
       toast.error(error);
     } else {
       toast.success('Account created successfully');
-      if (redirect) {
-        navigate({ to: redirect as string });
+      const target = signupSuccessRedirect(redirect);
+      if ('search' in target) {
+        navigate({ to: target.to, search: target.search });
       } else {
-        navigate({ to: '/workspaces' });
+        navigate({ to: target.to });
       }
     }
   };

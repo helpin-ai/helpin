@@ -25,3 +25,8 @@ export function isModuleEnabled(moduleId: string, userEmail?: string): boolean {
   if (!userEmail) return false;
   return allowedEmails.includes(userEmail.toLowerCase());
 }
+
+// Coordinate with the backend SETUP_SUCCESS_ENABLED flag to avoid exposing a route the API has disabled.
+export function isSetupSuccessEnabled(): boolean {
+  return import.meta.env.VITE_SETUP_SUCCESS_ENABLED === 'true';
+}

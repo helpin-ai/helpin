@@ -155,18 +155,53 @@ func agentRuntimeRunID(run *model.AgentRun) (string, bool) {
 	return runtimeRunID, runtimeRunID != ""
 }
 
-func buildAgentRunInputPayload(targetType, targetID string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, output *model.AgentRunOutputContext, additionalContext *string, allowedTools []string) ([]byte, error) {
+func buildAgentRunInputPayload(targetType, targetID string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, output *model.AgentRunOutputContext, additionalContext *string, allowedTools []string, workspaceContexts ...*model.AgentRunWorkspaceContext) ([]byte, error) {
+	var workspaceContext *model.AgentRunWorkspaceContext
+	if len(workspaceContexts) > 0 {
+		workspaceContext = workspaceContexts[0]
+	}
 	payload := model.AgentRunInputPayload{
-		Trigger:      trigger,
-		Event:        event,
-		Output:       output,
-		AllowedTools: normalizeStringSlice(allowedTools),
+		Trigger:          trigger,
+		Event:            event,
+		Output:           output,
+		AllowedTools:     normalizeStringSlice(allowedTools),
+		WorkspaceContext: workspaceContext,
 	}
 	payload.SetTarget(targetType, targetID)
 	if additionalContext != nil {
 		payload.AdditionalContext = strings.TrimSpace(*additionalContext)
 	}
 	return json.Marshal(payload)
+}
+
+func (s *AgentService) workspaceContextForRun(ctx context.Context, workspaceID string) (*model.AgentRunWorkspaceContext, error) {
+	if s == nil || s.workspaceRepo == nil {
+		return nil, nil
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, nil
+	}
+	ws, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("get workspace context: %w", err)
+	}
+	if ws == nil {
+		return nil, nil
+	}
+	companyProductContext := strings.TrimSpace(derefString(ws.CompanyProductContext))
+	if companyProductContext == "" {
+		companyProductContext = strings.TrimSpace(derefString(ws.Description))
+	}
+	workspaceContext := &model.AgentRunWorkspaceContext{
+		Name:                  strings.TrimSpace(ws.Name),
+		WebsiteURL:            strings.TrimSpace(derefString(ws.WebsiteURL)),
+		CompanyProductContext: companyProductContext,
+	}
+	if workspaceContext.WebsiteURL == "" && workspaceContext.CompanyProductContext == "" {
+		return nil, nil
+	}
+	return workspaceContext, nil
 }
 
 // delegatesRunToAgentRuntime is the launch-time delegation decision. Agent
@@ -319,6 +354,9 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 	if input.Output != nil {
 		metadata["output"] = mapFromJSON(input.Output)
 	}
+	if input.WorkspaceContext != nil {
+		metadata["workspace_context"] = mapFromJSON(input.WorkspaceContext)
+	}
 	mode := strings.TrimSpace(run.InvocationMode)
 	if mode == "" && agent != nil {
 		mode = strings.TrimSpace(agent.DefaultInvocationMode)
@@ -425,6 +463,7 @@ func buildContinuationAdditionalContext(run *model.AgentRun, content string) str
 type AgentService struct {
 	agentRepo                  *repository.AgentRepository
 	agentTemplateRepo          *repository.AgentTemplateRepository
+	workspaceRepo              *repository.WorkspaceRepository
 	workspacePresetVersionRepo *repository.WorkspaceAgentPresetVersionRepository
 	runRepo                    *repository.AgentRunRepository
 	commandBarPlanRepo         *repository.CommandBarPlanRepository
@@ -582,6 +621,11 @@ func (s *AgentService) SetCommandBarPlanRepository(repo *repository.CommandBarPl
 
 func (s *AgentService) SetAgentTemplateRepository(repo *repository.AgentTemplateRepository) *AgentService {
 	s.agentTemplateRepo = repo
+	return s
+}
+
+func (s *AgentService) SetWorkspaceRepository(repo *repository.WorkspaceRepository) *AgentService {
+	s.workspaceRepo = repo
 	return s
 }
 
@@ -3579,6 +3623,10 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 	if strings.TrimSpace(targetType) == "doc" {
 		targetType = "document"
 	}
+	workspaceContext, err := s.workspaceContextForRun(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
 
 	switch targetType {
 	case "task", "story":
@@ -3616,7 +3664,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 				additionalContext = &launchContext
 			}
 		}
-		payload, err := buildAgentRunInputPayload("task", task.ID, trigger, event, req.Output, additionalContext, req.AllowedTools)
+		payload, err := buildAgentRunInputPayload("task", task.ID, trigger, event, req.Output, additionalContext, req.AllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build task run input: %w", err)
 		}
@@ -3673,7 +3721,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 				additionalContext = &launchContext
 			}
 		}
-		payload, err := buildAgentRunInputPayload("epic", epic.ID, trigger, event, req.Output, additionalContext, req.AllowedTools)
+		payload, err := buildAgentRunInputPayload("epic", epic.ID, trigger, event, req.Output, additionalContext, req.AllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build epic run input: %w", err)
 		}
@@ -3728,7 +3776,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
-		payload, err := buildAgentRunInputPayload("repository", repo.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools)
+		payload, err := buildAgentRunInputPayload("repository", repo.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build repository run input: %w", err)
 		}
@@ -3786,7 +3834,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
-		input, err := buildAgentRunInputPayload("support_conversation", conversation.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools)
+		input, err := buildAgentRunInputPayload("support_conversation", conversation.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build conversation run input: %w", err)
 		}
@@ -3834,7 +3882,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		context := supportCoverageGapRunContext(detail, req.AdditionalContext)
-		input, err := buildAgentRunInputPayload("support_coverage_gap", detail.ID, trigger, event, req.Output, &context, req.AllowedTools)
+		input, err := buildAgentRunInputPayload("support_coverage_gap", detail.ID, trigger, event, req.Output, &context, req.AllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build support coverage gap run input: %w", err)
 		}
@@ -3878,7 +3926,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
-		input, err := buildAgentRunInputPayload("document", doc.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools)
+		input, err := buildAgentRunInputPayload("document", doc.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build document run input: %w", err)
 		}
@@ -3918,7 +3966,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
-		input, err := buildAgentRunInputPayload("crm_contact", contact.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools)
+		input, err := buildAgentRunInputPayload("crm_contact", contact.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build crm contact run input: %w", err)
 		}
@@ -3958,7 +4006,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
-		input, err := buildAgentRunInputPayload("crm_company", company.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools)
+		input, err := buildAgentRunInputPayload("crm_company", company.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build crm company run input: %w", err)
 		}
@@ -3998,7 +4046,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
-		input, err := buildAgentRunInputPayload("crm_deal", deal.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools)
+		input, err := buildAgentRunInputPayload("crm_deal", deal.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build crm deal run input: %w", err)
 		}
@@ -4032,7 +4080,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
-		input, err := buildAgentRunInputPayload("workspace", workspaceID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools)
+		input, err := buildAgentRunInputPayload("workspace", workspaceID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build workspace run input: %w", err)
 		}
@@ -4097,7 +4145,11 @@ func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, co
 	if actorID == nil || strings.TrimSpace(*actorID) == "" {
 		trigger = systemRunTriggerContext(supportAutoTriggerType)
 	}
-	input, err := buildAgentRunInputPayload("support_conversation", conversationID, trigger, nil, nil, nil, nil)
+	workspaceContext, err := s.workspaceContextForRun(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	input, err := buildAgentRunInputPayload("support_conversation", conversationID, trigger, nil, nil, nil, nil, workspaceContext)
 	if err != nil {
 		return nil, fmt.Errorf("build conversation run input: %w", err)
 	}

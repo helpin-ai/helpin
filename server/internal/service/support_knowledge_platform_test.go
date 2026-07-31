@@ -352,7 +352,7 @@ func TestDocsRetrievalEnforcesWorkspaceAgentAndEnabledLinkInSQL(t *testing.T) {
 		`CREATE TABLE docs_documents (id TEXT PRIMARY KEY, workspace_id TEXT, space_id TEXT, status TEXT, deleted_at DATETIME)`,
 		`CREATE TABLE docs_helpcenter_articles (document_id TEXT, public_published_at DATETIME)`,
 		`CREATE TABLE docs_chunks (id TEXT PRIMARY KEY, workspace_id TEXT, space_id TEXT, document_id TEXT, block_id TEXT, chunk_index INTEGER, section_key TEXT, heading_path TEXT, title TEXT, content TEXT, search_content TEXT, updated_at DATETIME)`,
-		`CREATE TABLE agent_knowledge_sources (id TEXT PRIMARY KEY, agent_id TEXT, space_id TEXT, workspace_id TEXT, sync_status TEXT)`,
+		`CREATE TABLE agent_knowledge_sources (id TEXT PRIMARY KEY, agent_id TEXT, scope_type TEXT DEFAULT 'space', space_id TEXT, collection_id TEXT, document_id TEXT, workspace_id TEXT, sync_status TEXT)`,
 	} {
 		if err := db.Exec(ddl).Error; err != nil {
 			t.Fatalf("create retrieval table: %v", err)

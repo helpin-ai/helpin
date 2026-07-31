@@ -631,6 +631,7 @@ func newNotificationServiceTestDB(t *testing.T) *gorm.DB {
 			owner_id TEXT NOT NULL,
 			organization_id TEXT,
 			description TEXT,
+			company_product_context TEXT,
 			logo_url TEXT,
 			timezone TEXT NOT NULL,
 			created_at DATETIME,

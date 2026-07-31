@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useTheme } from 'next-themes';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useSetup, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useQuery } from '@tanstack/react-query';
@@ -33,10 +33,12 @@ import { COLLAPSIBLE_SETTINGS_GROUPS, getCollapsedSettingsGroups, getExpandedTea
 import { SidebarAccountMenu } from './sidebar/SidebarAccountMenu';
 import { SidebarCreateBar } from './sidebar/SidebarCreateBar';
 import { SidebarRail } from './sidebar/SidebarRail';
+import { SetupRailNav } from './sidebar/SetupRailNav';
 import { SettingsRailNav } from './sidebar/SettingsRailNav';
 import { StandardRailNav } from './sidebar/StandardRailNav';
 import { CrmRailNav } from './sidebar/CrmRailNav';
 import { SupportRailNav } from './sidebar/SupportRailNav';
+import { isSetupSuccessEnabled } from '@/lib/featureFlags';
 import type { SupportInboxView } from '@/lib/pmTypes';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -58,6 +60,7 @@ export function Sidebar() {
   const initials = getInitials(user?.full_name || user?.email);
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
+  const { data: setup } = useSetup(isSetupSuccessEnabled() ? workspaceId : undefined);
   const { isAdmin, canManageSettings, canManageTeams, permissionSet, canAccessModule, modules } = usePermissions(access);
   const hasSupportModule = canAccessModule('support');
   const {
@@ -157,6 +160,11 @@ export function Sidebar() {
     workspaceId ? getExpandedTeams(workspaceId) : new Set(),
   );
   const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState<Set<string>>(getCollapsedSettingsGroups);
+  const [activeSetupJourney, setActiveSetupJourney] = useState<string>();
+
+  useEffect(() => {
+    setActiveSetupJourney(setup?.recommended?.journey_key ?? setup?.journeys[0]?.key);
+  }, [setup?.recommended?.journey_key, setup?.journeys[0]?.key, workspaceId]);
 
   useEffect(() => {
     if (!workspaceId) {
@@ -203,7 +211,11 @@ export function Sidebar() {
     [wsSlug, canManageSettings, permissionSet, agentAttentionCount],
   );
   const currentNavGroups = panelNavGroups[activeRail];
-  const railItems = useMemo(() => buildRailItems(wsSlug, totalSupportUnread), [wsSlug, totalSupportUnread]);
+  const setupProgress = setup?.total_count ? Math.round((setup.completed_count / setup.total_count) * 100) : 0;
+  const railItems = useMemo(
+    () => buildRailItems(wsSlug, totalSupportUnread, isSetupSuccessEnabled() ? setupProgress : undefined),
+    [wsSlug, totalSupportUnread, setupProgress],
+  );
 
   useEffect(() => {
     if (activeRail !== 'settings') {
@@ -470,6 +482,17 @@ export function Sidebar() {
                 isActive={isActive}
                 openCreate={openCreate}
                 onNavigate={handleNavigate}
+              />
+            )}
+
+            {activeRail === 'setup' && setup && (
+              <SetupRailNav
+                journeys={setup.journeys}
+                activeJourneyKey={activeSetupJourney}
+                onSelect={(journeyKey) => {
+                  setActiveSetupJourney(journeyKey);
+                  window.dispatchEvent(new CustomEvent('setup-journey-navigate', { detail: { journeyKey } }));
+                }}
               />
             )}
           </div>

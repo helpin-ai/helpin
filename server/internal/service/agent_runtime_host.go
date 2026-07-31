@@ -688,7 +688,7 @@ func runtimeWorkspaceContextData(workspace *model.Workspace) map[string]interfac
 	if workspace == nil {
 		return map[string]interface{}{}
 	}
-	return map[string]interface{}{
+	data := map[string]interface{}{
 		"id":              workspace.ID,
 		"workspace_id":    workspace.ID,
 		"name":            workspace.Name,
@@ -696,6 +696,17 @@ func runtimeWorkspaceContextData(workspace *model.Workspace) map[string]interfac
 		"workspace_key":   workspace.WorkspaceKey,
 		"organization_id": workspace.OrganizationID,
 	}
+	if websiteURL := agentRuntimeHostString(workspace.WebsiteURL); websiteURL != "" {
+		data["website_url"] = websiteURL
+	}
+	companyProductContext := agentRuntimeHostString(workspace.CompanyProductContext)
+	if companyProductContext == "" {
+		companyProductContext = agentRuntimeHostString(workspace.Description)
+	}
+	if companyProductContext != "" {
+		data["company_product_context"] = companyProductContext
+	}
+	return data
 }
 
 func runtimeTaskContextData(task *model.TaskDetail) map[string]interface{} {

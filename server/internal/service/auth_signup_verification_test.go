@@ -65,6 +65,43 @@ func TestAuthServiceSignupCreatesUnverifiedUserAndSendsVerification(t *testing.T
 	}
 }
 
+func TestAuthServiceSignupCreatesUniqueDefaultOrganizationWhenSlugExists(t *testing.T) {
+	svc, db, _ := newAuthSignupTestService(t)
+	ctx := context.Background()
+
+	_, err := svc.Signup(ctx, model.SignupRequest{
+		Email:    "waqar.one@example.com",
+		Password: "strongpass1",
+		FullName: "Waqar One",
+	})
+	if err != nil {
+		t.Fatalf("first Signup() error = %v", err)
+	}
+
+	resp, err := svc.Signup(ctx, model.SignupRequest{
+		Email:    "waqar.two@example.com",
+		Password: "strongpass1",
+		FullName: "Waqar Two",
+	})
+	if err != nil {
+		t.Fatalf("second Signup() error = %v", err)
+	}
+
+	orgs, err := repository.NewOrganizationRepository(db).List(ctx, resp.User.ID)
+	if err != nil {
+		t.Fatalf("list organizations: %v", err)
+	}
+	if len(orgs) != 1 {
+		t.Fatalf("organization count = %d, want 1", len(orgs))
+	}
+	if orgs[0].Slug != "waqar-s-organization-2" {
+		t.Fatalf("organization slug = %q, want waqar-s-organization-2", orgs[0].Slug)
+	}
+	if orgs[0].Role != model.RoleOwner {
+		t.Fatalf("organization role = %q, want owner", orgs[0].Role)
+	}
+}
+
 func TestAuthServiceSignupRejectsDisposableEmail(t *testing.T) {
 	svc, _, _ := newAuthSignupTestService(t)
 
@@ -154,7 +191,7 @@ func newAuthSignupTestService(t *testing.T) (*AuthService, *gorm.DB, *authSignup
 	svc := NewAuthService(
 		repository.NewUserRepository(db),
 		nil,
-		nil,
+		repository.NewOrganizationRepository(db),
 		nil,
 		repository.NewEmailVerificationTokenRepository(db),
 		auth.NewJWTManager("test-secret"),

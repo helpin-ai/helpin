@@ -1,5 +1,5 @@
 import { memo, useEffect, useState, type JSX, type ReactNode, type SVGProps } from 'react';
-import { format, formatDistance } from 'date-fns';
+import { formatDistance } from 'date-fns';
 import * as Flags from 'country-flag-icons/react/3x2';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -81,15 +81,14 @@ export function shouldShowLastActiveIndicator(isVisitorOnline: boolean, lastActi
   return !isVisitorOnline && Boolean(lastActiveAt);
 }
 
-export function getLastActiveTooltipLabel(lastActiveAt: string, source?: LastActiveSource, now = new Date()): string {
+export function getLastActiveTooltipLabel(lastActiveAt: string, _source?: LastActiveSource, now = new Date()): string {
   const date = new Date(lastActiveAt);
   if (Number.isNaN(date.getTime())) {
     return 'Last active time unavailable';
   }
 
   const relative = formatDistance(date, now, { addSuffix: true });
-  const scope = source === 'crm_contact' ? ' across this contact' : '';
-  return `Last active ${relative}${scope} · ${format(date, 'PPp')}`;
+  return `Last active ${relative}`;
 }
 
 function VisitorLastActiveDot({
