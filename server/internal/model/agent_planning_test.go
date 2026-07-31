@@ -10,7 +10,7 @@ func TestTaskImplementationBriefUnmarshalAllowsStringFilesToModify(t *testing.T)
 	err := json.Unmarshal([]byte(`{
 		"approach": "Follow the existing planner flow",
 		"files_to_modify": [
-			"server/internal/worker/tools.go",
+			"server/internal/agentcontract/tool_constants.go",
 			{"path":" frontend/src/components/pm/AgentRunDrawer.tsx ","action":"CREATE","description":" add inline rendering "}
 		],
 		"test_strategy": "Add regression coverage"
@@ -22,7 +22,7 @@ func TestTaskImplementationBriefUnmarshalAllowsStringFilesToModify(t *testing.T)
 	if len(brief.FilesToModify) != 2 {
 		t.Fatalf("expected 2 file changes, got %#v", brief.FilesToModify)
 	}
-	if brief.FilesToModify[0].Path != "server/internal/worker/tools.go" {
+	if brief.FilesToModify[0].Path != "server/internal/agentcontract/tool_constants.go" {
 		t.Fatalf("expected string entry to become path, got %#v", brief.FilesToModify[0])
 	}
 	if brief.FilesToModify[0].Action != "modify" {
@@ -59,7 +59,7 @@ func TestTaskImplementationBriefUnmarshalAllowsArrayTestStrategy(t *testing.T) {
 	err := json.Unmarshal([]byte(`{
 		"approach": "Follow the approved proposal",
 		"files_to_modify": [
-			{"path":"server/internal/worker/tools.go","action":"modify","description":"widen schema"}
+			{"path":"server/internal/agentcontract/tool_constants.go","action":"modify","description":"widen schema"}
 		],
 		"test_strategy": ["Add decoder regression coverage", "Verify story creation still works"]
 	}`), &brief)

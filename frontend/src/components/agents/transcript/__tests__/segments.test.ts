@@ -209,12 +209,14 @@ describe('collectSegments', () => {
       transcript_messages: [
         message({
           event_id: 'persisted-1',
+          message_id: 'live-1',
           content: 'The frontend build has started.',
           timestamp: '2026-06-15T00:00:01Z',
           sequence_no: 1,
         }),
         message({
           event_id: 'persisted-2',
+          message_id: 'live-2',
           content: 'The prebuild step completed successfully.',
           timestamp: '2026-06-15T00:00:02Z',
           sequence_no: 2,
@@ -238,7 +240,7 @@ describe('collectSegments', () => {
     'I have a web search result for the competitor digest.',
     'ffer has launched a new publishing workflow for teams.',
     'web search result for the competitor digest',
-  ])('reconciles a clipped live fragment with its complete persisted turn: %s', (liveFragment) => {
+  ])('reconciles a live fragment by stable message identity: %s', (liveFragment) => {
     const persistedContent = liveFragment.startsWith('ffer')
       ? 'Buffer has launched a new publishing workflow for teams.'
       : 'I have a web search result for the competitor digest.';
@@ -246,6 +248,7 @@ describe('collectSegments', () => {
       stream({
         transcript_messages: [message({
           event_id: 'persisted-complete',
+          message_id: 'live-partial',
           content: persistedContent,
         })],
         live_turn_segments: [assistantSegment('live-partial', liveFragment, 'streaming')],
@@ -256,6 +259,7 @@ describe('collectSegments', () => {
     expect(segments).toEqual([{
       kind: 'assistant',
       id: 'persisted-complete',
+      messageId: 'live-partial',
       content: persistedContent,
     }]);
   });
@@ -266,8 +270,8 @@ describe('collectSegments', () => {
     const segments = collectSegments(
       stream({
         transcript_messages: [
-          message({ event_id: 'persisted-first', content: first, sequence_no: 1 }),
-          message({ event_id: 'persisted-second', content: second, sequence_no: 2 }),
+          message({ event_id: 'persisted-first', message_id: 'live-first', content: first, sequence_no: 1 }),
+          message({ event_id: 'persisted-second', message_id: 'live-second', content: second, sequence_no: 2 }),
         ],
         live_turn_segments: [
           assistantSegment('live-first', first),
@@ -292,9 +296,9 @@ describe('collectSegments', () => {
     expect(segments.filter((segment) => segment.kind === 'assistant')).toHaveLength(2);
   });
 
-  it('dedupes a persisted and live tool call by operation even when projector ids and result state differ', () => {
+  it('dedupes a persisted and live tool call by stable tool identity', () => {
     const persistedTool = toolCall({
-      tool_call_id: 'persisted-generated-id',
+      tool_call_id: 'runtime-native-id',
       tool_name: 'crawl_url',
       args_text: '{"url":"https://example.com"}',
       status: 'completed',
@@ -325,7 +329,7 @@ describe('collectSegments', () => {
     expect(tools).toHaveLength(1);
     expect(tools[0]).toMatchObject({
       kind: 'tool',
-      id: 'persisted-generated-id',
+      id: 'runtime-native-id',
       toolCall: { status: 'completed' },
     });
   });
@@ -335,8 +339,8 @@ describe('collectSegments', () => {
     const segments = collectSegments(
       stream({
         transcript_messages: [
-          message({ event_id: 'persisted-1', content: repeated, sequence_no: 1 }),
-          message({ event_id: 'persisted-2', content: repeated, sequence_no: 2 }),
+          message({ event_id: 'persisted-1', message_id: 'live-1', content: repeated, sequence_no: 1 }),
+          message({ event_id: 'persisted-2', message_id: 'live-2', content: repeated, sequence_no: 2 }),
         ],
         live_turn_segments: [
           assistantSegment('live-1', repeated),

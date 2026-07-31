@@ -61,7 +61,7 @@ func TestApplyCodingSessionStreamEventStitchesWordTokenDeltas(t *testing.T) {
 	snapshot = ApplyCodingSessionStreamEvent(snapshot, "assistant.message.started", map[string]any{
 		"message_id": "assistant-1",
 	}, base)
-	for index, token := range []string{"inspect", "the", "Rust", "crate", "first,", "then", "update", "the", "dependency", "and", "build", "against", "the", "new", "API.", "If", "it", "breaks", "I", "'ll", "patch", "."} {
+	for index, token := range []string{"inspect", " the", " Rust", " crate", " first,", " then", " update", " the", " dependency", " and", " build", " against", " the", " new", " API.", " If", " it", " breaks", " I", "'ll", " patch", "."} {
 		snapshot = ApplyCodingSessionStreamEvent(snapshot, "assistant.message.delta", map[string]any{
 			"message_id": "assistant-1",
 			"text":       token,

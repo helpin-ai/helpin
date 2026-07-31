@@ -20,6 +20,19 @@ func setupCoverageKnowledgeMatcherTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite db: %v", err)
 	}
 	tables := []string{
+		`CREATE TABLE docs_spaces (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL
+		)`,
+		`CREATE TABLE docs_documents (
+			id TEXT PRIMARY KEY,
+			status TEXT NOT NULL,
+			deleted_at DATETIME
+		)`,
+		`CREATE TABLE docs_helpcenter_articles (
+			document_id TEXT PRIMARY KEY,
+			public_published_at DATETIME
+		)`,
 		`CREATE TABLE docs_chunks (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -27,9 +40,14 @@ func setupCoverageKnowledgeMatcherTestDB(t *testing.T) *gorm.DB {
 			document_id TEXT NOT NULL,
 			block_id TEXT,
 			chunk_index INTEGER NOT NULL,
+			section_key TEXT NOT NULL DEFAULT '',
+			heading_path TEXT NOT NULL DEFAULT '',
 			block_range TEXT,
 			title TEXT NOT NULL,
 			content TEXT NOT NULL,
+			search_content TEXT NOT NULL DEFAULT '',
+			previous_chunk_index INTEGER,
+			next_chunk_index INTEGER,
 			content_hash TEXT NOT NULL DEFAULT '',
 			embedding TEXT NOT NULL DEFAULT '',
 			embedding_provider TEXT NOT NULL DEFAULT 'openai',
@@ -45,9 +63,14 @@ func setupCoverageKnowledgeMatcherTestDB(t *testing.T) *gorm.DB {
 			content_source_id TEXT NOT NULL,
 			page_id TEXT NOT NULL,
 			chunk_index INTEGER NOT NULL,
+			section_key TEXT NOT NULL DEFAULT '',
+			heading_path TEXT NOT NULL DEFAULT '',
 			title TEXT NOT NULL,
 			url TEXT NOT NULL DEFAULT '',
 			content TEXT NOT NULL,
+			search_content TEXT NOT NULL DEFAULT '',
+			previous_chunk_index INTEGER,
+			next_chunk_index INTEGER,
 			content_hash TEXT NOT NULL DEFAULT '',
 			embedding TEXT NOT NULL DEFAULT '',
 			embedding_provider TEXT NOT NULL DEFAULT 'openai',
@@ -62,6 +85,12 @@ func setupCoverageKnowledgeMatcherTestDB(t *testing.T) *gorm.DB {
 		if err := db.Exec(stmt).Error; err != nil {
 			t.Fatalf("create table: %v", err)
 		}
+	}
+	if err := db.Exec(`INSERT INTO docs_spaces (id, type) VALUES (?, ?)`, "space-public", model.SpaceTypeInternal).Error; err != nil {
+		t.Fatalf("seed docs space: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_documents (id, status) VALUES (?, ?)`, "doc-1", model.DocStatusPublished).Error; err != nil {
+		t.Fatalf("seed docs document: %v", err)
 	}
 	return db
 }

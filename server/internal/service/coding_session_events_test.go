@@ -3,16 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestListCodingSessionEventsSkipsLegacyInteractionArtifactsWhenInteractionsExist(t *testing.T) {
@@ -916,7 +912,7 @@ func TestListCodingSessionEventsEmitsResolvedInteractionAfterPreviousSequence(t 
 	}
 }
 
-func TestGetCodingSessionDiffUsesRunWorkspace(t *testing.T) {
+func TestGetCodingSessionDiffUsesPersistedArtifact(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 
 	runRepo := repository.NewAgentRunRepository(db)
@@ -944,23 +940,19 @@ func TestGetCodingSessionDiffUsesRunWorkspace(t *testing.T) {
 		t.Fatalf("create run: %v", err)
 	}
 
-	defer func() {
-		_ = worker.CleanupWorkspaceForRun(run.ID)
-	}()
-	workDir := worker.PersistentWorkspacePathForRun(run.ID)
-	_ = os.RemoveAll(filepath.Dir(workDir))
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		t.Fatalf("mkdir workdir: %v", err)
-	}
-	runGitCommand(t, workDir, "init")
-	filePath := filepath.Join(workDir, "session.txt")
-	if err := os.WriteFile(filePath, []byte("before\n"), 0o644); err != nil {
-		t.Fatalf("write initial file: %v", err)
-	}
-	runGitCommand(t, workDir, "add", "session.txt")
-	runGitCommand(t, workDir, "-c", "user.name=Test Runner", "-c", "user.email=test@example.com", "commit", "-m", "init")
-	if err := os.WriteFile(filePath, []byte("after\n"), 0o644); err != nil {
-		t.Fatalf("write modified file: %v", err)
+	diffContent := "diff --git a/session.txt b/session.txt\n--- a/session.txt\n+++ b/session.txt\n@@ -1 +1 @@\n-before\n+after\n"
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-diff-session",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  "diff",
+		Format:        "text",
+		StorageMode:   "inline",
+		InlineContent: &diffContent,
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create diff artifact: %v", err)
 	}
 
 	svc := &AgentService{
@@ -974,7 +966,7 @@ func TestGetCodingSessionDiffUsesRunWorkspace(t *testing.T) {
 		t.Fatalf("GetCodingSessionDiff returned error: %v", err)
 	}
 	if !strings.Contains(diff.Diff, "session.txt") || !strings.Contains(diff.Diff, "-before") || !strings.Contains(diff.Diff, "+after") {
-		t.Fatalf("expected diff from session checkout, got %q", diff.Diff)
+		t.Fatalf("expected persisted diff artifact, got %q", diff.Diff)
 	}
 }
 
@@ -986,14 +978,4 @@ func codingSessionEventTypes(events []model.CodingSessionEvent, eventType string
 		}
 	}
 	return count
-}
-
-func runGitCommand(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(output))
-	}
 }

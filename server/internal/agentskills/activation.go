@@ -3,8 +3,8 @@ package agentskills
 import (
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 type NativeActiveSelectionContext struct {
@@ -15,15 +15,15 @@ type NativeActiveSelectionContext struct {
 
 type NativeActiveSelection struct {
 	Refs         model.AgentSkillRefs
-	Definitions  []worker.SkillDefinition
+	Definitions  []agentcontract.SkillDefinition
 	Instructions string
 }
 
-func SelectNativeActiveSkills(refs model.AgentSkillRefs, definitions []worker.SkillDefinition, ctx NativeActiveSelectionContext) NativeActiveSelection {
+func SelectNativeActiveSkills(refs model.AgentSkillRefs, definitions []agentcontract.SkillDefinition, ctx NativeActiveSelectionContext) NativeActiveSelection {
 	if len(refs) == 0 || len(definitions) == 0 || len(refs) != len(definitions) {
 		return NativeActiveSelection{
 			Refs:         append(model.AgentSkillRefs(nil), refs...),
-			Definitions:  append([]worker.SkillDefinition(nil), definitions...),
+			Definitions:  append([]agentcontract.SkillDefinition(nil), definitions...),
 			Instructions: CompileInstructions(definitions),
 		}
 	}
@@ -32,13 +32,13 @@ func SelectNativeActiveSkills(refs model.AgentSkillRefs, definitions []worker.Sk
 	if !ok {
 		return NativeActiveSelection{
 			Refs:         append(model.AgentSkillRefs(nil), refs...),
-			Definitions:  append([]worker.SkillDefinition(nil), definitions...),
+			Definitions:  append([]agentcontract.SkillDefinition(nil), definitions...),
 			Instructions: CompileInstructions(definitions),
 		}
 	}
 
 	activeRefs := make(model.AgentSkillRefs, 0, len(refs))
-	activeDefs := make([]worker.SkillDefinition, 0, len(definitions))
+	activeDefs := make([]agentcontract.SkillDefinition, 0, len(definitions))
 	for idx, ref := range refs {
 		definition := definitions[idx]
 		if shouldKeepActiveByDefault(ref, definition) || activeBuiltIns[definition.Key] {
@@ -138,7 +138,7 @@ func documentationActiveBuiltInSkillSet(targetType string) map[string]bool {
 	return active
 }
 
-func shouldKeepActiveByDefault(ref model.AgentSkillRef, definition worker.SkillDefinition) bool {
+func shouldKeepActiveByDefault(ref model.AgentSkillRef, definition agentcontract.SkillDefinition) bool {
 	if ref.SkillID != nil {
 		return true
 	}

@@ -14,9 +14,9 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestCreateAgentDefaultsToCodeBuilderPreset(t *testing.T) {
@@ -282,7 +282,7 @@ func TestEnsureBuiltInTaskPlannerRefreshesLegacyPrompt(t *testing.T) {
 	if strings.Contains(*updated.SystemPrompt, "`publish_preview`") || strings.Contains(*updated.SystemPrompt, "`request_human_approval`") {
 		t.Fatalf("expected refreshed task planner prompt to remove legacy preview/approval tools, got %q", *updated.SystemPrompt)
 	}
-	if !strings.Contains(*updated.SystemPrompt, "`"+worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc)+"`") {
+	if !strings.Contains(*updated.SystemPrompt, "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishTaskPlanDoc)+"`") {
 		t.Fatalf("expected refreshed task planner prompt to include publish_task_plan_doc, got %q", *updated.SystemPrompt)
 	}
 	if updated.Name != "Scribe" {
@@ -362,19 +362,19 @@ func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
 		t.Fatalf("expected review preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent), updated.PresetVersionKey)
 	}
 	if updated.SystemPrompt == nil ||
-		!strings.Contains(*updated.SystemPrompt, "`"+worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput)+"`") ||
-		!strings.Contains(*updated.SystemPrompt, "`"+worker.RuntimeToolNameForPrompt(worker.ToolRequestReviewCheckpoint)+"`") {
+		!strings.Contains(*updated.SystemPrompt, "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestUserInput)+"`") ||
+		!strings.Contains(*updated.SystemPrompt, "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestReviewCheckpoint)+"`") {
 		t.Fatalf("expected refreshed review prompt with interactive loop tools, got %+v", updated.SystemPrompt)
 	}
 	var tools []string
 	if err := json.Unmarshal(updated.AllowedTools, &tools); err != nil {
 		t.Fatalf("unmarshal allowed tools: %v", err)
 	}
-	if !slices.Contains(tools, worker.ToolRequestUserInput) {
-		t.Fatalf("expected review agent tools to include %q, got %v", worker.ToolRequestUserInput, tools)
+	if !slices.Contains(tools, agentcontract.ToolRequestUserInput) {
+		t.Fatalf("expected review agent tools to include %q, got %v", agentcontract.ToolRequestUserInput, tools)
 	}
-	if !slices.Contains(tools, worker.ToolRequestReviewCheckpoint) {
-		t.Fatalf("expected review agent tools to include %q, got %v", worker.ToolRequestReviewCheckpoint, tools)
+	if !slices.Contains(tools, agentcontract.ToolRequestReviewCheckpoint) {
+		t.Fatalf("expected review agent tools to include %q, got %v", agentcontract.ToolRequestReviewCheckpoint, tools)
 	}
 	if updated.DefaultInvocationMode != model.InvocationModeInteractive {
 		t.Fatalf("expected review agent default invocation mode interactive, got %q", updated.DefaultInvocationMode)
@@ -1252,7 +1252,7 @@ func TestUpdateWorkspacePresetVersion_PersistsPromptOnlyEditAndExplicitEmptyList
 		Label:            "Workspace Atlas",
 		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner)),
 		SystemPrompt:     agentTestStringPtr("Workspace atlas v1"),
-		AllowedTools:     mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
+		AllowedTools:     mustJSONStringSlice([]string{agentcontract.ToolUpdatePlan}),
 		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeInteractive}),
 	}, "user-1")
 	if err != nil {
@@ -1324,7 +1324,7 @@ func TestCreateWorkspacePresetVersion_SystemPromptWinsOverInstructionMetadata(t 
 		SystemPrompt:          &rawPrompt,
 		InstructionPreamble:   &legacyPreamble,
 		InstructionSkills:     mustJSONStringSlice([]string{"engineering_planner_operating_rules"}),
-		AllowedTools:          mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
+		AllowedTools:          mustJSONStringSlice([]string{agentcontract.ToolUpdatePlan}),
 		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeInteractive}),
 		DefaultInvocationMode: agentTestStringPtr(model.InvocationModeInteractive),
 	}, "user-1")
@@ -1352,7 +1352,7 @@ func TestUpdateWorkspacePresetVersion_SystemPromptWinsOverInstructionMetadata(t 
 		Label:            "Workspace Atlas",
 		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner)),
 		SystemPrompt:     agentTestStringPtr("Workspace atlas v1"),
-		AllowedTools:     mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
+		AllowedTools:     mustJSONStringSlice([]string{agentcontract.ToolUpdatePlan}),
 		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeInteractive}),
 	}, "user-1")
 	if err != nil {

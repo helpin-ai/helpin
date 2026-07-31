@@ -136,6 +136,79 @@ func TestCreateTaskCommandMetadataAndTargets(t *testing.T) {
 	}
 }
 
+func TestCreateTaskCommandTreatsEmptyOptionalIDsAsOmitted(t *testing.T) {
+	db := newTestDB(t)
+	seedUser(t, db, "actor-1", "actor@example.com", "Actor", "hash")
+	seedWorkspace(t, db, "ws-1", "Workspace", "workspace", "actor-1")
+	seedWorkspaceMember(t, db, "member-1", "ws-1", "actor-1", "actor@example.com", "Actor", "admin")
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"team-1", "ws-1", "Marketing", "marketing", "chore", now, now)
+	mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"wf-1", "ws-1", "Marketing Workflow", "team-1", "state-1", now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-1", "wf-1", "To Do", model.PMStateTypeUnstarted, 0, true, now, now)
+
+	taskRepo := repository.NewPMTaskRepository(db)
+	taskService := NewPMTaskService(
+		taskRepo,
+		repository.NewWorkspaceRepository(db),
+		repository.NewPMWorkflowRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		NewPMActivityService(repository.NewPMActivityRepository(db)),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, taskRepo, nil)
+
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		ActorID:     "actor-1",
+		TargetType:  "workspace",
+		TargetID:    "ws-1",
+	}, "pm.create_task", json.RawMessage(`{
+		"name":"Weekly competitor digest",
+		"team_id":"team-1",
+		"task_type":"chore",
+		"epic_id":"",
+		"workflow_id":"",
+		"state_id":"",
+		"owner_member_ids":[""],
+		"label_ids":[""]
+	}`))
+	if err != nil {
+		t.Fatalf("pm.create_task with empty optional IDs returned error: %v", err)
+	}
+
+	var result struct {
+		TaskID     string  `json:"task_id"`
+		WorkflowID string  `json:"workflow_id"`
+		StateID    string  `json:"state_id"`
+		EpicID     *string `json:"epic_id"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("unmarshal create task output: %v", err)
+	}
+	if result.TaskID == "" || result.WorkflowID != "wf-1" || result.StateID != "state-1" || result.EpicID != nil {
+		t.Fatalf("unexpected create task result: %#v", result)
+	}
+
+	var created model.PMTask
+	if err := db.First(&created, "id = ?", result.TaskID).Error; err != nil {
+		t.Fatalf("load created task: %v", err)
+	}
+	if created.EpicID != nil {
+		t.Fatalf("epic_id = %q, want NULL", *created.EpicID)
+	}
+}
+
 func TestListWorkspaceTeamsCommandMetadataAndOutput(t *testing.T) {
 	db := newTestDB(t)
 	now := time.Now()

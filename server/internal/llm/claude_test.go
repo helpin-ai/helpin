@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 )
 
 func TestBuildClaudeMessageRequestUsesToolChoiceForJSONMode(t *testing.T) {
@@ -114,8 +114,8 @@ func TestExtractClaudeResponseContentUsesToolInputForJSONMode(t *testing.T) {
 		t.Fatalf("marshal payload: %v", err)
 	}
 
-	resp := &workerpkg.CreateMessageResponse{
-		Content: []workerpkg.ContentBlock{
+	resp := &agentcontract.CreateMessageResponse{
+		Content: []agentcontract.ContentBlock{
 			{Type: "text", Text: "ignored"},
 			{Type: "tool_use", Name: claudeJSONToolName, Input: payload},
 		},
@@ -128,8 +128,8 @@ func TestExtractClaudeResponseContentUsesToolInputForJSONMode(t *testing.T) {
 }
 
 func TestExtractClaudeResponseContentFallsBackToTextWhenToolInputMissing(t *testing.T) {
-	resp := &workerpkg.CreateMessageResponse{
-		Content: []workerpkg.ContentBlock{
+	resp := &agentcontract.CreateMessageResponse{
+		Content: []agentcontract.ContentBlock{
 			{Type: "text", Text: "Hello "},
 			{Type: "text", Text: "world"},
 		},
@@ -150,7 +150,7 @@ func TestBuildClaudeMessageContentUsesImageBlocks(t *testing.T) {
 		},
 	})
 
-	blocks, ok := content.([]workerpkg.ContentBlock)
+	blocks, ok := content.([]agentcontract.ContentBlock)
 	if !ok {
 		t.Fatalf("expected content blocks, got %#v", content)
 	}

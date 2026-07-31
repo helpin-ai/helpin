@@ -1,5 +1,5 @@
 key: competitors_changelog_tracking_report
-version: 1
+version: 2
 name: Competitors Changelog Tracking Report
 icon: chart
 short_description: Tracks competitor changelogs and saves a scheduled report.
@@ -29,7 +29,7 @@ agent:
 
       Use the configured competitor list when it is not empty. If no competitors are configured, discover competitors with web search and cite sources.
 
-      For each competitor, first use web_search_exa to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog.
+      For each competitor, first use web_search_exa (or the runtime's built-in web search when available) to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog. A missing search provider is a tool limitation, not evidence that a competitor has no public changelog.
 
       Always create one Docs report in the configured internal Docs space and collection. Use this title format: `Competitors changelog tracking report - <scope/context> - YYYY-MM-DD`. Use {{target_company}}, the market/category, or the primary competitor set for `<scope/context>`. Call create_document exactly once with the complete report content. Do not repeat the document title as the first heading or opening line in the document body. Start the body with TL;DR, then include competitor updates, source links, relevance to {{target_company}}, customer-facing implications, and recommended messaging or product follow-ups.
 

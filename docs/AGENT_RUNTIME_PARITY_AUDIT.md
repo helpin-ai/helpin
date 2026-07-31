@@ -40,9 +40,9 @@ agent-runtime is the only path") did a **hard cutover** instead:
 - There is **no local executor fallback** — a run either delegates or fails loudly.
 - The per-surface predicate maps (`agentRuntimePresetDelegatedTargets`,
   `agentRuntimeCustomAgentDelegatedTargets`) were **deleted**.
-- The old `ExecuteRunActivity` / `AgentRunWorkflow` still exist in
-  `temporalapp/` but are **no longer registered** by the worker (dead code kept
-  for reference under the freeze doc's MIGRATE-THEN-DELETE plan).
+- The old `ExecuteRunActivity` / `AgentRunWorkflow` were first unregistered and
+  were removed from Helpin in the executor-demolition release. Their history is
+  available in git and in the freeze document's inventory.
 
 Net effect: surfaces the doc calls "not flipped" or "deliberately local" —
 **planners (epic/task), custom coding agents, workspace-target coding, crm_company,

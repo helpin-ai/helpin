@@ -83,59 +83,6 @@ func TestLoadParsesCommandRouterOpenRouterProviderOptions(t *testing.T) {
 	}
 }
 
-func TestLoadSetsDefaultCodexHelpinMCPBridgePath(t *testing.T) {
-	setRequiredConfigEnv(t)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	if cfg.CodexHelpinMCPBridgePath == "" {
-		t.Fatal("expected Codex Helpin MCP bridge path default")
-	}
-}
-
-func TestLoadExpandsCodexHelpinMCPBridgePath(t *testing.T) {
-	setRequiredConfigEnv(t)
-	t.Setenv("PWD", "/tmp/helpin-server")
-	t.Setenv("CODEX_HELPIN_MCP_BRIDGE_PATH", "$PWD/bin/helpin-mcp-bridge")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	if cfg.CodexHelpinMCPBridgePath != "/tmp/helpin-server/bin/helpin-mcp-bridge" {
-		t.Fatalf("expected expanded bridge path, got %q", cfg.CodexHelpinMCPBridgePath)
-	}
-}
-
-func TestLoadDefaultsCodexHelpinAPIBaseURLToLocalAPI(t *testing.T) {
-	setRequiredConfigEnv(t)
-	t.Setenv("PORT", "9090")
-	t.Setenv("APP_BASE_URL", "https://frontend.example")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	if cfg.CodexHelpinAPIBaseURL != "http://127.0.0.1:9090/api" {
-		t.Fatalf("expected local API base URL, got %q", cfg.CodexHelpinAPIBaseURL)
-	}
-}
-
-func TestLoadAllowsCodexHelpinAPIBaseURLOverride(t *testing.T) {
-	setRequiredConfigEnv(t)
-	t.Setenv("CODEX_HELPIN_API_BASE_URL", " http://helpin-server-svc:8080/api/ ")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	if cfg.CodexHelpinAPIBaseURL != "http://helpin-server-svc:8080/api" {
-		t.Fatalf("expected override API base URL, got %q", cfg.CodexHelpinAPIBaseURL)
-	}
-}
-
 func TestLoadAgentRuntimeConfig(t *testing.T) {
 	setRequiredConfigEnv(t)
 	t.Setenv("AGENT_RUNTIME_BASE_URL", " https://runtime.internal/ ")

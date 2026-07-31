@@ -686,6 +686,7 @@ func createTaskSchema() map[string]any {
 			"name": map[string]any{
 				"type":        "string",
 				"description": "Task title",
+				"minLength":   1,
 			},
 			"description": map[string]any{
 				"type":        "string",
@@ -705,29 +706,33 @@ func createTaskSchema() map[string]any {
 			},
 			"epic_id": map[string]any{
 				"type":        "string",
-				"description": "Optional epic ID to link the task to",
+				"description": "Optional epic ID to link the task to. Omit this field when no epic is configured; do not send an empty string.",
+				"minLength":   1,
 			},
 			"team_id": map[string]any{
 				"type":        "string",
 				"description": "Team ID that owns the task",
+				"minLength":   1,
 			},
 			"workflow_id": map[string]any{
 				"type":        "string",
-				"description": "Optional workflow ID override. Defaults to the resolved team workflow.",
+				"description": "Optional workflow ID override. Omit this field to use the resolved team workflow; do not send an empty string.",
+				"minLength":   1,
 			},
 			"state_id": map[string]any{
 				"type":        "string",
-				"description": "Optional workflow state ID override. Defaults to the resolved workflow default state.",
+				"description": "Optional workflow state ID override. Omit this field to use the workflow default state; do not send an empty string.",
+				"minLength":   1,
 			},
 			"owner_member_ids": map[string]any{
 				"type":        "array",
 				"description": "Optional workspace member IDs to assign as owners",
-				"items":       map[string]any{"type": "string"},
+				"items":       map[string]any{"type": "string", "minLength": 1},
 			},
 			"label_ids": map[string]any{
 				"type":        "array",
 				"description": "Optional label IDs to attach to the task",
-				"items":       map[string]any{"type": "string"},
+				"items":       map[string]any{"type": "string", "minLength": 1},
 			},
 			"deadline": map[string]any{
 				"type":        "string",

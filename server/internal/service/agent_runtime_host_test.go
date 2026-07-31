@@ -123,6 +123,9 @@ func TestAgentRuntimeHostRepositorySpecFallsBackToRuntimeRunMapping(t *testing.T
 	if spec.WorkBranch != "hel-31-fix-merge-status" || spec.Metadata["workspace_id"] != "ws-1" {
 		t.Fatalf("unexpected repository spec: %#v", spec)
 	}
+	if spec.Auth == nil || spec.Auth.Type != "github" || spec.Auth.Token != "github-installation-token" {
+		t.Fatalf("repository spec did not include GitHub installation authentication: %#v", spec.Auth)
+	}
 }
 
 func ensureAgentRuntimeHostRunTable(t *testing.T, db *gorm.DB) {

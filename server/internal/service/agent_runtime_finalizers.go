@@ -169,8 +169,8 @@ func (s *AgentRunFinalizerService) FinalizeTerminalRun(ctx context.Context, run 
 		{name: "repository_delivery", completedOnly: true, needsSummary: true, run: s.finalizeRepositoryDelivery},
 		// command_bar_plan runs last so repository delivery (PR bookkeeping a
 		// downstream merge step may depend on) lands before the plan advances.
-		// It fires on every terminal status: Temporal AgentRunWorkflow also
-		// advances the plan on both its completion and failure paths.
+		// It fires on every terminal status so both completion and failure
+		// advance the plan.
 		{name: "command_bar_plan", run: s.finalizeCommandBarPlan},
 	}
 	for _, finalizer := range finalizers {

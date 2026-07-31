@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"strings"
 
-	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 )
 
 const claudeJSONToolName = "emit_json_response"
 
 // ClaudeProvider wraps the existing Claude API client.
 type ClaudeProvider struct {
-	client *workerpkg.ClaudeClient
+	client *agentcontract.ClaudeClient
 }
 
 // NewClaudeProvider creates a Claude LLM provider.
@@ -21,7 +21,7 @@ func NewClaudeProvider(apiKey string) *ClaudeProvider {
 		return nil
 	}
 	return &ClaudeProvider{
-		client: workerpkg.NewClaudeClient(apiKey),
+		client: agentcontract.NewClaudeClient(apiKey),
 	}
 }
 
@@ -44,10 +44,10 @@ func (p *ClaudeProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 	}, nil
 }
 
-func buildClaudeMessageRequest(req ChatRequest) workerpkg.CreateMessageRequest {
-	messages := make([]workerpkg.Message, 0, len(req.Messages))
+func buildClaudeMessageRequest(req ChatRequest) agentcontract.CreateMessageRequest {
+	messages := make([]agentcontract.Message, 0, len(req.Messages))
 	for _, m := range req.Messages {
-		messages = append(messages, workerpkg.Message{Role: m.Role, Content: buildClaudeMessageContent(m)})
+		messages = append(messages, agentcontract.Message{Role: m.Role, Content: buildClaudeMessageContent(m)})
 	}
 
 	maxTokens := req.MaxTokens
@@ -55,7 +55,7 @@ func buildClaudeMessageRequest(req ChatRequest) workerpkg.CreateMessageRequest {
 		maxTokens = 4096
 	}
 
-	apiReq := workerpkg.CreateMessageRequest{
+	apiReq := agentcontract.CreateMessageRequest{
 		Model:     req.Model,
 		System:    req.SystemPrompt,
 		Messages:  messages,
@@ -66,14 +66,14 @@ func buildClaudeMessageRequest(req ChatRequest) workerpkg.CreateMessageRequest {
 		if schema == nil {
 			schema = defaultClaudeJSONSchema()
 		}
-		apiReq.Tools = []workerpkg.ToolDefinition{
+		apiReq.Tools = []agentcontract.ToolDefinition{
 			{
 				Name:        claudeJSONToolName,
 				Description: "Return the final response as a single JSON object that matches the schema requested in the prompt. Do not emit free-form text outside the tool input.",
 				InputSchema: schema,
 			},
 		}
-		apiReq.ToolChoice = &workerpkg.ToolChoice{
+		apiReq.ToolChoice = &agentcontract.ToolChoice{
 			Type: "tool",
 			Name: claudeJSONToolName,
 		}
@@ -112,14 +112,14 @@ func buildClaudeMessageContent(message Message) any {
 		return message.Content
 	}
 
-	blocks := make([]workerpkg.ContentBlock, 0, len(message.ContentParts))
+	blocks := make([]agentcontract.ContentBlock, 0, len(message.ContentParts))
 	for _, part := range message.ContentParts {
 		switch part.Type {
 		case "image_url":
 			if part.ImageURL == nil || strings.TrimSpace(part.ImageURL.URL) == "" {
 				continue
 			}
-			blocks = append(blocks, workerpkg.ContentBlock{
+			blocks = append(blocks, agentcontract.ContentBlock{
 				Type: "image",
 				Source: map[string]any{
 					"type": "url",
@@ -131,7 +131,7 @@ func buildClaudeMessageContent(message Message) any {
 			if text == "" {
 				continue
 			}
-			blocks = append(blocks, workerpkg.ContentBlock{
+			blocks = append(blocks, agentcontract.ContentBlock{
 				Type: "text",
 				Text: text,
 			})
@@ -144,7 +144,7 @@ func buildClaudeMessageContent(message Message) any {
 	return blocks
 }
 
-func extractClaudeResponseContent(resp *workerpkg.CreateMessageResponse, jsonMode bool) string {
+func extractClaudeResponseContent(resp *agentcontract.CreateMessageResponse, jsonMode bool) string {
 	if resp == nil {
 		return ""
 	}

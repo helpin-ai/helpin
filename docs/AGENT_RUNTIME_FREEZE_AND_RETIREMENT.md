@@ -4,6 +4,14 @@ The final slice of the Helpin → agent-runtime migration: freeze the in-process
 executor, graduate each remaining surface through the flag ladder, then
 demolish `server/internal/worker/` and the Temporal agent-run machinery.
 
+> Status update: Helpin has completed the hard cutover. Agent Runtime is the
+> only launch path; `server/internal/worker/`, the local Temporal agent
+> workflows, and the private local MCP bridge have been removed. The surface
+> ladder and demolition inventory below are historical. Setting
+> `AGENT_RUNTIME_LAUNCH_ENABLED=false` now fails new run starts; it does not
+> restore the local executor. Before demolition, the flag was confirmed true
+> in staging and production and the non-terminal unmapped-run count was zero.
+
 Companion docs:
 
 - `docs/AGENT_RUNTIME_LOCAL.md` — parity rows per surface + planner blockers.
@@ -12,13 +20,14 @@ Companion docs:
 - `scripts/agent-runtime-canary/canary.sh` — the canary itself.
 - `docs/AGENTS_AND_AUTOMATION.md` — agent taxonomy this migration preserves.
 
-Terminology: a **surface** is a (preset-or-custom-agent, target-type) slice of
-the delegation predicate — one entry in `agentRuntimePresetDelegatedTargets` /
-`agentRuntimeCustomAgentDelegatedTargets` (`server/internal/service/agent.go`).
-This runbook is deliberately surface-generic: it does not hardcode today's
-delegated list, because that list is actively growing (the repository surface —
-code_builder / review_agent — is being evaluated in parallel). Whatever the
-list says on any given day, every surface goes through the same ladder below.
+Schema removal is deliberately deferred by one release. The
+`codex_workspace_auths` table and legacy `agent_runs` columns remain until
+reporting and billing consumers have been audited and the code-deletion release
+has run cleanly in production. Dropping them is a separate irreversible change.
+
+Historical terminology: a **surface** was a (preset-or-custom-agent,
+target-type) slice of the old delegation predicate. Those per-surface maps were
+removed by the hard cutover; the ladder below records the rollout process.
 
 ---
 
@@ -145,9 +154,9 @@ parity rows green/amber-cleared (LOCAL.md)
 
 Per `docs/AGENT_RUNTIME_STAGING.md` § Rollback:
 
-- Flipping `AGENT_RUNTIME_LAUNCH_ENABLED=false` (or reverting a predicate
-  entry) affects **NEW runs only** — they immediately route back to the
-  in-process Temporal executor.
+- Flipping `AGENT_RUNTIME_LAUNCH_ENABLED=false` affects **NEW runs only** —
+  they fail to start because the in-process executor is retired. Do not use
+  this flag as a rollback mechanism.
 - **In-flight delegated runs are not orphaned**: the runtime keeps executing
   them, and the projection consumer — which runs regardless of the launch
   flag — finishes projecting their terminal state and firing finalizers.
@@ -171,14 +180,40 @@ Per `docs/AGENT_RUNTIME_STAGING.md` § Rollback:
 
 ## 3. Demolition preconditions
 
-No file below is deleted until:
+The demolition was gated on all of the following:
 
-1. Every surface that exercises it has completed rung 5, **and**
-2. No non-terminal `agent_runs` row has `external_runtime IS NULL` with a live
+1. `AGENT_RUNTIME_LAUNCH_ENABLED=true` is verified against the effective
+   environment of the running Helpin API pods in both staging and production,
+   **and**
+2. No non-terminal `agent_runs` row has `external_runtime_id IS NULL` with a live
    local workflow (i.e., all in-flight local runs have drained), **and**
-3. The leaked helpers it exports (section 4 RELOCATE list) have been moved to
+3. Every surface that exercises it has completed rung 5, **and**
+4. The leaked helpers it exports (section 4 RELOCATE list) have been moved to
    a neutral package and importers repointed, **and**
-4. `go build ./... && go vet ./...` pass after the deletion commit.
+5. `go build ./... && go vet ./...` pass after the deletion commit.
+
+Run the fail-closed check once per environment before deleting the worker:
+
+```bash
+scripts/agent-runtime-retirement/preflight.sh <staging-kubectl-context>
+scripts/agent-runtime-retirement/preflight.sh <production-kubectl-context>
+```
+
+The script checks the live pod's effective flag and then queries that
+environment's database for active unmapped runs. It does not print the
+database URL.
+
+Removing Deployment objects from the manifest does not delete objects already
+in Kubernetes. After the slimmed Temporal worker manifest is applied, delete
+all five zero-replica agent worker Deployments explicitly in each environment:
+
+```bash
+scripts/agent-runtime-retirement/delete-retired-deployments.sh <staging-kubectl-context> --confirm
+scripts/agent-runtime-retirement/delete-retired-deployments.sh <production-kubectl-context> --confirm
+```
+
+The script uses explicit Deployment names and `--ignore-not-found`; it does not
+touch the surviving `helpin-temporal-automation` Deployment.
 
 ---
 
@@ -382,8 +417,8 @@ HTML, link previews all use `x/net/html`), `github.com/google/uuid`
      runs/messages/artifacts/interactions/usage/billing;
    - terminal finalizers (`agent_runtime_finalizers.go`) — support draft send,
      repository delivery, planning output, completed-rules, agent status;
-   - host adapters — target context + skills (`agent_runtime_host.go`), tool
-     gateway (`agent_tool_gateway.go`), internal-command providers;
+   - host adapters — target context + skills (`agent_runtime_host.go`) and
+     internal-command providers;
    - neutral helper packages from section 4.1 (skills, tool names, artifact
      extraction, contracts);
    - `server/internal/worker/` **does not exist**, and `temporalapp` contains

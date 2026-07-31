@@ -9,6 +9,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
@@ -73,6 +74,10 @@ type agentRuntimeProjectionSessionSnapshotRepository interface {
 	DeleteByRun(ctx context.Context, workspaceID, runID string) error
 }
 
+type agentRuntimeV2ReplayClient interface {
+	ListV2Events(ctx context.Context, runtimeRunID string, afterSequence int64) (*AgentRuntimeEventListResponse, error)
+}
+
 // AgentRuntimeProjectionService projects Agent Runtime lifecycle events back
 // into Helpin's agent_runs table and existing realtime fanout.
 type AgentRuntimeProjectionService struct {
@@ -87,7 +92,10 @@ type AgentRuntimeProjectionService struct {
 	runFinalizers       *AgentRunFinalizerService
 	wsPublisher         websocket.EventPublisher
 	appID               string
+	eventProtocol       string
 	now                 func() time.Time
+	v2ReplayMu          sync.Mutex
+	v2ReplayThrough     map[string]int64
 }
 
 type agentRuntimeUsagePayload struct {
@@ -104,10 +112,24 @@ func NewAgentRuntimeProjectionService(runRepo *repository.AgentRunRepository, ap
 		resolvedAppID = strings.TrimSpace(appID[0])
 	}
 	return &AgentRuntimeProjectionService{
-		runRepo: runRepo,
-		appID:   resolvedAppID,
-		now:     time.Now,
+		runRepo:       runRepo,
+		appID:         resolvedAppID,
+		eventProtocol: "v1",
+		now:           time.Now,
 	}
+}
+
+// SetEventProtocol selects the app-scoped Agent Runtime event contract.
+func (s *AgentRuntimeProjectionService) SetEventProtocol(protocol string) *AgentRuntimeProjectionService {
+	if s == nil {
+		return s
+	}
+	if strings.EqualFold(strings.TrimSpace(protocol), "v2") {
+		s.eventProtocol = "v2"
+	} else {
+		s.eventProtocol = "v1"
+	}
+	return s
 }
 
 func (s *AgentRuntimeProjectionService) SetOverageDependencies(agentRepo *repository.AgentRepository, usageMeter *AIUsageMeter, runtimeClient agentRuntimeSignalClient) *AgentRuntimeProjectionService {
@@ -165,15 +187,27 @@ func (s *AgentRuntimeProjectionService) StartNATSConsumer(ctx context.Context, j
 			slog.ErrorContext(ctx, "agent runtime projection consumer panic", "panic", recovered)
 		}
 	}()
+	durable := agentRuntimeProjectionDurable
+	subject := ""
+	if s.eventProtocol == "v2" {
+		durable += "-v2"
+		subject = fmt.Sprintf("agent-runtime.events.v2.%s.>", runtimeSubjectToken(s.appID))
+	}
 	consumer := agentruntime.NewNATSConsumer(agentruntime.NATSConsumerConfig{
 		JetStream:    js,
 		AppID:        s.appID,
-		Durable:      agentRuntimeProjectionDurable,
+		Durable:      durable,
+		Subject:      subject,
 		Stream:       agentruntime.DefaultNATSStreamName,
 		EnsureStream: true,
 		Logger:       slog.Default(),
 	})
-	slog.Info("agent runtime projection consumer starting")
+	slog.Info("agent runtime projection consumer starting",
+		"app_id", s.appID,
+		"event_protocol", s.eventProtocol,
+		"subject", firstNonEmptyString(subject, agentruntime.AppEventSubject(s.appID)),
+		"durable", durable,
+	)
 	return consumer.Run(ctx, func(ctx context.Context, event AgentRuntimeEventEnvelope) error {
 		if err := s.ApplyEvent(ctx, event); err != nil {
 			if errors.Is(err, errAgentRuntimeProjectionRunNotFound) {
@@ -247,6 +281,16 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 		if runtimeRunID == "" {
 			continue
 		}
+		if s.eventProtocol == "v2" {
+			if err := s.replayV2Events(ctx, &run, runtimeRunID); err != nil {
+				slog.WarnContext(ctx, "agent runtime v2 event replay failed",
+					"workspace_id", run.WorkspaceID,
+					"run_id", run.ID,
+					"runtime_run_id", runtimeRunID,
+					"error", err,
+				)
+			}
+		}
 		runtimeRun, err := s.agentRuntimeClient.GetRun(ctx, runtimeRunID)
 		if err != nil {
 			slog.WarnContext(ctx, "agent runtime reconciliation fetch failed",
@@ -305,6 +349,52 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 		}
 	}
 	return nil
+}
+
+func (s *AgentRuntimeProjectionService) replayV2Events(ctx context.Context, run *model.AgentRun, runtimeRunID string) error {
+	client, ok := s.agentRuntimeClient.(agentRuntimeV2ReplayClient)
+	if !ok || run == nil {
+		return nil
+	}
+	afterSequence := s.v2ReplayCursor(runtimeRunID)
+	response, err := client.ListV2Events(ctx, runtimeRunID, afterSequence)
+	if err != nil {
+		return err
+	}
+	if response == nil {
+		return nil
+	}
+	for _, event := range response.Events {
+		if event.SequenceNo <= afterSequence {
+			continue
+		}
+		if err := s.ApplyEvent(ctx, event); err != nil {
+			return fmt.Errorf("apply sequence %d: %w", event.SequenceNo, err)
+		}
+		s.setV2ReplayCursor(runtimeRunID, event.SequenceNo)
+	}
+	return nil
+}
+
+func (s *AgentRuntimeProjectionService) v2ReplayCursor(runtimeRunID string) int64 {
+	s.v2ReplayMu.Lock()
+	defer s.v2ReplayMu.Unlock()
+	return s.v2ReplayThrough[strings.TrimSpace(runtimeRunID)]
+}
+
+func (s *AgentRuntimeProjectionService) setV2ReplayCursor(runtimeRunID string, sequence int64) {
+	if sequence <= 0 {
+		return
+	}
+	s.v2ReplayMu.Lock()
+	defer s.v2ReplayMu.Unlock()
+	if s.v2ReplayThrough == nil {
+		s.v2ReplayThrough = make(map[string]int64)
+	}
+	key := strings.TrimSpace(runtimeRunID)
+	if sequence > s.v2ReplayThrough[key] {
+		s.v2ReplayThrough[key] = sequence
+	}
 }
 
 func reconciliationEventForRuntimeRun(runtimeRun *AgentRuntimeRun, localRun model.AgentRun, fallback time.Time) (AgentRuntimeEventEnvelope, bool) {
@@ -468,30 +558,36 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			changed = true
 		}
 	case agentruntime.EventAssistantMessageStarted, agentruntime.EventAssistantMessageDelta:
-		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
-		s.publishRuntimeCodingSessionEvent(run, event)
+		if s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event) {
+			s.publishRuntimeCodingSessionEvent(run, event)
+		}
 	case agentruntime.EventAssistantMessageCompleted:
-		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
-		s.publishRuntimeCodingSessionEvent(run, event)
+		if s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event) {
+			s.publishRuntimeCodingSessionEvent(run, event)
+		}
 		if err := s.mirrorAssistantMessageCompleted(ctx, run, event); err != nil {
 			return err
 		}
 	case agentruntime.EventReasoningMessageStarted, agentruntime.EventReasoningMessageDelta, agentruntime.EventReasoningMessageCompleted:
-		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
-		s.publishRuntimeCodingSessionEvent(run, event)
+		if s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event) {
+			s.publishRuntimeCodingSessionEvent(run, event)
+		}
 	case agentruntime.EventToolCallStarted, agentruntime.EventToolCallResult, agentruntime.EventToolCallFinished:
 		// Tool-call activity renders inline in the transcript via message
 		// turn_segments (and live via the coding-session snapshot) — do not
 		// mirror it as artifacts, which would surface raw JSON in the side
 		// panel.
-		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
-		s.publishRuntimeCodingSessionEvent(run, event)
+		if s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event) {
+			s.publishRuntimeCodingSessionEvent(run, event)
+		}
 	case agentruntime.EventToolCallArgsDelta:
-		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
-		s.publishRuntimeCodingSessionEvent(run, event)
+		if s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event) {
+			s.publishRuntimeCodingSessionEvent(run, event)
+		}
 	case agentruntime.EventPlanUpdated:
-		s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event)
-		s.publishRuntimeCodingSessionEvent(run, event)
+		if s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event) {
+			s.publishRuntimeCodingSessionEvent(run, event)
+		}
 		if err := s.mirrorRuntimePlanUpdated(ctx, run, event); err != nil {
 			return err
 		}
@@ -521,21 +617,14 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 				return err
 			}
 		}
-		// Completed and cancelled runs have a durable transcript at this point;
-		// their cumulative live snapshot is no longer useful and can otherwise
-		// grow indefinitely in coding_session_state_snapshots. Failed snapshots
-		// are intentionally retained because they carry the last recoverable plan
-		// and diagnostic stream state shown by the failed-run UI.
-		if s.sessionSnapshotRepo != nil && (strings.TrimSpace(event.Type) == agentruntime.EventRunCompleted ||
-			strings.TrimSpace(event.Type) == agentruntime.EventRunCancelled) {
+		// Keep the v2 stream snapshot after completion. It is the durable ordered
+		// timeline for multi-message Codex turns and preserves tool placement while
+		// persisted messages are reconciled by stable IDs. Preserve the legacy v1
+		// cleanup behavior because those snapshots have no replay watermark.
+		if s.eventProtocol != "v2" && s.sessionSnapshotRepo != nil &&
+			(event.Type == agentruntime.EventRunCompleted || event.Type == agentruntime.EventRunCancelled) {
 			if err := s.sessionSnapshotRepo.DeleteByRun(ctx, run.WorkspaceID, run.ID); err != nil {
-				slog.WarnContext(ctx, "delete terminal coding session stream snapshot failed",
-					"run_id", run.ID,
-					"workspace_id", run.WorkspaceID,
-					"runtime_run_id", strings.TrimSpace(event.RunID),
-					"event_type", event.Type,
-					"error", err,
-				)
+				return err
 			}
 		}
 	}
@@ -865,15 +954,16 @@ func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx cont
 		toolInvocations = runtimeMessage.ToolInvocations
 	}
 	message := &model.AgentRunMessage{
-		WorkspaceID:     run.WorkspaceID,
-		RunID:           run.ID,
-		Role:            "assistant",
-		Content:         content,
-		MessageType:     "assistant_turn",
-		ContentBlocks:   annotateRuntimeMessageBlocks(storeBlocks, runtimeMessageID, content),
-		ToolInvocations: toolInvocations,
-		TurnSegments:    runtimeMessageTurnSegments(runtimeMessageID, content, toolInvocations),
-		SequenceNo:      sequenceNo,
+		WorkspaceID:      run.WorkspaceID,
+		RunID:            run.ID,
+		RuntimeMessageID: runtimeMessageID,
+		Role:             "assistant",
+		Content:          content,
+		MessageType:      "assistant_turn",
+		ContentBlocks:    annotateRuntimeMessageBlocks(storeBlocks, runtimeMessageID, content),
+		ToolInvocations:  toolInvocations,
+		TurnSegments:     runtimeMessageTurnSegments(runtimeMessageID, content, toolInvocations),
+		SequenceNo:       sequenceNo,
 	}
 	if err := s.runMessageRepo.Create(ctx, message); err != nil {
 		return err
@@ -882,13 +972,13 @@ func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx cont
 	return nil
 }
 
-func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapshot(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) {
+func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapshot(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) bool {
 	if s == nil || s.sessionSnapshotRepo == nil || run == nil {
-		return
+		return true
 	}
 	eventType := codingSessionEventTypeFromAgentRuntimeEvent(event)
 	if eventType == "" {
-		return
+		return false
 	}
 
 	record, err := s.sessionSnapshotRepo.GetByRun(ctx, run.WorkspaceID, run.ID)
@@ -900,7 +990,7 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 			"event_type", event.Type,
 			"error", err,
 		)
-		return
+		return true
 	}
 
 	var snapshot *model.CodingSessionStreamSnapshot
@@ -917,8 +1007,14 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 			record = nil
 		}
 	}
+	if s.eventProtocol == "v2" && event.SequenceNo > 0 && snapshot != nil && snapshot.ThroughSequence >= event.SequenceNo {
+		return false
+	}
 
 	snapshot = model.ApplyCodingSessionStreamEvent(snapshot, eventType, event.Data, s.eventTime(event))
+	if snapshot != nil && s.eventProtocol == "v2" && event.SequenceNo > snapshot.ThroughSequence {
+		snapshot.ThroughSequence = event.SequenceNo
+	}
 	if snapshot == nil || snapshot.IsEmpty() {
 		if record != nil {
 			if err := s.sessionSnapshotRepo.DeleteByRun(ctx, run.WorkspaceID, run.ID); err != nil {
@@ -931,7 +1027,7 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 				)
 			}
 		}
-		return
+		return true
 	}
 
 	encoded, err := model.EncodeCodingSessionStreamSnapshot(snapshot)
@@ -943,7 +1039,7 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 			"event_type", event.Type,
 			"error", err,
 		)
-		return
+		return true
 	}
 
 	nextRecord := &model.CodingSessionStateSnapshot{
@@ -964,11 +1060,12 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 			"event_type", event.Type,
 			"error", err,
 		)
-		return
+		return true
 	}
 	// Stream snapshots are surfaced through coding_session_event websocket
 	// events. Do not emit a generic agent_run update for every transcript
 	// delta; that causes run-summary refetch storms in sheet/dock views.
+	return true
 }
 
 func (s *AgentRuntimeProjectionService) publishRuntimeCodingSessionEvent(run *model.AgentRun, event AgentRuntimeEventEnvelope) {
@@ -981,15 +1078,20 @@ func (s *AgentRuntimeProjectionService) publishRuntimeCodingSessionEvent(run *mo
 	}
 	eventID := firstNonEmptyString(strings.TrimSpace(event.EventID), fmt.Sprintf("%s:%d", run.ID, time.Now().UTC().UnixNano()))
 	payload := runtimeCodingSessionEventPayload(event)
+	source := "agent-runtime-v1"
+	if s.eventProtocol == "v2" {
+		source = "agent-runtime-v2"
+	}
 	envelope, _ := json.Marshal(model.CodingSessionEvent{
-		ID:          eventID,
-		SessionID:   run.ID,
-		RunID:       run.ID,
-		SequenceNo:  runtimeCodingSessionSequence(event),
-		Timestamp:   s.eventTime(event),
-		Type:        eventType,
-		RuntimeKind: run.RuntimeKind,
-		Payload:     payload,
+		ID:              eventID,
+		SessionID:       run.ID,
+		RunID:           run.ID,
+		SequenceNo:      runtimeCodingSessionSequence(event),
+		Timestamp:       s.eventTime(event),
+		Type:            eventType,
+		RuntimeKind:     run.RuntimeKind,
+		Payload:         payload,
+		RuntimeMetadata: map[string]any{"source": source},
 	})
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "created",
@@ -1017,15 +1119,42 @@ func runtimeCodingSessionEventPayload(event AgentRuntimeEventEnvelope) map[strin
 	for key, value := range event.Data {
 		payload[key] = value
 	}
-	text := firstNonEmptyString(eventDataString(event.Data, "text"), eventDataString(event.Data, "content"))
+	// Text deltas are byte fragments, not metadata. Leading whitespace and even
+	// a whitespace-only fragment are meaningful token content and must survive
+	// the Agent Runtime -> websocket projection unchanged.
+	text := eventDataRawString(event.Data, "text")
+	if text == "" {
+		text = eventDataRawString(event.Data, "content")
+	}
 	if text != "" {
 		payload["text"] = text
-		payload["content"] = firstNonEmptyString(eventDataString(event.Data, "content"), text)
+		content := eventDataRawString(event.Data, "content")
+		if content == "" {
+			content = text
+		}
+		payload["content"] = content
 	}
 	if strings.TrimSpace(event.HostRunID) != "" {
 		payload["host_run_id"] = strings.TrimSpace(event.HostRunID)
 	}
 	return payload
+}
+
+func runtimeSubjectToken(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "unknown"
+	}
+	var builder strings.Builder
+	for _, char := range value {
+		switch {
+		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z', char >= '0' && char <= '9', char == '-', char == '_':
+			builder.WriteRune(char)
+		default:
+			builder.WriteByte('_')
+		}
+	}
+	return builder.String()
 }
 
 func (s *AgentRuntimeProjectionService) mirrorRuntimePlanUpdated(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) error {
@@ -1177,14 +1306,15 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 		role = "assistant"
 	}
 	message := &model.AgentRunMessage{
-		WorkspaceID:     run.WorkspaceID,
-		RunID:           run.ID,
-		Role:            role,
-		Content:         strings.TrimSpace(runtimeMessage.Content),
-		MessageType:     messageType,
-		ContentBlocks:   annotateRuntimeMessageBlocks(runtimeMessage.ContentBlocks, runtimeMessageID, runtimeMessage.Content),
-		ToolInvocations: runtimeMessage.ToolInvocations,
-		SequenceNo:      sequenceNo,
+		WorkspaceID:      run.WorkspaceID,
+		RunID:            run.ID,
+		RuntimeMessageID: runtimeMessageID,
+		Role:             role,
+		Content:          strings.TrimSpace(runtimeMessage.Content),
+		MessageType:      messageType,
+		ContentBlocks:    annotateRuntimeMessageBlocks(runtimeMessage.ContentBlocks, runtimeMessageID, runtimeMessage.Content),
+		ToolInvocations:  runtimeMessage.ToolInvocations,
+		SequenceNo:       sequenceNo,
 	}
 	if role == "assistant" {
 		message.TurnSegments = runtimeMessageTurnSegments(runtimeMessageID, message.Content, runtimeMessage.ToolInvocations)
@@ -1222,6 +1352,10 @@ func applyRuntimeMessageProjection(message *model.AgentRunMessage, runtimeMessag
 	}
 
 	changed := false
+	if message.RuntimeMessageID != runtimeMessageID {
+		message.RuntimeMessageID = runtimeMessageID
+		changed = true
+	}
 	if message.Role != role {
 		message.Role = role
 		changed = true
@@ -1410,6 +1544,9 @@ func agentRunMessageHasRuntimeMessageID(message model.AgentRunMessage, runtimeMe
 	if runtimeMessageID == "" {
 		return false
 	}
+	if strings.TrimSpace(message.RuntimeMessageID) == runtimeMessageID {
+		return true
+	}
 	return jsonRawContainsStringField(message.ContentBlocks, "runtime_message_id", runtimeMessageID)
 }
 
@@ -1489,10 +1626,12 @@ func (s *AgentRuntimeProjectionService) lookupRuntimeStoreMessage(ctx context.Co
 // runtimeToolInvocation mirrors the runtime's persisted tool invocation shape
 // (agent-runtime internal/runtime native tool invocations).
 type runtimeToolInvocation struct {
-	ToolName      string          `json:"tool_name"`
-	Input         json.RawMessage `json:"input"`
-	OutputSummary string          `json:"output_summary"`
-	DurationMs    int64           `json:"duration_ms"`
+	ToolCallID          string          `json:"tool_call_id"`
+	ToolName            string          `json:"tool_name"`
+	Input               json.RawMessage `json:"input"`
+	OutputSummary       string          `json:"output_summary"`
+	DurationMs          int64           `json:"duration_ms"`
+	AssistantBeforeTool bool            `json:"assistant_before_tool"`
 }
 
 // runtimeMessageTurnSegments maps runtime tool invocations plus the assistant
@@ -1507,8 +1646,34 @@ func runtimeMessageTurnSegments(runtimeMessageID, content string, toolInvocation
 		return nil
 	}
 	segments := make([]model.CodingSessionLiveTurnSegment, 0, len(invocations)+1)
+	assistantAdded := false
+	appendAssistant := func() {
+		if assistantAdded {
+			return
+		}
+		trimmed := strings.TrimSpace(content)
+		if trimmed == "" {
+			return
+		}
+		segments = append(segments, model.CodingSessionLiveTurnSegment{
+			SegmentID: runtimeMessageID,
+			Kind:      "assistant_message",
+			AssistantMessage: &model.CodingSessionLiveAssistantMessage{
+				MessageID: runtimeMessageID,
+				Content:   trimmed,
+				Status:    "completed",
+			},
+		})
+		assistantAdded = true
+	}
 	for index, invocation := range invocations {
-		segmentID := fmt.Sprintf("%s-tool-%d", runtimeMessageID, index)
+		if invocation.AssistantBeforeTool {
+			appendAssistant()
+		}
+		segmentID := strings.TrimSpace(invocation.ToolCallID)
+		if segmentID == "" {
+			segmentID = fmt.Sprintf("%s-tool-%d", runtimeMessageID, index)
+		}
 		toolCall := &model.CodingSessionLiveToolCall{
 			ToolCallID: segmentID,
 			ToolName:   strings.TrimSpace(invocation.ToolName),
@@ -1528,17 +1693,7 @@ func runtimeMessageTurnSegments(runtimeMessageID, content string, toolInvocation
 			ToolCall:  toolCall,
 		})
 	}
-	if trimmed := strings.TrimSpace(content); trimmed != "" {
-		segments = append(segments, model.CodingSessionLiveTurnSegment{
-			SegmentID: runtimeMessageID,
-			Kind:      "assistant_message",
-			AssistantMessage: &model.CodingSessionLiveAssistantMessage{
-				MessageID: runtimeMessageID,
-				Content:   trimmed,
-				Status:    "completed",
-			},
-		})
-	}
+	appendAssistant()
 	payload, err := json.Marshal(segments)
 	if err != nil {
 		return nil
@@ -2053,6 +2208,24 @@ func eventDataString(data map[string]any, key string) string {
 		return strings.TrimSpace(typed.String())
 	default:
 		return strings.TrimSpace(fmt.Sprint(typed))
+	}
+}
+
+func eventDataRawString(data map[string]any, key string) string {
+	if len(data) == 0 {
+		return ""
+	}
+	value, ok := data[key]
+	if !ok {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case fmt.Stringer:
+		return typed.String()
+	default:
+		return fmt.Sprint(typed)
 	}
 }
 

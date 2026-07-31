@@ -3049,6 +3049,8 @@ func buildAISystemPromptWithPlan(agent *model.Agent, knowledgeContext string, pl
 - For support, product, troubleshooting, pricing, policy, or feature questions, answer only from the provided knowledge chunks and the conversation context.
 - Review the supplied chunks and answer every portion of the question they materially support. A partial but useful grounded answer is preferable to a handoff.
 - Set can_answer=false only when the chunks contain no material support for the request or when the request requires an account-specific action.
+- Treat third-party tool recommendations/comparisons as out of scope unless the supplied chunks explicitly support them.
+- When a request is out of scope, respond briefly by acknowledging the limitation and redirecting back to supported questions.
 - Never use general knowledge to invent product behavior, workflows, integrations, pricing, policies, or troubleshooting steps.
 - Ask a human to take over whenever the customer needs account-specific actions (billing changes, password resets, accessing their data) or when the knowledge contains nothing relevant at all.
 - If you have already told the customer you will connect them with a team member, do not repeat that message. Acknowledge their follow-up briefly, for example: "A team member will be with you shortly."
