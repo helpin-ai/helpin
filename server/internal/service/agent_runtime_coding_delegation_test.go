@@ -123,6 +123,29 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 	}
 }
 
+func TestRuntimeAgentFromHelpinAgentIncludesImplicitScribeSkills(t *testing.T) {
+	scribe := &model.Agent{
+		ID:          "agent-scribe",
+		IsSystem:    true,
+		Name:        "Scribe",
+		PresetKey:   model.AgentPresetTaskPlanner,
+		RuntimeKind: "codex",
+	}
+
+	out := runtimeAgentFromHelpinAgent(scribe, "helpin")
+	got := make(map[string]bool, len(out.Skills))
+	for _, ref := range out.Skills {
+		got[ref.Key] = true
+	}
+	// coding_task_planning is native-only; the Codex delegation must still
+	// retain the approval protocol and its planner operating rules.
+	for _, key := range []string{"prd_task_plan_approval", "engineering_planner_operating_rules"} {
+		if !got[key] {
+			t.Fatalf("expected delegated Scribe skill %q, got %#v", key, out.Skills)
+		}
+	}
+}
+
 // setupCodingDelegationTestDB extends the shared interactive-approval schema
 // with the PM, delivery, git, and docs tables the coding launch chain touches.
 func setupCodingDelegationTestDB(t *testing.T) *gorm.DB {

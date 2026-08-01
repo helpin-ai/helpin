@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/agentskills"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -205,7 +206,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		Provider:              strings.TrimSpace(derefString(agent.Provider)),
 		Model:                 strings.TrimSpace(derefString(agent.Model)),
 		SystemPrompt:          strings.TrimSpace(derefString(agent.SystemPrompt)),
-		Skills:                runtimeSkillRefsFromHelpin(agent.Skills, agent.RuntimeKind),
+		Skills:                runtimeSkillRefsFromHelpin(agentskills.EffectiveRuntimeRefs(agent), agent.RuntimeKind),
 		AllowedTools:          parseJSONStringSlice(agent.AllowedTools),
 		AllowedTargets:        parseJSONStringSlice(agent.AllowedTargets),
 		ApprovalMode:          strings.TrimSpace(agent.ApprovalMode),

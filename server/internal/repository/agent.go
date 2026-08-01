@@ -685,6 +685,14 @@ func (r *AgentRunMessageRepository) Create(ctx context.Context, message *model.A
 	return nil
 }
 
+func (r *AgentRunMessageRepository) Update(ctx context.Context, message *model.AgentRunMessage) error {
+	sanitizeAgentRunMessageForPostgres(message)
+	if err := r.db.WithContext(ctx).Save(message).Error; err != nil {
+		return fmt.Errorf("update agent run message: %w", err)
+	}
+	return nil
+}
+
 // GetByID returns a single run.
 func (r *AgentRunRepository) GetByID(ctx context.Context, workspaceID, id string) (*model.AgentRun, error) {
 	var run model.AgentRun

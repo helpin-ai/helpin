@@ -52,6 +52,7 @@ type agentRuntimeProjectionMessageRepository interface {
 	ListByRun(ctx context.Context, workspaceID, runID string) ([]model.AgentRunMessage, error)
 	NextSequence(ctx context.Context, workspaceID, runID string) (int, error)
 	Create(ctx context.Context, message *model.AgentRunMessage) error
+	Update(ctx context.Context, message *model.AgentRunMessage) error
 }
 
 type agentRuntimeProjectionArtifactRepository interface {
@@ -1131,8 +1132,11 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 	if err != nil {
 		return err
 	}
-	for _, message := range existing {
-		if agentRunMessageHasRuntimeMessageID(message, runtimeMessageID) || agentRunMessageMatchesRuntimeMessage(message, runtimeMessage, runtimeMessageID) {
+	for index := range existing {
+		if agentRunMessageHasRuntimeMessageID(existing[index], runtimeMessageID) {
+			return s.enrichRuntimeMessage(ctx, run, &existing[index], runtimeMessage, runtimeMessageID)
+		}
+		if agentRunMessageMatchesRuntimeMessage(existing[index], runtimeMessage, runtimeMessageID) {
 			return nil
 		}
 	}
@@ -1165,6 +1169,29 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 		message.CreatedAt = runtimeMessage.CreatedAt.UTC()
 	}
 	if err := s.runMessageRepo.Create(ctx, message); err != nil {
+		return err
+	}
+	s.runRepo.Notify(ctx, run)
+	return nil
+}
+
+func (s *AgentRuntimeProjectionService) enrichRuntimeMessage(ctx context.Context, run *model.AgentRun, message *model.AgentRunMessage, runtimeMessage AgentRuntimeMessage, runtimeMessageID string) error {
+	if s == nil || s.runMessageRepo == nil || run == nil || message == nil {
+		return nil
+	}
+	if content := strings.TrimSpace(runtimeMessage.Content); content != "" {
+		message.Content = content
+	}
+	if len(runtimeMessage.ContentBlocks) > 0 {
+		message.ContentBlocks = annotateRuntimeMessageBlocks(runtimeMessage.ContentBlocks, runtimeMessageID, message.Content)
+	}
+	if len(runtimeMessage.ToolInvocations) > 0 {
+		message.ToolInvocations = append(json.RawMessage(nil), runtimeMessage.ToolInvocations...)
+	}
+	if strings.TrimSpace(message.Role) == "assistant" && len(message.ToolInvocations) > 0 {
+		message.TurnSegments = runtimeMessageTurnSegments(runtimeMessageID, message.Content, message.ToolInvocations)
+	}
+	if err := s.runMessageRepo.Update(ctx, message); err != nil {
 		return err
 	}
 	s.runRepo.Notify(ctx, run)
