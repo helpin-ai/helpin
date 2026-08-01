@@ -488,8 +488,8 @@ func TestReviewAgentSkillDeclaresCompletionInteractionPolicy(t *testing.T) {
 	if contract.Transports["native_sdk"].ToolName != HelpinMCPRuntimeToolName(ToolRequestReviewCheckpoint) {
 		t.Fatalf("expected native_sdk review checkpoint tool transport, got %+v", contract.Transports["native_sdk"])
 	}
-	if contract.Transports["codex"].BlockLabel != "helpin-review" {
-		t.Fatalf("expected codex review checkpoint block label, got %+v", contract.Transports["codex"])
+	if contract.Transports["codex"].Type != InteractionTransportTypeToolCall || contract.Transports["codex"].ToolName != HelpinMCPRuntimeToolName(ToolRequestReviewCheckpoint) {
+		t.Fatalf("expected codex review checkpoint tool transport, got %+v", contract.Transports["codex"])
 	}
 	inputContract, ok := skill.Policy.InteractionContract(InteractionKindRequestUserInput)
 	if !ok {
