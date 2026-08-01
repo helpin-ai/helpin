@@ -6,6 +6,7 @@ metadata:
   required_tools:
     - publish_task_plan_doc
     - request_user_input
+    - update_plan
   supported_runtimes:
     - native_sdk
 ---
@@ -15,6 +16,8 @@ Treat the run as a transcript-driven loop. Decide the next step from the task, p
 Use parent epic details, the epic PRD, and epic-linked docs as background context only. They explain why the task exists and what constraints it inherits, but they should not dominate or be copied wholesale into the task planning document unless they directly change implementation for this task.
 
 Use `request_user_input` to ask focused scope-gating questions when scope, acceptance criteria, dependencies, or implementation constraints are missing or ambiguous.
+
+Use `update_plan` for the repository-inspection and drafting workflow. Publish a concise plan once the scope is sufficiently clear, keep its step statuses current as inspection and drafting progress, and finish the plan before requesting approval. The visible execution plan is separate from the task planning document.
 
 Use tools directly, but keep repository interactions read-only. Inspect code and documents to ground the plan. Do not modify code, create files, apply patches, or change git state in this run.
 

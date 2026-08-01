@@ -2,6 +2,7 @@ package worker
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -40,6 +41,21 @@ func TestCanonicalToolNameStripsHelpinMCPPrefixAndLegacyAliases(t *testing.T) {
 		if got := CanonicalToolName(raw); got != want {
 			t.Fatalf("CanonicalToolName(%q)=%q, want %q", raw, got, want)
 		}
+	}
+}
+
+func TestRenderRuntimeToolNamesInInstructionsForCodexUsesLogicalNames(t *testing.T) {
+	rendered := RenderRuntimeToolNamesInInstructionsForRuntime(
+		"Publish with `mcp__helpin__publish_task_plan_doc`, then call `mcp__helpin__request_approval`.",
+		"codex",
+	)
+	for _, toolName := range []string{"`publish_task_plan_doc`", "`request_approval`"} {
+		if !strings.Contains(rendered, toolName) {
+			t.Fatalf("expected logical tool name %s, got %q", toolName, rendered)
+		}
+	}
+	if strings.Contains(rendered, "mcp__helpin__") {
+		t.Fatalf("expected Codex prompt to remove MCP qualification, got %q", rendered)
 	}
 }
 

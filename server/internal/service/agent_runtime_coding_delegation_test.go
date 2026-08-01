@@ -124,6 +124,7 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 }
 
 func TestRuntimeAgentFromHelpinAgentIncludesImplicitScribeSkills(t *testing.T) {
+	qualifiedPrompt := "Publish with `mcp__helpin__publish_task_plan_doc`, then call `mcp__helpin__request_approval`."
 	scribe := &model.Agent{
 		ID:               "agent-scribe",
 		IsSystem:         true,
@@ -131,6 +132,7 @@ func TestRuntimeAgentFromHelpinAgentIncludesImplicitScribeSkills(t *testing.T) {
 		PresetKey:        model.AgentPresetTaskPlanner,
 		PresetVersionKey: "task_planner_default",
 		RuntimeKind:      "codex",
+		SystemPrompt:     &qualifiedPrompt,
 		// Reproduce a persisted partial selection from before the approval
 		// skill became a required Scribe core skill.
 		Skills: model.AgentSkillRefs{{Key: "engineering_planner_operating_rules"}},
@@ -148,6 +150,14 @@ func TestRuntimeAgentFromHelpinAgentIncludesImplicitScribeSkills(t *testing.T) {
 		if !got[key] {
 			t.Fatalf("expected delegated Scribe skill %q, got %#v", key, out.Skills)
 		}
+	}
+	for _, toolName := range []string{"`publish_task_plan_doc`", "`request_approval`"} {
+		if !strings.Contains(out.SystemPrompt, toolName) {
+			t.Fatalf("expected delegated Scribe prompt to contain logical tool name %s, got %q", toolName, out.SystemPrompt)
+		}
+	}
+	if strings.Contains(out.SystemPrompt, "mcp__helpin__") {
+		t.Fatalf("expected delegated Codex prompt to remove Helpin MCP qualification, got %q", out.SystemPrompt)
 	}
 }
 
