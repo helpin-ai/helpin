@@ -110,7 +110,7 @@ func (s *ExternalMCPService) StartOAuth(ctx context.Context, workspaceID, server
 		return nil, err
 	}
 	if !validExternalMCPReturnPath(returnPath) {
-		returnPath = "/settings/mcp?tab=external"
+		returnPath = "/workspaces"
 	}
 	oauthState := &model.ExternalMCPOAuthState{
 		ID: uuid.NewString(), StateHash: stateHash, WorkspaceID: workspaceID, ServerID: serverID,

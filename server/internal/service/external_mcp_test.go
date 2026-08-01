@@ -74,8 +74,8 @@ func TestExternalMCPReturnPathRejectsOpenRedirects(t *testing.T) {
 			t.Fatalf("expected return path %q to be rejected", value)
 		}
 	}
-	if !validExternalMCPReturnPath("/settings/mcp?tab=external") {
-		t.Fatal("expected local settings return path to be accepted")
+	if !validExternalMCPReturnPath("/w/acme/automation/tools/connections") {
+		t.Fatal("expected local automation connections return path to be accepted")
 	}
 }
 

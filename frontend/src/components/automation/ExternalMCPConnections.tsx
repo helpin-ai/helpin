@@ -50,9 +50,10 @@ import {
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 
-type ExternalMCPSettingsProps = {
+type ExternalMCPConnectionsProps = {
   workspaceId: string;
   workspaceName: string;
+  canManageSettings: boolean;
 };
 
 const STATUS_COPY: Record<ExternalMCPServer['status'], { label: string; className: string }> = {
@@ -73,7 +74,11 @@ const CUSTOMER_SCOPE_COPY: Record<string, string> = {
   configure: 'Change workspace configuration',
 };
 
-export function ExternalMCPSettings({ workspaceId, workspaceName }: ExternalMCPSettingsProps) {
+export function ExternalMCPConnections({
+  workspaceId,
+  workspaceName,
+  canManageSettings,
+}: ExternalMCPConnectionsProps) {
   const providersQuery = useExternalMCPProviders(workspaceId);
   const enabled = providersQuery.data?.enabled === true;
   const serversQuery = useExternalMCPServers(workspaceId, enabled);
@@ -84,7 +89,7 @@ export function ExternalMCPSettings({ workspaceId, workspaceName }: ExternalMCPS
     return <div className="grid gap-4 lg:grid-cols-2"><Skeleton className="h-48" /><Skeleton className="h-48" /></div>;
   }
   if (providersQuery.isError) {
-    return <Alert variant="destructive"><AlertTitle>Could not load external MCP settings</AlertTitle><AlertDescription>{providersQuery.error.message}</AlertDescription></Alert>;
+    return <Alert variant="destructive"><AlertTitle>Could not load external MCP connections</AlertTitle><AlertDescription>{providersQuery.error.message}</AlertDescription></Alert>;
   }
   if (!enabled) {
     return (
@@ -99,6 +104,13 @@ export function ExternalMCPSettings({ workspaceId, workspaceName }: ExternalMCPS
   const reconnecting = servers.filter((server) => server.status === 'reauthorization_required');
   return (
     <div className="space-y-4">
+      {!canManageSettings ? (
+        <Alert>
+          <Shield01Icon className="h-4 w-4" />
+          <AlertTitle>Connections are read-only</AlertTitle>
+          <AlertDescription>A workspace admin can add servers, reconnect accounts, and change which tools agents may use.</AlertDescription>
+        </Alert>
+      ) : null}
       {reconnecting.length > 0 ? (
         <Alert>
           <Key01Icon className="h-4 w-4" />
@@ -115,9 +127,11 @@ export function ExternalMCPSettings({ workspaceId, workspaceName }: ExternalMCPS
                 <CardTitle className="text-base">Workspace MCP servers</CardTitle>
                 <CardDescription>Add external systems once, then choose their individual tools on each Helpin agent.</CardDescription>
               </div>
-              <Button size="sm" onClick={() => setCreateOpen(true)}>
-                <PlusSignIcon className="mr-1.5 h-4 w-4" /> Add server
-              </Button>
+              {canManageSettings ? (
+                <Button size="sm" onClick={() => setCreateOpen(true)}>
+                  <PlusSignIcon className="mr-1.5 h-4 w-4" /> Add server
+                </Button>
+              ) : null}
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -127,11 +141,22 @@ export function ExternalMCPSettings({ workspaceId, workspaceName }: ExternalMCPS
               <div className="rounded-xl border border-dashed px-6 py-10 text-center">
                 <Globe02Icon className="mx-auto h-6 w-6 text-muted-foreground" />
                 <p className="mt-3 text-sm font-medium">No external servers yet</p>
-                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">Connect Customer.io to test the full OAuth and agent tool flow, or add an approved custom server.</p>
-                <Button className="mt-4" size="sm" variant="outline" onClick={() => setCreateOpen(true)}>Add your first server</Button>
+                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+                  {canManageSettings
+                    ? 'Connect an approved MCP server to make its tools available to Helpin agents.'
+                    : 'A workspace admin can connect an MCP server and make its tools available to Helpin agents.'}
+                </p>
+                {canManageSettings ? <Button className="mt-4" size="sm" variant="outline" onClick={() => setCreateOpen(true)}>Add your first server</Button> : null}
               </div>
             ) : null}
-            {servers.map((server) => <ExternalMCPServerCard key={server.id} workspaceId={workspaceId} server={server} />)}
+            {servers.map((server) => (
+              <ExternalMCPServerCard
+                key={server.id}
+                workspaceId={workspaceId}
+                server={server}
+                canManageSettings={canManageSettings}
+              />
+            ))}
           </CardContent>
         </Card>
 
@@ -150,17 +175,27 @@ export function ExternalMCPSettings({ workspaceId, workspaceName }: ExternalMCPS
         </Card>
       </div>
 
-      <AddExternalMCPDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        workspaceId={workspaceId}
-        providers={providersQuery.data?.providers ?? []}
-      />
+      {canManageSettings ? (
+        <AddExternalMCPDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          workspaceId={workspaceId}
+          providers={providersQuery.data?.providers ?? []}
+        />
+      ) : null}
     </div>
   );
 }
 
-function ExternalMCPServerCard({ workspaceId, server }: { workspaceId: string; server: ExternalMCPServer }) {
+function ExternalMCPServerCard({
+  workspaceId,
+  server,
+  canManageSettings,
+}: {
+  workspaceId: string;
+  server: ExternalMCPServer;
+  canManageSettings: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   const updateServer = useUpdateExternalMCPServer(workspaceId);
   const deleteServer = useDeleteExternalMCPServer(workspaceId);
@@ -218,29 +253,41 @@ function ExternalMCPServerCard({ workspaceId, server }: { workspaceId: string; s
           <p className="mt-1 truncate text-xs text-muted-foreground">{safeEndpointLabel(server.endpoint_url)} · {tools.filter((tool) => tool.enabled).length}/{tools.length} tools enabled</p>
           {server.last_error_message ? <p className="mt-2 text-xs text-destructive">{server.last_error_message}</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            {needsOAuth ? <Button size="sm" onClick={() => void connect()} disabled={oauth.isPending}>{oauth.isPending ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Key01Icon className="mr-1.5 h-3.5 w-3.5" />}{server.status === 'pending_oauth' ? 'Connect' : 'Reconnect'}</Button> : null}
-            {server.status === 'connected' ? <Button size="sm" variant="outline" onClick={() => void sync()} disabled={refresh.isPending}>{refresh.isPending ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ArrowReloadHorizontalIcon className="mr-1.5 h-3.5 w-3.5" />}Refresh tools</Button> : null}
-            {tools.length > 0 ? <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Hide tools' : 'Manage tools'}<ArrowDown01Icon className={cn('ml-1.5 h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} /></Button> : null}
+            {canManageSettings && needsOAuth ? <Button size="sm" onClick={() => void connect()} disabled={oauth.isPending}>{oauth.isPending ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Key01Icon className="mr-1.5 h-3.5 w-3.5" />}{server.status === 'pending_oauth' ? 'Connect' : 'Reconnect'}</Button> : null}
+            {canManageSettings && server.status === 'connected' ? <Button size="sm" variant="outline" onClick={() => void sync()} disabled={refresh.isPending}>{refresh.isPending ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ArrowReloadHorizontalIcon className="mr-1.5 h-3.5 w-3.5" />}Refresh tools</Button> : null}
+            {tools.length > 0 ? <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Hide tools' : canManageSettings ? 'Manage tools' : 'View tools'}<ArrowDown01Icon className={cn('ml-1.5 h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} /></Button> : null}
           </div>
         </div>
-        <div className="flex items-center gap-1 self-start">
-          <Switch
-            checked={server.enabled}
-            aria-label={`${server.enabled ? 'Disable' : 'Enable'} ${server.name}`}
-            disabled={updateServer.isPending}
-            onCheckedChange={(enabled) => updateServer.mutate({ serverId: server.id, request: { enabled } })}
-          />
-          <Button size="icon-sm" variant="ghost" onClick={() => void remove()} disabled={deleteServer.isPending}>
-            <Delete01Icon className="h-4 w-4" /><span className="sr-only">Remove {server.name}</span>
-          </Button>
-        </div>
+        {canManageSettings ? (
+          <div className="flex items-center gap-1 self-start">
+            <Switch
+              checked={server.enabled}
+              aria-label={`${server.enabled ? 'Disable' : 'Enable'} ${server.name}`}
+              disabled={updateServer.isPending}
+              onCheckedChange={(enabled) => updateServer.mutate({ serverId: server.id, request: { enabled } })}
+            />
+            <Button size="icon-sm" variant="ghost" onClick={() => void remove()} disabled={deleteServer.isPending}>
+              <Delete01Icon className="h-4 w-4" /><span className="sr-only">Remove {server.name}</span>
+            </Button>
+          </div>
+        ) : null}
       </div>
-      {expanded ? <ExternalMCPToolPolicies workspaceId={workspaceId} server={server} tools={tools} /> : null}
+      {expanded ? <ExternalMCPToolPolicies workspaceId={workspaceId} server={server} tools={tools} canManageSettings={canManageSettings} /> : null}
     </section>
   );
 }
 
-function ExternalMCPToolPolicies({ workspaceId, server, tools }: { workspaceId: string; server: ExternalMCPServer; tools: ExternalMCPTool[] }) {
+function ExternalMCPToolPolicies({
+  workspaceId,
+  server,
+  tools,
+  canManageSettings,
+}: {
+  workspaceId: string;
+  server: ExternalMCPServer;
+  tools: ExternalMCPTool[];
+  canManageSettings: boolean;
+}) {
   const updateTools = useUpdateExternalMCPTools(workspaceId);
   const update = async (toolID: string, patch: Partial<Pick<ExternalMCPTool, 'enabled' | 'access'>>) => {
     const next = tools.map((tool) => tool.id === toolID ? { ...tool, ...patch } : tool);
@@ -262,14 +309,14 @@ function ExternalMCPToolPolicies({ workspaceId, server, tools }: { workspaceId: 
       <div className="space-y-2">
         {tools.map((tool) => (
           <div key={tool.id} className="flex flex-col gap-3 rounded-lg border bg-background p-3 sm:flex-row sm:items-center">
-            <Checkbox checked={tool.enabled} disabled={updateTools.isPending} onCheckedChange={(checked) => void update(tool.id, { enabled: checked === true })} aria-label={`Enable ${tool.remote_name}`} />
+            <Checkbox checked={tool.enabled} disabled={!canManageSettings || updateTools.isPending} onCheckedChange={(checked) => void update(tool.id, { enabled: checked === true })} aria-label={`Enable ${tool.remote_name}`} />
             <div className="min-w-0 flex-1">
               <p className="font-mono text-xs font-medium">{tool.remote_name}</p>
               <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{tool.description}</p>
             </div>
             <div className="flex rounded-lg border p-0.5">
               {(['read', 'write'] as const).map((access) => (
-                <button key={access} type="button" disabled={updateTools.isPending} onClick={() => void update(tool.id, { access })} className={cn('rounded-md px-2 py-1 text-xs capitalize transition-colors', tool.access === access ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground')}>{access}</button>
+                <button key={access} type="button" disabled={!canManageSettings || updateTools.isPending} onClick={() => void update(tool.id, { access })} className={cn('rounded-md px-2 py-1 text-xs capitalize transition-colors disabled:cursor-default', tool.access === access ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground disabled:hover:text-muted-foreground')}>{access}</button>
               ))}
             </div>
           </div>
