@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -118,6 +119,30 @@ func TestAgentRuntimeHostResolveHelpinBuiltInSkillByKey(t *testing.T) {
 	}
 	if byID.Key != resolved.Key || byID.PackageChecksum != resolved.PackageChecksum {
 		t.Fatalf("unexpected by-id built-in skill: %#v", byID)
+	}
+}
+
+func TestAgentRuntimeHostResolveScribeApprovalSkillIncludesCompletionPolicy(t *testing.T) {
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	resolved, err := host.ResolveActiveSkillByKey(context.Background(), AgentRuntimeSkillLookupRequest{
+		AppID: "helpin",
+		Key:   "prd_task_plan_approval",
+	})
+	if err != nil {
+		t.Fatalf("ResolveActiveSkillByKey returned error: %v", err)
+	}
+	var policy struct {
+		CompletionRequiresInteractionKinds []string `json:"completion_requires_interaction_kinds"`
+	}
+	if err := json.Unmarshal(resolved.Policy, &policy); err != nil {
+		t.Fatalf("decode approval skill policy: %v", err)
+	}
+	if !containsString(policy.CompletionRequiresInteractionKinds, "approval_request") {
+		t.Fatalf("expected approval_request completion policy, got %s", resolved.Policy)
+	}
+	if !containsString(resolved.RequiredTools, "request_approval") {
+		t.Fatalf("expected request_approval required tool, got %#v", resolved.RequiredTools)
 	}
 }
 
