@@ -43,12 +43,6 @@ spec:
               value: "https://mcp.helpin.ai"
             - name: MCP_SERVER_ENABLED
               value: "true"
-            - name: EXTERNAL_MCP_ENABLED
-              value: "false"
-            - name: EXTERNAL_MCP_CUSTOM_SERVERS_ENABLED
-              value: "false"
-            - name: EXTERNAL_MCP_ALLOWED_HOSTS
-              value: "mcp.customer.io,mcp-eu.customer.io"
           resources:
             requests:
               cpu: 750m
