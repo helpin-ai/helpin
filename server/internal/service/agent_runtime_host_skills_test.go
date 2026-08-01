@@ -146,6 +146,61 @@ func TestAgentRuntimeHostResolveScribeApprovalSkillIncludesCompletionPolicy(t *t
 	}
 }
 
+func TestAgentRuntimeHostBuiltInSkillKeyIgnoresStalePersistedPackage(t *testing.T) {
+	db := newWorkspaceSkillTestDB(t)
+	repo := repository.NewWorkspaceSkillRepository(db)
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetWorkspaceSkillStore(repo, &fakeSkillPackageStore{})
+	now := time.Now().UTC()
+	stale := &model.WorkspaceSkill{
+		ID:                "stale-approval-skill",
+		WorkspaceID:       "ws-1",
+		SourceKind:        model.WorkspaceSkillSourceBuiltIn,
+		Key:               "prd_task_plan_approval",
+		VersionKey:        "old-version",
+		Title:             "Old approval protocol",
+		Description:       stringPtr("Persisted before completion interactions were added."),
+		Instructions:      "Ask for approval in prose.",
+		RequiredTools:     model.JSONBlob(`[]`),
+		SupportedRuntimes: model.JSONBlob(`["native_sdk","codex"]`),
+		InterfaceConfig:   model.JSONBlob(`{}`),
+		PolicyConfig:      model.JSONBlob(`{}`),
+		PackageObjectKey:  "workspaces/ws-1/skills/stale-approval-skill/approval.zip",
+		PackageFileName:   "approval.zip",
+		PackageChecksum:   "old-checksum",
+		PackageSize:       1,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if err := repo.Create(context.Background(), stale); err != nil {
+		t.Fatalf("seed stale built-in skill: %v", err)
+	}
+
+	resolved, err := host.ResolveActiveSkillByKey(context.Background(), AgentRuntimeSkillLookupRequest{
+		AppID:    "helpin",
+		Key:      "prd_task_plan_approval",
+		Metadata: map[string]interface{}{"workspace_id": "ws-1"},
+	})
+	if err != nil {
+		t.Fatalf("ResolveActiveSkillByKey returned error: %v", err)
+	}
+	if resolved.ID != agentRuntimeHelpinBuiltInSkillIDPrefix+"prd_task_plan_approval" {
+		t.Fatalf("expected current product-owned built-in, got %#v", resolved)
+	}
+	if !containsString(resolved.RequiredTools, "request_approval") {
+		t.Fatalf("expected current approval tool contract, got %#v", resolved.RequiredTools)
+	}
+	var policy struct {
+		CompletionRequiresInteractionKinds []string `json:"completion_requires_interaction_kinds"`
+	}
+	if err := json.Unmarshal(resolved.Policy, &policy); err != nil {
+		t.Fatalf("decode current approval policy: %v", err)
+	}
+	if !containsString(policy.CompletionRequiresInteractionKinds, "approval_request") {
+		t.Fatalf("expected current approval completion policy, got %s", resolved.Policy)
+	}
+}
+
 func TestRuntimeSkillRefsFromHelpinAllowsNativeAuthoredSkillsOnCodex(t *testing.T) {
 	refs := model.AgentSkillRefs{{Key: "marketing_context_setup"}}
 	if got := runtimeSkillRefsFromHelpin(refs, "native_sdk"); len(got) != 1 || got[0].Key != "marketing_context_setup" {
