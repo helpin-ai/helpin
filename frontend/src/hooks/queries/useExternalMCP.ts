@@ -72,7 +72,7 @@ export function useStartExternalMCPOAuth(workspaceId: string) {
     mutationFn: async (serverId: string) => unwrap(await externalMCPService.startOAuth(
       workspaceId,
       serverId,
-      `${window.location.pathname}?tab=external`,
+      window.location.pathname,
     )),
   });
 }

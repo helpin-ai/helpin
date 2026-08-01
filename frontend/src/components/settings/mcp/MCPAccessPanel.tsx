@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -43,9 +43,8 @@ import type {
 import { ensureMCPWriteScopes, hasMCPWriteScope } from '@/lib/mcpPolicy';
 import { cn } from '@/lib/utils';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
-import { ExternalMCPSettings } from './ExternalMCPSettings';
 
-type MCPSettingsPanelProps = {
+type MCPAccessPanelProps = {
   workspaceId: string;
   workspaceName: string;
 };
@@ -72,58 +71,24 @@ const SCOPE_LABELS: Record<string, string> = {
   'helpin.agents.run': 'Start and cancel agent runs',
 };
 
-export function MCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPanelProps) {
-  const initialTab = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'ai-clients'
-    ? 'ai-clients'
-    : 'external';
-  const [section, setSection] = useState(initialTab);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const oauthResult = params.get('external_mcp_oauth');
-    if (!oauthResult) return;
-    if (oauthResult === 'connected') {
-      toast.success(params.get('external_mcp_resume') === 'failed'
-        ? 'Server connected. A paused run could not be resumed automatically.'
-        : 'External MCP server connected');
-    } else {
-      toast.error('External MCP connection could not be completed. Check the server status for details.');
-    }
-    params.delete('external_mcp_oauth');
-    params.delete('external_mcp_server_id');
-    params.delete('external_mcp_resume');
-    const query = params.toString();
-    window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
-  }, []);
-
+export function MCPAccessPanel({ workspaceId, workspaceName }: MCPAccessPanelProps) {
   return (
     <div className="space-y-4">
       <div>
         <div className="flex items-center gap-2">
           <BotIcon className="h-5 w-5 text-muted-foreground" />
-          <h2 className="text-xl font-semibold">Model Context Protocol</h2>
+          <h2 className="text-xl font-semibold">MCP access</h2>
         </div>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          Connect external systems for Helpin agents, or connect outside AI clients to {workspaceName || 'this workspace'}.
+          Connect outside MCP clients to {workspaceName || 'this workspace'} and control what they can access.
         </p>
       </div>
-      <Tabs value={section} onValueChange={setSection}>
-        <TabsList variant="line" className="max-w-full overflow-x-auto">
-          <TabsTrigger value="external">External servers</TabsTrigger>
-          <TabsTrigger value="ai-clients">AI clients</TabsTrigger>
-        </TabsList>
-        <TabsContent value="external" className="mt-4">
-          <ExternalMCPSettings workspaceId={workspaceId} workspaceName={workspaceName} />
-        </TabsContent>
-        <TabsContent value="ai-clients" className="mt-4">
-          <InboundMCPSettingsPanel workspaceId={workspaceId} workspaceName={workspaceName} />
-        </TabsContent>
-      </Tabs>
+      <InboundMCPAccessPanel workspaceId={workspaceId} workspaceName={workspaceName} />
     </div>
   );
 }
 
-function InboundMCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPanelProps) {
+function InboundMCPAccessPanel({ workspaceId, workspaceName }: MCPAccessPanelProps) {
   const dashboardQuery = useMCPDashboard(workspaceId);
   const dashboard = dashboardQuery.data;
   const [tab, setTab] = useState('setup');
@@ -163,7 +128,7 @@ function InboundMCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPane
         <TabsList variant="line" className="max-w-full overflow-x-auto">
           <TabsTrigger value="setup">Setup</TabsTrigger>
           <TabsTrigger value="connections">Connections</TabsTrigger>
-          {dashboard.can_manage ? <TabsTrigger value="service-accounts">Automations</TabsTrigger> : null}
+          {dashboard.can_manage ? <TabsTrigger value="service-accounts">Service accounts</TabsTrigger> : null}
           {dashboard.can_view_activity ? <TabsTrigger value="activity">Activity</TabsTrigger> : null}
           {dashboard.can_manage ? <TabsTrigger value="policy">Permissions</TabsTrigger> : null}
         </TabsList>

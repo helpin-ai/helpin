@@ -105,7 +105,7 @@ func (h *ExternalMCPHandler) OAuthCallback(w http.ResponseWriter, r *http.Reques
 		r.Context(), middleware.GetUserID(r.Context()), r.URL.Query().Get("state"),
 		r.URL.Query().Get("code"), r.URL.Query().Get("error"), h.authorizeOAuthCallback,
 	)
-	returnPath := "/settings/mcp?tab=external"
+	returnPath := "/workspaces"
 	if result != nil && strings.TrimSpace(result.ReturnPath) != "" {
 		returnPath = result.ReturnPath
 	}
