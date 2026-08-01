@@ -473,13 +473,10 @@ func codexToolEventDetails(execCtx *ExecutionContext, item codexThreadItem) (str
 	case "fileChange":
 		return "apply_patch", codexDiffFromFileChange(execCtx, item)
 	case "mcpToolCall":
-		name := strings.TrimSpace(item.Tool)
-		if server := strings.TrimSpace(item.Server); server != "" && name != "" {
-			name = server + "/" + name
-		}
+		name := CanonicalToolName(item.Tool)
 		return firstNonEmptyText(name, "mcp_tool_call"), strings.TrimSpace(string(item.Arguments))
 	case "dynamicToolCall":
-		return firstNonEmptyText(strings.TrimSpace(item.Tool), "dynamic_tool_call"), strings.TrimSpace(string(item.Arguments))
+		return firstNonEmptyText(CanonicalToolName(item.Tool), "dynamic_tool_call"), strings.TrimSpace(string(item.Arguments))
 	default:
 		return "", ""
 	}
@@ -651,6 +648,9 @@ func normalizeCodexDiffGitHeader(execCtx *ExecutionContext, line string, extraRo
 }
 
 func codexItemFailed(item codexThreadItem) bool {
+	if item.Success != nil && !*item.Success {
+		return true
+	}
 	switch strings.ToLower(strings.TrimSpace(item.Status)) {
 	case "failed", "declined":
 		return true

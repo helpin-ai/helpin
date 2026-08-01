@@ -31,6 +31,9 @@ func TestCanonicalToolNameStripsHelpinMCPPrefixAndLegacyAliases(t *testing.T) {
 	for raw, want := range map[string]string{
 		HelpinMCPToolPrefix + ToolUpdatePlan:        ToolUpdatePlan,
 		HelpinMCPToolPrefix + ToolRequestHumanInput: ToolRequestUserInput,
+		"helpin/" + ToolPublishTaskPlanDoc:          ToolPublishTaskPlanDoc,
+		"agent_runtime/" + ToolRequestApproval:      ToolRequestApproval,
+		"mcp__future_app__custom__approval":         "custom__approval",
 		ToolRequestHumanApproval:                    ToolRequestApproval,
 		"read_file":                                 "read_file",
 	} {

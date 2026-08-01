@@ -273,6 +273,16 @@ func helpinSkillRefSupportsRuntime(ref model.AgentSkillRef, runtimeKind string) 
 			return true
 		}
 	}
+	// Keep delegated projection aligned with agentskills.ValidateRuntimeAndTools
+	// and Agent Runtime's compatibility rule. Native-authored skill packages are
+	// staged for Codex and use the same runtime-backed logical tool contracts.
+	if runtimeKind == "codex" {
+		for _, supported := range definition.SupportedRuntimes {
+			if strings.TrimSpace(supported) == "native_sdk" {
+				return true
+			}
+		}
+	}
 	return false
 }
 

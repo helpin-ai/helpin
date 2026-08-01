@@ -141,9 +141,10 @@ func TestRuntimeAgentFromHelpinAgentIncludesImplicitScribeSkills(t *testing.T) {
 	for _, ref := range out.Skills {
 		got[ref.Key] = true
 	}
-	// coding_task_planning is native-only; the Codex delegation must still
-	// retain the approval protocol and its planner operating rules.
-	for _, key := range []string{"prd_task_plan_approval", "engineering_planner_operating_rules"} {
+	// Native-authored skills use runtime-backed logical tools under Codex. The
+	// delegated agent must receive the complete Scribe workflow, not only the
+	// approval protocol that guards its completion.
+	for _, key := range []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"} {
 		if !got[key] {
 			t.Fatalf("expected delegated Scribe skill %q, got %#v", key, out.Skills)
 		}

@@ -65,7 +65,18 @@ type HumanApprovalRequest = ApprovalRequest
 
 func CanonicalToolName(name string) string {
 	trimmed := strings.TrimSpace(name)
-	trimmed = strings.TrimPrefix(trimmed, HelpinMCPToolPrefix)
+	// Codex app-server events use <server>/<tool>, while model-facing MCP
+	// names use mcp__<server>__<tool>. Product contracts use logical tool names.
+	if strings.HasPrefix(trimmed, "mcp__") {
+		qualified := strings.TrimPrefix(trimmed, "mcp__")
+		if separator := strings.Index(qualified, "__"); separator >= 0 && separator+2 < len(qualified) {
+			trimmed = qualified[separator+2:]
+		}
+	}
+	if separator := strings.Index(trimmed, "/"); separator >= 0 && separator+1 < len(trimmed) {
+		trimmed = trimmed[separator+1:]
+	}
+	trimmed = strings.TrimSpace(trimmed)
 	switch trimmed {
 	case ToolRequestHumanInput:
 		return ToolRequestUserInput
