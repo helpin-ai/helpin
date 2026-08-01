@@ -5,7 +5,14 @@ package service
 // When retrieval produced chunks, we require strong retrieval quality plus explicit citation coverage.
 // When retrieval produced no chunks, only conversational turns like greetings or
 // safe limitation/redirect responses for out-of-scope questions should pass.
-func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIResponseContract) float64 {
+//
+// isGreeting marks replies to messages like "hi"/"hello" that the system prompt
+// instructs the model to answer without citing sources. Vector search has no
+// similarity floor, so it can still return spurious low-relevance chunks for a
+// bare greeting; grounding the confidence score against those chunks would
+// penalize a correctly-uncited greeting reply. Skip the grounded formula for
+// this case the same way we do when retrieval found nothing.
+func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIResponseContract, isGreeting bool) float64 {
 	llmConfidence := clamp01(response.Confidence)
 
 	canAnswerScore := 0.0
@@ -13,13 +20,14 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 		canAnswerScore = 1.0
 	}
 
-	if len(searchResults) == 0 {
+	if len(searchResults) == 0 || isGreeting {
 		return (llmConfidence * 0.65) + (canAnswerScore * 0.35)
 	}
 
 	bestVector := 0.0
 	bestLexical := 0.0
-	retrievedDocs := map[string]struct{}{}
+	retrievedPublicDocs := map[string]struct{}{}
+	hasInternalGrounding := false
 	for _, result := range searchResults {
 		if result.VectorScore > bestVector {
 			bestVector = result.VectorScore
@@ -27,7 +35,11 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 		if result.LexicalScore > bestLexical {
 			bestLexical = result.LexicalScore
 		}
-		retrievedDocs[result.ReferenceID] = struct{}{}
+		if result.IsInternal {
+			hasInternalGrounding = true
+		} else {
+			retrievedPublicDocs[result.ReferenceID] = struct{}{}
+		}
 	}
 
 	// ts_rank scores are typically small; normalize them into a 0-1 band.
@@ -36,14 +48,18 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 
 	citedDocs := map[string]struct{}{}
 	for _, docID := range response.SourceDocIDs {
-		if _, ok := retrievedDocs[docID]; ok {
+		if _, ok := retrievedPublicDocs[docID]; ok {
 			citedDocs[docID] = struct{}{}
 		}
 	}
 
+	// Candidate retrieval deliberately includes diverse alternatives. Do not
+	// penalize a grounded answer for declining to cite irrelevant candidates;
+	// claim validation separately verifies that the sources actually support
+	// the rendered answer.
 	sourceCoverage := 0.0
-	if len(retrievedDocs) > 0 {
-		sourceCoverage = clamp01(float64(len(citedDocs)) / float64(minInt(len(retrievedDocs), 3)))
+	if len(citedDocs) > 0 || hasInternalGrounding {
+		sourceCoverage = 1
 	}
 
 	return (retrievalQuality * 0.4) +
@@ -64,13 +80,6 @@ func clamp01(value float64) float64 {
 
 func maxFloat(a, b float64) float64 {
 	if a > b {
-		return a
-	}
-	return b
-}
-
-func minInt(a, b int) int {
-	if a < b {
 		return a
 	}
 	return b

@@ -281,6 +281,43 @@ func TestApprovalRequestResumeContentSynthesizesTaskPlanContinuation(t *testing.
 	}
 }
 
+func TestApprovalRequestResumeContentSynthesizesTaskDocumentPersistenceTools(t *testing.T) {
+	requestPayload, err := json.Marshal(model.ApprovalRequest{
+		Phase: "task_doc",
+		Title: "Approve Task Planning Document",
+	})
+	if err != nil {
+		t.Fatalf("marshal request payload: %v", err)
+	}
+
+	got := approvalRequestResumeContent(requestPayload, json.RawMessage(`{"decision":"approve"}`), model.AgentRunResumeIntentApprove)
+	for _, expected := range []string{
+		"Approved task planning document.",
+		"Call ensure_task_plan_doc with {}",
+		"Then call write_document_content with the returned document_id and the full approved markdown.",
+		"Do not claim the document was persisted and do not finish until both tool calls succeed.",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("expected task-document continuation to contain %q, got %q", expected, got)
+		}
+	}
+}
+
+func TestApprovalRequestResumeContentPreservesTaskDocumentApproveMessageAsNote(t *testing.T) {
+	requestPayload, err := json.Marshal(model.ApprovalRequest{
+		Phase: "task_doc",
+		Title: "Approve Task Planning Document",
+	})
+	if err != nil {
+		t.Fatalf("marshal request payload: %v", err)
+	}
+
+	got := approvalRequestResumeContent(requestPayload, json.RawMessage(`{"decision":"approve","message":"Use the final wording."}`), model.AgentRunResumeIntentApprove)
+	if !strings.Contains(got, "Call ensure_task_plan_doc with {}") || !strings.Contains(got, "Human note: Use the final wording.") {
+		t.Fatalf("expected persistence instructions and human note, got %q", got)
+	}
+}
+
 func TestApprovalRequestResumeContentPreservesExplicitApproveMessage(t *testing.T) {
 	requestPayload, err := json.Marshal(model.ApprovalRequest{
 		Phase: "prd",

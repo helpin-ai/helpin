@@ -171,6 +171,9 @@ export function CodingSessionSurface({
           : current.parent_run_id,
         status: nextStatus ?? current.status,
         pause_reason: nextPauseReason ?? current.pause_reason,
+        approval_state: typeof detail.data?.approval_state === 'string'
+          ? detail.data.approval_state as CodingSession['approval_state']
+          : current.approval_state,
         execution_stage: typeof detail.data?.execution_stage === 'string'
           ? detail.data.execution_stage || undefined
           : current.execution_stage,
@@ -364,6 +367,10 @@ export function CodingSessionSurface({
       response_payload: responsePayload,
       ...(followupMessage?.trim() ? { followup_message: followupMessage.trim() } : {}),
     }));
+  }, [runAction, activeSessionId, workspaceId]);
+
+  const approveRunGate = useCallback(async () => {
+    await runAction('approve-run', () => codingSessionService.approve(workspaceId, activeSessionId));
   }, [runAction, activeSessionId, workspaceId]);
 
   const continueRun = useCallback(async (content?: string) => {
@@ -590,6 +597,7 @@ export function CodingSessionSurface({
           onViewPreview={handleViewPreview}
           onAuthStart={() => void runAction('auth-start', () => codingSessionService.startDeviceCodeAuth(workspaceId, activeSessionId))}
           onAuthCancel={() => void runAction('auth-cancel', () => codingSessionService.cancelDeviceCodeAuth(workspaceId, activeSessionId))}
+          onApproveRun={() => void approveRunGate()}
           onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
         />
 

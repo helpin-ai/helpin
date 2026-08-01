@@ -7,18 +7,19 @@ import (
 
 // AgentRunMessage persists the conversation history for an interactive or autonomous run.
 type AgentRunMessage struct {
-	ID              string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID     string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	RunID           string          `json:"run_id" gorm:"type:uuid;not null;index"`
-	Role            string          `json:"role" gorm:"not null"`
-	Content         string          `json:"content" gorm:"not null"`
-	MessageType     string          `json:"message_type" gorm:"not null;default:'message'"`
-	ContentBlocks   json.RawMessage `json:"content_blocks,omitempty" gorm:"type:jsonb"`
-	TurnSegments    json.RawMessage `json:"turn_segments,omitempty" gorm:"type:jsonb"`
-	ToolInvocations json.RawMessage `json:"tool_invocations,omitempty" gorm:"type:jsonb"`
-	TokenUsage      json.RawMessage `json:"token_usage,omitempty" gorm:"type:jsonb"`
-	SequenceNo      int             `json:"sequence_no" gorm:"not null;default:0"`
-	CreatedAt       time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	ID               string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID      string          `json:"workspace_id" gorm:"type:uuid;not null;index;index:idx_agent_run_messages_runtime_message_id,priority:1"`
+	RunID            string          `json:"run_id" gorm:"type:uuid;not null;index;index:idx_agent_run_messages_runtime_message_id,priority:2"`
+	RuntimeMessageID string          `json:"runtime_message_id,omitempty" gorm:"index:idx_agent_run_messages_runtime_message_id,priority:3"`
+	Role             string          `json:"role" gorm:"not null"`
+	Content          string          `json:"content" gorm:"not null"`
+	MessageType      string          `json:"message_type" gorm:"not null;default:'message'"`
+	ContentBlocks    json.RawMessage `json:"content_blocks,omitempty" gorm:"type:jsonb"`
+	TurnSegments     json.RawMessage `json:"turn_segments,omitempty" gorm:"type:jsonb"`
+	ToolInvocations  json.RawMessage `json:"tool_invocations,omitempty" gorm:"type:jsonb"`
+	TokenUsage       json.RawMessage `json:"token_usage,omitempty" gorm:"type:jsonb"`
+	SequenceNo       int             `json:"sequence_no" gorm:"not null;default:0"`
+	CreatedAt        time.Time       `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (AgentRunMessage) TableName() string { return "agent_run_messages" }

@@ -56,6 +56,17 @@ export const queryKeys = {
     targetRuns: (wsId: string, targetType: string, targetId: string) => ['automation', wsId, 'runs', 'target', targetType, targetId] as const,
   },
 
+  mcp: {
+    root: (wsId: string) => ['mcp', wsId] as const,
+    dashboard: (wsId: string) => ['mcp', wsId, 'dashboard'] as const,
+    activity: (wsId: string) => ['mcp', wsId, 'activity'] as const,
+    serviceTokens: (wsId: string, principalId: string) => ['mcp', wsId, 'service-principals', principalId, 'tokens'] as const,
+    authorization: (query: object) => ['mcp', 'authorization', query] as const,
+    externalRoot: (wsId: string) => ['mcp', wsId, 'external'] as const,
+    externalProviders: (wsId: string) => ['mcp', wsId, 'external', 'providers'] as const,
+    externalServers: (wsId: string) => ['mcp', wsId, 'external', 'servers'] as const,
+  },
+
   pm: {
     workflows: (wsId: string) => ['pm', wsId, 'workflows'] as const,
     epicStates: (wsId: string) => ['pm', wsId, 'epicStates'] as const,
@@ -135,6 +146,7 @@ export const queryKeys = {
     detail: (wsId: string, id: string) => ['agents', wsId, id] as const,
     runs: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'runs'] as const,
     knowledgeSources: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'knowledge-sources'] as const,
+    curatedGuidance: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'curated-guidance'] as const,
     contentSources: (wsId: string) => ['agents', wsId, 'content-sources'] as const,
     contentSourcePages: (wsId: string, contentSourceId: string) => ['agents', wsId, 'content-sources', contentSourceId, 'pages'] as const,
     contentSourcePage: (wsId: string, contentSourceId: string, pageId: string) => ['agents', wsId, 'content-sources', contentSourceId, 'pages', pageId] as const,

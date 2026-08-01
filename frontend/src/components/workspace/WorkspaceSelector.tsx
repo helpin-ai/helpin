@@ -6,18 +6,22 @@ import { workspacesService } from '@/lib/services/workspacesService';
 import type { MemberWithUser, Workspace, WorkspaceBillingSummary } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Favicon } from '@/components/ui/favicon';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useSupportUnreadByWorkspace } from '@/hooks/queries/useSupport';
 import { daysUntil, PLAN_LABEL } from '@/lib/billingUtils';
-import { Settings02Icon, StarIcon, UserGroupIcon } from '@/lib/icons';
+import { MoreHorizontalIcon, Settings02Icon, StarIcon, UserGroupIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 const MAX_VISIBLE_AVATARS = 5;
 
 interface WorkspaceSelectorProps {
   workspaces: Workspace[];
+}
+
+function planDisplayName(plan: string): string {
+  return /\bplan\b/i.test(plan) ? plan : `${plan} plan`;
 }
 
 function billingBadge(billing?: WorkspaceBillingSummary | null): {
@@ -46,16 +50,17 @@ function billingBadge(billing?: WorkspaceBillingSummary | null): {
   }
 
   const plan = PLAN_LABEL[billing.plan] ?? billing.plan;
+  const planName = planDisplayName(plan);
   if (billing.trialing) {
     const days = daysUntil(billing.trial_ends_at);
     return {
-      label: days > 0 ? `${plan} trial · ${days}d left` : `${plan} trial`,
+      label: days > 0 ? `${planName} trial · ${days}d left` : `${planName} trial`,
       className: 'bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-300',
     };
   }
 
   return {
-    label: plan,
+    label: planName,
     className: billing.locked
       ? 'bg-destructive/10 text-destructive border-destructive/20'
       : 'bg-primary/10 text-primary border-primary/15',
@@ -89,17 +94,19 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
     });
   }, [workspaces]);
 
-  const handleSetDefault = async (e: React.MouseEvent, wsId: string) => {
+  const handleSetDefault = async (e: { stopPropagation: () => void }, wsId: string) => {
     e.stopPropagation();
-    const newId = wsId === defaultWsId ? '' : wsId;
+    if (wsId === defaultWsId) {
+      return;
+    }
     const { data, error } = await authService.updateProfile({
-      default_workspace_id: newId || undefined,
+      default_workspace_id: wsId,
     });
     if (error) {
       toast.error(error);
     } else {
       if (data) useAuthStore.setState({ user: data });
-      toast.success(newId ? 'Default workspace set' : 'Default workspace cleared');
+      toast.success('Default workspace set');
     }
   };
 
@@ -132,22 +139,31 @@ function WorkspaceCard({
   isDefault: boolean;
   members: MemberWithUser[];
   unread: number;
-  onSetDefault: (event: React.MouseEvent, wsId: string) => void;
+  onSetDefault: (event: { stopPropagation: () => void }, wsId: string) => void;
 }) {
   const navigate = useNavigate();
   const billing = ws.billing;
   const plan = billingBadge(billing);
   const canManage = canManageBilling(ws);
   const visibleMembers = members.slice(0, MAX_VISIBLE_AVATARS);
+  const overflowMembers = members.slice(MAX_VISIBLE_AVATARS);
   const overflowCount = members.length - MAX_VISIBLE_AVATARS;
 
   const openWorkspace = () =>
     navigate({
       to: billing?.locked ? `/w/${ws.slug}/settings/billing` : `/w/${ws.slug}/pm/my-work`,
     });
-  const openBilling = (event: React.MouseEvent) => {
+  const openBilling = (event: { stopPropagation: () => void }) => {
     event.stopPropagation();
     navigate({ to: `/w/${ws.slug}/settings/billing` });
+  };
+  const openSettings = (event: { stopPropagation: () => void }) => {
+    event.stopPropagation();
+    navigate({ to: `/w/${ws.slug}/settings/general` });
+  };
+  const openMembersSettings = (event: { stopPropagation: () => void }) => {
+    event.stopPropagation();
+    navigate({ to: `/w/${ws.slug}/settings/members` });
   };
 
   return (
@@ -158,22 +174,11 @@ function WorkspaceCard({
       onClick={openWorkspace}
     >
       <CardHeader className="pb-3">
-        <div className="flex items-center gap-3">
-          <Favicon
-            src={ws.logo_url}
-            url={ws.website_url}
-            name={ws.name}
-            size={128}
-            className="h-11 w-11 shrink-0 rounded-lg"
-            fallbackClassName="text-sm"
-          />
+        <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <CardTitle className="text-base truncate">{ws.name}</CardTitle>
-            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
-              <CardDescription className="text-xs truncate">{ws.slug}</CardDescription>
-              <Badge variant="outline" className={`shrink-0 px-1.5 py-0 text-[10px] ${plan.className}`}>
-                {plan.label}
-              </Badge>
+            <CardTitle className="truncate text-base">{ws.name}</CardTitle>
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+              <CardDescription className="min-w-0 truncate text-xs">{ws.slug}</CardDescription>
               {isDefault && (
                 <Badge variant="secondary" className="shrink-0 gap-1 bg-primary/10 text-primary text-[10px] px-1.5 py-0">
                   <StarIcon className="h-2.5 w-2.5 fill-current" />
@@ -182,27 +187,62 @@ function WorkspaceCard({
               )}
             </div>
           </div>
-          {unread > 0 && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  className="shrink-0 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white"
-                  aria-label={`${unread} unread conversations`}
+          <div className="flex shrink-0 items-start gap-1.5">
+            {unread > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="mt-1 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white"
+                    aria-label={`${unread} unread conversations`}
+                  >
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {unread} unread conversation{unread === 1 ? '' : 's'}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  onClick={(event) => event.stopPropagation()}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label={`More options for ${ws.name}`}
                 >
-                  {unread > 99 ? '99+' : unread}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs">
-                {unread} unread conversation{unread === 1 ? '' : 's'}
-              </TooltipContent>
-            </Tooltip>
-          )}
+                  <MoreHorizontalIcon className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem onClick={openSettings}>
+                  <Settings02Icon className="h-4 w-4" />
+                  <span>Settings</span>
+                </DropdownMenuItem>
+                {canManage && (
+                  <DropdownMenuItem onClick={openBilling}>
+                    <Settings02Icon className="h-4 w-4" />
+                    <span>Manage billing</span>
+                  </DropdownMenuItem>
+                )}
+                {!isDefault && (
+                  <DropdownMenuItem onClick={(event) => onSetDefault(event, ws.id)}>
+                    <StarIcon className="h-4 w-4" />
+                    <span>Set as default</span>
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </CardHeader>
 
       <CardContent className="pt-0">
         <div className="flex min-h-8 items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center -space-x-1.5">
+          <div
+            className="flex min-w-0 cursor-default items-center -space-x-1.5"
+            onClick={(event) => event.stopPropagation()}
+          >
             {visibleMembers.map((member) => (
               <Tooltip key={member.id}>
                 <TooltipTrigger asChild>
@@ -226,50 +266,39 @@ function WorkspaceCard({
             {overflowCount > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted ring-2 ring-background">
-                    <span className="text-[10px] font-medium text-muted-foreground">
+                  <div className="flex h-7 min-w-8 items-center justify-center rounded-full border border-border bg-background px-2 shadow-sm ring-2 ring-background">
+                    <span className="text-[10px] font-semibold text-foreground">
                       +{overflowCount}
                     </span>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  {overflowCount} more member{overflowCount !== 1 ? 's' : ''}
+                <TooltipContent side="bottom" className="max-w-56 flex-col items-stretch gap-2 py-2 text-xs">
+                  <div className="space-y-1">
+                    {overflowMembers.slice(0, 5).map((member) => (
+                      <p key={member.id} className="truncate font-medium text-background">{member.full_name}</p>
+                    ))}
+                    {overflowMembers.length > 5 && (
+                      <p className="text-background/80">and {overflowMembers.length - 5} more</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={openMembersSettings}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-medium text-background underline underline-offset-2 transition-opacity hover:opacity-80"
+                  >
+                    <UserGroupIcon className="h-3.5 w-3.5" />
+                    View all members
+                  </button>
                 </TooltipContent>
               </Tooltip>
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {canManage && (
-              <button
-                type="button"
-                onClick={openBilling}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground shadow-sm transition-opacity hover:bg-muted sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
-                aria-label={`Manage billing for ${ws.name}`}
-              >
-                <Settings02Icon className="h-3.5 w-3.5" />
-                Manage billing
-              </button>
-            )}
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <UserGroupIcon className="h-3.5 w-3.5" />
-              <span>{members.length}</span>
-            </div>
-          </div>
+          <Badge variant="outline" className={`max-w-36 shrink-0 truncate px-2 py-0.5 text-[11px] ${plan.className}`}>
+            {plan.label}
+          </Badge>
         </div>
       </CardContent>
 
-      <button
-        type="button"
-        onClick={(e) => onSetDefault(e, ws.id)}
-        className={`absolute top-2.5 right-2.5 flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-opacity duration-150 ${
-          isDefault
-            ? 'opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground hover:bg-muted'
-            : 'opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary hover:bg-primary/10'
-        }`}
-      >
-        <StarIcon className="h-3 w-3" />
-        {isDefault ? 'Remove default' : 'Set as default'}
-      </button>
     </Card>
   );
 }

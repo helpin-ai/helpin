@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/iconcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -137,6 +138,11 @@ func (s *DocsSpaceService) Create(ctx context.Context, workspaceID string, req m
 	if req.Type != model.SpaceTypeInternal && req.Type != model.SpaceTypeExternalCapable {
 		return nil, fmt.Errorf("invalid space type: %s", req.Type)
 	}
+	normalizedIcon, err := iconcatalog.NormalizeNew(req.Icon)
+	if err != nil {
+		return nil, fmt.Errorf("icon: %w", err)
+	}
+	req.Icon = normalizedIcon
 
 	// Append to end of section.
 	nextPos, err := s.spaceRepo.NextPosition(ctx, workspaceID, req.Type)
@@ -354,8 +360,14 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 		updates["slug"] = *req.Slug
 		shouldRefreshTranslations = true
 	}
-	if req.Icon != nil {
-		updates["icon"] = *req.Icon
+	if normalizedIcon, changed, err := iconcatalog.NormalizeUpdate(req.Icon, space.Icon); err != nil {
+		return nil, fmt.Errorf("icon: %w", err)
+	} else if changed {
+		if normalizedIcon == nil {
+			updates["icon"] = nil
+		} else {
+			updates["icon"] = *normalizedIcon
+		}
 	}
 	if req.Type != nil {
 		if *req.Type != model.SpaceTypeInternal && *req.Type != model.SpaceTypeExternalCapable {

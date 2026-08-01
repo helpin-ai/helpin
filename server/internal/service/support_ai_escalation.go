@@ -661,22 +661,6 @@ func checkHardEscalation(content string) string {
 	return ""
 }
 
-// isConfirmationMessage checks if a customer message is a resolution confirmation.
-func isConfirmationMessage(content string) bool {
-	lower := strings.ToLower(strings.TrimSpace(content))
-	confirmPatterns := []string{
-		"thanks", "thank you", "that helped", "got it", "perfect",
-		"that works", "awesome", "great", "resolved", "solved",
-		"that's what i needed", "all good", "helpful",
-	}
-	for _, pattern := range confirmPatterns {
-		if strings.Contains(lower, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
 func isSameIssueDissatisfaction(content string) bool {
 	lower := strings.ToLower(strings.TrimSpace(content))
 	if lower == "" {

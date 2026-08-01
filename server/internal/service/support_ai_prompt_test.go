@@ -31,6 +31,86 @@ func TestBuildAISystemPrompt_IncludesHandoffRepeatGuidance(t *testing.T) {
 	}
 }
 
+func TestInternalKnowledgeContextHidesSourceMetadataAndCitations(t *testing.T) {
+	results := []KnowledgeSearchResult{
+		{
+			ReferenceID: "docs:internal-doc",
+			SourceType:  knowledgeSourceTypeDocs,
+			IsInternal:  true,
+			Title:       "Secret enterprise playbook",
+			HeadingPath: "Unannounced 2027 launch",
+			URL:         "https://internal.example/doc",
+			Content:     "Enterprise plans include SAML SSO and audit logs.",
+		},
+		{
+			ReferenceID: "docs:public-doc",
+			SourceType:  knowledgeSourceTypeDocs,
+			Title:       "Enterprise overview",
+			Content:     "Read the public enterprise overview.",
+		},
+	}
+
+	context := buildKnowledgeContext(results)
+	for _, secret := range []string{"docs:internal-doc", "Secret enterprise playbook", "Unannounced 2027 launch", "https://internal.example/doc"} {
+		if strings.Contains(context, secret) {
+			t.Fatalf("internal knowledge context exposed %q:\n%s", secret, context)
+		}
+	}
+	if !strings.Contains(context, "VISIBILITY: INTERNAL") || !strings.Contains(context, results[0].Content) {
+		t.Fatalf("internal knowledge content missing from context:\n%s", context)
+	}
+
+	filtered := publicSourceDocIDs([]string{"docs:internal-doc", "docs:public-doc"}, results)
+	if len(filtered) != 1 || filtered[0] != "docs:public-doc" {
+		t.Fatalf("publicSourceDocIDs() = %v, want only public source", filtered)
+	}
+
+	sources := buildAISources([]string{"docs:internal-doc", "docs:public-doc"}, results)
+	if len(sources) != 1 || sources[0].DocID != "docs:public-doc" {
+		t.Fatalf("buildAISources() = %+v, want only public source", sources)
+	}
+}
+
+func TestBuildAISystemPromptProtectsInternalKnowledgeSources(t *testing.T) {
+	prompt := buildAISystemPrompt(&model.Agent{Name: "Support Bot"}, "VISIBILITY: INTERNAL\nCONTENT:\nPrivate guidance")
+
+	for _, guidance := range []string{
+		"never name, cite, link to, or reveal an internal source",
+		"Only include document IDs from PUBLIC knowledge chunks",
+	} {
+		if !strings.Contains(prompt, guidance) {
+			t.Fatalf("prompt missing internal source guidance %q:\n%s", guidance, prompt)
+		}
+	}
+}
+
+func TestBuildSupportPlannerSystemPromptIncludesWelcomeMessage(t *testing.T) {
+	prompt := buildSupportPlannerSystemPrompt("Hi there! How can we help you today?")
+	if !strings.Contains(prompt, "Automatic welcome message already shown to the visitor:\nHi there! How can we help you today?") {
+		t.Fatalf("prompt missing welcome context:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, `"conversational"`) || !strings.Contains(prompt, "customer-facing response in reply") {
+		t.Fatal("prompt missing conversational route or reply contract")
+	}
+}
+
+func TestBuildSupportPlannerSystemPromptIncludesTrustedProductContext(t *testing.T) {
+	productPrompt := "You support Usermaven website and product analytics customers."
+	prompt := buildSupportPlannerSystemPrompt("", &model.Agent{Name: "Usermaven Support", SystemPrompt: &productPrompt})
+	for _, expected := range []string{"Support agent: Usermaven Support", "Configured product context: You support Usermaven"} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("planner prompt missing %q:\n%s", expected, prompt)
+		}
+	}
+}
+
+func TestBuildSupportPlannerSystemPromptOmitsEmptyWelcome(t *testing.T) {
+	prompt := buildSupportPlannerSystemPrompt("   ")
+	if strings.Contains(prompt, "Automatic welcome message already shown to the visitor:") {
+		t.Fatal("prompt should omit welcome section when none is configured")
+	}
+}
+
 func TestHasEscalationMessageInHistoryDetectsSystemEvent(t *testing.T) {
 	history := []model.SupportMessage{
 		{SenderType: "customer", Content: "Can you help?"},

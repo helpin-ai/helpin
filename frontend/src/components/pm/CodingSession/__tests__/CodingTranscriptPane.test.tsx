@@ -73,6 +73,7 @@ function buildSession(overrides: Partial<CodingSession> = {}): CodingSession {
     invocation_mode: 'interactive',
     status: 'paused',
     pause_reason: 'human_approval',
+    approval_state: 'not_required',
     title: 'Docs Operator',
     capabilities: {
       live_text_streaming: true,
@@ -207,6 +208,105 @@ describe('CodingTranscriptPane', () => {
     expect(container.textContent).toContain('Approve');
   });
 
+  it('shows an approval placeholder while a paused run has no projected interaction yet', () => {
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'paused', pause_reason: 'human_approval' })}
+          activeInteraction={null}
+          acting={null}
+          attachedPreview={null}
+          availablePreviewPanelKey={null}
+          onResolveInteraction={() => {}}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('The agent paused for your approval');
+    expect(container.textContent).toContain('Loading the approval details…');
+  });
+
+  it('shows run-level approval controls when execution is gated before an interaction exists', () => {
+    const onApproveRun = vi.fn();
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ approval_state: 'pending' })}
+          activeInteraction={null}
+          acting={null}
+          attachedPreview={null}
+          availablePreviewPanelKey={null}
+          onApproveRun={onApproveRun}
+          onResolveInteraction={() => {}}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Approve this run to let the agent begin.');
+    expect(container.textContent).not.toContain('Loading the approval details…');
+    const approveButton = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Approve');
+    expect(approveButton).toBeTruthy();
+    act(() => approveButton?.click());
+    expect(onApproveRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not show the approval placeholder for an authentication pause', () => {
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'paused', pause_reason: 'authentication' })}
+          activeInteraction={null}
+          acting={null}
+          attachedPreview={null}
+          availablePreviewPanelKey={null}
+          onResolveInteraction={() => {}}
+        />,
+      );
+    });
+
+    expect(container.textContent).not.toContain('Loading the approval details…');
+    expect(container.textContent).toContain('Authentication required');
+  });
+
+  it('does not label a human-input pause as awaiting approval', () => {
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'paused', pause_reason: 'human_input' })}
+          activeInteraction={null}
+          acting={null}
+          attachedPreview={null}
+          availablePreviewPanelKey={null}
+          onResolveInteraction={() => {}}
+        />,
+      );
+    });
+
+    expect(container.textContent).not.toContain('Awaiting your approval');
+    expect(container.textContent).not.toContain('The agent paused for your approval');
+  });
+
   it('uses the subtle shared focus border on the main composer', () => {
     act(() => {
       root.render(
@@ -305,6 +405,8 @@ describe('CodingTranscriptPane', () => {
     expect(container.textContent.indexOf('Read Dockerfile')).toBeLessThan(
       container.textContent.indexOf('Second streamed chunk.'),
     );
+    expect(container.querySelectorAll('.markdown-caret')).toHaveLength(0);
+    expect(container.querySelector('[data-agent-streaming-status]')).toBeNull();
   });
 
   it('does not append review history artifacts to the main transcript', () => {
@@ -361,8 +463,7 @@ describe('CodingTranscriptPane', () => {
     expect(onSendMessage).not.toHaveBeenCalled();
   });
 
-  it('renders the running state as the latest activity row with the colorful spinner', () => {
-    vi.useFakeTimers();
+  it('renders one quiet text status before live output starts', () => {
     act(() => {
       root.render(
         <CodingTranscriptPane
@@ -376,27 +477,48 @@ describe('CodingTranscriptPane', () => {
       );
     });
 
-    const runningActivity = container.querySelector('[data-coding-session-running-activity]');
-    expect(runningActivity?.textContent).toContain('Agent running');
-    expect(runningActivity?.querySelector('[data-agent-working-spinner]')?.className).toContain('agent-working-chroma');
-    expect(runningActivity?.querySelector('[data-agent-working-spinner]')?.className).toContain('text-base');
-    expect(runningActivity?.querySelector('[data-agent-running-halo]')?.className).toContain('animate-ping');
-    const ellipsis = runningActivity?.querySelector('[data-agent-running-ellipsis]');
-    expect(ellipsis?.textContent).toBe('.');
+    const streamingStatus = container.querySelector('[data-agent-streaming-status]');
+    expect(streamingStatus?.textContent).toBe('Thinking…');
+    expect(streamingStatus?.querySelector('.agent-streaming-text')).not.toBeNull();
+    expect(container.querySelectorAll('[data-agent-streaming-status]')).toHaveLength(1);
+    expect(container.querySelector('.animate-bounce')).toBeNull();
+    expect(container.querySelector('[data-agent-working-spinner]')).toBeNull();
+  });
+
+  it.each(['completed', 'failed', 'cancelled'] as const)('does not render stale live snapshot rows after a %s run', (status) => {
     act(() => {
-      vi.advanceTimersByTime(500);
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[buildTranscriptMessage({
+            event_id: 'persisted-final',
+            content: 'The final persisted response.',
+          })]}
+          liveAssistantMessage={{
+            message_id: 'stale-live',
+            content: 'Obsolete live response.',
+            status: 'completed',
+            tool_calls: [],
+          }}
+          liveReasoningMessage={null}
+          liveTurnSegments={[{
+            segment_id: 'stale-live:segment:1',
+            kind: 'assistant_message',
+            assistant_message: {
+              message_id: 'stale-live',
+              content: 'Obsolete live response.',
+              status: 'completed',
+              tool_calls: [],
+            },
+          }]}
+          loading={false}
+          session={buildSession({ status, pause_reason: 'none' })}
+        />,
+      );
     });
-    expect(ellipsis?.textContent).toBe('..');
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-    expect(ellipsis?.textContent).toBe('...');
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-    expect(ellipsis?.textContent).toBe('.');
-    expect(container.querySelector('[data-coding-session-running-footer]')).toBeNull();
-    vi.useRealTimers();
+
+    expect(container.textContent).toContain('The final persisted response.');
+    expect(container.textContent).not.toContain('Obsolete live response.');
+    expect(container.querySelector('.markdown-caret')).toBeNull();
   });
 
   it('auto-grows the main composer while typing', () => {

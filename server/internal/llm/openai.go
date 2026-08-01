@@ -61,7 +61,7 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 		modelName = req.Model
 	}
 
-	body := p.buildChatCompletionBody(modelName, messages, maxTokens, req.Temperature, req.JSONMode, req.ProviderOptions)
+	body := p.buildChatCompletionBody(modelName, messages, maxTokens, req.Temperature, req.JSONMode, req.JSONSchema, req.JSONSchemaStrict, req.ProviderOptions)
 
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
@@ -87,6 +87,9 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusPaymentRequired {
+			return nil, fmt.Errorf("openai API error (status %d): %s: %w", resp.StatusCode, string(respBody), ErrInsufficientCredits)
+		}
 		return nil, fmt.Errorf("openai API error (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
@@ -125,12 +128,13 @@ func (p *OpenAIProvider) buildChatCompletionBody(
 	maxTokens int,
 	temperature float64,
 	jsonMode bool,
+	jsonSchema map[string]any,
+	jsonSchemaStrict bool,
 	providerOptions json.RawMessage,
 ) map[string]interface{} {
 	body := map[string]interface{}{
-		"model":       modelName,
-		"messages":    messages,
-		"temperature": temperature,
+		"model":    modelName,
+		"messages": messages,
 	}
 	if len(providerOptions) > 0 && strings.TrimSpace(string(providerOptions)) != "" {
 		body["provider"] = json.RawMessage(providerOptions)
@@ -139,8 +143,18 @@ func (p *OpenAIProvider) buildChatCompletionBody(
 		body["max_completion_tokens"] = maxTokens
 	} else {
 		body["max_tokens"] = maxTokens
+		body["temperature"] = temperature
 	}
-	if jsonMode {
+	if jsonMode && jsonSchemaStrict && len(jsonSchema) > 0 {
+		body["response_format"] = map[string]any{
+			"type": "json_schema",
+			"json_schema": map[string]any{
+				"name":   "helpin_structured_response",
+				"strict": true,
+				"schema": jsonSchema,
+			},
+		}
+	} else if jsonMode {
 		body["response_format"] = map[string]string{"type": "json_object"}
 	}
 	return body

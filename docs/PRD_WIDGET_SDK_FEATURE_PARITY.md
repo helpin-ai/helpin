@@ -6,6 +6,16 @@ When the help widget is opened via auto-boot (`data-widget-key` script attribute
 
 A comprehensive analysis of Crisp's production widget (`v4.4.4`) reveals we have **17/68 features** vs Crisp's **66/68**. This PRD covers the architecture fixes, the full feature gap, and a phased implementation plan.
 
+### Session continuity amendment (2026-07-14)
+
+This amendment supersedes older `localStorage` and 30-day session references in this document:
+
+- The widget session is stored in the JavaScript-readable root-domain cookie `helpin_session_{widget_key}` so sibling subdomains restore the same active session and conversation.
+- New widget sessions expire after seven days. While the widget remains active, the server heartbeat extends sessions that are within one hour of expiry and returns the refreshed expiry to the SDK.
+- The old origin-scoped `helpin_ws_{widget_key}` localStorage value is migrated to the cookie on first read. It remains only as a same-origin fallback when a browser rejects cookies.
+- `shutdown()` revokes and clears the session, clears identified-user state, and rotates `helpin_aid_{widget_key}`. Customer applications must call it on logout to prevent shared-browser history exposure.
+- Cross-device identity remains a separate signed-identity/JWT concern; a shared domain cookie only provides continuity within one browser and root domain.
+
 ---
 
 ## Identity Model
@@ -15,7 +25,7 @@ Four distinct primitives. Each has a single responsibility:
 | Primitive | Scope | Lifetime | Storage | Purpose |
 |-----------|-------|----------|---------|---------|
 | `anonymous_id` | Browser identity | ~10 years | Cookie (`helpin_aid_{widget_key}`) | Durable anonymous identity. Ties a browser to all its conversations across visits. Shared with analytics pipeline for cross-system correlation. |
-| `session_token` | Auth credential | 30 days (revocable) | localStorage (`helpin_ws_{widget_key}`) | Authenticates widget HTTP/WS calls. Can be revoked server-side. Cleared on `shutdown()`. Multiple concurrent sessions allowed (tabs). |
+| `session_token` | Auth credential | 7 days, sliding while active (revocable) | Root-domain cookie (`helpin_session_{widget_key}`) | Authenticates widget HTTP/WS calls. Can be revoked server-side. Cleared on `shutdown()`. Shared by sibling subdomains. |
 | `conversation_id` | Chat thread | Indefinite | Server-side (PostgreSQL) | Identifies a single conversation thread. A visitor can have multiple conversations. Widget receives messages scoped to their active `conversation_id` only. |
 | `session_id` | Internal DB record | 30 days | Server-side only (never sent to client) | Primary key of `support_widget_sessions` table. Internal reference, not exposed in any client API. |
 
@@ -86,7 +96,8 @@ session_token                  → in-memory only, lost on refresh
 **After (consistent `helpin_` prefix, keyed by `widget_key`):**
 ```
 helpin_aid_{widget_key}        → anonymous_id cookie (same UUID as user_anonymous_id in events pipeline)
-helpin_ws_{widget_key}         → widget session: { session_token, expires_at } in localStorage
+helpin_session_{widget_key}    → widget session cookie: { session_token, expires_at } on the root domain
+helpin_ws_{widget_key}         → legacy migration / cookie-rejection fallback only
 helpin_wc_{widget_key}         → widget config cache: { config, cached_at } in localStorage
 helpin_analytics_{widget_key}  → analytics persistence (userId, userProps, companyProps)
 ```

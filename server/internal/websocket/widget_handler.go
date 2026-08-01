@@ -566,13 +566,21 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			client.ConversationID = nil
 
 		case "ping":
-			// Refresh visitor online key TTL (keepalive from widget SDK).
+			// Refresh visitor presence and extend an active session near expiry.
 			if session.AnonymousID != "" {
 				if err := h.hub.Presence.RefreshVisitorOnline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID); err != nil {
 					slog.Error("presence RefreshVisitorOnline", "error", err)
 				}
 			}
-			SendToClient(conn, "pong", nil)
+			refreshed, err := h.service.GetWidgetSession(ctx, session.SessionToken)
+			if err != nil {
+				SendToClient(conn, "connection:error", map[string]string{"code": "session_expired", "message": err.Error()})
+				return
+			}
+			session.ExpiresAt = refreshed.ExpiresAt
+			SendToClient(conn, "pong", map[string]string{
+				"expires_at": session.ExpiresAt.Format(time.RFC3339),
+			})
 
 		case "conversation:read":
 			typed, err := unmarshalWidgetData[model.WidgetConversationSelectData](msg.Data)

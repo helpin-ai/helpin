@@ -3,28 +3,78 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
-func TestOpenAIProviderBuildChatCompletionBodyUsesMaxCompletionTokensForGPT5(t *testing.T) {
+func TestOpenAIProviderBuildChatCompletionBodyOmitsTemperatureForGPT5(t *testing.T) {
+	models := []string{"gpt-5.6-luna", "gpt-5.6-terra"}
+	schema := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"route"},
+		"properties": map[string]any{
+			"route": map[string]any{"type": "string"},
+		},
+	}
+
+	for _, modelName := range models {
+		t.Run(modelName, func(t *testing.T) {
+			provider := NewOpenAIProvider("test-key", "https://api.openai.com/v1", "")
+			body := provider.buildChatCompletionBody(
+				modelName,
+				[]map[string]any{{"role": "user", "content": "hello"}},
+				123,
+				0.1,
+				true,
+				schema,
+				true,
+				nil,
+			)
+
+			if _, ok := body["max_completion_tokens"]; !ok {
+				t.Fatalf("expected max_completion_tokens in request body, got %#v", body)
+			}
+			if _, ok := body["max_tokens"]; ok {
+				t.Fatalf("did not expect max_tokens for GPT-5 request body, got %#v", body)
+			}
+			if _, ok := body["temperature"]; ok {
+				t.Fatalf("did not expect temperature for GPT-5 request body, got %#v", body)
+			}
+			responseFormat, ok := body["response_format"].(map[string]any)
+			if !ok || responseFormat["type"] != "json_schema" {
+				t.Fatalf("expected structured output response_format in request body, got %#v", body)
+			}
+			structuredFormat, ok := responseFormat["json_schema"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected json_schema configuration, got %#v", responseFormat)
+			}
+			if structuredFormat["name"] != "helpin_structured_response" || structuredFormat["strict"] != true {
+				t.Fatalf("expected named strict json schema, got %#v", structuredFormat)
+			}
+			if !reflect.DeepEqual(structuredFormat["schema"], schema) {
+				t.Fatalf("expected request schema to be preserved, got %#v", structuredFormat["schema"])
+			}
+		})
+	}
+}
+
+func TestOpenAIProviderBuildChatCompletionBodyKeepsGenericJSONModeWithoutStrictSchema(t *testing.T) {
 	provider := NewOpenAIProvider("test-key", "https://api.openai.com/v1", "")
 	body := provider.buildChatCompletionBody(
-		"gpt-5.5",
+		"gpt-5.6-luna",
 		[]map[string]any{{"role": "user", "content": "hello"}},
 		123,
 		0.1,
 		true,
+		map[string]any{"type": "object"},
+		false,
 		nil,
 	)
 
-	if _, ok := body["max_completion_tokens"]; !ok {
-		t.Fatalf("expected max_completion_tokens in request body, got %#v", body)
-	}
-	if _, ok := body["max_tokens"]; ok {
-		t.Fatalf("did not expect max_tokens for GPT-5 request body, got %#v", body)
-	}
-	if _, ok := body["response_format"]; !ok {
-		t.Fatalf("expected JSON mode response_format in request body, got %#v", body)
+	responseFormat, ok := body["response_format"].(map[string]string)
+	if !ok || responseFormat["type"] != "json_object" {
+		t.Fatalf("expected generic JSON mode response_format, got %#v", body)
 	}
 }
 
@@ -37,6 +87,8 @@ func TestOpenAIProviderBuildChatCompletionBodyUsesMaxTokensForNonGPT5(t *testing
 		0.1,
 		false,
 		nil,
+		false,
+		nil,
 	)
 
 	if _, ok := body["max_tokens"]; !ok {
@@ -44,6 +96,9 @@ func TestOpenAIProviderBuildChatCompletionBodyUsesMaxTokensForNonGPT5(t *testing
 	}
 	if _, ok := body["max_completion_tokens"]; ok {
 		t.Fatalf("did not expect max_completion_tokens for non-GPT-5 request body, got %#v", body)
+	}
+	if temperature, ok := body["temperature"].(float64); !ok || temperature != 0.1 {
+		t.Fatalf("expected temperature 0.1 for non-GPT-5 request body, got %#v", body)
 	}
 	if _, ok := body["response_format"]; ok {
 		t.Fatalf("did not expect response_format when JSON mode is off, got %#v", body)
@@ -57,6 +112,8 @@ func TestOpenAIProviderBuildChatCompletionBodyIncludesProviderOptions(t *testing
 		[]map[string]any{{"role": "user", "content": "hello"}},
 		123,
 		0.1,
+		false,
+		nil,
 		false,
 		[]byte(`{"order":["openai"],"allow_fallbacks":false}`),
 	)

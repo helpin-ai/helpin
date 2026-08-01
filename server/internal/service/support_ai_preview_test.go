@@ -12,9 +12,11 @@ import (
 type scriptedSupportPreviewLLM struct {
 	responses []llm.ChatResponse
 	errs      []error
+	requests  []llm.ChatRequest
 }
 
-func (f *scriptedSupportPreviewLLM) ChatCompletion(_ context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+func (f *scriptedSupportPreviewLLM) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	f.requests = append(f.requests, req)
 	if len(f.errs) > 0 {
 		err := f.errs[0]
 		f.errs = f.errs[1:]
@@ -32,7 +34,7 @@ func (f *scriptedSupportPreviewLLM) ChatCompletion(_ context.Context, _ llm.Chat
 
 func TestPreviewSupportReplyClarifySkipsAnswerGeneration(t *testing.T) {
 	svc := &SupportAIService{
-		llmProvider:            &scriptedSupportPreviewLLM{responses: []llm.ChatResponse{{Content: `{"decision":"clarify","standalone_query":"","search_queries":[],"clarifying_question":"Do you mean Publer features or ContentStudio features?","reason":"needs_clarification"}`, TokensUsed: llm.TokenUsage{InputTokens: 10, OutputTokens: 8}}}},
+		llmProvider:            &scriptedSupportPreviewLLM{responses: []llm.ChatResponse{{Content: `{"route":"clarify","reply":"Do you mean Publer features or ContentStudio features?","intent":"unknown","subject":"Publer and ContentStudio","language":"en","risk":"general","required_evidence":[],"context_action":"continue","issue_key":"feature_comparison","issue_summary":"Customer wants to compare product features.","progress_signal":"same_issue_unclear","standalone_query":"","search_queries":[],"reason":"needs_clarification"}`, TokensUsed: llm.TokenUsage{InputTokens: 10, OutputTokens: 8}}}},
 		queryExpansionModel:    "gpt-5.5",
 		queryExpansionProvider: "openai",
 	}
@@ -47,6 +49,7 @@ func TestPreviewSupportReplyClarifySkipsAnswerGeneration(t *testing.T) {
 		8,
 		0.7,
 		"history",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("previewSupportReply() error = %v", err)
@@ -71,20 +74,57 @@ func TestPreviewSupportReplyClarifySkipsAnswerGeneration(t *testing.T) {
 	}
 }
 
-func TestPreviewSupportReplyReturnsGroundedAnswerDecision(t *testing.T) {
+func TestPreviewSupportReplyGreetSkipsRetrievalAndAnswer(t *testing.T) {
 	svc := &SupportAIService{
-		llmProvider: &scriptedSupportPreviewLLM{
-			responses: []llm.ChatResponse{
-				{
-					Content:    `{"decision":"answer","standalone_query":"Publer vs ContentStudio pricing","search_queries":["Publer vs ContentStudio pricing"],"clarifying_question":"","reason":"resolved_from_context"}`,
-					TokensUsed: llm.TokenUsage{InputTokens: 12, OutputTokens: 7},
-				},
-				{
-					Content:    `{"content":"ContentStudio offers a 7-day free trial and annual discounts.","can_answer":true,"source_doc_ids":[],"confidence":0.95}`,
-					TokensUsed: llm.TokenUsage{InputTokens: 20, OutputTokens: 14},
-				},
+		llmProvider:            &scriptedSupportPreviewLLM{responses: []llm.ChatResponse{{Content: `{"route":"conversational","reply":"Hello! What would you like help with today?","intent":"unknown","subject":"","language":"en","risk":"general","required_evidence":[],"context_action":"new_issue","issue_key":"greeting","issue_summary":"Customer greeted support.","progress_signal":"new_issue","standalone_query":"","search_queries":[],"reason":"greeting"}`, TokensUsed: llm.TokenUsage{InputTokens: 10, OutputTokens: 8}}}},
+		queryExpansionModel:    "gpt-5.5",
+		queryExpansionProvider: "openai",
+	}
+
+	resp, err := svc.previewSupportReply(
+		context.Background(),
+		"ws-1",
+		&model.Agent{Name: "Support", Provider: strPtr(model.AgentModelProviderOpenAI), Model: strPtr("gpt-5-mini")},
+		[]model.SupportMessage{{SenderType: "customer", MessageType: "reply", Content: "Hello"}},
+		"Hello",
+		true,
+		8,
+		0.7,
+		"history",
+		"Hi there! How can we help you today?",
+	)
+	if err != nil {
+		t.Fatalf("previewSupportReply() error = %v", err)
+	}
+	if resp.FinalDecision != supportDecisionGreet {
+		t.Fatalf("final_decision = %q, want %q", resp.FinalDecision, supportDecisionGreet)
+	}
+	if resp.QueryPlan.GreetingReply == "" {
+		t.Fatal("query_plan.greeting_reply is empty; simulator would show decision=greet with no text")
+	}
+	if resp.Retrieval.QueryCount != 0 || resp.Retrieval.ResultCount != 0 {
+		t.Fatalf("retrieval = %d queries / %d results, want 0/0", resp.Retrieval.QueryCount, resp.Retrieval.ResultCount)
+	}
+	if resp.Answer != nil {
+		t.Fatalf("expected answer to be nil for greet decision, got %#v", resp.Answer)
+	}
+}
+
+func TestPreviewSupportReplyRejectsAnswerWithoutEvidence(t *testing.T) {
+	provider := &scriptedSupportPreviewLLM{
+		responses: []llm.ChatResponse{
+			{
+				Content:    `{"route":"answer","reply":"","intent":"unknown","subject":"Publer and ContentStudio","language":"en","risk":"general","required_evidence":[],"context_action":"continue","issue_key":"pricing_comparison","issue_summary":"Customer wants a pricing comparison.","progress_signal":"same_issue_new_info","standalone_query":"Publer vs ContentStudio pricing","search_queries":["Publer vs ContentStudio pricing"],"reason":"resolved_from_context"}`,
+				TokensUsed: llm.TokenUsage{InputTokens: 12, OutputTokens: 7},
+			},
+			{
+				Content:    `{"content":"ContentStudio offers a 7-day free trial and annual discounts.","can_answer":true,"source_doc_ids":[],"confidence":0.95}`,
+				TokensUsed: llm.TokenUsage{InputTokens: 20, OutputTokens: 14},
 			},
 		},
+	}
+	svc := &SupportAIService{
+		llmProvider:            provider,
 		queryExpansionModel:    "gpt-5.5",
 		queryExpansionProvider: "openai",
 	}
@@ -99,27 +139,31 @@ func TestPreviewSupportReplyReturnsGroundedAnswerDecision(t *testing.T) {
 		8,
 		0.7,
 		"history",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("previewSupportReply() error = %v", err)
 	}
-	if resp.FinalDecision != supportDecisionAnswer {
-		t.Fatalf("final_decision = %q, want %q", resp.FinalDecision, supportDecisionAnswer)
+	if resp.FinalDecision != supportDecisionHandoff {
+		t.Fatalf("final_decision = %q, want %q", resp.FinalDecision, supportDecisionHandoff)
 	}
 	if resp.Answer == nil {
 		t.Fatal("expected answer to be present")
 	}
-	if !resp.Answer.CanAnswer {
-		t.Fatal("expected can_answer to be true")
+	if resp.Answer.CanAnswer {
+		t.Fatal("answer without retrieved evidence or claim mappings must be rejected")
 	}
-	if resp.Answer.GroundedConfidence <= 0.7 {
-		t.Fatalf("grounded_confidence = %v, want > 0.7", resp.Answer.GroundedConfidence)
+	if resp.Answer.ValidationOutcome != supportValidationNumeric {
+		t.Fatalf("validation_outcome = %q, want %q", resp.Answer.ValidationOutcome, supportValidationNumeric)
 	}
 	if resp.TotalTokensUsed != 53 {
 		t.Fatalf("total_tokens_used = %d, want 53", resp.TotalTokensUsed)
 	}
 	if resp.Answer.SourceDocIDs == nil {
 		t.Fatal("expected answer.source_doc_ids to be an empty slice, got nil")
+	}
+	if len(provider.requests) != 2 || !provider.requests[1].JSONSchemaStrict || provider.requests[1].JSONSchema == nil {
+		t.Fatalf("final support answer must use strict structured output: %+v", provider.requests)
 	}
 }
 
@@ -140,6 +184,7 @@ func TestPreviewSupportReplySurfacesPlannerFallback(t *testing.T) {
 		8,
 		0.7,
 		"none",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("previewSupportReply() error = %v", err)
@@ -149,6 +194,12 @@ func TestPreviewSupportReplySurfacesPlannerFallback(t *testing.T) {
 	}
 	if resp.QueryPlan.Error == "" {
 		t.Fatal("expected planner error to be populated")
+	}
+	if resp.QueryPlan.Decision != supportDecisionAnswer {
+		t.Fatalf("planner fallback decision = %q, want %q", resp.QueryPlan.Decision, supportDecisionAnswer)
+	}
+	if len(resp.QueryPlan.SearchQueries) != 1 || resp.QueryPlan.SearchQueries[0] != "pricing" {
+		t.Fatalf("planner fallback search queries = %#v, want pricing query", resp.QueryPlan.SearchQueries)
 	}
 }
 

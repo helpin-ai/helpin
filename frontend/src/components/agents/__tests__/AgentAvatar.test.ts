@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getAgentPersonaMeta, resolveAgentPersonaKey } from '../AgentAvatar';
+import { AGENT_ICON_PRESETS, getAgentPersonaMeta, resolveAgentPersonaKey } from '../AgentAvatar';
 
 describe('AgentAvatar persona resolution', () => {
   it('assigns Mira to the marketer preset', () => {
@@ -23,5 +23,17 @@ describe('AgentAvatar persona resolution', () => {
       label: 'Quill',
       role: 'Documentation Agent',
     });
+  });
+
+  it('uses an explicitly selected custom avatar before name or preset inference', () => {
+    expect(resolveAgentPersonaKey({
+      agent: { name: 'Forge', preset_key: 'code_builder', icon_key: 'ocean_orbit' },
+    })).toBe('ocean_orbit');
+  });
+
+  it('exposes anonymous custom avatar presets instead of product agent names', () => {
+    expect(AGENT_ICON_PRESETS).toHaveLength(8);
+    expect(AGENT_ICON_PRESETS.map((preset) => preset.label)).not.toContain('Forge');
+    expect(AGENT_ICON_PRESETS.map((preset) => preset.label)).not.toContain('Scribe');
   });
 });

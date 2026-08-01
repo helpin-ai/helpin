@@ -455,6 +455,14 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
 
   if (interaction.interaction_kind === 'approval_request') {
     const approval = parseApprovalRequest(requestPayload);
+    // Runtimes (e.g. Codex) describe what they want to do in the interaction
+    // summary — "Command: …", file/permission details, reason. Surface it so
+    // the reviewer knows what they are approving instead of a bare title.
+    // Only when there is no richer document/preview already representing the
+    // request (task-plan/doc approvals carry a preview panel and intentionally
+    // suppress the raw summary in favour of the rendered preview).
+    const approvalContext = (interaction.summary ?? approval?.summary)?.trim() || undefined;
+    const showApprovalContext = Boolean(approvalContext) && !approval?.preview_panel_key && !attachedPreview;
     const buildApprovalResponse = (
       decision: CodingSessionApprovalResponsePayload['decision'],
     ): CodingSessionApprovalResponsePayload => ({
@@ -482,6 +490,16 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
         title={interaction.title ?? approval?.title ?? 'Approval required'}
         action={fullPreviewAction}
       >
+        {showApprovalContext ? (
+          <div className="mb-3 rounded-lg border border-border/70 bg-muted/25 px-3 py-2">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              What the agent wants to do
+            </div>
+            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">
+              {approvalContext}
+            </pre>
+          </div>
+        ) : null}
         <ApprovalInlinePreview
           preview={attachedPreview}
           expanded={approvalPreviewExpanded}

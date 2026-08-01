@@ -175,6 +175,30 @@ describe('AskAgentsDock chat', () => {
     expect(textarea?.placeholder).not.toContain('/');
   });
 
+  it('shows one animated text status while a chat response is pending', async () => {
+    let resolveTurn: ((value: { data: null; error: string }) => void) | undefined;
+    mocks.chatTurn.mockReturnValue(new Promise((resolve) => {
+      resolveTurn = resolve;
+    }));
+    await renderDock();
+
+    await act(async () => {
+      setTextareaValue('summarize this workspace');
+    });
+    await clickSend();
+    await waitForText('Thinking…');
+
+    const statuses = document.body.querySelectorAll('[data-agent-streaming-status]');
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]?.querySelector('.agent-streaming-text')).not.toBeNull();
+    expect(document.body.querySelector('.animate-bounce')).toBeNull();
+
+    await act(async () => {
+      resolveTurn?.({ data: null, error: 'Stopped for test' });
+      await Promise.resolve();
+    });
+  });
+
   it('removes document context from the dock without leaving the page', async () => {
     const docContext = {
       entity_type: 'document',
@@ -519,5 +543,8 @@ describe('AskAgentsDock chat', () => {
     });
 
     expect(mocks.confirmChatCreateAgent).toHaveBeenCalledWith('ws-1', 'proposal-msg');
+    await waitForText('Agent created');
+    expect([...document.body.querySelectorAll('button')]
+      .some((candidate) => candidate.textContent?.includes('Create agent'))).toBe(false);
   });
 });

@@ -685,9 +685,26 @@ func (r *AgentRunMessageRepository) Create(ctx context.Context, message *model.A
 	return nil
 }
 
+// Update replaces the mutable transcript fields of an existing run message.
 func (r *AgentRunMessageRepository) Update(ctx context.Context, message *model.AgentRunMessage) error {
+	if message == nil {
+		return nil
+	}
 	sanitizeAgentRunMessageForPostgres(message)
-	if err := r.db.WithContext(ctx).Save(message).Error; err != nil {
+	updates := map[string]any{
+		"runtime_message_id": message.RuntimeMessageID,
+		"role":               message.Role,
+		"content":            message.Content,
+		"message_type":       message.MessageType,
+		"content_blocks":     message.ContentBlocks,
+		"turn_segments":      message.TurnSegments,
+		"tool_invocations":   message.ToolInvocations,
+		"token_usage":        message.TokenUsage,
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRunMessage{}).
+		Where("workspace_id = ? AND run_id = ? AND id = ?", message.WorkspaceID, message.RunID, message.ID).
+		Updates(updates).Error; err != nil {
 		return fmt.Errorf("update agent run message: %w", err)
 	}
 	return nil

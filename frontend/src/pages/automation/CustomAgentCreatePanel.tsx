@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WorkspaceTeam } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { AgentIconPicker } from '@/components/agents/AgentIconPicker';
 import { AGENT_RUNTIME_HELP_TEXT, AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { HelpCircleIcon } from '@/lib/icons';
 import {
@@ -381,11 +383,14 @@ export function CustomAgentCreatePanel({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border/60 bg-muted/20 py-4 pl-6 pr-14">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">{isEditMode ? (form.name.trim() || 'Custom Agent') : 'Create Custom Agent'}</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {isEditMode ? 'Custom agent' : 'Define a reusable workspace agent'}
-            </p>
+          <div className="flex items-center gap-3">
+            <AgentAvatar iconKey={form.icon_key} className="h-10 w-10 rounded-none border-0 bg-transparent shadow-none" genericBare />
+            <div>
+              <h2 className="text-lg font-semibold">{isEditMode ? (form.name.trim() || 'Custom Agent') : 'Create Custom Agent'}</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {isEditMode ? 'Custom agent' : 'Define a reusable workspace agent'}
+              </p>
+            </div>
           </div>
           {actionControls}
         </div>
@@ -446,6 +451,12 @@ export function CustomAgentCreatePanel({
 
           <section className="space-y-5 rounded-lg border border-border bg-card p-4">
             <div className="space-y-5">
+              <div className="space-y-2">
+                <FieldLabel tooltip="Choose the avatar shown anywhere this custom agent appears.">
+                  Agent icon
+                </FieldLabel>
+                <AgentIconPicker value={form.icon_key} onValueChange={(iconKey) => update({ icon_key: iconKey })} />
+              </div>
               <label className="block space-y-2">
                 <FieldLabel tooltip="This is the name people will see when choosing or running the agent.">
                   Agent name <RequiredMark />

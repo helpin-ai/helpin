@@ -15,7 +15,7 @@ import type {
  * user/review-decision are surface-scoped extras.
  */
 export type TranscriptSegment =
-  | { kind: 'assistant'; id: string; content: string; streaming?: boolean }
+  | { kind: 'assistant'; id: string; messageId?: string; content: string; streaming?: boolean }
   | { kind: 'tool'; id: string; toolCall: CodingSessionLiveToolCall }
   | { kind: 'reasoning'; id: string; reasoning: CodingSessionLiveReasoningMessage }
   | { kind: 'status'; id: string; message: CodingSessionTranscriptMessage }
@@ -71,10 +71,6 @@ function isReviewDecisionMessage(message: CodingSessionTranscriptMessage): boole
   );
 }
 
-function normalizedAssistantContent(content: string): string {
-  return content.trim().replace(/\s+/g, ' ');
-}
-
 /** Identity key for deduping a persisted tool call against the turn timeline. */
 function toolCallTimelineKey(toolCall: CodingSessionLiveToolCall): string {
   return [
@@ -99,7 +95,39 @@ export function collectSegments(
 ): TranscriptSegment[] {
   const include = opts.include ?? ALL_SEGMENT_KINDS;
   const out: TranscriptSegment[] = [];
-  const persistedAssistantContent = new Set<string>();
+  const persistedAssistantSegments: Array<{
+    outIndex: number;
+    segment: Extract<TranscriptSegment, { kind: 'assistant' }>;
+  }> = [];
+  const persistedToolSegments: Array<{
+    outIndex: number;
+    segment: Extract<TranscriptSegment, { kind: 'tool' }>;
+  }> = [];
+  let activeStreamingAssistantSegmentId: string | null = null;
+
+  const pushPersistedAssistant = (segment: Extract<TranscriptSegment, { kind: 'assistant' }>) => {
+    persistedAssistantSegments.push({ outIndex: out.length, segment });
+    out.push(segment);
+  };
+  const pushPersistedTool = (segment: Extract<TranscriptSegment, { kind: 'tool' }>) => {
+    persistedToolSegments.push({ outIndex: out.length, segment });
+    out.push(segment);
+  };
+
+  if (opts.includeLive) {
+    for (let index = stream.live_turn_segments.length - 1; index >= 0; index -= 1) {
+      const segment = stream.live_turn_segments[index];
+      if (segment.kind === 'assistant_message') {
+        if (!include.has('assistant')) continue;
+        if (segment.assistant_message.content.trim() && segment.assistant_message.status === 'streaming') {
+          activeStreamingAssistantSegmentId = segment.segment_id;
+        }
+        break;
+      }
+      if (!include.has('tool') || isToolName(segment.tool_call.tool_name, 'update_plan')) continue;
+      break;
+    }
+  }
 
   if (opts.leadingContext && include.has('context')) {
     out.push({ kind: 'context', id: `context:${opts.leadingContext.event_id}`, message: opts.leadingContext });
@@ -135,12 +163,16 @@ export function collectSegments(
         if (segment.kind === 'assistant_message') {
           const content = segment.assistant_message.content.trim();
           if (content && include.has('assistant')) {
-            persistedAssistantContent.add(normalizedAssistantContent(content));
-            out.push({ kind: 'assistant', id: segment.segment_id, content });
+            pushPersistedAssistant({
+              kind: 'assistant',
+              id: segment.segment_id,
+              messageId: segment.assistant_message.message_id || message.message_id,
+              content,
+            });
           }
         } else if (segment.kind === 'tool_call' && !isToolName(segment.tool_call.tool_name, 'update_plan')) {
           seenToolKeys.add(toolCallTimelineKey(segment.tool_call));
-          if (include.has('tool')) out.push({ kind: 'tool', id: segment.segment_id, toolCall: segment.tool_call });
+          if (include.has('tool')) pushPersistedTool({ kind: 'tool', id: segment.segment_id, toolCall: segment.tool_call });
         }
       }
       // Persisted tool calls absent from the segment timeline (e.g. apply_patch
@@ -149,7 +181,7 @@ export function collectSegments(
         for (const toolCall of message.tool_calls ?? []) {
           if (isToolName(toolCall.tool_name, 'update_plan')) continue;
           if (seenToolKeys.has(toolCallTimelineKey(toolCall))) continue;
-          out.push({ kind: 'tool', id: toolCall.tool_call_id, toolCall });
+          pushPersistedTool({ kind: 'tool', id: toolCall.tool_call_id, toolCall });
         }
       }
       continue;
@@ -157,20 +189,21 @@ export function collectSegments(
 
     if (message.content.trim() && include.has('assistant')) {
       const content = message.content.trim();
-      persistedAssistantContent.add(normalizedAssistantContent(content));
-      out.push({ kind: 'assistant', id: message.event_id, content });
+      pushPersistedAssistant({ kind: 'assistant', id: message.event_id, messageId: message.message_id, content });
     }
     if (include.has('tool')) {
       for (const toolCall of message.tool_calls ?? []) {
         if (isToolName(toolCall.tool_name, 'update_plan')) continue;
-        out.push({ kind: 'tool', id: toolCall.tool_call_id, toolCall });
+        pushPersistedTool({ kind: 'tool', id: toolCall.tool_call_id, toolCall });
       }
     }
   }
 
   if (opts.includeLive) {
+    const matchedPersistedIndexes = new Set<number>();
+    const liveOut: TranscriptSegment[] = [];
     if (stream.live_reasoning_message && include.has('reasoning')) {
-      out.push({
+      liveOut.push({
         kind: 'reasoning',
         id: `live-reasoning:${stream.live_reasoning_message.message_id}`,
         reasoning: stream.live_reasoning_message,
@@ -179,18 +212,49 @@ export function collectSegments(
     for (const segment of stream.live_turn_segments) {
       if (segment.kind === 'assistant_message') {
         const content = segment.assistant_message.content.trim();
-        if (content && include.has('assistant') && !persistedAssistantContent.has(normalizedAssistantContent(content))) {
-          out.push({
-            kind: 'assistant',
-            id: `live:${segment.segment_id}`,
-            content,
-            streaming: segment.assistant_message.status === 'streaming',
-          });
+        if (!content || !include.has('assistant')) continue;
+
+        const persisted = persistedAssistantSegments.find((candidate) => (
+          !matchedPersistedIndexes.has(candidate.outIndex)
+          && candidate.segment.messageId === segment.assistant_message.message_id
+        ));
+        if (persisted) {
+          matchedPersistedIndexes.add(persisted.outIndex);
+          // The persisted body is authoritative and complete, but the live
+          // timeline supplies its correct position among tool calls.
+          liveOut.push(persisted.segment);
+          continue;
         }
+
+        liveOut.push({
+          kind: 'assistant',
+          id: `live:${segment.segment_id}`,
+          messageId: segment.assistant_message.message_id,
+          content,
+          streaming: segment.segment_id === activeStreamingAssistantSegmentId,
+        });
       } else if (segment.kind === 'tool_call' && !isToolName(segment.tool_call.tool_name, 'update_plan')) {
-        if (include.has('tool')) out.push({ kind: 'tool', id: `live:${segment.segment_id}`, toolCall: segment.tool_call });
+        if (!include.has('tool')) continue;
+        const persisted = persistedToolSegments.find((candidate) => (
+          !matchedPersistedIndexes.has(candidate.outIndex)
+          && candidate.segment.toolCall.tool_call_id === segment.tool_call.tool_call_id
+        ));
+        if (persisted) {
+          matchedPersistedIndexes.add(persisted.outIndex);
+          liveOut.push(persisted.segment);
+        } else {
+          liveOut.push({ kind: 'tool', id: `live:${segment.segment_id}`, toolCall: segment.tool_call });
+        }
       }
     }
+
+    // A cumulative live snapshot is the best ordering source while a run is
+    // active. Remove persisted rows represented by that timeline, then insert
+    // their authoritative content at the corresponding live positions.
+    return [
+      ...out.filter((_, index) => !matchedPersistedIndexes.has(index)),
+      ...liveOut,
+    ];
   }
 
   return out;

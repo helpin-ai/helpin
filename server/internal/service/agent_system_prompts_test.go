@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testing.T) {
@@ -25,10 +25,10 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"If an approved spec exists and no tasks exist yet:",
 		"If no approved spec exists but a draft PRD already exists:",
 		"If approved PRD persistence is already complete:",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput) + "`",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval) + "`",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolPublishPRDDraft) + "`",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlan) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestUserInput) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestApproval) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishPRDDraft) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishTaskPlan) + "`",
 		"Use `isOther: true` instead of adding an explicit Other option.",
 		"`files_to_modify` must be an array of objects",
 		"\"name\": \"Add tracking helper\"",
@@ -38,7 +38,7 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"The value of `content` must be a JSON object.",
 		"Inside `proposed_tasks`, use the canonical field names `name` and `task_type`.",
 		"Use `dependency_refs` only for refs that appear elsewhere in the same `proposed_tasks` array.",
-		"`" + worker.RuntimeToolNameForPrompt("list_workspace_teams") + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt("list_workspace_teams") + "`",
 		"platform will persist the approved PRD artifact",
 		"platform will apply the approved task plan artifact and create the tasks",
 		"Only treat the phase as approved when the human gives a clear, explicit approval.",
@@ -72,15 +72,17 @@ func TestTaskPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 
 	for _, snippet := range []string{
 		"You are Scribe, the workspace task planner. You run a focused planning conversation for one task or work item.",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc) + "`",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput) + "`",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval) + "`",
-		"call `" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc) + "`, then call `" + worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval) + "` with `phase=\"task_doc\"`, then stop.",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishTaskPlanDoc) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestUserInput) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestApproval) + "`",
+		"call `" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishTaskPlanDoc) + "`, then call `" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestApproval) + "` with `phase=\"task_doc\"`, then stop.",
 		"\"phase\": \"prd|tasks|task_doc\"",
 		"`content` is required and must contain the full current markdown draft being reviewed.",
 		"Never call the tool with only `title` or with empty `content`.",
-		"platform will persist and link the approved preview",
-		"Revise the active planning document, republish the full replacement draft with `" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc) + "`, and request another approval request with `phase=\"task_doc\"` when the revision is ready.",
+		"After approval, call `" + agentcontract.RuntimeToolNameForPrompt("ensure_task_plan_doc") + "` with `{}`.",
+		"Call `" + agentcontract.RuntimeToolNameForPrompt("write_document_content") + "` with that `document_id` and the full approved markdown draft as `content`.",
+		"Do not claim the document was persisted or attached based on the approval alone.",
+		"Revise the active planning document, republish the full replacement draft with `" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishTaskPlanDoc) + "`, and request another approval request with `phase=\"task_doc\"` when the revision is ready.",
 		"Produce a planning document, not code.",
 		"keep repository interactions read-only",
 		"Do not modify code, create files, apply patches, or change git state in this run.",
@@ -98,8 +100,8 @@ func TestReviewAgentSystemPromptIncludesInteractiveLoop(t *testing.T) {
 	}
 	for _, snippet := range []string{
 		"You are Lens, the workspace reviewer.",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput) + "`",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestReviewCheckpoint) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestUserInput) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestReviewCheckpoint) + "`",
 		"Treat review as an interactive loop, not a one-shot report.",
 		"After the initial findings pass, produce a `review_checkpoint` handoff and stop.",
 		"Do not finish immediately after posting findings unless the latest human reply clearly says the review is done",

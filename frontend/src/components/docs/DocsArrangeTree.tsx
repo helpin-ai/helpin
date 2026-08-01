@@ -19,7 +19,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { ArrowRight01Icon, File01Icon, Folder01Icon, DragDropVerticalIcon, PlusSignIcon } from '@/lib/icons'
 import { timeAgo } from '@/lib/utils'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
-import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
+import { StoredIcon } from '@/components/ui/icon-picker'
 import { Collapsible } from 'radix-ui'
 import {
   useDocsCollections,
@@ -331,7 +331,6 @@ function ArrangeCollectionNode({
   const effectiveOpen = forceCollapsed ? false : open
   const canHostChildren = node.collection.depth < MAX_COLLECTION_DEPTH
 
-  const CollIcon = node.collection.icon ? (ICON_MAP[node.collection.icon] ?? Folder01Icon) : Folder01Icon
   const totalChildren = node.children.length
   const hasContent = totalChildren > 0 || node.documents.length > 0
 
@@ -344,7 +343,11 @@ function ArrangeCollectionNode({
             className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-3 py-2 ${COLLECTION_ROW_CLASS} hover:bg-muted/40`}
           >
             <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${effectiveOpen ? 'rotate-90' : ''}`} />
-            <CollIcon className={COLLECTION_ICON_CLASS} />
+            <StoredIcon
+              name={node.collection.icon}
+              className={COLLECTION_ICON_CLASS}
+              fallback={<Folder01Icon className={COLLECTION_ICON_CLASS} />}
+            />
             <span className="truncate">{node.collection.name}</span>
             {node.documents.length > 0 && (
               <span className={COUNT_BADGE_CLASS}>

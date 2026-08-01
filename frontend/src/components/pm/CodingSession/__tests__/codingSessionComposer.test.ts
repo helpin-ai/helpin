@@ -15,6 +15,7 @@ function buildSession(overrides: Partial<CodingSession> = {}): CodingSession {
     invocation_mode: 'interactive',
     status: 'running',
     pause_reason: 'none',
+    approval_state: 'not_required',
     title: 'Docs Operator',
     capabilities: {
       live_text_streaming: true,

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -25,23 +26,25 @@ type InternalCommandDefinition struct {
 }
 
 type InternalCommandService struct {
-	agentService         *AgentService
-	taskService          *PMTaskService
-	labelService         *PMLabelService
-	commentService       *PMCommentService
-	crmDealService       *CRMDealService
-	crmActivityService   *CRMActivityService
-	crmEnrichmentService *CRMEnrichmentService
-	docsDocumentService  *DocsDocumentService
-	docsContentService   *DocsContentService
-	docsBlockService     *DocsBlockService
-	docsContentRepo      *repository.DocsContentRepository
-	docsLinkService      *DocsLinkService
-	pmAutomationService  *PMAutomationService
-	gitService           *GitService
-	settingsRepo         *repository.SettingsRepository
-	taskRepo             *repository.PMTaskRepository
-	taskLinkRepo         *repository.PMTaskLinkRepository
+	agentService          *AgentService
+	taskService           *PMTaskService
+	labelService          *PMLabelService
+	commentService        *PMCommentService
+	crmDealService        *CRMDealService
+	crmActivityService    *CRMActivityService
+	crmEnrichmentService  *CRMEnrichmentService
+	docsDocumentService   *DocsDocumentService
+	docsSpaceService      *DocsSpaceService
+	docsCollectionService *DocsCollectionService
+	docsContentService    *DocsContentService
+	docsBlockService      *DocsBlockService
+	docsContentRepo       *repository.DocsContentRepository
+	docsLinkService       *DocsLinkService
+	pmAutomationService   *PMAutomationService
+	gitService            *GitService
+	settingsRepo          *repository.SettingsRepository
+	taskRepo              *repository.PMTaskRepository
+	taskLinkRepo          *repository.PMTaskLinkRepository
 
 	supportMessageRepo        *repository.SupportMessageRepository
 	supportConversationRepo   *repository.SupportConversationRepository
@@ -106,6 +109,16 @@ func (s *InternalCommandService) SetDocsCreateDependencies(documentSvc *DocsDocu
 	}
 	s.docsDocumentService = documentSvc
 	s.docsContentRepo = contentRepo
+}
+
+// SetDocsOrganizationServices wires bounded space, collection, and document
+// organization commands used by documentation agents.
+func (s *InternalCommandService) SetDocsOrganizationServices(spaceSvc *DocsSpaceService, collectionSvc *DocsCollectionService) {
+	if s == nil {
+		return
+	}
+	s.docsSpaceService = spaceSvc
+	s.docsCollectionService = collectionSvc
 }
 
 func (s *InternalCommandService) SetDocsBlockService(blockSvc *DocsBlockService) {
@@ -262,7 +275,72 @@ func (s *InternalCommandService) register(def InternalCommandDefinition) {
 	s.definitions[def.Name] = def
 }
 
+func taskDependencyGraphHasCycle(graph map[string][]string) bool {
+	const (
+		visiting = iota + 1
+		visited
+	)
+	states := make(map[string]int, len(graph))
+	var visit func(string) bool
+	visit = func(taskID string) bool {
+		switch states[taskID] {
+		case visiting:
+			return true
+		case visited:
+			return false
+		}
+		states[taskID] = visiting
+		for _, dependentID := range graph[taskID] {
+			if visit(dependentID) {
+				return true
+			}
+		}
+		states[taskID] = visited
+		return false
+	}
+	for taskID := range graph {
+		if visit(taskID) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *InternalCommandService) registerDefaults() {
+	s.register(InternalCommandDefinition{
+		Name:                 "agents.list_agents",
+		Module:               "workspace",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "document", "deal", "crm_deal", "contact", "crm_contact", "company", "conversation", "support_conversation", "repository"},
+		Tool: &commandtools.RuntimeToolMetadata{
+			CommandName: "agents.list_agents",
+			Alias:       "list_agents",
+			Category:    "Agents",
+			Description: "List saved, built-in, and custom agents visible to the current actor. Use this before recommending which agent should handle a request.",
+			InputSchema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"required":             []string{},
+				"additionalProperties": false,
+			},
+		},
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.agentService == nil {
+				return nil, fmt.Errorf("agent service is not configured")
+			}
+			if len(input) > 0 {
+				var req struct{}
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse list agents input: %w", err)
+				}
+			}
+			agents, err := s.agentService.ListAgentsForActor(ctx, meta.WorkspaceID, internalCommandActor(meta))
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(commandBarAllAgentCandidates(agents)), nil
+		},
+	})
 	s.register(InternalCommandDefinition{
 		Name:                 "workspace.list_teams",
 		Module:               "workspace",
@@ -721,11 +799,22 @@ func (s *InternalCommandService) registerDefaults() {
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse dependency input: %w", err)
 			}
+			if len(req.Dependencies) == 0 {
+				return nil, fmt.Errorf("dependencies is required")
+			}
+			if len(req.Dependencies) > 100 {
+				return nil, fmt.Errorf("at most 100 dependencies can be created at once")
+			}
+			type dependencyPair struct{ sourceID, targetID string }
+			pending := make([]dependencyPair, 0, len(req.Dependencies))
 			for _, dep := range req.Dependencies {
 				sourceID := strings.TrimSpace(dep.SourceTaskID)
 				targetID := strings.TrimSpace(dep.TargetTaskID)
 				if sourceID == "" || targetID == "" {
 					return nil, fmt.Errorf("source_task_id and target_task_id are required")
+				}
+				if sourceID == targetID {
+					return nil, fmt.Errorf("a task cannot depend on itself")
 				}
 				source, err := s.taskRepo.GetRawByID(ctx, sourceID)
 				if err != nil {
@@ -738,17 +827,40 @@ func (s *InternalCommandService) registerDefaults() {
 				if source == nil || target == nil || source.WorkspaceID != meta.WorkspaceID || target.WorkspaceID != meta.WorkspaceID {
 					return nil, fmt.Errorf("tasks must belong to the current workspace")
 				}
+				if err := requireTeamAccess(ctx, source.TeamID); err != nil {
+					return nil, fmt.Errorf("source task is not accessible")
+				}
+				if err := requireTeamAccess(ctx, target.TeamID); err != nil {
+					return nil, fmt.Errorf("target task is not accessible")
+				}
+				pending = append(pending, dependencyPair{sourceID: sourceID, targetID: targetID})
+			}
+			existing, err := s.taskLinkRepo.ListByWorkspaceAndType(ctx, meta.WorkspaceID, model.PMTaskLinkTypeBlocks)
+			if err != nil {
+				return nil, err
+			}
+			graph := make(map[string][]string, len(existing)+len(pending))
+			for _, link := range existing {
+				graph[link.SourceTaskID] = append(graph[link.SourceTaskID], link.TargetTaskID)
+			}
+			for _, dep := range pending {
+				graph[dep.sourceID] = append(graph[dep.sourceID], dep.targetID)
+			}
+			if taskDependencyGraphHasCycle(graph) {
+				return nil, fmt.Errorf("task dependencies contain a cycle")
+			}
+			for _, dep := range pending {
 				if err := s.taskLinkRepo.Create(ctx, &model.PMTaskLink{
 					WorkspaceID:  meta.WorkspaceID,
-					SourceTaskID: sourceID,
-					TargetTaskID: targetID,
+					SourceTaskID: dep.sourceID,
+					TargetTaskID: dep.targetID,
 					LinkType:     model.PMTaskLinkTypeBlocks,
 					CreatedBy:    fallbackActor(meta),
 				}); err != nil {
 					return nil, err
 				}
 			}
-			return mustJSON(map[string]any{"dependency_count": len(req.Dependencies)}), nil
+			return mustJSON(map[string]any{"dependency_count": len(pending)}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -782,6 +894,7 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("name and team_id are required")
 			}
 
+			req.EpicID = stringPtrOrNil(commandDerefString(req.EpicID))
 			if req.EpicID == nil && strings.TrimSpace(meta.TargetType) == "epic" && strings.TrimSpace(meta.TargetID) != "" {
 				req.EpicID = stringPtrOrNil(meta.TargetID)
 			}
@@ -791,6 +904,7 @@ func (s *InternalCommandService) registerDefaults() {
 			req.WorkflowID = stringPtrOrNil(commandDerefString(req.WorkflowID))
 			req.StateID = stringPtrOrNil(commandDerefString(req.StateID))
 			req.OwnerMemberIDs = commandTrimStringSlice(req.OwnerMemberIDs)
+			req.LabelIDs = commandTrimStringSlice(req.LabelIDs)
 
 			var deadline *time.Time
 			if req.Deadline != nil {
@@ -1354,7 +1468,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.link_document_to_object",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "task", "story", "crm_deal"},
+		SupportedTargetTypes: []string{"epic", "task", "story", "deal", "crm_deal"},
 		Tool:                 mustCommandToolMetadata("docs.link_document_to_object"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
@@ -1366,12 +1480,70 @@ func (s *InternalCommandService) registerDefaults() {
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse document link input: %w", err)
 			}
+			if s.docsDocumentService == nil {
+				return nil, fmt.Errorf("docs document service is not available")
+			}
+			document, err := s.docsDocumentService.Get(ctx, strings.TrimSpace(req.DocumentID))
+			if err != nil {
+				return nil, err
+			}
+			if document == nil || document.WorkspaceID != meta.WorkspaceID {
+				return nil, fmt.Errorf("document not found")
+			}
+			if s.docsLinkService == nil {
+				return nil, fmt.Errorf("docs link service is not available")
+			}
+			linkedObjectType := strings.TrimSpace(req.LinkedObjectType)
+			switch linkedObjectType {
+			case model.LinkedObjectTask, "story":
+				if s.taskRepo == nil {
+					return nil, fmt.Errorf("task access is not available")
+				}
+				task, err := s.taskRepo.GetRawByID(ctx, strings.TrimSpace(req.LinkedObjectID))
+				if err != nil {
+					return nil, err
+				}
+				if task == nil || task.WorkspaceID != meta.WorkspaceID || requireTeamAccess(ctx, task.TeamID) != nil {
+					return nil, fmt.Errorf("linked task not found")
+				}
+				linkedObjectType = model.LinkedObjectTask
+			case model.LinkedObjectEpic:
+				if s.agentService == nil || s.agentService.epicRepo == nil {
+					return nil, fmt.Errorf("epic access is not available")
+				}
+				epic, err := s.agentService.epicRepo.GetByID(ctx, strings.TrimSpace(req.LinkedObjectID))
+				if err != nil {
+					return nil, err
+				}
+				if epic == nil || epic.Epic.WorkspaceID != meta.WorkspaceID || requireTeamAccess(ctx, epic.Epic.TeamID) != nil {
+					return nil, fmt.Errorf("linked epic not found")
+				}
+			case model.LinkedObjectDeal, "crm_deal":
+				if s.crmDealService == nil {
+					return nil, fmt.Errorf("CRM deal access is not available")
+				}
+				deal, err := s.crmDealService.GetByID(ctx, strings.TrimSpace(req.LinkedObjectID))
+				if err != nil {
+					return nil, err
+				}
+				if deal == nil || deal.WorkspaceID != meta.WorkspaceID {
+					return nil, fmt.Errorf("linked deal not found")
+				}
+				linkedObjectType = model.LinkedObjectDeal
+			default:
+				return nil, fmt.Errorf("unsupported linked_object_type %q", linkedObjectType)
+			}
 			linkContext := model.LinkContextAttached
 			if req.LinkContext != nil && strings.TrimSpace(*req.LinkContext) != "" {
 				linkContext = strings.TrimSpace(*req.LinkContext)
 			}
+			switch linkContext {
+			case model.LinkContextAttached, model.LinkContextMentioned, model.LinkContextCreatedFrom, model.LinkContextLinkedInContent:
+			default:
+				return nil, fmt.Errorf("unsupported link_context %q", linkContext)
+			}
 			link, err := s.docsLinkService.Create(ctx, meta.WorkspaceID, req.DocumentID, model.CreateDocsLinkRequest{
-				LinkedObjectType: req.LinkedObjectType,
+				LinkedObjectType: linkedObjectType,
 				LinkedObjectID:   req.LinkedObjectID,
 				LinkContext:      linkContext,
 			}, fallbackActor(meta))
@@ -1684,6 +1856,23 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerCRMReadCommands()
 	s.registerReleaseFactsCommands()
 	s.registerDocsRuntimeToolCommands()
+	s.registerDocsOrganizationCommands()
+}
+
+func internalCommandActor(meta model.InternalCommandContext) *authorization.Actor {
+	memberships := make([]authorization.TeamRole, 0, len(meta.ActorTeamIDs))
+	for _, teamID := range meta.ActorTeamIDs {
+		teamID = strings.TrimSpace(teamID)
+		if teamID != "" {
+			memberships = append(memberships, authorization.TeamRole{TeamID: teamID})
+		}
+	}
+	return &authorization.Actor{
+		UserID:          strings.TrimSpace(meta.ActorID),
+		WorkspaceID:     strings.TrimSpace(meta.WorkspaceID),
+		Role:            strings.TrimSpace(meta.ActorRole),
+		TeamMemberships: memberships,
+	}
 }
 
 // resolveCommandRun resolves the local agent run for a command context. The

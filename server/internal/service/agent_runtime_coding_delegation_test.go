@@ -103,8 +103,14 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 	if workspaceValue == nil || workspaceValue["mode"] != "repository" {
 		t.Fatalf("expected workspace.mode=repository for code builder, got %#v", values)
 	}
+	if workspaceValue["access"] != agentRepositoryAccessReadWrite {
+		t.Fatalf("expected code builder read-write workspace access, got %#v", values)
+	}
 	if values["reasoning_effort"] != "high" {
 		t.Fatalf("expected reasoning_effort preserved, got %#v", values)
+	}
+	if values["preset_key"] != model.AgentPresetCodeBuilder {
+		t.Fatalf("expected preset_key propagated, got %#v", values)
 	}
 
 	marketer := &model.Agent{
@@ -117,7 +123,11 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 	if config := runtimeAgentFromHelpinAgent(marketer, "helpin").ExecutionConfig; len(config) > 0 {
 		nonRepoValues := map[string]interface{}{}
 		_ = json.Unmarshal(config, &nonRepoValues)
-		if _, ok := nonRepoValues["workspace"]; ok {
+		workspace, _ := nonRepoValues["workspace"].(map[string]interface{})
+		if workspace["access"] != agentRepositoryAccessReadOnly {
+			t.Fatalf("marketer must get read-only workspace access, got %#v", nonRepoValues)
+		}
+		if _, ok := workspace["mode"]; ok {
 			t.Fatalf("marketer must not get a workspace mode, got %#v", nonRepoValues)
 		}
 	}
@@ -158,6 +168,96 @@ func TestRuntimeAgentFromHelpinAgentIncludesImplicitScribeSkills(t *testing.T) {
 	}
 	if strings.Contains(out.SystemPrompt, "mcp__helpin__") {
 		t.Fatalf("expected delegated Codex prompt to remove Helpin MCP qualification, got %q", out.SystemPrompt)
+	}
+}
+
+func TestAgentRepositoryAccessModeMatchesBuiltInAuthority(t *testing.T) {
+	tests := []struct {
+		preset string
+		want   string
+	}{
+		{preset: model.AgentPresetEpicPlanner, want: agentRepositoryAccessReadOnly},
+		{preset: model.AgentPresetTaskPlanner, want: agentRepositoryAccessReadOnly},
+		{preset: model.AgentPresetCRMOperator, want: agentRepositoryAccessReadOnly},
+		{preset: model.AgentPresetSupportAgent, want: agentRepositoryAccessReadOnly},
+		{preset: model.AgentPresetDocumentationAgent, want: agentRepositoryAccessReadOnly},
+		{preset: model.AgentPresetMarketer, want: agentRepositoryAccessReadOnly},
+		{preset: model.AgentPresetCommandAgent, want: agentRepositoryAccessReadOnly},
+		{preset: model.AgentPresetCodeBuilder, want: agentRepositoryAccessReadWrite},
+		{preset: model.AgentPresetReviewAgent, want: agentRepositoryAccessReadWrite},
+	}
+	for _, tt := range tests {
+		t.Run(tt.preset, func(t *testing.T) {
+			agent := &model.Agent{IsSystem: true, PresetKey: tt.preset}
+			if got := agentRepositoryAccessMode(agent); got != tt.want {
+				t.Fatalf("agentRepositoryAccessMode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAgentRepositoryAccessModeRequiresExplicitWriteToolsForCustomAgent(t *testing.T) {
+	readOnly := &model.Agent{AllowedTools: json.RawMessage(`["read_file","run_command","ripgrep"]`)}
+	if got := agentRepositoryAccessMode(readOnly); got != agentRepositoryAccessReadOnly {
+		t.Fatalf("read-only custom agent access = %q", got)
+	}
+	writer := &model.Agent{AllowedTools: json.RawMessage(`["read_file","apply_patch"]`)}
+	if got := agentRepositoryAccessMode(writer); got != agentRepositoryAccessReadWrite {
+		t.Fatalf("writer custom agent access = %q", got)
+	}
+}
+
+func TestRuntimeAgentFromHelpinAgentRequiresScribePlanDocument(t *testing.T) {
+	scribe := &model.Agent{
+		ID:          "agent-scribe",
+		IsSystem:    true,
+		PresetKey:   model.AgentPresetTaskPlanner,
+		RuntimeKind: "codex",
+	}
+	var config map[string]interface{}
+	if err := json.Unmarshal(runtimeAgentFromHelpinAgent(scribe, "helpin").ExecutionConfig, &config); err != nil {
+		t.Fatalf("decode execution config: %v", err)
+	}
+	completion, _ := config["completion"].(map[string]interface{})
+	required, _ := completion["required_tools"].([]interface{})
+	if len(required) != 1 || required[0] != "publish_task_plan_doc" {
+		t.Fatalf("unexpected Scribe completion contract %#v", config)
+	}
+}
+
+func TestRuntimeAgentFromHelpinAgentPropagatesNativeToolBudget(t *testing.T) {
+	tests := []struct {
+		name  string
+		agent *model.Agent
+		want  float64
+	}{
+		{
+			name:  "system default",
+			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetMarketer, RuntimeKind: "native_sdk"},
+			want:  50,
+		},
+		{
+			name:  "planner",
+			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetEpicPlanner, RuntimeKind: "native_sdk"},
+			want:  300,
+		},
+		{
+			name:  "custom agent",
+			agent: &model.Agent{IsSystem: false, RuntimeKind: "native_sdk"},
+			want:  300,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := runtimeAgentFromHelpinAgent(tt.agent, "helpin")
+			var values map[string]interface{}
+			if err := json.Unmarshal(out.ExecutionConfig, &values); err != nil {
+				t.Fatalf("decode runtime execution config: %v", err)
+			}
+			if got := values["max_tool_steps"]; got != tt.want {
+				t.Fatalf("max_tool_steps = %#v, want %.0f", got, tt.want)
+			}
+		})
 	}
 }
 

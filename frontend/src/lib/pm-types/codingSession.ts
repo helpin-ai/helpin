@@ -1,4 +1,4 @@
-import type { AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRuntimeKind, CodexAuthState } from './agents';
+import type { AgentApprovalState, AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRuntimeKind, CodexAuthState } from './agents';
 
 export type CodingSessionInteractionKind =
   | 'request_user_input'
@@ -120,6 +120,7 @@ export interface CodingSession {
   invocation_mode: AgentInvocationMode;
   status: AgentRunStatus;
   pause_reason: AgentRunPauseReason;
+  approval_state: AgentApprovalState;
   error_message?: string;
   execution_stage?: string;
   last_heartbeat_at?: string;
@@ -235,6 +236,7 @@ export type CodingSessionLiveTurnSegment =
   | CodingSessionLiveToolCallSegment;
 
 export interface CodingSessionStreamSnapshot {
+  through_sequence?: number;
   live_assistant_message?: CodingSessionLiveAssistantMessage;
   live_reasoning_message?: CodingSessionLiveReasoningMessage;
   live_turn_segments?: CodingSessionLiveTurnSegment[];

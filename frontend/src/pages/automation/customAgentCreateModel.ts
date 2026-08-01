@@ -1,6 +1,7 @@
 import type {
   AgentApprovalMode,
   AgentExecutionConfig,
+  AgentIconKey,
   AgentInvocationMode,
   AgentModelProvider,
   AgentPresetKey,
@@ -15,6 +16,7 @@ import type {
 
 export interface CustomAgentFormData {
   name: string;
+  icon_key: AgentIconKey;
   preset_key: AgentPresetKey;
   preset_version_key: string;
   runtime_kind: AgentRuntimeKind;
@@ -42,6 +44,7 @@ export interface CustomAgentFormData {
 export function createDefaultCustomAgentForm(): CustomAgentFormData {
   return {
     name: '',
+    icon_key: 'violet_star',
     preset_key: 'code_builder',
     preset_version_key: 'code_builder_default',
     runtime_kind: 'codex',
@@ -61,7 +64,7 @@ export function createDefaultCustomAgentForm(): CustomAgentFormData {
     allowed_targets: ['task'],
     allowed_tools: [],
     skills: [],
-    approval_mode: 'always',
+    approval_mode: 'mutating_tools',
     max_concurrent_runs: '1',
     default_invocation_mode: 'interactive',
   };
@@ -121,6 +124,7 @@ export function buildCustomAgentCreatePayload(
   return {
     workspace_id: workspaceId,
     name: form.name.trim(),
+    icon_key: form.icon_key,
     provider: form.provider,
     model: form.model.trim() || undefined,
     execution_config: buildExecutionConfigPayload(form),

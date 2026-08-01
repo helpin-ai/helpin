@@ -6,6 +6,33 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* One quiet pre-token status replaces spinner bubbles and animated dot groups. */
+@keyframes agent-streaming-text-sweep {
+  from { background-position: 150% 50%; }
+  to { background-position: -150% 50%; }
+}
+.agent-streaming-text {
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    var(--muted-foreground) 25%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 75%
+  );
+  background-position: 150% 50%;
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: agent-streaming-text-sweep 1.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-streaming-text {
+    animation: none;
+    background: none;
+    color: var(--muted-foreground);
+  }
+}
+
 @theme {
   --background: oklch(1 0 0);
   --foreground: oklch(0.24 0 0);

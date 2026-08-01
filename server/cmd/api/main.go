@@ -48,7 +48,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	appwebauthn "github.com/helpin-ai/helpin/server/internal/webauthn"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
-	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func main() {
@@ -89,6 +88,7 @@ func main() {
 			gormlogger.Config{
 				SlowThreshold:             200 * time.Millisecond,
 				IgnoreRecordNotFoundError: true,
+				ParameterizedQueries:      true,
 				LogLevel:                  gormlogger.Warn,
 			},
 		),
@@ -210,6 +210,10 @@ func main() {
 			&model.AgentRunMessage{},
 			&model.AgentRunArtifact{},
 			&model.AgentRunInteraction{},
+			// Public MCP tables are intentionally excluded. Their constraints,
+			// partial indexes, and retention fields are owned exclusively by
+			// versioned migration 202607100003_public_mcp.sql. Letting GORM
+			// reconcile those tables can attempt incompatible constraint changes.
 			&model.CommandBarPlanRecord{},
 			&model.CommandBarUnmetIntent{},
 			&model.CommandBarPlanDismissal{},
@@ -335,6 +339,7 @@ func main() {
 			&model.SupportContentSource{},
 			&model.SupportContentPage{},
 			&model.SupportContentChunk{},
+			&model.CuratedGuidance{},
 		); err != nil {
 			fatalWithSentry("failed to auto-migrate", err)
 		}
@@ -353,6 +358,10 @@ func main() {
 		`CREATE INDEX IF NOT EXISTS idx_docs_chunks_fts ON docs_chunks USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(content, '')), 'B')))`,
 		`CREATE INDEX IF NOT EXISTS idx_support_content_chunks_embedding_ivfflat ON support_content_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)`,
 		`CREATE INDEX IF NOT EXISTS idx_support_content_chunks_fts ON support_content_chunks USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(content, '')), 'B')))`,
+		`CREATE INDEX IF NOT EXISTS idx_docs_chunks_fts_v2 ON docs_chunks USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(NULLIF(search_content, ''), content, '')), 'B')))`,
+		`CREATE INDEX IF NOT EXISTS idx_support_content_chunks_fts_v2 ON support_content_chunks USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(NULLIF(search_content, ''), content, '')), 'B')))`,
+		`CREATE INDEX IF NOT EXISTS idx_curated_guidance_embedding_ivfflat ON curated_guidance USING ivfflat (embedding vector_cosine_ops) WITH (lists = 20) WHERE embedding IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_curated_guidance_fts ON curated_guidance USING GIN ((setweight(to_tsvector('english', COALESCE(title, '')), 'A') || setweight(to_tsvector('english', COALESCE(array_to_string(question_patterns, ' '), '')), 'A') || setweight(to_tsvector('english', COALESCE(answer, '')), 'B')))`,
 	} {
 		if err := db.Exec(stmt).Error; err != nil {
 			slog.Warn("failed to create docs chunk index", "error", err, "stmt", stmt)
@@ -541,6 +550,11 @@ func main() {
 	passkeyRepo := repository.NewPasskeyRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
+	mcpRepo := repository.NewMCPRepository(db)
+	externalMCPRepo := repository.NewExternalMCPRepository(db)
+	if err := mcpRepo.CleanupExpired(context.Background(), time.Now()); err != nil {
+		slog.Warn("MCP retention cleanup skipped", "error", err)
+	}
 	settingsRepo := repository.NewSettingsRepository(db)
 	moduleGrantRepo := repository.NewWorkspaceModuleGrantRepository(db)
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
@@ -580,7 +594,6 @@ func main() {
 	commandBarPlanDismissalRepo := repository.NewCommandBarPlanDismissalRepository(db)
 	commandBarChatRepo := repository.NewCommandBarChatRepository(db)
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
-	codexWorkspaceAuthRepo := repository.NewCodexWorkspaceAuthRepository(db)
 	pmTaskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
 	supportInboxViewRepo := repository.NewSupportInboxViewRepository(db)
@@ -640,6 +653,7 @@ func main() {
 	agentContentSourceRepo := repository.NewAgentContentSourceRepository(db)
 	supportContentPageRepo := repository.NewSupportContentPageRepository(db)
 	supportContentChunkRepo := repository.NewSupportContentChunkRepository(db)
+	curatedGuidanceRepo := repository.NewCuratedGuidanceRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
@@ -803,23 +817,6 @@ func main() {
 		slog.Info("Temporal configured", "address", cfg.TemporalAddress, "namespace", cfg.TemporalNamespace)
 	}
 	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
-	codexWorkspaceAuthStore := workerpkg.NewCodexWorkspaceAuthStore(codexWorkspaceAuthRepo, resolveCodexAuthEncryptionKey(cfg))
-	if strings.TrimSpace(cfg.CodexOpenAIAuthMode) == "chatgpt_device_code" && codexWorkspaceAuthStore == nil {
-		slog.Warn("Codex workspace auth persistence disabled; set CODEX_AUTH_ENCRYPTION_KEY or a valid CRM_ENCRYPTION_KEY for durable device-code auth")
-	}
-	codexAuthManager := workerpkg.NewCodexAuthManager(workerpkg.CodexRuntimeConfig{
-		Path:                      cfg.CodexPath,
-		DefaultModel:              cfg.CodexModel,
-		OpenAIAPIKey:              cfg.OpenAIAPIKey,
-		OpenAIBaseURL:             cfg.OpenAIBaseURL,
-		OpenAIAuthMode:            cfg.CodexOpenAIAuthMode,
-		EnableManagedChatGPTOAuth: cfg.CodexEnableChatGPTOAuth,
-		ChatGPTAccessToken:        cfg.CodexChatGPTAccessToken,
-		ChatGPTAccountID:          cfg.CodexChatGPTAccountID,
-		ChatGPTPlanType:           cfg.CodexChatGPTPlanType,
-		OpenRouterAPIKey:          cfg.OpenRouterAPIKey,
-		OpenRouterBaseURL:         cfg.OpenRouterBaseURL,
-	}, agentRunArtifactRepo, codexWorkspaceAuthStore)
 
 	gitService := service.NewGitService(
 		gitIntegrationRepo,
@@ -842,10 +839,29 @@ func main() {
 	pmTaskService.SetGitService(gitService)
 	var agentRuntimeClient *service.AgentRuntimeClient
 	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
-		agentRuntimeClient, err = service.NewAgentRuntimeClient(cfg.AgentRuntimeBaseURL, cfg.AgentRuntimeAppID, cfg.AgentRuntimeServiceToken, nil)
+		agentRuntimeClient, err = service.NewAgentRuntimeClient(cfg.AgentRuntimeBaseURL, cfg.AgentRuntimeAppID, cfg.AgentRuntimeServiceToken, nil, cfg.AgentRuntimeEventProtocol)
 		if err != nil {
 			fatalWithSentry("failed to initialize agent runtime client", err)
 		}
+	}
+	externalMCPService, err := service.NewExternalMCPService(
+		externalMCPRepo,
+		notificationService,
+		service.ExternalMCPServiceConfig{
+			Enabled:                cfg.ExternalMCPEnabled,
+			CustomServersEnabled:   cfg.ExternalMCPCustomServersEnabled,
+			EncryptionKey:          cfg.ExternalMCPEncryptionKey,
+			AllowedHosts:           cfg.ExternalMCPAllowedHosts,
+			OAuthRedirectURL:       cfg.ExternalMCPOAuthRedirectURL,
+			AppBaseURL:             cfg.AppBaseURL,
+			OAuthClientID:          cfg.ExternalMCPOAuthClientID,
+			OAuthClientSecret:      cfg.ExternalMCPOAuthClientSecret,
+			OAuthClientAuthMethod:  cfg.ExternalMCPOAuthClientAuthMethod,
+			AllowInsecureLocalhost: cfg.ExternalMCPAllowInsecureLocalhost,
+		},
+	)
+	if err != nil {
+		fatalWithSentry("failed to initialize external MCP service", err)
 	}
 	agentService := service.NewAgentService(
 		agentRepo,
@@ -881,10 +897,11 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+	).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
+	agentService.SetExternalMCPService(externalMCPService)
 	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMProvider).
 		SetChatRepository(commandBarChatRepo).
 		SetLLMRouterConfig(
@@ -984,6 +1001,7 @@ func main() {
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmTaskRepo, docsDocumentRepo, wsPublisher)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
 	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
+	tlsAskService := service.NewTLSAskService(docsHelpcenterRepo, cfg.TLSAskExtraAllowedDomains)
 
 	// Tiered cache for hot public help-center reads. L1 is an in-process LRU;
 	// L2 is Redis when available so cache entries survive pod restarts and
@@ -1082,6 +1100,12 @@ func main() {
 		supportContentSourceRepo,
 		supportContentSyncService,
 	)
+	curatedGuidanceService := service.NewCuratedGuidanceService(
+		curatedGuidanceRepo,
+		agentRepo,
+		supportEmbeddingProvider,
+		cfg.OpenAIEmbeddingModel,
+	)
 
 	crmContactService := service.NewCRMContactService(crmContactRepo)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
@@ -1133,6 +1157,7 @@ func main() {
 	commandService.SetSettingsRepository(settingsRepo)
 	commandService.SetCRMEnrichmentService(crmEnrichmentService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
+	commandService.SetDocsOrganizationServices(docsSpaceService, docsCollectionService)
 	commandService.SetDocsBlockService(docsBlockService)
 	commandService.SetSupportDependencies(supportMessageRepo, supportConversationRepo, wsPublisher)
 	commandService.SetCRMReadServices(crmContactService, crmSignalService)
@@ -1154,15 +1179,6 @@ func main() {
 	commandBarService.SetInternalCommandService(commandService).
 		SetReadOnlyDataServices(docsDocumentService, crmDealService, crmContactService, crmCompanyService)
 	ruleEngine.SetCommandService(commandService)
-	agentToolGateway := service.NewAgentToolGateway(
-		agentRunRepo,
-		agentRepo,
-		agentRunArtifactRepo,
-		agentRunInteractionRepo,
-		commandService,
-		jwtManager,
-		wsPublisher,
-	)
 	agentRuntimeHostService := service.NewAgentRuntimeHostService(
 		cfg.AgentRuntimeAppID,
 		agentRunRepo,
@@ -1190,6 +1206,7 @@ func main() {
 			wsPublisher,
 		).SetRepositoryDeliveryService(gitService).SetCommandBarPlanAdvancer(agentService)
 		agentRuntimeProjectionService = service.NewAgentRuntimeProjectionService(agentRunRepo, cfg.AgentRuntimeAppID).
+			SetEventProtocol(cfg.AgentRuntimeEventProtocol).
 			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
 			SetTranscriptRepositories(agentRunMessageRepo, agentRunArtifactRepo, agentRunInteractionRepo).
 			SetCodingSessionSnapshotRepository(codingSessionStateSnapshotRepo).
@@ -1234,10 +1251,15 @@ func main() {
 		wsPublisher, jetstream, redisClient, db,
 		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
 	)
+	supportAIService.SetQueryExpansionTimeout(time.Duration(cfg.QueryExpansionTimeoutMS) * time.Millisecond)
 	supportAIService.SetSupportRoutingDependencies(workspaceRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
 	supportAIService.SetMailboxRepository(supportMailboxRepo)
 	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
+	supportAIService.SetCuratedGuidanceRepository(curatedGuidanceRepo)
+	if reranker := service.NewHTTPSupportKnowledgeReranker(cfg.SupportRerankerURL, cfg.SupportRerankerModel, cfg.SupportRerankerAPIKey); reranker != nil {
+		supportAIService.SetKnowledgeReranker(reranker)
+	}
 	if strings.TrimSpace(cfg.AnthropicAPIKey) != "" {
 		supportAIService.SetTaskDraftLLM(service.NewEinoSupportTaskDraftLLM(cfg.AnthropicAPIKey, "claude-sonnet-4-6"))
 	}
@@ -1311,9 +1333,43 @@ func main() {
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
 	authzService.SetWorkspaceMFARepository(workspaceRepo)
-	supportInboxService.SetAuthzService(authzService)
 	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
 	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
+	agentService.SetMCPRepository(mcpRepo)
+	mcpService := service.NewMCPService(
+		mcpRepo,
+		workspaceRepo,
+		userRepo,
+		authzService,
+		jwtManager,
+		commandService,
+		agentService,
+		searchService,
+		pmTaskService,
+		docsDocumentService,
+		docsSpaceService,
+		docsCollectionService,
+		docsLinkService,
+		docsEntityReferenceResolverService,
+		pmChecklistItemService,
+		crmContactService,
+		crmDealService,
+		supportInboxService,
+		service.MCPServiceConfig{
+			AppBaseURL:           cfg.AppBaseURL,
+			IssuerURL:            cfg.MCPPublicBaseURL,
+			ResourceURL:          cfg.MCPPublicBaseURL + "/mcp",
+			ServerEnabled:        cfg.MCPServerEnabled,
+			OAuthEnabled:         cfg.MCPOAuthEnabled,
+			ServiceTokensEnabled: cfg.MCPServiceTokensEnabled,
+			PMWriteEnabled:       cfg.MCPPMWriteEnabled,
+			DocsWriteEnabled:     cfg.MCPDocsWriteEnabled,
+			AgentRunEnabled:      cfg.MCPAgentRunEnabled,
+			CRMEnabled:           cfg.MCPCRMEnabled,
+			SupportEnabled:       cfg.MCPSupportEnabled,
+		},
+	)
+	supportInboxService.SetAuthzService(authzService)
 
 	// Inject authorization into WebSocket handler for workspace access checks.
 	wsHandler.SetAuthzService(authzService)
@@ -1386,13 +1442,14 @@ func main() {
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:               handler.NewAgentHandler(agentService),
-		AgentToolGateway:    handler.NewAgentToolGatewayHandler(agentToolGateway),
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
+		MCP:                 handler.NewMCPHandler(mcpService),
+		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),
 		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),
-		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService),
+		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService, curatedGuidanceService),
 		SupportAttachment:   handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),
 		PostmarkInbound:     handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkReplyInboundWebhookSecret, cfg.PostmarkRouteInboundWebhookSecret),
 		EmailImageProxy:     handler.NewEmailImageProxyHandler(),
@@ -1452,6 +1509,7 @@ func main() {
 			service.NewSupportCoverageDraftService(supportCoverageRepo, docsDocumentService, docsContentService, docsVersionService, llmProvider),
 			supportCoverageClusterRebuildService,
 		),
+		TLSAsk: handler.NewTLSAskHandler(tlsAskService),
 	}
 
 	// Set support event recorder on DocsHandler after handler creation.
@@ -1746,23 +1804,6 @@ func fatalWithSentry(message string, err error, attrs ...any) {
 	slog.Error(message, logAttrs...)
 	observability.Flush(2 * time.Second)
 	os.Exit(1)
-}
-
-func resolveCodexAuthEncryptionKey(cfg *config.Config) []byte {
-	if cfg == nil {
-		return nil
-	}
-	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CodexAuthEncryptionKey)); err != nil {
-		slog.Warn("invalid CODEX_AUTH_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
-	} else if len(key) == 32 {
-		return key
-	}
-	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
-		slog.Warn("invalid CRM_ENCRYPTION_KEY for Codex workspace auth fallback (must be a 32-byte hex-encoded AES key)", "error", err)
-	} else if len(key) == 32 {
-		return key
-	}
-	return nil
 }
 
 func resolveTOTPEncryptionKey(cfg *config.Config) []byte {

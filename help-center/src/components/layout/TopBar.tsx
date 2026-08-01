@@ -23,7 +23,7 @@ import {
   resolveLocaleSwitchPath,
 } from '@/lib/locale'
 import { prefixBasepath } from '@/lib/pathUtils'
-import { PhIcon } from '@/components/PhIcon'
+import { PublicIcon } from '@/components/PublicIcon'
 import { LocaleSwitcher } from './LocaleSwitcher'
 import type { ArticleDetail, CollectionPage, NavItem, Space } from '@/lib/types'
 
@@ -442,10 +442,9 @@ export function TopBar({ onSearchClick }: TopBarProps) {
                   )}
                 >
                   {space.icon && (
-                    <PhIcon
+                    <PublicIcon
                       name={space.icon}
                       size={15}
-                      weight="regular"
                       className="mr-1.5 inline-block align-text-bottom"
                     />
                   )}

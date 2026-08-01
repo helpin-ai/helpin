@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -11,6 +13,13 @@ import (
 type scriptedSupportPlannerLLM struct {
 	responses []llm.ChatResponse
 	requests  []llm.ChatRequest
+}
+
+type blockingSupportPlannerLLM struct{}
+
+func (f *blockingSupportPlannerLLM) ChatCompletion(ctx context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
 }
 
 func (f *scriptedSupportPlannerLLM) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
@@ -65,7 +74,7 @@ func TestPlanSupportQueryResolvesFollowUpFromContext(t *testing.T) {
 	provider := &scriptedSupportPlannerLLM{
 		responses: []llm.ChatResponse{
 			{
-				Content: `{"decision":"answer","issue_key":"publer_vs_contentstudio","issue_summary":"Customer wants a features comparison between Publer and ContentStudio","progress_signal":"same_issue_new_info","standalone_query":"Publer vs ContentStudio features","search_queries":["ContentStudio features vs Publer","Publer ContentStudio feature comparison"],"clarifying_question":"","reason":"resolved_from_context"}`,
+				Content: `{"route":"answer","reply":"","intent":"unknown","subject":"Publer and ContentStudio","language":"en","risk":"general","required_evidence":[],"context_action":"continue","issue_key":"publer_vs_contentstudio","issue_summary":"Customer wants a features comparison between Publer and ContentStudio","progress_signal":"same_issue_new_info","standalone_query":"Publer vs ContentStudio features","search_queries":["ContentStudio features vs Publer","Publer ContentStudio feature comparison"],"reason":"resolved_from_context"}`,
 				TokensUsed: llm.TokenUsage{
 					InputTokens:  15,
 					OutputTokens: 9,
@@ -84,7 +93,7 @@ func TestPlanSupportQueryResolvesFollowUpFromContext(t *testing.T) {
 		{SenderType: "ai", MessageType: "reply", Content: "ContentStudio is stronger for agencies and richer analytics."},
 	}
 
-	plan, tokensUsed, err := svc.planSupportQuery(context.Background(), history, model.SupportMessage{SenderType: "customer", Content: "features"})
+	plan, tokensUsed, err := svc.planSupportQuery(context.Background(), history, model.SupportMessage{SenderType: "customer", Content: "features"}, "")
 	if err != nil {
 		t.Fatalf("planSupportQuery() error = %v", err)
 	}
@@ -119,13 +128,39 @@ func TestPlanSupportQueryResolvesFollowUpFromContext(t *testing.T) {
 	if len(provider.requests) != 1 {
 		t.Fatalf("planner calls = %d, want 1", len(provider.requests))
 	}
+	if !provider.requests[0].JSONSchemaStrict || provider.requests[0].JSONSchema == nil {
+		t.Fatalf("expected planner to request strict structured output, got %#v", provider.requests[0])
+	}
+}
+
+func TestPlanSupportQueryHonorsConfiguredTimeout(t *testing.T) {
+	svc := &SupportAIService{
+		llmProvider:            &blockingSupportPlannerLLM{},
+		queryExpansionModel:    "gpt-5.6-luna",
+		queryExpansionProvider: "openai",
+		queryExpansionTimeout:  20 * time.Millisecond,
+	}
+
+	startedAt := time.Now()
+	_, _, err := svc.planSupportQuery(
+		context.Background(),
+		nil,
+		model.SupportMessage{SenderType: "customer", Content: "pricing"},
+		"",
+	)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("planSupportQuery() error = %v, want context deadline exceeded", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("planSupportQuery() elapsed = %v, configured timeout was not honored", elapsed)
+	}
 }
 
 func TestPlanSupportQueryUsesClarifyInsteadOfHandoffForAmbiguousFollowUp(t *testing.T) {
 	provider := &scriptedSupportPlannerLLM{
 		responses: []llm.ChatResponse{
 			{
-				Content: `{"decision":"clarify","issue_key":"publer_vs_contentstudio","issue_summary":"Customer wants to compare Publer and ContentStudio","progress_signal":"same_issue_unclear","standalone_query":"","search_queries":[],"clarifying_question":"Do you mean Publer features or ContentStudio features?","reason":"needs_clarification"}`,
+				Content: `{"route":"clarify","reply":"Do you mean Publer features or ContentStudio features?","intent":"unknown","subject":"Publer and ContentStudio","language":"en","risk":"general","required_evidence":[],"context_action":"continue","issue_key":"publer_vs_contentstudio","issue_summary":"Customer wants to compare Publer and ContentStudio","progress_signal":"same_issue_unclear","standalone_query":"","search_queries":[],"reason":"needs_clarification"}`,
 				TokensUsed: llm.TokenUsage{
 					InputTokens:  12,
 					OutputTokens: 10,
@@ -143,7 +178,7 @@ func TestPlanSupportQueryUsesClarifyInsteadOfHandoffForAmbiguousFollowUp(t *test
 		{SenderType: "customer", MessageType: "reply", Content: "Which one is better?"},
 	}
 
-	plan, _, err := svc.planSupportQuery(context.Background(), history, model.SupportMessage{SenderType: "customer", Content: "pricing"})
+	plan, _, err := svc.planSupportQuery(context.Background(), history, model.SupportMessage{SenderType: "customer", Content: "pricing"}, "")
 	if err != nil {
 		t.Fatalf("planSupportQuery() error = %v", err)
 	}
@@ -165,7 +200,7 @@ func TestPlanSupportQueryIncludesImageContentParts(t *testing.T) {
 	provider := &scriptedSupportPlannerLLM{
 		responses: []llm.ChatResponse{
 			{
-				Content: `{"decision":"answer","issue_key":"screenshot_issue","issue_summary":"Customer reported an issue with a screenshot attachment","progress_signal":"new_issue","standalone_query":"screenshot issue","search_queries":["screenshot issue"],"clarifying_question":"","reason":"resolved_from_context"}`,
+				Content: `{"route":"answer","reply":"","intent":"unknown","subject":"","language":"en","risk":"general","required_evidence":[],"context_action":"new_issue","issue_key":"screenshot_issue","issue_summary":"Customer reported an issue with a screenshot attachment","progress_signal":"new_issue","standalone_query":"screenshot issue","search_queries":["screenshot issue"],"reason":"resolved_from_context"}`,
 			},
 		},
 	}
@@ -180,7 +215,7 @@ func TestPlanSupportQueryIncludesImageContentParts(t *testing.T) {
 		Attachments: []model.SupportAttachmentPayload{
 			{FileName: "Screenshot.png", FileType: "image/png", URL: "https://assets.example.com/screenshot.png"},
 		},
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("planSupportQuery() error = %v", err)
 	}
@@ -241,14 +276,82 @@ func TestNormalizeSupportQueryPlanGeneratesIssueKeyWhenPlannerOmitsIt(t *testing
 }
 
 func TestParseSupportQueryPlanStripsCodeFences(t *testing.T) {
-	plan, err := parseSupportQueryPlan("```json\n{\"decision\":\"handoff\",\"standalone_query\":\"\",\"search_queries\":[],\"clarifying_question\":\"\",\"reason\":\"customer_requested_human\"}\n```")
+	plan, err := parseSupportQueryPlan("```json\n{\"route\":\"handoff\",\"reply\":\"I’ll connect you with the team.\",\"intent\":\"unknown\",\"subject\":\"\",\"language\":\"en\",\"risk\":\"general\",\"required_evidence\":[],\"context_action\":\"continue\",\"issue_key\":\"human_help\",\"issue_summary\":\"Customer requested a human.\",\"progress_signal\":\"same_issue_repeat\",\"standalone_query\":\"\",\"search_queries\":[],\"reason\":\"customer_requested_human\"}\n```")
 	if err != nil {
 		t.Fatalf("parseSupportQueryPlan() error = %v", err)
 	}
-	if plan.Decision != supportDecisionHandoff {
-		t.Fatalf("decision = %q, want %q", plan.Decision, supportDecisionHandoff)
+	if plan.Route != supportDecisionHandoff {
+		t.Fatalf("route = %q, want %q", plan.Route, supportDecisionHandoff)
 	}
 	if plan.Reason != "customer_requested_human" {
 		t.Fatalf("reason = %q, want customer_requested_human", plan.Reason)
+	}
+}
+
+func TestParseSupportQueryPlanGreetingReply(t *testing.T) {
+	plan, err := parseSupportQueryPlan(`{"route":"conversational","reply":"Hi! What can I help you with?","intent":"unknown","subject":"","language":"en","risk":"general","required_evidence":[],"context_action":"new_issue","issue_key":"greeting","issue_summary":"Customer greeted support.","progress_signal":"new_issue","standalone_query":"","search_queries":[],"reason":"greeting"}`)
+	if err != nil {
+		t.Fatalf("parseSupportQueryPlan() error = %v", err)
+	}
+	if plan.Route != supportRouteConversational || plan.Reply != "Hi! What can I help you with?" {
+		t.Fatalf("plan = %+v, want conversational route with reply", plan)
+	}
+}
+
+func TestParseSupportQueryPlanRejectsIncompleteOrExtendedContracts(t *testing.T) {
+	if _, err := parseSupportQueryPlan(`{"route":"answer"}`); err == nil {
+		t.Fatal("incomplete planner contract must be rejected")
+	}
+	if _, err := parseSupportQueryPlan(`{"route":"answer","reply":"","intent":"unknown","subject":"","language":"en","risk":"general","required_evidence":[],"context_action":"new_issue","issue_key":"test","issue_summary":"Test issue.","progress_signal":"new_issue","standalone_query":"test","search_queries":["test"],"reason":"test","invented":true}`); err == nil {
+		t.Fatal("planner contract with unknown fields must be rejected")
+	}
+	if _, err := parseSupportQueryPlan(`{"route":"conversational","reply":"","intent":"unknown","subject":"","language":"en","risk":"general","required_evidence":[],"context_action":"new_issue","issue_key":"greeting","issue_summary":"Customer greeted support.","progress_signal":"new_issue","standalone_query":"","search_queries":[],"reason":"greeting"}`); err == nil {
+		t.Fatal("conversational planner contract without an LLM-authored reply must be rejected")
+	}
+}
+
+func TestNormalizeSupportQueryPlanPreservesGreet(t *testing.T) {
+	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
+		Decision:      "greet",
+		GreetingReply: "  ¡Hola! ¿En qué puedo ayudarte hoy?  ",
+		SearchQueries: []string{"hola"},
+		IssueKey:      "greeting",
+	}, "Hola")
+	if plan.Decision != supportDecisionGreet {
+		t.Fatalf("decision = %q, want %q", plan.Decision, supportDecisionGreet)
+	}
+	if plan.GreetingReply != "¡Hola! ¿En qué puedo ayudarte hoy?" {
+		t.Fatalf("greeting reply = %q, want trimmed text", plan.GreetingReply)
+	}
+	if len(plan.SearchQueries) != 0 {
+		t.Fatalf("search queries = %v, want empty", plan.SearchQueries)
+	}
+	if plan.IssueKey != "" || plan.IssueSummary != "" {
+		t.Fatalf("issue key/summary = %q/%q, want empty", plan.IssueKey, plan.IssueSummary)
+	}
+}
+
+func TestNormalizeSupportQueryPlanGreetWithoutReplyFallsBack(t *testing.T) {
+	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{Decision: "greet"}, "hello")
+	if plan.Decision != supportDecisionAnswer || plan.GreetingReply != "" {
+		t.Fatalf("invalid conversational output must not synthesize a canned reply: %+v", plan)
+	}
+	mixed := normalizeSupportQueryPlan(SupportQueryPlanContract{Decision: "greet"}, "hi, how do I reset my password?")
+	if mixed.Decision != supportDecisionAnswer {
+		t.Fatalf("decision = %q, want answer for greeting+question when planner text missing", mixed.Decision)
+	}
+}
+
+func TestDefaultSupportQueryPlanGreeting(t *testing.T) {
+	plan := defaultSupportQueryPlan("Hello!")
+	if plan.Decision != supportDecisionAnswer {
+		t.Fatalf("decision = %q, want conservative answer fallback", plan.Decision)
+	}
+	if plan.GreetingReply != "" || len(plan.SearchQueries) != 1 {
+		t.Fatalf("plan = %+v, want no deterministic reply and one sufficiency query", plan)
+	}
+	mixed := defaultSupportQueryPlan("hi, how do I reset my password?")
+	if mixed.Decision != supportDecisionAnswer {
+		t.Fatalf("decision = %q, want answer for greeting+question", mixed.Decision)
 	}
 }

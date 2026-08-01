@@ -43,6 +43,7 @@ import {
 } from './chat-widget/responseModes';
 import { getChatWidgetAIAssistantEnableBlocker, getChatWidgetAIAssistantToggleToast } from './chat-widget/aiAssistantReadiness';
 import { DEFAULT_AI_HANDOFF_FOLLOWUPS, formatAIHandoffFollowupOption } from './chat-widget/handoffFollowups';
+import { CuratedGuidanceField } from './CuratedGuidanceField';
 
 /* ── Main component ──────────────────────────────────────────────────── */
 
@@ -934,6 +935,11 @@ function Dashboard() {
       <div className="space-y-4">
         {saveIndicator}
         {aiAssistantSection}
+        <CuratedGuidanceField
+          key={aiAgentId}
+          workspaceId={workspaceId}
+          agentId={aiAgentId === NO_AGENT_VALUE ? undefined : aiAgentId}
+        />
       </div>
     );
   }

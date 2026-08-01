@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -19,6 +20,7 @@ type SupportAIHandler struct {
 	knowledgeSourceSvc *service.AgentKnowledgeSourceService
 	contentSourceSvc   *service.SupportContentSourceService
 	agentContentSvc    *service.AgentContentSourceService
+	curatedGuidanceSvc *service.CuratedGuidanceService
 }
 
 // NewSupportAIHandler creates a new SupportAIHandler.
@@ -28,6 +30,7 @@ func NewSupportAIHandler(
 	knowledgeSourceSvc *service.AgentKnowledgeSourceService,
 	contentSourceSvc *service.SupportContentSourceService,
 	agentContentSvc *service.AgentContentSourceService,
+	curatedGuidanceSvc *service.CuratedGuidanceService,
 ) *SupportAIHandler {
 	return &SupportAIHandler{
 		aiService:          aiService,
@@ -35,7 +38,87 @@ func NewSupportAIHandler(
 		knowledgeSourceSvc: knowledgeSourceSvc,
 		contentSourceSvc:   contentSourceSvc,
 		agentContentSvc:    agentContentSvc,
+		curatedGuidanceSvc: curatedGuidanceSvc,
 	}
+}
+
+// ListCuratedGuidance returns pinned answers scoped to one support agent.
+func (h *SupportAIHandler) ListCuratedGuidance(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	agentID := chi.URLParam(r, "id")
+	items, err := h.curatedGuidanceSvc.List(r.Context(), workspaceID, agentID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "list curated guidance failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+// CreateCuratedGuidance creates and indexes a pinned support answer.
+func (h *SupportAIHandler) CreateCuratedGuidance(w http.ResponseWriter, r *http.Request) {
+	var req model.CreateCuratedGuidanceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	item, err := h.curatedGuidanceSvc.Create(
+		r.Context(),
+		getWorkspaceID(r),
+		chi.URLParam(r, "id"),
+		middleware.GetUserID(r.Context()),
+		req,
+	)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "create curated guidance failed", "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, item)
+}
+
+// UpdateCuratedGuidance updates scope, content, or status and reindexes when needed.
+func (h *SupportAIHandler) UpdateCuratedGuidance(w http.ResponseWriter, r *http.Request) {
+	var req model.UpdateCuratedGuidanceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	item, err := h.curatedGuidanceSvc.Update(
+		r.Context(),
+		getWorkspaceID(r),
+		chi.URLParam(r, "id"),
+		chi.URLParam(r, "guidanceId"),
+		req,
+	)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, service.ErrCuratedGuidanceNotFound) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+// DeleteCuratedGuidance permanently removes a pinned answer.
+func (h *SupportAIHandler) DeleteCuratedGuidance(w http.ResponseWriter, r *http.Request) {
+	err := h.curatedGuidanceSvc.Delete(
+		r.Context(),
+		getWorkspaceID(r),
+		chi.URLParam(r, "id"),
+		chi.URLParam(r, "guidanceId"),
+	)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, service.ErrCuratedGuidanceNotFound) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // GetKnowledgeSources returns the knowledge sources linked to an agent.

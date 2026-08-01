@@ -7,20 +7,27 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 // delegatedTaskPlanDocumentContextLimit mirrors the Temporal path's plan-doc
 // truncation (temporalapp buildTaskRunPlanDocumentContextSections).
 const delegatedTaskPlanDocumentContextLimit = 12000
 
+const (
+	delegatedEpicSpecContextLimit  = 16000
+	delegatedEpicTaskContextLimit  = 50
+	agentRepositoryAccessReadOnly  = "read_only"
+	agentRepositoryAccessReadWrite = "read_write"
+)
+
 // agentRequiresRepositoryWorkspace reports whether delegated runs for this
 // agent must execute inside a prepared repository clone. It is keyed strictly
 // off the agent's preset runtime profile (code_builder / review_agent set
 // RequiresRepo); custom agents never match because
-// worker.GetRuntimeProfile falls back to code_builder for unknown names, so
+// agentcontract.GetRuntimeProfile falls back to code_builder for unknown names, so
 // the resolved profile name must round-trip the preset key exactly.
 func agentRequiresRepositoryWorkspace(agent *model.Agent) bool {
 	if agent == nil {
@@ -30,7 +37,7 @@ func agentRequiresRepositoryWorkspace(agent *model.Agent) bool {
 	if preset == "" {
 		return false
 	}
-	profile := worker.GetRuntimeProfile(preset)
+	profile := agentcontract.GetRuntimeProfile(preset)
 	return profile.Name == preset && profile.RequiresRepo
 }
 
@@ -63,8 +70,107 @@ func withRepositoryWorkspaceExecutionConfig(config json.RawMessage) json.RawMess
 	return payload
 }
 
+// withAgentRuntimeExecutionConfig adds host-owned execution selectors that
+// Agent Runtime needs but Helpin does not persist in AgentExecutionConfig.
+// Existing user/model routing fields are preserved.
+func withAgentRuntimeExecutionConfig(config json.RawMessage, agent *model.Agent) json.RawMessage {
+	if agentRequiresRepositoryWorkspace(agent) {
+		config = withRepositoryWorkspaceExecutionConfig(config)
+	}
+	values := map[string]interface{}{}
+	if len(config) > 0 && strings.TrimSpace(string(config)) != "null" {
+		if err := json.Unmarshal(config, &values); err != nil {
+			values = map[string]interface{}{}
+		}
+	}
+	if agent != nil {
+		workspaceValue, _ := values["workspace"].(map[string]interface{})
+		if workspaceValue == nil {
+			workspaceValue = map[string]interface{}{}
+		}
+		workspaceValue["access"] = agentRepositoryAccessMode(agent)
+		values["workspace"] = workspaceValue
+		if strings.TrimSpace(agent.EffectivePresetKey()) == model.AgentPresetTaskPlanner {
+			values["completion"] = map[string]interface{}{
+				"required_tools": []string{agentcontract.ToolPublishTaskPlanDoc},
+			}
+		}
+		if presetKey := strings.TrimSpace(agent.EffectivePresetKey()); presetKey != "" {
+			values["preset_key"] = presetKey
+		}
+		if strings.TrimSpace(agent.RuntimeKind) == "native_sdk" {
+			values["max_tool_steps"] = agentcontract.DefaultWorkflowConfigForAgent(agent).MaxIterations
+		}
+	}
+	payload, err := json.Marshal(values)
+	if err != nil {
+		return config
+	}
+	return payload
+}
+
+func agentRepositoryAccessMode(agent *model.Agent) string {
+	if agent == nil {
+		return agentRepositoryAccessReadOnly
+	}
+	switch strings.TrimSpace(agent.EffectivePresetKey()) {
+	case model.AgentPresetCodeBuilder, model.AgentPresetReviewAgent:
+		return agentRepositoryAccessReadWrite
+	}
+	for _, toolName := range agentcontract.NormalizeToolNames(parseJSONStringSlice(agent.AllowedTools)) {
+		switch toolName {
+		case "write_file", "edit_file", "apply_patch", "create_branch", "commit_and_push", "open_pr":
+			return agentRepositoryAccessReadWrite
+		}
+	}
+	return agentRepositoryAccessReadOnly
+}
+
+func withAgentRunPlanningStage(payload []byte, stage string) ([]byte, error) {
+	stage = strings.TrimSpace(stage)
+	if stage == "" {
+		return payload, nil
+	}
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(payload, &input); err != nil {
+		return nil, err
+	}
+	input.Stage = stage
+	return json.Marshal(input)
+}
+
+func planningStageForDelegatedRun(agent *model.Agent, task *model.PMTask, epic *model.PMEpic) string {
+	if agent == nil {
+		return ""
+	}
+	switch strings.TrimSpace(agent.EffectivePresetKey()) {
+	case model.AgentPresetTaskPlanner:
+		if task != nil {
+			return model.PlanningStageTaskPlanDoc
+		}
+	case model.AgentPresetEpicPlanner:
+		if epic == nil {
+			return ""
+		}
+		if strings.TrimSpace(derefString(epic.ApprovedSpecVersionID)) != "" {
+			return model.PlanningStagePlanTasks
+		}
+		switch strings.TrimSpace(epic.PlanningState) {
+		case model.EpicPlanningStateReadyForTaskPlanning,
+			model.EpicPlanningStateAwaitingPlanApproval,
+			model.EpicPlanningStateTasksCreated,
+			model.EpicPlanningStateExecutionStarted,
+			model.EpicPlanningStateReadyForExecution:
+			return model.PlanningStagePlanTasks
+		default:
+			return model.PlanningStageDraftSpec
+		}
+	}
+	return ""
+}
+
 // buildDelegatedTaskLaunchContext assembles, at launch time, the task context
-// a local Temporal run builds at execution time (worker.BuildUserPrompt task
+// a local Temporal run builds at execution time (agentcontract.BuildUserPrompt task
 // sections + temporalapp buildTaskExecutionInstructions): operator notes,
 // task name and description, parent epic background, repository branch
 // values, and the canonical plan document content. Delegated runs need this
@@ -104,8 +210,138 @@ func (s *AgentService) buildDelegatedTaskLaunchContext(ctx context.Context, task
 	return strings.TrimSpace(strings.Join(sections, "\n\n"))
 }
 
+// buildDelegatedEpicLaunchContext carries the durable planning facts that the
+// retired Temporal executor assembled before invoking an epic planner. The
+// runtime can still use Helpin tools for deeper discovery, but it should not
+// spend its first tool rounds rediscovering the epic, approved/draft spec, and
+// existing-task guardrails.
+func (s *AgentService) buildDelegatedEpicLaunchContext(ctx context.Context, epic *model.PMEpic, extra *string) string {
+	operatorNotes := strings.TrimSpace(derefString(extra))
+	if epic == nil {
+		return operatorNotes
+	}
+	sections := make([]string, 0, 8)
+	if operatorNotes != "" {
+		sections = append(sections, "Operator notes:\n"+operatorNotes)
+	}
+	sections = append(sections, fmt.Sprintf("Epic: **%s** [%s]", strings.TrimSpace(epic.Name), epic.ID))
+	if epic.Description != nil {
+		if description := strings.TrimSpace(tiptap.RichTextToMarkdown(*epic.Description)); description != "" {
+			sections = append(sections, "Epic description:\n"+truncateDelegatedLaunchText(description, 8000))
+		}
+	}
+	sections = append(sections, fmt.Sprintf(
+		"Durable planning facts:\n- planning_state=%s\n- team_id=%s\n- spec_document_id=%s\n- approved_spec_version_id=%s",
+		strings.TrimSpace(epic.PlanningState),
+		strings.TrimSpace(derefString(epic.TeamID)),
+		strings.TrimSpace(derefString(epic.SpecDocumentID)),
+		strings.TrimSpace(derefString(epic.ApprovedSpecVersionID)),
+	))
+	if spec := s.delegatedEpicSpecSection(ctx, epic); spec != "" {
+		sections = append(sections, spec)
+	}
+	if tasks := s.delegatedEpicTasksSection(ctx, epic); tasks != "" {
+		sections = append(sections, tasks)
+	}
+	if docs := s.delegatedLinkedDocsSection(ctx, epic.WorkspaceID, model.LinkedObjectEpic, epic.ID, derefString(epic.SpecDocumentID)); docs != "" {
+		sections = append(sections, "Other docs linked to this epic:\n"+docs)
+	}
+	return strings.TrimSpace(strings.Join(sections, "\n\n"))
+}
+
+func (s *AgentService) delegatedEpicSpecSection(ctx context.Context, epic *model.PMEpic) string {
+	if epic == nil {
+		return ""
+	}
+	if versionID := strings.TrimSpace(derefString(epic.ApprovedSpecVersionID)); versionID != "" && s.docsVersionRepo != nil {
+		version, err := s.docsVersionRepo.GetByID(ctx, versionID)
+		if err != nil {
+			slog.WarnContext(ctx, "delegated epic launch context: approved spec lookup failed", "error", err, "epic_id", epic.ID, "version_id", versionID)
+		} else if version != nil {
+			markdown := strings.TrimSpace(tiptap.RichTextToMarkdown(string(version.Content)))
+			if markdown == "" {
+				markdown = strings.TrimSpace(version.ContentText)
+			}
+			if markdown != "" {
+				return "Approved epic PRD snapshot [" + versionID + "]:\n" + truncateDelegatedLaunchText(markdown, delegatedEpicSpecContextLimit)
+			}
+		}
+	}
+	documentID := strings.TrimSpace(derefString(epic.SpecDocumentID))
+	if documentID == "" || s.docsContentRepo == nil {
+		return ""
+	}
+	content, err := s.docsContentRepo.GetByDocumentID(ctx, documentID)
+	if err != nil {
+		slog.WarnContext(ctx, "delegated epic launch context: spec draft lookup failed", "error", err, "epic_id", epic.ID, "document_id", documentID)
+		return ""
+	}
+	markdown := delegatedDocsContentMarkdown(content)
+	if markdown == "" {
+		return ""
+	}
+	return "Current epic PRD draft [" + documentID + "]:\n" + truncateDelegatedLaunchText(markdown, delegatedEpicSpecContextLimit)
+}
+
+func (s *AgentService) delegatedEpicTasksSection(ctx context.Context, epic *model.PMEpic) string {
+	if epic == nil || s.taskRepo == nil {
+		return ""
+	}
+	tasks, err := s.taskRepo.ListByEpicID(ctx, epic.WorkspaceID, epic.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "delegated epic launch context: task lookup failed", "error", err, "epic_id", epic.ID)
+		return ""
+	}
+	if len(tasks) == 0 {
+		return "Existing epic tasks: none."
+	}
+	lines := []string{fmt.Sprintf("Existing epic tasks (%d total; do not duplicate these):", len(tasks))}
+	for index, task := range tasks {
+		if index >= delegatedEpicTaskContextLimit {
+			lines = append(lines, fmt.Sprintf("- ... %d more tasks omitted", len(tasks)-index))
+			break
+		}
+		lines = append(lines, fmt.Sprintf("- #%d %s [id=%s type=%s completed=%t]", task.DisplayID, strings.TrimSpace(task.Name), task.ID, task.TaskType, task.Completed))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (s *AgentService) delegatedLinkedDocsSection(ctx context.Context, workspaceID, objectType, objectID, excludeDocumentID string) string {
+	if s.docsLinkRepo == nil || s.docsDocumentRepo == nil || s.docsContentRepo == nil {
+		return ""
+	}
+	links, err := s.docsLinkRepo.ListByObject(ctx, workspaceID, objectType, objectID)
+	if err != nil {
+		slog.WarnContext(ctx, "delegated launch context: linked docs lookup failed", "error", err, "object_type", objectType, "object_id", objectID)
+		return ""
+	}
+	entries := make([]string, 0, 5)
+	seen := map[string]bool{}
+	for _, link := range links {
+		if link.DocumentID == excludeDocumentID || seen[link.DocumentID] {
+			continue
+		}
+		seen[link.DocumentID] = true
+		doc, err := s.docsDocumentRepo.GetByID(ctx, link.DocumentID)
+		if err != nil || doc == nil {
+			continue
+		}
+		body := "(no content yet)"
+		if content, err := s.docsContentRepo.GetByDocumentID(ctx, doc.ID); err == nil {
+			if markdown := delegatedDocsContentMarkdown(content); markdown != "" {
+				body = truncateDelegatedLaunchText(markdown, 3000)
+			}
+		}
+		entries = append(entries, fmt.Sprintf("- %s [%s]\n%s", doc.Title, doc.ID, body))
+		if len(entries) >= 5 {
+			break
+		}
+	}
+	return strings.Join(entries, "\n\n")
+}
+
 // delegatedTaskEpicSections mirrors the parent-epic background block of
-// worker.BuildUserPrompt for a task-scoped run.
+// agentcontract.BuildUserPrompt for a task-scoped run.
 func (s *AgentService) delegatedTaskEpicSections(ctx context.Context, task *model.PMTask) []string {
 	epicID := strings.TrimSpace(derefString(task.EpicID))
 	if epicID == "" || s.epicRepo == nil {

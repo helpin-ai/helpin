@@ -405,7 +405,12 @@ func (h *AutomationHandler) ListTriggerCatalog(w http.ResponseWriter, r *http.Re
 
 // ListToolCatalog handles GET /api/automation/library/tools.
 func (h *AutomationHandler) ListToolCatalog(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.agentService.ListToolCatalog())
+	catalog, err := h.agentService.ListToolCatalogForWorkspace(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
 }
 
 // ListAgentTemplates handles GET /api/automation/agent-templates.
@@ -587,18 +592,7 @@ func (h *AutomationHandler) DraftCustomAgent(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	skillCatalog, err := h.agentService.ListSkillCatalog(r.Context(), workspaceID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	result, err := h.agentService.DraftCustomAgentWithCatalog(
-		r.Context(),
-		workspaceID,
-		req,
-		h.agentService.ListToolCatalog().Tools,
-		skillCatalog.Skills,
-	)
+	result, err := h.agentService.DraftCustomAgent(r.Context(), workspaceID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

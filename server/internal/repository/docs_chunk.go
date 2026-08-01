@@ -18,7 +18,8 @@ type DocsChunkRepository struct {
 const (
 	defaultChunkEmbeddingProvider   = "openai"
 	defaultChunkEmbeddingModel      = "text-embedding-3-small"
-	defaultChunkEmbeddingVersion    = "content-chunk-v1"
+	defaultChunkEmbeddingVersion    = "content-chunk-v2"
+	legacyChunkEmbeddingVersion     = "content-chunk-v1"
 	defaultChunkEmbeddingDimensions = 1536
 )
 
@@ -27,9 +28,12 @@ type DocsChunkSearchResult struct {
 	ID            string  `json:"id"`
 	WorkspaceID   string  `json:"workspace_id"`
 	SpaceID       string  `json:"space_id"`
+	SpaceType     string  `json:"space_type"`
 	DocumentID    string  `json:"document_id"`
 	BlockID       *string `json:"block_id,omitempty"`
 	ChunkIndex    int     `json:"chunk_index"`
+	SectionKey    string  `json:"section_key"`
+	HeadingPath   string  `json:"heading_path"`
 	Title         string  `json:"title"`
 	Content       string  `json:"content"`
 	LexicalScore  float64 `json:"lexical_score"`
@@ -54,7 +58,8 @@ func (r *DocsChunkRepository) ReplaceDocumentChunks(ctx context.Context, documen
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "document_id"}, {Name: "chunk_index"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"block_id", "block_range", "title", "content", "content_hash", "embedding",
+				"block_id", "block_range", "section_key", "heading_path", "title", "content", "search_content",
+				"previous_chunk_index", "next_chunk_index", "content_hash", "embedding",
 				"embedding_provider", "embedding_model", "embedding_version", "embedding_dimensions",
 				"updated_at",
 			}),
@@ -79,7 +84,7 @@ func (r *DocsChunkRepository) DeleteByDocumentIDs(ctx context.Context, documentI
 	return r.db.WithContext(ctx).Where("document_id IN ?", documentIDs).Delete(&model.DocsChunk{}).Error
 }
 
-// DeleteBySpaceExceptDocuments removes stale chunks for docs no longer eligible in a help-center space.
+// DeleteBySpaceExceptDocuments removes stale chunks for docs no longer eligible in a selected space.
 func (r *DocsChunkRepository) DeleteBySpaceExceptDocuments(ctx context.Context, workspaceID, spaceID string, keepDocumentIDs []string) error {
 	query := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND space_id = ?", workspaceID, spaceID)
@@ -101,6 +106,31 @@ func (r *DocsChunkRepository) CountBySpaceID(ctx context.Context, workspaceID, s
 	return count, nil
 }
 
+// ListDocumentNeighbors returns exact adjacent chunks for an already eligible
+// document hit. Workspace and document filters remain in SQL.
+func (r *DocsChunkRepository) ListDocumentNeighbors(ctx context.Context, workspaceID, agentID, documentID string, indexes []int) ([]DocsChunkSearchResult, error) {
+	if len(indexes) == 0 {
+		return []DocsChunkSearchResult{}, nil
+	}
+	results := []DocsChunkSearchResult{}
+	if err := r.db.WithContext(ctx).
+		Table("docs_chunks AS c").
+		Select("c.id, c.workspace_id, c.space_id, s.type AS space_type, c.document_id, c.block_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.content").
+		Joins("JOIN docs_documents d ON d.id = c.document_id").
+		Joins("JOIN docs_spaces s ON s.id = c.space_id").
+		Joins("JOIN agent_knowledge_sources aks ON aks.space_id = c.space_id AND aks.workspace_id = c.workspace_id").
+		Joins("LEFT JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
+		Where("c.workspace_id = ? AND aks.agent_id = ? AND c.document_id = ? AND c.chunk_index IN ?", workspaceID, agentID, documentID, indexes).
+		Where("aks.sync_status <> ?", model.KnowledgeSourceSyncDisabled).
+		Where("d.status = ? AND d.deleted_at IS NULL", model.DocStatusPublished).
+		Where("(s.type = ? OR (s.type = ? AND ha.public_published_at IS NOT NULL))", model.SpaceTypeInternal, model.SpaceTypeExternalCapable).
+		Order("c.chunk_index ASC").
+		Scan(&results).Error; err != nil {
+		return nil, fmt.Errorf("list docs chunk neighbors: %w", err)
+	}
+	return results, nil
+}
+
 // HybridSearch performs lexical + vector retrieval and fuses the results in memory.
 func (r *DocsChunkRepository) HybridSearch(
 	ctx context.Context,
@@ -110,12 +140,31 @@ func (r *DocsChunkRepository) HybridSearch(
 	queryEmbedding string,
 	limit int,
 ) ([]DocsChunkSearchResult, error) {
-	return r.HybridSearchWithEmbeddingModel(ctx, workspaceID, spaceIDs, query, queryEmbedding, defaultChunkEmbeddingModel, limit)
+	return r.hybridSearch(ctx, workspaceID, "", spaceIDs, query, queryEmbedding, defaultChunkEmbeddingModel, limit)
+}
+
+// HybridSearchForAgent applies the agent-to-space link inside every candidate
+// SQL query so unlinking a source cannot leak it through a stale application list.
+func (r *DocsChunkRepository) HybridSearchForAgent(ctx context.Context, workspaceID, agentID string, spaceIDs []string, query, queryEmbedding, embeddingModel string, limit int) ([]DocsChunkSearchResult, error) {
+	return r.hybridSearch(ctx, workspaceID, agentID, spaceIDs, query, queryEmbedding, embeddingModel, limit)
 }
 
 func (r *DocsChunkRepository) HybridSearchWithEmbeddingModel(
 	ctx context.Context,
 	workspaceID string,
+	spaceIDs []string,
+	query string,
+	queryEmbedding string,
+	embeddingModel string,
+	limit int,
+) ([]DocsChunkSearchResult, error) {
+	return r.hybridSearch(ctx, workspaceID, "", spaceIDs, query, queryEmbedding, embeddingModel, limit)
+}
+
+func (r *DocsChunkRepository) hybridSearch(
+	ctx context.Context,
+	workspaceID string,
+	agentID string,
 	spaceIDs []string,
 	query string,
 	queryEmbedding string,
@@ -132,14 +181,14 @@ func (r *DocsChunkRepository) HybridSearchWithEmbeddingModel(
 		embeddingModel = defaultChunkEmbeddingModel
 	}
 
-	lexical, err := r.lexicalSearch(ctx, workspaceID, spaceIDs, query, max(limit*4, 12))
+	lexical, err := r.lexicalSearch(ctx, workspaceID, agentID, spaceIDs, query, max(limit*4, 12))
 	if err != nil {
 		return nil, err
 	}
 
 	vector := []DocsChunkSearchResult{}
 	if queryEmbedding != "" && r.db.Dialector.Name() == "postgres" {
-		vector, err = r.vectorSearch(ctx, workspaceID, spaceIDs, queryEmbedding, embeddingModel, max(limit*4, 12))
+		vector, err = r.vectorSearch(ctx, workspaceID, agentID, spaceIDs, queryEmbedding, embeddingModel, max(limit*4, 12))
 		if err != nil {
 			return nil, err
 		}
@@ -152,91 +201,120 @@ func (r *DocsChunkRepository) HybridSearchWithEmbeddingModel(
 	return fused, nil
 }
 
-func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID string, spaceIDs []string, query string, limit int) ([]DocsChunkSearchResult, error) {
+func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID, agentID string, spaceIDs []string, query string, limit int) ([]DocsChunkSearchResult, error) {
 	tsQuery := toTSQuery(query)
 	if tsQuery == "" {
 		return []DocsChunkSearchResult{}, nil
 	}
 
 	if r.db.Dialector.Name() != "postgres" {
-		var chunks []model.DocsChunk
-		if err := r.db.WithContext(ctx).
-			Where("workspace_id = ? AND space_id IN ?", workspaceID, spaceIDs).
-			Order("updated_at DESC").
+		var results []DocsChunkSearchResult
+		dbQuery := r.db.WithContext(ctx).
+			Table("docs_chunks AS c").
+			Select("c.id, c.workspace_id, c.space_id, s.type AS space_type, c.document_id, c.block_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.content").
+			Joins("JOIN docs_documents d ON d.id = c.document_id").
+			Joins("JOIN docs_spaces s ON s.id = c.space_id").
+			Joins("LEFT JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
+			Where("c.workspace_id = ? AND c.space_id IN ?", workspaceID, spaceIDs).
+			Where("d.status = ? AND d.deleted_at IS NULL", model.DocStatusPublished).
+			Where("(s.type = ? OR (s.type = ? AND ha.public_published_at IS NOT NULL))", model.SpaceTypeInternal, model.SpaceTypeExternalCapable)
+		if agentID != "" {
+			dbQuery = dbQuery.Joins("JOIN agent_knowledge_sources aks ON aks.space_id = c.space_id AND aks.workspace_id = c.workspace_id").
+				Where("aks.agent_id = ? AND aks.sync_status <> ?", agentID, model.KnowledgeSourceSyncDisabled)
+		}
+		if err := dbQuery.
+			Order("c.updated_at DESC").
 			Limit(limit).
-			Find(&chunks).Error; err != nil {
+			Scan(&results).Error; err != nil {
 			return nil, err
 		}
-		results := make([]DocsChunkSearchResult, 0, len(chunks))
-		for _, chunk := range chunks {
-			results = append(results, DocsChunkSearchResult{
-				ID:           chunk.ID,
-				WorkspaceID:  chunk.WorkspaceID,
-				SpaceID:      chunk.SpaceID,
-				DocumentID:   chunk.DocumentID,
-				BlockID:      chunk.BlockID,
-				ChunkIndex:   chunk.ChunkIndex,
-				Title:        chunk.Title,
-				Content:      chunk.Content,
-				LexicalScore: 1,
-			})
+		for idx := range results {
+			results[idx].LexicalScore = 1
 		}
 		return results, nil
 	}
 
-	sql := `
-		SELECT c.id, c.workspace_id, c.space_id, c.document_id, c.block_id, c.chunk_index, c.title, c.content,
+	agentJoin := ""
+	agentPredicate := ""
+	if agentID != "" {
+		agentJoin = "JOIN agent_knowledge_sources aks ON aks.space_id = c.space_id AND aks.workspace_id = c.workspace_id"
+		agentPredicate = "AND aks.agent_id = ? AND aks.sync_status <> 'disabled'"
+	}
+	sql := fmt.Sprintf(`
+		SELECT c.id, c.workspace_id, c.space_id, s.type AS space_type, c.document_id, c.block_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.content,
 		       ts_rank(
 		         setweight(to_tsvector('english', COALESCE(c.title, '')), 'A') ||
-		         setweight(to_tsvector('english', COALESCE(c.content, '')), 'B'),
+		         setweight(to_tsvector('english', COALESCE(NULLIF(c.search_content, ''), c.content, '')), 'B'),
 		         to_tsquery('english', ?)
 		       ) AS lexical_score
 		FROM docs_chunks c
 		JOIN docs_documents d ON d.id = c.document_id
-		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		JOIN docs_spaces s ON s.id = c.space_id
+		LEFT JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		%s
 		WHERE c.workspace_id = ?
 		  AND c.space_id IN ?
 		  AND d.status = 'published'
 		  AND d.deleted_at IS NULL
-		  AND ha.public_published_at IS NOT NULL
+		  AND (s.type = 'internal' OR (s.type = 'external_capable' AND ha.public_published_at IS NOT NULL))
+		  %s
 		  AND (
-		    to_tsvector('english', COALESCE(c.title, '')) ||
-		    to_tsvector('english', COALESCE(c.content, ''))
+		    setweight(to_tsvector('english', COALESCE(c.title, '')), 'A') ||
+		    setweight(to_tsvector('english', COALESCE(NULLIF(c.search_content, ''), c.content, '')), 'B')
 		  ) @@ to_tsquery('english', ?)
 		ORDER BY lexical_score DESC, c.updated_at DESC
 		LIMIT ?
-	`
+	`, agentJoin, agentPredicate)
 	var results []DocsChunkSearchResult
-	if err := r.db.WithContext(ctx).Raw(sql, tsQuery, workspaceID, spaceIDs, tsQuery, limit).Scan(&results).Error; err != nil {
+	args := []any{tsQuery, workspaceID, spaceIDs}
+	if agentID != "" {
+		args = append(args, agentID)
+	}
+	args = append(args, tsQuery, limit)
+	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("lexical chunk search: %w", err)
 	}
 	return results, nil
 }
 
-func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID string, spaceIDs []string, queryEmbedding string, embeddingModel string, limit int) ([]DocsChunkSearchResult, error) {
+func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID, agentID string, spaceIDs []string, queryEmbedding string, embeddingModel string, limit int) ([]DocsChunkSearchResult, error) {
 	if embeddingModel == "" {
 		embeddingModel = defaultChunkEmbeddingModel
 	}
-	sql := `
-		SELECT c.id, c.workspace_id, c.space_id, c.document_id, c.block_id, c.chunk_index, c.title, c.content,
+	agentJoin := ""
+	agentPredicate := ""
+	if agentID != "" {
+		agentJoin = "JOIN agent_knowledge_sources aks ON aks.space_id = c.space_id AND aks.workspace_id = c.workspace_id"
+		agentPredicate = "AND aks.agent_id = ? AND aks.sync_status <> 'disabled'"
+	}
+	sql := fmt.Sprintf(`
+		SELECT c.id, c.workspace_id, c.space_id, s.type AS space_type, c.document_id, c.block_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.content,
 		       GREATEST(0, 1 - (c.embedding <=> CAST(? AS vector))) AS vector_score
 		FROM docs_chunks c
 		JOIN docs_documents d ON d.id = c.document_id
-		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		JOIN docs_spaces s ON s.id = c.space_id
+		LEFT JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		%s
 		WHERE c.workspace_id = ?
 		  AND c.space_id IN ?
 		  AND d.status = 'published'
 		  AND d.deleted_at IS NULL
-		  AND ha.public_published_at IS NOT NULL
+		  AND (s.type = 'internal' OR (s.type = 'external_capable' AND ha.public_published_at IS NOT NULL))
+		  %s
 		  AND c.embedding_provider = ?
 		  AND c.embedding_model = ?
-		  AND c.embedding_version = ?
+		  AND c.embedding_version IN ?
 		  AND c.embedding_dimensions = ?
-		ORDER BY c.embedding <=> CAST(? AS vector) ASC, c.updated_at DESC
+		ORDER BY c.embedding <=> CAST(? AS vector) ASC
 		LIMIT ?
-	`
+	`, agentJoin, agentPredicate)
 	var results []DocsChunkSearchResult
-	if err := r.db.WithContext(ctx).Raw(sql, queryEmbedding, workspaceID, spaceIDs, defaultChunkEmbeddingProvider, embeddingModel, defaultChunkEmbeddingVersion, defaultChunkEmbeddingDimensions, queryEmbedding, limit).Scan(&results).Error; err != nil {
+	args := []any{queryEmbedding, workspaceID, spaceIDs}
+	if agentID != "" {
+		args = append(args, agentID)
+	}
+	args = append(args, defaultChunkEmbeddingProvider, embeddingModel, []string{defaultChunkEmbeddingVersion, legacyChunkEmbeddingVersion}, defaultChunkEmbeddingDimensions, queryEmbedding, limit)
+	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("vector chunk search: %w", err)
 	}
 	return results, nil

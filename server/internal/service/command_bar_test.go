@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -600,6 +601,38 @@ func TestChatTurnClassifiesExplicitTaskStatusAsInlineReadOnly(t *testing.T) {
 	output := string(toolContext.ToolCalls[0].Output)
 	if !strings.Contains(output, `"task_key":"USE-90"`) || !strings.Contains(output, `"completed":false`) {
 		t.Fatalf("expected resolved USE-90 task output, got %s", output)
+	}
+}
+
+func TestChatTurnSurfacesInsufficientAICreditsClearly(t *testing.T) {
+	service, db, workspaceID, _ := setupCommandBarTargetResolutionTest(t)
+	ctx := context.Background()
+	createCommandBarChatTablesForTest(t, db)
+
+	// The provider is out of credits: the classifier call fails with a 402.
+	fakeLLM := &scriptedCommandBarLLM{err: fmt.Errorf("openai API error (status 402): no credits: %w", llm.ErrInsufficientCredits)}
+	service.llmProvider = fakeLLM
+	service.SetChatRepository(repository.NewCommandBarChatRepository(db))
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "Write a summary document of this week's tasks.",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalInlineAnswer {
+		t.Fatalf("expected inline answer proposal, got %#v", resp.Proposal)
+	}
+	if resp.Proposal.Plan != nil {
+		t.Fatalf("credit-exhausted turn should not create a run plan")
+	}
+	if resp.Proposal.Answer != commandBarAICreditsExhaustedMessage {
+		t.Fatalf("expected clear credits message, got %q", resp.Proposal.Answer)
+	}
+	// It must not attempt a second (also-doomed) read-only answer call.
+	if len(fakeLLM.requests) != 1 {
+		t.Fatalf("expected a single classifier call before short-circuiting, got %d", len(fakeLLM.requests))
 	}
 }
 
@@ -2106,6 +2139,97 @@ func TestInlineReadOnlyChatUsesModelRequestedTools(t *testing.T) {
 	}
 }
 
+func TestInlineReadOnlyChatGroundsAgentRecommendationsInActorVisibleCatalog(t *testing.T) {
+	db := setupAgentScopeTestDB(t)
+	workspaceID := "ws-1"
+	seedAgentScopeAgent(t, db, model.Agent{
+		ID:                    "quill-agent",
+		WorkspaceID:           workspaceID,
+		IsSystem:              true,
+		Name:                  "Quill",
+		PresetKey:             model.AgentPresetDocumentationAgent,
+		Role:                  "Documentation Agent",
+		Status:                "idle",
+		RuntimeKind:           "codex",
+		AllowedTargets:        json.RawMessage(`["workspace","document","repository"]`),
+		AllowedTools:          json.RawMessage(`["list_documents","read_document","checkout_repository"]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "never",
+		DefaultInvocationMode: "interactive",
+	})
+	seedAgentScopeAgent(t, db, model.Agent{
+		ID:                    "hidden-agent",
+		WorkspaceID:           workspaceID,
+		Name:                  "Hidden Team Writer",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		AllowedTargets:        json.RawMessage(`["document"]`),
+		AllowedTools:          json.RawMessage(`["read_document"]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "always",
+		DefaultInvocationMode: "interactive",
+		TeamIDs:               []string{"team-b"},
+	})
+
+	agentService := &AgentService{agentRepo: repository.NewAgentRepository(db)}
+	commandService := NewInternalCommandService(agentService, nil, nil, nil, nil, nil, nil, nil)
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"type":"tool_call","tool":"list_agents","input":{}}`,
+		`{"type":"final","answer":"Use Quill, the Documentation Agent, to research and write the Usermaven MCP documentation."}`,
+	}}
+	service := NewCommandBarService(agentService, nil, nil, nil, fakeLLM).
+		SetInternalCommandService(commandService)
+	ctx := authorization.WithActor(context.Background(), &authorization.Actor{
+		UserID:      "actor-1",
+		WorkspaceID: workspaceID,
+		Role:        "member",
+		TeamMemberships: []authorization.TeamRole{
+			{TeamID: "team-a", Role: "member"},
+		},
+	})
+	classifierLLM := &scriptedCommandBarLLM{response: `{"route":"inline_read_only","reason":"agent recommendation","confidence":0.99}`}
+	classifierService := NewCommandBarService(agentService, nil, nil, nil, classifierLLM).
+		SetInternalCommandService(commandService)
+	classification, err := classifierService.classifyCommandBarChatIntent(ctx, workspaceID, "Which agents should I use to document our Usermaven MCP server?", model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID}, CommandBarChatAccess{CanReadPM: true, CanReadDocs: true, ActorRole: "member"}, nil)
+	if err != nil || classification == nil || classification.Route != "inline_read_only" {
+		t.Fatalf("expected inline agent-discovery classification, classification=%#v err=%v", classification, err)
+	}
+	classifierPrompt := classifierLLM.requests[0].Messages[0].Content
+	if !strings.Contains(classifierPrompt, `"name":"Quill"`) || strings.Contains(classifierPrompt, "Hidden Team Writer") {
+		t.Fatalf("classifier did not receive actor-filtered catalog: %s", classifierPrompt)
+	}
+
+	answer, inlineContext := service.inlineReadOnlyAnswer(ctx, workspaceID, "actor-1", "Which agents should I use to document our Usermaven MCP server?", model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID}, CommandBarChatAccess{CanReadPM: true, CanReadDocs: true, ActorRole: "member"}, nil)
+	if !strings.Contains(answer, "Quill") {
+		t.Fatalf("expected Quill recommendation, got %q", answer)
+	}
+	if len(fakeLLM.requests) != 2 {
+		t.Fatalf("expected list_agents tool turn then final answer, got %d requests", len(fakeLLM.requests))
+	}
+	firstPrompt := fakeLLM.requests[0].Messages[0].Content
+	if !strings.Contains(firstPrompt, `"name":"Quill"`) || !strings.Contains(firstPrompt, `"name":"list_agents"`) {
+		t.Fatalf("expected verified Quill catalog and list_agents tool in prompt, got %s", firstPrompt)
+	}
+	if strings.Contains(firstPrompt, "Hidden Team Writer") {
+		t.Fatalf("actor-inaccessible agent leaked into prompt: %s", firstPrompt)
+	}
+	var toolContext commandBarReadOnlyToolContext
+	if err := json.Unmarshal(inlineContext, &toolContext); err != nil {
+		t.Fatalf("decode inline context: %v", err)
+	}
+	if len(toolContext.ToolCalls) != 1 || toolContext.ToolCalls[0].Tool != "list_agents" {
+		t.Fatalf("expected one list_agents call, got %#v", toolContext.ToolCalls)
+	}
+	toolOutput := string(toolContext.ToolCalls[0].Output)
+	if !strings.Contains(toolOutput, `"name":"Quill"`) || strings.Contains(toolOutput, "Hidden Team Writer") {
+		t.Fatalf("expected actor-filtered list_agents output, got %s", toolOutput)
+	}
+}
+
 func TestInlineReadOnlyChatUsesDocsToolForDocumentPublishCount(t *testing.T) {
 	db := setupCommandBarPlanTestDB(t)
 	ctx := context.Background()
@@ -2668,6 +2792,48 @@ func TestConfirmChatCreateAgentRejectsToolTargetOverrides(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "overrides are not supported") {
 		t.Fatalf("expected override rejection, got %v", err)
+	}
+}
+
+func TestConfirmChatCreateAgentPersistsResolutionAndIsIdempotent(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	chatRepo := repository.NewCommandBarChatRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	service := NewCommandBarService(&AgentService{agentRepo: agentRepo}, nil, nil, nil, nil).SetChatRepository(chatRepo)
+	messageID := seedCommandBarCreateAgentProposal(t, ctx, chatRepo, workspaceID, "actor-1")
+
+	first, err := service.ConfirmChatCreateAgent(ctx, workspaceID, "actor-1", messageID, model.ConfirmCommandBarChatProposalRequest{})
+	if err != nil {
+		t.Fatalf("confirm create agent: %v", err)
+	}
+	second, err := service.ConfirmChatCreateAgent(ctx, workspaceID, "actor-1", messageID, model.ConfirmCommandBarChatProposalRequest{})
+	if err != nil {
+		t.Fatalf("confirm resolved create agent: %v", err)
+	}
+	if first.Agent.ID == "" || second.Agent.ID != first.Agent.ID {
+		t.Fatalf("expected repeated confirmation to return agent %q, got %q", first.Agent.ID, second.Agent.ID)
+	}
+
+	var agentCount int64
+	if err := db.Model(&model.Agent{}).Where("workspace_id = ?", workspaceID).Count(&agentCount).Error; err != nil {
+		t.Fatalf("count agents: %v", err)
+	}
+	if agentCount != 1 {
+		t.Fatalf("expected one agent after repeated confirmation, got %d", agentCount)
+	}
+
+	message, err := chatRepo.GetMessage(ctx, workspaceID, messageID)
+	if err != nil {
+		t.Fatalf("get proposal message: %v", err)
+	}
+	proposal, err := decodeCommandBarProposal(message.ProposalJSON)
+	if err != nil {
+		t.Fatalf("decode persisted proposal: %v", err)
+	}
+	if proposal == nil || proposal.CreatedAgentID != first.Agent.ID {
+		t.Fatalf("expected proposal to persist created agent %q, got %#v", first.Agent.ID, proposal)
 	}
 }
 
@@ -3590,6 +3756,7 @@ func setupCommandBarTargetResolutionTest(t *testing.T) (*CommandBarService, *gor
 		workspace_id TEXT NOT NULL,
 		is_system BOOLEAN NOT NULL DEFAULT 0,
 		name TEXT NOT NULL,
+		icon_key TEXT NOT NULL DEFAULT '',
 		preset_key TEXT,
 		preset_version_key TEXT,
 		source_preset_key TEXT,
@@ -4021,10 +4188,11 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME
 		)`,
 		`CREATE TABLE agents (
-			id TEXT PRIMARY KEY,
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			icon_key TEXT NOT NULL DEFAULT '',
 			preset_key TEXT,
 			preset_version_key TEXT,
 			source_preset_key TEXT,

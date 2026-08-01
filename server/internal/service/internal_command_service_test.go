@@ -28,6 +28,44 @@ func TestWriteDocumentContentCommandSupportsDocumentTarget(t *testing.T) {
 	t.Fatalf("expected docs.write_document_content to support target type document, got %#v", def.SupportedTargetTypes)
 }
 
+func TestEnsureTaskPlanDocumentToolContractAttachesAndReturnsDocumentID(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+
+	def, ok := svc.Definition("docs.ensure_task_plan_doc")
+	if !ok || def.Tool == nil {
+		t.Fatal("expected docs.ensure_task_plan_doc runtime tool definition")
+	}
+	if !strings.Contains(def.Tool.Description, "attach it to that task") || !strings.Contains(def.Tool.Description, "document_id") {
+		t.Fatalf("unexpected ensure task plan document description %q", def.Tool.Description)
+	}
+	schema := def.Tool.InputSchema
+	if schema["additionalProperties"] != false {
+		t.Fatalf("expected closed empty-object schema, got %#v", def.Tool.InputSchema)
+	}
+}
+
+func TestTaskDependencyGraphHasCycle(t *testing.T) {
+	if taskDependencyGraphHasCycle(map[string][]string{"task-a": {"task-b"}, "task-b": {"task-c"}}) {
+		t.Fatal("acyclic dependency graph reported a cycle")
+	}
+	if !taskDependencyGraphHasCycle(map[string][]string{"task-a": {"task-b"}, "task-b": {"task-c"}, "task-c": {"task-a"}}) {
+		t.Fatal("cyclic dependency graph was accepted")
+	}
+}
+
+func TestDocsOrganizationCommandsAreExposedToRuntimeAgents(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	for _, commandName := range []string{"docs.create_space", "docs.create_collection", "docs.update_space", "docs.update_collection", "docs.move_document"} {
+		definition, ok := svc.Definition(commandName)
+		if !ok {
+			t.Fatalf("missing command %q", commandName)
+		}
+		if definition.Tool == nil || definition.Tool.Alias == "" || !definition.Mutating {
+			t.Fatalf("command %q metadata = %#v", commandName, definition.Tool)
+		}
+	}
+}
+
 func TestWriteDocumentContentCommandRejectsEmptyContent(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 
@@ -114,6 +152,79 @@ func TestCreateTaskCommandMetadataAndTargets(t *testing.T) {
 	}
 }
 
+func TestCreateTaskCommandTreatsEmptyOptionalIDsAsOmitted(t *testing.T) {
+	db := newTestDB(t)
+	seedUser(t, db, "actor-1", "actor@example.com", "Actor", "hash")
+	seedWorkspace(t, db, "ws-1", "Workspace", "workspace", "actor-1")
+	seedWorkspaceMember(t, db, "member-1", "ws-1", "actor-1", "actor@example.com", "Actor", "admin")
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"team-1", "ws-1", "Marketing", "marketing", "chore", now, now)
+	mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"wf-1", "ws-1", "Marketing Workflow", "team-1", "state-1", now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-1", "wf-1", "To Do", model.PMStateTypeUnstarted, 0, true, now, now)
+
+	taskRepo := repository.NewPMTaskRepository(db)
+	taskService := NewPMTaskService(
+		taskRepo,
+		repository.NewWorkspaceRepository(db),
+		repository.NewPMWorkflowRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		NewPMActivityService(repository.NewPMActivityRepository(db)),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, taskRepo, nil)
+
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		ActorID:     "actor-1",
+		TargetType:  "workspace",
+		TargetID:    "ws-1",
+	}, "pm.create_task", json.RawMessage(`{
+		"name":"Weekly competitor digest",
+		"team_id":"team-1",
+		"task_type":"chore",
+		"epic_id":"",
+		"workflow_id":"",
+		"state_id":"",
+		"owner_member_ids":[""],
+		"label_ids":[""]
+	}`))
+	if err != nil {
+		t.Fatalf("pm.create_task with empty optional IDs returned error: %v", err)
+	}
+
+	var result struct {
+		TaskID     string  `json:"task_id"`
+		WorkflowID string  `json:"workflow_id"`
+		StateID    string  `json:"state_id"`
+		EpicID     *string `json:"epic_id"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("unmarshal create task output: %v", err)
+	}
+	if result.TaskID == "" || result.WorkflowID != "wf-1" || result.StateID != "state-1" || result.EpicID != nil {
+		t.Fatalf("unexpected create task result: %#v", result)
+	}
+
+	var created model.PMTask
+	if err := db.First(&created, "id = ?", result.TaskID).Error; err != nil {
+		t.Fatalf("load created task: %v", err)
+	}
+	if created.EpicID != nil {
+		t.Fatalf("epic_id = %q, want NULL", *created.EpicID)
+	}
+}
+
 func TestListWorkspaceTeamsCommandMetadataAndOutput(t *testing.T) {
 	db := newTestDB(t)
 	now := time.Now()
@@ -157,6 +268,85 @@ func TestListWorkspaceTeamsCommandMetadataAndOutput(t *testing.T) {
 	}
 	if len(teams) != 2 || teams[0].ID != "team-1" || teams[0].Handle != "eng" || teams[1].Name != "Growth" {
 		t.Fatalf("unexpected teams output %#v", teams)
+	}
+}
+
+func TestListAgentsCommandReturnsOnlyActorVisibleAgents(t *testing.T) {
+	db := setupAgentScopeTestDB(t)
+	seedAgentScopeAgent(t, db, model.Agent{
+		ID:                    "quill-agent",
+		WorkspaceID:           "ws-1",
+		IsSystem:              true,
+		Name:                  "Quill",
+		PresetKey:             model.AgentPresetDocumentationAgent,
+		Role:                  "Documentation Agent",
+		Status:                "idle",
+		RuntimeKind:           "codex",
+		AllowedTargets:        json.RawMessage(`["workspace","document","repository"]`),
+		AllowedTools:          json.RawMessage(`["list_documents","read_document","checkout_repository"]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "never",
+		DefaultInvocationMode: "interactive",
+	})
+	seedAgentScopeAgent(t, db, model.Agent{
+		ID:                    "team-a-agent",
+		WorkspaceID:           "ws-1",
+		Name:                  "Team A Agent",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		AllowedTargets:        json.RawMessage(`["task"]`),
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "always",
+		DefaultInvocationMode: "interactive",
+		TeamIDs:               []string{"team-a"},
+	})
+	seedAgentScopeAgent(t, db, model.Agent{
+		ID:                    "hidden-agent",
+		WorkspaceID:           "ws-1",
+		Name:                  "Hidden Team Agent",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		AllowedTargets:        json.RawMessage(`["task"]`),
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "always",
+		DefaultInvocationMode: "interactive",
+		TeamIDs:               []string{"team-b"},
+	})
+
+	agentService := &AgentService{agentRepo: repository.NewAgentRepository(db)}
+	svc := NewInternalCommandService(agentService, nil, nil, nil, nil, nil, nil, nil)
+	def, ok := svc.Definition("agents.list_agents")
+	if !ok || def.Tool == nil || def.Tool.Alias != "list_agents" || def.Mutating {
+		t.Fatalf("unexpected list_agents definition: %#v", def)
+	}
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID:  "ws-1",
+		ActorID:      "actor-1",
+		ActorRole:    "member",
+		ActorTeamIDs: []string{"team-a"},
+		TargetType:   "workspace",
+		TargetID:     "ws-1",
+	}, "agents.list_agents", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("agents.list_agents returned error: %v", err)
+	}
+	var agents []model.CommandBarAgent
+	if err := json.Unmarshal(output, &agents); err != nil {
+		t.Fatalf("unmarshal agents: %v\n%s", err, string(output))
+	}
+	if len(agents) != 2 || agents[0].Name != "Quill" || agents[1].Name != "Team A Agent" {
+		t.Fatalf("agents = %#v, want Quill and Team A Agent", agents)
+	}
+	if agents[0].PresetKey != model.AgentPresetDocumentationAgent || !agents[0].IsSystem {
+		t.Fatalf("expected grounded Quill metadata, got %#v", agents[0])
 	}
 }
 

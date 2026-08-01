@@ -1,6 +1,6 @@
 import { useRouterState } from '@tanstack/react-router'
 import { DocsLink } from '@/components/DocsLink'
-import { PhIcon } from '@/components/PhIcon'
+import { PublicIcon } from '@/components/PublicIcon'
 import {
   Accordion,
   AccordionContent,
@@ -120,10 +120,9 @@ function CollectionGroup({
         )}
       >
         {node.item.icon && level === 0 ? (
-          <PhIcon
+          <PublicIcon
             name={node.item.icon}
             size={16}
-            weight="regular"
             className={cn(
               'shrink-0',
               isActiveCollection

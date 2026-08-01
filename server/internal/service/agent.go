@@ -16,13 +16,13 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/agentskills"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 type supportRunSummary struct {
@@ -38,7 +38,6 @@ type supportDraftReply struct {
 
 const stuckPostRunThreshold = 2 * time.Minute
 const staleQueuedRunThreshold = 30 * time.Second
-const liveCodexPauseHeartbeatFreshThreshold = 2 * time.Minute
 const defaultSystemEpicPlannerName = "Atlas"
 
 var ErrAssignedAgentNotFound = errors.New("assigned agent not found")
@@ -205,7 +204,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		RuntimeKind:           strings.TrimSpace(agent.RuntimeKind),
 		Provider:              strings.TrimSpace(derefString(agent.Provider)),
 		Model:                 strings.TrimSpace(derefString(agent.Model)),
-		SystemPrompt:          worker.RenderRuntimeToolNamesInInstructionsForRuntime(derefString(agent.SystemPrompt), agent.RuntimeKind),
+		SystemPrompt:          agentcontract.RenderRuntimeToolNamesInInstructionsForRuntime(derefString(agent.SystemPrompt), agent.RuntimeKind),
 		Skills:                runtimeSkillRefsFromHelpin(agentskills.EffectiveRuntimeRefs(agent), agent.RuntimeKind),
 		AllowedTools:          parseJSONStringSlice(agent.AllowedTools),
 		AllowedTargets:        parseJSONStringSlice(agent.AllowedTargets),
@@ -215,9 +214,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	if len(agent.ExecutionConfig) > 0 && strings.TrimSpace(string(agent.ExecutionConfig)) != "null" {
 		out.ExecutionConfig = append([]byte(nil), agent.ExecutionConfig...)
 	}
-	if agentRequiresRepositoryWorkspace(agent) {
-		out.ExecutionConfig = withRepositoryWorkspaceExecutionConfig(out.ExecutionConfig)
-	}
+	out.ExecutionConfig = withAgentRuntimeExecutionConfig(out.ExecutionConfig, agent)
 	if out.RuntimeKind == "" {
 		out.RuntimeKind = "native_sdk"
 	}
@@ -261,7 +258,7 @@ func helpinSkillRefSupportsRuntime(ref model.AgentSkillRef, runtimeKind string) 
 	if runtimeKind == "" || ref.SkillID != nil {
 		return true
 	}
-	definition, ok := worker.GetBuiltInSkill(ref.Key)
+	definition, ok := agentcontract.GetBuiltInSkill(ref.Key)
 	if !ok {
 		return true
 	}
@@ -299,6 +296,12 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 		"target_type":   strings.TrimSpace(run.TargetType),
 		"target_id":     strings.TrimSpace(run.TargetID),
 		"helpin_run_id": strings.TrimSpace(run.ID),
+	}
+	if agent != nil && strings.TrimSpace(agent.PresetKey) != "" {
+		metadata["preset_key"] = strings.TrimSpace(agent.PresetKey)
+	}
+	if strings.TrimSpace(input.Stage) != "" {
+		metadata["planning_stage"] = strings.TrimSpace(input.Stage)
 	}
 	if run.RepositoryID != nil && strings.TrimSpace(*run.RepositoryID) != "" {
 		metadata["repository_id"] = strings.TrimSpace(*run.RepositoryID)
@@ -468,7 +471,6 @@ type AgentService struct {
 	notificationService        *NotificationService
 	wsPublisher                *websocket.Publisher
 	ruleEngine                 *AutomationRuleEngine
-	codexAuthManager           *worker.CodexAuthManager
 	anthropicAPIKey            string
 	openAIAPIKey               string
 	openRouterAPIKey           string
@@ -482,6 +484,8 @@ type AgentService struct {
 	aiUsageMeter               *AIUsageMeter
 	agentRuntimeClient         agentRuntimeSignalClient
 	agentRuntimeLaunchEnabled  bool
+	mcpRepo                    *repository.MCPRepository
+	externalMCPService         *ExternalMCPService
 }
 
 type agentRuntimeSignalClient interface {
@@ -502,6 +506,10 @@ type agentRuntimeLaunchClient interface {
 	AppID() string
 	UpsertAgent(ctx context.Context, agent AgentRuntimeAgent) (*AgentRuntimeAgent, error)
 	StartRun(ctx context.Context, req AgentRuntimeStartRunRequest) (*AgentRuntimeRun, error)
+}
+
+type agentRuntimeMCPCredentialClient interface {
+	UpdateRunMCPCredential(ctx context.Context, runtimeRunID, serverID string, credential ExternalMCPRunCredential) error
 }
 
 // NewAgentService creates a new AgentService.
@@ -578,11 +586,6 @@ func (s *AgentService) SetModelProviderConfig(
 	return s
 }
 
-func (s *AgentService) SetCodexAuthManager(manager *worker.CodexAuthManager) *AgentService {
-	s.codexAuthManager = manager
-	return s
-}
-
 func (s *AgentService) SetTriggerExecutionRepository(repo *repository.AgentTriggerExecutionRepository) *AgentService {
 	s.triggerExecutionRepo = repo
 	return s
@@ -601,6 +604,12 @@ func (s *AgentService) SetAgentTemplateRepository(repo *repository.AgentTemplate
 // SetUserRepository injects the user repository so coding sessions can hydrate the triggering actor.
 func (s *AgentService) SetUserRepository(repo *repository.UserRepository) *AgentService {
 	s.userRepo = repo
+	return s
+}
+
+// SetMCPRepository enables MCP-origin attribution on normal agent-run read models.
+func (s *AgentService) SetMCPRepository(repo *repository.MCPRepository) *AgentService {
+	s.mcpRepo = repo
 	return s
 }
 
@@ -650,6 +659,45 @@ func (s *AgentService) SetAgentRuntimeClient(client agentRuntimeSignalClient) *A
 func (s *AgentService) SetAgentRuntimeLaunchEnabled(enabled bool) *AgentService {
 	s.agentRuntimeLaunchEnabled = enabled
 	return s
+}
+
+func (s *AgentService) SetExternalMCPService(externalMCPService *ExternalMCPService) *AgentService {
+	s.externalMCPService = externalMCPService
+	return s
+}
+
+// ResumeRunsAfterExternalMCPAuth rotates the run-scoped credential and resumes
+// only runs paused by agent-runtime for authentication on this installation.
+func (s *AgentService) ResumeRunsAfterExternalMCPAuth(ctx context.Context, workspaceID, serverID, actorID string) error {
+	if s.externalMCPService == nil || s.agentRuntimeClient == nil {
+		return nil
+	}
+	runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeMCPCredentialClient)
+	if !ok {
+		return fmt.Errorf("agent runtime client does not support MCP credential rotation")
+	}
+	updates, err := s.externalMCPService.CredentialUpdatesForServer(ctx, workspaceID, serverID)
+	if err != nil {
+		return err
+	}
+	for _, update := range updates {
+		if update.Credential == nil {
+			continue
+		}
+		run, err := s.GetAgentRun(ctx, workspaceID, update.AgentRunID)
+		if err != nil || run == nil || run.Status != model.AgentRunStatusPaused || run.PauseReason != model.AgentRunPauseReasonAuthentication {
+			continue
+		}
+		if err := runtimeClient.UpdateRunMCPCredential(ctx, update.RuntimeRunID, update.ServerID, *update.Credential); err != nil {
+			return fmt.Errorf("rotate external MCP run credential: %w", err)
+		}
+		if _, err := s.agentRuntimeClient.ResumeRun(ctx, update.RuntimeRunID, AgentRuntimeResumeRunRequest{
+			Intent: model.AgentRunResumeIntentAuthCompleted, ExternalActorID: actorID,
+		}); err != nil {
+			return fmt.Errorf("resume external MCP-authenticated run: %w", err)
+		}
+	}
+	return nil
 }
 
 // SeedWorkspaceDefaults creates workspace-scoped built-in agents.
@@ -1836,9 +1884,9 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		version.InstructionPreamble = &preamble
 		version.InstructionSkills = mustJSONStringSlice(skills)
 		availableSkills := parseJSONStringSlice(json.RawMessage(version.AvailableSkills))
-		compiled := worker.CompilePresetInstructionsWithAvailableSkills(preamble, skills, availableSkills)
+		compiled := agentcontract.CompilePresetInstructionsWithAvailableSkills(preamble, skills, availableSkills)
 		version.SystemPrompt = &compiled
-		version.InstructionTemplateVersion = worker.InstructionTemplateVersionForPresetWithAvailableSkills(preamble, skills, availableSkills)
+		version.InstructionTemplateVersion = agentcontract.InstructionTemplateVersionForPresetWithAvailableSkills(preamble, skills, availableSkills)
 	} else {
 		version.SystemPrompt = trimPtr(basePreset.SystemPrompt)
 	}
@@ -1902,13 +1950,13 @@ func filterAvailableSkillsForAllowedTools(availableSkills, allowedTools, instruc
 	}
 	instructionSet := make(map[string]struct{}, len(instructionSkills))
 	for _, skillKey := range instructionSkills {
-		skillKey = worker.CanonicalBuiltInSkillKey(skillKey)
+		skillKey = agentcontract.CanonicalBuiltInSkillKey(skillKey)
 		if skillKey != "" {
 			instructionSet[skillKey] = struct{}{}
 		}
 	}
 	allowedSet := make(map[string]struct{}, len(allowedTools))
-	for _, toolName := range worker.NormalizeToolNames(allowedTools) {
+	for _, toolName := range agentcontract.NormalizeToolNames(allowedTools) {
 		allowedSet[toolName] = struct{}{}
 	}
 	filtered := make([]string, 0, len(availableSkills))
@@ -1917,16 +1965,16 @@ func filterAvailableSkillsForAllowedTools(availableSkills, allowedTools, instruc
 		if skillKey == "" {
 			continue
 		}
-		if _, ok := instructionSet[worker.CanonicalBuiltInSkillKey(skillKey)]; ok {
+		if _, ok := instructionSet[agentcontract.CanonicalBuiltInSkillKey(skillKey)]; ok {
 			continue
 		}
-		definition, ok := worker.GetBuiltInSkill(skillKey)
+		definition, ok := agentcontract.GetBuiltInSkill(skillKey)
 		if !ok {
 			filtered = append(filtered, skillKey)
 			continue
 		}
 		supported := true
-		for _, requiredTool := range worker.NormalizeToolNames(definition.RequiredTools) {
+		for _, requiredTool := range agentcontract.NormalizeToolNames(definition.RequiredTools) {
 			if _, ok := allowedSet[requiredTool]; !ok {
 				supported = false
 				break
@@ -2514,9 +2562,9 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 			}
 			version.InstructionPreamble = &preamble
 			version.InstructionSkills = mustJSONStringSlice(skills)
-			compiled := worker.CompilePresetInstructionsWithAvailableSkills(preamble, skills, availableSkills)
+			compiled := agentcontract.CompilePresetInstructionsWithAvailableSkills(preamble, skills, availableSkills)
 			version.SystemPrompt = &compiled
-			version.InstructionTemplateVersion = worker.InstructionTemplateVersionForPresetWithAvailableSkills(preamble, skills, availableSkills)
+			version.InstructionTemplateVersion = agentcontract.InstructionTemplateVersionForPresetWithAvailableSkills(preamble, skills, availableSkills)
 		} else {
 			version.SystemPrompt = trimPtr(currentPreset.SystemPrompt)
 			version.InstructionTemplateVersion = strings.TrimSpace(currentPreset.InstructionTemplateVersion)
@@ -2611,7 +2659,7 @@ func (s *AgentService) DeleteWorkspacePresetVersion(ctx context.Context, workspa
 
 // ListToolCatalog returns the tool catalog with categories and preset mappings.
 func (s *AgentService) ListToolCatalog() model.ToolCatalogResponse {
-	catalog := worker.ListToolCatalog()
+	catalog := agentcontract.ListToolCatalog()
 	presets := ListAgentPresets()
 	for idx := range catalog.Tools {
 		tool := &catalog.Tools[idx]
@@ -2629,6 +2677,27 @@ func (s *AgentService) ListToolCatalog() model.ToolCatalogResponse {
 		tool.Presets = presetKeys
 	}
 	return catalog
+}
+
+// ListToolCatalogForWorkspace merges the frozen host-tool contract with the
+// workspace's enabled, discovered external MCP aliases.
+func (s *AgentService) ListToolCatalogForWorkspace(ctx context.Context, workspaceID string) (model.ToolCatalogResponse, error) {
+	catalog := s.ListToolCatalog()
+	if s.externalMCPService == nil || !s.externalMCPService.Enabled() || strings.TrimSpace(workspaceID) == "" {
+		return catalog, nil
+	}
+	externalTools, err := s.externalMCPService.ListToolCatalog(ctx, workspaceID)
+	if err != nil {
+		return model.ToolCatalogResponse{}, err
+	}
+	if len(externalTools) == 0 {
+		return catalog, nil
+	}
+	catalog.Tools = append(catalog.Tools, externalTools...)
+	if !slices.Contains(catalog.Categories, "External MCP") {
+		catalog.Categories = append(catalog.Categories, "External MCP")
+	}
+	return catalog, nil
 }
 
 func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
@@ -2686,6 +2755,11 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	if req.PresetVersionKey != nil && strings.TrimSpace(*req.PresetVersionKey) != "" {
 		return nil, fmt.Errorf("custom agents cannot specify preset_version_key")
 	}
+	if req.IconKey != nil {
+		if err := validateAgentIconKey(*req.IconKey); err != nil {
+			return nil, err
+		}
+	}
 
 	skills := req.Skills.Normalize()
 	if skills == nil {
@@ -2721,6 +2795,7 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	agent := &model.Agent{
 		WorkspaceID:                req.WorkspaceID,
 		Name:                       strings.TrimSpace(req.Name),
+		IconKey:                    normalizeAgentIconKey(stringOrDefault(req.IconKey, "")),
 		PresetKey:                  "",
 		PresetVersionKey:           "",
 		SourcePresetKey:            "",
@@ -2813,6 +2888,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		if req.Skills != nil {
 			return nil, fmt.Errorf("system agent skills are preset-owned")
 		}
+		if req.IconKey != nil {
+			return nil, fmt.Errorf("system agent icon is preset-owned")
+		}
 	} else {
 		if req.PresetKey != nil && strings.TrimSpace(*req.PresetKey) != "" {
 			return nil, fmt.Errorf("custom agents cannot specify preset_key")
@@ -2821,10 +2899,18 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 			return nil, fmt.Errorf("custom agents cannot specify preset_version_key")
 		}
 	}
+	if req.IconKey != nil {
+		if err := validateAgentIconKey(*req.IconKey); err != nil {
+			return nil, err
+		}
+	}
 
 	presetChanged := false
 	if req.Name != nil {
 		agent.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.IconKey != nil {
+		agent.IconKey = normalizeAgentIconKey(*req.IconKey)
 	}
 	if req.PresetKey != nil && agent.IsSystem {
 		agent.PresetKey = normalizePresetKey(*req.PresetKey)
@@ -3226,6 +3312,7 @@ func (s *AgentService) GetAgentRun(ctx context.Context, workspaceID, runID strin
 	single := []model.AgentRun{*run}
 	s.enrichRunTargets(ctx, workspaceID, single)
 	run.TargetInfo = single[0].TargetInfo
+	run.MCPAttribution = single[0].MCPAttribution
 	return run, nil
 }
 
@@ -3583,7 +3670,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, err
 		}
-		resolved := worker.ResolveAgentProfile(agent, resolveInvocationMode(agent))
+		resolved := agentcontract.ResolveAgentProfile(agent, resolveInvocationMode(agent))
 
 		var delivery *model.TaskDeliveryTarget
 		if s.gitService != nil {
@@ -3608,6 +3695,10 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		payload, err := buildAgentRunInputPayload("task", task.ID, trigger, event, req.Output, additionalContext, req.AllowedTools)
 		if err != nil {
 			return nil, fmt.Errorf("build task run input: %w", err)
+		}
+		payload, err = withAgentRunPlanningStage(payload, planningStageForDelegatedRun(agent, task, nil))
+		if err != nil {
+			return nil, fmt.Errorf("build task planning stage: %w", err)
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
@@ -3652,9 +3743,19 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
-		payload, err := buildAgentRunInputPayload("epic", epic.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools)
+		additionalContext := req.AdditionalContext
+		if s.delegatesRunToAgentRuntime(agent, "epic") {
+			if launchContext := s.buildDelegatedEpicLaunchContext(ctx, epic, req.AdditionalContext); launchContext != "" {
+				additionalContext = &launchContext
+			}
+		}
+		payload, err := buildAgentRunInputPayload("epic", epic.ID, trigger, event, req.Output, additionalContext, req.AllowedTools)
 		if err != nil {
 			return nil, fmt.Errorf("build epic run input: %w", err)
+		}
+		payload, err = withAgentRunPlanningStage(payload, planningStageForDelegatedRun(agent, nil, epic))
+		if err != nil {
+			return nil, fmt.Errorf("build epic planning stage: %w", err)
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
@@ -4102,49 +4203,42 @@ func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, co
 
 // CancelRun cancels a queued, running, or approval-pending agent run.
 func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorID string) (*model.AgentRun, error) {
-	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+	// Read the persisted row directly. GetAgentRun performs stale-run
+	// reconciliation, which can mark an unmapped queued row failed before we
+	// get the chance to recover its runtime execution through host_run_id.
+	run, err := s.runRepo.GetByID(ctx, workspaceID, runID)
 	if err != nil {
 		return nil, err
+	}
+	if run == nil {
+		return nil, fmt.Errorf("agent run not found")
 	}
 	if !model.IsAgentRunActiveStatus(run.Status) {
 		return nil, fmt.Errorf("only queued, running, or paused runs can be cancelled")
 	}
-	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
-		if s.agentRuntimeClient == nil {
-			return nil, fmt.Errorf("agent runtime client is not configured")
-		}
-		if _, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID); err != nil {
-			return nil, fmt.Errorf("cancel agent runtime run: %w", err)
-		}
-		now := time.Now()
-		if err := s.runRepo.UpdateStage(ctx, workspaceID, run.ID, "cancelling", &now); err != nil {
-			return nil, err
-		}
-		if refreshed, err := s.runRepo.GetByID(ctx, workspaceID, run.ID); err == nil && refreshed != nil {
-			run = refreshed
-		}
-		_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
-		s.logTargetAgentRunActivity(ctx, run, actorID, "cancelled", nil)
-		s.publishRunEvent(run, actorID)
-		return run, nil
+	if s.agentRuntimeClient == nil {
+		return nil, fmt.Errorf("agent runtime client is not configured")
 	}
-
-	// Legacy row without a runtime mapping (pre-delegation drain leftovers):
-	// there is no executor to signal; flip the local status so the run stops
-	// occupying the agent.
+	runtimeRunID, mapped := agentRuntimeRunID(run)
+	if !mapped {
+		// Agent Runtime is the only executor. If Helpin did not persist the
+		// returned runtime ID (for example, after a split-brain start), recover
+		// through the host_run_id that was supplied when the run was started.
+		runtimeRunID = strings.TrimSpace(run.ID)
+	}
+	if _, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID); err != nil {
+		return nil, fmt.Errorf("cancel agent runtime run: %w", err)
+	}
 	now := time.Now()
-	run.Status = "cancelled"
-	run.PauseReason = model.AgentRunPauseReasonNone
-	run.CompletedAt = &now
-	run.ExecutionStage = strPtr("cancelled")
-	if err := s.runRepo.Update(ctx, run); err != nil {
+	if err := s.runRepo.UpdateStage(ctx, workspaceID, run.ID, "cancelling", &now); err != nil {
 		return nil, err
 	}
-
+	if refreshed, err := s.runRepo.GetByID(ctx, workspaceID, run.ID); err == nil && refreshed != nil {
+		run = refreshed
+	}
 	_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
 	s.logTargetAgentRunActivity(ctx, run, actorID, "cancelled", nil)
 	s.publishRunEvent(run, actorID)
-
 	return run, nil
 }
 
@@ -4156,38 +4250,15 @@ func (s *AgentService) StartCodexDeviceCodeAuth(ctx context.Context, workspaceID
 	if err := s.ensureRunSupportsCodexDeviceCode(run, agent); err != nil {
 		return nil, err
 	}
-	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
-		runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeCodexAuthClient)
-		if !ok || runtimeClient == nil {
-			return nil, fmt.Errorf("agent runtime codex auth client is not configured")
-		}
-		authState, err := runtimeClient.StartCodexDeviceCodeAuth(ctx, runtimeRunID)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.applyCodexAuthState(ctx, workspaceID, runID, actorID, authState, authState != nil && authState.State == model.CodexAuthStateConnected); err != nil {
-			return nil, err
-		}
-		return authState, nil
+	runtimeRunID, ok := agentRuntimeRunID(run)
+	if !ok {
+		return nil, fmt.Errorf("run is not managed by the agent runtime")
 	}
-
-	if s.codexAuthManager == nil {
-		return nil, fmt.Errorf("codex device-code auth is not configured")
+	runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeCodexAuthClient)
+	if !ok || runtimeClient == nil {
+		return nil, fmt.Errorf("agent runtime codex auth client is not configured")
 	}
-
-	authState, err := s.codexAuthManager.StartDeviceCode(ctx, run, agent, func(callbackCtx context.Context, state *model.CodexAuthState) {
-		if state == nil {
-			return
-		}
-		if err := s.applyCodexAuthState(callbackCtx, workspaceID, runID, actorID, state, state.State == model.CodexAuthStateConnected); err != nil {
-			slog.ErrorContext(callbackCtx, "failed to apply codex auth state update",
-				"error", err,
-				"workspace_id", workspaceID,
-				"run_id", runID,
-				"state", state.State,
-			)
-		}
-	})
+	authState, err := runtimeClient.StartCodexDeviceCodeAuth(ctx, runtimeRunID)
 	if err != nil {
 		return nil, err
 	}
@@ -4205,26 +4276,22 @@ func (s *AgentService) CancelCodexDeviceCodeAuth(ctx context.Context, workspaceI
 	if err := s.ensureRunSupportsCodexDeviceCode(run, agent); err != nil {
 		return nil, err
 	}
-	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
-		runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeCodexAuthClient)
-		if !ok || runtimeClient == nil {
-			return nil, fmt.Errorf("agent runtime codex auth client is not configured")
-		}
-		authState, err := runtimeClient.CancelCodexDeviceCodeAuth(ctx, runtimeRunID)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.applyCodexAuthState(ctx, workspaceID, runID, actorID, authState, false); err != nil {
-			return nil, err
-		}
-		return authState, nil
+	runtimeRunID, ok := agentRuntimeRunID(run)
+	if !ok {
+		return nil, fmt.Errorf("run is not managed by the agent runtime")
 	}
-
-	if s.codexAuthManager == nil {
-		return nil, fmt.Errorf("codex device-code auth is not configured")
+	runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeCodexAuthClient)
+	if !ok || runtimeClient == nil {
+		return nil, fmt.Errorf("agent runtime codex auth client is not configured")
 	}
-
-	return s.codexAuthManager.CancelDeviceCode(ctx, runID)
+	authState, err := runtimeClient.CancelCodexDeviceCodeAuth(ctx, runtimeRunID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.applyCodexAuthState(ctx, workspaceID, runID, actorID, authState, false); err != nil {
+		return nil, err
+	}
+	return authState, nil
 }
 
 // ResumeRun resumes a paused interactive run using one generic intent path.
@@ -4474,31 +4541,6 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 	return run, message, nil
 }
 
-func (s *AgentService) shouldUseLiveCodexPausePath(ctx context.Context, run *model.AgentRun) (bool, error) {
-	if s == nil || run == nil || s.artifactRepo == nil {
-		return false, nil
-	}
-	if strings.TrimSpace(run.RuntimeKind) != "codex" {
-		return false, nil
-	}
-	if !model.IsAgentRunPausedStatus(run.Status) {
-		return false, nil
-	}
-	switch run.PauseReason {
-	case model.AgentRunPauseReasonHumanApproval, model.AgentRunPauseReasonHumanInput:
-	default:
-		return false, nil
-	}
-	if run.LastHeartbeatAt == nil || time.Since(run.LastHeartbeatAt.UTC()) > liveCodexPauseHeartbeatFreshThreshold {
-		return false, nil
-	}
-	snapshot, err := worker.LoadCodexSessionSnapshot(ctx, s.artifactRepo, run)
-	if err != nil {
-		return false, err
-	}
-	return snapshot != nil && snapshot.HasPendingRequest, nil
-}
-
 func normalizeResumeIntent(intent string) string {
 	switch strings.TrimSpace(strings.ToLower(intent)) {
 	case model.AgentRunResumeIntentReply:
@@ -4575,10 +4617,10 @@ func buildInteractionResponsePayload(interaction *model.AgentRunInteraction, res
 	case model.AgentRunInteractionSchemaVersionCodexV2:
 		switch strings.TrimSpace(interaction.InteractionKind) {
 		case model.AgentRunInteractionKindRequestUserInput:
-			payload, err := worker.BuildCodexUserInputResponseFromPayload(interaction.RequestPayload, content)
+			payload, err := agentcontract.BuildCodexUserInputResponseFromPayload(interaction.RequestPayload, content)
 			return payload, model.AgentRunInteractionSchemaVersionCodexV2, err
 		case model.AgentRunInteractionKindCommandExecutionApproval, model.AgentRunInteractionKindFileChangeApproval, model.AgentRunInteractionKindPermissionsApproval:
-			payload, err := worker.BuildCodexApprovalResponseFromPayload(
+			payload, err := agentcontract.BuildCodexApprovalResponseFromPayload(
 				codexPendingKindForInteraction(strings.TrimSpace(interaction.InteractionKind)),
 				interaction.RequestPayload,
 				resolvedIntent == model.AgentRunResumeIntentApprove,
@@ -4766,9 +4808,9 @@ func (s *AgentService) ensureRunSupportsCodexDeviceCode(run *model.AgentRun, age
 	if provider != model.AgentModelProviderOpenAI {
 		return fmt.Errorf("codex device-code auth only supports provider openai")
 	}
-	if !s.isCodexOpenAIDeviceCodeEnabled() {
-		return fmt.Errorf("CODEX_OPENAI_AUTH_MODE must be %q to use device-code auth", "chatgpt_device_code")
-	}
+	// Agent Runtime owns the effective Codex auth mode. Do not gate this request
+	// on Helpin's provider-discovery configuration: the runtime validates its
+	// own mode and returns the authoritative error if device auth is disabled.
 	return nil
 }
 
@@ -4785,45 +4827,11 @@ func (s *AgentService) applyCodexAuthState(ctx context.Context, workspaceID, run
 		return err
 	}
 
-	if runtimeRunID, ok := agentRuntimeRunID(run); ok {
-		return s.applyDelegatedCodexAuthState(ctx, workspaceID, runID, actorID, runtimeRunID, authState, autoResume)
+	runtimeRunID, ok := agentRuntimeRunID(run)
+	if !ok {
+		return fmt.Errorf("run is not managed by the agent runtime")
 	}
-
-	now := time.Now()
-	run.ErrorMessage = nil
-	switch strings.TrimSpace(authState.State) {
-	case model.CodexAuthStateConnected:
-		run.Status = model.AgentRunStatusRunning
-		run.PauseReason = model.AgentRunPauseReasonNone
-		run.ExecutionStage = strPtr("auth_completed")
-		run.LastHeartbeatAt = &now
-		run.CompletedAt = nil
-		if run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
-			run.ApprovalState = "not_required"
-		}
-		if err := s.runRepo.Update(ctx, run); err != nil {
-			return err
-		}
-		if err := s.markAgentWorking(ctx, workspaceID, run.AgentID, run.TaskID); err != nil {
-			return err
-		}
-	default:
-		run.Status = model.AgentRunStatusPaused
-		run.PauseReason = model.AgentRunPauseReasonAuthentication
-		run.ExecutionStage = strPtr("awaiting_auth")
-		run.LastHeartbeatAt = &now
-		run.CompletedAt = nil
-		if run.ApprovalState != "pending" && run.ApprovalState != "rejected" {
-			run.ApprovalState = "not_required"
-		}
-		if err := s.runRepo.Update(ctx, run); err != nil {
-			return err
-		}
-	}
-
-	s.publishRunEvent(run, actorID)
-	s.publishCodexAuthStateEvent(run, authState, actorID)
-	return nil
+	return s.applyDelegatedCodexAuthState(ctx, workspaceID, runID, actorID, runtimeRunID, authState, autoResume)
 }
 
 func (s *AgentService) applyDelegatedCodexAuthState(ctx context.Context, workspaceID, runID, actorID, runtimeRunID string, authState *model.CodexAuthState, autoResume bool) error {
@@ -4949,8 +4957,8 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	}
 
 	content := append(json.RawMessage(nil), preview.Content...)
-	if strings.EqualFold(strings.TrimSpace(approval.Phase), "tasks") && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
-		normalizedContent, err := worker.NormalizeTaskPlanPreviewContent(content)
+	if strings.EqualFold(strings.TrimSpace(approval.Phase), "tasks") && strings.EqualFold(strings.TrimSpace(preview.Format), agentcontract.PreviewFormatJSON) {
+		normalizedContent, err := agentcontract.NormalizeTaskPlanPreviewContent(content)
 		if err != nil {
 			if approvedPreviewDebugEnabled() {
 				slog.ErrorContext(ctx, "approved task plan preview normalization failed during approval persistence",
@@ -4996,11 +5004,11 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	return s.saveJSONArtifact(ctx, run, model.AgentRunArtifactTypeApprovedPreview, "json", payload)
 }
 
-func latestApprovalCheckpoint(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, int, *model.ApprovalRequest, *worker.PublishedPreview, error) {
+func latestApprovalCheckpoint(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, int, *model.ApprovalRequest, *agentcontract.PublishedPreview, error) {
 	return latestApprovalCheckpointFromArtifacts(messages, artifacts)
 }
 
-func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, int, *model.ApprovalRequest, *worker.PublishedPreview, error) {
+func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, int, *model.ApprovalRequest, *agentcontract.PublishedPreview, error) {
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
 		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeHumanApprovalRequest || artifact.InlineContent == nil {
@@ -5034,11 +5042,11 @@ func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, art
 func normalizeApprovalPreviewPanelKey(value string) string {
 	key := strings.ToLower(strings.TrimSpace(value))
 	switch key {
-	case worker.ToolPublishPRDDraft:
+	case agentcontract.ToolPublishPRDDraft:
 		return "prd_draft"
-	case worker.ToolPublishTaskPlan:
+	case agentcontract.ToolPublishTaskPlan:
 		return "task_plan"
-	case worker.ToolPublishTaskPlanDoc:
+	case agentcontract.ToolPublishTaskPlanDoc:
 		return "task_plan_doc"
 	default:
 		return key
@@ -5054,7 +5062,7 @@ func isCanonicalApprovalPreviewPanelKey(value string) bool {
 	}
 }
 
-func latestRunPreviewArtifactForApproval(artifacts []model.AgentRunArtifact, assistantSequenceNo int, approval *model.ApprovalRequest) (*worker.PublishedPreview, error) {
+func latestRunPreviewArtifactForApproval(artifacts []model.AgentRunArtifact, assistantSequenceNo int, approval *model.ApprovalRequest) (*agentcontract.PublishedPreview, error) {
 	panelKey := ""
 	if approval != nil {
 		panelKey = normalizeApprovalPreviewPanelKey(approval.PreviewPanelKey)
@@ -5084,15 +5092,15 @@ func latestRunPreviewArtifactForApproval(artifacts []model.AgentRunArtifact, ass
 	return latestRunPreviewArtifact(artifacts, "")
 }
 
-func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey string) (*worker.PublishedPreview, error) {
+func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey string) (*agentcontract.PublishedPreview, error) {
 	targetKey := normalizeApprovalPreviewPanelKey(panelKey)
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
-		if strings.TrimSpace(artifact.ArtifactType) != worker.RunPreviewArtifactType || artifact.InlineContent == nil {
+		if strings.TrimSpace(artifact.ArtifactType) != agentcontract.RunPreviewArtifactType || artifact.InlineContent == nil {
 			continue
 		}
 
-		var payload worker.PublishedPreview
+		var payload agentcontract.PublishedPreview
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
 			return nil, fmt.Errorf("parse run preview artifact: %w", err)
 		}
@@ -5104,22 +5112,22 @@ func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey strin
 	return nil, nil
 }
 
-func latestRunPreviewArtifactForAssistantSequence(artifacts []model.AgentRunArtifact, assistantSequenceNo int, panelKey string) (*worker.PublishedPreview, int, error) {
+func latestRunPreviewArtifactForAssistantSequence(artifacts []model.AgentRunArtifact, assistantSequenceNo int, panelKey string) (*agentcontract.PublishedPreview, int, error) {
 	if assistantSequenceNo <= 0 {
 		return nil, 0, nil
 	}
 	targetKey := normalizeApprovalPreviewPanelKey(panelKey)
 	matchCount := 0
-	var firstMatch *worker.PublishedPreview
+	var firstMatch *agentcontract.PublishedPreview
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
-		if strings.TrimSpace(artifact.ArtifactType) != worker.RunPreviewArtifactType || artifact.InlineContent == nil {
+		if strings.TrimSpace(artifact.ArtifactType) != agentcontract.RunPreviewArtifactType || artifact.InlineContent == nil {
 			continue
 		}
 		if artifactAssistantMessageSequenceNo(artifact) != assistantSequenceNo {
 			continue
 		}
-		var payload worker.PublishedPreview
+		var payload agentcontract.PublishedPreview
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
 			return nil, 0, fmt.Errorf("parse run preview artifact: %w", err)
 		}
@@ -5349,8 +5357,8 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 
-	resolved := worker.ResolveAgentProfile(params.agent, params.invocationMode)
-	approvalState := worker.ResolveApprovalState(resolved)
+	resolved := agentcontract.ResolveAgentProfile(params.agent, params.invocationMode)
+	approvalState := agentcontract.ResolveApprovalState(resolved)
 
 	run := &model.AgentRun{
 		ID:                uuid.NewString(),
@@ -5428,6 +5436,27 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 	startReq := runtimeStartRunRequest(run, params.agent)
+	resolvedMCP := &ExternalMCPResolvedRun{}
+	selectedExternalTools := make([]string, 0)
+	for _, tool := range parseJSONStringSlice(params.agent.AllowedTools) {
+		tool = strings.TrimSpace(tool)
+		if strings.HasPrefix(tool, "mcp__") && !strings.HasPrefix(tool, "mcp__helpin__") {
+			selectedExternalTools = append(selectedExternalTools, tool)
+		}
+	}
+	if len(selectedExternalTools) > 0 {
+		if s.externalMCPService == nil {
+			err := fmt.Errorf("agent has external MCP tools but external MCP is not configured")
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
+		resolvedMCP, err = s.externalMCPService.ResolveRunAttachments(ctx, params.workspaceID, selectedExternalTools)
+		if err != nil {
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
+		startReq.MCPServers = resolvedMCP.Servers
+	}
 	runtimeRun, err := runtimeLauncher.StartRun(ctx, startReq)
 	if err != nil && shouldRetryAgentRuntimeStart(err) {
 		slog.WarnContext(ctx, "retrying agent runtime start after transient failure", "error", err, "run_id", run.ID, "agent_id", params.agent.ID)
@@ -5441,6 +5470,15 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		err := fmt.Errorf("agent runtime returned empty run id")
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
+	}
+	if len(resolvedMCP.Bindings) > 0 {
+		if err := s.externalMCPService.PersistRunBindings(ctx, run.ID, strings.TrimSpace(runtimeRun.ID), resolvedMCP.Bindings); err != nil {
+			if s.agentRuntimeClient != nil {
+				_, _ = s.agentRuntimeClient.CancelRun(ctx, strings.TrimSpace(runtimeRun.ID))
+			}
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
 	}
 	run.ExternalRuntime = strPtr(agentRuntimeName)
 	run.ExternalRuntimeID = strPtr(strings.TrimSpace(runtimeRun.ID))
@@ -5887,6 +5925,7 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 	if len(runs) == 0 || workspaceID == "" {
 		return
 	}
+	s.enrichMCPRunAttributions(ctx, workspaceID, runs)
 
 	taskIDs := make([]string, 0, len(runs))
 	epicIDs := make([]string, 0, len(runs))
@@ -6059,6 +6098,29 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 			continue
 		}
 		run.TargetInfo = info
+	}
+}
+
+func (s *AgentService) enrichMCPRunAttributions(ctx context.Context, workspaceID string, runs []model.AgentRun) {
+	if s.mcpRepo == nil || len(runs) == 0 {
+		return
+	}
+	runIDs := make([]string, 0, len(runs))
+	for idx := range runs {
+		runIDs = append(runIDs, runs[idx].ID)
+	}
+	attributions, err := s.mcpRepo.ListRunAttributions(ctx, workspaceID, runIDs)
+	if err != nil {
+		slog.WarnContext(ctx, "load MCP run attributions", "workspace_id", workspaceID, "error", err)
+		return
+	}
+	byRunID := make(map[string]*model.MCPAgentRunAttribution, len(attributions))
+	for idx := range attributions {
+		attribution := attributions[idx]
+		byRunID[attribution.RunID] = &attribution
+	}
+	for idx := range runs {
+		runs[idx].MCPAttribution = byRunID[runs[idx].ID]
 	}
 }
 
@@ -6278,15 +6340,6 @@ func (s *AgentService) isCodexOpenAIConfigured() bool {
 		return strings.TrimSpace(s.openAIAPIKey) != ""
 	case "chatgpt_oauth", "oauth", "chatgpt", "chatgpt-auth":
 		return s.codexChatGPTOAuthEnabled && strings.TrimSpace(s.codexChatGPTAccessToken) != "" && strings.TrimSpace(s.codexChatGPTAccountID) != ""
-	case "chatgpt_device_code", "device_code", "chatgpt-device", "chatgpt-device-code", "chatgpt-managed":
-		return true
-	default:
-		return false
-	}
-}
-
-func (s *AgentService) isCodexOpenAIDeviceCodeEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(s.codexOpenAIAuthMode)) {
 	case "chatgpt_device_code", "device_code", "chatgpt-device", "chatgpt-device-code", "chatgpt-managed":
 		return true
 	default:

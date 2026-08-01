@@ -95,7 +95,7 @@ vi.mock('@/components/ui/select', () => ({
 }))
 
 vi.mock('@/components/ui/icon-picker', () => ({
-  ICON_MAP: {},
+  StoredIcon: () => null,
 }))
 
 vi.mock('@/components/billing/UpgradeRequiredDialog', () => ({

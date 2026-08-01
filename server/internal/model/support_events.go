@@ -18,6 +18,7 @@ const (
 	SupportEventConversationAssigned      = "conversation_assigned"
 	SupportEventAIAttemptStarted          = "ai_attempt_started"
 	SupportEventAIRetrievalCompleted      = "ai_retrieval_completed"
+	SupportEventAIPreRouterDecision       = "ai_pre_router_decision"
 	SupportEventAIAnswerSent              = "ai_answer_sent"
 	SupportEventAIHandoffTriggered        = "ai_handoff_triggered"
 	SupportEventConversationResolved      = "conversation_resolved"
@@ -40,10 +41,10 @@ const (
 // ─── Channels ──────────────────────────────────────────────────────────────
 
 const (
-	SupportEventChannelWidget    = "widget"
-	SupportEventChannelEmail     = "email"
+	SupportEventChannelWidget     = "widget"
+	SupportEventChannelEmail      = "email"
 	SupportEventChannelHelpCenter = "help_center"
-	SupportEventChannelInternal  = "internal"
+	SupportEventChannelInternal   = "internal"
 )
 
 // SupportEvent is an append-only operational event capturing signals

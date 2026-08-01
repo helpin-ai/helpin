@@ -152,6 +152,8 @@ type CommandBarProposal struct {
 	Reason          string                   `json:"reason,omitempty"`
 	Suggestions     []string                 `json:"suggestions,omitempty"`
 	Guardrails      []CommandBarGuardrail    `json:"guardrails,omitempty"`
+	CreatedAgentID  string                   `json:"created_agent_id,omitempty"`
+	CreatedRunID    string                   `json:"created_run_id,omitempty"`
 }
 
 type CommandBarThreadSummary struct {
@@ -304,6 +306,10 @@ type CommandBarAgent struct {
 	Description    string   `json:"description,omitempty"`
 	PresetKey      string   `json:"preset_key,omitempty"`
 	Role           string   `json:"role,omitempty"`
+	Status         string   `json:"status,omitempty"`
+	RuntimeKind    string   `json:"runtime_kind,omitempty"`
+	IsSystem       bool     `json:"is_system,omitempty"`
+	SupportedModes []string `json:"supported_modes,omitempty"`
 	AllowedTargets []string `json:"allowed_targets"`
 	AllowedTools   []string `json:"allowed_tools"`
 }

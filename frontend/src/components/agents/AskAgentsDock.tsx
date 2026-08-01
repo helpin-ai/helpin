@@ -12,6 +12,7 @@ import { ACTIVE_RUN_STATUSES, isPausedAgentRun } from '@/components/pm/agentRunC
 import { PromotionDialog } from '@/components/command-bar/PromotionDialog';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
+import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
 import type {
   AgentRun,
   CommandBarMessageSummary,
@@ -1069,6 +1070,18 @@ export function AskAgentsDock() {
                           toast.error(res.error ?? 'Failed to create agent');
                           return;
                         }
+                        const result = res.data;
+                        setMessages((current) => current.map((item) => {
+                          if (item.id !== message.id || !item.proposal) return item;
+                          return {
+                            ...item,
+                            proposal: {
+                              ...item.proposal,
+                              created_agent_id: result.agent.id,
+                              created_run_id: result.run?.id ?? item.proposal.created_run_id,
+                            },
+                          };
+                        }));
                         toast.success(mode === 'create_agent_and_run' ? 'Agent created and run started' : 'Agent created');
                         if (res.data.run) {
                           addRuns([res.data.run]);
@@ -1135,14 +1148,9 @@ export function AskAgentsDock() {
             })}
 
             {parsing ? (
-              <div className="flex items-center gap-2 px-1 py-0.5 text-sm text-muted-foreground animate-in fade-in duration-150">
-                <span className="flex items-center gap-1" aria-hidden="true">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.3s] motion-reduce:animate-none" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.15s] motion-reduce:animate-none" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 motion-reduce:animate-none" />
-                </span>
-                <span role="status">{turnStageLabel(turnStage)}</span>
-              </div>
+              <StreamingStatusText className="px-1 py-0.5 animate-in fade-in duration-150">
+                {turnStageLabel(turnStage)}
+              </StreamingStatusText>
             ) : null}
 
             {plan ? (
@@ -1273,7 +1281,11 @@ function AgentDraftProposalCard({
   if (!draft) return null;
   const targets = draft.allowed_targets?.length ? draft.allowed_targets.join(', ') : 'tasks';
   const tools = draft.allowed_tools?.length ?? 0;
-  const action = proposal.type === 'create_agent_and_run' ? 'Create agent & run' : 'Create agent';
+  const isCreateAndRun = proposal.type === 'create_agent_and_run';
+  const completed = isCreateAndRun ? Boolean(proposal.created_run_id) : Boolean(proposal.created_agent_id);
+  let action = 'Create agent';
+  if (isCreateAndRun) action = proposal.created_agent_id ? 'Start run' : 'Create agent & run';
+  const busyAction = isCreateAndRun && proposal.created_agent_id ? 'Starting...' : 'Creating...';
   return (
     <div className="mt-2 rounded-md border border-border/70 bg-background/80 p-2.5">
       <div className="flex items-center gap-2">
@@ -1294,18 +1306,25 @@ function AgentDraftProposalCard({
         </p>
       ) : null}
       <div className="mt-2 flex justify-end">
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={busy}
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition',
-            busy ? 'cursor-not-allowed bg-muted text-muted-foreground' : 'bg-orange-500 text-white hover:bg-orange-500/90',
-          )}
-        >
-          {busy ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <Tick01Icon className="h-3 w-3" />}
-          {busy ? 'Creating...' : action}
-        </button>
+        {completed ? (
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+            <Tick01Icon className="h-3 w-3" />
+            {isCreateAndRun ? 'Agent created and run started' : 'Agent created'}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition',
+              busy ? 'cursor-not-allowed bg-muted text-muted-foreground' : 'bg-orange-500 text-white hover:bg-orange-500/90',
+            )}
+          >
+            {busy ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <Tick01Icon className="h-3 w-3" />}
+            {busy ? busyAction : action}
+          </button>
+        )}
       </div>
     </div>
   );

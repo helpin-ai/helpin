@@ -43,16 +43,22 @@ const markdownComponents: Components = {
       {children}
     </pre>
   ),
-  code: ({ className: codeClassName, children, node: _node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => (
-    <code className={cn('text-[12px]', codeClassName)} {...props}>
-      {children}
-    </code>
-  ),
-  inlineCode: ({ children, node: _node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => (
-    <code className="rounded bg-muted px-1 py-0.5 text-[12px]" {...props}>
-      {children}
-    </code>
-  ),
+  code: ({ className: codeClassName, children, node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => {
+    void node;
+    return (
+      <code className={cn('text-[12px]', codeClassName)} {...props}>
+        {children}
+      </code>
+    );
+  },
+  inlineCode: ({ children, node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => {
+    void node;
+    return (
+      <code className="rounded bg-muted px-1 py-0.5 text-[12px]" {...props}>
+        {children}
+      </code>
+    );
+  },
 };
 
 export function MarkdownContent({
@@ -72,7 +78,7 @@ export function MarkdownContent({
         controls={false}
         lineNumbers={false}
         mode={streaming ? 'streaming' : 'static'}
-        isAnimating={streaming}
+        isAnimating={false}
         parseIncompleteMarkdown={streaming}
         rehypePlugins={[
           defaultRehypePlugins.sanitize,

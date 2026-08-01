@@ -190,6 +190,7 @@ func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		name TEXT NOT NULL DEFAULT '',
+		icon_key TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'idle',
 		runtime_kind TEXT NOT NULL DEFAULT 'native_sdk',
 		source_template_key TEXT NOT NULL DEFAULT '',

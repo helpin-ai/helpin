@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { BookOpen01Icon, LinkSquare01Icon, PlusSignIcon, Settings02Icon } from '@/lib/icons';
+import { BookOpen01Icon, LinkSquare01Icon, LockIcon, PlusSignIcon, Settings02Icon } from '@/lib/icons';
 import { useDocsSpaces } from '@/hooks/queries';
 import { useChatSettings, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources, useReindexAgentKnowledgeSource, useSupportContentSources, useCreateSupportContentSource } from '@/hooks/queries/useSupport';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -76,10 +76,13 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
   const createWebsiteSource = useCreateSupportContentSource(workspaceId);
 
   const externalDocsSpaces = docsSpaces.filter((space) => space.type === 'external_capable');
+  const internalDocsSpaces = docsSpaces.filter((space) => space.type === 'internal');
   const externalDocsSpaceIds = new Set(externalDocsSpaces.map((space) => space.id));
+  const internalDocsSpaceIds = new Set(internalDocsSpaces.map((space) => space.id));
   const externalKnowledgeSources = knowledgeSources.filter((source) => externalDocsSpaceIds.has(source.space_id));
+  const internalKnowledgeSources = knowledgeSources.filter((source) => internalDocsSpaceIds.has(source.space_id));
   const websiteContentSource = findWorkspaceWebsiteContentSource(workspace?.website_url, contentSources);
-  const hasAnySource = externalDocsSpaces.length > 0 || contentSources.length > 0 || Boolean(workspace?.website_url);
+  const hasAnySource = docsSpaces.length > 0 || contentSources.length > 0 || Boolean(workspace?.website_url);
   const workspaceSlug = workspace?.slug ?? '';
 
   const openDocs = () => {
@@ -97,7 +100,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
       return;
     }
 
-    const current = externalKnowledgeSources.map((source) => source.space_id);
+    const current = knowledgeSources.map((source) => source.space_id);
     const next = current.includes(spaceId)
       ? current.filter((id) => id !== spaceId)
       : [...current, spaceId];
@@ -194,6 +197,47 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
           disabled={updateKnowledgeSources.isPending}
         />
       </div>
+
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <LockIcon className="h-4 w-4" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Internal Docs</CardTitle>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Published internal docs can guide answers without appearing in customer citations.
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {docsSpacesLoading || knowledgeSourcesLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-16 rounded-xl" />
+              <Skeleton className="h-16 rounded-xl" />
+            </div>
+          ) : (
+            <SupportKnowledgeSourcesField
+              agentId={chatWidgetAgentId || undefined}
+              spaces={internalDocsSpaces}
+              knowledgeSources={internalKnowledgeSources}
+              onToggle={toggleSpace}
+              onReindex={(spaceId) => chatWidgetAgentId && reindexKnowledgeSource.mutate({ agentId: chatWidgetAgentId, spaceId })}
+              reindexingSpaceId={reindexKnowledgeSource.variables?.spaceId}
+              disabled={!chatWidgetAgentId || updateKnowledgeSources.isPending || reindexKnowledgeSource.isPending}
+              onOpenDocs={openDocs}
+              kind="internal"
+            />
+          )}
+          {!chatWidgetAgentId && (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Select a support agent in AI Assistant to attach docs.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>

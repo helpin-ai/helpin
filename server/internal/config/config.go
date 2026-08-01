@@ -13,7 +13,6 @@ const (
 	defaultCommandRouterLLMProvider                  = "openrouter"
 	defaultCommandRouterLLMModel                     = "google/gemini-3.1-flash-lite"
 	defaultCommandRouterOpenRouterProviderOptionsRaw = `{"order":["google-vertex/global"],"allow_fallbacks":false}`
-	defaultCodexHelpinMCPBridgePath                  = "/usr/local/bin/helpin-mcp-bridge"
 )
 
 // Config holds all application configuration loaded from environment variables.
@@ -35,6 +34,7 @@ type Config struct {
 	AgentRuntimeBaseURL       string
 	AgentRuntimeServiceToken  string
 	AgentRuntimeAppID         string
+	AgentRuntimeEventProtocol string
 	AgentRuntimeLaunchEnabled bool
 
 	// S3 / object storage (optional — attachments disabled if not set)
@@ -46,30 +46,23 @@ type Config struct {
 	AWSPublicBaseURL   string // Optional public asset base URL (R2 custom domain / CDN)
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
-	AnthropicAPIKey          string
-	AnthropicBaseURL         string
-	OpenAIAPIKey             string
-	OpenAIBaseURL            string
-	OpenAIEmbeddingModel     string
-	OpenRouterAPIKey         string
-	OpenRouterBaseURL        string
-	OpenCodePath             string
-	CodexPath                string
-	CodexModel               string
-	CodexSandboxMode         string
-	CodexOpenAIAuthMode      string
-	CodexEnableChatGPTOAuth  bool
-	CodexChatGPTAccessToken  string
-	CodexChatGPTAccountID    string
-	CodexChatGPTPlanType     string
-	CodexAuthEncryptionKey   string
-	CodexHelpinAPIBaseURL    string
-	CodexHelpinMCPBridgePath string
-	BraveSearchAPIKey        string
-	ExaSearchAPIKey          string
-	CloudflareAccountID      string
-	CloudflareAPIToken       string
-	CloudflareAPIBaseURL     string
+	AnthropicAPIKey         string
+	AnthropicBaseURL        string
+	OpenAIAPIKey            string
+	OpenAIBaseURL           string
+	OpenAIEmbeddingModel    string
+	SupportRerankerURL      string
+	SupportRerankerModel    string
+	SupportRerankerAPIKey   string
+	OpenRouterAPIKey        string
+	OpenRouterBaseURL       string
+	CodexOpenAIAuthMode     string
+	CodexEnableChatGPTOAuth bool
+	CodexChatGPTAccessToken string
+	CodexChatGPTAccountID   string
+	CloudflareAccountID     string
+	CloudflareAPIToken      string
+	CloudflareAPIBaseURL    string
 
 	// Website content crawler (optional — controls crawl engine and proxy)
 	CrawlerMode      string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
@@ -96,6 +89,24 @@ type Config struct {
 	PostmarkRouteInboundWebhookSecret string
 	SupportEmailRouteDomain           string
 	AppBaseURL                        string
+	MCPServerEnabled                  bool
+	MCPOAuthEnabled                   bool
+	MCPServiceTokensEnabled           bool
+	MCPPMWriteEnabled                 bool
+	MCPDocsWriteEnabled               bool
+	MCPAgentRunEnabled                bool
+	MCPCRMEnabled                     bool
+	MCPSupportEnabled                 bool
+	MCPPublicBaseURL                  string
+	ExternalMCPEnabled                bool
+	ExternalMCPCustomServersEnabled   bool
+	ExternalMCPEncryptionKey          string
+	ExternalMCPAllowedHosts           []string
+	ExternalMCPOAuthRedirectURL       string
+	ExternalMCPOAuthClientID          string
+	ExternalMCPOAuthClientSecret      string
+	ExternalMCPOAuthClientAuthMethod  string
+	ExternalMCPAllowInsecureLocalhost bool
 	WebAuthnRPID                      string
 	WebAuthnRPOrigins                 []string
 	PlatformAdminEmails               []string
@@ -119,9 +130,10 @@ type Config struct {
 	CRMLLMBaseURL  string
 	CRMLLMModel    string
 
-	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.5)
-	QueryExpansionModel    string
-	QueryExpansionProvider string
+	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.6-luna)
+	QueryExpansionModel     string
+	QueryExpansionProvider  string
+	QueryExpansionTimeoutMS int
 
 	// Command bar intent routing LLM (optional — defaults to router default provider)
 	CommandRouterLLMProvider               string
@@ -155,6 +167,11 @@ type Config struct {
 	// Docs ordering: when true, reads/writes use fractional sort_key
 	// instead of integer position. Enable after backfill completes.
 	DocsOrderingUseSortKey bool
+
+	// TLSAskExtraAllowedDomains lists additional hostnames approved by the Caddy
+	// on-demand TLS ask endpoint. Entries prefixed with "." or "*." match as
+	// suffixes; anything else matches exactly.
+	TLSAskExtraAllowedDomains []string
 }
 
 // Load reads configuration from environment variables.
@@ -231,6 +248,7 @@ func Load() (*Config, error) {
 		AgentRuntimeBaseURL:                    strings.TrimRight(strings.TrimSpace(os.Getenv("AGENT_RUNTIME_BASE_URL")), "/"),
 		AgentRuntimeServiceToken:               strings.TrimSpace(os.Getenv("AGENT_RUNTIME_SERVICE_TOKEN")),
 		AgentRuntimeAppID:                      strings.TrimSpace(firstNonEmpty(os.Getenv("AGENT_RUNTIME_APP_ID"), "helpin")),
+		AgentRuntimeEventProtocol:              strings.ToLower(strings.TrimSpace(firstNonEmpty(os.Getenv("AGENT_RUNTIME_EVENT_PROTOCOL"), "v1"))),
 		AgentRuntimeLaunchEnabled:              parseBoolEnv(os.Getenv("AGENT_RUNTIME_LAUNCH_ENABLED")),
 		AWSAccessKeyID:                         os.Getenv("AWS_ACCESS_KEY_ID"),
 		AWSSecretAccessKey:                     os.Getenv("AWS_SECRET_ACCESS_KEY"),
@@ -243,22 +261,15 @@ func Load() (*Config, error) {
 		OpenAIAPIKey:                           strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
 		OpenAIBaseURL:                          strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
 		OpenAIEmbeddingModel:                   strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_MODEL")),
+		SupportRerankerURL:                     strings.TrimRight(strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_URL")), "/"),
+		SupportRerankerModel:                   strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_MODEL")),
+		SupportRerankerAPIKey:                  strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_API_KEY")),
 		OpenRouterAPIKey:                       strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")),
 		OpenRouterBaseURL:                      strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")),
-		OpenCodePath:                           strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),
-		CodexPath:                              strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_PATH"), "codex")),
-		CodexModel:                             strings.TrimSpace(os.Getenv("CODEX_MODEL")),
-		CodexSandboxMode:                       strings.TrimSpace(os.Getenv("CODEX_SANDBOX_MODE")),
 		CodexOpenAIAuthMode:                    strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_OPENAI_AUTH_MODE"), "api_key")),
 		CodexEnableChatGPTOAuth:                parseBoolEnv(os.Getenv("CODEX_ENABLE_CHATGPT_OAUTH")),
 		CodexChatGPTAccessToken:                strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCESS_TOKEN")),
 		CodexChatGPTAccountID:                  strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCOUNT_ID")),
-		CodexChatGPTPlanType:                   strings.TrimSpace(os.Getenv("CODEX_CHATGPT_PLAN_TYPE")),
-		CodexAuthEncryptionKey:                 strings.TrimSpace(os.Getenv("CODEX_AUTH_ENCRYPTION_KEY")),
-		CodexHelpinAPIBaseURL:                  codexHelpinAPIBaseURL(os.Getenv("CODEX_HELPIN_API_BASE_URL"), port),
-		CodexHelpinMCPBridgePath:               codexHelpinMCPBridgePath(os.Getenv("CODEX_HELPIN_MCP_BRIDGE_PATH")),
-		BraveSearchAPIKey:                      strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
-		ExaSearchAPIKey:                        strings.TrimSpace(os.Getenv("EXA_API_KEY")),
 		CloudflareAccountID:                    strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
 		CloudflareAPIToken:                     strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),
 		CloudflareAPIBaseURL:                   strings.TrimSpace(os.Getenv("CLOUDFLARE_API_BASE_URL")),
@@ -279,6 +290,24 @@ func Load() (*Config, error) {
 		PostmarkRouteInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
 		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "on.helpin.email")),
 		AppBaseURL:                             appBaseURL,
+		MCPServerEnabled:                       parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVER_ENABLED")),
+		MCPOAuthEnabled:                        parseBoolEnvDefaultTrue(os.Getenv("MCP_OAUTH_ENABLED")),
+		MCPServiceTokensEnabled:                parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVICE_TOKENS_ENABLED")),
+		MCPPMWriteEnabled:                      parseBoolEnvDefaultTrue(os.Getenv("MCP_PM_WRITE_ENABLED")),
+		MCPDocsWriteEnabled:                    parseBoolEnvDefaultTrue(os.Getenv("MCP_DOCS_WRITE_ENABLED")),
+		MCPAgentRunEnabled:                     parseBoolEnvDefaultTrue(os.Getenv("MCP_AGENT_RUN_ENABLED")),
+		MCPCRMEnabled:                          parseBoolEnvDefaultTrue(os.Getenv("MCP_CRM_ENABLED")),
+		MCPSupportEnabled:                      parseBoolEnvDefaultTrue(os.Getenv("MCP_SUPPORT_ENABLED")),
+		MCPPublicBaseURL:                       strings.TrimRight(strings.TrimSpace(firstNonEmpty(os.Getenv("MCP_PUBLIC_BASE_URL"), appBaseURL)), "/"),
+		ExternalMCPEnabled:                     parseBoolEnv(os.Getenv("EXTERNAL_MCP_ENABLED")),
+		ExternalMCPCustomServersEnabled:        parseBoolEnv(os.Getenv("EXTERNAL_MCP_CUSTOM_SERVERS_ENABLED")),
+		ExternalMCPEncryptionKey:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_ENCRYPTION_KEY")),
+		ExternalMCPAllowedHosts:                parseCSV(firstNonEmpty(os.Getenv("EXTERNAL_MCP_ALLOWED_HOSTS"), "mcp.customer.io,mcp-eu.customer.io")),
+		ExternalMCPOAuthRedirectURL:            strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_REDIRECT_URL")),
+		ExternalMCPOAuthClientID:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_ID")),
+		ExternalMCPOAuthClientSecret:           strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_SECRET")),
+		ExternalMCPOAuthClientAuthMethod:       strings.TrimSpace(firstNonEmpty(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_AUTH_METHOD"), "none")),
+		ExternalMCPAllowInsecureLocalhost:      parseBoolEnv(os.Getenv("EXTERNAL_MCP_ALLOW_INSECURE_LOCALHOST")),
 		WebAuthnRPID:                           webAuthnRPID,
 		WebAuthnRPOrigins:                      webAuthnRPOrigins,
 		PlatformAdminEmails:                    parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
@@ -295,8 +324,9 @@ func Load() (*Config, error) {
 		CRMLLMAPIKey:                           os.Getenv("CRM_LLM_API_KEY"),
 		CRMLLMBaseURL:                          os.Getenv("CRM_LLM_BASE_URL"),
 		CRMLLMModel:                            os.Getenv("CRM_LLM_MODEL"),
-		QueryExpansionModel:                    strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.5")),
+		QueryExpansionModel:                    strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.6-luna")),
 		QueryExpansionProvider:                 strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
+		QueryExpansionTimeoutMS:                parsePositiveIntEnv(os.Getenv("QUERY_EXPANSION_TIMEOUT_MS"), 10000),
 		CommandRouterLLMProvider:               strings.TrimSpace(firstNonEmpty(os.Getenv("COMMAND_ROUTER_LLM_PROVIDER"), defaultCommandRouterLLMProvider)),
 		CommandRouterLLMModel:                  strings.TrimSpace(firstNonEmpty(os.Getenv("COMMAND_ROUTER_LLM_MODEL"), defaultCommandRouterLLMModel)),
 		CommandRouterLLMMaxTokens:              parsePositiveIntEnv(os.Getenv("COMMAND_ROUTER_LLM_MAX_TOKENS"), 900),
@@ -317,6 +347,7 @@ func Load() (*Config, error) {
 		StripeCreditBlockPriceID:               strings.TrimSpace(os.Getenv("STRIPE_CREDIT_BLOCK_PRICE_ID")),
 		AgentPreviewDebug:                      parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 		DocsOrderingUseSortKey:                 parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
+		TLSAskExtraAllowedDomains:              parseCSV(os.Getenv("TLS_ASK_EXTRA_ALLOWED_DOMAINS")),
 	}, nil
 }
 
@@ -327,36 +358,6 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func codexHelpinMCPBridgePath(raw string) string {
-	raw = strings.TrimSpace(os.ExpandEnv(raw))
-	if raw != "" {
-		return raw
-	}
-	for _, candidate := range []string{
-		"bin/helpin-mcp-bridge",
-		"../bin/helpin-mcp-bridge",
-		"../../bin/helpin-mcp-bridge",
-		defaultCodexHelpinMCPBridgePath,
-	} {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-	}
-	return defaultCodexHelpinMCPBridgePath
-}
-
-func codexHelpinAPIBaseURL(raw, port string) string {
-	raw = strings.TrimRight(strings.TrimSpace(os.ExpandEnv(raw)), "/")
-	if raw != "" {
-		return raw
-	}
-	port = strings.TrimSpace(port)
-	if port == "" {
-		port = "8080"
-	}
-	return "http://127.0.0.1:" + port + "/api"
 }
 
 func parsePositiveIntEnv(value string, fallback int) int {

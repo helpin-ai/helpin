@@ -33,7 +33,7 @@ import {
   SquareUnlock01Icon,
   UserCheck01Icon,
 } from '@/lib/icons'
-import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
+import { StoredIcon } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
@@ -148,11 +148,13 @@ function docStatusColor(status: string): string {
 }
 
 function DocCollectionIcon({ name }: { name?: string | null }) {
-  if (name) {
-    const Icon = ICON_MAP[name];
-    if (Icon) return <Icon className="h-3 w-3 shrink-0" />;
-  }
-  return <FolderOpenIcon className="h-3 w-3 shrink-0" />;
+  return (
+    <StoredIcon
+      name={name}
+      className="h-3 w-3 shrink-0"
+      fallback={<FolderOpenIcon className="h-3 w-3 shrink-0" />}
+    />
+  );
 }
 
 import type { DocumentOutlineItem } from '@/components/docs/DocsOutlineMinimap'

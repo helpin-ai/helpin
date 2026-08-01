@@ -65,7 +65,7 @@ func TestValidateCustomAgentDraftDropsUnknownCatalogValuesAndAddsRequiredSkillTo
 	if len(draft.Skills) != 1 || draft.Skills[0].Key != "support_style" {
 		t.Fatalf("expected valid skill only, got %#v", draft.Skills)
 	}
-	if draft.ApprovalMode != "always" {
+	if draft.ApprovalMode != "mutating_tools" {
 		t.Fatalf("expected safe approval default, got %q", draft.ApprovalMode)
 	}
 	if draft.RuntimeKind != "codex" {

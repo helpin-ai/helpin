@@ -40,10 +40,20 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *model.User) (*mod
 	return user, nil
 }
 
-// GetByEmail looks up a user by their email address.
+// GetByEmail looks up a user by their email address, case-insensitively.
+//
+// The lookup is case-insensitive because email addresses are case-insensitive
+// for routing purposes and callers normalize input to lowercase, while some
+// legacy rows were stored with mixed case. A case-sensitive match would miss
+// those rows and cause auth flows to mint duplicate accounts for the same
+// person (see the users table's case-sensitive uniqueness gap).
+//
+// Results are ordered by id so that, in the (transient) event that duplicate
+// case-variant rows still exist, the lookup deterministically resolves to the
+// lowest-id row — the same account the merge migration keeps as the survivor.
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
 	user := &model.User{}
-	err := r.db.WithContext(ctx).Where("email = ?", email).First(user).Error
+	err := r.db.WithContext(ctx).Where("LOWER(email) = LOWER(?)", email).Order("id").First(user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil

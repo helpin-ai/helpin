@@ -43,14 +43,16 @@ type Handlers struct {
 	Search              *handler.SearchHandler
 	CommandBar          *handler.CommandBarHandler
 	Agent               *handler.AgentHandler
-	AgentToolGateway    *handler.AgentToolGatewayHandler
 	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
+	MCP                 *handler.MCPHandler
+	ExternalMCP         *handler.ExternalMCPHandler
 	SupportInbox        *handler.SupportInboxHandler
 	SupportInboxView    *handler.SupportInboxViewHandler
 	SupportTag          *handler.SupportTagHandler
 	SupportInboxWidget  *handler.SupportInboxWidgetHandler
 	Git                 *handler.GitHandler
 	Docs                *handler.DocsHandler
+	TLSAsk              *handler.TLSAskHandler
 	Notification        *handler.NotificationHandler
 	UserNotifSettings   *handler.UserNotificationSettingsHandler
 	CRMContact          *handler.CRMContactHandler
@@ -141,6 +143,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		MaxAge:           3600,
 	})).Get("/view_headers", h.Health.ViewHeaders)
 	r.Get("/health", h.Health.Check)
+	if h.MCP != nil {
+		r.Get("/.well-known/oauth-authorization-server", h.MCP.AuthorizationServerMetadata)
+		r.Get("/.well-known/oauth-protected-resource", h.MCP.ProtectedResourceMetadata)
+		r.Handle("/mcp", http.HandlerFunc(h.MCP.Protocol))
+	}
 
 	// ---- Public widget routes for client.helpin.ai (no JWT, open CORS) ----
 	// Mounted at /widget (outside /api) so the ingress path /widget/* works directly.
@@ -193,8 +200,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			MaxAge:           3600,
 		}))
 
-		// Help Center domain verification (Caddy on_demand_tls)
-		r.Get("/verify-domain", h.Docs.VerifyDomain)
+		// Caddy on-demand TLS "ask" check (200 = issue certificate, 404 = deny)
+		r.Get("/verify-domain", h.TLSAsk.Verify)
 
 		// Public Help Center routes
 		r.Route("/{subdomain}", func(r chi.Router) {
@@ -233,6 +240,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/auth/reset-password", h.Auth.ResetPassword)
 		r.Post("/auth/refresh", h.Auth.RefreshToken)
 		r.Post("/auth/signout", h.Auth.Signout)
+		if h.MCP != nil {
+			r.Post("/mcp/oauth/register", h.MCP.RegisterClient)
+			r.Get("/mcp/oauth/authorize", h.MCP.AuthorizeRedirect)
+			r.Post("/mcp/oauth/token", h.MCP.Token)
+			r.Post("/mcp/oauth/revoke", h.MCP.RevokeToken)
+		}
 		r.Get("/health", h.Health.Check)
 		r.Get("/system/ensure-cors", h.Health.EnsureStorageCORS)
 		r.Get("/invitations/info", h.Invite.GetInfo)
@@ -259,8 +272,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// so this keeps the durable attachment ID as the app-controlled image URL.
 		r.Get("/pm/attachments/{id}/content", h.PMAttachment.Content)
 
-		// ---- Help Center domain verification (Caddy on_demand_tls) ----
-		r.Get("/hc/verify-domain", h.Docs.VerifyDomain)
+		// ---- Caddy on-demand TLS "ask" check ----
+		r.Get("/hc/verify-domain", h.TLSAsk.Verify)
 
 		// ---- Public Help Center routes (no JWT) ----
 		r.Route("/hc/{subdomain}", func(r chi.Router) {
@@ -376,13 +389,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			}
 		})
 
-		if h.AgentToolGateway != nil {
-			r.Route("/agent-run-tools", func(r chi.Router) {
-				r.Get("/tools", h.AgentToolGateway.ListTools)
-				r.Post("/call", h.AgentToolGateway.CallTool)
-			})
-		}
-
 		// ---- Platform admin routes (audited before auth so denied attempts are logged) ----
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(middleware.AdminAuditLogger(jwtManager))
@@ -398,6 +404,39 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Protected routes ----
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(jwtManager))
+			if h.MCP != nil {
+				r.Get("/mcp/oauth/request", h.MCP.AuthorizationRequest)
+				r.Post("/mcp/oauth/authorize", h.MCP.Authorize)
+				r.Route("/mcp", func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceID)
+					r.Use(wsActive)
+					r.Get("/", h.MCP.Dashboard)
+					r.With(requirePerm(authorization.PermSettingsManage)).Put("/policy", h.MCP.UpdatePolicy)
+					r.With(requirePerm(authorization.PermSettingsManage)).Delete("/connections", h.MCP.RevokeWorkspaceAccess)
+					r.Delete("/connections/{connectionID}", h.MCP.RevokeConnection)
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/activity", h.MCP.Activity)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/service-principals", h.MCP.CreateServicePrincipal)
+					r.With(requirePerm(authorization.PermSettingsManage)).Delete("/service-principals/{principalID}", h.MCP.RevokeServicePrincipal)
+					r.With(requirePerm(authorization.PermSettingsManage)).Get("/service-principals/{principalID}/tokens", h.MCP.ListServiceTokens)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/service-principals/{principalID}/tokens", h.MCP.RotateServiceToken)
+					r.With(requirePerm(authorization.PermSettingsManage)).Delete("/service-principals/{principalID}/tokens/{tokenID}", h.MCP.RevokeServiceToken)
+				})
+			}
+			if h.ExternalMCP != nil {
+				r.Get("/external-mcp/oauth/callback", h.ExternalMCP.OAuthCallback)
+				r.Route("/external-mcp", func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceID)
+					r.Use(wsActive)
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/providers", h.ExternalMCP.Providers)
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/servers", h.ExternalMCP.ListServers)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/servers", h.ExternalMCP.CreateServer)
+					r.With(requirePerm(authorization.PermSettingsManage)).Put("/servers/{serverID}", h.ExternalMCP.UpdateServer)
+					r.With(requirePerm(authorization.PermSettingsManage)).Delete("/servers/{serverID}", h.ExternalMCP.DeleteServer)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/servers/{serverID}/oauth/start", h.ExternalMCP.StartOAuth)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/servers/{serverID}/tools/refresh", h.ExternalMCP.RefreshTools)
+					r.With(requirePerm(authorization.PermSettingsManage)).Put("/servers/{serverID}/tools", h.ExternalMCP.UpdateTools)
+				})
+			}
 
 			// Auth / profile
 			r.Get("/auth/me", h.Auth.Me)
@@ -1036,6 +1075,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Post("/agents/{id}/support-preview", h.SupportAI.PreviewSupportReply)
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/knowledge-sources", h.SupportAI.UpdateKnowledgeSources)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agents/{id}/knowledge-sources/{spaceId}/reindex", h.SupportAI.ReindexKnowledgeSource)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/curated-guidance", h.SupportAI.ListCuratedGuidance)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agents/{id}/curated-guidance", h.SupportAI.CreateCuratedGuidance)
+					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/curated-guidance/{guidanceId}", h.SupportAI.UpdateCuratedGuidance)
+					r.With(requirePerm(authorization.PermPMEdit)).Delete("/agents/{id}/curated-guidance/{guidanceId}", h.SupportAI.DeleteCuratedGuidance)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/content-sources", h.SupportAI.GetAgentContentSources)
 					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}/content-sources", h.SupportAI.UpdateAgentContentSources)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources", h.SupportAI.ListContentSources)

@@ -40,7 +40,8 @@ import { gitService } from '@/lib/services/gitService';
 import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { AGENT_RUNTIME_HELP_TEXT, AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
-import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
+import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
+import { buildAutomationActivityPath, buildAutomationFlowsPath, buildAutomationToolConnectionsPath } from '@/lib/automationUi';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
@@ -48,6 +49,7 @@ import type {
   Agent,
   AgentAnalyticsResponse,
   AgentExecutionConfig,
+  AgentIconKey,
   AgentPresetDefinition,
   AgentPresetKey,
   AgentVersion,
@@ -303,7 +305,7 @@ Treat these configured values as already resolved and authoritative. Do not plan
 
 Use the configured competitor list when it is not empty. If no competitors are configured, discover competitors with web search and cite sources.
 
-For each competitor, first use web_search_exa to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog.
+For each competitor, first use web_search_exa (or the runtime's built-in web search when available) to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog. A missing search provider is a tool limitation, not evidence that a competitor has no public changelog.
 
 Create exactly one competitors changelog tracking report task with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
 
@@ -387,6 +389,7 @@ type SecurityTriageSeverity = typeof SECURITY_TRIAGE_SEVERITY_OPTIONS[number]['v
 
 interface AgentFormData {
   name: string;
+  icon_key: AgentIconKey;
   preset_key: AgentPresetKey;
   preset_version_key: string;
   runtime_kind: AgentRuntimeKind;
@@ -868,6 +871,7 @@ function buildUpdatePayload(
 
   return {
     name: form.name.trim(),
+    icon_key: form.icon_key,
     trigger_mode: 'manual',
     provider: provider || undefined,
     model: form.model.trim(),
@@ -896,6 +900,7 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     : (preset?.default_invocation_mode ?? presetFallback(presetKey).default_invocation_mode);
   return {
     name: agent.name,
+    icon_key: agent.icon_key ?? 'violet_star',
     preset_key: presetKey,
     preset_version_key: agent.preset_version_key?.trim() || preset?.version_key || fallbackPresetVersionKey(presetKey),
     runtime_kind: agent.runtime_kind || runtimeKind,
@@ -943,6 +948,7 @@ function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
   const provider = normalizeProviderForRuntime(runtimeKind, 'anthropic');
   return {
     name: template.name,
+    icon_key: 'violet_star',
     preset_key: DEFAULT_SYSTEM_PRESET_KEY,
     preset_version_key: fallbackPresetVersionKey(DEFAULT_SYSTEM_PRESET_KEY),
     runtime_kind: runtimeKind,
@@ -972,6 +978,7 @@ function buildCustomAgentForm(agent: Agent): AgentFormData {
   const runtimeKind = agent.runtime_kind;
   return {
     name: agent.name,
+    icon_key: agent.icon_key ?? 'violet_star',
     preset_key: presetKey,
     preset_version_key: fallbackPresetVersionKey(presetKey),
     runtime_kind: runtimeKind,
@@ -1028,6 +1035,7 @@ function comparableCustomAgentForm(form: AgentFormData) {
     : [];
   return {
     name: form.name.trim(),
+    icon_key: form.icon_key,
     runtime_kind: form.runtime_kind,
     provider,
     model: form.model.trim(),
@@ -2440,6 +2448,7 @@ export function AgentsPage() {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
   const repositoriesSettingsHref = workspace?.slug ? buildSettingsRoutePath(workspace.slug, 'repositories') : undefined;
+  const toolConnectionsHref = workspace?.slug ? buildAutomationToolConnectionsPath(workspace.slug) : undefined;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
   const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId ?? '');
@@ -3323,6 +3332,7 @@ export function AgentsPage() {
           team_id: form.team_id || undefined,
           overrides: {
             role: templateDraft.template.default_role,
+            icon_key: form.icon_key,
             runtime_kind: form.runtime_kind,
             skills: form.skills,
             provider: form.provider,
@@ -5037,6 +5047,7 @@ export function AgentsPage() {
                           onOpenChange={setToolPickerOpen}
                           tools={toolCatalogEntries}
                           selectedTools={form.allowed_tools}
+                          connectionsHref={toolConnectionsHref}
                           disabled={!versionToolEditingState.canEdit}
                           disabledReason={versionToolEditingState.disabledReason}
                           onToggleTool={toggleTool}
@@ -7045,6 +7056,7 @@ export function AgentsPage() {
                         onOpenChange={setToolPickerOpen}
                         tools={toolCatalogEntries}
                         selectedTools={form.allowed_tools}
+                        connectionsHref={toolConnectionsHref}
                         onToggleTool={toggleTool}
                       />
                     </div>
@@ -7078,11 +7090,40 @@ export function AgentsPage() {
                 <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
                   <span className="flex items-center gap-2 text-sm">
                     {automationOpen ? <ArrowDown01Icon className="h-4 w-4" /> : <ArrowRight01Icon className="h-4 w-4" />}
-                    Run limits
+                    Run behavior
                   </span>
                 </Button>
               </Collapsible.Trigger>
               <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
+                <div className="space-y-2">
+                  <FieldLabel
+                    htmlFor="agent-approval-policy"
+                    tooltip="Choose when this agent needs a person to approve its work."
+                  >
+                    Approval policy
+                  </FieldLabel>
+                  <Select
+                    value={form.approval_mode}
+                    onValueChange={(value) => setForm((current) => ({
+                      ...current,
+                      approval_mode: value as AgentApprovalMode,
+                    }))}
+                  >
+                    <SelectTrigger id="agent-approval-policy">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AGENT_APPROVAL_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {agentApprovalDescription(form.approval_mode)}
+                  </p>
+                </div>
                 <div className="space-y-2">
                   <FieldLabel
                     htmlFor="agent-concurrency"

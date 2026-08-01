@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getSettingsSidebarGroups } from '../settingsSections';
+import { getSettingsSidebarGroups, SETTINGS_ROUTE_SECTIONS } from '../settingsSections';
 
 function visibleSectionIDs(canManageSettings: boolean) {
   return getSettingsSidebarGroups(canManageSettings).flatMap((group) =>
@@ -20,6 +20,29 @@ describe('getSettingsSidebarGroups', () => {
 
   it('still hides settings-admin-only sections without workspace settings management', () => {
     expect(visibleSectionIDs(false)).not.toContain('command-intents');
+  });
+
+  it('places MCP after Access when workspace read is allowed', () => {
+    const workspaceGroup = getSettingsSidebarGroups(true, new Set(['workspace.read', 'module_access.manage']))
+      .find((group) => group.label === 'Workspace');
+
+    const sections = workspaceGroup?.sections.map((section) => section.id) ?? [];
+    expect(sections.indexOf('mcp')).toBe(sections.indexOf('access') + 1);
+    expect(sections.indexOf('repositories')).toBe(sections.indexOf('mcp') + 1);
+  });
+
+  it('labels the inbound workspace surface MCP access', () => {
+    expect(SETTINGS_ROUTE_SECTIONS.find((section) => section.id === 'mcp')).toMatchObject({
+      label: 'MCP access',
+      description: 'Connect outside MCP clients to Helpin and control their workspace access.',
+    });
+  });
+
+  it('hides MCP without workspace read permission', () => {
+    const sections = getSettingsSidebarGroups(true, new Set(['module_access.manage']))
+      .flatMap((group) => group.sections.map((section) => section.id));
+
+    expect(sections).not.toContain('mcp');
   });
 
   it('puts AI Assistant first in support settings', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ type ToolMultiSelectPopoverProps = {
   onOpenChange: (open: boolean) => void;
   tools: ToolCatalogEntry[];
   selectedTools: string[];
+  connectionsHref?: string;
   disabled?: boolean;
   disabledReason?: string;
   onToggleTool: (toolName: string) => void;
@@ -22,6 +23,7 @@ export function ToolMultiSelectPopover({
   onOpenChange,
   tools,
   selectedTools,
+  connectionsHref,
   disabled,
   disabledReason,
   onToggleTool,
@@ -33,18 +35,15 @@ export function ToolMultiSelectPopover({
     () => ['All', ...Array.from(new Set(tools.map((tool) => tool.category).filter(Boolean))).sort()],
     [tools],
   );
+  const activeCategory = categories.includes(category) ? category : 'All';
   const filteredTools = useMemo(() => {
     const query = search.trim().toLowerCase();
     return tools.filter((tool) => {
-      if (category !== 'All' && tool.category !== category) return false;
+      if (activeCategory !== 'All' && tool.category !== activeCategory) return false;
       if (!query) return true;
       return `${tool.name} ${tool.category} ${tool.description}`.toLowerCase().includes(query);
     });
-  }, [category, search, tools]);
-
-  useEffect(() => {
-    if (!categories.includes(category)) setCategory('All');
-  }, [categories, category]);
+  }, [activeCategory, search, tools]);
 
   const categoryCount = (value: string) => (value === 'All' ? tools.length : tools.filter((tool) => tool.category === value).length);
 
@@ -56,7 +55,7 @@ export function ToolMultiSelectPopover({
           variant="outline"
           size="sm"
           className="h-8 gap-1.5 px-2 text-[11px]"
-          disabled={tools.length === 0 || disabled}
+          disabled={disabled}
           aria-label={disabled && disabledReason ? `Select tools. ${disabledReason}` : 'Select tools'}
         >
           <PlusSignIcon className="h-3.5 w-3.5" />
@@ -89,7 +88,7 @@ export function ToolMultiSelectPopover({
                 type="button"
                 className={cn(
                   'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs transition-colors',
-                  category === item
+                  activeCategory === item
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:bg-background/70 hover:text-foreground',
                 )}
@@ -135,7 +134,15 @@ export function ToolMultiSelectPopover({
             )}
           </div>
         </div>
-        <div className="flex items-center justify-end border-t border-border/60 px-2 py-2">
+        <div className="flex items-center justify-between gap-3 border-t border-border/60 px-2 py-2">
+          {connectionsHref ? (
+            <a
+              href={connectionsHref}
+              className="px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Manage connections
+            </a>
+          ) : <span />}
           <Button
             type="button"
             variant="outline"

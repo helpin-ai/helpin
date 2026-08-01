@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -95,6 +96,21 @@ func (r *CommandBarChatRepository) GetMessage(ctx context.Context, workspaceID, 
 		return nil, err
 	}
 	return &message, nil
+}
+
+func (r *CommandBarChatRepository) UpdateMessageProposal(ctx context.Context, workspaceID, id string, proposal *model.CommandBarProposal) error {
+	if r == nil || r.db == nil {
+		return gorm.ErrInvalidDB
+	}
+	payload, err := json.Marshal(proposal)
+	if err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).
+		Model(&model.CommandBarMessage{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, id).
+		Update("proposal_json", payload).
+		Error
 }
 
 func (r *CommandBarChatRepository) ListRecentMessages(ctx context.Context, workspaceID, threadID string, limit int) ([]model.CommandBarMessage, error) {

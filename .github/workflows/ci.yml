@@ -258,6 +258,9 @@ jobs:
       - name: Install
         working-directory: help-center
         run: pnpm install --frozen-lockfile
+      - name: Verify generated icon catalog
+        working-directory: help-center
+        run: pnpm run check:icons
       - name: Vitest
         working-directory: help-center
         run: pnpm run test

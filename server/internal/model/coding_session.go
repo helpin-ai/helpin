@@ -18,6 +18,7 @@ type CodingSession struct {
 	InvocationMode      string                       `json:"invocation_mode"`
 	Status              string                       `json:"status"`
 	PauseReason         string                       `json:"pause_reason"`
+	ApprovalState       string                       `json:"approval_state"`
 	ErrorMessage        *string                      `json:"error_message,omitempty"`
 	ExecutionStage      *string                      `json:"execution_stage,omitempty"`
 	LastHeartbeatAt     *time.Time                   `json:"last_heartbeat_at,omitempty"`
@@ -109,6 +110,11 @@ func CodingSessionEventFromAgentRunMessage(run *AgentRun, message *AgentRunMessa
 		eventType = "tool.call.completed"
 	}
 
+	messageID := strings.TrimSpace(message.RuntimeMessageID)
+	if messageID == "" {
+		messageID = message.ID
+	}
+
 	return CodingSessionEvent{
 		ID:          "msg:" + message.ID,
 		SessionID:   run.ID,
@@ -118,14 +124,15 @@ func CodingSessionEventFromAgentRunMessage(run *AgentRun, message *AgentRunMessa
 		Type:        eventType,
 		RuntimeKind: run.RuntimeKind,
 		Payload: map[string]any{
-			"message_id":       message.ID,
-			"role":             message.Role,
-			"message_type":     message.MessageType,
-			"content":          message.Content,
-			"sequence_no":      message.SequenceNo,
-			"content_blocks":   json.RawMessage(message.ContentBlocks),
-			"turn_segments":    json.RawMessage(message.TurnSegments),
-			"tool_invocations": json.RawMessage(message.ToolInvocations),
+			"message_id":           messageID,
+			"persisted_message_id": message.ID,
+			"role":                 message.Role,
+			"message_type":         message.MessageType,
+			"content":              message.Content,
+			"sequence_no":          message.SequenceNo,
+			"content_blocks":       json.RawMessage(message.ContentBlocks),
+			"turn_segments":        json.RawMessage(message.TurnSegments),
+			"tool_invocations":     json.RawMessage(message.ToolInvocations),
 		},
 		RuntimeMetadata: map[string]any{
 			"source": "agent_run_message",
@@ -188,6 +195,7 @@ type CodingSessionRunPlan struct {
 }
 
 type CodingSessionStreamSnapshot struct {
+	ThroughSequence      int64                              `json:"through_sequence,omitempty"`
 	LiveAssistantMessage *CodingSessionLiveAssistantMessage `json:"live_assistant_message,omitempty"`
 	LiveReasoningMessage *CodingSessionLiveReasoningMessage `json:"live_reasoning_message,omitempty"`
 	LiveTurnSegments     []CodingSessionLiveTurnSegment     `json:"live_turn_segments,omitempty"`

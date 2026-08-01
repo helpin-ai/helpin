@@ -17,6 +17,8 @@ type SupportContentChunkSearchResult struct {
 	ContentSourceID string  `json:"content_source_id"`
 	PageID          string  `json:"page_id"`
 	ChunkIndex      int     `json:"chunk_index"`
+	SectionKey      string  `json:"section_key"`
+	HeadingPath     string  `json:"heading_path"`
 	Title           string  `json:"title"`
 	URL             string  `json:"url"`
 	Content         string  `json:"content"`
@@ -45,7 +47,8 @@ func (r *SupportContentChunkRepository) ReplacePageChunks(ctx context.Context, p
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "page_id"}, {Name: "chunk_index"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"title", "url", "content", "content_hash", "embedding",
+				"section_key", "heading_path", "title", "url", "content", "search_content",
+				"previous_chunk_index", "next_chunk_index", "content_hash", "embedding",
 				"embedding_provider", "embedding_model", "embedding_version", "embedding_dimensions",
 				"updated_at",
 			}),
@@ -77,11 +80,41 @@ func (r *SupportContentChunkRepository) DeleteByContentSourceExceptPages(ctx con
 	return nil
 }
 
+// ListPageNeighbors returns exact adjacent chunks for an already eligible page hit.
+func (r *SupportContentChunkRepository) ListPageNeighbors(ctx context.Context, workspaceID, agentID, pageID string, indexes []int) ([]SupportContentChunkSearchResult, error) {
+	if len(indexes) == 0 {
+		return []SupportContentChunkSearchResult{}, nil
+	}
+	results := []SupportContentChunkSearchResult{}
+	if err := r.db.WithContext(ctx).
+		Table("support_content_chunks AS c").
+		Select("c.id, c.workspace_id, c.content_source_id, c.page_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.url, c.content").
+		Joins("JOIN agent_content_sources acs ON acs.content_source_id = c.content_source_id AND acs.workspace_id = c.workspace_id").
+		Joins("JOIN support_content_sources scs ON scs.id = c.content_source_id AND scs.workspace_id = c.workspace_id").
+		Joins("JOIN support_content_pages p ON p.id = c.page_id AND p.workspace_id = c.workspace_id").
+		Where("c.workspace_id = ? AND acs.agent_id = ? AND c.page_id = ? AND c.chunk_index IN ?", workspaceID, agentID, pageID, indexes).
+		Where("scs.sync_status <> ? AND p.http_status >= 200 AND p.http_status < 300", model.KnowledgeSourceSyncDisabled).
+		Order("c.chunk_index ASC").
+		Scan(&results).Error; err != nil {
+		return nil, fmt.Errorf("list content chunk neighbors: %w", err)
+	}
+	return results, nil
+}
+
 func (r *SupportContentChunkRepository) HybridSearch(ctx context.Context, workspaceID string, sourceIDs []string, query string, queryEmbedding string, limit int) ([]SupportContentChunkSearchResult, error) {
-	return r.HybridSearchWithEmbeddingModel(ctx, workspaceID, sourceIDs, query, queryEmbedding, defaultChunkEmbeddingModel, limit)
+	return r.hybridSearch(ctx, workspaceID, "", sourceIDs, query, queryEmbedding, defaultChunkEmbeddingModel, limit)
+}
+
+// HybridSearchForAgent enforces the agent-to-source link inside candidate SQL.
+func (r *SupportContentChunkRepository) HybridSearchForAgent(ctx context.Context, workspaceID, agentID string, sourceIDs []string, query, queryEmbedding, embeddingModel string, limit int) ([]SupportContentChunkSearchResult, error) {
+	return r.hybridSearch(ctx, workspaceID, agentID, sourceIDs, query, queryEmbedding, embeddingModel, limit)
 }
 
 func (r *SupportContentChunkRepository) HybridSearchWithEmbeddingModel(ctx context.Context, workspaceID string, sourceIDs []string, query string, queryEmbedding string, embeddingModel string, limit int) ([]SupportContentChunkSearchResult, error) {
+	return r.hybridSearch(ctx, workspaceID, "", sourceIDs, query, queryEmbedding, embeddingModel, limit)
+}
+
+func (r *SupportContentChunkRepository) hybridSearch(ctx context.Context, workspaceID, agentID string, sourceIDs []string, query, queryEmbedding, embeddingModel string, limit int) ([]SupportContentChunkSearchResult, error) {
 	if limit <= 0 {
 		limit = 8
 	}
@@ -92,14 +125,14 @@ func (r *SupportContentChunkRepository) HybridSearchWithEmbeddingModel(ctx conte
 		embeddingModel = defaultChunkEmbeddingModel
 	}
 
-	lexical, err := r.lexicalSearch(ctx, workspaceID, sourceIDs, query, max(limit*4, 12))
+	lexical, err := r.lexicalSearch(ctx, workspaceID, agentID, sourceIDs, query, max(limit*4, 12))
 	if err != nil {
 		return nil, err
 	}
 
 	vector := []SupportContentChunkSearchResult{}
 	if queryEmbedding != "" && r.db.Dialector.Name() == "postgres" {
-		vector, err = r.vectorSearch(ctx, workspaceID, sourceIDs, queryEmbedding, embeddingModel, max(limit*4, 12))
+		vector, err = r.vectorSearch(ctx, workspaceID, agentID, sourceIDs, queryEmbedding, embeddingModel, max(limit*4, 12))
 		if err != nil {
 			return nil, err
 		}
@@ -112,81 +145,115 @@ func (r *SupportContentChunkRepository) HybridSearchWithEmbeddingModel(ctx conte
 	return fused, nil
 }
 
-func (r *SupportContentChunkRepository) lexicalSearch(ctx context.Context, workspaceID string, sourceIDs []string, query string, limit int) ([]SupportContentChunkSearchResult, error) {
+func (r *SupportContentChunkRepository) lexicalSearch(ctx context.Context, workspaceID, agentID string, sourceIDs []string, query string, limit int) ([]SupportContentChunkSearchResult, error) {
 	tsQuery := toTSQuery(query)
 	if tsQuery == "" {
 		return []SupportContentChunkSearchResult{}, nil
 	}
 
 	if r.db.Dialector.Name() != "postgres" {
-		var chunks []model.SupportContentChunk
-		if err := r.db.WithContext(ctx).
-			Where("workspace_id = ? AND content_source_id IN ?", workspaceID, sourceIDs).
-			Order("updated_at DESC").
+		var results []SupportContentChunkSearchResult
+		dbQuery := r.db.WithContext(ctx).Table("support_content_chunks").
+			Select("support_content_chunks.id, support_content_chunks.workspace_id, support_content_chunks.content_source_id, support_content_chunks.page_id, support_content_chunks.chunk_index, support_content_chunks.section_key, support_content_chunks.heading_path, support_content_chunks.title, support_content_chunks.url, support_content_chunks.content").
+			Where("support_content_chunks.workspace_id = ? AND support_content_chunks.content_source_id IN ?", workspaceID, sourceIDs)
+		if agentID != "" {
+			dbQuery = dbQuery.Joins("JOIN agent_content_sources acs ON acs.content_source_id = support_content_chunks.content_source_id AND acs.workspace_id = support_content_chunks.workspace_id").
+				Joins("JOIN support_content_sources scs ON scs.id = support_content_chunks.content_source_id AND scs.workspace_id = support_content_chunks.workspace_id").
+				Joins("JOIN support_content_pages p ON p.id = support_content_chunks.page_id AND p.workspace_id = support_content_chunks.workspace_id").
+				Where("acs.agent_id = ?", agentID).
+				Where("scs.sync_status <> ? AND p.http_status >= 200 AND p.http_status < 300", model.KnowledgeSourceSyncDisabled)
+		}
+		if err := dbQuery.
+			Order("support_content_chunks.updated_at DESC").
 			Limit(limit).
-			Find(&chunks).Error; err != nil {
+			Scan(&results).Error; err != nil {
 			return nil, err
 		}
-		results := make([]SupportContentChunkSearchResult, 0, len(chunks))
-		for _, chunk := range chunks {
-			results = append(results, SupportContentChunkSearchResult{
-				ID:              chunk.ID,
-				WorkspaceID:     chunk.WorkspaceID,
-				ContentSourceID: chunk.ContentSourceID,
-				PageID:          chunk.PageID,
-				ChunkIndex:      chunk.ChunkIndex,
-				Title:           chunk.Title,
-				URL:             chunk.URL,
-				Content:         chunk.Content,
-				LexicalScore:    1,
-			})
+		for idx := range results {
+			results[idx].LexicalScore = 1
 		}
 		return results, nil
 	}
 
-	sql := `
-		SELECT c.id, c.workspace_id, c.content_source_id, c.page_id, c.chunk_index, c.title, c.url, c.content,
+	agentJoin := ""
+	sourcePredicate := ""
+	agentPredicate := ""
+	if agentID != "" {
+		agentJoin = `JOIN support_content_sources scs ON scs.id = c.content_source_id AND scs.workspace_id = c.workspace_id
+		JOIN support_content_pages p ON p.id = c.page_id AND p.workspace_id = c.workspace_id
+		JOIN agent_content_sources acs ON acs.content_source_id = c.content_source_id AND acs.workspace_id = c.workspace_id`
+		agentPredicate = "AND acs.agent_id = ?"
+		sourcePredicate = "AND scs.sync_status <> 'disabled' AND p.http_status >= 200 AND p.http_status < 300"
+	}
+	sql := fmt.Sprintf(`
+		SELECT c.id, c.workspace_id, c.content_source_id, c.page_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.url, c.content,
 		       ts_rank(
 		         setweight(to_tsvector('english', COALESCE(c.title, '')), 'A') ||
-		         setweight(to_tsvector('english', COALESCE(c.content, '')), 'B'),
+		         setweight(to_tsvector('english', COALESCE(NULLIF(c.search_content, ''), c.content, '')), 'B'),
 		         to_tsquery('english', ?)
 		       ) AS lexical_score
 		FROM support_content_chunks c
+		%s
 		WHERE c.workspace_id = ?
 		  AND c.content_source_id IN ?
+		  %s
+		  %s
 		  AND (
-		    to_tsvector('english', COALESCE(c.title, '')) ||
-		    to_tsvector('english', COALESCE(c.content, ''))
+		    setweight(to_tsvector('english', COALESCE(c.title, '')), 'A') ||
+		    setweight(to_tsvector('english', COALESCE(NULLIF(c.search_content, ''), c.content, '')), 'B')
 		  ) @@ to_tsquery('english', ?)
 		ORDER BY lexical_score DESC, c.updated_at DESC
 		LIMIT ?
-	`
+	`, agentJoin, sourcePredicate, agentPredicate)
 	var results []SupportContentChunkSearchResult
-	if err := r.db.WithContext(ctx).Raw(sql, tsQuery, workspaceID, sourceIDs, tsQuery, limit).Scan(&results).Error; err != nil {
+	args := []any{tsQuery, workspaceID, sourceIDs}
+	if agentID != "" {
+		args = append(args, agentID)
+	}
+	args = append(args, tsQuery, limit)
+	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("lexical content chunk search: %w", err)
 	}
 	return results, nil
 }
 
-func (r *SupportContentChunkRepository) vectorSearch(ctx context.Context, workspaceID string, sourceIDs []string, queryEmbedding string, embeddingModel string, limit int) ([]SupportContentChunkSearchResult, error) {
+func (r *SupportContentChunkRepository) vectorSearch(ctx context.Context, workspaceID, agentID string, sourceIDs []string, queryEmbedding string, embeddingModel string, limit int) ([]SupportContentChunkSearchResult, error) {
 	if embeddingModel == "" {
 		embeddingModel = defaultChunkEmbeddingModel
 	}
-	sql := `
-		SELECT c.id, c.workspace_id, c.content_source_id, c.page_id, c.chunk_index, c.title, c.url, c.content,
+	agentJoin := ""
+	sourcePredicate := ""
+	agentPredicate := ""
+	if agentID != "" {
+		agentJoin = `JOIN support_content_sources scs ON scs.id = c.content_source_id AND scs.workspace_id = c.workspace_id
+		JOIN support_content_pages p ON p.id = c.page_id AND p.workspace_id = c.workspace_id
+		JOIN agent_content_sources acs ON acs.content_source_id = c.content_source_id AND acs.workspace_id = c.workspace_id`
+		agentPredicate = "AND acs.agent_id = ?"
+		sourcePredicate = "AND scs.sync_status <> 'disabled' AND p.http_status >= 200 AND p.http_status < 300"
+	}
+	sql := fmt.Sprintf(`
+		SELECT c.id, c.workspace_id, c.content_source_id, c.page_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.url, c.content,
 		       GREATEST(0, 1 - (c.embedding <=> CAST(? AS vector))) AS vector_score
 		FROM support_content_chunks c
+		%s
 		WHERE c.workspace_id = ?
 		  AND c.content_source_id IN ?
+		  %s
+		  %s
 		  AND c.embedding_provider = ?
 		  AND c.embedding_model = ?
-		  AND c.embedding_version = ?
+		  AND c.embedding_version IN ?
 		  AND c.embedding_dimensions = ?
-		ORDER BY c.embedding <=> CAST(? AS vector) ASC, c.updated_at DESC
+		ORDER BY c.embedding <=> CAST(? AS vector) ASC
 		LIMIT ?
-	`
+	`, agentJoin, sourcePredicate, agentPredicate)
 	var results []SupportContentChunkSearchResult
-	if err := r.db.WithContext(ctx).Raw(sql, queryEmbedding, workspaceID, sourceIDs, defaultChunkEmbeddingProvider, embeddingModel, defaultChunkEmbeddingVersion, defaultChunkEmbeddingDimensions, queryEmbedding, limit).Scan(&results).Error; err != nil {
+	args := []any{queryEmbedding, workspaceID, sourceIDs}
+	if agentID != "" {
+		args = append(args, agentID)
+	}
+	args = append(args, defaultChunkEmbeddingProvider, embeddingModel, []string{defaultChunkEmbeddingVersion, legacyChunkEmbeddingVersion}, defaultChunkEmbeddingDimensions, queryEmbedding, limit)
+	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("vector content chunk search: %w", err)
 	}
 	return results, nil

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -13,12 +14,18 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
+
+// commandBarAICreditsExhaustedMessage is shown when the AI provider rejects
+// requests for billing reasons (402). It replaces a confusing silent downgrade
+// to read-only with a clear, actionable explanation.
+const commandBarAICreditsExhaustedMessage = "AI features are temporarily unavailable because this workspace's AI credits are exhausted. Ask a workspace admin to top up AI credits, then try again — running agents and answering questions need available credits."
 
 const maxCommandBarPlanSteps = 50
 const maxCommandBarDAGInitialFanOut = 10
@@ -387,12 +394,29 @@ func (s *CommandBarService) ConfirmChatCreateAgent(ctx context.Context, workspac
 	if len(req.AllowedTools) > 0 || len(req.AllowedTargets) > 0 {
 		return nil, fmt.Errorf("agent proposal tool and target overrides are not supported")
 	}
-	agent, err := s.agentService.CreateAgent(ctx, commandBarCreateAgentRequestFromDraft(workspaceID, *proposal.Draft, req), actorID)
+	var agent *model.Agent
+	if proposal.CreatedAgentID != "" {
+		agent, err = s.agentService.GetAgent(ctx, workspaceID, proposal.CreatedAgentID)
+	} else {
+		agent, err = s.agentService.CreateAgent(ctx, commandBarCreateAgentRequestFromDraft(workspaceID, *proposal.Draft, req), actorID)
+		if err == nil {
+			proposal.CreatedAgentID = agent.ID
+			err = s.chatRepo.UpdateMessageProposal(ctx, workspaceID, message.ID, proposal)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
 	resp := &model.ConfirmCommandBarChatCreateAgentResponse{Agent: *agent}
 	if proposal.Type == model.CommandBarProposalCreateAgentAndRun {
+		if proposal.CreatedRunID != "" {
+			run, getRunErr := s.agentService.GetAgentRun(ctx, workspaceID, proposal.CreatedRunID)
+			if getRunErr != nil {
+				return nil, getRunErr
+			}
+			resp.Run = run
+			return resp, nil
+		}
 		target := proposal.RunTarget
 		if target == nil {
 			return nil, fmt.Errorf("create-and-run proposal is missing a run target")
@@ -406,6 +430,10 @@ func (s *CommandBarService) ConfirmChatCreateAgent(ctx context.Context, workspac
 			AdditionalContext: &instructions,
 		}, actorID)
 		if err != nil {
+			return nil, err
+		}
+		proposal.CreatedRunID = run.ID
+		if err := s.chatRepo.UpdateMessageProposal(ctx, workspaceID, message.ID, proposal); err != nil {
 			return nil, err
 		}
 		resp.Run = run
@@ -493,6 +521,14 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 	s.publishChatTurnProgress(ctx, workspaceID, actorID, "classifying", "")
 	classification, err := s.classifyCommandBarChatIntent(ctx, workspaceID, effectiveText, pageContext, access, history)
 	if err != nil {
+		// Insufficient AI credits (provider 402) fails both the classifier and
+		// the read-only answer that uses the same provider, so don't silently
+		// degrade to a confusing read-only reply — tell the user plainly that
+		// AI credits are exhausted and what to do about it.
+		if errors.Is(err, llm.ErrInsufficientCredits) {
+			slog.ErrorContext(ctx, "ask agents chat unavailable: AI credits exhausted", "error", err, "workspace_id", workspaceID)
+			return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: commandBarAICreditsExhaustedMessage}, commandBarAICreditsExhaustedMessage, nil
+		}
 		slog.WarnContext(ctx, "ask agents chat intent classification failed", "error", err, "workspace_id", workspaceID)
 		answer, inlineContext := s.inlineReadOnlyAnswer(ctx, workspaceID, actorID, effectiveText, pageContext, access, history)
 		return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: answer, Context: inlineContext}, answer, nil
@@ -594,14 +630,9 @@ func (s *CommandBarService) classifyCommandBarChatIntent(ctx context.Context, wo
 		return nil, nil
 	}
 	tools := s.executableReadOnlyToolCards(access)
-	var agents []model.CommandBarAgent
-	if s.agentService != nil && s.agentService.agentRepo != nil {
-		list, err := s.agentService.ListAgents(ctx, workspaceID)
-		if err == nil {
-			agents = commandBarAllAgentCandidates(list)
-		} else {
-			slog.WarnContext(ctx, "ask agents chat classifier could not list agents", "error", err, "workspace_id", workspaceID)
-		}
+	agents, err := s.commandBarAgentsForActor(ctx, workspaceID, "", access)
+	if err != nil {
+		slog.WarnContext(ctx, "ask agents chat classifier could not list agents", "error", err, "workspace_id", workspaceID)
 	}
 	contextJSON, _ := json.Marshal(pageContext)
 	historyJSON, _ := json.Marshal(commandBarChatHistoryForClassifier(history))
@@ -632,6 +663,7 @@ Choose exactly one route:
 
 Policy:
 - Prefer "inline_read_only" for read-only workspace questions when the available non-mutating tools can fetch the data.
+- Agent discovery, comparison, and recommendation questions are read-only. Route them to "inline_read_only" unless the user explicitly asks to run an agent.
 - A resolved task, document, CRM object, or workspace page context is enough target context for inline read-only status questions.
 - Do not route to one-shot merely because live data is needed; inline read-only tools are live data tools.
 - If the user needs current external evidence, industry trends, online research, web search, or fetched URLs, route "inline_read_only" only when an inline web/search/fetch tool is listed. Otherwise route "one_shot_command" so the user can approve a Command Agent with web tools.
@@ -679,8 +711,13 @@ func (s *CommandBarService) inlineReadOnlyAnswer(ctx context.Context, workspaceI
 		return fallbackInlineReadOnlyAnswer(text, pageContext), nil
 	}
 	tools := s.executableReadOnlyToolCards(access)
+	agents, err := s.commandBarAgentsForActor(ctx, workspaceID, actorID, access)
+	if err != nil {
+		slog.WarnContext(ctx, "ask agents read-only chat could not list agents", "error", err, "workspace_id", workspaceID)
+	}
 	contextJSON, _ := json.Marshal(pageContext)
 	toolJSON, _ := json.Marshal(tools)
+	agentJSON, _ := json.Marshal(commandBarChatClassifierAgentCards(agents))
 	historyJSON, _ := json.Marshal(commandBarInlineChatHistoryForLLM(history))
 	historyWorkingContext := commandBarWorkingContextFromHistory(history)
 	toolCalls := make([]commandBarReadOnlyToolCall, 0, 4)
@@ -711,6 +748,7 @@ For live workspace data, request one allowed read-only tool at a time, wait for 
 If the user asks to summarize, compare, rank, or choose from referenced entities and the available context is too shallow, fetch richer read-only detail for the referenced set first.
 Respect the domain of the current question. If the user asks about documents/docs, do not answer from PM task result sets; use Docs tools or ask a clarification. If the user asks about tasks, do not answer from Docs result sets.
 Never claim that a tool was executed unless a tool result is present.
+For questions about available agents or which agent to use, recommend only agents present in the verified available-agent catalog. Use their exact names and do not invent agent roles. The list_agents tool returns the same actor-filtered catalog.
 Never request or simulate mutating actions. If the user asks for mutation, reusable agents, chains, DAGs, or long-running work, do not answer inline.
 Return JSON only with one of:
 {"type":"tool_call","tool":"tool_name","input":{...}}
@@ -723,7 +761,8 @@ Page context: %s
 Recent chat history: %s
 Working context: %s
 Available executable read-only tools: %s
-Tool results so far: %s`, text, string(contextJSON), string(historyJSON), string(workingContextJSON), string(toolJSON), string(toolResultJSON)),
+Verified available saved/system/custom agents: %s
+Tool results so far: %s`, text, string(contextJSON), string(historyJSON), string(workingContextJSON), string(toolJSON), string(agentJSON), string(toolResultJSON)),
 			}},
 			Temperature:     0,
 			MaxTokens:       900,
@@ -1814,13 +1853,41 @@ func (s *CommandBarService) executeCommandBarReadOnlyTool(ctx context.Context, w
 	}
 	targetType := firstNonEmptyString(strings.TrimSpace(pageContext.EntityType), "workspace")
 	targetID := firstNonEmptyString(strings.TrimSpace(pageContext.EntityID), workspaceID)
+	actor := commandBarRequestActor(ctx, workspaceID, actorID, access)
 	return s.commandService.Execute(ctx, model.InternalCommandContext{
-		WorkspaceID: workspaceID,
-		ActorID:     actorID,
-		ActorRole:   access.ActorRole,
-		TargetType:  targetType,
-		TargetID:    targetID,
+		WorkspaceID:  workspaceID,
+		ActorID:      actorID,
+		ActorRole:    actor.Role,
+		ActorTeamIDs: actor.TeamIDs(),
+		TargetType:   targetType,
+		TargetID:     targetID,
 	}, def.Name, input)
+}
+
+func (s *CommandBarService) commandBarAgentsForActor(ctx context.Context, workspaceID, actorID string, access CommandBarChatAccess) ([]model.CommandBarAgent, error) {
+	if s == nil || s.agentService == nil || s.agentService.agentRepo == nil {
+		return nil, nil
+	}
+	agents, err := s.agentService.ListAgentsForActor(ctx, workspaceID, commandBarRequestActor(ctx, workspaceID, actorID, access))
+	if err != nil {
+		return nil, err
+	}
+	return commandBarAllAgentCandidates(agents), nil
+}
+
+func commandBarRequestActor(ctx context.Context, workspaceID, actorID string, access CommandBarChatAccess) *authorization.Actor {
+	if actor := authorization.GetActor(ctx); actor != nil {
+		workspaceMatches := strings.TrimSpace(actor.WorkspaceID) == "" || actor.WorkspaceID == workspaceID
+		userMatches := strings.TrimSpace(actorID) == "" || strings.TrimSpace(actor.UserID) == "" || actor.UserID == actorID
+		if workspaceMatches && userMatches {
+			return actor
+		}
+	}
+	return &authorization.Actor{
+		UserID:      strings.TrimSpace(actorID),
+		WorkspaceID: strings.TrimSpace(workspaceID),
+		Role:        strings.TrimSpace(access.ActorRole),
+	}
 }
 
 func (s *CommandBarService) commandBarReadOnlyToolDefinition(toolName string) (InternalCommandDefinition, bool) {
@@ -2060,7 +2127,7 @@ func commandBarCreateAgentRequestFromDraft(workspaceID string, draft model.Custo
 	runtimeKind := firstNonEmptyString(strings.TrimSpace(draft.RuntimeKind), "native_sdk")
 	provider := strings.TrimSpace(draft.Provider)
 	modelName := strings.TrimSpace(draft.Model)
-	approvalMode := firstNonEmptyString(strings.TrimSpace(draft.ApprovalMode), "always")
+	approvalMode := firstNonEmptyString(strings.TrimSpace(draft.ApprovalMode), "mutating_tools")
 	invocationMode := firstNonEmptyString(strings.TrimSpace(draft.DefaultInvocationMode), "interactive")
 	maxRuns := draft.MaxConcurrentRuns
 	if maxRuns <= 0 {
@@ -3764,9 +3831,8 @@ func (s *AgentService) startCommandBarPlanStep(ctx context.Context, workspaceID,
 }
 
 // AdvanceCommandBarPlanAfterRun advances the command-bar plan that owns the
-// given terminal run, loading the run's persisted state. Temporal
-// AgentRunWorkflow calls this (via AdvanceCommandBarPlanActivity) after the
-// terminal status is already persisted.
+// given terminal run, loading the run's persisted state. Agent Runtime
+// finalization calls this after the terminal status is already persisted.
 func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, completedRunID string) (*model.AgentRun, error) {
 	if s == nil || s.runRepo == nil {
 		return nil, nil
@@ -5265,6 +5331,10 @@ func commandBarAgentCandidate(agent model.Agent, allowedTargets []string) model.
 		Description:    commandBarAgentDescription(agent),
 		PresetKey:      normalizePresetKey(agent.PresetKey),
 		Role:           agent.Role,
+		Status:         agent.Status,
+		RuntimeKind:    agent.RuntimeKind,
+		IsSystem:       agent.IsSystem,
+		SupportedModes: slices.Clone(agent.SupportedModes),
 		AllowedTargets: normalizeCommandBarTargetTypes(allowedTargets),
 		AllowedTools:   parseJSONStringSlice(agent.AllowedTools),
 	}

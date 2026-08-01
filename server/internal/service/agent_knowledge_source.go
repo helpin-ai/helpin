@@ -47,7 +47,7 @@ func (s *AgentKnowledgeSourceService) List(ctx context.Context, workspaceID, age
 	result := make([]KnowledgeSourceWithSpace, 0, len(sources))
 	for _, src := range sources {
 		space, err := s.spaceRepo.GetByID(ctx, src.SpaceID)
-		if err != nil || space == nil || space.WorkspaceID != workspaceID || space.Type != model.SpaceTypeExternalCapable {
+		if err != nil || space == nil || space.WorkspaceID != workspaceID || !isSupportKnowledgeSpaceType(space.Type) {
 			continue
 		}
 		enriched := KnowledgeSourceWithSpace{AgentKnowledgeSource: src}
@@ -58,7 +58,7 @@ func (s *AgentKnowledgeSourceService) List(ctx context.Context, workspaceID, age
 	return result, nil
 }
 
-// Set replaces all knowledge sources for an agent and queues vector syncs for selected help-center spaces.
+// Set replaces all knowledge sources for an agent and queues vector syncs for selected docs spaces.
 func (s *AgentKnowledgeSourceService) Set(ctx context.Context, workspaceID, agentID string, spaceIDs []string) error {
 	existing, err := s.repo.ListByAgentID(ctx, agentID)
 	if err != nil {
@@ -78,8 +78,8 @@ func (s *AgentKnowledgeSourceService) Set(ctx context.Context, workspaceID, agen
 		if space == nil || space.WorkspaceID != workspaceID {
 			return fmt.Errorf("one or more space_ids do not belong to this workspace")
 		}
-		if space.Type != model.SpaceTypeExternalCapable {
-			return fmt.Errorf("support AI knowledge sources must be help center spaces")
+		if !isSupportKnowledgeSpaceType(space.Type) {
+			return fmt.Errorf("support AI knowledge sources must be internal or help center spaces")
 		}
 		nextBySpace[spaceID] = true
 	}
@@ -142,7 +142,7 @@ func (s *AgentKnowledgeSourceService) Set(ctx context.Context, workspaceID, agen
 	return nil
 }
 
-// Reindex queues a fresh embedding sync for one selected help-center space.
+// Reindex queues a fresh embedding sync for one selected docs space.
 func (s *AgentKnowledgeSourceService) Reindex(ctx context.Context, workspaceID, agentID, spaceID string) error {
 	if strings.TrimSpace(spaceID) == "" {
 		return fmt.Errorf("space_id is required")
@@ -175,11 +175,15 @@ func (s *AgentKnowledgeSourceService) Reindex(ctx context.Context, workspaceID, 
 	if space == nil || space.WorkspaceID != workspaceID {
 		return fmt.Errorf("space not found in workspace")
 	}
-	if space.Type != model.SpaceTypeExternalCapable {
-		return fmt.Errorf("only help center spaces can be reindexed")
+	if !isSupportKnowledgeSpaceType(space.Type) {
+		return fmt.Errorf("only internal and help center spaces can be reindexed")
 	}
 
 	return s.embeddingSvc.QueueSpaceSync(ctx, workspaceID, spaceID)
+}
+
+func isSupportKnowledgeSpaceType(spaceType string) bool {
+	return spaceType == model.SpaceTypeInternal || spaceType == model.SpaceTypeExternalCapable
 }
 
 func (s *AgentKnowledgeSourceService) reusableStateForSpace(ctx context.Context, workspaceID, spaceID, agentID string) (*model.AgentKnowledgeSource, error) {

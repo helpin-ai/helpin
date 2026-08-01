@@ -16,12 +16,21 @@ export type AgentPresetKey =
   | 'review_agent'
   | 'command_agent';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
+export type AgentIconKey =
+  | 'violet_star'
+  | 'ocean_orbit'
+  | 'forest_cap'
+  | 'sunset_flame'
+  | 'rose_wave'
+  | 'teal_signal'
+  | 'sky_quill'
+  | 'amber_lens';
 export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
 export type AgentTargetType = 'task' | 'support_conversation' | 'support_coverage_gap' | 'epic' | 'document' | 'crm_deal' | 'repository' | 'workspace';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
-export type AgentApprovalMode = 'preset_default' | 'never' | 'always';
+export type AgentApprovalMode = 'preset_default' | 'never' | 'mutating_tools' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
 export type AgentInvocationMode = 'interactive' | 'autonomous';
 export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication' | 'awaiting_user_message';
@@ -39,6 +48,7 @@ export interface Agent {
   workspace_id: string;
   is_system: boolean;
   name: string;
+  icon_key?: AgentIconKey;
   preset_key?: AgentPresetKey;
   preset_version_key?: string;
   source_template_id?: string;
@@ -318,6 +328,8 @@ export interface CommandBarProposal {
   reason?: string;
   suggestions?: string[];
   guardrails?: Array<{ type: string; severity: string; message: string }>;
+  created_agent_id?: string;
+  created_run_id?: string;
 }
 
 export interface CommandBarThreadSummary {
@@ -594,6 +606,7 @@ export interface AgentRunArtifact {
 export interface CreateAgentRequest {
   workspace_id: string;
   name: string;
+  icon_key?: AgentIconKey;
   preset_key?: AgentPresetKey;
   preset_version_key?: string;
   role?: string;
@@ -702,6 +715,7 @@ export interface AgentTemplateStarterFlowField {
 
 export interface CreateAgentFromTemplateOverrides {
   role?: string;
+  icon_key?: AgentIconKey;
   runtime_kind?: AgentRuntimeKind;
   skills?: AgentSkillRef[];
   provider?: AgentModelProvider;
@@ -746,6 +760,7 @@ export interface CreateAgentFromTemplateResponse {
 
 export interface UpdateAgentRequest {
   name?: string;
+  icon_key?: AgentIconKey;
   preset_key?: AgentPresetKey;
   preset_version_key?: string;
   role?: string;

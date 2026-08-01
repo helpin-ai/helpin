@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/cache"
+	"github.com/helpin-ai/helpin/server/internal/iconcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
@@ -123,6 +124,13 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 		if err != nil {
 			return nil, err
 		}
+		// Stored value must match what the TLS ask endpoint looks up, or the
+		// domain can never get a certificate issued.
+		if normalized != nil {
+			if _, err := NormalizeTLSAskDomain(*normalized); err != nil {
+				return nil, fmt.Errorf("custom domain must be a valid hostname without port or wildcard")
+			}
+		}
 		customDomain = normalized
 		updates["custom_domain"] = normalized
 	}
@@ -198,7 +206,15 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 		updates["footer_config"] = req.FooterConfig
 	}
 	if req.HomepageConfig != nil {
-		updates["homepage_config"] = req.HomepageConfig
+		var currentHomepageConfig json.RawMessage
+		if existing != nil {
+			currentHomepageConfig = existing.HomepageConfig
+		}
+		normalized, err := normalizeHomepageConfigIconWrites(req.HomepageConfig, currentHomepageConfig)
+		if err != nil {
+			return nil, err
+		}
+		updates["homepage_config"] = normalized
 	}
 	if req.SpaceNavConfig != nil {
 		updates["space_nav_config"] = req.SpaceNavConfig
@@ -590,6 +606,7 @@ func (s *DocsHelpcenterService) GetConfigBySubdomain(ctx context.Context, subdom
 		return cfg, err
 	}
 	s.enrichFeaturedCardTitles(ctx, cfg)
+	normalizePublicHomepageIcons(cfg)
 	return cfg, nil
 }
 
@@ -602,6 +619,7 @@ func (s *DocsHelpcenterService) resolveConfigUncached(ctx context.Context, ident
 	}
 	if cfg != nil {
 		s.enrichFeaturedCardTitles(ctx, cfg)
+		normalizePublicHomepageIcons(cfg)
 		return cfg, nil
 	}
 
@@ -612,6 +630,7 @@ func (s *DocsHelpcenterService) resolveConfigUncached(ctx context.Context, ident
 	}
 	if cfg != nil {
 		s.enrichFeaturedCardTitles(ctx, cfg)
+		normalizePublicHomepageIcons(cfg)
 		return cfg, nil
 	}
 
@@ -620,7 +639,72 @@ func (s *DocsHelpcenterService) resolveConfigUncached(ctx context.Context, ident
 
 // GetConfigByCustomDomain returns a help center config by its custom domain.
 func (s *DocsHelpcenterService) GetConfigByCustomDomain(ctx context.Context, domain string) (*model.DocsHelpcenterConfig, error) {
-	return s.hcRepo.GetConfigByCustomDomain(ctx, domain)
+	cfg, err := s.hcRepo.GetConfigByCustomDomain(ctx, domain)
+	if err != nil || cfg == nil {
+		return cfg, err
+	}
+	s.enrichFeaturedCardTitles(ctx, cfg)
+	normalizePublicHomepageIcons(cfg)
+	return cfg, nil
+}
+
+func normalizeHomepageConfigIconWrites(raw, currentRaw json.RawMessage) (json.RawMessage, error) {
+	var homepage model.HelpcenterHomepageConfig
+	if err := json.Unmarshal(raw, &homepage); err != nil {
+		return nil, fmt.Errorf("homepage_config: invalid JSON: %w", err)
+	}
+	var current model.HelpcenterHomepageConfig
+	if len(currentRaw) > 0 {
+		_ = json.Unmarshal(currentRaw, &current)
+	}
+	for index := range homepage.FeaturedCards {
+		card := &homepage.FeaturedCards[index]
+		var currentIcon *string
+		if index < len(current.FeaturedCards) {
+			currentIcon = &current.FeaturedCards[index].Icon
+		}
+		normalized, changed, err := iconcatalog.NormalizeUpdate(&card.Icon, currentIcon)
+		if err != nil {
+			return nil, fmt.Errorf("homepage_config.featured_cards[%d].icon: %w", index, err)
+		}
+		switch {
+		case changed:
+			if normalized == nil {
+				card.Icon = ""
+			} else {
+				card.Icon = *normalized
+			}
+		case currentIcon != nil:
+			card.Icon = *currentIcon
+		}
+	}
+	normalized, err := json.Marshal(homepage)
+	if err != nil {
+		return nil, fmt.Errorf("homepage_config: encode: %w", err)
+	}
+	return normalized, nil
+}
+
+func normalizePublicHomepageIcons(cfg *model.DocsHelpcenterConfig) {
+	if cfg == nil || len(cfg.HomepageConfig) == 0 {
+		return
+	}
+	var homepage model.HelpcenterHomepageConfig
+	if err := json.Unmarshal(cfg.HomepageConfig, &homepage); err != nil {
+		return
+	}
+	for index := range homepage.FeaturedCards {
+		icon := homepage.FeaturedCards[index].Icon
+		resolved := iconcatalog.ResolvePublicValue(&icon, "folder")
+		if resolved == nil {
+			homepage.FeaturedCards[index].Icon = ""
+		} else {
+			homepage.FeaturedCards[index].Icon = *resolved
+		}
+	}
+	if normalized, err := json.Marshal(homepage); err == nil {
+		cfg.HomepageConfig = normalized
+	}
 }
 
 // enrichFeaturedCardTitles resolves current collection names into
@@ -876,7 +960,7 @@ func normalizeHelpcenterPublicHost(value *string, label string) (*string, error)
 	if trimmed == "" {
 		return nil, nil
 	}
-	lower := strings.ToLower(trimmed)
+	lower := strings.TrimSuffix(strings.ToLower(trimmed), ".")
 	if strings.Contains(lower, "://") || strings.ContainsAny(lower, `/\`) || strings.ContainsAny(lower, " \t\r\n") {
 		return nil, fmt.Errorf("%s must be a hostname without scheme or path", label)
 	}
@@ -1596,7 +1680,7 @@ func (s *DocsHelpcenterService) listPublicSpacesUncached(ctx context.Context, wo
 			ID:          sp.ID,
 			Name:        translation.Name,
 			Slug:        stringValue(translation.Slug),
-			Icon:        sp.Icon,
+			Icon:        iconcatalog.ResolvePublicValue(sp.Icon, "folder"),
 			Description: translation.Description,
 		})
 	}
@@ -1760,7 +1844,7 @@ func (s *DocsHelpcenterService) getSpaceNavigationUncached(ctx context.Context, 
 			Name:               translation.Name,
 			Slug:               stringValue(translation.Slug),
 			PublicID:           collection.PublicID,
-			Icon:               collection.Icon,
+			Icon:               iconcatalog.ResolvePublicValue(collection.Icon, "folder"),
 			ParentCollectionID: collection.ParentCollectionID,
 			Depth:              collection.Depth,
 			Position:           collection.Position,
@@ -1866,7 +1950,7 @@ func (s *DocsHelpcenterService) getPublicArticleUncached(ctx context.Context, wo
 		RequestedLocale:    requestedLocale,
 		IsFallback:         fellBack,
 		Excerpt:            translation.Excerpt,
-		Icon:               doc.Icon,
+		Icon:               iconcatalog.ResolvePublicValue(doc.Icon, "file01"),
 		Status:             doc.Status,
 		SpaceSlug:          stringValue(spaceTranslation.Slug),
 		CollectionID:       doc.CollectionID,
@@ -1972,7 +2056,7 @@ func (s *DocsHelpcenterService) getPublicLocalizedCollectionUncached(ctx context
 		Slug:      stringValue(collectionTranslation.Slug),
 		PublicID:  collectionPublicID,
 		SpaceSlug: stringValue(spaceTranslation.Slug),
-		Icon:      icon,
+		Icon:      iconcatalog.ResolvePublicValue(icon, "folder"),
 		Articles:  articles,
 	}, articles, nil
 }
@@ -2067,7 +2151,7 @@ func (s *DocsHelpcenterService) getPublicLocalizedCollectionByCanonicalPathUncac
 		Slug:      stringValue(collectionTranslation.Slug),
 		PublicID:  collection.PublicID,
 		SpaceSlug: resolvedSpaceSlug,
-		Icon:      icon,
+		Icon:      iconcatalog.ResolvePublicValue(icon, "folder"),
 		Articles:  articles,
 	}, articles, nil
 }
@@ -2176,7 +2260,7 @@ func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalPathUncached
 		RequestedLocale:    requestedLocale,
 		IsFallback:         fellBack,
 		Excerpt:            translation.Excerpt,
-		Icon:               doc.Icon,
+		Icon:               iconcatalog.ResolvePublicValue(doc.Icon, "file01"),
 		Status:             doc.Status,
 		SpaceSlug:          spaceSlugValue,
 		CollectionID:       doc.CollectionID,
@@ -2313,7 +2397,7 @@ func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalKeyUncached(
 		RequestedLocale:    requestedLocale,
 		IsFallback:         fellBack,
 		Excerpt:            translation.Excerpt,
-		Icon:               doc.Icon,
+		Icon:               iconcatalog.ResolvePublicValue(doc.Icon, "file01"),
 		Status:             doc.Status,
 		SpaceSlug:          spaceSlugValue,
 		CollectionID:       doc.CollectionID,
@@ -2408,7 +2492,7 @@ func (s *DocsHelpcenterService) getPublicArticleByCanonicalPathUncached(ctx cont
 		Slug:               ha.Slug,
 		PublicID:           ha.PublicID,
 		Excerpt:            doc.Excerpt,
-		Icon:               doc.Icon,
+		Icon:               iconcatalog.ResolvePublicValue(doc.Icon, "file01"),
 		Status:             doc.Status,
 		SpaceSlug:          spaceSlug,
 		CollectionID:       doc.CollectionID,
@@ -2490,7 +2574,7 @@ func (s *DocsHelpcenterService) getPublicArticleByCanonicalKeyUncached(ctx conte
 		Slug:               ha.Slug,
 		PublicID:           ha.PublicID,
 		Excerpt:            doc.Excerpt,
-		Icon:               doc.Icon,
+		Icon:               iconcatalog.ResolvePublicValue(doc.Icon, "file01"),
 		Status:             doc.Status,
 		SpaceSlug:          spaceSlug,
 		CollectionID:       doc.CollectionID,
@@ -2545,7 +2629,9 @@ func (s *DocsHelpcenterService) getPublicCollectionUncached(ctx context.Context,
 	if space, err := s.spaceRepo.GetByID(ctx, coll.SpaceID); err == nil && space != nil {
 		spaceSlug = space.Slug
 	}
-	return coll, articles, spaceSlug, nil
+	publicCollection := *coll
+	publicCollection.Icon = iconcatalog.ResolvePublicValue(coll.Icon, "folder")
+	return &publicCollection, articles, spaceSlug, nil
 }
 
 // PreviewArticleHTML renders a document's TipTap content as HTML for preview, regardless of status.
@@ -2594,7 +2680,7 @@ func (s *DocsHelpcenterService) PreviewArticleHTML(ctx context.Context, workspac
 		ID:             doc.ID,
 		Title:          doc.Title,
 		Excerpt:        doc.Excerpt,
-		Icon:           doc.Icon,
+		Icon:           iconcatalog.ResolvePublicValue(doc.Icon, "file01"),
 		Status:         doc.Status,
 		CollectionID:   doc.CollectionID,
 		CollectionName: collectionName,

@@ -65,10 +65,12 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.ensure_task_plan_doc",
 		Alias:       "ensure_task_plan_doc",
 		Category:    "Docs",
-		Description: "Create or load the canonical planning document for the current task. Returns document metadata and whether a draft already exists.",
+		Description: "Create or load the canonical planning document for the current task and attach it to that task. Returns the document_id and title.",
 		InputSchema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"required":             []string{},
+			"additionalProperties": false,
 		},
 	},
 	{
@@ -150,17 +152,22 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 			"type": "object",
 			"properties": map[string]any{
 				"dependencies": map[string]any{
-					"type": "array",
+					"type":     "array",
+					"minItems": 1,
+					"maxItems": 100,
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
 							"source_task_id": map[string]any{"type": "string"},
 							"target_task_id": map[string]any{"type": "string"},
 						},
+						"required":             []string{"source_task_id", "target_task_id"},
+						"additionalProperties": false,
 					},
 				},
 			},
-			"required": []string{"dependencies"},
+			"required":             []string{"dependencies"},
+			"additionalProperties": false,
 		},
 	},
 	{
@@ -189,7 +196,8 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		Category:    "Docs",
 		Description: "Write document content to a document in Helpin Docs. Accepts either structured document JSON or a markdown string, which will be auto-converted.",
 		InputSchema: map[string]any{
-			"type": "object",
+			"type":                 "object",
+			"additionalProperties": false,
 			"properties": map[string]any{
 				"document_id": map[string]any{
 					"type":        "string",
@@ -244,7 +252,8 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 				"icon": map[string]any{
 					"type":        "string",
-					"description": "Optional icon for the document",
+					"maxLength":   100,
+					"description": "Canonical icon ID. Public MCP callers should use search_icons to discover valid values, or omit this field.",
 				},
 				"tags": map[string]any{
 					"type":        "array",
@@ -285,6 +294,41 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		},
 	},
 	{
+		CommandName: "docs.create_space",
+		Alias:       "create_space",
+		Category:    "Docs",
+		Description: "Create a Docs space in the current workspace without publishing content.",
+		InputSchema: docsCreateSpaceSchema(),
+	},
+	{
+		CommandName: "docs.create_collection",
+		Alias:       "create_collection",
+		Category:    "Docs",
+		Description: "Create a top-level or nested collection in an existing Docs space.",
+		InputSchema: docsCreateCollectionSchema(),
+	},
+	{
+		CommandName: "docs.update_space",
+		Alias:       "update_space",
+		Category:    "Docs",
+		Description: "Update bounded metadata for an existing Docs space.",
+		InputSchema: docsUpdateSpaceSchema(),
+	},
+	{
+		CommandName: "docs.update_collection",
+		Alias:       "update_collection",
+		Category:    "Docs",
+		Description: "Update or reparent an existing Docs collection.",
+		InputSchema: docsUpdateCollectionSchema(),
+	},
+	{
+		CommandName: "docs.move_document",
+		Alias:       "move_document",
+		Category:    "Docs",
+		Description: "Move a document to another Docs space or collection.",
+		InputSchema: docsMoveDocumentSchema(),
+	},
+	{
 		CommandName: "docs.link_document_to_object",
 		Alias:       "link_document_to_object",
 		Category:    "Docs",
@@ -299,6 +343,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				"linked_object_type": map[string]any{
 					"type":        "string",
 					"description": "The linked object type such as epic or task",
+					"enum":        []string{"epic", "task", "deal", "crm_deal"},
 				},
 				"linked_object_id": map[string]any{
 					"type":        "string",
@@ -307,9 +352,11 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				"link_context": map[string]any{
 					"type":        "string",
 					"description": "Optional link context, defaults to attached",
+					"enum":        []string{"attached", "mentioned", "created_from", "linked_in_content"},
 				},
 			},
-			"required": []string{"document_id", "linked_object_type", "linked_object_id"},
+			"required":             []string{"document_id", "linked_object_type", "linked_object_id"},
+			"additionalProperties": false,
 		},
 	},
 	{
@@ -559,6 +606,82 @@ func createTaskBatchSchema() map[string]any {
 	}
 }
 
+func docsCreateSpaceSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name":                map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
+			"slug":                map[string]any{"type": "string", "maxLength": 200},
+			"icon":                map[string]any{"type": "string", "maxLength": 100},
+			"visibility":          map[string]any{"type": "string", "enum": []string{"workspace_wide", "team_only"}},
+			"type":                map[string]any{"type": "string", "enum": []string{"internal", "external_capable"}},
+			"default_review_days": map[string]any{"type": "integer", "minimum": 1, "maximum": 3650},
+		},
+		"required":             []string{"name"},
+		"additionalProperties": false,
+	}
+}
+
+func docsCreateCollectionSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"space_id":             map[string]any{"type": "string"},
+			"name":                 map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
+			"slug":                 map[string]any{"type": "string", "maxLength": 200},
+			"description":          map[string]any{"type": "string", "maxLength": 5000},
+			"icon":                 map[string]any{"type": "string", "maxLength": 100},
+			"parent_collection_id": map[string]any{"type": "string"},
+		},
+		"required":             []string{"space_id", "name"},
+		"additionalProperties": false,
+	}
+}
+
+func docsUpdateSpaceSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"space_id":            map[string]any{"type": "string"},
+			"name":                map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
+			"icon":                map[string]any{"type": "string", "maxLength": 100},
+			"visibility":          map[string]any{"type": "string", "enum": []string{"workspace_wide", "team_only"}},
+			"default_review_days": map[string]any{"type": "integer", "minimum": 1, "maximum": 3650},
+		},
+		"required":             []string{"space_id"},
+		"additionalProperties": false,
+	}
+}
+
+func docsUpdateCollectionSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"collection_id":        map[string]any{"type": "string"},
+			"name":                 map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
+			"description":          map[string]any{"type": "string", "maxLength": 5000},
+			"icon":                 map[string]any{"type": "string", "maxLength": 100},
+			"position":             map[string]any{"type": "integer", "minimum": 0},
+			"parent_collection_id": map[string]any{"type": "string"},
+		},
+		"required":             []string{"collection_id"},
+		"additionalProperties": false,
+	}
+}
+
+func docsMoveDocumentSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"document_id":   map[string]any{"type": "string"},
+			"space_id":      map[string]any{"type": "string"},
+			"collection_id": map[string]any{"type": "string"},
+		},
+		"required":             []string{"document_id", "space_id"},
+		"additionalProperties": false,
+	}
+}
+
 func createTaskSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
@@ -566,6 +689,7 @@ func createTaskSchema() map[string]any {
 			"name": map[string]any{
 				"type":        "string",
 				"description": "Task title",
+				"minLength":   1,
 			},
 			"description": map[string]any{
 				"type":        "string",
@@ -585,29 +709,33 @@ func createTaskSchema() map[string]any {
 			},
 			"epic_id": map[string]any{
 				"type":        "string",
-				"description": "Optional epic ID to link the task to",
+				"description": "Optional epic ID to link the task to. Omit this field when no epic is configured; do not send an empty string.",
+				"minLength":   1,
 			},
 			"team_id": map[string]any{
 				"type":        "string",
 				"description": "Team ID that owns the task",
+				"minLength":   1,
 			},
 			"workflow_id": map[string]any{
 				"type":        "string",
-				"description": "Optional workflow ID override. Defaults to the resolved team workflow.",
+				"description": "Optional workflow ID override. Omit this field to use the resolved team workflow; do not send an empty string.",
+				"minLength":   1,
 			},
 			"state_id": map[string]any{
 				"type":        "string",
-				"description": "Optional workflow state ID override. Defaults to the resolved workflow default state.",
+				"description": "Optional workflow state ID override. Omit this field to use the workflow default state; do not send an empty string.",
+				"minLength":   1,
 			},
 			"owner_member_ids": map[string]any{
 				"type":        "array",
 				"description": "Optional workspace member IDs to assign as owners",
-				"items":       map[string]any{"type": "string"},
+				"items":       map[string]any{"type": "string", "minLength": 1},
 			},
 			"label_ids": map[string]any{
 				"type":        "array",
 				"description": "Optional label IDs to attach to the task",
-				"items":       map[string]any{"type": "string"},
+				"items":       map[string]any{"type": "string", "minLength": 1},
 			},
 			"deadline": map[string]any{
 				"type":        "string",

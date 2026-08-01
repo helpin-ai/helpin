@@ -42,7 +42,7 @@ export function SidebarRail({
               type="button"
               aria-label={item.label}
               onClick={() => onRailSelect(item.defaultLink)}
-              className={`flex w-12 flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 transition-colors ${
+              className={`flex w-12 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 transition-colors ${
                 activeRail === item.id
                   ? 'text-foreground'
                   : 'text-muted-foreground hover:text-foreground'
@@ -73,7 +73,7 @@ export function SidebarRail({
       <div className="flex flex-col items-center gap-1.5 pt-2">
         <button
           type="button"
-          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+          className="flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
           onClick={onToggleTheme}
           aria-label="Toggle theme"
         >

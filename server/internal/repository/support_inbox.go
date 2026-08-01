@@ -403,6 +403,18 @@ func (r *SupportInboxSessionRepository) TouchActivityByToken(ctx context.Context
 	return nil
 }
 
+// ExtendExpiryByToken advances the expiry for an active, non-revoked widget session.
+func (r *SupportInboxSessionRepository) ExtendExpiryByToken(ctx context.Context, sessionToken string, expiresAt time.Time) error {
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportWidgetSession{}).
+		Where("session_token = ? AND revoked_at IS NULL AND expires_at < ?", sessionToken, expiresAt).
+		Update("expires_at", expiresAt)
+	if result.Error != nil {
+		return fmt.Errorf("extend session expiry: %w", result.Error)
+	}
+	return nil
+}
+
 // TouchActivityByAnonymousID records activity across the visitor's current anonymous sessions.
 func (r *SupportInboxSessionRepository) TouchActivityByAnonymousID(ctx context.Context, workspaceID, anonymousID string) error {
 	if strings.TrimSpace(anonymousID) == "" {

@@ -4,7 +4,7 @@
 
 - **Go 1.24** (latest minor)
 - **Router**: go-chi/chi/v5
-- **ORM**: GORM (gorm.io/gorm) with PostgreSQL (Neon) / SQLite for tests
+- **ORM**: GORM (gorm.io/gorm) with PostgreSQL / SQLite for tests
 - **Logging**: log/slog (Go stdlib)
 - **Auth**: golang-jwt/jwt/v5
 - **Config**: Environment variables via joho/godotenv

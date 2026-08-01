@@ -12,12 +12,13 @@ describe('custom agent create model', () => {
     const form = createDefaultCustomAgentForm();
 
     expect(form.name).toBe('');
+    expect(form.icon_key).toBe('violet_star');
     expect(form.runtime_kind).toBe('codex');
     expect(form.default_invocation_mode).toBe('interactive');
     expect(form.supported_modes).toEqual(['autonomous', 'interactive']);
     expect(form.allowed_targets).toEqual(['task']);
     expect(form.allowed_tools).toEqual([]);
-    expect(form.approval_mode).toBe('always');
+    expect(form.approval_mode).toBe('mutating_tools');
     expect(form.max_concurrent_runs).toBe('1');
     expect(form.preset_key).toBe('code_builder');
     expect(form.preset_version_key).toBe('code_builder_default');
@@ -34,7 +35,7 @@ describe('custom agent create model', () => {
       allowed_targets: ['support_conversation'],
       allowed_tools: ['search_documents'],
       skills: [{ key: 'support_style' }],
-      approval_mode: 'always',
+      approval_mode: 'mutating_tools',
       runtime_kind: 'native_sdk',
       provider: 'anthropic',
       model: '',
@@ -48,7 +49,7 @@ describe('custom agent create model', () => {
       allowed_targets: ['support_conversation'],
       allowed_tools: ['search_documents'],
       skills: [{ key: 'support_style' }],
-      approval_mode: 'always',
+      approval_mode: 'mutating_tools',
       runtime_kind: 'native_sdk',
       provider: 'anthropic',
       default_invocation_mode: 'interactive',
@@ -71,12 +72,13 @@ describe('custom agent create model', () => {
     expect(payload).toMatchObject({
       workspace_id: 'workspace-1',
       name: 'Support Helper',
+      icon_key: 'violet_star',
       provider: 'openai',
       system_prompt: 'Help triage support conversations.',
       trigger_mode: 'manual',
       team_ids: ['team-1', 'team-2'],
       allowed_targets: ['support_conversation'],
-      approval_mode: 'always',
+      approval_mode: 'mutating_tools',
       max_concurrent_runs: 1,
       default_invocation_mode: 'interactive',
     });

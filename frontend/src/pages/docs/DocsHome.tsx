@@ -17,7 +17,7 @@ import {
   PlusSignIcon,
   Search01Icon,
 } from '@/lib/icons'
-import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
+import { StoredIcon } from '@/components/ui/icon-picker'
 import { Collapsible } from 'radix-ui'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
@@ -236,11 +236,13 @@ function buildCollectionNodeTree(
 // ── Collection section ──────────────────────────────────────────────────────
 
 function CollectionIcon({ name }: { name?: string }) {
-  if (name) {
-    const Icon = ICON_MAP[name]
-    if (Icon) return <Icon className="h-3.5 w-3.5 shrink-0" />
-  }
-  return <Folder01Icon className="h-3.5 w-3.5 shrink-0" />
+  return (
+    <StoredIcon
+      name={name}
+      className="h-3.5 w-3.5 shrink-0"
+      fallback={<Folder01Icon className="h-3.5 w-3.5 shrink-0" />}
+    />
+  )
 }
 
 interface CollectionNode {
