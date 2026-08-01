@@ -125,11 +125,15 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 
 func TestRuntimeAgentFromHelpinAgentIncludesImplicitScribeSkills(t *testing.T) {
 	scribe := &model.Agent{
-		ID:          "agent-scribe",
-		IsSystem:    true,
-		Name:        "Scribe",
-		PresetKey:   model.AgentPresetTaskPlanner,
-		RuntimeKind: "codex",
+		ID:               "agent-scribe",
+		IsSystem:         true,
+		Name:             "Scribe",
+		PresetKey:        model.AgentPresetTaskPlanner,
+		PresetVersionKey: "task_planner_default",
+		RuntimeKind:      "codex",
+		// Reproduce a persisted partial selection from before the approval
+		// skill became a required Scribe core skill.
+		Skills: model.AgentSkillRefs{{Key: "engineering_planner_operating_rules"}},
 	}
 
 	out := runtimeAgentFromHelpinAgent(scribe, "helpin")

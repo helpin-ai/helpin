@@ -93,6 +93,61 @@ func TestEffectiveRuntimeRefsFallsBackToCoreSkillsForCoreOnlyBuiltInPreset(t *te
 	}
 }
 
+func TestEffectiveRuntimeRefsMergesMissingCoreSkillsForBuiltInDefaultVersion(t *testing.T) {
+	versionKey := "operating_rules_v1"
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetTaskPlanner,
+		PresetVersionKey: "task_planner_default",
+		Skills: model.AgentSkillRefs{{
+			Key:        "engineering_planner_operating_rules",
+			VersionKey: &versionKey,
+			Config:     model.JSONBlob(`{"strict":true}`),
+		}},
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) != 3 {
+		t.Fatalf("expected all three required Scribe skills, got %#v", refs)
+	}
+	wantKeys := []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"}
+	for index, wantKey := range wantKeys {
+		if refs[index].Key != wantKey {
+			t.Fatalf("expected skill %d to be %q, got %#v", index, wantKey, refs)
+		}
+	}
+	if refs[2].VersionKey == nil || *refs[2].VersionKey != versionKey {
+		t.Fatalf("expected explicit core skill version to be preserved, got %#v", refs[2])
+	}
+	if string(refs[2].Config) != `{"strict":true}` {
+		t.Fatalf("expected explicit core skill config to be preserved, got %#v", refs[2])
+	}
+}
+
+func TestEffectiveRuntimeRefsDoesNotLetWorkspaceSkillReplaceBuiltInCoreSkill(t *testing.T) {
+	skillID := "skill_workspace_approval"
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetTaskPlanner,
+		PresetVersionKey: "task_planner_default",
+		Skills: model.AgentSkillRefs{{
+			SkillID: &skillID,
+			Key:     "prd_task_plan_approval",
+		}},
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) != 4 {
+		t.Fatalf("expected three built-in core skills plus the workspace skill, got %#v", refs)
+	}
+	if refs[1].Key != "prd_task_plan_approval" || refs[1].SkillID != nil {
+		t.Fatalf("expected required built-in approval skill, got %#v", refs[1])
+	}
+	if refs[3].SkillID == nil || *refs[3].SkillID != skillID {
+		t.Fatalf("expected explicit workspace skill to remain available, got %#v", refs[3])
+	}
+}
+
 func TestEffectiveRuntimeRefsDoesNotFallbackForWorkspaceVersion(t *testing.T) {
 	agent := &model.Agent{
 		IsSystem:         true,
@@ -103,6 +158,22 @@ func TestEffectiveRuntimeRefsDoesNotFallbackForWorkspaceVersion(t *testing.T) {
 	refs := EffectiveRuntimeRefs(agent)
 	if len(refs) != 0 {
 		t.Fatalf("expected workspace version with explicit empty skills to stay empty, got %v", refs)
+	}
+}
+
+func TestEffectiveRuntimeRefsDoesNotMergeCoreSkillsForWorkspaceVersion(t *testing.T) {
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetTaskPlanner,
+		PresetVersionKey: "task_planner_workspace_123",
+		Skills: model.AgentSkillRefs{{
+			Key: "engineering_planner_operating_rules",
+		}},
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) != 1 || refs[0].Key != "engineering_planner_operating_rules" {
+		t.Fatalf("expected workspace version to retain only its explicit skills, got %#v", refs)
 	}
 }
 
