@@ -32,8 +32,8 @@ func TestProductToolCommandDefinitionsExposeNativeAliases(t *testing.T) {
 		{command: "release.get_release_context", alias: "get_release_context", category: "Release", mutating: false},
 		{command: "release.find_tasks_for_git_changes", alias: "find_tasks_for_git_changes", category: "Release", mutating: false},
 		{command: "release.get_task_context", alias: "get_task_context", category: "Release", mutating: false},
-		{command: "docs.publish_prd_draft", alias: "publish_prd_draft", category: "Docs", mutating: true},
-		{command: "docs.publish_task_plan_doc", alias: "publish_task_plan_doc", category: "Docs", mutating: true},
+		{command: "docs.publish_prd_draft", alias: "publish_prd_draft", category: "Docs", mutating: false},
+		{command: "docs.publish_task_plan_doc", alias: "publish_task_plan_doc", category: "Docs", mutating: false},
 		{command: "docs.publish_document_change_proposal", alias: "publish_document_change_proposal", category: "Docs", mutating: true},
 	}
 	for _, tt := range tests {

@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/agentskills"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -203,8 +204,8 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		RuntimeKind:           strings.TrimSpace(agent.RuntimeKind),
 		Provider:              strings.TrimSpace(derefString(agent.Provider)),
 		Model:                 strings.TrimSpace(derefString(agent.Model)),
-		SystemPrompt:          strings.TrimSpace(derefString(agent.SystemPrompt)),
-		Skills:                runtimeSkillRefsFromHelpin(agent.Skills, agent.RuntimeKind),
+		SystemPrompt:          agentcontract.RenderRuntimeToolNamesInInstructionsForRuntime(derefString(agent.SystemPrompt), agent.RuntimeKind),
+		Skills:                runtimeSkillRefsFromHelpin(agentskills.EffectiveRuntimeRefs(agent), agent.RuntimeKind),
 		AllowedTools:          parseJSONStringSlice(agent.AllowedTools),
 		AllowedTargets:        parseJSONStringSlice(agent.AllowedTargets),
 		ApprovalMode:          strings.TrimSpace(agent.ApprovalMode),
@@ -267,6 +268,16 @@ func helpinSkillRefSupportsRuntime(ref model.AgentSkillRef, runtimeKind string) 
 	for _, supported := range definition.SupportedRuntimes {
 		if strings.TrimSpace(supported) == runtimeKind {
 			return true
+		}
+	}
+	// Keep delegated projection aligned with agentskills.ValidateRuntimeAndTools
+	// and Agent Runtime's compatibility rule. Native-authored skill packages are
+	// staged for Codex and use the same runtime-backed logical tool contracts.
+	if runtimeKind == "codex" {
+		for _, supported := range definition.SupportedRuntimes {
+			if strings.TrimSpace(supported) == "native_sdk" {
+				return true
+			}
 		}
 	}
 	return false
@@ -4373,7 +4384,7 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		run.ApprovalState = "pending"
 	}
 	if !model.IsAgentRunPausedStatus(run.Status) {
-		return nil, nil, fmt.Errorf("run is not paused for human input")
+		return nil, nil, fmt.Errorf("this run is not waiting for input right now — it may have already resumed or finished; refresh to see its latest status")
 	}
 	if run.PauseReason == model.AgentRunPauseReasonAuthentication {
 		return nil, nil, fmt.Errorf("run is waiting for authentication")

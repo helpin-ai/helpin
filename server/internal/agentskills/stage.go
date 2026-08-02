@@ -23,11 +23,12 @@ func EffectiveRuntimeRefs(agent *model.Agent) model.AgentSkillRefs {
 	if agent == nil {
 		return nil
 	}
-	if refs := agent.Skills.Normalize(); len(refs) > 0 {
-		return refs
-	}
+	explicitRefs := agent.Skills.Normalize()
 	if shouldUseBuiltInAvailableSkillFallback(agent) {
 		if bundle, ok := agentcontract.BuiltInPresetSkillBundleForPreset(agent.EffectivePresetKey()); ok {
+			if len(explicitRefs) > 0 {
+				return mergeRequiredBuiltInCoreSkillRefs(bundle.CoreSkillKeys, explicitRefs)
+			}
 			runtimeSkillKeys := agentcontract.RuntimeSkillKeysForPresetBundle(bundle)
 			refs := make(model.AgentSkillRefs, 0, len(runtimeSkillKeys))
 			for _, key := range runtimeSkillKeys {
@@ -40,7 +41,49 @@ func EffectiveRuntimeRefs(agent *model.Agent) model.AgentSkillRefs {
 			return refs
 		}
 	}
-	return agent.Skills.Normalize()
+	return explicitRefs
+}
+
+func mergeRequiredBuiltInCoreSkillRefs(coreSkillKeys []string, explicitRefs model.AgentSkillRefs) model.AgentSkillRefs {
+	if len(coreSkillKeys) == 0 {
+		return explicitRefs
+	}
+
+	refs := make(model.AgentSkillRefs, 0, len(coreSkillKeys)+len(explicitRefs))
+	usedExplicitRefs := make([]bool, len(explicitRefs))
+	for _, coreKey := range coreSkillKeys {
+		coreKey = agentcontract.CanonicalBuiltInSkillKey(coreKey)
+		if coreKey == "" {
+			continue
+		}
+
+		matchedIndex := -1
+		for index, ref := range explicitRefs {
+			// A workspace skill with the same key must not replace a required,
+			// product-owned preset skill. It remains available as an additional
+			// explicit skill below.
+			if usedExplicitRefs[index] || ref.SkillID != nil {
+				continue
+			}
+			if agentcontract.CanonicalBuiltInSkillKey(ref.Key) == coreKey {
+				matchedIndex = index
+				break
+			}
+		}
+		if matchedIndex >= 0 {
+			refs = append(refs, explicitRefs[matchedIndex])
+			usedExplicitRefs[matchedIndex] = true
+			continue
+		}
+		refs = append(refs, model.AgentSkillRef{Key: coreKey})
+	}
+
+	for index, ref := range explicitRefs {
+		if !usedExplicitRefs[index] {
+			refs = append(refs, ref)
+		}
+	}
+	return refs
 }
 
 func shouldUseBuiltInAvailableSkillFallback(agent *model.Agent) bool {

@@ -16,7 +16,7 @@ metadata:
 - Avoid low-signal commentary and avoid proposing unnecessary rewrites.
 - Treat review as an interactive loop, not a one-shot report.
 - After the initial findings pass, produce a `review_checkpoint` handoff and stop. Treat that handoff as the final action in the turn. Do not keep working after it in the same turn.
-- In `native_sdk`, emit that handoff with `request_review_checkpoint`. In `codex` and `opencode`, use the runtime-specific structured handoff format declared by the active runtime instructions.
+- In `native_sdk` and `codex`, emit that handoff with `request_review_checkpoint`. In `opencode`, use the runtime-specific structured handoff format declared by the active runtime instructions.
 - Include structured findings in the `review_checkpoint` payload when possible: `findings[]` with `title`, `body`, `priority`, `confidence`, and `code_location`, plus `overall_correctness`, `overall_explanation`, and `overall_confidence_score`.
 - Use `review_checkpoint` to present the review findings for approval or change feedback before you edit code.
 - After you answer a follow-up, hand control back with `request_user_input` unless the latest human reply clearly says the review is done.
