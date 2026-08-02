@@ -1345,10 +1345,20 @@ func applyRuntimeMessageProjection(message *model.AgentRunMessage, runtimeMessag
 		messageType = "assistant_turn"
 	}
 	content := strings.TrimSpace(runtimeMessage.Content)
-	contentBlocks := annotateRuntimeMessageBlocks(runtimeMessage.ContentBlocks, runtimeMessageID, content)
+	if content == "" {
+		content = message.Content
+	}
+	contentBlocks := message.ContentBlocks
+	if len(runtimeMessage.ContentBlocks) > 0 {
+		contentBlocks = annotateRuntimeMessageBlocks(runtimeMessage.ContentBlocks, runtimeMessageID, content)
+	}
+	toolInvocations := message.ToolInvocations
+	if len(runtimeMessage.ToolInvocations) > 0 {
+		toolInvocations = append(json.RawMessage(nil), runtimeMessage.ToolInvocations...)
+	}
 	var turnSegments json.RawMessage
 	if role == "assistant" {
-		turnSegments = runtimeMessageTurnSegments(runtimeMessageID, content, runtimeMessage.ToolInvocations)
+		turnSegments = runtimeMessageTurnSegments(runtimeMessageID, content, toolInvocations)
 	}
 
 	changed := false
@@ -1376,8 +1386,8 @@ func applyRuntimeMessageProjection(message *model.AgentRunMessage, runtimeMessag
 		message.TurnSegments = turnSegments
 		changed = true
 	}
-	if !agentRuntimeProjectionJSONRawEqual(message.ToolInvocations, runtimeMessage.ToolInvocations) {
-		message.ToolInvocations = runtimeMessage.ToolInvocations
+	if !agentRuntimeProjectionJSONRawEqual(message.ToolInvocations, toolInvocations) {
+		message.ToolInvocations = toolInvocations
 		changed = true
 	}
 	return changed

@@ -388,7 +388,7 @@ func (s *AgentRuntimeHostService) ResolveSkillByID(ctx context.Context, req Agen
 }
 
 func (s *AgentRuntimeHostService) ResolveActiveSkillByKey(ctx context.Context, req AgentRuntimeSkillLookupRequest) (*AgentRuntimeWorkspaceSkill, error) {
-	key := strings.TrimSpace(req.Key)
+	key := agentcontract.CanonicalBuiltInSkillKey(strings.TrimSpace(req.Key))
 	if key == "" {
 		return nil, fmt.Errorf("%w: key is required", ErrAgentRuntimeHostBadRequest)
 	}
@@ -397,6 +397,15 @@ func (s *AgentRuntimeHostService) ResolveActiveSkillByKey(ctx context.Context, r
 	}
 	if err := s.validateAppID(req.AppID); err != nil {
 		return nil, err
+	}
+	// Product-owned built-in skill keys are immutable runtime contracts. Resolve
+	// them from the currently deployed package before consulting persisted
+	// workspace rows. Older releases materialized built-ins in workspace_skills;
+	// allowing one of those rows to win here can silently retain stale required
+	// tools or completion-interaction policy across process restarts. Workspace
+	// skills remain addressable through their explicit skill IDs.
+	if definition, ok := agentcontract.GetBuiltInSkill(key); ok {
+		return runtimeBuiltInWorkspaceSkill(definition)
 	}
 	workspaceID, err := s.workspaceIDForSkillLookup(ctx, req)
 	if err != nil {
@@ -410,9 +419,6 @@ func (s *AgentRuntimeHostService) ResolveActiveSkillByKey(ctx context.Context, r
 		if skill != nil && !skill.IsArchived {
 			return runtimeWorkspaceSkill(skill), nil
 		}
-	}
-	if definition, ok := agentcontract.GetBuiltInSkill(key); ok {
-		return runtimeBuiltInWorkspaceSkill(definition)
 	}
 	if workspaceID == "" {
 		return nil, fmt.Errorf("%w: workspace_id metadata or run mapping is required", ErrAgentRuntimeHostBadRequest)
