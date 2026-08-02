@@ -41,7 +41,7 @@ import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { AGENT_RUNTIME_HELP_TEXT, AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
-import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
+import { buildAutomationActivityPath, buildAutomationFlowsPath, buildAutomationToolConnectionsPath } from '@/lib/automationUi';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
@@ -2448,6 +2448,7 @@ export function AgentsPage() {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
   const repositoriesSettingsHref = workspace?.slug ? buildSettingsRoutePath(workspace.slug, 'repositories') : undefined;
+  const toolConnectionsHref = workspace?.slug ? buildAutomationToolConnectionsPath(workspace.slug) : undefined;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
   const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId ?? '');
@@ -5046,6 +5047,7 @@ export function AgentsPage() {
                           onOpenChange={setToolPickerOpen}
                           tools={toolCatalogEntries}
                           selectedTools={form.allowed_tools}
+                          connectionsHref={toolConnectionsHref}
                           disabled={!versionToolEditingState.canEdit}
                           disabledReason={versionToolEditingState.disabledReason}
                           onToggleTool={toggleTool}
@@ -7054,6 +7056,7 @@ export function AgentsPage() {
                         onOpenChange={setToolPickerOpen}
                         tools={toolCatalogEntries}
                         selectedTools={form.allowed_tools}
+                        connectionsHref={toolConnectionsHref}
                         onToggleTool={toggleTool}
                       />
                     </div>

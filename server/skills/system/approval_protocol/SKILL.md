@@ -21,6 +21,7 @@ Approval requests happen inline in the same chat.
 - Treat `request_approval` as the last action in that turn. Do not call more tools after it in the same turn. Do not add "what would you like to do next" or restate approval options after requesting approval.
 - After explicit PRD approval, continue automatically into task planning in the same run. Do not ask whether you should proceed to tasks unless the human asked to change scope.
 - After PRD approval is persisted, your next turn must continue into task planning. Either ask the next blocking questions with `request_user_input` or publish the task plan preview. Do not complete the run immediately after PRD approval.
+- After task planning document approval, call `ensure_task_plan_doc` with `{}`, then call `write_document_content` with the returned `document_id` and the full approved markdown. Do not finish or claim persistence until both calls succeed.
 
 ## Required Approval Tool
 

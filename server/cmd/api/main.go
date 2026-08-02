@@ -551,6 +551,7 @@ func main() {
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	mcpRepo := repository.NewMCPRepository(db)
+	externalMCPRepo := repository.NewExternalMCPRepository(db)
 	if err := mcpRepo.CleanupExpired(context.Background(), time.Now()); err != nil {
 		slog.Warn("MCP retention cleanup skipped", "error", err)
 	}
@@ -843,6 +844,25 @@ func main() {
 			fatalWithSentry("failed to initialize agent runtime client", err)
 		}
 	}
+	externalMCPService, err := service.NewExternalMCPService(
+		externalMCPRepo,
+		notificationService,
+		service.ExternalMCPServiceConfig{
+			Enabled:                cfg.ExternalMCPEnabled,
+			CustomServersEnabled:   cfg.ExternalMCPCustomServersEnabled,
+			EncryptionKey:          cfg.ExternalMCPEncryptionKey,
+			AllowedHosts:           cfg.ExternalMCPAllowedHosts,
+			OAuthRedirectURL:       cfg.ExternalMCPOAuthRedirectURL,
+			AppBaseURL:             cfg.AppBaseURL,
+			OAuthClientID:          cfg.ExternalMCPOAuthClientID,
+			OAuthClientSecret:      cfg.ExternalMCPOAuthClientSecret,
+			OAuthClientAuthMethod:  cfg.ExternalMCPOAuthClientAuthMethod,
+			AllowInsecureLocalhost: cfg.ExternalMCPAllowInsecureLocalhost,
+		},
+	)
+	if err != nil {
+		fatalWithSentry("failed to initialize external MCP service", err)
+	}
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,
@@ -881,6 +901,7 @@ func main() {
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
+	agentService.SetExternalMCPService(externalMCPService)
 	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMProvider).
 		SetChatRepository(commandBarChatRepo).
 		SetLLMRouterConfig(
@@ -1423,6 +1444,7 @@ func main() {
 		Agent:               handler.NewAgentHandler(agentService),
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
 		MCP:                 handler.NewMCPHandler(mcpService),
+		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),

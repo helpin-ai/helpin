@@ -62,6 +62,9 @@ export const queryKeys = {
     activity: (wsId: string) => ['mcp', wsId, 'activity'] as const,
     serviceTokens: (wsId: string, principalId: string) => ['mcp', wsId, 'service-principals', principalId, 'tokens'] as const,
     authorization: (query: object) => ['mcp', 'authorization', query] as const,
+    externalRoot: (wsId: string) => ['mcp', wsId, 'external'] as const,
+    externalProviders: (wsId: string) => ['mcp', wsId, 'external', 'providers'] as const,
+    externalServers: (wsId: string) => ['mcp', wsId, 'external', 'servers'] as const,
   },
 
   pm: {

@@ -46,6 +46,7 @@ const CATEGORY_ICONS: Record<string, typeof Wrench01Icon> = {
   Support: Message01Icon,
   CRM: ChartIncreaseIcon,
   Docs: File01Icon,
+  'External MCP': GlobeIcon,
 };
 
 // PRESET_STYLES imported from @/lib/presetStyles
@@ -332,9 +333,9 @@ export function ToolCatalogContent({
   );
 }
 
-export function ToolCatalogPage() {
+export function ToolCatalogPage({ embedded = false }: { embedded?: boolean }) {
   useTitle('Tool Catalog');
   const workspaceId = useWorkspaceStore((s) => s.currentWorkspace?.id) ?? '';
 
-  return <ToolCatalogContent workspaceId={workspaceId} />;
+  return <ToolCatalogContent workspaceId={workspaceId} embedded={embedded} />;
 }

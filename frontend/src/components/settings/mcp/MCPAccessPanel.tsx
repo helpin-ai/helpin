@@ -44,7 +44,7 @@ import { ensureMCPWriteScopes, hasMCPWriteScope } from '@/lib/mcpPolicy';
 import { cn } from '@/lib/utils';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 
-type MCPSettingsPanelProps = {
+type MCPAccessPanelProps = {
   workspaceId: string;
   workspaceName: string;
 };
@@ -71,7 +71,24 @@ const SCOPE_LABELS: Record<string, string> = {
   'helpin.agents.run': 'Start and cancel agent runs',
 };
 
-export function MCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPanelProps) {
+export function MCPAccessPanel({ workspaceId, workspaceName }: MCPAccessPanelProps) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="flex items-center gap-2">
+          <BotIcon className="h-5 w-5 text-muted-foreground" />
+          <h2 className="text-xl font-semibold">MCP access</h2>
+        </div>
+        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+          Connect outside MCP clients to {workspaceName || 'this workspace'} and control what they can access.
+        </p>
+      </div>
+      <InboundMCPAccessPanel workspaceId={workspaceId} workspaceName={workspaceName} />
+    </div>
+  );
+}
+
+function InboundMCPAccessPanel({ workspaceId, workspaceName }: MCPAccessPanelProps) {
   const dashboardQuery = useMCPDashboard(workspaceId);
   const dashboard = dashboardQuery.data;
   const [tab, setTab] = useState('setup');
@@ -91,16 +108,6 @@ export function MCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPane
 
   return (
     <div className="space-y-4">
-      <div>
-        <div className="flex items-center gap-2">
-          <BotIcon className="h-5 w-5 text-muted-foreground" />
-          <h2 className="text-xl font-semibold">MCP</h2>
-        </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Connect Claude, ChatGPT, Cursor, or any MCP-compatible tool to {workspaceName || 'this workspace'} — so your AI can read projects, answer from your docs, and act on your behalf.
-        </p>
-      </div>
-
       {!dashboard.platform_enabled ? (
         <Alert>
           <AlertTitle>AI tool connections are not available in this environment</AlertTitle>
@@ -121,7 +128,7 @@ export function MCPSettingsPanel({ workspaceId, workspaceName }: MCPSettingsPane
         <TabsList variant="line" className="max-w-full overflow-x-auto">
           <TabsTrigger value="setup">Setup</TabsTrigger>
           <TabsTrigger value="connections">Connections</TabsTrigger>
-          {dashboard.can_manage ? <TabsTrigger value="service-accounts">Automations</TabsTrigger> : null}
+          {dashboard.can_manage ? <TabsTrigger value="service-accounts">Service accounts</TabsTrigger> : null}
           {dashboard.can_view_activity ? <TabsTrigger value="activity">Activity</TabsTrigger> : null}
           {dashboard.can_manage ? <TabsTrigger value="policy">Permissions</TabsTrigger> : null}
         </TabsList>

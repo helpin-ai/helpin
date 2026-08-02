@@ -270,6 +270,11 @@ func TestListAgentPresetsTaskPlannerExcludesListEpicTasks(t *testing.T) {
 		if slices.Contains(preset.AllowedTools, "list_epic_tasks") {
 			t.Fatalf("expected task planner preset to exclude list_epic_tasks, got %v", preset.AllowedTools)
 		}
+		for _, productTool := range []string{"ensure_task_plan_doc", "write_document_content"} {
+			if !slices.Contains(preset.AllowedTools, productTool) {
+				t.Fatalf("expected task planner preset to include %q, got %v", productTool, preset.AllowedTools)
+			}
+		}
 		return
 	}
 	t.Fatal("expected task planner preset in catalog")
@@ -655,13 +660,17 @@ func TestNormalizeAgentRecordStripsGenericPreviewToolsFromTaskPlanner(t *testing
 	if !slices.Contains(tools, agentcontract.ToolRequestApproval) {
 		t.Fatalf("expected sanitized tool list to keep %q, got %v", agentcontract.ToolRequestApproval, tools)
 	}
+	for _, productTool := range []string{"ensure_task_plan_doc", "write_document_content"} {
+		if !slices.Contains(tools, productTool) {
+			t.Fatalf("expected sanitized tool list to keep %q, got %v", productTool, tools)
+		}
+	}
 	for _, unexpected := range []string{
 		agentcontract.ToolPreviewMarkdown,
 		agentcontract.ToolPreviewJSON,
 		agentcontract.ToolPublishPreview,
 		agentcontract.ToolPublishPRDDraft,
 		agentcontract.ToolPublishTaskPlan,
-		"write_document_content",
 	} {
 		if slices.Contains(tools, unexpected) {
 			t.Fatalf("expected sanitized tool list to exclude %q, got %v", unexpected, tools)

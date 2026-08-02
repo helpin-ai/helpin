@@ -707,17 +707,31 @@ func approvalRequestResumeContent(requestPayload, responsePayload json.RawMessag
 			}
 			return "Approved. Continue."
 		}
-		if response.Message != "" {
-			return response.Message
-		}
 		switch strings.ToLower(strings.TrimSpace(request.Phase)) {
 		case "prd":
+			if response.Message != "" {
+				return response.Message
+			}
 			return "Approved PRD. Continue to task planning."
 		case "tasks":
+			if response.Message != "" {
+				return response.Message
+			}
 			return "Approved task plan. Apply it and create tasks."
 		case "task_doc":
-			return "Approved task planning document. Persist it and finish."
+			lines := []string{
+				"Approved task planning document.",
+				"Call ensure_task_plan_doc with {} to create or load and attach the canonical document. Then call write_document_content with the returned document_id and the full approved markdown.",
+				"Do not claim the document was persisted and do not finish until both tool calls succeed.",
+			}
+			if response.Message != "" {
+				lines = append(lines, "Human note: "+response.Message)
+			}
+			return strings.Join(lines, "\n")
 		default:
+			if response.Message != "" {
+				return response.Message
+			}
 			return "Approved. Continue."
 		}
 	}

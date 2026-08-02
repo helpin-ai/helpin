@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getSettingsSidebarGroups } from '../settingsSections';
+import { getSettingsSidebarGroups, SETTINGS_ROUTE_SECTIONS } from '../settingsSections';
 
 function visibleSectionIDs(canManageSettings: boolean) {
   return getSettingsSidebarGroups(canManageSettings).flatMap((group) =>
@@ -29,6 +29,13 @@ describe('getSettingsSidebarGroups', () => {
     const sections = workspaceGroup?.sections.map((section) => section.id) ?? [];
     expect(sections.indexOf('mcp')).toBe(sections.indexOf('access') + 1);
     expect(sections.indexOf('repositories')).toBe(sections.indexOf('mcp') + 1);
+  });
+
+  it('labels the inbound workspace surface MCP access', () => {
+    expect(SETTINGS_ROUTE_SECTIONS.find((section) => section.id === 'mcp')).toMatchObject({
+      label: 'MCP access',
+      description: 'Connect outside MCP clients to Helpin and control their workspace access.',
+    });
   });
 
   it('hides MCP without workspace read permission', () => {

@@ -336,6 +336,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		agentcontract.ToolPublishTaskPlanDoc,
 		agentcontract.ToolRequestUserInput,
 		agentcontract.ToolRequestApproval,
+		"ensure_task_plan_doc",
+		"write_document_content",
 	)
 	taskPlannerTools = slices.DeleteFunc(taskPlannerTools, func(toolName string) bool {
 		return toolName == "list_epic_tasks"

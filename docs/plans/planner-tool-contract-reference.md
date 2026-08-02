@@ -92,6 +92,41 @@ Rules:
 - `content` must be the full markdown draft being reviewed
 - `title` is optional metadata only and must not be sent by itself
 
+### Approved task planning document application
+
+After a human approves the `task_doc` preview, the task planner applies it through two bounded product tools:
+
+1. Call `ensure_task_plan_doc` with an empty object:
+
+```json
+{}
+```
+
+This creates or loads the canonical task planning document, attaches it to the current task, and returns:
+
+```json
+{
+  "document_id": "...",
+  "title": "..."
+}
+```
+
+2. Call `write_document_content` with the returned ID and the full approved markdown:
+
+```json
+{
+  "document_id": "...",
+  "content": "# Outcome\n..."
+}
+```
+
+Rules:
+
+- use `ensure_task_plan_doc`; do not create and link a generic document manually
+- write the exact full markdown draft that the human approved
+- do not claim the document was persisted or attached until both calls succeed
+- repository access remains read-only throughout the task-planning run
+
 ### `request_approval`
 
 ```json

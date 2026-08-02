@@ -474,6 +474,7 @@ type AgentService struct {
 	agentRuntimeClient         agentRuntimeSignalClient
 	agentRuntimeLaunchEnabled  bool
 	mcpRepo                    *repository.MCPRepository
+	externalMCPService         *ExternalMCPService
 }
 
 type agentRuntimeSignalClient interface {
@@ -494,6 +495,10 @@ type agentRuntimeLaunchClient interface {
 	AppID() string
 	UpsertAgent(ctx context.Context, agent AgentRuntimeAgent) (*AgentRuntimeAgent, error)
 	StartRun(ctx context.Context, req AgentRuntimeStartRunRequest) (*AgentRuntimeRun, error)
+}
+
+type agentRuntimeMCPCredentialClient interface {
+	UpdateRunMCPCredential(ctx context.Context, runtimeRunID, serverID string, credential ExternalMCPRunCredential) error
 }
 
 // NewAgentService creates a new AgentService.
@@ -643,6 +648,45 @@ func (s *AgentService) SetAgentRuntimeClient(client agentRuntimeSignalClient) *A
 func (s *AgentService) SetAgentRuntimeLaunchEnabled(enabled bool) *AgentService {
 	s.agentRuntimeLaunchEnabled = enabled
 	return s
+}
+
+func (s *AgentService) SetExternalMCPService(externalMCPService *ExternalMCPService) *AgentService {
+	s.externalMCPService = externalMCPService
+	return s
+}
+
+// ResumeRunsAfterExternalMCPAuth rotates the run-scoped credential and resumes
+// only runs paused by agent-runtime for authentication on this installation.
+func (s *AgentService) ResumeRunsAfterExternalMCPAuth(ctx context.Context, workspaceID, serverID, actorID string) error {
+	if s.externalMCPService == nil || s.agentRuntimeClient == nil {
+		return nil
+	}
+	runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeMCPCredentialClient)
+	if !ok {
+		return fmt.Errorf("agent runtime client does not support MCP credential rotation")
+	}
+	updates, err := s.externalMCPService.CredentialUpdatesForServer(ctx, workspaceID, serverID)
+	if err != nil {
+		return err
+	}
+	for _, update := range updates {
+		if update.Credential == nil {
+			continue
+		}
+		run, err := s.GetAgentRun(ctx, workspaceID, update.AgentRunID)
+		if err != nil || run == nil || run.Status != model.AgentRunStatusPaused || run.PauseReason != model.AgentRunPauseReasonAuthentication {
+			continue
+		}
+		if err := runtimeClient.UpdateRunMCPCredential(ctx, update.RuntimeRunID, update.ServerID, *update.Credential); err != nil {
+			return fmt.Errorf("rotate external MCP run credential: %w", err)
+		}
+		if _, err := s.agentRuntimeClient.ResumeRun(ctx, update.RuntimeRunID, AgentRuntimeResumeRunRequest{
+			Intent: model.AgentRunResumeIntentAuthCompleted, ExternalActorID: actorID,
+		}); err != nil {
+			return fmt.Errorf("resume external MCP-authenticated run: %w", err)
+		}
+	}
+	return nil
 }
 
 // SeedWorkspaceDefaults creates workspace-scoped built-in agents.
@@ -2622,6 +2666,27 @@ func (s *AgentService) ListToolCatalog() model.ToolCatalogResponse {
 		tool.Presets = presetKeys
 	}
 	return catalog
+}
+
+// ListToolCatalogForWorkspace merges the frozen host-tool contract with the
+// workspace's enabled, discovered external MCP aliases.
+func (s *AgentService) ListToolCatalogForWorkspace(ctx context.Context, workspaceID string) (model.ToolCatalogResponse, error) {
+	catalog := s.ListToolCatalog()
+	if s.externalMCPService == nil || !s.externalMCPService.Enabled() || strings.TrimSpace(workspaceID) == "" {
+		return catalog, nil
+	}
+	externalTools, err := s.externalMCPService.ListToolCatalog(ctx, workspaceID)
+	if err != nil {
+		return model.ToolCatalogResponse{}, err
+	}
+	if len(externalTools) == 0 {
+		return catalog, nil
+	}
+	catalog.Tools = append(catalog.Tools, externalTools...)
+	if !slices.Contains(catalog.Categories, "External MCP") {
+		catalog.Categories = append(catalog.Categories, "External MCP")
+	}
+	return catalog, nil
 }
 
 func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
@@ -5360,6 +5425,27 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 	startReq := runtimeStartRunRequest(run, params.agent)
+	resolvedMCP := &ExternalMCPResolvedRun{}
+	selectedExternalTools := make([]string, 0)
+	for _, tool := range parseJSONStringSlice(params.agent.AllowedTools) {
+		tool = strings.TrimSpace(tool)
+		if strings.HasPrefix(tool, "mcp__") && !strings.HasPrefix(tool, "mcp__helpin__") {
+			selectedExternalTools = append(selectedExternalTools, tool)
+		}
+	}
+	if len(selectedExternalTools) > 0 {
+		if s.externalMCPService == nil {
+			err := fmt.Errorf("agent has external MCP tools but external MCP is not configured")
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
+		resolvedMCP, err = s.externalMCPService.ResolveRunAttachments(ctx, params.workspaceID, selectedExternalTools)
+		if err != nil {
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
+		startReq.MCPServers = resolvedMCP.Servers
+	}
 	runtimeRun, err := runtimeLauncher.StartRun(ctx, startReq)
 	if err != nil && shouldRetryAgentRuntimeStart(err) {
 		slog.WarnContext(ctx, "retrying agent runtime start after transient failure", "error", err, "run_id", run.ID, "agent_id", params.agent.ID)
@@ -5373,6 +5459,15 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		err := fmt.Errorf("agent runtime returned empty run id")
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
+	}
+	if len(resolvedMCP.Bindings) > 0 {
+		if err := s.externalMCPService.PersistRunBindings(ctx, run.ID, strings.TrimSpace(runtimeRun.ID), resolvedMCP.Bindings); err != nil {
+			if s.agentRuntimeClient != nil {
+				_, _ = s.agentRuntimeClient.CancelRun(ctx, strings.TrimSpace(runtimeRun.ID))
+			}
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
 	}
 	run.ExternalRuntime = strPtr(agentRuntimeName)
 	run.ExternalRuntimeID = strPtr(strings.TrimSpace(runtimeRun.ID))

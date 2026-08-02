@@ -65,10 +65,12 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.ensure_task_plan_doc",
 		Alias:       "ensure_task_plan_doc",
 		Category:    "Docs",
-		Description: "Create or load the canonical planning document for the current task. Returns document metadata and whether a draft already exists.",
+		Description: "Create or load the canonical planning document for the current task and attach it to that task. Returns the document_id and title.",
 		InputSchema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"required":             []string{},
+			"additionalProperties": false,
 		},
 	},
 	{
@@ -194,7 +196,8 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		Category:    "Docs",
 		Description: "Write document content to a document in Helpin Docs. Accepts either structured document JSON or a markdown string, which will be auto-converted.",
 		InputSchema: map[string]any{
-			"type": "object",
+			"type":                 "object",
+			"additionalProperties": false,
 			"properties": map[string]any{
 				"document_id": map[string]any{
 					"type":        "string",

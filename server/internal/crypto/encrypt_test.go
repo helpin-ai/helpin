@@ -16,6 +16,21 @@ func generateKey(t *testing.T, size int) []byte {
 	return key
 }
 
+func TestEncryptStringWithAADRejectsDifferentBinding(t *testing.T) {
+	key := []byte("01234567890123456789012345678901")
+	ciphertext, err := EncryptStringWithAAD("secret", key, []byte("workspace-a|server-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plaintext, err := DecryptStringWithAAD(ciphertext, key, []byte("workspace-a|server-a"))
+	if err != nil || plaintext != "secret" {
+		t.Fatalf("decrypt = %q, %v", plaintext, err)
+	}
+	if _, err := DecryptStringWithAAD(ciphertext, key, []byte("workspace-b|server-a")); err == nil {
+		t.Fatal("expected AAD mismatch to fail")
+	}
+}
+
 func TestEncryptDecryptRoundtrip(t *testing.T) {
 	key := generateKey(t, 32)
 
@@ -240,7 +255,7 @@ func TestDecryptStringInvalidBase64(t *testing.T) {
 		input string
 	}{
 		{"not base64", "this is not valid base64!!!"},
-		{"truncated padding", "aGVsbG8==" },
+		{"truncated padding", "aGVsbG8=="},
 		{"illegal characters", "abc~def@ghi"},
 	}
 
