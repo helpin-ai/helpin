@@ -205,9 +205,15 @@ type ConfirmCommandBarChatCreateAgentResponse struct {
 }
 
 type CommandBarPlanRecord struct {
-	ID               string          `json:"id" gorm:"type:uuid;primaryKey"`
-	WorkspaceID      string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ActorID          *string         `json:"actor_id" gorm:"type:uuid;index"`
+	ID          string  `json:"id" gorm:"type:uuid;primaryKey"`
+	WorkspaceID string  `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ActorID     *string `json:"actor_id" gorm:"type:uuid;index"`
+	// ParentChatRunID links a plan launched from a dock chat back to the
+	// chat's backing run; when the plan settles, its result is delivered
+	// into that chat (ParentNotifiedAt records delivery).
+	ParentChatRunID  *string         `json:"parent_chat_run_id,omitempty" gorm:"type:uuid;index"`
+	DockChatID       *string         `json:"dock_chat_id,omitempty" gorm:"type:uuid;index"`
+	ParentNotifiedAt *time.Time      `json:"parent_notified_at,omitempty"`
 	Status           string          `json:"status" gorm:"not null;default:'running';index"`
 	Prompt           string          `json:"prompt" gorm:"not null"`
 	PageContext      json.RawMessage `json:"page_context" gorm:"type:jsonb;not null;default:'{}'"`

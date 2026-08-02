@@ -1195,8 +1195,9 @@ func main() {
 		gitService,
 	).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
 	var agentRuntimeProjectionService *service.AgentRuntimeProjectionService
+	var runFinalizers *service.AgentRunFinalizerService
 	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
-		runFinalizers := service.NewAgentRunFinalizerService(
+		runFinalizers = service.NewAgentRunFinalizerService(
 			agentRunRepo,
 			agentRepo,
 			pmTaskRepo,
@@ -1215,8 +1216,8 @@ func main() {
 			SetRunFinalizers(runFinalizers)
 	}
 	agentRuntimeProjectionCancel := context.CancelFunc(func() {})
+	var projectionCtx context.Context
 	if agentRuntimeProjectionService != nil {
-		var projectionCtx context.Context
 		projectionCtx, agentRuntimeProjectionCancel = context.WithCancel(context.Background())
 		go func() {
 			if err := agentRuntimeProjectionService.StartNATSConsumer(projectionCtx, jetstream); err != nil {
@@ -1335,9 +1336,22 @@ func main() {
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
 	authzService.SetWorkspaceMFARepository(workspaceRepo)
 	commandService.SetAuthorizationService(authzService)
+	commandService.SetAgentOrchestrationDependencies(commandBarService, agentRunInteractionRepo)
 	agentRuntimeHostService.SetAuthorizationService(authzService)
 	dockChatRepo := repository.NewDockChatRepository(db)
-	dockChatService := service.NewDockChatService(dockChatRepo, agentRunRepo, agentRunMessageRepo, agentService, commandService, authzService)
+	dockChatService := service.NewDockChatService(dockChatRepo, agentRunRepo, agentRunMessageRepo, commandBarPlanRepo, agentService, commandService, authzService)
+	if runFinalizers != nil {
+		// Immediate delivery of settled child-plan results into dock chats;
+		// the sweep below retries chats that were mid-turn at that moment.
+		runFinalizers.SetDockChatResultNotifier(dockChatService)
+	}
+	if projectionCtx != nil {
+		go func() {
+			if err := dockChatService.StartDockChatResultSweep(projectionCtx, 30*time.Second, 50); err != nil {
+				slog.Error("dock chat result sweep stopped", "error", err)
+			}
+		}()
+	}
 	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
 	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
 	agentService.SetMCPRepository(mcpRepo)

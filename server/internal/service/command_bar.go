@@ -1938,7 +1938,7 @@ func (s *CommandBarService) executableReadOnlyToolCards(access CommandBarChatAcc
 
 func commandBarAccessAllowsModule(access CommandBarChatAccess, module string) bool {
 	switch strings.ToLower(strings.TrimSpace(module)) {
-	case "", "workspace":
+	case "", "workspace", "agents":
 		return true
 	case "pm":
 		return access.CanReadPM
@@ -2867,6 +2867,18 @@ func commandBarAllowedTargetPhrase(allowedTargets []string) string {
 }
 
 func (s *CommandBarService) DispatchPlan(ctx context.Context, workspaceID, actorID string, req model.CommandBarDispatchRequest) (*model.CommandBarDispatchResponse, error) {
+	return s.dispatchPlanCore(ctx, workspaceID, actorID, req, dispatchPlanParams{})
+}
+
+// dispatchPlanParams carries dock-chat linkage for plans launched by a chat's
+// orchestrator agent (via the agents.* command tools). Empty for HTTP
+// dispatches.
+type dispatchPlanParams struct {
+	parentChatRunID *string
+	dockChatID      *string
+}
+
+func (s *CommandBarService) dispatchPlanCore(ctx context.Context, workspaceID, actorID string, req model.CommandBarDispatchRequest, params dispatchPlanParams) (*model.CommandBarDispatchResponse, error) {
 	if s == nil || s.agentService == nil {
 		return nil, fmt.Errorf("command bar service is not configured")
 	}
@@ -2903,6 +2915,8 @@ func (s *CommandBarService) DispatchPlan(ctx context.Context, workspaceID, actor
 		if err != nil {
 			return nil, err
 		}
+		record.ParentChatRunID = params.parentChatRunID
+		record.DockChatID = params.dockChatID
 		if err := s.planRepo.Create(ctx, record); err != nil {
 			return nil, err
 		}

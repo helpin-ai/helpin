@@ -265,3 +265,62 @@ func (r *CommandBarUnmetIntentRepository) Review(ctx context.Context, workspaceI
 	}
 	return &intent, nil
 }
+
+// ListSettledUnnotifiedDockPlans returns terminal plans launched from a dock
+// chat whose result has not yet been delivered back into the chat.
+func (r *CommandBarPlanRepository) ListSettledUnnotifiedDockPlans(ctx context.Context, limit int) ([]model.CommandBarPlanRecord, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("command bar plan repository is not configured")
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var plans []model.CommandBarPlanRecord
+	if err := r.db.WithContext(ctx).
+		Where("parent_chat_run_id IS NOT NULL AND parent_notified_at IS NULL AND status IN ?", []string{
+			model.CommandBarPlanStatusCompleted,
+			model.CommandBarPlanStatusFailed,
+			model.CommandBarPlanStatusCancelled,
+		}).
+		Order("updated_at ASC").
+		Limit(limit).
+		Find(&plans).Error; err != nil {
+		return nil, fmt.Errorf("list settled unnotified dock plans: %w", err)
+	}
+	return plans, nil
+}
+
+// MarkParentNotified records that the plan's result was delivered to (or is
+// permanently undeliverable for) its parent dock chat run.
+func (r *CommandBarPlanRepository) MarkParentNotified(ctx context.Context, workspaceID, id string) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("command bar plan repository is not configured")
+	}
+	now := time.Now().UTC()
+	if err := r.db.WithContext(ctx).
+		Model(&model.CommandBarPlanRecord{}).
+		Where("workspace_id = ? AND id = ? AND parent_notified_at IS NULL", workspaceID, id).
+		Update("parent_notified_at", now).Error; err != nil {
+		return fmt.Errorf("mark command bar plan parent notified: %w", err)
+	}
+	return nil
+}
+
+// ListByDockChat returns plans launched from a dock chat, newest first.
+func (r *CommandBarPlanRepository) ListByDockChat(ctx context.Context, workspaceID, dockChatID string, limit int) ([]model.CommandBarPlanRecord, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("command bar plan repository is not configured")
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	var plans []model.CommandBarPlanRecord
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND dock_chat_id = ?", workspaceID, dockChatID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&plans).Error; err != nil {
+		return nil, fmt.Errorf("list dock chat plans: %w", err)
+	}
+	return plans, nil
+}

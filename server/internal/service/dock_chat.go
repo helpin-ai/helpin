@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ type DockChatService struct {
 	chatRepo       *repository.DockChatRepository
 	runRepo        *repository.AgentRunRepository
 	runMessageRepo *repository.AgentRunMessageRepository
+	planRepo       *repository.CommandBarPlanRepository
 	agentService   *AgentService
 	commandService *InternalCommandService
 	authz          *authorization.AuthzService
@@ -42,6 +44,7 @@ func NewDockChatService(
 	chatRepo *repository.DockChatRepository,
 	runRepo *repository.AgentRunRepository,
 	runMessageRepo *repository.AgentRunMessageRepository,
+	planRepo *repository.CommandBarPlanRepository,
 	agentService *AgentService,
 	commandService *InternalCommandService,
 	authz *authorization.AuthzService,
@@ -50,6 +53,7 @@ func NewDockChatService(
 		chatRepo:       chatRepo,
 		runRepo:        runRepo,
 		runMessageRepo: runMessageRepo,
+		planRepo:       planRepo,
 		agentService:   agentService,
 		commandService: commandService,
 		authz:          authz,
@@ -194,6 +198,14 @@ func (s *DockChatService) chatDetail(ctx context.Context, chat *model.DockChat) 
 		}
 		detail.Run = run
 	}
+	if s.planRepo != nil {
+		plans, err := s.planRepo.ListByDockChat(ctx, chat.WorkspaceID, chat.ID, 20)
+		if err == nil {
+			for _, plan := range plans {
+				detail.PlanIDs = append(detail.PlanIDs, plan.ID)
+			}
+		}
+	}
 	return detail, nil
 }
 
@@ -220,14 +232,21 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 		return err
 	}
 
-	additional := composedTurn
+	var contextBlocks []string
 	var parentRunID *string
 	if previousRun != nil {
-		carry := s.buildCarryForward(ctx, previousRun)
-		if carry != "" {
-			additional = carry + "\n\n" + composedTurn
+		if carry := s.buildCarryForward(ctx, previousRun); carry != "" {
+			contextBlocks = append(contextBlocks, carry)
 		}
 		parentRunID = &previousRun.ID
+	}
+	// Deliver any settled child-run results that could not be resumed into the
+	// previous run (it had already ended) through the successor's context.
+	pendingBlocks, pendingPlanIDs := s.unnotifiedPlanResultBlocks(ctx, chat)
+	contextBlocks = append(contextBlocks, pendingBlocks...)
+	additional := composedTurn
+	if len(contextBlocks) > 0 {
+		additional = strings.Join(contextBlocks, "\n\n") + "\n\n" + composedTurn
 	}
 
 	now := time.Now().UTC()
@@ -262,6 +281,12 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 		return fmt.Errorf("set chat active run: %w", err)
 	}
 	chat.ActiveRunID = &run.ID
+	for _, planID := range pendingPlanIDs {
+		if err := s.planRepo.MarkParentNotified(ctx, chat.WorkspaceID, planID); err != nil {
+			slog.WarnContext(ctx, "dock chat: mark plan notified after carry-forward failed",
+				"workspace_id", chat.WorkspaceID, "plan_id", planID, "error", err)
+		}
+	}
 	return nil
 }
 

@@ -56,6 +56,8 @@ type InternalCommandService struct {
 	docsChangeProposalService *DocsChangeProposalService
 	agentRunRepo              *repository.AgentRunRepository
 	agentRunArtifactRepo      *repository.AgentRunArtifactRepository
+	agentRunInteractionRepo   *repository.AgentRunInteractionRepository
+	commandBarService         *CommandBarService
 	authz                     *authorization.AuthzService
 
 	definitions map[string]InternalCommandDefinition
@@ -321,7 +323,7 @@ func taskDependencyGraphHasCycle(graph map[string][]string) bool {
 func (s *InternalCommandService) registerDefaults() {
 	s.register(InternalCommandDefinition{
 		Name:                 "agents.list_agents",
-		Module:               "workspace",
+		Module:               "agents",
 		Mutating:             false,
 		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "document", "deal", "crm_deal", "contact", "crm_contact", "company", "conversation", "support_conversation", "repository"},
 		Tool: &commandtools.RuntimeToolMetadata{
@@ -1864,6 +1866,7 @@ func (s *InternalCommandService) registerDefaults() {
 			return mustJSON(result), nil
 		},
 	})
+	s.registerAgentOrchestrationCommands()
 	s.registerSupportCommands()
 	s.registerCRMReadCommands()
 	s.registerReleaseFactsCommands()
