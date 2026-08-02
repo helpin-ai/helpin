@@ -42,6 +42,7 @@ type Handlers struct {
 	PMRecurringTemplate *handler.PMRecurringTemplateHandler
 	Search              *handler.SearchHandler
 	CommandBar          *handler.CommandBarHandler
+	DockChat            *handler.DockChatHandler
 	Agent               *handler.AgentHandler
 	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
 	MCP                 *handler.MCPHandler
@@ -732,6 +733,24 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/runs/{runID}/promote-agent", h.CommandBar.PromoteRunToAgent)
 				r.With(requirePerm(authorization.PermSettingsManage)).Get("/unmet-intents", h.CommandBar.ListUnmetIntents)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/unmet-intents/{intentID}/review", h.CommandBar.ReviewUnmetIntent)
+			})
+
+			// Dock chats: user-owned conversations backed by agent-runtime
+			// chat-mode runs. Run-scoped reads are proxied through the chat's
+			// ownership check so users without PM permissions can use their
+			// own dock (the generic /agent-runs routes are PM-gated).
+			r.Route("/dock", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+				r.Use(wsActive)
+				r.With(requireCommandBarRead()).Get("/chats", h.DockChat.ListChats)
+				r.With(requireCommandBarRead()).Post("/chats", h.DockChat.CreateChat)
+				r.With(requireCommandBarRead()).Get("/chats/{chatID}", h.DockChat.GetChat)
+				r.With(requireCommandBarRead()).Patch("/chats/{chatID}", h.DockChat.UpdateChat)
+				r.With(requireCommandBarRead()).Post("/chats/{chatID}/messages", h.DockChat.SendMessage)
+				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run", h.DockChat.GetChatRun)
+				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run/events", h.DockChat.ListChatRunEvents)
+				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/interactions/{interactionID}/resolve", h.DockChat.ResolveChatRunInteraction)
+				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/cancel", h.DockChat.CancelChatRun)
 			})
 
 			// Support module

@@ -4119,6 +4119,7 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
 			invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
 			parent_run_id TEXT,
+			dock_chat_id TEXT,
 			handoff_state TEXT,
 			approval_state TEXT NOT NULL DEFAULT 'not_required',
 			pause_reason TEXT NOT NULL DEFAULT 'none',

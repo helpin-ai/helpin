@@ -10,6 +10,7 @@ import (
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
 	"github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -43,6 +44,7 @@ type AgentRuntimeHostService struct {
 	gitService     *GitService
 	skillRepo      *repository.WorkspaceSkillRepository
 	skillStore     skillPackageStore
+	authz          *authorization.AuthzService
 }
 
 type AgentRuntimeSkillLookupRequest struct {
@@ -112,6 +114,38 @@ func (s *AgentRuntimeHostService) SetWorkspaceSkillStore(repo *repository.Worksp
 	s.skillRepo = repo
 	s.skillStore = store
 	return s
+}
+
+// SetAuthorizationService enables per-actor RBAC enrichment on command
+// execution: when a run carries an external actor (the triggering user),
+// commands are executed with that user's workspace role and team memberships.
+func (s *AgentRuntimeHostService) SetAuthorizationService(authz *authorization.AuthzService) *AgentRuntimeHostService {
+	if s == nil {
+		return s
+	}
+	s.authz = authz
+	return s
+}
+
+// enrichCommandActor resolves the external actor's workspace membership and
+// stamps role/team info onto the command context. Runs without a human actor
+// (schedules, automation rules) are left untouched — agent-level tool policy
+// remains their only gate. A non-member actor is rejected outright.
+func (s *AgentRuntimeHostService) enrichCommandActor(ctx context.Context, meta *model.InternalCommandContext) error {
+	if s == nil || s.authz == nil || meta == nil {
+		return nil
+	}
+	actorID := strings.TrimSpace(meta.ActorID)
+	if actorID == "" {
+		return nil
+	}
+	actor, err := s.authz.ResolveActor(ctx, meta.WorkspaceID, actorID)
+	if err != nil {
+		return fmt.Errorf("%w: actor is not an active workspace member", ErrAgentRuntimeHostForbidden)
+	}
+	meta.ActorRole = actor.Role
+	meta.ActorTeamIDs = actor.TeamIDs()
+	return nil
 }
 
 func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req agentruntime.TargetContextRequest) (*agentruntime.TargetContext, error) {
@@ -352,6 +386,9 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 	}
 	if meta.WorkspaceID == "" {
 		return nil, fmt.Errorf("%w: workspace_id is required", ErrAgentRuntimeHostBadRequest)
+	}
+	if err := s.enrichCommandActor(ctx, &meta); err != nil {
+		return &agentruntime.CommandExecutionResponse{Error: err.Error()}, nil
 	}
 	if len(req.Input) == 0 {
 		req.Input = json.RawMessage(`{}`)

@@ -56,6 +56,7 @@ type InternalCommandService struct {
 	docsChangeProposalService *DocsChangeProposalService
 	agentRunRepo              *repository.AgentRunRepository
 	agentRunArtifactRepo      *repository.AgentRunArtifactRepository
+	authz                     *authorization.AuthzService
 
 	definitions map[string]InternalCommandDefinition
 }
@@ -66,6 +67,14 @@ type commandReleaseFactsProvider interface {
 	GetReleaseContext(ctx context.Context, workspaceID string, req model.GetReleaseContextRequest) (*model.ReleaseContextResult, error)
 	FindTasksForGitChanges(ctx context.Context, workspaceID string, req model.FindTasksForGitChangesRequest) (*model.FindTasksForGitChangesResult, error)
 	GetTaskContext(ctx context.Context, workspaceID string, req model.GetTaskContextRequest) (*model.GetTaskContextResult, error)
+}
+
+// SetAuthorizationService enables the central per-actor RBAC gate: when a
+// command context carries an actor role, execution requires the matching
+// module permission. Contexts without a role (agent-triggered runs with no
+// human actor) are not gated here — agent tool policy remains their gate.
+func (s *InternalCommandService) SetAuthorizationService(authz *authorization.AuthzService) {
+	s.authz = authz
 }
 
 // SetPMAutomationService sets the PM automation service (breaks circular dependency).
@@ -260,6 +269,9 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 		if !supported {
 			return nil, fmt.Errorf("command %q does not support target type %q", name, meta.TargetType)
 		}
+	}
+	if err := s.authorizeCommandActor(meta, def); err != nil {
+		return nil, err
 	}
 	output, err := def.Execute(ctx, meta, input)
 	if err != nil {
@@ -1857,6 +1869,69 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerReleaseFactsCommands()
 	s.registerDocsRuntimeToolCommands()
 	s.registerDocsOrganizationCommands()
+}
+
+// authorizeCommandActor is the central per-actor RBAC gate for command
+// execution. It enforces the module read/edit permission whenever the context
+// carries a resolved actor role; role-less contexts pass through unchanged.
+func (s *InternalCommandService) authorizeCommandActor(meta model.InternalCommandContext, def InternalCommandDefinition) error {
+	if s == nil || s.authz == nil {
+		return nil
+	}
+	if strings.TrimSpace(meta.ActorRole) == "" {
+		return nil
+	}
+	perms := commandPermissionsForDefinition(def)
+	if len(perms) == 0 {
+		return nil
+	}
+	if !s.authz.CanAny(internalCommandActor(meta), perms...) {
+		return fmt.Errorf("actor does not have permission to run command %q", def.Name)
+	}
+	return nil
+}
+
+// commandPermissionsForDefinition maps a command's module and mutation flag to
+// the workspace permissions that allow it (any one suffices). An empty result
+// means the module is not permission-gated at this layer.
+func commandPermissionsForDefinition(def InternalCommandDefinition) []authorization.Permission {
+	mutating := def.Mutating
+	switch strings.TrimSpace(def.Module) {
+	case "pm", "git", "delivery", "release":
+		if mutating {
+			return []authorization.Permission{authorization.PermPMEdit}
+		}
+		return []authorization.Permission{authorization.PermPMRead}
+	case "docs":
+		if mutating {
+			return []authorization.Permission{authorization.PermDocsEdit}
+		}
+		return []authorization.Permission{authorization.PermDocsRead}
+	case "crm":
+		if mutating {
+			return []authorization.Permission{authorization.PermCRMEdit}
+		}
+		return []authorization.Permission{authorization.PermCRMRead}
+	case "support":
+		if mutating {
+			return []authorization.Permission{authorization.PermSupportEdit}
+		}
+		return []authorization.Permission{authorization.PermSupportRead}
+	case "workspace":
+		if mutating {
+			return []authorization.Permission{authorization.PermWorkspaceUpdate}
+		}
+		return []authorization.Permission{authorization.PermWorkspaceRead}
+	case "agents":
+		// Agent orchestration mirrors the dock gates: any module read grants
+		// discovery, any module edit grants launching.
+		if mutating {
+			return []authorization.Permission{authorization.PermPMEdit, authorization.PermDocsEdit, authorization.PermCRMEdit}
+		}
+		return []authorization.Permission{authorization.PermPMRead, authorization.PermDocsRead, authorization.PermCRMRead}
+	default:
+		return nil
+	}
 }
 
 func internalCommandActor(meta model.InternalCommandContext) *authorization.Actor {

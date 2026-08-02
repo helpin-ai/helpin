@@ -219,6 +219,7 @@ func main() {
 			&model.CommandBarPlanDismissal{},
 			&model.CommandBarThread{},
 			&model.CommandBarMessage{},
+			&model.DockChat{},
 			&model.CodingSessionStateSnapshot{},
 			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
@@ -1333,6 +1334,10 @@ func main() {
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
 	authzService.SetWorkspaceMFARepository(workspaceRepo)
+	commandService.SetAuthorizationService(authzService)
+	agentRuntimeHostService.SetAuthorizationService(authzService)
+	dockChatRepo := repository.NewDockChatRepository(db)
+	dockChatService := service.NewDockChatService(dockChatRepo, agentRunRepo, agentRunMessageRepo, agentService, commandService, authzService)
 	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
 	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
 	agentService.SetMCPRepository(mcpRepo)
@@ -1437,6 +1442,7 @@ func main() {
 		PMView:              handler.NewPMViewHandler(pmViewService),
 		Search:              handler.NewSearchHandler(searchService),
 		CommandBar:          handler.NewCommandBarHandler(commandBarService, authzService),
+		DockChat:            handler.NewDockChatHandler(dockChatService, agentService),
 		PMAutomation:        handler.NewPMAutomationHandler(pmAutomationService),
 		AutomationRule:      handler.NewAutomationRuleHandler(ruleEngine),
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),
