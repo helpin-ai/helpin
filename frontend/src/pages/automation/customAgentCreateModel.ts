@@ -4,6 +4,7 @@ import type {
   AgentIconKey,
   AgentInvocationMode,
   AgentModelProvider,
+  AgentModelProviderOption,
   AgentPresetKey,
   AgentReasoningEffort,
   AgentRuntimeKind,
@@ -13,6 +14,20 @@ import type {
   CreateAgentRequest,
   CustomAgentDraft,
 } from '@/lib/pmTypes';
+
+const FALLBACK_DEFAULT_MODELS: Record<AgentModelProvider, string> = {
+  anthropic: 'claude-opus-4-8',
+  openai: 'gpt-5.6-terra',
+  openrouter: 'openai/gpt-5.6-terra',
+};
+
+export function defaultModelForAgentProvider(
+  provider: AgentModelProvider,
+  providerOptions: AgentModelProviderOption[] = [],
+): string {
+  return providerOptions.find((option) => option.value === provider)?.default_model?.trim()
+    || FALLBACK_DEFAULT_MODELS[provider];
+}
 
 export interface CustomAgentFormData {
   name: string;
@@ -50,7 +65,7 @@ export function createDefaultCustomAgentForm(): CustomAgentFormData {
     runtime_kind: 'codex',
     supported_modes: ['autonomous', 'interactive'],
     provider: 'openai',
-    model: '',
+    model: defaultModelForAgentProvider('openai'),
     reasoning_effort: '',
     service_tier: '',
     system_prompt: '',
@@ -82,7 +97,7 @@ export function applyCustomAgentDraftToForm(
       ? ['autonomous', 'interactive']
       : ['autonomous'],
     provider: draft.provider,
-    model: draft.model ?? '',
+    model: draft.model?.trim() || defaultModelForAgentProvider(draft.provider),
     system_prompt: draft.system_prompt,
     allowed_targets: [...draft.allowed_targets],
     allowed_tools: [...draft.allowed_tools],
@@ -126,7 +141,7 @@ export function buildCustomAgentCreatePayload(
     name: form.name.trim(),
     icon_key: form.icon_key,
     provider: form.provider,
-    model: form.model.trim() || undefined,
+    model: form.model.trim() || defaultModelForAgentProvider(form.provider),
     execution_config: buildExecutionConfigPayload(form),
     system_prompt: form.system_prompt.trim() || undefined,
     trigger_mode: 'manual',

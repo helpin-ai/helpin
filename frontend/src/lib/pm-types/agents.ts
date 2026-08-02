@@ -932,6 +932,7 @@ export interface UpdateWorkspaceAgentPresetVersionRequest {
 export interface AgentModelProviderOption {
   value: AgentModelProvider;
   label: string;
+  default_model: string;
   model_placeholder: string;
   supports_reasoning_effort: boolean;
   supported_reasoning_efforts?: AgentReasoningEffort[];

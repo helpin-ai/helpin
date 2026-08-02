@@ -783,6 +783,7 @@ type AgentPresetDefinition struct {
 type AgentModelProviderOption struct {
 	Value                     string   `json:"value"`
 	Label                     string   `json:"label"`
+	DefaultModel              string   `json:"default_model"`
 	ModelPlaceholder          string   `json:"model_placeholder"`
 	SupportsReasoningEffort   bool     `json:"supports_reasoning_effort"`
 	SupportedReasoningEfforts []string `json:"supported_reasoning_efforts,omitempty"`

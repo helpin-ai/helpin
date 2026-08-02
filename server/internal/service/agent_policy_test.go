@@ -214,6 +214,21 @@ func TestListAgentPresetsIncludesEpicPlanner(t *testing.T) {
 	}
 }
 
+func TestListAgentPresetsUseGPT56Terra(t *testing.T) {
+	presets := ListAgentPresets()
+	if len(presets) == 0 {
+		t.Fatal("expected preset catalog")
+	}
+	for _, preset := range presets {
+		if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenAI {
+			t.Errorf("preset %q provider = %+v, want openai", preset.Key, preset.Provider)
+		}
+		if preset.Model == nil || *preset.Model != "gpt-5.6-terra" {
+			t.Errorf("preset %q model = %+v, want gpt-5.6-terra", preset.Key, preset.Model)
+		}
+	}
+}
+
 func TestListAgentPresetsIncludesInteractiveReviewAgent(t *testing.T) {
 	presets := ListAgentPresets()
 	for _, preset := range presets {
@@ -449,6 +464,7 @@ func TestListModelProvidersIncludesOpenAIForCodexDeviceCodeMode(t *testing.T) {
 
 func TestListModelProvidersIncludesExecutionCapabilities(t *testing.T) {
 	svc := &AgentService{
+		anthropicAPIKey:  "anthropic-secret",
 		openAIAPIKey:     "openai-secret",
 		openRouterAPIKey: "openrouter-secret",
 	}
@@ -456,11 +472,21 @@ func TestListModelProvidersIncludesExecutionCapabilities(t *testing.T) {
 	options := svc.ListModelProviders()
 	for _, option := range options {
 		switch option.Value {
+		case model.AgentModelProviderAnthropic:
+			if option.DefaultModel != "claude-opus-4-8" {
+				t.Fatalf("expected anthropic default model claude-opus-4-8, got %#v", option)
+			}
 		case model.AgentModelProviderOpenAI:
+			if option.DefaultModel != "gpt-5.6-terra" {
+				t.Fatalf("expected openai default model gpt-5.6-terra, got %#v", option)
+			}
 			if !option.SupportsReasoningEffort || !option.SupportsServiceTier {
 				t.Fatalf("expected openai provider capabilities, got %#v", option)
 			}
 		case model.AgentModelProviderOpenRouter:
+			if option.DefaultModel != "openai/gpt-5.6-terra" {
+				t.Fatalf("expected openrouter default model openai/gpt-5.6-terra, got %#v", option)
+			}
 			if !option.SupportsReasoningEffort || option.SupportsServiceTier {
 				t.Fatalf("expected openrouter provider capabilities, got %#v", option)
 			}

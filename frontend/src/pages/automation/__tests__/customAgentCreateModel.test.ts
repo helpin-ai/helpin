@@ -3,12 +3,13 @@ import {
   applyCustomAgentDraftToForm,
   buildCustomAgentCreatePayload,
   createDefaultCustomAgentForm,
+  defaultModelForAgentProvider,
   summarizeCustomAgentCreate,
   validateCustomAgentCreateForm,
 } from '../customAgentCreateModel';
 
 describe('custom agent create model', () => {
-  it('keeps current blank custom-agent defaults', () => {
+  it('uses explicit OpenAI custom-agent defaults', () => {
     const form = createDefaultCustomAgentForm();
 
     expect(form.name).toBe('');
@@ -22,6 +23,8 @@ describe('custom agent create model', () => {
     expect(form.max_concurrent_runs).toBe('1');
     expect(form.preset_key).toBe('code_builder');
     expect(form.preset_version_key).toBe('code_builder_default');
+    expect(form.provider).toBe('openai');
+    expect(form.model).toBe('gpt-5.6-terra');
     expect(form.instruction_preamble).toBe('');
     expect(form.instruction_skills).toEqual([]);
   });
@@ -52,6 +55,7 @@ describe('custom agent create model', () => {
       approval_mode: 'mutating_tools',
       runtime_kind: 'native_sdk',
       provider: 'anthropic',
+      model: 'claude-opus-4-8',
       default_invocation_mode: 'interactive',
       max_concurrent_runs: '1',
     });
@@ -74,6 +78,7 @@ describe('custom agent create model', () => {
       name: 'Support Helper',
       icon_key: 'violet_star',
       provider: 'openai',
+      model: 'gpt-5.6-terra',
       system_prompt: 'Help triage support conversations.',
       trigger_mode: 'manual',
       team_ids: ['team-1', 'team-2'],
@@ -91,6 +96,20 @@ describe('custom agent create model', () => {
     expect(payload).not.toHaveProperty('create_flow');
     expect(payload).not.toHaveProperty('flow');
     expect(payload).not.toHaveProperty('overrides');
+  });
+
+  it('uses explicit provider defaults for model routing', () => {
+    expect(defaultModelForAgentProvider('openai')).toBe('gpt-5.6-terra');
+    expect(defaultModelForAgentProvider('openrouter')).toBe('openai/gpt-5.6-terra');
+    expect(defaultModelForAgentProvider('anthropic')).toBe('claude-opus-4-8');
+    expect(defaultModelForAgentProvider('openai', [{
+      value: 'openai',
+      label: 'OpenAI',
+      default_model: 'gpt-server-default',
+      model_placeholder: 'gpt-server-default',
+      supports_reasoning_effort: true,
+      supports_service_tier: true,
+    }])).toBe('gpt-server-default');
   });
 
   it('pins current optional field behavior for empty team and skills', () => {

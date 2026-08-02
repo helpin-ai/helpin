@@ -83,14 +83,16 @@ function renderPanel(overrides: Partial<{
       {
         value: 'anthropic',
         label: 'Anthropic',
-        model_placeholder: 'claude-sonnet-4-6',
+        default_model: 'claude-opus-4-8',
+        model_placeholder: 'claude-opus-4-8',
         supports_reasoning_effort: false,
         supports_service_tier: false,
       },
       {
         value: 'openai',
         label: 'OpenAI',
-        model_placeholder: 'gpt-5.5',
+        default_model: 'gpt-5.6-terra',
+        model_placeholder: 'gpt-5.6-terra',
         supports_reasoning_effort: true,
         supports_service_tier: true,
       },
@@ -236,7 +238,7 @@ describe('CustomAgentCreatePanel', () => {
     expect(document.body.textContent).toContain('Autonomous');
   });
 
-  it('keeps model entry simple with auto as the default', () => {
+  it('shows the explicit provider default model', () => {
     renderPanel({
       form: { ...createDefaultCustomAgentForm(), name: 'Planner' },
       advancedOpen: true,
@@ -246,9 +248,8 @@ describe('CustomAgentCreatePanel', () => {
     click('Advanced settings');
 
     const modelInput = Array.from(container?.querySelectorAll('input') ?? [])
-      .find((input) => input.placeholder === 'Auto');
+      .find((input) => input.value === 'gpt-5.6-terra');
     expect(modelInput).toBeTruthy();
-    expect(container?.textContent).not.toContain('claude-sonnet-4-6');
     expect(container?.textContent).not.toContain('Use suggested');
     expect(container?.textContent).toContain('Coming soon');
   });

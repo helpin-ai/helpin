@@ -831,6 +831,13 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
+		if presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
+			strings.TrimSpace(derefString(existing.Model)) == "gpt-5.5" &&
+			strings.TrimSpace(derefString(preset.Model)) == "gpt-5.6-terra" {
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
 		expectedExecutionConfig := normalizeExecutionConfigJSON(preset.ExecutionConfig)
 		if string(normalizeExecutionConfigJSON(existing.ExecutionConfig)) == "{}" && string(expectedExecutionConfig) != "{}" {
 			existing.ExecutionConfig = expectedExecutionConfig
@@ -2706,7 +2713,8 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 		options = append(options, model.AgentModelProviderOption{
 			Value:                   model.AgentModelProviderAnthropic,
 			Label:                   "Anthropic",
-			ModelPlaceholder:        "claude-sonnet-4-6",
+			DefaultModel:            defaultAnthropicAgentModel,
+			ModelPlaceholder:        defaultAnthropicAgentModel,
 			SupportsReasoningEffort: false,
 			SupportsServiceTier:     false,
 		})
@@ -2715,7 +2723,8 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 		options = append(options, model.AgentModelProviderOption{
 			Value:                     model.AgentModelProviderOpenAI,
 			Label:                     "OpenAI",
-			ModelPlaceholder:          "gpt-5.5",
+			DefaultModel:              defaultOpenAIAgentModel,
+			ModelPlaceholder:          defaultOpenAIAgentModel,
 			SupportsReasoningEffort:   true,
 			SupportedReasoningEfforts: slices.Clone(supportedAgentReasoningEfforts),
 			SupportsServiceTier:       true,
@@ -2726,7 +2735,8 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 		options = append(options, model.AgentModelProviderOption{
 			Value:                     model.AgentModelProviderOpenRouter,
 			Label:                     "OpenRouter",
-			ModelPlaceholder:          "openai/gpt-5.5",
+			DefaultModel:              defaultOpenRouterAgentModel,
+			ModelPlaceholder:          defaultOpenRouterAgentModel,
 			SupportsReasoningEffort:   true,
 			SupportedReasoningEfforts: slices.Clone(supportedAgentReasoningEfforts),
 			SupportsServiceTier:       false,

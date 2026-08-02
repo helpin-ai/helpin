@@ -9,6 +9,12 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
+const (
+	defaultAnthropicAgentModel  = "claude-opus-4-8"
+	defaultOpenAIAgentModel     = "gpt-5.6-terra"
+	defaultOpenRouterAgentModel = "openai/gpt-5.6-terra"
+)
+
 func ListAgentPresets() []model.AgentPresetDefinition {
 	presets := agentPresetDefinitions()
 	out := make([]model.AgentPresetDefinition, len(presets))
@@ -303,12 +309,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	reviewerProfile := agentcontract.GetRuntimeProfile(model.AgentPresetReviewAgent)
 	supportProfile := agentcontract.GetRuntimeProfile(model.AgentPresetSupportAgent)
 	documentationProfile := agentcontract.GetRuntimeProfile(model.AgentPresetDocumentationAgent)
-	supportAgentProvider := model.AgentModelProviderOpenAI
-	supportAgentModel := "gpt-5.6-terra"
-	codeBuilderProvider := model.AgentModelProviderOpenAI
-	codeBuilderModel := "gpt-5.5"
-	reviewAgentProvider := model.AgentModelProviderOpenAI
-	reviewAgentModel := "gpt-5.5"
+	openAIPresetProvider := model.AgentModelProviderOpenAI
+	openAIPresetModel := defaultOpenAIAgentModel
 	highReasoning := "high"
 	fastServiceTier := "fast"
 	codexOpenAIDefaultExecutionConfig := model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
@@ -354,6 +356,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Interactive product planning for epics, PRDs, documents, and story creation.",
 			DefaultRole:           "Epic Planner",
 			RuntimeKind:           "codex",
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          epicPlannerTools,
@@ -374,6 +378,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
 			DefaultRole:           "Coding Task Planner",
 			RuntimeKind:           "codex",
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          taskPlannerTools,
@@ -394,6 +400,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Cross-app CRM execution with deal, contact, support, and doc context.",
 			DefaultRole:           "CRM Operator",
 			RuntimeKind:           "codex",
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          []string{agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill, "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"},
@@ -414,8 +422,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Support conversation triage and reply drafting with review by default.",
 			DefaultRole:           "Support Agent",
 			RuntimeKind:           "codex",
-			Provider:              &supportAgentProvider,
-			Model:                 &supportAgentModel,
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(supportProfile.AllowedTools),
@@ -436,6 +444,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Keeps internal docs, public help docs, and API docs accurate, organized, and current.",
 			DefaultRole:           "Documentation Agent",
 			RuntimeKind:           "codex",
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(documentationProfile.AllowedTools),
@@ -456,6 +466,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:         "Marketing agent for growth plans, campaigns, copy, lifecycle messaging, content strategy, launches, and customer-signal synthesis.",
 			DefaultRole:         "Marketer",
 			RuntimeKind:         "codex",
+			Provider:            &openAIPresetProvider,
+			Model:               &openAIPresetModel,
 			DefaultTriggerMode:  "manual",
 			AllowedTriggerModes: []string{"manual"},
 			AllowedTools: []string{
@@ -516,8 +528,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder),
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
-			Provider:              &codeBuilderProvider,
-			Model:                 &codeBuilderModel,
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
 			Label:                 "Code Builder",
 			Description:           "Repository-writing implementation agent for story execution.",
@@ -539,8 +551,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent),
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
-			Provider:              &reviewAgentProvider,
-			Model:                 &reviewAgentModel,
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
 			Label:                 "QA & Code Reviewer",
 			Description:           "Review-first agent for validation, follow-up discussion, and agreed fixes in the same branch.",
@@ -566,6 +578,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "One-shot workspace operator for command-bar intents that do not fit narrower saved agents.",
 			DefaultRole:           "Command Agent",
 			RuntimeKind:           "codex",
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          []string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repository", "checkout_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "list_spaces", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"},
