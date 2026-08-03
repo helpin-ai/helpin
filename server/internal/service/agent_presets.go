@@ -13,6 +13,9 @@ const (
 	defaultAnthropicAgentModel  = "claude-opus-4-8"
 	defaultOpenAIAgentModel     = "gpt-5.6-terra"
 	defaultOpenRouterAgentModel = "openai/gpt-5.6-terra"
+	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
+	// agent mostly routes tools and summarizes, so a flash-tier model fits.
+	defaultAskAgentModel = "deepseek/deepseek-v4-flash-0731"
 )
 
 func ListAgentPresets() []model.AgentPresetDefinition {
@@ -336,6 +339,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	reviewPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
 	commandAgentPrompt := "You are Command Agent, a one-shot workspace operator for confirmed command-bar runs. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward."
 	askAgentPrompt := askAgentSystemPrompt()
+	openRouterPresetProvider := model.AgentModelProviderOpenRouter
+	askAgentDefaultModel := defaultAskAgentModel
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		agentcontract.ToolUpdatePlan,
 		agentcontract.ToolPublishPRDDraft,
@@ -610,8 +615,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Conversational dock orchestrator: answers workspace questions with read-only tools and launches other agents for durable work.",
 			DefaultRole:           "Ask Agent",
 			RuntimeKind:           "native_sdk",
-			Provider:              &openAIPresetProvider,
-			Model:                 &openAIPresetModel,
+			Provider:              &openRouterPresetProvider,
+			Model:                 &askAgentDefaultModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          askAgentPresetTools(),

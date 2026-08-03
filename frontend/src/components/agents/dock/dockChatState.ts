@@ -110,6 +110,15 @@ export function transformDockStream(stream: CodingSessionStreamState): DockTrans
       messages.push({ ...message, content: stripped });
     }
   }
+  // Message sequence numbers are assigned in projection-arrival order, which
+  // can lag conversation order (a mirrored user message may get a higher
+  // sequence than the assistant reply it caused). Timestamps are
+  // conversation-true, so the chat orders by time with sequence as tiebreak.
+  messages.sort((a, b) => {
+    const timeDelta = Date.parse(a.timestamp) - Date.parse(b.timestamp);
+    if (!Number.isNaN(timeDelta) && timeDelta !== 0) return timeDelta;
+    return a.sequence_no - b.sequence_no;
+  });
   return {
     stream: { ...stream, transcript_messages: messages },
     childResults,

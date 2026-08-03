@@ -220,6 +220,16 @@ func TestListAgentPresetsUseGPT56Terra(t *testing.T) {
 		t.Fatal("expected preset catalog")
 	}
 	for _, preset := range presets {
+		if preset.Key == model.AgentPresetAskAgent {
+			// The dock orchestrator defaults to a flash-tier OpenRouter model.
+			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
+				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
+			}
+			if preset.Model == nil || *preset.Model != defaultAskAgentModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultAskAgentModel)
+			}
+			continue
+		}
 		if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenAI {
 			t.Errorf("preset %q provider = %+v, want openai", preset.Key, preset.Provider)
 		}

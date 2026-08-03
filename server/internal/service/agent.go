@@ -861,6 +861,15 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
+		// Ask Agent default moved from OpenAI to OpenRouter (flash-tier
+		// model); upgrade rows still on the untouched old default.
+		if presetKey == model.AgentPresetAskAgent &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
+			strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel {
+			existing.Provider = trimPtr(preset.Provider)
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
 		expectedExecutionConfig := normalizeExecutionConfigJSON(preset.ExecutionConfig)
 		if string(normalizeExecutionConfigJSON(existing.ExecutionConfig)) == "{}" && string(expectedExecutionConfig) != "{}" {
 			existing.ExecutionConfig = expectedExecutionConfig

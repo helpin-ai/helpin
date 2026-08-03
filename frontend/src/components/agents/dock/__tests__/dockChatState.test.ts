@@ -72,6 +72,30 @@ describe('transformDockStream', () => {
   });
 });
 
+describe('transformDockStream ordering', () => {
+  it('orders messages by timestamp when sequence lags conversation order', () => {
+    const stream = emptyStream();
+    stream.transcript_messages = [
+      // Assistant reply arrived at the projection first (lower sequence)
+      // even though the user message it answers is older.
+      { event_id: 'a', role: 'assistant', content: 'answer', timestamp: '2026-08-03T07:22:27Z', sequence_no: 9 },
+      { event_id: 'u', role: 'user', content: 'question', timestamp: '2026-08-03T07:22:19Z', sequence_no: 10 },
+    ];
+    const result = transformDockStream(stream);
+    expect(result.stream.transcript_messages.map((m) => m.content)).toEqual(['question', 'answer']);
+  });
+
+  it('falls back to sequence for identical timestamps', () => {
+    const stream = emptyStream();
+    stream.transcript_messages = [
+      { event_id: 'b', role: 'assistant', content: 'second', timestamp: '2026-08-03T07:00:00Z', sequence_no: 2 },
+      { event_id: 'a', role: 'user', content: 'first', timestamp: '2026-08-03T07:00:00Z', sequence_no: 1 },
+    ];
+    const result = transformDockStream(stream);
+    expect(result.stream.transcript_messages.map((m) => m.content)).toEqual(['first', 'second']);
+  });
+});
+
 describe('dock marker parsing', () => {
   it('stripDockPageContext leaves plain content unchanged', () => {
     expect(stripDockPageContext('hello')).toBe('hello');
