@@ -215,10 +215,8 @@ func main() {
 			// versioned migration 202607100003_public_mcp.sql. Letting GORM
 			// reconcile those tables can attempt incompatible constraint changes.
 			&model.CommandBarPlanRecord{},
-			&model.CommandBarUnmetIntent{},
 			&model.CommandBarPlanDismissal{},
-			&model.CommandBarThread{},
-			&model.CommandBarMessage{},
+			&model.DockChat{},
 			&model.CodingSessionStateSnapshot{},
 			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
@@ -590,9 +588,7 @@ func main() {
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	agentRunInteractionRepo := repository.NewAgentRunInteractionRepository(db)
 	commandBarPlanRepo := repository.NewCommandBarPlanRepository(db)
-	commandBarUnmetIntentRepo := repository.NewCommandBarUnmetIntentRepository(db)
 	commandBarPlanDismissalRepo := repository.NewCommandBarPlanDismissalRepository(db)
-	commandBarChatRepo := repository.NewCommandBarChatRepository(db)
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	pmTaskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
@@ -902,15 +898,7 @@ func main() {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
 	agentService.SetExternalMCPService(externalMCPService)
-	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMProvider).
-		SetChatRepository(commandBarChatRepo).
-		SetLLMRouterConfig(
-			cfg.CommandRouterLLMProvider,
-			cfg.CommandRouterLLMModel,
-			cfg.CommandRouterLLMMaxTokens,
-			time.Duration(cfg.CommandRouterLLMTimeoutMS)*time.Millisecond,
-		).
-		SetCommandRouterOpenRouterProviderOptions(cfg.CommandRouterOpenRouterProviderOptions).
+	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarPlanDismissalRepo).
 		SetWebsocketPublisher(wsPublisher)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
@@ -1194,8 +1182,9 @@ func main() {
 		gitService,
 	).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
 	var agentRuntimeProjectionService *service.AgentRuntimeProjectionService
+	var runFinalizers *service.AgentRunFinalizerService
 	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
-		runFinalizers := service.NewAgentRunFinalizerService(
+		runFinalizers = service.NewAgentRunFinalizerService(
 			agentRunRepo,
 			agentRepo,
 			pmTaskRepo,
@@ -1214,8 +1203,8 @@ func main() {
 			SetRunFinalizers(runFinalizers)
 	}
 	agentRuntimeProjectionCancel := context.CancelFunc(func() {})
+	var projectionCtx context.Context
 	if agentRuntimeProjectionService != nil {
-		var projectionCtx context.Context
 		projectionCtx, agentRuntimeProjectionCancel = context.WithCancel(context.Background())
 		go func() {
 			if err := agentRuntimeProjectionService.StartNATSConsumer(projectionCtx, jetstream); err != nil {
@@ -1333,6 +1322,23 @@ func main() {
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
 	authzService.SetWorkspaceMFARepository(workspaceRepo)
+	commandService.SetAuthorizationService(authzService)
+	commandService.SetAgentOrchestrationDependencies(commandBarService, agentRunInteractionRepo)
+	agentRuntimeHostService.SetAuthorizationService(authzService)
+	dockChatRepo := repository.NewDockChatRepository(db)
+	dockChatService := service.NewDockChatService(dockChatRepo, agentRunRepo, agentRunMessageRepo, commandBarPlanRepo, agentService, commandService, authzService)
+	if runFinalizers != nil {
+		// Immediate delivery of settled child-plan results into dock chats;
+		// the sweep below retries chats that were mid-turn at that moment.
+		runFinalizers.SetDockChatResultNotifier(dockChatService)
+	}
+	if projectionCtx != nil {
+		go func() {
+			if err := dockChatService.StartDockChatResultSweep(projectionCtx, 30*time.Second, 50); err != nil {
+				slog.Error("dock chat result sweep stopped", "error", err)
+			}
+		}()
+	}
 	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
 	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
 	agentService.SetMCPRepository(mcpRepo)
@@ -1437,6 +1443,7 @@ func main() {
 		PMView:              handler.NewPMViewHandler(pmViewService),
 		Search:              handler.NewSearchHandler(searchService),
 		CommandBar:          handler.NewCommandBarHandler(commandBarService, authzService),
+		DockChat:            handler.NewDockChatHandler(dockChatService, agentService),
 		PMAutomation:        handler.NewPMAutomationHandler(pmAutomationService),
 		AutomationRule:      handler.NewAutomationRuleHandler(ruleEngine),
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),

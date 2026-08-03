@@ -45,6 +45,7 @@ import { automationService } from '@/lib/services/automationService';
 import {
   applyCustomAgentDraftToForm,
   createDefaultCustomAgentForm,
+  defaultModelForAgentProvider,
   validateCustomAgentCreateForm,
   type CustomAgentFormData,
 } from './customAgentCreateModel';
@@ -285,9 +286,18 @@ export function CustomAgentCreatePanel({
 
   const updateRuntimeKind = (runtimeKind: AgentRuntimeKind) => {
     if (!CUSTOM_RUNTIME_KIND_OPTIONS.includes(runtimeKind)) return;
+    const codexProvider = providerOptions.find((option) => option.value === 'openai' || option.value === 'openrouter')?.value
+      ?? 'openai';
+    const provider = runtimeKind === 'codex' && form.provider === 'anthropic'
+      ? codexProvider
+      : form.provider;
     update({
       runtime_kind: runtimeKind,
       supported_modes: supportedModesForRuntime(runtimeKind),
+      provider,
+      model: provider !== form.provider || !form.model.trim()
+        ? defaultModelForAgentProvider(provider, providerOptions)
+        : form.model,
       default_invocation_mode: normalizeInvocationMode(form.default_invocation_mode, runtimeKind),
     });
   };
@@ -296,6 +306,9 @@ export function CustomAgentCreatePanel({
   const selectedSkillIdentities = new Set(form.skills.map(skillIdentity));
   const availableSkills = skills.filter((skill) => !selectedSkillIdentities.has(skillIdentity(skill)));
   const supportedModes = supportedModesForRuntime(form.runtime_kind);
+  const compatibleProviderOptions = form.runtime_kind === 'codex'
+    ? providerOptions.filter((option) => option.value === 'openai' || option.value === 'openrouter')
+    : providerOptions;
   const selectedSkills = form.skills
     .map((ref) => skills.find((skill) => skillIdentity(skill) === skillIdentity(ref)))
     .filter((skill): skill is SkillCatalogEntry => Boolean(skill));
@@ -816,12 +829,21 @@ export function CustomAgentCreatePanel({
                     </label>
                     <label className="block space-y-2">
                       <FieldLabel tooltip="The AI service that powers this agent. The list only includes providers configured for this workspace/server.">AI Provider</FieldLabel>
-                      <Select value={form.provider} onValueChange={(value) => update({ provider: value as AgentModelProvider, model: '' })}>
+                      <Select
+                        value={form.provider}
+                        onValueChange={(value) => {
+                          const provider = value as AgentModelProvider;
+                          update({
+                            provider,
+                            model: defaultModelForAgentProvider(provider, providerOptions),
+                          });
+                        }}
+                      >
                         <SelectTrigger className="h-9">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {providerOptions.map((provider) => (
+                          {compatibleProviderOptions.map((provider) => (
                             <SelectItem key={provider.value} value={provider.value}>
                               {provider.label}
                             </SelectItem>
@@ -830,8 +852,13 @@ export function CustomAgentCreatePanel({
                       </Select>
                     </label>
                     <label className="block space-y-2">
-                      <FieldLabel tooltip="Leave blank for Auto. Manual model names are provider-specific and are not validated until the agent is saved or run.">Model</FieldLabel>
-                      <input className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={form.model} onChange={(event) => update({ model: event.target.value })} placeholder="Auto" />
+                      <FieldLabel tooltip="The provider default is selected automatically. Enter a different provider-compatible model only when needed.">Model</FieldLabel>
+                      <input
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        value={form.model}
+                        onChange={(event) => update({ model: event.target.value })}
+                        placeholder={defaultModelForAgentProvider(form.provider, providerOptions)}
+                      />
                     </label>
                     <label className="block space-y-2">
                       <FieldLabel tooltip="Coming soon: this will limit how many runs this agent can work on at the same time. It is saved as 1 today.">Parallel tasks</FieldLabel>

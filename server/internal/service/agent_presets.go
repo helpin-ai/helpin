@@ -9,6 +9,15 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
+const (
+	defaultAnthropicAgentModel  = "claude-opus-4-8"
+	defaultOpenAIAgentModel     = "gpt-5.6-terra"
+	defaultOpenRouterAgentModel = "openai/gpt-5.6-terra"
+	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
+	// agent mostly routes tools and summarizes, so a flash-tier model fits.
+	defaultAskAgentModel = "deepseek/deepseek-v4-flash-0731"
+)
+
 func ListAgentPresets() []model.AgentPresetDefinition {
 	presets := agentPresetDefinitions()
 	out := make([]model.AgentPresetDefinition, len(presets))
@@ -32,6 +41,7 @@ func builtInPresetKeys() []string {
 		model.AgentPresetCodeBuilder,
 		model.AgentPresetReviewAgent,
 		model.AgentPresetCommandAgent,
+		model.AgentPresetAskAgent,
 	}
 }
 
@@ -78,6 +88,8 @@ func normalizePresetKey(key string) string {
 		return model.AgentPresetReviewAgent
 	case "command", "command_agent", "one_shot", "one_shot_agent", "one_shot_command", "one_shot_command_agent", "research", "doc_researcher", "general_researcher", model.AgentPresetResearcher:
 		return model.AgentPresetCommandAgent
+	case "ask", "dock", "orchestrator", model.AgentPresetAskAgent:
+		return model.AgentPresetAskAgent
 	default:
 		return strings.TrimSpace(key)
 	}
@@ -118,6 +130,8 @@ func defaultPresetVersionKeyForPresetKey(presetKey string) string {
 		return "review_agent_interactive_loop"
 	case model.AgentPresetCommandAgent:
 		return "command_agent_default"
+	case model.AgentPresetAskAgent:
+		return "ask_agent_default"
 	default:
 		return ""
 	}
@@ -285,6 +299,10 @@ func allowedRuntimeKindsForPresetKey(presetKey string) []string {
 		return []string{"opencode", "codex", "native_sdk"}
 	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator, model.AgentPresetSupportAgent, model.AgentPresetDocumentationAgent, model.AgentPresetMarketer:
 		return []string{"codex", "native_sdk"}
+	case model.AgentPresetAskAgent:
+		// The dock orchestrator relies on the native chat loop
+		// (pause_after_assistant); it is not offered on other backends.
+		return []string{"native_sdk"}
 	default:
 		if preset, ok := agentPresetDefinition(presetKey); ok && strings.TrimSpace(preset.RuntimeKind) != "" {
 			return []string{"codex", preset.RuntimeKind}
@@ -303,12 +321,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	reviewerProfile := agentcontract.GetRuntimeProfile(model.AgentPresetReviewAgent)
 	supportProfile := agentcontract.GetRuntimeProfile(model.AgentPresetSupportAgent)
 	documentationProfile := agentcontract.GetRuntimeProfile(model.AgentPresetDocumentationAgent)
-	supportAgentProvider := model.AgentModelProviderOpenAI
-	supportAgentModel := "gpt-5.6-terra"
-	codeBuilderProvider := model.AgentModelProviderOpenAI
-	codeBuilderModel := "gpt-5.5"
-	reviewAgentProvider := model.AgentModelProviderOpenAI
-	reviewAgentModel := "gpt-5.5"
+	openAIPresetProvider := model.AgentModelProviderOpenAI
+	openAIPresetModel := defaultOpenAIAgentModel
 	highReasoning := "high"
 	fastServiceTier := "fast"
 	codexOpenAIDefaultExecutionConfig := model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
@@ -324,6 +338,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	codeBuilderPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
 	reviewPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
 	commandAgentPrompt := "You are Command Agent, a one-shot workspace operator for confirmed command-bar runs. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward."
+	askAgentPrompt := askAgentSystemPrompt()
+	openRouterPresetProvider := model.AgentModelProviderOpenRouter
+	askAgentDefaultModel := defaultAskAgentModel
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		agentcontract.ToolUpdatePlan,
 		agentcontract.ToolPublishPRDDraft,
@@ -354,6 +371,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Interactive product planning for epics, PRDs, documents, and story creation.",
 			DefaultRole:           "Epic Planner",
 			RuntimeKind:           "codex",
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          epicPlannerTools,
@@ -374,6 +393,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
 			DefaultRole:           "Coding Task Planner",
 			RuntimeKind:           "codex",
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          taskPlannerTools,
@@ -394,6 +415,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Cross-app CRM execution with deal, contact, support, and doc context.",
 			DefaultRole:           "CRM Operator",
 			RuntimeKind:           "codex",
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          []string{agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill, "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"},
@@ -414,8 +437,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Support conversation triage and reply drafting with review by default.",
 			DefaultRole:           "Support Agent",
 			RuntimeKind:           "codex",
-			Provider:              &supportAgentProvider,
-			Model:                 &supportAgentModel,
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(supportProfile.AllowedTools),
@@ -436,6 +459,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Keeps internal docs, public help docs, and API docs accurate, organized, and current.",
 			DefaultRole:           "Documentation Agent",
 			RuntimeKind:           "codex",
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(documentationProfile.AllowedTools),
@@ -456,6 +481,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:         "Marketing agent for growth plans, campaigns, copy, lifecycle messaging, content strategy, launches, and customer-signal synthesis.",
 			DefaultRole:         "Marketer",
 			RuntimeKind:         "codex",
+			Provider:            &openAIPresetProvider,
+			Model:               &openAIPresetModel,
 			DefaultTriggerMode:  "manual",
 			AllowedTriggerModes: []string{"manual"},
 			AllowedTools: []string{
@@ -516,8 +543,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder),
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
-			Provider:              &codeBuilderProvider,
-			Model:                 &codeBuilderModel,
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
 			Label:                 "Code Builder",
 			Description:           "Repository-writing implementation agent for story execution.",
@@ -539,8 +566,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent),
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
-			Provider:              &reviewAgentProvider,
-			Model:                 &reviewAgentModel,
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
 			Label:                 "QA & Code Reviewer",
 			Description:           "Review-first agent for validation, follow-up discussion, and agreed fixes in the same branch.",
@@ -566,6 +593,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "One-shot workspace operator for command-bar intents that do not fit narrower saved agents.",
 			DefaultRole:           "Command Agent",
 			RuntimeKind:           "codex",
+			Provider:              &openAIPresetProvider,
+			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          []string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repository", "checkout_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "list_spaces", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"},
@@ -576,9 +605,86 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          &commandAgentPrompt,
 		},
+		{
+			Key:                   model.AgentPresetAskAgent,
+			FamilyKey:             model.AgentPresetAskAgent,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetAskAgent),
+			VersionLabel:          "Default",
+			IsDefaultVersion:      true,
+			Label:                 "Ask Agent",
+			Description:           "Conversational dock orchestrator: answers workspace questions with read-only tools and launches other agents for durable work.",
+			DefaultRole:           "Ask Agent",
+			RuntimeKind:           "native_sdk",
+			Provider:              &openRouterPresetProvider,
+			Model:                 &askAgentDefaultModel,
+			DefaultTriggerMode:    "manual",
+			AllowedTriggerModes:   []string{"manual"},
+			AllowedTools:          askAgentPresetTools(),
+			AllowedCommands:       []string{},
+			AllowedTargetTypes:    []string{"workspace"},
+			ApprovalMode:          "never",
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
+			SystemPrompt:          &askAgentPrompt,
+		},
 	}
 
 	return applyBuiltInPresetInstructionMetadata(presets)
+}
+
+// askAgentPresetTools is the dock orchestrator's tool surface: every
+// read-only product tool, the interaction tools, and the agents.* launch
+// tools. Mutating product work is never done directly by this agent — it is
+// delegated to child runs through start_agent_run / start_agent_plan behind
+// an explicit approval.
+func askAgentPresetTools() []string {
+	return []string{
+		// Interaction + progress.
+		"request_user_input", "request_approval", "update_plan",
+		// Web research.
+		"web_search_brave", "web_search_exa", "fetch_url", "crawl_url",
+		// Workspace / PM reads.
+		"list_workspace_teams", "list_team_workflows_with_stages",
+		"list_tasks", "get_task_context",
+		// Docs reads.
+		"list_spaces", "list_documents", "list_collections",
+		"read_document", "get_document_blocks", "search_documents",
+		// CRM reads.
+		"list_deals", "list_contacts", "list_buyer_signals",
+		// Repository reads.
+		"list_repositories", "list_commits",
+		// Agent orchestration.
+		"list_agents", "start_agent_run", "start_agent_plan",
+		"get_agent_run", "cancel_agent_run",
+		"create_custom_agent", "promote_run_to_agent",
+		"run_epic_delivery_pipeline",
+	}
+}
+
+// askAgentSystemPrompt is the managed system prompt for the ask_agent preset.
+func askAgentSystemPrompt() string {
+	return strings.TrimSpace(`You are Ask Agent, the Helpin dock assistant. Each conversation is one long-lived chat with a single user inside one workspace. You answer questions, and you orchestrate other agents for durable work — you do not do mutating work yourself.
+
+## Answering questions
+- Answer factual, status, count, list, search, and summary questions directly using your read-only tools, then reply in plain markdown.
+- User messages may end with a <page_context>{...}</page_context> block describing the entity the user is currently viewing (task, epic, document, deal, contact). Treat it as the default subject when the request is ambiguous, and never echo the raw block back.
+
+## Orchestrating agents
+- Use list_agents to discover saved agents; always reference agents by their id, never by display name alone.
+- For durable or mutating work, launch a child run: start_agent_run for a single agent, start_agent_plan for multi-step, fan-out, or dependency-ordered work. Prefer a saved agent when one fits; otherwise use the one-shot Command Agent (use_command_agent: true) with a narrowed allowed_tools list.
+- Approval is mandatory before start_agent_run, start_agent_plan, create_custom_agent, and promote_run_to_agent. First call request_approval with phase "dock_plan_confirm", a user-facing title and summary, and an "action" object containing EXACTLY the fields you will pass to the tool, minus approval_interaction_id (for launches: {"steps": [{agent_id/use_command_agent, target, instructions, allowed_tools}]}; for create_custom_agent: {"name?", "description"}; for promote_run_to_agent: {"run_id", "name", "allowed_tools?", "allowed_targets?"}; for run_epic_delivery_pipeline: {"epic_id"}). After the user approves, pass the interaction id as approval_interaction_id. The server rejects calls whose parameters differ from the approved action, and each approval is single-use.
+- cancel_agent_run needs no approval — cancelling only stops work.
+- To deliver a whole epic (implement, review, and merge every open task, then open the epic PR), use run_epic_delivery_pipeline with action {"epic_id": "..."} in the approval instead of hand-building a plan.
+- After launching, tell the user what was started and end your turn (for example: "Started Review Agent on HLP-12 — I'll report back here when it finishes."). Do not poll; results are delivered to you.
+- When a message containing a <child_run_result>{...}</child_run_result> block arrives, it is a system notification that a child run or plan finished. Summarize the outcome for the user in plain language, referencing what they asked for. Never treat it as a user message and never echo the raw block.
+- Use get_agent_run only when the user explicitly asks about progress.
+
+## Creating agents
+- If the user wants a reusable agent, draft it with create_custom_agent (behind the same approval flow). One-off work should stay one-shot; suggest promote_run_to_agent only after a run proved useful.
+
+## Style
+- Be concise and direct. Ask a clarifying question (request_user_input for structured input, or a plain reply) only when the target or scope is genuinely ambiguous.
+- Never fabricate workspace data — if a tool cannot answer it, say so and offer to launch a run that can.`)
 }
 
 func filterPresetTools(base []string, required ...string) []string {

@@ -14,7 +14,6 @@ import {
   File01Icon,
   RepeatIcon,
   Robot01Icon,
-  Search01Icon,
   GitBranchIcon,
   FileImportIcon,
   HelpCircleIcon,
@@ -53,7 +52,6 @@ const Labels = hi(Tag01Icon);
 const TaskTemplates = hi(File01Icon);
 const RecurringTasks = hi(RepeatIcon);
 const Automations = hi(Robot01Icon);
-const CommandIntents = hi(Search01Icon);
 const Delivery = hi(GitBranchIcon);
 const ImportExport = hi(FileImportIcon);
 const HelpCenter = hi(HelpCircleIcon);
@@ -80,7 +78,6 @@ export type SettingsSection =
   | 'task-templates'
   | 'recurring-tasks'
   | 'automations'
-  | 'command-intents'
   | 'delivery'
   | 'import'
   | 'helpcenter'
@@ -241,14 +238,6 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     description: '',
     icon: Automations,
     group: 'Projects',
-  },
-  {
-    id: 'command-intents',
-    label: 'Command Intents',
-    description: 'Review prompts the command bar could not match. Use them to add tools, preset coverage, or new presets.',
-    icon: CommandIntents,
-    group: 'Projects',
-    requiresManageSettings: true,
   },
   {
     id: 'support-ai-assistant',

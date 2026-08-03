@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import type { AgentRun } from '@/lib/pmTypes';
-import type { CommandBarRunPlan } from '@/stores/commandBarStore';
+import type { CommandBarRunPlan } from './planSummary';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import {
   ArrowDown01Icon,

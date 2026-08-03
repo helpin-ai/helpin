@@ -8,12 +8,34 @@ import {
   mergeCodingSessionStreamSnapshotSeed,
 } from '@/components/pm/CodingSession/codingSessionStream';
 import type {
+  CodingSession,
   CodingSessionEvent,
+  CodingSessionEventListResponse,
   CodingSessionInteraction,
   CodingSessionStreamSnapshot,
   CodingSessionStreamState,
   RunPlanArtifact,
 } from '@/lib/pmTypes';
+
+/**
+ * Pluggable snapshot/event fetchers. The default hits the PM-gated
+ * /pm/agent-runs endpoints; the dock chat view supplies chat-scoped fetchers
+ * (/dock/chats/{id}/run*) so users without PM permissions can stream their
+ * own chat.
+ */
+export interface AgentRunStreamFetchers {
+  getSnapshot: (workspaceId: string, runId: string) => Promise<{ data: CodingSession | null; error: string | null }>;
+  listEvents: (
+    workspaceId: string,
+    runId: string,
+    after: number,
+  ) => Promise<{ data: CodingSessionEventListResponse | null; error: string | null }>;
+}
+
+const defaultFetchers: AgentRunStreamFetchers = {
+  getSnapshot: (workspaceId, runId) => agentService.getRunSnapshot(workspaceId, runId),
+  listEvents: (workspaceId, runId, after) => agentService.listRunEvents(workspaceId, runId, after),
+};
 
 interface AgentRunStreamState {
   currentPlan: RunPlanArtifact | null;
@@ -50,6 +72,7 @@ export function useAgentRunStream(
   runId: string | null | undefined,
   active: boolean,
   pollMs = 5_000,
+  fetchers: AgentRunStreamFetchers = defaultFetchers,
 ): AgentRunStreamState {
   const [currentPlan, setCurrentPlan] = useState<RunPlanArtifact | null>(null);
   const [streamState, setStreamState] = useState<CodingSessionStreamState | null>(null);
@@ -77,8 +100,8 @@ export function useAgentRunStream(
     setLoading(true);
     try {
       const [snap, ev] = await Promise.all([
-        agentService.getRunSnapshot(workspaceId, runId),
-        agentService.listRunEvents(workspaceId, runId, seqRef.current),
+        fetchers.getSnapshot(workspaceId, runId),
+        fetchers.listEvents(workspaceId, runId, seqRef.current),
       ]);
       if (cancelledRef.current) return;
       snapshotRef.current = mergeCodingSessionStreamSnapshotSeed(
@@ -106,7 +129,7 @@ export function useAgentRunStream(
     } finally {
       if (!cancelledRef.current) setLoading(false);
     }
-  }, [runId, workspaceId]);
+  }, [fetchers, runId, workspaceId]);
 
   // Reset on run change.
   useEffect(() => {

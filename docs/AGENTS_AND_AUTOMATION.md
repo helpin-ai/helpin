@@ -290,28 +290,27 @@ tool name from the prompt renderer, for example `mcp__helpin__update_plan`, not
 the bare alias. When writing backend tests, policies, or artifact decoders, use
 canonical aliases unless the test is specifically about runtime tool naming.
 
-## Ask Agents
+## The Dock (Ask Agents)
 
-Ask Agents is the orchestration chat layer over the agent system.
+The dock is the primary chat surface over the agent system. Each user has
+multiple dock chats per workspace; **each chat is an agent-runtime chat-mode
+run** of the `ask_agent` system preset (`turn_policy.mode =
+pause_after_assistant`). There is no in-app classifier or inline LLM tool loop
+anymore — the chat run itself answers read-only questions with product command
+tools and orchestrates durable work through the `agents.*` command tools.
 
-Full runtime reference with mermaid diagrams (component map, intent routing, read-only
-vs mutation gating, plan-kind dispatch, Temporal DAG loop, persistence):
-[ASK_AGENTS_BAR.md](./ASK_AGENTS_BAR.md).
-
-It can:
-
-- answer simple read-only questions inline with non-mutating context/tool access
-- load bounded live read-only context for common task, docs, and CRM list/count questions
-- propose a normal command-bar run plan for saved agents, one-shot Command Agent runs, fan-out, or DAGs
-- propose reusable custom-agent drafts
-- create reusable custom agents only after explicit approval
+Current reference: [ASK_AGENTS_BAR.md](./ASK_AGENTS_BAR.md).
 
 Important boundaries:
 
-- Ask Agents is not a new runtime and not a super-agent with every tool enabled
-- inline answers must stay read-only, must not create `agent_run` records, and must fall back to a one-shot Command Agent run when the requested data needs broader tool execution
-- inline answers and runtime tools should share command-backed product reads where a tool already exists, for example `workspace.list_teams` backing the `list_workspace_teams` runtime alias
-- durable work still creates `agent_run` records, grouped by `command_bar_plans` when orchestration is needed
+- the chat agent's tool surface is read-only product tools + `agents.*`
+  orchestration tools, narrowed per user at run start
+- mutating `agents.*` launches require a server-verified `dock_plan_confirm`
+  approval interaction (canonical action hash, single-use)
+- durable work still creates `agent_run` records, grouped by
+  `command_bar_plans` when orchestration is needed; plans launched from a chat
+  carry `parent_chat_run_id` / `dock_chat_id` and deliver a
+  `<child_run_result>` back into the chat when they settle
 - one-shot ad hoc work still uses the system `Command Agent`
 - saved custom agents still persist through the normal `agents` creation path
 

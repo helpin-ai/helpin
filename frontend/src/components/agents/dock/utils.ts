@@ -1,5 +1,5 @@
 import type { AgentRun, CommandBarPlanStep } from '@/lib/pmTypes';
-import type { CommandBarRunPlan } from '@/stores/commandBarStore';
+import type { CommandBarRunPlan } from './planSummary';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import { isScaffoldingStep } from './planLayers';
 

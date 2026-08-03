@@ -5,7 +5,7 @@ import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/a
 import { ArrowUpRight01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import type { AgentRun, CommandBarPageContext, CommandBarPlanStep } from '@/lib/pmTypes';
-import type { CommandBarRunPlan } from '@/stores/commandBarStore';
+import type { CommandBarRunPlan } from '@/components/agents/dock/planSummary';
 
 export type RunAction = 'approve' | 'cancel';
 
