@@ -14,6 +14,7 @@ import {
   RotateLeft01Icon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
+import { displayAgentName } from '@/lib/agentTerminology';
 import { StatusDot, type DotKind } from './StatusDot';
 import { PipelineRail } from './PipelineRail';
 import { FanOutRail } from './FanOutRail';
@@ -298,7 +299,7 @@ function PlanStrip({
                         <StatusDot state={dot} className="mt-1" />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-baseline gap-2">
-                            <span className="truncate font-medium text-foreground">{step.agent_name}</span>
+                            <span className="truncate font-medium text-foreground">{displayAgentName(step.agent_name)}</span>
                             {run ? (
                               <span className="shrink-0 text-[11px] text-muted-foreground">
                                 {runStatusLabel(run)}

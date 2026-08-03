@@ -13,6 +13,7 @@ import {
   runDurationMs,
 } from '@/components/pm/epicDeliveryDag';
 import { cn } from '@/lib/utils';
+import { displayAgentName } from '@/lib/agentTerminology';
 import { FINALIZE_STEP_TYPE, SETUP_STEP_TYPE, buildTaskNodes, layerTasks } from './planLayers';
 import { StatusDot } from './StatusDot';
 import {
@@ -174,7 +175,7 @@ function StepRow({
       <StatusDot state={state} size={sizes.stepDot} />
       {isAgentStep(plan, stepIndex) ? (
         <AgentAvatar
-          name={step.agent_name}
+          name={displayAgentName(step.agent_name)}
           className={cn(sizes.avatar, 'shrink-0 rounded-none border-0 bg-transparent shadow-none')}
           genericBare
         />
@@ -327,7 +328,7 @@ function StepChip({
       <StatusDot state={state} />
       {isAgentStep(plan, stepIndex) ? (
         <AgentAvatar
-          name={step.agent_name}
+          name={displayAgentName(step.agent_name)}
           className={cn(sizes.chipAvatar, 'shrink-0 rounded-none border-0 bg-transparent shadow-none')}
           genericBare
         />

@@ -32,6 +32,25 @@ type SupportContentChunkRepository struct {
 	db *gorm.DB
 }
 
+// ListSearchableSourceIDs returns workspace content sources that currently
+// have released chunks from successful pages. Crawled public content is
+// workspace-wide and does not require a per-agent link.
+func (r *SupportContentChunkRepository) ListSearchableSourceIDs(ctx context.Context, workspaceID string) ([]string, error) {
+	ids := []string{}
+	if err := r.db.WithContext(ctx).
+		Table("support_content_chunks AS c").
+		Distinct("c.content_source_id").
+		Joins("JOIN support_content_sources scs ON scs.id = c.content_source_id AND scs.workspace_id = c.workspace_id").
+		Joins("JOIN support_content_pages p ON p.id = c.page_id AND p.workspace_id = c.workspace_id").
+		Where("c.workspace_id = ?", workspaceID).
+		Where("scs.sync_status <> ?", model.KnowledgeSourceSyncDisabled).
+		Where("p.http_status >= 200 AND p.http_status < 300").
+		Pluck("c.content_source_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("list searchable content sources: %w", err)
+	}
+	return ids, nil
+}
+
 func NewSupportContentChunkRepository(db *gorm.DB) *SupportContentChunkRepository {
 	return &SupportContentChunkRepository{db: db}
 }
@@ -86,14 +105,19 @@ func (r *SupportContentChunkRepository) ListPageNeighbors(ctx context.Context, w
 		return []SupportContentChunkSearchResult{}, nil
 	}
 	results := []SupportContentChunkSearchResult{}
-	if err := r.db.WithContext(ctx).
+	query := r.db.WithContext(ctx).
 		Table("support_content_chunks AS c").
 		Select("c.id, c.workspace_id, c.content_source_id, c.page_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.url, c.content").
-		Joins("JOIN agent_content_sources acs ON acs.content_source_id = c.content_source_id AND acs.workspace_id = c.workspace_id").
 		Joins("JOIN support_content_sources scs ON scs.id = c.content_source_id AND scs.workspace_id = c.workspace_id").
 		Joins("JOIN support_content_pages p ON p.id = c.page_id AND p.workspace_id = c.workspace_id").
-		Where("c.workspace_id = ? AND acs.agent_id = ? AND c.page_id = ? AND c.chunk_index IN ?", workspaceID, agentID, pageID, indexes).
-		Where("scs.sync_status <> ? AND p.http_status >= 200 AND p.http_status < 300", model.KnowledgeSourceSyncDisabled).
+		Where("c.workspace_id = ? AND c.page_id = ? AND c.chunk_index IN ?", workspaceID, pageID, indexes).
+		Where("scs.sync_status <> ? AND p.http_status >= 200 AND p.http_status < 300", model.KnowledgeSourceSyncDisabled)
+	if agentID != "" {
+		query = query.
+			Joins("JOIN agent_content_sources acs ON acs.content_source_id = c.content_source_id AND acs.workspace_id = c.workspace_id").
+			Where("acs.agent_id = ?", agentID)
+	}
+	if err := query.
 		Order("c.chunk_index ASC").
 		Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("list content chunk neighbors: %w", err)
@@ -155,13 +179,13 @@ func (r *SupportContentChunkRepository) lexicalSearch(ctx context.Context, works
 		var results []SupportContentChunkSearchResult
 		dbQuery := r.db.WithContext(ctx).Table("support_content_chunks").
 			Select("support_content_chunks.id, support_content_chunks.workspace_id, support_content_chunks.content_source_id, support_content_chunks.page_id, support_content_chunks.chunk_index, support_content_chunks.section_key, support_content_chunks.heading_path, support_content_chunks.title, support_content_chunks.url, support_content_chunks.content").
-			Where("support_content_chunks.workspace_id = ? AND support_content_chunks.content_source_id IN ?", workspaceID, sourceIDs)
+			Joins("JOIN support_content_sources scs ON scs.id = support_content_chunks.content_source_id AND scs.workspace_id = support_content_chunks.workspace_id").
+			Joins("JOIN support_content_pages p ON p.id = support_content_chunks.page_id AND p.workspace_id = support_content_chunks.workspace_id").
+			Where("support_content_chunks.workspace_id = ? AND support_content_chunks.content_source_id IN ?", workspaceID, sourceIDs).
+			Where("scs.sync_status <> ? AND p.http_status >= 200 AND p.http_status < 300", model.KnowledgeSourceSyncDisabled)
 		if agentID != "" {
 			dbQuery = dbQuery.Joins("JOIN agent_content_sources acs ON acs.content_source_id = support_content_chunks.content_source_id AND acs.workspace_id = support_content_chunks.workspace_id").
-				Joins("JOIN support_content_sources scs ON scs.id = support_content_chunks.content_source_id AND scs.workspace_id = support_content_chunks.workspace_id").
-				Joins("JOIN support_content_pages p ON p.id = support_content_chunks.page_id AND p.workspace_id = support_content_chunks.workspace_id").
-				Where("acs.agent_id = ?", agentID).
-				Where("scs.sync_status <> ? AND p.http_status >= 200 AND p.http_status < 300", model.KnowledgeSourceSyncDisabled)
+				Where("acs.agent_id = ?", agentID)
 		}
 		if err := dbQuery.
 			Order("support_content_chunks.updated_at DESC").
@@ -176,14 +200,10 @@ func (r *SupportContentChunkRepository) lexicalSearch(ctx context.Context, works
 	}
 
 	agentJoin := ""
-	sourcePredicate := ""
 	agentPredicate := ""
 	if agentID != "" {
-		agentJoin = `JOIN support_content_sources scs ON scs.id = c.content_source_id AND scs.workspace_id = c.workspace_id
-		JOIN support_content_pages p ON p.id = c.page_id AND p.workspace_id = c.workspace_id
-		JOIN agent_content_sources acs ON acs.content_source_id = c.content_source_id AND acs.workspace_id = c.workspace_id`
+		agentJoin = `JOIN agent_content_sources acs ON acs.content_source_id = c.content_source_id AND acs.workspace_id = c.workspace_id`
 		agentPredicate = "AND acs.agent_id = ?"
-		sourcePredicate = "AND scs.sync_status <> 'disabled' AND p.http_status >= 200 AND p.http_status < 300"
 	}
 	sql := fmt.Sprintf(`
 		SELECT c.id, c.workspace_id, c.content_source_id, c.page_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.url, c.content,
@@ -193,10 +213,13 @@ func (r *SupportContentChunkRepository) lexicalSearch(ctx context.Context, works
 		         to_tsquery('english', ?)
 		       ) AS lexical_score
 		FROM support_content_chunks c
+		JOIN support_content_sources scs ON scs.id = c.content_source_id AND scs.workspace_id = c.workspace_id
+		JOIN support_content_pages p ON p.id = c.page_id AND p.workspace_id = c.workspace_id
 		%s
 		WHERE c.workspace_id = ?
 		  AND c.content_source_id IN ?
-		  %s
+		  AND scs.sync_status <> 'disabled'
+		  AND p.http_status >= 200 AND p.http_status < 300
 		  %s
 		  AND (
 		    setweight(to_tsvector('english', COALESCE(c.title, '')), 'A') ||
@@ -204,7 +227,7 @@ func (r *SupportContentChunkRepository) lexicalSearch(ctx context.Context, works
 		  ) @@ to_tsquery('english', ?)
 		ORDER BY lexical_score DESC, c.updated_at DESC
 		LIMIT ?
-	`, agentJoin, sourcePredicate, agentPredicate)
+	`, agentJoin, agentPredicate)
 	var results []SupportContentChunkSearchResult
 	args := []any{tsQuery, workspaceID, sourceIDs}
 	if agentID != "" {
@@ -222,23 +245,22 @@ func (r *SupportContentChunkRepository) vectorSearch(ctx context.Context, worksp
 		embeddingModel = defaultChunkEmbeddingModel
 	}
 	agentJoin := ""
-	sourcePredicate := ""
 	agentPredicate := ""
 	if agentID != "" {
-		agentJoin = `JOIN support_content_sources scs ON scs.id = c.content_source_id AND scs.workspace_id = c.workspace_id
-		JOIN support_content_pages p ON p.id = c.page_id AND p.workspace_id = c.workspace_id
-		JOIN agent_content_sources acs ON acs.content_source_id = c.content_source_id AND acs.workspace_id = c.workspace_id`
+		agentJoin = `JOIN agent_content_sources acs ON acs.content_source_id = c.content_source_id AND acs.workspace_id = c.workspace_id`
 		agentPredicate = "AND acs.agent_id = ?"
-		sourcePredicate = "AND scs.sync_status <> 'disabled' AND p.http_status >= 200 AND p.http_status < 300"
 	}
 	sql := fmt.Sprintf(`
 		SELECT c.id, c.workspace_id, c.content_source_id, c.page_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.url, c.content,
 		       GREATEST(0, 1 - (c.embedding <=> CAST(? AS vector))) AS vector_score
 		FROM support_content_chunks c
+		JOIN support_content_sources scs ON scs.id = c.content_source_id AND scs.workspace_id = c.workspace_id
+		JOIN support_content_pages p ON p.id = c.page_id AND p.workspace_id = c.workspace_id
 		%s
 		WHERE c.workspace_id = ?
 		  AND c.content_source_id IN ?
-		  %s
+		  AND scs.sync_status <> 'disabled'
+		  AND p.http_status >= 200 AND p.http_status < 300
 		  %s
 		  AND c.embedding_provider = ?
 		  AND c.embedding_model = ?
@@ -246,7 +268,7 @@ func (r *SupportContentChunkRepository) vectorSearch(ctx context.Context, worksp
 		  AND c.embedding_dimensions = ?
 		ORDER BY c.embedding <=> CAST(? AS vector) ASC
 		LIMIT ?
-	`, agentJoin, sourcePredicate, agentPredicate)
+	`, agentJoin, agentPredicate)
 	var results []SupportContentChunkSearchResult
 	args := []any{queryEmbedding, workspaceID, sourceIDs}
 	if agentID != "" {

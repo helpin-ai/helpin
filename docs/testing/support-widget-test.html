@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Helpin Support Agent Test</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #18241e;
+        --muted: #617067;
+        --paper: #f3f0e8;
+        --surface: #fbfaf6;
+        --line: #cbd1c9;
+        --accent: #e65f2b;
+        --accent-strong: #b83d14;
+        --green: #275d45;
+        --green-soft: #dce9df;
+        --shadow: 0 24px 60px rgba(39, 57, 47, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: var(--ink);
+        background:
+          linear-gradient(rgba(24, 36, 30, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(24, 36, 30, 0.045) 1px, transparent 1px),
+          var(--paper);
+        background-size: 32px 32px;
+        font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button:focus-visible,
+      input:focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--accent) 38%, transparent);
+        outline-offset: 2px;
+      }
+
+      .shell {
+        width: min(1180px, calc(100% - 36px));
+        margin: 0 auto;
+        padding: clamp(32px, 6vw, 76px) 0 56px;
+      }
+
+      .masthead {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr);
+        gap: clamp(36px, 7vw, 96px);
+        align-items: end;
+        padding-bottom: 30px;
+        border-bottom: 1px solid var(--ink);
+      }
+
+      .eyebrow {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin: 0 0 16px;
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+      }
+
+      .eyebrow::before {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--accent);
+        content: "";
+        box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent);
+      }
+
+      h1 {
+        max-width: 760px;
+        margin: 0;
+        font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+        font-size: clamp(48px, 7vw, 92px);
+        font-weight: 500;
+        letter-spacing: -0.055em;
+        line-height: 0.92;
+      }
+
+      .intro {
+        max-width: 390px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.65;
+      }
+
+      .workspace-tag {
+        color: var(--ink);
+        font-weight: 700;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 0.8fr) minmax(360px, 1.2fr);
+        gap: clamp(24px, 4vw, 56px);
+        padding-top: 38px;
+      }
+
+      .panel {
+        min-width: 0;
+      }
+
+      .section-label {
+        margin: 0 0 15px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .connection {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .connection-row {
+        display: grid;
+        grid-template-columns: 112px minmax(0, 1fr);
+        gap: 20px;
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .connection-row:last-child {
+        border-bottom: 0;
+      }
+
+      .connection-row dt,
+      .connection-row dd {
+        margin: 0;
+      }
+
+      .connection-row dt {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .connection-row dd {
+        overflow: hidden;
+        font-size: 13px;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .status {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #a36c20;
+      }
+
+      .status[data-state="ready"] .status-dot {
+        background: #31835a;
+      }
+
+      .status[data-state="error"] .status-dot {
+        background: #ba2e24;
+      }
+
+      .diagnostic-warning {
+        color: #9a3f1d;
+        font-weight: 750;
+      }
+
+      .checklist {
+        display: grid;
+        gap: 0;
+        margin: 28px 0 0;
+        padding: 0;
+        list-style: none;
+        border-top: 1px solid var(--line);
+      }
+
+      .checklist li {
+        display: grid;
+        grid-template-columns: 32px 1fr;
+        gap: 12px;
+        padding: 15px 0;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .step {
+        color: var(--accent-strong);
+        font-family: Iowan Old Style, Baskerville, serif;
+        font-size: 18px;
+        font-style: italic;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .button {
+        min-height: 42px;
+        padding: 10px 15px;
+        border: 1px solid var(--ink);
+        border-radius: 0;
+        color: var(--ink);
+        background: transparent;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 750;
+        transition: transform 140ms ease, background-color 140ms ease, color 140ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-2px);
+        color: var(--surface);
+        background: var(--ink);
+      }
+
+      .button-primary {
+        border-color: var(--accent);
+        color: var(--surface);
+        background: var(--accent);
+      }
+
+      .button-primary:hover {
+        border-color: var(--accent-strong);
+        background: var(--accent-strong);
+      }
+
+      .prompt-box {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        margin-top: 14px;
+      }
+
+      .prompt-box input {
+        min-width: 0;
+        min-height: 46px;
+        padding: 10px 14px;
+        border: 1px solid var(--ink);
+        border-right: 0;
+        border-radius: 0;
+        color: var(--ink);
+        background: var(--surface);
+      }
+
+      .prompt-box .button {
+        min-height: 46px;
+      }
+
+      .console {
+        min-height: 280px;
+        max-height: 390px;
+        margin-top: 26px;
+        overflow: auto;
+        border: 1px solid #263b31;
+        color: #dce9df;
+        background: #17261f;
+      }
+
+      .console-header {
+        position: sticky;
+        top: 0;
+        display: flex;
+        justify-content: space-between;
+        padding: 11px 14px;
+        border-bottom: 1px solid #385347;
+        color: #9eb3a8;
+        background: #17261f;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .console button {
+        padding: 0;
+        border: 0;
+        color: inherit;
+        background: transparent;
+        cursor: pointer;
+        font: inherit;
+        letter-spacing: inherit;
+        text-transform: inherit;
+      }
+
+      #event-log {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 14px;
+        list-style: none;
+        font: 12px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+
+      .log-entry {
+        overflow-wrap: anywhere;
+      }
+
+      .log-time {
+        margin-right: 9px;
+        color: #78a389;
+      }
+
+      .log-error {
+        color: #ffac96;
+      }
+
+      .footer-note {
+        margin: 18px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      @media (max-width: 780px) {
+        .masthead,
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .masthead {
+          align-items: start;
+        }
+
+        .connection-row {
+          grid-template-columns: 96px minmax(0, 1fr);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">Agent-runtime integration lab</p>
+          <h1>Support, under observation.</h1>
+        </div>
+        <p class="intro">
+          An isolated customer surface for exercising the Helpin widget against the
+          <span class="workspace-tag">Usermaven</span> test workspace. Messages sent here should
+          enter the migrated support-agent runtime.
+        </p>
+      </header>
+
+      <div class="layout">
+        <section class="panel" aria-labelledby="connection-heading">
+          <p class="section-label" id="connection-heading">Connection</p>
+          <dl class="connection">
+            <div class="connection-row">
+              <dt>Widget key</dt>
+              <dd title="c397f7127cc41494d46d57875095d059">c397f7127cc41494d46d57875095d059</dd>
+            </div>
+            <div class="connection-row">
+              <dt>API host</dt>
+              <dd>https://helpin-dev.tryunhide.com</dd>
+            </div>
+            <div class="connection-row">
+              <dt>Runtime</dt>
+              <dd>https://cdn.helpin.ai/lib.js</dd>
+            </div>
+            <div class="connection-row">
+              <dt>AI routing</dt>
+              <dd id="ai-routing-status">Checking workspace configuration</dd>
+            </div>
+            <div class="connection-row">
+              <dt>State</dt>
+              <dd>
+                <span class="status" id="runtime-status" data-state="loading">
+                  <span class="status-dot" aria-hidden="true"></span>
+                  <span id="runtime-status-copy">Loading widget runtime</span>
+                </span>
+              </dd>
+            </div>
+          </dl>
+
+          <ol class="checklist">
+            <li><span class="step">01</span><span>Open the messenger and begin a new conversation.</span></li>
+            <li><span class="step">02</span><span>Ask a question covered by the Usermaven support knowledge base.</span></li>
+            <li><span class="step">03</span><span>Confirm the AI response arrives and the run is visible in Helpin.</span></li>
+            <li><span class="step">04</span><span>Try an unsupported request and verify the escalation behavior.</span></li>
+          </ol>
+
+          <p class="footer-note">
+            “Fresh visitor” revokes this browser’s widget session and rotates its anonymous identity.
+            Use it between scenarios that must start without conversation history.
+          </p>
+        </section>
+
+        <section class="panel" aria-labelledby="controls-heading">
+          <p class="section-label" id="controls-heading">Widget controls</p>
+          <div class="actions">
+            <button class="button button-primary" type="button" data-command="open">Open messenger</button>
+            <button class="button" type="button" data-command="openMessages">Messages</button>
+            <button class="button" type="button" data-command="close">Close</button>
+            <button class="button" type="button" id="fresh-visitor">Fresh visitor</button>
+          </div>
+
+          <form class="prompt-box" id="prompt-form">
+            <label for="prompt" class="section-label" style="position: absolute; clip: rect(0 0 0 0)">Test prompt</label>
+            <input
+              id="prompt"
+              name="prompt"
+              value="How do I install Usermaven on my website?"
+              autocomplete="off"
+              aria-label="Test prompt"
+            />
+            <button class="button button-primary" type="submit">Start with prompt</button>
+          </form>
+
+          <div class="console" aria-live="polite">
+            <div class="console-header">
+              <span>Widget event log</span>
+              <button type="button" id="clear-log">Clear</button>
+            </div>
+            <ol id="event-log"></ol>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script type="text/javascript">
+      (function () {
+        window.helpin = window.helpin || function () {
+          (window.helpinQ = window.helpinQ || []).push(arguments);
+        };
+
+        var runtime = document.createElement("script");
+        var firstScript = document.getElementsByTagName("script")[0];
+        runtime.defer = true;
+        runtime.id = "helpin-widget";
+        runtime.setAttribute("data-widget-key", "c397f7127cc41494d46d57875095d059");
+        runtime.setAttribute("data-host", "https://helpin-dev.tryunhide.com");
+        runtime.src = "https://cdn.helpin.ai/lib.js";
+        runtime.addEventListener("load", function () {
+          window.dispatchEvent(new CustomEvent("helpin-test:runtime-loaded"));
+        });
+        runtime.addEventListener("error", function () {
+          window.dispatchEvent(new CustomEvent("helpin-test:runtime-error"));
+        });
+        firstScript.parentNode.insertBefore(runtime, firstScript);
+      })();
+    </script>
+
+    <script type="text/javascript">
+      (function () {
+        var logElement = document.getElementById("event-log");
+        var statusElement = document.getElementById("runtime-status");
+        var statusCopy = document.getElementById("runtime-status-copy");
+        var aiRoutingStatus = document.getElementById("ai-routing-status");
+
+        function log(message, level) {
+          var entry = document.createElement("li");
+          var timestamp = document.createElement("span");
+          var copy = document.createElement("span");
+          timestamp.className = "log-time";
+          timestamp.textContent = new Date().toLocaleTimeString();
+          copy.textContent = message;
+          entry.className = "log-entry" + (level === "error" ? " log-error" : "");
+          entry.append(timestamp, copy);
+          logElement.appendChild(entry);
+          entry.scrollIntoView({ block: "nearest" });
+        }
+
+        function setStatus(state, copy) {
+          statusElement.dataset.state = state;
+          statusCopy.textContent = copy;
+        }
+
+        window.addEventListener("helpin-test:runtime-loaded", function () {
+          setStatus("ready", "Runtime loaded");
+          log("Runtime loaded; auto-boot requested");
+        });
+
+        window.addEventListener("helpin-test:runtime-error", function () {
+          setStatus("error", "Runtime failed to load");
+          log("Could not load https://cdn.helpin.ai/lib.js", "error");
+        });
+
+        window.helpin("onOpen", function () {
+          log("Messenger opened");
+        });
+        window.helpin("onClose", function () {
+          log("Messenger closed");
+        });
+        window.helpin("onUnreadCountChange", function (count) {
+          log("Unread count changed to " + count);
+        });
+        window.helpin("onConversationStarted", function () {
+          log("Conversation started");
+        });
+        window.helpin("onMessageReceived", function () {
+          log("Message received");
+        });
+
+        document.querySelectorAll("[data-command]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            var command = button.getAttribute("data-command");
+            window.helpin(command);
+            log("Command: " + command);
+          });
+        });
+
+        document.getElementById("prompt-form").addEventListener("submit", function (event) {
+          event.preventDefault();
+          var prompt = document.getElementById("prompt").value.trim();
+          window.helpin("openNewMessage", prompt);
+          log("Opened a new message" + (prompt ? " with a test prompt" : ""));
+        });
+
+        document.getElementById("fresh-visitor").addEventListener("click", function () {
+          log("Shutting down the current visitor session");
+          window.helpin("shutdown");
+          window.setTimeout(function () {
+            window.location.reload();
+          }, 500);
+        });
+
+        document.getElementById("clear-log").addEventListener("click", function () {
+          logElement.replaceChildren();
+          log("Log cleared");
+        });
+
+        log("Embed snippet installed for the Usermaven workspace");
+
+        window.fetch(
+          "https://helpin-dev.tryunhide.com/widget/config?widget_key=c397f7127cc41494d46d57875095d059"
+        ).then(function (response) {
+          if (!response.ok) {
+            throw new Error("Widget config returned HTTP " + response.status);
+          }
+          return response.json();
+        }).then(function (config) {
+          var features = config.features || {};
+          if (features.aiEnabled) {
+            aiRoutingStatus.textContent = features.aiFirst ? "Enabled · AI first" : "Enabled";
+            log("AI routing is enabled for workspace " + config.workspaceId);
+            return;
+          }
+
+          aiRoutingStatus.textContent = "Disabled · enable before testing the agent";
+          aiRoutingStatus.className = "diagnostic-warning";
+          log("AI routing is disabled; widget messages will not invoke the support agent", "error");
+        }).catch(function (error) {
+          aiRoutingStatus.textContent = "Could not read widget configuration";
+          aiRoutingStatus.className = "diagnostic-warning";
+          log(error.message || "Could not read widget configuration", "error");
+        });
+      })();
+    </script>
+  </body>
+</html>

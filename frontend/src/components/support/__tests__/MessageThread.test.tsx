@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -11,6 +12,10 @@ const supportHooks = vi.hoisted(() => ({
   useConversationMessages: vi.fn(),
   markConversationRead: vi.fn(),
 }))
+
+function createTestQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } })
+}
 
 vi.mock('@tanstack/react-router', () => ({
   useLocation: () => ({ pathname: '/w/acme/support/conv-1' }),
@@ -88,9 +93,14 @@ describe('MessageThread', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
+    const queryClient = createTestQueryClient()
 
     act(() => {
-      root.render(<MessageThread workspaceId="ws-1" conversationId="conv-1" />)
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MessageThread workspaceId="ws-1" conversationId="conv-1" />
+        </QueryClientProvider>,
+      )
     })
     act(() => {
       vi.runAllTimers()
@@ -123,16 +133,25 @@ describe('MessageThread', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
+    const queryClient = createTestQueryClient()
 
     act(() => {
-      root.render(<MessageThread workspaceId="ws-1" conversationId="conv-1" />)
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MessageThread workspaceId="ws-1" conversationId="conv-1" />
+        </QueryClientProvider>,
+      )
     })
     act(() => {
       vi.runAllTimers()
     })
 
     act(() => {
-      root.render(<MessageThread workspaceId="ws-1" conversationId="conv-2" />)
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MessageThread workspaceId="ws-1" conversationId="conv-2" />
+        </QueryClientProvider>,
+      )
     })
 
     expect(container.querySelector('[data-support-message-thread]')?.getAttribute('data-transitioning')).toBe('true')
@@ -182,9 +201,14 @@ describe('MessageThread', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
+    const queryClient = createTestQueryClient()
 
     act(() => {
-      root.render(<MessageThread workspaceId="ws-1" conversationId="conv-1" />)
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MessageThread workspaceId="ws-1" conversationId="conv-1" />
+        </QueryClientProvider>,
+      )
     })
     act(() => {
       vi.runAllTimers()

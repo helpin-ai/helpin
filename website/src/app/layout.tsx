@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
 import { Plus_Jakarta_Sans, Instrument_Serif } from 'next/font/google';
 import { Navbar } from '@/components/Navbar';
@@ -44,13 +44,18 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: 'any' },
-      { url: '/favicon.svg', type: 'image/svg+xml' },
-      { url: '/favicon-96x96.png', type: 'image/png', sizes: '96x96' },
+      { url: '/favicon.ico?v=20260803-3', sizes: 'any' },
+      { url: '/favicon.svg?v=20260803-3', type: 'image/svg+xml' },
+      { url: '/favicon-32x32.png?v=20260803-3', type: 'image/png', sizes: '32x32' },
+      { url: '/favicon-16x16.png?v=20260803-3', type: 'image/png', sizes: '16x16' },
     ],
-    apple: '/apple-touch-icon.png',
+    apple: '/apple-touch-icon.png?v=20260803',
   },
-  manifest: '/site.webmanifest',
+  manifest: '/site.webmanifest?v=20260803',
+};
+
+export const viewport: Viewport = {
+  themeColor: '#E8613A',
 };
 
 export default function RootLayout({

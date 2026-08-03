@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
@@ -90,6 +91,65 @@ func TestAgentRuntimeHostExecuteCommandRejectsWrongApp(t *testing.T) {
 	}
 	if !errors.Is(err, ErrAgentRuntimeHostForbidden) {
 		t.Fatalf("expected forbidden error, got %v", err)
+	}
+}
+
+func TestAgentRuntimeHostResolveSupportConversationBypassesMailboxMembership(t *testing.T) {
+	db := newTestDB(t)
+	mustExec(t, db, `INSERT INTO workspaces (
+		id, name, slug, owner_id, description, website_url, timezone, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"ws-1", "Usermaven", "usermaven", "user-1", "Product and website analytics for SaaS teams.", "https://usermaven.com", "UTC")
+	mustExec(t, db, `INSERT INTO support_mailboxes (
+		id, workspace_id, name, handle, visibility_mode, created_by_id, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"mailbox-1", "ws-1", "Support", "support", "members_only", "user-1")
+	mustExec(t, db, `INSERT INTO support_conversations (
+		id, workspace_id, mailbox_id, display_id, subject, status, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"conversation-1", "ws-1", "mailbox-1", 1, "Widget installation help", "open")
+
+	host := NewAgentRuntimeHostService(
+		"helpin",
+		nil, repository.NewWorkspaceRepository(db), nil, nil,
+		repository.NewSupportConversationRepository(db),
+		nil, nil, nil, nil, nil, nil,
+	)
+
+	resolved, err := host.ResolveTargetContext(context.Background(), agentruntime.TargetContextRequest{
+		AppID: "helpin",
+		Target: agentruntime.TargetRef{
+			Type: "support_conversation",
+			ID:   "conversation-1",
+		},
+		Metadata: map[string]interface{}{"workspace_id": "ws-1"},
+	})
+	if err != nil {
+		t.Fatalf("ResolveTargetContext returned error: %v", err)
+	}
+	if resolved == nil || resolved.Target.Type != "support_conversation" || resolved.Target.ID != "conversation-1" {
+		t.Fatalf("unexpected support target context: %#v", resolved)
+	}
+	for _, expected := range []string{
+		"Support conversation: Widget installation help for Usermaven",
+		"'your plans' to Usermaven",
+		"Product website: https://usermaven.com",
+		"Workspace summary: Product and website analytics for SaaS teams.",
+	} {
+		if !strings.Contains(resolved.Summary, expected) {
+			t.Fatalf("support target summary does not contain %q: %q", expected, resolved.Summary)
+		}
+	}
+	workspace, ok := resolved.Data["workspace"].(map[string]interface{})
+	if !ok || workspace["name"] != "Usermaven" || workspace["description"] != "Product and website analytics for SaaS teams." || workspace["website_url"] != "https://usermaven.com" {
+		t.Fatalf("support target lacks workspace product context: %#v", resolved.Data)
+	}
+	productContext, ok := resolved.Data["product_context"].(map[string]interface{})
+	if !ok || productContext["name"] != "Usermaven" || productContext["resolve_generic_product_references"] != true {
+		t.Fatalf("support target lacks product resolution policy: %#v", resolved.Data)
+	}
+	if resolved.Summary == "Support conversation: Widget installation help" {
+		t.Fatalf("unexpected support target summary: %q", resolved.Summary)
 	}
 }
 

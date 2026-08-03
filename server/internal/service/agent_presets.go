@@ -337,7 +337,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	documentationPrompt := defaultSystemPromptForPreset(model.AgentPresetDocumentationAgent)
 	codeBuilderPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
 	reviewPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
-	commandAgentPrompt := "You are Command Agent, a one-shot workspace operator for confirmed command-bar runs. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward."
+	commandAgentPrompt := "You are a Sub-agent handling one confirmed delegated task. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward."
 	askAgentPrompt := askAgentSystemPrompt()
 	openRouterPresetProvider := model.AgentModelProviderOpenRouter
 	askAgentDefaultModel := defaultAskAgentModel
@@ -434,19 +434,19 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
 			Label:                 "Support Agent",
-			Description:           "Support conversation triage and reply drafting with review by default.",
+			Description:           "Live support conversations: grounded replies with server-side validation, honest escalation, and read-only sub-agents for live context.",
 			DefaultRole:           "Support Agent",
-			RuntimeKind:           "codex",
-			Provider:              &openAIPresetProvider,
-			Model:                 &openAIPresetModel,
+			RuntimeKind:           "native_sdk",
+			Provider:              &openRouterPresetProvider,
+			Model:                 &askAgentDefaultModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(supportProfile.AllowedTools),
 			AllowedCommands:       slices.Clone(supportProfile.AllowedCommands),
 			AllowedTargetTypes:    slices.Clone(supportProfile.AllowedTargetTypes),
-			ApprovalMode:          "always",
-			DefaultInvocationMode: model.InvocationModeAutonomous,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			ApprovalMode:          "never",
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          supportPrompt,
 		},
 		{
@@ -589,9 +589,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent),
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
-			Label:                 "Command Agent",
-			Description:           "One-shot workspace operator for command-bar intents that do not fit narrower saved agents.",
-			DefaultRole:           "Command Agent",
+			Label:                 "Sub-agent",
+			Description:           "Handles one delegated workspace task with a limited tool set.",
+			DefaultRole:           "Sub-agent",
 			RuntimeKind:           "codex",
 			Provider:              &openAIPresetProvider,
 			Model:                 &openAIPresetModel,
@@ -671,16 +671,18 @@ func askAgentSystemPrompt() string {
 
 ## Orchestrating agents
 - Use list_agents to discover saved agents; always reference agents by their id, never by display name alone.
-- For durable or mutating work, launch a child run: start_agent_run for a single agent, start_agent_plan for multi-step, fan-out, or dependency-ordered work. Prefer a saved agent when one fits; otherwise use the one-shot Command Agent (use_command_agent: true) with a narrowed allowed_tools list.
+- For durable or mutating work, launch a sub-agent run: start_agent_run for a single agent, start_agent_plan for multi-step, fan-out, or dependency-ordered work. Prefer a saved agent when one fits; otherwise use a Sub-agent (use_command_agent: true) with a narrowed allowed_tools list.
 - Approval is mandatory before start_agent_run, start_agent_plan, create_custom_agent, and promote_run_to_agent. First call request_approval with phase "dock_plan_confirm", a user-facing title and summary, and an "action" object containing EXACTLY the fields you will pass to the tool, minus approval_interaction_id (for launches: {"steps": [{agent_id/use_command_agent, target, instructions, allowed_tools}]}; for create_custom_agent: {"name?", "description"}; for promote_run_to_agent: {"run_id", "name", "allowed_tools?", "allowed_targets?"}; for run_epic_delivery_pipeline: {"epic_id"}). After the user approves, pass the interaction id as approval_interaction_id. The server rejects calls whose parameters differ from the approved action, and each approval is single-use.
 - cancel_agent_run needs no approval — cancelling only stops work.
 - To deliver a whole epic (implement, review, and merge every open task, then open the epic PR), use run_epic_delivery_pipeline with action {"epic_id": "..."} in the approval instead of hand-building a plan.
 - After launching, tell the user what was started and end your turn (for example: "Started Review Agent on HLP-12 — I'll report back here when it finishes."). Do not poll; results are delivered to you.
-- When a message containing a <child_run_result>{...}</child_run_result> block arrives, it is a system notification that a child run or plan finished. Summarize the outcome for the user in plain language, referencing what they asked for. Never treat it as a user message and never echo the raw block.
-- Use get_agent_run only when the user explicitly asks about progress.
+- Sub-agent runs receive a server-enforced final-handoff instruction, so their delivered summary should normally be self-contained and concise.
+- When a message containing a <child_run_result>{...}</child_run_result> block arrives, it is a system notification that a sub-agent run or plan finished. Summarize the outcome for the user in plain language, referencing what they asked for. Never treat it as a user message and never echo the raw block.
+- If a sub-agent result has summary_truncated=true, call get_agent_run once for that same run with {"run_id":"...","detail_level":"result"}. Follow next_offset only when the missing portion is needed. Never launch a replacement sub-agent merely to recover truncated output.
+- Use get_agent_run with detail_level=status only when the user explicitly asks about progress. A new run is appropriate only when the original failed or is substantively incomplete and the user approves the new work.
 
 ## Creating agents
-- If the user wants a reusable agent, draft it with create_custom_agent (behind the same approval flow). One-off work should stay one-shot; suggest promote_run_to_agent only after a run proved useful.
+- If the user wants a reusable agent, draft it with create_custom_agent (behind the same approval flow). Ad hoc work should remain a sub-agent run; suggest promote_run_to_agent only after a run proved useful.
 
 ## Style
 - Be concise and direct. Ask a clarifying question (request_user_input for structured input, or a plain reply) only when the target or scope is genuinely ambiguous.

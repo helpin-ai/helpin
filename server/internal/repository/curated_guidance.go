@@ -29,6 +29,32 @@ type CuratedGuidanceRepository struct {
 	db *gorm.DB
 }
 
+func curatedGuidancePostgresSearchSQL(vectorSelect, languageSQL, matchSQL, vectorOrder string) string {
+	return fmt.Sprintf(`
+		WITH ranked AS (
+			SELECT id, workspace_id, agent_id, title, answer, intent, language, updated_at,
+			       ts_rank(
+			         setweight(to_tsvector('english', COALESCE(title, '')), 'A') ||
+			         setweight(to_tsvector('english', COALESCE(array_to_string(question_patterns, ' '), '')), 'A') ||
+			         setweight(to_tsvector('english', COALESCE(answer, '')), 'B'),
+			         to_tsquery('english', ?)
+			       ) AS lexical_score,
+			       %s
+			FROM curated_guidance
+			WHERE workspace_id = ? AND agent_id = ? AND status = ?
+			  AND audience_policy_id IS NULL AND brand_id IS NULL
+			  AND (valid_from IS NULL OR valid_from <= ?)
+			  AND (valid_until IS NULL OR valid_until > ?)
+			  %s
+			  %s
+		)
+		SELECT id, workspace_id, agent_id, title, answer, intent, language,
+		       lexical_score, vector_score
+		FROM ranked
+		ORDER BY %s, updated_at DESC
+		LIMIT ?`, vectorSelect, languageSQL, matchSQL, vectorOrder)
+}
+
 func NewCuratedGuidanceRepository(db *gorm.DB) *CuratedGuidanceRepository {
 	return &CuratedGuidanceRepository{db: db}
 }
@@ -171,24 +197,7 @@ func (r *CuratedGuidanceRepository) Search(
 		params = append(params, tsQuery)
 	}
 	params = append(params, limit)
-	sql := fmt.Sprintf(`
-		SELECT id, workspace_id, agent_id, title, answer, intent, language,
-		       ts_rank(
-		         setweight(to_tsvector('english', COALESCE(title, '')), 'A') ||
-		         setweight(to_tsvector('english', COALESCE(array_to_string(question_patterns, ' '), '')), 'A') ||
-		         setweight(to_tsvector('english', COALESCE(answer, '')), 'B'),
-		         to_tsquery('english', ?)
-		       ) AS lexical_score,
-		       %s
-		FROM curated_guidance
-		WHERE workspace_id = ? AND agent_id = ? AND status = ?
-		  AND audience_policy_id IS NULL AND brand_id IS NULL
-		  AND (valid_from IS NULL OR valid_from <= ?)
-		  AND (valid_until IS NULL OR valid_until > ?)
-		  %s
-		  %s
-		ORDER BY %s, updated_at DESC
-		LIMIT ?`, vectorSelect, languageSQL, matchSQL, vectorOrder)
+	sql := curatedGuidancePostgresSearchSQL(vectorSelect, languageSQL, matchSQL, vectorOrder)
 	var results []CuratedGuidanceSearchResult
 	if err := r.db.WithContext(ctx).Raw(sql, params...).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("search curated guidance: %w", err)

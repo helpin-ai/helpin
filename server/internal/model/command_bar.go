@@ -105,9 +105,12 @@ type CommandBarPlanRecord struct {
 	// ParentChatRunID links a plan launched from a dock chat back to the
 	// chat's backing run; when the plan settles, its result is delivered
 	// into that chat (ParentNotifiedAt records delivery).
-	ParentChatRunID  *string         `json:"parent_chat_run_id,omitempty" gorm:"type:uuid;index"`
-	DockChatID       *string         `json:"dock_chat_id,omitempty" gorm:"type:uuid;index"`
-	ParentNotifiedAt *time.Time      `json:"parent_notified_at,omitempty"`
+	ParentChatRunID *string `json:"parent_chat_run_id,omitempty" gorm:"type:uuid;index"`
+	DockChatID      *string `json:"dock_chat_id,omitempty" gorm:"type:uuid;index"`
+	// SupportConversationID links a plan launched from a support chat run to
+	// its conversation (mutually exclusive with DockChatID).
+	SupportConversationID *string    `json:"support_conversation_id,omitempty" gorm:"type:uuid;index"`
+	ParentNotifiedAt      *time.Time `json:"parent_notified_at,omitempty"`
 	Status           string          `json:"status" gorm:"not null;default:'running';index"`
 	Prompt           string          `json:"prompt" gorm:"not null"`
 	PageContext      json.RawMessage `json:"page_context" gorm:"type:jsonb;not null;default:'{}'"`

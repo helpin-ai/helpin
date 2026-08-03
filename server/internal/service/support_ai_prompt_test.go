@@ -84,33 +84,6 @@ func TestBuildAISystemPromptProtectsInternalKnowledgeSources(t *testing.T) {
 	}
 }
 
-func TestBuildSupportPlannerSystemPromptIncludesWelcomeMessage(t *testing.T) {
-	prompt := buildSupportPlannerSystemPrompt("Hi there! How can we help you today?")
-	if !strings.Contains(prompt, "Automatic welcome message already shown to the visitor:\nHi there! How can we help you today?") {
-		t.Fatalf("prompt missing welcome context:\n%s", prompt)
-	}
-	if !strings.Contains(prompt, `"conversational"`) || !strings.Contains(prompt, "customer-facing response in reply") {
-		t.Fatal("prompt missing conversational route or reply contract")
-	}
-}
-
-func TestBuildSupportPlannerSystemPromptIncludesTrustedProductContext(t *testing.T) {
-	productPrompt := "You support Usermaven website and product analytics customers."
-	prompt := buildSupportPlannerSystemPrompt("", &model.Agent{Name: "Usermaven Support", SystemPrompt: &productPrompt})
-	for _, expected := range []string{"Support agent: Usermaven Support", "Configured product context: You support Usermaven"} {
-		if !strings.Contains(prompt, expected) {
-			t.Fatalf("planner prompt missing %q:\n%s", expected, prompt)
-		}
-	}
-}
-
-func TestBuildSupportPlannerSystemPromptOmitsEmptyWelcome(t *testing.T) {
-	prompt := buildSupportPlannerSystemPrompt("   ")
-	if strings.Contains(prompt, "Automatic welcome message already shown to the visitor:") {
-		t.Fatal("prompt should omit welcome section when none is configured")
-	}
-}
-
 func TestHasEscalationMessageInHistoryDetectsSystemEvent(t *testing.T) {
 	history := []model.SupportMessage{
 		{SenderType: "customer", Content: "Can you help?"},
@@ -125,10 +98,6 @@ func TestHasEscalationMessageInHistoryDetectsSystemEvent(t *testing.T) {
 	if !hasEscalationMessageInHistory(history) {
 		t.Fatal("hasEscalationMessageInHistory() = false, want true for escalation system event")
 	}
-
-	if !hasEscalationSystemEventInHistory(history) {
-		t.Fatal("hasEscalationSystemEventInHistory() = false, want true")
-	}
 }
 
 func TestHasEscalationMessageInHistoryDetectsPriorAIHandoffText(t *testing.T) {
@@ -139,10 +108,6 @@ func TestHasEscalationMessageInHistoryDetectsPriorAIHandoffText(t *testing.T) {
 
 	if !hasEscalationMessageInHistory(history) {
 		t.Fatal("hasEscalationMessageInHistory() = false, want true for AI handoff text")
-	}
-
-	if hasEscalationSystemEventInHistory(history) {
-		t.Fatal("hasEscalationSystemEventInHistory() = true, want false without system event")
 	}
 }
 

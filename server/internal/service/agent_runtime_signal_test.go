@@ -618,6 +618,7 @@ func setupAgentRuntimeSupportRunTestDB(t *testing.T) *gorm.DB {
 			ai_resolution_type text,
 			ai_turn_count integer NOT NULL DEFAULT 0,
 			customer_requested_human_at datetime,
+			ai_active_run_id TEXT,
 			human_takeover boolean DEFAULT false,
 			created_at datetime,
 			updated_at datetime

@@ -77,7 +77,7 @@ func (s *CommandBarService) BuildEpicDeliveryPipeline(ctx context.Context, works
 	}
 	commandAgent, err := s.agentService.ensureBuiltInAgent(ctx, workspaceID, "", model.AgentPresetCommandAgent)
 	if err != nil {
-		return nil, fmt.Errorf("resolve command agent: %w", err)
+		return nil, fmt.Errorf("resolve sub-agent: %w", err)
 	}
 
 	tasks, err := s.agentService.taskRepo.ListByEpicID(ctx, workspaceID, epicID)

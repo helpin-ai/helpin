@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -42,6 +43,93 @@ func (r *CommandBarPlanRepository) GetByID(ctx context.Context, workspaceID, id 
 		return nil, fmt.Errorf("get command bar plan: %w", err)
 	}
 	return &plan, nil
+}
+
+// FindByDockChatAndRunID returns the plan in one dock chat that owns runID.
+// Run IDs are persisted inside run_ids_by_step, so this deliberately decodes
+// the chat's plans instead of relying on database-specific JSON operators.
+func (r *CommandBarPlanRepository) FindByDockChatAndRunID(ctx context.Context, workspaceID, dockChatID, runID string) (*model.CommandBarPlanRecord, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("command bar plan repository is not configured")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	dockChatID = strings.TrimSpace(dockChatID)
+	runID = strings.TrimSpace(runID)
+	if workspaceID == "" || dockChatID == "" || runID == "" {
+		return nil, nil
+	}
+	var plans []model.CommandBarPlanRecord
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND dock_chat_id = ?", workspaceID, dockChatID).
+		Order("created_at DESC").
+		Find(&plans).Error; err != nil {
+		return nil, fmt.Errorf("find dock plan for run: %w", err)
+	}
+	for index := range plans {
+		var runIDs map[string]string
+		if err := json.Unmarshal(plans[index].RunIDsByStep, &runIDs); err != nil {
+			continue
+		}
+		for _, candidate := range runIDs {
+			if strings.TrimSpace(candidate) == runID {
+				return &plans[index], nil
+			}
+		}
+	}
+	return nil, nil
+}
+
+// FindBySupportConversationAndRunID returns the plan launched from one support
+// conversation's chat run that owns runID (same decode strategy as
+// FindByDockChatAndRunID).
+func (r *CommandBarPlanRepository) FindBySupportConversationAndRunID(ctx context.Context, workspaceID, conversationID, runID string) (*model.CommandBarPlanRecord, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("command bar plan repository is not configured")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	conversationID = strings.TrimSpace(conversationID)
+	runID = strings.TrimSpace(runID)
+	if workspaceID == "" || conversationID == "" || runID == "" {
+		return nil, nil
+	}
+	var plans []model.CommandBarPlanRecord
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND support_conversation_id = ?", workspaceID, conversationID).
+		Order("created_at DESC").
+		Find(&plans).Error; err != nil {
+		return nil, fmt.Errorf("find support plan for run: %w", err)
+	}
+	for index := range plans {
+		var runIDs map[string]string
+		if err := json.Unmarshal(plans[index].RunIDsByStep, &runIDs); err != nil {
+			continue
+		}
+		for _, candidate := range runIDs {
+			if strings.TrimSpace(candidate) == runID {
+				return &plans[index], nil
+			}
+		}
+	}
+	return nil, nil
+}
+
+// CountPlansForSupportConversation returns how many child plans a support
+// conversation has launched; activeOnly restricts to still-running plans.
+func (r *CommandBarPlanRepository) CountPlansForSupportConversation(ctx context.Context, workspaceID, conversationID string, activeOnly bool) (int64, error) {
+	if r == nil || r.db == nil {
+		return 0, fmt.Errorf("command bar plan repository is not configured")
+	}
+	query := r.db.WithContext(ctx).
+		Model(&model.CommandBarPlanRecord{}).
+		Where("workspace_id = ? AND support_conversation_id = ?", workspaceID, conversationID)
+	if activeOnly {
+		query = query.Where("status = ?", model.CommandBarPlanStatusRunning)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count support conversation plans: %w", err)
+	}
+	return count, nil
 }
 
 func (r *CommandBarPlanRepository) ListRecent(ctx context.Context, workspaceID, actorID string, limit int) ([]model.CommandBarPlanRecord, error) {

@@ -99,7 +99,7 @@ export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCard
 }
 
 function DockPlanConfirmStepRow({ step, index }: { step: DockPlanConfirmStep; index: number }) {
-  const agentLabel = step.use_command_agent ? 'Command Agent (one-shot)' : step.agent_id || 'agent';
+  const agentLabel = step.use_command_agent ? 'Sub-agent' : step.agent_id || 'agent';
   const targetLabel =
     step.target?.type && step.target.type !== 'workspace'
       ? `${step.target.type}${step.target.id ? ` ${step.target.id.slice(0, 8)}` : ''}`

@@ -740,12 +740,11 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
               transformOrigin: 'center',
               animation: aliveT >= 1 ? 'orbital-center-breathe 4s ease-in-out infinite' : 'none',
             }}>
-              <span style={{
-                fontSize: 14, fontWeight: 700, letterSpacing: '0.08em',
-                textTransform: 'uppercase', color: 'oklch(0.98 0.003 75)',
-              }}>
-                Helpin
-              </span>
+              <img
+                src="/brand/helpin-icon-white.svg"
+                alt="Helpin"
+                style={{ width: 38, height: 38 }}
+              />
             </div>
           </div>
 
@@ -918,7 +917,7 @@ export default function HomePage() {
             {/* Mobile: simplified module list */}
             <div className="md:hidden flex flex-col items-center gap-3 py-8">
               <div className="w-14 h-14 rounded-full bg-foreground flex items-center justify-center mb-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-background">Helpin</span>
+                <img src="/brand/helpin-icon-white.svg" alt="Helpin" className="h-8 w-8" />
               </div>
               <div className="flex flex-wrap justify-center gap-2">
                 {['Support', 'PM', 'Docs', 'Knowledge', 'CRM', 'Customer'].map((m) => (
@@ -1046,7 +1045,7 @@ export default function HomePage() {
               <div className="flex flex-col items-center md:items-center md:mr-auto md:ml-16">
                 <div className="w-[100px] h-[100px] rounded-3xl bg-foreground flex items-center justify-center mb-5"
                   style={{ boxShadow: '0 12px 40px oklch(0.12 0.02 55 / 0.25), 0 4px 12px oklch(0.12 0.02 55 / 0.1)' }}>
-                  <span className="text-[14px] font-bold uppercase tracking-wider text-background">Helpin</span>
+                  <img src="/brand/helpin-icon-white.svg" alt="Helpin" className="h-12 w-12" />
                 </div>
                 <span className="inline-block text-[12px] font-bold uppercase tracking-widest rounded-full px-5 py-2" style={{ color: 'oklch(0.45 0.15 155)', background: 'oklch(0.45 0.15 155 / 0.08)' }}>After</span>
               </div>
@@ -1666,15 +1665,16 @@ function AIWorkflowVisual() {
             strokeWidth="1" className="wf-core-breathe"
             style={{ transition: 'fill 0.3s ease, stroke 0.3s ease' }} />
 
-          {/* HELPIN AI text — hidden during processing */}
-          <text x={cx} y={cy - 6} textAnchor="middle" dominantBaseline="middle"
-            fontSize="9" fontWeight="700" letterSpacing="0.14em"
-            fill={processing ? 'transparent' : centerOn ? 'oklch(0.48 0.15 155 / 0.8)' : 'oklch(0.12 0.02 55 / 0.2)'}
-            style={{ transition: 'fill 0.3s ease', fontFamily: 'var(--font-sans)' }}>HELPIN</text>
-          <text x={cx} y={cy + 10} textAnchor="middle" dominantBaseline="middle"
-            fontSize="15" fontWeight="800" letterSpacing="0.2em"
-            fill={processing ? 'transparent' : centerOn ? 'oklch(0.48 0.15 155)' : 'oklch(0.12 0.02 55 / 0.15)'}
-            style={{ transition: 'fill 0.3s ease', fontFamily: 'var(--font-sans)' }}>AI</text>
+          {/* Helpin mark — hidden during processing */}
+          <image
+            href="/brand/helpin-icon-black.svg"
+            x={cx - 12}
+            y={cy - 12}
+            width="24"
+            height="24"
+            opacity={processing ? 0 : centerOn ? 0.82 : 0.18}
+            style={{ transition: 'opacity 0.3s ease' }}
+          />
 
           {/* Processing label */}
           <text x={cx} y={cy + 2} textAnchor="middle" dominantBaseline="middle"

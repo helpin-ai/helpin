@@ -139,6 +139,60 @@ func TestMiraBundleIncludesMarketingSkills(t *testing.T) {
 	}
 }
 
+func TestEchoSystemPromptPrefersCanonicalWebsiteSourcesOverBlogs(t *testing.T) {
+	for _, guidance := range []string{
+		"Search results include their source URL and authority when available",
+		"Prefer curated and canonical evidence over standard and secondary evidence",
+		"comparison, alternative, blog, news, announcement, campaign, or audience pages",
+	} {
+		if !strings.Contains(echoSystemPrompt, guidance) {
+			t.Fatalf("Echo prompt missing source precedence guidance %q:\n%s", guidance, echoSystemPrompt)
+		}
+	}
+}
+
+func TestEchoSystemPromptUsesCustomerSafeResearchFallback(t *testing.T) {
+	for _, guidance := range []string{
+		"never mention a knowledge base",
+		"search only the official product website",
+		"implementation-specific behavior",
+		"Call start_agent_run first",
+		"Do not send the interim reply before launching",
+		"required_confidence",
+		"best_possible_grounded_confidence",
+	} {
+		if !strings.Contains(echoSystemPrompt, guidance) {
+			t.Fatalf("Echo prompt missing fallback guidance %q:\n%s", guidance, echoSystemPrompt)
+		}
+	}
+}
+
+func TestEnsureSupportRuntimeDeliveryContractProtectsWorkspacePromptCopies(t *testing.T) {
+	staleSnapshot := "You are Echo.\n\n## Answer quality\nAnswer from evidence."
+	prompt := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, staleSnapshot)
+	for _, required := range []string{
+		staleSnapshot,
+		"Required live-support delivery contract",
+		"one successful call to send_support_reply",
+		"Plain assistant text is never delivered",
+		"status sent, escalated, or suppressed is terminal",
+		"Never mention a knowledge base",
+		"official website",
+		"implementation-specific questions",
+		"required_confidence",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("support runtime prompt missing %q:\n%s", required, prompt)
+		}
+	}
+	if duplicated := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, prompt); duplicated != prompt {
+		t.Fatal("support runtime contract should be idempotent")
+	}
+	if got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetMarketer, staleSnapshot); got != staleSnapshot {
+		t.Fatalf("non-support prompt changed: %q", got)
+	}
+}
+
 func TestDocumentationSkillsDeclareExpectedGuidance(t *testing.T) {
 	cases := map[string][]string{
 		"public_help_doc_writing": {
@@ -434,6 +488,22 @@ func TestSystemAgentPresetPreamblesUsePersonaIdentities(t *testing.T) {
 		}
 		if bundle.Preamble != want {
 			t.Fatalf("preamble for %s = %q, want %q", presetKey, bundle.Preamble, want)
+		}
+	}
+}
+
+func TestEchoPromptDefaultsGenericProductReferencesToWorkspace(t *testing.T) {
+	prompt := BuiltInPresetPrompt(model.AgentPresetSupportAgent)
+	if prompt == nil {
+		t.Fatal("expected Echo system prompt")
+	}
+	for _, expected := range []string{
+		"product whose website the visitor is currently using",
+		`"your plans" to the current workspace`,
+		"Do not ask which product they mean unless they explicitly named or compared another product.",
+	} {
+		if !strings.Contains(*prompt, expected) {
+			t.Fatalf("Echo prompt does not contain %q\n%s", expected, *prompt)
 		}
 	}
 }
