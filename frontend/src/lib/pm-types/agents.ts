@@ -267,19 +267,6 @@ export interface CommandBarAgentCandidate {
   allowed_tools: string[];
 }
 
-
-
-      plan: CommandBarPlan;
-      rationale?: string;
-      candidates?: CommandBarAgentCandidate[];
-    }
-  | {
-      status: 'no_matching_agent';
-      reason: string;
-      suggestions?: string[];
-      candidates?: CommandBarAgentCandidate[];
-    };
-
 export interface CommandBarDispatchRequest {
   text: string;
   page_context: CommandBarPageContext;

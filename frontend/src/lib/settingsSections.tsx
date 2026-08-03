@@ -14,7 +14,6 @@ import {
   File01Icon,
   RepeatIcon,
   Robot01Icon,
-  Search01Icon,
   GitBranchIcon,
   FileImportIcon,
   HelpCircleIcon,
