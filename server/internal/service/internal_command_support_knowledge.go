@@ -124,7 +124,7 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 					content = content[:supportKnowledgeContentExcerpt] + "…"
 				}
 				rows = append(rows, knowledgeRow{
-					EvidenceID:  result.ReferenceID,
+					EvidenceID:  result.ID,
 					Title:       result.Title,
 					URL:         result.URL,
 					SourceType:  result.SourceType,
@@ -161,7 +161,8 @@ func (s *InternalCommandService) persistSupportRunEvidence(ctx context.Context, 
 		rows = append(rows, model.SupportRunEvidence{
 			WorkspaceID: run.WorkspaceID,
 			RunID:       run.ID,
-			EvidenceID:  result.ReferenceID,
+			EvidenceID:  result.ID,
+			ReferenceID: result.ReferenceID,
 			SourceType:  result.SourceType,
 			SourceID:    result.SourceID,
 			DocumentID:  result.DocumentID,

@@ -99,3 +99,21 @@ func (r *AIMessageProcessingRepository) MarkFailedBySourceMessageID(ctx context.
 			"updated_at": time.Now(),
 		}).Error
 }
+
+// LatestProcessingForConversation returns the newest in-flight processing row
+// for a conversation, or nil. The support chat turn currently executing
+// corresponds to this row; support.send_reply/escalate settle it.
+func (r *AIMessageProcessingRepository) LatestProcessingForConversation(ctx context.Context, workspaceID, conversationID string) (*model.AIMessageProcessing, error) {
+	var row model.AIMessageProcessing
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND conversation_id = ? AND status = ?", workspaceID, conversationID, "processing").
+		Order("updated_at DESC").
+		First(&row).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}

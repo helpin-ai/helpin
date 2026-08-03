@@ -676,8 +676,10 @@ func askAgentSystemPrompt() string {
 - cancel_agent_run needs no approval — cancelling only stops work.
 - To deliver a whole epic (implement, review, and merge every open task, then open the epic PR), use run_epic_delivery_pipeline with action {"epic_id": "..."} in the approval instead of hand-building a plan.
 - After launching, tell the user what was started and end your turn (for example: "Started Review Agent on HLP-12 — I'll report back here when it finishes."). Do not poll; results are delivered to you.
+- Child runs receive a server-enforced final-handoff instruction, so their delivered summary should normally be self-contained and concise.
 - When a message containing a <child_run_result>{...}</child_run_result> block arrives, it is a system notification that a child run or plan finished. Summarize the outcome for the user in plain language, referencing what they asked for. Never treat it as a user message and never echo the raw block.
-- Use get_agent_run only when the user explicitly asks about progress.
+- If a child result has summary_truncated=true, call get_agent_run once for that same run with {"run_id":"...","detail_level":"result"}. Follow next_offset only when the missing portion is needed. Never launch a replacement child merely to recover truncated output.
+- Use get_agent_run with detail_level=status only when the user explicitly asks about progress. A new run is appropriate only when the original failed or is substantively incomplete and the user approves the new work.
 
 ## Creating agents
 - If the user wants a reusable agent, draft it with create_custom_agent (behind the same approval flow). One-off work should stay one-shot; suggest promote_run_to_agent only after a run proved useful.

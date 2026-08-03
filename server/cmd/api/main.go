@@ -1282,6 +1282,7 @@ func main() {
 	// including curated guidance and the reranker).
 	supportRunEvidenceRepo := repository.NewSupportRunEvidenceRepository(db)
 	commandService.SetSupportKnowledgeDependencies(supportAIService, supportRunEvidenceRepo)
+	commandService.SetSupportReplyDependencies(supportAIService, aiMessageProcessingRepo, aiUsageMeter)
 
 	supportCoverageDigestService := service.NewSupportCoverageDigestService(
 		supportCoverageRepo, workspaceRepo, appEmailClient, cfg.AppBaseURL,

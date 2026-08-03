@@ -12,6 +12,7 @@ type SupportRunEvidence struct {
 	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	RunID       string    `json:"run_id" gorm:"type:uuid;not null;uniqueIndex:idx_support_run_evidence_run_ref,priority:1"`
 	EvidenceID  string    `json:"evidence_id" gorm:"not null;uniqueIndex:idx_support_run_evidence_run_ref,priority:2"`
+	ReferenceID string    `json:"reference_id"`
 	SourceType  string    `json:"source_type" gorm:"not null"`
 	SourceID    string    `json:"source_id"`
 	DocumentID  string    `json:"document_id"`

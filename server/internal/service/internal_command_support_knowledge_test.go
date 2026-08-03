@@ -42,6 +42,7 @@ func setupSupportKnowledgeTestDB(t *testing.T) *gorm.DB {
 		workspace_id TEXT NOT NULL,
 		run_id TEXT NOT NULL,
 		evidence_id TEXT NOT NULL,
+		reference_id TEXT,
 		source_type TEXT NOT NULL,
 		source_id TEXT,
 		document_id TEXT,
@@ -75,8 +76,8 @@ func TestSearchKnowledgeCommand(t *testing.T) {
 	db := setupSupportKnowledgeTestDB(t)
 	searcher := &stubKnowledgeSearcher{
 		results: []KnowledgeSearchResult{
-			{ReferenceID: "docs:chunk-1", SourceType: "docs", Title: "Install guide", URL: "https://x/install", Content: strings.Repeat("a", 1500), CombinedScore: 0.9},
-			{ReferenceID: "guidance:g-1", SourceType: "curated_guidance", IsInternal: true, Content: "internal note", CombinedScore: 0.8},
+			{ID: "chunk-1", ReferenceID: "docs:chunk-1", SourceType: "docs", Title: "Install guide", URL: "https://x/install", Content: strings.Repeat("a", 1500), CombinedScore: 0.9},
+			{ID: "g-1", ReferenceID: "guidance:g-1", SourceType: "curated_guidance", IsInternal: true, Content: "internal note", CombinedScore: 0.8},
 		},
 	}
 	if err := db.Exec(`INSERT INTO agent_runs (id, workspace_id, agent_id, target_type, target_id, status, external_runtime, external_runtime_id, input, output_summary)
@@ -116,7 +117,7 @@ func TestSearchKnowledgeCommand(t *testing.T) {
 		if err := json.Unmarshal(output, &resp); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
-		if resp.Total != 2 || resp.Results[0].EvidenceID != "docs:chunk-1" {
+		if resp.Total != 2 || resp.Results[0].EvidenceID != "chunk-1" {
 			t.Fatalf("unexpected results: %+v", resp)
 		}
 		if len(resp.Results[0].Content) > supportKnowledgeContentExcerpt+len("…") {
@@ -135,7 +136,7 @@ func TestSearchKnowledgeCommand(t *testing.T) {
 		}
 		// Full (non-excerpted) content is stored for numeric grounding.
 		var stored string
-		db.Table("support_run_evidence").Where("run_id = ? AND evidence_id = ?", "run-1", "docs:chunk-1").Pluck("content", &stored)
+		db.Table("support_run_evidence").Where("run_id = ? AND evidence_id = ?", "run-1", "chunk-1").Pluck("content", &stored)
 		if len(stored) != 1500 {
 			t.Errorf("stored content length = %d, want 1500", len(stored))
 		}

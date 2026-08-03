@@ -44,7 +44,18 @@ the tool input. The server verifies this by canonical hash
 helpin resumes the parent chat run with a `<child_run_result>` block
 (`internal/service/dock_chat_results.go`; immediate via the terminal
 finalizer, 30s sweep as backstop; ended chats get results via successor-run
-carry-forward).
+carry-forward). Each child is instructed to end with a self-contained handoff
+of at most 2,500 characters. Delivery includes up to 3,000 Unicode characters
+plus `summary_truncated`, `summary_char_count`, `result_available`, and compact
+artifact references. Run reports are emitted in plan-step order.
+
+When `summary_truncated` is true, Ask Agent retrieves the persisted response
+from the same run with
+`get_agent_run({run_id, detail_level: "result", result_offset?, result_limit?})`.
+Result reads are bounded and paginated (`next_offset`) and are authorized only
+for runs belonging to a plan launched from the current dock chat. Truncation is
+never a reason to launch replacement work; a new child requires a genuine
+failed/incomplete result and the normal user approval.
 
 ## Where the code lives
 

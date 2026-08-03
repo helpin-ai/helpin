@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,7 +16,6 @@ const (
 	dockChildResultOpenTag      = "<child_run_result>"
 	dockChildResultCloseTag     = "</child_run_result>"
 	dockChildResultResumePrefix = "dock-child:"
-	dockChildResultSummaryChars = 800
 )
 
 // dockChildRunResult is the payload delivered into a dock chat when a plan
@@ -30,10 +30,14 @@ type dockChildRunResult struct {
 }
 
 type dockChildRunReport struct {
-	RunID     string `json:"run_id"`
-	AgentName string `json:"agent_name,omitempty"`
-	Status    string `json:"status"`
-	Summary   string `json:"summary,omitempty"`
+	RunID            string                     `json:"run_id"`
+	AgentName        string                     `json:"agent_name,omitempty"`
+	Status           string                     `json:"status"`
+	Summary          string                     `json:"summary,omitempty"`
+	SummaryTruncated bool                       `json:"summary_truncated"`
+	SummaryCharCount int                        `json:"summary_char_count"`
+	ResultAvailable  bool                       `json:"result_available"`
+	Artifacts        []dockRunArtifactReference `json:"artifacts,omitempty"`
 }
 
 // NotifyPlanSettledForRun is the immediate delivery hook: called by the
@@ -216,7 +220,28 @@ func (s *DockChatService) buildChildRunResultBlock(ctx context.Context, plan *mo
 	runIDsByStep := map[string]string{}
 	_ = json.Unmarshal(plan.RunIDsByStep, &runIDsByStep)
 
+	type indexedRun struct {
+		stepKey   string
+		stepIndex int
+		runID     string
+	}
+	indexedRuns := make([]indexedRun, 0, len(runIDsByStep))
 	for stepKey, runID := range runIDsByStep {
+		stepIndex, err := strconv.Atoi(stepKey)
+		if err != nil {
+			stepIndex = len(steps)
+		}
+		indexedRuns = append(indexedRuns, indexedRun{stepKey: stepKey, stepIndex: stepIndex, runID: runID})
+	}
+	sort.Slice(indexedRuns, func(i, j int) bool {
+		if indexedRuns[i].stepIndex != indexedRuns[j].stepIndex {
+			return indexedRuns[i].stepIndex < indexedRuns[j].stepIndex
+		}
+		return indexedRuns[i].stepKey < indexedRuns[j].stepKey
+	})
+
+	for _, indexed := range indexedRuns {
+		stepKey, runID := indexed.stepKey, indexed.runID
 		report := dockChildRunReport{RunID: runID}
 		if index, err := strconv.Atoi(stepKey); err == nil && index >= 0 && index < len(steps) {
 			report.AgentName = strings.TrimSpace(steps[index].AgentName)
@@ -224,7 +249,18 @@ func (s *DockChatService) buildChildRunResultBlock(ctx context.Context, plan *mo
 		run, err := s.runRepo.GetByID(ctx, plan.WorkspaceID, runID)
 		if err == nil && run != nil {
 			report.Status = strings.TrimSpace(run.Status)
-			report.Summary = s.childRunSummary(ctx, run)
+			report.Summary, report.SummaryCharCount, report.SummaryTruncated = s.childRunSummary(ctx, run)
+			report.ResultAvailable = report.SummaryCharCount > 0
+			if report.SummaryTruncated {
+				slog.InfoContext(ctx, "dock child result summary truncated",
+					"workspace_id", plan.WorkspaceID, "plan_id", plan.ID, "run_id", run.ID,
+					"summary_char_count", report.SummaryCharCount, "delivered_char_limit", dockChildResultSummaryChars)
+			}
+			if s.agentService != nil && s.agentService.artifactRepo != nil {
+				if artifacts, artifactErr := s.agentService.ListRunArtifacts(ctx, plan.WorkspaceID, run.ID); artifactErr == nil {
+					report.Artifacts = dockRunArtifactReferences(artifacts)
+				}
+			}
 		}
 		result.Runs = append(result.Runs, report)
 	}
@@ -236,26 +272,14 @@ func (s *DockChatService) buildChildRunResultBlock(ctx context.Context, plan *mo
 	return dockChildResultOpenTag + string(encoded) + dockChildResultCloseTag, nil
 }
 
-// childRunSummary returns the child run's final assistant message, truncated.
-func (s *DockChatService) childRunSummary(ctx context.Context, run *model.AgentRun) string {
+// childRunSummary returns a bounded, rune-safe view of the child run's final
+// assistant response plus metadata describing the complete persisted result.
+func (s *DockChatService) childRunSummary(ctx context.Context, run *model.AgentRun) (string, int, bool) {
 	messages, err := s.runMessageRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
 	if err != nil {
-		return ""
+		return "", 0, false
 	}
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role != "assistant" {
-			continue
-		}
-		content := strings.TrimSpace(messages[i].Content)
-		if content == "" {
-			continue
-		}
-		if len(content) > dockChildResultSummaryChars {
-			content = content[:dockChildResultSummaryChars] + "…"
-		}
-		return content
-	}
-	return ""
+	return boundedDockSummary(latestAssistantResponse(messages), dockChildResultSummaryChars)
 }
 
 func (s *DockChatService) recordChildResultMessage(ctx context.Context, chatRun *model.AgentRun, content, resumeID string) {

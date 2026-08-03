@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -42,6 +43,40 @@ func (r *CommandBarPlanRepository) GetByID(ctx context.Context, workspaceID, id 
 		return nil, fmt.Errorf("get command bar plan: %w", err)
 	}
 	return &plan, nil
+}
+
+// FindByDockChatAndRunID returns the plan in one dock chat that owns runID.
+// Run IDs are persisted inside run_ids_by_step, so this deliberately decodes
+// the chat's plans instead of relying on database-specific JSON operators.
+func (r *CommandBarPlanRepository) FindByDockChatAndRunID(ctx context.Context, workspaceID, dockChatID, runID string) (*model.CommandBarPlanRecord, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("command bar plan repository is not configured")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	dockChatID = strings.TrimSpace(dockChatID)
+	runID = strings.TrimSpace(runID)
+	if workspaceID == "" || dockChatID == "" || runID == "" {
+		return nil, nil
+	}
+	var plans []model.CommandBarPlanRecord
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND dock_chat_id = ?", workspaceID, dockChatID).
+		Order("created_at DESC").
+		Find(&plans).Error; err != nil {
+		return nil, fmt.Errorf("find dock plan for run: %w", err)
+	}
+	for index := range plans {
+		var runIDs map[string]string
+		if err := json.Unmarshal(plans[index].RunIDsByStep, &runIDs); err != nil {
+			continue
+		}
+		for _, candidate := range runIDs {
+			if strings.TrimSpace(candidate) == runID {
+				return &plans[index], nil
+			}
+		}
+	}
+	return nil, nil
 }
 
 func (r *CommandBarPlanRepository) ListRecent(ctx context.Context, workspaceID, actorID string, limit int) ([]model.CommandBarPlanRecord, error) {
