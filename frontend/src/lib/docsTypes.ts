@@ -372,6 +372,7 @@ export interface DocsHelpcenterConfig {
   fallback_to_default_locale: boolean;
   is_published: boolean;
   chat_widget_enabled: boolean;
+  ai_answers_enabled: boolean;
   seo_title?: string;
   seo_description?: string;
   og_title?: string;
@@ -732,6 +733,7 @@ export interface UpdateDocsHelpcenterConfigRequest {
   protected_terms?: string[];
   is_published?: boolean;
   chat_widget_enabled?: boolean;
+  ai_answers_enabled?: boolean;
   seo_title?: string;
   seo_description?: string;
   og_title?: string;
