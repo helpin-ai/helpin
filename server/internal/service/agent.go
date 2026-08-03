@@ -5491,7 +5491,12 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, activeRun, nil)
 			return activeRun, nil
 		}
-		if params.targetType == "workspace" {
+		// Workspace and repository targets allow concurrent runs by different
+		// agents: every runtime run clones into its own isolated workspace, so
+		// repo exclusivity is a legacy of shared checkouts (task-target runs on
+		// the same repository already run in parallel). Same-agent relaunches
+		// still reuse the active run above.
+		if params.targetType == "workspace" || params.targetType == "repository" {
 			activeRun = nil
 		}
 	}

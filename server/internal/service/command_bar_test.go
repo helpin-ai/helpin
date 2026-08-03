@@ -396,6 +396,74 @@ func TestCreateRunAllowsDifferentAgentsOnWorkspaceTarget(t *testing.T) {
 	}
 }
 
+func TestCreateRunAllowsDifferentAgentsOnRepositoryTarget(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	service := &AgentService{runRepo: runRepo, agentRepo: agentRepo}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	repositoryID := "55555555-5555-5555-5555-555555555555"
+	existingAgentID := "22222222-2222-2222-2222-222222222222"
+	nextAgent := &model.Agent{
+		ID:                    "33333333-3333-3333-3333-333333333333",
+		WorkspaceID:           workspaceID,
+		Name:                  "Package upgrade check",
+		RuntimeKind:           "native_sdk",
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}
+
+	// Another agent (e.g. Quill) is mid-run on the same repository. Every
+	// runtime run clones into its own isolated workspace, so this must not
+	// block a different agent from starting.
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             "66666666-6666-6666-6666-666666666666",
+		WorkspaceID:    workspaceID,
+		AgentID:        existingAgentID,
+		TargetType:     "repository",
+		TargetID:       repositoryID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeAutonomous,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage("{}"),
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create existing repository run: %v", err)
+	}
+
+	_, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          nextAgent,
+		targetType:     "repository",
+		targetID:       repositoryID,
+		input:          []byte("{}"),
+		invocationMode: model.InvocationModeAutonomous,
+	})
+	if err == nil || strings.Contains(err.Error(), "already active") {
+		t.Fatalf("expected different repository agent to bypass duplicate-run guard, got %v", err)
+	}
+
+	runs, err := runRepo.ListByTarget(ctx, workspaceID, "repository", repositoryID)
+	if err != nil {
+		t.Fatalf("list repository runs: %v", err)
+	}
+	foundNextAgentRun := false
+	for _, run := range runs {
+		if run.AgentID == nextAgent.ID {
+			foundNextAgentRun = true
+			break
+		}
+	}
+	if !foundNextAgentRun {
+		t.Fatalf("expected new repository run for agent %q to be created alongside existing run, got %#v", nextAgent.ID, runs)
+	}
+}
+
 func TestCreateRunPreflightsAICreditsBeforeQueueingRun(t *testing.T) {
 	db := setupCommandBarPlanTestDB(t)
 	runRepo := repository.NewAgentRunRepository(db)
