@@ -266,6 +266,15 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		Threshold: settings.AIConfidenceThreshold,
 	})
 	if !gate.OK {
+		slog.WarnContext(ctx, "send_reply: reply gate rejected runtime answer",
+			"workspace_id", meta.WorkspaceID,
+			"conversation_id", conversationID,
+			"reason", gate.EscalationReason,
+			"validation_outcome", gate.ValidationOutcome,
+			"computed_confidence", gate.Confidence,
+			"required_confidence", settings.AIConfidenceThreshold,
+			"proposed_confidence", req.Confidence,
+			"source_doc_ids", req.SourceDocIDs)
 		sourceMessageID := s.supportTurnSourceMessageID(ctx, meta.WorkspaceID, conversationID, history)
 		if escErr := supportAI.EscalateToHumanForMessageWithIssue(ctx, meta.WorkspaceID, conversationID, sourceMessageID, gate.EscalationReason, "", ""); escErr != nil {
 			slog.ErrorContext(ctx, "send_reply: escalate after gate failure failed",

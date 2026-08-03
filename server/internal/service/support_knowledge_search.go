@@ -315,7 +315,7 @@ func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult
 			BlockID:    result.BlockID,
 			Title:      result.Title,
 			Snippet:    excerptText(result.Content, 180),
-			Confidence: clamp01(maxFloat(result.VectorScore, clamp01(result.LexicalScore/0.35))),
+			Confidence: supportEvidenceRetrievalQuality(result),
 			SourceType: result.SourceType,
 			URL:        result.URL,
 		})

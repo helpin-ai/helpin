@@ -108,22 +108,23 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 			s.persistSupportRunEvidence(ctx, meta, results)
 			requiredConfidence := 0.7
 			if s.supportAIService != nil {
-				if settings, settingsErr := s.supportAIService.loadSettings(ctx, meta.WorkspaceID); settingsErr == nil && settings != nil && settings.AIConfidenceThreshold > 0 {
+				if settings, settingsErr := s.supportAIService.loadSettings(ctx, meta.WorkspaceID); settingsErr == nil && settings != nil && settings.AIConfidenceThreshold >= 0 && settings.AIConfidenceThreshold <= 1 {
 					requiredConfidence = settings.AIConfidenceThreshold
 				}
 			}
 			confidenceCeiling := supportEvidenceConfidenceCeiling(results)
 
 			type knowledgeRow struct {
-				EvidenceID  string  `json:"evidence_id"`
-				Title       string  `json:"title,omitempty"`
-				URL         string  `json:"url,omitempty"`
-				SourceType  string  `json:"source_type"`
-				IsInternal  bool    `json:"is_internal,omitempty"`
-				HeadingPath string  `json:"heading_path,omitempty"`
-				Content     string  `json:"content"`
-				Score       float64 `json:"score"`
-				Authority   string  `json:"authority"`
+				EvidenceID                string  `json:"evidence_id"`
+				Title                     string  `json:"title,omitempty"`
+				URL                       string  `json:"url,omitempty"`
+				SourceType                string  `json:"source_type"`
+				IsInternal                bool    `json:"is_internal,omitempty"`
+				HeadingPath               string  `json:"heading_path,omitempty"`
+				Content                   string  `json:"content"`
+				Score                     float64 `json:"score"`
+				Authority                 string  `json:"authority"`
+				GroundedConfidenceCeiling float64 `json:"grounded_confidence_ceiling"`
 			}
 			rows := make([]knowledgeRow, 0, len(results))
 			for _, result := range results {
@@ -132,15 +133,16 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 					content = content[:supportKnowledgeContentExcerpt] + "…"
 				}
 				rows = append(rows, knowledgeRow{
-					EvidenceID:  result.ID,
-					Title:       result.Title,
-					URL:         result.URL,
-					SourceType:  result.SourceType,
-					IsInternal:  result.IsInternal,
-					HeadingPath: result.HeadingPath,
-					Content:     content,
-					Score:       result.CombinedScore,
-					Authority:   knowledgeResultAuthority(result),
+					EvidenceID:                result.ID,
+					Title:                     result.Title,
+					URL:                       result.URL,
+					SourceType:                result.SourceType,
+					IsInternal:                result.IsInternal,
+					HeadingPath:               result.HeadingPath,
+					Content:                   content,
+					Score:                     result.CombinedScore,
+					Authority:                 knowledgeResultAuthority(result),
+					GroundedConfidenceCeiling: supportEvidenceConfidenceCeiling([]KnowledgeSearchResult{result}),
 				})
 			}
 			return mustJSON(map[string]any{
@@ -148,7 +150,7 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 				"total":                             len(rows),
 				"required_confidence":               requiredConfidence,
 				"best_possible_grounded_confidence": confidenceCeiling,
-				"note":                              "Cite evidence_id values in send_support_reply claims. Prefer curated and canonical evidence when sources conflict. Preserve the exact scope of prices and other numbers. If the evidence does not directly answer the visitor or its best possible grounded confidence is below required_confidence, gather stronger evidence with the permitted fallback before replying. Do not expose these mechanics or is_internal content to the visitor.",
+				"note":                              "Cite evidence_id values in send_support_reply claims. Each result has its own grounded_confidence_ceiling; compare the result you will actually cite with required_confidence. The aggregate best_possible_grounded_confidence is only the maximum across all results and must not be used when that strongest result does not directly support the answer. Prefer curated and canonical evidence when sources conflict. Preserve the exact scope of prices and other numbers. If directly supporting evidence cannot meet required_confidence, gather stronger evidence with the permitted fallback before replying. Do not expose these mechanics or is_internal content to the visitor.",
 			}), nil
 		},
 	})

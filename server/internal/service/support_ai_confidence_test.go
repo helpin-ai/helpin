@@ -47,6 +47,18 @@ func TestEvaluateConfidence(t *testing.T) {
 			wantAbove:  true,
 		},
 		{
+			name: "exact canonical pricing evidence is confident when deliberately promoted",
+			searchResults: []KnowledgeSearchResult{
+				{ID: "pricing-chunk", ReferenceID: "pricing", URL: "https://usermaven.com/pricing", Content: "Growth costs $84/month.", VectorScore: 0, LexicalScore: 0},
+			},
+			response: &AIResponseContract{
+				CanAnswer: true, SourceDocIDs: []string{"pricing-chunk"}, Confidence: 0.9,
+				Claims: []AIResponseClaim{{Text: "Growth costs $84/month.", EvidenceIDs: []string{"pricing-chunk"}}},
+			},
+			isGreeting: false,
+			wantAbove:  true,
+		},
+		{
 			name: "relevant cited sources are not diluted by unrelated retrieval candidates",
 			searchResults: []KnowledgeSearchResult{
 				{ReferenceID: "pricing", VectorScore: 0.458},

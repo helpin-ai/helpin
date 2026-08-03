@@ -12,7 +12,7 @@ metadata:
 - Every visitor turn must end with one successful `send_support_reply` call or one `escalate_to_human` call. Plain assistant text is not delivered to the visitor. If `send_support_reply` returns `rewrite_required`, rewrite once in direct customer-facing language and call it again; `rewrite_required` is not terminal.
 - Treat `sent`, `escalated`, or `suppressed` from either tool as terminal. End the turn immediately and do not call any more tools.
 - Use at most one `search_knowledge` call per visitor message. A second repair search is allowed only when the first search returned no usable evidence or the visitor supplied a corrected fact.
-- Read `required_confidence` and `best_possible_grounded_confidence` from the search result. The confidence supplied to `send_support_reply` is only a proposal; the server recomputes it. Use the permitted research fallback when directly supporting evidence cannot meet the configured threshold.
+- Read `required_confidence` and each result's `grounded_confidence_ceiling`. Compare the evidence you will actually cite with the threshold; do not rely on aggregate `best_possible_grounded_confidence` when a different result supports the answer. The confidence supplied to `send_support_reply` is only a proposal; the server recomputes it. Use the permitted research fallback when directly supporting evidence cannot meet the configured threshold.
 
 ## Reading the conversation
 

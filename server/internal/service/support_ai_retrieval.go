@@ -54,7 +54,8 @@ func (s *SupportAIService) ensureCanonicalPricingLeadChunks(
 			DocumentID: lead.PageID, SourceID: lead.ContentSourceID,
 			ChunkIndex: lead.ChunkIndex, SectionKey: lead.SectionKey,
 			HeadingPath: lead.HeadingPath, Title: lead.Title, URL: lead.URL,
-			Content: lead.Content, CombinedScore: seed.CombinedScore + 0.25,
+			Content: lead.Content, LexicalScore: seed.LexicalScore,
+			VectorScore: seed.VectorScore, CombinedScore: seed.CombinedScore + 0.25,
 		}
 		replaced := false
 		for idx := range result {
@@ -152,7 +153,8 @@ func (s *SupportAIService) expandKnowledgeNeighbors(
 					BlockID: derefString(neighbor.BlockID), SourceID: neighbor.SpaceID,
 					ChunkIndex: neighbor.ChunkIndex, SectionKey: neighbor.SectionKey,
 					HeadingPath: neighbor.HeadingPath, Title: neighbor.Title,
-					Content: neighbor.Content, CombinedScore: seed.CombinedScore - 0.001,
+					Content: neighbor.Content, LexicalScore: seed.LexicalScore,
+					VectorScore: seed.VectorScore, CombinedScore: seed.CombinedScore - 0.001,
 				})
 			}
 		case knowledgeSourceTypeContent:
@@ -173,7 +175,8 @@ func (s *SupportAIService) expandKnowledgeNeighbors(
 					DocumentID: neighbor.PageID, SourceID: neighbor.ContentSourceID,
 					ChunkIndex: neighbor.ChunkIndex, SectionKey: neighbor.SectionKey,
 					HeadingPath: neighbor.HeadingPath, Title: neighbor.Title, URL: neighbor.URL,
-					Content: neighbor.Content, CombinedScore: seed.CombinedScore - 0.001,
+					Content: neighbor.Content, LexicalScore: seed.LexicalScore,
+					VectorScore: seed.VectorScore, CombinedScore: seed.CombinedScore - 0.001,
 				})
 			}
 		}

@@ -111,10 +111,11 @@ func TestSearchKnowledgeCommand(t *testing.T) {
 		}
 		var resp struct {
 			Results []struct {
-				EvidenceID string `json:"evidence_id"`
-				URL        string `json:"url"`
-				IsInternal bool   `json:"is_internal"`
-				Content    string `json:"content"`
+				EvidenceID                string  `json:"evidence_id"`
+				URL                       string  `json:"url"`
+				IsInternal                bool    `json:"is_internal"`
+				Content                   string  `json:"content"`
+				GroundedConfidenceCeiling float64 `json:"grounded_confidence_ceiling"`
 			} `json:"results"`
 			Total                          int     `json:"total"`
 			RequiredConfidence             float64 `json:"required_confidence"`
@@ -131,6 +132,9 @@ func TestSearchKnowledgeCommand(t *testing.T) {
 		}
 		if resp.BestPossibleGroundedConfidence < resp.RequiredConfidence {
 			t.Fatalf("confidence ceiling = %v, want at least %v", resp.BestPossibleGroundedConfidence, resp.RequiredConfidence)
+		}
+		if resp.Results[0].GroundedConfidenceCeiling < resp.RequiredConfidence {
+			t.Fatalf("first result confidence ceiling = %v, want at least %v", resp.Results[0].GroundedConfidenceCeiling, resp.RequiredConfidence)
 		}
 		if resp.Results[0].URL != "https://x/install" {
 			t.Fatalf("result URL = %q, want source chunk URL", resp.Results[0].URL)
