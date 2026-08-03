@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
+import { HelpinBrand } from '@/components/HelpinBrand';
 
 const FOOTER_LINKS = {
   Legal: [
@@ -113,7 +114,11 @@ export function Footer() {
           <div className="flex flex-col sm:flex-row justify-between gap-10">
             <div>
               <Link href="/">
-                <img src="/logos/helpin-light-mode-logo.svg" alt="Helpin" className="h-9 brightness-0 invert" />
+                <HelpinBrand
+                  variant="light-on-dark"
+                  className="text-white text-[1.5rem]"
+                  iconClassName="h-9 w-9"
+                />
               </Link>
               <p className="mt-4 text-sm leading-relaxed text-white/50 max-w-xs">
                 PM, CRM, support, sales & docs — connected

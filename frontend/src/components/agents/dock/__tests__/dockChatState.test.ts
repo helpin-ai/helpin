@@ -106,6 +106,19 @@ describe('dock marker parsing', () => {
     expect(parseDockChildResult('<child_run_result>not json</child_run_result>')).toBeNull();
   });
 
+  it('parseDockChildResult preserves result recovery metadata', () => {
+    const parsed = parseDockChildResult(
+      '<child_run_result>{"plan_id":"p1","status":"completed","runs":[{"run_id":"r1","status":"completed","summary":"short","summary_truncated":true,"summary_char_count":4200,"result_available":true,"artifacts":[{"artifact_id":"a1","artifact_type":"review_findings","format":"json","storage_mode":"inline"}]}]}</child_run_result>',
+    );
+    expect(parsed?.runs[0]).toMatchObject({
+      run_id: 'r1',
+      summary_truncated: true,
+      summary_char_count: 4200,
+      result_available: true,
+    });
+    expect(parsed?.runs[0].artifacts?.[0].artifact_id).toBe('a1');
+  });
+
   it('parseDockPlanConfirm requires the dock kind', () => {
     expect(parseDockPlanConfirm({ kind: 'other' })).toBeNull();
     expect(parseDockPlanConfirm({ kind: 'dock_plan_confirm', summary: 's' })?.summary).toBe('s');

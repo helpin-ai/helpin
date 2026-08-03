@@ -23,6 +23,12 @@ type SupportContentSyncWorkflowStarter interface {
 	QueueContentSourceReindex(ctx context.Context, workspaceID, contentSourceID string) error
 }
 
+// SupportContentSyncWorkflowCanceller is implemented by durable workflow
+// starters that can stop an in-flight source sync before its data is deleted.
+type SupportContentSyncWorkflowCanceller interface {
+	CancelContentSourceSync(ctx context.Context, workspaceID, contentSourceID string) error
+}
+
 // SupportContentSyncService keeps crawled web content indexed in pgvector.
 type SupportContentSyncService struct {
 	sourceRepo     *repository.SupportContentSourceRepository
@@ -102,6 +108,19 @@ func (s *SupportContentSyncService) QueueSourceSync(ctx context.Context, workspa
 		return err
 	}
 	return nil
+}
+
+// CancelSourceSync stops the deterministic durable workflow for a content
+// source. A missing starter means no workflow was queued by this service.
+func (s *SupportContentSyncService) CancelSourceSync(ctx context.Context, workspaceID, contentSourceID string) error {
+	if s == nil || s.starter == nil {
+		return nil
+	}
+	canceller, ok := s.starter.(SupportContentSyncWorkflowCanceller)
+	if !ok {
+		return fmt.Errorf("Temporal content sync cancellation is not configured")
+	}
+	return canceller.CancelContentSourceSync(ctx, workspaceID, contentSourceID)
 }
 
 // RunSourceSync performs the full crawl + embedding pipeline for a content source.

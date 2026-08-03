@@ -101,6 +101,13 @@ func (s *SupportContentSourceService) Delete(ctx context.Context, workspaceID, i
 	if existing == nil || existing.WorkspaceID != workspaceID {
 		return fmt.Errorf("content source not found in workspace")
 	}
+	// Stop and await the durable workflow before removing indexed data. Without
+	// this, an active crawl can recreate pages/chunks after the delete returns.
+	if s.syncService != nil {
+		if err := s.syncService.CancelSourceSync(ctx, workspaceID, id); err != nil {
+			return fmt.Errorf("cancel content source sync: %w", err)
+		}
+	}
 	if err := s.linkRepo.DeleteByContentSourceID(ctx, id); err != nil {
 		return err
 	}

@@ -14,6 +14,7 @@ import {
 import { HelpArticleView } from './HelpArticleView';
 import { ConversationView } from './ConversationView';
 import { ConversationListView } from './ConversationListView';
+import { HelpinMark } from './HelpinMark';
 import { XIcon } from './icons';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
@@ -482,6 +483,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
           className="helpin-powered-by"
         >
           <span>Powered by</span>
+          <HelpinMark className="helpin-powered-by-icon" />
           <span className="helpin-powered-by-name">Helpin</span>
         </a>
       )}

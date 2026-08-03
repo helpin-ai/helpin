@@ -133,6 +133,27 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 	}
 }
 
+func TestRuntimeAgentFromHelpinAgentAlwaysIncludesSupportDeliveryContract(t *testing.T) {
+	staleWorkspacePrompt := "You are Echo. Answer customer questions from evidence."
+	out := runtimeAgentFromHelpinAgent(&model.Agent{
+		ID:           "agent-echo-copy",
+		IsSystem:     true,
+		PresetKey:    model.AgentPresetSupportAgent,
+		RuntimeKind:  "native_sdk",
+		SystemPrompt: &staleWorkspacePrompt,
+	}, "helpin")
+	for _, required := range []string{
+		staleWorkspacePrompt,
+		"Required live-support delivery contract",
+		"send_support_reply",
+		"Plain assistant text is never delivered",
+	} {
+		if !strings.Contains(out.SystemPrompt, required) {
+			t.Fatalf("runtime support prompt missing %q:\n%s", required, out.SystemPrompt)
+		}
+	}
+}
+
 func TestRuntimeAgentFromHelpinAgentIncludesImplicitScribeSkills(t *testing.T) {
 	qualifiedPrompt := "Publish with `mcp__helpin__publish_task_plan_doc`, then call `mcp__helpin__request_approval`."
 	scribe := &model.Agent{

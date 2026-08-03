@@ -4,36 +4,42 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 const (
 	dockChildResultOpenTag      = "<child_run_result>"
 	dockChildResultCloseTag     = "</child_run_result>"
 	dockChildResultResumePrefix = "dock-child:"
-	dockChildResultSummaryChars = 800
 )
 
 // dockChildRunResult is the payload delivered into a dock chat when a plan
 // launched from that chat settles. The FE renders it as a result chip; the
 // ask_agent prompt tells the model to summarize it for the user.
 type dockChildRunResult struct {
-	PlanID string               `json:"plan_id"`
-	Status string               `json:"status"`
-	Prompt string               `json:"prompt,omitempty"`
-	Error  string               `json:"error,omitempty"`
-	Runs   []dockChildRunReport `json:"runs"`
+	EvidenceID string               `json:"evidence_id,omitempty"`
+	PlanID     string               `json:"plan_id"`
+	Status     string               `json:"status"`
+	Prompt     string               `json:"prompt,omitempty"`
+	Error      string               `json:"error,omitempty"`
+	Runs       []dockChildRunReport `json:"runs"`
 }
 
 type dockChildRunReport struct {
-	RunID     string `json:"run_id"`
-	AgentName string `json:"agent_name,omitempty"`
-	Status    string `json:"status"`
-	Summary   string `json:"summary,omitempty"`
+	RunID            string                     `json:"run_id"`
+	AgentName        string                     `json:"agent_name,omitempty"`
+	Status           string                     `json:"status"`
+	Summary          string                     `json:"summary,omitempty"`
+	SummaryTruncated bool                       `json:"summary_truncated"`
+	SummaryCharCount int                        `json:"summary_char_count"`
+	ResultAvailable  bool                       `json:"result_available"`
+	Artifacts        []dockRunArtifactReference `json:"artifacts,omitempty"`
 }
 
 // NotifyPlanSettledForRun is the immediate delivery hook: called by the
@@ -118,6 +124,10 @@ func (s *DockChatService) notifyPlanSettled(ctx context.Context, plan *model.Com
 		return nil
 	}
 	if plan.DockChatID == nil {
+		if plan.SupportConversationID != nil {
+			// Support-launched plan: the support chat notifier delivers it.
+			return nil
+		}
 		return s.planRepo.MarkParentNotified(ctx, plan.WorkspaceID, plan.ID)
 	}
 	chat, err := s.chatRepo.GetByID(ctx, plan.WorkspaceID, *plan.DockChatID)
@@ -203,6 +213,13 @@ func (s *DockChatService) unnotifiedPlanResultBlocks(ctx context.Context, chat *
 }
 
 func (s *DockChatService) buildChildRunResultBlock(ctx context.Context, plan *model.CommandBarPlanRecord) (string, error) {
+	return buildChildRunResultBlockWith(ctx, plan, s.runRepo, s.runMessageRepo, s.agentService)
+}
+
+// buildChildRunResultBlockWith renders a settled plan's result block from
+// explicit collaborators so both the dock and support chat services share the
+// same child-result contract.
+func buildChildRunResultBlockWith(ctx context.Context, plan *model.CommandBarPlanRecord, runRepo *repository.AgentRunRepository, runMessageRepo *repository.AgentRunMessageRepository, agentService *AgentService, evidenceIDs ...string) (string, error) {
 	result := dockChildRunResult{
 		PlanID: plan.ID,
 		Status: strings.TrimSpace(plan.Status),
@@ -210,21 +227,58 @@ func (s *DockChatService) buildChildRunResultBlock(ctx context.Context, plan *mo
 		Error:  strings.TrimSpace(derefString(plan.ErrorMessage)),
 		Runs:   []dockChildRunReport{},
 	}
+	if len(evidenceIDs) > 0 {
+		result.EvidenceID = strings.TrimSpace(evidenceIDs[0])
+	}
 
 	var steps []model.CommandBarPlanStep
 	_ = json.Unmarshal(plan.Steps, &steps)
 	runIDsByStep := map[string]string{}
 	_ = json.Unmarshal(plan.RunIDsByStep, &runIDsByStep)
 
+	type indexedRun struct {
+		stepKey   string
+		stepIndex int
+		runID     string
+	}
+	indexedRuns := make([]indexedRun, 0, len(runIDsByStep))
 	for stepKey, runID := range runIDsByStep {
+		stepIndex, err := strconv.Atoi(stepKey)
+		if err != nil {
+			stepIndex = len(steps)
+		}
+		indexedRuns = append(indexedRuns, indexedRun{stepKey: stepKey, stepIndex: stepIndex, runID: runID})
+	}
+	sort.Slice(indexedRuns, func(i, j int) bool {
+		if indexedRuns[i].stepIndex != indexedRuns[j].stepIndex {
+			return indexedRuns[i].stepIndex < indexedRuns[j].stepIndex
+		}
+		return indexedRuns[i].stepKey < indexedRuns[j].stepKey
+	})
+
+	for _, indexed := range indexedRuns {
+		stepKey, runID := indexed.stepKey, indexed.runID
 		report := dockChildRunReport{RunID: runID}
 		if index, err := strconv.Atoi(stepKey); err == nil && index >= 0 && index < len(steps) {
 			report.AgentName = strings.TrimSpace(steps[index].AgentName)
 		}
-		run, err := s.runRepo.GetByID(ctx, plan.WorkspaceID, runID)
+		run, err := runRepo.GetByID(ctx, plan.WorkspaceID, runID)
 		if err == nil && run != nil {
 			report.Status = strings.TrimSpace(run.Status)
-			report.Summary = s.childRunSummary(ctx, run)
+			if messages, msgErr := runMessageRepo.ListByRun(ctx, run.WorkspaceID, run.ID); msgErr == nil {
+				report.Summary, report.SummaryCharCount, report.SummaryTruncated = boundedDockSummary(latestAssistantResponse(messages), dockChildResultSummaryChars)
+			}
+			report.ResultAvailable = report.SummaryCharCount > 0
+			if report.SummaryTruncated {
+				slog.InfoContext(ctx, "child result summary truncated",
+					"workspace_id", plan.WorkspaceID, "plan_id", plan.ID, "run_id", run.ID,
+					"summary_char_count", report.SummaryCharCount, "delivered_char_limit", dockChildResultSummaryChars)
+			}
+			if agentService != nil && agentService.artifactRepo != nil {
+				if artifacts, artifactErr := agentService.ListRunArtifacts(ctx, plan.WorkspaceID, run.ID); artifactErr == nil {
+					report.Artifacts = dockRunArtifactReferences(artifacts)
+				}
+			}
 		}
 		result.Runs = append(result.Runs, report)
 	}
@@ -236,32 +290,17 @@ func (s *DockChatService) buildChildRunResultBlock(ctx context.Context, plan *mo
 	return dockChildResultOpenTag + string(encoded) + dockChildResultCloseTag, nil
 }
 
-// childRunSummary returns the child run's final assistant message, truncated.
-func (s *DockChatService) childRunSummary(ctx context.Context, run *model.AgentRun) string {
-	messages, err := s.runMessageRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
-	if err != nil {
-		return ""
-	}
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role != "assistant" {
-			continue
-		}
-		content := strings.TrimSpace(messages[i].Content)
-		if content == "" {
-			continue
-		}
-		if len(content) > dockChildResultSummaryChars {
-			content = content[:dockChildResultSummaryChars] + "…"
-		}
-		return content
-	}
-	return ""
+func (s *DockChatService) recordChildResultMessage(ctx context.Context, chatRun *model.AgentRun, content, resumeID string) {
+	recordChildResultRunMessage(ctx, s.runMessageRepo, chatRun, content, resumeID)
 }
 
-func (s *DockChatService) recordChildResultMessage(ctx context.Context, chatRun *model.AgentRun, content, resumeID string) {
-	sequence, err := s.runMessageRepo.NextSequence(ctx, chatRun.WorkspaceID, chatRun.ID)
+// recordChildResultRunMessage mirrors an injected child-result message into
+// the local run transcript (runtime-side user messages are not projected
+// back), shared by the dock and support chat services.
+func recordChildResultRunMessage(ctx context.Context, runMessageRepo *repository.AgentRunMessageRepository, chatRun *model.AgentRun, content, resumeID string) {
+	sequence, err := runMessageRepo.NextSequence(ctx, chatRun.WorkspaceID, chatRun.ID)
 	if err != nil {
-		slog.WarnContext(ctx, "dock chat result: next sequence failed",
+		slog.WarnContext(ctx, "chat result: next sequence failed",
 			"workspace_id", chatRun.WorkspaceID, "run_id", chatRun.ID, "error", err)
 		return
 	}
@@ -274,8 +313,8 @@ func (s *DockChatService) recordChildResultMessage(ctx context.Context, chatRun 
 		MessageType:      "message",
 		SequenceNo:       sequence,
 	}
-	if err := s.runMessageRepo.Create(ctx, message); err != nil {
-		slog.WarnContext(ctx, "dock chat result: record message failed",
+	if err := runMessageRepo.Create(ctx, message); err != nil {
+		slog.WarnContext(ctx, "chat result: record message failed",
 			"workspace_id", chatRun.WorkspaceID, "run_id", chatRun.ID, "error", err)
 	}
 }

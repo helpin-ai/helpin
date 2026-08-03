@@ -80,6 +80,17 @@ func setupCoverageKnowledgeMatcherTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE support_content_sources (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			sync_status TEXT NOT NULL
+		)`,
+		`CREATE TABLE support_content_pages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			content_source_id TEXT NOT NULL,
+			http_status INTEGER NOT NULL
+		)`,
 	}
 	for _, stmt := range tables {
 		if err := db.Exec(stmt).Error; err != nil {
@@ -91,6 +102,12 @@ func setupCoverageKnowledgeMatcherTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.Exec(`INSERT INTO docs_documents (id, status) VALUES (?, ?)`, "doc-1", model.DocStatusPublished).Error; err != nil {
 		t.Fatalf("seed docs document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO support_content_sources (id, workspace_id, sync_status) VALUES (?, ?, ?)`, "source-website", "ws-1", model.KnowledgeSourceSyncReady).Error; err != nil {
+		t.Fatalf("seed content source: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO support_content_pages (id, workspace_id, content_source_id, http_status) VALUES (?, ?, ?, ?)`, "page-1", "ws-1", "source-website", 200).Error; err != nil {
+		t.Fatalf("seed content page: %v", err)
 	}
 	return db
 }

@@ -245,7 +245,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
         {plans.length > 0 && (
           <div className="space-y-2 rounded-lg border border-indigo-200/60 bg-indigo-50/50 p-2 dark:border-indigo-500/20 dark:bg-indigo-500/[0.07]">
             <div className="px-1 text-[11px] font-medium uppercase tracking-wide text-indigo-600/80 dark:text-indigo-300/80">
-              Child agent runs
+              Sub-agent runs
             </div>
             {plans.map((plan) => (
               <ExecutionStrip

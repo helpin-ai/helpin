@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Menu, X } from 'lucide-react';
+import { HelpinBrand } from '@/components/HelpinBrand';
 
 const NAV_LINKS: { label: string; href: string }[] = [];
 
@@ -26,7 +27,7 @@ export function Navbar() {
     >
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
         <Link href="/">
-          <img src="/logos/helpin-light-mode-logo.svg" alt="Helpin" className="h-7" />
+          <HelpinBrand />
         </Link>
 
         <div className="hidden md:flex items-center gap-8">

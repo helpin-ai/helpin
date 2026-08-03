@@ -37,6 +37,7 @@ import { MessageBubble } from './MessageBubble';
 import { ReplyComposer } from './ReplyComposer';
 import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
+import { AIRunApprovalCard } from './AIRunApprovalCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
 import { getInitialThreadScrollTarget, isNearThreadBottom, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
@@ -985,6 +986,15 @@ export function MessageThread({
             )}
           </div>
         </div>
+      )}
+
+      {/* Approvals raised by the conversation's AI chat run (child launches). */}
+      {conversation && (
+        <AIRunApprovalCard
+          workspaceId={workspaceId}
+          conversationId={conversation.id}
+          enabled={!!conversation.ai_state}
+        />
       )}
 
       {/* Agent runs — hidden for AI-first conversations (ai_state is set) */}

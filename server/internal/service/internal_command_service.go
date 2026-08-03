@@ -58,6 +58,12 @@ type InternalCommandService struct {
 	agentRunArtifactRepo      *repository.AgentRunArtifactRepository
 	agentRunInteractionRepo   *repository.AgentRunInteractionRepository
 	commandBarService         *CommandBarService
+	supportKnowledgeSearcher  supportKnowledgeSearcher
+	supportRunEvidenceRepo    *repository.SupportRunEvidenceRepository
+	supportAIService          *SupportAIService
+	supportProcessingRepo     *repository.AIMessageProcessingRepository
+	supportUsageMeter         *AIUsageMeter
+	supportRunCloser          supportChatRunCloser
 	authz                     *authorization.AuthzService
 
 	definitions map[string]InternalCommandDefinition
@@ -221,6 +227,7 @@ func NewInternalCommandService(
 		docsLinkService:    docsLinkService,
 		taskRepo:           taskRepo,
 		taskLinkRepo:       taskLinkRepo,
+		supportRunCloser:   agentService,
 		definitions:        make(map[string]InternalCommandDefinition),
 	}
 	svc.registerDefaults()
@@ -1875,6 +1882,8 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.registerAgentOrchestrationCommands()
+	s.registerSupportKnowledgeCommands()
+	s.registerSupportReplyCommands()
 	s.registerSupportCommands()
 	s.registerCRMReadCommands()
 	s.registerReleaseFactsCommands()

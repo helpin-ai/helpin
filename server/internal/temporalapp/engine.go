@@ -8,6 +8,7 @@ import (
 
 	"go.temporal.io/api/serviceerror"
 	tclient "go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
 )
 
 // RunEngine starts Helpin product automation workflows.
@@ -146,6 +147,31 @@ func (e *RunEngine) QueueContentSourceReindex(ctx context.Context, workspaceID, 
 	)
 	if err != nil {
 		return fmt.Errorf("queue content source reindex: %w", err)
+	}
+	return nil
+}
+
+// CancelContentSourceSync requests cancellation of a source's deterministic
+// workflow and waits for it to close, so callers can safely remove its rows.
+func (e *RunEngine) CancelContentSourceSync(ctx context.Context, workspaceID, contentSourceID string) error {
+	if e == nil || e.client == nil {
+		return nil
+	}
+	workflowID := WorkflowIDForContentSource(workspaceID, contentSourceID)
+	run := e.client.GetWorkflow(ctx, workflowID, "")
+	if err := e.client.CancelWorkflow(ctx, workflowID, ""); err != nil {
+		var notFound *serviceerror.NotFound
+		if errors.As(err, &notFound) {
+			return nil
+		}
+		return fmt.Errorf("cancel content source sync workflow: %w", err)
+	}
+	if err := run.Get(ctx, nil); err != nil {
+		var notFound *serviceerror.NotFound
+		if temporal.IsCanceledError(err) || errors.As(err, &notFound) {
+			return nil
+		}
+		return fmt.Errorf("wait for content source sync cancellation: %w", err)
 	}
 	return nil
 }

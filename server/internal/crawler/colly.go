@@ -19,7 +19,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-
 // crawlWithColly performs a BFS crawl using Colly for link traversal and
 // go-trafilatura for content extraction.
 func crawlWithColly(
@@ -199,21 +198,31 @@ func crawlWithColly(
 			Metadata:   metadata,
 		}
 
+		// Responses are processed concurrently. Reserve the page while holding
+		// the callback lock so several responses cannot all pass the limit check
+		// and make the crawl exceed its configured page budget.
 		mu.Lock()
-		if crawlErr == nil {
+		accepted := false
+		if crawlErr == nil && int(pageCount.Load()) < limit {
 			if err := onPage(record); err != nil {
 				crawlErr = fmt.Errorf("onPage callback: %w", err)
+			} else {
+				pageCount.Add(1)
+				accepted = true
 			}
 		}
+		currentPageCount := pageCount.Load()
 		mu.Unlock()
 
-		pageCount.Add(1)
+		if !accepted {
+			return
+		}
 		logger.Info("crawl page extracted",
 			"url", pageURL.String(),
 			"title", title,
 			"status", r.StatusCode,
 			"content_length", len(contentText),
-			"page_count", pageCount.Load(),
+			"page_count", currentPageCount,
 			"limit", limit,
 		)
 	})
@@ -230,8 +239,19 @@ func crawlWithColly(
 		}
 	}
 
-	// Seed with sitemap URLs if source discovery allows it.
-	if source.CrawlSource != "links" {
+	// For combined discovery, crawl the entry page and its navigation first.
+	// This keeps a large blog sitemap from consuming the entire page budget
+	// before core pages linked from the homepage (for example /pricing) are
+	// even queued. Sitemaps then fill any remaining capacity with orphaned or
+	// deeper pages.
+	if source.CrawlSource != "sitemaps" {
+		_ = collector.Visit(source.StartURL)
+		collector.Wait()
+	}
+
+	// Seed with sitemap URLs if source discovery allows it and the link crawl
+	// left capacity available.
+	if source.CrawlSource != "links" && int(pageCount.Load()) < limit {
 		sitemapURLs := discoverSitemapURLs(ctx, sitemapClient, source.StartURL, logger)
 		logger.Info("sitemap discovery complete", "urls", len(sitemapURLs))
 		for _, u := range sitemapURLs {
@@ -242,14 +262,8 @@ func crawlWithColly(
 				_ = collector.Visit(u)
 			}
 		}
+		collector.Wait()
 	}
-
-	// Start from the entry URL if source discovery allows it.
-	if source.CrawlSource != "sitemaps" {
-		_ = collector.Visit(source.StartURL)
-	}
-
-	collector.Wait()
 
 	if crawlErr != nil {
 		return int(pageCount.Load()), crawlErr
@@ -294,4 +308,3 @@ func isArticlePath(rawURL string) bool {
 	}
 	return false
 }
-

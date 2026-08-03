@@ -217,6 +217,7 @@ func main() {
 			&model.CommandBarPlanRecord{},
 			&model.CommandBarPlanDismissal{},
 			&model.DockChat{},
+			&model.SupportRunEvidence{},
 			&model.CodingSessionStateSnapshot{},
 			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
@@ -1276,6 +1277,42 @@ func main() {
 	supportAIService.SetSupportEventRecorder(supportEventRecorder)
 	supportAIService.SetSupportAIRetrievalTraceRecorder(supportCoverageTraceService)
 	supportInboxService.SetSupportEventRecorder(supportEventRecorder)
+	// search_knowledge runtime tool: agent-scoped knowledge search for
+	// support chat runs, executed in this process (full retrieval wiring
+	// including curated guidance and the reranker).
+	supportRunEvidenceRepo := repository.NewSupportRunEvidenceRepository(db)
+	commandService.SetSupportKnowledgeDependencies(supportAIService, supportRunEvidenceRepo)
+	commandService.SetSupportReplyDependencies(supportAIService, aiMessageProcessingRepo, aiUsageMeter)
+	// Support chat lifecycle: conversation = agent-runtime chat-mode run.
+	// Dark until the consumer cutover — only the pause hook and sweep are
+	// live (both no-op without support_chat-trigger runs).
+	supportChatService := service.NewSupportChatService(
+		supportConversationRepo,
+		supportMessageRepo,
+		aiMessageProcessingRepo,
+		agentRunRepo,
+		commandBarPlanRepo,
+		agentService,
+		supportAIService,
+	)
+	supportChatService.SetResearchEvidenceDependencies(supportRunEvidenceRepo, workspaceRepo)
+	if agentRuntimeProjectionService != nil {
+		agentRuntimeProjectionService.SetSupportChatPauseHook(supportChatService.OnSupportChatRunPaused)
+	}
+	if projectionCtx != nil {
+		go func() {
+			if err := supportChatService.StartSupportChatSweep(projectionCtx, 30*time.Second, 30*time.Second, 50); err != nil {
+				slog.Error("support chat sweep stopped", "error", err)
+			}
+		}()
+		// Visitor-message consumer: NATS stays the serializer/retry layer;
+		// each message now drives the conversation's chat-mode run.
+		go func() {
+			if err := supportAIService.StartNATSConsumer(projectionCtx, supportChatService.HandleVisitorMessage); err != nil {
+				slog.Error("support AI consumer stopped", "error", err)
+			}
+		}()
+	}
 
 	supportCoverageDigestService := service.NewSupportCoverageDigestService(
 		supportCoverageRepo, workspaceRepo, appEmailClient, cfg.AppBaseURL,
@@ -1331,6 +1368,7 @@ func main() {
 		// Immediate delivery of settled child-plan results into dock chats;
 		// the sweep below retries chats that were mid-turn at that moment.
 		runFinalizers.SetDockChatResultNotifier(dockChatService)
+		runFinalizers.SetSupportChatResultNotifier(supportChatService)
 	}
 	if projectionCtx != nil {
 		go func() {
@@ -1414,7 +1452,8 @@ func main() {
 	}
 
 	handlers := router.Handlers{
-		Health: handler.NewHealthHandler(s3Client, geoIPResolver),
+		WidgetRateLimit: middleware.WidgetRateLimit(redisClient),
+		Health:          handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
 			ClientID:     cfg.GoogleAuthClientID,
 			ClientSecret: cfg.GoogleAuthClientSecret,

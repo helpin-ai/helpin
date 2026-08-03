@@ -304,4 +304,21 @@ export const supportService = {
   // Email details for an individual message (only when via_channel === 'email').
   getMessageEmailDetail: (workspaceId: string, messageId: string) =>
     api.get<SupportMessageEmailDetail>(`/support/inbox/messages/${messageId}/email${qs(workspaceId)}`),
+
+  // Interactions raised by the conversation's AI chat run (e.g. child-launch
+  // approvals a teammate must resolve).
+  listAIRunInteractions: (workspaceId: string, conversationId: string) =>
+    api.get<{ run_id: string; interactions: import('@/lib/pmTypes').CodingSessionInteraction[] }>(
+      `/support/inbox/conversations/${conversationId}/ai-run/interactions${qs(workspaceId)}`,
+    ),
+  resolveAIRunInteraction: (
+    workspaceId: string,
+    conversationId: string,
+    interactionId: string,
+    payload: { response_payload: Record<string, unknown>; followup_message?: string },
+  ) =>
+    api.post(
+      `/support/inbox/conversations/${conversationId}/ai-run/interactions/${interactionId}/resolve${qs(workspaceId)}`,
+      payload,
+    ),
 };

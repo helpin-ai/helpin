@@ -663,28 +663,3 @@ func TestCheckHardEscalation(t *testing.T) {
 		})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// isConfirmationMessage (moved function, verify still works)
-// ---------------------------------------------------------------------------
-
-func TestIsConfirmationMessage(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    bool
-	}{
-		{name: "thanks", content: "Thanks!", want: true},
-		{name: "that helped", content: "Oh that helped a lot", want: true},
-		{name: "question", content: "How do I reset?", want: false},
-		{name: "empty", content: "", want: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := isConfirmationMessage(tt.content)
-			if got != tt.want {
-				t.Errorf("isConfirmationMessage(%q) = %v, want %v", tt.content, got, tt.want)
-			}
-		})
-	}
-}

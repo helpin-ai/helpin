@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
@@ -90,6 +91,9 @@ type AgentRuntimeProjectionService struct {
 	usageMeter          *AIUsageMeter
 	agentRuntimeClient  agentRuntimeSignalClient
 	runFinalizers       *AgentRunFinalizerService
+	// supportChatPauseHook is set after the NATS consumer may already be
+	// running, so access is atomic.
+	supportChatPauseHook atomic.Pointer[supportChatPauseHookFunc]
 	wsPublisher         websocket.EventPublisher
 	appID               string
 	eventProtocol       string
@@ -170,6 +174,18 @@ func (s *AgentRuntimeProjectionService) SetWebSocketPublisher(wsPublisher websoc
 
 // SetRunFinalizers wires the product side-effect finalizers dispatched when a
 // delegated run transitions into a terminal status.
+// SetSupportChatPauseHook wires the support chat lifecycle callback invoked
+// after a run pauses awaiting the next user message (turn settlement check,
+// thinking indicator, deferred-message drain).
+type supportChatPauseHookFunc = func(context.Context, *model.AgentRun)
+
+func (s *AgentRuntimeProjectionService) SetSupportChatPauseHook(hook supportChatPauseHookFunc) *AgentRuntimeProjectionService {
+	if s != nil && hook != nil {
+		s.supportChatPauseHook.Store(&hook)
+	}
+	return s
+}
+
 func (s *AgentRuntimeProjectionService) SetRunFinalizers(finalizers *AgentRunFinalizerService) *AgentRuntimeProjectionService {
 	if s == nil {
 		return s
@@ -671,6 +687,21 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		return err
 	}
 	s.runRepo.Notify(ctx, run)
+	if hookPtr := s.supportChatPauseHook.Load(); hookPtr != nil && event.Type == agentruntime.EventRunPaused &&
+		run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonUserMessage {
+		hook := *hookPtr
+		runCopy := *run
+		go func() {
+			hookCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					slog.Error("support chat pause hook panic", "panic", recovered)
+				}
+			}()
+			hook(hookCtx, &runCopy)
+		}()
+	}
 	return nil
 }
 

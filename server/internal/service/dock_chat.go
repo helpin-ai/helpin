@@ -160,7 +160,7 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 		}
 	case model.IsAgentRunPausedStatus(currentRun.Status):
 		if _, err := s.agentService.SendRunMessage(ctx, workspaceID, currentRun.ID, userID, model.SendAgentRunMessageRequest{Content: composed}); err != nil {
-			if !isDockChatRunExpiredError(err) {
+			if !isChatRunExpiredError(err) {
 				return nil, err
 			}
 			// The runtime idle-expired the run; it is completed on its side.
@@ -388,9 +388,9 @@ func dockChatTitleFromContent(content string) string {
 	return title
 }
 
-// isDockChatRunExpiredError matches the runtime's idle-expiry resume error
+// isChatRunExpiredError matches the runtime's idle-expiry resume error
 // ("run idle timeout expired"), after which the runtime completes the run.
-func isDockChatRunExpiredError(err error) bool {
+func isChatRunExpiredError(err error) bool {
 	if err == nil {
 		return false
 	}

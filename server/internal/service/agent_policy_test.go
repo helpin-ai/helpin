@@ -115,8 +115,8 @@ func TestAgentDefaultsDerivedFromPreset(t *testing.T) {
 	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "codex" {
 		t.Fatalf("expected planner runtime default codex, got %q", got)
 	}
-	if got := defaultRuntimeKindForPresetKey(model.AgentPresetSupportAgent); got != "codex" {
-		t.Fatalf("expected support runtime default codex, got %q", got)
+	if got := defaultRuntimeKindForPresetKey(model.AgentPresetSupportAgent); got != "native_sdk" {
+		t.Fatalf("expected support runtime default native_sdk, got %q", got)
 	}
 }
 
@@ -220,8 +220,9 @@ func TestListAgentPresetsUseGPT56Terra(t *testing.T) {
 		t.Fatal("expected preset catalog")
 	}
 	for _, preset := range presets {
-		if preset.Key == model.AgentPresetAskAgent {
-			// The dock orchestrator defaults to a flash-tier OpenRouter model.
+		if preset.Key == model.AgentPresetAskAgent || preset.Key == model.AgentPresetSupportAgent {
+			// The dock orchestrator and support agent default to a flash-tier
+			// OpenRouter model.
 			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
 				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
 			}

@@ -177,6 +177,12 @@ func TestLegacyPromptIsManaged(t *testing.T) {
 			want:      true,
 		},
 		{
+			name:      "persisted Echo default prompt",
+			presetKey: model.AgentPresetSupportAgent,
+			prompt:    "You are Echo, the workspace support agent. You are chatting live with a customer inside a support conversation.\nEvery turn MUST end with exactly one call to send_support_reply.\nFor any factual or product question, call search_knowledge FIRST.",
+			want:      true,
+		},
+		{
 			name:      "custom prompt stays custom",
 			presetKey: model.AgentPresetEpicPlanner,
 			prompt:    "You are my special planner. Speak in haiku and keep all output under 3 lines.",

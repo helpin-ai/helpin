@@ -2,6 +2,7 @@ import { FunctionComponent } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { PaperclipIcon, SendIcon, XIcon } from './icons';
 import { EmojiPicker } from './EmojiPicker';
+import { HelpinMark } from './HelpinMark';
 import type { PendingAttachment } from '../types';
 
 const HELPIN_BRANDING_URL = 'https://helpin.ai/?utm_source=helpin_widget&utm_medium=widget&utm_campaign=powered_by';
@@ -228,7 +229,10 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
       {showBranding && (
         <div className="helpin-compose-footer">
           We run on{' '}
-          <a href={HELPIN_BRANDING_URL} target="_blank" rel="noopener noreferrer" className="helpin-compose-footer-link">Helpin</a>
+          <a href={HELPIN_BRANDING_URL} target="_blank" rel="noopener noreferrer" className="helpin-compose-footer-link">
+            <HelpinMark className="helpin-compose-footer-icon" />
+            <span>Helpin</span>
+          </a>
         </div>
       )}
     </div>

@@ -245,9 +245,9 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
   },
   command_agent: {
     ...DEFAULT_PRESET_MODEL,
-    label: 'Command Agent',
-    default_role: 'Command Agent',
-    description: 'One-shot command-bar agent: runs a single instruction with a narrowed tool set.',
+    label: 'Sub-agent',
+    default_role: 'Sub-agent',
+    description: 'Runs one delegated task with a limited tool set.',
     runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],

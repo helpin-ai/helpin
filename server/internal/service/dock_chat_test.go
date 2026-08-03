@@ -48,13 +48,13 @@ func TestDockChatTitleFromContent(t *testing.T) {
 }
 
 func TestIsDockChatRunExpiredError(t *testing.T) {
-	if isDockChatRunExpiredError(nil) {
-		t.Error("isDockChatRunExpiredError(nil) = true, want false")
+	if isChatRunExpiredError(nil) {
+		t.Error("isChatRunExpiredError(nil) = true, want false")
 	}
-	if !isDockChatRunExpiredError(errors.New("resume run: run idle timeout expired")) {
-		t.Error("isDockChatRunExpiredError() = false for idle timeout error, want true")
+	if !isChatRunExpiredError(errors.New("resume run: run idle timeout expired")) {
+		t.Error("isChatRunExpiredError() = false for idle timeout error, want true")
 	}
-	if isDockChatRunExpiredError(errors.New("run is not paused")) {
-		t.Error("isDockChatRunExpiredError() = true for unrelated error, want false")
+	if isChatRunExpiredError(errors.New("run is not paused")) {
+		t.Error("isChatRunExpiredError() = true for unrelated error, want false")
 	}
 }

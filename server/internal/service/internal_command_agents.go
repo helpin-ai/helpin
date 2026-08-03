@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"strings"
@@ -20,6 +21,42 @@ import (
 // `action` object must equal the tool input (minus approval_interaction_id) —
 // enforced server-side by canonical-hash comparison, not by prompt trust.
 const dockApprovalPayloadKind = "dock_plan_confirm"
+
+// supportApprovalPayloadKind is the request_approval payload kind a support
+// chat run must use for child launches that are not strictly read-only; the
+// approval is resolved by a teammate from the inbox. Read-only launches
+// (allowed_tools ⊆ supportChildReadOnlyTools) auto-approve.
+const supportApprovalPayloadKind = "support_plan_confirm"
+
+// orchestratorRunKind identifies which orchestration surface a calling run
+// belongs to.
+type orchestratorRunKind int
+
+const (
+	orchestratorRunDock orchestratorRunKind = iota + 1
+	orchestratorRunSupport
+)
+
+type dockGetRunRequest struct {
+	RunID        string `json:"run_id"`
+	PlanID       string `json:"plan_id"`
+	DetailLevel  string `json:"detail_level"`
+	ResultOffset int    `json:"result_offset"`
+	ResultLimit  int    `json:"result_limit"`
+}
+
+type dockGetRunResponse struct {
+	RunID           string                     `json:"run_id"`
+	Status          string                     `json:"status"`
+	PauseReason     string                     `json:"pause_reason"`
+	AgentID         string                     `json:"agent_id"`
+	TargetType      string                     `json:"target_type"`
+	TargetID        string                     `json:"target_id"`
+	Error           string                     `json:"error,omitempty"`
+	ResultAvailable bool                       `json:"result_available"`
+	Result          *dockRunResultExcerpt      `json:"result,omitempty"`
+	Artifacts       []dockRunArtifactReference `json:"artifacts,omitempty"`
+}
 
 // SetAgentOrchestrationDependencies wires the collaborators used by the
 // agents.* command tools: the command-bar dispatcher (plan validation +
@@ -82,30 +119,148 @@ func dockActionHash(value interface{}) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// resolveDockChatRun resolves the calling run and requires it to be a dock
-// chat's backing run — only the dock orchestrator may use the agents.* launch
-// tools.
-func (s *InternalCommandService) resolveDockChatRun(ctx context.Context, meta model.InternalCommandContext) (*model.AgentRun, error) {
+// resolveOrchestratorRun resolves the calling run and requires it to be an
+// orchestrator — a dock chat's backing run, or a support conversation's chat
+// run. Only orchestrators may use the agents.* launch tools.
+func (s *InternalCommandService) resolveOrchestratorRun(ctx context.Context, meta model.InternalCommandContext) (*model.AgentRun, orchestratorRunKind, error) {
 	run, err := s.resolveCommandRun(ctx, meta)
+	if err != nil {
+		return nil, 0, err
+	}
+	switch {
+	case run == nil:
+		return nil, 0, fmt.Errorf("agent launch tools are only available to dock chat or support chat runs")
+	case run.DockChatID != nil && strings.TrimSpace(*run.DockChatID) != "":
+		return run, orchestratorRunDock, nil
+	case strings.TrimSpace(run.TargetType) == "support_conversation" && runInputTriggerType(run) == supportChatTriggerType:
+		return run, orchestratorRunSupport, nil
+	default:
+		return nil, 0, fmt.Errorf("agent launch tools are only available to dock chat or support chat runs")
+	}
+}
+
+// resolveDockChatRun resolves the calling run and requires it to be a dock
+// chat's backing run — for tools that stay dock-only (create/promote agents).
+func (s *InternalCommandService) resolveDockChatRun(ctx context.Context, meta model.InternalCommandContext) (*model.AgentRun, error) {
+	run, kind, err := s.resolveOrchestratorRun(ctx, meta)
 	if err != nil {
 		return nil, err
 	}
-	if run == nil || run.DockChatID == nil || strings.TrimSpace(*run.DockChatID) == "" {
-		return nil, fmt.Errorf("agent launch tools are only available to dock chat runs")
+	if kind != orchestratorRunDock {
+		return nil, fmt.Errorf("this tool is only available to dock chat runs")
 	}
 	return run, nil
 }
 
+func (s *InternalCommandService) orchestratorPlanOwningRun(ctx context.Context, chatRun *model.AgentRun, kind orchestratorRunKind, runID string) (*model.CommandBarPlanRecord, error) {
+	if s.commandBarService == nil || s.commandBarService.planRepo == nil {
+		return nil, fmt.Errorf("command bar service is not configured")
+	}
+	var plan *model.CommandBarPlanRecord
+	var err error
+	switch {
+	case kind == orchestratorRunDock && chatRun != nil && chatRun.DockChatID != nil:
+		plan, err = s.commandBarService.planRepo.FindByDockChatAndRunID(ctx, chatRun.WorkspaceID, *chatRun.DockChatID, runID)
+	case kind == orchestratorRunSupport && chatRun != nil:
+		plan, err = s.commandBarService.planRepo.FindBySupportConversationAndRunID(ctx, chatRun.WorkspaceID, chatRun.TargetID, runID)
+	default:
+		return nil, fmt.Errorf("get_agent_run requires an orchestrator run")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if plan == nil {
+		return nil, fmt.Errorf("run_id was not launched from this chat")
+	}
+	return plan, nil
+}
+
+// orchestratorOwnsPlan reports whether a plan was launched from the calling
+// orchestrator run's chat or conversation.
+func orchestratorOwnsPlan(chatRun *model.AgentRun, kind orchestratorRunKind, plan *model.CommandBarPlanRecord) bool {
+	if chatRun == nil || plan == nil {
+		return false
+	}
+	switch kind {
+	case orchestratorRunDock:
+		return plan.DockChatID != nil && chatRun.DockChatID != nil &&
+			strings.TrimSpace(*plan.DockChatID) == strings.TrimSpace(*chatRun.DockChatID)
+	case orchestratorRunSupport:
+		return plan.SupportConversationID != nil &&
+			strings.TrimSpace(*plan.SupportConversationID) == strings.TrimSpace(chatRun.TargetID)
+	default:
+		return false
+	}
+}
+
+// checkSupportChildCaps enforces the per-conversation child-plan limits for
+// support-launched plans.
+func (s *InternalCommandService) checkSupportChildCaps(ctx context.Context, workspaceID, conversationID string) error {
+	if s.commandBarService == nil || s.commandBarService.planRepo == nil {
+		return fmt.Errorf("command bar service is not configured")
+	}
+	active, err := s.commandBarService.planRepo.CountPlansForSupportConversation(ctx, workspaceID, conversationID, true)
+	if err != nil {
+		return err
+	}
+	if active >= supportChildMaxConcurrent {
+		return fmt.Errorf("this conversation already has %d sub-agent plans running; wait for their results before launching more", active)
+	}
+	total, err := s.commandBarService.planRepo.CountPlansForSupportConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		return err
+	}
+	if total >= supportChildMaxPerConversation {
+		return fmt.Errorf("this conversation reached its child-plan limit (%d); answer with what you have or escalate to a human", supportChildMaxPerConversation)
+	}
+	return nil
+}
+
+func normalizeDockGetRunRequest(req dockGetRunRequest) (dockGetRunRequest, error) {
+	req.RunID = strings.TrimSpace(req.RunID)
+	req.PlanID = strings.TrimSpace(req.PlanID)
+	req.DetailLevel = strings.TrimSpace(req.DetailLevel)
+	if req.DetailLevel == "" {
+		req.DetailLevel = "status"
+	}
+	if req.RunID == "" && req.PlanID == "" {
+		return req, fmt.Errorf("run_id or plan_id is required")
+	}
+	if req.RunID != "" && req.PlanID != "" {
+		return req, fmt.Errorf("run_id and plan_id are mutually exclusive")
+	}
+	if req.DetailLevel != "status" && req.DetailLevel != "result" {
+		return req, fmt.Errorf("detail_level must be status or result")
+	}
+	if req.DetailLevel == "result" && req.RunID == "" {
+		return req, fmt.Errorf("detail_level=result requires run_id")
+	}
+	if req.DetailLevel == "status" && (req.ResultOffset != 0 || req.ResultLimit != 0) {
+		return req, fmt.Errorf("result_offset and result_limit require detail_level=result")
+	}
+	if req.ResultOffset < 0 {
+		return req, fmt.Errorf("result_offset must be zero or greater")
+	}
+	if req.ResultLimit < 0 || req.ResultLimit > dockRunResultMaxChars {
+		return req, fmt.Errorf("result_limit must be between 1 and %d", dockRunResultMaxChars)
+	}
+	if req.DetailLevel == "result" && req.ResultLimit == 0 {
+		req.ResultLimit = dockRunResultDefaultChars
+	}
+	return req, nil
+}
+
 // verifyDockApproval checks that the given interaction on the chat run is a
-// resolved-approved dock_plan_confirm whose action content matches actionHash,
-// and that it has not been consumed by an earlier launch.
-func (s *InternalCommandService) verifyDockApproval(ctx context.Context, meta model.InternalCommandContext, chatRun *model.AgentRun, interactionID, actionType, actionHash string) (*model.AgentRunInteraction, error) {
+// resolved-approved confirmation of the expected payload kind whose action
+// content matches actionHash, and that it has not been consumed by an earlier
+// launch.
+func (s *InternalCommandService) verifyDockApproval(ctx context.Context, meta model.InternalCommandContext, chatRun *model.AgentRun, interactionID, actionType, actionHash, payloadKind string) (*model.AgentRunInteraction, error) {
 	if s.agentRunInteractionRepo == nil {
 		return nil, fmt.Errorf("interaction repository is not configured")
 	}
 	interactionID = strings.TrimSpace(interactionID)
 	if interactionID == "" {
-		return nil, fmt.Errorf("approval_interaction_id is required: call request_approval with a %q payload first", dockApprovalPayloadKind)
+		return nil, fmt.Errorf("approval_interaction_id is required: call request_approval with a %q payload first", payloadKind)
 	}
 	interaction, err := s.agentRunInteractionRepo.GetByID(ctx, meta.WorkspaceID, chatRun.ID, interactionID)
 	if err != nil {
@@ -155,15 +310,15 @@ func (s *InternalCommandService) verifyDockApproval(ctx context.Context, meta mo
 		return nil, fmt.Errorf("approval payload is not valid JSON")
 	}
 	kind := strings.TrimSpace(firstNonEmptyString(request.Kind, request.Phase))
-	if kind != dockApprovalPayloadKind {
-		return nil, fmt.Errorf("approval must use phase %q with the proposed action", dockApprovalPayloadKind)
+	if kind != payloadKind {
+		return nil, fmt.Errorf("approval must use phase %q with the proposed action", payloadKind)
 	}
 	approvedAction := request.Action
 	if len(approvedAction) == 0 {
 		approvedAction = request.RawInput.Action
 	}
 	if len(approvedAction) == 0 {
-		return nil, fmt.Errorf("approval is missing the structured action: call request_approval with phase %q and an action object matching the tool call", dockApprovalPayloadKind)
+		return nil, fmt.Errorf("approval is missing the structured action: call request_approval with phase %q and an action object matching the tool call", payloadKind)
 	}
 	approvedHash, err := dockApprovedActionHash(actionType, approvedAction)
 	if err != nil {
@@ -258,7 +413,7 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 	if len(steps) == 0 {
 		return nil, fmt.Errorf("at least one step is required")
 	}
-	chatRun, err := s.resolveDockChatRun(ctx, meta)
+	chatRun, kind, err := s.resolveOrchestratorRun(ctx, meta)
 	if err != nil {
 		return nil, err
 	}
@@ -267,9 +422,26 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 	if err != nil {
 		return nil, err
 	}
-	interaction, err := s.verifyDockApproval(ctx, meta, chatRun, approvalInteractionID, "launch", actionHash)
-	if err != nil {
-		return nil, err
+	var interaction *model.AgentRunInteraction
+	var supportConversationID *string
+	switch kind {
+	case orchestratorRunSupport:
+		conversationID := strings.TrimSpace(chatRun.TargetID)
+		supportConversationID = &conversationID
+		if err := s.checkSupportChildCaps(ctx, meta.WorkspaceID, conversationID); err != nil {
+			return nil, err
+		}
+		if !supportStepsAreReadOnly(steps) {
+			interaction, err = s.verifyDockApproval(ctx, meta, chatRun, approvalInteractionID, "launch", actionHash, supportApprovalPayloadKind)
+			if err != nil {
+				return nil, fmt.Errorf("%w (this launch is not strictly read-only: either narrow every step's allowed_tools to read-only tools for auto-approval, or call request_approval with phase %q and the exact action — a teammate resolves it from the inbox)", err, supportApprovalPayloadKind)
+			}
+		}
+	default:
+		interaction, err = s.verifyDockApproval(ctx, meta, chatRun, approvalInteractionID, "launch", actionHash, dockApprovalPayloadKind)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	planSteps := make([]model.CommandBarPlanStep, 0, len(steps))
@@ -282,11 +454,11 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 		planKind := ""
 		if step.UseCommandAgent {
 			if len(step.AllowedTools) == 0 {
-				return nil, fmt.Errorf("step %d: one-shot command agent steps require allowed_tools", i+1)
+				return nil, fmt.Errorf("step %d: sub-agent steps require allowed_tools", i+1)
 			}
 			commandAgent, err := s.agentService.ensureBuiltInAgent(ctx, meta.WorkspaceID, meta.ActorID, model.AgentPresetCommandAgent)
 			if err != nil {
-				return nil, fmt.Errorf("resolve command agent: %w", err)
+				return nil, fmt.Errorf("resolve sub-agent: %w", err)
 			}
 			agentID = commandAgent.ID
 			agentName = commandAgent.Name
@@ -307,12 +479,16 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 			targetType = "workspace"
 			targetID = meta.WorkspaceID
 		}
+		instructions := withDockChildHandoffInstruction(step.Instructions)
+		if kind == orchestratorRunSupport {
+			instructions = withSupportChildHandoffInstruction(step.Instructions)
+		}
 		planSteps = append(planSteps, model.CommandBarPlanStep{
 			AgentID:              agentID,
 			AgentName:            agentName,
 			PlanKind:             planKind,
 			Target:               model.CommandBarPageContext{EntityType: targetType, EntityID: targetID},
-			Instructions:         step.Instructions,
+			Instructions:         instructions,
 			AllowedTools:         step.AllowedTools,
 			DependsOnStepIndexes: step.DependsOnStepIndexes,
 		})
@@ -326,7 +502,7 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 		Text:        text,
 		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: meta.WorkspaceID},
 		Steps:       planSteps,
-	}, dispatchPlanParams{parentChatRunID: &chatRun.ID, dockChatID: chatRun.DockChatID})
+	}, dispatchPlanParams{parentChatRunID: &chatRun.ID, dockChatID: chatRun.DockChatID, supportConversationID: supportConversationID})
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +570,7 @@ func dockLaunchStepSchema() map[string]any {
 		"type": "object",
 		"properties": map[string]any{
 			"agent_id":          map[string]any{"type": "string", "description": "ID of the saved agent to run (from list_agents). Omit when use_command_agent is true."},
-			"use_command_agent": map[string]any{"type": "boolean", "description": "Run the one-shot Command Agent instead of a saved agent. Requires allowed_tools."},
+			"use_command_agent": map[string]any{"type": "boolean", "description": "Run a Sub-agent instead of a saved agent. Requires allowed_tools."},
 			"target": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -402,8 +578,8 @@ func dockLaunchStepSchema() map[string]any {
 					"id":   map[string]any{"type": "string", "description": "Target entity ID. Defaults to the workspace when omitted."},
 				},
 			},
-			"instructions":  map[string]any{"type": "string", "description": "What the child run should do."},
-			"allowed_tools": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Narrowed tool list for the child run (required for use_command_agent)."},
+			"instructions":            map[string]any{"type": "string", "description": "What the sub-agent run should do."},
+			"allowed_tools":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Limited tool list for the sub-agent run (required for use_command_agent)."},
 			"depends_on_step_indexes": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Zero-based indexes of steps that must finish first (DAG plans)."},
 		},
 		"required":             []string{"instructions"},
@@ -416,7 +592,7 @@ func dockLaunchStepSchema() map[string]any {
 // results back into the chat. All mutating tools enforce the
 // dock_plan_confirm approval contract server-side.
 func (s *InternalCommandService) registerAgentOrchestrationCommands() {
-	launchTargets := []string{"workspace"}
+	launchTargets := []string{"workspace", "support_conversation"}
 
 	s.register(InternalCommandDefinition{
 		Name:                 "agents.start_run",
@@ -427,7 +603,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.start_run",
 			Alias:       "start_agent_run",
 			Category:    "Agents",
-			Description: "Start one child agent run (a saved agent by id, or the one-shot Command Agent with narrowed tools). Requires a resolved dock_plan_confirm approval whose action matches this call exactly. The result is delivered back into this chat when the run finishes.",
+			Description: "Start one sub-agent run (a saved agent by id, or a Sub-agent with limited tools). Dock chats require a resolved dock_plan_confirm approval whose action matches this call exactly. Support chat runs auto-approve when allowed_tools is a non-empty set of read-only tools; otherwise a support_plan_confirm approval resolved by a teammate is required. The result is delivered back into this chat when the run finishes.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -436,9 +612,9 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 					"target":                  dockLaunchStepSchema()["properties"].(map[string]any)["target"],
 					"instructions":            dockLaunchStepSchema()["properties"].(map[string]any)["instructions"],
 					"allowed_tools":           dockLaunchStepSchema()["properties"].(map[string]any)["allowed_tools"],
-					"approval_interaction_id": map[string]any{"type": "string", "description": "ID of the resolved dock_plan_confirm approval interaction."},
+					"approval_interaction_id": map[string]any{"type": "string", "description": "ID of the resolved approval interaction (dock_plan_confirm or support_plan_confirm). Omit only for auto-approved read-only support launches."},
 				},
-				"required":             []string{"instructions", "approval_interaction_id"},
+				"required":             []string{"instructions"},
 				"additionalProperties": false,
 			},
 		},
@@ -463,15 +639,15 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.start_plan",
 			Alias:       "start_agent_plan",
 			Category:    "Agents",
-			Description: "Start a multi-step plan of child agent runs (fan-out or dependency-ordered DAG via depends_on_step_indexes). Requires a resolved dock_plan_confirm approval whose action matches this call exactly. Results are delivered back into this chat when the plan settles.",
+			Description: "Start a multi-step plan of sub-agent runs (fan-out or dependency-ordered DAG via depends_on_step_indexes). Dock chats require a resolved dock_plan_confirm approval whose action matches this call exactly. Support chat runs auto-approve when every step's allowed_tools is a non-empty set of read-only tools; otherwise a support_plan_confirm approval resolved by a teammate is required. Results are delivered back into this chat when the plan settles.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"prompt":                  map[string]any{"type": "string", "description": "Short description of the overall plan (shown in run surfaces)."},
-					"steps":                  map[string]any{"type": "array", "items": dockLaunchStepSchema(), "description": "Plan steps in order."},
-					"approval_interaction_id": map[string]any{"type": "string", "description": "ID of the resolved dock_plan_confirm approval interaction."},
+					"steps":                   map[string]any{"type": "array", "items": dockLaunchStepSchema(), "description": "Plan steps in order."},
+					"approval_interaction_id": map[string]any{"type": "string", "description": "ID of the resolved approval interaction (dock_plan_confirm or support_plan_confirm). Omit only for auto-approved read-only support launches."},
 				},
-				"required":             []string{"steps", "approval_interaction_id"},
+				"required":             []string{"steps"},
 				"additionalProperties": false,
 			},
 		},
@@ -497,59 +673,104 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.get_run",
 			Alias:       "get_agent_run",
 			Category:    "Agents",
-			Description: "Get the status of a child agent run or plan started from this chat. Use only when the user explicitly asks about progress — results arrive in this chat automatically.",
+			Description: "Get a sub-agent plan's status, or retrieve the persisted final response of a sub-agent run started from this chat. Use status only when the user asks about progress. Use detail_level=result when a delivered sub-agent summary says summary_truncated=true; retrieve the same run instead of launching replacement work.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"run_id":  map[string]any{"type": "string"},
-					"plan_id": map[string]any{"type": "string"},
+					"run_id":        map[string]any{"type": "string", "description": "Sub-agent run ID returned in the sub-agent result. Mutually exclusive with plan_id."},
+					"plan_id":       map[string]any{"type": "string", "description": "Sub-agent plan ID whose status should be returned. Mutually exclusive with run_id."},
+					"detail_level":  map[string]any{"type": "string", "enum": []string{"status", "result"}, "description": "Return status metadata, or a bounded page of the run's persisted final response. Defaults to status."},
+					"result_offset": map[string]any{"type": "integer", "minimum": 0, "description": "Unicode-character offset for result retrieval. Defaults to 0."},
+					"result_limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": dockRunResultMaxChars, "description": "Maximum Unicode characters to return. Defaults to 6000, max 12000."},
 				},
+				"required":             []string{},
 				"additionalProperties": false,
 			},
 		},
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			var req struct {
-				RunID  string `json:"run_id"`
-				PlanID string `json:"plan_id"`
-			}
+			var req dockGetRunRequest
 			if len(input) > 0 {
 				if err := json.Unmarshal(input, &req); err != nil {
 					return nil, fmt.Errorf("parse get run input: %w", err)
 				}
 			}
-			if planID := strings.TrimSpace(req.PlanID); planID != "" {
-				if s.commandBarService == nil {
+			var err error
+			req, err = normalizeDockGetRunRequest(req)
+			if err != nil {
+				return nil, err
+			}
+			chatRun, kind, err := s.resolveOrchestratorRun(ctx, meta)
+			if err != nil {
+				return nil, err
+			}
+			if req.PlanID != "" {
+				if s.commandBarService == nil || s.commandBarService.planRepo == nil {
 					return nil, fmt.Errorf("command bar service is not configured")
 				}
-				detail, err := s.commandBarService.GetPlan(ctx, meta.WorkspaceID, meta.ActorID, planID)
+				plan, planErr := s.commandBarService.planRepo.GetByID(ctx, meta.WorkspaceID, req.PlanID)
+				if planErr != nil {
+					return nil, planErr
+				}
+				if !orchestratorOwnsPlan(chatRun, kind, plan) {
+					return nil, fmt.Errorf("plan_id was not launched from this chat")
+				}
+				detail, err := s.commandBarService.GetPlan(ctx, meta.WorkspaceID, meta.ActorID, req.PlanID)
 				if err != nil {
 					return nil, err
 				}
 				return mustJSON(detail), nil
 			}
-			runID := strings.TrimSpace(req.RunID)
-			if runID == "" {
-				return nil, fmt.Errorf("run_id or plan_id is required")
-			}
 			if s.agentRunRepo == nil {
 				return nil, fmt.Errorf("agent run repository is not configured")
 			}
-			run, err := s.agentRunRepo.GetByID(ctx, meta.WorkspaceID, runID)
+			if _, err := s.orchestratorPlanOwningRun(ctx, chatRun, kind, req.RunID); err != nil {
+				return nil, err
+			}
+			run, err := s.agentRunRepo.GetByID(ctx, meta.WorkspaceID, req.RunID)
 			if err != nil {
 				return nil, err
 			}
 			if run == nil {
 				return nil, fmt.Errorf("run not found")
 			}
-			return mustJSON(map[string]interface{}{
-				"run_id":       run.ID,
-				"status":       run.Status,
-				"pause_reason": run.PauseReason,
-				"agent_id":     run.AgentID,
-				"target_type":  run.TargetType,
-				"target_id":    run.TargetID,
-				"error":        derefString(run.ErrorMessage),
-			}), nil
+			response := dockGetRunResponse{
+				RunID:       run.ID,
+				Status:      run.Status,
+				PauseReason: run.PauseReason,
+				AgentID:     run.AgentID,
+				TargetType:  run.TargetType,
+				TargetID:    run.TargetID,
+				Error:       strings.TrimSpace(derefString(run.ErrorMessage)),
+			}
+			if req.DetailLevel == "result" {
+				if s.agentService == nil || s.agentService.runMessageRepo == nil {
+					return nil, fmt.Errorf("agent run message repository is not configured")
+				}
+				messages, messageErr := s.agentService.runMessageRepo.ListByRun(ctx, meta.WorkspaceID, run.ID)
+				if messageErr != nil {
+					return nil, messageErr
+				}
+				content := latestAssistantResponse(messages)
+				response.ResultAvailable = content != ""
+				if response.ResultAvailable {
+					if req.ResultOffset > len([]rune(strings.TrimSpace(content))) {
+						return nil, fmt.Errorf("result_offset exceeds result char_count")
+					}
+					excerpt := dockRunResultWindow(content, req.ResultOffset, req.ResultLimit)
+					response.Result = &excerpt
+				}
+				if s.agentRunArtifactRepo != nil {
+					artifacts, artifactErr := s.agentRunArtifactRepo.ListByRun(ctx, meta.WorkspaceID, run.ID)
+					if artifactErr != nil {
+						return nil, artifactErr
+					}
+					response.Artifacts = dockRunArtifactReferences(artifacts)
+				}
+				slog.InfoContext(ctx, "child run result retrieved",
+					"workspace_id", meta.WorkspaceID, "chat_run_id", chatRun.ID,
+					"run_id", run.ID, "result_offset", req.ResultOffset, "result_limit", req.ResultLimit)
+			}
+			return mustJSON(response), nil
 		},
 	})
 
@@ -562,7 +783,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.cancel_run",
 			Alias:       "cancel_agent_run",
 			Category:    "Agents",
-			Description: "Cancel a child agent run or plan started from this chat. No approval needed — cancelling stops work.",
+			Description: "Cancel a sub-agent run or plan started from this chat. No approval needed — cancelling stops work.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -582,12 +803,20 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 					return nil, fmt.Errorf("parse cancel input: %w", err)
 				}
 			}
-			if _, err := s.resolveDockChatRun(ctx, meta); err != nil {
+			cancelChatRun, cancelKind, err := s.resolveOrchestratorRun(ctx, meta)
+			if err != nil {
 				return nil, err
 			}
 			if planID := strings.TrimSpace(req.PlanID); planID != "" {
-				if s.commandBarService == nil {
+				if s.commandBarService == nil || s.commandBarService.planRepo == nil {
 					return nil, fmt.Errorf("command bar service is not configured")
+				}
+				plan, planErr := s.commandBarService.planRepo.GetByID(ctx, meta.WorkspaceID, planID)
+				if planErr != nil {
+					return nil, planErr
+				}
+				if !orchestratorOwnsPlan(cancelChatRun, cancelKind, plan) {
+					return nil, fmt.Errorf("plan_id was not launched from this chat")
 				}
 				if _, err := s.commandBarService.CancelPlan(ctx, meta.WorkspaceID, meta.ActorID, planID); err != nil {
 					return nil, err
@@ -600,6 +829,9 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			}
 			if s.agentService == nil {
 				return nil, fmt.Errorf("agent service is not configured")
+			}
+			if _, err := s.orchestratorPlanOwningRun(ctx, cancelChatRun, cancelKind, runID); err != nil {
+				return nil, err
 			}
 			if _, err := s.agentService.CancelRun(ctx, meta.WorkspaceID, runID, meta.ActorID); err != nil {
 				return nil, err
@@ -652,7 +884,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			if err != nil {
 				return nil, err
 			}
-			interaction, err := s.verifyDockApproval(ctx, meta, chatRun, req.ApprovalInteractionID, "create_agent", actionHash)
+			interaction, err := s.verifyDockApproval(ctx, meta, chatRun, req.ApprovalInteractionID, "create_agent", actionHash, dockApprovalPayloadKind)
 			if err != nil {
 				return nil, err
 			}
@@ -729,7 +961,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 				if hashErr != nil {
 					return nil, hashErr
 				}
-				interaction, approvalErr := s.verifyDockApproval(ctx, meta, run, req.ApprovalInteractionID, "epic_pipeline", actionHash)
+				interaction, approvalErr := s.verifyDockApproval(ctx, meta, run, req.ApprovalInteractionID, "epic_pipeline", actionHash, dockApprovalPayloadKind)
 				if approvalErr != nil {
 					return nil, approvalErr
 				}
@@ -767,7 +999,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.promote_run",
 			Alias:       "promote_run_to_agent",
 			Category:    "Agents",
-			Description: "Promote a finished one-shot child run into a reusable saved agent. Requires a resolved dock_plan_confirm approval whose action matches this call exactly.",
+			Description: "Promote a finished sub-agent run into a reusable saved agent. Requires a resolved dock_plan_confirm approval whose action matches this call exactly.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -801,7 +1033,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			if err != nil {
 				return nil, err
 			}
-			interaction, err := s.verifyDockApproval(ctx, meta, chatRun, req.ApprovalInteractionID, "promote_run", actionHash)
+			interaction, err := s.verifyDockApproval(ctx, meta, chatRun, req.ApprovalInteractionID, "promote_run", actionHash, dockApprovalPayloadKind)
 			if err != nil {
 				return nil, err
 			}

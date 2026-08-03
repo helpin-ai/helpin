@@ -81,6 +81,15 @@ export interface DockChildRunResult {
     agent_name?: string
     status: string
     summary?: string
+    summary_truncated?: boolean
+    summary_char_count?: number
+    result_available?: boolean
+    artifacts?: Array<{
+      artifact_id: string
+      artifact_type: string
+      format: string
+      storage_mode: string
+    }>
   }>
 }
 
