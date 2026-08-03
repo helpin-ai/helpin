@@ -208,64 +208,6 @@ func (r *CommandBarPlanRepository) MarkCancelled(ctx context.Context, workspaceI
 	return nil
 }
 
-type CommandBarUnmetIntentRepository struct {
-	db *gorm.DB
-}
-
-func NewCommandBarUnmetIntentRepository(db *gorm.DB) *CommandBarUnmetIntentRepository {
-	return &CommandBarUnmetIntentRepository{db: db}
-}
-
-func (r *CommandBarUnmetIntentRepository) Create(ctx context.Context, intent *model.CommandBarUnmetIntent) error {
-	if r == nil || r.db == nil {
-		return fmt.Errorf("command bar unmet intent repository is not configured")
-	}
-	if err := r.db.WithContext(ctx).Create(intent).Error; err != nil {
-		return fmt.Errorf("create command bar unmet intent: %w", err)
-	}
-	return nil
-}
-
-func (r *CommandBarUnmetIntentRepository) List(ctx context.Context, workspaceID, status string, limit int) ([]model.CommandBarUnmetIntent, error) {
-	if r == nil || r.db == nil {
-		return nil, fmt.Errorf("command bar unmet intent repository is not configured")
-	}
-	if limit <= 0 || limit > 100 {
-		limit = 50
-	}
-	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
-	if status != "" {
-		query = query.Where("status = ?", status)
-	}
-	var intents []model.CommandBarUnmetIntent
-	if err := query.Order("created_at DESC").Limit(limit).Find(&intents).Error; err != nil {
-		return nil, fmt.Errorf("list command bar unmet intents: %w", err)
-	}
-	return intents, nil
-}
-
-func (r *CommandBarUnmetIntentRepository) Review(ctx context.Context, workspaceID, id, status string, notes *string) (*model.CommandBarUnmetIntent, error) {
-	if r == nil || r.db == nil {
-		return nil, fmt.Errorf("command bar unmet intent repository is not configured")
-	}
-	now := time.Now().UTC()
-	if err := r.db.WithContext(ctx).
-		Model(&model.CommandBarUnmetIntent{}).
-		Where("workspace_id = ? AND id = ?", workspaceID, id).
-		Updates(map[string]any{
-			"status":       status,
-			"review_notes": notes,
-			"reviewed_at":  now,
-		}).Error; err != nil {
-		return nil, fmt.Errorf("review command bar unmet intent: %w", err)
-	}
-	var intent model.CommandBarUnmetIntent
-	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, id).First(&intent).Error; err != nil {
-		return nil, fmt.Errorf("get reviewed command bar unmet intent: %w", err)
-	}
-	return &intent, nil
-}
-
 // ListSettledUnnotifiedDockPlans returns terminal plans launched from a dock
 // chat whose result has not yet been delivered back into the chat.
 func (r *CommandBarPlanRepository) ListSettledUnnotifiedDockPlans(ctx context.Context, limit int) ([]model.CommandBarPlanRecord, error) {

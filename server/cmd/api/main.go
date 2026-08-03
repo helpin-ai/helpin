@@ -215,10 +215,7 @@ func main() {
 			// versioned migration 202607100003_public_mcp.sql. Letting GORM
 			// reconcile those tables can attempt incompatible constraint changes.
 			&model.CommandBarPlanRecord{},
-			&model.CommandBarUnmetIntent{},
 			&model.CommandBarPlanDismissal{},
-			&model.CommandBarThread{},
-			&model.CommandBarMessage{},
 			&model.DockChat{},
 			&model.CodingSessionStateSnapshot{},
 			&model.CodexWorkspaceAuth{},
@@ -591,9 +588,7 @@ func main() {
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	agentRunInteractionRepo := repository.NewAgentRunInteractionRepository(db)
 	commandBarPlanRepo := repository.NewCommandBarPlanRepository(db)
-	commandBarUnmetIntentRepo := repository.NewCommandBarUnmetIntentRepository(db)
 	commandBarPlanDismissalRepo := repository.NewCommandBarPlanDismissalRepository(db)
-	commandBarChatRepo := repository.NewCommandBarChatRepository(db)
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	pmTaskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
@@ -903,15 +898,7 @@ func main() {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
 	agentService.SetExternalMCPService(externalMCPService)
-	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMProvider).
-		SetChatRepository(commandBarChatRepo).
-		SetLLMRouterConfig(
-			cfg.CommandRouterLLMProvider,
-			cfg.CommandRouterLLMModel,
-			cfg.CommandRouterLLMMaxTokens,
-			time.Duration(cfg.CommandRouterLLMTimeoutMS)*time.Millisecond,
-		).
-		SetCommandRouterOpenRouterProviderOptions(cfg.CommandRouterOpenRouterProviderOptions).
+	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarPlanDismissalRepo).
 		SetWebsocketPublisher(wsPublisher)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
