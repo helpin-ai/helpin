@@ -230,8 +230,10 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
         <div className="helpin-compose-footer">
           We run on{' '}
           <a href={HELPIN_BRANDING_URL} target="_blank" rel="noopener noreferrer" className="helpin-compose-footer-link">
-            <HelpinMark className="helpin-compose-footer-icon" />
-            <span>Helpin</span>
+            <span className="helpin-compose-footer-brand">
+              <HelpinMark className="helpin-compose-footer-icon" />
+              <span>Helpin</span>
+            </span>
           </a>
         </div>
       )}

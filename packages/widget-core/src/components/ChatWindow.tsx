@@ -483,8 +483,10 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
           className="helpin-powered-by"
         >
           <span>Powered by</span>
-          <HelpinMark className="helpin-powered-by-icon" />
-          <span className="helpin-powered-by-name">Helpin</span>
+          <span className="helpin-powered-by-brand">
+            <HelpinMark className="helpin-powered-by-icon" />
+            <span className="helpin-powered-by-name">Helpin</span>
+          </span>
         </a>
       )}
 

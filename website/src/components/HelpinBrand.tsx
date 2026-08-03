@@ -16,13 +16,14 @@ export function HelpinBrand({
   return (
     <span
       aria-label="Helpin"
-      className={`inline-flex items-center gap-2.5 text-[1.25rem] font-bold leading-none tracking-[-0.045em] ${className}`}
+      data-helpin-brand-lockup
+      className={`inline-flex items-center gap-1 text-[1.25rem] font-bold leading-none tracking-[-0.045em] ${className}`}
     >
       <img
         src={icon}
         alt=""
         aria-hidden="true"
-        className={`${iconClassName} shrink-0`}
+        className={`${iconClassName} shrink-0 scale-125`}
       />
       <span>Helpin</span>
     </span>

@@ -5,6 +5,8 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { FooterSocialPlatform } from '@/lib/types'
+import helpinIconBlack from '@/assets/helpin-icon-black.svg'
+import helpinIconWhite from '@/assets/helpin-icon-white.svg'
 
 const FONT_AWESOME_BRAND_ICON_BASE = 'https://d3gk2c5xim1je2.cloudfront.net/fontawesome/v7.2.0/brands'
 
@@ -130,20 +132,22 @@ export function Footer() {
             className="group inline-flex w-fit items-center gap-1 whitespace-nowrap text-muted-foreground/55 transition-colors hover:text-foreground"
           >
             <span>Powered by</span>
-            <img
-              src="/brand/helpin-icon-black.svg"
-              alt=""
-              aria-hidden="true"
-              className="h-3 w-3 shrink-0 dark:hidden"
-            />
-            <img
-              src="/brand/helpin-icon-white.svg"
-              alt=""
-              aria-hidden="true"
-              className="hidden h-3 w-3 shrink-0 dark:block"
-            />
-            <span className="inline-block font-medium text-muted-foreground/80 bg-[linear-gradient(currentColor,currentColor)] bg-[length:0_1px] bg-[position:0_100%] bg-no-repeat transition-[background-size] duration-200 ease-out group-hover:bg-[length:100%_1px]">
-              Helpin
+            <span data-helpin-brand-lockup className="inline-flex items-center gap-0.5">
+              <img
+                src={helpinIconBlack}
+                alt=""
+                aria-hidden="true"
+                className="h-3 w-3 shrink-0 scale-125 dark:hidden"
+              />
+              <img
+                src={helpinIconWhite}
+                alt=""
+                aria-hidden="true"
+                className="hidden h-3 w-3 shrink-0 scale-125 dark:block"
+              />
+              <span className="inline-block font-medium text-muted-foreground/80 bg-[linear-gradient(currentColor,currentColor)] bg-[length:0_1px] bg-[position:0_100%] bg-no-repeat transition-[background-size] duration-200 ease-out group-hover:bg-[length:100%_1px]">
+                Helpin
+              </span>
             </span>
           </a>
         </div>
