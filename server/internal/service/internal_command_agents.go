@@ -50,6 +50,12 @@ func normalizeDockLaunchSteps(steps []dockLaunchStep) []dockLaunchStep {
 		step.AgentID = strings.TrimSpace(step.AgentID)
 		step.Target.Type = strings.TrimSpace(step.Target.Type)
 		step.Target.ID = strings.TrimSpace(step.Target.ID)
+		// Workspace targets always resolve to the run's workspace; models
+		// sometimes stuff a display name into target.id, so drop it from the
+		// canonical form (dispatch supplies the real workspace id).
+		if step.Target.Type == "" || step.Target.Type == "workspace" {
+			step.Target.ID = ""
+		}
 		step.Instructions = strings.TrimSpace(step.Instructions)
 		tools := make([]string, 0, len(step.AllowedTools))
 		for _, tool := range step.AllowedTools {
@@ -105,6 +111,20 @@ func (s *InternalCommandService) verifyDockApproval(ctx context.Context, meta mo
 		return nil, err
 	}
 	if interaction == nil {
+		// The agent knows the runtime-side interaction id; the projected row
+		// has its own id and records the runtime id in runtime_metadata.
+		interactions, listErr := s.agentRunInteractionRepo.ListByRun(ctx, meta.WorkspaceID, chatRun.ID)
+		if listErr != nil {
+			return nil, listErr
+		}
+		for index := range interactions {
+			if agentRunInteractionHasRuntimeInteractionID(interactions[index], interactionID) {
+				interaction = &interactions[index]
+				break
+			}
+		}
+	}
+	if interaction == nil {
 		return nil, fmt.Errorf("approval interaction not found on this chat run")
 	}
 	if interaction.InteractionKind != model.AgentRunInteractionKindApprovalRequest {
@@ -119,14 +139,32 @@ func (s *InternalCommandService) verifyDockApproval(ctx context.Context, meta mo
 	if err := json.Unmarshal(interaction.ResponsePayload, &response); err != nil || strings.TrimSpace(response.Decision) != "approve" {
 		return nil, fmt.Errorf("the user did not approve this action")
 	}
+	// The runtime's request_approval tool carries the dock contract as
+	// phase="dock_plan_confirm" plus a structured `action` object (also
+	// mirrored under raw_input). Accept a top-level `kind` for parity.
 	var request struct {
-		Kind   string          `json:"kind"`
-		Action json.RawMessage `json:"action"`
+		Kind     string          `json:"kind"`
+		Phase    string          `json:"phase"`
+		Action   json.RawMessage `json:"action"`
+		RawInput struct {
+			Action json.RawMessage `json:"action"`
+		} `json:"raw_input"`
 	}
-	if err := json.Unmarshal(interaction.RequestPayload, &request); err != nil || strings.TrimSpace(request.Kind) != dockApprovalPayloadKind {
-		return nil, fmt.Errorf("approval payload must have kind %q with the proposed action", dockApprovalPayloadKind)
+	if err := json.Unmarshal(interaction.RequestPayload, &request); err != nil {
+		return nil, fmt.Errorf("approval payload is not valid JSON")
 	}
-	approvedHash, err := dockApprovedActionHash(actionType, request.Action)
+	kind := strings.TrimSpace(firstNonEmptyString(request.Kind, request.Phase))
+	if kind != dockApprovalPayloadKind {
+		return nil, fmt.Errorf("approval must use phase %q with the proposed action", dockApprovalPayloadKind)
+	}
+	approvedAction := request.Action
+	if len(approvedAction) == 0 {
+		approvedAction = request.RawInput.Action
+	}
+	if len(approvedAction) == 0 {
+		return nil, fmt.Errorf("approval is missing the structured action: call request_approval with phase %q and an action object matching the tool call", dockApprovalPayloadKind)
+	}
+	approvedHash, err := dockApprovedActionHash(actionType, approvedAction)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +302,7 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 		}
 		targetType := step.Target.Type
 		targetID := step.Target.ID
-		if targetType == "" {
+		if targetType == "" || targetType == "workspace" {
 			targetType = "workspace"
 			targetID = meta.WorkspaceID
 		}

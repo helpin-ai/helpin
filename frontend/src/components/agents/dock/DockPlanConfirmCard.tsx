@@ -35,7 +35,7 @@ export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCard
   return (
     <div className="rounded-lg border border-amber-300/60 bg-amber-50/60 p-3 text-sm dark:border-amber-500/30 dark:bg-amber-500/10">
       <div className="mb-2 font-medium text-foreground">
-        {payload.summary?.trim() || 'The agent wants to run this — confirm?'}
+        {payload.summary?.trim() || payload.title?.trim() || 'The agent wants to run this — confirm?'}
       </div>
       {steps.length > 0 && (
         <ol className="mb-2 space-y-1.5">

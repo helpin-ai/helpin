@@ -117,6 +117,40 @@ func TestVerifyDockApprovalLaunch(t *testing.T) {
 		}
 	})
 
+	t.Run("runtime-shaped payload (phase + raw_input.action) passes", func(t *testing.T) {
+		payload, err := json.Marshal(map[string]interface{}{
+			"phase":   dockApprovalPayloadKind,
+			"title":   "Confirm child agent run",
+			"summary": "test",
+			"raw_input": map[string]interface{}{
+				"phase":  dockApprovalPayloadKind,
+				"action": map[string]interface{}{"steps": steps},
+			},
+		})
+		if err != nil {
+			t.Fatalf("marshal payload: %v", err)
+		}
+		interaction := seedDockApproval(t, db, chatRun.ID, func(i *model.AgentRunInteraction) {
+			i.RequestPayload = payload
+		})
+		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps)); err != nil {
+			t.Fatalf("verifyDockApproval() runtime shape = %v, want nil", err)
+		}
+	})
+
+	t.Run("missing action rejected", func(t *testing.T) {
+		payload, _ := json.Marshal(map[string]interface{}{
+			"phase": dockApprovalPayloadKind,
+			"title": "Confirm child agent run",
+		})
+		interaction := seedDockApproval(t, db, chatRun.ID, func(i *model.AgentRunInteraction) {
+			i.RequestPayload = payload
+		})
+		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps)); err == nil || !strings.Contains(err.Error(), "missing the structured action") {
+			t.Fatalf("verifyDockApproval() without action = %v, want missing-action error", err)
+		}
+	})
+
 	t.Run("single-step inline action form passes", func(t *testing.T) {
 		interaction := seedDockApproval(t, db, chatRun.ID, func(i *model.AgentRunInteraction) {
 			i.RequestPayload = dockApprovalRequestPayload(t, steps[0])

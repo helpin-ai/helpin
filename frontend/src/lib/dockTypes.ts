@@ -36,9 +36,13 @@ export interface UpdateDockChatRequest {
  * The dock renders it as the confirm card.
  */
 export interface DockPlanConfirmPayload {
-  kind: 'dock_plan_confirm'
+  kind?: string
+  /** The runtime's request_approval tool carries the contract as phase. */
+  phase?: string
+  title?: string
   summary?: string
   action?: DockPlanConfirmAction
+  raw_input?: { action?: DockPlanConfirmAction }
 }
 
 export interface DockPlanConfirmAction {
@@ -109,6 +113,6 @@ export function parseDockChildResult(content: string): DockChildRunResult | null
 export function parseDockPlanConfirm(payload: unknown): DockPlanConfirmPayload | null {
   if (!payload || typeof payload !== 'object') return null
   const candidate = payload as DockPlanConfirmPayload
-  if (candidate.kind !== 'dock_plan_confirm') return null
-  return candidate
+  if (candidate.kind !== 'dock_plan_confirm' && candidate.phase !== 'dock_plan_confirm') return null
+  return { ...candidate, action: candidate.action ?? candidate.raw_input?.action }
 }
