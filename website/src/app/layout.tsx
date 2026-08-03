@@ -3,6 +3,7 @@ import Script from 'next/script';
 import { Plus_Jakarta_Sans, Instrument_Serif } from 'next/font/google';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
+import { createPageMetadata, PAGE_SEO, SITE_URL } from '@/lib/metadata';
 import './globals.css';
 
 const jakarta = Plus_Jakarta_Sans({
@@ -20,28 +21,9 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: 'Helpin — The AI Operating System for Modern Work',
-  description:
-    'Helpin brings project management, support, sales, and docs into one connected system. AI agents plan, build, triage, and follow up — so your team moves faster without the chaos.',
-  metadataBase: new URL('https://helpin.ai'),
-  openGraph: {
-    title: 'Helpin — The AI Operating System for Modern Work',
-    description:
-      'One connected system for PM, support, sales, and docs. AI agents that actually do the work.',
-    url: 'https://helpin.ai',
-    siteName: 'Helpin',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Helpin — The AI Operating System for Modern Work',
-    description:
-      'One connected system for PM, support, sales, and docs. AI agents that actually do the work.',
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
+  ...createPageMetadata(PAGE_SEO.home),
+  applicationName: 'Helpin',
+  metadataBase: new URL(SITE_URL),
   icons: {
     icon: [
       { url: '/favicon.ico?v=20260803-3', sizes: 'any' },
