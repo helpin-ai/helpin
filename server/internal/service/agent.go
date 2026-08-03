@@ -68,7 +68,7 @@ func defaultSystemAgentNameForPresetKey(presetKey string) string {
 	case model.AgentPresetReviewAgent:
 		return "Lens"
 	case model.AgentPresetCommandAgent:
-		return "Command Agent"
+		return "Sub-agent"
 	case model.AgentPresetAskAgent:
 		return "Ask Agent"
 	default:

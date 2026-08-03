@@ -32,6 +32,9 @@ func TestSupportReplyInternalProcessDisclosures(t *testing.T) {
 	if got := supportReplyInternalProcessDisclosures(bad); len(got) < 4 {
 		t.Fatalf("expected internal process disclosures, got %v", got)
 	}
+	if got := supportReplyInternalProcessDisclosures("I launched a sub-agent to inspect the repository."); len(got) == 0 {
+		t.Fatalf("expected sub-agent process disclosure to be rejected, got %v", got)
+	}
 	good := "Usermaven supports Google Ads conversion tracking. I can confirm the exact offline-sync workflow with our product team."
 	if got := supportReplyInternalProcessDisclosures(good); len(got) != 0 {
 		t.Fatalf("customer-facing limitation was rejected: %v", got)

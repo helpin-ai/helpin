@@ -28,7 +28,7 @@ export function EnrichmentRailCard({ workspaceId, objectType, objectId }: Enrich
       <div className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border/70 px-4 py-5 text-center">
         <p className="text-sm font-semibold">Pull from the web</p>
         <p className="text-xs text-muted-foreground">
-          Use Command Agent to research and update safe CRM fields.
+          Use a sub-agent to research and update safe CRM fields.
         </p>
         <Button size="sm" className="mt-1 gap-1.5" onClick={handleEnrich}>
           <SparklesIcon className="h-3.5 w-3.5" />

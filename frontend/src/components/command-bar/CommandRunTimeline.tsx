@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import { ArrowUpRight01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
+import { displayAgentName } from '@/lib/agentTerminology';
 import type { AgentRun, CommandBarPageContext, CommandBarPlanStep } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from '@/components/agents/dock/planSummary';
 
@@ -100,7 +101,7 @@ export function CommandPlanTimeline({
   const subtitle = isFanOut
     ? `${steps.length} targets`
     : isOneShot
-    ? 'one-shot'
+    ? 'sub-agent'
     : `${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`;
   const retryLabel = isFanOut ? 'Retry failed' : 'Retry';
 
@@ -111,7 +112,7 @@ export function CommandPlanTimeline({
           <div className="flex min-w-0 items-center gap-2">
             <h3 className="truncate text-[13px] font-medium leading-5 text-foreground">{title}</h3>
             {isFanOut ? <Badge variant="outline" className="h-5 px-1.5 text-[10px]">fan-out</Badge> : null}
-            {isOneShot ? <Badge variant="outline" className="h-5 px-1.5 text-[10px]">one-shot</Badge> : null}
+            {isOneShot ? <Badge variant="outline" className="h-5 px-1.5 text-[10px]">sub-agent</Badge> : null}
           </div>
           <p className="mt-0.5 truncate text-[11px] leading-4 text-muted-foreground">
             {subtitle}
@@ -267,7 +268,7 @@ function RunningRunHero({
 
 function agentNameForRun(run: AgentRun): string {
   const fromInput = (run.input as Record<string, unknown> | undefined)?.['agent_name'];
-  if (typeof fromInput === 'string' && fromInput.trim()) return fromInput.trim();
+  if (typeof fromInput === 'string' && fromInput.trim()) return displayAgentName(fromInput);
   const fromTitle = run.target_info?.title;
   if (fromTitle) return 'Agent';
   return 'Agent';
@@ -313,7 +314,7 @@ function CommandRunNode({
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1.5">
               {branch ? <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">{targetKindLabel(step.target.entity_type, index)}</span> : null}
-              <span className={cn('shrink-0 whitespace-nowrap text-[12.5px] font-medium leading-5', accent.text)}>{step.agent_name || 'Agent'}</span>
+              <span className={cn('shrink-0 whitespace-nowrap text-[12.5px] font-medium leading-5', accent.text)}>{displayAgentName(step.agent_name) || 'Agent'}</span>
               <span className="min-w-0 truncate text-[12.5px] leading-5 text-muted-foreground">{description}</span>
             </div>
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-muted-foreground">
@@ -330,7 +331,7 @@ function CommandRunNode({
                 variant="ghost"
                 size="icon"
                 className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                aria-label={`Open ${step.agent_name || 'agent'} run`}
+                aria-label={`Open ${displayAgentName(step.agent_name) || 'agent'} run`}
                 onClick={() => onOpenRun(run.id)}
               >
                 <ArrowUpRight01Icon className="h-3.5 w-3.5" />
@@ -450,15 +451,15 @@ function stepDescription(step: CommandBarPlanStep, run?: AgentRun) {
 
 function planTitle(plan: CommandBarRunPlan, runs: Array<AgentRun | undefined>) {
   if (plan.planKind === 'fan_out') {
-    const agent = plan.steps[0]?.agent_name ?? 'Agent';
+    const agent = displayAgentName(plan.steps[0]?.agent_name ?? 'Agent');
     const target = targetTypeLabel(plan.steps[0]?.target.entity_type ?? 'target');
     return `${agent} across ${plan.steps.length} ${target.toLowerCase()}${plan.steps.length === 1 ? '' : 's'}`;
   }
   if (plan.steps.length > 1) {
-    return plan.steps.map((step) => step.agent_name).filter(Boolean).join(' -> ') || plan.prompt || 'Command plan';
+    return plan.steps.map((step) => displayAgentName(step.agent_name)).filter(Boolean).join(' -> ') || plan.prompt || 'Command plan';
   }
-  if (plan.planKind === 'one_shot_command') return 'Command Agent';
-  return runs[0] ? targetLabel(runs[0]) : plan.prompt || plan.steps[0]?.agent_name || 'Command plan';
+  if (plan.planKind === 'one_shot_command') return 'Sub-agent';
+  return runs[0] ? targetLabel(runs[0]) : plan.prompt || displayAgentName(plan.steps[0]?.agent_name ?? '') || 'Command plan';
 }
 
 function summarizePlan(plan: CommandBarRunPlan, runs: Array<AgentRun | undefined>) {

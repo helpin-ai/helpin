@@ -360,6 +360,8 @@ func supportReplyInternalProcessDisclosures(content string) []string {
 		"evidence_id",
 		"source ranking",
 		"child agent",
+		"sub-agent",
+		"sub agent",
 		"agent run",
 		"repository inspection",
 		"confidence threshold",

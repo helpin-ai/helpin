@@ -320,6 +320,9 @@ func TestEnsureBuiltInCommandAgentReconcilesLegacyResearcherPreset(t *testing.T)
 	if updated.PresetVersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent) {
 		t.Fatalf("expected canonical command agent preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent), updated.PresetVersionKey)
 	}
+	if updated.Name != "Sub-agent" {
+		t.Fatalf("expected legacy command agent display name to reconcile to Sub-agent, got %q", updated.Name)
+	}
 
 	agents, err := agentRepo.List(context.Background(), "ws-test")
 	if err != nil {

@@ -51,7 +51,7 @@ func (s *CommandBarService) dispatchPlanCore(ctx context.Context, workspaceID, a
 			return nil, fmt.Errorf("agent_id is required for step %d", i+1)
 		}
 		if step.PlanKind == model.CommandBarPlanKindOneShotCommand && len(step.AllowedTools) == 0 {
-			return nil, fmt.Errorf("one-shot command step %d requires at least one enabled tool", i+1)
+			return nil, fmt.Errorf("sub-agent step %d requires at least one enabled tool", i+1)
 		}
 	}
 	if err := s.validateDispatchSteps(ctx, workspaceID, steps); err != nil {
@@ -160,10 +160,10 @@ func (s *CommandBarService) validateDispatchSteps(ctx context.Context, workspace
 		}
 		if normalizePresetKey(agent.PresetKey) == model.AgentPresetCommandAgent {
 			if step.PlanKind != model.CommandBarPlanKindOneShotCommand && step.PlanKind != model.CommandBarPlanKindDAG {
-				return fmt.Errorf("command agent step %d must be dispatched as a one-shot command or DAG step", i+1)
+				return fmt.Errorf("sub-agent step %d must be dispatched as a delegated command or DAG step", i+1)
 			}
 			if len(step.AllowedTools) == 0 {
-				return fmt.Errorf("command agent step %d requires a narrowed tool subset", i+1)
+				return fmt.Errorf("sub-agent step %d requires a limited tool set", i+1)
 			}
 		}
 	}
@@ -263,4 +263,3 @@ func commandBarHasDependencyCycle(steps []model.CommandBarPlanStep) bool {
 	}
 	return false
 }
-

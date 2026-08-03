@@ -222,6 +222,25 @@ func TestVerifyDockApprovalLaunch(t *testing.T) {
 	})
 }
 
+func TestAgentOrchestrationToolDescriptionsUseSubAgentTerminology(t *testing.T) {
+	svc := &InternalCommandService{definitions: map[string]InternalCommandDefinition{}}
+	svc.registerAgentOrchestrationCommands()
+
+	for _, name := range []string{"agents.start_run", "agents.start_plan", "agents.get_run", "agents.cancel_run", "agents.promote_run"} {
+		definition, ok := svc.Definition(name)
+		if !ok || definition.Tool == nil {
+			t.Fatalf("%s definition missing", name)
+		}
+		lower := strings.ToLower(definition.Tool.Description)
+		if strings.Contains(lower, "child agent") || strings.Contains(lower, "child run") || strings.Contains(lower, "one-shot") {
+			t.Fatalf("%s uses legacy agent terminology: %q", name, definition.Tool.Description)
+		}
+		if !strings.Contains(lower, "sub-agent") {
+			t.Fatalf("%s description does not use sub-agent terminology: %q", name, definition.Tool.Description)
+		}
+	}
+}
+
 func TestDockActionHashNormalization(t *testing.T) {
 	base := []dockLaunchStep{{
 		AgentID:      " agent-1 ",
@@ -279,7 +298,7 @@ func TestAskAgentPromptRecoversTruncatedResultWithoutRerun(t *testing.T) {
 	for _, required := range []string{
 		"summary_truncated=true",
 		`{"run_id":"...","detail_level":"result"}`,
-		"Never launch a replacement child merely to recover truncated output",
+		"Never launch a replacement sub-agent merely to recover truncated output",
 	} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("Ask Agent prompt missing %q", required)

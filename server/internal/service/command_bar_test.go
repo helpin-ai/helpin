@@ -903,8 +903,8 @@ func TestValidateDispatchStepsRequiresOneShotKindForCommandAgent(t *testing.T) {
 		Instructions: "Update this doc.",
 		AllowedTools: []string{"read_document"},
 	}})
-	if err == nil || !strings.Contains(err.Error(), "must be dispatched as a one-shot command") {
-		t.Fatalf("expected one-shot kind validation error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "must be dispatched as a delegated command") {
+		t.Fatalf("expected sub-agent kind validation error, got %v", err)
 	}
 
 	err = service.validateDispatchSteps(ctx, workspaceID, []model.CommandBarPlanStep{{
@@ -1581,5 +1581,3 @@ func createCommandBarChatTablesForTest(t *testing.T, db *gorm.DB) {
 		}
 	}
 }
-
-

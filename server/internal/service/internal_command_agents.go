@@ -204,7 +204,7 @@ func (s *InternalCommandService) checkSupportChildCaps(ctx context.Context, work
 		return err
 	}
 	if active >= supportChildMaxConcurrent {
-		return fmt.Errorf("this conversation already has %d child plans running; wait for their results before launching more", active)
+		return fmt.Errorf("this conversation already has %d sub-agent plans running; wait for their results before launching more", active)
 	}
 	total, err := s.commandBarService.planRepo.CountPlansForSupportConversation(ctx, workspaceID, conversationID, false)
 	if err != nil {
@@ -454,11 +454,11 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 		planKind := ""
 		if step.UseCommandAgent {
 			if len(step.AllowedTools) == 0 {
-				return nil, fmt.Errorf("step %d: one-shot command agent steps require allowed_tools", i+1)
+				return nil, fmt.Errorf("step %d: sub-agent steps require allowed_tools", i+1)
 			}
 			commandAgent, err := s.agentService.ensureBuiltInAgent(ctx, meta.WorkspaceID, meta.ActorID, model.AgentPresetCommandAgent)
 			if err != nil {
-				return nil, fmt.Errorf("resolve command agent: %w", err)
+				return nil, fmt.Errorf("resolve sub-agent: %w", err)
 			}
 			agentID = commandAgent.ID
 			agentName = commandAgent.Name
@@ -570,7 +570,7 @@ func dockLaunchStepSchema() map[string]any {
 		"type": "object",
 		"properties": map[string]any{
 			"agent_id":          map[string]any{"type": "string", "description": "ID of the saved agent to run (from list_agents). Omit when use_command_agent is true."},
-			"use_command_agent": map[string]any{"type": "boolean", "description": "Run the one-shot Command Agent instead of a saved agent. Requires allowed_tools."},
+			"use_command_agent": map[string]any{"type": "boolean", "description": "Run a Sub-agent instead of a saved agent. Requires allowed_tools."},
 			"target": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -578,8 +578,8 @@ func dockLaunchStepSchema() map[string]any {
 					"id":   map[string]any{"type": "string", "description": "Target entity ID. Defaults to the workspace when omitted."},
 				},
 			},
-			"instructions":            map[string]any{"type": "string", "description": "What the child run should do."},
-			"allowed_tools":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Narrowed tool list for the child run (required for use_command_agent)."},
+			"instructions":            map[string]any{"type": "string", "description": "What the sub-agent run should do."},
+			"allowed_tools":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Limited tool list for the sub-agent run (required for use_command_agent)."},
 			"depends_on_step_indexes": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Zero-based indexes of steps that must finish first (DAG plans)."},
 		},
 		"required":             []string{"instructions"},
@@ -603,7 +603,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.start_run",
 			Alias:       "start_agent_run",
 			Category:    "Agents",
-			Description: "Start one child agent run (a saved agent by id, or the one-shot Command Agent with narrowed tools). Dock chats require a resolved dock_plan_confirm approval whose action matches this call exactly. Support chat runs auto-approve when allowed_tools is a non-empty set of read-only tools; otherwise a support_plan_confirm approval resolved by a teammate is required. The result is delivered back into this chat when the run finishes.",
+			Description: "Start one sub-agent run (a saved agent by id, or a Sub-agent with limited tools). Dock chats require a resolved dock_plan_confirm approval whose action matches this call exactly. Support chat runs auto-approve when allowed_tools is a non-empty set of read-only tools; otherwise a support_plan_confirm approval resolved by a teammate is required. The result is delivered back into this chat when the run finishes.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -639,7 +639,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.start_plan",
 			Alias:       "start_agent_plan",
 			Category:    "Agents",
-			Description: "Start a multi-step plan of child agent runs (fan-out or dependency-ordered DAG via depends_on_step_indexes). Dock chats require a resolved dock_plan_confirm approval whose action matches this call exactly. Support chat runs auto-approve when every step's allowed_tools is a non-empty set of read-only tools; otherwise a support_plan_confirm approval resolved by a teammate is required. Results are delivered back into this chat when the plan settles.",
+			Description: "Start a multi-step plan of sub-agent runs (fan-out or dependency-ordered DAG via depends_on_step_indexes). Dock chats require a resolved dock_plan_confirm approval whose action matches this call exactly. Support chat runs auto-approve when every step's allowed_tools is a non-empty set of read-only tools; otherwise a support_plan_confirm approval resolved by a teammate is required. Results are delivered back into this chat when the plan settles.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -673,12 +673,12 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.get_run",
 			Alias:       "get_agent_run",
 			Category:    "Agents",
-			Description: "Get a child plan's status, or retrieve the persisted final response of a child run started from this chat. Use status only when the user asks about progress. Use detail_level=result when a delivered child summary says summary_truncated=true; retrieve the same run instead of launching replacement work.",
+			Description: "Get a sub-agent plan's status, or retrieve the persisted final response of a sub-agent run started from this chat. Use status only when the user asks about progress. Use detail_level=result when a delivered sub-agent summary says summary_truncated=true; retrieve the same run instead of launching replacement work.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"run_id":        map[string]any{"type": "string", "description": "Child run ID returned in the child result. Mutually exclusive with plan_id."},
-					"plan_id":       map[string]any{"type": "string", "description": "Child plan ID whose status should be returned. Mutually exclusive with run_id."},
+					"run_id":        map[string]any{"type": "string", "description": "Sub-agent run ID returned in the sub-agent result. Mutually exclusive with plan_id."},
+					"plan_id":       map[string]any{"type": "string", "description": "Sub-agent plan ID whose status should be returned. Mutually exclusive with run_id."},
 					"detail_level":  map[string]any{"type": "string", "enum": []string{"status", "result"}, "description": "Return status metadata, or a bounded page of the run's persisted final response. Defaults to status."},
 					"result_offset": map[string]any{"type": "integer", "minimum": 0, "description": "Unicode-character offset for result retrieval. Defaults to 0."},
 					"result_limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": dockRunResultMaxChars, "description": "Maximum Unicode characters to return. Defaults to 6000, max 12000."},
@@ -783,7 +783,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.cancel_run",
 			Alias:       "cancel_agent_run",
 			Category:    "Agents",
-			Description: "Cancel a child agent run or plan started from this chat. No approval needed — cancelling stops work.",
+			Description: "Cancel a sub-agent run or plan started from this chat. No approval needed — cancelling stops work.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -999,7 +999,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.promote_run",
 			Alias:       "promote_run_to_agent",
 			Category:    "Agents",
-			Description: "Promote a finished one-shot child run into a reusable saved agent. Requires a resolved dock_plan_confirm approval whose action matches this call exactly.",
+			Description: "Promote a finished sub-agent run into a reusable saved agent. Requires a resolved dock_plan_confirm approval whose action matches this call exactly.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
