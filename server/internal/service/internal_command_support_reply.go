@@ -303,8 +303,15 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		}
 	}
 
+	triggerMessageID := s.supportTurnSourceMessageID(ctx, meta.WorkspaceID, conversationID, history)
 	s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, &message.ID)
 	s.consumeSupportReplyBilling(ctx, meta.WorkspaceID, conversationID, message.ID)
+	// Answer trace feeds coverage analytics (the retrieval trace was emitted
+	// by search_knowledge; this one records the delivered outcome).
+	supportAI.recordSupportAIAnswerTrace(ctx, meta.WorkspaceID, conversationID, message.ID,
+		triggerMessageID, agentID, SupportQueryPlanContract{}, evidence, contract,
+		supportEvidenceCoverage{}, supportAnswerValidation{Outcome: gate.ValidationOutcome},
+		gate.Confidence, kind, "runtime_tool", false, nil)
 	supportAI.publishTypingIndicator(ctx, meta.WorkspaceID, conversationID, false)
 
 	return mustJSON(map[string]any{
