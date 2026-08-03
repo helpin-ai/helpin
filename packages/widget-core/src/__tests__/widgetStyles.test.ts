@@ -20,9 +20,13 @@ describe('widget scroll styles', () => {
 
   it('animates Helpin branding underlines from left to right on hover', () => {
     expect(ruleBody('.helpin-powered-by')).toContain('text-decoration: none');
+    expect(ruleBody('.helpin-powered-by-brand')).toContain('gap: 2px');
     expect(ruleBody('.helpin-powered-by-name')).toContain('background-size: 0 1px');
+    expect(ruleBody('.helpin-powered-by-icon')).toContain('transform: scale(1.25)');
     expect(ruleBody('.helpin-powered-by:hover .helpin-powered-by-name')).toContain('background-size: 100% 1px');
     expect(ruleBody('.helpin-compose-footer-link')).toContain('background-size: 0 1px');
+    expect(ruleBody('.helpin-compose-footer-brand')).toContain('gap: 2px');
+    expect(ruleBody('.helpin-compose-footer-icon')).toContain('transform: scale(1.25)');
     expect(ruleBody('.helpin-compose-footer:hover .helpin-compose-footer-link')).toContain('background-size: 100% 1px');
   });
 
