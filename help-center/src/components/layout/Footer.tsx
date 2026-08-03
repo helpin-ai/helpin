@@ -130,6 +130,18 @@ export function Footer() {
             className="group inline-flex w-fit items-center gap-1 whitespace-nowrap text-muted-foreground/55 transition-colors hover:text-foreground"
           >
             <span>Powered by</span>
+            <img
+              src="/brand/helpin-icon-black.svg"
+              alt=""
+              aria-hidden="true"
+              className="h-3 w-3 shrink-0 dark:hidden"
+            />
+            <img
+              src="/brand/helpin-icon-white.svg"
+              alt=""
+              aria-hidden="true"
+              className="hidden h-3 w-3 shrink-0 dark:block"
+            />
             <span className="inline-block font-medium text-muted-foreground/80 bg-[linear-gradient(currentColor,currentColor)] bg-[length:0_1px] bg-[position:0_100%] bg-no-repeat transition-[background-size] duration-200 ease-out group-hover:bg-[length:100%_1px]">
               Helpin
             </span>

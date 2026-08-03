@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Check, ArrowRight, Zap, Users, Building2, Layers, MessageCircle, BarChart3, FileText, Search, Code2, CheckCircle, Send } from 'lucide-react';
+import { HelpinBrand } from '@/components/HelpinBrand';
 
 const PLANS = [
   {
@@ -380,7 +381,7 @@ export default function PricingPage() {
             ))}
             <div className="flex items-center justify-between px-6 py-5 bg-pop-light border-t-2 border-pop">
               <div className="flex items-center gap-3">
-                <img src="/logos/helpin-light-mode-logo.svg" className="h-7" alt="Helpin" />
+                <HelpinBrand iconClassName="h-7 w-7" />
                 <span className="text-[16px] font-medium text-muted-foreground">(replaces all of the above)</span>
               </div>
               <span className="text-[16px] font-bold text-pop">Free forever — paid from $99/mo</span>
