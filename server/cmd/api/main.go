@@ -1304,6 +1304,13 @@ func main() {
 				slog.Error("support chat sweep stopped", "error", err)
 			}
 		}()
+		// Visitor-message consumer: NATS stays the serializer/retry layer;
+		// each message now drives the conversation's chat-mode run.
+		go func() {
+			if err := supportAIService.StartNATSConsumer(projectionCtx, supportChatService.HandleVisitorMessage); err != nil {
+				slog.Error("support AI consumer stopped", "error", err)
+			}
+		}()
 	}
 
 	supportCoverageDigestService := service.NewSupportCoverageDigestService(

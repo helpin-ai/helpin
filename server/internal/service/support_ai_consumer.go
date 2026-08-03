@@ -13,10 +13,16 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-// StartNATSConsumer starts the durable pull consumer for AI request events.
-// Runs on the worker node, not the API process.
-func (s *SupportAIService) StartNATSConsumer(ctx context.Context) error {
-	if s.js == nil {
+// SupportChatMessageHandler processes one visitor message; the production
+// handler is SupportChatService.HandleVisitorMessage.
+type SupportChatMessageHandler func(ctx context.Context, workspaceID, conversationID string, msg *model.SupportMessage) error
+
+// StartNATSConsumer starts the durable pull consumer for AI request events
+// and routes each visitor message through handler. Runs in the API process
+// (alongside the agent-runtime projection the chat runs depend on); NATS
+// keeps its role as serializer / retry / poison-message layer.
+func (s *SupportAIService) StartNATSConsumer(ctx context.Context, handler SupportChatMessageHandler) error {
+	if s.js == nil || handler == nil {
 		return nil
 	}
 
@@ -75,13 +81,13 @@ func (s *SupportAIService) StartNATSConsumer(ctx context.Context) error {
 		}
 
 		for _, msg := range msgs {
-			s.processNATSMessage(ctx, msg)
+			s.processNATSMessage(ctx, msg, handler)
 		}
 	}
 }
 
 // processNATSMessage handles a single NATS message.
-func (s *SupportAIService) processNATSMessage(ctx context.Context, msg *nats.Msg) {
+func (s *SupportAIService) processNATSMessage(ctx context.Context, msg *nats.Msg, handler SupportChatMessageHandler) {
 	var event AIRequestEvent
 	if err := json.Unmarshal(msg.Data, &event); err != nil {
 		slog.Error("support AI consumer: invalid payload", "error", err)
@@ -89,14 +95,17 @@ func (s *SupportAIService) processNATSMessage(ctx context.Context, msg *nats.Msg
 		return
 	}
 
-	// Check delivery count for poison message handling.
+	// Poison-message handling: retries exhausted → a human takes over.
 	meta, _ := msg.Metadata()
 	if meta != nil && meta.NumDelivered >= 3 {
-		slog.Error("support AI consumer: max deliveries reached, marking failed",
+		slog.Error("support AI consumer: max deliveries reached, escalating to human",
 			"workspace_id", event.WorkspaceID,
 			"conversation_id", event.ConversationID,
 			"message_id", event.MessageID,
 		)
+		if err := s.EscalateToHumanForMessage(ctx, event.WorkspaceID, event.ConversationID, event.MessageID, "ai_pipeline_error"); err != nil {
+			slog.Error("support AI consumer: poison escalation failed", "message_id", event.MessageID, "error", err)
+		}
 		if s.processingRepo != nil {
 			if err := s.processingRepo.MarkFailedBySourceMessageID(ctx, event.MessageID); err != nil {
 				slog.Error("support AI consumer: failed to mark message failed", "message_id", event.MessageID, "error", err)
@@ -118,7 +127,7 @@ func (s *SupportAIService) processNATSMessage(ctx context.Context, msg *nats.Msg
 		return
 	}
 
-	if err := s.HandleIncomingMessage(ctx, event.WorkspaceID, event.ConversationID, supportMsg); err != nil {
+	if err := handler(ctx, event.WorkspaceID, event.ConversationID, supportMsg); err != nil {
 		slog.ErrorContext(ctx, "support AI consumer: processing failed",
 			"workspace_id", event.WorkspaceID,
 			"conversation_id", event.ConversationID,
