@@ -217,6 +217,7 @@ func main() {
 			&model.CommandBarPlanRecord{},
 			&model.CommandBarPlanDismissal{},
 			&model.DockChat{},
+			&model.SupportRunEvidence{},
 			&model.CodingSessionStateSnapshot{},
 			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
@@ -1276,6 +1277,11 @@ func main() {
 	supportAIService.SetSupportEventRecorder(supportEventRecorder)
 	supportAIService.SetSupportAIRetrievalTraceRecorder(supportCoverageTraceService)
 	supportInboxService.SetSupportEventRecorder(supportEventRecorder)
+	// search_knowledge runtime tool: agent-scoped knowledge search for
+	// support chat runs, executed in this process (full retrieval wiring
+	// including curated guidance and the reranker).
+	supportRunEvidenceRepo := repository.NewSupportRunEvidenceRepository(db)
+	commandService.SetSupportKnowledgeDependencies(supportAIService, supportRunEvidenceRepo)
 
 	supportCoverageDigestService := service.NewSupportCoverageDigestService(
 		supportCoverageRepo, workspaceRepo, appEmailClient, cfg.AppBaseURL,

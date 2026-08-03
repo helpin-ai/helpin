@@ -4261,3 +4261,76 @@ func stripConversationPII(content string, customerEmail, customerPhone *string) 
 	result = piiRegexes[2].ReplaceAllString(result, "[REDACTED]")
 	return result
 }
+
+// SupportKnowledgeSearchOutcome is what the search_knowledge runtime tool
+// receives: the resolved support agent plus the agent-scoped search results.
+type SupportKnowledgeSearchOutcome struct {
+	AgentID string
+	Results []KnowledgeSearchResult
+}
+
+// SearchKnowledgeForConversation runs the agent-scoped knowledge search for a
+// support conversation on behalf of the search_knowledge runtime tool. It
+// resolves the workspace's configured support agent, searches docs, crawled
+// content, and curated guidance, and emits a coverage retrieval trace tied to
+// the conversation's latest customer message.
+func (s *SupportAIService) SearchKnowledgeForConversation(ctx context.Context, workspaceID, conversationID, language string, queries []string) (*SupportKnowledgeSearchOutcome, error) {
+	if s == nil {
+		return nil, fmt.Errorf("support AI service is not configured")
+	}
+	settings, err := s.loadSettings(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if settings.AIAgentID == nil || strings.TrimSpace(*settings.AIAgentID) == "" {
+		return nil, fmt.Errorf("no support AI agent is configured for this workspace")
+	}
+	agentID := strings.TrimSpace(*settings.AIAgentID)
+
+	results, err := s.loadKnowledgeChunks(ctx, workspaceID, agentID, language, queries)
+	if err != nil {
+		return nil, err
+	}
+
+	s.recordToolRetrievalTrace(ctx, workspaceID, conversationID, queries, results)
+	return &SupportKnowledgeSearchOutcome{AgentID: agentID, Results: results}, nil
+}
+
+// recordToolRetrievalTrace keeps the coverage-analytics feed alive for
+// tool-driven retrieval: the trace is attached to the conversation's latest
+// customer message, marked with origin runtime_tool.
+func (s *SupportAIService) recordToolRetrievalTrace(ctx context.Context, workspaceID, conversationID string, queries []string, results []KnowledgeSearchResult) {
+	if s.traceRecorder == nil || s.messageRepo == nil {
+		return
+	}
+	messages, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		slog.WarnContext(ctx, "support knowledge tool: list messages for trace failed",
+			"error", err, "workspace_id", workspaceID, "conversation_id", conversationID)
+		return
+	}
+	messageID := ""
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].SenderType == "customer" {
+			messageID = messages[i].ID
+			break
+		}
+	}
+	if messageID == "" {
+		return
+	}
+	trace, err := BuildSupportAIRetrievalTrace(SupportAIRetrievalTraceInput{
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		MessageID:      messageID,
+		SearchQueries:  queries,
+		SearchResults:  results,
+		Metadata:       map[string]any{"origin": "runtime_tool"},
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "support knowledge tool: build retrieval trace failed",
+			"error", err, "workspace_id", workspaceID, "conversation_id", conversationID)
+		return
+	}
+	s.recordSupportAIRetrievalTraceBestEffort(trace)
+}

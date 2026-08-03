@@ -58,6 +58,8 @@ type InternalCommandService struct {
 	agentRunArtifactRepo      *repository.AgentRunArtifactRepository
 	agentRunInteractionRepo   *repository.AgentRunInteractionRepository
 	commandBarService         *CommandBarService
+	supportKnowledgeSearcher  supportKnowledgeSearcher
+	supportRunEvidenceRepo    *repository.SupportRunEvidenceRepository
 	authz                     *authorization.AuthzService
 
 	definitions map[string]InternalCommandDefinition
@@ -1875,6 +1877,7 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.registerAgentOrchestrationCommands()
+	s.registerSupportKnowledgeCommands()
 	s.registerSupportCommands()
 	s.registerCRMReadCommands()
 	s.registerReleaseFactsCommands()
