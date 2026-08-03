@@ -90,7 +90,14 @@ describe('Footer', () => {
     expect(screen.getByRole('link', { name: 'Powered by Helpin' }).getAttribute('href')).toBe(
       'https://helpin.ai/?utm_campaign=poweredBy&utm_medium=referral&utm_source=replug-ws-12345',
     )
-    expect(screen.getByRole('link', { name: 'Powered by Helpin' }).querySelectorAll('img')).toHaveLength(2)
+    const attribution = screen.getByRole('link', { name: 'Powered by Helpin' })
+    const brandLockup = attribution.querySelector('[data-helpin-brand-lockup]')
+    expect(brandLockup).not.toBeNull()
+
+    const brandMarks = Array.from(attribution.querySelectorAll('img'))
+    expect(brandMarks).toHaveLength(2)
+    expect(brandMarks.every((mark) => mark.getAttribute('src')?.startsWith('/brand/') === false)).toBe(true)
+    expect(brandMarks.every((mark) => mark.className.includes('scale-125'))).toBe(true)
   })
 
   it('shows the default copyright when the visibility flag is omitted', () => {

@@ -1349,11 +1349,19 @@
   transition: background-size 0.18s ease;
 }
 
+.helpin-powered-by-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .helpin-powered-by-icon {
   display: block;
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
+  transform: scale(1.25);
+  transform-origin: center;
 }
 
 .helpin-powered-by:hover .helpin-powered-by-name {
@@ -2275,7 +2283,6 @@
 .helpin-compose-footer-link {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
   color: var(--helpin-fg-secondary);
   text-decoration: none;
   background-image: linear-gradient(currentColor, currentColor);
@@ -2285,11 +2292,19 @@
   transition: background-size 0.18s ease;
 }
 
+.helpin-compose-footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .helpin-compose-footer-icon {
   display: block;
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
+  transform: scale(1.25);
+  transform-origin: center;
 }
 
 .helpin-compose-footer:hover .helpin-compose-footer-link {

@@ -204,6 +204,7 @@ describe('ChatWindow', () => {
 
     expect(getByText('Powered by')).toBeTruthy();
     expect(getByText('Helpin')).toBeTruthy();
+    expect(container.querySelector('.helpin-powered-by-brand')).not.toBeNull();
     const mark = container.querySelector('.helpin-powered-by-icon');
     expect(mark).not.toBeNull();
     expect(mark?.getAttribute('aria-hidden')).toBe('true');
