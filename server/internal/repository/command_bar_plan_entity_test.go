@@ -26,6 +26,10 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			actor_id TEXT,
+			parent_chat_run_id TEXT,
+			dock_chat_id TEXT,
+			support_conversation_id TEXT,
+			parent_notified_at DATETIME,
 			status TEXT NOT NULL DEFAULT 'running',
 			prompt TEXT NOT NULL,
 			page_context BLOB NOT NULL DEFAULT '{}',
@@ -58,10 +62,10 @@ func seedPlan(t *testing.T, db *gorm.DB, id, actorID, entityType, entityID strin
 	t.Helper()
 	actor := actorID
 	rec := &model.CommandBarPlanRecord{
-		ID:          id,
-		WorkspaceID: "ws-1",
-		ActorID:     &actor,
-		Status:      model.CommandBarPlanStatusRunning,
+		ID:           id,
+		WorkspaceID:  "ws-1",
+		ActorID:      &actor,
+		Status:       model.CommandBarPlanStatusRunning,
 		Prompt:       "do the thing",
 		PageContext:  pageContext(t, entityType, entityID),
 		Steps:        json.RawMessage(`[]`),
@@ -121,6 +125,43 @@ func TestCommandBarPlanRepositoryListByEntityExcludesOtherTargets(t *testing.T) 
 	}
 	if len(got) != 0 {
 		t.Fatalf("expected no plans for epic-E, got %v", planIDs(got))
+	}
+}
+
+func TestCommandBarPlanRepositoryFindByDockChatAndRunID(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	repo := NewCommandBarPlanRepository(db)
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	actor := "actor-a"
+	chatA := "chat-a"
+	chatB := "chat-b"
+	for _, plan := range []model.CommandBarPlanRecord{
+		{
+			ID: "plan-a", WorkspaceID: "ws-1", ActorID: &actor, DockChatID: &chatA,
+			Status: model.CommandBarPlanStatusCompleted, Prompt: "research", PageContext: json.RawMessage(`{}`),
+			Steps: json.RawMessage(`[]`), RunIDsByStep: json.RawMessage(`{"0":"run-a"}`), CreatedAt: now, UpdatedAt: now,
+		},
+		{
+			ID: "plan-b", WorkspaceID: "ws-1", ActorID: &actor, DockChatID: &chatB,
+			Status: model.CommandBarPlanStatusCompleted, Prompt: "research", PageContext: json.RawMessage(`{}`),
+			Steps: json.RawMessage(`[]`), RunIDsByStep: json.RawMessage(`{"0":"run-b"}`), CreatedAt: now, UpdatedAt: now,
+		},
+	} {
+		plan := plan
+		if err := db.Create(&plan).Error; err != nil {
+			t.Fatalf("create plan %s: %v", plan.ID, err)
+		}
+	}
+
+	got, err := repo.FindByDockChatAndRunID(context.Background(), "ws-1", chatA, "run-a")
+	if err != nil {
+		t.Fatalf("FindByDockChatAndRunID: %v", err)
+	}
+	if got == nil || got.ID != "plan-a" {
+		t.Fatalf("plan = %+v, want plan-a", got)
+	}
+	if crossChat, err := repo.FindByDockChatAndRunID(context.Background(), "ws-1", chatA, "run-b"); err != nil || crossChat != nil {
+		t.Fatalf("cross-chat lookup = %+v, %v; want nil", crossChat, err)
 	}
 }
 

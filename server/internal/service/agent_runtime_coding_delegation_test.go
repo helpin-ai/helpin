@@ -133,6 +133,65 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 	}
 }
 
+func TestRuntimeAgentFromHelpinAgentAlwaysIncludesSupportDeliveryContract(t *testing.T) {
+	staleWorkspacePrompt := "You are Echo. Answer customer questions from evidence."
+	out := runtimeAgentFromHelpinAgent(&model.Agent{
+		ID:           "agent-echo-copy",
+		IsSystem:     true,
+		PresetKey:    model.AgentPresetSupportAgent,
+		RuntimeKind:  "native_sdk",
+		SystemPrompt: &staleWorkspacePrompt,
+	}, "helpin")
+	for _, required := range []string{
+		staleWorkspacePrompt,
+		"Required live-support delivery contract",
+		"send_support_reply",
+		"Plain assistant text is never delivered",
+	} {
+		if !strings.Contains(out.SystemPrompt, required) {
+			t.Fatalf("runtime support prompt missing %q:\n%s", required, out.SystemPrompt)
+		}
+	}
+}
+
+func TestRuntimeAgentFromHelpinAgentIncludesImplicitScribeSkills(t *testing.T) {
+	qualifiedPrompt := "Publish with `mcp__helpin__publish_task_plan_doc`, then call `mcp__helpin__request_approval`."
+	scribe := &model.Agent{
+		ID:               "agent-scribe",
+		IsSystem:         true,
+		Name:             "Scribe",
+		PresetKey:        model.AgentPresetTaskPlanner,
+		PresetVersionKey: "task_planner_default",
+		RuntimeKind:      "codex",
+		SystemPrompt:     &qualifiedPrompt,
+		// Reproduce a persisted partial selection from before the approval
+		// skill became a required Scribe core skill.
+		Skills: model.AgentSkillRefs{{Key: "engineering_planner_operating_rules"}},
+	}
+
+	out := runtimeAgentFromHelpinAgent(scribe, "helpin")
+	got := make(map[string]bool, len(out.Skills))
+	for _, ref := range out.Skills {
+		got[ref.Key] = true
+	}
+	// Native-authored skills use runtime-backed logical tools under Codex. The
+	// delegated agent must receive the complete Scribe workflow, not only the
+	// approval protocol that guards its completion.
+	for _, key := range []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"} {
+		if !got[key] {
+			t.Fatalf("expected delegated Scribe skill %q, got %#v", key, out.Skills)
+		}
+	}
+	for _, toolName := range []string{"`publish_task_plan_doc`", "`request_approval`"} {
+		if !strings.Contains(out.SystemPrompt, toolName) {
+			t.Fatalf("expected delegated Scribe prompt to contain logical tool name %s, got %q", toolName, out.SystemPrompt)
+		}
+	}
+	if strings.Contains(out.SystemPrompt, "mcp__helpin__") {
+		t.Fatalf("expected delegated Codex prompt to remove Helpin MCP qualification, got %q", out.SystemPrompt)
+	}
+}
+
 func TestAgentRepositoryAccessModeMatchesBuiltInAuthority(t *testing.T) {
 	tests := []struct {
 		preset string

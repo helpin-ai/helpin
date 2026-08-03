@@ -205,7 +205,7 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 		activitySvc: NewPMActivityService(repository.NewPMActivityRepository(db)),
 		wsPublisher: nil,
 	}
-	agentService.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	agentService.SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
 	defaults := NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, agentService)
 	svc := NewWorkspaceService(wsRepo, attachRepo, nil, defaults)
 

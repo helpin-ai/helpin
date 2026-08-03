@@ -212,7 +212,11 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 	if story != nil && strings.TrimSpace(planningStage) == model.PlanningStageTaskPlanDoc {
 		parts = append(parts, "- This is a planning-doc run, not an implementation run.")
 		parts = append(parts, "- Draft or refine the canonical task planning document in chat first, then request approval.")
-		parts = append(parts, "- After approval, stop. The platform will persist and link the approved task planning document.")
+		parts = append(parts, fmt.Sprintf("- After approval, call `%s` with `{}` to create or load and attach the canonical task planning document, then call `%s` with the returned `document_id` and the full approved markdown.",
+			RuntimeToolNameForPrompt("ensure_task_plan_doc"),
+			RuntimeToolNameForPrompt("write_document_content"),
+		))
+		parts = append(parts, "- Do not claim the planning document was persisted and do not finish the run until both product tool calls succeed.")
 	}
 	if ticket != nil {
 		parts = append(parts, "- Customer-visible replies must be drafted for human approval before they are sent.")

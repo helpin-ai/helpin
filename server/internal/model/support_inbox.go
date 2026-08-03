@@ -50,6 +50,10 @@ type SupportConversation struct {
 	AIResolutionType         *string    `json:"ai_resolution_type"` // "confirmed", "assumed", null
 	AITurnCount              int        `json:"ai_turn_count" gorm:"not null;default:0"`
 	CustomerRequestedHumanAt *time.Time `json:"customer_requested_human_at" gorm:"type:timestamptz"`
+	// AIActiveRunID points at the agent-runtime chat run currently backing
+	// this conversation's AI turns (nil before the first AI turn; repointed
+	// when an idle-expired run gets a successor).
+	AIActiveRunID *string `json:"ai_active_run_id,omitempty" gorm:"type:uuid;index"`
 	HumanTakeover            *bool      `json:"human_takeover" gorm:"default:false;index"`
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`

@@ -9,6 +9,12 @@ policy:
         native_sdk:
           type: tool_call
           tool_name: mcp__helpin__request_approval
+        codex:
+          type: runtime_bridge
+          tool_name: request_approval
+        opencode:
+          type: runtime_bridge
+          tool_name: request_approval
     - kind: request_user_input
       schema: request_user_input_v1
       transports:

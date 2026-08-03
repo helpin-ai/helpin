@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -83,6 +84,34 @@ func (a *ContentSourceSyncActivities) SyncContentSourceActivity(ctx context.Cont
 	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.ContentSourceID) == "" {
 		return fmt.Errorf("workspace_id and content_source_id are required")
 	}
+
+	// Temporal delivers activity cancellation through heartbeats. Crawls and
+	// embedding batches can run for minutes, so heartbeat independently of page
+	// callbacks to make source deletion stop them promptly.
+	heartbeatDone := make(chan struct{})
+	defer close(heartbeatDone)
+	activity.RecordHeartbeat(ctx, map[string]string{
+		"workspace_id":      input.WorkspaceID,
+		"content_source_id": input.ContentSourceID,
+	})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				activity.RecordHeartbeat(ctx, map[string]string{
+					"workspace_id":      input.WorkspaceID,
+					"content_source_id": input.ContentSourceID,
+				})
+			case <-ctx.Done():
+				return
+			case <-heartbeatDone:
+				return
+			}
+		}
+	}()
+
 	if input.Reindex {
 		return a.runner.RunSourceReindex(ctx, input.WorkspaceID, input.ContentSourceID)
 	}

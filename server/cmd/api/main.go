@@ -220,10 +220,9 @@ func main() {
 			// versioned migration 202607100003_public_mcp.sql. Letting GORM
 			// reconcile those tables can attempt incompatible constraint changes.
 			&model.CommandBarPlanRecord{},
-			&model.CommandBarUnmetIntent{},
 			&model.CommandBarPlanDismissal{},
-			&model.CommandBarThread{},
-			&model.CommandBarMessage{},
+			&model.DockChat{},
+			&model.SupportRunEvidence{},
 			&model.CodingSessionStateSnapshot{},
 			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
@@ -561,6 +560,7 @@ func main() {
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	mcpRepo := repository.NewMCPRepository(db)
+	externalMCPRepo := repository.NewExternalMCPRepository(db)
 	if err := mcpRepo.CleanupExpired(context.Background(), time.Now()); err != nil {
 		slog.Warn("MCP retention cleanup skipped", "error", err)
 	}
@@ -600,9 +600,7 @@ func main() {
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	agentRunInteractionRepo := repository.NewAgentRunInteractionRepository(db)
 	commandBarPlanRepo := repository.NewCommandBarPlanRepository(db)
-	commandBarUnmetIntentRepo := repository.NewCommandBarUnmetIntentRepository(db)
 	commandBarPlanDismissalRepo := repository.NewCommandBarPlanDismissalRepository(db)
-	commandBarChatRepo := repository.NewCommandBarChatRepository(db)
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	pmTaskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
@@ -869,6 +867,25 @@ func main() {
 			fatalWithSentry("failed to initialize agent runtime client", err)
 		}
 	}
+	externalMCPService, err := service.NewExternalMCPService(
+		externalMCPRepo,
+		notificationService,
+		service.ExternalMCPServiceConfig{
+			Enabled:                cfg.ExternalMCPEnabled,
+			CustomServersEnabled:   cfg.ExternalMCPCustomServersEnabled,
+			EncryptionKey:          cfg.ExternalMCPEncryptionKey,
+			AllowedHosts:           cfg.ExternalMCPAllowedHosts,
+			OAuthRedirectURL:       cfg.ExternalMCPOAuthRedirectURL,
+			AppBaseURL:             cfg.AppBaseURL,
+			OAuthClientID:          cfg.ExternalMCPOAuthClientID,
+			OAuthClientSecret:      cfg.ExternalMCPOAuthClientSecret,
+			OAuthClientAuthMethod:  cfg.ExternalMCPOAuthClientAuthMethod,
+			AllowInsecureLocalhost: cfg.ExternalMCPAllowInsecureLocalhost,
+		},
+	)
+	if err != nil {
+		fatalWithSentry("failed to initialize external MCP service", err)
+	}
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,
@@ -907,15 +924,8 @@ func main() {
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
-	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMProvider).
-		SetChatRepository(commandBarChatRepo).
-		SetLLMRouterConfig(
-			cfg.CommandRouterLLMProvider,
-			cfg.CommandRouterLLMModel,
-			cfg.CommandRouterLLMMaxTokens,
-			time.Duration(cfg.CommandRouterLLMTimeoutMS)*time.Millisecond,
-		).
-		SetCommandRouterOpenRouterProviderOptions(cfg.CommandRouterOpenRouterProviderOptions).
+	agentService.SetExternalMCPService(externalMCPService)
+	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarPlanDismissalRepo).
 		SetWebsocketPublisher(wsPublisher)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
@@ -1202,8 +1212,9 @@ func main() {
 		gitService,
 	).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
 	var agentRuntimeProjectionService *service.AgentRuntimeProjectionService
+	var runFinalizers *service.AgentRunFinalizerService
 	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
-		runFinalizers := service.NewAgentRunFinalizerService(
+		runFinalizers = service.NewAgentRunFinalizerService(
 			agentRunRepo,
 			agentRepo,
 			pmTaskRepo,
@@ -1222,8 +1233,8 @@ func main() {
 			SetRunFinalizers(runFinalizers)
 	}
 	agentRuntimeProjectionCancel := context.CancelFunc(func() {})
+	var projectionCtx context.Context
 	if agentRuntimeProjectionService != nil {
-		var projectionCtx context.Context
 		projectionCtx, agentRuntimeProjectionCancel = context.WithCancel(context.Background())
 		go func() {
 			if err := agentRuntimeProjectionService.StartNATSConsumer(projectionCtx, jetstream); err != nil {
@@ -1295,6 +1306,42 @@ func main() {
 	supportAIService.SetSupportEventRecorder(supportEventRecorder)
 	supportAIService.SetSupportAIRetrievalTraceRecorder(supportCoverageTraceService)
 	supportInboxService.SetSupportEventRecorder(supportEventRecorder)
+	// search_knowledge runtime tool: agent-scoped knowledge search for
+	// support chat runs, executed in this process (full retrieval wiring
+	// including curated guidance and the reranker).
+	supportRunEvidenceRepo := repository.NewSupportRunEvidenceRepository(db)
+	commandService.SetSupportKnowledgeDependencies(supportAIService, supportRunEvidenceRepo)
+	commandService.SetSupportReplyDependencies(supportAIService, aiMessageProcessingRepo, aiUsageMeter)
+	// Support chat lifecycle: conversation = agent-runtime chat-mode run.
+	// Dark until the consumer cutover — only the pause hook and sweep are
+	// live (both no-op without support_chat-trigger runs).
+	supportChatService := service.NewSupportChatService(
+		supportConversationRepo,
+		supportMessageRepo,
+		aiMessageProcessingRepo,
+		agentRunRepo,
+		commandBarPlanRepo,
+		agentService,
+		supportAIService,
+	)
+	supportChatService.SetResearchEvidenceDependencies(supportRunEvidenceRepo, workspaceRepo)
+	if agentRuntimeProjectionService != nil {
+		agentRuntimeProjectionService.SetSupportChatPauseHook(supportChatService.OnSupportChatRunPaused)
+	}
+	if projectionCtx != nil {
+		go func() {
+			if err := supportChatService.StartSupportChatSweep(projectionCtx, 30*time.Second, 30*time.Second, 50); err != nil {
+				slog.Error("support chat sweep stopped", "error", err)
+			}
+		}()
+		// Visitor-message consumer: NATS stays the serializer/retry layer;
+		// each message now drives the conversation's chat-mode run.
+		go func() {
+			if err := supportAIService.StartNATSConsumer(projectionCtx, supportChatService.HandleVisitorMessage); err != nil {
+				slog.Error("support AI consumer stopped", "error", err)
+			}
+		}()
+	}
 
 	supportCoverageDigestService := service.NewSupportCoverageDigestService(
 		supportCoverageRepo, workspaceRepo, appEmailClient, cfg.AppBaseURL,
@@ -1350,6 +1397,24 @@ func main() {
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
 	authzService.SetWorkspaceMFARepository(workspaceRepo)
+	commandService.SetAuthorizationService(authzService)
+	commandService.SetAgentOrchestrationDependencies(commandBarService, agentRunInteractionRepo)
+	agentRuntimeHostService.SetAuthorizationService(authzService)
+	dockChatRepo := repository.NewDockChatRepository(db)
+	dockChatService := service.NewDockChatService(dockChatRepo, agentRunRepo, agentRunMessageRepo, commandBarPlanRepo, agentService, commandService, authzService)
+	if runFinalizers != nil {
+		// Immediate delivery of settled child-plan results into dock chats;
+		// the sweep below retries chats that were mid-turn at that moment.
+		runFinalizers.SetDockChatResultNotifier(dockChatService)
+		runFinalizers.SetSupportChatResultNotifier(supportChatService)
+	}
+	if projectionCtx != nil {
+		go func() {
+			if err := dockChatService.StartDockChatResultSweep(projectionCtx, 30*time.Second, 50); err != nil {
+				slog.Error("dock chat result sweep stopped", "error", err)
+			}
+		}()
+	}
 	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
 	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
 	agentService.SetMCPRepository(mcpRepo)
@@ -1429,7 +1494,8 @@ func main() {
 		setupHandler = handler.NewSetupHandler(setupService, authzService)
 	}
 	handlers := router.Handlers{
-		Health: handler.NewHealthHandler(s3Client, geoIPResolver),
+		WidgetRateLimit: middleware.WidgetRateLimit(redisClient),
+		Health:          handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
 			ClientID:     cfg.GoogleAuthClientID,
 			ClientSecret: cfg.GoogleAuthClientSecret,
@@ -1459,6 +1525,7 @@ func main() {
 		PMView:              handler.NewPMViewHandler(pmViewService),
 		Search:              handler.NewSearchHandler(searchService),
 		CommandBar:          handler.NewCommandBarHandler(commandBarService, authzService),
+		DockChat:            handler.NewDockChatHandler(dockChatService, agentService),
 		PMAutomation:        handler.NewPMAutomationHandler(pmAutomationService),
 		AutomationRule:      handler.NewAutomationRuleHandler(ruleEngine),
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),
@@ -1466,6 +1533,7 @@ func main() {
 		Agent:               handler.NewAgentHandler(agentService),
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
 		MCP:                 handler.NewMCPHandler(mcpService),
+		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),

@@ -758,6 +758,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			ai_resolution_type TEXT,
 			ai_turn_count INTEGER NOT NULL DEFAULT 0,
 			customer_requested_human_at DATETIME,
+			ai_active_run_id TEXT,
 			human_takeover BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME

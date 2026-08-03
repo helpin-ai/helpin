@@ -44,7 +44,7 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 	s.register(InternalCommandDefinition{
 		Name:     "docs.publish_prd_draft",
 		Module:   "docs",
-		Mutating: true,
+		Mutating: false,
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "docs.publish_prd_draft",
 			Alias:       "publish_prd_draft",
@@ -59,7 +59,7 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 	s.register(InternalCommandDefinition{
 		Name:     "docs.publish_task_plan_doc",
 		Module:   "docs",
-		Mutating: true,
+		Mutating: false,
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "docs.publish_task_plan_doc",
 			Alias:       "publish_task_plan_doc",

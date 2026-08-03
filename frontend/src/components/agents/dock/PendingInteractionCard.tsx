@@ -10,6 +10,15 @@ interface PendingInteractionCardProps {
   interaction: CodingSessionInteraction;
   /** Called after a successful resolve so the caller can refetch run state. */
   onResolved?: () => void;
+  /**
+   * Optional resolve override. The dock chat view supplies a chat-scoped
+   * resolver (/dock/chats/{id}/interactions/...) so users without PM
+   * permissions can respond in their own chat.
+   */
+  resolve?: (
+    interactionId: string,
+    payload: { response_payload: Record<string, unknown>; followup_message?: string },
+  ) => Promise<{ error: string | null }>;
 }
 
 /**
@@ -25,6 +34,7 @@ export function PendingInteractionCard({
   runId,
   interaction,
   onResolved,
+  resolve,
 }: PendingInteractionCardProps) {
   const [acting, setActing] = useState<string | null>(null);
 
@@ -35,10 +45,13 @@ export function PendingInteractionCard({
   ) => {
     setActing(interactionId);
     try {
-      const res = await agentService.resolveInteraction(workspaceId, runId, interactionId, {
+      const payload = {
         response_payload: responsePayload,
         followup_message: followupMessage,
-      });
+      };
+      const res = resolve
+        ? await resolve(interactionId, payload)
+        : await agentService.resolveInteraction(workspaceId, runId, interactionId, payload);
       if (res.error) {
         toast.error(res.error);
         return;

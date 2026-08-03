@@ -348,6 +348,8 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 			agentcontract.ToolUpdatePlan,
 			agentcontract.ToolRequestApproval,
 			agentcontract.ToolPublishTaskPlanDoc,
+			"ensure_task_plan_doc",
+			"write_document_content",
 		}
 		policy.disallowedExtraTools = []string{
 			agentcontract.ToolPreviewMarkdown,
@@ -356,8 +358,6 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 			agentcontract.ToolPublishPRDDraft,
 			agentcontract.ToolPublishTaskPlan,
 			"ensure_epic_spec_doc",
-			"ensure_task_plan_doc",
-			"write_document_content",
 			"link_document_to_object",
 			"approve_epic_spec",
 			"create_task_batch",

@@ -17,7 +17,7 @@ import {
 import { formatDistanceToNow } from 'date-fns'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation'
-import { getNotificationTaskRunTarget } from '@/lib/notificationNavigation'
+import { getExternalMCPNotificationTarget, getNotificationTaskRunTarget } from '@/lib/notificationNavigation'
 import {
   useNotifications,
   useUnreadCount,
@@ -238,7 +238,9 @@ function NotificationDetail({ notification }: { notification: Notification }) {
   const entityState = notification.entity_snapshot?.state || ''
   const parentTitle = notification.parent_entity_snapshot?.title
   const parentIdentifier = notification.parent_entity_snapshot?.identifier
-  const openLabel = notification.entity_type === 'support_conversation'
+  const openLabel = notification.entity_type === 'external_mcp_server'
+    ? 'Open connection'
+    : notification.entity_type === 'support_conversation'
     ? 'Open conversation'
     : notification.entity_type === 'agent_run'
       ? 'Open task run'
@@ -247,6 +249,11 @@ function NotificationDetail({ notification }: { notification: Notification }) {
   const handleNavigateToEntity = () => {
     const type = notification.entity_type
     const id = notification.entity_id
+    const externalMCPRoute = getExternalMCPNotificationTarget(notification, wsSlug)
+    if (externalMCPRoute) {
+      navigate({ to: externalMCPRoute })
+      return
+    }
     const taskRunTarget = getNotificationTaskRunTarget(notification)
     if (taskRunTarget) {
       if (!wsSlug) return

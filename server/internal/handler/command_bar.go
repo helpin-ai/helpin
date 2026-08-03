@@ -2,7 +2,6 @@ package handler
 
 import (
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,21 +24,6 @@ func NewCommandBarHandler(commandBarService *service.CommandBarService, authz *a
 	return &CommandBarHandler{commandBarService: commandBarService, authz: authz}
 }
 
-func (h *CommandBarHandler) ParseIntent(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	actorID := middleware.GetUserID(r.Context())
-	var req model.CommandBarParseRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	resp, err := h.commandBarService.ParseIntent(r.Context(), workspaceID, actorID, req)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
 
 func (h *CommandBarHandler) DispatchPlan(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -88,6 +72,21 @@ func (h *CommandBarHandler) ListEpicPlans(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// StartEpicDeliveryPipeline handles POST /api/pm/epics/{id}/delivery-pipeline:
+// the epic-page button that implements, reviews, and merges every open epic
+// task on the integration branch, then opens the epic PR.
+func (h *CommandBarHandler) StartEpicDeliveryPipeline(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	epicID := chi.URLParam(r, "id")
+	resp, err := h.commandBarService.StartEpicDeliveryPipeline(r.Context(), workspaceID, actorID, epicID, service.DirectDispatchParams())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (h *CommandBarHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	actorID := middleware.GetUserID(r.Context())
@@ -100,76 +99,9 @@ func (h *CommandBarHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (h *CommandBarHandler) ChatTurn(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	actorID := middleware.GetUserID(r.Context())
-	var req model.CommandBarChatTurnRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	access, err := h.commandBarChatAccess(r)
-	if err != nil {
-		writeError(w, http.StatusForbidden, err.Error())
-		return
-	}
-	ctx := service.WithCommandBarTurnProgress(r.Context(), req.ClientTurnID)
-	resp, err := h.commandBarService.ChatTurnWithAccess(ctx, workspaceID, actorID, req, access)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
 
-func (h *CommandBarHandler) ListChatThreads(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	actorID := middleware.GetUserID(r.Context())
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	resp, err := h.commandBarService.ListChatThreads(r.Context(), workspaceID, actorID, limit)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
 
-func (h *CommandBarHandler) ConfirmChatCreateAgent(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	actorID := middleware.GetUserID(r.Context())
-	messageID := chi.URLParam(r, "messageID")
-	var req model.ConfirmCommandBarChatProposalRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	resp, err := h.commandBarService.ConfirmChatCreateAgent(r.Context(), workspaceID, actorID, messageID, req)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusCreated, resp)
-}
 
-func (h *CommandBarHandler) commandBarChatAccess(r *http.Request) (service.CommandBarChatAccess, error) {
-	actor := authorization.GetActor(r.Context())
-	if actor == nil || h.authz == nil {
-		return service.CommandBarChatAccess{}, fmt.Errorf("authorization context missing")
-	}
-	canAccess := func(perm authorization.Permission, module model.ModuleID) bool {
-		if !h.authz.Can(actor, perm) {
-			return false
-		}
-		ok, err := h.authz.CanAccessModule(r.Context(), actor, module)
-		return err == nil && ok
-	}
-	return service.CommandBarChatAccess{
-		CanReadPM:   canAccess(authorization.PermPMRead, model.ModulePM),
-		CanReadDocs: canAccess(authorization.PermDocsRead, model.ModuleDocs),
-		CanReadCRM:  canAccess(authorization.PermCRMRead, model.ModuleCRM),
-		ActorRole:   actor.Role,
-	}, nil
-}
 
 func authorizeCommandBarDispatch(r *http.Request, req model.CommandBarDispatchRequest) error {
 	return authorizeCommandBarSteps(r, req.PageContext, req.Steps, 0)
@@ -301,36 +233,7 @@ func (h *CommandBarHandler) DismissPlan(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
-func (h *CommandBarHandler) ListUnmetIntents(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	includeSensitive := r.URL.Query().Get("include_sensitive") == "true"
-	if includeSensitive {
-		slog.InfoContext(r.Context(), "command bar unmet intents sensitive prompt requested", "workspace_id", workspaceID, "actor_id", middleware.GetUserID(r.Context()))
-	}
-	resp, err := h.commandBarService.ListUnmetIntents(r.Context(), workspaceID, r.URL.Query().Get("status"), limit, includeSensitive)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
 
-func (h *CommandBarHandler) ReviewUnmetIntent(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	intentID := chi.URLParam(r, "intentID")
-	var req model.ReviewCommandBarUnmetIntentRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	resp, err := h.commandBarService.ReviewUnmetIntent(r.Context(), workspaceID, intentID, req)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
 
 func (h *CommandBarHandler) ListAgentToolCatalog(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

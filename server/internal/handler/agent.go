@@ -187,7 +187,12 @@ func (h *AgentHandler) ListModelProviders(w http.ResponseWriter, r *http.Request
 
 // ListToolCatalog handles GET /api/pm/tool-catalog.
 func (h *AgentHandler) ListToolCatalog(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.agentService.ListToolCatalog())
+	catalog, err := h.agentService.ListToolCatalogForWorkspace(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
 }
 
 // CreateAgent handles POST /api/pm/agents.

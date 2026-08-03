@@ -28,6 +28,22 @@ func TestWriteDocumentContentCommandSupportsDocumentTarget(t *testing.T) {
 	t.Fatalf("expected docs.write_document_content to support target type document, got %#v", def.SupportedTargetTypes)
 }
 
+func TestEnsureTaskPlanDocumentToolContractAttachesAndReturnsDocumentID(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+
+	def, ok := svc.Definition("docs.ensure_task_plan_doc")
+	if !ok || def.Tool == nil {
+		t.Fatal("expected docs.ensure_task_plan_doc runtime tool definition")
+	}
+	if !strings.Contains(def.Tool.Description, "attach it to that task") || !strings.Contains(def.Tool.Description, "document_id") {
+		t.Fatalf("unexpected ensure task plan document description %q", def.Tool.Description)
+	}
+	schema := def.Tool.InputSchema
+	if schema["additionalProperties"] != false {
+		t.Fatalf("expected closed empty-object schema, got %#v", def.Tool.InputSchema)
+	}
+}
+
 func TestTaskDependencyGraphHasCycle(t *testing.T) {
 	if taskDependencyGraphHasCycle(map[string][]string{"task-a": {"task-b"}, "task-b": {"task-c"}}) {
 		t.Fatal("acyclic dependency graph reported a cycle")
@@ -322,10 +338,11 @@ func TestListAgentsCommandReturnsOnlyActorVisibleAgents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agents.list_agents returned error: %v", err)
 	}
-	var agents []model.CommandBarAgent
-	if err := json.Unmarshal(output, &agents); err != nil {
+	var directory compactAgentDirectoryResult
+	if err := json.Unmarshal(output, &directory); err != nil {
 		t.Fatalf("unmarshal agents: %v\n%s", err, string(output))
 	}
+	agents := directory.Agents
 	if len(agents) != 2 || agents[0].Name != "Quill" || agents[1].Name != "Team A Agent" {
 		t.Fatalf("agents = %#v, want Quill and Team A Agent", agents)
 	}

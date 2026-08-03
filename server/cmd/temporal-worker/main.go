@@ -145,11 +145,6 @@ func main() {
 	sprintCloseoutRepo := repository.NewPMSprintCloseoutRepository(db)
 	pmActivityRepo := repository.NewPMActivityRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
-	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
-	supportConversationTriageRepo := repository.NewSupportConversationTriageRepository(db)
-	supportConversationTriageEventRepo := repository.NewSupportConversationTriageEventRepository(db)
-	supportTriageRuleRepo := repository.NewSupportTriageRuleRepository(db)
-	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
 	userRepo := repository.NewUserRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
@@ -178,11 +173,8 @@ func main() {
 	docsChunkRepo := repository.NewDocsChunkRepository(db)
 	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
 	supportContentSourceRepo := repository.NewSupportContentSourceRepository(db)
-	agentContentSourceRepo := repository.NewAgentContentSourceRepository(db)
 	supportContentPageRepo := repository.NewSupportContentPageRepository(db)
 	supportContentChunkRepo := repository.NewSupportContentChunkRepository(db)
-	aiMessageProcessingRepo := repository.NewAIMessageProcessingRepository(db)
-	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	crmEmailRepo := repository.NewCRMEmailRepository(db)
 	crmContactRepo := repository.NewCRMContactRepository(db)
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
@@ -196,7 +188,6 @@ func main() {
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
-	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
 
 	// Gmail OAuth + encryption for email sync.
 	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
@@ -240,7 +231,7 @@ func main() {
 	default:
 		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
 	}
-	supportLLMRouter, supportEmbeddingProvider := llm.NewSupportRouter(
+	_, supportEmbeddingProvider := llm.NewSupportRouter(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
 		cfg.OpenAIBaseURL,
@@ -259,57 +250,9 @@ func main() {
 		}
 		defer redisClient.Close()
 	}
-	// AI Support Agent consumer — runs alongside Temporal workers.
-	supportInboxService := service.NewSupportInboxService(
-		conversationRepo,
-		supportMailboxRepo,
-		supportMessageRepo,
-		nil,
-		nil,
-		supportInstallRepo,
-		nil,
-		nil,
-		nil,
-		nil,
-		crmContactRepo,
-		userRepo,
-		docsSpaceRepo,
-		nil,
-		docsHelpcenterRepo,
-	)
-	supportInboxTriageService := service.NewSupportInboxTriageService(
-		supportInboxService,
-		supportConversationTriageRepo,
-		supportConversationTriageEventRepo,
-		supportTriageRuleRepo,
-		supportInstallRepo,
-		supportMailboxRepo,
-		conversationRepo,
-		supportMessageRepo,
-		supportLLMRouter,
-	)
-	supportInboxService.SetTriageService(supportInboxTriageService)
-
-	supportAIService := service.NewSupportAIService(
-		supportLLMRouter, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel, docsChunkRepo,
-		agentKnowledgeSourceRepo, supportContentChunkRepo, agentContentSourceRepo, aiMessageProcessingRepo,
-		conversationRepo, supportMessageRepo, supportAttachmentRepo,
-		agentRepo, handoffRepo, supportInstallRepo,
-		wsPublisher, jetstream, redisClient, db,
-		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
-	)
-	supportAIService.SetQueryExpansionTimeout(time.Duration(cfg.QueryExpansionTimeoutMS) * time.Millisecond)
-	supportAIService.SetSupportRoutingDependencies(workspaceRepo, nil, supportTeammateStatusOverrideRepo)
-	supportAIService.SetMailboxRepository(supportMailboxRepo)
-	supportAIService.SetTriageService(supportInboxTriageService)
-	supportAIService.SetLinkPreviewService(service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs))
-	aiConsumerCtx, aiConsumerCancel := context.WithCancel(context.Background())
-	go func() {
-		if err := supportAIService.StartNATSConsumer(aiConsumerCtx); err != nil {
-			log.Printf("support AI consumer stopped: %v", err)
-		}
-	}()
-	_ = aiConsumerCancel // used at shutdown
+	// The support AI visitor-message consumer now runs in the API process
+	// (chat-mode runs need the agent-runtime projection); the worker keeps
+	// only knowledge indexing and coverage analytics.
 
 	gitGraceCleanupCtx, gitGraceCleanupCancel := context.WithCancel(context.Background())
 	go service.NewGitGraceCleanup(gitIntRepo, gitRepo).Start(gitGraceCleanupCtx)
@@ -327,8 +270,6 @@ func main() {
 		SetConversationRepositories(conversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
-	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
-	supportAIService.SetSupportAIRetrievalTraceRecorder(supportCoverageTraceService)
 	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
@@ -585,7 +526,6 @@ func main() {
 	<-stopCh
 
 	log.Println("shutting down temporal workers")
-	aiConsumerCancel() // stop AI support consumer
 	gitGraceCleanupCancel()
 	for _, sharedWorker := range workers {
 		sharedWorker.Stop()

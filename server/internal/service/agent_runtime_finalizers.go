@@ -75,8 +75,10 @@ type AgentRunFinalizerService struct {
 	supportMessageRepo agentRunFinalizerSupportMessageRepository
 	ruleEngine         agentRunFinalizerRuleEvaluator
 	repositoryDelivery agentRunFinalizerRepositoryDeliveryService
-	commandBarAdvancer agentRunFinalizerCommandBarPlanAdvancer
-	wsPublisher        websocket.EventPublisher
+	commandBarAdvancer  agentRunFinalizerCommandBarPlanAdvancer
+	dockChatNotifier    agentRunFinalizerDockChatNotifier
+	supportChatNotifier agentRunFinalizerDockChatNotifier
+	wsPublisher         websocket.EventPublisher
 }
 
 // NewAgentRunFinalizerService wires the finalizer set from the repositories
@@ -138,6 +140,37 @@ func (s *AgentRunFinalizerService) SetCommandBarPlanAdvancer(advancer agentRunFi
 	}
 	if advancer != nil {
 		s.commandBarAdvancer = advancer
+	}
+	return s
+}
+
+// agentRunFinalizerDockChatNotifier delivers a settled dock-launched plan's
+// result back into its parent dock chat run. *DockChatService satisfies it.
+type agentRunFinalizerDockChatNotifier interface {
+	NotifyPlanSettledForRun(ctx context.Context, run *model.AgentRun) error
+}
+
+// SetDockChatResultNotifier wires the dock chat service used to deliver
+// settled child-plan results into the launching chat immediately after plan
+// advancement (the periodic sweep remains the backstop).
+func (s *AgentRunFinalizerService) SetDockChatResultNotifier(notifier agentRunFinalizerDockChatNotifier) *AgentRunFinalizerService {
+	if s == nil {
+		return s
+	}
+	if notifier != nil {
+		s.dockChatNotifier = notifier
+	}
+	return s
+}
+
+// SetSupportChatResultNotifier wires the support chat service used to deliver
+// settled child-plan results into the launching support conversation run.
+func (s *AgentRunFinalizerService) SetSupportChatResultNotifier(notifier agentRunFinalizerDockChatNotifier) *AgentRunFinalizerService {
+	if s == nil {
+		return s
+	}
+	if notifier != nil {
+		s.supportChatNotifier = notifier
 	}
 	return s
 }
@@ -470,6 +503,20 @@ func (s *AgentRunFinalizerService) finalizeCommandBarPlan(ctx context.Context, r
 	}
 	if _, err := s.commandBarAdvancer.AdvanceCommandBarPlanForDelegatedRun(ctx, run); err != nil {
 		return fmt.Errorf("advance command bar plan after run %q: %w", run.ID, err)
+	}
+	if s.dockChatNotifier != nil {
+		// Delivery is idempotent (parent_notified_at + runtime resume_id);
+		// failures are retried by the dock chat result sweep.
+		if err := s.dockChatNotifier.NotifyPlanSettledForRun(ctx, run); err != nil {
+			slog.WarnContext(ctx, "dock chat result delivery after plan advance failed",
+				"workspace_id", run.WorkspaceID, "run_id", run.ID, "error", err)
+		}
+	}
+	if s.supportChatNotifier != nil {
+		if err := s.supportChatNotifier.NotifyPlanSettledForRun(ctx, run); err != nil {
+			slog.WarnContext(ctx, "support chat result delivery after plan advance failed",
+				"workspace_id", run.WorkspaceID, "run_id", run.ID, "error", err)
+		}
 	}
 	return s.markRunOutputSummaryFlag(ctx, run, agentRuntimeFinalizerCommandBarPlanSummaryKey)
 }

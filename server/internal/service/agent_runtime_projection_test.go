@@ -132,7 +132,7 @@ func (r *fakeAgentRuntimeProjectionMessageRepo) Create(_ context.Context, messag
 func (r *fakeAgentRuntimeProjectionMessageRepo) Update(_ context.Context, message *model.AgentRunMessage) error {
 	r.updates++
 	for index := range r.messages {
-		if r.messages[index].ID == message.ID {
+		if (message.ID != "" && r.messages[index].ID == message.ID) || (r.messages[index].RunID == message.RunID && r.messages[index].SequenceNo == message.SequenceNo) {
 			r.messages[index] = *message
 			return nil
 		}
@@ -1508,6 +1508,107 @@ func TestAgentRuntimeProjectionTerminalBackfillUpdatesChangedLiveAssistantMessag
 	}
 	if !agentRunMessageHasRuntimeMessageID(messageRepo.messages[0], "event-msg-1") {
 		t.Fatalf("message missing event runtime id: %s", string(messageRepo.messages[0].ContentBlocks))
+	}
+}
+
+func TestAgentRuntimeProjectionTerminalBackfillEnrichesLiveCodexTranscript(t *testing.T) {
+	completedAt := time.Date(2026, 7, 2, 15, 30, 0, 0, time.UTC)
+	run := &model.AgentRun{
+		ID:                "helpin-run-terminal-live-enrich",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		RuntimeKind:       "codex",
+		Status:            model.AgentRunStatusRunning,
+		PauseReason:       model.AgentRunPauseReasonNone,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_terminal_live_enrich"),
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_terminal_live_enrich": run},
+	}
+	messageRepo := &fakeAgentRuntimeProjectionMessageRepo{}
+	runtimeClient := &fakeAgentRuntimeSignalClient{messages: map[string][]AgentRuntimeMessage{}}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:            runRepo,
+		runMessageRepo:     messageRepo,
+		agentRuntimeClient: runtimeClient,
+		now:                func() time.Time { return completedAt },
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "run_runtime_terminal_live_enrich",
+		Type:  "assistant_message_completed",
+		Data: map[string]any{
+			"message_id": "event-msg-enrich",
+			"content":    "Done.",
+		},
+	}); err != nil {
+		t.Fatalf("ApplyEvent assistant returned error: %v", err)
+	}
+	if len(messageRepo.messages) != 1 || len(messageRepo.messages[0].ToolInvocations) != 0 {
+		t.Fatalf("expected initial content-only live mirror, got %#v", messageRepo.messages)
+	}
+
+	runtimeClient.messages["run_runtime_terminal_live_enrich"] = []AgentRuntimeMessage{{
+		ID:               "store-msg-enrich",
+		RuntimeMessageID: "event-msg-enrich",
+		Role:             "assistant",
+		Content:          "Done.",
+		MessageType:      "assistant_turn",
+		ToolInvocations:  json.RawMessage(`[{"tool_name":"run_command","input":{"command":"go test ./..."},"output_summary":"ok","duration_ms":12}]`),
+		CreatedAt:        completedAt,
+	}}
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID:  "run_runtime_terminal_live_enrich",
+		Type:   "run.completed",
+		SentAt: completedAt,
+	}); err != nil {
+		t.Fatalf("ApplyEvent completed returned error: %v", err)
+	}
+	if messageRepo.creates != 1 || messageRepo.updates != 1 || len(messageRepo.messages) != 1 {
+		t.Fatalf("expected terminal reconciliation to enrich in place, creates=%d updates=%d messages=%#v", messageRepo.creates, messageRepo.updates, messageRepo.messages)
+	}
+	if len(messageRepo.messages[0].ToolInvocations) == 0 || len(messageRepo.messages[0].TurnSegments) == 0 {
+		t.Fatalf("expected durable Codex tool transcript, got %#v", messageRepo.messages[0])
+	}
+}
+
+func TestAgentRuntimeProjectionEmptyTerminalBackfillPreservesLiveCodexTranscript(t *testing.T) {
+	run := &model.AgentRun{
+		ID:          "helpin-run-terminal-live-preserve",
+		WorkspaceID: "ws-1",
+		RuntimeKind: "codex",
+	}
+	toolInvocations := json.RawMessage(`[{"tool_name":"publish_task_plan_doc","input":{"content":"# Plan"},"output_summary":"published"}]`)
+	messageRepo := &fakeAgentRuntimeProjectionMessageRepo{messages: []model.AgentRunMessage{{
+		WorkspaceID:      run.WorkspaceID,
+		RunID:            run.ID,
+		RuntimeMessageID: "event-msg-preserve",
+		Role:             "assistant",
+		Content:          "The planning document is ready for approval.",
+		MessageType:      "assistant_turn",
+		ToolInvocations:  toolInvocations,
+		TurnSegments:     runtimeMessageTurnSegments("event-msg-preserve", "The planning document is ready for approval.", toolInvocations),
+	}}}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:        &fakeAgentRuntimeProjectionRunRepo{},
+		runMessageRepo: messageRepo,
+	}
+
+	if err := svc.createRuntimeMessage(context.Background(), run, AgentRuntimeMessage{
+		RuntimeMessageID: "event-msg-preserve",
+	}); err != nil {
+		t.Fatalf("createRuntimeMessage returned error: %v", err)
+	}
+	if len(messageRepo.messages) != 1 {
+		t.Fatalf("expected one preserved message, got %#v", messageRepo.messages)
+	}
+	message := messageRepo.messages[0]
+	if message.Content != "The planning document is ready for approval." {
+		t.Fatalf("empty terminal backfill erased content: %q", message.Content)
+	}
+	if len(message.ToolInvocations) == 0 || len(message.TurnSegments) == 0 {
+		t.Fatalf("empty terminal backfill erased tool transcript: %#v", message)
 	}
 }
 

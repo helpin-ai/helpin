@@ -288,7 +288,8 @@ describe('getAgentProviderConfigState', () => {
       {
         value: 'anthropic',
         label: 'Anthropic',
-        model_placeholder: 'claude-sonnet-4-20250514',
+        default_model: 'claude-opus-4-8',
+        model_placeholder: 'claude-opus-4-8',
         supports_reasoning_effort: false,
         supports_service_tier: false,
       },

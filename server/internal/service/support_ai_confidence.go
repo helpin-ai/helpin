@@ -24,27 +24,37 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 		return (llmConfidence * 0.65) + (canAnswerScore * 0.35)
 	}
 
-	bestVector := 0.0
-	bestLexical := 0.0
+	retrievalQuality := 0.0
 	retrievedPublicDocs := map[string]struct{}{}
 	hasInternalGrounding := false
-	for _, result := range searchResults {
-		if result.VectorScore > bestVector {
-			bestVector = result.VectorScore
+	citedEvidence := map[string]struct{}{}
+	for _, docID := range response.SourceDocIDs {
+		citedEvidence[docID] = struct{}{}
+	}
+	for _, claim := range response.Claims {
+		for _, evidenceID := range claim.EvidenceIDs {
+			citedEvidence[evidenceID] = struct{}{}
 		}
-		if result.LexicalScore > bestLexical {
-			bestLexical = result.LexicalScore
+	}
+	for _, result := range searchResults {
+		_, citesRuntimeID := citedEvidence[result.ID]
+		_, citesReferenceID := citedEvidence[result.ReferenceID]
+		if len(citedEvidence) > 0 && !citesRuntimeID && !citesReferenceID {
+			continue
+		}
+		if quality := supportEvidenceRetrievalQuality(result); quality > retrievalQuality {
+			retrievalQuality = quality
 		}
 		if result.IsInternal {
 			hasInternalGrounding = true
 		} else {
+			// Runtime knowledge tools expose the per-run evidence ID to the
+			// agent, while the older in-process pipeline cites ReferenceID.
+			// Both identify this retrieved public chunk.
+			retrievedPublicDocs[result.ID] = struct{}{}
 			retrievedPublicDocs[result.ReferenceID] = struct{}{}
 		}
 	}
-
-	// ts_rank scores are typically small; normalize them into a 0-1 band.
-	normalizedLexical := clamp01(bestLexical / 0.35)
-	retrievalQuality := maxFloat(bestVector, normalizedLexical)
 
 	citedDocs := map[string]struct{}{}
 	for _, docID := range response.SourceDocIDs {
@@ -66,6 +76,26 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 		(sourceCoverage * 0.25) +
 		(llmConfidence * 0.2) +
 		(canAnswerScore * 0.15)
+}
+
+// supportEvidenceRetrievalQuality normalizes the relevance signals used by
+// the reply gate. Canonical pricing chunks that contain an exact currency
+// value receive an authority floor: these chunks may be deliberately promoted
+// from the same pricing page after semantic retrieval, so their own vector
+// score can be absent even though they are the authoritative exact evidence.
+func supportEvidenceRetrievalQuality(result KnowledgeSearchResult) float64 {
+	quality := maxFloat(result.VectorScore, clamp01(result.LexicalScore/0.35))
+	switch {
+	case result.SourceType == knowledgeSourceTypeGuidance:
+		quality = maxFloat(quality, 0.9)
+	case result.SourceType == supportChildSourceOfficialWeb,
+		result.SourceType == supportChildSourceRepository,
+		result.SourceType == supportChildSourceWorkspaceResearch:
+		quality = maxFloat(quality, 0.85)
+	case isCanonicalPricingURL(result.URL) && currencyValuePattern.MatchString(result.Content):
+		quality = maxFloat(quality, 0.85)
+	}
+	return clamp01(quality)
 }
 
 func clamp01(value float64) float64 {

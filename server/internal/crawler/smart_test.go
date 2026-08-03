@@ -171,6 +171,69 @@ a minimum amount of text content to produce meaningful results.</p>
 	}
 }
 
+func TestSmartCrawler_Crawl_AllPrioritizesEntryLinksAndEnforcesLimit(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		switch r.URL.Path {
+		case "/":
+			fmt.Fprintf(w, `<html><head><title>Home</title></head><body>
+<h1>Home</h1><a href="/pricing">Pricing</a>
+<p>This homepage links to the important product pricing page. It contains enough descriptive text for the crawler to retain the page during this test.</p>
+</body></html>`)
+		case "/pricing":
+			fmt.Fprintf(w, `<html><head><title>Pricing</title></head><body>
+<h1>Pricing plans</h1><p>We offer Growth, Scale, and Enterprise plans. This pricing content must be discovered from the primary site navigation before blog sitemap overflow.</p>
+</body></html>`)
+		case "/sitemap.xml":
+			w.Header().Set("Content-Type", "application/xml")
+			fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<url><loc>%s/blog/one</loc></url><url><loc>%s/blog/two</loc></url><url><loc>%s/blog/three</loc></url>
+</urlset>`, server.URL, server.URL, server.URL)
+		case "/blog/one", "/blog/two", "/blog/three":
+			fmt.Fprintf(w, `<html><head><title>Blog</title></head><body><h1>Blog article</h1><p>This is a long blog article that should not displace core pages when the crawl page limit is small.</p></body></html>`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	sc := NewSmartCrawler("local", "", "", "", "", newTestLogger(t))
+	source := model.SupportContentSource{
+		ID:          "test-source-priority",
+		StartURL:    server.URL + "/",
+		CrawlLimit:  2,
+		CrawlDepth:  2,
+		CrawlSource: "all",
+	}
+
+	var records []CrawlRecord
+	n, err := sc.Crawl(context.Background(), source, func(record CrawlRecord) error {
+		records = append(records, record)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Crawl() error: %v", err)
+	}
+	if n != 2 || len(records) != 2 {
+		t.Fatalf("Crawl() returned %d pages and %d records, want exactly 2", n, len(records))
+	}
+
+	foundHome := false
+	foundPricing := false
+	for _, record := range records {
+		switch record.URL {
+		case server.URL + "/":
+			foundHome = true
+		case server.URL + "/pricing":
+			foundPricing = true
+		}
+	}
+	if !foundHome || !foundPricing {
+		t.Fatalf("crawl should prioritize home and pricing before sitemap pages; got %+v", records)
+	}
+}
+
 func TestSmartCrawler_Crawl_CloudflareWithNoCredentials(t *testing.T) {
 	logger := newTestLogger(t)
 	sc := NewSmartCrawler("cloudflare", "", "", "", "", logger)

@@ -188,7 +188,7 @@ describe('ChatWindow', () => {
     expect(handleClose).toHaveBeenCalled();
   });
 
-  it('renders powered-by text without the Helpin logo mark', () => {
+  it('renders the Helpin logo mark with the powered-by text', () => {
     const { container, getByText } = render(
       <ChatWindow
         config={baseConfig}
@@ -204,8 +204,9 @@ describe('ChatWindow', () => {
 
     expect(getByText('Powered by')).toBeTruthy();
     expect(getByText('Helpin')).toBeTruthy();
-    expect(container.querySelector('.helpin-powered-by img')).toBeNull();
-    expect(container.querySelector('.helpin-powered-by-icon')).toBeNull();
+    const mark = container.querySelector('.helpin-powered-by-icon');
+    expect(mark).not.toBeNull();
+    expect(mark?.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('uses the inline header close button instead of a floating close button in help docs subviews', () => {

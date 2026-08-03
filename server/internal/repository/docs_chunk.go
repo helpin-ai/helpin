@@ -114,6 +114,28 @@ func (r *DocsChunkRepository) CountBySpaceID(ctx context.Context, workspaceID, s
 	return count, nil
 }
 
+// ListSearchableExternalSpaceIDs returns workspace external-capable spaces that
+// already have chunks belonging to published help-center articles. Public
+// knowledge is workspace-wide; agent-to-space links control ingestion state,
+// not which agents may retrieve released chunks.
+func (r *DocsChunkRepository) ListSearchableExternalSpaceIDs(ctx context.Context, workspaceID string) ([]string, error) {
+	ids := []string{}
+	if err := r.db.WithContext(ctx).
+		Table("docs_chunks AS c").
+		Distinct("c.space_id").
+		Joins("JOIN docs_spaces s ON s.id = c.space_id AND s.workspace_id = c.workspace_id").
+		Joins("JOIN docs_documents d ON d.id = c.document_id AND d.workspace_id = c.workspace_id").
+		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
+		Where("c.workspace_id = ?", workspaceID).
+		Where("s.type = ? AND s.deleted_at IS NULL", model.SpaceTypeExternalCapable).
+		Where("d.status = ? AND d.deleted_at IS NULL", model.DocStatusPublished).
+		Where("ha.public_published_at IS NOT NULL").
+		Pluck("c.space_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("list searchable external docs spaces: %w", err)
+	}
+	return ids, nil
+}
+
 // ListDocumentNeighbors returns exact adjacent chunks for an already eligible
 // document hit. Workspace and document filters remain in SQL.
 func (r *DocsChunkRepository) ListDocumentNeighbors(ctx context.Context, workspaceID, agentID, documentID string, indexes []int) ([]DocsChunkSearchResult, error) {
@@ -121,17 +143,21 @@ func (r *DocsChunkRepository) ListDocumentNeighbors(ctx context.Context, workspa
 		return []DocsChunkSearchResult{}, nil
 	}
 	results := []DocsChunkSearchResult{}
-	if err := r.db.WithContext(ctx).
+	query := r.db.WithContext(ctx).
 		Table("docs_chunks AS c").
 		Select("c.id, c.workspace_id, c.space_id, s.type AS space_type, c.document_id, c.block_id, c.chunk_index, c.section_key, c.heading_path, c.title, c.content").
 		Joins("JOIN docs_documents d ON d.id = c.document_id").
 		Joins("JOIN docs_spaces s ON s.id = c.space_id").
-		Joins("JOIN agent_knowledge_sources aks ON aks.space_id = c.space_id AND aks.workspace_id = c.workspace_id").
 		Joins("LEFT JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
-		Where("c.workspace_id = ? AND aks.agent_id = ? AND c.document_id = ? AND c.chunk_index IN ?", workspaceID, agentID, documentID, indexes).
-		Where("aks.sync_status <> ?", model.KnowledgeSourceSyncDisabled).
+		Where("c.workspace_id = ? AND c.document_id = ? AND c.chunk_index IN ?", workspaceID, documentID, indexes).
 		Where("d.status = ? AND d.deleted_at IS NULL", model.DocStatusPublished).
-		Where("(s.type = ? OR (s.type = ? AND ha.public_published_at IS NOT NULL))", model.SpaceTypeInternal, model.SpaceTypeExternalCapable).
+		Where("(s.type = ? OR (s.type = ? AND ha.public_published_at IS NOT NULL))", model.SpaceTypeInternal, model.SpaceTypeExternalCapable)
+	if agentID != "" {
+		query = query.
+			Joins("JOIN agent_knowledge_sources aks ON aks.space_id = c.space_id AND aks.workspace_id = c.workspace_id").
+			Where("aks.agent_id = ? AND aks.sync_status <> ?", agentID, model.KnowledgeSourceSyncDisabled)
+	}
+	if err := query.
 		Order("c.chunk_index ASC").
 		Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("list docs chunk neighbors: %w", err)

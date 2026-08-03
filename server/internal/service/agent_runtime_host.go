@@ -10,6 +10,7 @@ import (
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
 	"github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -43,6 +44,7 @@ type AgentRuntimeHostService struct {
 	gitService     *GitService
 	skillRepo      *repository.WorkspaceSkillRepository
 	skillStore     skillPackageStore
+	authz          *authorization.AuthzService
 }
 
 type AgentRuntimeSkillLookupRequest struct {
@@ -112,6 +114,38 @@ func (s *AgentRuntimeHostService) SetWorkspaceSkillStore(repo *repository.Worksp
 	s.skillRepo = repo
 	s.skillStore = store
 	return s
+}
+
+// SetAuthorizationService enables per-actor RBAC enrichment on command
+// execution: when a run carries an external actor (the triggering user),
+// commands are executed with that user's workspace role and team memberships.
+func (s *AgentRuntimeHostService) SetAuthorizationService(authz *authorization.AuthzService) *AgentRuntimeHostService {
+	if s == nil {
+		return s
+	}
+	s.authz = authz
+	return s
+}
+
+// enrichCommandActor resolves the external actor's workspace membership and
+// stamps role/team info onto the command context. Runs without a human actor
+// (schedules, automation rules) are left untouched — agent-level tool policy
+// remains their only gate. A non-member actor is rejected outright.
+func (s *AgentRuntimeHostService) enrichCommandActor(ctx context.Context, meta *model.InternalCommandContext) error {
+	if s == nil || s.authz == nil || meta == nil {
+		return nil
+	}
+	actorID := strings.TrimSpace(meta.ActorID)
+	if actorID == "" {
+		return nil
+	}
+	actor, err := s.authz.ResolveActor(ctx, meta.WorkspaceID, actorID)
+	if err != nil {
+		return fmt.Errorf("%w: actor is not an active workspace member", ErrAgentRuntimeHostForbidden)
+	}
+	meta.ActorRole = actor.Role
+	meta.ActorTeamIDs = actor.TeamIDs()
+	return nil
 }
 
 func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req agentruntime.TargetContextRequest) (*agentruntime.TargetContext, error) {
@@ -191,7 +225,11 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		if workspaceID == "" {
 			return nil, fmt.Errorf("%w: workspace_id metadata or run mapping is required for support conversation targets", ErrAgentRuntimeHostBadRequest)
 		}
-		conversation, err := s.supportRepo.GetByID(ctx, workspaceID, target.ID, "", "")
+		// The runtime host adapter is an authenticated service-to-service path,
+		// not a workspace-member inbox view. Use the elevated internal lookup so
+		// mailbox membership filtering does not turn a valid conversation into a
+		// false not-found response.
+		conversation, err := s.supportRepo.GetByID(ctx, workspaceID, target.ID, "", model.RoleOwner)
 		if err != nil {
 			return nil, err
 		}
@@ -202,10 +240,27 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		if err := ensureRuntimeWorkspaceMatch(requestedWorkspaceID, workspaceID); err != nil {
 			return nil, err
 		}
-		resp.Summary = fmt.Sprintf("Support conversation: %s", conversation.Subject)
+		var workspace *model.Workspace
+		if s.workspaceRepo != nil {
+			workspace, err = s.workspaceRepo.GetByID(ctx, workspaceID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		resp.Summary = runtimeSupportConversationSummary(conversation, workspace)
 		resp.Target.Type = "support_conversation"
 		resp.Target.Display = &agentruntime.TargetDisplay{Title: conversation.Subject}
 		resp.Data = runtimeSupportConversationContextData(conversation)
+		if workspace != nil {
+			resp.Data["workspace"] = runtimeWorkspaceContextData(workspace)
+			resp.Data["product_context"] = map[string]interface{}{
+				"name":                               workspace.Name,
+				"website_url":                        agentRuntimeHostString(workspace.WebsiteURL),
+				"summary":                            agentRuntimeHostString(workspace.Description),
+				"is_current_website_product":         true,
+				"resolve_generic_product_references": true,
+			}
+		}
 	case "document":
 		doc, err := s.docsRepo.GetByID(ctx, target.ID)
 		if err != nil {
@@ -353,6 +408,9 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 	if meta.WorkspaceID == "" {
 		return nil, fmt.Errorf("%w: workspace_id is required", ErrAgentRuntimeHostBadRequest)
 	}
+	if err := s.enrichCommandActor(ctx, &meta); err != nil {
+		return &agentruntime.CommandExecutionResponse{Error: err.Error()}, nil
+	}
 	if len(req.Input) == 0 {
 		req.Input = json.RawMessage(`{}`)
 	}
@@ -388,7 +446,7 @@ func (s *AgentRuntimeHostService) ResolveSkillByID(ctx context.Context, req Agen
 }
 
 func (s *AgentRuntimeHostService) ResolveActiveSkillByKey(ctx context.Context, req AgentRuntimeSkillLookupRequest) (*AgentRuntimeWorkspaceSkill, error) {
-	key := strings.TrimSpace(req.Key)
+	key := agentcontract.CanonicalBuiltInSkillKey(strings.TrimSpace(req.Key))
 	if key == "" {
 		return nil, fmt.Errorf("%w: key is required", ErrAgentRuntimeHostBadRequest)
 	}
@@ -397,6 +455,15 @@ func (s *AgentRuntimeHostService) ResolveActiveSkillByKey(ctx context.Context, r
 	}
 	if err := s.validateAppID(req.AppID); err != nil {
 		return nil, err
+	}
+	// Product-owned built-in skill keys are immutable runtime contracts. Resolve
+	// them from the currently deployed package before consulting persisted
+	// workspace rows. Older releases materialized built-ins in workspace_skills;
+	// allowing one of those rows to win here can silently retain stale required
+	// tools or completion-interaction policy across process restarts. Workspace
+	// skills remain addressable through their explicit skill IDs.
+	if definition, ok := agentcontract.GetBuiltInSkill(key); ok {
+		return runtimeBuiltInWorkspaceSkill(definition)
 	}
 	workspaceID, err := s.workspaceIDForSkillLookup(ctx, req)
 	if err != nil {
@@ -410,9 +477,6 @@ func (s *AgentRuntimeHostService) ResolveActiveSkillByKey(ctx context.Context, r
 		if skill != nil && !skill.IsArchived {
 			return runtimeWorkspaceSkill(skill), nil
 		}
-	}
-	if definition, ok := agentcontract.GetBuiltInSkill(key); ok {
-		return runtimeBuiltInWorkspaceSkill(definition)
 	}
 	if workspaceID == "" {
 		return nil, fmt.Errorf("%w: workspace_id metadata or run mapping is required", ErrAgentRuntimeHostBadRequest)
@@ -695,6 +759,8 @@ func runtimeWorkspaceContextData(workspace *model.Workspace) map[string]interfac
 		"slug":            workspace.Slug,
 		"workspace_key":   workspace.WorkspaceKey,
 		"organization_id": workspace.OrganizationID,
+		"description":     agentRuntimeHostString(workspace.Description),
+		"website_url":     agentRuntimeHostString(workspace.WebsiteURL),
 	}
 	if websiteURL := agentRuntimeHostString(workspace.WebsiteURL); websiteURL != "" {
 		data["website_url"] = websiteURL
@@ -707,6 +773,29 @@ func runtimeWorkspaceContextData(workspace *model.Workspace) map[string]interfac
 		data["company_product_context"] = companyProductContext
 	}
 	return data
+}
+
+func runtimeSupportConversationSummary(conversation *model.SupportConversation, workspace *model.Workspace) string {
+	conversationSummary := "Support conversation"
+	if conversation != nil && strings.TrimSpace(conversation.Subject) != "" {
+		conversationSummary += ": " + strings.TrimSpace(conversation.Subject)
+	}
+	if workspace == nil || strings.TrimSpace(workspace.Name) == "" {
+		return conversationSummary
+	}
+
+	productName := strings.TrimSpace(workspace.Name)
+	parts := []string{
+		fmt.Sprintf("%s for %s, the product whose website the visitor is currently using.", conversationSummary, productName),
+		fmt.Sprintf("Resolve generic references such as 'you', 'your product', and 'your plans' to %s; do not ask which product unless the visitor explicitly names another one.", productName),
+	}
+	if websiteURL := agentRuntimeHostString(workspace.WebsiteURL); websiteURL != "" {
+		parts = append(parts, "Product website: "+websiteURL+".")
+	}
+	if summary := agentRuntimeHostString(workspace.Description); summary != "" {
+		parts = append(parts, "Workspace summary: "+summary)
+	}
+	return strings.Join(parts, " ")
 }
 
 func runtimeTaskContextData(task *model.TaskDetail) map[string]interface{} {

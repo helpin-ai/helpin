@@ -41,7 +41,7 @@ import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { AGENT_RUNTIME_HELP_TEXT, AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
-import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
+import { buildAutomationActivityPath, buildAutomationFlowsPath, buildAutomationToolConnectionsPath } from '@/lib/automationUi';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
@@ -137,6 +137,7 @@ import { CustomAgentCreatePanel } from './CustomAgentCreatePanel';
 import {
   buildCustomAgentCreatePayload,
   createDefaultCustomAgentForm,
+  defaultModelForAgentProvider,
 } from './customAgentCreateModel';
 
 // ---------------------------------------------------------------------------
@@ -147,6 +148,10 @@ const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'codex', 'native_s
 const REASONING_EFFORT_OPTIONS: AgentReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 const SERVICE_TIER_OPTIONS: AgentServiceTier[] = ['fast', 'flex'];
 const DEFAULT_SYSTEM_PRESET_KEY: AgentPresetKey = 'code_builder';
+const DEFAULT_PRESET_MODEL = {
+  provider: 'openai' as const,
+  model: defaultModelForAgentProvider('openai'),
+};
 const PRESET_FALLBACKS: Record<AgentPresetKey, {
   label: string;
   default_role: string;
@@ -158,6 +163,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
   model?: string;
 }> = {
   epic_planner: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Epic Planner',
     default_role: 'Epic Planner',
     description: 'Interactive product planning for epics, PRDs, docs, and tasks.',
@@ -166,6 +172,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   task_planner: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Coding Task Planner',
     default_role: 'Coding Task Planner',
     description: 'Interactive decomposition and refinement for tasks and execution plans.',
@@ -174,6 +181,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   story_planner: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Coding Task Planner',
     default_role: 'Coding Task Planner',
     description: 'Interactive decomposition and refinement for tasks and execution plans.',
@@ -182,6 +190,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   crm_operator: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Beacon',
     default_role: 'CRM Operator',
     description: 'Cross-app CRM execution across deals, contacts, docs, and support context.',
@@ -190,6 +199,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   support_agent: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Support Agent',
     default_role: 'Support Agent',
     description: 'Handles support conversations and drafts replies with review controls.',
@@ -198,6 +208,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   documentation_agent: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Quill',
     default_role: 'Documentation Agent',
     description: 'Keeps internal docs, public help docs, and API docs accurate and organized.',
@@ -206,6 +217,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   marketer: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Mira',
     default_role: 'Marketer',
     description: 'Plans growth work, writes marketing assets, audits funnels, and creates campaigns from workspace context.',
@@ -214,29 +226,28 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   code_builder: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Code Builder',
     default_role: 'Code Builder',
     description: 'Writes code, implements features, and fixes bugs in the repo.',
     runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
-    provider: 'openai',
-    model: 'gpt-5.5',
   },
   review_agent: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'QA & Code Reviewer',
     default_role: 'QA & Code Reviewer',
     description: 'Reviews work, runs tests, and checks quality without repo mutation.',
     runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
-    provider: 'openai',
-    model: 'gpt-5.5',
   },
   command_agent: {
-    label: 'Command Agent',
-    default_role: 'Command Agent',
-    description: 'One-shot command-bar agent: runs a single instruction with a narrowed tool set.',
+    ...DEFAULT_PRESET_MODEL,
+    label: 'Sub-agent',
+    default_role: 'Sub-agent',
+    description: 'Runs one delegated task with a limited tool set.',
     runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
@@ -244,6 +255,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
 };
 
 const PRESET_FALLBACK_DEFAULT: (typeof PRESET_FALLBACKS)[AgentPresetKey] = {
+  ...DEFAULT_PRESET_MODEL,
   label: 'Agent',
   default_role: 'Automation Agent',
   description: '',
@@ -518,14 +530,16 @@ const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
   {
     value: 'anthropic',
     label: 'Anthropic',
-    model_placeholder: 'claude-sonnet-4-20250514',
+    default_model: 'claude-opus-4-8',
+    model_placeholder: 'claude-opus-4-8',
     supports_reasoning_effort: false,
     supports_service_tier: false,
   },
   {
     value: 'openai',
     label: 'OpenAI',
-    model_placeholder: 'gpt-5.5',
+    default_model: 'gpt-5.6-terra',
+    model_placeholder: 'gpt-5.6-terra',
     supports_reasoning_effort: true,
     supported_reasoning_efforts: REASONING_EFFORT_OPTIONS,
     supports_service_tier: true,
@@ -534,23 +548,24 @@ const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
   {
     value: 'openrouter',
     label: 'OpenRouter',
-    model_placeholder: 'openai/gpt-5.5',
+    default_model: 'openai/gpt-5.6-terra',
+    model_placeholder: 'openai/gpt-5.6-terra',
     supports_reasoning_effort: true,
     supported_reasoning_efforts: REASONING_EFFORT_OPTIONS,
     supports_service_tier: false,
   },
 ];
 
-// Shared pill used in the fleet card + list row. An empty model resolves to
-// "Auto" at runtime — render that as a neutral value (not a red-flag state).
+// Shared pill used in the fleet card + list row. Legacy blank values display
+// the same explicit provider default that Agent Runtime will resolve.
 function AgentModelPill({ provider, model }: { provider?: AgentModelProvider | null; model?: string | null }) {
-  const trimmed = model?.trim();
   const effectiveProvider = provider ?? 'openai';
+  const displayedModel = model?.trim() || defaultModelForAgentProvider(effectiveProvider);
   return (
     <span className="inline-flex items-center gap-2 text-sm">
       <ProviderIcon provider={effectiveProvider} className="h-4 w-4 shrink-0" />
       <span className="font-mono text-xs text-foreground">
-        {trimmed || <span className="text-muted-foreground">Auto</span>}
+        {displayedModel}
       </span>
     </span>
   );
@@ -860,7 +875,7 @@ function buildUpdatePayload(
       preset_key: form.preset_key,
       preset_version_key: form.preset_version_key,
       provider: provider || undefined,
-      model: form.model.trim(),
+      model: form.model.trim() || defaultModelForAgentProvider(provider),
       execution_config: buildExecutionConfigPayload(form),
       monthly_token_budget: form.monthly_token_budget.trim()
         ? Number.parseInt(form.monthly_token_budget, 10)
@@ -874,7 +889,7 @@ function buildUpdatePayload(
     icon_key: form.icon_key,
     trigger_mode: 'manual',
     provider: provider || undefined,
-    model: form.model.trim(),
+    model: form.model.trim() || defaultModelForAgentProvider(provider),
     execution_config: buildExecutionConfigPayload(form),
     system_prompt: form.system_prompt.trim() || undefined,
     team_ids: teamIds,
@@ -898,6 +913,10 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
   const defaultInvocationMode = agent.default_invocation_mode?.trim()
     ? agent.default_invocation_mode
     : (preset?.default_invocation_mode ?? presetFallback(presetKey).default_invocation_mode);
+  const provider = normalizeProviderForRuntime(
+    agent.runtime_kind || runtimeKind,
+    agent.provider ?? preset?.provider ?? presetFallback(presetKey).provider ?? 'anthropic',
+  );
   return {
     name: agent.name,
     icon_key: agent.icon_key ?? 'violet_star',
@@ -905,17 +924,11 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     preset_version_key: agent.preset_version_key?.trim() || preset?.version_key || fallbackPresetVersionKey(presetKey),
     runtime_kind: agent.runtime_kind || runtimeKind,
     supported_modes: supportedModes,
-    provider: normalizeProviderForRuntime(
-      agent.runtime_kind || runtimeKind,
-      agent.provider ?? preset?.provider ?? presetFallback(presetKey).provider ?? 'anthropic',
-    ),
-    model: agent.model ?? preset?.model ?? '',
+    provider,
+    model: agent.model?.trim() || preset?.model?.trim() || defaultModelForAgentProvider(provider),
     ...deriveExecutionConfigFields(
       agent.runtime_kind || runtimeKind,
-      normalizeProviderForRuntime(
-        agent.runtime_kind || runtimeKind,
-        agent.provider ?? preset?.provider ?? presetFallback(presetKey).provider ?? 'anthropic',
-      ),
+      provider,
       agent.execution_config ?? preset?.execution_config,
     ),
     system_prompt: preset?.instruction_preamble?.trim() || agent.system_prompt || preset?.system_prompt || '',
@@ -954,7 +967,7 @@ function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
     runtime_kind: runtimeKind,
     supported_modes: supportedModesForForm(runtimeKind),
     provider,
-    model: '',
+    model: defaultModelForAgentProvider(provider),
     ...deriveExecutionConfigFields(runtimeKind, provider, template.execution_config),
     system_prompt: template.system_prompt ?? '',
     instruction_preamble: '',
@@ -976,6 +989,7 @@ function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
 function buildCustomAgentForm(agent: Agent): AgentFormData {
   const presetKey = fallbackPresetKey(agent);
   const runtimeKind = agent.runtime_kind;
+  const provider = normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic');
   return {
     name: agent.name,
     icon_key: agent.icon_key ?? 'violet_star',
@@ -983,11 +997,11 @@ function buildCustomAgentForm(agent: Agent): AgentFormData {
     preset_version_key: fallbackPresetVersionKey(presetKey),
     runtime_kind: runtimeKind,
     supported_modes: supportedModesForForm(runtimeKind),
-    provider: normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
-    model: agent.model ?? '',
+    provider,
+    model: agent.model?.trim() || defaultModelForAgentProvider(provider),
     ...deriveExecutionConfigFields(
       runtimeKind,
-      normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
+      provider,
       agent.execution_config,
     ),
     system_prompt: agent.system_prompt ?? '',
@@ -1015,7 +1029,7 @@ function buildCustomAgentVersionForm(agent: Agent, version: AgentVersion): Agent
     runtime_kind: runtimeKind,
     supported_modes: version.supported_modes?.length ? version.supported_modes : supportedModesForForm(runtimeKind),
     provider,
-    model: version.model ?? '',
+    model: version.model?.trim() || defaultModelForAgentProvider(provider),
     ...deriveExecutionConfigFields(runtimeKind, provider, version.execution_config),
     system_prompt: version.system_prompt ?? '',
     instruction_preamble: '',
@@ -1605,10 +1619,7 @@ function agentPurpose(agent: Agent, presets: AgentPresetDefinition[]) {
   return 'Custom agent';
 }
 
-// An empty model resolves to "Auto" (the runtime picks a default). That is a
-// valid configured state — do not flag it amber. Only custom agents that were
-// created but never saved with a model + provider would be truly unconfigured,
-// which the creation flow prevents today, so this is effectively always false.
+// Legacy blank models resolve to the provider default and are not an error.
 function needsModelConfiguration(_agent: Agent) {
   return false;
 }
@@ -2448,6 +2459,7 @@ export function AgentsPage() {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
   const repositoriesSettingsHref = workspace?.slug ? buildSettingsRoutePath(workspace.slug, 'repositories') : undefined;
+  const toolConnectionsHref = workspace?.slug ? buildAutomationToolConnectionsPath(workspace.slug) : undefined;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
   const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId ?? '');
@@ -4799,7 +4811,7 @@ export function AgentsPage() {
                     </div>
                     <div className="space-y-1 p-3">
                       <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model</dt>
-                      <dd className="truncate text-sm font-medium" title={form.model}>{form.model || 'Auto'}</dd>
+                      <dd className="truncate text-sm font-medium" title={form.model}>{form.model || defaultModelForAgentProvider(form.provider, providerOptions)}</dd>
                     </div>
                     <div className="space-y-1 p-3">
                       <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
@@ -5046,6 +5058,7 @@ export function AgentsPage() {
                           onOpenChange={setToolPickerOpen}
                           tools={toolCatalogEntries}
                           selectedTools={form.allowed_tools}
+                          connectionsHref={toolConnectionsHref}
                           disabled={!versionToolEditingState.canEdit}
                           disabledReason={versionToolEditingState.disabledReason}
                           onToggleTool={toggleTool}
@@ -5224,7 +5237,7 @@ export function AgentsPage() {
                       <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
                         <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
                         <span className="flex-1 text-sm font-medium">Execution</span>
-                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind} · {form.model || 'Auto'}</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind} · {form.model || defaultModelForAgentProvider(form.provider, providerOptions)}</span>
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
@@ -5242,14 +5255,19 @@ export function AgentsPage() {
                                   const nextDefaultMode = nextSupportedModes.includes(current.default_invocation_mode)
                                     ? current.default_invocation_mode
                                     : nextSupportedModes[0];
+                                  const provider = normalizeProviderForRuntime(runtimeKind, current.provider);
+                                  const modelName = provider !== current.provider || !current.model.trim()
+                                    ? defaultModelForAgentProvider(provider, providerOptions)
+                                    : current.model;
                                   return {
                                     ...current,
                                     runtime_kind: runtimeKind,
                                     supported_modes: nextSupportedModes,
-                                    provider: normalizeProviderForRuntime(runtimeKind, current.provider),
+                                    provider,
+                                    model: modelName,
                                     ...deriveExecutionConfigFields(
                                       runtimeKind,
-                                      normalizeProviderForRuntime(runtimeKind, current.provider),
+                                      provider,
                                       buildExecutionConfigPayload(current),
                                     ),
                                     default_invocation_mode: nextDefaultMode,
@@ -5287,6 +5305,7 @@ export function AgentsPage() {
                                   return {
                                     ...current,
                                     provider,
+                                    model: defaultModelForAgentProvider(provider, providerOptions),
                                     ...deriveExecutionConfigFields(current.runtime_kind, provider, buildExecutionConfigPayload(current)),
                                   };
                                 })
@@ -6361,7 +6380,7 @@ export function AgentsPage() {
                   </div>
                   <div className="space-y-1 p-3">
                     <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model</dt>
-                    <dd className="truncate text-sm font-medium" title={form.model}>{form.model || 'Auto'}</dd>
+                    <dd className="truncate text-sm font-medium" title={form.model}>{form.model || defaultModelForAgentProvider(form.provider, providerOptions)}</dd>
                   </div>
                   <div className="space-y-1 p-3">
                     <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
@@ -6871,14 +6890,19 @@ export function AgentsPage() {
                         if (!availableRuntimeKinds.includes(runtimeKind)) {
                           return current;
                         }
+                        const provider = normalizeProviderForRuntime(runtimeKind, current.provider);
+                        const modelName = provider !== current.provider || !current.model.trim()
+                          ? defaultModelForAgentProvider(provider, providerOptions)
+                          : current.model;
                         return {
                           ...current,
                           runtime_kind: runtimeKind,
                           supported_modes: supportedModesForForm(runtimeKind),
-                          provider: normalizeProviderForRuntime(runtimeKind, current.provider),
+                          provider,
+                          model: modelName,
                           ...deriveExecutionConfigFields(
                             runtimeKind,
-                            normalizeProviderForRuntime(runtimeKind, current.provider),
+                            provider,
                             buildExecutionConfigPayload(current),
                           ),
                           default_invocation_mode: normalizeDefaultInvocationMode(
@@ -6952,6 +6976,7 @@ export function AgentsPage() {
                         return {
                           ...current,
                           provider,
+                          model: defaultModelForAgentProvider(provider, providerOptions),
                           ...deriveExecutionConfigFields(current.runtime_kind, provider, buildExecutionConfigPayload(current)),
                         };
                       })
@@ -6981,7 +7006,7 @@ export function AgentsPage() {
                 <div className="space-y-2">
                   <FieldLabel
                     htmlFor="agent-model"
-                    tooltip="Leave blank to use the recommended model. Only change this if you need a specific model."
+                    tooltip="The provider default is selected automatically. Enter a different provider-compatible model only when needed."
                   >
                     Model
                   </FieldLabel>
@@ -7054,6 +7079,7 @@ export function AgentsPage() {
                         onOpenChange={setToolPickerOpen}
                         tools={toolCatalogEntries}
                         selectedTools={form.allowed_tools}
+                        connectionsHref={toolConnectionsHref}
                         onToggleTool={toggleTool}
                       />
                     </div>

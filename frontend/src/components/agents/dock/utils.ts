@@ -1,7 +1,8 @@
 import type { AgentRun, CommandBarPlanStep } from '@/lib/pmTypes';
-import type { CommandBarRunPlan } from '@/stores/commandBarStore';
+import type { CommandBarRunPlan } from './planSummary';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import { isScaffoldingStep } from './planLayers';
+import { displayAgentName } from '@/lib/agentTerminology';
 
 /**
  * Activity state used to drive the status dot and color tokens.
@@ -21,7 +22,7 @@ export type ActivityState =
   | 'completed';
 
 export type PlanKindLabel =
-  | 'One-shot'
+  | 'Sub-agent'
   | 'Pipeline'
   | 'Fan-out'
   | 'Task pipeline'
@@ -135,7 +136,7 @@ export function planKindLabel(
   if (kind === 'task_pipeline_fan_out') return 'Task pipeline';
   if (kind === 'dag') return 'Orchestrated';
   if (kind === 'fan_out') return 'Fan-out';
-  if (kind === 'one_shot_command') return stepCount > 1 ? 'Pipeline' : 'One-shot';
+  if (kind === 'one_shot_command') return stepCount > 1 ? 'Pipeline' : 'Sub-agent';
   if (stepCount > 1) return 'Pipeline';
   return 'Agent';
 }
@@ -217,7 +218,7 @@ export function stepDisplayName(step: CommandBarPlanStep): string {
     case 'open_epic_pr':
       return 'Final PR';
     default:
-      return step.agent_name;
+      return displayAgentName(step.agent_name);
   }
 }
 

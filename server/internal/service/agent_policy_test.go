@@ -115,8 +115,8 @@ func TestAgentDefaultsDerivedFromPreset(t *testing.T) {
 	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "codex" {
 		t.Fatalf("expected planner runtime default codex, got %q", got)
 	}
-	if got := defaultRuntimeKindForPresetKey(model.AgentPresetSupportAgent); got != "codex" {
-		t.Fatalf("expected support runtime default codex, got %q", got)
+	if got := defaultRuntimeKindForPresetKey(model.AgentPresetSupportAgent); got != "native_sdk" {
+		t.Fatalf("expected support runtime default native_sdk, got %q", got)
 	}
 }
 
@@ -214,6 +214,32 @@ func TestListAgentPresetsIncludesEpicPlanner(t *testing.T) {
 	}
 }
 
+func TestListAgentPresetsUseGPT56Terra(t *testing.T) {
+	presets := ListAgentPresets()
+	if len(presets) == 0 {
+		t.Fatal("expected preset catalog")
+	}
+	for _, preset := range presets {
+		if preset.Key == model.AgentPresetAskAgent || preset.Key == model.AgentPresetSupportAgent {
+			// The dock orchestrator and support agent default to a flash-tier
+			// OpenRouter model.
+			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
+				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
+			}
+			if preset.Model == nil || *preset.Model != defaultAskAgentModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultAskAgentModel)
+			}
+			continue
+		}
+		if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenAI {
+			t.Errorf("preset %q provider = %+v, want openai", preset.Key, preset.Provider)
+		}
+		if preset.Model == nil || *preset.Model != "gpt-5.6-terra" {
+			t.Errorf("preset %q model = %+v, want gpt-5.6-terra", preset.Key, preset.Model)
+		}
+	}
+}
+
 func TestListAgentPresetsIncludesInteractiveReviewAgent(t *testing.T) {
 	presets := ListAgentPresets()
 	for _, preset := range presets {
@@ -269,6 +295,11 @@ func TestListAgentPresetsTaskPlannerExcludesListEpicTasks(t *testing.T) {
 		}
 		if slices.Contains(preset.AllowedTools, "list_epic_tasks") {
 			t.Fatalf("expected task planner preset to exclude list_epic_tasks, got %v", preset.AllowedTools)
+		}
+		for _, productTool := range []string{"ensure_task_plan_doc", "write_document_content"} {
+			if !slices.Contains(preset.AllowedTools, productTool) {
+				t.Fatalf("expected task planner preset to include %q, got %v", productTool, preset.AllowedTools)
+			}
 		}
 		return
 	}
@@ -444,6 +475,7 @@ func TestListModelProvidersIncludesOpenAIForCodexDeviceCodeMode(t *testing.T) {
 
 func TestListModelProvidersIncludesExecutionCapabilities(t *testing.T) {
 	svc := &AgentService{
+		anthropicAPIKey:  "anthropic-secret",
 		openAIAPIKey:     "openai-secret",
 		openRouterAPIKey: "openrouter-secret",
 	}
@@ -451,11 +483,21 @@ func TestListModelProvidersIncludesExecutionCapabilities(t *testing.T) {
 	options := svc.ListModelProviders()
 	for _, option := range options {
 		switch option.Value {
+		case model.AgentModelProviderAnthropic:
+			if option.DefaultModel != "claude-opus-4-8" {
+				t.Fatalf("expected anthropic default model claude-opus-4-8, got %#v", option)
+			}
 		case model.AgentModelProviderOpenAI:
+			if option.DefaultModel != "gpt-5.6-terra" {
+				t.Fatalf("expected openai default model gpt-5.6-terra, got %#v", option)
+			}
 			if !option.SupportsReasoningEffort || !option.SupportsServiceTier {
 				t.Fatalf("expected openai provider capabilities, got %#v", option)
 			}
 		case model.AgentModelProviderOpenRouter:
+			if option.DefaultModel != "openai/gpt-5.6-terra" {
+				t.Fatalf("expected openrouter default model openai/gpt-5.6-terra, got %#v", option)
+			}
 			if !option.SupportsReasoningEffort || option.SupportsServiceTier {
 				t.Fatalf("expected openrouter provider capabilities, got %#v", option)
 			}
@@ -655,13 +697,17 @@ func TestNormalizeAgentRecordStripsGenericPreviewToolsFromTaskPlanner(t *testing
 	if !slices.Contains(tools, agentcontract.ToolRequestApproval) {
 		t.Fatalf("expected sanitized tool list to keep %q, got %v", agentcontract.ToolRequestApproval, tools)
 	}
+	for _, productTool := range []string{"ensure_task_plan_doc", "write_document_content"} {
+		if !slices.Contains(tools, productTool) {
+			t.Fatalf("expected sanitized tool list to keep %q, got %v", productTool, tools)
+		}
+	}
 	for _, unexpected := range []string{
 		agentcontract.ToolPreviewMarkdown,
 		agentcontract.ToolPreviewJSON,
 		agentcontract.ToolPublishPreview,
 		agentcontract.ToolPublishPRDDraft,
 		agentcontract.ToolPublishTaskPlan,
-		"write_document_content",
 	} {
 		if slices.Contains(tools, unexpected) {
 			t.Fatalf("expected sanitized tool list to exclude %q, got %v", unexpected, tools)

@@ -1,6 +1,7 @@
 package agentcontract
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 
@@ -110,4 +111,21 @@ func RenderRuntimeToolNamesInInstructions(instructions string) string {
 		rendered = strings.ReplaceAll(rendered, "`"+alias+"`", "`"+runtimeName+"`")
 	}
 	return rendered
+}
+
+var backtickedMCPRuntimeToolPattern = regexp.MustCompile("`mcp__[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+`")
+
+func RenderRuntimeToolNamesInInstructionsForRuntime(instructions, runtimeKind string) string {
+	if strings.TrimSpace(runtimeKind) != "codex" {
+		return RenderRuntimeToolNamesInInstructions(instructions)
+	}
+	rendered := strings.TrimSpace(instructions)
+	return backtickedMCPRuntimeToolPattern.ReplaceAllStringFunc(rendered, func(token string) string {
+		qualified := strings.Trim(token, "`")
+		logical := CanonicalToolName(qualified)
+		if logical == "" || logical == qualified {
+			return token
+		}
+		return "`" + logical + "`"
+	})
 }

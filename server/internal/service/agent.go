@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/agentcontract"
+	"github.com/helpin-ai/helpin/server/internal/agentskills"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -67,7 +68,9 @@ func defaultSystemAgentNameForPresetKey(presetKey string) string {
 	case model.AgentPresetReviewAgent:
 		return "Lens"
 	case model.AgentPresetCommandAgent:
-		return "Command Agent"
+		return "Sub-agent"
+	case model.AgentPresetAskAgent:
+		return "Ask Agent"
 	default:
 		return "Agent"
 	}
@@ -231,6 +234,13 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	if agent == nil {
 		return AgentRuntimeAgent{}
 	}
+	effectiveSystemPrompt := strings.TrimSpace(derefString(agent.SystemPrompt))
+	if effectiveSystemPrompt == "" {
+		if prompt := agentcontract.BuiltInPresetPrompt(strings.TrimSpace(agent.EffectivePresetKey())); prompt != nil {
+			effectiveSystemPrompt = strings.TrimSpace(*prompt)
+		}
+	}
+	effectiveSystemPrompt = agentcontract.EnsureSupportRuntimeDeliveryContract(agent.EffectivePresetKey(), effectiveSystemPrompt)
 	out := AgentRuntimeAgent{
 		ID:                    strings.TrimSpace(agent.ID),
 		AppID:                 strings.TrimSpace(appID),
@@ -238,8 +248,8 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		RuntimeKind:           strings.TrimSpace(agent.RuntimeKind),
 		Provider:              strings.TrimSpace(derefString(agent.Provider)),
 		Model:                 strings.TrimSpace(derefString(agent.Model)),
-		SystemPrompt:          strings.TrimSpace(derefString(agent.SystemPrompt)),
-		Skills:                runtimeSkillRefsFromHelpin(agent.Skills, agent.RuntimeKind),
+		SystemPrompt:          agentcontract.RenderRuntimeToolNamesInInstructionsForRuntime(effectiveSystemPrompt, agent.RuntimeKind),
+		Skills:                runtimeSkillRefsFromHelpin(agentskills.EffectiveRuntimeRefs(agent), agent.RuntimeKind),
 		AllowedTools:          parseJSONStringSlice(agent.AllowedTools),
 		AllowedTargets:        parseJSONStringSlice(agent.AllowedTargets),
 		ApprovalMode:          strings.TrimSpace(agent.ApprovalMode),
@@ -304,6 +314,16 @@ func helpinSkillRefSupportsRuntime(ref model.AgentSkillRef, runtimeKind string) 
 			return true
 		}
 	}
+	// Keep delegated projection aligned with agentskills.ValidateRuntimeAndTools
+	// and Agent Runtime's compatibility rule. Native-authored skill packages are
+	// staged for Codex and use the same runtime-backed logical tool contracts.
+	if runtimeKind == "codex" {
+		for _, supported := range definition.SupportedRuntimes {
+			if strings.TrimSpace(supported) == "native_sdk" {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -347,6 +367,9 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 	if run.ParentRunID != nil && strings.TrimSpace(*run.ParentRunID) != "" {
 		metadata["parent_run_id"] = strings.TrimSpace(*run.ParentRunID)
 	}
+	if run.DockChatID != nil && strings.TrimSpace(*run.DockChatID) != "" {
+		metadata["dock_chat_id"] = strings.TrimSpace(*run.DockChatID)
+	}
 	trigger := mapFromJSON(input.Trigger)
 	if input.Event != nil {
 		metadata["event"] = mapFromJSON(input.Event)
@@ -375,25 +398,72 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 		ExecutionMode:   agentRuntimeExecutionModeDurable,
 		Trigger:         trigger,
 		Metadata:        metadata,
-		TurnPolicy:      AgentRuntimeTurnPolicy{Mode: runtimeTurnPolicyMode(run, mode)},
+		TurnPolicy:      runtimeTurnPolicy(run, agent, mode, 0),
 	}
 }
 
-func runtimeTurnPolicyMode(run *model.AgentRun, mode string) string {
+// defaultDockChatIdleTimeoutSeconds bounds how long a dock chat run stays
+// paused awaiting the next user message before the runtime completes it (72h).
+// Continuing an idle-expired chat starts a successor run in DockChatService.
+const defaultDockChatIdleTimeoutSeconds = 72 * 60 * 60
+
+// defaultSupportChatIdleTimeoutSeconds bounds support conversation chat runs
+// (24h): visitors rarely return later, and an idle-expired conversation gets
+// a successor run with carry-forward in SupportChatService.
+const defaultSupportChatIdleTimeoutSeconds = 24 * 60 * 60
+
+// supportChatTriggerType marks runs created by the support chat lifecycle
+// (visitor-message driven), as opposed to manual/auto draft runs.
+const supportChatTriggerType = "support_chat"
+
+// runInputTriggerType reads the trigger type stamped into a run's input.
+func runInputTriggerType(run *model.AgentRun) string {
+	if run == nil || len(run.Input) == 0 {
+		return ""
+	}
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(run.Input, &input); err != nil || input.Trigger == nil {
+		return ""
+	}
+	return strings.TrimSpace(input.Trigger.TriggerType)
+}
+
+// runtimeTurnPolicy decides whether a run uses the runtime's chat loop.
+// Agent Runtime's pause_after_assistant mode intentionally pauses after each
+// assistant turn and waits for another user message. Most Helpin
+// "interactive" runs still have a finite product outcome, so chat-loop
+// behavior stays scoped to conversational surfaces: support conversations and
+// dock chats (the ask_agent preset). A non-positive dockChatIdleSeconds falls
+// back to the default.
+func runtimeTurnPolicy(run *model.AgentRun, agent *model.Agent, mode string, dockChatIdleSeconds int) AgentRuntimeTurnPolicy {
+	completeOnFinish := AgentRuntimeTurnPolicy{Mode: agentRuntimeTurnCompleteOnFinish}
 	if run == nil {
-		return agentRuntimeTurnCompleteOnFinish
+		return completeOnFinish
+	}
+	if agent != nil && normalizePresetKey(agent.PresetKey) == model.AgentPresetAskAgent {
+		if dockChatIdleSeconds <= 0 {
+			dockChatIdleSeconds = defaultDockChatIdleTimeoutSeconds
+		}
+		return AgentRuntimeTurnPolicy{
+			Mode:               agentRuntimeTurnPauseAfterAssist,
+			IdleTimeoutSeconds: dockChatIdleSeconds,
+		}
+	}
+	if strings.TrimSpace(run.TargetType) == "support_conversation" && runInputTriggerType(run) == supportChatTriggerType {
+		// Visitor-message-driven support chats use the chat loop with a
+		// bounded idle window; manual/auto draft runs keep complete_on_finish.
+		return AgentRuntimeTurnPolicy{
+			Mode:               agentRuntimeTurnPauseAfterAssist,
+			IdleTimeoutSeconds: defaultSupportChatIdleTimeoutSeconds,
+		}
 	}
 	if strings.TrimSpace(mode) != model.InvocationModeInteractive {
-		return agentRuntimeTurnCompleteOnFinish
+		return completeOnFinish
 	}
-	// Agent Runtime's pause_after_assistant mode is a chat-loop primitive: it
-	// intentionally pauses after an assistant turn and waits for another user
-	// message. Most Helpin "interactive" runs still have a finite product
-	// outcome, so keep chat-loop behavior scoped to conversational surfaces.
 	if strings.TrimSpace(run.TargetType) == "support_conversation" {
-		return agentRuntimeTurnPauseAfterAssist
+		return AgentRuntimeTurnPolicy{Mode: agentRuntimeTurnPauseAfterAssist}
 	}
-	return agentRuntimeTurnCompleteOnFinish
+	return completeOnFinish
 }
 
 func mapFromJSON(value interface{}) map[string]interface{} {
@@ -513,6 +583,7 @@ type AgentService struct {
 	agentRuntimeClient         agentRuntimeSignalClient
 	agentRuntimeLaunchEnabled  bool
 	mcpRepo                    *repository.MCPRepository
+	externalMCPService         *ExternalMCPService
 }
 
 type agentRuntimeSignalClient interface {
@@ -533,6 +604,10 @@ type agentRuntimeLaunchClient interface {
 	AppID() string
 	UpsertAgent(ctx context.Context, agent AgentRuntimeAgent) (*AgentRuntimeAgent, error)
 	StartRun(ctx context.Context, req AgentRuntimeStartRunRequest) (*AgentRuntimeRun, error)
+}
+
+type agentRuntimeMCPCredentialClient interface {
+	UpdateRunMCPCredential(ctx context.Context, runtimeRunID, serverID string, credential ExternalMCPRunCredential) error
 }
 
 // NewAgentService creates a new AgentService.
@@ -689,6 +764,45 @@ func (s *AgentService) SetAgentRuntimeLaunchEnabled(enabled bool) *AgentService 
 	return s
 }
 
+func (s *AgentService) SetExternalMCPService(externalMCPService *ExternalMCPService) *AgentService {
+	s.externalMCPService = externalMCPService
+	return s
+}
+
+// ResumeRunsAfterExternalMCPAuth rotates the run-scoped credential and resumes
+// only runs paused by agent-runtime for authentication on this installation.
+func (s *AgentService) ResumeRunsAfterExternalMCPAuth(ctx context.Context, workspaceID, serverID, actorID string) error {
+	if s.externalMCPService == nil || s.agentRuntimeClient == nil {
+		return nil
+	}
+	runtimeClient, ok := s.agentRuntimeClient.(agentRuntimeMCPCredentialClient)
+	if !ok {
+		return fmt.Errorf("agent runtime client does not support MCP credential rotation")
+	}
+	updates, err := s.externalMCPService.CredentialUpdatesForServer(ctx, workspaceID, serverID)
+	if err != nil {
+		return err
+	}
+	for _, update := range updates {
+		if update.Credential == nil {
+			continue
+		}
+		run, err := s.GetAgentRun(ctx, workspaceID, update.AgentRunID)
+		if err != nil || run == nil || run.Status != model.AgentRunStatusPaused || run.PauseReason != model.AgentRunPauseReasonAuthentication {
+			continue
+		}
+		if err := runtimeClient.UpdateRunMCPCredential(ctx, update.RuntimeRunID, update.ServerID, *update.Credential); err != nil {
+			return fmt.Errorf("rotate external MCP run credential: %w", err)
+		}
+		if _, err := s.agentRuntimeClient.ResumeRun(ctx, update.RuntimeRunID, AgentRuntimeResumeRunRequest{
+			Intent: model.AgentRunResumeIntentAuthCompleted, ExternalActorID: actorID,
+		}); err != nil {
+			return fmt.Errorf("resume external MCP-authenticated run: %w", err)
+		}
+	}
+	return nil
+}
+
 // SeedWorkspaceDefaults creates workspace-scoped built-in agents.
 func (s *AgentService) SeedWorkspaceDefaults(ctx context.Context, workspaceID, actorID string) error {
 	return s.ensureWorkspaceBuiltInAgents(ctx, workspaceID, actorID)
@@ -817,6 +931,22 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			changed = true
 		}
 		if trimPtr(existing.Model) == nil && trimPtr(preset.Model) != nil {
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
+		if presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
+			strings.TrimSpace(derefString(existing.Model)) == "gpt-5.5" &&
+			strings.TrimSpace(derefString(preset.Model)) == "gpt-5.6-terra" {
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
+		// Ask Agent and Support Agent defaults moved from OpenAI to OpenRouter
+		// (flash-tier model); upgrade rows still on the untouched old default.
+		if (presetKey == model.AgentPresetAskAgent || presetKey == model.AgentPresetSupportAgent) &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
+			strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel {
+			existing.Provider = trimPtr(preset.Provider)
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
@@ -2668,13 +2798,35 @@ func (s *AgentService) ListToolCatalog() model.ToolCatalogResponse {
 	return catalog
 }
 
+// ListToolCatalogForWorkspace merges the frozen host-tool contract with the
+// workspace's enabled, discovered external MCP aliases.
+func (s *AgentService) ListToolCatalogForWorkspace(ctx context.Context, workspaceID string) (model.ToolCatalogResponse, error) {
+	catalog := s.ListToolCatalog()
+	if s.externalMCPService == nil || !s.externalMCPService.Enabled() || strings.TrimSpace(workspaceID) == "" {
+		return catalog, nil
+	}
+	externalTools, err := s.externalMCPService.ListToolCatalog(ctx, workspaceID)
+	if err != nil {
+		return model.ToolCatalogResponse{}, err
+	}
+	if len(externalTools) == 0 {
+		return catalog, nil
+	}
+	catalog.Tools = append(catalog.Tools, externalTools...)
+	if !slices.Contains(catalog.Categories, "External MCP") {
+		catalog.Categories = append(catalog.Categories, "External MCP")
+	}
+	return catalog, nil
+}
+
 func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 	options := make([]model.AgentModelProviderOption, 0, 3)
 	if s.isModelProviderConfigured(model.AgentModelProviderAnthropic) {
 		options = append(options, model.AgentModelProviderOption{
 			Value:                   model.AgentModelProviderAnthropic,
 			Label:                   "Anthropic",
-			ModelPlaceholder:        "claude-sonnet-4-6",
+			DefaultModel:            defaultAnthropicAgentModel,
+			ModelPlaceholder:        defaultAnthropicAgentModel,
 			SupportsReasoningEffort: false,
 			SupportsServiceTier:     false,
 		})
@@ -2683,7 +2835,8 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 		options = append(options, model.AgentModelProviderOption{
 			Value:                     model.AgentModelProviderOpenAI,
 			Label:                     "OpenAI",
-			ModelPlaceholder:          "gpt-5.5",
+			DefaultModel:              defaultOpenAIAgentModel,
+			ModelPlaceholder:          defaultOpenAIAgentModel,
 			SupportsReasoningEffort:   true,
 			SupportedReasoningEfforts: slices.Clone(supportedAgentReasoningEfforts),
 			SupportsServiceTier:       true,
@@ -2694,7 +2847,8 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 		options = append(options, model.AgentModelProviderOption{
 			Value:                     model.AgentModelProviderOpenRouter,
 			Label:                     "OpenRouter",
-			ModelPlaceholder:          "openai/gpt-5.5",
+			DefaultModel:              defaultOpenRouterAgentModel,
+			ModelPlaceholder:          defaultOpenRouterAgentModel,
 			SupportsReasoningEffort:   true,
 			SupportedReasoningEfforts: slices.Clone(supportedAgentReasoningEfforts),
 			SupportsServiceTier:       false,
@@ -3609,6 +3763,10 @@ func truncateRunContextText(value string, limit int) string {
 
 type startTargetRunOptions struct {
 	allowActiveParentRun bool
+	// dockChatID marks the run as the backing run of a dock chat. Dock chat
+	// runs are keyed by their chat, not their target, so the per-target
+	// active-run guard does not apply to them.
+	dockChatID *string
 }
 
 func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string) (*model.AgentRun, error) {
@@ -4092,6 +4250,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			targetID:             workspaceID,
 			parentRunID:          parentRunID,
 			allowActiveParentRun: opts.allowActiveParentRun,
+			dockChatID:           opts.dockChatID,
 			actorID:              actorID,
 			input:                input,
 			trigger:              trigger,
@@ -4360,7 +4519,7 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 		run.ApprovalState = "pending"
 	}
 	if !model.IsAgentRunPausedStatus(run.Status) {
-		return nil, nil, fmt.Errorf("run is not paused for human input")
+		return nil, nil, fmt.Errorf("this run is not waiting for input right now — it may have already resumed or finished; refresh to see its latest status")
 	}
 	if run.PauseReason == model.AgentRunPauseReasonAuthentication {
 		return nil, nil, fmt.Errorf("run is waiting for authentication")
@@ -5289,6 +5448,7 @@ type createRunParams struct {
 	targetID             string
 	parentRunID          *string
 	allowActiveParentRun bool
+	dockChatID           *string
 	taskID               *string
 	conversationID       *string
 	actorID              *string
@@ -5303,9 +5463,17 @@ type createRunParams struct {
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
-	activeRun, err := s.runRepo.FindActiveByTarget(ctx, params.workspaceID, params.targetType, params.targetID)
-	if err != nil {
-		return nil, err
+	var activeRun *model.AgentRun
+	var err error
+	if params.dockChatID == nil {
+		// Dock chat runs are keyed by chat, not target: many chats share the
+		// workspace target and the same ask_agent, so the per-target guard
+		// would wrongly reuse another chat's paused run. DockChatService
+		// guarantees a single active backing run per chat.
+		activeRun, err = s.runRepo.FindActiveByTarget(ctx, params.workspaceID, params.targetType, params.targetID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if activeRun != nil {
 		if updated := s.reconcileStuckRun(ctx, activeRun); updated != nil {
@@ -5345,6 +5513,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		TargetType:        params.targetType,
 		TargetID:          params.targetID,
 		ParentRunID:       params.parentRunID,
+		DockChatID:        params.dockChatID,
 		RuntimeKind:       params.agent.RuntimeKind,
 		InvocationMode:    defaultString(params.invocationMode, model.InvocationModeAutonomous),
 		ApprovalState:     approvalState,
@@ -5412,6 +5581,27 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 	startReq := runtimeStartRunRequest(run, params.agent)
+	resolvedMCP := &ExternalMCPResolvedRun{}
+	selectedExternalTools := make([]string, 0)
+	for _, tool := range parseJSONStringSlice(params.agent.AllowedTools) {
+		tool = strings.TrimSpace(tool)
+		if strings.HasPrefix(tool, "mcp__") && !strings.HasPrefix(tool, "mcp__helpin__") {
+			selectedExternalTools = append(selectedExternalTools, tool)
+		}
+	}
+	if len(selectedExternalTools) > 0 {
+		if s.externalMCPService == nil {
+			err := fmt.Errorf("agent has external MCP tools but external MCP is not configured")
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
+		resolvedMCP, err = s.externalMCPService.ResolveRunAttachments(ctx, params.workspaceID, selectedExternalTools)
+		if err != nil {
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
+		startReq.MCPServers = resolvedMCP.Servers
+	}
 	runtimeRun, err := runtimeLauncher.StartRun(ctx, startReq)
 	if err != nil && shouldRetryAgentRuntimeStart(err) {
 		slog.WarnContext(ctx, "retrying agent runtime start after transient failure", "error", err, "run_id", run.ID, "agent_id", params.agent.ID)
@@ -5425,6 +5615,15 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		err := fmt.Errorf("agent runtime returned empty run id")
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
+	}
+	if len(resolvedMCP.Bindings) > 0 {
+		if err := s.externalMCPService.PersistRunBindings(ctx, run.ID, strings.TrimSpace(runtimeRun.ID), resolvedMCP.Bindings); err != nil {
+			if s.agentRuntimeClient != nil {
+				_, _ = s.agentRuntimeClient.CancelRun(ctx, strings.TrimSpace(runtimeRun.ID))
+			}
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
 	}
 	run.ExternalRuntime = strPtr(agentRuntimeName)
 	run.ExternalRuntimeID = strPtr(strings.TrimSpace(runtimeRun.ID))

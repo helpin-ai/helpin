@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AgentRun } from '@/lib/pmTypes';
-import { runDisplayTitle } from '../utils';
+import { displayAgentName } from '@/lib/agentTerminology';
+import { planKindLabel, runDisplayTitle } from '../utils';
 
 function run(overrides: Partial<AgentRun> = {}): AgentRun {
   return {
@@ -28,6 +29,15 @@ function run(overrides: Partial<AgentRun> = {}): AgentRun {
 }
 
 describe('dock run utilities', () => {
+  it('labels a single delegated command as a sub-agent', () => {
+    expect(planKindLabel('one_shot_command', 1)).toBe('Sub-agent');
+  });
+
+  it('normalizes historical Command Agent names for display', () => {
+    expect(displayAgentName('Command Agent')).toBe('Sub-agent');
+    expect(displayAgentName('Command Agent (one-shot)')).toBe('Sub-agent');
+  });
+
   it('uses automation flow names for workspace-targeted runs', () => {
     expect(
       runDisplayTitle(run({

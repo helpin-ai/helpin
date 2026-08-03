@@ -47,22 +47,6 @@ type CommandBarPageContext struct {
 	RelatedIDs   map[string][]string    `json:"related_ids,omitempty"`
 	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 }
-
-type CommandBarParseRequest struct {
-	Text        string                `json:"text"`
-	PageContext CommandBarPageContext `json:"page_context"`
-}
-
-type CommandBarChatTurnRequest struct {
-	ThreadID    *string               `json:"thread_id,omitempty"`
-	Text        string                `json:"text"`
-	PageContext CommandBarPageContext `json:"page_context"`
-	// ClientTurnID correlates websocket progress events with the in-flight
-	// turn on the client that sent it. Optional; no progress is published
-	// without it.
-	ClientTurnID string `json:"client_turn_id,omitempty"`
-}
-
 type CommandBarPlanStep struct {
 	AgentID              string                `json:"agent_id"`
 	AgentKey             string                `json:"agent_key,omitempty"`
@@ -91,14 +75,6 @@ type CommandBarGuardrail struct {
 	Message  string `json:"message"`
 }
 
-type CommandBarParseResponse struct {
-	Status      string            `json:"status"`
-	Plan        *CommandBarPlan   `json:"plan,omitempty"`
-	Rationale   string            `json:"rationale,omitempty"`
-	Reason      string            `json:"reason,omitempty"`
-	Suggestions []string          `json:"suggestions,omitempty"`
-	Candidates  []CommandBarAgent `json:"candidates,omitempty"`
-}
 
 type CommandBarDispatchRequest struct {
 	Text        string                `json:"text"`
@@ -113,85 +89,6 @@ type CommandBarDispatchResponse struct {
 	Runs     []AgentRun           `json:"runs"`
 }
 
-type CommandBarThread struct {
-	ID          string    `json:"id" gorm:"type:uuid;primaryKey"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ActorID     *string   `json:"actor_id" gorm:"type:uuid;index"`
-	Title       string    `json:"title" gorm:"not null"`
-	Status      string    `json:"status" gorm:"not null;default:'open';index"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
-}
-
-func (CommandBarThread) TableName() string { return "command_bar_threads" }
-
-type CommandBarMessage struct {
-	ID           string          `json:"id" gorm:"type:uuid;primaryKey"`
-	ThreadID     string          `json:"thread_id" gorm:"type:uuid;not null;index"`
-	WorkspaceID  string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ActorID      *string         `json:"actor_id,omitempty" gorm:"type:uuid;index"`
-	Role         string          `json:"role" gorm:"not null"`
-	Content      string          `json:"content" gorm:"not null"`
-	PageContext  json.RawMessage `json:"page_context,omitempty" gorm:"type:jsonb"`
-	ProposalJSON json.RawMessage `json:"proposal_json,omitempty" gorm:"type:jsonb"`
-	CreatedAt    time.Time       `json:"created_at" gorm:"autoCreateTime"`
-}
-
-func (CommandBarMessage) TableName() string { return "command_bar_messages" }
-
-type CommandBarProposal struct {
-	Type            string                   `json:"type"`
-	Answer          string                   `json:"answer,omitempty"`
-	Context         json.RawMessage          `json:"context,omitempty"`
-	Plan            *CommandBarPlan          `json:"plan,omitempty"`
-	Draft           *CustomAgentDraft        `json:"draft,omitempty"`
-	RunTarget       *CommandBarPageContext   `json:"run_target,omitempty"`
-	RunInstructions string                   `json:"run_instructions,omitempty"`
-	Reasons         []CustomAgentDraftReason `json:"reasons,omitempty"`
-	Warnings        []string                 `json:"warnings,omitempty"`
-	Reason          string                   `json:"reason,omitempty"`
-	Suggestions     []string                 `json:"suggestions,omitempty"`
-	Guardrails      []CommandBarGuardrail    `json:"guardrails,omitempty"`
-	CreatedAgentID  string                   `json:"created_agent_id,omitempty"`
-	CreatedRunID    string                   `json:"created_run_id,omitempty"`
-}
-
-type CommandBarThreadSummary struct {
-	ID          string    `json:"id"`
-	WorkspaceID string    `json:"workspace_id"`
-	ActorID     *string   `json:"actor_id,omitempty"`
-	Title       string    `json:"title"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-}
-
-type CommandBarMessageSummary struct {
-	ID          string                `json:"id"`
-	ThreadID    string                `json:"thread_id"`
-	Role        string                `json:"role"`
-	Content     string                `json:"content"`
-	PageContext CommandBarPageContext `json:"page_context,omitempty"`
-	Proposal    *CommandBarProposal   `json:"proposal,omitempty"`
-	CreatedAt   time.Time             `json:"created_at"`
-}
-
-type CommandBarChatTurnResponse struct {
-	Thread           CommandBarThreadSummary  `json:"thread"`
-	UserMessage      CommandBarMessageSummary `json:"user_message"`
-	AssistantMessage CommandBarMessageSummary `json:"assistant_message"`
-	Proposal         *CommandBarProposal      `json:"proposal,omitempty"`
-}
-
-type CommandBarThreadDetail struct {
-	Thread   CommandBarThreadSummary    `json:"thread"`
-	Messages []CommandBarMessageSummary `json:"messages"`
-}
-
-type ListCommandBarChatThreadsResponse struct {
-	Threads []CommandBarThreadDetail `json:"threads"`
-}
-
 type ConfirmCommandBarChatProposalRequest struct {
 	Name           *string  `json:"name,omitempty"`
 	Description    *string  `json:"description,omitempty"`
@@ -199,15 +96,20 @@ type ConfirmCommandBarChatProposalRequest struct {
 	AllowedTargets []string `json:"allowed_targets,omitempty"`
 }
 
-type ConfirmCommandBarChatCreateAgentResponse struct {
-	Agent Agent     `json:"agent"`
-	Run   *AgentRun `json:"run,omitempty"`
-}
 
 type CommandBarPlanRecord struct {
-	ID               string          `json:"id" gorm:"type:uuid;primaryKey"`
-	WorkspaceID      string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ActorID          *string         `json:"actor_id" gorm:"type:uuid;index"`
+	ID          string  `json:"id" gorm:"type:uuid;primaryKey"`
+	WorkspaceID string  `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ActorID     *string `json:"actor_id" gorm:"type:uuid;index"`
+	// ParentChatRunID links a plan launched from a dock chat back to the
+	// chat's backing run; when the plan settles, its result is delivered
+	// into that chat (ParentNotifiedAt records delivery).
+	ParentChatRunID *string `json:"parent_chat_run_id,omitempty" gorm:"type:uuid;index"`
+	DockChatID      *string `json:"dock_chat_id,omitempty" gorm:"type:uuid;index"`
+	// SupportConversationID links a plan launched from a support chat run to
+	// its conversation (mutually exclusive with DockChatID).
+	SupportConversationID *string    `json:"support_conversation_id,omitempty" gorm:"type:uuid;index"`
+	ParentNotifiedAt      *time.Time `json:"parent_notified_at,omitempty"`
 	Status           string          `json:"status" gorm:"not null;default:'running';index"`
 	Prompt           string          `json:"prompt" gorm:"not null"`
 	PageContext      json.RawMessage `json:"page_context" gorm:"type:jsonb;not null;default:'{}'"`
@@ -333,45 +235,4 @@ type CommandBarToolCatalogResponse struct {
 	Categories     []string                     `json:"categories"`
 	Validation     []string                     `json:"validation,omitempty"`
 	AllowedTargets []string                     `json:"allowed_targets,omitempty"`
-}
-
-type CommandBarUnmetIntent struct {
-	ID              string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID     string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ActorID         *string         `json:"actor_id" gorm:"type:uuid;index"`
-	Prompt          string          `json:"prompt" gorm:"not null"`
-	PageContext     json.RawMessage `json:"page_context" gorm:"type:jsonb;not null;default:'{}'"`
-	CandidateAgents json.RawMessage `json:"candidate_agents" gorm:"type:jsonb;not null;default:'[]'"`
-	Reason          string          `json:"reason" gorm:"not null"`
-	Status          string          `json:"status" gorm:"not null;default:'open';index"`
-	ReviewNotes     *string         `json:"review_notes"`
-	ReviewedAt      *time.Time      `json:"reviewed_at"`
-	CreatedAt       time.Time       `json:"created_at" gorm:"autoCreateTime"`
-}
-
-func (CommandBarUnmetIntent) TableName() string { return "command_bar_unmet_intents" }
-
-type CommandBarUnmetIntentListResponse struct {
-	Intents []CommandBarUnmetIntentSummary `json:"intents"`
-}
-
-type CommandBarUnmetIntentSummary struct {
-	ID              string                `json:"id"`
-	WorkspaceID     string                `json:"workspace_id"`
-	ActorID         *string               `json:"actor_id,omitempty"`
-	Prompt          string                `json:"prompt,omitempty"`
-	PromptPreview   string                `json:"prompt_preview"`
-	PromptRedacted  bool                  `json:"prompt_redacted"`
-	PageContext     CommandBarPageContext `json:"page_context"`
-	CandidateAgents []CommandBarAgent     `json:"candidate_agents"`
-	Reason          string                `json:"reason"`
-	Status          string                `json:"status"`
-	ReviewNotes     *string               `json:"review_notes,omitempty"`
-	ReviewedAt      *time.Time            `json:"reviewed_at,omitempty"`
-	CreatedAt       time.Time             `json:"created_at"`
-}
-
-type ReviewCommandBarUnmetIntentRequest struct {
-	Status string  `json:"status"`
-	Notes  *string `json:"notes,omitempty"`
 }

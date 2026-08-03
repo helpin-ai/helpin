@@ -79,7 +79,9 @@ func TestTaskPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 		"\"phase\": \"prd|tasks|task_doc\"",
 		"`content` is required and must contain the full current markdown draft being reviewed.",
 		"Never call the tool with only `title` or with empty `content`.",
-		"platform will persist and link the approved preview",
+		"After approval, call `" + agentcontract.RuntimeToolNameForPrompt("ensure_task_plan_doc") + "` with `{}`.",
+		"Call `" + agentcontract.RuntimeToolNameForPrompt("write_document_content") + "` with that `document_id` and the full approved markdown draft as `content`.",
+		"Do not claim the document was persisted or attached based on the approval alone.",
 		"Revise the active planning document, republish the full replacement draft with `" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishTaskPlanDoc) + "`, and request another approval request with `phase=\"task_doc\"` when the revision is ready.",
 		"Produce a planning document, not code.",
 		"keep repository interactions read-only",
@@ -172,6 +174,12 @@ func TestLegacyPromptIsManaged(t *testing.T) {
 			name:      "review agent branded prompt",
 			presetKey: model.AgentPresetReviewAgent,
 			prompt:    "You are Review Agent for Helpin.\n- Inspect the relevant code and run targeted validation when possible.",
+			want:      true,
+		},
+		{
+			name:      "persisted Echo default prompt",
+			presetKey: model.AgentPresetSupportAgent,
+			prompt:    "You are Echo, the workspace support agent. You are chatting live with a customer inside a support conversation.\nEvery turn MUST end with exactly one call to send_support_reply.\nFor any factual or product question, call search_knowledge FIRST.",
 			want:      true,
 		},
 		{

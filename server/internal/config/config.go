@@ -98,6 +98,15 @@ type Config struct {
 	MCPCRMEnabled                     bool
 	MCPSupportEnabled                 bool
 	MCPPublicBaseURL                  string
+	ExternalMCPEnabled                bool
+	ExternalMCPCustomServersEnabled   bool
+	ExternalMCPEncryptionKey          string
+	ExternalMCPAllowedHosts           []string
+	ExternalMCPOAuthRedirectURL       string
+	ExternalMCPOAuthClientID          string
+	ExternalMCPOAuthClientSecret      string
+	ExternalMCPOAuthClientAuthMethod  string
+	ExternalMCPAllowInsecureLocalhost bool
 	WebAuthnRPID                      string
 	WebAuthnRPOrigins                 []string
 	PlatformAdminEmails               []string
@@ -297,6 +306,15 @@ func Load() (*Config, error) {
 		MCPCRMEnabled:                          parseBoolEnvDefaultTrue(os.Getenv("MCP_CRM_ENABLED")),
 		MCPSupportEnabled:                      parseBoolEnvDefaultTrue(os.Getenv("MCP_SUPPORT_ENABLED")),
 		MCPPublicBaseURL:                       strings.TrimRight(strings.TrimSpace(firstNonEmpty(os.Getenv("MCP_PUBLIC_BASE_URL"), appBaseURL)), "/"),
+		ExternalMCPEnabled:                     parseBoolEnv(os.Getenv("EXTERNAL_MCP_ENABLED")),
+		ExternalMCPCustomServersEnabled:        parseBoolEnv(os.Getenv("EXTERNAL_MCP_CUSTOM_SERVERS_ENABLED")),
+		ExternalMCPEncryptionKey:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_ENCRYPTION_KEY")),
+		ExternalMCPAllowedHosts:                parseCSV(firstNonEmpty(os.Getenv("EXTERNAL_MCP_ALLOWED_HOSTS"), "mcp.customer.io,mcp-eu.customer.io")),
+		ExternalMCPOAuthRedirectURL:            strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_REDIRECT_URL")),
+		ExternalMCPOAuthClientID:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_ID")),
+		ExternalMCPOAuthClientSecret:           strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_SECRET")),
+		ExternalMCPOAuthClientAuthMethod:       strings.TrimSpace(firstNonEmpty(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_AUTH_METHOD"), "none")),
+		ExternalMCPAllowInsecureLocalhost:      parseBoolEnv(os.Getenv("EXTERNAL_MCP_ALLOW_INSECURE_LOCALHOST")),
 		WebAuthnRPID:                           webAuthnRPID,
 		WebAuthnRPOrigins:                      webAuthnRPOrigins,
 		PlatformAdminEmails:                    parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),

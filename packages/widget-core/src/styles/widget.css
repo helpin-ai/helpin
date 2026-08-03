@@ -1349,6 +1349,13 @@
   transition: background-size 0.18s ease;
 }
 
+.helpin-powered-by-icon {
+  display: block;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+
 .helpin-powered-by:hover .helpin-powered-by-name {
   background-size: 100% 1px;
 }
@@ -2266,7 +2273,9 @@
 }
 
 .helpin-compose-footer-link {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--helpin-fg-secondary);
   text-decoration: none;
   background-image: linear-gradient(currentColor, currentColor);
@@ -2274,6 +2283,13 @@
   background-repeat: no-repeat;
   background-size: 0 1px;
   transition: background-size 0.18s ease;
+}
+
+.helpin-compose-footer-icon {
+  display: block;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
 }
 
 .helpin-compose-footer:hover .helpin-compose-footer-link {

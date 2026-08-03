@@ -1,8 +1,5 @@
 import { cn } from '@/lib/utils';
 
-const LIGHT_LOGO_URL = 'https://assets.helpin.ai/logos/helpin-light-mode-logo.svg';
-const DARK_LOGO_URL = 'https://assets.helpin.ai/logos/helpin-dark-mode-logo.svg';
-
 interface HelpinLogoProps {
   className?: string;
   imageClassName?: string;
@@ -10,17 +7,23 @@ interface HelpinLogoProps {
 
 export function HelpinLogo({ className, imageClassName }: HelpinLogoProps) {
   return (
-    <div className={cn('flex justify-center', className)}>
+    <div
+      aria-label="Helpin"
+      className={cn('flex items-center justify-center gap-2.5 text-foreground', className)}
+    >
       <img
-        src={LIGHT_LOGO_URL}
-        alt="Helpin"
-        className={cn('h-10 w-auto dark:hidden', imageClassName)}
+        src="/brand/helpin-icon-black.svg"
+        alt=""
+        aria-hidden="true"
+        className={cn('h-9 w-9 shrink-0 dark:hidden', imageClassName)}
       />
       <img
-        src={DARK_LOGO_URL}
-        alt="Helpin"
-        className={cn('hidden h-10 w-auto dark:block', imageClassName)}
+        src="/brand/helpin-icon-white.svg"
+        alt=""
+        aria-hidden="true"
+        className={cn('hidden h-9 w-9 shrink-0 dark:block', imageClassName)}
       />
+      <span className="text-2xl font-semibold tracking-[-0.04em]">Helpin</span>
     </div>
   );
 }

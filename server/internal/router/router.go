@@ -16,6 +16,10 @@ import (
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
+	// WidgetRateLimit guards the unauthenticated /widget write endpoints
+	// (nil disables limiting, e.g. when Redis is not configured).
+	WidgetRateLimit func(http.Handler) http.Handler
+
 	Health              *handler.HealthHandler
 	Auth                *handler.AuthHandler
 	Passkey             *handler.PasskeyHandler
@@ -43,9 +47,11 @@ type Handlers struct {
 	PMRecurringTemplate *handler.PMRecurringTemplateHandler
 	Search              *handler.SearchHandler
 	CommandBar          *handler.CommandBarHandler
+	DockChat            *handler.DockChatHandler
 	Agent               *handler.AgentHandler
 	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
 	MCP                 *handler.MCPHandler
+	ExternalMCP         *handler.ExternalMCPHandler
 	SupportInbox        *handler.SupportInboxHandler
 	SupportInboxView    *handler.SupportInboxViewHandler
 	SupportTag          *handler.SupportTagHandler
@@ -165,6 +171,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			AllowCredentials: false,
 			MaxAge:           3600,
 		}))
+		if h.WidgetRateLimit != nil {
+			r.Use(h.WidgetRateLimit)
+		}
 		r.Get("/config", h.SupportInboxWidget.GetConfig)
 		r.Post("/session", h.SupportInboxWidget.CreateSession)
 		r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
@@ -326,6 +335,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				AllowCredentials: false,
 				MaxAge:           3600,
 			}))
+			if h.WidgetRateLimit != nil {
+				r.Use(h.WidgetRateLimit)
+			}
 			r.Get("/config", h.SupportInboxWidget.GetConfig)
 			r.Get("/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
 			r.Get("/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
@@ -426,6 +438,21 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSettingsManage)).Get("/service-principals/{principalID}/tokens", h.MCP.ListServiceTokens)
 					r.With(requirePerm(authorization.PermSettingsManage)).Post("/service-principals/{principalID}/tokens", h.MCP.RotateServiceToken)
 					r.With(requirePerm(authorization.PermSettingsManage)).Delete("/service-principals/{principalID}/tokens/{tokenID}", h.MCP.RevokeServiceToken)
+				})
+			}
+			if h.ExternalMCP != nil {
+				r.Get("/external-mcp/oauth/callback", h.ExternalMCP.OAuthCallback)
+				r.Route("/external-mcp", func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceID)
+					r.Use(wsActive)
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/providers", h.ExternalMCP.Providers)
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/servers", h.ExternalMCP.ListServers)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/servers", h.ExternalMCP.CreateServer)
+					r.With(requirePerm(authorization.PermSettingsManage)).Put("/servers/{serverID}", h.ExternalMCP.UpdateServer)
+					r.With(requirePerm(authorization.PermSettingsManage)).Delete("/servers/{serverID}", h.ExternalMCP.DeleteServer)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/servers/{serverID}/oauth/start", h.ExternalMCP.StartOAuth)
+					r.With(requirePerm(authorization.PermSettingsManage)).Post("/servers/{serverID}/tools/refresh", h.ExternalMCP.RefreshTools)
+					r.With(requirePerm(authorization.PermSettingsManage)).Put("/servers/{serverID}/tools", h.ExternalMCP.UpdateTools)
 				})
 			}
 
@@ -714,10 +741,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Route("/command-bar", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsActive)
-				r.With(requireCommandBarRead()).Post("/intents/parse", h.CommandBar.ParseIntent)
-				r.With(requireCommandBarRead()).Get("/chat/threads", h.CommandBar.ListChatThreads)
-				r.With(requireCommandBarRead()).Post("/chat/turns", h.CommandBar.ChatTurn)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/chat/proposals/{messageID}/create-agent", h.CommandBar.ConfirmChatCreateAgent)
 				r.With(requireCommandBarRead()).Get("/plans", h.CommandBar.ListPlans)
 				r.With(requireCommandBarRead()).Get("/plans/{planID}", h.CommandBar.GetPlan)
 				r.With(requireCommandBarRead()).Get("/agents/{agentID}/tools", h.CommandBar.ListAgentToolCatalog)
@@ -728,8 +751,25 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarRead()).Post("/plans/dismiss", h.CommandBar.DismissPlans)
 				r.With(requireCommandBarRead()).Post("/plans/{planID}/dismiss", h.CommandBar.DismissPlan)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/runs/{runID}/promote-agent", h.CommandBar.PromoteRunToAgent)
-				r.With(requirePerm(authorization.PermSettingsManage)).Get("/unmet-intents", h.CommandBar.ListUnmetIntents)
-				r.With(requirePerm(authorization.PermSettingsManage)).Post("/unmet-intents/{intentID}/review", h.CommandBar.ReviewUnmetIntent)
+			})
+
+			// Dock chats: user-owned conversations backed by agent-runtime
+			// chat-mode runs. Run-scoped reads are proxied through the chat's
+			// ownership check so users without PM permissions can use their
+			// own dock (the generic /agent-runs routes are PM-gated).
+			r.Route("/dock", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+				r.Use(wsActive)
+				r.With(requireCommandBarRead()).Get("/chats", h.DockChat.ListChats)
+				r.With(requireCommandBarRead()).Post("/chats", h.DockChat.CreateChat)
+				r.With(requireCommandBarRead()).Get("/chats/{chatID}", h.DockChat.GetChat)
+				r.With(requireCommandBarRead()).Patch("/chats/{chatID}", h.DockChat.UpdateChat)
+				r.With(requireCommandBarRead()).Post("/chats/{chatID}/messages", h.DockChat.SendMessage)
+				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run", h.DockChat.GetChatRun)
+				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run/events", h.DockChat.ListChatRunEvents)
+				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run/interactions", h.DockChat.ListChatRunInteractions)
+				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/interactions/{interactionID}/resolve", h.DockChat.ResolveChatRunInteraction)
+				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/cancel", h.DockChat.CancelChatRun)
 			})
 
 			// Support module
@@ -822,6 +862,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/customer-name", h.SupportInbox.UpdateConversationCustomerName)
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/email-recipients", h.SupportInbox.UpdateConversationEmailRecipients)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/run-agent", h.SupportInbox.RunAgent)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/ai-run/interactions", h.SupportInbox.ListAIRunInteractions)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/ai-run/interactions/{interactionID}/resolve", h.SupportInbox.ResolveAIRunInteraction)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/move", h.SupportInbox.MoveConversation)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/tags/{tagId}", h.SupportTag.AddConversationTag)
 				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/conversations/{id}/tags/{tagId}", h.SupportTag.RemoveConversationTag)
@@ -954,6 +996,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/command-bar-plans", h.CommandBar.ListEpicPlans)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/delivery-pipeline", h.CommandBar.StartEpicDeliveryPipeline)
 				// Sprints (PM) — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints", h.PMSprint.List)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/planning", h.PMSprint.PlanningWorkspace)

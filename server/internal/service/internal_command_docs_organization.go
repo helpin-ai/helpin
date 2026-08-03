@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -200,6 +201,112 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 				return nil, err
 			}
 			return mustJSON(updated), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "docs.list_spaces",
+		Module:               "docs",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "repository", "conversation", "support_conversation", "deal", "crm_deal", "contact", "crm_contact"},
+		Tool: &commandtools.RuntimeToolMetadata{
+			CommandName: "docs.list_spaces",
+			Alias:       "list_spaces",
+			Category:    "Docs",
+			Description: "List the Docs spaces the current actor can see (id, name, slug, type, visibility). Use this to pick a space_id before create_document or move_document when the workspace has several spaces.",
+			InputSchema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"additionalProperties": false,
+			},
+		},
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.docsSpaceService == nil {
+				return nil, fmt.Errorf("docs space service is not available")
+			}
+			spaces, err := s.docsSpaceService.List(ctx, meta.WorkspaceID, internalCommandActor(meta))
+			if err != nil {
+				return nil, err
+			}
+			type spaceRow struct {
+				ID         string   `json:"id"`
+				Name       string   `json:"name"`
+				Slug       string   `json:"slug"`
+				Type       string   `json:"type"`
+				Visibility string   `json:"visibility"`
+				IsSystem   bool     `json:"is_system,omitempty"`
+				TeamIDs    []string `json:"team_ids,omitempty"`
+			}
+			rows := make([]spaceRow, 0, len(spaces))
+			for _, space := range spaces {
+				rows = append(rows, spaceRow{
+					ID:         space.ID,
+					Name:       space.Name,
+					Slug:       space.Slug,
+					Type:       space.Type,
+					Visibility: space.Visibility,
+					IsSystem:   space.IsSystem,
+					TeamIDs:    space.TeamIDs,
+				})
+			}
+			return mustJSON(map[string]any{"spaces": rows, "total": len(rows)}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "docs.list_collections",
+		Module:               "docs",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "repository"},
+		Tool: &commandtools.RuntimeToolMetadata{
+			CommandName: "docs.list_collections",
+			Alias:       "list_collections",
+			Category:    "Docs",
+			Description: "List Docs collections (id, space_id, parent, name), optionally filtered to one space. Use to pick a collection_id when organizing documents.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"space_id": map[string]any{"type": "string", "description": "Optional space ID filter (from list_spaces)."},
+				},
+				"additionalProperties": false,
+			},
+		},
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.docsCollectionService == nil {
+				return nil, fmt.Errorf("docs collection service is not available")
+			}
+			var req struct {
+				SpaceID string `json:"space_id"`
+			}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse list collections input: %w", err)
+				}
+			}
+			collections, err := s.docsCollectionService.ListByWorkspace(ctx, meta.WorkspaceID)
+			if err != nil {
+				return nil, err
+			}
+			spaceID := strings.TrimSpace(req.SpaceID)
+			type collectionRow struct {
+				ID                 string  `json:"id"`
+				SpaceID            string  `json:"space_id"`
+				ParentCollectionID *string `json:"parent_collection_id,omitempty"`
+				Name               string  `json:"name"`
+				Depth              int     `json:"depth"`
+			}
+			rows := make([]collectionRow, 0, len(collections))
+			for _, collection := range collections {
+				if spaceID != "" && collection.SpaceID != spaceID {
+					continue
+				}
+				rows = append(rows, collectionRow{
+					ID:                 collection.ID,
+					SpaceID:            collection.SpaceID,
+					ParentCollectionID: collection.ParentCollectionID,
+					Name:               collection.Name,
+					Depth:              collection.Depth,
+				})
+			}
+			return mustJSON(map[string]any{"collections": rows, "total": len(rows)}), nil
 		},
 	})
 }
