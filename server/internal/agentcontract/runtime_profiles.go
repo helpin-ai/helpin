@@ -41,11 +41,11 @@ var runtimeProfiles = []model.RuntimeProfile{
 	{
 		Name:               model.AgentPresetSupportAgent,
 		RuntimeKind:        "native_sdk",
-		Description:        "Support conversation triage and draft replies with human approval before customer-visible sends.",
-		AllowedTools:       []string{"list_available_skills", "search_available_skills", "read_skill", "request_user_input", "request_approval", "request_review_checkpoint", "preview_md", "preview_json", "list_conversation_messages", "draft_support_reply", "update_conversation_status"},
+		Description:        "Live support conversations: grounded replies via server-validated send, escalation to humans, and read-only child agents for live context.",
+		AllowedTools:       []string{"list_available_skills", "search_available_skills", "read_skill", "request_user_input", "request_approval", "request_review_checkpoint", "preview_md", "preview_json", "list_conversation_messages", "draft_support_reply", "update_conversation_status", "search_knowledge", "send_support_reply", "escalate_to_human", "list_tasks", "get_task_context", "update_plan", "list_agents", "start_agent_run", "start_agent_plan", "get_agent_run", "cancel_agent_run"},
 		AllowedCommands:    []string{},
 		AllowedTargetTypes: []string{"support_conversation"},
-		ApprovalRequired:   true,
+		ApprovalRequired:   false,
 		RequiresRepo:       false,
 	},
 	{

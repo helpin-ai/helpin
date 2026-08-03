@@ -520,8 +520,9 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 		if agent.IsSystem {
 			systemPresets = append(systemPresets, agent.PresetKey)
 			wantProvider, wantModel := model.AgentModelProviderOpenAI, "gpt-5.6-terra"
-			if agent.PresetKey == model.AgentPresetAskAgent {
-				// The dock orchestrator defaults to a flash-tier OpenRouter model.
+			if agent.PresetKey == model.AgentPresetAskAgent || agent.PresetKey == model.AgentPresetSupportAgent {
+				// The dock orchestrator and support agent default to a
+				// flash-tier OpenRouter model.
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultAskAgentModel
 			}
 			if agent.Provider == nil || *agent.Provider != wantProvider {
@@ -587,11 +588,11 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if supportAgent == nil {
 		t.Fatal("expected system support agent")
 	}
-	if supportAgent.Provider == nil || *supportAgent.Provider != model.AgentModelProviderOpenAI {
-		t.Fatalf("expected support agent provider openai, got %+v", supportAgent.Provider)
+	if supportAgent.Provider == nil || *supportAgent.Provider != model.AgentModelProviderOpenRouter {
+		t.Fatalf("expected support agent provider openrouter, got %+v", supportAgent.Provider)
 	}
-	if supportAgent.Model == nil || *supportAgent.Model != "gpt-5.6-terra" {
-		t.Fatalf("expected support agent model gpt-5.6-terra, got %+v", supportAgent.Model)
+	if supportAgent.Model == nil || *supportAgent.Model != defaultAskAgentModel {
+		t.Fatalf("expected support agent model %s, got %+v", defaultAskAgentModel, supportAgent.Model)
 	}
 	docsAgent, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetDocumentationAgent)
 	if err != nil {
