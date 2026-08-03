@@ -52,6 +52,27 @@ func TestRuntimeTurnPolicy(t *testing.T) {
 			wantIdleSeconds: 600,
 		},
 		{
+			name: "support chat trigger gets chat loop with 24h idle timeout",
+			run: &model.AgentRun{
+				TargetType: "support_conversation",
+				Input:      []byte(`{"trigger":{"source":"system","trigger_type":"support_chat"}}`),
+			},
+			agent:           commandAgent,
+			mode:            model.InvocationModeInteractive,
+			wantMode:        agentRuntimeTurnPauseAfterAssist,
+			wantIdleSeconds: defaultSupportChatIdleTimeoutSeconds,
+		},
+		{
+			name: "manual support run keeps complete_on_finish when autonomous",
+			run: &model.AgentRun{
+				TargetType: "support_conversation",
+				Input:      []byte(`{"trigger":{"source":"manual","trigger_type":"manual"}}`),
+			},
+			agent:    commandAgent,
+			mode:     model.InvocationModeAutonomous,
+			wantMode: agentRuntimeTurnCompleteOnFinish,
+		},
+		{
 			name:     "interactive support conversation uses chat loop without idle timeout",
 			run:      &model.AgentRun{TargetType: "support_conversation"},
 			agent:    commandAgent,

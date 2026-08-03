@@ -362,6 +362,27 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 // Continuing an idle-expired chat starts a successor run in DockChatService.
 const defaultDockChatIdleTimeoutSeconds = 72 * 60 * 60
 
+// defaultSupportChatIdleTimeoutSeconds bounds support conversation chat runs
+// (24h): visitors rarely return later, and an idle-expired conversation gets
+// a successor run with carry-forward in SupportChatService.
+const defaultSupportChatIdleTimeoutSeconds = 24 * 60 * 60
+
+// supportChatTriggerType marks runs created by the support chat lifecycle
+// (visitor-message driven), as opposed to manual/auto draft runs.
+const supportChatTriggerType = "support_chat"
+
+// runInputTriggerType reads the trigger type stamped into a run's input.
+func runInputTriggerType(run *model.AgentRun) string {
+	if run == nil || len(run.Input) == 0 {
+		return ""
+	}
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(run.Input, &input); err != nil || input.Trigger == nil {
+		return ""
+	}
+	return strings.TrimSpace(input.Trigger.TriggerType)
+}
+
 // runtimeTurnPolicy decides whether a run uses the runtime's chat loop.
 // Agent Runtime's pause_after_assistant mode intentionally pauses after each
 // assistant turn and waits for another user message. Most Helpin
@@ -381,6 +402,14 @@ func runtimeTurnPolicy(run *model.AgentRun, agent *model.Agent, mode string, doc
 		return AgentRuntimeTurnPolicy{
 			Mode:               agentRuntimeTurnPauseAfterAssist,
 			IdleTimeoutSeconds: dockChatIdleSeconds,
+		}
+	}
+	if strings.TrimSpace(run.TargetType) == "support_conversation" && runInputTriggerType(run) == supportChatTriggerType {
+		// Visitor-message-driven support chats use the chat loop with a
+		// bounded idle window; manual/auto draft runs keep complete_on_finish.
+		return AgentRuntimeTurnPolicy{
+			Mode:               agentRuntimeTurnPauseAfterAssist,
+			IdleTimeoutSeconds: defaultSupportChatIdleTimeoutSeconds,
 		}
 	}
 	if strings.TrimSpace(mode) != model.InvocationModeInteractive {

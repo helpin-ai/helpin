@@ -1283,6 +1283,28 @@ func main() {
 	supportRunEvidenceRepo := repository.NewSupportRunEvidenceRepository(db)
 	commandService.SetSupportKnowledgeDependencies(supportAIService, supportRunEvidenceRepo)
 	commandService.SetSupportReplyDependencies(supportAIService, aiMessageProcessingRepo, aiUsageMeter)
+	// Support chat lifecycle: conversation = agent-runtime chat-mode run.
+	// Dark until the consumer cutover — only the pause hook and sweep are
+	// live (both no-op without support_chat-trigger runs).
+	supportChatService := service.NewSupportChatService(
+		supportConversationRepo,
+		supportMessageRepo,
+		aiMessageProcessingRepo,
+		agentRunRepo,
+		commandBarPlanRepo,
+		agentService,
+		supportAIService,
+	)
+	if agentRuntimeProjectionService != nil {
+		agentRuntimeProjectionService.SetSupportChatPauseHook(supportChatService.OnSupportChatRunPaused)
+	}
+	if projectionCtx != nil {
+		go func() {
+			if err := supportChatService.StartSupportChatSweep(projectionCtx, 30*time.Second, 30*time.Second, 50); err != nil {
+				slog.Error("support chat sweep stopped", "error", err)
+			}
+		}()
+	}
 
 	supportCoverageDigestService := service.NewSupportCoverageDigestService(
 		supportCoverageRepo, workspaceRepo, appEmailClient, cfg.AppBaseURL,
