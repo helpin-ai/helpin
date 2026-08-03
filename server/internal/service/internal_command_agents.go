@@ -173,9 +173,24 @@ func dockApprovedActionHash(actionType string, action json.RawMessage) (string, 
 			return "", fmt.Errorf("approval action does not contain promotion fields")
 		}
 		return dockActionHash(payload.normalized())
+	case "epic_pipeline":
+		var payload dockEpicPipelineAction
+		if err := json.Unmarshal(action, &payload); err != nil {
+			return "", fmt.Errorf("approval action does not contain the epic id")
+		}
+		return dockActionHash(payload.normalized())
 	default:
 		return "", fmt.Errorf("unsupported dock action type %q", actionType)
 	}
+}
+
+// dockEpicPipelineAction is the canonical epic-pipeline action content.
+type dockEpicPipelineAction struct {
+	EpicID string `json:"epic_id"`
+}
+
+func (a dockEpicPipelineAction) normalized() dockEpicPipelineAction {
+	return dockEpicPipelineAction{EpicID: strings.TrimSpace(a.EpicID)}
 }
 
 func (s *InternalCommandService) consumeDockApproval(ctx context.Context, interaction *model.AgentRunInteraction, resultID string) {
@@ -621,6 +636,86 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 				"allowed_targets": parseJSONStringSlice(agent.AllowedTargets),
 				"message":         "Agent created. You can now start it with start_agent_run (that launch needs its own approval).",
 			}), nil
+		},
+	})
+
+	s.register(InternalCommandDefinition{
+		Name:                 "epic.run_delivery_pipeline",
+		Module:               "agents",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"workspace", "epic"},
+		Tool: &commandtools.RuntimeToolMetadata{
+			CommandName: "epic.run_delivery_pipeline",
+			Alias:       "run_epic_delivery_pipeline",
+			Category:    "Agents",
+			Description: "Run the epic delivery pipeline: implement (Forge), review (Lens), and merge every open task of an epic on its integration branch, ordered by blocking links, then open the epic PR. From a dock chat this requires a dock_plan_confirm approval whose action is {\"epic_id\": ...}; epic-target agent runs may call it directly for their own epic.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"epic_id":                 map[string]any{"type": "string", "description": "Epic to deliver. Defaults to the run's target when the run targets an epic."},
+					"approval_interaction_id": map[string]any{"type": "string", "description": "Required when called from a dock chat."},
+				},
+				"additionalProperties": false,
+			},
+		},
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			var req struct {
+				EpicID                string `json:"epic_id"`
+				ApprovalInteractionID string `json:"approval_interaction_id"`
+			}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse epic pipeline input: %w", err)
+				}
+			}
+			if s.commandBarService == nil {
+				return nil, fmt.Errorf("command bar service is not configured")
+			}
+			run, err := s.resolveCommandRun(ctx, meta)
+			if err != nil {
+				return nil, err
+			}
+			if run == nil {
+				return nil, fmt.Errorf("epic pipeline requires a run context")
+			}
+			epicID := strings.TrimSpace(req.EpicID)
+			params := dispatchPlanParams{}
+			switch {
+			case run.DockChatID != nil && strings.TrimSpace(*run.DockChatID) != "":
+				if epicID == "" {
+					return nil, fmt.Errorf("epic_id is required")
+				}
+				action := dockEpicPipelineAction{EpicID: epicID}.normalized()
+				actionHash, hashErr := dockActionHash(action)
+				if hashErr != nil {
+					return nil, hashErr
+				}
+				interaction, approvalErr := s.verifyDockApproval(ctx, meta, run, req.ApprovalInteractionID, "epic_pipeline", actionHash)
+				if approvalErr != nil {
+					return nil, approvalErr
+				}
+				params = dispatchPlanParams{parentChatRunID: &run.ID, dockChatID: run.DockChatID}
+				resp, startErr := s.commandBarService.StartEpicDeliveryPipeline(ctx, meta.WorkspaceID, meta.ActorID, epicID, params)
+				if startErr != nil {
+					return nil, startErr
+				}
+				s.consumeDockApproval(ctx, interaction, resp.PlanID)
+				return mustJSON(resp), nil
+			case strings.TrimSpace(run.TargetType) == "epic":
+				if epicID == "" {
+					epicID = strings.TrimSpace(run.TargetID)
+				}
+				if epicID != strings.TrimSpace(run.TargetID) {
+					return nil, fmt.Errorf("epic-target runs may only deliver their own epic")
+				}
+			default:
+				return nil, fmt.Errorf("epic pipeline can only be started from a dock chat (with approval) or an epic-target run")
+			}
+			resp, err := s.commandBarService.StartEpicDeliveryPipeline(ctx, meta.WorkspaceID, meta.ActorID, epicID, params)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(resp), nil
 		},
 	})
 

@@ -72,6 +72,21 @@ func (h *CommandBarHandler) ListEpicPlans(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// StartEpicDeliveryPipeline handles POST /api/pm/epics/{id}/delivery-pipeline:
+// the epic-page button that implements, reviews, and merges every open epic
+// task on the integration branch, then opens the epic PR.
+func (h *CommandBarHandler) StartEpicDeliveryPipeline(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	epicID := chi.URLParam(r, "id")
+	resp, err := h.commandBarService.StartEpicDeliveryPipeline(r.Context(), workspaceID, actorID, epicID, service.DirectDispatchParams())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (h *CommandBarHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	actorID := middleware.GetUserID(r.Context())

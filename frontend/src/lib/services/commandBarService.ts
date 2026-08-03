@@ -21,6 +21,14 @@ export const commandBarService = {
     api.get<CommandBarPlanDetailResponse>(`/command-bar/plans/${encodeURIComponent(planId)}${qs(workspaceId)}`),
   listEpicPlans: (workspaceId: string, epicId: string) =>
     api.get<CommandBarPlanListResponse>(`/pm/epics/${encodeURIComponent(epicId)}/command-bar-plans${qs(workspaceId)}`),
+  startEpicDeliveryPipeline: (workspaceId: string, epicId: string) =>
+    api.post<{
+      plan_id: string;
+      run_count: number;
+      task_count: number;
+      dependency_edges: number;
+      skipped_tasks?: Array<{ task_id: string; title: string; reason: string }>;
+    }>(`/pm/epics/${encodeURIComponent(epicId)}/delivery-pipeline${qs(workspaceId)}`),
   getAgentToolCatalog: (workspaceId: string, agentId: string, selectedTools?: string[]) => {
     const params = (selectedTools ?? []).map((tool) => `&selected=${encodeURIComponent(tool)}`).join('');
     return api.get<CommandBarToolCatalogResponse>(`/command-bar/agents/${encodeURIComponent(agentId)}/tools${qs(workspaceId)}${params}`);

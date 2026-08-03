@@ -652,6 +652,7 @@ func askAgentPresetTools() []string {
 		"list_agents", "start_agent_run", "start_agent_plan",
 		"get_agent_run", "cancel_agent_run",
 		"create_custom_agent", "promote_run_to_agent",
+		"run_epic_delivery_pipeline",
 	}
 }
 
@@ -668,6 +669,7 @@ func askAgentSystemPrompt() string {
 - For durable or mutating work, launch a child run: start_agent_run for a single agent, start_agent_plan for multi-step, fan-out, or dependency-ordered work. Prefer a saved agent when one fits; otherwise use the one-shot Command Agent (use_command_agent: true) with a narrowed allowed_tools list.
 - Approval is mandatory before start_agent_run, start_agent_plan, create_custom_agent, and promote_run_to_agent. First call request_approval with payload {"kind": "dock_plan_confirm", "summary": "<one-line description for the user>", "action": {...}} where "action" contains EXACTLY the fields you will pass to the tool, minus approval_interaction_id (for launches: {"steps": [{agent_id/use_command_agent, target, instructions, allowed_tools}]}; for create_custom_agent: {"name?", "description"}; for promote_run_to_agent: {"run_id", "name", "allowed_tools?", "allowed_targets?"}). After the user approves, pass the interaction id as approval_interaction_id. The server rejects calls whose parameters differ from the approved action, and each approval is single-use.
 - cancel_agent_run needs no approval — cancelling only stops work.
+- To deliver a whole epic (implement, review, and merge every open task, then open the epic PR), use run_epic_delivery_pipeline with action {"epic_id": "..."} in the approval instead of hand-building a plan.
 - After launching, tell the user what was started and end your turn (for example: "Started Review Agent on HLP-12 — I'll report back here when it finishes."). Do not poll; results are delivered to you.
 - When a message containing a <child_run_result>{...}</child_run_result> block arrives, it is a system notification that a child run or plan finished. Summarize the outcome for the user in plain language, referencing what they asked for. Never treat it as a user message and never echo the raw block.
 - Use get_agent_run only when the user explicitly asks about progress.
