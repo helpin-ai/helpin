@@ -76,6 +76,7 @@ import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
 import {
   EPIC_DELIVERY_PANEL_ID,
+  EpicDeliveryPipelineButton,
   EpicDeliveryRunsPanel,
   EpicDeliveryStatusChip,
 } from '@/components/pm/EpicDeliveryRunsPanel';
@@ -767,6 +768,13 @@ export function EpicDetailPage() {
 
   const renderTaskHeaderAddButton = () => (
     <div className="flex items-center gap-1.5">
+      {canEdit && workspaceId && tasks.length > 0 ? (
+        <EpicDeliveryPipelineButton
+          workspaceId={workspaceId}
+          epicId={epicId}
+          onStarted={delivery.reload}
+        />
+      ) : null}
       {renderTasksViewSwitcher()}
       <Button
         type="button"

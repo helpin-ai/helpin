@@ -69,6 +69,8 @@ func defaultSystemAgentNameForPresetKey(presetKey string) string {
 		return "Lens"
 	case model.AgentPresetCommandAgent:
 		return "Command Agent"
+	case model.AgentPresetAskAgent:
+		return "Ask Agent"
 	default:
 		return "Agent"
 	}
@@ -323,6 +325,9 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 	if run.ParentRunID != nil && strings.TrimSpace(*run.ParentRunID) != "" {
 		metadata["parent_run_id"] = strings.TrimSpace(*run.ParentRunID)
 	}
+	if run.DockChatID != nil && strings.TrimSpace(*run.DockChatID) != "" {
+		metadata["dock_chat_id"] = strings.TrimSpace(*run.DockChatID)
+	}
 	trigger := mapFromJSON(input.Trigger)
 	if input.Event != nil {
 		metadata["event"] = mapFromJSON(input.Event)
@@ -348,25 +353,43 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 		ExecutionMode:   agentRuntimeExecutionModeDurable,
 		Trigger:         trigger,
 		Metadata:        metadata,
-		TurnPolicy:      AgentRuntimeTurnPolicy{Mode: runtimeTurnPolicyMode(run, mode)},
+		TurnPolicy:      runtimeTurnPolicy(run, agent, mode, 0),
 	}
 }
 
-func runtimeTurnPolicyMode(run *model.AgentRun, mode string) string {
+// defaultDockChatIdleTimeoutSeconds bounds how long a dock chat run stays
+// paused awaiting the next user message before the runtime completes it (72h).
+// Continuing an idle-expired chat starts a successor run in DockChatService.
+const defaultDockChatIdleTimeoutSeconds = 72 * 60 * 60
+
+// runtimeTurnPolicy decides whether a run uses the runtime's chat loop.
+// Agent Runtime's pause_after_assistant mode intentionally pauses after each
+// assistant turn and waits for another user message. Most Helpin
+// "interactive" runs still have a finite product outcome, so chat-loop
+// behavior stays scoped to conversational surfaces: support conversations and
+// dock chats (the ask_agent preset). A non-positive dockChatIdleSeconds falls
+// back to the default.
+func runtimeTurnPolicy(run *model.AgentRun, agent *model.Agent, mode string, dockChatIdleSeconds int) AgentRuntimeTurnPolicy {
+	completeOnFinish := AgentRuntimeTurnPolicy{Mode: agentRuntimeTurnCompleteOnFinish}
 	if run == nil {
-		return agentRuntimeTurnCompleteOnFinish
+		return completeOnFinish
+	}
+	if agent != nil && normalizePresetKey(agent.PresetKey) == model.AgentPresetAskAgent {
+		if dockChatIdleSeconds <= 0 {
+			dockChatIdleSeconds = defaultDockChatIdleTimeoutSeconds
+		}
+		return AgentRuntimeTurnPolicy{
+			Mode:               agentRuntimeTurnPauseAfterAssist,
+			IdleTimeoutSeconds: dockChatIdleSeconds,
+		}
 	}
 	if strings.TrimSpace(mode) != model.InvocationModeInteractive {
-		return agentRuntimeTurnCompleteOnFinish
+		return completeOnFinish
 	}
-	// Agent Runtime's pause_after_assistant mode is a chat-loop primitive: it
-	// intentionally pauses after an assistant turn and waits for another user
-	// message. Most Helpin "interactive" runs still have a finite product
-	// outcome, so keep chat-loop behavior scoped to conversational surfaces.
 	if strings.TrimSpace(run.TargetType) == "support_conversation" {
-		return agentRuntimeTurnPauseAfterAssist
+		return AgentRuntimeTurnPolicy{Mode: agentRuntimeTurnPauseAfterAssist}
 	}
-	return agentRuntimeTurnCompleteOnFinish
+	return completeOnFinish
 }
 
 func mapFromJSON(value interface{}) map[string]interface{} {
@@ -835,6 +858,15 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
 			strings.TrimSpace(derefString(existing.Model)) == "gpt-5.5" &&
 			strings.TrimSpace(derefString(preset.Model)) == "gpt-5.6-terra" {
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
+		// Ask Agent default moved from OpenAI to OpenRouter (flash-tier
+		// model); upgrade rows still on the untouched old default.
+		if presetKey == model.AgentPresetAskAgent &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
+			strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel {
+			existing.Provider = trimPtr(preset.Provider)
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
@@ -3651,6 +3683,10 @@ func truncateRunContextText(value string, limit int) string {
 
 type startTargetRunOptions struct {
 	allowActiveParentRun bool
+	// dockChatID marks the run as the backing run of a dock chat. Dock chat
+	// runs are keyed by their chat, not their target, so the per-target
+	// active-run guard does not apply to them.
+	dockChatID *string
 }
 
 func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string) (*model.AgentRun, error) {
@@ -4130,6 +4166,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			targetID:             workspaceID,
 			parentRunID:          parentRunID,
 			allowActiveParentRun: opts.allowActiveParentRun,
+			dockChatID:           opts.dockChatID,
 			actorID:              actorID,
 			input:                input,
 			trigger:              trigger,
@@ -5323,6 +5360,7 @@ type createRunParams struct {
 	targetID             string
 	parentRunID          *string
 	allowActiveParentRun bool
+	dockChatID           *string
 	taskID               *string
 	conversationID       *string
 	actorID              *string
@@ -5337,9 +5375,17 @@ type createRunParams struct {
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
-	activeRun, err := s.runRepo.FindActiveByTarget(ctx, params.workspaceID, params.targetType, params.targetID)
-	if err != nil {
-		return nil, err
+	var activeRun *model.AgentRun
+	var err error
+	if params.dockChatID == nil {
+		// Dock chat runs are keyed by chat, not target: many chats share the
+		// workspace target and the same ask_agent, so the per-target guard
+		// would wrongly reuse another chat's paused run. DockChatService
+		// guarantees a single active backing run per chat.
+		activeRun, err = s.runRepo.FindActiveByTarget(ctx, params.workspaceID, params.targetType, params.targetID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if activeRun != nil {
 		if updated := s.reconcileStuckRun(ctx, activeRun); updated != nil {
@@ -5379,6 +5425,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		TargetType:        params.targetType,
 		TargetID:          params.targetID,
 		ParentRunID:       params.parentRunID,
+		DockChatID:        params.dockChatID,
 		RuntimeKind:       params.agent.RuntimeKind,
 		InvocationMode:    defaultString(params.invocationMode, model.InvocationModeAutonomous),
 		ApprovalState:     approvalState,

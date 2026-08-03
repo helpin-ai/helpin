@@ -1,5 +1,5 @@
 import type { AgentRun } from '@/lib/pmTypes';
-import type { CommandBarRunPlan } from '@/stores/commandBarStore';
+import type { CommandBarRunPlan } from './planSummary';
 import { cn } from '@/lib/utils';
 import { StatusDot } from './StatusDot';
 import { stepDotState } from './utils';

@@ -5,64 +5,61 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AskAgentsDock } from '../AskAgentsDock';
 import { PageContextProvider } from '@/components/command-bar/pageContext';
-import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useCommandBarRunStore } from '@/stores/commandBarStore';
-import type { CommandBarPageContext } from '@/lib/pmTypes';
+import { useDockStore } from '@/stores/dockStore';
+import type { DockChat, DockChatDetail } from '@/lib/dockTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const mocks = vi.hoisted(() => ({
-  listPlans: vi.fn(),
+  listChats: vi.fn(),
+  createChat: vi.fn(),
+  getChat: vi.fn(),
+  updateChat: vi.fn(),
+  sendMessage: vi.fn(),
+  getChatRun: vi.fn(),
+  listChatRunEvents: vi.fn(),
+  listChatRunInteractions: vi.fn(),
+  resolveInteraction: vi.fn(),
+  cancelChatRun: vi.fn(),
   getPlan: vi.fn(),
-  chatTurn: vi.fn(),
-  listChatThreads: vi.fn(),
-  dispatchPlan: vi.fn(),
-  cancelPlan: vi.fn(),
-  resumePlan: vi.fn(),
-  retryPlan: vi.fn(),
-  confirmChatCreateAgent: vi.fn(),
-  listRecentRuns: vi.fn(),
-  getRun: vi.fn(),
-  getRunSnapshot: vi.fn(),
-  listRunEvents: vi.fn(),
-  approveRun: vi.fn(),
-  cancelRun: vi.fn(),
+}));
+
+vi.mock('@/lib/services/dockChatService', () => ({
+  dockChatService: {
+    listChats: mocks.listChats,
+    createChat: mocks.createChat,
+    getChat: mocks.getChat,
+    updateChat: mocks.updateChat,
+    sendMessage: mocks.sendMessage,
+    getChatRun: mocks.getChatRun,
+    listChatRunEvents: mocks.listChatRunEvents,
+    listChatRunInteractions: mocks.listChatRunInteractions,
+    resolveInteraction: mocks.resolveInteraction,
+    cancelChatRun: mocks.cancelChatRun,
+  },
 }));
 
 vi.mock('@/lib/services/commandBarService', () => ({
   commandBarService: {
-    listPlans: mocks.listPlans,
     getPlan: mocks.getPlan,
-    chatTurn: mocks.chatTurn,
-    listChatThreads: mocks.listChatThreads,
-    dispatchPlan: mocks.dispatchPlan,
-    cancelPlan: mocks.cancelPlan,
-    resumePlan: mocks.resumePlan,
-    retryPlan: mocks.retryPlan,
-    confirmChatCreateAgent: mocks.confirmChatCreateAgent,
   },
 }));
 
-vi.mock('@/lib/services/agentService', () => ({
-  agentService: {
-    listRecentRuns: mocks.listRecentRuns,
-    getRun: mocks.getRun,
-    getRunSnapshot: mocks.getRunSnapshot,
-    listRunEvents: mocks.listRunEvents,
-    approveRun: mocks.approveRun,
-    cancelRun: mocks.cancelRun,
-  },
-}));
+const CHAT: DockChat = {
+  id: 'chat-1',
+  workspace_id: 'ws-1',
+  user_id: 'user-1',
+  title: 'Sprint questions',
+  active_run_id: null,
+  created_at: '2026-08-01T00:00:00Z',
+  updated_at: '2026-08-01T00:00:00Z',
+};
 
-vi.mock('@/components/command-bar/PromotionDialog', () => ({
-  PromotionDialog: () => null,
-}));
-
-vi.mock('@/components/pm/CodingSession/CodingSessionDrawer', () => ({
-  CodingSessionDrawer: () => null,
-}));
+function chatDetail(overrides: Partial<DockChatDetail> = {}): DockChatDetail {
+  return { chat: CHAT, run: null, plan_ids: [], ...overrides };
+}
 
 let container: HTMLDivElement;
 let root: Root;
@@ -72,18 +69,16 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   localStorage.clear();
-  useCommandBarRunStore.getState().clear();
+  useDockStore.setState({ collapsed: false, view: 'chat', activeChatId: null, chats: [] });
   useWorkspaceStore.setState({
     currentWorkspace: { id: 'ws-1', name: 'Acme' } as never,
   });
-  mocks.listPlans.mockResolvedValue({ data: { plans: [] }, error: null });
-  mocks.listRecentRuns.mockResolvedValue({ data: { runs: [] }, error: null });
-  mocks.listChatThreads.mockResolvedValue({ data: { threads: [] }, error: null });
-  mocks.getRunSnapshot.mockResolvedValue({ data: { stream_state_snapshot: null }, error: null });
-  mocks.listRunEvents.mockResolvedValue({ data: { events: [], next_sequence_no: 0 }, error: null });
-  mocks.chatTurn.mockResolvedValue({ data: null, error: null });
-  mocks.dispatchPlan.mockResolvedValue({ data: null, error: null });
-  mocks.confirmChatCreateAgent.mockResolvedValue({ data: { agent: { id: 'agent-1' } }, error: null });
+  mocks.listChats.mockResolvedValue({ data: { chats: [CHAT] }, error: null });
+  mocks.getChat.mockResolvedValue({ data: chatDetail(), error: null });
+  mocks.getChatRun.mockResolvedValue({ data: null, error: null });
+  mocks.listChatRunEvents.mockResolvedValue({ data: { events: [], next_sequence_no: 0 }, error: null });
+  mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [] }, error: null });
+  mocks.getPlan.mockResolvedValue({ data: null, error: null });
 });
 
 afterEach(() => {
@@ -93,24 +88,14 @@ afterEach(() => {
   container.remove();
   document.body.innerHTML = '';
   useWorkspaceStore.setState({ currentWorkspace: null });
-  useCommandBarRunStore.getState().clear();
   vi.clearAllMocks();
 });
 
-function RegisteredPageContext({ context }: { context: CommandBarPageContext }) {
-  useRegisterPageContext(context);
-  return null;
-}
-
-async function renderDock(context?: CommandBarPageContext, options: { preserveStorage?: boolean } = {}) {
-  if (!options.preserveStorage) {
-    localStorage.setItem('helpin:ask-agents-dock-collapsed', '0');
-  }
+async function renderDock() {
   await act(async () => {
     root.render(
       <TooltipProvider>
         <PageContextProvider>
-          {context ? <RegisteredPageContext context={context} /> : null}
           <AskAgentsDock />
         </PageContextProvider>
       </TooltipProvider>,
@@ -133,418 +118,225 @@ async function waitForText(text: string) {
   throw new Error(`Missing text: ${text}`);
 }
 
-async function waitForDockClass(className: string) {
-  for (let i = 0; i < 10; i += 1) {
-    const dock = document.body.querySelector('[data-helpin-dock="true"]');
-    if (dock?.classList.contains(className)) return dock;
-    await flush();
-  }
-  throw new Error(`Missing dock class: ${className}`);
+function dockTextarea(): HTMLTextAreaElement {
+  const textarea = document.body.querySelector('[data-helpin-dock] textarea');
+  if (!textarea) throw new Error('dock textarea not found');
+  return textarea as HTMLTextAreaElement;
 }
 
-function setTextareaValue(value: string) {
-  const textarea = document.body.querySelector('textarea');
-  if (!textarea) throw new Error('textarea not found');
+function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
   setter?.call(textarea, value);
   textarea.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-async function clickSend() {
-  const button = document.body.querySelector<HTMLButtonElement>('button[title="Send"]');
-  if (!button) throw new Error('send button not found');
-  await act(async () => {
-    button.click();
-  });
-}
-
-describe('AskAgentsDock chat', () => {
-  it('starts collapsed when no dock preference is saved', async () => {
-    await renderDock(undefined, { preserveStorage: true });
-
-    expect(document.body.textContent).toContain('Ask agents');
-    expect(document.body.querySelector('textarea')).toBeNull();
-    expect(localStorage.getItem('helpin:ask-agents-dock-collapsed')).toBe('1');
-  });
-
-  it('describes agent instructions without implying slash commands', async () => {
+describe('AskAgentsDock', () => {
+  it('renders the collapsed pill and expands via the / key', async () => {
+    useDockStore.setState({ collapsed: true });
     await renderDock();
-
-    const textarea = document.body.querySelector<HTMLTextAreaElement>('textarea');
-    expect(textarea?.placeholder).toBe('Tell Atlas, Forge, Lens, or any agent what to do');
-    expect(textarea?.placeholder).not.toContain('/');
-  });
-
-  it('shows one animated text status while a chat response is pending', async () => {
-    let resolveTurn: ((value: { data: null; error: string }) => void) | undefined;
-    mocks.chatTurn.mockReturnValue(new Promise((resolve) => {
-      resolveTurn = resolve;
-    }));
-    await renderDock();
+    await waitForText('Ask agents');
 
     await act(async () => {
-      setTextareaValue('summarize this workspace');
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }));
     });
-    await clickSend();
-    await waitForText('Thinking…');
-
-    const statuses = document.body.querySelectorAll('[data-agent-streaming-status]');
-    expect(statuses).toHaveLength(1);
-    expect(statuses[0]?.querySelector('.agent-streaming-text')).not.toBeNull();
-    expect(document.body.querySelector('.animate-bounce')).toBeNull();
-
-    await act(async () => {
-      resolveTurn?.({ data: null, error: 'Stopped for test' });
-      await Promise.resolve();
-    });
+    await waitForText('Sprint questions');
+    expect(useDockStore.getState().collapsed).toBe(false);
   });
 
-  it('removes document context from the dock without leaving the page', async () => {
-    const docContext = {
-      entity_type: 'document',
-      entity_id: 'doc-1',
-      display_title: 'API Guide',
-    } satisfies CommandBarPageContext;
-    mocks.chatTurn.mockResolvedValue({
-      data: {
-        thread: {
-          id: 'thread-1',
-          workspace_id: 'ws-1',
-          title: 'Docs',
-          status: 'open',
-          created_at: '2026-05-15T00:00:00Z',
-          updated_at: '2026-05-15T00:00:01Z',
-        },
-        user_message: {
-          id: 'user-msg',
-          thread_id: 'thread-1',
-          role: 'user',
-          content: 'summarize',
-          created_at: '2026-05-15T00:00:00Z',
-        },
-        assistant_message: {
-          id: 'assistant-msg',
-          thread_id: 'thread-1',
-          role: 'assistant',
-          content: 'Workspace answer.',
-          created_at: '2026-05-15T00:00:01Z',
-        },
-      },
+  it('loads chats and shows the active chat view with an enabled composer', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+    expect(mocks.listChats).toHaveBeenCalled();
+    expect(mocks.getChat).toHaveBeenCalledWith('ws-1', 'chat-1');
+    const textarea = dockTextarea();
+    expect(textarea.disabled).toBe(false);
+  });
+
+  it('sends a message through the dock chat service', async () => {
+    mocks.sendMessage.mockResolvedValue({
+      data: chatDetail({
+        chat: { ...CHAT, active_run_id: 'run-1' },
+        run: { id: 'run-1', status: 'running', pause_reason: 'none' } as never,
+      }),
       error: null,
     });
-
-    await renderDock(docContext);
-    await waitForText('API Guide');
-
-    const remove = document.body.querySelector<HTMLButtonElement>('button[aria-label="Remove document context"]');
-    expect(remove).toBeTruthy();
-    await act(async () => {
-      remove?.click();
-    });
-
-    expect(document.body.textContent).not.toContain('API Guide');
-
-    await act(async () => {
-      setTextareaValue('summarize');
-    });
-    await clickSend();
-
-    expect(mocks.chatTurn).toHaveBeenCalledWith('ws-1', expect.objectContaining({
-      page_context: expect.objectContaining({
-        entity_type: 'workspace',
-        entity_id: 'ws-1',
-      }),
-    }));
-  });
-
-  it('labels the top-right collapse control as minimize', async () => {
     await renderDock();
+    await waitForText('Sprint questions');
 
-    expect(document.body.querySelector('button[aria-label="Minimize dock"]')).toBeTruthy();
-    expect(document.body.querySelector('button[aria-label="Hide dock"]')).toBeNull();
-  });
-
-  it('does not show active runs from the previous workspace after switching workspaces', async () => {
-    mocks.listRecentRuns
-      .mockResolvedValueOnce({
-        data: {
-          runs: [{
-            id: 'run-ws-1',
-            workspace_id: 'ws-1',
-            agent_id: 'agent-command',
-            target_type: 'workspace',
-            target_id: 'ws-1',
-            runtime_kind: 'native_sdk',
-            invocation_mode: 'autonomous',
-            approval_state: 'approved',
-            pause_reason: 'none',
-            status: 'running',
-            input: { text: 'summarize workspace one' },
-            output_summary: {},
-            cached_input_tokens: 0,
-            input_tokens: 0,
-            output_tokens: 0,
-            tokens_used: 0,
-            created_at: '2026-05-15T00:00:05Z',
-            updated_at: '2026-05-15T00:01:00Z',
-            target_info: { target_type: 'workspace', target_id: 'ws-1', title: 'Acme' },
-          }],
-        },
-        error: null,
-      })
-      .mockResolvedValueOnce({ data: { runs: [] }, error: null });
-
-    await renderDock();
-    await waitForText('1 running');
-
+    const textarea = dockTextarea();
     await act(async () => {
-      useWorkspaceStore.setState({
-        currentWorkspace: { id: 'ws-2', name: 'Beta' } as never,
-      });
+      setTextareaValue(textarea, 'list open tasks');
+    });
+    await act(async () => {
+      textarea.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
     });
     await flush();
 
-    expect(document.body.textContent).not.toContain('1 running');
-    expect(document.body.textContent).not.toContain('summarize workspace one');
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      'ws-1',
+      'chat-1',
+      expect.objectContaining({ content: 'list open tasks' }),
+    );
   });
 
-  it('smoothly hides while a dialog is open', async () => {
+  it('opens with a prefilled draft from the helpin:ask-agents event', async () => {
+    useDockStore.setState({ collapsed: true });
     await renderDock();
-    expect(document.body.querySelector('[data-helpin-dock="true"]')).toBeTruthy();
-
-    const dialog = document.createElement('div');
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('data-state', 'open');
-    dialog.setAttribute('data-slot', 'dialog-content');
-    document.body.appendChild(dialog);
-
-    const dock = await waitForDockClass('opacity-0');
-    expect(dock.classList.contains('pointer-events-none')).toBe(true);
-    expect(dock.classList.contains('translate-y-4')).toBe(true);
-    expect(document.body.querySelector('textarea')).toBeTruthy();
-  });
-
-  it('smoothly hides while a sheet drawer is open', async () => {
-    await renderDock();
-
-    const sheet = document.createElement('div');
-    sheet.setAttribute('role', 'dialog');
-    sheet.setAttribute('data-state', 'open');
-    sheet.setAttribute('data-slot', 'sheet-content');
-    sheet.setAttribute('data-side', 'right');
-    document.body.appendChild(sheet);
-
-    const dock = await waitForDockClass('opacity-0');
-    expect(dock.classList.contains('pointer-events-none')).toBe(true);
-    expect(dock.classList.contains('translate-y-4')).toBe(true);
-    expect(document.body.querySelector('textarea')).toBeTruthy();
-  });
-
-  it('hydrates the latest chat thread', async () => {
-    mocks.listChatThreads.mockResolvedValue({
-      data: {
-        threads: [{
-          thread: {
-            id: 'thread-1',
-            workspace_id: 'ws-1',
-            title: 'Last chat',
-            status: 'open',
-            created_at: '2026-05-15T00:00:00Z',
-            updated_at: '2026-05-15T00:00:01Z',
-          },
-          messages: [{
-            id: 'msg-1',
-            thread_id: 'thread-1',
-            role: 'assistant',
-            content: 'Hydrated answer',
-            created_at: '2026-05-15T00:00:01Z',
-          }],
-        }],
-      },
-      error: null,
-    });
-
-    await renderDock();
-
-    await waitForText('Hydrated answer');
-  });
-
-  it('hydrates completed runs that belong to the latest chat thread', async () => {
-    mocks.listChatThreads.mockResolvedValue({
-      data: {
-        threads: [{
-          thread: {
-            id: 'thread-1',
-            workspace_id: 'ws-1',
-            title: 'Run chat',
-            status: 'open',
-            created_at: '2026-05-15T00:00:00Z',
-            updated_at: '2026-05-15T00:02:00Z',
-          },
-          messages: [
-            {
-              id: 'user-msg',
-              thread_id: 'thread-1',
-              role: 'user',
-              content: 'update USE-239',
-              created_at: '2026-05-15T00:00:00Z',
-            },
-            {
-              id: 'assistant-msg',
-              thread_id: 'thread-1',
-              role: 'assistant',
-              content: 'Approve the one-shot run.',
-              created_at: '2026-05-15T00:00:01Z',
-            },
-          ],
-        }],
-      },
-      error: null,
-    });
-    mocks.listPlans.mockResolvedValue({
-      data: {
-        plans: [{
-          id: 'plan-1',
-          status: 'completed',
-          plan_kind: 'one_shot_command',
-          prompt: 'update USE-239',
-          page_context: { entity_type: 'workspace', entity_id: 'ws-1', display_title: 'Acme' },
-          steps: [{
-            agent_id: 'agent-command',
-            agent_name: 'Command Agent',
-            plan_kind: 'one_shot_command',
-            target: { entity_type: 'task', entity_id: 'task-1', display_title: 'USE-239' },
-            instructions: 'update USE-239',
-          }],
-          run_ids_by_step: { 0: 'run-1' },
-          current_step_index: 0,
-          run_count: 1,
-          created_at: '2026-05-15T00:00:05Z',
-          updated_at: '2026-05-15T00:01:00Z',
-          runs: [{
-            id: 'run-1',
-            workspace_id: 'ws-1',
-            agent_id: 'agent-command',
-            target_type: 'task',
-            target_id: 'task-1',
-            runtime_kind: 'native_sdk',
-            invocation_mode: 'autonomous',
-            approval_state: 'approved',
-            pause_reason: 'none',
-            status: 'completed',
-            input: { text: 'update USE-239' },
-            output_summary: { summary: 'Updated USE-239 with the latest findings.' },
-            cached_input_tokens: 0,
-            input_tokens: 0,
-            output_tokens: 0,
-            tokens_used: 0,
-            created_at: '2026-05-15T00:00:05Z',
-            updated_at: '2026-05-15T00:01:00Z',
-            completed_at: '2026-05-15T00:01:00Z',
-            target_info: { target_type: 'task', target_id: 'task-1', title: 'USE-239' },
-          }],
-        }],
-      },
-      error: null,
-    });
-
-    await renderDock();
-
-    await waitForText('Updated USE-239 with the latest findings.');
-  });
-
-  it('renders inline answers without dispatching a plan', async () => {
-    mocks.chatTurn.mockResolvedValue({
-      data: {
-        thread: {
-          id: 'thread-1',
-          workspace_id: 'ws-1',
-          title: 'Docs',
-          status: 'open',
-          created_at: '2026-05-15T00:00:00Z',
-          updated_at: '2026-05-15T00:00:01Z',
-        },
-        user_message: {
-          id: 'user-msg',
-          thread_id: 'thread-1',
-          role: 'user',
-          content: 'list docs',
-          created_at: '2026-05-15T00:00:00Z',
-        },
-        assistant_message: {
-          id: 'assistant-msg',
-          thread_id: 'thread-1',
-          role: 'assistant',
-          content: 'I found 2 visible documents.',
-          proposal: { type: 'inline_answer', answer: 'I found 2 visible documents.' },
-          created_at: '2026-05-15T00:00:01Z',
-        },
-        proposal: { type: 'inline_answer', answer: 'I found 2 visible documents.' },
-      },
-      error: null,
-    });
-    await renderDock();
-
     await act(async () => {
-      setTextareaValue('list docs');
+      window.dispatchEvent(
+        new CustomEvent('helpin:ask-agents', { detail: { query: 'enrich this contact' } }),
+      );
     });
-    await clickSend();
-    await waitForText('I found 2 visible documents.');
-
-    expect(mocks.dispatchPlan).not.toHaveBeenCalled();
+    await waitForText('Sprint questions');
+    expect(dockTextarea().value).toBe('enrich this contact');
   });
 
-  it('renders and confirms a custom agent proposal', async () => {
-    mocks.listChatThreads.mockResolvedValue({
+  it('switches to the chat list and back', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const chatsButton = Array.from(document.body.querySelectorAll('[data-helpin-dock] button')).find(
+      (b) => b.textContent === 'Chats',
+    );
+    expect(chatsButton).toBeTruthy();
+    await act(async () => {
+      (chatsButton as HTMLButtonElement).click();
+    });
+    await waitForText('Rename');
+    expect(useDockStore.getState().view).toBe('chats');
+  });
+
+  it('creates a new chat', async () => {
+    const newChat: DockChat = { ...CHAT, id: 'chat-2', title: '' };
+    mocks.createChat.mockResolvedValue({ data: newChat, error: null });
+    mocks.getChat.mockImplementation((_: string, chatId: string) =>
+      Promise.resolve({
+        data: chatDetail({ chat: chatId === 'chat-2' ? newChat : CHAT }),
+        error: null,
+      }),
+    );
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const newButton = Array.from(document.body.querySelectorAll('[data-helpin-dock] button')).find(
+      (b) => b.textContent === 'New chat',
+    );
+    await act(async () => {
+      (newButton as HTMLButtonElement).click();
+    });
+    await flush();
+    expect(mocks.createChat).toHaveBeenCalledWith('ws-1');
+    expect(useDockStore.getState().activeChatId).toBe('chat-2');
+  });
+
+  it('renders the approval card from the interactions fallback when events are empty', async () => {
+    const run = { id: 'run-1', status: 'paused', pause_reason: 'human_approval' } as never;
+    mocks.getChat.mockResolvedValue({
+      data: chatDetail({ chat: { ...CHAT, active_run_id: 'run-1' }, run }),
+      error: null,
+    });
+    mocks.listChatRunInteractions.mockResolvedValue({
       data: {
-        threads: [{
-          thread: {
-            id: 'thread-1',
-            workspace_id: 'ws-1',
-            title: 'Agent',
-            status: 'open',
-            created_at: '2026-05-15T00:00:00Z',
-            updated_at: '2026-05-15T00:00:01Z',
+        interactions: [
+          {
+            id: 'int-9',
+            interaction_kind: 'approval_request',
+            status: 'pending',
+            request_schema_version: '1',
+            request_payload: {
+              phase: 'dock_plan_confirm',
+              title: 'Confirm fallback launch',
+              raw_input: { action: { steps: [{ instructions: 'Do the thing' }] } },
+            },
           },
-          messages: [{
-            id: 'proposal-msg',
-            thread_id: 'thread-1',
-            role: 'assistant',
-            content: 'Review the draft before approving.',
-            proposal: {
-              type: 'create_agent',
-              draft: {
-                name: 'Doc Reviewer',
-                role: 'Review documentation for gaps.',
-                runtime_kind: 'native_sdk',
-                allowed_tools: ['read_document'],
-                allowed_targets: ['document'],
-                approval_mode: 'always',
-                default_invocation_mode: 'interactive',
-                max_concurrent_runs: 1,
-                system_prompt: 'Review docs.',
-                skills: [],
+        ],
+      },
+      error: null,
+    });
+    mocks.resolveInteraction.mockResolvedValue({ data: null, error: null });
+
+    await renderDock();
+    await waitForText('Confirm fallback launch');
+
+    const approve = Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Approve',
+    );
+    await act(async () => {
+      (approve as HTMLButtonElement).click();
+    });
+    await flush();
+
+    expect(mocks.resolveInteraction).toHaveBeenCalledWith(
+      'ws-1',
+      'chat-1',
+      'int-9',
+      expect.objectContaining({ response_payload: { decision: 'approve' } }),
+    );
+  });
+
+  it('renders the dock_plan_confirm card and approves through the chat resolver', async () => {
+    const run = { id: 'run-1', status: 'paused', pause_reason: 'human_approval' } as never;
+    mocks.getChat.mockResolvedValue({
+      data: chatDetail({ chat: { ...CHAT, active_run_id: 'run-1' }, run }),
+      error: null,
+    });
+    mocks.listChatRunEvents.mockResolvedValue({
+      data: {
+        events: [
+          {
+            id: 'ev-1',
+            session_id: 'run-1',
+            run_id: 'run-1',
+            sequence_no: 1,
+            timestamp: '2026-08-01T00:00:01Z',
+            type: 'interaction.requested',
+            runtime_kind: 'native_sdk',
+            payload: {
+              interaction_id: 'int-1',
+              interaction_kind: 'approval_request',
+              status: 'pending',
+              request_schema_version: '1',
+              request_payload: {
+                kind: 'dock_plan_confirm',
+                summary: 'Run Review Agent on HLP-12',
+                action: {
+                  steps: [
+                    {
+                      agent_id: 'agent-lens',
+                      target: { type: 'task', id: 'task-12' },
+                      instructions: 'Review the task',
+                    },
+                  ],
+                },
               },
             },
-            created_at: '2026-05-15T00:00:01Z',
-          }],
-        }],
+          },
+        ],
+        next_sequence_no: 1,
       },
       error: null,
     });
+    mocks.resolveInteraction.mockResolvedValue({ data: null, error: null });
+
     await renderDock();
-    await waitForText('Doc Reviewer');
+    await waitForText('Run Review Agent on HLP-12');
 
-    const button = [...document.body.querySelectorAll('button')]
-      .find((candidate) => candidate.textContent?.includes('Create agent'));
-    expect(button).toBeTruthy();
+    const approve = Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Approve',
+    );
+    expect(approve).toBeTruthy();
     await act(async () => {
-      button?.click();
+      (approve as HTMLButtonElement).click();
     });
+    await flush();
 
-    expect(mocks.confirmChatCreateAgent).toHaveBeenCalledWith('ws-1', 'proposal-msg');
-    await waitForText('Agent created');
-    expect([...document.body.querySelectorAll('button')]
-      .some((candidate) => candidate.textContent?.includes('Create agent'))).toBe(false);
+    expect(mocks.resolveInteraction).toHaveBeenCalledWith(
+      'ws-1',
+      'chat-1',
+      'int-1',
+      expect.objectContaining({ response_payload: { decision: 'approve' } }),
+    );
   });
 });

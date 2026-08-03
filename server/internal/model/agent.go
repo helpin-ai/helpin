@@ -19,6 +19,7 @@ const (
 	AgentPresetCodeBuilder        = "code_builder"
 	AgentPresetReviewAgent        = "review_agent"
 	AgentPresetCommandAgent       = "command_agent"
+	AgentPresetAskAgent           = "ask_agent"
 	// AgentPresetResearcher is a legacy alias accepted for old command-agent rows.
 	AgentPresetResearcher = "researcher"
 
@@ -176,6 +177,7 @@ type AgentRun struct {
 	RuntimeKind       string                  `json:"runtime_kind" gorm:"not null;default:'opencode'"`
 	InvocationMode    string                  `json:"invocation_mode" gorm:"not null;default:'autonomous'"`
 	ParentRunID       *string                 `json:"parent_run_id" gorm:"type:uuid;index"`
+	DockChatID        *string                 `json:"dock_chat_id,omitempty" gorm:"type:uuid;index"`
 	HandoffState      *string                 `json:"handoff_state"`
 	ApprovalState     string                  `json:"approval_state" gorm:"not null;default:'not_required'"`
 	PauseReason       string                  `json:"pause_reason" gorm:"not null;default:'none'"`

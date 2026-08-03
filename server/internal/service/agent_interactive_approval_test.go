@@ -2653,6 +2653,7 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			runtime_kind TEXT NOT NULL,
 			invocation_mode TEXT NOT NULL,
 			parent_run_id TEXT,
+			dock_chat_id TEXT,
 			handoff_state TEXT,
 			approval_state TEXT NOT NULL,
 			pause_reason TEXT NOT NULL DEFAULT 'none',

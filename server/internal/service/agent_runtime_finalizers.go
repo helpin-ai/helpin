@@ -76,6 +76,7 @@ type AgentRunFinalizerService struct {
 	ruleEngine         agentRunFinalizerRuleEvaluator
 	repositoryDelivery agentRunFinalizerRepositoryDeliveryService
 	commandBarAdvancer agentRunFinalizerCommandBarPlanAdvancer
+	dockChatNotifier   agentRunFinalizerDockChatNotifier
 	wsPublisher        websocket.EventPublisher
 }
 
@@ -138,6 +139,25 @@ func (s *AgentRunFinalizerService) SetCommandBarPlanAdvancer(advancer agentRunFi
 	}
 	if advancer != nil {
 		s.commandBarAdvancer = advancer
+	}
+	return s
+}
+
+// agentRunFinalizerDockChatNotifier delivers a settled dock-launched plan's
+// result back into its parent dock chat run. *DockChatService satisfies it.
+type agentRunFinalizerDockChatNotifier interface {
+	NotifyPlanSettledForRun(ctx context.Context, run *model.AgentRun) error
+}
+
+// SetDockChatResultNotifier wires the dock chat service used to deliver
+// settled child-plan results into the launching chat immediately after plan
+// advancement (the periodic sweep remains the backstop).
+func (s *AgentRunFinalizerService) SetDockChatResultNotifier(notifier agentRunFinalizerDockChatNotifier) *AgentRunFinalizerService {
+	if s == nil {
+		return s
+	}
+	if notifier != nil {
+		s.dockChatNotifier = notifier
 	}
 	return s
 }
@@ -470,6 +490,14 @@ func (s *AgentRunFinalizerService) finalizeCommandBarPlan(ctx context.Context, r
 	}
 	if _, err := s.commandBarAdvancer.AdvanceCommandBarPlanForDelegatedRun(ctx, run); err != nil {
 		return fmt.Errorf("advance command bar plan after run %q: %w", run.ID, err)
+	}
+	if s.dockChatNotifier != nil {
+		// Delivery is idempotent (parent_notified_at + runtime resume_id);
+		// failures are retried by the dock chat result sweep.
+		if err := s.dockChatNotifier.NotifyPlanSettledForRun(ctx, run); err != nil {
+			slog.WarnContext(ctx, "dock chat result delivery after plan advance failed",
+				"workspace_id", run.WorkspaceID, "run_id", run.ID, "error", err)
+		}
 	}
 	return s.markRunOutputSummaryFlag(ctx, run, agentRuntimeFinalizerCommandBarPlanSummaryKey)
 }

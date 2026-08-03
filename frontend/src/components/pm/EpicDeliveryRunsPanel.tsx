@@ -18,6 +18,57 @@ import {
 
 export const EPIC_DELIVERY_PANEL_ID = 'epic-delivery-panel';
 
+interface EpicDeliveryPipelineButtonProps {
+  workspaceId: string;
+  epicId: string;
+  onStarted: () => Promise<void> | void;
+  disabled?: boolean;
+}
+
+/**
+ * Launches the epic delivery pipeline (implement → review → merge every open
+ * task on the epic integration branch, ordered by blocking links, then open
+ * the epic PR). Backed by POST /pm/epics/{id}/delivery-pipeline.
+ */
+export function EpicDeliveryPipelineButton({
+  workspaceId,
+  epicId,
+  onStarted,
+  disabled = false,
+}: EpicDeliveryPipelineButtonProps) {
+  const [busy, setBusy] = useState(false);
+
+  const start = async () => {
+    setBusy(true);
+    try {
+      const res = await commandBarService.startEpicDeliveryPipeline(workspaceId, epicId);
+      if (res.error || !res.data) {
+        toast.error(res.error ?? 'Failed to start delivery pipeline');
+        return;
+      }
+      const skipped = res.data.skipped_tasks?.length ?? 0;
+      toast.success(
+        `Delivery pipeline started for ${res.data.task_count} task${res.data.task_count === 1 ? '' : 's'}${skipped ? ` (${skipped} skipped)` : ''}`,
+      );
+      await onStarted();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-7 text-xs"
+      disabled={disabled || busy}
+      onClick={() => void start()}
+    >
+      {busy ? 'Starting…' : 'Run delivery pipeline'}
+    </Button>
+  );
+}
+
 interface EpicDeliveryRunsPanelProps {
   workspaceId: string;
   plan: CommandBarRunPlan;
