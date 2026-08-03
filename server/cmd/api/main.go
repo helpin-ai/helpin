@@ -1451,6 +1451,7 @@ func main() {
 	}
 
 	handlers := router.Handlers{
+		WidgetRateLimit: middleware.WidgetRateLimit(redisClient),
 		Health: handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
 			ClientID:     cfg.GoogleAuthClientID,

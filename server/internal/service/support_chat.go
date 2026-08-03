@@ -159,6 +159,13 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
 		return nil
 	}
+	if !supportAI.consumeDailyReplyBudget(ctx, workspaceID) {
+		if err := supportAI.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "token_budget_exhausted"); err != nil {
+			return fmt.Errorf("daily budget escalation: %w", err)
+		}
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
+		return nil
+	}
 
 	supportAI.publishTypingIndicator(ctx, workspaceID, conversationID, true)
 

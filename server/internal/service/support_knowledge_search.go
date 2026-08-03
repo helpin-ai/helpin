@@ -846,6 +846,29 @@ func (s *SupportAIService) acquireLock(ctx context.Context, key string) bool {
 	return result == "OK"
 }
 
+// supportChatDailyReplyLimit caps AI turns per workspace per UTC day — a
+// spend/abuse ceiling behind the per-conversation caps and widget rate
+// limits. Exceeding it hands conversations to humans for the rest of the day.
+const supportChatDailyReplyLimit = 500
+
+// consumeDailyReplyBudget increments the workspace's daily AI-turn counter
+// and reports whether the turn is within budget. Fails open without Redis.
+func (s *SupportAIService) consumeDailyReplyBudget(ctx context.Context, workspaceID string) bool {
+	if s.redis == nil {
+		return true
+	}
+	key := "support:ai:daily:" + workspaceID + ":" + time.Now().UTC().Format("20060102")
+	count, err := s.redis.Incr(ctx, key).Result()
+	if err != nil {
+		slog.WarnContext(ctx, "support daily budget check failed", "workspace_id", workspaceID, "error", err)
+		return true
+	}
+	if count == 1 {
+		s.redis.Expire(ctx, key, 48*time.Hour)
+	}
+	return count <= supportChatDailyReplyLimit
+}
+
 // releaseLock releases a Redis lock.
 func (s *SupportAIService) releaseLock(ctx context.Context, key string) {
 	if s.redis == nil {

@@ -16,6 +16,10 @@ import (
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
+	// WidgetRateLimit guards the unauthenticated /widget write endpoints
+	// (nil disables limiting, e.g. when Redis is not configured).
+	WidgetRateLimit func(http.Handler) http.Handler
+
 	Health              *handler.HealthHandler
 	Auth                *handler.AuthHandler
 	Passkey             *handler.PasskeyHandler
@@ -160,6 +164,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			AllowCredentials: false,
 			MaxAge:           3600,
 		}))
+		if h.WidgetRateLimit != nil {
+			r.Use(h.WidgetRateLimit)
+		}
 		r.Get("/config", h.SupportInboxWidget.GetConfig)
 		r.Post("/session", h.SupportInboxWidget.CreateSession)
 		r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
@@ -321,6 +328,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				AllowCredentials: false,
 				MaxAge:           3600,
 			}))
+			if h.WidgetRateLimit != nil {
+				r.Use(h.WidgetRateLimit)
+			}
 			r.Get("/config", h.SupportInboxWidget.GetConfig)
 			r.Get("/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
 			r.Get("/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
