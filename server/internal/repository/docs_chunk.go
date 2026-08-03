@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -543,4 +544,32 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// PublicContentFingerprint summarizes the current public chunk corpus of a
+// workspace (count + latest update). Answer cache keys embed it so publishing
+// or editing help-center content invalidates cached answers naturally.
+func (r *DocsChunkRepository) PublicContentFingerprint(ctx context.Context, workspaceID string) (string, error) {
+	var row struct {
+		Total     int64
+		UpdatedAt *time.Time
+	}
+	if err := r.db.WithContext(ctx).
+		Table("docs_chunks AS c").
+		Select("COUNT(*) AS total, MAX(c.updated_at) AS updated_at").
+		Joins("JOIN docs_spaces s ON s.id = c.space_id AND s.workspace_id = c.workspace_id").
+		Joins("JOIN docs_documents d ON d.id = c.document_id AND d.workspace_id = c.workspace_id").
+		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = d.id").
+		Where("c.workspace_id = ?", workspaceID).
+		Where("s.type = ? AND s.deleted_at IS NULL", model.SpaceTypeExternalCapable).
+		Where("d.status = ? AND d.deleted_at IS NULL", model.DocStatusPublished).
+		Where("ha.public_published_at IS NOT NULL").
+		Scan(&row).Error; err != nil {
+		return "", fmt.Errorf("public content fingerprint: %w", err)
+	}
+	stamp := ""
+	if row.UpdatedAt != nil {
+		stamp = row.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	return fmt.Sprintf("%d:%s", row.Total, stamp), nil
 }
