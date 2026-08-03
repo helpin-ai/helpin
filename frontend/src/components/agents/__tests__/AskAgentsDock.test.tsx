@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   getChatRun: vi.fn(),
   listChatRunEvents: vi.fn(),
+  listChatRunInteractions: vi.fn(),
   resolveInteraction: vi.fn(),
   cancelChatRun: vi.fn(),
   getPlan: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock('@/lib/services/dockChatService', () => ({
     sendMessage: mocks.sendMessage,
     getChatRun: mocks.getChatRun,
     listChatRunEvents: mocks.listChatRunEvents,
+    listChatRunInteractions: mocks.listChatRunInteractions,
     resolveInteraction: mocks.resolveInteraction,
     cancelChatRun: mocks.cancelChatRun,
   },
@@ -75,6 +77,7 @@ beforeEach(() => {
   mocks.getChat.mockResolvedValue({ data: chatDetail(), error: null });
   mocks.getChatRun.mockResolvedValue({ data: null, error: null });
   mocks.listChatRunEvents.mockResolvedValue({ data: { events: [], next_sequence_no: 0 }, error: null });
+  mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [] }, error: null });
   mocks.getPlan.mockResolvedValue({ data: null, error: null });
 });
 
@@ -226,6 +229,51 @@ describe('AskAgentsDock', () => {
     await flush();
     expect(mocks.createChat).toHaveBeenCalledWith('ws-1');
     expect(useDockStore.getState().activeChatId).toBe('chat-2');
+  });
+
+  it('renders the approval card from the interactions fallback when events are empty', async () => {
+    const run = { id: 'run-1', status: 'paused', pause_reason: 'human_approval' } as never;
+    mocks.getChat.mockResolvedValue({
+      data: chatDetail({ chat: { ...CHAT, active_run_id: 'run-1' }, run }),
+      error: null,
+    });
+    mocks.listChatRunInteractions.mockResolvedValue({
+      data: {
+        interactions: [
+          {
+            id: 'int-9',
+            interaction_kind: 'approval_request',
+            status: 'pending',
+            request_schema_version: '1',
+            request_payload: {
+              phase: 'dock_plan_confirm',
+              title: 'Confirm fallback launch',
+              raw_input: { action: { steps: [{ instructions: 'Do the thing' }] } },
+            },
+          },
+        ],
+      },
+      error: null,
+    });
+    mocks.resolveInteraction.mockResolvedValue({ data: null, error: null });
+
+    await renderDock();
+    await waitForText('Confirm fallback launch');
+
+    const approve = Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Approve',
+    );
+    await act(async () => {
+      (approve as HTMLButtonElement).click();
+    });
+    await flush();
+
+    expect(mocks.resolveInteraction).toHaveBeenCalledWith(
+      'ws-1',
+      'chat-1',
+      'int-9',
+      expect.objectContaining({ response_payload: { decision: 'approve' } }),
+    );
   });
 
   it('renders the dock_plan_confirm card and approves through the chat resolver', async () => {

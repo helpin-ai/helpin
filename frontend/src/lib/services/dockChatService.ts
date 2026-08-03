@@ -28,6 +28,10 @@ export const dockChatService = {
     api.post<DockChatDetail>(`/dock/chats/${encodeURIComponent(chatId)}/messages${qs(workspaceId)}`, payload),
   getChatRun: (workspaceId: string, chatId: string) =>
     api.get<CodingSession>(`/dock/chats/${encodeURIComponent(chatId)}/run${qs(workspaceId)}`),
+  listChatRunInteractions: (workspaceId: string, chatId: string) =>
+    api.get<{ interactions: CodingSessionInteraction[] }>(
+      `/dock/chats/${encodeURIComponent(chatId)}/run/interactions${qs(workspaceId)}`,
+    ),
   listChatRunEvents: (workspaceId: string, chatId: string, after = 0) =>
     api.get<CodingSessionEventListResponse>(
       `/dock/chats/${encodeURIComponent(chatId)}/run/events${qs(workspaceId)}&after=${encodeURIComponent(after)}`,

@@ -128,6 +128,22 @@ func (h *DockChatHandler) ListChatRunEvents(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, events)
 }
 
+// ListChatRunInteractions handles GET /api/dock/chats/{chatID}/run/interactions.
+// The chat view uses this as the authoritative pending-interaction source so
+// approval cards render even when a websocket event was missed.
+func (h *DockChatHandler) ListChatRunInteractions(w http.ResponseWriter, r *http.Request) {
+	run, ok := h.resolveChatRun(w, r)
+	if !ok {
+		return
+	}
+	interactions, err := h.agentService.ListRunInteractions(r.Context(), getWorkspaceID(r), run.ID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"interactions": interactions})
+}
+
 // ResolveChatRunInteraction handles
 // POST /api/dock/chats/{chatID}/interactions/{interactionID}/resolve.
 func (h *DockChatHandler) ResolveChatRunInteraction(w http.ResponseWriter, r *http.Request) {

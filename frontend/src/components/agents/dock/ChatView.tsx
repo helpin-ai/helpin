@@ -5,7 +5,7 @@ import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
 import { parseDockPlanConfirm } from '@/lib/dockTypes';
 import type { DockChatDetail } from '@/lib/dockTypes';
-import type { CommandBarPlanSummary, AgentRun } from '@/lib/pmTypes';
+import type { AgentRun, CodingSessionInteraction, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
@@ -116,6 +116,38 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
     };
   }, [detail?.plan_ids, workspaceId]);
 
+  // Authoritative pending-interaction fallback: when the run is paused on a
+  // human interaction but the event stream hasn't surfaced it (missed WS
+  // event, projection lag), fetch the interaction rows directly so the
+  // approval card always renders instead of leaving the composer open.
+  const [fallbackInteraction, setFallbackInteraction] = useState<CodingSessionInteraction | null>(null);
+  const pausedOnInteraction =
+    run?.status === 'paused' && (run.pause_reason === 'human_approval' || run.pause_reason === 'human_input');
+  useEffect(() => {
+    if (!pausedOnInteraction) {
+      setFallbackInteraction(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const res = await dockChatService.listChatRunInteractions(workspaceId, chatId);
+      if (cancelled || !res.data) return;
+      const rows = res.data.interactions ?? [];
+      const pending = rows.filter((row) => row.status === 'pending');
+      const latest = pending[pending.length - 1] as (CodingSessionInteraction & { id?: string }) | undefined;
+      if (!latest) {
+        setFallbackInteraction(null);
+        return;
+      }
+      // Raw interaction rows carry `id`; the coding-session shape uses
+      // `interaction_id` — normalize so resolve calls work either way.
+      setFallbackInteraction({ ...latest, interaction_id: latest.interaction_id ?? latest.id ?? '' });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [chatId, pausedOnInteraction, workspaceId]);
+
   const transformed = useMemo(() => (streamState ? transformDockStream(streamState) : null), [streamState]);
 
   // Drop the optimistic echo once the transcript contains it.
@@ -133,8 +165,9 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
     if (node) node.scrollTop = node.scrollHeight;
   }, [transformed, pendingEcho, pendingInteraction]);
 
-  const dockConfirm = pendingInteraction ? parseDockPlanConfirm(pendingInteraction.request_payload) : null;
-  const structuredPending = !dockConfirm && isStructuredInteractionKind(pendingInteraction?.interaction_kind);
+  const effectiveInteraction = pendingInteraction ?? fallbackInteraction;
+  const dockConfirm = effectiveInteraction ? parseDockPlanConfirm(effectiveInteraction.request_payload) : null;
+  const structuredPending = !dockConfirm && isStructuredInteractionKind(effectiveInteraction?.interaction_kind);
   const composer = resolveDockComposerState(
     run ? { status: run.status, pause_reason: run.pause_reason } : null,
     !!dockConfirm || structuredPending,
@@ -170,6 +203,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
       const res = await dockChatService.resolveInteraction(workspaceId, chatId, interactionId, payload);
       if (!res.error) {
         clearPendingInteraction(interactionId);
+        setFallbackInteraction(null);
         void refreshDetail();
         void refetch();
       }
@@ -221,24 +255,25 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
             ))}
           </div>
         )}
-        {pendingInteraction && dockConfirm && (
+        {effectiveInteraction && dockConfirm && (
           <DockPlanConfirmCard
             payload={dockConfirm}
-            onDecision={(decision) =>
-              resolveInteraction(pendingInteraction.interaction_id, {
+            onDecision={(decision, note) =>
+              resolveInteraction(effectiveInteraction.interaction_id, {
                 response_payload: { decision },
+                followup_message: note,
               })
             }
           />
         )}
-        {pendingInteraction && !dockConfirm && run && (
+        {effectiveInteraction && !dockConfirm && run && (
           <PendingInteractionCard
             workspaceId={workspaceId}
             runId={run.id}
-            interaction={pendingInteraction}
+            interaction={effectiveInteraction}
             resolve={resolveInteraction}
             onResolved={() => {
-              clearPendingInteraction(pendingInteraction.interaction_id);
+              clearPendingInteraction(effectiveInteraction.interaction_id);
               void refreshDetail();
               void refetch();
             }}

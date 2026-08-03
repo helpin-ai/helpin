@@ -338,10 +338,11 @@ func TestListAgentsCommandReturnsOnlyActorVisibleAgents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agents.list_agents returned error: %v", err)
 	}
-	var agents []model.CommandBarAgent
-	if err := json.Unmarshal(output, &agents); err != nil {
+	var directory compactAgentDirectoryResult
+	if err := json.Unmarshal(output, &directory); err != nil {
 		t.Fatalf("unmarshal agents: %v\n%s", err, string(output))
 	}
+	agents := directory.Agents
 	if len(agents) != 2 || agents[0].Name != "Quill" || agents[1].Name != "Team A Agent" {
 		t.Fatalf("agents = %#v, want Quill and Team A Agent", agents)
 	}

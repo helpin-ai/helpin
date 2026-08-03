@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -819,4 +820,83 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			}), nil
 		},
 	})
+}
+
+// compactAgentListEntry is the selection-focused row list_agents returns.
+// The full CommandBarAgent shape (with complete allowed_tools) overflows the
+// model-visible tool output budget in workspaces with many agents, which
+// hides agents that sort late — so the directory stays compact and filterable.
+type compactAgentListEntry struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	PresetKey      string   `json:"preset_key,omitempty"`
+	Role           string   `json:"role,omitempty"`
+	IsSystem       bool     `json:"is_system,omitempty"`
+	Status         string   `json:"status,omitempty"`
+	AllowedTargets []string `json:"allowed_targets,omitempty"`
+}
+
+type compactAgentDirectoryResult struct {
+	Agents  []compactAgentListEntry `json:"agents"`
+	Total   int                     `json:"total"`
+	Omitted int                     `json:"omitted,omitempty"`
+	Note    string                  `json:"note,omitempty"`
+}
+
+// compactAgentDirectory filters and compacts the actor-visible agents for the
+// list_agents tool.
+func compactAgentDirectory(agents []model.Agent, query, targetType string, limit int) compactAgentDirectoryResult {
+	query = strings.ToLower(strings.TrimSpace(query))
+	targetType = strings.TrimSpace(targetType)
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	entries := make([]compactAgentListEntry, 0, len(agents))
+	for _, agent := range agents {
+		targets := parseJSONStringSlice(agent.AllowedTargets)
+		if targetType != "" && !slices.Contains(targets, targetType) {
+			continue
+		}
+		if query != "" {
+			haystack := strings.ToLower(agent.Name + " " + agent.PresetKey + " " + agent.Role)
+			if !strings.Contains(haystack, query) {
+				continue
+			}
+		}
+		role := strings.TrimSpace(agent.Role)
+		if len(role) > 120 {
+			role = role[:120] + "…"
+		}
+		entries = append(entries, compactAgentListEntry{
+			ID:             agent.ID,
+			Name:           agent.Name,
+			PresetKey:      agent.PresetKey,
+			Role:           role,
+			IsSystem:       agent.IsSystem,
+			Status:         agent.Status,
+			AllowedTargets: targets,
+		})
+	}
+	// System agents first, then by name, so the built-in specialists survive
+	// any downstream truncation.
+	slices.SortStableFunc(entries, func(a, b compactAgentListEntry) int {
+		if a.IsSystem != b.IsSystem {
+			if a.IsSystem {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	})
+	total := len(entries)
+	omitted := 0
+	if len(entries) > limit {
+		omitted = len(entries) - limit
+		entries = entries[:limit]
+	}
+	result := compactAgentDirectoryResult{Agents: entries, Total: total, Omitted: omitted}
+	if omitted > 0 {
+		result.Note = fmt.Sprintf("%d more agents not shown — narrow with query or target_type, or raise limit.", omitted)
+	}
+	return result
 }

@@ -1292,3 +1292,13 @@ func sessionPathLabel(path string) *string {
 	cleaned := filepath.Clean(path)
 	return &cleaned
 }
+
+// ListRunInteractions returns the run's interaction records (approval
+// requests, input requests) ordered as persisted. Used by the dock chat view
+// as the authoritative pending-interaction source.
+func (s *AgentService) ListRunInteractions(ctx context.Context, workspaceID, runID string) ([]model.AgentRunInteraction, error) {
+	if s == nil || s.interactionRepo == nil {
+		return nil, fmt.Errorf("interaction repository is not configured")
+	}
+	return s.interactionRepo.ListByRun(ctx, workspaceID, runID)
+}

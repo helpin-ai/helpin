@@ -5,7 +5,7 @@ import type { DockPlanConfirmPayload, DockPlanConfirmStep } from '@/lib/dockType
 
 interface DockPlanConfirmCardProps {
   payload: DockPlanConfirmPayload;
-  onDecision: (decision: 'approve' | 'request_changes') => Promise<{ error: string | null }>;
+  onDecision: (decision: 'approve' | 'request_changes', note?: string) => Promise<{ error: string | null }>;
 }
 
 /**
@@ -18,12 +18,15 @@ interface DockPlanConfirmCardProps {
  */
 export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCardProps) {
   const [acting, setActing] = useState<'approve' | 'request_changes' | null>(null);
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState('');
 
-  const decide = async (decision: 'approve' | 'request_changes') => {
+  const decide = async (decision: 'approve' | 'request_changes', decisionNote?: string) => {
     setActing(decision);
     try {
-      const res = await onDecision(decision);
+      const res = await onDecision(decision, decisionNote?.trim() || undefined);
       if (res.error) toast.error(res.error);
+      else setRejecting(false);
     } finally {
       setActing(null);
     }
@@ -57,19 +60,40 @@ export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCard
           {action.name ? ` to saved agent “${action.name}”` : ''}
         </p>
       )}
-      <div className="flex items-center gap-2">
-        <Button size="sm" disabled={acting !== null} onClick={() => void decide('approve')}>
-          {acting === 'approve' ? 'Approving…' : 'Approve'}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={acting !== null}
-          onClick={() => void decide('request_changes')}
-        >
-          {acting === 'request_changes' ? 'Sending…' : 'Not now'}
-        </Button>
-      </div>
+      {rejecting ? (
+        <div className="space-y-2">
+          <textarea
+            autoFocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="What should the agent change? (optional)"
+            className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            rows={2}
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={acting !== null}
+              onClick={() => void decide('request_changes', note)}
+            >
+              {acting === 'request_changes' ? 'Sending…' : 'Send'}
+            </Button>
+            <Button size="sm" variant="ghost" disabled={acting !== null} onClick={() => setRejecting(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Button size="sm" disabled={acting !== null} onClick={() => void decide('approve')}>
+            {acting === 'approve' ? 'Approving…' : 'Approve'}
+          </Button>
+          <Button size="sm" variant="outline" disabled={acting !== null} onClick={() => setRejecting(true)}>
+            Not now
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

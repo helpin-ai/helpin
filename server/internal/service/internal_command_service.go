@@ -330,10 +330,14 @@ func (s *InternalCommandService) registerDefaults() {
 			CommandName: "agents.list_agents",
 			Alias:       "list_agents",
 			Category:    "Agents",
-			Description: "List saved, built-in, and custom agents visible to the current actor. Use this before recommending which agent should handle a request.",
+			Description: "List saved, built-in, and custom agents visible to the current actor (compact rows: id, name, preset, role, targets). Use query to search by name/preset and target_type to filter; use this before recommending which agent should handle a request, and reference agents by id.",
 			InputSchema: map[string]any{
-				"type":                 "object",
-				"properties":           map[string]any{},
+				"type": "object",
+				"properties": map[string]any{
+					"query":       map[string]any{"type": "string", "description": "Optional case-insensitive substring match on name, preset key, or role."},
+					"target_type": map[string]any{"type": "string", "description": "Optional target type the agent must support (task, epic, document, crm_deal, repository, workspace, ...)."},
+					"limit":       map[string]any{"type": "integer", "description": "Maximum rows to return (default 50)."},
+				},
 				"required":             []string{},
 				"additionalProperties": false,
 			},
@@ -342,8 +346,12 @@ func (s *InternalCommandService) registerDefaults() {
 			if s.agentService == nil {
 				return nil, fmt.Errorf("agent service is not configured")
 			}
+			var req struct {
+				Query      string `json:"query"`
+				TargetType string `json:"target_type"`
+				Limit      int    `json:"limit"`
+			}
 			if len(input) > 0 {
-				var req struct{}
 				if err := json.Unmarshal(input, &req); err != nil {
 					return nil, fmt.Errorf("parse list agents input: %w", err)
 				}
@@ -352,7 +360,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if err != nil {
 				return nil, err
 			}
-			return mustJSON(commandBarAllAgentCandidates(agents)), nil
+			return mustJSON(compactAgentDirectory(agents, req.Query, req.TargetType, req.Limit)), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
