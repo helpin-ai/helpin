@@ -59,6 +59,19 @@ func TestEvaluateConfidence(t *testing.T) {
 			wantAbove:  true,
 		},
 		{
+			name: "uncited high scoring candidate cannot inflate weak cited evidence",
+			searchResults: []KnowledgeSearchResult{
+				{ID: "canonical-unrelated", ReferenceID: "pricing", VectorScore: 0.99},
+				{ID: "cited-weak", ReferenceID: "comparison", VectorScore: 0.1},
+			},
+			response: &AIResponseContract{
+				CanAnswer: true, SourceDocIDs: []string{"cited-weak"}, Confidence: 0.98,
+				Claims: []AIResponseClaim{{Text: "A claim", EvidenceIDs: []string{"cited-weak"}}},
+			},
+			isGreeting: false,
+			wantAbove:  false,
+		},
+		{
 			name: "non-greeting answer grounded in high-relevance internal retrieval does not require a citation",
 			searchResults: []KnowledgeSearchResult{
 				{ReferenceID: "internal-doc", IsInternal: true, VectorScore: 0.95},

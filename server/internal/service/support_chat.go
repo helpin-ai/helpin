@@ -35,7 +35,24 @@ type SupportChatService struct {
 	runRepo          *repository.AgentRunRepository
 	planRepo         *repository.CommandBarPlanRepository
 	agentService     *AgentService
+	runCloser        supportChatRunCloser
 	supportAIService *SupportAIService
+	evidenceRepo     *repository.SupportRunEvidenceRepository
+	workspaceRepo    *repository.WorkspaceRepository
+}
+
+// SetResearchEvidenceDependencies wires the stores used to turn completed
+// read-only child research into server-validatable support evidence.
+func (s *SupportChatService) SetResearchEvidenceDependencies(evidenceRepo *repository.SupportRunEvidenceRepository, workspaceRepo *repository.WorkspaceRepository) {
+	if s == nil {
+		return
+	}
+	s.evidenceRepo = evidenceRepo
+	s.workspaceRepo = workspaceRepo
+}
+
+type supportChatRunCloser interface {
+	CancelRun(ctx context.Context, workspaceID, runID, actorID string) (*model.AgentRun, error)
 }
 
 // NewSupportChatService creates a SupportChatService.
@@ -55,6 +72,7 @@ func NewSupportChatService(
 		runRepo:          runRepo,
 		planRepo:         planRepo,
 		agentService:     agentService,
+		runCloser:        agentService,
 		supportAIService: supportAIService,
 	}
 }
@@ -189,7 +207,7 @@ func (s *SupportChatService) startOrResumeChatRun(ctx context.Context, conv *mod
 
 	switch {
 	case currentRun == nil || !model.IsAgentRunActiveStatus(currentRun.Status):
-		return s.startSupportChatRun(ctx, conv, agent, composed, currentRun)
+		return s.startSupportChatRun(ctx, conv, agent, composed, currentRun, nil)
 	case model.IsAgentRunPausedStatus(currentRun.Status):
 		if currentRun.PauseReason != model.AgentRunPauseReasonUserMessage {
 			// Paused on an interaction (approval etc.) — park the message;
@@ -198,7 +216,7 @@ func (s *SupportChatService) startOrResumeChatRun(ctx context.Context, conv *mod
 		}
 		if _, err := s.agentService.SendRunMessage(ctx, workspaceID, currentRun.ID, "", model.SendAgentRunMessageRequest{Content: composed}); err != nil {
 			if isChatRunExpiredError(err) {
-				return s.startSupportChatRun(ctx, conv, agent, composed, currentRun)
+				return s.startSupportChatRun(ctx, conv, agent, composed, currentRun, nil)
 			}
 			return fmt.Errorf("resume chat run: %w", err)
 		}
@@ -211,7 +229,7 @@ func (s *SupportChatService) startOrResumeChatRun(ctx context.Context, conv *mod
 
 // startSupportChatRun creates a (possibly successor) chat run for the
 // conversation with transcript carry-forward and repoints ai_active_run_id.
-func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *model.SupportConversation, agent *model.Agent, composed string, previousRun *model.AgentRun) error {
+func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *model.SupportConversation, agent *model.Agent, composed string, previousRun *model.AgentRun, pendingEvidence *model.SupportRunEvidence) error {
 	workspaceID := conv.WorkspaceID
 	additional := composed
 	var parentRunID *string
@@ -247,6 +265,10 @@ func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *mode
 	})
 	if err != nil {
 		return fmt.Errorf("start support chat run: %w", err)
+	}
+	if pendingEvidence != nil && !s.persistSupportChildEvidence(ctx, run.ID, pendingEvidence) {
+		slog.WarnContext(ctx, "support chat: child evidence persistence failed before successor launch",
+			"workspace_id", workspaceID, "run_id", run.ID, "evidence_id", pendingEvidence.EvidenceID)
 	}
 	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conv.ID, map[string]any{
 		"ai_active_run_id": &run.ID,

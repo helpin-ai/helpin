@@ -28,7 +28,21 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 	bestLexical := 0.0
 	retrievedPublicDocs := map[string]struct{}{}
 	hasInternalGrounding := false
+	citedEvidence := map[string]struct{}{}
+	for _, docID := range response.SourceDocIDs {
+		citedEvidence[docID] = struct{}{}
+	}
+	for _, claim := range response.Claims {
+		for _, evidenceID := range claim.EvidenceIDs {
+			citedEvidence[evidenceID] = struct{}{}
+		}
+	}
 	for _, result := range searchResults {
+		_, citesRuntimeID := citedEvidence[result.ID]
+		_, citesReferenceID := citedEvidence[result.ReferenceID]
+		if len(citedEvidence) > 0 && !citesRuntimeID && !citesReferenceID {
+			continue
+		}
 		if result.VectorScore > bestVector {
 			bestVector = result.VectorScore
 		}
@@ -38,6 +52,10 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 		if result.IsInternal {
 			hasInternalGrounding = true
 		} else {
+			// Runtime knowledge tools expose the per-run evidence ID to the
+			// agent, while the older in-process pipeline cites ReferenceID.
+			// Both identify this retrieved public chunk.
+			retrievedPublicDocs[result.ID] = struct{}{}
 			retrievedPublicDocs[result.ReferenceID] = struct{}{}
 		}
 	}

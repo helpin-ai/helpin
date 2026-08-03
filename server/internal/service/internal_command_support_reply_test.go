@@ -27,6 +27,17 @@ func aiHistoryMessage(confidence float64) model.SupportMessage {
 	return model.SupportMessage{SenderType: "ai", Content: "earlier reply", Metadata: string(metadata)}
 }
 
+func TestSupportReplyInternalProcessDisclosures(t *testing.T) {
+	bad := "The knowledge base search results did not meet the confidence threshold, so I launched a child agent."
+	if got := supportReplyInternalProcessDisclosures(bad); len(got) < 4 {
+		t.Fatalf("expected internal process disclosures, got %v", got)
+	}
+	good := "Usermaven supports Google Ads conversion tracking. I can confirm the exact offline-sync workflow with our product team."
+	if got := supportReplyInternalProcessDisclosures(good); len(got) != 0 {
+		t.Fatalf("customer-facing limitation was rejected: %v", got)
+	}
+}
+
 func TestEvaluateSupportReplyGate(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -67,6 +78,24 @@ func TestEvaluateSupportReplyGate(t *testing.T) {
 			wantReason: "answer_validation_" + supportValidationUngrounded,
 		},
 		{
+			name: "runtime evidence id contributes citation coverage",
+			input: supportReplyGateInput{
+				Kind: "answer",
+				Contract: &AIResponseContract{
+					Content:      "The Pro plan costs $49 per month.",
+					CanAnswer:    true,
+					Confidence:   0.92,
+					SourceDocIDs: []string{"chunk-1"},
+					Claims:       []AIResponseClaim{{Text: "The Pro plan costs $49 per month.", EvidenceIDs: []string{"chunk-1"}}},
+				},
+				Evidence: []KnowledgeSearchResult{{
+					ID: "chunk-1", ReferenceID: "content:page-1", Content: "The Pro plan costs $49 per month.", VectorScore: 0.4,
+				}},
+				Threshold: 0.7,
+			},
+			wantOK: true,
+		},
+		{
 			name: "numeric mismatch escalates",
 			input: supportReplyGateInput{
 				Kind: "answer",
@@ -82,6 +111,25 @@ func TestEvaluateSupportReplyGate(t *testing.T) {
 			},
 			wantOK:     false,
 			wantReason: "answer_validation_" + supportValidationNumeric,
+		},
+		{
+			name: "free trial cannot be generalized into free tier",
+			input: supportReplyGateInput{
+				Kind: "answer",
+				Contract: &AIResponseContract{
+					Content:      "We offer a free tier plus paid plans.",
+					CanAnswer:    true,
+					Confidence:   0.95,
+					SourceDocIDs: []string{"trial"},
+					Claims:       []AIResponseClaim{{Text: "We offer a free tier.", EvidenceIDs: []string{"trial"}}},
+				},
+				Evidence: []KnowledgeSearchResult{{
+					ID: "trial", ReferenceID: "content:pricing", Content: "Start a 14-day free trial. Sign up free.", VectorScore: 0.9,
+				}},
+				Threshold: 0.7,
+			},
+			wantOK:     false,
+			wantReason: "answer_validation_" + supportValidationUngrounded,
 		},
 		{
 			name: "low confidence answer escalates",

@@ -63,6 +63,7 @@ type InternalCommandService struct {
 	supportAIService          *SupportAIService
 	supportProcessingRepo     *repository.AIMessageProcessingRepository
 	supportUsageMeter         *AIUsageMeter
+	supportRunCloser          supportChatRunCloser
 	authz                     *authorization.AuthzService
 
 	definitions map[string]InternalCommandDefinition
@@ -226,6 +227,7 @@ func NewInternalCommandService(
 		docsLinkService:    docsLinkService,
 		taskRepo:           taskRepo,
 		taskLinkRepo:       taskLinkRepo,
+		supportRunCloser:   agentService,
 		definitions:        make(map[string]InternalCommandDefinition),
 	}
 	svc.registerDefaults()

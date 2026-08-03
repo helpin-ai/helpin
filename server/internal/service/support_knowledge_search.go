@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -87,7 +88,7 @@ func (s *SupportAIService) searchSingleQuery(
 
 	// Search docs chunks.
 	if s.docsChunkRepo != nil && len(spaceIDs) > 0 {
-		docResults, err := s.docsChunkRepo.HybridSearchForAgent(ctx, workspaceID, agentID, spaceIDs, query, queryEmbedding, embeddingModel, 12)
+		docResults, err := s.docsChunkRepo.HybridSearchWithEmbeddingModel(ctx, workspaceID, spaceIDs, query, queryEmbedding, embeddingModel, 12)
 		if err != nil {
 			return nil, fmt.Errorf("docs hybrid search: %w", err)
 		}
@@ -114,7 +115,7 @@ func (s *SupportAIService) searchSingleQuery(
 
 	// Search content chunks.
 	if s.contentChunkRepo != nil && len(contentSourceIDs) > 0 {
-		contentResults, err := s.contentChunkRepo.HybridSearchForAgent(ctx, workspaceID, agentID, contentSourceIDs, query, queryEmbedding, embeddingModel, 12)
+		contentResults, err := s.contentChunkRepo.HybridSearchWithEmbeddingModel(ctx, workspaceID, contentSourceIDs, query, queryEmbedding, embeddingModel, 12)
 		if err != nil {
 			return nil, fmt.Errorf("content hybrid search: %w", err)
 		}
@@ -146,29 +147,21 @@ func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID,
 		return nil, nil
 	}
 
-	// Resolve knowledge source IDs once (shared across all query variants).
+	// Resolve released public knowledge once (shared across query variants).
+	// External docs and crawled website content are workspace-wide. The agent ID
+	// remains relevant only for private curated guidance.
 	var spaceIDs []string
-	if s.docsChunkRepo != nil && s.knowledgeRepo != nil {
-		sources, err := s.knowledgeRepo.ListByAgentID(ctx, agentID)
+	if s.docsChunkRepo != nil {
+		ids, err := s.docsChunkRepo.ListSearchableExternalSpaceIDs(ctx, workspaceID)
 		if err != nil {
 			return nil, err
 		}
-		seenSpaces := map[string]struct{}{}
-		for _, source := range sources {
-			if source.WorkspaceID != workspaceID {
-				continue
-			}
-			if _, ok := seenSpaces[source.SpaceID]; ok {
-				continue
-			}
-			seenSpaces[source.SpaceID] = struct{}{}
-			spaceIDs = append(spaceIDs, source.SpaceID)
-		}
+		spaceIDs = ids
 	}
 
 	var contentSourceIDs []string
-	if s.contentChunkRepo != nil && s.contentLinkRepo != nil {
-		ids, err := s.contentLinkRepo.ListContentSourceIDs(ctx, agentID)
+	if s.contentChunkRepo != nil {
+		ids, err := s.contentChunkRepo.ListSearchableSourceIDs(ctx, workspaceID)
 		if err != nil {
 			return nil, err
 		}
@@ -208,26 +201,26 @@ func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID,
 		return nil, err
 	}
 
-	// Deduplicate by chunk ID, keeping the highest combined score.
-	seen := make(map[string]int, len(allResults))
-	deduped := make([]KnowledgeSearchResult, 0, len(allResults))
-	for _, result := range allResults {
-		if idx, ok := seen[result.ID]; ok {
-			if result.CombinedScore > deduped[idx].CombinedScore {
-				deduped[idx] = result
-			}
-			continue
-		}
-		seen[result.ID] = len(deduped)
-		deduped = append(deduped, result)
-	}
+	// Deduplicate equivalent chunks across repeated queries and duplicate crawls
+	// of the same URL, keeping the strongest copy.
+	deduped := dedupeKnowledgeResults(allResults)
 
 	reranked := rerankKnowledgeResults(queries[0], deduped)
 	reranked = s.semanticRerankKnowledgeResults(ctx, queries[0], reranked)
-	reranked, err := s.expandKnowledgeNeighbors(ctx, workspaceID, agentID, reranked, 12)
+	reranked = applyKnowledgeAuthorityRanking(queries[0], reranked)
+	var err error
+	reranked, err = s.ensureCanonicalPricingLeadChunks(ctx, workspaceID, "", queries[0], reranked)
 	if err != nil {
 		return nil, err
 	}
+	reranked = limitKnowledgeResultsPerDocument(reranked, 2)
+	reranked = filterConflictingPricingEvidence(queries[0], reranked)
+	// Public neighbors use the same workspace-wide scope as the seed results.
+	reranked, err = s.expandKnowledgeNeighbors(ctx, workspaceID, "", reranked, 12)
+	if err != nil {
+		return nil, err
+	}
+	reranked = filterConflictingPricingEvidence(queries[0], reranked)
 
 	// Cap final results to avoid oversized context.
 	if len(reranked) > 12 {
@@ -380,16 +373,172 @@ func rerankKnowledgeResults(query string, results []KnowledgeSearchResult) []Kno
 		return reranked[i].CombinedScore > reranked[j].CombinedScore
 	})
 
+	return reranked
+}
+
+func limitKnowledgeResultsPerDocument(results []KnowledgeSearchResult, limit int) []KnowledgeSearchResult {
+	if limit <= 0 || len(results) == 0 {
+		return results
+	}
 	byDocCount := map[string]int{}
-	final := make([]KnowledgeSearchResult, 0, len(reranked))
-	for _, result := range reranked {
-		if byDocCount[result.ReferenceID] >= 2 {
+	limited := make([]KnowledgeSearchResult, 0, len(results))
+	for _, result := range results {
+		documentKey := knowledgeResultDocumentKey(result)
+		if byDocCount[documentKey] >= limit {
 			continue
 		}
-		byDocCount[result.ReferenceID]++
-		final = append(final, result)
+		byDocCount[documentKey]++
+		limited = append(limited, result)
 	}
-	return final
+	return limited
+}
+
+func dedupeKnowledgeResults(results []KnowledgeSearchResult) []KnowledgeSearchResult {
+	seen := make(map[string]int, len(results))
+	deduped := make([]KnowledgeSearchResult, 0, len(results))
+	for _, result := range results {
+		key := knowledgeResultChunkKey(result)
+		if idx, ok := seen[key]; ok {
+			if result.CombinedScore > deduped[idx].CombinedScore {
+				deduped[idx] = result
+			}
+			continue
+		}
+		seen[key] = len(deduped)
+		deduped = append(deduped, result)
+	}
+	return deduped
+}
+
+func knowledgeResultChunkKey(result KnowledgeSearchResult) string {
+	if normalizedURL := normalizeKnowledgeResultURL(result.URL); normalizedURL != "" {
+		return fmt.Sprintf("url:%s|chunk:%d|section:%s", normalizedURL, result.ChunkIndex, strings.TrimSpace(result.SectionKey))
+	}
+	if strings.TrimSpace(result.ReferenceID) != "" {
+		return fmt.Sprintf("ref:%s|chunk:%d|section:%s", strings.TrimSpace(result.ReferenceID), result.ChunkIndex, strings.TrimSpace(result.SectionKey))
+	}
+	return "id:" + result.ID
+}
+
+func knowledgeResultDocumentKey(result KnowledgeSearchResult) string {
+	if normalizedURL := normalizeKnowledgeResultURL(result.URL); normalizedURL != "" {
+		return "url:" + normalizedURL
+	}
+	if strings.TrimSpace(result.ReferenceID) != "" {
+		return "ref:" + strings.TrimSpace(result.ReferenceID)
+	}
+	return "id:" + result.ID
+}
+
+func normalizeKnowledgeResultURL(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Hostname() == "" {
+		return ""
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Fragment = ""
+	if parsed.Path != "/" {
+		parsed.Path = strings.TrimRight(parsed.Path, "/")
+	}
+	return parsed.String()
+}
+
+func applyKnowledgeAuthorityRanking(query string, results []KnowledgeSearchResult) []KnowledgeSearchResult {
+	if len(results) < 2 || !isPricingKnowledgeQuery(query) {
+		return results
+	}
+	reranked := append([]KnowledgeSearchResult(nil), results...)
+	for idx := range reranked {
+		switch {
+		case isCanonicalPricingURL(reranked[idx].URL):
+			reranked[idx].CombinedScore += 5
+		case isArticleKnowledgeURL(reranked[idx].URL):
+			reranked[idx].CombinedScore -= 1
+		}
+	}
+	sort.SliceStable(reranked, func(i, j int) bool {
+		return reranked[i].CombinedScore > reranked[j].CombinedScore
+	})
+	return reranked
+}
+
+// filterConflictingPricingEvidence prevents a stale high-overlap marketing
+// page from supplying a different price when the same retrieval already found
+// the canonical pricing page. Comparative questions keep both sides because
+// the visitor explicitly asked for a comparison.
+func filterConflictingPricingEvidence(query string, results []KnowledgeSearchResult) []KnowledgeSearchResult {
+	if len(results) < 2 || !isPricingKnowledgeQuery(query) || isComparativeKnowledgeQuery(query) {
+		return results
+	}
+	hasCanonicalPricing := false
+	for _, result := range results {
+		if isCanonicalPricingURL(result.URL) {
+			hasCanonicalPricing = true
+			break
+		}
+	}
+	if !hasCanonicalPricing {
+		return results
+	}
+	filtered := make([]KnowledgeSearchResult, 0, len(results))
+	for _, result := range results {
+		if result.IsInternal || isCanonicalPricingURL(result.URL) || !currencyValuePattern.MatchString(result.Content) {
+			filtered = append(filtered, result)
+		}
+	}
+	return filtered
+}
+
+func isPricingKnowledgeQuery(query string) bool {
+	for _, term := range normalizedTerms(query) {
+		switch term {
+		case "price", "prices", "pricing", "cost", "costs", "plan", "plans", "subscription", "subscriptions", "billing":
+			return true
+		}
+	}
+	return false
+}
+
+func isComparativeKnowledgeQuery(query string) bool {
+	for _, term := range normalizedTerms(query) {
+		switch term {
+		case "compare", "compared", "comparison", "comparisons", "versus", "vs", "alternative", "alternatives":
+			return true
+		}
+	}
+	return false
+}
+
+func isCanonicalPricingURL(rawURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || isArticleKnowledgeURL(rawURL) {
+		return false
+	}
+	segments := strings.Split(strings.Trim(strings.ToLower(parsed.Path), "/"), "/")
+	if len(segments) == 0 {
+		return false
+	}
+	switch segments[len(segments)-1] {
+	case "pricing", "plans", "pricing-plans", "plans-pricing", "subscriptions":
+		return true
+	default:
+		return false
+	}
+}
+
+func isArticleKnowledgeURL(rawURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return false
+	}
+	path := "/" + strings.Trim(strings.ToLower(parsed.Path), "/") + "/"
+	for _, segment := range []string{"/blog/", "/blogs/", "/article/", "/articles/", "/news/", "/guides/", "/compare/", "/comparison/", "/comparisons/"} {
+		if strings.Contains(path, segment) {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultSupportQueryPlan(customerMessage string) SupportQueryPlanContract {
@@ -959,14 +1108,39 @@ func (s *SupportAIService) SearchKnowledgeForConversation(ctx context.Context, w
 		return nil, fmt.Errorf("no support AI agent is configured for this workspace")
 	}
 	agentID := strings.TrimSpace(*settings.AIAgentID)
+	effectiveQueries := cloneStringSlice(queries)
+	if s.messageRepo != nil {
+		messages, listErr := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+		if listErr != nil {
+			slog.WarnContext(ctx, "support knowledge tool: list messages for exact query failed", "error", listErr, "conversation_id", conversationID)
+		} else {
+			effectiveQueries = prependVisitorKnowledgeQuery(messages, effectiveQueries)
+		}
+	}
+	effectiveQueries = dedupeQueries(effectiveQueries)
+	if len(effectiveQueries) > 4 {
+		effectiveQueries = effectiveQueries[:4]
+	}
 
-	results, err := s.loadKnowledgeChunks(ctx, workspaceID, agentID, language, queries)
+	results, err := s.loadKnowledgeChunks(ctx, workspaceID, agentID, language, effectiveQueries)
 	if err != nil {
 		return nil, err
 	}
 
-	s.recordToolRetrievalTrace(ctx, workspaceID, conversationID, queries, results)
+	s.recordToolRetrievalTrace(ctx, workspaceID, conversationID, effectiveQueries, results)
 	return &SupportKnowledgeSearchOutcome{AgentID: agentID, Results: results}, nil
+}
+
+func prependVisitorKnowledgeQuery(messages []model.SupportMessage, queries []string) []string {
+	for idx := len(messages) - 1; idx >= 0; idx-- {
+		if messages[idx].SenderType != "customer" {
+			continue
+		}
+		if visitorQuery := strings.TrimSpace(supportMessagePromptText(messages[idx])); visitorQuery != "" {
+			return append([]string{visitorQuery}, queries...)
+		}
+	}
+	return queries
 }
 
 // recordToolRetrievalTrace keeps the coverage-analytics feed alive for

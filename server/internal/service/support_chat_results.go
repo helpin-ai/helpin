@@ -36,6 +36,9 @@ func (s *SupportChatService) OnSupportChatRunPaused(ctx context.Context, run *mo
 	}
 
 	s.supportAIService.publishTypingIndicator(ctx, run.WorkspaceID, conversationID, false)
+	if s.closeSupportChatRunIfTerminal(ctx, run, conversationID, time.Now().UTC()) {
+		return
+	}
 
 	if s.enforceTurnSettlement(ctx, run, conversationID) {
 		// A nudge resume was sent — the run is active again; deferred
@@ -43,6 +46,51 @@ func (s *SupportChatService) OnSupportChatRunPaused(ctx context.Context, run *mo
 		return
 	}
 	s.drainDeferredMessages(ctx, run, conversationID)
+}
+
+// closeSupportChatRunIfTerminal ends chat-mode runtime runs that no longer
+// have a valid next AI turn. Human handoff closes immediately; ordinary idle
+// support chats retain their 24-hour continuation window.
+func (s *SupportChatService) closeSupportChatRunIfTerminal(ctx context.Context, run *model.AgentRun, conversationID string, now time.Time) bool {
+	if s == nil || run == nil || s.conversationRepo == nil {
+		return false
+	}
+	conversation, err := s.conversationRepo.GetByID(ctx, run.WorkspaceID, conversationID, "", model.RoleOwner)
+	if err != nil {
+		slog.WarnContext(ctx, "support chat: load conversation for run closure failed", "error", err, "conversation_id", conversationID, "run_id", run.ID)
+		return false
+	}
+	closeRun, reason := supportChatRunClosureDecision(run, conversation, now)
+	if !closeRun {
+		return false
+	}
+	if s.runCloser == nil {
+		slog.WarnContext(ctx, "support chat: run closer unavailable", "conversation_id", conversationID, "run_id", run.ID, "reason", reason)
+		return true
+	}
+	if _, err := s.runCloser.CancelRun(ctx, run.WorkspaceID, run.ID, ""); err != nil {
+		slog.WarnContext(ctx, "support chat: close terminal chat run failed", "error", err, "conversation_id", conversationID, "run_id", run.ID, "reason", reason)
+	} else {
+		slog.InfoContext(ctx, "support chat run closed", "conversation_id", conversationID, "run_id", run.ID, "reason", reason)
+	}
+	// Once a human owns the conversation, never nudge or resume the AI even if
+	// runtime cancellation needs a later sweep retry.
+	return true
+}
+
+func supportChatRunClosureDecision(run *model.AgentRun, conversation *model.SupportConversation, now time.Time) (bool, string) {
+	if run == nil || strings.TrimSpace(run.TargetType) != "support_conversation" || runInputTriggerType(run) != supportChatTriggerType {
+		return false, ""
+	}
+	if conversation != nil && ((conversation.HumanTakeover != nil && *conversation.HumanTakeover) ||
+		conversation.CustomerRequestedHumanAt != nil || strings.TrimSpace(derefString(conversation.AIState)) == "escalated") {
+		return true, "human_handoff"
+	}
+	if run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonUserMessage &&
+		!run.UpdatedAt.IsZero() && now.Sub(run.UpdatedAt) >= time.Duration(defaultSupportChatIdleTimeoutSeconds)*time.Second {
+		return true, "idle_timeout"
+	}
+	return false, ""
 }
 
 // enforceTurnSettlement checks that the just-ended turn produced its outcome.
@@ -149,6 +197,35 @@ func (s *SupportChatService) SweepSupportChat(ctx context.Context, staleAfter ti
 			s.reviveDeferredConversation(ctx, conv, run)
 		}
 	}
+	return s.sweepClosableSupportChatRuns(ctx, staleAfter, limit)
+}
+
+func (s *SupportChatService) sweepClosableSupportChatRuns(ctx context.Context, staleAfter time.Duration, limit int) error {
+	if s == nil || s.runRepo == nil {
+		return nil
+	}
+	if staleAfter <= 0 {
+		staleAfter = 30 * time.Second
+	}
+	now := time.Now().UTC()
+	runs, err := s.runRepo.ListActiveByExternalRuntime(ctx, agentRuntimeName, now.Add(-staleAfter), limit)
+	if err != nil {
+		return err
+	}
+	for idx := range runs {
+		run := &runs[idx]
+		if strings.TrimSpace(run.TargetType) != "support_conversation" || runInputTriggerType(run) != supportChatTriggerType {
+			continue
+		}
+		conversationID := strings.TrimSpace(derefString(run.ConversationID))
+		if conversationID == "" {
+			conversationID = strings.TrimSpace(run.TargetID)
+		}
+		if conversationID == "" {
+			continue
+		}
+		s.closeSupportChatRunIfTerminal(ctx, run, conversationID, now)
+	}
 	return nil
 }
 
@@ -196,7 +273,7 @@ func (s *SupportChatService) reviveDeferredConversation(ctx context.Context, con
 	if len(contents) > 1 {
 		composed = "The visitor sent several messages:\n- " + strings.Join(contents, "\n- ")
 	}
-	if err := s.startSupportChatRun(ctx, conv, agent, composed, previousRun); err != nil {
+	if err := s.startSupportChatRun(ctx, conv, agent, composed, previousRun, nil); err != nil {
 		slog.WarnContext(ctx, "support chat: revive successor failed", "error", err, "conversation_id", conv.ID)
 		_ = s.processingRepo.MarkDeferred(ctx, rows[len(rows)-1].ID)
 	}
@@ -235,4 +312,3 @@ func (s *SupportChatService) StartSupportChatSweep(ctx context.Context, interval
 		}
 	}
 }
-

@@ -106,13 +106,13 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 			CommandName: "support.send_reply",
 			Alias:       "send_support_reply",
 			Category:    "Support",
-			Description: "Send your reply to the visitor. For factual answers you MUST first call search_knowledge and cite the evidence_id values that support each material claim — the server re-validates grounding and confidence, and hands the conversation to a human if validation fails. Call exactly once per visitor message, as your final action of the turn.",
+			Description: "Send your reply to the visitor. For factual answers you MUST first call search_knowledge and cite the evidence_id values that support each material claim — the server re-validates grounding and confidence. This must be the final successful action of the turn. If the tool returns rewrite_required, rewrite once in customer-facing language and call it again.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"content":    map[string]any{"type": "string", "description": "The reply text shown to the visitor."},
-					"reply_kind": map[string]any{"type": "string", "enum": []string{"answer", "clarify", "conversational", "confirmation"}, "description": "answer = factual answer needing evidence; clarify = asking the visitor a question; conversational = greeting/small talk; confirmation = confirming the visitor's issue is resolved."},
-					"confidence": map[string]any{"type": "number", "description": "Your 0-1 confidence that the reply is correct and grounded."},
+					"content":        map[string]any{"type": "string", "description": "The reply text shown to the visitor."},
+					"reply_kind":     map[string]any{"type": "string", "enum": []string{"answer", "clarify", "conversational", "confirmation"}, "description": "answer = factual answer needing evidence; clarify = asking the visitor a question; conversational = greeting/small talk; confirmation = confirming the visitor's issue is resolved."},
+					"confidence":     map[string]any{"type": "number", "description": "Your 0-1 confidence that the reply is correct and grounded."},
 					"source_doc_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "evidence_id values (from search_knowledge) backing the reply."},
 					"claims": map[string]any{
 						"type":        "array",
@@ -145,7 +145,7 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 			CommandName: "support.escalate_to_human",
 			Alias:       "escalate_to_human",
 			Category:    "Support",
-			Description: "Hand the conversation to a human teammate. Use when the visitor asks for a human, the request is risky (billing disputes, account deletion, legal), or you cannot answer from the knowledge base. The server sends the availability-aware handoff message — after calling this, end your turn without sending another reply.",
+			Description: "Hand the conversation to a human teammate. Use when the visitor asks for a human, the request is risky (billing disputes, account deletion, legal), or the permitted research fallback cannot produce a grounded answer. The server sends the availability-aware handoff message — after calling this, end your turn without sending another reply.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -185,6 +185,14 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	if content == "" {
 		return nil, fmt.Errorf("content is required")
 	}
+	if disclosures := supportReplyInternalProcessDisclosures(content); len(disclosures) > 0 {
+		return mustJSON(map[string]any{
+			"status":      "rewrite_required",
+			"reason":      "internal_process_disclosure",
+			"violations":  disclosures,
+			"next_action": "Rewrite once as a direct customer-facing answer without mentioning searches, evidence, tools, agents, repositories, confidence machinery, or other internal process; then call send_support_reply again.",
+		}), nil
+	}
 
 	conv, err := supportAI.conversationRepo.GetByID(ctx, meta.WorkspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
@@ -197,6 +205,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	// was thinking, so the reply is suppressed, not published.
 	if (conv.HumanTakeover != nil && *conv.HumanTakeover) || conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" {
 		s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, nil)
+		s.closeEscalatedSupportCommandRun(ctx, meta)
 		return mustJSON(map[string]any{
 			"status":      "suppressed",
 			"next_action": "A human owns this conversation now. End your turn without sending anything.",
@@ -221,15 +230,18 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		}
 		for _, row := range rows {
 			evidence = append(evidence, KnowledgeSearchResult{
-				ID:          row.EvidenceID,
-				ReferenceID: row.ReferenceID,
-				SourceType:  row.SourceType,
-				SourceID:    row.SourceID,
-				DocumentID:  row.DocumentID,
-				Title:       row.Title,
-				URL:         row.URL,
-				IsInternal:  row.IsInternal,
-				Content:     row.Content,
+				ID:            row.EvidenceID,
+				ReferenceID:   row.ReferenceID,
+				SourceType:    row.SourceType,
+				SourceID:      row.SourceID,
+				DocumentID:    row.DocumentID,
+				Title:         row.Title,
+				URL:           row.URL,
+				IsInternal:    row.IsInternal,
+				Content:       row.Content,
+				LexicalScore:  row.LexicalScore,
+				VectorScore:   row.VectorScore,
+				CombinedScore: row.CombinedScore,
 			})
 		}
 	}
@@ -261,6 +273,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		}
 		s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, nil)
 		supportAI.publishTypingIndicator(ctx, meta.WorkspaceID, conversationID, false)
+		s.closeEscalatedSupportCommandRun(ctx, meta)
 		return mustJSON(map[string]any{
 			"status":      "escalated",
 			"reason":      gate.EscalationReason,
@@ -322,6 +335,37 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	}), nil
 }
 
+func supportReplyInternalProcessDisclosures(content string) []string {
+	lower := strings.ToLower(content)
+	phrases := []string{
+		"knowledge base",
+		"search_knowledge",
+		"search results",
+		"i searched",
+		"i'm searching",
+		"i am searching",
+		"let me search",
+		"i'll search",
+		"retrieval",
+		"evidence id",
+		"evidence_id",
+		"source ranking",
+		"child agent",
+		"agent run",
+		"repository inspection",
+		"confidence threshold",
+		"confidence calculation",
+		"internal tooling",
+	}
+	matches := make([]string, 0)
+	for _, phrase := range phrases {
+		if strings.Contains(lower, phrase) {
+			matches = append(matches, phrase)
+		}
+	}
+	return matches
+}
+
 func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 	supportAI := s.supportAIService
 	if supportAI == nil {
@@ -349,10 +393,30 @@ func (s *InternalCommandService) executeSupportEscalate(ctx context.Context, met
 	}
 	s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, nil)
 	supportAI.publishTypingIndicator(ctx, meta.WorkspaceID, conversationID, false)
+	s.closeEscalatedSupportCommandRun(ctx, meta)
 	return mustJSON(map[string]any{
 		"status":      "escalated",
 		"next_action": "The conversation was handed to a human with an availability-aware message. End your turn without sending anything else.",
 	}), nil
+}
+
+// closeEscalatedSupportCommandRun synchronously terminates the live runtime
+// after ownership passes to a human. Waiting for the pause hook or 30-second
+// sweep leaves a window in which the model can issue more searches/replies.
+func (s *InternalCommandService) closeEscalatedSupportCommandRun(ctx context.Context, meta model.InternalCommandContext) {
+	if s == nil || s.supportRunCloser == nil {
+		return
+	}
+	run, err := s.resolveCommandRun(ctx, meta)
+	if err != nil || run == nil {
+		if err != nil {
+			slog.WarnContext(ctx, "close escalated support run: resolve failed", "error", err, "run_id", meta.RunID)
+		}
+		return
+	}
+	if _, err := s.supportRunCloser.CancelRun(ctx, run.WorkspaceID, run.ID, ""); err != nil {
+		slog.WarnContext(ctx, "close escalated support run failed", "error", err, "run_id", run.ID, "conversation_id", run.TargetID)
+	}
 }
 
 // settleSupportTurn marks the triggering visitor message's processing row

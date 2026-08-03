@@ -31,6 +31,7 @@ var (
 	currencyValuePattern = regexp.MustCompile(`(?i)(?:[$€£]\s?\d[\d,.]*|\b\d[\d,.]*\s?(?:usd|eur|gbp|dollars?|euros?|pounds?)\b)`)
 	numericValuePattern  = regexp.MustCompile(`(?i)\b\d[\d,.]*(?:\s?%|\s?(?:users?|events?|sessions?|months?|years?|days?|hours?))?\b`)
 	orderedListPattern   = regexp.MustCompile(`(?m)^\s*\d+[.)]\s+`)
+	freePlanClaimPattern = regexp.MustCompile(`(?i)\bfree\s+(?:plan|tier)\b|\bfree\s+forever\b`)
 )
 
 func selectSupportEvidenceContext(
@@ -114,6 +115,10 @@ func validateSupportAnswer(
 			validation.Outcome = supportValidationNumeric
 			validation.Reasons = append(validation.Reasons, "unsupported_numeric:"+value)
 		}
+	}
+	if freePlanClaimPattern.MatchString(response.Content) && !freePlanClaimPattern.MatchString(citedEvidenceText.String()) {
+		validation.Outcome = supportValidationUngrounded
+		validation.Reasons = append(validation.Reasons, "unsupported_free_plan_claim")
 	}
 	validation.Reasons = dedupeQueries(validation.Reasons)
 	sort.Strings(validation.Reasons)

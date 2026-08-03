@@ -45,6 +45,18 @@ func TestDockChildHandoffInstructionIsAppendedOnce(t *testing.T) {
 	}
 }
 
+func TestSupportChildHandoffInstructionRequiresOfficialSources(t *testing.T) {
+	got := withSupportChildHandoffInstruction("Check the current product pricing.")
+	for _, want := range []string{"at most 2,500 characters", "official product website", "exact page URL", "third-party sources", "file paths and symbols"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("support handoff instruction missing %q: %q", want, got)
+		}
+	}
+	if twice := withSupportChildHandoffInstruction(got); twice != got {
+		t.Fatalf("support handoff instruction duplicated: %q", twice)
+	}
+}
+
 func TestDockRunArtifactReferencesExcludeRuntimeInternals(t *testing.T) {
 	artifacts := []model.AgentRunArtifact{
 		{ID: "tool", ArtifactType: model.AgentRunArtifactTypeToolCall, Format: "json", StorageMode: "inline"},

@@ -8,13 +8,25 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 const supportChildResultResumePrefix = "support-child:"
+
+const (
+	supportChildEvidencePrefix          = "child-result:"
+	supportChildSourceOfficialWeb       = "support_child_official_web"
+	supportChildSourceRepository        = "support_child_repository"
+	supportChildSourceWorkspaceResearch = "support_child_workspace"
+)
+
+var supportChildURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
 
 // NotifyPlanSettledForRun is the immediate delivery hook: called by the
 // agent-runtime terminal finalizer for command-bar child runs, it resolves the
@@ -105,6 +117,12 @@ func (s *SupportChatService) notifySupportPlanSettled(ctx context.Context, plan 
 	if err != nil {
 		return err
 	}
+	if evidence := s.prepareSupportChildEvidence(ctx, plan, block); evidence != nil && s.persistSupportChildEvidence(ctx, chatRun.ID, evidence) {
+		block, err = addEvidenceIDToChildRunResultBlock(block, evidence.EvidenceID)
+		if err != nil {
+			return err
+		}
+	}
 	resumeID := supportChildResultResumePrefix + plan.ID
 	if _, err := runtimeClient.ResumeRun(ctx, strings.TrimSpace(*chatRun.ExternalRuntimeID), AgentRuntimeResumeRunRequest{
 		Intent:   "reply",
@@ -148,11 +166,183 @@ func (s *SupportChatService) deliverPlanResultViaSuccessor(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	if err := s.startSupportChatRun(ctx, conv, agent, block, previousRun); err != nil {
+	evidence := s.prepareSupportChildEvidence(ctx, plan, block)
+	if evidence != nil {
+		block, err = addEvidenceIDToChildRunResultBlock(block, evidence.EvidenceID)
+		if err != nil {
+			return err
+		}
+	}
+	if err := s.startSupportChatRun(ctx, conv, agent, block, previousRun, evidence); err != nil {
 		return err
 	}
 	s.supportAIService.publishTypingIndicator(ctx, conv.WorkspaceID, conv.ID, true)
 	return s.planRepo.MarkParentNotified(ctx, conv.WorkspaceID, plan.ID)
+}
+
+// prepareSupportChildEvidence converts a completed read-only child handoff
+// into evidence that the reply gate can validate. Official-web research is
+// accepted only when the handoff contains a URL on the workspace's configured
+// website domain. Repository and live-workspace reads remain internal.
+func (s *SupportChatService) prepareSupportChildEvidence(ctx context.Context, plan *model.CommandBarPlanRecord, block string) *model.SupportRunEvidence {
+	if s == nil || s.evidenceRepo == nil || plan == nil || strings.TrimSpace(plan.Status) != model.CommandBarPlanStatusCompleted {
+		return nil
+	}
+	evidenceContent := childRunResultEvidenceContent(block)
+	if evidenceContent == "" {
+		return nil
+	}
+
+	var steps []model.CommandBarPlanStep
+	if err := json.Unmarshal(plan.Steps, &steps); err != nil || len(steps) == 0 {
+		return nil
+	}
+	hasWeb, hasRepository := supportChildResearchKinds(steps)
+	evidenceID := supportChildEvidencePrefix + strings.TrimSpace(plan.ID)
+	row := &model.SupportRunEvidence{
+		WorkspaceID:   plan.WorkspaceID,
+		EvidenceID:    evidenceID,
+		ReferenceID:   evidenceID,
+		SourceID:      strings.TrimSpace(plan.ID),
+		Content:       evidenceContent,
+		VectorScore:   0.9,
+		CombinedScore: 0.9,
+	}
+
+	switch {
+	case hasRepository:
+		row.SourceType = supportChildSourceRepository
+		row.Title = "Verified product implementation"
+		row.IsInternal = true
+	case hasWeb:
+		if s.workspaceRepo == nil {
+			return nil
+		}
+		workspace, err := s.workspaceRepo.GetByID(ctx, plan.WorkspaceID)
+		if err != nil || workspace == nil {
+			return nil
+		}
+		officialURL := ""
+		if workspace.WebsiteURL != nil {
+			officialURL = strings.TrimSpace(*workspace.WebsiteURL)
+		}
+		matchedURL := officialURLFromChildResult(evidenceContent, officialURL)
+		if matchedURL == "" {
+			slog.WarnContext(ctx, "support child web result omitted an official-domain URL",
+				"workspace_id", plan.WorkspaceID, "plan_id", plan.ID)
+			return nil
+		}
+		row.SourceType = supportChildSourceOfficialWeb
+		row.Title = "Official product website"
+		row.URL = matchedURL
+		row.IsInternal = false
+	default:
+		row.SourceType = supportChildSourceWorkspaceResearch
+		row.Title = "Verified workspace information"
+		row.IsInternal = true
+		row.VectorScore = 0.85
+		row.CombinedScore = 0.85
+	}
+	return row
+}
+
+func (s *SupportChatService) persistSupportChildEvidence(ctx context.Context, runID string, evidence *model.SupportRunEvidence) bool {
+	if s == nil || s.evidenceRepo == nil || evidence == nil || strings.TrimSpace(runID) == "" {
+		return false
+	}
+	row := *evidence
+	row.RunID = strings.TrimSpace(runID)
+	if err := s.evidenceRepo.UpsertBatch(ctx, []model.SupportRunEvidence{row}); err != nil {
+		slog.WarnContext(ctx, "support child evidence persistence failed",
+			"error", err, "workspace_id", row.WorkspaceID, "run_id", row.RunID, "evidence_id", row.EvidenceID)
+		return false
+	}
+	return true
+}
+
+func supportChildResearchKinds(steps []model.CommandBarPlanStep) (hasWeb, hasRepository bool) {
+	for _, step := range steps {
+		for _, tool := range step.AllowedTools {
+			switch strings.TrimSpace(tool) {
+			case "web_search_brave", "web_search_exa", "fetch_url", "crawl_url":
+				hasWeb = true
+			case "checkout_repository", "checkout_repositories", "list_repositories", "list_commits", "read_file", "read_files", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols":
+				hasRepository = true
+			}
+		}
+	}
+	return hasWeb, hasRepository
+}
+
+func childRunResultHasSummary(block string) bool {
+	return childRunResultEvidenceContent(block) != ""
+}
+
+// childRunResultEvidenceContent deliberately excludes the plan prompt and
+// error envelope. Visitor-supplied values in the original question must never
+// become evidence for themselves; only completed child summaries count.
+func childRunResultEvidenceContent(block string) string {
+	payload := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(block), dockChildResultOpenTag), dockChildResultCloseTag)
+	var result dockChildRunResult
+	if err := json.Unmarshal([]byte(payload), &result); err != nil {
+		return ""
+	}
+	var summaries []string
+	for _, run := range result.Runs {
+		if run.ResultAvailable && strings.TrimSpace(run.Summary) != "" {
+			summaries = append(summaries, strings.TrimSpace(run.Summary))
+		}
+	}
+	return strings.Join(summaries, "\n\n")
+}
+
+func addEvidenceIDToChildRunResultBlock(block, evidenceID string) (string, error) {
+	payload := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(block), dockChildResultOpenTag), dockChildResultCloseTag)
+	var result dockChildRunResult
+	if err := json.Unmarshal([]byte(payload), &result); err != nil {
+		return "", err
+	}
+	result.EvidenceID = strings.TrimSpace(evidenceID)
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return "", err
+	}
+	return dockChildResultOpenTag + string(encoded) + dockChildResultCloseTag, nil
+}
+
+func officialURLFromChildResult(block, workspaceURL string) string {
+	officialHost := normalizedSupportWebsiteHost(workspaceURL)
+	if officialHost == "" {
+		return ""
+	}
+	for _, candidate := range supportChildURLPattern.FindAllString(block, -1) {
+		candidate = strings.TrimRight(candidate, ".,;:!?)]}")
+		parsed, err := url.Parse(candidate)
+		if err != nil {
+			continue
+		}
+		candidateHost := normalizedSupportWebsiteHost(parsed.Hostname())
+		if candidateHost == officialHost || strings.HasSuffix(candidateHost, "."+officialHost) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func normalizedSupportWebsiteHost(raw string) string {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if raw == "" {
+		return ""
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	return strings.TrimPrefix(host, "www.")
 }
 
 // supportPlanDeliveryBlocked reports whether the conversation has left AI

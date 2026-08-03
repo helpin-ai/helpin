@@ -479,12 +479,16 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 			targetType = "workspace"
 			targetID = meta.WorkspaceID
 		}
+		instructions := withDockChildHandoffInstruction(step.Instructions)
+		if kind == orchestratorRunSupport {
+			instructions = withSupportChildHandoffInstruction(step.Instructions)
+		}
 		planSteps = append(planSteps, model.CommandBarPlanStep{
 			AgentID:              agentID,
 			AgentName:            agentName,
 			PlanKind:             planKind,
 			Target:               model.CommandBarPageContext{EntityType: targetType, EntityID: targetID},
-			Instructions:         withDockChildHandoffInstruction(step.Instructions),
+			Instructions:         instructions,
 			AllowedTools:         step.AllowedTools,
 			DependsOnStepIndexes: step.DependsOnStepIndexes,
 		})

@@ -23,11 +23,12 @@ const (
 // launched from that chat settles. The FE renders it as a result chip; the
 // ask_agent prompt tells the model to summarize it for the user.
 type dockChildRunResult struct {
-	PlanID string               `json:"plan_id"`
-	Status string               `json:"status"`
-	Prompt string               `json:"prompt,omitempty"`
-	Error  string               `json:"error,omitempty"`
-	Runs   []dockChildRunReport `json:"runs"`
+	EvidenceID string               `json:"evidence_id,omitempty"`
+	PlanID     string               `json:"plan_id"`
+	Status     string               `json:"status"`
+	Prompt     string               `json:"prompt,omitempty"`
+	Error      string               `json:"error,omitempty"`
+	Runs       []dockChildRunReport `json:"runs"`
 }
 
 type dockChildRunReport struct {
@@ -218,13 +219,16 @@ func (s *DockChatService) buildChildRunResultBlock(ctx context.Context, plan *mo
 // buildChildRunResultBlockWith renders a settled plan's result block from
 // explicit collaborators so both the dock and support chat services share the
 // same child-result contract.
-func buildChildRunResultBlockWith(ctx context.Context, plan *model.CommandBarPlanRecord, runRepo *repository.AgentRunRepository, runMessageRepo *repository.AgentRunMessageRepository, agentService *AgentService) (string, error) {
+func buildChildRunResultBlockWith(ctx context.Context, plan *model.CommandBarPlanRecord, runRepo *repository.AgentRunRepository, runMessageRepo *repository.AgentRunMessageRepository, agentService *AgentService, evidenceIDs ...string) (string, error) {
 	result := dockChildRunResult{
 		PlanID: plan.ID,
 		Status: strings.TrimSpace(plan.Status),
 		Prompt: strings.TrimSpace(plan.Prompt),
 		Error:  strings.TrimSpace(derefString(plan.ErrorMessage)),
 		Runs:   []dockChildRunReport{},
+	}
+	if len(evidenceIDs) > 0 {
+		result.EvidenceID = strings.TrimSpace(evidenceIDs[0])
 	}
 
 	var steps []model.CommandBarPlanStep

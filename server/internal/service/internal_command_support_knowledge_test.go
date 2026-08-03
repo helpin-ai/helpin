@@ -50,6 +50,9 @@ func setupSupportKnowledgeTestDB(t *testing.T) *gorm.DB {
 		url TEXT,
 		is_internal INTEGER NOT NULL DEFAULT 0,
 		content TEXT NOT NULL,
+		lexical_score REAL NOT NULL DEFAULT 0,
+		vector_score REAL NOT NULL DEFAULT 0,
+		combined_score REAL NOT NULL DEFAULT 0,
 		created_at DATETIME,
 		UNIQUE(run_id, evidence_id)
 	)`).Error; err != nil {
@@ -76,7 +79,7 @@ func TestSearchKnowledgeCommand(t *testing.T) {
 	db := setupSupportKnowledgeTestDB(t)
 	searcher := &stubKnowledgeSearcher{
 		results: []KnowledgeSearchResult{
-			{ID: "chunk-1", ReferenceID: "docs:chunk-1", SourceType: "docs", Title: "Install guide", URL: "https://x/install", Content: strings.Repeat("a", 1500), CombinedScore: 0.9},
+			{ID: "chunk-1", ReferenceID: "docs:chunk-1", SourceType: "docs", Title: "Install guide", URL: "https://x/install", Content: strings.Repeat("a", 1500), LexicalScore: 0.31, VectorScore: 0.78, CombinedScore: 0.9},
 			{ID: "g-1", ReferenceID: "guidance:g-1", SourceType: "curated_guidance", IsInternal: true, Content: "internal note", CombinedScore: 0.8},
 		},
 	}
@@ -109,16 +112,28 @@ func TestSearchKnowledgeCommand(t *testing.T) {
 		var resp struct {
 			Results []struct {
 				EvidenceID string `json:"evidence_id"`
+				URL        string `json:"url"`
 				IsInternal bool   `json:"is_internal"`
 				Content    string `json:"content"`
 			} `json:"results"`
-			Total int `json:"total"`
+			Total                          int     `json:"total"`
+			RequiredConfidence             float64 `json:"required_confidence"`
+			BestPossibleGroundedConfidence float64 `json:"best_possible_grounded_confidence"`
 		}
 		if err := json.Unmarshal(output, &resp); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
 		if resp.Total != 2 || resp.Results[0].EvidenceID != "chunk-1" {
 			t.Fatalf("unexpected results: %+v", resp)
+		}
+		if resp.RequiredConfidence != 0.7 {
+			t.Fatalf("required confidence = %v, want default 0.7", resp.RequiredConfidence)
+		}
+		if resp.BestPossibleGroundedConfidence < resp.RequiredConfidence {
+			t.Fatalf("confidence ceiling = %v, want at least %v", resp.BestPossibleGroundedConfidence, resp.RequiredConfidence)
+		}
+		if resp.Results[0].URL != "https://x/install" {
+			t.Fatalf("result URL = %q, want source chunk URL", resp.Results[0].URL)
 		}
 		if len(resp.Results[0].Content) > supportKnowledgeContentExcerpt+len("…") {
 			t.Errorf("content not excerpted: %d chars", len(resp.Results[0].Content))
@@ -139,6 +154,17 @@ func TestSearchKnowledgeCommand(t *testing.T) {
 		db.Table("support_run_evidence").Where("run_id = ? AND evidence_id = ?", "run-1", "chunk-1").Pluck("content", &stored)
 		if len(stored) != 1500 {
 			t.Errorf("stored content length = %d, want 1500", len(stored))
+		}
+		var scores struct {
+			LexicalScore  float64
+			VectorScore   float64
+			CombinedScore float64
+		}
+		if err := db.Table("support_run_evidence").Where("run_id = ? AND evidence_id = ?", "run-1", "chunk-1").Take(&scores).Error; err != nil {
+			t.Fatalf("load stored evidence scores: %v", err)
+		}
+		if scores.LexicalScore != 0.31 || scores.VectorScore != 0.78 || scores.CombinedScore != 0.9 {
+			t.Fatalf("stored evidence scores = %+v", scores)
 		}
 	})
 

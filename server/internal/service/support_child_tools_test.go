@@ -1,6 +1,8 @@
 package service
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,6 +65,62 @@ func TestSupportStepsAreReadOnly(t *testing.T) {
 				t.Errorf("supportStepsAreReadOnly() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSupportChildResearchKinds(t *testing.T) {
+	steps := []model.CommandBarPlanStep{
+		{AllowedTools: []string{"web_search_exa", "fetch_url"}},
+		{AllowedTools: []string{"checkout_repository", "ripgrep", "read_file"}},
+	}
+	hasWeb, hasRepository := supportChildResearchKinds(steps)
+	if !hasWeb || !hasRepository {
+		t.Fatalf("supportChildResearchKinds() = web:%v repo:%v, want both", hasWeb, hasRepository)
+	}
+}
+
+func TestOfficialURLFromChildResult(t *testing.T) {
+	block := `Third party: https://example.com/pricing. Official facts: https://www.usermaven.com/pricing.`
+	if got := officialURLFromChildResult(block, "https://usermaven.com"); got != "https://www.usermaven.com/pricing" {
+		t.Fatalf("officialURLFromChildResult() = %q", got)
+	}
+	if got := officialURLFromChildResult("https://example.com/pricing", "https://usermaven.com"); got != "" {
+		t.Fatalf("third-party URL accepted: %q", got)
+	}
+	if got := officialURLFromChildResult("https://docs.usermaven.com/setup", "usermaven.com"); got != "https://docs.usermaven.com/setup" {
+		t.Fatalf("official subdomain rejected: %q", got)
+	}
+}
+
+func TestChildRunResultEvidenceID(t *testing.T) {
+	result := dockChildRunResult{
+		PlanID: "plan-1",
+		Status: model.CommandBarPlanStatusCompleted,
+		Prompt: "Visitor guessed the price is $99",
+		Runs:   []dockChildRunReport{{Summary: "Official pricing lists Growth at $84.", ResultAvailable: true}},
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := addEvidenceIDToChildRunResultBlock(dockChildResultOpenTag+string(payload)+dockChildResultCloseTag, "child-result:plan-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !childRunResultHasSummary(block) {
+		t.Fatal("expected child summary to remain available")
+	}
+	evidenceContent := childRunResultEvidenceContent(block)
+	if strings.Contains(evidenceContent, "$99") || !strings.Contains(evidenceContent, "$84") {
+		t.Fatalf("evidence content must include only child summaries, got %q", evidenceContent)
+	}
+	var decoded dockChildRunResult
+	jsonPayload := block[len(dockChildResultOpenTag) : len(block)-len(dockChildResultCloseTag)]
+	if err := json.Unmarshal([]byte(jsonPayload), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.EvidenceID != "child-result:plan-1" {
+		t.Fatalf("evidence_id = %q", decoded.EvidenceID)
 	}
 }
 

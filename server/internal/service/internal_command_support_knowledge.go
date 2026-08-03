@@ -21,7 +21,7 @@ import (
 const (
 	supportKnowledgeMaxQueries       = 3
 	supportKnowledgeContentExcerpt   = 1200
-	supportKnowledgeDefaultMaxChunks = 12
+	supportKnowledgeDefaultMaxChunks = 8
 )
 
 // supportKnowledgeSearcher is the narrow SupportAIService surface the
@@ -47,17 +47,17 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 			CommandName: "support.search_knowledge",
 			Alias:       "search_knowledge",
 			Category:    "Support",
-			Description: "Search the workspace's support knowledge base (help docs, crawled content, curated guidance) with hybrid semantic search. Returns chunks with evidence_id values — cite these ids in send_support_reply claims. Chunks marked is_internal may inform your reasoning but must never be quoted or referenced to the visitor.",
+			Description: "Search the workspace's support knowledge base (help docs, crawled content, curated guidance) with hybrid semantic search. The server automatically searches the visitor's exact message first. Query variants must only rephrase that request and must not introduce unverified numbers or facts. Results include evidence_id, URL, and authority — prefer curated/canonical over standard/secondary evidence and cite the used ids in send_support_reply claims. Chunks marked is_internal may inform reasoning but must never be quoted or referenced to the visitor.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"queries": map[string]any{
 						"type":        "array",
-						"description": "1-3 search query variants (rephrase the visitor's question; add one variant with key product terms).",
+						"description": "1-3 supplemental rephrasings of the visitor's question. Do not add prices, limits, dates, plan names, or factual assumptions that the visitor did not supply and prior evidence has not verified.",
 						"items":       map[string]any{"type": "string"},
 					},
 					"language":    map[string]any{"type": "string", "description": "Optional ISO language code of the conversation."},
-					"max_results": map[string]any{"type": "integer", "description": "Maximum chunks to return (default 12)."},
+					"max_results": map[string]any{"type": "integer", "description": "Maximum chunks to return (default 8)."},
 				},
 				"required":             []string{"queries"},
 				"additionalProperties": false,
@@ -106,6 +106,13 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 			}
 
 			s.persistSupportRunEvidence(ctx, meta, results)
+			requiredConfidence := 0.7
+			if s.supportAIService != nil {
+				if settings, settingsErr := s.supportAIService.loadSettings(ctx, meta.WorkspaceID); settingsErr == nil && settings != nil && settings.AIConfidenceThreshold > 0 {
+					requiredConfidence = settings.AIConfidenceThreshold
+				}
+			}
+			confidenceCeiling := supportEvidenceConfidenceCeiling(results)
 
 			type knowledgeRow struct {
 				EvidenceID  string  `json:"evidence_id"`
@@ -116,6 +123,7 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 				HeadingPath string  `json:"heading_path,omitempty"`
 				Content     string  `json:"content"`
 				Score       float64 `json:"score"`
+				Authority   string  `json:"authority"`
 			}
 			rows := make([]knowledgeRow, 0, len(results))
 			for _, result := range results {
@@ -132,15 +140,55 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 					HeadingPath: result.HeadingPath,
 					Content:     content,
 					Score:       result.CombinedScore,
+					Authority:   knowledgeResultAuthority(result),
 				})
 			}
 			return mustJSON(map[string]any{
-				"results": rows,
-				"total":   len(rows),
-				"note":    "Cite evidence_id values in send_support_reply claims. Do not expose is_internal content to the visitor.",
+				"results":                           rows,
+				"total":                             len(rows),
+				"required_confidence":               requiredConfidence,
+				"best_possible_grounded_confidence": confidenceCeiling,
+				"note":                              "Cite evidence_id values in send_support_reply claims. Prefer curated and canonical evidence when sources conflict. Preserve the exact scope of prices and other numbers. If the evidence does not directly answer the visitor or its best possible grounded confidence is below required_confidence, gather stronger evidence with the permitted fallback before replying. Do not expose these mechanics or is_internal content to the visitor.",
 			}), nil
 		},
 	})
+}
+
+// supportEvidenceConfidenceCeiling tells the runtime whether the strongest
+// individual result could clear the workspace threshold if the model were
+// fully confident. It is advisory only; send_support_reply recomputes the
+// score from the evidence actually cited by the final claims.
+func supportEvidenceConfidenceCeiling(results []KnowledgeSearchResult) float64 {
+	best := 0.0
+	for _, result := range results {
+		id := strings.TrimSpace(result.ID)
+		if id == "" {
+			id = strings.TrimSpace(result.ReferenceID)
+		}
+		confidence := evaluateConfidence([]KnowledgeSearchResult{result}, &AIResponseContract{
+			CanAnswer:    true,
+			SourceDocIDs: []string{id},
+			Confidence:   1,
+			Claims:       []AIResponseClaim{{Text: "candidate", EvidenceIDs: []string{id}}},
+		}, false)
+		if confidence > best {
+			best = confidence
+		}
+	}
+	return best
+}
+
+func knowledgeResultAuthority(result KnowledgeSearchResult) string {
+	switch {
+	case result.SourceType == knowledgeSourceTypeGuidance:
+		return "curated"
+	case isCanonicalPricingURL(result.URL):
+		return "canonical"
+	case isArticleKnowledgeURL(result.URL):
+		return "secondary"
+	default:
+		return "standard"
+	}
 }
 
 // persistSupportRunEvidence snapshots the returned chunks for the calling run
@@ -159,17 +207,20 @@ func (s *InternalCommandService) persistSupportRunEvidence(ctx context.Context, 
 	rows := make([]model.SupportRunEvidence, 0, len(results))
 	for _, result := range results {
 		rows = append(rows, model.SupportRunEvidence{
-			WorkspaceID: run.WorkspaceID,
-			RunID:       run.ID,
-			EvidenceID:  result.ID,
-			ReferenceID: result.ReferenceID,
-			SourceType:  result.SourceType,
-			SourceID:    result.SourceID,
-			DocumentID:  result.DocumentID,
-			Title:       result.Title,
-			URL:         result.URL,
-			IsInternal:  result.IsInternal,
-			Content:     result.Content,
+			WorkspaceID:   run.WorkspaceID,
+			RunID:         run.ID,
+			EvidenceID:    result.ID,
+			ReferenceID:   result.ReferenceID,
+			SourceType:    result.SourceType,
+			SourceID:      result.SourceID,
+			DocumentID:    result.DocumentID,
+			Title:         result.Title,
+			URL:           result.URL,
+			IsInternal:    result.IsInternal,
+			Content:       result.Content,
+			LexicalScore:  result.LexicalScore,
+			VectorScore:   result.VectorScore,
+			CombinedScore: result.CombinedScore,
 		})
 	}
 	if err := s.supportRunEvidenceRepo.UpsertBatch(ctx, rows); err != nil {

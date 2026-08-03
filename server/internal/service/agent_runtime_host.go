@@ -225,7 +225,11 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		if workspaceID == "" {
 			return nil, fmt.Errorf("%w: workspace_id metadata or run mapping is required for support conversation targets", ErrAgentRuntimeHostBadRequest)
 		}
-		conversation, err := s.supportRepo.GetByID(ctx, workspaceID, target.ID, "", "")
+		// The runtime host adapter is an authenticated service-to-service path,
+		// not a workspace-member inbox view. Use the elevated internal lookup so
+		// mailbox membership filtering does not turn a valid conversation into a
+		// false not-found response.
+		conversation, err := s.supportRepo.GetByID(ctx, workspaceID, target.ID, "", model.RoleOwner)
 		if err != nil {
 			return nil, err
 		}
@@ -236,10 +240,27 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		if err := ensureRuntimeWorkspaceMatch(requestedWorkspaceID, workspaceID); err != nil {
 			return nil, err
 		}
-		resp.Summary = fmt.Sprintf("Support conversation: %s", conversation.Subject)
+		var workspace *model.Workspace
+		if s.workspaceRepo != nil {
+			workspace, err = s.workspaceRepo.GetByID(ctx, workspaceID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		resp.Summary = runtimeSupportConversationSummary(conversation, workspace)
 		resp.Target.Type = "support_conversation"
 		resp.Target.Display = &agentruntime.TargetDisplay{Title: conversation.Subject}
 		resp.Data = runtimeSupportConversationContextData(conversation)
+		if workspace != nil {
+			resp.Data["workspace"] = runtimeWorkspaceContextData(workspace)
+			resp.Data["product_context"] = map[string]interface{}{
+				"name":                               workspace.Name,
+				"website_url":                        agentRuntimeHostString(workspace.WebsiteURL),
+				"summary":                            agentRuntimeHostString(workspace.Description),
+				"is_current_website_product":         true,
+				"resolve_generic_product_references": true,
+			}
+		}
 	case "document":
 		doc, err := s.docsRepo.GetByID(ctx, target.ID)
 		if err != nil {
@@ -738,7 +759,32 @@ func runtimeWorkspaceContextData(workspace *model.Workspace) map[string]interfac
 		"slug":            workspace.Slug,
 		"workspace_key":   workspace.WorkspaceKey,
 		"organization_id": workspace.OrganizationID,
+		"description":     agentRuntimeHostString(workspace.Description),
+		"website_url":     agentRuntimeHostString(workspace.WebsiteURL),
 	}
+}
+
+func runtimeSupportConversationSummary(conversation *model.SupportConversation, workspace *model.Workspace) string {
+	conversationSummary := "Support conversation"
+	if conversation != nil && strings.TrimSpace(conversation.Subject) != "" {
+		conversationSummary += ": " + strings.TrimSpace(conversation.Subject)
+	}
+	if workspace == nil || strings.TrimSpace(workspace.Name) == "" {
+		return conversationSummary
+	}
+
+	productName := strings.TrimSpace(workspace.Name)
+	parts := []string{
+		fmt.Sprintf("%s for %s, the product whose website the visitor is currently using.", conversationSummary, productName),
+		fmt.Sprintf("Resolve generic references such as 'you', 'your product', and 'your plans' to %s; do not ask which product unless the visitor explicitly names another one.", productName),
+	}
+	if websiteURL := agentRuntimeHostString(workspace.WebsiteURL); websiteURL != "" {
+		parts = append(parts, "Product website: "+websiteURL+".")
+	}
+	if summary := agentRuntimeHostString(workspace.Description); summary != "" {
+		parts = append(parts, "Workspace summary: "+summary)
+	}
+	return strings.Join(parts, " ")
 }
 
 func runtimeTaskContextData(task *model.TaskDetail) map[string]interface{} {

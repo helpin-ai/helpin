@@ -199,6 +199,13 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	if agent == nil {
 		return AgentRuntimeAgent{}
 	}
+	effectiveSystemPrompt := strings.TrimSpace(derefString(agent.SystemPrompt))
+	if effectiveSystemPrompt == "" {
+		if prompt := agentcontract.BuiltInPresetPrompt(strings.TrimSpace(agent.EffectivePresetKey())); prompt != nil {
+			effectiveSystemPrompt = strings.TrimSpace(*prompt)
+		}
+	}
+	effectiveSystemPrompt = agentcontract.EnsureSupportRuntimeDeliveryContract(agent.EffectivePresetKey(), effectiveSystemPrompt)
 	out := AgentRuntimeAgent{
 		ID:                    strings.TrimSpace(agent.ID),
 		AppID:                 strings.TrimSpace(appID),
@@ -206,7 +213,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		RuntimeKind:           strings.TrimSpace(agent.RuntimeKind),
 		Provider:              strings.TrimSpace(derefString(agent.Provider)),
 		Model:                 strings.TrimSpace(derefString(agent.Model)),
-		SystemPrompt:          agentcontract.RenderRuntimeToolNamesInInstructionsForRuntime(derefString(agent.SystemPrompt), agent.RuntimeKind),
+		SystemPrompt:          agentcontract.RenderRuntimeToolNamesInInstructionsForRuntime(effectiveSystemPrompt, agent.RuntimeKind),
 		Skills:                runtimeSkillRefsFromHelpin(agentskills.EffectiveRuntimeRefs(agent), agent.RuntimeKind),
 		AllowedTools:          parseJSONStringSlice(agent.AllowedTools),
 		AllowedTargets:        parseJSONStringSlice(agent.AllowedTargets),

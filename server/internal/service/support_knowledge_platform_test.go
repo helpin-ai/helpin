@@ -197,6 +197,78 @@ func TestSelectSupportEvidenceContextUsesRetrievalRank(t *testing.T) {
 	}
 }
 
+func TestPricingRerankPrefersCanonicalPageAndDeduplicatesRepeatedCrawls(t *testing.T) {
+	results := []KnowledgeSearchResult{
+		{ID: "blog-old", URL: "https://example.test/blog/vendor-pricing", ReferenceID: "content:old", ChunkIndex: 0, CombinedScore: 0.95},
+		{ID: "blog-new", URL: "https://example.test/blog/vendor-pricing", ReferenceID: "content:new", ChunkIndex: 0, CombinedScore: 0.9},
+		{ID: "reviews", URL: "https://example.test/reviews", ReferenceID: "content:reviews", ChunkIndex: 0, CombinedScore: 0.8},
+		{ID: "pricing-0", URL: "https://example.test/pricing", ReferenceID: "content:pricing", ChunkIndex: 0, CombinedScore: 0.4},
+		{ID: "pricing-1", URL: "https://example.test/pricing", ReferenceID: "content:pricing", ChunkIndex: 1, CombinedScore: 0.35},
+	}
+
+	deduped := dedupeKnowledgeResults(results)
+	if len(deduped) != 4 {
+		t.Fatalf("duplicate crawl chunk should be removed, got %+v", deduped)
+	}
+	reranked := applyKnowledgeAuthorityRanking("What does it cost?", rerankKnowledgeResults("What does it cost?", deduped))
+	if len(reranked) != 4 || reranked[0].ID != "pricing-0" || reranked[1].ID != "pricing-1" {
+		t.Fatalf("canonical pricing chunks should outrank articles and generic pages: %+v", reranked)
+	}
+	blogCount := 0
+	for _, result := range reranked {
+		if strings.Contains(result.URL, "/blog/") {
+			blogCount++
+		}
+	}
+	if blogCount != 1 {
+		t.Fatalf("expected one deduplicated blog result, got %d in %+v", blogCount, reranked)
+	}
+}
+
+func TestPricingAuthorityFiltersConflictingNonCanonicalPrices(t *testing.T) {
+	results := []KnowledgeSearchResult{
+		{ID: "canonical", URL: "https://example.test/pricing", Content: "Growth costs $99 per month."},
+		{ID: "comparison", URL: "https://example.test/comparison/vendor-alternative", Content: "Plans start at $49 per month."},
+		{ID: "feature", URL: "https://example.test/features", Content: "Every plan includes analytics."},
+	}
+	filtered := filterConflictingPricingEvidence("What does it cost?", results)
+	if len(filtered) != 2 || filtered[0].ID != "canonical" || filtered[1].ID != "feature" {
+		t.Fatalf("generic pricing should exclude conflicting secondary prices: %+v", filtered)
+	}
+	if !isArticleKnowledgeURL(results[1].URL) {
+		t.Fatal("singular /comparison/ path should be secondary")
+	}
+	comparative := filterConflictingPricingEvidence("Compare your price vs Vendor", results)
+	if len(comparative) != len(results) {
+		t.Fatalf("explicit comparisons must retain both sides: %+v", comparative)
+	}
+}
+
+func TestPrependVisitorKnowledgeQueryUsesLatestCustomerMessage(t *testing.T) {
+	messages := []model.SupportMessage{
+		{SenderType: "customer", Content: "Old question"},
+		{SenderType: "ai", Content: "Old answer"},
+		{SenderType: "customer", Content: "What does it cost?"},
+	}
+	queries := prependVisitorKnowledgeQuery(messages, []string{"Usermaven Growth plan price", "Usermaven $49 plan"})
+	if len(queries) != 3 || queries[0] != "What does it cost?" {
+		t.Fatalf("latest visitor wording must rank first: %#v", queries)
+	}
+}
+
+func TestSelectCanonicalPricingLeadChunkPrefersPrimaryPlanCards(t *testing.T) {
+	chunks := []repository.SupportContentChunkSearchResult{
+		{ID: "nav", ChunkIndex: 0, Content: "Pricing and product navigation"},
+		{ID: "plans", ChunkIndex: 3, Content: "Plans Monthly Yearly Growth $99/month Scale $199/month Enterprise contact sales"},
+		{ID: "white-label", ChunkIndex: 8, Content: "White-label add-on starts at $49/month"},
+		{ID: "setup", ChunkIndex: 10, Content: "Guided setup $499 one-time"},
+	}
+	lead, ok := selectCanonicalPricingLeadChunk(chunks)
+	if !ok || lead.ID != "plans" {
+		t.Fatalf("primary plan cards should lead canonical pricing evidence: %+v, ok=%v", lead, ok)
+	}
+}
+
 type fixedSupportReranker struct {
 	scores []SupportRerankScore
 }
@@ -413,5 +485,67 @@ func TestContentRetrievalEnforcesAgentSourceStatusAndPageValidityInSQL(t *testin
 	}
 	if len(results) != 1 || results[0].ID != "content-ok" {
 		t.Fatalf("ineligible content entered candidate set: %+v", results)
+	}
+}
+
+func TestWorkspacePublicKnowledgeDiscoveryDoesNotRequireAgentLinks(t *testing.T) {
+	db := newTestDB(t)
+	for _, ddl := range []string{
+		`CREATE TABLE docs_spaces (id TEXT PRIMARY KEY, workspace_id TEXT, type TEXT, deleted_at DATETIME)`,
+		`CREATE TABLE docs_documents (id TEXT PRIMARY KEY, workspace_id TEXT, space_id TEXT, status TEXT, deleted_at DATETIME)`,
+		`CREATE TABLE docs_helpcenter_articles (document_id TEXT, public_published_at DATETIME)`,
+		`CREATE TABLE docs_chunks (id TEXT PRIMARY KEY, workspace_id TEXT, space_id TEXT, document_id TEXT, block_id TEXT, chunk_index INTEGER, section_key TEXT, heading_path TEXT, title TEXT, content TEXT, search_content TEXT, updated_at DATETIME)`,
+		`CREATE TABLE support_content_sources (id TEXT PRIMARY KEY, workspace_id TEXT, sync_status TEXT)`,
+		`CREATE TABLE support_content_pages (id TEXT PRIMARY KEY, workspace_id TEXT, content_source_id TEXT, http_status INTEGER)`,
+		`CREATE TABLE support_content_chunks (id TEXT PRIMARY KEY, workspace_id TEXT, content_source_id TEXT, page_id TEXT, chunk_index INTEGER, section_key TEXT, heading_path TEXT, title TEXT, url TEXT, content TEXT, search_content TEXT, updated_at DATETIME)`,
+	} {
+		if err := db.Exec(ddl).Error; err != nil {
+			t.Fatalf("create public retrieval table: %v", err)
+		}
+	}
+	for _, statement := range []string{
+		`INSERT INTO docs_spaces (id, workspace_id, type) VALUES ('external-public', 'ws-1', 'external_capable'), ('external-unpublished', 'ws-1', 'external_capable'), ('internal', 'ws-1', 'internal'), ('external-other-workspace', 'ws-2', 'external_capable')`,
+		`INSERT INTO docs_documents (id, workspace_id, space_id, status) VALUES ('doc-public', 'ws-1', 'external-public', 'published'), ('doc-unpublished', 'ws-1', 'external-unpublished', 'published'), ('doc-internal', 'ws-1', 'internal', 'published'), ('doc-other', 'ws-2', 'external-other-workspace', 'published')`,
+		`INSERT INTO docs_helpcenter_articles (document_id, public_published_at) VALUES ('doc-public', CURRENT_TIMESTAMP), ('doc-unpublished', NULL), ('doc-internal', CURRENT_TIMESTAMP), ('doc-other', CURRENT_TIMESTAMP)`,
+		`INSERT INTO docs_chunks (id, workspace_id, space_id, document_id, chunk_index, title, content, search_content, updated_at) VALUES ('docs-public', 'ws-1', 'external-public', 'doc-public', 0, 'Install', 'Install from settings', 'Install settings', CURRENT_TIMESTAMP), ('docs-unpublished', 'ws-1', 'external-unpublished', 'doc-unpublished', 0, 'Install', 'Draft instructions', 'Install draft', CURRENT_TIMESTAMP), ('docs-internal', 'ws-1', 'internal', 'doc-internal', 0, 'Install', 'Internal instructions', 'Install internal', CURRENT_TIMESTAMP), ('docs-other', 'ws-2', 'external-other-workspace', 'doc-other', 0, 'Install', 'Other workspace', 'Install other', CURRENT_TIMESTAMP)`,
+		`INSERT INTO support_content_sources (id, workspace_id, sync_status) VALUES ('content-public', 'ws-1', 'ready'), ('content-disabled', 'ws-1', 'disabled'), ('content-other', 'ws-2', 'ready')`,
+		`INSERT INTO support_content_pages (id, workspace_id, content_source_id, http_status) VALUES ('page-public', 'ws-1', 'content-public', 200), ('page-bad', 'ws-1', 'content-public', 404), ('page-disabled', 'ws-1', 'content-disabled', 200), ('page-other', 'ws-2', 'content-other', 200)`,
+		`INSERT INTO support_content_chunks (id, workspace_id, content_source_id, page_id, chunk_index, title, url, content, search_content, updated_at) VALUES ('content-public-chunk', 'ws-1', 'content-public', 'page-public', 0, 'Install', 'https://example.test/install', 'Install the pixel', 'Install pixel', CURRENT_TIMESTAMP), ('content-bad-chunk', 'ws-1', 'content-public', 'page-bad', 0, 'Missing', 'https://example.test/missing', 'Missing page', 'Missing page', CURRENT_TIMESTAMP), ('content-disabled-chunk', 'ws-1', 'content-disabled', 'page-disabled', 0, 'Disabled', 'https://example.test/disabled', 'Disabled source', 'Disabled source', CURRENT_TIMESTAMP), ('content-other-chunk', 'ws-2', 'content-other', 'page-other', 0, 'Other', 'https://other.test', 'Other workspace', 'Other workspace', CURRENT_TIMESTAMP)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("seed public retrieval table: %v", err)
+		}
+	}
+
+	docsRepo := repository.NewDocsChunkRepository(db)
+	spaceIDs, err := docsRepo.ListSearchableExternalSpaceIDs(context.Background(), "ws-1")
+	if err != nil {
+		t.Fatalf("list public docs spaces: %v", err)
+	}
+	if len(spaceIDs) != 1 || spaceIDs[0] != "external-public" {
+		t.Fatalf("searchable external spaces = %v, want [external-public]", spaceIDs)
+	}
+	docResults, err := docsRepo.HybridSearchWithEmbeddingModel(context.Background(), "ws-1", spaceIDs, "install", "", "", 10)
+	if err != nil {
+		t.Fatalf("search public docs without agent links: %v", err)
+	}
+	if len(docResults) != 1 || docResults[0].ID != "docs-public" {
+		t.Fatalf("public docs results = %+v", docResults)
+	}
+
+	contentRepo := repository.NewSupportContentChunkRepository(db)
+	sourceIDs, err := contentRepo.ListSearchableSourceIDs(context.Background(), "ws-1")
+	if err != nil {
+		t.Fatalf("list public content sources: %v", err)
+	}
+	if len(sourceIDs) != 1 || sourceIDs[0] != "content-public" {
+		t.Fatalf("searchable content sources = %v, want [content-public]", sourceIDs)
+	}
+	contentResults, err := contentRepo.HybridSearchWithEmbeddingModel(context.Background(), "ws-1", sourceIDs, "install", "", "", 10)
+	if err != nil {
+		t.Fatalf("search public content without agent links: %v", err)
+	}
+	if len(contentResults) != 1 || contentResults[0].ID != "content-public-chunk" {
+		t.Fatalf("public content results = %+v", contentResults)
 	}
 }
