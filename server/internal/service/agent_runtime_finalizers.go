@@ -75,9 +75,10 @@ type AgentRunFinalizerService struct {
 	supportMessageRepo agentRunFinalizerSupportMessageRepository
 	ruleEngine         agentRunFinalizerRuleEvaluator
 	repositoryDelivery agentRunFinalizerRepositoryDeliveryService
-	commandBarAdvancer agentRunFinalizerCommandBarPlanAdvancer
-	dockChatNotifier   agentRunFinalizerDockChatNotifier
-	wsPublisher        websocket.EventPublisher
+	commandBarAdvancer  agentRunFinalizerCommandBarPlanAdvancer
+	dockChatNotifier    agentRunFinalizerDockChatNotifier
+	supportChatNotifier agentRunFinalizerDockChatNotifier
+	wsPublisher         websocket.EventPublisher
 }
 
 // NewAgentRunFinalizerService wires the finalizer set from the repositories
@@ -158,6 +159,18 @@ func (s *AgentRunFinalizerService) SetDockChatResultNotifier(notifier agentRunFi
 	}
 	if notifier != nil {
 		s.dockChatNotifier = notifier
+	}
+	return s
+}
+
+// SetSupportChatResultNotifier wires the support chat service used to deliver
+// settled child-plan results into the launching support conversation run.
+func (s *AgentRunFinalizerService) SetSupportChatResultNotifier(notifier agentRunFinalizerDockChatNotifier) *AgentRunFinalizerService {
+	if s == nil {
+		return s
+	}
+	if notifier != nil {
+		s.supportChatNotifier = notifier
 	}
 	return s
 }
@@ -496,6 +509,12 @@ func (s *AgentRunFinalizerService) finalizeCommandBarPlan(ctx context.Context, r
 		// failures are retried by the dock chat result sweep.
 		if err := s.dockChatNotifier.NotifyPlanSettledForRun(ctx, run); err != nil {
 			slog.WarnContext(ctx, "dock chat result delivery after plan advance failed",
+				"workspace_id", run.WorkspaceID, "run_id", run.ID, "error", err)
+		}
+	}
+	if s.supportChatNotifier != nil {
+		if err := s.supportChatNotifier.NotifyPlanSettledForRun(ctx, run); err != nil {
+			slog.WarnContext(ctx, "support chat result delivery after plan advance failed",
 				"workspace_id", run.WorkspaceID, "run_id", run.ID, "error", err)
 		}
 	}

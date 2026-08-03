@@ -21,8 +21,9 @@ func (s *CommandBarService) DispatchPlan(ctx context.Context, workspaceID, actor
 // orchestrator agent (via the agents.* command tools). Empty for HTTP
 // dispatches.
 type dispatchPlanParams struct {
-	parentChatRunID *string
-	dockChatID      *string
+	parentChatRunID       *string
+	dockChatID            *string
+	supportConversationID *string
 }
 
 func (s *CommandBarService) dispatchPlanCore(ctx context.Context, workspaceID, actorID string, req model.CommandBarDispatchRequest, params dispatchPlanParams) (*model.CommandBarDispatchResponse, error) {
@@ -64,6 +65,7 @@ func (s *CommandBarService) dispatchPlanCore(ctx context.Context, workspaceID, a
 		}
 		record.ParentChatRunID = params.parentChatRunID
 		record.DockChatID = params.dockChatID
+		record.SupportConversationID = params.supportConversationID
 		if err := s.planRepo.Create(ctx, record); err != nil {
 			return nil, err
 		}

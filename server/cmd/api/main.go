@@ -1360,6 +1360,7 @@ func main() {
 		// Immediate delivery of settled child-plan results into dock chats;
 		// the sweep below retries chats that were mid-turn at that moment.
 		runFinalizers.SetDockChatResultNotifier(dockChatService)
+		runFinalizers.SetSupportChatResultNotifier(supportChatService)
 	}
 	if projectionCtx != nil {
 		go func() {

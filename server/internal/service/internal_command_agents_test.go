@@ -112,7 +112,7 @@ func TestVerifyDockApprovalLaunch(t *testing.T) {
 		interaction := seedDockApproval(t, db, chatRun.ID, func(i *model.AgentRunInteraction) {
 			i.RequestPayload = dockApprovalRequestPayload(t, map[string]interface{}{"steps": steps})
 		})
-		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps)); err != nil {
+		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps), dockApprovalPayloadKind); err != nil {
 			t.Fatalf("verifyDockApproval() = %v, want nil", err)
 		}
 	})
@@ -133,7 +133,7 @@ func TestVerifyDockApprovalLaunch(t *testing.T) {
 		interaction := seedDockApproval(t, db, chatRun.ID, func(i *model.AgentRunInteraction) {
 			i.RequestPayload = payload
 		})
-		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps)); err != nil {
+		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps), dockApprovalPayloadKind); err != nil {
 			t.Fatalf("verifyDockApproval() runtime shape = %v, want nil", err)
 		}
 	})
@@ -146,7 +146,7 @@ func TestVerifyDockApprovalLaunch(t *testing.T) {
 		interaction := seedDockApproval(t, db, chatRun.ID, func(i *model.AgentRunInteraction) {
 			i.RequestPayload = payload
 		})
-		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps)); err == nil || !strings.Contains(err.Error(), "missing the structured action") {
+		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps), dockApprovalPayloadKind); err == nil || !strings.Contains(err.Error(), "missing the structured action") {
 			t.Fatalf("verifyDockApproval() without action = %v, want missing-action error", err)
 		}
 	})
@@ -155,7 +155,7 @@ func TestVerifyDockApprovalLaunch(t *testing.T) {
 		interaction := seedDockApproval(t, db, chatRun.ID, func(i *model.AgentRunInteraction) {
 			i.RequestPayload = dockApprovalRequestPayload(t, steps[0])
 		})
-		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps)); err != nil {
+		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps), dockApprovalPayloadKind); err != nil {
 			t.Fatalf("verifyDockApproval() inline form = %v, want nil", err)
 		}
 	})
@@ -170,7 +170,7 @@ func TestVerifyDockApprovalLaunch(t *testing.T) {
 		interaction := seedDockApproval(t, db, chatRun.ID, func(i *model.AgentRunInteraction) {
 			i.RequestPayload = dockApprovalRequestPayload(t, map[string]interface{}{"steps": steps})
 		})
-		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, tampered)); err == nil {
+		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, tampered), dockApprovalPayloadKind); err == nil {
 			t.Fatal("verifyDockApproval() = nil for tampered steps, want error")
 		}
 	})
@@ -180,7 +180,7 @@ func TestVerifyDockApprovalLaunch(t *testing.T) {
 			i.Status = model.AgentRunInteractionStatusPending
 			i.RequestPayload = dockApprovalRequestPayload(t, map[string]interface{}{"steps": steps})
 		})
-		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps)); err == nil || !strings.Contains(err.Error(), "not resolved") {
+		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps), dockApprovalPayloadKind); err == nil || !strings.Contains(err.Error(), "not resolved") {
 			t.Fatalf("verifyDockApproval() pending = %v, want not-resolved error", err)
 		}
 	})
@@ -190,7 +190,7 @@ func TestVerifyDockApprovalLaunch(t *testing.T) {
 			i.ResponsePayload = json.RawMessage(`{"decision":"request_changes"}`)
 			i.RequestPayload = dockApprovalRequestPayload(t, map[string]interface{}{"steps": steps})
 		})
-		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps)); err == nil || !strings.Contains(err.Error(), "did not approve") {
+		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps), dockApprovalPayloadKind); err == nil || !strings.Contains(err.Error(), "did not approve") {
 			t.Fatalf("verifyDockApproval() rejected = %v, want not-approved error", err)
 		}
 	})
@@ -200,7 +200,7 @@ func TestVerifyDockApprovalLaunch(t *testing.T) {
 			payload, _ := json.Marshal(map[string]interface{}{"kind": "something_else", "action": map[string]interface{}{"steps": steps}})
 			i.RequestPayload = payload
 		})
-		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps)); err == nil {
+		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps), dockApprovalPayloadKind); err == nil {
 			t.Fatal("verifyDockApproval() = nil for wrong kind, want error")
 		}
 	})
@@ -210,13 +210,13 @@ func TestVerifyDockApprovalLaunch(t *testing.T) {
 			i.RequestPayload = dockApprovalRequestPayload(t, map[string]interface{}{"steps": steps})
 			i.RuntimeMetadata = json.RawMessage(`{"dock_action_consumed":true}`)
 		})
-		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps)); err == nil || !strings.Contains(err.Error(), "already used") {
+		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, interaction.ID, "launch", stepsHash(t, steps), dockApprovalPayloadKind); err == nil || !strings.Contains(err.Error(), "already used") {
 			t.Fatalf("verifyDockApproval() consumed = %v, want already-used error", err)
 		}
 	})
 
 	t.Run("missing interaction id rejected", func(t *testing.T) {
-		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, "", "launch", stepsHash(t, steps)); err == nil {
+		if _, err := svc.verifyDockApproval(context.Background(), meta, chatRun, "", "launch", stepsHash(t, steps), dockApprovalPayloadKind); err == nil {
 			t.Fatal("verifyDockApproval() = nil for empty id, want error")
 		}
 	})
@@ -295,6 +295,7 @@ func TestGetAgentRunRetrievesOwnedPersistedResultWithoutNewPlan(t *testing.T) {
 		actor_id TEXT,
 		parent_chat_run_id TEXT,
 		dock_chat_id TEXT,
+		support_conversation_id TEXT,
 		parent_notified_at DATETIME,
 		status TEXT NOT NULL DEFAULT 'running',
 		prompt TEXT NOT NULL,
@@ -417,7 +418,7 @@ func TestGetAgentRunRetrievesOwnedPersistedResultWithoutNewPlan(t *testing.T) {
 	_, err = definition.Execute(ctx, model.InternalCommandContext{
 		WorkspaceID: workspaceID, ActorID: actorID, RunID: otherChatRunID, TargetType: "workspace", TargetID: workspaceID,
 	}, input)
-	if err == nil || !strings.Contains(err.Error(), "not launched from this dock chat") {
+	if err == nil || !strings.Contains(err.Error(), "not launched from this chat") {
 		t.Fatalf("cross-chat result lookup error = %v", err)
 	}
 }

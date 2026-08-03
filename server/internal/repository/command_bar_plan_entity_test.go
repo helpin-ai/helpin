@@ -28,6 +28,7 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			actor_id TEXT,
 			parent_chat_run_id TEXT,
 			dock_chat_id TEXT,
+			support_conversation_id TEXT,
 			parent_notified_at DATETIME,
 			status TEXT NOT NULL DEFAULT 'running',
 			prompt TEXT NOT NULL,

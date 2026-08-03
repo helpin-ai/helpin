@@ -230,6 +230,9 @@ func (s *SupportChatService) StartSupportChatSweep(ctx context.Context, interval
 		if err := s.SweepSupportChat(ctx, staleAfter, limit); err != nil {
 			slog.ErrorContext(ctx, "support chat sweep failed", "error", err)
 		}
+		if err := s.SweepUnnotifiedSupportChatResults(ctx, limit); err != nil {
+			slog.ErrorContext(ctx, "support chat result sweep failed", "error", err)
+		}
 	}
 }
 
