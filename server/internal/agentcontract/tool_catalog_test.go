@@ -14,6 +14,8 @@ func TestPMToolCatalogContracts(t *testing.T) {
 		"list_workspace_members":          "Workspace",
 		"list_team_workflows_with_stages": "PM / Tasks",
 		"list_pm_labels":                  "PM / Tasks",
+		"create_task":                     "PM / Tasks",
+		"list_tasks":                      "PM / Tasks",
 		"get_task":                        "PM / Tasks",
 		"update_task":                     "PM / Tasks",
 		"create_task_checklist_item":      "PM / Tasks",
@@ -153,8 +155,28 @@ func TestPMToolCatalogContracts(t *testing.T) {
 	} {
 		schema := requireCatalogSchema(t, toolsByName, alias)
 		for _, field := range fields {
+			assertPropertyDescriptionContains(t, alias, schema, field, "preserve")
 			assertPropertyDescriptionContains(t, alias, schema, field, "complete set")
 			assertPropertyDescriptionContains(t, alias, schema, field, "empty array clears")
+		}
+	}
+
+	createChecklist := requireCatalogSchema(t, toolsByName, "create_task_checklist_item")
+	assertPropertyDescriptionContains(t, "create_task_checklist_item", createChecklist, "assignee_id", "workspace user ID")
+	assertPropertyDescriptionContains(t, "update_task_checklist_item", updateChecklist, "assignee_id", "workspace user ID")
+	checklistItems := schemaProperties(t, "create_task", createTask)["checklist_items"].(map[string]any)
+	checklistItem := checklistItems["items"].(map[string]any)
+	assertPropertyDescriptionContains(t, "create_task.checklist_items.items", checklistItem, "assignee_id", "workspace user ID")
+
+	for alias, fields := range map[string][]string{
+		"create_epic":      {"label_ids"},
+		"create_sprint":    {"label_ids"},
+		"create_objective": {"team_ids", "owner_ids", "owner_member_ids", "label_ids", "epic_ids"},
+	} {
+		schema := requireCatalogSchema(t, toolsByName, alias)
+		for _, field := range fields {
+			assertPropertyDescriptionNotContains(t, alias, schema, field, "on update")
+			assertPropertyDescriptionNotContains(t, alias, schema, field, "preserve")
 		}
 	}
 
@@ -246,6 +268,18 @@ func assertPropertyDescriptionContains(t *testing.T, alias string, schema map[st
 	description, _ := property["description"].(string)
 	if !strings.Contains(description, needle) {
 		t.Errorf("%s.%s description = %q, want it to contain %q", alias, field, description, needle)
+	}
+}
+
+func assertPropertyDescriptionNotContains(t *testing.T, alias string, schema map[string]any, field, needle string) {
+	t.Helper()
+	property, ok := schemaProperties(t, alias, schema)[field].(map[string]any)
+	if !ok {
+		t.Fatalf("%s.%s schema missing", alias, field)
+	}
+	description, _ := property["description"].(string)
+	if strings.Contains(description, needle) {
+		t.Errorf("%s.%s description = %q, want it not to contain %q", alias, field, description, needle)
 	}
 }
 

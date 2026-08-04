@@ -162,6 +162,11 @@ git commit -m "feat: define complete PM agent tool contracts"
 **Files:**
 - Create: `server/internal/service/internal_command_pm_tools.go`
 - Create: `server/internal/service/internal_command_pm_tools_test.go`
+- Modify: `server/internal/model/pm_checklist_item.go`
+- Modify: `server/internal/repository/pm_checklist_item.go`
+- Test: `server/internal/repository/pm_checklist_item_test.go`
+- Modify: `server/internal/service/pm_checklist_item.go`
+- Modify: `server/internal/service/pm_checklist_item_test.go`
 - Modify: `server/internal/service/internal_command_service.go`
 - Modify: `server/internal/service/internal_command_service_test.go`
 - Modify: `server/cmd/api/main.go`
@@ -224,6 +229,7 @@ Cover:
 - `get_task` cross-workspace rejection.
 - `update_task` edits allowed fields, clears sprint/epic on empty string, rejects no-op payloads, and never archives/moves teams.
 - checklist list/create/update executors work through `PMChecklistItemService`.
+- checklist due dates persist as date-only values, reject malformed values, update from `YYYY-MM-DD`, clear on an explicit empty string, and remain unchanged when `due_date` is omitted.
 - `add_pm_comment` defaults target entity and validates the enum.
 - parent-target task/comment/checklist writes reject unrelated child tasks.
 - `get_task_context`, `update_task_state`, `set_task_dependencies`, and `add_task_comment` accept the supported sprint/epic/objective targets from the spec and apply task-ID defaulting or child validation as appropriate.
@@ -234,7 +240,9 @@ Cover:
 
 Run: `cd server && go test ./internal/service -run 'TestPMCommand(CreateTask|GetTask|UpdateTask|Checklist|AddComment|ParentChild)' -count=1`
 
-Expected: FAIL because the task extensions/executors are missing.
+Run: `cd server && go test ./internal/service ./internal/repository -run 'TestPMChecklistItem(DueDate|RepositoryDueDate)' -count=1`
+
+Expected: FAIL because the task extensions/executors and checklist due-date persistence are missing.
 
 - [ ] **Step 8: Implement task tools**
 
@@ -248,16 +256,27 @@ func compactCommandTask(detail *model.TaskDetail) map[string]any
 
 Set `SprintID` on `model.CreateTaskRequest`; parse dates with the existing deadline parser; reuse workflow resolution; never accept archive/team-move fields.
 
+Extend checklist due-date persistence in the same task so the Task 2 contract is executable:
+
+- add `DueDate *time.Time` to `model.PMChecklistItem` with `gorm:"type:date"`;
+- add due-date input to the checklist create/update DTOs, and add an internal `DueDateSet` boolean excluded from JSON on updates so omission can preserve the stored value while an explicit empty tool value can clear it;
+- in the command executor, parse non-empty `due_date` values strictly as `YYYY-MM-DD`, map an empty string to an explicit clear, and reject malformed dates before calling the service;
+- have `PMChecklistItemService.Create` persist the parsed date and `Update` apply it whenever a date is supplied or the presence flag is set, including setting `DueDate` to `nil` for a clear;
+- verify `PMChecklistItemRepository.Create`/`Update` round-trip both a date and `NULL`; the repository's existing model save path should require no alternate SQL;
+- retain `&model.PMChecklistItem{}` in `cmd/api/main.go`'s AutoMigrate list so the nullable `DATE` column is added without a versioned migration.
+
+Add service and repository tests for create, update, clear, and omitted-value preservation in addition to the command tests above. Do not silently ignore `due_date` now that it is part of the selectable tool contract.
+
 - [ ] **Step 9: Wire services in `cmd/api/main.go` and verify GREEN**
 
 Call `SetPMOperationalServices(workspaceRepo, pmEpicService, pmSprintService, pmObjectiveService, pmWorkflowService, pmChecklistItemService)` after construction.
 
-Run the command from Step 7. Expected: PASS.
+Run both commands from Step 7. Expected: PASS.
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git add server/internal/service/internal_command_pm_tools.go server/internal/service/internal_command_pm_tools_test.go server/internal/service/internal_command_service.go server/internal/service/internal_command_service_test.go server/cmd/api/main.go server/internal/commandtools/metadata.go
+git add server/internal/model/pm_checklist_item.go server/internal/repository/pm_checklist_item.go server/internal/repository/pm_checklist_item_test.go server/internal/service/pm_checklist_item.go server/internal/service/pm_checklist_item_test.go server/internal/service/internal_command_pm_tools.go server/internal/service/internal_command_pm_tools_test.go server/internal/service/internal_command_service.go server/internal/service/internal_command_service_test.go server/cmd/api/main.go server/internal/commandtools/metadata.go
 git commit -m "feat: add PM discovery and task agent tools"
 ```
 

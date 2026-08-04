@@ -1132,7 +1132,16 @@ func optionalIDSchema(description string) map[string]any {
 func replaceIDArraySchema(description string) map[string]any {
 	return map[string]any{
 		"type":        "array",
-		"description": description + " When supplied on update, replaces the complete set; an empty array clears it.",
+		"description": description + " Omit this field to preserve current associations; when supplied, it replaces the complete set; an empty array clears it.",
+		"items":       map[string]any{"type": "string", "minLength": 1},
+		"maxItems":    100,
+	}
+}
+
+func createIDArraySchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": description,
 		"items":       map[string]any{"type": "string", "minLength": 1},
 		"maxItems":    100,
 	}
@@ -1165,7 +1174,7 @@ func checklistItemCreateSchema() map[string]any {
 		"properties": map[string]any{
 			"text":        map[string]any{"type": "string", "minLength": 1},
 			"position":    map[string]any{"type": "integer", "minimum": 0},
-			"assignee_id": optionalIDSchema("Optional workspace member ID assigned to the checklist item."),
+			"assignee_id": optionalIDSchema("Optional workspace user ID assigned to the checklist item."),
 		},
 		"required":             []string{"text"},
 		"additionalProperties": false,
@@ -1216,7 +1225,7 @@ func updateTaskChecklistItemSchema() map[string]any {
 			"text":              map[string]any{"type": "string", "minLength": 1},
 			"completed":         map[string]any{"type": "boolean"},
 			"position":          map[string]any{"type": "integer", "minimum": 0},
-			"assignee_id":       map[string]any{"type": "string", "description": "Workspace member ID, or an empty string to clear the assignee."},
+			"assignee_id":       map[string]any{"type": "string", "description": "Optional workspace user ID, or an empty string to clear the assignee."},
 			"due_date":          dateSchema("Optional checklist item due date.", true),
 		},
 		"required":             []string{"checklist_item_id"},
@@ -1250,8 +1259,8 @@ func listEpicsSchema() map[string]any {
 	})
 }
 
-func epicEditableProperties() map[string]any {
-	return map[string]any{
+func epicEditableProperties(forUpdate bool) map[string]any {
+	properties := map[string]any{
 		"name":                   map[string]any{"type": "string", "minLength": 1},
 		"description":            map[string]any{"type": "string"},
 		"epic_state_id":          map[string]any{"type": "string", "description": "Epic workflow state ID, or an empty string to clear it."},
@@ -1263,13 +1272,18 @@ func epicEditableProperties() map[string]any {
 		"color":                  map[string]any{"type": "string"},
 		"health":                 map[string]any{"type": "string", "enum": []string{model.PMEpicHealthNone, model.PMEpicHealthOnTrack, model.PMEpicHealthAtRisk, model.PMEpicHealthOffTrack}},
 		"health_comment":         map[string]any{"type": "string"},
-		"label_ids":              replaceIDArraySchema("Epic label IDs."),
 		"planning_repository_id": map[string]any{"type": "string", "description": "Planning repository ID, or an empty string to clear it."},
 	}
+	if forUpdate {
+		properties["label_ids"] = replaceIDArraySchema("Epic label IDs.")
+	} else {
+		properties["label_ids"] = createIDArraySchema("Epic label IDs to attach.")
+	}
+	return properties
 }
 
 func createEpicSchema() map[string]any {
-	properties := epicEditableProperties()
+	properties := epicEditableProperties(false)
 	return map[string]any{
 		"type":                 "object",
 		"properties":           properties,
@@ -1279,7 +1293,7 @@ func createEpicSchema() map[string]any {
 }
 
 func updateEpicSchema() map[string]any {
-	properties := epicEditableProperties()
+	properties := epicEditableProperties(true)
 	properties["epic_id"] = optionalIDSchema("Optional epic ID. Omit to use the current epic target.")
 	return map[string]any{
 		"type":                 "object",
@@ -1309,7 +1323,7 @@ func createSprintSchema() map[string]any {
 			"start_date":  dateSchema("Sprint start date.", false),
 			"end_date":    dateSchema("Sprint end date.", false),
 			"team_id":     optionalIDSchema("Owning team ID."),
-			"label_ids":   replaceIDArraySchema("Sprint label IDs."),
+			"label_ids":   createIDArraySchema("Sprint label IDs to attach."),
 		},
 		"required":             []string{"name", "start_date", "end_date", "team_id"},
 		"additionalProperties": false,
@@ -1343,8 +1357,8 @@ func listObjectivesSchema() map[string]any {
 	})
 }
 
-func objectiveEditableProperties() map[string]any {
-	return map[string]any{
+func objectiveEditableProperties(forUpdate bool) map[string]any {
+	properties := map[string]any{
 		"name":               map[string]any{"type": "string", "minLength": 1},
 		"description":        map[string]any{"type": "string"},
 		"objective_type":     map[string]any{"type": "string", "enum": []string{model.PMObjectiveTypeTactical, model.PMObjectiveTypeStrategic}},
@@ -1353,25 +1367,34 @@ func objectiveEditableProperties() map[string]any {
 		"deadline":           dateSchema("Optional objective deadline.", true),
 		"health":             map[string]any{"type": "string", "enum": []string{model.PMObjectiveHealthOnTrack, model.PMObjectiveHealthAtRisk, model.PMObjectiveHealthOffTrack}},
 		"health_comment":     map[string]any{"type": "string"},
-		"team_ids":           replaceIDArraySchema("Linked team IDs."),
-		"owner_ids":          replaceIDArraySchema("Workspace user owner IDs."),
-		"owner_member_ids":   replaceIDArraySchema("Workspace member owner IDs."),
-		"label_ids":          replaceIDArraySchema("Objective label IDs."),
-		"epic_ids":           replaceIDArraySchema("Linked epic IDs."),
 	}
+	if forUpdate {
+		properties["team_ids"] = replaceIDArraySchema("Linked team IDs.")
+		properties["owner_ids"] = replaceIDArraySchema("Workspace user owner IDs.")
+		properties["owner_member_ids"] = replaceIDArraySchema("Workspace member owner IDs.")
+		properties["label_ids"] = replaceIDArraySchema("Objective label IDs.")
+		properties["epic_ids"] = replaceIDArraySchema("Linked epic IDs.")
+	} else {
+		properties["team_ids"] = createIDArraySchema("Team IDs to link.")
+		properties["owner_ids"] = createIDArraySchema("Workspace user owner IDs to link.")
+		properties["owner_member_ids"] = createIDArraySchema("Workspace member owner IDs to link.")
+		properties["label_ids"] = createIDArraySchema("Objective label IDs to attach.")
+		properties["epic_ids"] = createIDArraySchema("Epic IDs to link.")
+	}
+	return properties
 }
 
 func createObjectiveSchema() map[string]any {
 	return map[string]any{
 		"type":                 "object",
-		"properties":           objectiveEditableProperties(),
+		"properties":           objectiveEditableProperties(false),
 		"required":             []string{"name", "objective_type"},
 		"additionalProperties": false,
 	}
 }
 
 func updateObjectiveSchema() map[string]any {
-	properties := objectiveEditableProperties()
+	properties := objectiveEditableProperties(true)
 	properties["objective_id"] = optionalIDSchema("Optional objective ID. Omit to use the current objective target.")
 	return map[string]any{
 		"type":                 "object",
