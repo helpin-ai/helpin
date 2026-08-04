@@ -781,6 +781,16 @@ func (s *InternalCommandService) registerDefaults() {
 		SupportedTargetTypes: []string{"epic"},
 		Tool:                 mustCommandToolMetadata("pm.approve_epic_spec"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.epicService == nil {
+				return nil, fmt.Errorf("epic service is not configured")
+			}
+			epic, err := s.epicService.GetByID(ctx, meta.TargetID)
+			if err != nil || epic == nil || epic.Epic.WorkspaceID != meta.WorkspaceID {
+				return nil, fmt.Errorf("epic not found")
+			}
+			if err := requireCommandAgentTeam(meta, epic.Epic.TeamID); err != nil {
+				return nil, err
+			}
 			var req model.ApproveEpicSpecRequest
 			if len(input) > 0 {
 				if err := json.Unmarshal(input, &req); err != nil {
@@ -801,6 +811,16 @@ func (s *InternalCommandService) registerDefaults() {
 		SupportedTargetTypes: []string{"epic"},
 		Tool:                 mustCommandToolMetadata("pm.create_task_batch"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.epicService == nil {
+				return nil, fmt.Errorf("epic service is not configured")
+			}
+			epic, err := s.epicService.GetByID(ctx, meta.TargetID)
+			if err != nil || epic == nil || epic.Epic.WorkspaceID != meta.WorkspaceID {
+				return nil, fmt.Errorf("epic not found")
+			}
+			if err := requireCommandAgentTeam(meta, epic.Epic.TeamID); err != nil {
+				return nil, err
+			}
 			var req struct {
 				Tasks         []model.ProposedTask `json:"tasks"`
 				ProposedTasks []model.ProposedTask `json:"proposed_tasks"`
@@ -825,7 +845,6 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 
 			var tasks []model.PMTask
-			var err error
 			if strings.TrimSpace(req.RunID) != "" {
 				legacy := model.ConfirmPlanningRequest{
 					RunID:         strings.TrimSpace(req.RunID),
