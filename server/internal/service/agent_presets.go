@@ -440,7 +440,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Coding Task Planner",
 			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
 			DefaultRole:           "Coding Task Planner",
-			RuntimeKind:           "codex",
+			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &scribeDefaultModel,
 			DefaultTriggerMode:    "manual",
@@ -450,7 +450,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    []string{"task", "epic", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          taskPlannerPrompt,
 		},
 		{

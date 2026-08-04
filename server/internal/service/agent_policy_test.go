@@ -221,6 +221,9 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 	}
 	for _, preset := range presets {
 		if preset.Key == model.AgentPresetTaskPlanner {
+			if preset.RuntimeKind != "native_sdk" {
+				t.Errorf("preset %q runtime = %q, want native_sdk", preset.Key, preset.RuntimeKind)
+			}
 			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
 				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
 			}
