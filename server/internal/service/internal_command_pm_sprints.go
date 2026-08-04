@@ -349,10 +349,14 @@ func pmSprintPageBounds(page, perPage, total int) (int, int, int, int) {
 	if perPage > 100 {
 		perPage = 100
 	}
-	start := (page - 1) * perPage
-	if start > total {
-		start = total
+	if total <= 0 {
+		return page, perPage, 0, 0
 	}
+	maxPage := (total-1)/perPage + 1
+	if page > maxPage {
+		return page, perPage, total, total
+	}
+	start := (page - 1) * perPage
 	end := start + perPage
 	if end > total {
 		end = total
@@ -386,13 +390,22 @@ func compactCommandSprint(value *model.SprintWithStats) map[string]any {
 }
 
 func compactCommandSprintTask(task model.BoardTask) map[string]any {
+	labels := make([]map[string]any, 0, len(task.Labels))
+	for _, label := range task.Labels {
+		labels = append(labels, map[string]any{
+			"id":      label.ID,
+			"name":    label.Name,
+			"color":   commandDerefString(label.Color),
+			"team_id": commandDerefString(label.TeamID),
+		})
+	}
 	return map[string]any{
 		"id": task.ID, "task_id": task.ID, "display_id": task.DisplayID, "task_key": task.TaskKey,
 		"name": task.Name, "task_type": task.TaskType, "priority": task.Priority, "severity": task.Severity,
 		"team_id": commandDerefString(task.TeamID), "workflow_id": task.WorkflowID, "state_id": task.WorkflowStateID,
 		"state_name": commandDerefString(task.StateName), "state_type": commandDerefString(task.StateType),
 		"epic_id": commandDerefString(task.EpicID), "sprint_id": commandDerefString(task.SprintID),
-		"owner_member_ids": task.OwnerMemberIDs, "labels": task.Labels, "estimate": task.Estimate,
+		"owner_member_ids": task.OwnerMemberIDs, "labels": labels, "estimate": task.Estimate,
 		"completed": task.Completed, "blocked": task.Blocked, "updated_at": task.UpdatedAt,
 	}
 }

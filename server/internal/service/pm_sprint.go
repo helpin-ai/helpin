@@ -178,8 +178,9 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 	if overlap {
 		return nil, fmt.Errorf("sprint date range overlaps with another sprint for the same team")
 	}
-	if len(req.LabelIDs) > 0 {
-		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
+	labelIDs := dedupeIDs(req.LabelIDs)
+	if len(labelIDs) > 0 {
+		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, labelIDs, allowedTeamIDs(req.TeamID)); err != nil {
 			return nil, err
 		}
 	}
@@ -196,7 +197,7 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 		sprint.CreatedBy = &actorID
 	}
 
-	if err := s.sprintRepo.Create(ctx, sprint); err != nil {
+	if err := s.sprintRepo.CreateWithLabels(ctx, sprint, labelIDs); err != nil {
 		s.logger.ErrorContext(ctx, "failed to create sprint", "error", err, "workspace_id", req.WorkspaceID)
 		return nil, err
 	}
@@ -205,12 +206,6 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 			s.logger.ErrorContext(ctx, "failed to reassign attachments to sprint", "error", err, "sprint_id", sprint.ID, "attachment_ids", req.AttachmentIDs)
 		}
 	}
-	if len(req.LabelIDs) > 0 {
-		if err := s.sprintRepo.ReplaceLabels(ctx, sprint.ID, req.LabelIDs); err != nil {
-			return nil, err
-		}
-	}
-
 	s.logger.InfoContext(ctx, "sprint created", "sprint_id", sprint.ID, "workspace_id", sprint.WorkspaceID, "name", sprint.Name)
 	if err := s.activityService.Log(ctx, sprint.WorkspaceID, "sprint", sprint.ID, optionalActor(actorID), "created", nil, nil, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log sprint created activity", "error", err, "sprint_id", sprint.ID)
@@ -309,20 +304,26 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 	if overlap {
 		return nil, fmt.Errorf("sprint date range overlaps with another sprint for the same team")
 	}
+	normalizedLabelIDs := req.LabelIDs
 	if req.LabelIDs != nil {
-		if err := validateLabelScope(ctx, s.labelRepo, sprint.WorkspaceID, req.LabelIDs, allowedTeamIDs(sprint.TeamID)); err != nil {
+		normalizedLabelIDs = dedupeIDs(req.LabelIDs)
+	}
+	labelIDsToValidate := normalizedLabelIDs
+	if req.TeamID != nil && req.LabelIDs == nil {
+		labelIDsToValidate = make([]string, 0, len(current.Labels))
+		for _, label := range current.Labels {
+			labelIDsToValidate = append(labelIDsToValidate, label.ID)
+		}
+	}
+	if len(labelIDsToValidate) > 0 {
+		if err := validateLabelScope(ctx, s.labelRepo, sprint.WorkspaceID, labelIDsToValidate, allowedTeamIDs(sprint.TeamID)); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := s.sprintRepo.Update(ctx, &sprint); err != nil {
+	if err := s.sprintRepo.UpdateWithLabels(ctx, &sprint, normalizedLabelIDs); err != nil {
 		s.logger.ErrorContext(ctx, "failed to update sprint", "error", err, "sprint_id", id)
 		return nil, err
-	}
-	if req.LabelIDs != nil {
-		if err := s.sprintRepo.ReplaceLabels(ctx, sprint.ID, req.LabelIDs); err != nil {
-			return nil, err
-		}
 	}
 
 	s.logger.InfoContext(ctx, "sprint updated", "sprint_id", sprint.ID, "workspace_id", sprint.WorkspaceID)

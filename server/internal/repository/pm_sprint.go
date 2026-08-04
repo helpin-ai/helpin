@@ -210,12 +210,41 @@ func (r *PMSprintRepository) Create(ctx context.Context, sprint *model.PMSprint)
 	return nil
 }
 
+// CreateWithLabels inserts a sprint and its label links atomically.
+func (r *PMSprintRepository) CreateWithLabels(ctx context.Context, sprint *model.PMSprint, labelIDs []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(sprint).Error; err != nil {
+			return fmt.Errorf("create sprint: %w", err)
+		}
+		if err := replaceSprintLabels(tx, sprint.ID, labelIDs); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 // Update updates a sprint.
 func (r *PMSprintRepository) Update(ctx context.Context, sprint *model.PMSprint) error {
 	if err := r.db.WithContext(ctx).Save(sprint).Error; err != nil {
 		return fmt.Errorf("update sprint: %w", err)
 	}
 	return nil
+}
+
+// UpdateWithLabels saves sprint scalar fields and, when labelIDs is non-nil,
+// replaces its label links in the same transaction.
+func (r *PMSprintRepository) UpdateWithLabels(ctx context.Context, sprint *model.PMSprint, labelIDs []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(sprint).Error; err != nil {
+			return fmt.Errorf("update sprint: %w", err)
+		}
+		if labelIDs != nil {
+			if err := replaceSprintLabels(tx, sprint.ID, labelIDs); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Delete hard-deletes a sprint.
@@ -278,17 +307,21 @@ func (r *PMSprintRepository) ComputeStats(ctx context.Context, sprintID string) 
 // ReplaceLabels replaces all labels linked to a sprint.
 func (r *PMSprintRepository) ReplaceLabels(ctx context.Context, sprintID string, labelIDs []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&model.PMSprintLabel{}, "sprint_id = ?", sprintID).Error; err != nil {
-			return fmt.Errorf("clear sprint labels: %w", err)
-		}
-		for _, labelID := range labelIDs {
-			link := model.PMSprintLabel{SprintID: sprintID, LabelID: labelID}
-			if err := tx.Create(&link).Error; err != nil {
-				return fmt.Errorf("set sprint labels: %w", err)
-			}
-		}
-		return nil
+		return replaceSprintLabels(tx, sprintID, labelIDs)
 	})
+}
+
+func replaceSprintLabels(tx *gorm.DB, sprintID string, labelIDs []string) error {
+	if err := tx.Delete(&model.PMSprintLabel{}, "sprint_id = ?", sprintID).Error; err != nil {
+		return fmt.Errorf("clear sprint labels: %w", err)
+	}
+	for _, labelID := range labelIDs {
+		link := model.PMSprintLabel{SprintID: sprintID, LabelID: labelID}
+		if err := tx.Create(&link).Error; err != nil {
+			return fmt.Errorf("set sprint labels: %w", err)
+		}
+	}
+	return nil
 }
 
 // ListTasks returns tasks in a sprint.

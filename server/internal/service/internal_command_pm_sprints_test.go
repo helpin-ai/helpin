@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -219,10 +220,31 @@ func TestPMCommandListGetAndListSprintTasks(t *testing.T) {
 
 	seedPMSprintPlanningServiceState(t, db, "state-command-list", "workflow-command-list", "Todo", model.PMStateTypeUnstarted, 0)
 	seedPMSprintPlanningServiceStory(t, db, "task-command-list", workspaceID, "workflow-command-list", "state-command-list", first.Sprint.ID, teamID, "Sprint task", 9001, 1, 3)
+	labelDescription := "internal label description must not leak"
+	labelColor := "#778899"
+	if err := db.Create(&model.PMLabel{
+		ID: "label-command-task", WorkspaceID: workspaceID, TeamID: &teamID, Name: "Task label", Description: &labelDescription, Color: &labelColor,
+	}).Error; err != nil {
+		t.Fatalf("seed task label: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO pm_task_labels (task_id, label_id, created_at) VALUES (?, ?, ?)`, "task-command-list", "label-command-task", time.Now().UTC()).Error; err != nil {
+		t.Fatalf("link task label: %v", err)
+	}
 	tasks := executePMSprintTestCommand(t, svc, context.Background(), meta, "pm.list_sprint_tasks", `{}`)
 	items := tasks["tasks"].([]any)
 	if len(items) != 1 || items[0].(map[string]any)["name"] != "Sprint task" || items[0].(map[string]any)["estimate"] != float64(3) {
 		t.Fatalf("unexpected sprint tasks: %#v", tasks)
+	}
+	labels, ok := items[0].(map[string]any)["labels"].([]any)
+	if !ok || len(labels) != 1 {
+		t.Fatalf("unexpected compact task labels: %#v", items[0].(map[string]any)["labels"])
+	}
+	label, ok := labels[0].(map[string]any)
+	if !ok {
+		t.Fatalf("compact task label = %#v", labels[0])
+	}
+	if len(label) != 4 || label["id"] != "label-command-task" || label["name"] != "Task label" || label["color"] != labelColor || label["team_id"] != teamID {
+		t.Fatalf("compact task label leaked or omitted fields: %#v", label)
 	}
 
 	seedWorkspace(t, db, "ws-command-list-other", "Other", "command-list-other", "owner-2")
@@ -237,6 +259,36 @@ func TestPMCommandListGetAndListSprintTasks(t *testing.T) {
 	_, err = svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: workspaceID, TargetType: "workspace", TargetID: workspaceID}, "pm.get_sprint", json.RawMessage(`{"sprint_id":"`+other.Sprint.ID+`"}`))
 	if err == nil || !strings.Contains(err.Error(), "sprint not found in this workspace") {
 		t.Fatalf("expected workspace isolation error, got %v", err)
+	}
+}
+
+func TestPMCommandListSprintsHugePageReturnsEmptyPage(t *testing.T) {
+	svc, sprintService, db, workspaceID := newPMSprintCommandTestEnv(t)
+	seedPMSprintCommandTeam(t, db, workspaceID, "team-command-huge-page")
+	teamID := "team-command-huge-page"
+	if _, err := sprintService.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: workspaceID,
+		Name:        "Only sprint",
+		StartDate:   commandMustDate(t, "2027-03-01"),
+		EndDate:     commandMustDate(t, "2027-03-15"),
+		TeamID:      &teamID,
+	}, "actor-1"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf("huge page panicked: %v", recovered)
+		}
+	}()
+	list := executePMSprintTestCommand(t, svc, context.Background(), model.InternalCommandContext{
+		WorkspaceID: workspaceID,
+		TargetType:  "workspace",
+		TargetID:    workspaceID,
+	}, "pm.list_sprints", `{"page":`+strconv.Itoa(int(^uint(0)>>1))+`,"per_page":100}`)
+	items, ok := list["sprints"].([]any)
+	if !ok || len(items) != 0 {
+		t.Fatalf("huge page returned %#v, want empty sprints", list["sprints"])
 	}
 }
 

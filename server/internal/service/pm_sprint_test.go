@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -219,6 +220,74 @@ func TestCreateSprint_InvalidLabelDoesNotPersistSprint(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("invalid create persisted %d sprint rows, want 0", count)
+	}
+}
+
+func TestCreateSprint_DeduplicatesLabelIDs(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID := newSprintTestEnvWithDB(t)
+	if err := db.Create(&model.PMLabel{ID: "label-sprint-deduplicate", WorkspaceID: wsID, Name: "Deduplicate"}).Error; err != nil {
+		t.Fatalf("seed label: %v", err)
+	}
+
+	start, end := makeSprintDates(time.Now().UTC(), 1, 14)
+	created, err := svc.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: wsID,
+		Name:        "Deduplicated sprint",
+		StartDate:   start,
+		EndDate:     end,
+		LabelIDs:    []string{"label-sprint-deduplicate", "label-sprint-deduplicate"},
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if len(created.Labels) != 1 || created.Labels[0].ID != "label-sprint-deduplicate" {
+		t.Fatalf("labels = %#v, want one deduplicated label", created.Labels)
+	}
+}
+
+func TestCreateSprint_RollsBackSprintWhenLabelWriteFails(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID := newSprintTestEnvWithDB(t)
+	if err := db.Create(&model.PMLabel{ID: "label-sprint-create-failure", WorkspaceID: wsID, Name: "Failure"}).Error; err != nil {
+		t.Fatalf("seed label: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TRIGGER fail_sprint_create_label_insert
+		BEFORE INSERT ON pm_sprint_labels
+		WHEN NEW.label_id = 'label-sprint-create-failure'
+		BEGIN
+			SELECT RAISE(ABORT, 'forced sprint label insert failure');
+		END
+	`).Error; err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	start, end := makeSprintDates(time.Now().UTC(), 1, 14)
+	_, err := svc.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: wsID,
+		Name:        "Must roll back",
+		StartDate:   start,
+		EndDate:     end,
+		LabelIDs:    []string{"label-sprint-create-failure"},
+	}, "actor-1")
+	if err == nil || !strings.Contains(err.Error(), "forced sprint label insert failure") {
+		t.Fatalf("Create error = %v, want forced label failure", err)
+	}
+
+	var sprintCount int64
+	if err := db.Model(&model.PMSprint{}).Where("workspace_id = ? AND name = ?", wsID, "Must roll back").Count(&sprintCount).Error; err != nil {
+		t.Fatalf("count sprints: %v", err)
+	}
+	if sprintCount != 0 {
+		t.Fatalf("failed label write left %d sprint rows, want 0", sprintCount)
+	}
+	var activityCount int64
+	if err := db.Model(&model.PMActivityLog{}).Where("workspace_id = ?", wsID).Count(&activityCount).Error; err != nil {
+		t.Fatalf("count activity: %v", err)
+	}
+	if activityCount != 0 {
+		t.Fatalf("failed transaction emitted %d activity rows, want 0", activityCount)
 	}
 }
 
@@ -628,6 +697,140 @@ func TestUpdateSprint_RequiresManagementOfDestinationTeam(t *testing.T) {
 	}
 	if reloaded == nil || reloaded.Sprint.TeamID == nil || *reloaded.Sprint.TeamID != currentTeamID {
 		t.Fatalf("unauthorized team move persisted: %#v", reloaded)
+	}
+}
+
+func TestUpdateSprint_TeamChangeValidatesPreservedLabels(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID := newSprintTestEnvWithDB(t)
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		"team-sprint-label-source", wsID, "Source Team", now, now)
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		"team-sprint-label-destination", wsID, "Destination Team", now, now)
+	sourceTeamID := "team-sprint-label-source"
+	destinationTeamID := "team-sprint-label-destination"
+	if err := db.Create(&model.PMLabel{
+		ID: "label-sprint-source-team", WorkspaceID: wsID, TeamID: &sourceTeamID, Name: "Source only",
+	}).Error; err != nil {
+		t.Fatalf("seed team label: %v", err)
+	}
+	start, end := makeSprintDates(now, 1, 14)
+	created, err := svc.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: wsID,
+		Name:        "Preserve labels",
+		StartDate:   start,
+		EndDate:     end,
+		TeamID:      &sourceTeamID,
+		LabelIDs:    []string{"label-sprint-source-team"},
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	_, err = svc.Update(context.Background(), created.Sprint.ID, model.UpdateSprintRequest{TeamID: &destinationTeamID}, "actor-1")
+	if err == nil || !strings.Contains(err.Error(), "does not belong to the selected team scope") {
+		t.Fatalf("Update error = %v, want preserved-label scope failure", err)
+	}
+	reloaded, err := repository.NewPMSprintRepository(db).GetWithStats(context.Background(), created.Sprint.ID)
+	if err != nil {
+		t.Fatalf("reload sprint: %v", err)
+	}
+	if reloaded == nil || reloaded.Sprint.TeamID == nil || *reloaded.Sprint.TeamID != sourceTeamID {
+		t.Fatalf("invalid team move persisted: %#v", reloaded)
+	}
+}
+
+func TestUpdateSprint_RollsBackScalarAndLabelsWhenLabelWriteFails(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID := newSprintTestEnvWithDB(t)
+	for _, label := range []model.PMLabel{
+		{ID: "label-sprint-existing", WorkspaceID: wsID, Name: "Existing"},
+		{ID: "label-sprint-update-failure", WorkspaceID: wsID, Name: "Failure"},
+	} {
+		if err := db.Create(&label).Error; err != nil {
+			t.Fatalf("seed label %s: %v", label.ID, err)
+		}
+	}
+	start, end := makeSprintDates(time.Now().UTC(), 1, 14)
+	created, err := svc.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: wsID,
+		Name:        "Original atomic name",
+		StartDate:   start,
+		EndDate:     end,
+		LabelIDs:    []string{"label-sprint-existing"},
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var activityBefore int64
+	if err := db.Model(&model.PMActivityLog{}).Where("workspace_id = ?", wsID).Count(&activityBefore).Error; err != nil {
+		t.Fatalf("count activity before update: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TRIGGER fail_sprint_update_label_insert
+		BEFORE INSERT ON pm_sprint_labels
+		WHEN NEW.label_id = 'label-sprint-update-failure'
+		BEGIN
+			SELECT RAISE(ABORT, 'forced sprint label update failure');
+		END
+	`).Error; err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	updatedName := "Must roll back"
+	_, err = svc.Update(context.Background(), created.Sprint.ID, model.UpdateSprintRequest{
+		Name:     &updatedName,
+		LabelIDs: []string{"label-sprint-update-failure"},
+	}, "actor-1")
+	if err == nil || !strings.Contains(err.Error(), "forced sprint label update failure") {
+		t.Fatalf("Update error = %v, want forced label failure", err)
+	}
+
+	reloaded, err := repository.NewPMSprintRepository(db).GetWithStats(context.Background(), created.Sprint.ID)
+	if err != nil {
+		t.Fatalf("reload sprint: %v", err)
+	}
+	if reloaded == nil || reloaded.Sprint.Name != "Original atomic name" {
+		t.Fatalf("failed label write persisted scalar update: %#v", reloaded)
+	}
+	if len(reloaded.Labels) != 1 || reloaded.Labels[0].ID != "label-sprint-existing" {
+		t.Fatalf("failed label write changed labels: %#v", reloaded.Labels)
+	}
+	var activityAfter int64
+	if err := db.Model(&model.PMActivityLog{}).Where("workspace_id = ?", wsID).Count(&activityAfter).Error; err != nil {
+		t.Fatalf("count activity after update: %v", err)
+	}
+	if activityAfter != activityBefore {
+		t.Fatalf("failed transaction changed activity count from %d to %d", activityBefore, activityAfter)
+	}
+}
+
+func TestUpdateSprint_DeduplicatesLabelIDs(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID := newSprintTestEnvWithDB(t)
+	if err := db.Create(&model.PMLabel{ID: "label-sprint-update-deduplicate", WorkspaceID: wsID, Name: "Deduplicate"}).Error; err != nil {
+		t.Fatalf("seed label: %v", err)
+	}
+	start, end := makeSprintDates(time.Now().UTC(), 1, 14)
+	created, err := svc.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: wsID,
+		Name:        "Update deduplication",
+		StartDate:   start,
+		EndDate:     end,
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	updated, err := svc.Update(context.Background(), created.Sprint.ID, model.UpdateSprintRequest{
+		LabelIDs: []string{"label-sprint-update-deduplicate", "label-sprint-update-deduplicate"},
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if len(updated.Labels) != 1 || updated.Labels[0].ID != "label-sprint-update-deduplicate" {
+		t.Fatalf("labels = %#v, want one deduplicated label", updated.Labels)
 	}
 }
 
