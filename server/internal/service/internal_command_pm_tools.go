@@ -176,7 +176,7 @@ func (s *InternalCommandService) executeListPMLabels(ctx context.Context, meta m
 		if label.TeamID != nil && !canAccessTeam(ctx, label.TeamID) {
 			continue
 		}
-		if len(agentTeams) > 0 && !containsCommandTeam(agentTeams, label.TeamID) {
+		if label.TeamID != nil && len(agentTeams) > 0 && !containsCommandTeam(agentTeams, label.TeamID) {
 			continue
 		}
 		if nameFilter != "" && !strings.Contains(strings.ToLower(label.Name), nameFilter) {
@@ -212,6 +212,13 @@ func (s *InternalCommandService) executeListPMTeamWorkflows(ctx context.Context,
 		}
 	}
 	requestedTeamID := strings.TrimSpace(req.TeamID)
+	agentTeams, err := commandAgentTeamFilter(meta)
+	if err != nil {
+		return nil, err
+	}
+	if requestedTeamID != "" && len(agentTeams) > 0 && !containsCommandTeam(agentTeams, &requestedTeamID) {
+		return nil, fmt.Errorf("team not found")
+	}
 	teams, err := s.workspaceRepo.ListTeams(ctx, meta.WorkspaceID)
 	if err != nil {
 		return nil, err
@@ -226,6 +233,9 @@ func (s *InternalCommandService) executeListPMTeamWorkflows(ctx context.Context,
 			continue
 		}
 		if !canAccessTeam(ctx, &team.ID) {
+			continue
+		}
+		if len(agentTeams) > 0 && !containsCommandTeam(agentTeams, &team.ID) {
 			continue
 		}
 		workflow := resolvedCommandTeamWorkflow(workflows, team.ID)
@@ -676,6 +686,9 @@ func (s *InternalCommandService) executeGetPMTask(ctx context.Context, meta mode
 	}
 	if detail.Task.WorkspaceID != meta.WorkspaceID {
 		return nil, fmt.Errorf("task not found")
+	}
+	if err := s.validateTaskWithinTarget(ctx, meta, &detail.Task); err != nil {
+		return nil, err
 	}
 	return mustJSON(compactCommandTask(detail)), nil
 }
@@ -1335,6 +1348,9 @@ func (s *InternalCommandService) validatePMCommentEntity(ctx context.Context, me
 		if err != nil || epic.Epic.WorkspaceID != meta.WorkspaceID {
 			return fmt.Errorf("epic not found")
 		}
+		if err := requireCommandAgentTeam(meta, epic.Epic.TeamID); err != nil {
+			return err
+		}
 	case "sprint":
 		if s.sprintService == nil {
 			return fmt.Errorf("sprint service is not configured")
@@ -1343,12 +1359,19 @@ func (s *InternalCommandService) validatePMCommentEntity(ctx context.Context, me
 		if err != nil || sprint.Sprint.WorkspaceID != meta.WorkspaceID {
 			return fmt.Errorf("sprint not found")
 		}
+		if err := requireCommandAgentTeam(meta, sprint.Sprint.TeamID); err != nil {
+			return err
+		}
 	case "objective":
 		if s.objectiveService == nil {
 			return fmt.Errorf("objective service is not configured")
 		}
-		if _, err := s.objectiveService.GetByID(ctx, entityID, meta.WorkspaceID); err != nil {
+		objective, err := s.objectiveService.GetByID(ctx, entityID, meta.WorkspaceID)
+		if err != nil {
 			return fmt.Errorf("objective not found")
+		}
+		if err := requireCommandAgentTeams(meta, objective.Teams); err != nil {
+			return err
 		}
 	}
 	return nil
