@@ -115,3 +115,17 @@ func queryPagination(r *http.Request) model.PMPagination {
 		PerPage: queryInt(r, "per_page", 50),
 	}
 }
+
+func queryAgentRunPagination(r *http.Request) model.PMPagination {
+	pagination := queryPagination(r)
+	if pagination.Page <= 0 {
+		pagination.Page = 1
+	}
+	if pagination.PerPage <= 0 {
+		pagination.PerPage = 50
+	}
+	if pagination.PerPage > 500 {
+		pagination.PerPage = 500
+	}
+	return pagination
+}
