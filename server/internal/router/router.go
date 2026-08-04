@@ -701,6 +701,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				r.Route("/runs", func(r chi.Router) {
 					r.With(requireAutomationRead()).Get("/", h.Automation.ListRuns)
+					r.With(requireAutomationRead()).Get("/attention-count", h.Automation.GetRunAttentionCount)
 					r.With(requireAutomationEdit()).Post("/", h.Automation.StartRun)
 					r.Route("/{id}", func(r chi.Router) {
 						r.With(requireAutomationRead()).Get("/", h.Automation.GetRun)

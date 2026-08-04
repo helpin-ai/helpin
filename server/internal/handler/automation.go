@@ -823,7 +823,7 @@ func (h *AutomationHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pagination := queryPagination(r)
+	pagination := queryAgentRunPagination(r)
 	runs, total, err := h.agentService.ListWorkspaceRuns(r.Context(), workspaceID, pagination)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -843,6 +843,19 @@ func (h *AutomationHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		Page:       pagination.Page,
 		PerPage:    pagination.PerPage,
 		TotalPages: totalPages,
+	})
+}
+
+// GetRunAttentionCount handles GET /api/automation/runs/attention-count.
+func (h *AutomationHandler) GetRunAttentionCount(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	count, err := h.agentService.CountWorkspaceRunsRequiringAttention(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.AgentRunAttentionCountResponse{
+		Count: count,
 	})
 }
 

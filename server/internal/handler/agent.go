@@ -789,7 +789,7 @@ func (h *AgentHandler) HandoffRun(w http.ResponseWriter, r *http.Request) {
 func (h *AgentHandler) ListAgentRuns(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	agentID := chi.URLParam(r, "id")
-	pagination := queryPagination(r)
+	pagination := queryAgentRunPagination(r)
 
 	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
 		writeError(w, http.StatusForbidden, err.Error())
@@ -820,7 +820,7 @@ func (h *AgentHandler) ListAgentRuns(w http.ResponseWriter, r *http.Request) {
 // ListWorkspaceRuns handles GET /api/pm/agent-runs/workspace.
 func (h *AgentHandler) ListWorkspaceRuns(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
-	pagination := queryPagination(r)
+	pagination := queryAgentRunPagination(r)
 
 	runs, total, err := h.agentService.ListWorkspaceRuns(r.Context(), workspaceID, pagination)
 	if err != nil {

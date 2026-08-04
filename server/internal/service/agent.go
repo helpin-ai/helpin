@@ -3290,6 +3290,19 @@ func (s *AgentService) ListWorkspaceRuns(ctx context.Context, workspaceID string
 	return normalized, total, nil
 }
 
+// CountWorkspaceRunsRequiringAttention returns the lightweight workspace badge
+// count without hydrating agent run input or output payloads.
+func (s *AgentService) CountWorkspaceRunsRequiringAttention(ctx context.Context, workspaceID string) (int64, error) {
+	if workspaceID == "" {
+		return 0, fmt.Errorf("workspace_id is required")
+	}
+	count, err := s.runRepo.CountWorkspaceRunsRequiringAttention(ctx, workspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // GetAgentAnalytics returns bucketed run and token trends for one agent.
 func (s *AgentService) GetAgentAnalytics(ctx context.Context, workspaceID, agentID, rangeKey string) (*model.AgentAnalyticsResponse, error) {
 	if workspaceID == "" {
@@ -5984,7 +5997,7 @@ func (s *AgentService) reconcileStuckRun(ctx context.Context, run *model.AgentRu
 	run.ErrorMessage = &errMsg
 	run.ExecutionStage = strPtr("failed")
 	run.LastHeartbeatAt = &now
-	if err := s.runRepo.Update(ctx, run); err != nil {
+	if err := s.runRepo.UpdateReconciledFailure(ctx, run); err != nil {
 		return run
 	}
 	_ = s.markAgentIdle(ctx, run.WorkspaceID, run.AgentID)
@@ -6013,7 +6026,7 @@ func (s *AgentService) failStaleRun(ctx context.Context, run *model.AgentRun, no
 	run.ErrorMessage = &errMsg
 	run.ExecutionStage = strPtr("failed_to_start")
 	run.LastHeartbeatAt = &now
-	if err := s.runRepo.Update(ctx, run); err != nil {
+	if err := s.runRepo.UpdateReconciledFailure(ctx, run); err != nil {
 		slog.WarnContext(ctx, "failed to persist stale run reconciliation", "run_id", run.ID, "error", err)
 		return run
 	}
