@@ -1187,3 +1187,60 @@ func TestSupportCoverageRepository_DigestDelivery(t *testing.T) {
 		t.Error("expected nil for different user")
 	}
 }
+
+func TestCreateGapOmitsEmptyEmbedding(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+
+	topic, err := repo.UpsertTopicByClusterKey(ctx, "ws-1", "cluster-1", "Pricing questions")
+	if err != nil {
+		t.Fatalf("upsert topic: %v", err)
+	}
+
+	// Event-derived gaps carry no embedding; the pgvector column must be
+	// omitted (NULL), never written as the invalid literal ''.
+	gap := &model.SupportCoverageGap{
+		WorkspaceID: "ws-1",
+		TopicID:     &topic.ID,
+		DedupeKey:   "cluster-1",
+		Title:       "Pricing questions",
+		Status:      model.SupportCoverageGapStatusOpen,
+	}
+	created, inserted, err := repo.UpsertOpenGapByTopic(ctx, gap)
+	if err != nil {
+		t.Fatalf("upsert gap: %v", err)
+	}
+	if !inserted || created == nil {
+		t.Fatalf("expected a new gap row, got inserted=%v", inserted)
+	}
+
+	var isNull bool
+	if err := db.Raw("SELECT embedding IS NULL FROM support_coverage_gaps WHERE id = ?", created.ID).Scan(&isNull).Error; err != nil {
+		t.Fatalf("read embedding: %v", err)
+	}
+	if !isNull {
+		t.Fatal("embedding = '' stored, want NULL (invalid pgvector literal)")
+	}
+
+	// A computed embedding must still be written through.
+	withEmbedding := &model.SupportCoverageGap{
+		WorkspaceID: "ws-1",
+		TopicID:     &topic.ID,
+		DedupeKey:   "cluster-2",
+		Title:       "Setup questions",
+		Status:      model.SupportCoverageGapStatusOpen,
+		Embedding:   "[0.1,0.2]",
+		Metadata:    []byte("{}"),
+	}
+	if err := repo.createGap(ctx, withEmbedding); err != nil {
+		t.Fatalf("create gap with embedding: %v", err)
+	}
+	var stored string
+	if err := db.Raw("SELECT embedding FROM support_coverage_gaps WHERE id = ?", withEmbedding.ID).Scan(&stored).Error; err != nil {
+		t.Fatalf("read stored embedding: %v", err)
+	}
+	if stored != "[0.1,0.2]" {
+		t.Fatalf("stored embedding = %q, want the provided vector", stored)
+	}
+}
