@@ -25,7 +25,7 @@ func (r *PMEpicRepository) List(ctx context.Context, workspaceID string, filters
 	query := r.listQuery(ctx, workspaceID, filters)
 
 	var epics []model.PMEpic
-	if err := query.Order("pm_epics.position ASC, pm_epics.created_at DESC").Find(&epics).Error; err != nil {
+	if err := query.Order("pm_epics.position ASC, pm_epics.created_at DESC, pm_epics.id ASC").Find(&epics).Error; err != nil {
 		return nil, fmt.Errorf("list epics: %w", err)
 	}
 	return epics, nil
@@ -48,7 +48,7 @@ func (r *PMEpicRepository) ListPage(ctx context.Context, workspaceID string, fil
 	}
 	var epics []model.PMEpic
 	if err := r.listQuery(ctx, workspaceID, filters).
-		Order("pm_epics.position ASC, pm_epics.created_at DESC").
+		Order("pm_epics.position ASC, pm_epics.created_at DESC, pm_epics.id ASC").
 		Offset((page - 1) * perPage).
 		Limit(perPage).
 		Find(&epics).Error; err != nil {

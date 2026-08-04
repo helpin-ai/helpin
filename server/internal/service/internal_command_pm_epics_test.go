@@ -305,6 +305,29 @@ func TestPMCommandCreateEpicBatchesLabelValidationReads(t *testing.T) {
 	}
 }
 
+func TestPMCommandCreateEpicRejectsArchivedLabelAtCommandBoundary(t *testing.T) {
+	env := newPMEpicCommandTestEnv(t)
+	if err := env.db.Model(&model.PMLabel{}).Where("id = ?", env.labelA).Update("archived", true).Error; err != nil {
+		t.Fatalf("archive label: %v", err)
+	}
+
+	_, err := env.service.Execute(env.adminContext, env.meta("workspace", env.workspaceID, env.adminUserID), "pm.create_epic", mustJSON(map[string]any{
+		"name":      "Archived Label Command",
+		"team_id":   env.teamA,
+		"label_ids": []string{env.labelA},
+	}))
+	if err == nil || !strings.Contains(err.Error(), "label") {
+		t.Fatalf("archived label command error = %v", err)
+	}
+	var count int64
+	if err := env.db.Model(&model.PMEpic{}).Where("workspace_id = ? AND name = ?", env.workspaceID, "Archived Label Command").Count(&count).Error; err != nil {
+		t.Fatalf("count epics: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("persisted epics = %d, want 0", count)
+	}
+}
+
 func TestPMCommandUpdateEpicPreservesReplacesClearsAndRejectsNoop(t *testing.T) {
 	env := newPMEpicCommandTestEnv(t)
 	start := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)

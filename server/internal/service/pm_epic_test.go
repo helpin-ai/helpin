@@ -743,6 +743,26 @@ func TestPMEpicServiceCreateValidatesLabelsBeforePersisting(t *testing.T) {
 	}
 }
 
+func TestPMEpicServiceCreatePreservesArchivedLabelCompatibility(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	labelID := "label-epic-archived-compatible"
+	if err := db.Create(&model.PMLabel{ID: labelID, WorkspaceID: wsID, Name: "Archived Compatible", Archived: true}).Error; err != nil {
+		t.Fatalf("create archived label: %v", err)
+	}
+
+	created, err := svc.Create(context.Background(), model.CreateEpicRequest{
+		WorkspaceID: wsID,
+		Name:        "Archived Label Compatibility",
+		LabelIDs:    []string{labelID},
+	}, userID)
+	if err != nil {
+		t.Fatalf("Create with archived label: %v", err)
+	}
+	if len(created.Labels) != 1 || created.Labels[0].ID != labelID {
+		t.Fatalf("created labels = %#v, want archived label %s", created.Labels, labelID)
+	}
+}
+
 func TestPMEpicServiceCreateRollsBackWhenLabelInsertFails(t *testing.T) {
 	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
 	ctx := context.Background()

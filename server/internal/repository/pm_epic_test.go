@@ -43,6 +43,34 @@ func TestPMEpicRepositoryListPageAppliesBoundsAndReturnsFilteredTotal(t *testing
 	}
 }
 
+func TestPMEpicRepositoryListPageUsesIDAsFinalTieBreaker(t *testing.T) {
+	t.Parallel()
+	db := newPMEpicListPageTestDB(t)
+	repo := NewPMEpicRepository(db)
+	tiedAt := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	for _, epicID := range []string{"epic-tie-z", "epic-tie-a"} {
+		if err := db.Exec(`INSERT INTO pm_epics (id, workspace_id, name, position, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			epicID, "ws-epic-tie", epicID, 7, false, tiedAt, tiedAt).Error; err != nil {
+			t.Fatalf("seed tied epic %s: %v", epicID, err)
+		}
+	}
+
+	first, total, err := repo.ListPage(context.Background(), "ws-epic-tie", model.PMEpicListFilters{}, model.PMPagination{Page: 1, PerPage: 1})
+	if err != nil {
+		t.Fatalf("ListPage first: %v", err)
+	}
+	second, _, err := repo.ListPage(context.Background(), "ws-epic-tie", model.PMEpicListFilters{}, model.PMPagination{Page: 2, PerPage: 1})
+	if err != nil {
+		t.Fatalf("ListPage second: %v", err)
+	}
+	if total != 2 || len(first) != 1 || len(second) != 1 {
+		t.Fatalf("unexpected pages: total=%d first=%#v second=%#v", total, first, second)
+	}
+	if first[0].ID != "epic-tie-a" || second[0].ID != "epic-tie-z" {
+		t.Fatalf("tied page ids = [%s %s], want [epic-tie-a epic-tie-z]", first[0].ID, second[0].ID)
+	}
+}
+
 func newPMEpicListPageTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dbName := fmt.Sprintf("file:pm-epic-list-page-%d?mode=memory&cache=shared", time.Now().UnixNano())

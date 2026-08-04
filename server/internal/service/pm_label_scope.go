@@ -9,6 +9,14 @@ import (
 )
 
 func validateLabelScope(ctx context.Context, labelRepo *repository.PMLabelRepository, workspaceID string, labelIDs []string, allowedTeamIDs []string) error {
+	return validateLabelScopeWithArchivePolicy(ctx, labelRepo, workspaceID, labelIDs, allowedTeamIDs, false)
+}
+
+func validateOperationalLabelScope(ctx context.Context, labelRepo *repository.PMLabelRepository, workspaceID string, labelIDs []string, allowedTeamIDs []string) error {
+	return validateLabelScopeWithArchivePolicy(ctx, labelRepo, workspaceID, labelIDs, allowedTeamIDs, true)
+}
+
+func validateLabelScopeWithArchivePolicy(ctx context.Context, labelRepo *repository.PMLabelRepository, workspaceID string, labelIDs []string, allowedTeamIDs []string, rejectArchived bool) error {
 	if labelRepo == nil || len(labelIDs) == 0 {
 		return nil
 	}
@@ -30,7 +38,7 @@ func validateLabelScope(ctx context.Context, labelRepo *repository.PMLabelReposi
 	}
 	for _, labelID := range labelIDs {
 		label, ok := labelsByID[labelID]
-		if !ok || label.WorkspaceID != workspaceID || label.Archived {
+		if !ok || label.WorkspaceID != workspaceID || (rejectArchived && label.Archived) {
 			return fmt.Errorf("label not found")
 		}
 		if label.TeamID == nil {
