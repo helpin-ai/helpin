@@ -126,6 +126,8 @@ PM / Objectives: list_objectives, get_objective, create_objective,
 
 Also assert `create_task` exposes `sprint_id`, `severity`, `blocked`, `blocker`, and `checklist_items`; `list_tasks` exposes the filters in the spec; every list schema has a maximum bounded page/per-page or limit. Do not add executor parity yet; that test belongs in Task 6 after all command groups are ready to turn green in the same commit.
 
+Add canonical `commandtools` metadata for the existing `list_team_workflows_with_stages` catalog alias as well. It currently has no Helpin host-command executor and must not be treated as a native-runtime exemption.
+
 - [ ] **Step 2: Run metadata tests and verify RED**
 
 Run: `cd server && go test ./internal/agentcontract -run TestPMToolCatalogContracts -count=1`
@@ -190,6 +192,7 @@ func (s *InternalCommandService) SetPMOperationalServices(
     epicService *PMEpicService,
     sprintService *PMSprintService,
     objectiveService *PMObjectiveService,
+    workflowService *PMWorkflowService,
     checklistService *PMChecklistItemService,
 )
 ```
@@ -224,7 +227,8 @@ Cover:
 - `add_pm_comment` defaults target entity and validates the enum.
 - parent-target task/comment/checklist writes reject unrelated child tasks.
 - `get_task_context`, `update_task_state`, `set_task_dependencies`, and `add_task_comment` accept the supported sprint/epic/objective targets from the spec and apply task-ID defaulting or child validation as appropriate.
-- existing `list_workspace_teams` and `list_team_workflows_with_stages` accept sprint/objective targets.
+- existing `list_workspace_teams` accepts sprint/objective targets.
+- a new `pm.list_team_workflows_with_stages` host executor backs the existing `list_team_workflows_with_stages` alias, uses `PMWorkflowService.ListByWorkspace`/team resolution, and accepts workspace/task/epic/sprint/objective targets.
 
 - [ ] **Step 7: Verify task RED**
 
@@ -234,7 +238,7 @@ Expected: FAIL because the task extensions/executors are missing.
 
 - [ ] **Step 8: Implement task tools**
 
-Use `PMTaskService.Create/Update`, `PMChecklistItemService`, and `PMCommentService`. Update the existing definitions for `list_workspace_teams`, `list_team_workflows_with_stages`, `get_task_context`, `update_task_state`, `set_task_dependencies`, and `add_task_comment` so their target lists/defaulting match the spec. Route their task IDs through the same child validator instead of duplicating checks. Add helpers:
+Use `PMTaskService.Create/Update`, `PMChecklistItemService`, and `PMCommentService`. Register `pm.list_team_workflows_with_stages` against the wired `PMWorkflowService`. Update the existing definitions for `list_workspace_teams`, `get_task_context`, `update_task_state`, `set_task_dependencies`, and `add_task_comment` so their target lists/defaulting match the spec. Route their task IDs through the same child validator instead of duplicating checks. Add helpers:
 
 ```go
 func resolveCommandEntityID(meta model.InternalCommandContext, explicit, entityType string) (string, error)
@@ -246,7 +250,7 @@ Set `SprintID` on `model.CreateTaskRequest`; parse dates with the existing deadl
 
 - [ ] **Step 9: Wire services in `cmd/api/main.go` and verify GREEN**
 
-Call `SetPMOperationalServices(workspaceRepo, pmEpicService, pmSprintService, pmObjectiveService, pmChecklistItemService)` after construction.
+Call `SetPMOperationalServices(workspaceRepo, pmEpicService, pmSprintService, pmObjectiveService, pmWorkflowService, pmChecklistItemService)` after construction.
 
 Run the command from Step 7. Expected: PASS.
 
@@ -267,7 +271,7 @@ git commit -m "feat: add PM discovery and task agent tools"
 
 - [ ] **Step 1: Write failing epic tests**
 
-Cover compact list filters/stats, get-by-ID workspace isolation, create/update service side effects, omitted association preservation, supplied-array replacement/clearing, date parsing, no-op update rejection, archive field rejection by schema, and member access limited to own teams.
+Cover compact list filters/stats, get-by-ID workspace isolation, create/update service side effects, omitted association preservation, supplied-array replacement/clearing, date parsing, no-op update rejection, archive field rejection by schema, and member access limited to own teams. Add explicit cross-workspace and unauthorized-destination cases for `team_id`, `epic_state_id`, owner/member IDs, label IDs, and planning repository ID.
 
 - [ ] **Step 2: Verify RED**
 
@@ -275,7 +279,7 @@ Run: `cd server && go test ./internal/service -run 'TestPMCommand(ListEpics|GetE
 
 - [ ] **Step 3: Implement epic commands**
 
-Register `pm.list_epics`, `pm.get_epic`, `pm.create_epic`, and `pm.update_epic`. Parse dates as `YYYY-MM-DD`, pass `actorID` to the service, default get/update IDs from an epic target, and use existing `PMEpicService` access checks.
+Register `pm.list_epics`, `pm.get_epic`, `pm.create_epic`, and `pm.update_epic`. Parse dates as `YYYY-MM-DD`, pass `actorID` to the service, and default get/update IDs from an epic target. Before calling `PMEpicService`, load and validate every supplied team, epic state, owner/member, label, and planning repository against `meta.WorkspaceID`; reject IDs outside the workspace. Retain `PMEpicService` team-access rules after referential validation.
 
 - [ ] **Step 4: Verify GREEN**
 
@@ -304,7 +308,7 @@ git commit -m "feat: add epic agent tools"
 
 - [ ] **Step 1: Write failing sprint command tests**
 
-Cover list/get/list-tasks, target ID defaulting, compact stats, workspace isolation, date parsing, create/update, omitted label preservation, empty label replacement, and team-manager enforcement using a real actor in context.
+Cover list/get/list-tasks, target ID defaulting, compact stats, workspace isolation, date parsing, create/update, omitted label preservation, empty label replacement, and team-manager enforcement using a real actor in context. Add cross-workspace label/team cases and verify an update cannot move a sprint to a destination team the actor does not manage.
 
 - [ ] **Step 2: Verify command RED**
 
@@ -312,7 +316,7 @@ Run: `cd server && go test ./internal/service -run 'TestPMCommand(ListSprints|Ge
 
 - [ ] **Step 3: Implement sprint commands**
 
-Register the five sprint commands and call `PMSprintService`. Use its existing overlap/duration/team rules. Return compact sprint/stats/labels payloads.
+Register the five sprint commands and call `PMSprintService`. Before create/update, validate the destination team and every label against `meta.WorkspaceID`; when `team_id` changes, call `requireCanManage` for the destination team as well as relying on the service's current-team check. Use existing overlap/duration rules and return compact sprint/stats/labels payloads.
 
 - [ ] **Step 4: Verify sprint commands GREEN**
 
@@ -356,7 +360,7 @@ git commit -m "feat: add sprint agent tools and targets"
 
 - [ ] **Step 1: Write failing objective command and final parity tests**
 
-Cover workspace-wide reads for a team-restricted actor, create/update manager requirements, unteamed objective owner/admin requirements, association replacement semantics, key-result objective ownership, numeric field validation, no-op update rejection, and cross-workspace IDs.
+Cover workspace-wide reads for a team-restricted actor, create/update manager requirements, unteamed objective owner/admin requirements, association replacement semantics, key-result objective ownership, numeric field validation, no-op update rejection, and cross-workspace IDs. Add explicit cross-workspace/unauthorized-destination cases for team IDs, owner/member IDs, label IDs, and linked epic IDs; verify an update cannot replace objective teams with teams the actor does not manage.
 
 Add `TestPMToolCatalogExecutorParity`: build the internal command service with nil dependencies, collect exposed aliases, and compare all Helpin-host PM aliases to the frozen catalog. Assert unique aliases in both directions, include `list_workspace_members` and `list_workspace_teams`, and use an explicit allowlist only for native/runtime tools that intentionally have no internal command.
 
@@ -366,7 +370,7 @@ Run: `cd server && go test ./internal/service -run 'TestPMCommand(ListObjectives
 
 - [ ] **Step 3: Implement objective/key-result commands**
 
-Register the six commands and use `PMObjectiveService`. Do not add accessible-team filtering to reads. Run writes with the propagated actor so `requireCanManageTeams` remains authoritative.
+Register the six commands and use `PMObjectiveService`. Do not add accessible-team filtering to reads. Before writes, validate every supplied team, owner/member, label, linked epic, objective, and key-result ID against `meta.WorkspaceID`. When update supplies replacement `team_ids`, call `requireCanManageTeams` for the destination set in addition to the service's current-team check. Run writes with the propagated actor so existing manager checks remain authoritative.
 
 - [ ] **Step 4: Verify command GREEN**
 
