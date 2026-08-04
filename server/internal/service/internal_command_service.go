@@ -1077,6 +1077,9 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("name is required")
 			}
 			teamID := stringPtrOrNil(commandDerefString(req.TeamID))
+			if err := requireCommandAgentTeam(meta, teamID); err != nil {
+				return nil, err
+			}
 			existing, err := s.labelService.labelRepo.GetByName(ctx, meta.WorkspaceID, teamID, name)
 			if err != nil {
 				return nil, err

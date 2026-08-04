@@ -224,6 +224,9 @@ func (s *InternalCommandService) executeGetTaskContext(ctx context.Context, meta
 			if err != nil || detail.Task.WorkspaceID != meta.WorkspaceID {
 				return nil, fmt.Errorf("task not found")
 			}
+			if err := s.validateTaskWithinTarget(ctx, meta, &detail.Task); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if s.releaseFactsProvider == nil {
