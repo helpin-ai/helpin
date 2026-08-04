@@ -7,7 +7,7 @@ import { ImageResponse } from 'next/og.js';
 const h = React.createElement;
 const websiteRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = resolve(websiteRoot, '..');
-const mark = await readFile(resolve(websiteRoot, 'public/brand/helpin-icon-black-128.png'));
+const mark = await readFile(resolve(websiteRoot, 'public/brand/helpin-icon-ink-128.png'));
 const markSrc = `data:image/png;base64,${mark.toString('base64')}`;
 
 const COLORS = {

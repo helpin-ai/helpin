@@ -5,7 +5,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { FooterSocialPlatform } from '@/lib/types'
-import helpinIconBlack from '@/assets/helpin-icon-black.svg'
+import helpinIconInk from '@/assets/helpin-icon-ink.svg'
 import helpinIconWhite from '@/assets/helpin-icon-white.svg'
 
 const FONT_AWESOME_BRAND_ICON_BASE = 'https://d3gk2c5xim1je2.cloudfront.net/fontawesome/v7.2.0/brands'
@@ -134,16 +134,16 @@ export function Footer() {
             <span>Powered by</span>
             <span data-helpin-brand-lockup className="inline-flex items-center gap-0.5">
               <img
-                src={helpinIconBlack}
+                src={helpinIconInk}
                 alt=""
                 aria-hidden="true"
-                className="h-3 w-3 shrink-0 scale-125 dark:hidden"
+                className="h-3 w-3 shrink-0 dark:hidden"
               />
               <img
                 src={helpinIconWhite}
                 alt=""
                 aria-hidden="true"
-                className="hidden h-3 w-3 shrink-0 scale-125 dark:block"
+                className="hidden h-3 w-3 shrink-0 dark:block"
               />
               <span className="inline-block font-medium text-muted-foreground/80 bg-[linear-gradient(currentColor,currentColor)] bg-[length:0_1px] bg-[position:0_100%] bg-no-repeat transition-[color,background-size] duration-200 ease-out group-hover:text-foreground group-hover:bg-[length:100%_1px]">
                 Helpin
