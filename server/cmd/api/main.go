@@ -1509,6 +1509,9 @@ func main() {
 		"", // default flash-tier answer model
 		redisClient,
 	)
+	// Lazy chunk backfill for workspaces whose help center predates
+	// agent-independent auto-indexing.
+	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
 
 	handlers := router.Handlers{
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),

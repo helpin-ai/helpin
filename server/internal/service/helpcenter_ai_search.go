@@ -60,6 +60,19 @@ type HelpcenterAISearchService struct {
 	answerProvider    string
 	answerModel       string
 	redis             *redis.Client
+	autoIndexer       helpcenterAutoIndexer
+}
+
+// helpcenterAutoIndexer backfills chunk indexing for a workspace's help
+// center spaces; *DocsEmbeddingService satisfies it.
+type helpcenterAutoIndexer interface {
+	QueueHelpcenterAutoIndex(ctx context.Context, workspaceID string) error
+}
+
+// SetAutoIndexer wires the lazy chunk-backfill used when a workspace has
+// published articles but no chunks yet.
+func (s *HelpcenterAISearchService) SetAutoIndexer(indexer helpcenterAutoIndexer) {
+	s.autoIndexer = indexer
 }
 
 // NewHelpcenterAISearchService creates a HelpcenterAISearchService.
@@ -259,6 +272,10 @@ func (s *HelpcenterAISearchService) retrievePublicChunks(ctx context.Context, wo
 		return nil, err
 	}
 	if len(spaceIDs) == 0 {
+		// Published articles but no chunks yet (workspace predates
+		// auto-indexing, or indexing lagged): queue a lazy backfill so the
+		// next search benefits. Debounced per workspace.
+		s.queueAutoIndexBackfill(ctx, workspaceID)
 		return nil, nil
 	}
 	queryEmbedding := ""
@@ -488,6 +505,24 @@ func helpcenterAnswerCacheKey(workspaceID, locale, spaceSlug, query, fingerprint
 	normalized := strings.Join(strings.Fields(strings.ToLower(query)), " ")
 	sum := sha256.Sum256([]byte(workspaceID + "|" + locale + "|" + spaceSlug + "|" + normalized + "|" + fingerprint))
 	return hex.EncodeToString(sum[:])
+}
+
+// queueAutoIndexBackfill triggers the help-center chunk backfill at most once
+// per workspace per day (best-effort; skipped entirely without Redis so a
+// missing debounce cannot cause repeated embedding work).
+func (s *HelpcenterAISearchService) queueAutoIndexBackfill(ctx context.Context, workspaceID string) {
+	if s.autoIndexer == nil || s.redis == nil {
+		return
+	}
+	key := "hc:ai:backfill:" + workspaceID
+	set, err := s.redis.SetNX(ctx, key, "1", 24*time.Hour).Result()
+	if err != nil || !set {
+		return
+	}
+	if err := s.autoIndexer.QueueHelpcenterAutoIndex(ctx, workspaceID); err != nil {
+		slog.WarnContext(ctx, "helpcenter auto-index backfill failed", "workspace_id", workspaceID, "error", err)
+		s.redis.Del(ctx, key)
+	}
 }
 
 // consumeAnswerBudget increments the workspace's daily generation counter.
