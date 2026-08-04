@@ -102,6 +102,42 @@ func TestPMChecklistItemServiceUpdateClearsAssigneeWithEmptyString(t *testing.T)
 	}
 }
 
+func TestPMChecklistItemServiceValidatesActiveWorkspaceAssigneesBeforeMutation(t *testing.T) {
+	db := newTestDB(t)
+	repo := repository.NewPMChecklistItemRepository(db)
+	taskRepo := repository.NewPMTaskRepository(db)
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	seedChecklistServiceTask(t, db, "task-assignee", "ws-assignee", nil)
+	seedUser(t, db, "user-active", "active@test.com", "Active", "hash")
+	seedUser(t, db, "user-revoked", "revoked@test.com", "Revoked", "hash")
+	seedUser(t, db, "user-other", "other@test.com", "Other", "hash")
+	seedWorkspaceMember(t, db, "member-active", "ws-assignee", "user-active", "active@test.com", "Active", model.RoleMember)
+	seedWorkspaceMember(t, db, "member-revoked", "ws-assignee", "user-revoked", "revoked@test.com", "Revoked", model.RoleMember)
+	seedWorkspace(t, db, "ws-other", "Other", "other-assignee", "user-other")
+	seedWorkspaceMember(t, db, "member-other", "ws-other", "user-other", "other@test.com", "Other", model.RoleMember)
+	mustExec(t, db, `UPDATE workspace_members SET status = ? WHERE id = ?`, model.WorkspaceMemberStatusRevoked, "member-revoked")
+	service := NewPMChecklistItemService(repo, taskRepo, nil, nil, workspaceRepo)
+
+	for _, assigneeID := range []string{"user-revoked", "user-other"} {
+		if _, err := service.Create(context.Background(), "task-assignee", model.CreateChecklistItemRequest{Text: "Must reject", AssigneeID: &assigneeID}, "ws-assignee", "actor"); err == nil {
+			t.Fatalf("create accepted invalid assignee %q", assigneeID)
+		}
+	}
+	active := "user-active"
+	item, err := service.Create(context.Background(), "task-assignee", model.CreateChecklistItemRequest{Text: "Valid", AssigneeID: &active}, "ws-assignee", "actor")
+	if err != nil {
+		t.Fatalf("create active assignee: %v", err)
+	}
+	revoked := "user-revoked"
+	if _, err := service.Update(context.Background(), item.ID, model.UpdateChecklistItemRequest{AssigneeID: &revoked}, "ws-assignee", "actor"); err == nil {
+		t.Fatal("update accepted revoked assignee")
+	}
+	reloaded, _ := repo.GetByID(context.Background(), item.ID)
+	if reloaded == nil || reloaded.AssigneeID == nil || *reloaded.AssigneeID != active {
+		t.Fatalf("invalid update mutated assignee: %#v", reloaded)
+	}
+}
+
 func TestPMChecklistItemDueDateCreateUpdateClearAndPreserve(t *testing.T) {
 	t.Parallel()
 
@@ -159,6 +195,27 @@ func TestPMChecklistItemDueDateCreateUpdateClearAndPreserve(t *testing.T) {
 	}
 	if reloaded.DueDate != nil {
 		t.Fatalf("persisted cleared due date = %v, want nil", reloaded.DueDate)
+	}
+}
+
+func TestPMChecklistItemServiceListBoundedReturnsFullCount(t *testing.T) {
+	db := newTestDB(t)
+	repo := repository.NewPMChecklistItemRepository(db)
+	taskRepo := repository.NewPMTaskRepository(db)
+	seedChecklistServiceTask(t, db, "task-bounded", "ws-1", nil)
+	for i := 0; i < 105; i++ {
+		item := model.PMChecklistItem{TaskID: "task-bounded", Text: "item", Position: i}
+		if err := repo.Create(context.Background(), &item); err != nil {
+			t.Fatalf("seed checklist item %d: %v", i, err)
+		}
+	}
+	service := NewPMChecklistItemService(repo, taskRepo, nil, nil, nil)
+	items, total, hasMore, err := service.ListBounded(context.Background(), "task-bounded", "ws-1", 100)
+	if err != nil {
+		t.Fatalf("list bounded: %v", err)
+	}
+	if len(items) != 100 || total != 105 || !hasMore {
+		t.Fatalf("bounded result len=%d total=%d has_more=%v", len(items), total, hasMore)
 	}
 }
 

@@ -54,6 +54,30 @@ func (s *PMChecklistItemService) requireAccessibleTask(ctx context.Context, task
 	return task, nil
 }
 
+func (s *PMChecklistItemService) validateAssignee(ctx context.Context, workspaceID string, assigneeID *string, allowEmpty bool) (*string, error) {
+	if assigneeID == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*assigneeID)
+	if trimmed == "" && allowEmpty {
+		return nil, nil
+	}
+	if trimmed == "" {
+		return nil, fmt.Errorf("assignee_id must be an active workspace member")
+	}
+	if s.workspaceRepo == nil {
+		return nil, fmt.Errorf("workspace repository is not configured")
+	}
+	membership, err := s.workspaceRepo.GetMembership(ctx, workspaceID, trimmed)
+	if err != nil {
+		return nil, err
+	}
+	if membership == nil {
+		return nil, fmt.Errorf("assignee_id must be an active workspace member")
+	}
+	return &trimmed, nil
+}
+
 // List returns checklist items for an accessible task in the workspace.
 func (s *PMChecklistItemService) List(ctx context.Context, storyID, workspaceID string) ([]model.PMChecklistItem, error) {
 	if storyID == "" {
@@ -63,6 +87,39 @@ func (s *PMChecklistItemService) List(ctx context.Context, storyID, workspaceID 
 		return nil, err
 	}
 	return s.repo.List(ctx, storyID)
+}
+
+// ListBounded returns at most 100 checklist items plus full count metadata.
+func (s *PMChecklistItemService) ListBounded(ctx context.Context, storyID, workspaceID string, limit int) ([]model.PMChecklistItem, int64, bool, error) {
+	if storyID == "" {
+		return nil, 0, false, fmt.Errorf("story_id is required")
+	}
+	if _, err := s.requireAccessibleTask(ctx, storyID, workspaceID); err != nil {
+		return nil, 0, false, err
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 100 {
+		return nil, 0, false, fmt.Errorf("limit must be between 1 and 100")
+	}
+	items, total, err := s.repo.ListPage(ctx, storyID, limit, 0)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return items, total, int64(len(items)) < total, nil
+}
+
+// Get returns one checklist item after validating its parent task boundary.
+func (s *PMChecklistItemService) Get(ctx context.Context, id, workspaceID string) (*model.PMChecklistItem, error) {
+	item, err := s.repo.GetByID(ctx, id)
+	if err != nil || item == nil {
+		return item, err
+	}
+	if _, err := s.requireAccessibleTask(ctx, item.TaskID, workspaceID); err != nil {
+		return nil, err
+	}
+	return item, nil
 }
 
 // Create creates a checklist item.
@@ -76,11 +133,15 @@ func (s *PMChecklistItemService) Create(ctx context.Context, storyID string, req
 	if _, err := s.requireAccessibleTask(ctx, storyID, workspaceID); err != nil {
 		return nil, err
 	}
+	assigneeID, err := s.validateAssignee(ctx, workspaceID, req.AssigneeID, false)
+	if err != nil {
+		return nil, err
+	}
 
 	item := &model.PMChecklistItem{
 		TaskID:     storyID,
 		Text:       strings.TrimSpace(req.Text),
-		AssigneeID: req.AssigneeID,
+		AssigneeID: assigneeID,
 		DueDate:    req.DueDate,
 	}
 	if req.Position != nil {
@@ -110,6 +171,10 @@ func (s *PMChecklistItemService) Update(ctx context.Context, id string, req mode
 	if _, err := s.requireAccessibleTask(ctx, item.TaskID, workspaceID); err != nil {
 		return nil, err
 	}
+	assigneeID, err := s.validateAssignee(ctx, workspaceID, req.AssigneeID, true)
+	if err != nil {
+		return nil, err
+	}
 
 	textChanged := false
 	if req.Text != nil {
@@ -128,12 +193,7 @@ func (s *PMChecklistItemService) Update(ctx context.Context, id string, req mode
 		item.Position = *req.Position
 	}
 	if req.AssigneeID != nil {
-		assigneeID := strings.TrimSpace(*req.AssigneeID)
-		if assigneeID == "" {
-			item.AssigneeID = nil
-		} else {
-			item.AssigneeID = &assigneeID
-		}
+		item.AssigneeID = assigneeID
 	}
 	if req.DueDate != nil || req.DueDateSet {
 		item.DueDate = req.DueDate

@@ -18,15 +18,23 @@ import (
 
 // PMTaskRepository handles DB operations for tasks and relations.
 type PMTaskRepository struct {
-	db *gorm.DB
+	db                    *gorm.DB
+	inMutationTransaction bool
 }
 
 // WithMutationTransaction runs task and checklist mutations on the same database
 // transaction. Repository-owned transactions keep GORM out of the service layer.
 func (r *PMTaskRepository) WithMutationTransaction(ctx context.Context, fn func(*PMTaskRepository, *PMChecklistItemRepository) error) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return fn(&PMTaskRepository{db: tx}, &PMChecklistItemRepository{db: tx})
+		return fn(&PMTaskRepository{db: tx, inMutationTransaction: true}, &PMChecklistItemRepository{db: tx})
 	})
+}
+
+func (r *PMTaskRepository) withTransaction(ctx context.Context, fn func(*gorm.DB) error) error {
+	if r.inMutationTransaction {
+		return fn(r.db.WithContext(ctx))
+	}
+	return r.db.WithContext(ctx).Transaction(fn)
 }
 
 const boardDoneGroupThisWeekLabel = "This Week"
@@ -531,7 +539,7 @@ func (r *PMTaskRepository) ListByEpicAndExternalIDs(ctx context.Context, workspa
 
 // Create inserts a task and auto-populates display_id per workspace.
 func (r *PMTaskRepository) Create(ctx context.Context, task *model.PMTask) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return r.withTransaction(ctx, func(tx *gorm.DB) error {
 		if task.DisplayID == 0 {
 			var maxDisplayID int
 			if err := tx.Model(&model.PMTask{}).
@@ -554,6 +562,34 @@ func (r *PMTaskRepository) Create(ctx context.Context, task *model.PMTask) error
 		}
 		return nil
 	})
+}
+
+// CreateWithPosition allocates and normalizes the new task's board position on
+// the repository's current transaction. It is intended for the outer mutation
+// transaction used by PMTaskService.Create.
+func (r *PMTaskRepository) CreateWithPosition(ctx context.Context, task *model.PMTask, requested *int) error {
+	tx := r.db.WithContext(ctx)
+	if task.DisplayID == 0 {
+		var maxDisplayID int
+		if err := tx.Model(&model.PMTask{}).Where("workspace_id = ?", task.WorkspaceID).Select("COALESCE(MAX(display_id), 0)").Scan(&maxDisplayID).Error; err != nil {
+			return fmt.Errorf("allocate display id: %w", err)
+		}
+		task.DisplayID = maxDisplayID + 1
+	}
+	if task.WorkflowStateID != "" {
+		if err := normalizeStateTaskPositions(tx, task.WorkspaceID, task.WorkflowStateID); err != nil {
+			return fmt.Errorf("normalize create state positions: %w", err)
+		}
+		position, err := normalizeTaskBoardPosition(tx, task.WorkspaceID, task.WorkflowStateID, "", requested)
+		if err != nil {
+			return fmt.Errorf("calculate create position: %w", err)
+		}
+		task.Position = position
+	}
+	if err := tx.Create(task).Error; err != nil {
+		return fmt.Errorf("create task: %w", err)
+	}
+	return nil
 }
 
 // GetMaxDisplayID returns the highest display ID currently assigned in a workspace.
@@ -840,7 +876,7 @@ func (r *PMTaskRepository) RemoveLabel(ctx context.Context, taskID, labelID stri
 
 // ReplaceOwners replaces all task owners.
 func (r *PMTaskRepository) ReplaceOwners(ctx context.Context, taskID string, userIDs []string) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return r.withTransaction(ctx, func(tx *gorm.DB) error {
 		if err := tx.Delete(&model.PMTaskOwner{}, "task_id = ?", taskID).Error; err != nil {
 			return fmt.Errorf("clear task owners: %w", err)
 		}
@@ -855,7 +891,7 @@ func (r *PMTaskRepository) ReplaceOwners(ctx context.Context, taskID string, use
 
 // ReplaceFollowers replaces all task followers.
 func (r *PMTaskRepository) ReplaceFollowers(ctx context.Context, taskID string, userIDs []string) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return r.withTransaction(ctx, func(tx *gorm.DB) error {
 		if err := tx.Delete(&model.PMTaskFollower{}, "task_id = ?", taskID).Error; err != nil {
 			return fmt.Errorf("clear task followers: %w", err)
 		}
@@ -870,7 +906,7 @@ func (r *PMTaskRepository) ReplaceFollowers(ctx context.Context, taskID string, 
 
 // ReplaceLabels replaces all task labels.
 func (r *PMTaskRepository) ReplaceLabels(ctx context.Context, taskID string, labelIDs []string) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return r.withTransaction(ctx, func(tx *gorm.DB) error {
 		if err := tx.Delete(&model.PMTaskLabel{}, "task_id = ?", taskID).Error; err != nil {
 			return fmt.Errorf("clear task labels: %w", err)
 		}

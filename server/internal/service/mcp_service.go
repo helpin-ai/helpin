@@ -96,7 +96,8 @@ type mcpPMTaskService interface {
 }
 
 type mcpPMChecklistService interface {
-	List(context.Context, string, string) ([]model.PMChecklistItem, error)
+	ListBounded(context.Context, string, string, int) ([]model.PMChecklistItem, int64, bool, error)
+	Get(context.Context, string, string) (*model.PMChecklistItem, error)
 	Create(context.Context, string, model.CreateChecklistItemRequest, string, string) (*model.PMChecklistItem, error)
 	Update(context.Context, string, model.UpdateChecklistItemRequest, string, string) (*model.PMChecklistItem, error)
 }

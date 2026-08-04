@@ -751,10 +751,6 @@ func (s *InternalCommandService) executeListTaskChecklist(ctx context.Context, m
 	if err != nil {
 		return nil, err
 	}
-	items, err := s.checklistService.List(ctx, task.ID, meta.WorkspaceID)
-	if err != nil {
-		return nil, err
-	}
 	limit := req.Limit
 	if limit <= 0 {
 		limit = 100
@@ -762,11 +758,11 @@ func (s *InternalCommandService) executeListTaskChecklist(ctx context.Context, m
 	if limit > 100 {
 		return nil, fmt.Errorf("limit must be between 1 and 100")
 	}
-	total := len(items)
-	if total > limit {
-		items = items[:limit]
+	items, total, hasMore, err := s.checklistService.ListBounded(ctx, task.ID, meta.WorkspaceID, limit)
+	if err != nil {
+		return nil, err
 	}
-	return mustJSON(map[string]any{"task_id": task.ID, "items": items, "total": total, "has_more": total > len(items)}), nil
+	return mustJSON(map[string]any{"task_id": task.ID, "items": items, "total": total, "has_more": hasMore}), nil
 }
 
 func (s *InternalCommandService) executeCreateTaskChecklistItem(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {

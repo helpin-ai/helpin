@@ -10,6 +10,14 @@ import (
 
 func TestPMTaskServiceCreateRollsBackTaskAndRelationsWhenChecklistInsertFails(t *testing.T) {
 	env := newTaskTestEnv(t)
+	for _, task := range []model.PMTask{
+		{ID: "existing-position-a", WorkspaceID: env.wsID, DisplayID: 20, Name: "Existing A", TaskType: model.PMTaskTypeFeature, WorkflowID: env.wfID, WorkflowStateID: env.stTodo, Position: 5},
+		{ID: "existing-position-b", WorkspaceID: env.wsID, DisplayID: 21, Name: "Existing B", TaskType: model.PMTaskTypeFeature, WorkflowID: env.wfID, WorkflowStateID: env.stTodo, Position: 9},
+	} {
+		if dbErr := env.db.Create(&task).Error; dbErr != nil {
+			t.Fatalf("seed positioned task: %v", dbErr)
+		}
+	}
 	mustExec(t, env.db, `CREATE TRIGGER fail_task_checklist_insert BEFORE INSERT ON pm_checklist_items
 		WHEN NEW.text = 'force rollback' BEGIN SELECT RAISE(ABORT, 'forced checklist failure'); END`)
 
@@ -21,7 +29,7 @@ func TestPMTaskServiceCreateRollsBackTaskAndRelationsWhenChecklistInsertFails(t 
 	if err == nil {
 		t.Fatal("expected checklist insertion failure")
 	}
-	for table, want := range map[string]int64{"pm_tasks": 0, "pm_task_owners": 0, "pm_task_followers": 0, "pm_checklist_items": 0} {
+	for table, want := range map[string]int64{"pm_tasks": 2, "pm_task_owners": 0, "pm_task_followers": 0, "pm_checklist_items": 0} {
 		var got int64
 		if dbErr := env.db.Table(table).Count(&got).Error; dbErr != nil {
 			t.Fatalf("count %s: %v", table, dbErr)
@@ -29,6 +37,13 @@ func TestPMTaskServiceCreateRollsBackTaskAndRelationsWhenChecklistInsertFails(t 
 		if got != want {
 			t.Fatalf("%s count = %d, want %d after rollback", table, got, want)
 		}
+	}
+	var positioned []model.PMTask
+	if dbErr := env.db.Where("id IN ?", []string{"existing-position-a", "existing-position-b"}).Order("id ASC").Find(&positioned).Error; dbErr != nil {
+		t.Fatalf("reload positioned tasks: %v", dbErr)
+	}
+	if len(positioned) != 2 || positioned[0].Position != 5 || positioned[1].Position != 9 {
+		t.Fatalf("existing positions changed despite rollback: %#v", positioned)
 	}
 }
 

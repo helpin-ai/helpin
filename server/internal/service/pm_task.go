@@ -416,16 +416,6 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	if err := validateSprintScope(ctx, s.sprintRepo, req.WorkspaceID, newTask.SprintID, newTask.TeamID); err != nil {
 		return nil, err
 	}
-	if req.Position != nil {
-		newTask.Position = *req.Position
-	} else {
-		position, err := s.taskRepo.NextPosition(ctx, req.WorkspaceID, stateID)
-		if err != nil {
-			return nil, err
-		}
-		newTask.Position = position
-	}
-
 	// Resolve and validate every referenced row before opening the mutation
 	// transaction. This prevents a late invalid owner/label/checklist assignee
 	// from leaving behind a partially-created task.
@@ -465,7 +455,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	}
 
 	if err := s.taskRepo.WithMutationTransaction(ctx, func(tasks *repository.PMTaskRepository, checklist *repository.PMChecklistItemRepository) error {
-		if err := tasks.Create(ctx, newTask); err != nil {
+		if err := tasks.CreateWithPosition(ctx, newTask, req.Position); err != nil {
 			return err
 		}
 		if err := tasks.ReplaceOwners(ctx, newTask.ID, ownerIDs); err != nil {

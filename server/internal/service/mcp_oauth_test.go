@@ -295,3 +295,21 @@ func TestPublicMCPToolCatalogSerializesValidRequiredArrays(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicMCPChecklistSchemasExposeBoundedListAndNullableDueDate(t *testing.T) {
+	service := &MCPService{commands: NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)}
+	tools := make(map[string]MCPToolDefinition)
+	for _, tool := range service.buildToolCatalog() {
+		tools[tool.Name] = tool
+	}
+	listProps := tools["list_task_checklist"].InputSchema["properties"].(map[string]any)
+	if limit := listProps["limit"].(map[string]any); limit["maximum"] != 100 {
+		t.Fatalf("list checklist limit schema = %#v", limit)
+	}
+	updateProps := tools["update_task_checklist_item"].InputSchema["properties"].(map[string]any)
+	dueDate := updateProps["due_date"].(map[string]any)
+	types, ok := dueDate["type"].([]any)
+	if !ok || len(types) != 2 || types[0] != "string" || types[1] != "null" {
+		t.Fatalf("update checklist due_date schema = %#v", dueDate)
+	}
+}

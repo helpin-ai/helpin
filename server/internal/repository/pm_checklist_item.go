@@ -32,6 +32,20 @@ func (r *PMChecklistItemRepository) List(ctx context.Context, taskID string) ([]
 	return items, nil
 }
 
+// ListPage returns a bounded checklist page and the full task checklist count.
+func (r *PMChecklistItemRepository) ListPage(ctx context.Context, taskID string, limit, offset int) ([]model.PMChecklistItem, int64, error) {
+	var total int64
+	query := r.db.WithContext(ctx).Model(&model.PMChecklistItem{}).Where("task_id = ?", taskID)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count checklist items: %w", err)
+	}
+	var items []model.PMChecklistItem
+	if err := query.Order("position ASC, created_at ASC").Limit(limit).Offset(offset).Find(&items).Error; err != nil {
+		return nil, 0, fmt.Errorf("list checklist item page: %w", err)
+	}
+	return items, total, nil
+}
+
 // GetByID returns a checklist item.
 func (r *PMChecklistItemRepository) GetByID(ctx context.Context, id string) (*model.PMChecklistItem, error) {
 	var item model.PMChecklistItem

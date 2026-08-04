@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -314,6 +315,7 @@ func (s *MCPService) executeSpecialMCPTool(
 	case "list_task_checklist":
 		var input struct {
 			TaskID string `json:"task_id"`
+			Limit  int    `json:"limit"`
 		}
 		if err := decodeMCPArguments(arguments, &input); err != nil {
 			return nil, err
@@ -325,11 +327,11 @@ func (s *MCPService) executeSpecialMCPTool(
 		if task == nil {
 			return nil, ErrMCPNotFound
 		}
-		items, err := s.checklists.List(ctx, input.TaskID, principal.WorkspaceID)
+		items, total, hasMore, err := s.checklists.ListBounded(ctx, input.TaskID, principal.WorkspaceID, input.Limit)
 		if err != nil {
 			return nil, err
 		}
-		return &MCPToolResult{Summary: fmt.Sprintf("Returned %d checklist items.", len(items)), Data: map[string]any{"items": items, "total": len(items)}}, nil
+		return &MCPToolResult{Summary: fmt.Sprintf("Returned %d checklist items.", len(items)), Data: map[string]any{"task_id": input.TaskID, "items": items, "total": total, "has_more": hasMore}}, nil
 
 	case "create_task_checklist_item":
 		var input struct {
@@ -363,12 +365,12 @@ func (s *MCPService) executeSpecialMCPTool(
 
 	case "update_task_checklist_item":
 		var input struct {
-			TaskID          string  `json:"task_id"`
-			ChecklistItemID string  `json:"checklist_item_id"`
-			Text            *string `json:"text"`
-			Completed       *bool   `json:"completed"`
-			Position        *int    `json:"position"`
-			DueDate         *string `json:"due_date"`
+			TaskID          string          `json:"task_id"`
+			ChecklistItemID string          `json:"checklist_item_id"`
+			Text            *string         `json:"text"`
+			Completed       *bool           `json:"completed"`
+			Position        *int            `json:"position"`
+			DueDate         json.RawMessage `json:"due_date"`
 		}
 		if err := decodeMCPArguments(arguments, &input); err != nil {
 			return nil, err
@@ -380,27 +382,26 @@ func (s *MCPService) executeSpecialMCPTool(
 		if task == nil {
 			return nil, ErrMCPNotFound
 		}
-		items, err := s.checklists.List(ctx, input.TaskID, principal.WorkspaceID)
+		existing, err := s.checklists.Get(ctx, input.ChecklistItemID, principal.WorkspaceID)
 		if err != nil {
 			return nil, err
 		}
-		found := false
-		for _, item := range items {
-			if item.ID == input.ChecklistItemID {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if existing == nil || existing.TaskID != input.TaskID {
 			return nil, ErrMCPNotFound
 		}
 		update := model.UpdateChecklistItemRequest{Text: input.Text, Completed: input.Completed, Position: input.Position}
 		if input.DueDate != nil {
-			update.DueDate, err = parseStrictPMCommandDate(*input.DueDate, "due_date", true)
-			if err != nil {
-				return nil, err
-			}
 			update.DueDateSet = true
+			if !bytes.Equal(bytes.TrimSpace(input.DueDate), []byte("null")) {
+				var value string
+				if err := json.Unmarshal(input.DueDate, &value); err != nil {
+					return nil, fmt.Errorf("due_date must be YYYY-MM-DD or null")
+				}
+				update.DueDate, err = parseStrictPMCommandDate(value, "due_date", false)
+				if err != nil {
+					return nil, err
+				}
+			}
 		}
 		item, err := s.checklists.Update(ctx, input.ChecklistItemID, update, principal.WorkspaceID, principal.UserID)
 		if err != nil {
