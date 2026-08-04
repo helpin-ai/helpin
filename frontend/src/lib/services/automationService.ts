@@ -11,6 +11,7 @@ import type {
   AgentTemplate,
   AgentVersion,
   AgentRun,
+  AgentRunAttentionCountResponse,
   AgentRunArtifact,
   AgentRunMessage,
   AgentTriggerUsageSummary,
@@ -195,6 +196,9 @@ export const automationService = {
 
   listWorkspaceRuns: (workspaceId: string, page = 1, perPage = 100) =>
     api.get<PaginatedResponse<AgentRun[]>>(`/automation/runs${qs(workspaceId)}&page=${page}&per_page=${perPage}`),
+
+  getRunAttentionCount: (workspaceId: string) =>
+    api.get<AgentRunAttentionCountResponse>(`/automation/runs/attention-count${qs(workspaceId)}`),
 
   listTargetRuns: (workspaceId: string, targetType: string, targetId: string) =>
     api.get<AgentRun[]>(`/automation/runs${qs(workspaceId)}&target_type=${encodeURIComponent(targetType)}&target_id=${encodeURIComponent(targetId)}`),

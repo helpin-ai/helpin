@@ -169,6 +169,10 @@ export interface AgentRun {
   target_info?: AgentRunTarget;
 }
 
+export interface AgentRunAttentionCountResponse {
+  count: number;
+}
+
 export interface AgentRunTarget {
   target_type: string;
   target_id: string;
