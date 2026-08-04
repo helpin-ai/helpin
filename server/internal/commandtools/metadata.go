@@ -1129,6 +1129,17 @@ func optionalIDSchema(description string) map[string]any {
 	}
 }
 
+func optionalCreateIDSchema(description string) map[string]any {
+	return optionalIDSchema("Optional " + description + ". Omit this field when it is not configured; do not send an empty string.")
+}
+
+func clearableIDSchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "string",
+		"description": description + ", or an empty string to clear it.",
+	}
+}
+
 func replaceIDArraySchema(description string) map[string]any {
 	return map[string]any{
 		"type":        "array",
@@ -1154,6 +1165,13 @@ func dateSchema(description string, clearable bool) map[string]any {
 		description += " Use YYYY-MM-DD."
 	}
 	return map[string]any{"type": "string", "description": description}
+}
+
+func optionalCreateDateSchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "string",
+		"description": "Optional " + description + ". Omit this field when it is not configured. When supplied, use YYYY-MM-DD.",
+	}
 }
 
 func taskTypeValues() []string {
@@ -1261,22 +1279,29 @@ func listEpicsSchema() map[string]any {
 
 func epicEditableProperties(forUpdate bool) map[string]any {
 	properties := map[string]any{
-		"name":                   map[string]any{"type": "string", "minLength": 1},
-		"description":            map[string]any{"type": "string"},
-		"epic_state_id":          map[string]any{"type": "string", "description": "Epic workflow state ID, or an empty string to clear it."},
-		"owner_id":               map[string]any{"type": "string", "description": "Workspace user ID, or an empty string to clear it."},
-		"owner_member_id":        map[string]any{"type": "string", "description": "Workspace member ID, or an empty string to clear it."},
-		"team_id":                map[string]any{"type": "string", "description": "Owning team ID, or an empty string to clear it."},
-		"planned_start_date":     dateSchema("Optional planned start date.", true),
-		"deadline":               dateSchema("Optional epic deadline.", true),
-		"color":                  map[string]any{"type": "string"},
-		"health":                 map[string]any{"type": "string", "enum": []string{model.PMEpicHealthNone, model.PMEpicHealthOnTrack, model.PMEpicHealthAtRisk, model.PMEpicHealthOffTrack}},
-		"health_comment":         map[string]any{"type": "string"},
-		"planning_repository_id": map[string]any{"type": "string", "description": "Planning repository ID, or an empty string to clear it."},
+		"name":           map[string]any{"type": "string", "minLength": 1},
+		"description":    map[string]any{"type": "string"},
+		"color":          map[string]any{"type": "string"},
+		"health":         map[string]any{"type": "string", "enum": []string{model.PMEpicHealthNone, model.PMEpicHealthOnTrack, model.PMEpicHealthAtRisk, model.PMEpicHealthOffTrack}},
+		"health_comment": map[string]any{"type": "string"},
 	}
 	if forUpdate {
+		properties["epic_state_id"] = clearableIDSchema("Epic workflow state ID")
+		properties["owner_id"] = clearableIDSchema("Workspace user ID")
+		properties["owner_member_id"] = clearableIDSchema("Workspace member ID")
+		properties["team_id"] = clearableIDSchema("Owning team ID")
+		properties["planned_start_date"] = dateSchema("Optional planned start date.", true)
+		properties["deadline"] = dateSchema("Optional epic deadline.", true)
+		properties["planning_repository_id"] = clearableIDSchema("Planning repository ID")
 		properties["label_ids"] = replaceIDArraySchema("Epic label IDs.")
 	} else {
+		properties["epic_state_id"] = optionalCreateIDSchema("epic workflow state ID")
+		properties["owner_id"] = optionalCreateIDSchema("workspace user ID")
+		properties["owner_member_id"] = optionalCreateIDSchema("workspace member ID")
+		properties["team_id"] = optionalCreateIDSchema("owning team ID")
+		properties["planned_start_date"] = optionalCreateDateSchema("planned start date")
+		properties["deadline"] = optionalCreateDateSchema("epic deadline")
+		properties["planning_repository_id"] = optionalCreateIDSchema("planning repository ID")
 		properties["label_ids"] = createIDArraySchema("Epic label IDs to attach.")
 	}
 	return properties
@@ -1359,22 +1384,25 @@ func listObjectivesSchema() map[string]any {
 
 func objectiveEditableProperties(forUpdate bool) map[string]any {
 	properties := map[string]any{
-		"name":               map[string]any{"type": "string", "minLength": 1},
-		"description":        map[string]any{"type": "string"},
-		"objective_type":     map[string]any{"type": "string", "enum": []string{model.PMObjectiveTypeTactical, model.PMObjectiveTypeStrategic}},
-		"state":              map[string]any{"type": "string", "enum": []string{model.PMObjectiveStateNotStarted, model.PMObjectiveStateActive, model.PMObjectiveStateClosed}},
-		"planned_start_date": dateSchema("Optional planned start date.", true),
-		"deadline":           dateSchema("Optional objective deadline.", true),
-		"health":             map[string]any{"type": "string", "enum": []string{model.PMObjectiveHealthOnTrack, model.PMObjectiveHealthAtRisk, model.PMObjectiveHealthOffTrack}},
-		"health_comment":     map[string]any{"type": "string"},
+		"name":           map[string]any{"type": "string", "minLength": 1},
+		"description":    map[string]any{"type": "string"},
+		"objective_type": map[string]any{"type": "string", "enum": []string{model.PMObjectiveTypeTactical, model.PMObjectiveTypeStrategic}},
+		"state":          map[string]any{"type": "string", "enum": []string{model.PMObjectiveStateNotStarted, model.PMObjectiveStateActive, model.PMObjectiveStateClosed}},
+		"health":         map[string]any{"type": "string", "enum": []string{model.PMObjectiveHealthOnTrack, model.PMObjectiveHealthAtRisk, model.PMObjectiveHealthOffTrack}},
+		"health_comment": map[string]any{"type": "string"},
 	}
 	if forUpdate {
+		properties["planned_start_date"] = dateSchema("Optional planned start date.", true)
+		properties["deadline"] = dateSchema("Optional objective deadline.", true)
 		properties["team_ids"] = replaceIDArraySchema("Linked team IDs.")
 		properties["owner_ids"] = replaceIDArraySchema("Workspace user owner IDs.")
 		properties["owner_member_ids"] = replaceIDArraySchema("Workspace member owner IDs.")
 		properties["label_ids"] = replaceIDArraySchema("Objective label IDs.")
 		properties["epic_ids"] = replaceIDArraySchema("Linked epic IDs.")
 	} else {
+		properties["state"] = map[string]any{"type": "string", "enum": []string{model.PMObjectiveStateNotStarted, model.PMObjectiveStateActive, model.PMObjectiveStateClosed}, "description": "Optional initial objective state. Omit this field to use not_started."}
+		properties["planned_start_date"] = optionalCreateDateSchema("planned start date")
+		properties["deadline"] = optionalCreateDateSchema("objective deadline")
 		properties["team_ids"] = createIDArraySchema("Team IDs to link.")
 		properties["owner_ids"] = createIDArraySchema("Workspace user owner IDs to link.")
 		properties["owner_member_ids"] = createIDArraySchema("Workspace member owner IDs to link.")

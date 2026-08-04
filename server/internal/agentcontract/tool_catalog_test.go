@@ -41,9 +41,11 @@ func TestPMToolCatalogContracts(t *testing.T) {
 	catalog := ListToolCatalog()
 	toolsByName := make(map[string]any, len(catalog.Tools))
 	categoryByName := make(map[string]string, len(catalog.Tools))
+	descriptionByName := make(map[string]string, len(catalog.Tools))
 	for _, tool := range catalog.Tools {
 		toolsByName[tool.Name] = tool.InputSchema
 		categoryByName[tool.Name] = tool.Category
+		descriptionByName[tool.Name] = tool.Description
 	}
 
 	for alias, category := range expected {
@@ -61,6 +63,9 @@ func TestPMToolCatalogContracts(t *testing.T) {
 			}
 			if categoryByName[alias] != category {
 				t.Fatalf("catalog category = %q, want %q", categoryByName[alias], category)
+			}
+			if descriptionByName[alias] != metadata.Description {
+				t.Fatalf("catalog description for %q drifted from canonical metadata\nmetadata: %q\ncatalog: %q", alias, metadata.Description, descriptionByName[alias])
 			}
 			if !reflect.DeepEqual(normalizeJSONValue(metadata.InputSchema), catalogSchema) {
 				t.Fatalf("catalog schema for %q drifted from canonical metadata\nmetadata: %#v\ncatalog: %#v", alias, metadata.InputSchema, catalogSchema)
@@ -143,6 +148,37 @@ func TestPMToolCatalogContracts(t *testing.T) {
 		for _, field := range fields {
 			assertPropertyDescriptionContains(t, alias, schema, field, "YYYY-MM-DD")
 		}
+	}
+
+	for alias, fields := range map[string][]string{
+		"create_task": {"epic_id", "sprint_id", "workflow_id", "state_id"},
+		"create_epic": {"epic_state_id", "owner_id", "owner_member_id", "team_id", "planning_repository_id"},
+	} {
+		schema := requireCatalogSchema(t, toolsByName, alias)
+		for _, field := range fields {
+			assertPropertyDescriptionContains(t, alias, schema, field, "Omit")
+			assertPropertyDescriptionNotContains(t, alias, schema, field, "empty string to clear")
+			assertPropertyMinimumLength(t, alias, schema, field, 1)
+		}
+	}
+
+	for alias, fields := range map[string][]string{
+		"create_epic":      {"planned_start_date", "deadline"},
+		"create_objective": {"planned_start_date", "deadline"},
+	} {
+		schema := requireCatalogSchema(t, toolsByName, alias)
+		for _, field := range fields {
+			assertPropertyDescriptionContains(t, alias, schema, field, "Omit")
+			assertPropertyDescriptionContains(t, alias, schema, field, "YYYY-MM-DD")
+			assertPropertyDescriptionNotContains(t, alias, schema, field, "empty string to clear")
+		}
+	}
+
+	for _, field := range []string{"epic_state_id", "owner_id", "owner_member_id", "team_id", "planning_repository_id", "planned_start_date", "deadline"} {
+		assertPropertyDescriptionContains(t, "update_epic", requireCatalogSchema(t, toolsByName, "update_epic"), field, "empty string to clear")
+	}
+	for _, field := range []string{"planned_start_date", "deadline"} {
+		assertPropertyDescriptionContains(t, "update_objective", requireCatalogSchema(t, toolsByName, "update_objective"), field, "empty string to clear")
 	}
 	assertPropertyDescriptionContains(t, "update_task_checklist_item", updateChecklist, "due_date", "YYYY-MM-DD")
 	assertPropertyDescriptionContains(t, "update_task_checklist_item", updateChecklist, "due_date", "empty string to clear")
@@ -280,6 +316,17 @@ func assertPropertyDescriptionNotContains(t *testing.T, alias string, schema map
 	description, _ := property["description"].(string)
 	if strings.Contains(description, needle) {
 		t.Errorf("%s.%s description = %q, want it not to contain %q", alias, field, description, needle)
+	}
+}
+
+func assertPropertyMinimumLength(t *testing.T, alias string, schema map[string]any, field string, want float64) {
+	t.Helper()
+	property, ok := schemaProperties(t, alias, schema)[field].(map[string]any)
+	if !ok {
+		t.Fatalf("%s.%s schema missing", alias, field)
+	}
+	if got, ok := property["minLength"].(float64); !ok || got != want {
+		t.Errorf("%s.%s minLength = %#v, want %v", alias, field, property["minLength"], want)
 	}
 }
 
