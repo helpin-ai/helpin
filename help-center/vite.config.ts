@@ -8,7 +8,6 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5175,
-    allowedHosts: ['helpin-dev-website.tryunhide.com'],
   },
   plugins: [
     tanstackStart({
