@@ -137,6 +137,10 @@ type UpdateObjectiveRequest struct {
 	OwnerMemberIDs   []string   `json:"owner_member_ids"`
 	LabelIDs         []string   `json:"label_ids"`
 	EpicIDs          []string   `json:"epic_ids"`
+	// Presence flags let non-HTTP callers distinguish an omitted nullable date
+	// from an explicit clear while preserving the existing JSON contract.
+	PlannedStartDateSet bool `json:"-"`
+	DeadlineSet         bool `json:"-"`
 }
 
 type CreateKeyResultRequest struct {

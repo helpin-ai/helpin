@@ -41,6 +41,26 @@ func requireCommandAgentTeam(meta model.InternalCommandContext, teamID *string) 
 	return &model.ErrForbidden{Message: "agent does not have access to this team's resources"}
 }
 
+// requireCommandAgentTeams applies the agent's configured team scope to an
+// entity with multiple linked teams. Any overlap is sufficient, matching the
+// product's objective management rule for human team managers.
+func requireCommandAgentTeams(meta model.InternalCommandContext, teamIDs []string) error {
+	allowedTeamIDs, err := commandAgentTeamFilter(meta)
+	if err != nil || len(allowedTeamIDs) == 0 {
+		return err
+	}
+	actual := make(map[string]struct{}, len(teamIDs))
+	for _, teamID := range normalizeCommandTeamIDs(teamIDs) {
+		actual[teamID] = struct{}{}
+	}
+	for _, allowedTeamID := range allowedTeamIDs {
+		if _, ok := actual[allowedTeamID]; ok {
+			return nil
+		}
+	}
+	return &model.ErrForbidden{Message: "agent does not have access to this objective's teams"}
+}
+
 func normalizeCommandTeamIDs(teamIDs []string) []string {
 	seen := make(map[string]struct{}, len(teamIDs))
 	normalized := make([]string, 0, len(teamIDs))

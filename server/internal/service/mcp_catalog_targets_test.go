@@ -35,16 +35,19 @@ func TestStartAgentRunCatalogIncludesOnlyExecutablePlanningTargets(t *testing.T)
 		targets = append(targets, target)
 	}
 
-	foundSprint := false
+	foundSprint, foundObjective := false, false
 	for _, target := range targets {
 		if target == "sprint" {
 			foundSprint = true
 		}
 		if target == "objective" {
-			t.Errorf("target enum %v advertises objective before its executor is available", targets)
+			foundObjective = true
 		}
 	}
 	if !foundSprint {
 		t.Errorf("target enum %v does not contain sprint", targets)
+	}
+	if !foundObjective {
+		t.Errorf("target enum %v does not contain objective", targets)
 	}
 }

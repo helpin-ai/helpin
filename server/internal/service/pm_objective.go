@@ -91,6 +91,37 @@ func (s *PMObjectiveService) List(ctx context.Context, workspaceID string, filte
 	return result, nil
 }
 
+// ListPage loads and enriches only the requested objective page.
+func (s *PMObjectiveService) ListPage(ctx context.Context, workspaceID string, filters model.PMObjectiveListFilters, pagination model.PMPagination) ([]model.ObjectiveWithDetails, int64, error) {
+	if workspaceID == "" {
+		return nil, 0, fmt.Errorf("workspace_id is required")
+	}
+	objectives, total, err := s.objectiveRepo.ListPage(ctx, workspaceID, filters, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	result := make([]model.ObjectiveWithDetails, 0, len(objectives))
+	for _, obj := range objectives {
+		details, err := s.objectiveRepo.GetByID(ctx, obj.ID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if details != nil {
+			enrichSuggestedHealth(details)
+			result = append(result, *details)
+		}
+	}
+	return result, total, nil
+}
+
+// ListByIDs returns objective rows for bounded run-target title enrichment.
+func (s *PMObjectiveService) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMObjective, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	return s.objectiveRepo.ListByIDs(ctx, workspaceID, ids)
+}
+
 // GetByID returns a single objective with details.
 // When workspaceID is provided, the query is scoped to that workspace
 // to prevent cross-workspace data access.
@@ -159,41 +190,50 @@ func (s *PMObjectiveService) Create(ctx context.Context, req model.CreateObjecti
 		obj.CreatedBy = &actorID
 	}
 
-	if err := s.objectiveRepo.Create(ctx, obj); err != nil {
-		return nil, err
-	}
-	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
-		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "objective", obj.ID); err != nil {
-			s.logger.ErrorContext(ctx, "failed to reassign attachments to objective", "error", err, "objective_id", obj.ID, "attachment_ids", req.AttachmentIDs)
-		}
-	}
-
-	// Sync many-to-many
-	if len(req.TeamIDs) > 0 {
-		if err := s.objectiveRepo.ReplaceTeams(ctx, obj.ID, req.TeamIDs); err != nil {
-			return nil, err
-		}
-	}
+	var resolvedOwnerMemberIDs []string
 	if len(req.OwnerIDs) > 0 || len(req.OwnerMemberIDs) > 0 {
 		owners, err := resolveWorkspaceMemberReferences(ctx, s.workspaceRepo, req.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
 		if err != nil {
 			return nil, err
 		}
-		if err := s.objectiveRepo.ReplaceOwners(ctx, obj.ID, memberIDs(owners)); err != nil {
-			return nil, err
-		}
+		resolvedOwnerMemberIDs = memberIDs(owners)
 	}
 	if len(req.LabelIDs) > 0 {
 		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, req.TeamIDs); err != nil {
 			return nil, err
 		}
-		if err := s.objectiveRepo.ReplaceLabels(ctx, obj.ID, req.LabelIDs); err != nil {
-			return nil, err
-		}
 	}
-	if len(req.EpicIDs) > 0 {
-		if err := s.objectiveRepo.ReplaceEpics(ctx, obj.ID, req.EpicIDs); err != nil {
-			return nil, err
+	if err := s.objectiveRepo.Transaction(ctx, func(repo *repository.PMObjectiveRepository) error {
+		if err := repo.Create(ctx, obj); err != nil {
+			return err
+		}
+		if len(req.TeamIDs) > 0 {
+			if err := repo.ReplaceTeams(ctx, obj.ID, req.TeamIDs); err != nil {
+				return err
+			}
+		}
+		if len(resolvedOwnerMemberIDs) > 0 {
+			if err := repo.ReplaceOwners(ctx, obj.ID, resolvedOwnerMemberIDs); err != nil {
+				return err
+			}
+		}
+		if len(req.LabelIDs) > 0 {
+			if err := repo.ReplaceLabels(ctx, obj.ID, req.LabelIDs); err != nil {
+				return err
+			}
+		}
+		if len(req.EpicIDs) > 0 {
+			if err := repo.ReplaceEpics(ctx, obj.ID, req.EpicIDs); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
+		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "objective", obj.ID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to reassign attachments to objective", "error", err, "objective_id", obj.ID, "attachment_ids", req.AttachmentIDs)
 		}
 	}
 
@@ -289,10 +329,10 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 	if req.HealthComment != nil {
 		obj.HealthComment = req.HealthComment
 	}
-	if req.PlannedStartDate != nil {
+	if req.PlannedStartDate != nil || req.PlannedStartDateSet {
 		obj.PlannedStartDate = req.PlannedStartDate
 	}
-	if req.Deadline != nil {
+	if req.Deadline != nil || req.DeadlineSet {
 		obj.Deadline = req.Deadline
 	}
 	if req.Position != nil {
@@ -302,23 +342,13 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 		obj.Archived = *req.Archived
 	}
 
-	if err := s.objectiveRepo.Update(ctx, &obj); err != nil {
-		return nil, err
-	}
-
-	if req.TeamIDs != nil {
-		if err := s.objectiveRepo.ReplaceTeams(ctx, obj.ID, req.TeamIDs); err != nil {
-			return nil, err
-		}
-	}
+	var resolvedOwnerMemberIDs []string
 	if req.OwnerIDs != nil || req.OwnerMemberIDs != nil {
 		owners, err := resolveWorkspaceMemberReferences(ctx, s.workspaceRepo, obj.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
 		if err != nil {
 			return nil, err
 		}
-		if err := s.objectiveRepo.ReplaceOwners(ctx, obj.ID, memberIDs(owners)); err != nil {
-			return nil, err
-		}
+		resolvedOwnerMemberIDs = memberIDs(owners)
 	}
 	if req.LabelIDs != nil {
 		teamIDs := current.Teams
@@ -328,14 +358,34 @@ func (s *PMObjectiveService) Update(ctx context.Context, id string, req model.Up
 		if err := validateLabelScope(ctx, s.labelRepo, obj.WorkspaceID, req.LabelIDs, teamIDs); err != nil {
 			return nil, err
 		}
-		if err := s.objectiveRepo.ReplaceLabels(ctx, obj.ID, req.LabelIDs); err != nil {
-			return nil, err
-		}
 	}
-	if req.EpicIDs != nil {
-		if err := s.objectiveRepo.ReplaceEpics(ctx, obj.ID, req.EpicIDs); err != nil {
-			return nil, err
+	if err := s.objectiveRepo.Transaction(ctx, func(repo *repository.PMObjectiveRepository) error {
+		if err := repo.Update(ctx, &obj); err != nil {
+			return err
 		}
+		if req.TeamIDs != nil {
+			if err := repo.ReplaceTeams(ctx, obj.ID, req.TeamIDs); err != nil {
+				return err
+			}
+		}
+		if req.OwnerIDs != nil || req.OwnerMemberIDs != nil {
+			if err := repo.ReplaceOwners(ctx, obj.ID, resolvedOwnerMemberIDs); err != nil {
+				return err
+			}
+		}
+		if req.LabelIDs != nil {
+			if err := repo.ReplaceLabels(ctx, obj.ID, req.LabelIDs); err != nil {
+				return err
+			}
+		}
+		if req.EpicIDs != nil {
+			if err := repo.ReplaceEpics(ctx, obj.ID, req.EpicIDs); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	if err := s.activitySvc.Log(ctx, obj.WorkspaceID, "objective", obj.ID, optionalActor(actorID), "updated", nil, nil, nil, nil); err != nil {
@@ -640,11 +690,15 @@ func (s *PMObjectiveService) UpdateKeyResult(ctx context.Context, id string, req
 	if kr == nil {
 		return nil, fmt.Errorf("key result not found")
 	}
-	parentObj, _ := s.objectiveRepo.GetByID(ctx, kr.ObjectiveID)
-	if parentObj != nil {
-		if err := requireCanManageTeams(ctx, parentObj.Teams); err != nil {
-			return nil, err
-		}
+	parentObj, err := s.objectiveRepo.GetByID(ctx, kr.ObjectiveID)
+	if err != nil {
+		return nil, err
+	}
+	if parentObj == nil {
+		return nil, fmt.Errorf("objective not found")
+	}
+	if err := requireCanManageTeams(ctx, parentObj.Teams); err != nil {
+		return nil, err
 	}
 
 	if req.Name != nil {

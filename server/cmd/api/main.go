@@ -956,6 +956,7 @@ func main() {
 	agentService.SetRuleEngine(ruleEngine)
 	agentService.SetWorkflowService(pmWorkflowService)
 	agentService.SetPMSprintService(pmSprintService)
+	agentService.SetPMObjectiveService(pmObjectiveService)
 	pmRecurringTemplateService.SetTemporalClient(temporalClient)
 	pmImportService.SetTemporalClient(temporalClient)
 
@@ -1213,6 +1214,7 @@ func main() {
 		commandService,
 		gitService,
 	).SetPMSprintService(pmSprintService).
+		SetPMObjectiveService(pmObjectiveService).
 		SetAgentRepository(agentRepo).
 		SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
 	var agentRuntimeProjectionService *service.AgentRuntimeProjectionService

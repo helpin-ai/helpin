@@ -565,6 +565,7 @@ type AgentService struct {
 	gitService                 *GitService
 	taskService                *PMTaskService
 	sprintService              *PMSprintService
+	objectiveService           *PMObjectiveService
 	workflowService            *PMWorkflowService
 	activitySvc                *PMActivityService
 	notificationService        *NotificationService
@@ -735,6 +736,16 @@ func (s *AgentService) SetPMSprintService(sprintService *PMSprintService) *Agent
 		return s
 	}
 	s.sprintService = sprintService
+	return s
+}
+
+// SetPMObjectiveService enables direct objective-targeted runs and target
+// title enrichment without expanding the positional constructor.
+func (s *AgentService) SetPMObjectiveService(objectiveService *PMObjectiveService) *AgentService {
+	if s == nil {
+		return s
+	}
+	s.objectiveService = objectiveService
 	return s
 }
 
@@ -3971,6 +3982,44 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
 
+	case "objective":
+		if s.objectiveService == nil {
+			return nil, fmt.Errorf("objective service is not configured")
+		}
+		objective, err := s.objectiveService.GetByID(ctx, targetID, workspaceID)
+		if err != nil || objective == nil {
+			return nil, fmt.Errorf("objective not found")
+		}
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "objective")
+		if err != nil {
+			return nil, err
+		}
+		if err := validateAgentTeamScopes(agent, "objective", objective.Teams); err != nil {
+			return nil, err
+		}
+		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
+			return nil, err
+		}
+		payload, err := buildAgentRunInputPayload("objective", objective.Objective.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
+		if err != nil {
+			return nil, fmt.Errorf("build objective run input: %w", err)
+		}
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID: workspaceID, agent: agent, targetType: "objective", targetID: objective.Objective.ID,
+			parentRunID: parentRunID, allowActiveParentRun: opts.allowActiveParentRun, actorID: actorID,
+			input: payload, trigger: trigger, invocationMode: resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if s.activitySvc != nil {
+			if err := s.activitySvc.Log(ctx, workspaceID, "objective", objective.Objective.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started")); err != nil {
+				slog.ErrorContext(ctx, "log objective agent run activity", "error", err, "workspace_id", workspaceID, "objective_id", objective.Objective.ID, "run_id", run.ID)
+			}
+		}
+		s.publishRunEvent(run, derefString(actorID))
+		return run, nil
+
 	case "repository":
 		if s.gitService == nil {
 			return nil, fmt.Errorf("git service not configured")
@@ -6167,6 +6216,7 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 	taskIDs := make([]string, 0, len(runs))
 	epicIDs := make([]string, 0, len(runs))
 	sprintIDs := make([]string, 0, len(runs))
+	objectiveIDs := make([]string, 0, len(runs))
 	documentIDs := make([]string, 0, len(runs))
 	conversationIDs := make([]string, 0, len(runs))
 	contactIDs := make([]string, 0, len(runs))
@@ -6190,6 +6240,8 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 			epicIDs = append(epicIDs, targetID)
 		case "sprint":
 			sprintIDs = append(sprintIDs, targetID)
+		case "objective":
+			objectiveIDs = append(objectiveIDs, targetID)
 		case "document":
 			documentIDs = append(documentIDs, targetID)
 		case "support_conversation":
@@ -6210,6 +6262,18 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 			sprintsByID = make(map[string]model.PMSprint, len(sprints))
 			for _, sprint := range sprints {
 				sprintsByID[sprint.ID] = sprint
+			}
+		}
+	}
+	objectivesByID := map[string]model.PMObjective{}
+	if len(objectiveIDs) > 0 && s.objectiveService != nil {
+		objectives, err := s.objectiveService.ListByIDs(ctx, workspaceID, objectiveIDs)
+		if err != nil {
+			slog.WarnContext(ctx, "enrich run targets: list objectives failed", "error", err, "workspace_id", workspaceID)
+		} else {
+			objectivesByID = make(map[string]model.PMObjective, len(objectives))
+			for _, objective := range objectives {
+				objectivesByID[objective.ID] = objective
 			}
 		}
 	}
@@ -6329,6 +6393,12 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 				continue
 			}
 			info.Title = sprint.Name
+		case "objective":
+			objective, ok := objectivesByID[targetID]
+			if !ok {
+				continue
+			}
+			info.Title = objective.Name
 		case "document":
 			doc, ok := documentsByID[targetID]
 			if !ok {
@@ -6460,6 +6530,22 @@ func validateAgentTeamScope(agent *model.Agent, targetType string, targetTeamID 
 		return fmt.Errorf("agent is restricted to team %s and cannot run on %s targets for team %s", strings.Join(teamIDs, ","), targetType, actualTargetTeamID)
 	}
 	return nil
+}
+
+func validateAgentTeamScopes(agent *model.Agent, targetType string, targetTeamIDs []string) error {
+	teamIDs := agentTeamIDsForScope(agent)
+	if len(teamIDs) == 0 {
+		return nil
+	}
+	for _, targetTeamID := range normalizeServiceTeamIDs(targetTeamIDs) {
+		if slices.Contains(teamIDs, targetTeamID) {
+			return nil
+		}
+	}
+	if len(targetTeamIDs) == 0 {
+		return fmt.Errorf("agent is restricted to team %s and cannot run on workspace-scoped %s targets", strings.Join(teamIDs, ","), targetType)
+	}
+	return fmt.Errorf("agent is restricted to team %s and cannot run on %s targets for teams %s", strings.Join(teamIDs, ","), targetType, strings.Join(normalizeServiceTeamIDs(targetTeamIDs), ","))
 }
 
 func resolveCreateAgentTeamIDs(req model.CreateAgentRequest) []string {

@@ -20,6 +20,7 @@ import (
 const (
 	agentRuntimeHelpinBuiltInSkillIDPrefix     = "helpin_builtin:"
 	agentRuntimeHelpinBuiltInSkillObjectPrefix = "helpin-builtins/"
+	agentRuntimeObjectiveCollectionLimit       = 100
 )
 
 var (
@@ -32,23 +33,24 @@ var (
 // It exposes runtime contracts only; Helpin lifecycle policy remains in the
 // existing projection, billing, and finalizer services.
 type AgentRuntimeHostService struct {
-	appID          string
-	runRepo        *repository.AgentRunRepository
-	agentRepo      *repository.AgentRepository
-	workspaceRepo  *repository.WorkspaceRepository
-	taskRepo       *repository.PMTaskRepository
-	epicRepo       *repository.PMEpicRepository
-	sprintService  *PMSprintService
-	supportRepo    *repository.SupportConversationRepository
-	docsRepo       *repository.DocsDocumentRepository
-	crmContactRepo *repository.CRMContactRepository
-	crmCompanyRepo *repository.CRMCompanyRepository
-	crmDealRepo    *repository.CRMDealRepository
-	commandService *InternalCommandService
-	gitService     *GitService
-	skillRepo      *repository.WorkspaceSkillRepository
-	skillStore     skillPackageStore
-	authz          *authorization.AuthzService
+	appID            string
+	runRepo          *repository.AgentRunRepository
+	agentRepo        *repository.AgentRepository
+	workspaceRepo    *repository.WorkspaceRepository
+	taskRepo         *repository.PMTaskRepository
+	epicRepo         *repository.PMEpicRepository
+	sprintService    *PMSprintService
+	objectiveService *PMObjectiveService
+	supportRepo      *repository.SupportConversationRepository
+	docsRepo         *repository.DocsDocumentRepository
+	crmContactRepo   *repository.CRMContactRepository
+	crmCompanyRepo   *repository.CRMCompanyRepository
+	crmDealRepo      *repository.CRMDealRepository
+	commandService   *InternalCommandService
+	gitService       *GitService
+	skillRepo        *repository.WorkspaceSkillRepository
+	skillStore       skillPackageStore
+	authz            *authorization.AuthzService
 }
 
 // SetAgentRepository enables repository-backed effective agent scope
@@ -148,6 +150,15 @@ func (s *AgentRuntimeHostService) SetPMSprintService(sprintService *PMSprintServ
 		return s
 	}
 	s.sprintService = sprintService
+	return s
+}
+
+// SetPMObjectiveService enables workspace-scoped objective target projection.
+func (s *AgentRuntimeHostService) SetPMObjectiveService(objectiveService *PMObjectiveService) *AgentRuntimeHostService {
+	if s == nil {
+		return s
+	}
+	s.objectiveService = objectiveService
 	return s
 }
 
@@ -261,6 +272,21 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		resp.Summary = fmt.Sprintf("Sprint: %s", sprint.Sprint.Name)
 		resp.Target.Display = &agentruntime.TargetDisplay{Title: sprint.Sprint.Name}
 		resp.Data = runtimeSprintContextData(sprint)
+	case "objective":
+		if s.objectiveService == nil {
+			return nil, fmt.Errorf("objective target resolver is not configured")
+		}
+		objective, err := s.objectiveService.GetByID(ctx, target.ID)
+		if err != nil || objective == nil {
+			return nil, fmt.Errorf("%w: objective not found", ErrAgentRuntimeHostNotFound)
+		}
+		workspaceID = objective.Objective.WorkspaceID
+		if err := ensureRuntimeWorkspaceMatch(requestedWorkspaceID, workspaceID); err != nil {
+			return nil, err
+		}
+		resp.Summary = fmt.Sprintf("Objective: %s", objective.Objective.Name)
+		resp.Target.Display = &agentruntime.TargetDisplay{Title: objective.Objective.Name}
+		resp.Data = runtimeObjectiveContextData(objective)
 	case "support_conversation", "conversation":
 		if workspaceID == "" {
 			return nil, fmt.Errorf("%w: workspace_id metadata or run mapping is required for support conversation targets", ErrAgentRuntimeHostBadRequest)
@@ -959,6 +985,44 @@ func runtimeSprintContextData(sprint *model.SprintWithStats) map[string]interfac
 		"labels":       labels,
 		"stats":        sprint.Stats,
 	}
+}
+
+func runtimeObjectiveContextData(objective *model.ObjectiveWithDetails) map[string]interface{} {
+	if objective == nil {
+		return map[string]interface{}{}
+	}
+	labels := make([]map[string]interface{}, 0, min(len(objective.Labels), agentRuntimeObjectiveCollectionLimit))
+	for _, label := range objective.Labels[:min(len(objective.Labels), agentRuntimeObjectiveCollectionLimit)] {
+		labels = append(labels, map[string]interface{}{"id": label.ID, "name": label.Name, "color": agentRuntimeHostString(label.Color), "team_id": agentRuntimeHostString(label.TeamID)})
+	}
+	epics := make([]map[string]interface{}, 0, min(len(objective.Epics), agentRuntimeObjectiveCollectionLimit))
+	for _, epic := range objective.Epics[:min(len(objective.Epics), agentRuntimeObjectiveCollectionLimit)] {
+		epics = append(epics, map[string]interface{}{"id": epic.Epic.ID, "name": epic.Epic.Name, "team_id": agentRuntimeHostString(epic.Epic.TeamID), "stats": epic.Stats})
+	}
+	keyResults := make([]map[string]interface{}, 0, min(len(objective.KeyResults), agentRuntimeObjectiveCollectionLimit))
+	for _, keyResult := range objective.KeyResults[:min(len(objective.KeyResults), agentRuntimeObjectiveCollectionLimit)] {
+		keyResults = append(keyResults, map[string]interface{}{
+			"id": keyResult.ID, "name": keyResult.Name, "result_type": keyResult.ResultType,
+			"initial_value": keyResult.InitialValue, "current_value": keyResult.CurrentValue,
+			"target_value": keyResult.TargetValue, "progress": keyResult.Progress, "note": agentRuntimeHostString(keyResult.Note),
+		})
+	}
+	return map[string]interface{}{
+		"id": objective.Objective.ID, "workspace_id": objective.Objective.WorkspaceID, "name": objective.Objective.Name,
+		"description": agentRuntimeHostString(objective.Objective.Description), "objective_type": objective.Objective.ObjectiveType,
+		"state": objective.Objective.State, "planned_start_date": runtimeHostDateString(objective.Objective.PlannedStartDate),
+		"deadline": runtimeHostDateString(objective.Objective.Deadline), "health": objective.Objective.Health,
+		"health_comment": agentRuntimeHostString(objective.Objective.HealthComment), "teams": boundedRuntimeStrings(objective.Teams),
+		"owners": boundedRuntimeStrings(objective.Owners), "owner_member_ids": boundedRuntimeStrings(objective.OwnerMemberIDs),
+		"labels": labels, "epics": epics, "key_results": keyResults, "stats": objective.Stats,
+	}
+}
+
+func boundedRuntimeStrings(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), values[:min(len(values), agentRuntimeObjectiveCollectionLimit)]...)
 }
 
 func runtimeHostDateString(value *time.Time) string {

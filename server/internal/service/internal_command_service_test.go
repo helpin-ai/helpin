@@ -8,9 +8,63 @@ import (
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
+
+func TestPMToolCatalogExecutorParity(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	hostAliases := map[string]string{}
+	hostPMAliases := map[string]string{}
+	for _, def := range svc.ToolDefinitions() {
+		if def.Tool == nil {
+			continue
+		}
+		alias, category := strings.TrimSpace(def.Tool.Alias), strings.TrimSpace(def.Tool.Category)
+		if def.Execute == nil {
+			t.Fatalf("exposed command %q has no executor", def.Name)
+		}
+		if def.Tool.CommandName != def.Name {
+			t.Fatalf("command %q metadata points to %q", def.Name, def.Tool.CommandName)
+		}
+		if previous, exists := hostAliases[alias]; exists {
+			t.Fatalf("duplicate executor alias %q for %s and %s", alias, previous, def.Name)
+		}
+		hostAliases[alias] = def.Name
+		if strings.HasPrefix(category, "PM /") || alias == "list_workspace_members" || alias == "list_workspace_teams" {
+			hostPMAliases[alias] = def.Name
+		}
+	}
+	catalogAliases := map[string]struct{}{}
+	for _, tool := range agentcontract.ListToolCatalog().Tools {
+		alias, category := strings.TrimSpace(tool.Name), strings.TrimSpace(tool.Category)
+		if !strings.HasPrefix(category, "PM /") && alias != "list_workspace_members" && alias != "list_workspace_teams" {
+			continue
+		}
+		if _, exists := catalogAliases[alias]; exists {
+			t.Fatalf("duplicate catalog alias %q", alias)
+		}
+		catalogAliases[alias] = struct{}{}
+	}
+	nativeRuntimeAllowlist := map[string]struct{}{"list_epic_tasks": {}}
+	for alias := range catalogAliases {
+		if _, allowed := nativeRuntimeAllowlist[alias]; allowed {
+			continue
+		}
+		if _, ok := hostAliases[alias]; !ok {
+			t.Errorf("catalog alias %q has no executor", alias)
+		}
+	}
+	for alias := range hostPMAliases {
+		if _, ok := catalogAliases[alias]; !ok {
+			t.Errorf("executor alias %q is absent from catalog", alias)
+		}
+	}
+	if commandName := hostAliases["assign_task_agent"]; commandName == "" {
+		t.Error("deprecated assign_task_agent compatibility alias is missing")
+	}
+}
 
 func TestWriteDocumentContentCommandSupportsDocumentTarget(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
