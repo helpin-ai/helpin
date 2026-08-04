@@ -950,6 +950,18 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
+		// Scribe's product default moved from OpenAI to DeepSeek V4 Flash on
+		// OpenRouter. Only migrate the default preset when it still uses a known
+		// legacy product default, preserving custom routing choices.
+		if presetKey == model.AgentPresetTaskPlanner &&
+			presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
+			(strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel ||
+				strings.TrimSpace(derefString(existing.Model)) == "gpt-5.5") {
+			existing.Provider = trimPtr(preset.Provider)
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
 		expectedExecutionConfig := normalizeExecutionConfigJSON(preset.ExecutionConfig)
 		if string(normalizeExecutionConfigJSON(existing.ExecutionConfig)) == "{}" && string(expectedExecutionConfig) != "{}" {
 			existing.ExecutionConfig = expectedExecutionConfig
