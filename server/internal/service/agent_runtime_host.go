@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
@@ -35,6 +36,7 @@ type AgentRuntimeHostService struct {
 	workspaceRepo  *repository.WorkspaceRepository
 	taskRepo       *repository.PMTaskRepository
 	epicRepo       *repository.PMEpicRepository
+	sprintService  *PMSprintService
 	supportRepo    *repository.SupportConversationRepository
 	docsRepo       *repository.DocsDocumentRepository
 	crmContactRepo *repository.CRMContactRepository
@@ -124,6 +126,16 @@ func (s *AgentRuntimeHostService) SetAuthorizationService(authz *authorization.A
 		return s
 	}
 	s.authz = authz
+	return s
+}
+
+// SetPMSprintService enables sprint target-context resolution without changing
+// the positional runtime-host constructor used throughout the service tests.
+func (s *AgentRuntimeHostService) SetPMSprintService(sprintService *PMSprintService) *AgentRuntimeHostService {
+	if s == nil {
+		return s
+	}
+	s.sprintService = sprintService
 	return s
 }
 
@@ -222,6 +234,21 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		resp.Summary = fmt.Sprintf("Epic: %s", epic.Epic.Name)
 		resp.Target.Display = &agentruntime.TargetDisplay{Title: epic.Epic.Name}
 		resp.Data = runtimeEpicContextData(epic)
+	case "sprint":
+		if s.sprintService == nil {
+			return nil, fmt.Errorf("sprint target resolver is not configured")
+		}
+		sprint, err := s.sprintService.GetByID(ctx, target.ID)
+		if err != nil || sprint == nil {
+			return nil, fmt.Errorf("%w: sprint not found", ErrAgentRuntimeHostNotFound)
+		}
+		workspaceID = sprint.Sprint.WorkspaceID
+		if err := ensureRuntimeWorkspaceMatch(requestedWorkspaceID, workspaceID); err != nil {
+			return nil, err
+		}
+		resp.Summary = fmt.Sprintf("Sprint: %s", sprint.Sprint.Name)
+		resp.Target.Display = &agentruntime.TargetDisplay{Title: sprint.Sprint.Name}
+		resp.Data = runtimeSprintContextData(sprint)
 	case "support_conversation", "conversation":
 		if workspaceID == "" {
 			return nil, fmt.Errorf("%w: workspace_id metadata or run mapping is required for support conversation targets", ErrAgentRuntimeHostBadRequest)
@@ -854,6 +881,40 @@ func runtimeEpicContextData(epic *model.EpicWithStats) map[string]interface{} {
 		"planning_state": epic.Epic.PlanningState,
 		"stats":          epic.Stats,
 	}
+}
+
+func runtimeSprintContextData(sprint *model.SprintWithStats) map[string]interface{} {
+	if sprint == nil {
+		return map[string]interface{}{}
+	}
+	labels := make([]map[string]interface{}, 0, len(sprint.Labels))
+	for _, label := range sprint.Labels {
+		labels = append(labels, map[string]interface{}{
+			"id":      label.ID,
+			"name":    label.Name,
+			"color":   agentRuntimeHostString(label.Color),
+			"team_id": agentRuntimeHostString(label.TeamID),
+		})
+	}
+	return map[string]interface{}{
+		"id":           sprint.Sprint.ID,
+		"workspace_id": sprint.Sprint.WorkspaceID,
+		"name":         sprint.Sprint.Name,
+		"description":  agentRuntimeHostString(sprint.Sprint.Description),
+		"start_date":   runtimeHostDateString(sprint.Sprint.StartDate),
+		"end_date":     runtimeHostDateString(sprint.Sprint.EndDate),
+		"status":       sprint.Sprint.Status,
+		"team_id":      agentRuntimeHostString(sprint.Sprint.TeamID),
+		"labels":       labels,
+		"stats":        sprint.Stats,
+	}
+}
+
+func runtimeHostDateString(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.UTC().Format("2006-01-02")
 }
 
 func runtimeSupportConversationContextData(conversation *model.SupportConversation) map[string]interface{} {

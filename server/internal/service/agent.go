@@ -564,6 +564,7 @@ type AgentService struct {
 	workspaceSkillRepo         *repository.WorkspaceSkillRepository
 	gitService                 *GitService
 	taskService                *PMTaskService
+	sprintService              *PMSprintService
 	workflowService            *PMWorkflowService
 	activitySvc                *PMActivityService
 	notificationService        *NotificationService
@@ -724,6 +725,16 @@ func (s *AgentService) SetRuleEngine(engine *AutomationRuleEngine) *AgentService
 
 func (s *AgentService) SetWorkflowService(workflowService *PMWorkflowService) *AgentService {
 	s.workflowService = workflowService
+	return s
+}
+
+// SetPMSprintService enables direct sprint-targeted agent runs without
+// expanding the positional AgentService constructor.
+func (s *AgentService) SetPMSprintService(sprintService *PMSprintService) *AgentService {
+	if s == nil {
+		return s
+	}
+	s.sprintService = sprintService
 	return s
 }
 
@@ -3912,6 +3923,51 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
 
+	case "sprint":
+		if s.sprintService == nil {
+			return nil, fmt.Errorf("sprint service is not configured")
+		}
+		sprint, err := s.sprintService.GetByID(ctx, targetID)
+		if err != nil || sprint == nil || sprint.Sprint.WorkspaceID != workspaceID {
+			return nil, fmt.Errorf("sprint not found")
+		}
+
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "sprint")
+		if err != nil {
+			return nil, err
+		}
+		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
+			return nil, err
+		}
+		payload, err := buildAgentRunInputPayload("sprint", sprint.Sprint.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
+		if err != nil {
+			return nil, fmt.Errorf("build sprint run input: %w", err)
+		}
+
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID:          workspaceID,
+			agent:                agent,
+			targetType:           "sprint",
+			targetID:             sprint.Sprint.ID,
+			parentRunID:          parentRunID,
+			allowActiveParentRun: opts.allowActiveParentRun,
+			actorID:              actorID,
+			input:                payload,
+			trigger:              trigger,
+			invocationMode:       resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if s.activitySvc != nil {
+			if err := s.activitySvc.Log(ctx, workspaceID, "sprint", sprint.Sprint.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started")); err != nil {
+				slog.ErrorContext(ctx, "log sprint agent run activity", "error", err, "workspace_id", workspaceID, "sprint_id", sprint.Sprint.ID, "run_id", run.ID)
+			}
+		}
+		s.publishRunEvent(run, derefString(actorID))
+		return run, nil
+
 	case "repository":
 		if s.gitService == nil {
 			return nil, fmt.Errorf("git service not configured")
@@ -6079,6 +6135,7 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 
 	taskIDs := make([]string, 0, len(runs))
 	epicIDs := make([]string, 0, len(runs))
+	sprintIDs := make([]string, 0, len(runs))
 	documentIDs := make([]string, 0, len(runs))
 	conversationIDs := make([]string, 0, len(runs))
 	contactIDs := make([]string, 0, len(runs))
@@ -6100,6 +6157,8 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 			taskIDs = append(taskIDs, targetID)
 		case "epic":
 			epicIDs = append(epicIDs, targetID)
+		case "sprint":
+			sprintIDs = append(sprintIDs, targetID)
 		case "document":
 			documentIDs = append(documentIDs, targetID)
 		case "support_conversation":
@@ -6108,6 +6167,20 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 			contactIDs = append(contactIDs, targetID)
 		case "crm_deal":
 			dealIDs = append(dealIDs, targetID)
+		}
+	}
+
+	sprintsByID := map[string]model.PMSprint{}
+	if len(sprintIDs) > 0 && s.sprintService != nil {
+		for _, sprintID := range sprintIDs {
+			sprint, err := s.sprintService.GetByID(ctx, sprintID)
+			if err != nil {
+				slog.WarnContext(ctx, "enrich run targets: get sprint failed", "error", err, "workspace_id", workspaceID, "sprint_id", sprintID)
+				continue
+			}
+			if sprint != nil && sprint.Sprint.WorkspaceID == workspaceID {
+				sprintsByID[sprintID] = sprint.Sprint
+			}
 		}
 	}
 
@@ -6220,6 +6293,12 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 				continue
 			}
 			info.Title = epic.Name
+		case "sprint":
+			sprint, ok := sprintsByID[targetID]
+			if !ok {
+				continue
+			}
+			info.Title = sprint.Name
 		case "document":
 			doc, ok := documentsByID[targetID]
 			if !ok {

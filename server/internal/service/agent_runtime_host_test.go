@@ -203,6 +203,59 @@ func TestAgentRuntimeHostResolveSupportConversationBypassesMailboxMembership(t *
 	}
 }
 
+func TestAgentRuntimeHostResolveSprintTarget(t *testing.T) {
+	sprintService, db, workspaceID := newSprintTestEnvWithDB(t)
+	seedPMSprintCommandTeam(t, db, workspaceID, "team-runtime-sprint")
+	teamID := "team-runtime-sprint"
+	color := "#336699"
+	if err := db.Create(&model.PMLabel{ID: "label-runtime-sprint", WorkspaceID: workspaceID, Name: "Runtime", Color: &color}).Error; err != nil {
+		t.Fatalf("seed label: %v", err)
+	}
+	description := "Runtime sprint context"
+	sprint, err := sprintService.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: workspaceID,
+		Name:        "Runtime Sprint",
+		Description: &description,
+		StartDate:   commandMustDate(t, "2026-09-01"),
+		EndDate:     commandMustDate(t, "2026-09-15"),
+		TeamID:      &teamID,
+		LabelIDs:    []string{"label-runtime-sprint"},
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetPMSprintService(sprintService)
+	resolved, err := host.ResolveTargetContext(context.Background(), agentruntime.TargetContextRequest{
+		AppID:    "helpin",
+		Target:   agentruntime.TargetRef{Type: "sprint", ID: sprint.Sprint.ID},
+		Metadata: map[string]interface{}{"workspace_id": workspaceID},
+	})
+	if err != nil {
+		t.Fatalf("ResolveTargetContext: %v", err)
+	}
+	if resolved.Summary != "Sprint: Runtime Sprint" || resolved.Target.Display == nil || resolved.Target.Display.Title != "Runtime Sprint" {
+		t.Fatalf("unexpected sprint display: %#v", resolved)
+	}
+	if resolved.Data["start_date"] != "2026-09-01" || resolved.Data["end_date"] != "2026-09-15" || resolved.Data["team_id"] != teamID {
+		t.Fatalf("unexpected sprint context dates/team: %#v", resolved.Data)
+	}
+	labels, ok := resolved.Data["labels"].([]map[string]interface{})
+	if !ok || len(labels) != 1 || labels[0]["name"] != "Runtime" {
+		t.Fatalf("unexpected sprint labels: %#v", resolved.Data["labels"])
+	}
+
+	_, err = host.ResolveTargetContext(context.Background(), agentruntime.TargetContextRequest{
+		AppID:    "helpin",
+		Target:   agentruntime.TargetRef{Type: "sprint", ID: sprint.Sprint.ID},
+		Metadata: map[string]interface{}{"workspace_id": "workspace-other"},
+	})
+	if !errors.Is(err, ErrAgentRuntimeHostForbidden) {
+		t.Fatalf("cross-workspace sprint error = %v, want forbidden", err)
+	}
+}
+
 func TestAgentRuntimeHostRepositorySpecFallsBackToRuntimeRunMapping(t *testing.T) {
 	db := newTestDB(t)
 	seedGitDeliveryStatusFixture(t, db)

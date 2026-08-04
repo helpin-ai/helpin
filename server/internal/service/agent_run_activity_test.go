@@ -323,6 +323,49 @@ func TestEnrichRunTargetsResolvesDocumentTargetInfo(t *testing.T) {
 	}
 }
 
+func TestEnrichRunTargetsResolvesSprintTargetInfo(t *testing.T) {
+	svc, testDB := setupAgentRunActivityTest(t)
+	ctx := context.Background()
+	workspaceID := "ws-agent-activity"
+	sprintID := "sprint-1"
+	now := time.Now()
+	if err := testDB.Create(&model.PMSprint{
+		ID:          sprintID,
+		WorkspaceID: workspaceID,
+		Name:        "Platform reliability sprint",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}).Error; err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+	svc.SetPMSprintService(NewPMSprintService(
+		repository.NewPMSprintRepository(testDB.DB),
+		repository.NewPMLabelRepository(testDB.DB),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	))
+	runs := []model.AgentRun{{
+		ID:          "run-sprint",
+		WorkspaceID: workspaceID,
+		TargetType:  "sprint",
+		TargetID:    sprintID,
+	}}
+
+	svc.enrichRunTargets(ctx, workspaceID, runs)
+
+	if runs[0].TargetInfo == nil {
+		t.Fatal("expected sprint target info")
+	}
+	if runs[0].TargetInfo.Title != "Platform reliability sprint" {
+		t.Fatalf("target title = %q", runs[0].TargetInfo.Title)
+	}
+}
+
 func TestEnrichRunTargetsResolvesLinkedTargetTitles(t *testing.T) {
 	svc, testDB := setupAgentRunActivityTest(t)
 	ctx := context.Background()

@@ -955,6 +955,7 @@ func main() {
 	pmRecurringTemplateService.SetTaskService(pmTaskService)
 	agentService.SetRuleEngine(ruleEngine)
 	agentService.SetWorkflowService(pmWorkflowService)
+	agentService.SetPMSprintService(pmSprintService)
 	pmRecurringTemplateService.SetTemporalClient(temporalClient)
 	pmImportService.SetTemporalClient(temporalClient)
 
@@ -1211,7 +1212,8 @@ func main() {
 		crmDealRepo,
 		commandService,
 		gitService,
-	).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
+	).SetPMSprintService(pmSprintService).
+		SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
 	var agentRuntimeProjectionService *service.AgentRuntimeProjectionService
 	var runFinalizers *service.AgentRunFinalizerService
 	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
