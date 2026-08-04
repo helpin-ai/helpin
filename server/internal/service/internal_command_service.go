@@ -32,6 +32,9 @@ type InternalCommandService struct {
 	taskService           *PMTaskService
 	labelService          *PMLabelService
 	commentService        *PMCommentService
+	epicService           *PMEpicService
+	workflowService       *PMWorkflowService
+	workspaceRepo         *repository.WorkspaceRepository
 	crmDealService        *CRMDealService
 	crmActivityService    *CRMActivityService
 	crmEnrichmentService  *CRMEnrichmentService

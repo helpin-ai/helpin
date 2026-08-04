@@ -57,6 +57,7 @@ func (s *InternalCommandService) registerPMOperationalCommands() {
 	}
 	s.registerPMDiscoveryCommands()
 	s.registerPMTaskCommands()
+	s.registerPMEpicCommands()
 	s.extendExistingPMTaskCommands()
 }
 

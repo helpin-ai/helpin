@@ -45,7 +45,7 @@ func (r *PMEpicRepository) List(ctx context.Context, workspaceID string, filters
 	}
 
 	var epics []model.PMEpic
-	if err := query.Order("position ASC, created_at DESC").Find(&epics).Error; err != nil {
+	if err := query.Order("pm_epics.position ASC, pm_epics.created_at DESC").Find(&epics).Error; err != nil {
 		return nil, fmt.Errorf("list epics: %w", err)
 	}
 	return epics, nil
