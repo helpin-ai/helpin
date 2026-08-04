@@ -12,15 +12,6 @@ import (
 
 var pmSprintCommandTargetTypes = []string{"workspace", "sprint"}
 
-// SetPMSprintOperationalService wires sprint commands without expanding the
-// already-large internal-command constructor.
-func (s *InternalCommandService) SetPMSprintOperationalService(sprintService *PMSprintService) {
-	if s == nil {
-		return
-	}
-	s.sprintService = sprintService
-}
-
 func (s *InternalCommandService) registerPMSprintCommands() {
 	definitions := []struct {
 		name     string

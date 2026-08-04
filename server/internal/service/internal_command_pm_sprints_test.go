@@ -20,7 +20,7 @@ func newPMSprintCommandTestEnv(t *testing.T) (*InternalCommandService, *PMSprint
 	sprintService, db, workspaceID := newSprintTestEnvWithDB(t)
 	commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	commandService.SetSettingsRepository(repository.NewSettingsRepository(db))
-	commandService.SetPMSprintOperationalService(sprintService)
+	commandService.SetPMOperationalServices(nil, nil, sprintService, nil, nil, nil)
 	return commandService, sprintService, db, workspaceID
 }
 
