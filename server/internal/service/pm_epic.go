@@ -168,6 +168,11 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	if actorID != "" {
 		epic.CreatedBy = &actorID
 	}
+	if len(req.LabelIDs) > 0 {
+		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := s.epicRepo.Create(ctx, epic); err != nil {
 		s.logger.ErrorContext(ctx, "failed to create epic", "error", err, "workspace_id", req.WorkspaceID)
@@ -179,9 +184,6 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 		}
 	}
 	if len(req.LabelIDs) > 0 {
-		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
-			return nil, err
-		}
 		if err := s.epicRepo.ReplaceLabels(ctx, epic.ID, req.LabelIDs); err != nil {
 			return nil, err
 		}
@@ -286,10 +288,10 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if req.Description != nil {
 		epic.Description = req.Description
 	}
-	if req.EpicStateID != nil {
-		epic.EpicStateID = req.EpicStateID
+	if req.EpicStateID != nil || req.EpicStateIDSet {
+		epic.EpicStateID = nullableString(req.EpicStateID)
 	}
-	if req.OwnerID != nil || req.OwnerMemberID != nil {
+	if req.OwnerID != nil || req.OwnerMemberID != nil || req.OwnerSet {
 		ownerMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, current.Epic.WorkspaceID, req.OwnerMemberID, req.OwnerID)
 		if err != nil {
 			return nil, err
@@ -297,13 +299,17 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		epic.OwnerID = memberUserIDPtr(ownerMember)
 		epic.OwnerMemberID = memberIDPtr(ownerMember)
 	}
-	if req.TeamID != nil {
-		epic.TeamID = req.TeamID
+	if req.TeamID != nil || req.TeamIDSet {
+		nextTeamID := nullableString(req.TeamID)
+		if err := requireCanEditTeamEpics(ctx, nextTeamID); err != nil {
+			return nil, err
+		}
+		epic.TeamID = nextTeamID
 	}
-	if req.PlannedStartDate != nil {
+	if req.PlannedStartDate != nil || req.PlannedStartDateSet {
 		epic.PlannedStartDate = req.PlannedStartDate
 	}
-	if req.Deadline != nil {
+	if req.Deadline != nil || req.DeadlineSet {
 		epic.Deadline = req.Deadline
 	}
 	if req.Position != nil {
@@ -324,11 +330,11 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if req.HealthComment != nil {
 		epic.HealthComment = req.HealthComment
 	}
-	if req.PlanningRepositoryID != nil {
+	if req.PlanningRepositoryID != nil || req.PlanningRepositoryIDSet {
 		if err := s.validatePlanningRepository(ctx, epic.WorkspaceID, req.PlanningRepositoryID); err != nil {
 			return nil, err
 		}
-		epic.PlanningRepositoryID = req.PlanningRepositoryID
+		epic.PlanningRepositoryID = nullableString(req.PlanningRepositoryID)
 	}
 	if req.AssignedAgentID != nil {
 		nextAgentID := nullableString(req.AssignedAgentID)

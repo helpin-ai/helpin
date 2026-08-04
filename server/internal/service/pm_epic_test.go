@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -548,6 +549,126 @@ func TestPMEpicService_Update(t *testing.T) {
 			t.Fatal("expected error for nonexistent epic")
 		}
 	})
+}
+
+func TestPMEpicServiceUpdateClearsExplicitlySuppliedNullableFields(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	teamID := "team-epic-clear"
+	stateID := "state-epic-clear"
+	repoID := "repo-epic-clear"
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		teamID, wsID, "Clear Team", now, now)
+	mustExec(t, db, `INSERT INTO pm_epic_workflow_states (id, workspace_id, name, state_type, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		stateID, wsID, "To Do", model.PMStateTypeUnstarted, 0, now, now)
+	if err := db.Create(&model.GitRepository{
+		ID: repoID, WorkspaceID: wsID, IntegrationID: "integration-clear", Provider: "github",
+		ExternalID: "repo-clear", FullName: "helpin/clear", Permissions: json.RawMessage(`{}`),
+		Active: true, Selected: true,
+	}).Error; err != nil {
+		t.Fatalf("create git repository: %v", err)
+	}
+
+	start := time.Date(2026, time.August, 5, 0, 0, 0, 0, time.UTC)
+	deadline := time.Date(2026, time.August, 20, 0, 0, 0, 0, time.UTC)
+	created, err := svc.Create(ctx, model.CreateEpicRequest{
+		WorkspaceID:          wsID,
+		Name:                 "Clearable Epic",
+		TeamID:               &teamID,
+		EpicStateID:          &stateID,
+		OwnerMemberID:        stringPtr("member-epic-001"),
+		PlannedStartDate:     &start,
+		Deadline:             &deadline,
+		PlanningRepositoryID: &repoID,
+	}, userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	updated, err := svc.Update(ctx, created.Epic.ID, model.UpdateEpicRequest{
+		EpicStateIDSet:          true,
+		OwnerSet:                true,
+		TeamIDSet:               true,
+		PlannedStartDateSet:     true,
+		DeadlineSet:             true,
+		PlanningRepositoryIDSet: true,
+	}, userID)
+	if err != nil {
+		t.Fatalf("Update clears: %v", err)
+	}
+	if updated.Epic.EpicStateID != nil || updated.Epic.OwnerID != nil || updated.Epic.OwnerMemberID != nil ||
+		updated.Epic.TeamID != nil || updated.Epic.PlannedStartDate != nil || updated.Epic.Deadline != nil ||
+		updated.Epic.PlanningRepositoryID != nil {
+		t.Fatalf("nullable fields were not cleared: %#v", updated.Epic)
+	}
+}
+
+func TestPMEpicServiceUpdateRejectsDestinationTeamOutsideActorScope(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID, adminUserID := newEpicTestEnvWithDB(t)
+	now := time.Now().UTC()
+	teamA := "team-epic-destination-a"
+	teamB := "team-epic-destination-b"
+	memberUserID := "user-epic-destination-member"
+	memberID := "member-epic-destination-member"
+
+	seedUser(t, db, memberUserID, "destination@test.com", "Destination Member", "hash")
+	seedWorkspaceMember(t, db, memberID, wsID, memberUserID, "destination@test.com", "Destination Member", model.RoleMember)
+	for _, team := range []struct{ id, name string }{{teamA, "Team A"}, {teamB, "Team B"}} {
+		mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, team.id, wsID, team.name, now, now)
+	}
+	mustExec(t, db, `INSERT INTO team_workspace_memberships (id, team_id, workspace_member_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"membership-epic-destination", teamA, memberID, "member", now, now)
+
+	created, err := svc.Create(context.Background(), model.CreateEpicRequest{WorkspaceID: wsID, Name: "Scoped Epic", TeamID: &teamA}, adminUserID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	memberCtx := authorization.WithActor(context.Background(), &authorization.Actor{
+		UserID: memberUserID, WorkspaceID: wsID, WorkspaceMemberID: memberID, Role: model.RoleMember,
+		TeamMemberships: []authorization.TeamRole{{TeamID: teamA, Role: "member"}},
+	})
+
+	_, err = svc.Update(memberCtx, created.Epic.ID, model.UpdateEpicRequest{TeamID: &teamB}, memberUserID)
+	if err == nil {
+		t.Fatal("expected update to an inaccessible destination team to fail")
+	}
+	reloaded, loadErr := svc.GetByID(context.Background(), created.Epic.ID)
+	if loadErr != nil {
+		t.Fatalf("GetByID: %v", loadErr)
+	}
+	if reloaded.Epic.TeamID == nil || *reloaded.Epic.TeamID != teamA {
+		t.Fatalf("team_id = %v, want %s", reloaded.Epic.TeamID, teamA)
+	}
+}
+
+func TestPMEpicServiceCreateValidatesLabelsBeforePersisting(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	foreignWorkspaceID := "ws-epic-label-foreign"
+	seedWorkspace(t, db, foreignWorkspaceID, "Foreign", "foreign-epic-label", userID)
+	if err := db.Create(&model.PMLabel{ID: "label-epic-foreign", WorkspaceID: foreignWorkspaceID, Name: "Foreign"}).Error; err != nil {
+		t.Fatalf("create foreign label: %v", err)
+	}
+
+	_, err := svc.Create(context.Background(), model.CreateEpicRequest{
+		WorkspaceID: wsID,
+		Name:        "Must Not Persist",
+		LabelIDs:    []string{"label-epic-foreign"},
+	}, userID)
+	if err == nil {
+		t.Fatal("expected foreign label validation error")
+	}
+	var count int64
+	if err := db.Model(&model.PMEpic{}).Where("workspace_id = ? AND name = ?", wsID, "Must Not Persist").Count(&count).Error; err != nil {
+		t.Fatalf("count epics: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("persisted epics = %d, want 0", count)
+	}
 }
 
 func TestPMEpicService_Delete(t *testing.T) {
