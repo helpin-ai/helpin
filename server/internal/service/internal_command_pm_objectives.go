@@ -108,8 +108,7 @@ func (s *InternalCommandService) executePMListObjectives(ctx context.Context, me
 	if err := s.requirePMObjectiveCommandDependencies(false); err != nil {
 		return nil, err
 	}
-	agentTeams, err := commandAgentTeamFilter(meta)
-	if err != nil {
+	if _, err := commandAgentTeamFilter(meta); err != nil {
 		return nil, err
 	}
 	var req struct {
@@ -152,9 +151,6 @@ func (s *InternalCommandService) executePMListObjectives(ctx context.Context, me
 	}
 	filters := model.PMObjectiveListFilters{
 		TeamID: req.TeamID, LabelID: req.LabelID, ObjectiveType: req.ObjectiveType, State: req.State, Archived: req.Archived,
-	}
-	if len(agentTeams) > 0 {
-		filters.AccessibleTeamIDs = agentTeams
 	}
 	objectives, total, err := s.objectiveService.ListPage(ctx, meta.WorkspaceID, filters, model.PMPagination{Page: page, PerPage: perPage})
 	if err != nil {
@@ -450,12 +446,12 @@ func (s *InternalCommandService) loadPMCommandObjective(ctx context.Context, met
 	if err != nil {
 		return nil, fmt.Errorf("objective not found")
 	}
-	if err := requireCommandAgentTeams(meta, objective.Teams); err != nil {
-		return nil, err
-	}
 	if write {
 		if err := requireCanManageTeams(ctx, objective.Teams); err != nil {
 			return nil, fmt.Errorf("objective not found")
+		}
+		if err := requireCommandAgentTeams(meta, objective.Teams); err != nil {
+			return nil, err
 		}
 	}
 	return objective, nil
