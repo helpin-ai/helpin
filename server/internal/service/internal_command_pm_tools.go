@@ -211,6 +211,10 @@ func (s *InternalCommandService) executeListPMTeamWorkflows(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	workflows, err := s.workflowService.ListByWorkspace(ctx, meta.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
 	rows := make([]map[string]any, 0, len(teams))
 	for _, team := range teams {
 		if requestedTeamID != "" && team.ID != requestedTeamID {
@@ -219,10 +223,7 @@ func (s *InternalCommandService) executeListPMTeamWorkflows(ctx context.Context,
 		if !canAccessTeam(ctx, &team.ID) {
 			continue
 		}
-		workflow, err := s.workflowService.ResolveTeamWorkflow(ctx, meta.WorkspaceID, team.ID)
-		if err != nil {
-			return nil, err
-		}
+		workflow := resolvedCommandTeamWorkflow(workflows, team.ID)
 		if workflow == nil || workflow.Workflow.WorkspaceID != meta.WorkspaceID {
 			continue
 		}
@@ -255,6 +256,22 @@ func (s *InternalCommandService) executeListPMTeamWorkflows(ctx context.Context,
 		"page":      page,
 		"per_page":  perPage,
 	}), nil
+}
+
+func resolvedCommandTeamWorkflow(workflows []model.WorkflowWithStates, teamID string) *model.WorkflowWithStates {
+	var fallback *model.WorkflowWithStates
+	for index := range workflows {
+		workflow := &workflows[index]
+		if workflow.Workflow.TeamID != nil && strings.TrimSpace(*workflow.Workflow.TeamID) == teamID {
+			return workflow
+		}
+		if workflow.Workflow.TeamID == nil || strings.TrimSpace(*workflow.Workflow.TeamID) == "" {
+			if fallback == nil {
+				fallback = workflow
+			}
+		}
+	}
+	return fallback
 }
 
 func (s *InternalCommandService) executeListPMTasks(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -331,6 +348,10 @@ func (s *InternalCommandService) executeListPMTasks(ctx context.Context, meta mo
 	}
 	archived := req.Archived
 	completed := req.Completed
+	if archived == nil {
+		includeArchived := false
+		archived = &includeArchived
+	}
 	if req.OpenOnly {
 		open := false
 		completed = &open
@@ -526,23 +547,28 @@ func (s *InternalCommandService) executeCreatePMTask(ctx context.Context, meta m
 		return nil, fmt.Errorf("task service is not configured")
 	}
 	var req struct {
-		Name           string                             `json:"name"`
-		Description    *string                            `json:"description"`
-		TaskType       string                             `json:"task_type"`
-		Estimate       *int                               `json:"estimate"`
-		Priority       *string                            `json:"priority"`
-		Severity       *string                            `json:"severity"`
-		EpicID         *string                            `json:"epic_id"`
-		SprintID       *string                            `json:"sprint_id"`
-		TeamID         string                             `json:"team_id"`
-		WorkflowID     *string                            `json:"workflow_id"`
-		StateID        *string                            `json:"state_id"`
-		OwnerMemberIDs []string                           `json:"owner_member_ids"`
-		LabelIDs       []string                           `json:"label_ids"`
-		Deadline       *string                            `json:"deadline"`
-		Blocked        *bool                              `json:"blocked"`
-		Blocker        *string                            `json:"blocker"`
-		ChecklistItems []model.CreateChecklistItemRequest `json:"checklist_items"`
+		Name           string   `json:"name"`
+		Description    *string  `json:"description"`
+		TaskType       string   `json:"task_type"`
+		Estimate       *int     `json:"estimate"`
+		Priority       *string  `json:"priority"`
+		Severity       *string  `json:"severity"`
+		EpicID         *string  `json:"epic_id"`
+		SprintID       *string  `json:"sprint_id"`
+		TeamID         string   `json:"team_id"`
+		WorkflowID     *string  `json:"workflow_id"`
+		StateID        *string  `json:"state_id"`
+		OwnerMemberIDs []string `json:"owner_member_ids"`
+		LabelIDs       []string `json:"label_ids"`
+		Deadline       *string  `json:"deadline"`
+		Blocked        *bool    `json:"blocked"`
+		Blocker        *string  `json:"blocker"`
+		ChecklistItems []struct {
+			Text       string  `json:"text"`
+			Position   *int    `json:"position"`
+			AssigneeID *string `json:"assignee_id"`
+			DueDate    *string `json:"due_date"`
+		} `json:"checklist_items"`
 	}
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, fmt.Errorf("parse create task input: %w", err)
@@ -571,6 +597,20 @@ func (s *InternalCommandService) executeCreatePMTask(ctx context.Context, meta m
 	if err != nil {
 		return nil, err
 	}
+	checklistItems := make([]model.CreateChecklistItemRequest, 0, len(req.ChecklistItems))
+	for index, item := range req.ChecklistItems {
+		var dueDate *time.Time
+		if item.DueDate != nil {
+			dueDate, err = parseStrictPMCommandDate(*item.DueDate, fmt.Sprintf("checklist_items[%d].due_date", index), false)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err := s.validateChecklistAssignee(ctx, meta.WorkspaceID, item.AssigneeID, false); err != nil {
+			return nil, fmt.Errorf("checklist_items[%d]: %w", index, err)
+		}
+		checklistItems = append(checklistItems, model.CreateChecklistItemRequest{Text: item.Text, Position: item.Position, AssigneeID: normalizeOptionalCommandString(item.AssigneeID), DueDate: dueDate})
+	}
 	createReq := model.CreateTaskRequest{
 		WorkspaceID:     meta.WorkspaceID,
 		Name:            req.Name,
@@ -589,7 +629,7 @@ func (s *InternalCommandService) executeCreatePMTask(ctx context.Context, meta m
 		Blocked:         req.Blocked,
 		Blocker:         normalizeOptionalCommandString(req.Blocker),
 		LabelIDs:        commandTrimStringSlice(req.LabelIDs),
-		ChecklistItems:  req.ChecklistItems,
+		ChecklistItems:  checklistItems,
 	}
 	detail, err := s.taskService.Create(ctx, createReq, fallbackActor(meta))
 	if err != nil {
@@ -740,12 +780,14 @@ func (s *InternalCommandService) executeCreateTaskChecklistItem(ctx context.Cont
 	if err := s.validateChecklistAssignee(ctx, meta.WorkspaceID, req.AssigneeID, false); err != nil {
 		return nil, err
 	}
+	var dueDate *time.Time
 	if req.DueDate != nil {
-		if _, err := parseStrictPMCommandDate(*req.DueDate, "due_date", false); err != nil {
+		dueDate, err = parseStrictPMCommandDate(*req.DueDate, "due_date", false)
+		if err != nil {
 			return nil, err
 		}
 	}
-	item, err := s.checklistService.Create(ctx, task.ID, model.CreateChecklistItemRequest{Text: req.Text, Position: req.Position, AssigneeID: normalizeOptionalCommandString(req.AssigneeID)}, meta.WorkspaceID, fallbackActor(meta))
+	item, err := s.checklistService.Create(ctx, task.ID, model.CreateChecklistItemRequest{Text: req.Text, Position: req.Position, AssigneeID: normalizeOptionalCommandString(req.AssigneeID), DueDate: dueDate}, meta.WorkspaceID, fallbackActor(meta))
 	if err != nil {
 		return nil, err
 	}
@@ -793,12 +835,14 @@ func (s *InternalCommandService) executeUpdateTaskChecklistItem(ctx context.Cont
 	if err := s.validateChecklistAssignee(ctx, meta.WorkspaceID, req.AssigneeID, true); err != nil {
 		return nil, err
 	}
+	var dueDate *time.Time
 	if req.DueDate != nil {
-		if _, err := parseStrictPMCommandDate(*req.DueDate, "due_date", true); err != nil {
+		dueDate, err = parseStrictPMCommandDate(*req.DueDate, "due_date", true)
+		if err != nil {
 			return nil, err
 		}
 	}
-	updated, err := s.checklistService.Update(ctx, item.ID, model.UpdateChecklistItemRequest{Text: req.Text, Completed: req.Completed, Position: req.Position, AssigneeID: normalizeClearableCommandString(req.AssigneeID)}, meta.WorkspaceID, fallbackActor(meta))
+	updated, err := s.checklistService.Update(ctx, item.ID, model.UpdateChecklistItemRequest{Text: req.Text, Completed: req.Completed, Position: req.Position, AssigneeID: normalizeClearableCommandString(req.AssigneeID), DueDate: dueDate, DueDateSet: req.DueDate != nil}, meta.WorkspaceID, fallbackActor(meta))
 	if err != nil {
 		return nil, err
 	}
@@ -1092,6 +1136,7 @@ func compactCommandChecklistItem(item *model.PMChecklistItem) map[string]any {
 		"completed":         item.Completed,
 		"position":          item.Position,
 		"assignee_id":       item.AssigneeID,
+		"due_date":          item.DueDate,
 		"created_at":        item.CreatedAt,
 		"updated_at":        item.UpdatedAt,
 	}

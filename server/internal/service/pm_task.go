@@ -501,6 +501,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 				Text:       strings.TrimSpace(ci.Text),
 				Position:   i,
 				AssigneeID: ci.AssigneeID,
+				DueDate:    ci.DueDate,
 			}
 			if ci.Position != nil {
 				item.Position = *ci.Position
@@ -1147,6 +1148,7 @@ func (s *PMTaskService) Duplicate(ctx context.Context, taskID, actorID string) (
 				Completed:  sourceItem.Completed,
 				Position:   sourceItem.Position,
 				AssigneeID: sourceItem.AssigneeID,
+				DueDate:    sourceItem.DueDate,
 			}
 			if err := s.checklistRepo.Create(ctx, item); err != nil {
 				return nil, err

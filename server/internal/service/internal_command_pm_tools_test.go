@@ -208,7 +208,7 @@ func TestPMCommandListTasksFilters(t *testing.T) {
 func TestPMCommandCreateTask(t *testing.T) {
 	env := newPMCommandTestEnv(t)
 	out, err := env.service.Execute(context.Background(), env.meta("sprint", "sprint-a"), "pm.create_task", json.RawMessage(`{
-		"name":"Sprint-scoped task","team_id":"team-a","task_type":"bug","severity":"major","blocked":true,"blocker":"Awaiting API"
+		"name":"Sprint-scoped task","team_id":"team-a","task_type":"bug","severity":"major","blocked":true,"blocker":"Awaiting API","checklist_items":[{"text":"Verify rollout","due_date":"2026-08-30"}]
 	}`))
 	if err != nil {
 		t.Fatalf("create task: %v", err)
@@ -230,6 +230,10 @@ func TestPMCommandCreateTask(t *testing.T) {
 	if created.SprintID == nil || *created.SprintID != "sprint-a" || created.Severity != model.PMTaskSeverityMajor || !created.Blocked || created.Blocker == nil || *created.Blocker != "Awaiting API" {
 		t.Fatalf("created task = %#v", created)
 	}
+	var checklist model.PMChecklistItem
+	if err := env.db.First(&checklist, "task_id = ?", created.ID).Error; err != nil || checklist.DueDate == nil || checklist.DueDate.Format("2006-01-02") != "2026-08-30" {
+		t.Fatalf("created task checklist due date = %#v, %v", checklist.DueDate, err)
+	}
 
 	if _, err := env.service.Execute(context.Background(), env.meta("sprint", "sprint-a"), "pm.create_task", json.RawMessage(`{"name":"Conflict","team_id":"team-b","sprint_id":"sprint-b"}`)); err == nil || !strings.Contains(err.Error(), "target") {
 		t.Fatalf("expected sprint target conflict, got %v", err)
@@ -239,6 +243,11 @@ func TestPMCommandCreateTask(t *testing.T) {
 	}
 	if _, err := env.service.Execute(context.Background(), env.meta("epic", "epic-a"), "pm.create_task", json.RawMessage(`{"name":"Conflict","team_id":"team-b","epic_id":"epic-b"}`)); err == nil || !strings.Contains(err.Error(), "target") {
 		t.Fatalf("expected epic target conflict, got %v", err)
+	}
+	memberCtx := authorization.WithActor(context.Background(), &authorization.Actor{UserID: env.actorID, WorkspaceID: env.workspaceID, Role: model.RoleMember, TeamMemberships: []authorization.TeamRole{{TeamID: "team-a", Role: "member"}}})
+	memberMeta := model.InternalCommandContext{WorkspaceID: env.workspaceID, ActorID: env.actorID, ActorRole: model.RoleMember, ActorTeamIDs: []string{"team-a"}, TargetType: "workspace", TargetID: env.workspaceID}
+	if _, err := env.service.Execute(memberCtx, memberMeta, "pm.create_task", json.RawMessage(`{"name":"Other team","team_id":"team-b"}`)); err == nil {
+		t.Fatal("expected team-scoped actor create rejection")
 	}
 }
 
@@ -293,7 +302,7 @@ func TestPMCommandUpdateTask(t *testing.T) {
 func TestPMCommandChecklist(t *testing.T) {
 	env := newPMCommandTestEnv(t)
 	seedPMCommandTask(t, env.db, "task-a", "ws-1", "team-a", "wf-a", "state-a", "epic-a", "sprint-a", 1)
-	createOut, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.create_task_checklist_item", json.RawMessage(`{"text":"Write tests","position":2,"assignee_id":"actor-1"}`))
+	createOut, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.create_task_checklist_item", json.RawMessage(`{"text":"Write tests","position":2,"assignee_id":"actor-1","due_date":"2026-08-15"}`))
 	if err != nil {
 		t.Fatalf("create checklist item: %v", err)
 	}
@@ -307,7 +316,7 @@ func TestPMCommandChecklist(t *testing.T) {
 	if err != nil || !strings.Contains(string(listOut), "Write tests") {
 		t.Fatalf("list checklist = %s, %v", listOut, err)
 	}
-	updateOut, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.update_task_checklist_item", json.RawMessage(`{"checklist_item_id":"`+created.ChecklistItemID+`","text":"Ship tests","completed":true,"assignee_id":""}`))
+	updateOut, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.update_task_checklist_item", json.RawMessage(`{"checklist_item_id":"`+created.ChecklistItemID+`","text":"Ship tests","completed":true,"assignee_id":"","due_date":"2026-08-22"}`))
 	if err != nil || !strings.Contains(string(updateOut), "Ship tests") {
 		t.Fatalf("update checklist = %s, %v", updateOut, err)
 	}
@@ -315,8 +324,28 @@ func TestPMCommandChecklist(t *testing.T) {
 	if err := env.db.First(&item, "id = ?", created.ChecklistItemID).Error; err != nil {
 		t.Fatalf("load checklist item: %v", err)
 	}
-	if item.Text != "Ship tests" || !item.Completed || item.AssigneeID != nil {
+	if item.Text != "Ship tests" || !item.Completed || item.AssigneeID != nil || item.DueDate == nil || item.DueDate.Format("2006-01-02") != "2026-08-22" {
 		t.Fatalf("updated checklist item = %#v", item)
+	}
+	if _, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.update_task_checklist_item", json.RawMessage(`{"checklist_item_id":"`+created.ChecklistItemID+`","position":3}`)); err != nil {
+		t.Fatalf("update checklist without due_date: %v", err)
+	}
+	item = model.PMChecklistItem{}
+	if err := env.db.First(&item, "id = ?", created.ChecklistItemID).Error; err != nil || item.DueDate == nil || item.DueDate.Format("2006-01-02") != "2026-08-22" {
+		t.Fatalf("omitted due_date did not preserve value: %#v, %v", item, err)
+	}
+	if _, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.update_task_checklist_item", json.RawMessage(`{"checklist_item_id":"`+created.ChecklistItemID+`","due_date":""}`)); err != nil {
+		t.Fatalf("clear checklist due_date: %v", err)
+	}
+	item = model.PMChecklistItem{}
+	if err := env.db.First(&item, "id = ?", created.ChecklistItemID).Error; err != nil || item.DueDate != nil {
+		t.Fatalf("cleared due_date = %#v, %v", item.DueDate, err)
+	}
+	if _, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.create_task_checklist_item", json.RawMessage(`{"text":"Bad date","due_date":"08/31/2026"}`)); err == nil || !strings.Contains(err.Error(), "YYYY-MM-DD") {
+		t.Fatalf("expected malformed create due_date rejection, got %v", err)
+	}
+	if _, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.update_task_checklist_item", json.RawMessage(`{"checklist_item_id":"`+created.ChecklistItemID+`","due_date":"2026-02-30"}`)); err == nil || !strings.Contains(err.Error(), "YYYY-MM-DD") {
+		t.Fatalf("expected malformed update due_date rejection, got %v", err)
 	}
 }
 
@@ -336,6 +365,11 @@ func TestPMCommandParentChild(t *testing.T) {
 	env := newPMCommandTestEnv(t)
 	seedPMCommandTask(t, env.db, "task-a", "ws-1", "team-a", "wf-a", "state-a", "epic-a", "sprint-a", 1)
 	seedPMCommandTask(t, env.db, "task-b", "ws-1", "team-b", "wf-b", "state-b", "epic-b", "sprint-b", 2)
+	memberCtx := authorization.WithActor(context.Background(), &authorization.Actor{UserID: env.actorID, WorkspaceID: env.workspaceID, Role: model.RoleMember, TeamMemberships: []authorization.TeamRole{{TeamID: "team-a", Role: "member"}}})
+	memberMeta := model.InternalCommandContext{WorkspaceID: env.workspaceID, ActorID: env.actorID, ActorRole: model.RoleMember, ActorTeamIDs: []string{"team-a"}, TargetType: "workspace", TargetID: env.workspaceID}
+	if _, err := env.service.Execute(memberCtx, memberMeta, "pm.update_task", json.RawMessage(`{"task_id":"task-b","name":"No"}`)); err == nil {
+		t.Fatal("expected team-scoped actor update rejection")
+	}
 
 	for _, tc := range []struct {
 		name, command, input string
