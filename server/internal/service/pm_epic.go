@@ -102,6 +102,50 @@ func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters mo
 	return result, nil
 }
 
+// ListPage returns a repository-bounded epic page with batch-loaded enrichment.
+func (s *PMEpicService) ListPage(ctx context.Context, workspaceID string, filters model.PMEpicListFilters, pagination model.PMPagination) ([]model.EpicWithStats, int64, error) {
+	if workspaceID == "" {
+		return nil, 0, fmt.Errorf("workspace_id is required")
+	}
+	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
+	epics, total, err := s.epicRepo.ListPage(ctx, workspaceID, filters, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(epics) == 0 {
+		return []model.EpicWithStats{}, total, nil
+	}
+	epicIDs := make([]string, 0, len(epics))
+	for _, epic := range epics {
+		epicIDs = append(epicIDs, epic.ID)
+	}
+	labelsByEpic, err := s.epicRepo.ListLabelsBatch(ctx, epicIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	objectivesByEpic, err := s.epicRepo.ListObjectivesBatch(ctx, epicIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	statsByEpic, err := s.epicRepo.ComputeStatsBatch(ctx, epicIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	result := make([]model.EpicWithStats, 0, len(epics))
+	for _, epic := range epics {
+		item := model.EpicWithStats{
+			Epic:       epic,
+			Labels:     labelsByEpic[epic.ID],
+			Objectives: objectivesByEpic[epic.ID],
+			Stats:      statsByEpic[epic.ID],
+		}
+		enrichEpicSuggestedHealth(&item)
+		result = append(result, item)
+	}
+	return result, total, nil
+}
+
 // GetByID returns one epic with stats.
 func (s *PMEpicService) GetByID(ctx context.Context, id string) (*model.EpicWithStats, error) {
 	epic, err := s.epicRepo.GetWithStats(ctx, id)

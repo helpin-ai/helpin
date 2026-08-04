@@ -22,16 +22,52 @@ func NewPMEpicRepository(db *gorm.DB) *PMEpicRepository {
 
 // List returns epics in a workspace with optional filters.
 func (r *PMEpicRepository) List(ctx context.Context, workspaceID string, filters model.PMEpicListFilters) ([]model.PMEpic, error) {
-	query := r.db.WithContext(ctx).Model(&model.PMEpic{}).Where("workspace_id = ?", workspaceID)
+	query := r.listQuery(ctx, workspaceID, filters)
+
+	var epics []model.PMEpic
+	if err := query.Order("pm_epics.position ASC, pm_epics.created_at DESC").Find(&epics).Error; err != nil {
+		return nil, fmt.Errorf("list epics: %w", err)
+	}
+	return epics, nil
+}
+
+// ListPage returns one bounded page of epics and the total matching count.
+func (r *PMEpicRepository) ListPage(ctx context.Context, workspaceID string, filters model.PMEpicListFilters, pagination model.PMPagination) ([]model.PMEpic, int64, error) {
+	var total int64
+	if err := r.listQuery(ctx, workspaceID, filters).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count epics: %w", err)
+	}
+
+	page := pagination.Page
+	perPage := pagination.PerPage
+	if page <= 0 {
+		page = 1
+	}
+	if perPage <= 0 {
+		perPage = 50
+	}
+	var epics []model.PMEpic
+	if err := r.listQuery(ctx, workspaceID, filters).
+		Order("pm_epics.position ASC, pm_epics.created_at DESC").
+		Offset((page - 1) * perPage).
+		Limit(perPage).
+		Find(&epics).Error; err != nil {
+		return nil, 0, fmt.Errorf("list epics page: %w", err)
+	}
+	return epics, total, nil
+}
+
+func (r *PMEpicRepository) listQuery(ctx context.Context, workspaceID string, filters model.PMEpicListFilters) *gorm.DB {
+	query := r.db.WithContext(ctx).Model(&model.PMEpic{}).Where("pm_epics.workspace_id = ?", workspaceID)
 
 	if filters.TeamID != nil && *filters.TeamID != "" {
-		query = query.Where("team_id = ?", *filters.TeamID)
+		query = query.Where("pm_epics.team_id = ?", *filters.TeamID)
 	}
 	if filters.StateID != nil && *filters.StateID != "" {
-		query = query.Where("epic_state_id = ?", *filters.StateID)
+		query = query.Where("pm_epics.epic_state_id = ?", *filters.StateID)
 	}
 	if filters.Archived != nil {
-		query = query.Where("archived = ?", *filters.Archived)
+		query = query.Where("pm_epics.archived = ?", *filters.Archived)
 	}
 	if filters.LabelID != nil && *filters.LabelID != "" {
 		query = query.Joins("JOIN pm_epic_labels pel ON pel.epic_id = pm_epics.id").Where("pel.label_id = ?", *filters.LabelID)
@@ -40,15 +76,10 @@ func (r *PMEpicRepository) List(ctx context.Context, workspaceID string, filters
 		if len(filters.AccessibleTeamIDs) == 0 {
 			query = query.Where("1 = 0")
 		} else {
-			query = query.Where("team_id IN ?", filters.AccessibleTeamIDs)
+			query = query.Where("pm_epics.team_id IN ?", filters.AccessibleTeamIDs)
 		}
 	}
-
-	var epics []model.PMEpic
-	if err := query.Order("pm_epics.position ASC, pm_epics.created_at DESC").Find(&epics).Error; err != nil {
-		return nil, fmt.Errorf("list epics: %w", err)
-	}
-	return epics, nil
+	return query
 }
 
 // ListByIDs returns epics by ID for a workspace.
@@ -241,6 +272,46 @@ func (r *PMEpicRepository) ComputeStats(ctx context.Context, epicID string) (mod
 	return stats, nil
 }
 
+// ComputeStatsBatch computes derived task/point metrics for multiple epics.
+func (r *PMEpicRepository) ComputeStatsBatch(ctx context.Context, epicIDs []string) (map[string]model.PMEpicStats, error) {
+	result := make(map[string]model.PMEpicStats, len(epicIDs))
+	if len(epicIDs) == 0 {
+		return result, nil
+	}
+	type row struct {
+		EpicID    string
+		StateType string
+		Count     int
+		Points    int
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Table("pm_tasks s").
+		Select("s.epic_id AS epic_id, ws.state_type AS state_type, COUNT(*) AS count, COALESCE(SUM(COALESCE(s.estimate, 0)), 0) AS points").
+		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
+		Where("s.epic_id IN ? AND s.archived = false", epicIDs).
+		Group("s.epic_id, ws.state_type").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("batch compute epic stats: %w", err)
+	}
+	for _, row := range rows {
+		stats := result[row.EpicID]
+		stats.TaskCount += row.Count
+		stats.TotalPoints += row.Points
+		switch row.StateType {
+		case model.PMStateTypeDone:
+			stats.DoneTaskCount += row.Count
+			stats.DonePoints += row.Points
+		case model.PMStateTypeStarted:
+			stats.InProgressCount += row.Count
+		case model.PMStateTypeUnstarted, model.PMStateTypeBacklog:
+			stats.UnstartedCount += row.Count
+		}
+		result[row.EpicID] = stats
+	}
+	return result, nil
+}
+
 // ListTasks returns non-archived tasks in an epic.
 func (r *PMEpicRepository) ListTasks(ctx context.Context, epicID string) ([]model.PMTask, error) {
 	var stories []model.PMTask
@@ -312,6 +383,32 @@ func (r *PMEpicRepository) ListObjectivesBatch(ctx context.Context, epicIDs []st
 			ID:   r.ObjectiveID,
 			Name: r.ObjectiveName,
 		})
+	}
+	return result, nil
+}
+
+// ListLabelsBatch returns labels grouped by epic ID for the requested epics.
+func (r *PMEpicRepository) ListLabelsBatch(ctx context.Context, epicIDs []string) (map[string][]model.PMLabel, error) {
+	result := make(map[string][]model.PMLabel, len(epicIDs))
+	if len(epicIDs) == 0 {
+		return result, nil
+	}
+	type row struct {
+		EpicRefID string `gorm:"column:epic_ref_id"`
+		model.PMLabel
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Table("pm_labels l").
+		Select("pel.epic_id AS epic_ref_id, l.*").
+		Joins("JOIN pm_epic_labels pel ON pel.label_id = l.id").
+		Where("pel.epic_id IN ?", epicIDs).
+		Order("pel.epic_id ASC, l.name ASC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("batch list epic labels: %w", err)
+	}
+	for _, row := range rows {
+		result[row.EpicRefID] = append(result[row.EpicRefID], row.PMLabel)
 	}
 	return result, nil
 }

@@ -131,23 +131,14 @@ func (s *InternalCommandService) executePMListEpics(ctx context.Context, meta mo
 			return nil, fmt.Errorf("label does not belong to team_id")
 		}
 	}
-	epics, err := s.epicService.List(ctx, meta.WorkspaceID, model.PMEpicListFilters{
+	epics, total, err := s.epicService.ListPage(ctx, meta.WorkspaceID, model.PMEpicListFilters{
 		TeamID: stringPtrOrNil(teamID), StateID: stringPtrOrNil(stateID), LabelID: stringPtrOrNil(labelID), Archived: req.Archived,
-	})
+	}, model.PMPagination{Page: page, PerPage: perPage})
 	if err != nil {
 		return nil, err
 	}
-	total := len(epics)
-	start := (page - 1) * perPage
-	end := start + perPage
-	if start > total {
-		start = total
-	}
-	if end > total {
-		end = total
-	}
-	items := make([]map[string]any, 0, end-start)
-	for i := start; i < end; i++ {
+	items := make([]map[string]any, 0, len(epics))
+	for i := range epics {
 		items = append(items, compactPMCommandEpic(&epics[i], false))
 	}
 	return mustJSON(map[string]any{"epics": items, "total": total, "page": page, "per_page": perPage}), nil

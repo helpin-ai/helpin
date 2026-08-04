@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -141,6 +142,49 @@ func TestPMCommandListEpicsReturnsCompactFilteredStatsAndTeamScope(t *testing.T)
 	}
 	if result.Epics[0].PlannedStartDate != "2026-08-10" || result.Page != 1 || result.PerPage != 1 {
 		t.Fatalf("unexpected date/pagination: %#v", result)
+	}
+}
+
+func TestPMCommandListEpicsPagesBeforeBoundedBatchEnrichment(t *testing.T) {
+	env := newPMEpicCommandTestEnv(t)
+	for i := 1; i <= 5; i++ {
+		position := i
+		if _, err := env.epicService.Create(env.adminContext, model.CreateEpicRequest{
+			WorkspaceID: env.workspaceID,
+			Name:        fmt.Sprintf("Paged Epic %d", i),
+			Position:    &position,
+		}, env.adminUserID); err != nil {
+			t.Fatalf("create epic %d: %v", i, err)
+		}
+	}
+
+	queryCount := 0
+	const callbackName = "test:count_pm_list_epics_queries"
+	if err := env.db.Callback().Query().Before("gorm:query").Register(callbackName, func(*gorm.DB) {
+		queryCount++
+	}); err != nil {
+		t.Fatalf("register query callback: %v", err)
+	}
+	t.Cleanup(func() { _ = env.db.Callback().Query().Remove(callbackName) })
+
+	output, err := env.service.Execute(env.adminContext, env.meta("workspace", env.workspaceID, env.adminUserID), "pm.list_epics", json.RawMessage(`{"page":2,"per_page":1}`))
+	if err != nil {
+		t.Fatalf("pm.list_epics: %v", err)
+	}
+	var result struct {
+		Epics []struct {
+			Name string `json:"name"`
+		} `json:"epics"`
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, output)
+	}
+	if result.Total != 5 || len(result.Epics) != 1 || result.Epics[0].Name != "Paged Epic 2" {
+		t.Fatalf("unexpected page: %#v", result)
+	}
+	if queryCount > 6 {
+		t.Fatalf("pm.list_epics queries = %d, want at most 6 regardless of off-page rows", queryCount)
 	}
 }
 
