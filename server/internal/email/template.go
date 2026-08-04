@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	helpinLightModeLogoURL = "https://helpin.ai/brand/helpin-icon-black-128.png"
+	helpinLightModeLogoURL = "https://helpin.ai/brand/helpin-icon-ink-128.png"
 	helpinDarkModeLogoURL  = "https://helpin.ai/brand/helpin-icon-white-128.png"
 )
 
