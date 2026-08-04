@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Search } from 'lucide-react'
+import { Search, Sparkles } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Dialog,
   DialogContent,
@@ -8,6 +9,7 @@ import {
 import { useSearchArticles } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { buildCanonicalSearchPath } from '@/lib/locale'
 import { SearchResultItem } from './SearchResultItem'
 
 interface SearchDialogProps {
@@ -17,6 +19,7 @@ interface SearchDialogProps {
 
 export function SearchDialog({ open, onClose }: SearchDialogProps) {
   const { subdomain, locale, multilingualEnabled } = useDocsContext()
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const normalizedQuery = query.trim()
@@ -33,6 +36,14 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
     searchQuery,
     multilingualEnabled,
   )
+
+  const openFullSearch = () => {
+    if (normalizedQuery.length < 2) return
+    onClose()
+    void navigate({
+      to: buildCanonicalSearchPath(multilingualEnabled, locale, normalizedQuery) as never,
+    })
+  }
 
   useEffect(() => {
     if (!open) {
@@ -58,6 +69,9 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
             placeholder="Search documentation..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') openFullSearch()
+            }}
             className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
           <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded-[4px] bg-muted border border-border text-muted-foreground font-medium">
@@ -94,6 +108,23 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
             </div>
           )}
         </div>
+
+        {/* Full search page + AI answer entry point */}
+        {normalizedQuery.length >= 2 && (
+          <button
+            type="button"
+            onClick={openFullSearch}
+            className="flex w-full items-center gap-2 border-t border-border px-4 py-2.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          >
+            <Sparkles size={14} className="shrink-0" />
+            <span>
+              See all results and get an AI answer for &ldquo;{normalizedQuery}&rdquo;
+            </span>
+            <kbd className="ml-auto shrink-0 rounded-[4px] border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium">
+              Enter
+            </kbd>
+          </button>
+        )}
       </DialogContent>
     </Dialog>
   )
