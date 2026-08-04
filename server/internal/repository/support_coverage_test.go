@@ -1225,6 +1225,7 @@ func TestCreateGapOmitsEmptyEmbedding(t *testing.T) {
 
 	// A computed embedding must still be written through.
 	withEmbedding := &model.SupportCoverageGap{
+		ID:          "gap-with-embedding",
 		WorkspaceID: "ws-1",
 		TopicID:     &topic.ID,
 		DedupeKey:   "cluster-2",
