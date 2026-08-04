@@ -61,6 +61,9 @@ var taskPlannerPMReadToolAliases = []string{
 	"list_workspace_members",
 	"list_pm_labels",
 	"get_task",
+	"list_sprints",
+	"get_sprint",
+	"list_sprint_tasks",
 }
 
 func ListAgentPresets() []model.AgentPresetDefinition {

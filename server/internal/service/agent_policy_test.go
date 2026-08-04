@@ -376,7 +376,7 @@ func TestBuiltInPresetPMToolExpansionMatrix(t *testing.T) {
 		{presetKey: model.AgentPresetAskAgent, want: newPMReadTools},
 		{presetKey: model.AgentPresetCommandAgent, want: allNewPMTools},
 		{presetKey: model.AgentPresetEpicPlanner, want: []string{"list_workspace_members", "list_pm_labels", "get_task", "list_epics", "get_epic"}},
-		{presetKey: model.AgentPresetTaskPlanner, want: []string{"list_workspace_members", "list_pm_labels", "get_task"}},
+		{presetKey: model.AgentPresetTaskPlanner, want: []string{"list_workspace_members", "list_pm_labels", "get_task", "list_sprints", "get_sprint", "list_sprint_tasks"}},
 		{presetKey: model.AgentPresetMarketer, want: newPMReadTools},
 		{presetKey: model.AgentPresetCRMOperator, want: []string{}},
 		{presetKey: model.AgentPresetSupportAgent, want: []string{}},
