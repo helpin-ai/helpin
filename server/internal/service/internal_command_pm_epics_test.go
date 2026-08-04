@@ -81,7 +81,7 @@ func newPMEpicCommandTestEnv(t *testing.T) *pmEpicCommandTestEnv {
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	workflowService := NewPMWorkflowService(repository.NewPMWorkflowRepository(db), repository.NewPMTaskRepository(db), repository.NewPMLabelRepository(db), nil)
 	commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
-	commandService.SetPMEpicOperationalServices(workspaceRepo, epicService, workflowService)
+	commandService.SetPMOperationalServices(workspaceRepo, epicService, nil, nil, workflowService, nil)
 	commandService.SetGitService(&GitService{repoRepo: repository.NewGitRepositoryRepository(db)})
 	env.service = commandService
 	env.adminContext = authorization.WithActor(context.Background(), &authorization.Actor{
