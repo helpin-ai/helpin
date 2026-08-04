@@ -57,7 +57,8 @@ func (r *CRMContactRepository) List(ctx context.Context, workspaceID string, fil
 	if filters.Search != nil && *filters.Search != "" {
 		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
 		query = query.Where(
-			"(LOWER(first_name) LIKE ? OR LOWER(COALESCE(last_name, '')) LIKE ? OR LOWER(COALESCE(email, '')) LIKE ?)",
+			"(LOWER(first_name) LIKE ? OR LOWER(COALESCE(last_name, '')) LIKE ? OR LOWER(COALESCE(email, '')) LIKE ? OR LOWER(COALESCE(job_title, '')) LIKE ?)",
+			search,
 			search,
 			search,
 			search,

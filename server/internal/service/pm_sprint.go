@@ -426,8 +426,8 @@ func (s *PMSprintService) ListTasks(ctx context.Context, sprintID string) ([]mod
 }
 
 // ListTasksPage returns a repository-bounded sprint task page with batch enrichment.
-func (s *PMSprintService) ListTasksPage(ctx context.Context, sprintID string, pagination model.PMPagination) ([]model.BoardTask, int, int, int, error) {
-	tasks, total, page, perPage, err := s.sprintRepo.ListEnrichedTasksPage(ctx, sprintID, pagination)
+func (s *PMSprintService) ListTasksPage(ctx context.Context, sprintID string, search *string, pagination model.PMPagination) ([]model.BoardTask, int, int, int, error) {
+	tasks, total, page, perPage, err := s.sprintRepo.ListEnrichedTasksPage(ctx, sprintID, search, pagination)
 	if err != nil {
 		return nil, 0, page, perPage, err
 	}

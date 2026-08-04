@@ -70,6 +70,7 @@ func (PMEpicLabel) TableName() string { return "pm_epic_labels" }
 
 // PMEpicListFilters applies filters when listing epics.
 type PMEpicListFilters struct {
+	Search   *string
 	TeamID   *string
 	StateID  *string
 	LabelID  *string

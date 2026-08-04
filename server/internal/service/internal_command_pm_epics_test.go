@@ -108,7 +108,8 @@ func TestPMCommandListEpicsReturnsCompactFilteredStatsAndTeamScope(t *testing.T)
 	if err != nil {
 		t.Fatalf("create epic A: %v", err)
 	}
-	if _, err := env.epicService.Create(env.adminContext, model.CreateEpicRequest{WorkspaceID: env.workspaceID, Name: "Epic B", TeamID: &env.teamB}, env.adminUserID); err != nil {
+	epicB, err := env.epicService.Create(env.adminContext, model.CreateEpicRequest{WorkspaceID: env.workspaceID, Name: "Epic B", TeamID: &env.teamB}, env.adminUserID)
+	if err != nil {
 		t.Fatalf("create epic B: %v", err)
 	}
 	seedWorkflowForStoryTest(t, env.db, env.workspaceID, "workflow-command-epic", "workflow-state-command-epic")
@@ -142,6 +143,13 @@ func TestPMCommandListEpicsReturnsCompactFilteredStatsAndTeamScope(t *testing.T)
 	}
 	if result.Epics[0].PlannedStartDate != "2026-08-10" || result.Page != 1 || result.PerPage != 1 {
 		t.Fatalf("unexpected date/pagination: %#v", result)
+	}
+	queryResult, err := env.service.Execute(env.adminContext, env.meta("workspace", env.workspaceID, env.adminUserID), "pm.list_epics", json.RawMessage(`{"query":"epic b","page":1,"per_page":10}`))
+	if err != nil {
+		t.Fatalf("query epics: %v", err)
+	}
+	if !strings.Contains(string(queryResult), `"total":1`) || !strings.Contains(string(queryResult), epicB.Epic.ID) {
+		t.Fatalf("query epics = %s", queryResult)
 	}
 }
 

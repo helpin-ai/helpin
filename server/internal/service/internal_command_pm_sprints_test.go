@@ -263,6 +263,10 @@ func TestPMCommandListGetAndListSprintTasks(t *testing.T) {
 	if list["total"] != float64(2) || list["page"] != float64(1) || len(list["sprints"].([]any)) != 1 {
 		t.Fatalf("unexpected paginated list: %#v", list)
 	}
+	query := executePMSprintTestCommand(t, svc, context.Background(), model.InternalCommandContext{WorkspaceID: workspaceID, TargetType: "workspace", TargetID: workspaceID}, "pm.list_sprints", `{"query":"first","page":1,"per_page":10}`)
+	if query["total"] != float64(1) || len(query["sprints"].([]any)) != 1 || query["sprints"].([]any)[0].(map[string]any)["name"] != "First" {
+		t.Fatalf("unexpected queried sprints: %#v", query)
+	}
 
 	meta := model.InternalCommandContext{WorkspaceID: workspaceID, TargetType: "sprint", TargetID: first.Sprint.ID}
 	get := executePMSprintTestCommand(t, svc, context.Background(), meta, "pm.get_sprint", `{}`)
@@ -297,6 +301,10 @@ func TestPMCommandListGetAndListSprintTasks(t *testing.T) {
 	}
 	if len(label) != 4 || label["id"] != "label-command-task" || label["name"] != "Task label" || label["color"] != labelColor || label["team_id"] != teamID {
 		t.Fatalf("compact task label leaked or omitted fields: %#v", label)
+	}
+	filteredTasks := executePMSprintTestCommand(t, svc, context.Background(), meta, "pm.list_sprint_tasks", `{"query":"does-not-match"}`)
+	if filteredTasks["total"] != float64(0) || len(filteredTasks["tasks"].([]any)) != 0 {
+		t.Fatalf("unexpected filtered sprint tasks: %#v", filteredTasks)
 	}
 
 	seedWorkspace(t, db, "ws-command-list-other", "Other", "command-list-other", "owner-2")

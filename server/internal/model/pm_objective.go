@@ -92,6 +92,7 @@ func (PMObjectiveLabel) TableName() string { return "pm_objective_labels" }
 // ── Filters & Request DTOs ─────────────────────────────────────────
 
 type PMObjectiveListFilters struct {
+	Search        *string
 	TeamID        *string
 	LabelID       *string
 	ObjectiveType *string

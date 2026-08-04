@@ -109,6 +109,10 @@ func TestPMCommandObjectiveReadsAreWorkspaceWideAndAgentScopeFailClosed(t *testi
 	if result["total"] != float64(2) || len(items) != 2 {
 		t.Fatalf("team-scoped agent did not retain workspace-wide objective read: %#v", result)
 	}
+	query := executePMObjectiveTestCommand(t, env.commands, context.Background(), meta, "pm.list_objectives", `{"query":"team b","page":1,"per_page":100}`)
+	if query["total"] != float64(1) || len(query["objectives"].([]any)) != 1 || query["objectives"].([]any)[0].(map[string]any)["objective_id"] != "objective-read-b" {
+		t.Fatalf("queried objectives = %#v", query)
+	}
 	get := executePMObjectiveTestCommand(t, env.commands, context.Background(), meta, "pm.get_objective", `{"objective_id":"objective-read-b"}`)
 	if get["objective_id"] != "objective-read-b" {
 		t.Fatalf("workspace-wide get = %#v", get)

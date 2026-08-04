@@ -112,6 +112,7 @@ func (s *InternalCommandService) executePMListObjectives(ctx context.Context, me
 		return nil, err
 	}
 	var req struct {
+		Query         *string `json:"query"`
 		TeamID        *string `json:"team_id"`
 		LabelID       *string `json:"label_id"`
 		ObjectiveType *string `json:"objective_type"`
@@ -150,7 +151,7 @@ func (s *InternalCommandService) executePMListObjectives(ctx context.Context, me
 		req.State = &value
 	}
 	filters := model.PMObjectiveListFilters{
-		TeamID: req.TeamID, LabelID: req.LabelID, ObjectiveType: req.ObjectiveType, State: req.State, Archived: req.Archived,
+		Search: req.Query, TeamID: req.TeamID, LabelID: req.LabelID, ObjectiveType: req.ObjectiveType, State: req.State, Archived: req.Archived,
 	}
 	objectives, total, err := s.objectiveService.ListPage(ctx, meta.WorkspaceID, filters, model.PMPagination{Page: page, PerPage: perPage})
 	if err != nil {

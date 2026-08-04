@@ -295,6 +295,7 @@ func (s *InternalCommandService) executeListPMTasks(ctx context.Context, meta mo
 	}
 	var req struct {
 		pmCommandPage
+		Query               string   `json:"query"`
 		LabelID             string   `json:"label_id"`
 		TeamID              string   `json:"team_id"`
 		EpicID              string   `json:"epic_id"`
@@ -373,6 +374,7 @@ func (s *InternalCommandService) executeListPMTasks(ctx context.Context, meta mo
 		archived = &open
 	}
 	filters := model.PMTaskFilters{
+		Search:          stringPtrOrNil(req.Query),
 		LabelID:         stringPtrOrNil(req.LabelID),
 		TeamID:          stringPtrOrNil(req.TeamID),
 		EpicID:          stringPtrOrNil(req.EpicID),

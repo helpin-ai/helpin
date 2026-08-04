@@ -92,6 +92,9 @@ func TestPMToolCatalogContracts(t *testing.T) {
 		schema := requireCatalogSchema(t, toolsByName, alias)
 		assertBoundedListSchema(t, alias, schema)
 	}
+	for _, alias := range []string{"list_tasks", "list_epics", "list_sprints", "list_sprint_tasks", "list_objectives", "list_contacts", "list_deals"} {
+		assertSchemaFields(t, alias, requireCatalogSchema(t, toolsByName, alias), []string{"query"})
+	}
 
 	createTask := requireCatalogSchema(t, toolsByName, "create_task")
 	assertSchemaFields(t, "create_task", createTask, []string{"sprint_id", "severity", "blocked", "blocker", "checklist_items"})
@@ -99,7 +102,7 @@ func TestPMToolCatalogContracts(t *testing.T) {
 	assertBoundedArraySchemas(t, createTask, "create_task")
 	listTasks := requireCatalogSchema(t, toolsByName, "list_tasks")
 	assertSchemaFields(t, "list_tasks", listTasks, []string{
-		"epic_id", "sprint_id", "workflow_id", "state_id", "task_type", "priority", "severity",
+		"query", "epic_id", "sprint_id", "workflow_id", "state_id", "task_type", "priority", "severity",
 		"completed", "archived", "updated_after", "page", "per_page",
 	})
 	assertClosedObjectSchemas(t, listTasks, "list_tasks")
