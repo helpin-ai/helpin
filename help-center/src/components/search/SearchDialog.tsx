@@ -10,6 +10,11 @@ import { useSearchArticles } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { buildCanonicalSearchPath } from '@/lib/locale'
+import {
+  AI_ANSWER_MIN_QUERY_CHARS,
+  AIAnswerPanel,
+  useAIAnswer,
+} from '@/components/AIAnswerCard'
 import { SearchResultItem } from './SearchResultItem'
 
 interface SearchDialogProps {
@@ -36,6 +41,9 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
     searchQuery,
     multilingualEnabled,
   )
+  const ai = useAIAnswer(locale)
+  const aiRef = useRef(ai)
+  aiRef.current = ai
 
   const openFullSearch = () => {
     if (normalizedQuery.length < 2) return
@@ -45,13 +53,27 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
     })
   }
 
+  const canAskAI = ai.enabled && normalizedQuery.length >= AI_ANSWER_MIN_QUERY_CHARS
+
+  // Enter asks the AI inline when the query is long enough; shorter queries
+  // fall through to the full results page.
+  const onSubmit = () => {
+    if (canAskAI) {
+      void ai.ask(normalizedQuery)
+      return
+    }
+    openFullSearch()
+  }
+
   useEffect(() => {
     if (!open) {
       setQuery('')
+      aiRef.current.reset()
       return
     }
 
     setQuery('')
+    aiRef.current.reset()
     requestAnimationFrame(() => inputRef.current?.focus())
   }, [open])
 
@@ -70,7 +92,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') openFullSearch()
+              if (e.key === 'Enter') onSubmit()
             }}
             className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
@@ -81,6 +103,17 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
 
         {/* Results */}
         <div className="max-h-[60vh] overflow-y-auto">
+          {ai.state.phase !== 'idle' && (
+            <div className="px-3 pt-3">
+              <AIAnswerPanel
+                locale={locale}
+                state={ai.state}
+                vote={ai.vote}
+                onFeedback={ai.sendFeedback}
+                onCitationClick={onClose}
+              />
+            </div>
+          )}
           {normalizedQuery.length < 2 ? (
             <div className="px-4 py-10 text-center text-[13px] text-muted-foreground">
               Type to search documentation...
@@ -118,11 +151,15 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
           >
             <Sparkles size={14} className="shrink-0" />
             <span>
-              See all results and get an AI answer for &ldquo;{normalizedQuery}&rdquo;
+              {canAskAI && ai.state.phase === 'idle'
+                ? <>Press Enter for an AI answer, or see all results for &ldquo;{normalizedQuery}&rdquo;</>
+                : <>See all results for &ldquo;{normalizedQuery}&rdquo;</>}
             </span>
-            <kbd className="ml-auto shrink-0 rounded-[4px] border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium">
-              Enter
-            </kbd>
+            {canAskAI && ai.state.phase === 'idle' && (
+              <kbd className="ml-auto shrink-0 rounded-[4px] border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium">
+                Enter
+              </kbd>
+            )}
           </button>
         )}
       </DialogContent>
