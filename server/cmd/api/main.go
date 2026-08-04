@@ -1498,6 +1498,10 @@ func main() {
 	// plus cached, validated one-shot answers (free tier — cost is bounded by
 	// per-IP rate limits and the per-workspace daily generation budget).
 	helpcenterAnswerRepo := repository.NewHelpcenterAnswerRepository(db)
+	helpcenterAnswerProvider, helpcenterAnswerModel := service.ResolveHelpcenterAnswerRouting(
+		cfg.HelpcenterAnswerProvider, cfg.HelpcenterAnswerModel,
+		cfg.OpenRouterAPIKey != "", cfg.OpenAIAPIKey != "", cfg.AnthropicAPIKey != "",
+	)
 	helpcenterAISearchService := service.NewHelpcenterAISearchService(
 		docsChunkRepo,
 		docsSearchRepo,
@@ -1505,8 +1509,8 @@ func main() {
 		supportEmbeddingProvider,
 		cfg.OpenAIEmbeddingModel,
 		supportLLMRouter,
-		"", // default answer provider (openrouter)
-		"", // default flash-tier answer model
+		helpcenterAnswerProvider,
+		helpcenterAnswerModel,
 		redisClient,
 	)
 	// Lazy chunk backfill for workspaces whose help center predates

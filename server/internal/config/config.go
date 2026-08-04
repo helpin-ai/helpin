@@ -56,6 +56,10 @@ type Config struct {
 	SupportRerankerAPIKey   string
 	OpenRouterAPIKey        string
 	OpenRouterBaseURL       string
+	// Help center AI answer routing. Empty values resolve to a flash-tier
+	// default on the first chat provider that has an API key configured.
+	HelpcenterAnswerProvider string
+	HelpcenterAnswerModel    string
 	CodexOpenAIAuthMode     string
 	CodexEnableChatGPTOAuth bool
 	CodexChatGPTAccessToken string
@@ -273,6 +277,8 @@ func Load() (*Config, error) {
 		SupportRerankerAPIKey:                  strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_API_KEY")),
 		OpenRouterAPIKey:                       strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")),
 		OpenRouterBaseURL:                      strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")),
+		HelpcenterAnswerProvider:               strings.TrimSpace(os.Getenv("HELPCENTER_ANSWER_PROVIDER")),
+		HelpcenterAnswerModel:                  strings.TrimSpace(os.Getenv("HELPCENTER_ANSWER_MODEL")),
 		CodexOpenAIAuthMode:                    strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_OPENAI_AUTH_MODE"), "api_key")),
 		CodexEnableChatGPTOAuth:                parseBoolEnv(os.Getenv("CODEX_ENABLE_CHATGPT_OAUTH")),
 		CodexChatGPTAccessToken:                strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCESS_TOKEN")),

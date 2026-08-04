@@ -171,3 +171,70 @@ func TestConsumeHelpcenterAnswerBudgetFailsOpenWithoutRedis(t *testing.T) {
 		t.Fatal("expected nil-redis budget check to fail open")
 	}
 }
+
+func TestResolveHelpcenterAnswerRouting(t *testing.T) {
+	tests := []struct {
+		name             string
+		explicitProvider string
+		explicitModel    string
+		openrouter       bool
+		openai           bool
+		anthropic        bool
+		wantProvider     string
+		wantModel        string
+	}{
+		{
+			name:             "explicit provider and model win",
+			explicitProvider: "openai",
+			explicitModel:    "gpt-5.6-terra",
+			wantProvider:     "openai",
+			wantModel:        "gpt-5.6-terra",
+		},
+		{
+			name:             "explicit provider gets its cheap default model",
+			explicitProvider: "anthropic",
+			anthropic:        true,
+			wantProvider:     "anthropic",
+			wantModel:        "claude-haiku-4-5",
+		},
+		{
+			name:         "openrouter key preferred",
+			openrouter:   true,
+			openai:       true,
+			anthropic:    true,
+			wantProvider: "openrouter",
+			wantModel:    "deepseek/deepseek-v4-flash-0731",
+		},
+		{
+			name:         "openai key next",
+			openai:       true,
+			anthropic:    true,
+			wantProvider: "openai",
+			wantModel:    "gpt-5-mini",
+		},
+		{
+			name:         "anthropic key last",
+			anthropic:    true,
+			wantProvider: "anthropic",
+			wantModel:    "claude-haiku-4-5",
+		},
+		{
+			name: "no keys disables generation",
+		},
+		{
+			name:          "explicit model without provider follows key chain",
+			explicitModel: "custom/model",
+			openai:        true,
+			wantProvider:  "openai",
+			wantModel:     "custom/model",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider, modelName := ResolveHelpcenterAnswerRouting(tt.explicitProvider, tt.explicitModel, tt.openrouter, tt.openai, tt.anthropic)
+			if provider != tt.wantProvider || modelName != tt.wantModel {
+				t.Errorf("ResolveHelpcenterAnswerRouting() = %q/%q, want %q/%q", provider, modelName, tt.wantProvider, tt.wantModel)
+			}
+		})
+	}
+}

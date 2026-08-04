@@ -46,7 +46,44 @@ const (
 
 	defaultHelpcenterAnswerProvider = "openrouter"
 	defaultHelpcenterAnswerModel    = "deepseek/deepseek-v4-flash-0731"
+	// Cheap-tier fallbacks when only one provider key is configured.
+	fallbackOpenAIAnswerModel    = "gpt-5-mini"
+	fallbackAnthropicAnswerModel = "claude-haiku-4-5"
 )
+
+// ResolveHelpcenterAnswerRouting picks the chat provider/model for public
+// help-center answers. Explicit configuration (HELPCENTER_ANSWER_PROVIDER /
+// HELPCENTER_ANSWER_MODEL) wins; otherwise the first configured provider key
+// decides, each with a cheap-tier default model. Empty results mean no chat
+// provider is configured — answer generation is disabled and asks degrade to
+// the article list.
+func ResolveHelpcenterAnswerRouting(explicitProvider, explicitModel string, hasOpenRouter, hasOpenAI, hasAnthropic bool) (string, string) {
+	provider := strings.ToLower(strings.TrimSpace(explicitProvider))
+	explicitModel = strings.TrimSpace(explicitModel)
+	if provider == "" {
+		switch {
+		case hasOpenRouter:
+			provider = model.AgentModelProviderOpenRouter
+		case hasOpenAI:
+			provider = model.AgentModelProviderOpenAI
+		case hasAnthropic:
+			provider = model.AgentModelProviderAnthropic
+		default:
+			return "", ""
+		}
+	}
+	if explicitModel != "" {
+		return provider, explicitModel
+	}
+	switch provider {
+	case model.AgentModelProviderOpenAI:
+		return provider, fallbackOpenAIAnswerModel
+	case model.AgentModelProviderAnthropic:
+		return provider, fallbackAnthropicAnswerModel
+	default:
+		return provider, defaultHelpcenterAnswerModel
+	}
+}
 
 // HelpcenterAISearchService serves public semantic search and grounded
 // answers over published help-center content.
@@ -88,12 +125,10 @@ func NewHelpcenterAISearchService(
 	answerModel string,
 	redisClient *redis.Client,
 ) *HelpcenterAISearchService {
-	if strings.TrimSpace(answerProvider) == "" {
-		answerProvider = defaultHelpcenterAnswerProvider
-	}
-	if strings.TrimSpace(answerModel) == "" {
-		answerModel = defaultHelpcenterAnswerModel
-	}
+	// An empty provider/model pair (no chat key configured anywhere) disables
+	// answer generation; retrieval and article results keep working.
+	answerProvider = strings.TrimSpace(answerProvider)
+	answerModel = strings.TrimSpace(answerModel)
 	if strings.TrimSpace(embeddingModel) == "" {
 		embeddingModel = defaultDocsEmbeddingModel
 	}
@@ -186,6 +221,15 @@ func (s *HelpcenterAISearchService) Answer(ctx context.Context, workspaceID, loc
 	cacheKey := helpcenterAnswerCacheKey(workspaceID, locale, spaceSlug, query, fingerprint)
 	if cached, err := s.answerRepo.GetByCacheKey(ctx, workspaceID, cacheKey); err == nil && cached != nil {
 		return &AnswerOutcome{Response: answerResponseFromRow(cached, true)}, nil
+	}
+
+	if s.answerProvider == "" || s.llmProvider == nil {
+		// No chat provider configured: degrade to the article list without
+		// spending budget or caching a durable "cannot answer" verdict.
+		return &AnswerOutcome{Response: &model.HelpcenterAnswerResponse{
+			Status:    model.HelpcenterAnswerStatusInsufficientEvidence,
+			Citations: []model.HelpcenterAnswerCitation{},
+		}}, nil
 	}
 
 	if !s.consumeAnswerBudget(ctx, workspaceID) {
