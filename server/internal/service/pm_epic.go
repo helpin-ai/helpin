@@ -316,6 +316,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := current.Epic
+	teamChanged := false
 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -343,6 +344,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		if err := requireCanEditTeamEpics(ctx, nextTeamID); err != nil {
 			return nil, err
 		}
+		teamChanged = !nullableStringsEqual(epic.TeamID, nextTeamID)
 		epic.TeamID = nextTeamID
 	}
 	if req.PlannedStartDate != nil || req.PlannedStartDateSet {
@@ -383,6 +385,13 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 			}
 		}
 		epic.AssignedAgentID = nextAgentID
+	} else if teamChanged && epic.AssignedAgentID != nil {
+		if s.agentService == nil {
+			return nil, fmt.Errorf("cannot change epic team while assigned agent validation is unavailable")
+		}
+		if err := s.agentService.ValidateRunnableTargetAgent(ctx, epic.WorkspaceID, *epic.AssignedAgentID, "epic", epic.TeamID); err != nil {
+			return nil, err
+		}
 	}
 
 	labelIDs := req.LabelIDs
@@ -661,6 +670,13 @@ func optionalActor(actorID string) *string {
 		return nil
 	}
 	return &actorID
+}
+
+func nullableStringsEqual(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return strings.TrimSpace(*left) == strings.TrimSpace(*right)
 }
 
 func stringPtr(value string) *string { return &value }

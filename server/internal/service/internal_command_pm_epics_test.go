@@ -331,3 +331,56 @@ func TestPMCommandUpdateEpicPreservesReplacesClearsAndRejectsNoop(t *testing.T) 
 		t.Fatal("update_epic schema exposes archived")
 	}
 }
+
+func TestPMCommandUpdateEpicRejectsAssignedAgentIncompatibleTeamMove(t *testing.T) {
+	env := newPMEpicCommandTestEnv(t)
+	agentID := "agent-command-epic-team-a"
+	seedTeamScopedEpicAgent(t, env.db, env.epicService, env.workspaceID, agentID, env.teamA)
+	created, err := env.epicService.Create(env.adminContext, model.CreateEpicRequest{
+		WorkspaceID: env.workspaceID, Name: "Command Agent Scoped", TeamID: &env.teamA, AssignedAgentID: &agentID,
+	}, env.adminUserID)
+	if err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+
+	_, err = env.service.Execute(env.adminContext, env.meta("workspace", env.workspaceID, env.adminUserID), "pm.update_epic", mustJSON(map[string]any{
+		"epic_id": created.Epic.ID,
+		"team_id": env.teamB,
+	}))
+	if err == nil || !strings.Contains(err.Error(), "restricted to team") {
+		t.Fatalf("team move error = %v, want assigned-agent team restriction", err)
+	}
+	reloaded, err := env.epicService.GetByID(env.adminContext, created.Epic.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if reloaded.Epic.TeamID == nil || *reloaded.Epic.TeamID != env.teamA {
+		t.Fatalf("team changed after rejected command: %#v", reloaded.Epic.TeamID)
+	}
+}
+
+func TestPMCommandUpdateEpicRejectsCrossWorkspaceIDWithoutMutation(t *testing.T) {
+	env := newPMEpicCommandTestEnv(t)
+	foreign, err := env.epicService.Create(context.Background(), model.CreateEpicRequest{
+		WorkspaceID: env.foreignWSID,
+		Name:        "Foreign Update Target",
+	}, env.adminUserID)
+	if err != nil {
+		t.Fatalf("create foreign epic: %v", err)
+	}
+
+	_, err = env.service.Execute(env.adminContext, env.meta("workspace", env.workspaceID, env.adminUserID), "pm.update_epic", mustJSON(map[string]any{
+		"epic_id": foreign.Epic.ID,
+		"name":    "Cross Workspace Mutation",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "epic not found") {
+		t.Fatalf("cross-workspace update error = %v", err)
+	}
+	var stored model.PMEpic
+	if err := env.db.Where("id = ?", foreign.Epic.ID).First(&stored).Error; err != nil {
+		t.Fatalf("reload foreign epic: %v", err)
+	}
+	if stored.Name != "Foreign Update Target" {
+		t.Fatalf("foreign epic name = %q, want unchanged", stored.Name)
+	}
+}

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -643,6 +644,54 @@ func TestPMEpicServiceUpdateRejectsDestinationTeamOutsideActorScope(t *testing.T
 	if reloaded.Epic.TeamID == nil || *reloaded.Epic.TeamID != teamA {
 		t.Fatalf("team_id = %v, want %s", reloaded.Epic.TeamID, teamA)
 	}
+}
+
+func TestPMEpicServiceUpdateRejectsTeamMoveIncompatibleWithAssignedAgent(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	now := time.Now().UTC()
+	teamA := "team-epic-agent-a"
+	teamB := "team-epic-agent-b"
+	agentID := "agent-epic-team-a"
+	for _, team := range []struct{ id, name string }{{teamA, "Agent Team A"}, {teamB, "Agent Team B"}} {
+		mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, team.id, wsID, team.name, now, now)
+	}
+	seedTeamScopedEpicAgent(t, db, svc, wsID, agentID, teamA)
+	created, err := svc.Create(context.Background(), model.CreateEpicRequest{
+		WorkspaceID: wsID, Name: "Agent Scoped Epic", TeamID: &teamA, AssignedAgentID: &agentID,
+	}, userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	_, err = svc.Update(context.Background(), created.Epic.ID, model.UpdateEpicRequest{TeamID: &teamB}, userID)
+	if err == nil || !strings.Contains(err.Error(), "restricted to team") {
+		t.Fatalf("team move error = %v, want assigned-agent team restriction", err)
+	}
+	reloaded, err := svc.GetByID(context.Background(), created.Epic.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if reloaded.Epic.TeamID == nil || *reloaded.Epic.TeamID != teamA || reloaded.Epic.AssignedAgentID == nil || *reloaded.Epic.AssignedAgentID != agentID {
+		t.Fatalf("epic mutated after rejected team move: %#v", reloaded.Epic)
+	}
+}
+
+func seedTeamScopedEpicAgent(t *testing.T, db *gorm.DB, svc *PMEpicService, workspaceID, agentID, teamID string) {
+	t.Helper()
+	mustExec(t, db, `CREATE TABLE agents (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL DEFAULT 0,
+		name TEXT NOT NULL, preset_key TEXT, preset_version_key TEXT, status TEXT,
+		runtime_kind TEXT, skills TEXT, allowed_tools TEXT, allowed_commands TEXT,
+		allowed_targets TEXT, approval_mode TEXT, default_invocation_mode TEXT, team_id TEXT
+	)`)
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, preset_version_key, status,
+		runtime_kind, skills, allowed_tools, allowed_commands, allowed_targets,
+		approval_mode, default_invocation_mode, team_id
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		agentID, workspaceID, true, "Team A Epic Planner", model.AgentPresetEpicPlanner, "epic_planner_default", "idle",
+		"native_sdk", `[]`, []byte(`[]`), []byte(`[]`), []byte(`["epic"]`), "never", "autonomous", teamID)
+	svc.SetAgentService(&AgentService{agentRepo: repository.NewAgentRepository(db)})
 }
 
 func TestPMEpicServiceCreateValidatesLabelsBeforePersisting(t *testing.T) {
