@@ -33,6 +33,7 @@ import {
 import { useWorkspaceMembers } from '@/hooks/queries';
 import type { Agent, AgentRun, AgentRunArtifact, CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
+import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -441,6 +442,7 @@ export function CodingSessionSurface({
   useEffect(() => {
     if (!session?.target_id || session.target_type !== 'task') return;
     const handler = (event: Event) => {
+      if (!isAgentRunLifecycleEvent(event)) return;
       const detail = (event as CustomEvent).detail as { parent_type?: string; parent_id?: string } | undefined;
       if (detail?.parent_type === 'task' && detail.parent_id === session.target_id) {
         setHandoffRuns(null);

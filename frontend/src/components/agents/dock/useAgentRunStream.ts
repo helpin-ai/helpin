@@ -150,15 +150,21 @@ export function useAgentRunStream(
   useEffect(() => {
     if (!active || !workspaceId || !runId) return;
     void refetch();
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ entity_id?: string }>).detail;
       if (detail?.entity_id !== runId) return;
-      void refetch();
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void refetch();
+      }, 100);
     };
     window.addEventListener('agent_run-updated', handler);
     window.addEventListener('coding_session-updated', handler);
     window.addEventListener('coding_session_event-created', handler);
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       window.removeEventListener('agent_run-updated', handler);
       window.removeEventListener('coding_session-updated', handler);
       window.removeEventListener('coding_session_event-created', handler);

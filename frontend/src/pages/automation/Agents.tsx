@@ -4,6 +4,7 @@ import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import {
   BotIcon,
   ArrowDown01Icon,
@@ -2929,15 +2930,22 @@ export function AgentsPage() {
   }, [agentAnalyticsRange, editingAgent?.id, loadAgentAnalytics, systemDrawerOpen, systemDrawerTab]);
 
   useEffect(() => {
-    const handler = () => {
-      void loadFleetData();
-      if (systemDrawerOpen && systemDrawerTab === 'analytics' && editingAgent?.id) {
-        void loadAgentAnalytics(editingAgent.id, agentAnalyticsRange);
-      }
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const handler = (event: Event) => {
+      if (!isAgentRunLifecycleEvent(event)) return;
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void loadFleetData();
+        if (systemDrawerOpen && systemDrawerTab === 'analytics' && editingAgent?.id) {
+          void loadAgentAnalytics(editingAgent.id, agentAnalyticsRange);
+        }
+      }, 400);
     };
     window.addEventListener('agent_run-created', handler);
     window.addEventListener('agent_run-updated', handler);
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       window.removeEventListener('agent_run-created', handler);
       window.removeEventListener('agent_run-updated', handler);
     };

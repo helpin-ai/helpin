@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { queryKeys } from '@/lib/queryKeys'
+import { classifyAgentRunUpdate, type AgentRunUpdateKind } from '@/lib/agentRunRealtime'
 import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDetailEventPayload'
 import { isSupportConversationListQueryKey, moveConversationToTopForMessageActivity, patchConversationDetailStatus, patchConversationStatusInCache, type SupportConversationListCache, type SupportConversationStatusPatch } from '@/lib/supportQueryCache'
 import type { ConversationStatus, SupportConversation, Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes'
@@ -81,13 +82,24 @@ function patchTaskLatestRun(task: Task, event: WSEvent, now: string): Task {
     ? normalizeAgentRunPauseReason(event.data.pause_reason)
     : task.latest_run_pause_reason
 
+  const runId = event.entity_id || task.latest_run_id
+  const latestRunAt = event.sent_at || now
+  if (
+    task.latest_run_id === runId
+    && task.latest_run_agent_id === agentId
+    && task.latest_run_status === status
+    && task.latest_run_pause_reason === pauseReason
+  ) {
+    return task
+  }
+
   return {
     ...task,
-    latest_run_id: event.entity_id || task.latest_run_id,
+    latest_run_id: runId,
     latest_run_agent_id: agentId,
     latest_run_status: status,
     latest_run_pause_reason: pauseReason,
-    latest_run_at: event.sent_at || now,
+    latest_run_at: latestRunAt,
   }
 }
 
@@ -99,17 +111,21 @@ function patchAgentRunTaskColumns(columns: TaskStateColumn[], event: WSEvent, no
     let columnPatched = false
     const tasks = column.tasks.map((task) => {
       if (task.id !== taskId) return task
+      const nextTask = patchTaskLatestRun(task, event, now)
+      if (nextTask === task) return task
       columnPatched = true
       patched = true
-      return patchTaskLatestRun(task, event, now)
+      return nextTask
     })
     const taskGroups = column.task_groups?.map((group) => {
       let groupPatched = false
       const groupTasks = group.tasks.map((task) => {
         if (task.id !== taskId) return task
+        const nextTask = patchTaskLatestRun(task, event, now)
+        if (nextTask === task) return task
         groupPatched = true
         patched = true
-        return patchTaskLatestRun(task, event, now)
+        return nextTask
       })
       return groupPatched ? { ...group, tasks: groupTasks } : group
     })
@@ -136,9 +152,11 @@ function patchAgentRunTaskMemberColumns(columns: TaskMemberColumn[], event: WSEv
     let columnPatched = false
     const tasks = column.tasks.map((task) => {
       if (task.id !== taskId) return task
+      const nextTask = patchTaskLatestRun(task, event, now)
+      if (nextTask === task) return task
       columnPatched = true
       patched = true
-      return patchTaskLatestRun(task, event, now)
+      return nextTask
     })
 
     return columnPatched ? { ...column, tasks } : column
@@ -163,7 +181,7 @@ function patchBoardTaskLatestRun(event: WSEvent) {
   })
 }
 
-function dispatchAgentRunCompatibilityEvents(event: WSEvent) {
+function dispatchAgentRunCompatibilityEvents(event: WSEvent, updateKind: AgentRunUpdateKind) {
   if (event.entity !== 'agent_run') return
 
   const detail = {
@@ -171,10 +189,38 @@ function dispatchAgentRunCompatibilityEvents(event: WSEvent) {
     agent_id: typeof event.data?.agent_id === 'string' ? event.data.agent_id : undefined,
     status: typeof event.data?.status === 'string' ? event.data.status : undefined,
     pause_reason: typeof event.data?.pause_reason === 'string' ? event.data.pause_reason : undefined,
+    approval_state: typeof event.data?.approval_state === 'string' ? event.data.approval_state : undefined,
+    update_kind: updateKind,
   }
 
   const eventName = event.action === 'created' ? 'agent_run-created' : 'agent_run-updated'
   window.dispatchEvent(new CustomEvent(eventName, { detail }))
+}
+
+function patchAgentRunCache(current: unknown, event: WSEvent): unknown {
+  const patchRows = (rows: unknown[]): [unknown[], boolean] => {
+    let changed = false
+    const next = rows.map((row) => {
+      if (!row || typeof row !== 'object' || (row as { id?: unknown }).id !== event.entity_id) return row
+      const run = row as Record<string, unknown>
+      const fields: Record<string, unknown> = {}
+      for (const field of ['agent_id', 'status', 'pause_reason', 'approval_state'] as const) {
+        const value = event.data?.[field]
+        if (typeof value === 'string' && run[field] !== value) fields[field] = value
+      }
+      if (Object.keys(fields).length === 0) return row
+      changed = true
+      return { ...run, ...fields, updated_at: event.sent_at ?? run.updated_at }
+    })
+    return [changed ? next : rows, changed]
+  }
+
+  if (Array.isArray(current)) return patchRows(current)[0]
+  if (!current || typeof current !== 'object') return current
+  const data = (current as { data?: unknown }).data
+  if (!Array.isArray(data)) return current
+  const [nextData, changed] = patchRows(data)
+  return changed ? { ...current, data: nextData } : current
 }
 
 export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
@@ -381,13 +427,16 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         }
       }
     } else if (event.entity === 'agent_run') {
+      const updateKind = classifyAgentRunUpdate(event)
       patchBoardTaskLatestRun(event)
-      dispatchAgentRunCompatibilityEvents(event)
-      const status = typeof event.data?.status === 'string' ? event.data.status : ''
-      const pauseReason = typeof event.data?.pause_reason === 'string' ? event.data.pause_reason : ''
-      const isActiveHeartbeat = event.action === 'updated' && status === 'running' && (!pauseReason || pauseReason === 'none')
-      if (!isActiveHeartbeat) {
+      queryClient.setQueriesData(
+        { queryKey: queryKeys.automation.runsRoot(workspaceId) },
+        (current) => patchAgentRunCache(current, event),
+      )
+      dispatchAgentRunCompatibilityEvents(event, updateKind)
+      if (updateKind === 'lifecycle') {
         scheduleAgentRunInvalidation(queryKeys.automation.runsRoot(workspaceId))
+        scheduleAgentRunInvalidation(queryKeys.automation.runAttentionCount(workspaceId))
         scheduleAgentRunInvalidation(queryKeys.automation.activityRoot(workspaceId))
         scheduleAgentRunInvalidation(queryKeys.automation.overview(workspaceId))
         const eventAgentId = typeof event.data?.agent_id === 'string' ? event.data.agent_id : ''

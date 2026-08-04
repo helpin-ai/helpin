@@ -89,13 +89,21 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
   // handled inside useAgentRunStream; this keeps status/pause_reason fresh).
   useEffect(() => {
     if (!run?.id) return;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const handler = (event: Event) => {
       const detailPayload = (event as CustomEvent<{ entity_id?: string }>).detail;
       if (detailPayload?.entity_id !== run.id) return;
-      void refreshDetail();
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void refreshDetail();
+      }, 100);
     };
     window.addEventListener('agent_run-updated', handler);
-    return () => window.removeEventListener('agent_run-updated', handler);
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      window.removeEventListener('agent_run-updated', handler);
+    };
   }, [refreshDetail, run?.id]);
 
   // Child plans launched from this chat.

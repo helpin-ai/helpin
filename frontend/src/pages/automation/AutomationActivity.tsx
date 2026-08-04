@@ -1114,20 +1114,6 @@ export function AutomationActivityPage({
   });
   const isRefreshing = runsQuery.isFetching || executionsQuery.isFetching || overviewQuery.isFetching;
 
-  useEffect(() => {
-    const handler = () => {
-      void runsQuery.refetch();
-      void executionsQuery.refetch();
-      void overviewQuery.refetch();
-    };
-    window.addEventListener('agent_run-created', handler);
-    window.addEventListener('agent_run-updated', handler);
-    return () => {
-      window.removeEventListener('agent_run-created', handler);
-      window.removeEventListener('agent_run-updated', handler);
-    };
-  }, [executionsQuery, overviewQuery, runsQuery]);
-
   const agentList = Array.isArray(agents) ? agents : [];
   const agentById = useMemo(() => new Map(agentList.map((agent) => [agent.id, agent])), [agentList]);
   const rawWorkspaceRuns = runsQuery.data?.data;

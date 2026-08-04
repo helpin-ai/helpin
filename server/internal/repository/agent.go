@@ -393,7 +393,7 @@ func (r *AgentRunRepository) ListByAgent(ctx context.Context, workspaceID, agent
 
 	var runs []model.AgentRun
 	if err := query.Select(_agentRunListColumns).
-		Order("created_at DESC").
+		Order("created_at DESC, id DESC").
 		Offset(offset).
 		Limit(perPage).
 		Find(&runs).Error; err != nil {
@@ -428,7 +428,7 @@ func (r *AgentRunRepository) ListByWorkspace(ctx context.Context, workspaceID st
 
 	var runs []model.AgentRun
 	if err := query.Select(_agentRunListColumns).
-		Order("created_at DESC").
+		Order("created_at DESC, id DESC").
 		Offset(offset).
 		Limit(perPage).
 		Find(&runs).Error; err != nil {

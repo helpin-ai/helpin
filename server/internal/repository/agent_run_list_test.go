@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,43 @@ func TestAgentRunRepositoryListByAgentOmitsOutputSummary(t *testing.T) {
 	}
 	if len(runs[0].OutputSummary) != 0 {
 		t.Fatalf("list output_summary length = %d, want 0", len(runs[0].OutputSummary))
+	}
+}
+
+func TestAgentRunRepositoryListByWorkspaceUsesStableTieBreaker(t *testing.T) {
+	db := openAgentRunListTestDB(t)
+	repo := NewAgentRunRepository(db)
+	createdAt := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+
+	for _, id := range []string{"run-a", "run-c", "run-b"} {
+		seedAgentRunListTestRow(
+			t,
+			db,
+			id,
+			"workspace-stable-order",
+			"agent-1",
+			model.AgentRunStatusCompleted,
+			model.AgentRunPauseReasonNone,
+			`{}`,
+		)
+		if err := db.Model(&model.AgentRun{}).Where("id = ?", id).Updates(map[string]any{
+			"created_at": createdAt,
+			"updated_at": createdAt,
+		}).Error; err != nil {
+			t.Fatalf("set tied timestamps for %s: %v", id, err)
+		}
+	}
+
+	runs, _, err := repo.ListByWorkspace(
+		context.Background(),
+		"workspace-stable-order",
+		model.PMPagination{Page: 1, PerPage: 10},
+	)
+	if err != nil {
+		t.Fatalf("ListByWorkspace: %v", err)
+	}
+	if got, want := []string{runs[0].ID, runs[1].ID, runs[2].ID}, []string{"run-c", "run-b", "run-a"}; !slices.Equal(got, want) {
+		t.Fatalf("stable run order = %v, want %v", got, want)
 	}
 }
 
