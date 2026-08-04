@@ -58,6 +58,7 @@ func (s *PMChecklistItemService) Create(ctx context.Context, storyID string, req
 		TaskID:     storyID,
 		Text:       strings.TrimSpace(req.Text),
 		AssigneeID: req.AssigneeID,
+		DueDate:    req.DueDate,
 	}
 	if req.Position != nil {
 		item.Position = *req.Position
@@ -107,6 +108,9 @@ func (s *PMChecklistItemService) Update(ctx context.Context, id string, req mode
 		} else {
 			item.AssigneeID = &assigneeID
 		}
+	}
+	if req.DueDate != nil || req.DueDateSet {
+		item.DueDate = req.DueDate
 	}
 
 	if err := s.repo.Update(ctx, item); err != nil {

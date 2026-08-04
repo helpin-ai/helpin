@@ -1,12 +1,17 @@
 package model
 
-import "testing"
+import (
+	"encoding/json"
+	"reflect"
+	"testing"
+	"time"
+)
 
 func TestChecklistItem_AssigneeID_Nil(t *testing.T) {
 	item := PMChecklistItem{
-		ID:      "item-1",
+		ID:     "item-1",
 		TaskID: "story-1",
-		Text:    "Fix the bug",
+		Text:   "Fix the bug",
 	}
 	if item.AssigneeID != nil {
 		t.Error("expected nil assignee_id for unassigned item")
@@ -66,5 +71,42 @@ func TestChecklistItem_WithMentionText(t *testing.T) {
 	// The text stores raw @mention — extraction happens in the service layer.
 	if item.Text != "@azhar.usermaven Review the deployment" {
 		t.Errorf("unexpected text: %q", item.Text)
+	}
+}
+
+func TestChecklistItemDueDateDTOs(t *testing.T) {
+	field, ok := reflect.TypeOf(PMChecklistItem{}).FieldByName("DueDate")
+	if !ok {
+		t.Fatal("PMChecklistItem.DueDate field is missing")
+	}
+	if got := field.Tag.Get("gorm"); got != "type:date" {
+		t.Fatalf("DueDate GORM tag = %q, want type:date", got)
+	}
+
+	dueDate := time.Date(2026, time.August, 15, 0, 0, 0, 0, time.UTC)
+	item := PMChecklistItem{DueDate: &dueDate}
+	if item.DueDate == nil || !item.DueDate.Equal(dueDate) {
+		t.Fatalf("item due date = %v, want %v", item.DueDate, dueDate)
+	}
+
+	createReq := CreateChecklistItemRequest{DueDate: &dueDate}
+	if createReq.DueDate == nil || !createReq.DueDate.Equal(dueDate) {
+		t.Fatalf("create due date = %v, want %v", createReq.DueDate, dueDate)
+	}
+
+	updateReq := UpdateChecklistItemRequest{DueDate: &dueDate, DueDateSet: true}
+	payload, err := json.Marshal(updateReq)
+	if err != nil {
+		t.Fatalf("marshal update request: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("decode update request JSON: %v", err)
+	}
+	if _, exists := decoded["due_date"]; !exists {
+		t.Fatalf("due date missing from JSON: %s", payload)
+	}
+	if _, exists := decoded["due_date_set"]; exists {
+		t.Fatalf("internal presence flag leaked into JSON: %s", payload)
 	}
 }

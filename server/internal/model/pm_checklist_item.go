@@ -4,29 +4,33 @@ import "time"
 
 // PMChecklistItem represents a checklist (todo) item on a task.
 type PMChecklistItem struct {
-	ID         string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	TaskID     string    `json:"task_id" gorm:"column:task_id;type:uuid;not null;index"`
-	Text       string    `json:"text" gorm:"not null"`
-	Completed  bool      `json:"completed" gorm:"default:false"`
-	Position   int       `json:"position" gorm:"default:0"`
-	AssigneeID *string   `json:"assignee_id" gorm:"type:uuid;index"`
-	CreatedAt  time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt  time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID         string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	TaskID     string     `json:"task_id" gorm:"column:task_id;type:uuid;not null;index"`
+	Text       string     `json:"text" gorm:"not null"`
+	Completed  bool       `json:"completed" gorm:"default:false"`
+	Position   int        `json:"position" gorm:"default:0"`
+	AssigneeID *string    `json:"assignee_id" gorm:"type:uuid;index"`
+	DueDate    *time.Time `json:"due_date" gorm:"type:date"`
+	CreatedAt  time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt  time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMChecklistItem) TableName() string { return "pm_checklist_items" }
 
 // CreateChecklistItemRequest is the payload for creating a checklist item.
 type CreateChecklistItemRequest struct {
-	Text       string  `json:"text"`
-	Position   *int    `json:"position,omitempty"`
-	AssigneeID *string `json:"assignee_id,omitempty"`
+	Text       string     `json:"text"`
+	Position   *int       `json:"position,omitempty"`
+	AssigneeID *string    `json:"assignee_id,omitempty"`
+	DueDate    *time.Time `json:"due_date,omitempty"`
 }
 
 // UpdateChecklistItemRequest is the payload for updating a checklist item.
 type UpdateChecklistItemRequest struct {
-	Text       *string `json:"text,omitempty"`
-	Completed  *bool   `json:"completed,omitempty"`
-	Position   *int    `json:"position,omitempty"`
-	AssigneeID *string `json:"assignee_id,omitempty"`
+	Text       *string    `json:"text,omitempty"`
+	Completed  *bool      `json:"completed,omitempty"`
+	Position   *int       `json:"position,omitempty"`
+	AssigneeID *string    `json:"assignee_id,omitempty"`
+	DueDate    *time.Time `json:"due_date,omitempty"`
+	DueDateSet bool       `json:"-"`
 }
