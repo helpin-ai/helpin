@@ -132,6 +132,23 @@ The main tool families in the app are:
 
 Some mutation tools use shared internal-command backing for consistency. That should continue for new reusable business mutations, but it does not change the tool contract itself.
 
+### Optional skill access
+
+Each agent version owns one complete `system_prompt`. Product prompt modules
+may be used internally to generate a default version, but they are not exposed
+as attached skills and are not runtime dependencies. Approval and completion
+requirements are carried separately as structured runtime policy. Optional
+skills use these runtime-owned tools on both
+`native_sdk` and Codex:
+
+- `list_available_skills {}` returns metadata for the current agent's optional skills.
+- `search_available_skills {"query"?: string, "limit"?: integer}` searches that metadata.
+- `read_skill {"key"?: string, "skill_id"?: string, "path"?: string, "max_bytes"?: integer}` reads one selected package. Exactly one of `key` or `skill_id` is required; `path` defaults to `SKILL.md` and must remain inside the package.
+
+The legacy runtime-local `skills.list_files` and `skills.read_file` tools remain
+available for compatibility, but Helpin prompts and profiles must use the
+canonical tools above.
+
 Do not interpret "business tool" to mean "must be command-backed". The key question is whether the tool is a reusable mutation with product invariants, not whether it merely touches product data or reads from product tables.
 
 ## Tool Types And Relationships

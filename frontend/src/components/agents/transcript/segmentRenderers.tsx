@@ -225,7 +225,11 @@ function ContextSegment({
   message: CodingSessionTranscriptMessage;
   expandable: boolean;
 }) {
-  const label = message.message_type === 'system_prompt' ? 'System prompt' : 'Developer prompt';
+  const label = message.message_type === 'system_prompt'
+    ? 'System prompt'
+    : message.message_type === 'prompt'
+      ? 'Prompt'
+      : 'Developer prompt';
   return (
     <TranscriptRow
       icon={<File01Icon className="h-3 w-3" />}

@@ -95,32 +95,24 @@ export function CodingTranscriptPane({
     [liveTurnSegments],
   );
   const promptMessage = useMemo<CodingSessionTranscriptMessage | null>(() => {
+    if (transcriptMessages.some((message) => message.role === 'user' && message.message_type === 'prompt')) {
+      return null;
+    }
     const sections = parsePromptArtifactSections(promptArtifact?.inline_content);
-    const developerPrompt = sections.find((section) => section.label === 'Developer prompt');
-    if (developerPrompt) {
+    const userPrompt = sections.find((section) => section.label === 'User prompt');
+    if (userPrompt) {
       return {
-        event_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
-        message_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
+        event_id: `prompt:${promptArtifact?.id ?? 'user'}`,
+        message_id: `prompt:${promptArtifact?.id ?? 'user'}`,
         role: 'user',
-        message_type: 'developer_prompt',
-        content: developerPrompt.content,
+        message_type: 'prompt',
+        content: userPrompt.content,
         timestamp: promptArtifact?.created_at ?? new Date().toISOString(),
         sequence_no: Number.MIN_SAFE_INTEGER,
       };
     }
-
-    const systemPrompt = session?.system_prompt?.trim();
-    if (!systemPrompt) return null;
-    return {
-      event_id: `prompt:${session?.run_id ?? 'system'}`,
-      message_id: `prompt:${session?.run_id ?? 'system'}`,
-      role: 'user',
-      message_type: 'system_prompt',
-      content: systemPrompt,
-      timestamp: session?.created_at ?? new Date().toISOString(),
-      sequence_no: Number.MIN_SAFE_INTEGER,
-    };
-  }, [promptArtifact, session?.created_at, session?.run_id, session?.system_prompt]);
+    return null;
+  }, [promptArtifact, transcriptMessages]);
   const includeLive = !session
     || session.status === 'queued'
     || session.status === 'running'

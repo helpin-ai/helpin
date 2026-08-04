@@ -525,6 +525,8 @@ function transcriptToolCallsFromPayload(payload: Record<string, unknown>, messag
     if (!invocation) return [];
 
     const outputSummary = asString(invocation.output_summary) ?? '';
+    const error = asString(invocation.error);
+    const status = asString(invocation.status) === 'failed' || Boolean(error) ? 'failed' : 'completed';
     const toolName = asString(invocation.tool_name) ?? 'tool';
     const argsText = stringifyToolInput(invocation.input) ?? '';
 
@@ -533,10 +535,11 @@ function transcriptToolCallsFromPayload(payload: Record<string, unknown>, messag
       parent_message_id: messageID,
       tool_name: toolName,
       args_text: argsText,
-      status: 'completed',
+      status,
       result: {
         content: outputSummary,
         output_summary: outputSummary,
+        error,
       },
       duration_ms: asNumber(invocation.duration_ms),
     } satisfies CodingSessionLiveToolCall];

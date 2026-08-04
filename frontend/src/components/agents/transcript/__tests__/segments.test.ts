@@ -390,7 +390,8 @@ describe('collectSegments', () => {
     const segments = collectSegments(
       stream({
         transcript_messages: [
-          message({ event_id: 'ctx', role: 'user', message_type: 'developer_prompt', content: 'prompt' }),
+          message({ event_id: 'launch', role: 'user', message_type: 'prompt', content: 'launch context' }),
+          message({ event_id: 'ctx', role: 'user', message_type: 'developer_prompt', content: 'developer context' }),
           message({ event_id: 'status', message_type: 'status', content: 'Working' }),
           message({ event_id: 'user', role: 'user', message_type: 'message', content: 'hi' }),
           message({ event_id: 'review', role: 'user', message_type: 'approval_request_resolution', content: 'Approved.' }),
@@ -399,7 +400,7 @@ describe('collectSegments', () => {
       { includeLive: false },
     );
 
-    expect(segments.map((s) => s.kind)).toEqual(['context', 'status', 'user', 'review_decision']);
+    expect(segments.map((s) => s.kind)).toEqual(['context', 'context', 'status', 'user', 'review_decision']);
   });
 
   it('prepends leadingContext when context is in scope', () => {

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -52,26 +51,6 @@ func (s *scriptedCommandBarLLM) ChatCompletion(ctx context.Context, req llm.Chat
 	return &llm.ChatResponse{Content: s.response}, nil
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 func TestCommandBarAdditionalContextDoesNotIncludeRawUserRequest(t *testing.T) {
 	context := commandBarAdditionalContext(
 		"Execute your normal Forge role for the current target.",
@@ -89,19 +68,6 @@ func TestCommandBarAdditionalContextDoesNotIncludeRawUserRequest(t *testing.T) {
 		t.Fatalf("expected multi-step scheduler guidance, got %q", context)
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 func TestValidateCommandBarStepDependenciesRejectsCycle(t *testing.T) {
 	steps := []model.CommandBarPlanStep{
@@ -885,29 +851,6 @@ func TestCreateRunStillBlocksDifferentAgentsOnTaskTarget(t *testing.T) {
 	}
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 func TestCRMEnrichmentToolsAreCommandAgentOnlyPresetTools(t *testing.T) {
 	presets := ListAgentPresets()
 	var commandAgent, crmOperator *model.AgentPresetDefinition
@@ -936,10 +879,6 @@ func TestCRMEnrichmentToolsAreCommandAgentOnlyPresetTools(t *testing.T) {
 		}
 	}
 }
-
-
-
-
 
 func TestValidateDispatchStepsRequiresOneShotKindForCommandAgent(t *testing.T) {
 	db := setupCommandBarPlanTestDB(t)
@@ -1339,7 +1278,6 @@ func TestDecodeCommandBarPlanRunIDsUsesStringKeys(t *testing.T) {
 	}
 }
 
-
 func TestCommandBarPlanOwnedByActor(t *testing.T) {
 	actorID := "11111111-1111-1111-1111-111111111111"
 	otherID := "22222222-2222-2222-2222-222222222222"
@@ -1350,7 +1288,6 @@ func TestCommandBarPlanOwnedByActor(t *testing.T) {
 		t.Fatal("expected other actor to be denied")
 	}
 }
-
 
 func TestValidatePromotedAgentTargetsRejectsOutsideSourceAllowlist(t *testing.T) {
 	sourceAgent := &model.Agent{
@@ -1364,9 +1301,6 @@ func TestValidatePromotedAgentTargetsRejectsOutsideSourceAllowlist(t *testing.T)
 		t.Fatal("expected crm_deal target to be rejected")
 	}
 }
-
-
-
 
 // The retry handler pre-fetches the plan for per-step authorization; that
 // lookup must not be owner-gated or cross-actor retries from the epic page

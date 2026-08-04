@@ -347,6 +347,28 @@ func TestBuiltInPresetBundleDoesNotDefaultCoreSkillsIntoAvailableSkills(t *testi
 	}
 }
 
+func TestAtlasAvailableSkillIsOnlyTheTaskPlanToolContract(t *testing.T) {
+	bundle, ok := BuiltInPresetSkillBundleForPreset(model.AgentPresetEpicPlanner)
+	if !ok {
+		t.Fatal("expected epic planner bundle")
+	}
+	if len(bundle.AvailableSkillKeys) != 1 || bundle.AvailableSkillKeys[0] != "task_plan_publishing" {
+		t.Fatalf("Atlas available skills must contain only its operational tool contract, got %v", bundle.AvailableSkillKeys)
+	}
+	skill, ok := GetBuiltInSkill("task_plan_publishing")
+	if !ok {
+		t.Fatal("expected task-plan publishing skill")
+	}
+	if len(skill.RequiredTools) != 1 || skill.RequiredTools[0] != ToolPublishTaskPlan {
+		t.Fatalf("unexpected task-plan publishing tool contract: %#v", skill.RequiredTools)
+	}
+	for _, behavior := range []string{"approval rules", "planning order", "task-decomposition judgment"} {
+		if !strings.Contains(skill.Instructions, behavior) {
+			t.Fatalf("tool skill must explicitly exclude %q from its scope\n%s", behavior, skill.Instructions)
+		}
+	}
+}
+
 func TestTaskPlannerBundleUsesTaskPlanDocSkillStack(t *testing.T) {
 	bundle, ok := BuiltInPresetSkillBundleForPreset(model.AgentPresetTaskPlanner)
 	if !ok {

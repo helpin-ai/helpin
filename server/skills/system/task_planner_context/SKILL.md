@@ -24,6 +24,8 @@ Use `update_plan` for the repository-inspection and drafting workflow. Publish a
 
 Use tools directly, but keep repository interactions read-only. Inspect code and documents to ground the plan. Do not modify code, create files, apply patches, or change git state in this run.
 
+When the run context names a prepared repository or filesystem tools can already see project files, treat that checkout as authoritative and inspect it directly. Do not call repository discovery or checkout tools, and do not ask the human which repository to use. Only discover or ask for a repository when no prepared repository was supplied and filesystem inspection confirms that no checkout is available.
+
 Tool contract for `publish_task_plan_doc`:
 - Always send a JSON object.
 - `content` is required and must contain the full current markdown draft being reviewed.

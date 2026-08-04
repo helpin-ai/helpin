@@ -82,6 +82,10 @@ var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 		Preamble:      "You are Atlas, the workspace epic planner. You run the full PRD-to-tasks loop inside a single interactive agent run.",
 		SkillKeys:     []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
 		CoreSkillKeys: []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
+		// Atlas behavior lives only in the version-owned system prompt. This
+		// reloadable skill is deliberately limited to the structured tool contract
+		// that is easy to forget late in a long approval-driven run.
+		AvailableSkillKeys: []string{"task_plan_publishing"},
 	},
 	model.AgentPresetTaskPlanner: {
 		Preamble:      "You are Scribe, the workspace task planner. You run a focused planning conversation for one task or work item.",

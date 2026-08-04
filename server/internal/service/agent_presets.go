@@ -393,6 +393,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		agentcontract.ToolPublishTaskPlan,
 		agentcontract.ToolRequestUserInput,
 		agentcontract.ToolRequestApproval,
+		agentcontract.ToolListAvailableSkills,
+		agentcontract.ToolSearchAvailableSkills,
+		agentcontract.ToolReadSkill,
 	)
 	taskPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		agentcontract.ToolUpdatePlan,

@@ -249,11 +249,21 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		Provider:              strings.TrimSpace(derefString(agent.Provider)),
 		Model:                 strings.TrimSpace(derefString(agent.Model)),
 		SystemPrompt:          agentcontract.RenderRuntimeToolNamesInInstructionsForRuntime(effectiveSystemPrompt, agent.RuntimeKind),
-		Skills:                runtimeSkillRefsFromHelpin(agentskills.EffectiveRuntimeRefs(agent), agent.RuntimeKind),
+		Skills:                runtimeSkillRefsFromHelpinAgent(agent),
 		AllowedTools:          parseJSONStringSlice(agent.AllowedTools),
 		AllowedTargets:        parseJSONStringSlice(agent.AllowedTargets),
 		ApprovalMode:          strings.TrimSpace(agent.ApprovalMode),
 		DefaultInvocationMode: strings.TrimSpace(agent.DefaultInvocationMode),
+	}
+	if usesVersionOwnedSystemPrompt(agent) && !hasAvailableRuntimeSkills(out.Skills) {
+		out.AllowedTools = slices.DeleteFunc(out.AllowedTools, func(toolName string) bool {
+			switch agentcontract.CanonicalToolName(toolName) {
+			case agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill:
+				return true
+			default:
+				return false
+			}
+		})
 	}
 	if len(agent.ExecutionConfig) > 0 && strings.TrimSpace(string(agent.ExecutionConfig)) != "null" {
 		out.ExecutionConfig = append([]byte(nil), agent.ExecutionConfig...)
@@ -269,6 +279,67 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		out.DefaultInvocationMode = model.InvocationModeAutonomous
 	}
 	return out
+}
+
+func hasAvailableRuntimeSkills(refs []AgentRuntimeSkillRef) bool {
+	for _, ref := range refs {
+		var values map[string]any
+		if json.Unmarshal(ref.Config, &values) == nil && strings.TrimSpace(fmt.Sprint(values[runtimeSkillRoleConfigKey])) == "available" {
+			return true
+		}
+	}
+	return false
+}
+
+const runtimeSkillRoleConfigKey = "runtime_skill_role"
+
+func runtimeSkillRefsFromHelpinAgent(agent *model.Agent) []AgentRuntimeSkillRef {
+	if agent == nil {
+		return nil
+	}
+	refs := runtimeSkillRefsFromHelpin(agentskills.EffectiveRuntimeRefs(agent), agent.RuntimeKind)
+	preset, ok := agentPresetVersionDefinition(agent.EffectivePresetKey(), agent.EffectivePresetVersionKey())
+	if !ok {
+		return refs
+	}
+	availableKeys := make(map[string]bool, len(preset.AvailableSkills))
+	for _, key := range preset.AvailableSkills {
+		key = agentcontract.CanonicalBuiltInSkillKey(key)
+		if key != "" {
+			availableKeys[key] = true
+		}
+	}
+	availableRefs := make([]AgentRuntimeSkillRef, 0, len(preset.AvailableSkills))
+	for _, ref := range refs {
+		key := agentcontract.CanonicalBuiltInSkillKey(ref.Key)
+		if !availableKeys[key] {
+			continue
+		}
+		ref.Config = withRuntimeSkillRole(ref.Config, "available")
+		availableRefs = append(availableRefs, ref)
+	}
+	return availableRefs
+}
+
+func usesVersionOwnedSystemPrompt(agent *model.Agent) bool {
+	if agent == nil {
+		return false
+	}
+	_, ok := agentPresetVersionDefinition(agent.EffectivePresetKey(), agent.EffectivePresetVersionKey())
+	return ok
+}
+
+func withRuntimeSkillRole(config json.RawMessage, role string) json.RawMessage {
+	values := map[string]any{}
+	if len(config) > 0 && strings.TrimSpace(string(config)) != "null" {
+		_ = json.Unmarshal(config, &values)
+	}
+	values[runtimeSkillRoleConfigKey] = role
+	payload, err := json.Marshal(values)
+	if err != nil {
+		return config
+	}
+	return payload
 }
 
 func runtimeSkillRefsFromHelpin(refs model.AgentSkillRefs, runtimeKind string) []AgentRuntimeSkillRef {
@@ -5695,6 +5766,16 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
 		return nil, err
 	}
+	// Some embedders construct AgentService without transcript persistence. Keep
+	// that legacy setup working while making the launch prompt durable whenever
+	// the run-message repository is available (as it is in production).
+	if initialContext := initialAgentRunContext(run); initialContext != "" && s.runMessageRepo != nil {
+		if _, err := s.createRunMessage(ctx, run, "user", "prompt", initialContext); err != nil {
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, run, err)
+			return nil, err
+		}
+	}
 	s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, run, nil)
 
 	// Agent Runtime is the only execution path — a run that cannot delegate
@@ -5976,6 +6057,17 @@ func (s *AgentService) logTargetAgentRunActivity(ctx context.Context, run *model
 	}
 
 	_ = s.activitySvc.Log(ctx, run.WorkspaceID, entityType, entityID, strPtr(actorID), "updated", strPtr("agent_run"), nil, strPtr(action), metadata)
+}
+
+func initialAgentRunContext(run *model.AgentRun) string {
+	if run == nil || len(run.Input) == 0 {
+		return ""
+	}
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(run.Input, &input); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(input.AdditionalContext)
 }
 
 func (s *AgentService) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string) (*model.AgentRunMessage, error) {

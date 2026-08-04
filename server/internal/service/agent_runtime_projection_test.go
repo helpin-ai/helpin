@@ -1914,6 +1914,21 @@ func TestRuntimeMessageTurnSegmentsPreservesCodexPreambleBeforeTool(t *testing.T
 	}
 }
 
+func TestRuntimeMessageTurnSegmentsPreservesFailedToolStatus(t *testing.T) {
+	invocations := []byte(`[{"tool_call_id":"tool-failed","tool_name":"read_skill","input":{"key":"missing"},"output_summary":"not found","status":"failed","error":"skill is not available"}]`)
+	payload := runtimeMessageTurnSegments("msg-failed", "", invocations)
+	var segments []model.CodingSessionLiveTurnSegment
+	if err := json.Unmarshal(payload, &segments); err != nil {
+		t.Fatalf("unmarshal segments: %v", err)
+	}
+	if len(segments) != 1 || segments[0].ToolCall == nil || segments[0].ToolCall.Status != "failed" {
+		t.Fatalf("expected persisted failure, got %#v", segments)
+	}
+	if segments[0].ToolCall.Result == nil || segments[0].ToolCall.Result.Error == nil || *segments[0].ToolCall.Result.Error != "skill is not available" {
+		t.Fatalf("expected persisted tool error, got %#v", segments[0].ToolCall.Result)
+	}
+}
+
 func TestAgentRuntimeProjectionMirrorsAssistantMessageWithToolInvocations(t *testing.T) {
 	run := &model.AgentRun{
 		ID:                "helpin-run-enriched",

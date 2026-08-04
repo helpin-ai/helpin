@@ -37,7 +37,7 @@ export interface CollectSegmentsOptions {
   /** Which kinds to emit. Omit for all kinds. */
   include?: ReadonlySet<TranscriptSegmentKind>;
   /**
-   * Leading run-context message (developer/system prompt) the slider derives
+   * Leading run-context message (persisted/developer/system prompt) the slider derives
    * from the prompt artifact. Rendered first when `context` is in scope.
    */
   leadingContext?: CodingSessionTranscriptMessage | null;
@@ -61,7 +61,11 @@ export const DOCK_SEGMENT_KINDS: ReadonlySet<TranscriptSegmentKind> = new Set<Tr
 ]);
 
 function isContextMessage(message: CodingSessionTranscriptMessage): boolean {
-  return message.message_type === 'developer_prompt' || message.message_type === 'system_prompt';
+  return (
+    message.message_type === 'prompt'
+    || message.message_type === 'developer_prompt'
+    || message.message_type === 'system_prompt'
+  );
 }
 
 function isReviewDecisionMessage(message: CodingSessionTranscriptMessage): boolean {
