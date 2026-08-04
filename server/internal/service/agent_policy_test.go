@@ -214,12 +214,21 @@ func TestListAgentPresetsIncludesEpicPlanner(t *testing.T) {
 	}
 }
 
-func TestListAgentPresetsUseGPT56Terra(t *testing.T) {
+func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 	presets := ListAgentPresets()
 	if len(presets) == 0 {
 		t.Fatal("expected preset catalog")
 	}
 	for _, preset := range presets {
+		if preset.Key == model.AgentPresetTaskPlanner {
+			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
+				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
+			}
+			if preset.Model == nil || *preset.Model != defaultScribeAgentModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultScribeAgentModel)
+			}
+			continue
+		}
 		if preset.Key == model.AgentPresetAskAgent || preset.Key == model.AgentPresetSupportAgent {
 			// The dock orchestrator and support agent default to a flash-tier
 			// OpenRouter model.

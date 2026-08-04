@@ -310,6 +310,52 @@ type AgentRunRepository struct {
 	triggerExecutionRepo *AgentTriggerExecutionRepository
 }
 
+const (
+	_agentRunListDefaultPageSize = 50
+	_agentRunListMaxPageSize     = 500
+	_agentRunListColumns         = `
+		id,
+		workspace_id,
+		agent_id,
+		task_id,
+		conversation_id,
+		target_type,
+		target_id,
+		runtime_kind,
+		invocation_mode,
+		parent_run_id,
+		dock_chat_id,
+		handoff_state,
+		approval_state,
+		pause_reason,
+		triggered_by_user_id,
+		status,
+		workflow_id,
+		workflow_run_id,
+		external_runtime,
+		external_runtime_id,
+		task_queue,
+		runner_pool,
+		agent_version_id,
+		repository_id,
+		repo_full_name,
+		base_branch,
+		working_branch,
+		delivery_target_id,
+		execution_stage,
+		last_heartbeat_at,
+		input,
+		cached_input_tokens,
+		input_tokens,
+		output_tokens,
+		tokens_used,
+		error_message,
+		started_at,
+		completed_at,
+		created_at,
+		updated_at`
+)
+
 // NewAgentRunRepository creates a new AgentRunRepository.
 func NewAgentRunRepository(db *gorm.DB) *AgentRunRepository {
 	return &AgentRunRepository{db: db}
@@ -342,18 +388,15 @@ func (r *AgentRunRepository) ListByAgent(ctx context.Context, workspaceID, agent
 		return nil, 0, fmt.Errorf("count agent runs: %w", err)
 	}
 
-	page := pagination.Page
-	perPage := pagination.PerPage
-	if page <= 0 {
-		page = 1
-	}
-	if perPage <= 0 {
-		perPage = 50
-	}
+	page, perPage := agentRunListPagination(pagination)
 	offset := (page - 1) * perPage
 
 	var runs []model.AgentRun
-	if err := query.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&runs).Error; err != nil {
+	if err := query.Select(_agentRunListColumns).
+		Order("created_at DESC").
+		Offset(offset).
+		Limit(perPage).
+		Find(&runs).Error; err != nil {
 		return nil, 0, fmt.Errorf("list agent runs: %w", err)
 	}
 	return runs, total, nil
@@ -380,21 +423,49 @@ func (r *AgentRunRepository) ListByWorkspace(ctx context.Context, workspaceID st
 		return nil, 0, fmt.Errorf("count workspace agent runs: %w", err)
 	}
 
-	page := pagination.Page
-	perPage := pagination.PerPage
-	if page <= 0 {
-		page = 1
-	}
-	if perPage <= 0 {
-		perPage = 50
-	}
+	page, perPage := agentRunListPagination(pagination)
 	offset := (page - 1) * perPage
 
 	var runs []model.AgentRun
-	if err := query.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&runs).Error; err != nil {
+	if err := query.Select(_agentRunListColumns).
+		Order("created_at DESC").
+		Offset(offset).
+		Limit(perPage).
+		Find(&runs).Error; err != nil {
 		return nil, 0, fmt.Errorf("list workspace agent runs: %w", err)
 	}
 	return runs, total, nil
+}
+
+// CountWorkspaceRunsRequiringAttention returns the number of paused runs that
+// need a user action. Runs paused while waiting for a chat reply are excluded.
+func (r *AgentRunRepository) CountWorkspaceRunsRequiringAttention(ctx context.Context, workspaceID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("workspace_id = ?", workspaceID).
+		Where("status = ?", model.AgentRunStatusPaused).
+		Where("COALESCE(pause_reason, '') <> ?", model.AgentRunPauseReasonUserMessage).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count workspace agent runs requiring attention: %w", err)
+	}
+	return count, nil
+}
+
+func agentRunListPagination(pagination model.PMPagination) (int, int) {
+	page := pagination.Page
+	if page <= 0 {
+		page = 1
+	}
+
+	perPage := pagination.PerPage
+	if perPage <= 0 {
+		perPage = _agentRunListDefaultPageSize
+	}
+	if perPage > _agentRunListMaxPageSize {
+		perPage = _agentRunListMaxPageSize
+	}
+	return page, perPage
 }
 
 // ListWorkspaceRunsWithoutTriggerExecutions returns agent runs that do not
@@ -875,6 +946,38 @@ func (r *AgentRunRepository) UpdateOutputSummary(ctx context.Context, runID stri
 		Update("output_summary", outputSummary).
 		Error; err != nil {
 		return fmt.Errorf("update agent run output summary: %w", err)
+	}
+	return nil
+}
+
+// UpdateReconciledFailure persists only the fields changed when a stale run is
+// failed during read-time reconciliation. The targeted update keeps projected
+// list rows from overwriting large fields that were intentionally not loaded.
+func (r *AgentRunRepository) UpdateReconciledFailure(ctx context.Context, run *model.AgentRun) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("agent run repository is not configured")
+	}
+	if run == nil {
+		return fmt.Errorf("agent run is required")
+	}
+	updates := map[string]any{
+		"status":            run.Status,
+		"pause_reason":      run.PauseReason,
+		"completed_at":      run.CompletedAt,
+		"error_message":     run.ErrorMessage,
+		"execution_stage":   run.ExecutionStage,
+		"last_heartbeat_at": run.LastHeartbeatAt,
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("workspace_id = ? AND id = ?", run.WorkspaceID, run.ID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update reconciled agent run failure: %w", err)
+	}
+	if r.triggerExecutionRepo != nil {
+		if err := r.triggerExecutionRepo.SyncRunStatus(ctx, run); err != nil {
+			return fmt.Errorf("sync reconciled agent run status: %w", err)
+		}
 	}
 	return nil
 }

@@ -54,6 +54,7 @@ export const queryKeys = {
     agentUsage: (wsId: string, id: string) => ['automation', wsId, 'agents', id, 'usage'] as const,
     runsRoot: (wsId: string) => ['automation', wsId, 'runs'] as const,
     runs: (wsId: string, page?: number, perPage?: number) => ['automation', wsId, 'runs', page, perPage] as const,
+    runAttentionCount: (wsId: string) => ['automation', wsId, 'runs', 'attention-count'] as const,
     targetRuns: (wsId: string, targetType: string, targetId: string) => ['automation', wsId, 'runs', 'target', targetType, targetId] as const,
   },
 

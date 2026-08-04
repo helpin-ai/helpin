@@ -13,6 +13,9 @@ const (
 	defaultAnthropicAgentModel  = "claude-opus-4-8"
 	defaultOpenAIAgentModel     = "gpt-5.6-terra"
 	defaultOpenRouterAgentModel = "openai/gpt-5.6-terra"
+	// defaultScribeAgentModel keeps interactive task planning on the product's
+	// preferred fast OpenRouter model.
+	defaultScribeAgentModel = "deepseek/deepseek-v4-flash"
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
 	defaultAskAgentModel = "deepseek/deepseek-v4-flash-0731"
@@ -382,6 +385,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	commandAgentPrompt := "You are a Sub-agent handling one confirmed delegated task. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward."
 	askAgentPrompt := askAgentSystemPrompt()
 	openRouterPresetProvider := model.AgentModelProviderOpenRouter
+	scribeDefaultModel := defaultScribeAgentModel
 	askAgentDefaultModel := defaultAskAgentModel
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		agentcontract.ToolUpdatePlan,
@@ -437,8 +441,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
 			DefaultRole:           "Coding Task Planner",
 			RuntimeKind:           "codex",
-			Provider:              &openAIPresetProvider,
-			Model:                 &openAIPresetModel,
+			Provider:              &openRouterPresetProvider,
+			Model:                 &scribeDefaultModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          taskPlannerTools,

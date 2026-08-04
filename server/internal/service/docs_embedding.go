@@ -92,6 +92,39 @@ func NewDocsEmbeddingServiceWithCollections(
 	}
 }
 
+// spaceIsAutoIndexable reports whether a space should be chunked even without
+// any agent knowledge-source link: live external-capable (help center) spaces.
+func (s *DocsEmbeddingService) spaceIsAutoIndexable(ctx context.Context, workspaceID, spaceID string) bool {
+	if s.spaceRepo == nil {
+		return false
+	}
+	space, err := s.spaceRepo.GetByID(ctx, spaceID)
+	if err != nil || space == nil || space.WorkspaceID != workspaceID {
+		return false
+	}
+	return space.Type == model.SpaceTypeExternalCapable && space.DeletedAt == nil
+}
+
+// QueueHelpcenterAutoIndex queues an embedding sync for every external-capable
+// space in the workspace. Used as a lazy backfill for workspaces that
+// published a help center before auto-indexing existed (or before any agent
+// linked their spaces).
+func (s *DocsEmbeddingService) QueueHelpcenterAutoIndex(ctx context.Context, workspaceID string) error {
+	if s == nil || s.spaceRepo == nil {
+		return nil
+	}
+	spaces, err := s.spaceRepo.ListPublicByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	for _, space := range spaces {
+		if err := s.QueueSpaceSync(ctx, workspaceID, space.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // QueueKnowledgeSourceSync schedules a sync for one selected docs source.
 func (s *DocsEmbeddingService) QueueKnowledgeSourceSync(ctx context.Context, knowledgeSourceID string) error {
 	if s == nil || s.knowledgeRepo == nil {
@@ -116,7 +149,10 @@ func (s *DocsEmbeddingService) QueueDocumentSync(ctx context.Context, documentID
 	return s.QueueSpaceSync(ctx, doc.WorkspaceID, doc.SpaceID)
 }
 
-// QueueSpaceSync schedules a sync for all selected knowledge sources on a docs space.
+// QueueSpaceSync schedules a sync for a docs space. Spaces linked as agent
+// knowledge sources always sync; help-center (external-capable) spaces sync
+// even without any linked agent — public semantic search and AI answers
+// depend on their chunks, so indexing is not gated on agent configuration.
 func (s *DocsEmbeddingService) QueueSpaceSync(ctx context.Context, workspaceID, spaceID string) error {
 	if s == nil || s.knowledgeRepo == nil {
 		return nil
@@ -125,7 +161,7 @@ func (s *DocsEmbeddingService) QueueSpaceSync(ctx context.Context, workspaceID, 
 	if err != nil {
 		return err
 	}
-	if len(sources) == 0 {
+	if len(sources) == 0 && !s.spaceIsAutoIndexable(ctx, workspaceID, spaceID) {
 		return nil
 	}
 
@@ -160,7 +196,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 	if err != nil {
 		return err
 	}
-	if len(sources) == 0 {
+	if len(sources) == 0 && !s.spaceIsAutoIndexable(ctx, workspaceID, spaceID) {
 		return nil
 	}
 

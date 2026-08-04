@@ -20,6 +20,10 @@ type Handlers struct {
 	// (nil disables limiting, e.g. when Redis is not configured).
 	WidgetRateLimit func(http.Handler) http.Handler
 
+	// HelpcenterAnswerRateLimit guards the public AI answer endpoints
+	// (nil disables limiting, e.g. when Redis is not configured).
+	HelpcenterAnswerRateLimit func(http.Handler) http.Handler
+
 	Health              *handler.HealthHandler
 	Auth                *handler.AuthHandler
 	Passkey             *handler.PasskeyHandler
@@ -92,6 +96,11 @@ type Handlers struct {
 // New creates and configures the Chi router with all routes.
 func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzService, slugResolver authorization.SlugResolver, corsOrigins []string) *chi.Mux {
 	r := chi.NewRouter()
+
+	helpcenterAnswerLimiter := h.HelpcenterAnswerRateLimit
+	if helpcenterAnswerLimiter == nil {
+		helpcenterAnswerLimiter = func(next http.Handler) http.Handler { return next }
+	}
 
 	// Global middleware (applied to all routes)
 	r.Use(chimiddleware.RequestID)
@@ -226,6 +235,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/spaces/{spaceSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
 			r.Post("/spaces/{spaceSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
 			r.Get("/search", h.Docs.PublicSearchArticles)
+			r.With(helpcenterAnswerLimiter).Post("/answer", h.Docs.PublicAnswerQuestion)
+			r.With(helpcenterAnswerLimiter).Post("/answer/{answerID}/feedback", h.Docs.PublicAnswerFeedback)
 
 			// Canonical collection + article routes
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
@@ -305,12 +316,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/{locale}/collections/{collectionSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
 			r.Post("/{locale}/collections/{collectionSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
 			r.Get("/{locale}/search", h.Docs.PublicSearchArticles)
+			r.With(helpcenterAnswerLimiter).Post("/{locale}/answer", h.Docs.PublicAnswerQuestion)
+			r.With(helpcenterAnswerLimiter).Post("/{locale}/answer/{answerID}/feedback", h.Docs.PublicAnswerFeedback)
 
 			r.Get("/spaces", h.Docs.PublicGetSpaces)
 			r.Get("/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
 			r.Get("/spaces/{spaceSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
 			r.Post("/spaces/{spaceSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
 			r.Get("/search", h.Docs.PublicSearchArticles)
+			r.With(helpcenterAnswerLimiter).Post("/answer", h.Docs.PublicAnswerQuestion)
+			r.With(helpcenterAnswerLimiter).Post("/answer/{answerID}/feedback", h.Docs.PublicAnswerFeedback)
 
 			// Canonical collection + article routes
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
@@ -686,6 +701,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				r.Route("/runs", func(r chi.Router) {
 					r.With(requireAutomationRead()).Get("/", h.Automation.ListRuns)
+					r.With(requireAutomationRead()).Get("/attention-count", h.Automation.GetRunAttentionCount)
 					r.With(requireAutomationEdit()).Post("/", h.Automation.StartRun)
 					r.Route("/{id}", func(r chi.Router) {
 						r.With(requireAutomationRead()).Get("/", h.Automation.GetRun)

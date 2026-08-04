@@ -1,6 +1,7 @@
-import { useSearchArticles } from '@/hooks/queries'
+import { useSearchArticles, useSemanticSearchArticles } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { AIAnswerCard } from '@/components/AIAnswerCard'
 import { SearchResultsList } from '@/components/SearchResults'
 import { LoadingState } from '@/components/LoadingState'
 import { Footer } from '@/components/layout/Footer'
@@ -24,6 +25,17 @@ export function SearchRouteView({
     multilingualEnabled,
     space,
   )
+  // Client-side semantic pass supersedes the SSR full-text results when it
+  // finds hits; on error or empty it silently keeps the lexical results.
+  const { data: semanticResults } = useSemanticSearchArticles(
+    subdomain,
+    locale,
+    query,
+    multilingualEnabled,
+    space,
+  )
+  const displayResults =
+    semanticResults && semanticResults.length > 0 ? semanticResults : results ?? []
 
   useDocumentTitle(query ? `Search: ${query}` : 'Search')
 
@@ -41,10 +53,12 @@ export function SearchRouteView({
         )}
       </header>
 
+      <AIAnswerCard locale={locale} query={query} space={space} />
+
       {isLoading ? (
         <LoadingState message="Searching..." />
       ) : (
-        <SearchResultsList results={results ?? []} query={query} locale={locale} />
+        <SearchResultsList results={displayResults} query={query} locale={locale} />
       )}
       <Footer />
     </div>

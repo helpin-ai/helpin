@@ -223,6 +223,7 @@ func main() {
 			&model.CommandBarPlanDismissal{},
 			&model.DockChat{},
 			&model.SupportRunEvidence{},
+			&model.HelpcenterAnswer{},
 			&model.CodingSessionStateSnapshot{},
 			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
@@ -1499,8 +1500,32 @@ func main() {
 	if setupSuccessEnabled {
 		setupHandler = handler.NewSetupHandler(setupService, authzService)
 	}
+	// Public help center AI search: semantic retrieval over published chunks
+	// plus cached, validated one-shot answers (free tier — cost is bounded by
+	// per-IP rate limits and the per-workspace daily generation budget).
+	helpcenterAnswerRepo := repository.NewHelpcenterAnswerRepository(db)
+	helpcenterAnswerProvider, helpcenterAnswerModel := service.ResolveHelpcenterAnswerRouting(
+		cfg.HelpcenterAnswerProvider, cfg.HelpcenterAnswerModel,
+		cfg.OpenRouterAPIKey != "", cfg.OpenAIAPIKey != "", cfg.AnthropicAPIKey != "",
+	)
+	helpcenterAISearchService := service.NewHelpcenterAISearchService(
+		docsChunkRepo,
+		docsSearchRepo,
+		helpcenterAnswerRepo,
+		supportEmbeddingProvider,
+		cfg.OpenAIEmbeddingModel,
+		supportLLMRouter,
+		helpcenterAnswerProvider,
+		helpcenterAnswerModel,
+		redisClient,
+	)
+	// Lazy chunk backfill for workspaces whose help center predates
+	// agent-independent auto-indexing.
+	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
+
 	handlers := router.Handlers{
-		WidgetRateLimit: middleware.WidgetRateLimit(redisClient),
+		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
+		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
 		Health:          handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
 			ClientID:     cfg.GoogleAuthClientID,
@@ -1610,6 +1635,7 @@ func main() {
 	// Set support event recorder on DocsHandler after handler creation.
 	handlers.Docs.SetSupportEventRecorder(supportEventRecorder)
 	handlers.Docs.SetSupportWidgetConfigProvider(supportInboxService)
+	handlers.Docs.SetHelpcenterAISearchService(helpcenterAISearchService)
 
 	// Slug resolver adapts workspace repo for RBAC middleware.
 	slugResolver := authorization.SlugResolver(func(ctx context.Context, slug string) (string, error) {

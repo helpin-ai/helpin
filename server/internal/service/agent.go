@@ -972,6 +972,18 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
+		// Scribe's product default moved from OpenAI to DeepSeek V4 Flash on
+		// OpenRouter. Only migrate the default preset when it still uses a known
+		// legacy product default, preserving custom routing choices.
+		if presetKey == model.AgentPresetTaskPlanner &&
+			presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
+			(strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel ||
+				strings.TrimSpace(derefString(existing.Model)) == "gpt-5.5") {
+			existing.Provider = trimPtr(preset.Provider)
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
 		expectedExecutionConfig := normalizeExecutionConfigJSON(preset.ExecutionConfig)
 		if string(normalizeExecutionConfigJSON(existing.ExecutionConfig)) == "{}" && string(expectedExecutionConfig) != "{}" {
 			existing.ExecutionConfig = expectedExecutionConfig
@@ -3310,6 +3322,19 @@ func (s *AgentService) ListWorkspaceRuns(ctx context.Context, workspaceID string
 	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
 	s.enrichRunTargets(ctx, workspaceID, normalized)
 	return normalized, total, nil
+}
+
+// CountWorkspaceRunsRequiringAttention returns the lightweight workspace badge
+// count without hydrating agent run input or output payloads.
+func (s *AgentService) CountWorkspaceRunsRequiringAttention(ctx context.Context, workspaceID string) (int64, error) {
+	if workspaceID == "" {
+		return 0, fmt.Errorf("workspace_id is required")
+	}
+	count, err := s.runRepo.CountWorkspaceRunsRequiringAttention(ctx, workspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // GetAgentAnalytics returns bucketed run and token trends for one agent.
@@ -6126,7 +6151,7 @@ func (s *AgentService) reconcileStuckRun(ctx context.Context, run *model.AgentRu
 	run.ErrorMessage = &errMsg
 	run.ExecutionStage = strPtr("failed")
 	run.LastHeartbeatAt = &now
-	if err := s.runRepo.Update(ctx, run); err != nil {
+	if err := s.runRepo.UpdateReconciledFailure(ctx, run); err != nil {
 		return run
 	}
 	_ = s.markAgentIdle(ctx, run.WorkspaceID, run.AgentID)
@@ -6155,7 +6180,7 @@ func (s *AgentService) failStaleRun(ctx context.Context, run *model.AgentRun, no
 	run.ErrorMessage = &errMsg
 	run.ExecutionStage = strPtr("failed_to_start")
 	run.LastHeartbeatAt = &now
-	if err := s.runRepo.Update(ctx, run); err != nil {
+	if err := s.runRepo.UpdateReconciledFailure(ctx, run); err != nil {
 		slog.WarnContext(ctx, "failed to persist stale run reconciliation", "run_id", run.ID, "error", err)
 		return run
 	}

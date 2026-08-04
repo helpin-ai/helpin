@@ -14,7 +14,6 @@ import { queryKeys } from '@/lib/queryKeys';
 import { getInitials } from '@/lib/utils';
 import { buildSupportInboxSearch } from '@/lib/supportInboxRouting';
 import { supportInboxCountMailboxScope } from '@/lib/supportInboxFilters';
-import { ACTIVE_RUN_STATUSES, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import {
   Sidebar as ShellSidebar,
@@ -116,26 +115,15 @@ export function Sidebar() {
     setBuiltinViewFilters(builtinViewFilterMap);
   }, [builtinViewFilterMap, setBuiltinViewFilters]);
 
-  const { data: agentRunsData } = useQuery({
-    queryKey: queryKeys.automation.runs(workspaceId ?? '', 1, 100),
+  const { data: agentAttentionCount = 0 } = useQuery({
+    queryKey: queryKeys.automation.runAttentionCount(workspaceId ?? ''),
     queryFn: async () => {
-      const res = await automationService.listWorkspaceRuns(workspaceId!, 1, 100);
-      return {
-        data: Array.isArray(res.data?.data) ? res.data.data : [],
-        total: res.data?.total ?? 0,
-        page: res.data?.page ?? 1,
-        per_page: res.data?.per_page ?? 100,
-        total_pages: res.data?.total_pages ?? 0,
-      };
+      const res = await automationService.getRunAttentionCount(workspaceId!);
+      return res.data?.count ?? 0;
     },
     enabled: !!workspaceId,
     staleTime: 30_000,
   });
-  const agentRuns = Array.isArray(agentRunsData?.data) ? agentRunsData.data : [];
-  const agentAttentionCount = useMemo(
-    () => agentRuns.filter((run) => ACTIVE_RUN_STATUSES.has(run.status) && isPausedAgentRun(run)).length,
-    [agentRuns],
-  );
 
   const { data: teammatePresence = [] } = useSupportTeammatePresence(workspaceId ?? '', hasSupportModule);
   const updateMyPresence = useUpdateMySupportTeammatePresence(workspaceId ?? '');

@@ -579,6 +579,7 @@ type DocsHelpcenterConfig struct {
 	FallbackToDefaultLocale bool            `json:"fallback_to_default_locale" gorm:"not null;default:true"`
 	IsPublished             bool            `json:"is_published" gorm:"not null;default:false"`
 	ChatWidgetEnabled       bool            `json:"chat_widget_enabled" gorm:"not null;default:true"`
+	AIAnswersEnabled        bool            `json:"ai_answers_enabled" gorm:"not null;default:true"`
 	SEOTitle                *string         `json:"seo_title"`
 	SEODescription          *string         `json:"seo_description"`
 	OGTitle                 *string         `json:"og_title"`
@@ -930,6 +931,7 @@ type UpdateDocsHelpcenterConfigRequest struct {
 	FallbackToDefaultLocale *bool           `json:"fallback_to_default_locale"`
 	IsPublished             *bool           `json:"is_published"`
 	ChatWidgetEnabled       *bool           `json:"chat_widget_enabled"`
+	AIAnswersEnabled        *bool           `json:"ai_answers_enabled"`
 	SEOTitle                *string         `json:"seo_title"`
 	SEODescription          *string         `json:"seo_description"`
 	OGTitle                 *string         `json:"og_title"`
