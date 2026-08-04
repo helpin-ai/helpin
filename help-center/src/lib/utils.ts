@@ -149,12 +149,13 @@ export function resolveHelpCenterContext(
     }
   }
 
-  // Dev / localhost / IP address / dev-*.helpin.ai fallback
+  // Dev / localhost / IP address / dev-*.helpin.ai / dev tunnel fallback
   if (
     host === 'localhost' ||
     host === '127.0.0.1' ||
     /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ||
-    /^dev-\w+\.helpin\.ai$/.test(host)
+    /^dev-\w+\.helpin\.ai$/.test(host) ||
+    /\.tryunhide\.com$/.test(host)
   ) {
     return {
       subdomain:
