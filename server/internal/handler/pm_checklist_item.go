@@ -23,7 +23,8 @@ func NewPMChecklistItemHandler(service *service.PMChecklistItemService) *PMCheck
 // List handles GET /api/pm/tasks/{id}/checklist
 func (h *PMChecklistItemHandler) List(w http.ResponseWriter, r *http.Request) {
 	storyID := chi.URLParam(r, "id")
-	items, err := h.service.List(r.Context(), storyID)
+	workspaceID := middleware.GetWorkspaceID(r.Context())
+	items, err := h.service.List(r.Context(), storyID, workspaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

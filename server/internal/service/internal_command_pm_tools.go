@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 var pmDiscoveryTargets = []string{"workspace", "task", "story", "epic", "sprint", "objective"}
@@ -35,6 +37,9 @@ func (p pmCommandPage) normalized() (int, int) {
 }
 
 func boundedPMCommandPage[T any](values []T, page, perPage int) []T {
+	if page <= 0 || perPage <= 0 || page-1 > math.MaxInt/perPage {
+		return []T{}
+	}
 	start := (page - 1) * perPage
 	if start >= len(values) {
 		return []T{}
@@ -105,19 +110,9 @@ func (s *InternalCommandService) executeListWorkspaceMembers(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	teams, err := s.workspaceRepo.ListTeams(ctx, meta.WorkspaceID)
+	teamsByUser, err := s.workspaceRepo.ListActiveTeamIDsByUser(ctx, meta.WorkspaceID)
 	if err != nil {
 		return nil, err
-	}
-	teamsByUser := make(map[string][]string)
-	for _, team := range teams {
-		userIDs, err := s.workspaceRepo.ListActiveTeamUserIDs(ctx, meta.WorkspaceID, team.ID)
-		if err != nil {
-			return nil, err
-		}
-		for _, userID := range userIDs {
-			teamsByUser[userID] = append(teamsByUser[userID], team.ID)
-		}
 	}
 	rows := make([]map[string]any, 0, len(members))
 	for _, member := range members {
@@ -745,6 +740,7 @@ func (s *InternalCommandService) executeListTaskChecklist(ctx context.Context, m
 	}
 	var req struct {
 		TaskID string `json:"task_id"`
+		Limit  int    `json:"limit"`
 	}
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {
@@ -755,14 +751,22 @@ func (s *InternalCommandService) executeListTaskChecklist(ctx context.Context, m
 	if err != nil {
 		return nil, err
 	}
-	items, err := s.checklistService.List(ctx, task.ID)
+	items, err := s.checklistService.List(ctx, task.ID, meta.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
-	if len(items) > 100 {
-		items = items[:100]
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 100
 	}
-	return mustJSON(map[string]any{"task_id": task.ID, "items": items, "total": len(items)}), nil
+	if limit > 100 {
+		return nil, fmt.Errorf("limit must be between 1 and 100")
+	}
+	total := len(items)
+	if total > limit {
+		items = items[:limit]
+	}
+	return mustJSON(map[string]any{"task_id": task.ID, "items": items, "total": total, "has_more": total > len(items)}), nil
 }
 
 func (s *InternalCommandService) executeCreateTaskChecklistItem(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -1005,10 +1009,15 @@ func (s *InternalCommandService) executeSetPMTaskDependencies(ctx context.Contex
 	if taskDependencyGraphHasCycle(graph) {
 		return nil, fmt.Errorf("task dependencies contain a cycle")
 	}
-	for _, dependency := range pending {
-		if err := s.taskLinkRepo.Create(ctx, &model.PMTaskLink{WorkspaceID: meta.WorkspaceID, SourceTaskID: dependency.sourceID, TargetTaskID: dependency.targetID, LinkType: model.PMTaskLinkTypeBlocks, CreatedBy: fallbackActor(meta)}); err != nil {
-			return nil, err
+	if err := s.taskLinkRepo.WithTransaction(ctx, func(links *repository.PMTaskLinkRepository) error {
+		for _, dependency := range pending {
+			if err := links.Create(ctx, &model.PMTaskLink{WorkspaceID: meta.WorkspaceID, SourceTaskID: dependency.sourceID, TargetTaskID: dependency.targetID, LinkType: model.PMTaskLinkTypeBlocks, CreatedBy: fallbackActor(meta)}); err != nil {
+				return err
+			}
 		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return mustJSON(map[string]any{"dependency_count": len(pending)}), nil
 }

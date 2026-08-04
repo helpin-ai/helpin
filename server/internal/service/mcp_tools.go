@@ -325,7 +325,7 @@ func (s *MCPService) executeSpecialMCPTool(
 		if task == nil {
 			return nil, ErrMCPNotFound
 		}
-		items, err := s.checklists.List(ctx, input.TaskID)
+		items, err := s.checklists.List(ctx, input.TaskID, principal.WorkspaceID)
 		if err != nil {
 			return nil, err
 		}
@@ -333,9 +333,10 @@ func (s *MCPService) executeSpecialMCPTool(
 
 	case "create_task_checklist_item":
 		var input struct {
-			TaskID   string `json:"task_id"`
-			Text     string `json:"text"`
-			Position *int   `json:"position"`
+			TaskID   string  `json:"task_id"`
+			Text     string  `json:"text"`
+			Position *int    `json:"position"`
+			DueDate  *string `json:"due_date"`
 		}
 		if err := decodeMCPArguments(arguments, &input); err != nil {
 			return nil, err
@@ -347,7 +348,14 @@ func (s *MCPService) executeSpecialMCPTool(
 		if task == nil {
 			return nil, ErrMCPNotFound
 		}
-		item, err := s.checklists.Create(ctx, input.TaskID, model.CreateChecklistItemRequest{Text: input.Text, Position: input.Position}, principal.WorkspaceID, principal.UserID)
+		var dueDate *time.Time
+		if input.DueDate != nil {
+			dueDate, err = parseStrictPMCommandDate(*input.DueDate, "due_date", false)
+			if err != nil {
+				return nil, err
+			}
+		}
+		item, err := s.checklists.Create(ctx, input.TaskID, model.CreateChecklistItemRequest{Text: input.Text, Position: input.Position, DueDate: dueDate}, principal.WorkspaceID, principal.UserID)
 		if err != nil {
 			return nil, err
 		}
@@ -360,6 +368,7 @@ func (s *MCPService) executeSpecialMCPTool(
 			Text            *string `json:"text"`
 			Completed       *bool   `json:"completed"`
 			Position        *int    `json:"position"`
+			DueDate         *string `json:"due_date"`
 		}
 		if err := decodeMCPArguments(arguments, &input); err != nil {
 			return nil, err
@@ -371,7 +380,7 @@ func (s *MCPService) executeSpecialMCPTool(
 		if task == nil {
 			return nil, ErrMCPNotFound
 		}
-		items, err := s.checklists.List(ctx, input.TaskID)
+		items, err := s.checklists.List(ctx, input.TaskID, principal.WorkspaceID)
 		if err != nil {
 			return nil, err
 		}
@@ -385,7 +394,15 @@ func (s *MCPService) executeSpecialMCPTool(
 		if !found {
 			return nil, ErrMCPNotFound
 		}
-		item, err := s.checklists.Update(ctx, input.ChecklistItemID, model.UpdateChecklistItemRequest{Text: input.Text, Completed: input.Completed, Position: input.Position}, principal.WorkspaceID, principal.UserID)
+		update := model.UpdateChecklistItemRequest{Text: input.Text, Completed: input.Completed, Position: input.Position}
+		if input.DueDate != nil {
+			update.DueDate, err = parseStrictPMCommandDate(*input.DueDate, "due_date", true)
+			if err != nil {
+				return nil, err
+			}
+			update.DueDateSet = true
+		}
+		item, err := s.checklists.Update(ctx, input.ChecklistItemID, update, principal.WorkspaceID, principal.UserID)
 		if err != nil {
 			return nil, err
 		}

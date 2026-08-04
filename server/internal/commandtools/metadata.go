@@ -246,7 +246,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		Alias:       "list_task_checklist",
 		Category:    "PM / Tasks",
 		Description: "List up to 100 checklist items belonging to one accessible task.",
-		InputSchema: entityIDSchema("task_id", "Optional task ID. Omit to use the current task target; parent epic and sprint targets require an explicit task ID."),
+		InputSchema: listTaskChecklistSchema(),
 	},
 	{
 		CommandName: "pm.update_task_checklist_item",
@@ -1238,6 +1238,18 @@ func createTaskChecklistItemSchema() map[string]any {
 		"type":                 "object",
 		"properties":           properties,
 		"required":             []string{"text"},
+		"additionalProperties": false,
+	}
+}
+
+func listTaskChecklistSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": optionalIDSchema("Optional task ID. Omit to use the current task target; parent epic and sprint targets require an explicit task ID."),
+			"limit":   map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "default": 100},
+		},
+		"required":             []string{},
 		"additionalProperties": false,
 	}
 }

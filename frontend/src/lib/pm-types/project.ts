@@ -1022,6 +1022,7 @@ export interface ChecklistItem {
   completed: boolean;
   position: number;
   assignee_id?: string;
+  due_date?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1030,6 +1031,7 @@ export interface CreateChecklistItemRequest {
   text: string;
   position?: number;
   assignee_id?: string;
+  due_date?: string | null;
 }
 
 export interface UpdateChecklistItemRequest {
@@ -1037,6 +1039,7 @@ export interface UpdateChecklistItemRequest {
   completed?: boolean;
   position?: number;
   assignee_id?: string;
+  due_date?: string | null;
 }
 
 // ── External Links ──────────────────────────────────────────────────

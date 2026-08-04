@@ -110,3 +110,54 @@ func TestChecklistItemDueDateDTOs(t *testing.T) {
 		t.Fatalf("internal presence flag leaked into JSON: %s", payload)
 	}
 }
+
+func TestUpdateChecklistItemRequestDueDateJSONPresence(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		payload  string
+		wantSet  bool
+		wantNil  bool
+		wantDate string
+	}{
+		{name: "omitted", payload: `{"text":"Keep date"}`, wantSet: false, wantNil: true},
+		{name: "null clears", payload: `{"due_date":null}`, wantSet: true, wantNil: true},
+		{name: "empty clears", payload: `{"due_date":""}`, wantSet: true, wantNil: true},
+		{name: "date only", payload: `{"due_date":"2026-09-15"}`, wantSet: true, wantDate: "2026-09-15"},
+		{name: "rfc3339", payload: `{"due_date":"2026-09-16T12:30:00Z"}`, wantSet: true, wantDate: "2026-09-16"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var req UpdateChecklistItemRequest
+			if err := json.Unmarshal([]byte(tc.payload), &req); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if req.DueDateSet != tc.wantSet {
+				t.Fatalf("DueDateSet = %v, want %v", req.DueDateSet, tc.wantSet)
+			}
+			if tc.wantNil {
+				if req.DueDate != nil {
+					t.Fatalf("DueDate = %v, want nil", req.DueDate)
+				}
+				return
+			}
+			if req.DueDate == nil || req.DueDate.Format("2006-01-02") != tc.wantDate {
+				t.Fatalf("DueDate = %v, want %s", req.DueDate, tc.wantDate)
+			}
+		})
+	}
+}
+
+func TestCreateChecklistItemRequestAcceptsDateOnlyAndRFC3339(t *testing.T) {
+	t.Parallel()
+	for _, payload := range []string{`{"text":"Date only","due_date":"2026-09-15"}`, `{"text":"Timestamp","due_date":"2026-09-16T12:30:00Z"}`} {
+		var req CreateChecklistItemRequest
+		if err := json.Unmarshal([]byte(payload), &req); err != nil {
+			t.Fatalf("unmarshal %s: %v", payload, err)
+		}
+		if req.DueDate == nil {
+			t.Fatalf("due date missing for %s", payload)
+		}
+	}
+}

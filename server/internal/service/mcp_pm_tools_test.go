@@ -51,17 +51,17 @@ func TestExecuteSpecialMCPChecklistLifecycle(t *testing.T) {
 
 	result, err = service.executeSpecialMCPTool(
 		context.Background(), principal, actor, "create_task_checklist_item",
-		json.RawMessage(`{"task_id":"task-1","text":"Run integration tests","position":2}`),
+		json.RawMessage(`{"task_id":"task-1","text":"Run integration tests","position":2,"due_date":"2026-08-15"}`),
 	)
-	if err != nil || result.Summary != "Checklist item created." || checklists.createTaskID != "task-1" || checklists.createRequest.Text != "Run integration tests" {
+	if err != nil || result.Summary != "Checklist item created." || checklists.createTaskID != "task-1" || checklists.createRequest.Text != "Run integration tests" || checklists.createRequest.DueDate == nil || checklists.createRequest.DueDate.Format("2006-01-02") != "2026-08-15" {
 		t.Fatalf("create checklist result = %#v, request %#v, error = %v", result, checklists.createRequest, err)
 	}
 
 	result, err = service.executeSpecialMCPTool(
 		context.Background(), principal, actor, "update_task_checklist_item",
-		json.RawMessage(`{"task_id":"task-1","checklist_item_id":"check-1","completed":true}`),
+		json.RawMessage(`{"task_id":"task-1","checklist_item_id":"check-1","completed":true,"due_date":"2026-08-22"}`),
 	)
-	if err != nil || result.Summary != "Checklist item updated." || checklists.updateID != "check-1" || checklists.updateRequest.Completed == nil || !*checklists.updateRequest.Completed {
+	if err != nil || result.Summary != "Checklist item updated." || checklists.updateID != "check-1" || checklists.updateRequest.Completed == nil || !*checklists.updateRequest.Completed || !checklists.updateRequest.DueDateSet || checklists.updateRequest.DueDate == nil || checklists.updateRequest.DueDate.Format("2006-01-02") != "2026-08-22" {
 		t.Fatalf("update checklist result = %#v, request %#v, error = %v", result, checklists.updateRequest, err)
 	}
 }
@@ -137,7 +137,7 @@ func (f *fakeMCPTaskBatchCreator) CreateEpicTaskBatch(_ context.Context, workspa
 	return []model.PMTask{{ID: "task-created", WorkspaceID: workspaceID, Name: tasks[0].Name}}, nil
 }
 
-func (f *fakeMCPPMChecklistService) List(_ context.Context, taskID string) ([]model.PMChecklistItem, error) {
+func (f *fakeMCPPMChecklistService) List(_ context.Context, taskID, _ string) ([]model.PMChecklistItem, error) {
 	return f.items[taskID], nil
 }
 

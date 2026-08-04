@@ -1199,6 +1199,29 @@ func (r *WorkspaceRepository) ListActiveTeamUserIDs(ctx context.Context, workspa
 	return userIDs, nil
 }
 
+// ListActiveTeamIDsByUser returns all active team memberships in one query.
+// It is used by discovery surfaces to avoid one membership query per team.
+func (r *WorkspaceRepository) ListActiveTeamIDsByUser(ctx context.Context, workspaceID string) (map[string][]string, error) {
+	var rows []struct {
+		UserID string
+		TeamID string
+	}
+	if err := r.db.WithContext(ctx).
+		Table("team_workspace_memberships twm").
+		Select("wm.user_id AS user_id, twm.team_id AS team_id").
+		Joins("JOIN workspace_members wm ON wm.id = twm.workspace_member_id").
+		Where("wm.workspace_id = ? AND wm.status = ? AND wm.user_id IS NOT NULL", workspaceID, model.WorkspaceMemberStatusActive).
+		Order("wm.user_id ASC, twm.team_id ASC").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list active team ids by user: %w", err)
+	}
+	result := make(map[string][]string)
+	for _, row := range rows {
+		result[row.UserID] = append(result[row.UserID], row.TeamID)
+	}
+	return result, nil
+}
+
 // ListActiveUserIDsByRoles returns active linked workspace user IDs for the given roles.
 func (r *WorkspaceRepository) ListActiveUserIDsByRoles(ctx context.Context, workspaceID string, roles []string) ([]string, error) {
 	if len(roles) == 0 {

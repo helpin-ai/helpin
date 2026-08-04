@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -18,6 +19,14 @@ import (
 // PMTaskRepository handles DB operations for tasks and relations.
 type PMTaskRepository struct {
 	db *gorm.DB
+}
+
+// WithMutationTransaction runs task and checklist mutations on the same database
+// transaction. Repository-owned transactions keep GORM out of the service layer.
+func (r *PMTaskRepository) WithMutationTransaction(ctx context.Context, fn func(*PMTaskRepository, *PMChecklistItemRepository) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(&PMTaskRepository{db: tx}, &PMChecklistItemRepository{db: tx})
+	})
 }
 
 const boardDoneGroupThisWeekLabel = "This Week"
@@ -371,6 +380,9 @@ func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters
 	}
 	if perPage <= 0 {
 		perPage = 50
+	}
+	if page-1 > math.MaxInt/perPage {
+		return []model.BoardTask{}, total, nil
 	}
 
 	var tasks []model.PMTask

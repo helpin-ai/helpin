@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -364,6 +365,36 @@ func TestPMCommandChecklist(t *testing.T) {
 	}
 	if _, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.update_task_checklist_item", json.RawMessage(`{"checklist_item_id":"`+created.ChecklistItemID+`","due_date":"2026-02-30"}`)); err == nil || !strings.Contains(err.Error(), "YYYY-MM-DD") {
 		t.Fatalf("expected malformed update due_date rejection, got %v", err)
+	}
+	if _, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.create_task_checklist_item", json.RawMessage(`{"text":"Second"}`)); err != nil {
+		t.Fatalf("create second checklist item: %v", err)
+	}
+	limited, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.list_task_checklist", json.RawMessage(`{"limit":1}`))
+	if err != nil || !strings.Contains(string(limited), `"total":2`) || !strings.Contains(string(limited), `"has_more":true`) {
+		t.Fatalf("bounded checklist metadata = %s, %v", limited, err)
+	}
+}
+
+func TestSetPMTaskDependenciesRollsBackWholeBatch(t *testing.T) {
+	env := newPMCommandTestEnv(t)
+	seedPMCommandTask(t, env.db, "task-a", "ws-1", "team-a", "wf-a", "state-a", "", "", 1)
+	seedPMCommandTask(t, env.db, "task-b", "ws-1", "team-a", "wf-a", "state-a", "", "", 2)
+	seedPMCommandTask(t, env.db, "task-c", "ws-1", "team-a", "wf-a", "state-a", "", "", 3)
+	mustExec(t, env.db, `CREATE TRIGGER fail_dependency_insert BEFORE INSERT ON pm_task_links
+		WHEN NEW.target_task_id = 'task-c' BEGIN SELECT RAISE(ABORT, 'forced dependency failure'); END`)
+	_, err := env.service.Execute(context.Background(), env.meta("workspace", "ws-1"), "pm.set_task_dependencies", json.RawMessage(`{"dependencies":[{"source_task_id":"task-a","target_task_id":"task-b"},{"source_task_id":"task-b","target_task_id":"task-c"}]}`))
+	if err == nil {
+		t.Fatal("expected dependency batch failure")
+	}
+	var count int64
+	if dbErr := env.db.Table("pm_task_links").Count(&count).Error; dbErr != nil || count != 0 {
+		t.Fatalf("dependency count = %d, err %v; want zero after rollback", count, dbErr)
+	}
+}
+
+func TestBoundedPMCommandPageRejectsOverflow(t *testing.T) {
+	if got := boundedPMCommandPage([]int{1, 2}, math.MaxInt, 100); len(got) != 0 {
+		t.Fatalf("overflow page = %#v, want empty", got)
 	}
 }
 

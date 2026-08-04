@@ -19,6 +19,7 @@ func TestPMToolCatalogContracts(t *testing.T) {
 		"get_task":                        "PM / Tasks",
 		"update_task":                     "PM / Tasks",
 		"create_task_checklist_item":      "PM / Tasks",
+		"list_task_checklist":             "PM / Tasks",
 		"update_task_checklist_item":      "PM / Tasks",
 		"add_pm_comment":                  "PM / Tasks",
 		"list_epics":                      "PM / Epics",
@@ -114,6 +115,8 @@ func TestPMToolCatalogContracts(t *testing.T) {
 
 	assertRequiredFields(t, "create_task", createTask, []string{"name", "team_id"})
 	assertRequiredFields(t, "create_task_checklist_item", requireCatalogSchema(t, toolsByName, "create_task_checklist_item"), []string{"text"})
+	listChecklist := requireCatalogSchema(t, toolsByName, "list_task_checklist")
+	assertSchemaFields(t, "list_task_checklist", listChecklist, []string{"task_id", "limit"})
 	updateChecklist := requireCatalogSchema(t, toolsByName, "update_task_checklist_item")
 	assertRequiredFields(t, "update_task_checklist_item", updateChecklist, []string{"checklist_item_id"})
 	assertSchemaFields(t, "update_task_checklist_item", updateChecklist, []string{"task_id", "due_date"})

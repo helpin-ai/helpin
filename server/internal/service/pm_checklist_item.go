@@ -37,10 +37,30 @@ func NewPMChecklistItemService(
 	}
 }
 
-// List returns checklist items for a story.
-func (s *PMChecklistItemService) List(ctx context.Context, storyID string) ([]model.PMChecklistItem, error) {
+func (s *PMChecklistItemService) requireAccessibleTask(ctx context.Context, taskID, workspaceID string) (*model.PMTask, error) {
+	if s.taskRepo == nil {
+		return nil, fmt.Errorf("task repository is not configured")
+	}
+	task, err := s.taskRepo.GetRawByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil || task.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("task not found")
+	}
+	if err := requireTeamAccess(ctx, task.TeamID); err != nil {
+		return nil, fmt.Errorf("task not found")
+	}
+	return task, nil
+}
+
+// List returns checklist items for an accessible task in the workspace.
+func (s *PMChecklistItemService) List(ctx context.Context, storyID, workspaceID string) ([]model.PMChecklistItem, error) {
 	if storyID == "" {
 		return nil, fmt.Errorf("story_id is required")
+	}
+	if _, err := s.requireAccessibleTask(ctx, storyID, workspaceID); err != nil {
+		return nil, err
 	}
 	return s.repo.List(ctx, storyID)
 }
@@ -52,6 +72,9 @@ func (s *PMChecklistItemService) Create(ctx context.Context, storyID string, req
 	}
 	if strings.TrimSpace(req.Text) == "" {
 		return nil, fmt.Errorf("text is required")
+	}
+	if _, err := s.requireAccessibleTask(ctx, storyID, workspaceID); err != nil {
+		return nil, err
 	}
 
 	item := &model.PMChecklistItem{
@@ -83,6 +106,9 @@ func (s *PMChecklistItemService) Update(ctx context.Context, id string, req mode
 	}
 	if item == nil {
 		return nil, fmt.Errorf("checklist item not found")
+	}
+	if _, err := s.requireAccessibleTask(ctx, item.TaskID, workspaceID); err != nil {
+		return nil, err
 	}
 
 	textChanged := false
@@ -134,6 +160,9 @@ func (s *PMChecklistItemService) Delete(ctx context.Context, id string, workspac
 	}
 	if item == nil {
 		return fmt.Errorf("checklist item not found")
+	}
+	if _, err := s.requireAccessibleTask(ctx, item.TaskID, workspaceID); err != nil {
+		return err
 	}
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
