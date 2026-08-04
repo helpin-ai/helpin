@@ -17,12 +17,13 @@ import (
 )
 
 type InternalCommandDefinition struct {
-	Name                 string
-	Module               string
-	Mutating             bool
-	SupportedTargetTypes []string
-	Tool                 *commandtools.RuntimeToolMetadata
-	Execute              func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error)
+	Name                   string
+	Module                 string
+	Mutating               bool
+	SupportedTargetTypes   []string
+	RequiredPermissionsAll []authorization.Permission
+	Tool                   *commandtools.RuntimeToolMetadata
+	Execute                func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error)
 }
 
 type InternalCommandService struct {
@@ -45,6 +46,12 @@ type InternalCommandService struct {
 	settingsRepo          *repository.SettingsRepository
 	taskRepo              *repository.PMTaskRepository
 	taskLinkRepo          *repository.PMTaskLinkRepository
+	workspaceRepo         *repository.WorkspaceRepository
+	epicService           *PMEpicService
+	sprintService         *PMSprintService
+	objectiveService      *PMObjectiveService
+	workflowService       *PMWorkflowService
+	checklistService      *PMChecklistItemService
 
 	supportMessageRepo        *repository.SupportMessageRepository
 	supportConversationRepo   *repository.SupportConversationRepository
@@ -98,6 +105,27 @@ func (s *InternalCommandService) SetPMLabelService(svc *PMLabelService) {
 // SetPMCommentService sets the PM comment service for command-backed comment tools.
 func (s *InternalCommandService) SetPMCommentService(svc *PMCommentService) {
 	s.commentService = svc
+}
+
+// SetPMOperationalServices wires bounded PM discovery and mutation commands
+// without expanding the already-large constructor.
+func (s *InternalCommandService) SetPMOperationalServices(
+	workspaceRepo *repository.WorkspaceRepository,
+	epicService *PMEpicService,
+	sprintService *PMSprintService,
+	objectiveService *PMObjectiveService,
+	workflowService *PMWorkflowService,
+	checklistService *PMChecklistItemService,
+) {
+	if s == nil {
+		return
+	}
+	s.workspaceRepo = workspaceRepo
+	s.epicService = epicService
+	s.sprintService = sprintService
+	s.objectiveService = objectiveService
+	s.workflowService = workflowService
+	s.checklistService = checklistService
 }
 
 // SetGitService sets the git service for delivery commands.
@@ -1889,6 +1917,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerReleaseFactsCommands()
 	s.registerDocsRuntimeToolCommands()
 	s.registerDocsOrganizationCommands()
+	s.registerPMOperationalCommands()
 }
 
 // authorizeCommandActor is the central per-actor RBAC gate for command
@@ -1899,6 +1928,15 @@ func (s *InternalCommandService) authorizeCommandActor(meta model.InternalComman
 		return nil
 	}
 	if strings.TrimSpace(meta.ActorRole) == "" {
+		return nil
+	}
+	if len(def.RequiredPermissionsAll) > 0 {
+		actor := internalCommandActor(meta)
+		for _, permission := range def.RequiredPermissionsAll {
+			if !s.authz.Can(actor, permission) {
+				return fmt.Errorf("actor does not have permission to run command %q", def.Name)
+			}
+		}
 		return nil
 	}
 	perms := commandPermissionsForDefinition(def)

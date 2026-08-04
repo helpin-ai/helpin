@@ -1171,6 +1171,7 @@ func main() {
 	commandService.SetPMAutomationService(pmAutomationService)
 	commandService.SetPMLabelService(pmLabelService)
 	commandService.SetPMCommentService(pmCommentService)
+	commandService.SetPMOperationalServices(workspaceRepo, pmEpicService, pmSprintService, pmObjectiveService, pmWorkflowService, pmChecklistItemService)
 	commandService.SetGitService(gitService)
 	commandService.SetSettingsRepository(settingsRepo)
 	commandService.SetCRMEnrichmentService(crmEnrichmentService)

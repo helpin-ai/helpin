@@ -29,7 +29,7 @@ func (r *PMLabelRepository) ListByWorkspace(ctx context.Context, workspaceID str
 	var labels []model.PMLabel
 	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
 	query = ApplyScopeFilter(query, opts)
-	if err := query.Order("COALESCE(team_id::text, ''), name ASC").Find(&labels).Error; err != nil {
+	if err := query.Order("team_id ASC, name ASC").Find(&labels).Error; err != nil {
 		return nil, fmt.Errorf("list labels: %w", err)
 	}
 	return labels, nil
@@ -88,7 +88,7 @@ func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID strin
 	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
 	query = ApplyScopeFilter(query, opts)
 	var labels []model.PMLabel
-	if err := query.Order("COALESCE(team_id::text, ''), name ASC").Find(&labels).Error; err != nil {
+	if err := query.Order("team_id ASC, name ASC").Find(&labels).Error; err != nil {
 		return nil, fmt.Errorf("list labels with stats: %w", err)
 	}
 

@@ -337,6 +337,9 @@ func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters
 	if filters.Archived != nil {
 		query = query.Where("archived = ?", *filters.Archived)
 	}
+	if filters.UpdatedAfter != nil && strings.TrimSpace(*filters.UpdatedAfter) != "" {
+		query = query.Where("pm_tasks.updated_at >= ?", strings.TrimSpace(*filters.UpdatedAfter))
+	}
 	if labelValues := splitFilterValues(filters.LabelID); len(labelValues) > 0 {
 		query = query.Where(
 			`EXISTS (

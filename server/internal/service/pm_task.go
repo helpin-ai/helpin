@@ -1459,7 +1459,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		}
 		current.Severity = *req.Severity
 	}
-	if req.Deadline != nil {
+	if req.Deadline != nil || req.DeadlineSet {
 		current.Deadline = req.Deadline
 	}
 	if req.Position != nil {
@@ -1468,9 +1468,9 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	if req.Blocked != nil {
 		current.Blocked = *req.Blocked
 	}
-	if req.Blocker != nil {
-		current.Blocker = req.Blocker
-		current.Blocked = strings.TrimSpace(*req.Blocker) != ""
+	if req.Blocker != nil || req.BlockerSet {
+		current.Blocker = nullableString(req.Blocker)
+		current.Blocked = req.Blocker != nil && strings.TrimSpace(*req.Blocker) != ""
 	}
 	if req.Archived != nil {
 		current.Archived = *req.Archived

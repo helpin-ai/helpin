@@ -212,9 +212,11 @@ type UpdateTaskRequest struct {
 	Priority          *string    `json:"priority"`
 	Severity          *string    `json:"severity"`
 	Deadline          *time.Time `json:"deadline"`
+	DeadlineSet       bool       `json:"-" gorm:"-"`
 	Position          *int       `json:"position"`
 	Blocked           *bool      `json:"blocked"`
 	Blocker           *string    `json:"blocker"`
+	BlockerSet        bool       `json:"-" gorm:"-"`
 	Archived          *bool      `json:"archived"`
 	TemplateID        *string    `json:"template_id"`
 	ExternalID        *string    `json:"external_id"`
