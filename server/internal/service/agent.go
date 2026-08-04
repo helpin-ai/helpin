@@ -3822,6 +3822,9 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, err
 		}
+		if err := validateAgentTeamScope(agent, "task", task.TeamID); err != nil {
+			return nil, err
+		}
 		resolved := agentcontract.ResolveAgentProfile(agent, resolveInvocationMode(agent))
 
 		var delivery *model.TaskDeliveryTarget
@@ -3890,6 +3893,9 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "epic")
 		if err != nil {
+			return nil, err
+		}
+		if err := validateAgentTeamScope(agent, "epic", epic.TeamID); err != nil {
 			return nil, err
 		}
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {

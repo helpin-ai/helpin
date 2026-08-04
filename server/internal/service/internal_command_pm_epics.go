@@ -100,6 +100,10 @@ func (s *InternalCommandService) executePMListEpics(ctx context.Context, meta mo
 			return nil, fmt.Errorf("parse list epics input: %w", err)
 		}
 	}
+	agentTeams, err := commandAgentTeamFilter(meta)
+	if err != nil {
+		return nil, err
+	}
 	page, perPage, err := normalizePMCommandPagination(req.Page, req.PerPage)
 	if err != nil {
 		return nil, err
@@ -131,9 +135,13 @@ func (s *InternalCommandService) executePMListEpics(ctx context.Context, meta mo
 			return nil, fmt.Errorf("label does not belong to team_id")
 		}
 	}
-	epics, total, err := s.epicService.ListPage(ctx, meta.WorkspaceID, model.PMEpicListFilters{
+	filters := model.PMEpicListFilters{
 		TeamID: stringPtrOrNil(teamID), StateID: stringPtrOrNil(stateID), LabelID: stringPtrOrNil(labelID), Archived: req.Archived,
-	}, model.PMPagination{Page: page, PerPage: perPage})
+	}
+	if len(agentTeams) > 0 {
+		filters.AccessibleTeamIDs = agentTeams
+	}
+	epics, total, err := s.epicService.ListPage(ctx, meta.WorkspaceID, filters, model.PMPagination{Page: page, PerPage: perPage})
 	if err != nil {
 		return nil, err
 	}
@@ -167,6 +175,9 @@ func (s *InternalCommandService) executePMGetEpic(ctx context.Context, meta mode
 	if epic == nil || epic.Epic.WorkspaceID != meta.WorkspaceID {
 		return nil, fmt.Errorf("epic not found")
 	}
+	if err := requireCommandAgentTeam(meta, epic.Epic.TeamID); err != nil {
+		return nil, err
+	}
 	return mustJSON(compactPMCommandEpic(epic, true)), nil
 }
 
@@ -183,6 +194,9 @@ func (s *InternalCommandService) executePMCreateEpic(ctx context.Context, meta m
 	}
 	teamID, err := s.validatePMCommandOptionalEpicTeam(ctx, meta.WorkspaceID, req.TeamID, true)
 	if err != nil {
+		return nil, err
+	}
+	if err := requireCommandAgentTeam(meta, teamID); err != nil {
 		return nil, err
 	}
 	stateID, err := s.validatePMCommandOptionalEpicState(ctx, meta.WorkspaceID, req.EpicStateID)
@@ -243,6 +257,9 @@ func (s *InternalCommandService) executePMUpdateEpic(ctx context.Context, meta m
 	if current == nil || current.Epic.WorkspaceID != meta.WorkspaceID {
 		return nil, fmt.Errorf("epic not found")
 	}
+	if err := requireCommandAgentTeam(meta, current.Epic.TeamID); err != nil {
+		return nil, err
+	}
 	update := model.UpdateEpicRequest{
 		Name: req.Name, Description: req.Description, Color: req.Color, Health: req.Health, HealthComment: req.HealthComment,
 	}
@@ -254,6 +271,9 @@ func (s *InternalCommandService) executePMUpdateEpic(ctx context.Context, meta m
 			return nil, err
 		}
 		effectiveTeamID = update.TeamID
+	}
+	if err := requireCommandAgentTeam(meta, effectiveTeamID); err != nil {
+		return nil, err
 	}
 	if req.EpicStateID != nil {
 		update.EpicStateIDSet = true

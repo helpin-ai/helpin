@@ -68,7 +68,7 @@ func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters mo
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
+	filters.AccessibleTeamIDs = intersectAccessibleTeamIDs(filters.AccessibleTeamIDs, accessibleTeamIDs(ctx))
 	epics, err := s.epicRepo.List(ctx, workspaceID, filters)
 	if err != nil {
 		return nil, err
@@ -107,7 +107,7 @@ func (s *PMEpicService) ListPage(ctx context.Context, workspaceID string, filter
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
-	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
+	filters.AccessibleTeamIDs = intersectAccessibleTeamIDs(filters.AccessibleTeamIDs, accessibleTeamIDs(ctx))
 	epics, total, err := s.epicRepo.ListPage(ctx, workspaceID, filters, pagination)
 	if err != nil {
 		return nil, 0, err

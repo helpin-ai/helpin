@@ -156,6 +156,10 @@ func (s *InternalCommandService) executeListPMLabels(ctx context.Context, meta m
 		}
 	}
 	teamID := strings.TrimSpace(req.TeamID)
+	agentTeams, err := commandAgentTeamFilter(meta)
+	if err != nil {
+		return nil, err
+	}
 	if teamID != "" && !canAccessTeam(ctx, &teamID) {
 		return nil, fmt.Errorf("team not found")
 	}
@@ -170,6 +174,9 @@ func (s *InternalCommandService) executeListPMLabels(ctx context.Context, meta m
 			continue
 		}
 		if label.TeamID != nil && !canAccessTeam(ctx, label.TeamID) {
+			continue
+		}
+		if len(agentTeams) > 0 && !containsCommandTeam(agentTeams, label.TeamID) {
 			continue
 		}
 		if nameFilter != "" && !strings.Contains(strings.ToLower(label.Name), nameFilter) {
@@ -369,6 +376,11 @@ func (s *InternalCommandService) executeListPMTasks(ctx context.Context, meta mo
 		Completed:       completed,
 		UpdatedAfter:    stringPtrOrNil(req.UpdatedAfter),
 		Archived:        archived,
+	}
+	if agentTeams, err := commandAgentTeamFilter(meta); err != nil {
+		return nil, err
+	} else if len(agentTeams) > 0 {
+		filters.AccessibleTeamIDs = agentTeams
 	}
 	tasks, total, err := s.taskService.List(ctx, meta.WorkspaceID, filters, model.PMPagination{Page: page, PerPage: perPage})
 	if err != nil {
@@ -576,12 +588,18 @@ func (s *InternalCommandService) executeCreatePMTask(ctx context.Context, meta m
 	if req.Name == "" || req.TeamID == "" {
 		return nil, fmt.Errorf("name and team_id are required")
 	}
+	if err := requireCommandAgentTeam(meta, &req.TeamID); err != nil {
+		return nil, err
+	}
 	epicID, err := resolveCommandParentAssociation(meta, commandDerefString(req.EpicID), "epic")
 	if err != nil {
 		return nil, err
 	}
 	sprintID, err := resolveCommandParentAssociation(meta, commandDerefString(req.SprintID), "sprint")
 	if err != nil {
+		return nil, err
+	}
+	if err := s.validateCommandAgentParentScope(ctx, meta, epicID, sprintID); err != nil {
 		return nil, err
 	}
 	var deadline *time.Time
@@ -699,6 +717,9 @@ func (s *InternalCommandService) executeUpdatePMTask(ctx context.Context, meta m
 	if current.Task.WorkspaceID != meta.WorkspaceID {
 		return nil, fmt.Errorf("task not found")
 	}
+	if err := requireCommandAgentTeam(meta, current.Task.TeamID); err != nil {
+		return nil, err
+	}
 	if err := s.validateTaskWithinTarget(ctx, meta, &current.Task); err != nil {
 		return nil, err
 	}
@@ -707,6 +728,11 @@ func (s *InternalCommandService) executeUpdatePMTask(ctx context.Context, meta m
 	}
 	if err := validateCommandParentUpdate(meta, "sprint", req.SprintID); err != nil {
 		return nil, err
+	}
+	if req.EpicID != nil || req.SprintID != nil {
+		if err := s.validateCommandAgentParentScope(ctx, meta, commandDerefString(req.EpicID), commandDerefString(req.SprintID)); err != nil {
+			return nil, err
+		}
 	}
 	updateReq := model.UpdateTaskRequest{
 		Name:           normalizeOptionalCommandString(req.Name),
@@ -1103,6 +1129,9 @@ func (s *InternalCommandService) validateTaskWithinTarget(_ context.Context, met
 	if task == nil {
 		return fmt.Errorf("task not found")
 	}
+	if err := requireCommandAgentTeam(meta, task.TeamID); err != nil {
+		return err
+	}
 	switch normalizeCommandBarTargetType(meta.TargetType) {
 	case "task", "story":
 		if task.ID != strings.TrimSpace(meta.TargetID) {
@@ -1115,6 +1144,28 @@ func (s *InternalCommandService) validateTaskWithinTarget(_ context.Context, met
 	case "sprint":
 		if task.SprintID == nil || strings.TrimSpace(*task.SprintID) != strings.TrimSpace(meta.TargetID) {
 			return fmt.Errorf("task does not belong to the current sprint target")
+		}
+	}
+	return nil
+}
+
+func (s *InternalCommandService) validateCommandAgentParentScope(ctx context.Context, meta model.InternalCommandContext, epicID, sprintID string) error {
+	if epicID != "" && s.epicService != nil {
+		e, err := s.epicService.GetByID(ctx, epicID)
+		if err != nil || e == nil || e.Epic.WorkspaceID != meta.WorkspaceID {
+			return fmt.Errorf("epic not found")
+		}
+		if err := requireCommandAgentTeam(meta, e.Epic.TeamID); err != nil {
+			return err
+		}
+	}
+	if sprintID != "" && s.sprintService != nil {
+		s, err := s.sprintService.GetByID(ctx, sprintID)
+		if err != nil || s == nil || s.Sprint.WorkspaceID != meta.WorkspaceID {
+			return fmt.Errorf("sprint not found")
+		}
+		if err := requireCommandAgentTeam(meta, s.Sprint.TeamID); err != nil {
+			return err
 		}
 	}
 	return nil

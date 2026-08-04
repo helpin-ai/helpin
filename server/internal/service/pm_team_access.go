@@ -26,6 +26,29 @@ func accessibleTeamIDs(ctx context.Context) []string {
 	return actor.TeamIDs()
 }
 
+// intersectAccessibleTeamIDs combines an optional command/agent scope with
+// the human actor scope. nil means unrestricted; an empty non-nil slice means
+// no teams are accessible.
+func intersectAccessibleTeamIDs(existing, human []string) []string {
+	if existing == nil {
+		return human
+	}
+	if human == nil {
+		return existing
+	}
+	set := make(map[string]struct{}, len(human))
+	for _, id := range human {
+		set[id] = struct{}{}
+	}
+	out := make([]string, 0, len(existing))
+	for _, id := range existing {
+		if _, ok := set[id]; ok {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // canAccessTeam checks whether the current actor can access an entity with the given team ID.
 // Admins/owners can access everything. Members/viewers can only access their own teams.
 // NULL team_id entities are admin/owner-only.

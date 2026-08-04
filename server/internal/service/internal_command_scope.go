@@ -77,3 +77,16 @@ func normalizeCommandTeamIDs(teamIDs []string) []string {
 	}
 	return normalized
 }
+
+func containsCommandTeam(allowed []string, teamID *string) bool {
+	if teamID == nil {
+		return false
+	}
+	t := strings.TrimSpace(*teamID)
+	for _, id := range allowed {
+		if id == t {
+			return true
+		}
+	}
+	return false
+}
