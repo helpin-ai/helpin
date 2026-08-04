@@ -2274,6 +2274,10 @@
 
 /* Footer text below compose */
 .helpin-compose-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   text-align: center;
   font-size: 11px;
   color: var(--helpin-fg-muted);
@@ -2285,6 +2289,10 @@
   align-items: center;
   color: var(--helpin-fg-secondary);
   text-decoration: none;
+}
+
+.helpin-compose-footer-name {
+  display: inline-block;
   background-image: linear-gradient(currentColor, currentColor);
   background-position: 0 100%;
   background-repeat: no-repeat;
@@ -2307,7 +2315,7 @@
   transform-origin: center;
 }
 
-.helpin-compose-footer:hover .helpin-compose-footer-link {
+.helpin-compose-footer:hover .helpin-compose-footer-name {
   background-size: 100% 1px;
 }
 

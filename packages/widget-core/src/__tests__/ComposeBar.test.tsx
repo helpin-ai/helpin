@@ -120,6 +120,14 @@ describe('ComposeBar', () => {
     expect(sendButton.disabled).toBe(true);
   });
 
+  it('renders the composer attribution as explicit aligned label and brand elements', () => {
+    const { container } = render(<ComposeBar onSend={() => {}} />);
+
+    expect(container.querySelector('.helpin-compose-footer-label')?.textContent).toBe('We run on');
+    expect(container.querySelector('.helpin-compose-footer-name')?.textContent).toBe('Helpin');
+    expect(container.querySelector('.helpin-compose-footer-link .helpin-compose-footer-name')).not.toBeNull();
+  });
+
   it('inserts an emoji selected from the picker into the textarea', async () => {
     const { container, getByLabelText, findByPlaceholderText } = render(<ComposeBar onSend={() => {}} />);
 
