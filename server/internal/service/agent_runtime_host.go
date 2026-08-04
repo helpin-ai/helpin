@@ -127,25 +127,26 @@ func (s *AgentRuntimeHostService) SetAuthorizationService(authz *authorization.A
 	return s
 }
 
-// enrichCommandActor resolves the external actor's workspace membership and
-// stamps role/team info onto the command context. Runs without a human actor
+// enrichCommandActor resolves the external actor's workspace membership,
+// stamps role/team info onto the command metadata, and returns the full actor
+// for authorization checks in command services. Runs without a human actor
 // (schedules, automation rules) are left untouched — agent-level tool policy
 // remains their only gate. A non-member actor is rejected outright.
-func (s *AgentRuntimeHostService) enrichCommandActor(ctx context.Context, meta *model.InternalCommandContext) error {
+func (s *AgentRuntimeHostService) enrichCommandActor(ctx context.Context, meta *model.InternalCommandContext) (*authorization.Actor, error) {
 	if s == nil || s.authz == nil || meta == nil {
-		return nil
+		return nil, nil
 	}
 	actorID := strings.TrimSpace(meta.ActorID)
 	if actorID == "" {
-		return nil
+		return nil, nil
 	}
 	actor, err := s.authz.ResolveActor(ctx, meta.WorkspaceID, actorID)
 	if err != nil {
-		return fmt.Errorf("%w: actor is not an active workspace member", ErrAgentRuntimeHostForbidden)
+		return nil, fmt.Errorf("%w: actor is not an active workspace member", ErrAgentRuntimeHostForbidden)
 	}
 	meta.ActorRole = actor.Role
 	meta.ActorTeamIDs = actor.TeamIDs()
-	return nil
+	return actor, nil
 }
 
 func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req agentruntime.TargetContextRequest) (*agentruntime.TargetContext, error) {
@@ -408,13 +409,18 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 	if meta.WorkspaceID == "" {
 		return nil, fmt.Errorf("%w: workspace_id is required", ErrAgentRuntimeHostBadRequest)
 	}
-	if err := s.enrichCommandActor(ctx, &meta); err != nil {
+	actor, err := s.enrichCommandActor(ctx, &meta)
+	if err != nil {
 		return &agentruntime.CommandExecutionResponse{Error: err.Error()}, nil
 	}
 	if len(req.Input) == 0 {
 		req.Input = json.RawMessage(`{}`)
 	}
-	output, err := s.commandService.Execute(ctx, meta, strings.TrimSpace(req.CommandName), req.Input)
+	commandCtx := ctx
+	if actor != nil {
+		commandCtx = authorization.WithActor(commandCtx, actor)
+	}
+	output, err := s.commandService.Execute(commandCtx, meta, strings.TrimSpace(req.CommandName), req.Input)
 	if err != nil {
 		return &agentruntime.CommandExecutionResponse{Error: err.Error()}, nil
 	}

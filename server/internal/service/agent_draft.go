@@ -246,7 +246,7 @@ func normalizeDraftInvocationMode(value string) string {
 
 func isSupportedCustomAgentTarget(target string) bool {
 	switch target {
-	case "task", "epic", "repository", "workspace", "crm_deal", "document", "support_conversation":
+	case "task", "epic", "sprint", "objective", "repository", "workspace", "crm_deal", "document", "support_conversation":
 		return true
 	default:
 		return false
@@ -302,6 +302,8 @@ Return JSON only. The user will review and edit the draft before anything is cre
 Choose only from these target types:
 - task
 - epic
+- sprint
+- objective
 - repository
 - workspace
 - crm_deal

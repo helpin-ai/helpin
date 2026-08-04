@@ -9,6 +9,7 @@ import (
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/gorm"
@@ -52,6 +53,55 @@ func TestAgentRuntimeHostExecuteCommandUsesInternalCommandService(t *testing.T) 
 	}
 	if string(gotInput) != `{"message":"hello"}` {
 		t.Fatalf("unexpected command input: %s", gotInput)
+	}
+}
+
+func TestAgentRuntimeHostExecuteCommandPropagatesResolvedActor(t *testing.T) {
+	db := newTestDB(t)
+	seedUser(t, db, "user-actor-1", "actor@example.com", "Runtime Actor", "hash")
+	seedWorkspace(t, db, "workspace-actor-1", "Runtime Workspace", "runtime-workspace", "user-actor-1")
+	seedWorkspaceMember(t, db, "member-actor-1", "workspace-actor-1", "user-actor-1", "actor@example.com", "Runtime Actor", "manager")
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, "team-actor-1", "workspace-actor-1", "Runtime Team")
+	mustExec(t, db, `INSERT INTO team_workspace_memberships (id, team_id, workspace_member_id, role, created_at, updated_at)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, "team-member-actor-1", "team-actor-1", "member-actor-1", "owner")
+
+	commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	var gotActor *authorization.Actor
+	commandService.register(InternalCommandDefinition{
+		Name:                 "test.capture_actor",
+		SupportedTargetTypes: []string{"task"},
+		Execute: func(ctx context.Context, _ model.InternalCommandContext, _ json.RawMessage) (json.RawMessage, error) {
+			gotActor = authorization.GetActor(ctx)
+			return json.RawMessage(`{"ok":true}`), nil
+		},
+	})
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, commandService, nil).
+		SetAuthorizationService(authorization.NewAuthzService(db, authorization.NewGORMMemberRepository(db), nil))
+
+	resp, err := host.ExecuteCommand(context.Background(), agentruntime.CommandExecutionRequest{
+		Meta: agentruntime.CommandExecutionContext{
+			AppID:           "helpin",
+			ExternalActorID: "user-actor-1",
+			WorkspaceID:     "workspace-actor-1",
+			Target:          agentruntime.TargetRef{Type: "task", ID: "task-actor-1"},
+		},
+		CommandName: "test.capture_actor",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCommand returned error: %v", err)
+	}
+	if resp == nil || resp.Error != "" {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+	if gotActor == nil {
+		t.Fatal("expected resolved actor in command execution context")
+	}
+	if gotActor.Role != "manager" {
+		t.Fatalf("expected manager workspace role, got %q", gotActor.Role)
+	}
+	if len(gotActor.TeamMemberships) != 1 || gotActor.TeamMemberships[0].TeamID != "team-actor-1" || gotActor.TeamMemberships[0].Role != "owner" {
+		t.Fatalf("expected owner team role to survive actor propagation, got %#v", gotActor.TeamMemberships)
 	}
 }
 

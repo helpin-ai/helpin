@@ -91,6 +91,21 @@ func TestValidateCustomAgentDraftDropsUnknownCatalogValuesAndAddsRequiredSkillTo
 	}
 }
 
+func TestValidateCustomAgentDraftRetainsPMTargets(t *testing.T) {
+	raw := model.CustomAgentDraft{
+		AllowedTargets: []string{"sprint", "objective"},
+	}
+
+	draft, warnings := validateCustomAgentDraft(raw, nil, nil)
+
+	if !slices.Equal(draft.AllowedTargets, []string{"sprint", "objective"}) {
+		t.Fatalf("expected sprint and objective targets to be retained, got %v", draft.AllowedTargets)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("expected no target normalization warnings, got %v", warnings)
+	}
+}
+
 func TestDraftCustomAgentRejectsShortDescriptionBeforeCallingLLM(t *testing.T) {
 	llmClient := &fakeAgentDraftLLM{content: `{}`}
 	svc := (&AgentService{}).SetAgentDraftLLM(llmClient)
