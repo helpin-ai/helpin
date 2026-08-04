@@ -230,7 +230,7 @@ Implementation follows red-green-refactor for each tool group.
 5. Isolation tests reject cross-workspace entities and related IDs.
 6. Service behavior tests cover sprint date/team validation, task-sprint compatibility, objective/key-result validation, and checklist/comment attribution.
 7. Catalog parity tests prove selectable PM tools have executors and executable PM aliases are selectable.
-8. Agent launch tests cover sprint and objective targets and target-context projection.
+8. Agent launch tests cover sprint and objective targets, target-context projection, and a team-restricted actor launching against a multi-team objective.
 9. Frontend tests cover target options and tool-category rendering.
 10. Verification runs focused Go packages, `go test ./...`, relevant frontend tests, and the production frontend build.
 
