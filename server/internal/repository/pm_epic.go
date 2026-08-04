@@ -105,12 +105,38 @@ func (r *PMEpicRepository) Create(ctx context.Context, epic *model.PMEpic) error
 	return nil
 }
 
+// CreateWithLabels inserts an epic and its label links atomically.
+func (r *PMEpicRepository) CreateWithLabels(ctx context.Context, epic *model.PMEpic, labelIDs []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txRepo := NewPMEpicRepository(tx)
+		if err := txRepo.Create(ctx, epic); err != nil {
+			return err
+		}
+		return txRepo.replaceLabels(ctx, epic.ID, labelIDs)
+	})
+}
+
 // Update updates an epic.
 func (r *PMEpicRepository) Update(ctx context.Context, epic *model.PMEpic) error {
 	if err := r.db.WithContext(ctx).Save(epic).Error; err != nil {
 		return fmt.Errorf("update epic: %w", err)
 	}
 	return nil
+}
+
+// UpdateWithLabels updates an epic and, when labelIDs is non-nil, replaces its
+// label links in the same transaction. A nil labelIDs slice preserves labels.
+func (r *PMEpicRepository) UpdateWithLabels(ctx context.Context, epic *model.PMEpic, labelIDs []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txRepo := NewPMEpicRepository(tx)
+		if err := txRepo.Update(ctx, epic); err != nil {
+			return err
+		}
+		if labelIDs == nil {
+			return nil
+		}
+		return txRepo.replaceLabels(ctx, epic.ID, labelIDs)
+	})
 }
 
 // Delete archives an epic.
@@ -160,17 +186,24 @@ func (r *PMEpicRepository) RemoveLabel(ctx context.Context, epicID, labelID stri
 // ReplaceLabels replaces all labels linked to an epic.
 func (r *PMEpicRepository) ReplaceLabels(ctx context.Context, epicID string, labelIDs []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&model.PMEpicLabel{}, "epic_id = ?", epicID).Error; err != nil {
-			return fmt.Errorf("clear epic labels: %w", err)
-		}
-		for _, labelID := range labelIDs {
-			link := model.PMEpicLabel{EpicID: epicID, LabelID: labelID}
-			if err := tx.Create(&link).Error; err != nil {
-				return fmt.Errorf("set epic labels: %w", err)
-			}
-		}
-		return nil
+		return NewPMEpicRepository(tx).replaceLabels(ctx, epicID, labelIDs)
 	})
+}
+
+// replaceLabels performs label writes on the repository's current database
+// handle. Callers that need atomicity must bind the repository to a transaction.
+func (r *PMEpicRepository) replaceLabels(ctx context.Context, epicID string, labelIDs []string) error {
+	db := r.db.WithContext(ctx)
+	if err := db.Delete(&model.PMEpicLabel{}, "epic_id = ?", epicID).Error; err != nil {
+		return fmt.Errorf("clear epic labels: %w", err)
+	}
+	for _, labelID := range labelIDs {
+		link := model.PMEpicLabel{EpicID: epicID, LabelID: labelID}
+		if err := db.Create(&link).Error; err != nil {
+			return fmt.Errorf("set epic labels: %w", err)
+		}
+	}
+	return nil
 }
 
 // ComputeStats computes derived story/point metrics for an epic.

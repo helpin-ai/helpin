@@ -168,13 +168,14 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	if actorID != "" {
 		epic.CreatedBy = &actorID
 	}
-	if len(req.LabelIDs) > 0 {
-		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
+	labelIDs := dedupeIDs(req.LabelIDs)
+	if len(labelIDs) > 0 {
+		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, labelIDs, allowedTeamIDs(req.TeamID)); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := s.epicRepo.Create(ctx, epic); err != nil {
+	if err := s.epicRepo.CreateWithLabels(ctx, epic, labelIDs); err != nil {
 		s.logger.ErrorContext(ctx, "failed to create epic", "error", err, "workspace_id", req.WorkspaceID)
 		return nil, err
 	}
@@ -183,12 +184,6 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 			s.logger.ErrorContext(ctx, "failed to reassign attachments to epic", "error", err, "epic_id", epic.ID, "attachment_ids", req.AttachmentIDs)
 		}
 	}
-	if len(req.LabelIDs) > 0 {
-		if err := s.epicRepo.ReplaceLabels(ctx, epic.ID, req.LabelIDs); err != nil {
-			return nil, err
-		}
-	}
-
 	if err := s.syncProgress(ctx, epic.ID); err != nil {
 		return nil, err
 	}
@@ -346,17 +341,16 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		epic.AssignedAgentID = nextAgentID
 	}
 
-	if err := s.epicRepo.Update(ctx, &epic); err != nil {
+	labelIDs := req.LabelIDs
+	if req.LabelIDs != nil {
+		labelIDs = dedupeIDs(req.LabelIDs)
+		if err := validateLabelScope(ctx, s.labelRepo, epic.WorkspaceID, labelIDs, allowedTeamIDs(epic.TeamID)); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.epicRepo.UpdateWithLabels(ctx, &epic, labelIDs); err != nil {
 		s.logger.ErrorContext(ctx, "failed to update epic", "error", err, "epic_id", id)
 		return nil, err
-	}
-	if req.LabelIDs != nil {
-		if err := validateLabelScope(ctx, s.labelRepo, epic.WorkspaceID, req.LabelIDs, allowedTeamIDs(epic.TeamID)); err != nil {
-			return nil, err
-		}
-		if err := s.epicRepo.ReplaceLabels(ctx, epic.ID, req.LabelIDs); err != nil {
-			return nil, err
-		}
 	}
 
 	if err := s.syncProgress(ctx, epic.ID); err != nil {

@@ -671,6 +671,127 @@ func TestPMEpicServiceCreateValidatesLabelsBeforePersisting(t *testing.T) {
 	}
 }
 
+func TestPMEpicServiceCreateRollsBackWhenLabelInsertFails(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	ctx := context.Background()
+	labelID := "label-epic-create-failure"
+	attachmentID := "attachment-epic-create-failure"
+	if err := db.Create(&model.PMLabel{ID: labelID, WorkspaceID: wsID, Name: "Fails on insert"}).Error; err != nil {
+		t.Fatalf("create label: %v", err)
+	}
+	seedTemporaryAttachment(t, db, attachmentID, wsID, wsID, userID)
+	mustExec(t, db, `CREATE TRIGGER fail_epic_label_create
+		BEFORE INSERT ON pm_epic_labels
+		WHEN NEW.label_id = 'label-epic-create-failure'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced epic label insert failure');
+		END`)
+
+	_, err := svc.Create(ctx, model.CreateEpicRequest{
+		WorkspaceID:   wsID,
+		Name:          "Rolled Back Epic",
+		LabelIDs:      []string{labelID},
+		AttachmentIDs: []string{attachmentID},
+	}, userID)
+	if err == nil {
+		t.Fatal("expected label insert failure")
+	}
+
+	var epicCount int64
+	if err := db.Model(&model.PMEpic{}).
+		Where("workspace_id = ? AND name = ?", wsID, "Rolled Back Epic").
+		Count(&epicCount).Error; err != nil {
+		t.Fatalf("count epics: %v", err)
+	}
+	if epicCount != 0 {
+		t.Fatalf("persisted epics = %d, want 0", epicCount)
+	}
+	attachment, err := repository.NewPMAttachmentRepository(db).GetByID(ctx, attachmentID)
+	if err != nil {
+		t.Fatalf("get attachment: %v", err)
+	}
+	if attachment == nil || attachment.EntityType != "temporary" || attachment.EntityID != wsID {
+		t.Fatalf("attachment was reassigned before epic commit: %#v", attachment)
+	}
+}
+
+func TestPMEpicServiceUpdateRollsBackScalarAndLabelsWhenLabelInsertFails(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	ctx := context.Background()
+	originalLabelID := "label-epic-update-original"
+	failingLabelID := "label-epic-update-failure"
+	for _, label := range []model.PMLabel{
+		{ID: originalLabelID, WorkspaceID: wsID, Name: "Original"},
+		{ID: failingLabelID, WorkspaceID: wsID, Name: "Fails on insert"},
+	} {
+		if err := db.Create(&label).Error; err != nil {
+			t.Fatalf("create label %s: %v", label.ID, err)
+		}
+	}
+	created, err := svc.Create(ctx, model.CreateEpicRequest{
+		WorkspaceID: wsID,
+		Name:        "Original Epic Name",
+		LabelIDs:    []string{originalLabelID},
+	}, userID)
+	if err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+	mustExec(t, db, `CREATE TRIGGER fail_epic_label_update
+		BEFORE INSERT ON pm_epic_labels
+		WHEN NEW.label_id = 'label-epic-update-failure'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced epic label insert failure');
+		END`)
+
+	updatedName := "Must Roll Back"
+	_, err = svc.Update(ctx, created.Epic.ID, model.UpdateEpicRequest{
+		Name:     &updatedName,
+		LabelIDs: []string{failingLabelID},
+	}, userID)
+	if err == nil {
+		t.Fatal("expected label insert failure")
+	}
+
+	var epic model.PMEpic
+	if err := db.Where("id = ?", created.Epic.ID).First(&epic).Error; err != nil {
+		t.Fatalf("reload epic: %v", err)
+	}
+	if epic.Name != "Original Epic Name" {
+		t.Fatalf("epic name = %q, want original value", epic.Name)
+	}
+	var links []model.PMEpicLabel
+	if err := db.Where("epic_id = ?", created.Epic.ID).Find(&links).Error; err != nil {
+		t.Fatalf("reload epic labels: %v", err)
+	}
+	if len(links) != 1 || links[0].LabelID != originalLabelID {
+		t.Fatalf("epic labels = %#v, want only original label", links)
+	}
+}
+
+func TestPMEpicServiceCreateDeduplicatesLabelIDs(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	labelID := "label-epic-duplicate"
+	if err := db.Create(&model.PMLabel{ID: labelID, WorkspaceID: wsID, Name: "Duplicate"}).Error; err != nil {
+		t.Fatalf("create label: %v", err)
+	}
+
+	created, err := svc.Create(context.Background(), model.CreateEpicRequest{
+		WorkspaceID: wsID,
+		Name:        "Deduplicated Labels",
+		LabelIDs:    []string{labelID, " " + labelID + " ", labelID},
+	}, userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var linkCount int64
+	if err := db.Model(&model.PMEpicLabel{}).Where("epic_id = ?", created.Epic.ID).Count(&linkCount).Error; err != nil {
+		t.Fatalf("count epic labels: %v", err)
+	}
+	if linkCount != 1 {
+		t.Fatalf("epic label links = %d, want 1", linkCount)
+	}
+}
+
 func TestPMEpicService_Delete(t *testing.T) {
 	t.Parallel()
 	svc, wsID, userID := newEpicTestEnv(t)
