@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: helpcenter
-          image: ghcr.io/helpin-ai/helpin/helpcenter:helpcenter-v0.95.95-rc.1
+          image: ghcr.io/helpin-ai/helpin/helpcenter:helpcenter-v0.95.96-rc.1
           env:
             - name: INTERNAL_API_URL
               value: http://helpin-server-svc:8080/api

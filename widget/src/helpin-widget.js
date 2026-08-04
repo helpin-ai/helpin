@@ -877,6 +877,9 @@
       }
 
       .tp-footer a {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
         font-size: 11px;
         color: var(--tp-text-muted);
         text-decoration: none;
@@ -886,6 +889,12 @@
 
       .tp-footer a:hover {
         color: var(--tp-text-secondary);
+      }
+
+      .tp-helpin-mark {
+        width: 12px;
+        height: 12px;
+        flex-shrink: 0;
       }
 
       /* ─── Pre-chat Form ─── */
@@ -1117,6 +1126,7 @@
 
   // ─── SVG Icons ───
   const ICONS = {
+    helpin: `<svg class="tp-helpin-mark" viewBox="13.636 13.636 72.727 72.727" aria-hidden="true"><path d="M54.50,42.50 H24.50 A6.50,6.50 0 0 1 24.50,29.50 H54.50 Z" fill="currentColor"/><path d="M73.50,29.50 H75.50 A6.50,6.50 0 0 1 75.50,42.50 H73.50 Z" fill="currentColor"/><path d="M26.50,70.50 H24.50 A6.50,6.50 0 0 1 24.50,57.50 H26.50 Z" fill="currentColor"/><path d="M45.50,57.50 H75.50 A6.50,6.50 0 0 1 75.50,70.50 H45.50 Z" fill="currentColor"/><path d="M29.50,26.50 V24.50 A6.50,6.50 0 0 1 42.50,24.50 V26.50 Z" fill="currentColor"/><path d="M42.50,45.50 V75.50 A6.50,6.50 0 0 1 29.50,75.50 V45.50 Z" fill="currentColor"/><path d="M57.50,54.50 V24.50 A6.50,6.50 0 0 1 70.50,24.50 V54.50 Z" fill="currentColor"/><path d="M70.50,73.50 V75.50 A6.50,6.50 0 0 1 57.50,75.50 V73.50 Z" fill="currentColor"/></svg>`,
     chat: `<svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/><path d="M7 9h10v2H7zm0-3h10v2H7z"/></svg>`,
     close: `<svg viewBox="0 0 24 24"><path d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12 5.7 16.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.4z"/></svg>`,
     send: `<svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`,
@@ -1563,7 +1573,7 @@
       // Footer
       const footer = document.createElement("div");
       footer.className = "tp-footer";
-      footer.innerHTML = `<a href="https://helpin.ai" target="_blank" rel="noopener noreferrer">Powered by Helpin</a>`;
+      footer.innerHTML = `<a href="https://helpin.ai" target="_blank" rel="noopener noreferrer" aria-label="Powered by Helpin"><span>Powered by</span>${ICONS.helpin}<span>Helpin</span></a>`;
 
       // Assemble chat view
       this.chatView.appendChild(this.messagesEl);
