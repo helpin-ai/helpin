@@ -15,3 +15,29 @@ func TestDocumentationRuntimeProfileIncludesOrganizationTools(t *testing.T) {
 		}
 	}
 }
+
+func TestExcludedPresetRuntimeProfilesHaveNoNewPMTools(t *testing.T) {
+	newPMTools := []string{
+		"list_workspace_members", "list_pm_labels", "get_task",
+		"list_epics", "get_epic", "list_sprints", "get_sprint",
+		"list_sprint_tasks", "list_objectives", "get_objective",
+		"update_task", "create_task_checklist_item", "update_task_checklist_item",
+		"add_pm_comment", "create_epic", "update_epic", "create_sprint",
+		"update_sprint", "create_objective", "update_objective",
+		"create_key_result", "update_key_result",
+	}
+
+	for _, presetKey := range []string{
+		model.AgentPresetSupportAgent,
+		model.AgentPresetDocumentationAgent,
+		model.AgentPresetCodeBuilder,
+		model.AgentPresetReviewAgent,
+	} {
+		profile := GetRuntimeProfile(presetKey)
+		for _, toolName := range newPMTools {
+			if slices.Contains(profile.AllowedTools, toolName) {
+				t.Fatalf("excluded preset profile %q unexpectedly contains new PM tool %q", presetKey, toolName)
+			}
+		}
+	}
+}

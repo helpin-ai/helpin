@@ -331,6 +331,98 @@ func TestListAgentPresetsPlannersIncludeExaSearch(t *testing.T) {
 	}
 }
 
+func TestBuiltInPresetPMToolExpansionMatrix(t *testing.T) {
+	newPMReadTools := []string{
+		"list_workspace_members",
+		"list_pm_labels",
+		"get_task",
+		"list_epics",
+		"get_epic",
+		"list_sprints",
+		"get_sprint",
+		"list_sprint_tasks",
+		"list_objectives",
+		"get_objective",
+	}
+	newPMWriteTools := []string{
+		"update_task",
+		"create_task_checklist_item",
+		"update_task_checklist_item",
+		"add_pm_comment",
+		"create_epic",
+		"update_epic",
+		"create_sprint",
+		"update_sprint",
+		"create_objective",
+		"update_objective",
+		"create_key_result",
+		"update_key_result",
+	}
+	allNewPMTools := append(slices.Clone(newPMReadTools), newPMWriteTools...)
+
+	tests := []struct {
+		presetKey string
+		want      []string
+	}{
+		{presetKey: model.AgentPresetAskAgent, want: newPMReadTools},
+		{presetKey: model.AgentPresetCommandAgent, want: allNewPMTools},
+		{presetKey: model.AgentPresetEpicPlanner, want: []string{"list_workspace_members", "list_pm_labels", "get_task", "list_epics", "get_epic"}},
+		{presetKey: model.AgentPresetTaskPlanner, want: []string{"list_workspace_members", "list_pm_labels", "get_task"}},
+		{presetKey: model.AgentPresetMarketer, want: newPMReadTools},
+		{presetKey: model.AgentPresetCRMOperator, want: []string{}},
+		{presetKey: model.AgentPresetSupportAgent, want: []string{}},
+		{presetKey: model.AgentPresetDocumentationAgent, want: []string{}},
+		{presetKey: model.AgentPresetCodeBuilder, want: []string{}},
+		{presetKey: model.AgentPresetReviewAgent, want: []string{}},
+	}
+
+	presets := ListAgentPresets()
+	for _, tc := range tests {
+		t.Run(tc.presetKey, func(t *testing.T) {
+			var preset *model.AgentPresetDefinition
+			for idx := range presets {
+				if presets[idx].Key == tc.presetKey {
+					preset = &presets[idx]
+					break
+				}
+			}
+			if preset == nil {
+				t.Fatalf("preset %q not found", tc.presetKey)
+			}
+
+			got := make([]string, 0, len(tc.want))
+			for _, toolName := range allNewPMTools {
+				if slices.Contains(preset.AllowedTools, toolName) {
+					got = append(got, toolName)
+				}
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("preset %q new PM tools = %v, want exactly %v", tc.presetKey, got, tc.want)
+			}
+
+			seen := make(map[string]struct{}, len(preset.AllowedTools))
+			for _, toolName := range preset.AllowedTools {
+				if _, ok := seen[toolName]; ok {
+					t.Fatalf("preset %q contains duplicate tool %q in %v", tc.presetKey, toolName, preset.AllowedTools)
+				}
+				seen[toolName] = struct{}{}
+			}
+		})
+	}
+}
+
+func TestCommandAgentPresetPMToolTargets(t *testing.T) {
+	preset, ok := agentPresetDefinition(model.AgentPresetCommandAgent)
+	if !ok {
+		t.Fatal("command agent preset not found")
+	}
+	for _, targetType := range []string{"sprint", "objective"} {
+		if !slices.Contains(preset.AllowedTargetTypes, targetType) {
+			t.Fatalf("command agent target types = %v, want %q for its PM tools", preset.AllowedTargetTypes, targetType)
+		}
+	}
+}
+
 func TestValidateRuntimeKindAllowsOnlyImplementedRuntimes(t *testing.T) {
 	valid := []string{"opencode", "codex", "native_sdk"}
 	for _, runtimeKind := range valid {
