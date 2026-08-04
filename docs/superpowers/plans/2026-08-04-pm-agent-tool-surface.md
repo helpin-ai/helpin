@@ -39,6 +39,8 @@
 **Files:**
 - Modify: `server/internal/service/agent_runtime_host.go`
 - Modify: `server/internal/service/agent_runtime_host_test.go`
+- Modify: `server/internal/service/agent_draft.go`
+- Modify: `server/internal/service/agent_draft_test.go`
 - Modify: `frontend/src/lib/pm-types/agents.ts`
 - Modify: `frontend/src/pages/automation/Agents.tsx`
 - Test: `frontend/src/pages/automation/__tests__/Agents.test.tsx`
@@ -70,34 +72,36 @@ After populating `ActorRole` and `ActorTeamIDs`, wrap the command context with `
 
 Run the command from Step 2. Expected: PASS.
 
-- [ ] **Step 5: Write failing frontend target tests**
+- [ ] **Step 5: Write failing backend and frontend target tests**
 
-Assert the exported/visible custom-agent target options contain Sprints and Objectives and that both values are accepted by the target normalizer and run-now support set.
+Assert `draftAgentTargetTypes`/custom-agent draft normalization retains `sprint` and `objective`. In frontend tests, assert the visible custom-agent target options contain Sprints and Objectives and that both values are accepted by the target normalizer and run-now support set.
 
 - [ ] **Step 6: Run frontend target tests and verify RED**
 
+Run: `cd server && go test ./internal/service -run 'Test.*Draft.*Target' -count=1`
+
 Run: `cd frontend && npm test -- --run src/pages/automation/__tests__/Agents.test.tsx`
 
-Expected: FAIL because `AgentTargetType`, `CUSTOM_AGENT_TARGET_OPTIONS`, and `RUN_NOW_SUPPORTED_TARGETS` omit the new targets.
+Expected: FAIL because backend draft target validation, `AgentTargetType`, `CUSTOM_AGENT_TARGET_OPTIONS`, and `RUN_NOW_SUPPORTED_TARGETS` omit the new targets.
 
 - [ ] **Step 7: Add target types and options**
 
-Extend the union with `'sprint' | 'objective'`, add labeled options, and add both values to `RUN_NOW_SUPPORTED_TARGETS`. Do not change existing labels or target behavior.
+Extend the backend draft allowlist and frontend union with `'sprint' | 'objective'`, add labeled options, and add both values to `RUN_NOW_SUPPORTED_TARGETS`. Do not change existing labels or target behavior.
 
 - [ ] **Step 8: Re-run focused frontend tests**
 
-Expected: PASS.
+Run both Step 6 commands. Expected: PASS.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add server/internal/service/agent_runtime_host.go server/internal/service/agent_runtime_host_test.go frontend/src/lib/pm-types/agents.ts frontend/src/pages/automation/Agents.tsx frontend/src/pages/automation/__tests__/Agents.test.tsx
+git add server/internal/service/agent_runtime_host.go server/internal/service/agent_runtime_host_test.go server/internal/service/agent_draft.go server/internal/service/agent_draft_test.go frontend/src/lib/pm-types/agents.ts frontend/src/pages/automation/Agents.tsx frontend/src/pages/automation/__tests__/Agents.test.tsx
 git commit -m "feat: preserve actor context for PM agent runs"
 ```
 
 ---
 
-### Task 2: Define PM tool metadata and enforce catalog/executor parity
+### Task 2: Define PM tool metadata and catalog contracts
 
 **Files:**
 - Modify: `server/internal/commandtools/metadata.go`
@@ -105,7 +109,7 @@ git commit -m "feat: preserve actor context for PM agent runs"
 - Modify: `server/internal/agentcontract/tool_catalog_test.go`
 - Modify: `server/internal/service/internal_command_service_test.go`
 
-- [ ] **Step 1: Write failing metadata tests**
+- [ ] **Step 1: Write failing metadata/catalog contract tests**
 
 Add table-driven assertions for these aliases and categories:
 
@@ -120,11 +124,11 @@ PM / Objectives: list_objectives, get_objective, create_objective,
   update_objective, create_key_result, update_key_result
 ```
 
-Also assert `create_task` exposes `sprint_id`, `severity`, `blocked`, `blocker`, and `checklist_items`; `list_tasks` exposes the filters in the spec; every list schema has a maximum bounded page/per-page or limit.
+Also assert `create_task` exposes `sprint_id`, `severity`, `blocked`, `blocker`, and `checklist_items`; `list_tasks` exposes the filters in the spec; every list schema has a maximum bounded page/per-page or limit. Do not add executor parity yet; that test belongs in Task 6 after all command groups are ready to turn green in the same commit.
 
 - [ ] **Step 2: Run metadata tests and verify RED**
 
-Run: `cd server && go test ./internal/agentcontract ./internal/service -run 'TestPMToolCatalogContracts|TestPMToolCatalogExecutorParity' -count=1`
+Run: `cd server && go test ./internal/agentcontract -run TestPMToolCatalogContracts -count=1`
 
 Expected: FAIL with missing aliases/schemas.
 
@@ -138,15 +142,11 @@ Task update excludes `team_id`, `workflow_id`, `state_id`, and `archived`; state
 
 Update the embedded JSON mechanically from the metadata definitions, preserving existing entries and order. Add ordered categories `PM / Epics`, `PM / Sprints`, and `PM / Objectives` after `PM / Tasks`. Keep `assign_task_agent` as a compatibility entry.
 
-- [ ] **Step 5: Add parity test**
+- [ ] **Step 5: Re-run focused tests**
 
-Build the internal command service with nil dependencies, collect exposed aliases by module/category, and compare them to the catalog. Assert unique aliases in both directions, including `list_workspace_members` and `list_workspace_teams`. Allow native runtime tools through an explicit non-command allowlist; do not blanket-ignore missing executors.
+Expected: metadata/catalog contract tests pass. No committed test is intentionally left red.
 
-- [ ] **Step 6: Re-run focused tests**
-
-Expected: metadata tests pass; parity may remain RED until executors are registered in Task 3, which is the intended next dependency.
-
-- [ ] **Step 7: Commit metadata/catalog work**
+- [ ] **Step 6: Commit metadata/catalog work**
 
 ```bash
 git add server/internal/commandtools/metadata.go server/internal/agentcontract/tool_catalog.json server/internal/agentcontract/tool_catalog_test.go server/internal/service/internal_command_service_test.go
@@ -161,6 +161,7 @@ git commit -m "feat: define complete PM agent tool contracts"
 - Create: `server/internal/service/internal_command_pm_tools.go`
 - Create: `server/internal/service/internal_command_pm_tools_test.go`
 - Modify: `server/internal/service/internal_command_service.go`
+- Modify: `server/internal/service/internal_command_service_test.go`
 - Modify: `server/cmd/api/main.go`
 
 - [ ] **Step 1: Write failing discovery execution tests**
@@ -168,6 +169,7 @@ git commit -m "feat: define complete PM agent tool contracts"
 Seed active/inactive workspace members, team memberships, labels, workflows, and tasks. Test:
 
 - `workspace.list_members` returns active assignable members without email.
+- `workspace.list_members` denies an actor who lacks either `workspace.read` or `pm.read`.
 - `pm.list_labels` filters archived and team-incompatible labels.
 - expanded `pm.list_tasks` forwards epic/sprint/workflow/state and pagination filters.
 - team-scoped actors cannot see tasks outside their accessible team IDs.
@@ -178,7 +180,7 @@ Run: `cd server && go test ./internal/service -run 'TestPMCommand(ListWorkspaceM
 
 Expected: FAIL with unknown commands or missing filters.
 
-- [ ] **Step 3: Add focused PM command registration**
+- [ ] **Step 3: Add focused PM command registration and conjunctive permissions**
 
 Add fields for `workspaceRepo`, `epicService`, `sprintService`, `objectiveService`, and `checklistService`. Add setters instead of expanding the already-large constructor:
 
@@ -193,6 +195,14 @@ func (s *InternalCommandService) SetPMOperationalServices(
 ```
 
 Call `registerPMOperationalCommands()` from `registerDefaults`; executors may safely report an unavailable dependency only when invoked.
+
+Extend `InternalCommandDefinition` with an optional all-of permission field:
+
+```go
+RequiredPermissionsAll []authorization.Permission
+```
+
+In `authorizeCommandActor`, require every listed permission with `authz.Can`; retain the current module-derived any-of behavior for definitions that do not set the field. Set `list_workspace_members` to require both `PermWorkspaceRead` and `PermPMRead` and cover allowed/denied combinations in `internal_command_service_test.go`.
 
 - [ ] **Step 4: Implement discovery commands and compact projections**
 
@@ -213,6 +223,8 @@ Cover:
 - checklist list/create/update executors work through `PMChecklistItemService`.
 - `add_pm_comment` defaults target entity and validates the enum.
 - parent-target task/comment/checklist writes reject unrelated child tasks.
+- `get_task_context`, `update_task_state`, `set_task_dependencies`, and `add_task_comment` accept the supported sprint/epic/objective targets from the spec and apply task-ID defaulting or child validation as appropriate.
+- existing `list_workspace_teams` and `list_team_workflows_with_stages` accept sprint/objective targets.
 
 - [ ] **Step 7: Verify task RED**
 
@@ -222,7 +234,7 @@ Expected: FAIL because the task extensions/executors are missing.
 
 - [ ] **Step 8: Implement task tools**
 
-Use `PMTaskService.Create/Update`, `PMChecklistItemService`, and `PMCommentService`. Add helpers:
+Use `PMTaskService.Create/Update`, `PMChecklistItemService`, and `PMCommentService`. Update the existing definitions for `list_workspace_teams`, `list_team_workflows_with_stages`, `get_task_context`, `update_task_state`, `set_task_dependencies`, and `add_task_comment` so their target lists/defaulting match the spec. Route their task IDs through the same child validator instead of duplicating checks. Add helpers:
 
 ```go
 func resolveCommandEntityID(meta model.InternalCommandContext, explicit, entityType string) (string, error)
@@ -238,16 +250,10 @@ Call `SetPMOperationalServices(workspaceRepo, pmEpicService, pmSprintService, pm
 
 Run the command from Step 7. Expected: PASS.
 
-- [ ] **Step 10: Run parity test**
-
-Run: `cd server && go test ./internal/service -run TestPMToolCatalogExecutorParity -count=1`
-
-Expected: still reports only epic/sprint/objective executors missing.
-
-- [ ] **Step 11: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add server/internal/service/internal_command_pm_tools.go server/internal/service/internal_command_pm_tools_test.go server/internal/service/internal_command_service.go server/cmd/api/main.go server/internal/commandtools/metadata.go
+git add server/internal/service/internal_command_pm_tools.go server/internal/service/internal_command_pm_tools_test.go server/internal/service/internal_command_service.go server/internal/service/internal_command_service_test.go server/cmd/api/main.go server/internal/commandtools/metadata.go
 git commit -m "feat: add PM discovery and task agent tools"
 ```
 
@@ -271,9 +277,9 @@ Run: `cd server && go test ./internal/service -run 'TestPMCommand(ListEpics|GetE
 
 Register `pm.list_epics`, `pm.get_epic`, `pm.create_epic`, and `pm.update_epic`. Parse dates as `YYYY-MM-DD`, pass `actorID` to the service, default get/update IDs from an epic target, and use existing `PMEpicService` access checks.
 
-- [ ] **Step 4: Verify GREEN and parity progress**
+- [ ] **Step 4: Verify GREEN**
 
-Run focused tests plus `TestPMToolCatalogExecutorParity`. Expected: epic tests pass; parity reports only sprint/objective gaps.
+Run focused tests. Expected: epic tests pass and no committed suite is red.
 
 - [ ] **Step 5: Commit**
 
@@ -324,9 +330,9 @@ Run: `cd server && go test ./internal/service -run 'Test(StartTargetRunSprint|Ag
 
 Add sprint/objective service dependencies through setters on `AgentService` and `AgentRuntimeHostService`. Add a `case "sprint"` branch parallel to epic, without repo-specific planning behavior. Add `runtimeSprintContextData` and wire setters in `cmd/api/main.go`.
 
-- [ ] **Step 8: Verify run GREEN and parity progress**
+- [ ] **Step 8: Verify run GREEN**
 
-Run focused tests and parity. Expected: sprint tests pass; parity reports objective gaps only.
+Run focused command/run tests. Expected: PASS.
 
 - [ ] **Step 9: Commit**
 
@@ -348,13 +354,15 @@ git commit -m "feat: add sprint agent tools and targets"
 - Modify: `server/internal/service/agent_runtime_host_test.go`
 - Modify: `server/internal/service/agent_policy_test.go`
 
-- [ ] **Step 1: Write failing objective command tests**
+- [ ] **Step 1: Write failing objective command and final parity tests**
 
 Cover workspace-wide reads for a team-restricted actor, create/update manager requirements, unteamed objective owner/admin requirements, association replacement semantics, key-result objective ownership, numeric field validation, no-op update rejection, and cross-workspace IDs.
 
+Add `TestPMToolCatalogExecutorParity`: build the internal command service with nil dependencies, collect exposed aliases, and compare all Helpin-host PM aliases to the frozen catalog. Assert unique aliases in both directions, include `list_workspace_members` and `list_workspace_teams`, and use an explicit allowlist only for native/runtime tools that intentionally have no internal command.
+
 - [ ] **Step 2: Verify command RED**
 
-Run: `cd server && go test ./internal/service -run 'TestPMCommand(ListObjectives|GetObjective|CreateObjective|UpdateObjective|CreateKeyResult|UpdateKeyResult)' -count=1`
+Run: `cd server && go test ./internal/service -run 'TestPMCommand(ListObjectives|GetObjective|CreateObjective|UpdateObjective|CreateKeyResult|UpdateKeyResult)|TestPMToolCatalogExecutorParity' -count=1`
 
 - [ ] **Step 3: Implement objective/key-result commands**
 
@@ -378,7 +386,7 @@ Add a `case "objective"` branch parallel to sprint. Objective reads are workspac
 
 - [ ] **Step 8: Verify GREEN and full parity**
 
-Run focused tests plus `TestPMToolCatalogExecutorParity`. Expected: all PASS.
+Run the Step 2 command. Expected: all objective and parity tests PASS in the same commit.
 
 - [ ] **Step 9: Commit**
 
@@ -473,7 +481,4 @@ Confirm from tests and catalog output that a sprint-targeted custom agent can se
 
 - [ ] **Step 7: Commit verification fixes if any**
 
-```bash
-git add <only feature-related files>
-git commit -m "test: verify complete PM agent tool surface"
-```
+Run `git status --short`. If verification required feature-related edits, add only the explicit changed paths already listed in Tasks 1–7 and commit them with `git commit -m "test: verify complete PM agent tool surface"`. If verification required no edits, skip this commit.
