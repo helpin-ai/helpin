@@ -1212,10 +1212,12 @@ func updateTaskChecklistItemSchema() map[string]any {
 		"type": "object",
 		"properties": map[string]any{
 			"checklist_item_id": optionalIDSchema("Checklist item ID to update."),
+			"task_id":           optionalIDSchema("Optional parent task ID. Omit to use the current task target; parent epic and sprint targets require an explicit task ID."),
 			"text":              map[string]any{"type": "string", "minLength": 1},
 			"completed":         map[string]any{"type": "boolean"},
 			"position":          map[string]any{"type": "integer", "minimum": 0},
 			"assignee_id":       map[string]any{"type": "string", "description": "Workspace member ID, or an empty string to clear the assignee."},
+			"due_date":          dateSchema("Optional checklist item due date.", true),
 		},
 		"required":             []string{"checklist_item_id"},
 		"additionalProperties": false,

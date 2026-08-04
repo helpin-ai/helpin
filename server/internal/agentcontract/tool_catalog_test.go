@@ -105,6 +105,59 @@ func TestPMToolCatalogContracts(t *testing.T) {
 		}
 	}
 
+	assertRequiredFields(t, "create_task", createTask, []string{"name", "team_id"})
+	assertRequiredFields(t, "create_task_checklist_item", requireCatalogSchema(t, toolsByName, "create_task_checklist_item"), []string{"text"})
+	updateChecklist := requireCatalogSchema(t, toolsByName, "update_task_checklist_item")
+	assertRequiredFields(t, "update_task_checklist_item", updateChecklist, []string{"checklist_item_id"})
+	assertSchemaFields(t, "update_task_checklist_item", updateChecklist, []string{"task_id", "due_date"})
+	assertRequiredFields(t, "add_pm_comment", requireCatalogSchema(t, toolsByName, "add_pm_comment"), []string{"content"})
+	assertRequiredFields(t, "create_epic", requireCatalogSchema(t, toolsByName, "create_epic"), []string{"name"})
+	assertRequiredFields(t, "create_sprint", requireCatalogSchema(t, toolsByName, "create_sprint"), []string{"name", "start_date", "end_date", "team_id"})
+	assertRequiredFields(t, "create_objective", requireCatalogSchema(t, toolsByName, "create_objective"), []string{"name", "objective_type"})
+	assertRequiredFields(t, "create_key_result", requireCatalogSchema(t, toolsByName, "create_key_result"), []string{"name"})
+
+	assertSchemaEnum(t, "create_task.task_type", createTask, "task_type", []string{"feature", "bug", "chore"})
+	assertSchemaEnum(t, "create_task.priority", createTask, "priority", []string{"none", "low", "medium", "high", "urgent"})
+	assertSchemaEnum(t, "create_task.severity", createTask, "severity", []string{"none", "minor", "major", "critical"})
+	assertSchemaEnum(t, "add_pm_comment.entity_type", requireCatalogSchema(t, toolsByName, "add_pm_comment"), "entity_type", []string{"task", "epic", "sprint", "objective"})
+	assertSchemaEnum(t, "create_epic.health", requireCatalogSchema(t, toolsByName, "create_epic"), "health", []string{"no_health", "on_track", "at_risk", "off_track"})
+	assertSchemaEnum(t, "list_sprints.status", requireCatalogSchema(t, toolsByName, "list_sprints"), "status", []string{"unstarted", "started", "done"})
+	assertSchemaEnum(t, "create_objective.objective_type", requireCatalogSchema(t, toolsByName, "create_objective"), "objective_type", []string{"tactical", "strategic"})
+	assertSchemaEnum(t, "create_objective.state", requireCatalogSchema(t, toolsByName, "create_objective"), "state", []string{"not_started", "active", "closed"})
+	assertSchemaEnum(t, "create_objective.health", requireCatalogSchema(t, toolsByName, "create_objective"), "health", []string{"on_track", "at_risk", "off_track"})
+	assertSchemaEnum(t, "create_key_result.result_type", requireCatalogSchema(t, toolsByName, "create_key_result"), "result_type", []string{"boolean", "percent", "numeric"})
+
+	for alias, fields := range map[string][]string{
+		"create_task":      {"deadline"},
+		"update_task":      {"deadline"},
+		"create_epic":      {"planned_start_date", "deadline"},
+		"update_epic":      {"planned_start_date", "deadline"},
+		"create_sprint":    {"start_date", "end_date"},
+		"update_sprint":    {"start_date", "end_date"},
+		"create_objective": {"planned_start_date", "deadline"},
+		"update_objective": {"planned_start_date", "deadline"},
+	} {
+		schema := requireCatalogSchema(t, toolsByName, alias)
+		for _, field := range fields {
+			assertPropertyDescriptionContains(t, alias, schema, field, "YYYY-MM-DD")
+		}
+	}
+	assertPropertyDescriptionContains(t, "update_task_checklist_item", updateChecklist, "due_date", "YYYY-MM-DD")
+	assertPropertyDescriptionContains(t, "update_task_checklist_item", updateChecklist, "due_date", "empty string to clear")
+
+	for alias, fields := range map[string][]string{
+		"update_task":      {"owner_member_ids", "label_ids"},
+		"update_epic":      {"label_ids"},
+		"update_sprint":    {"label_ids"},
+		"update_objective": {"team_ids", "owner_ids", "owner_member_ids", "label_ids", "epic_ids"},
+	} {
+		schema := requireCatalogSchema(t, toolsByName, alias)
+		for _, field := range fields {
+			assertPropertyDescriptionContains(t, alias, schema, field, "complete set")
+			assertPropertyDescriptionContains(t, alias, schema, field, "empty array clears")
+		}
+	}
+
 	if _, ok := toolsByName["assign_task_agent"]; !ok {
 		t.Fatal("deprecated assign_task_agent compatibility entry was removed")
 	}
@@ -139,6 +192,60 @@ func assertSchemaFields(t *testing.T, alias string, schema map[string]any, field
 		if _, ok := properties[field]; !ok {
 			t.Errorf("%s schema missing %q", alias, field)
 		}
+	}
+}
+
+func assertRequiredFields(t *testing.T, alias string, schema map[string]any, want []string) {
+	t.Helper()
+	required, ok := schema["required"].([]any)
+	if !ok {
+		t.Fatalf("%s required = %#v", alias, schema["required"])
+	}
+	got := make([]string, 0, len(required))
+	for _, raw := range required {
+		value, ok := raw.(string)
+		if !ok {
+			t.Fatalf("%s required contains %#v", alias, raw)
+		}
+		got = append(got, value)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("%s required = %#v, want %#v", alias, got, want)
+	}
+}
+
+func assertSchemaEnum(t *testing.T, path string, schema map[string]any, field string, want []string) {
+	t.Helper()
+	property, ok := schemaProperties(t, path, schema)[field].(map[string]any)
+	if !ok {
+		t.Fatalf("%s schema missing field %q", path, field)
+	}
+	raw, ok := property["enum"].([]any)
+	if !ok {
+		t.Fatalf("%s enum = %#v", path, property["enum"])
+	}
+	got := make([]string, 0, len(raw))
+	for _, value := range raw {
+		item, ok := value.(string)
+		if !ok {
+			t.Fatalf("%s enum contains %#v", path, value)
+		}
+		got = append(got, item)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("%s enum = %#v, want %#v", path, got, want)
+	}
+}
+
+func assertPropertyDescriptionContains(t *testing.T, alias string, schema map[string]any, field, needle string) {
+	t.Helper()
+	property, ok := schemaProperties(t, alias, schema)[field].(map[string]any)
+	if !ok {
+		t.Fatalf("%s.%s schema missing", alias, field)
+	}
+	description, _ := property["description"].(string)
+	if !strings.Contains(description, needle) {
+		t.Errorf("%s.%s description = %q, want it to contain %q", alias, field, description, needle)
 	}
 }
 
