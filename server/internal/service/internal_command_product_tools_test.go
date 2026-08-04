@@ -540,6 +540,16 @@ func TestReleaseGetTaskContextCommandRequiresTaskIDs(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	svc.SetReleaseFactsProvider(provider)
 	def, _ := svc.Definition("release.get_task_context")
+	properties := def.Tool.InputSchema["properties"].(map[string]any)
+	taskIDs := properties["task_ids"].(map[string]any)
+	if taskIDs["maxItems"] != 50 {
+		t.Fatalf("task_ids maxItems = %#v, want 50", taskIDs["maxItems"])
+	}
+	for _, field := range def.Tool.InputSchema["required"].([]string) {
+		if field == "task_ids" {
+			t.Fatal("task_ids must be optional so a task target can supply the default")
+		}
+	}
 
 	_, err := def.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws-1"}, json.RawMessage(`{"task_ids":[" "]}`))
 	if err == nil || !strings.Contains(err.Error(), "task_ids is required") {

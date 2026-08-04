@@ -527,7 +527,7 @@ func (s *InternalCommandService) extendExistingPMTaskCommands() {
 		Name:                 "pm.set_task_dependencies",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "task", "story", "epic", "sprint"},
+		SupportedTargetTypes: []string{"workspace", "epic", "sprint"},
 		Tool:                 mustCommandToolMetadata("pm.set_task_dependencies"),
 		Execute:              s.executeSetPMTaskDependencies,
 	})
@@ -704,6 +704,12 @@ func (s *InternalCommandService) executeUpdatePMTask(ctx context.Context, meta m
 	if err := s.validateTaskWithinTarget(ctx, meta, &current.Task); err != nil {
 		return nil, err
 	}
+	if err := validateCommandParentUpdate(meta, "epic", req.EpicID); err != nil {
+		return nil, err
+	}
+	if err := validateCommandParentUpdate(meta, "sprint", req.SprintID); err != nil {
+		return nil, err
+	}
 	updateReq := model.UpdateTaskRequest{
 		Name:           normalizeOptionalCommandString(req.Name),
 		Description:    normalizeTaskDescriptionRichText(req.Description),
@@ -874,6 +880,9 @@ func (s *InternalCommandService) executeAddPMComment(ctx context.Context, meta m
 	if entityType != "task" && entityType != "epic" && entityType != "sprint" && entityType != "objective" {
 		return nil, fmt.Errorf("entity_type must be task, epic, sprint, or objective")
 	}
+	if err := validatePMCommentTarget(meta, entityType); err != nil {
+		return nil, err
+	}
 	entityID, err := resolveCommandEntityID(meta, req.EntityID, entityType)
 	if err != nil {
 		return nil, err
@@ -1017,6 +1026,30 @@ func resolveCommandParentAssociation(meta model.InternalCommandContext, explicit
 	return targetID, nil
 }
 
+func validateCommandParentUpdate(meta model.InternalCommandContext, entityType string, explicit *string) error {
+	if explicit == nil || normalizeCommandBarTargetType(meta.TargetType) != entityType {
+		return nil
+	}
+	if strings.TrimSpace(*explicit) != strings.TrimSpace(meta.TargetID) {
+		return fmt.Errorf("%s_id conflicts with the current %s target", entityType, entityType)
+	}
+	return nil
+}
+
+func validatePMCommentTarget(meta model.InternalCommandContext, entityType string) error {
+	targetType := normalizeCommandBarTargetType(meta.TargetType)
+	if targetType == "story" {
+		targetType = "task"
+	}
+	if targetType == "workspace" || entityType == targetType {
+		return nil
+	}
+	if entityType == "task" && (targetType == "epic" || targetType == "sprint") {
+		return nil
+	}
+	return fmt.Errorf("entity_type conflicts with the current %s target", targetType)
+}
+
 // resolveCommandEntityID defaults an entity ID from a matching run target and
 // rejects a conflicting explicit ID for mutating target-aware operations.
 func resolveCommandEntityID(meta model.InternalCommandContext, explicit, entityType string) (string, error) {
@@ -1090,6 +1123,22 @@ func compactCommandTask(detail *model.TaskDetail) map[string]any {
 		stateName = detail.State.Name
 		stateType = detail.State.StateType
 	}
+	owners := make([]map[string]any, 0, len(detail.Owners))
+	for _, owner := range detail.Owners {
+		owners = append(owners, map[string]any{
+			"user_id": owner.ID,
+			"name":    owner.FullName,
+		})
+	}
+	labels := make([]map[string]any, 0, len(detail.Labels))
+	for _, label := range detail.Labels {
+		labels = append(labels, map[string]any{
+			"label_id": label.ID,
+			"name":     label.Name,
+			"color":    label.Color,
+			"team_id":  label.TeamID,
+		})
+	}
 	return map[string]any{
 		"task_id":          task.ID,
 		"display_id":       task.DisplayID,
@@ -1108,8 +1157,8 @@ func compactCommandTask(detail *model.TaskDetail) map[string]any {
 		"sprint_id":        task.SprintID,
 		"sprint_name":      detail.SprintName,
 		"owner_member_ids": task.OwnerMemberIDs,
-		"owners":           detail.Owners,
-		"labels":           detail.Labels,
+		"owners":           owners,
+		"labels":           labels,
 		"estimate":         task.Estimate,
 		"priority":         task.Priority,
 		"severity":         task.Severity,

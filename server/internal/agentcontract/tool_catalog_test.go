@@ -464,3 +464,27 @@ func TestCreateTaskCatalogRejectsEmptyOptionalIDs(t *testing.T) {
 	}
 	t.Fatal("create_task missing from tool catalog")
 }
+
+func TestGetTaskContextCatalogAllowsTargetDefaultAndCapsIDs(t *testing.T) {
+	catalog := ListToolCatalog()
+	for _, tool := range catalog.Tools {
+		if tool.Name != "get_task_context" {
+			continue
+		}
+		schema := tool.InputSchema.(map[string]any)
+		properties := schema["properties"].(map[string]any)
+		taskIDs := properties["task_ids"].(map[string]any)
+		if taskIDs["maxItems"] != float64(50) {
+			t.Fatalf("get_task_context task_ids maxItems = %#v, want 50", taskIDs["maxItems"])
+		}
+		if required, ok := schema["required"].([]any); ok {
+			for _, field := range required {
+				if field == "task_ids" {
+					t.Fatal("get_task_context task_ids must be optional")
+				}
+			}
+		}
+		return
+	}
+	t.Fatal("get_task_context missing from tool catalog")
+}

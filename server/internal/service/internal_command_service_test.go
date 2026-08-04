@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -268,6 +269,33 @@ func TestListWorkspaceTeamsCommandMetadataAndOutput(t *testing.T) {
 	}
 	if len(teams) != 2 || teams[0].ID != "team-1" || teams[0].Handle != "eng" || teams[1].Name != "Growth" {
 		t.Fatalf("unexpected teams output %#v", teams)
+	}
+}
+
+func TestListWorkspaceTeamsCommandCapsDeterministicOutput(t *testing.T) {
+	db := newTestDB(t)
+	now := time.Now()
+	for index := 0; index < 105; index++ {
+		id := fmt.Sprintf("team-%03d", index)
+		name := fmt.Sprintf("Team %03d", 104-index)
+		mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, id, "ws-1", name, "engineering", "feature", now, now)
+	}
+
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetSettingsRepository(repository.NewSettingsRepository(db))
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws-1", ActorID: "actor-1", TargetType: "workspace", TargetID: "ws-1"}, "workspace.list_teams", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("list teams: %v", err)
+	}
+	var teams []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(output, &teams); err != nil {
+		t.Fatalf("decode teams: %v", err)
+	}
+	if len(teams) != 100 || teams[0].Name != "Team 000" || teams[99].Name != "Team 099" {
+		t.Fatalf("bounded team output = len %d, first %#v, last %#v", len(teams), teams[0], teams[len(teams)-1])
 	}
 }
 

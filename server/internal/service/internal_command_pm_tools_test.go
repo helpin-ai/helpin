@@ -290,6 +290,24 @@ func TestPMCommandUpdateTask(t *testing.T) {
 	if _, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.update_task", json.RawMessage(`{}`)); err == nil || !strings.Contains(err.Error(), "editable") {
 		t.Fatalf("expected no-op rejection, got %v", err)
 	}
+	for _, tc := range []struct {
+		name       string
+		targetType string
+		targetID   string
+		input      string
+	}{
+		{name: "epic clear", targetType: "epic", targetID: "epic-a", input: `{"task_id":"task-a","epic_id":""}`},
+		{name: "epic change", targetType: "epic", targetID: "epic-a", input: `{"task_id":"task-a","epic_id":"epic-b"}`},
+		{name: "sprint clear", targetType: "sprint", targetID: "sprint-a", input: `{"task_id":"task-a","sprint_id":""}`},
+		{name: "sprint change", targetType: "sprint", targetID: "sprint-a", input: `{"task_id":"task-a","sprint_id":"sprint-b"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mustExec(t, env.db, `UPDATE pm_tasks SET epic_id = ?, sprint_id = ? WHERE id = ?`, "epic-a", "sprint-a", "task-a")
+			if _, err := env.service.Execute(context.Background(), env.meta(tc.targetType, tc.targetID), "pm.update_task", json.RawMessage(tc.input)); err == nil || !strings.Contains(err.Error(), "target") {
+				t.Fatalf("expected parent target conflict, got %v", err)
+			}
+		})
+	}
 	def, _ := env.service.Definition("pm.update_task")
 	properties := def.Tool.InputSchema["properties"].(map[string]any)
 	for _, forbidden := range []string{"team_id", "workflow_id", "state_id", "archived"} {
@@ -359,6 +377,54 @@ func TestPMCommandAddComment(t *testing.T) {
 	if _, err := env.service.Execute(context.Background(), env.meta("workspace", "ws-1"), "pm.add_comment", json.RawMessage(`{"entity_type":"invalid","entity_id":"task-a","content":"No"}`)); err == nil || !strings.Contains(err.Error(), "entity_type") {
 		t.Fatalf("expected entity type rejection, got %v", err)
 	}
+	if _, err := env.service.Execute(context.Background(), env.meta("epic", "epic-a"), "pm.add_comment", json.RawMessage(`{"entity_type":"epic","entity_id":"epic-b","content":"No"}`)); err == nil || !strings.Contains(err.Error(), "target") {
+		t.Fatalf("expected epic ID conflict, got %v", err)
+	}
+	if _, err := env.service.Execute(context.Background(), env.meta("epic", "epic-a"), "pm.add_comment", json.RawMessage(`{"entity_type":"sprint","entity_id":"sprint-a","content":"No"}`)); err == nil || !strings.Contains(err.Error(), "target") {
+		t.Fatalf("expected epic type conflict, got %v", err)
+	}
+	if _, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.add_comment", json.RawMessage(`{"entity_type":"epic","entity_id":"epic-a","content":"No"}`)); err == nil || !strings.Contains(err.Error(), "target") {
+		t.Fatalf("expected task type conflict, got %v", err)
+	}
+	if _, err := env.service.Execute(context.Background(), env.meta("epic", "epic-a"), "pm.add_comment", json.RawMessage(`{"entity_type":"task","entity_id":"task-a","content":"Allowed child"}`)); err != nil {
+		t.Fatalf("epic target should allow a validated child task: %v", err)
+	}
+	seedPMCommandTask(t, env.db, "task-b", "ws-1", "team-b", "wf-b", "state-b", "epic-b", "sprint-b", 2)
+	if _, err := env.service.Execute(context.Background(), env.meta("epic", "epic-a"), "pm.add_comment", json.RawMessage(`{"entity_type":"task","entity_id":"task-b","content":"No"}`)); err == nil || !strings.Contains(err.Error(), "target") {
+		t.Fatalf("expected unrelated epic child rejection, got %v", err)
+	}
+}
+
+func TestPMCommandTaskProjectionDoesNotLeakOwnerOrLabelInternals(t *testing.T) {
+	env := newPMCommandTestEnv(t)
+	seedPMCommandTask(t, env.db, "task-a", "ws-1", "team-a", "wf-a", "state-a", "epic-a", "sprint-a", 1)
+	mustExec(t, env.db, `UPDATE users SET is_platform_admin = ? WHERE id = ?`, true, "actor-1")
+	mustExec(t, env.db, `UPDATE pm_labels SET color = ?, description = ? WHERE id = ?`, "#123456", "internal label note", "label-a")
+	mustExec(t, env.db, `INSERT INTO pm_task_owners (task_id, user_id, created_at) VALUES (?, ?, ?)`, "task-a", "actor-1", time.Now().UTC())
+	mustExec(t, env.db, `INSERT INTO pm_task_labels (task_id, label_id, created_at) VALUES (?, ?, ?)`, "task-a", "label-a", time.Now().UTC())
+
+	out, err := env.service.Execute(context.Background(), env.meta("task", "task-a"), "pm.get_task", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	for _, forbidden := range []string{"actor@example.com", "is_platform_admin", "internal label note", "archived"} {
+		if strings.Contains(string(out), forbidden) {
+			t.Fatalf("compact task projection leaked %q: %s", forbidden, out)
+		}
+	}
+	var projected struct {
+		Owners []map[string]any `json:"owners"`
+		Labels []map[string]any `json:"labels"`
+	}
+	if err := json.Unmarshal(out, &projected); err != nil {
+		t.Fatalf("decode task projection: %v", err)
+	}
+	if len(projected.Owners) != 1 || len(projected.Owners[0]) != 2 || projected.Owners[0]["user_id"] != "actor-1" || projected.Owners[0]["name"] != "Actor" {
+		t.Fatalf("owner projection = %#v", projected.Owners)
+	}
+	if len(projected.Labels) != 1 || len(projected.Labels[0]) != 4 || projected.Labels[0]["label_id"] != "label-a" || projected.Labels[0]["name"] != "Alpha" || projected.Labels[0]["color"] != "#123456" || projected.Labels[0]["team_id"] != "team-a" {
+		t.Fatalf("label projection = %#v", projected.Labels)
+	}
 }
 
 func TestPMCommandParentChild(t *testing.T) {
@@ -394,7 +460,7 @@ func TestPMCommandParentChild(t *testing.T) {
 		}
 	}
 	dependencyDef, _ := env.service.Definition("pm.set_task_dependencies")
-	if !containsCommandTarget(dependencyDef.SupportedTargetTypes, "workspace") || !containsCommandTarget(dependencyDef.SupportedTargetTypes, "sprint") {
+	if len(dependencyDef.SupportedTargetTypes) != 3 || !containsCommandTarget(dependencyDef.SupportedTargetTypes, "workspace") || !containsCommandTarget(dependencyDef.SupportedTargetTypes, "epic") || !containsCommandTarget(dependencyDef.SupportedTargetTypes, "sprint") || containsCommandTarget(dependencyDef.SupportedTargetTypes, "task") || containsCommandTarget(dependencyDef.SupportedTargetTypes, "story") {
 		t.Fatalf("dependency targets = %#v", dependencyDef.SupportedTargetTypes)
 	}
 	getContextDef, _ := env.service.Definition("release.get_task_context")

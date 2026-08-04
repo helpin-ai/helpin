@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"sort"
 	"strings"
 	"time"
 
@@ -417,6 +418,15 @@ func (s *InternalCommandService) registerDefaults() {
 			teams, err := s.settingsRepo.ListTeams(ctx, meta.WorkspaceID)
 			if err != nil {
 				return nil, err
+			}
+			sort.Slice(teams, func(i, j int) bool {
+				if teams[i].Name == teams[j].Name {
+					return teams[i].ID < teams[j].ID
+				}
+				return teams[i].Name < teams[j].Name
+			})
+			if len(teams) > 100 {
+				teams = teams[:100]
 			}
 			results := make([]map[string]any, 0, len(teams))
 			for _, team := range teams {

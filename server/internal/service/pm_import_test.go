@@ -644,6 +644,7 @@ func TestPMImportServiceExecuteShortcutRepairsLegacyChecklistStoryIDColumn(t *te
 		completed BOOLEAN NOT NULL DEFAULT 0,
 		position INTEGER NOT NULL DEFAULT 0,
 		assignee_id TEXT,
+		due_date DATE,
 		created_at DATETIME,
 		updated_at DATETIME
 	)`).Error; err != nil {
@@ -1627,6 +1628,7 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			completed BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER NOT NULL DEFAULT 0,
 			assignee_id TEXT,
+			due_date DATE,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

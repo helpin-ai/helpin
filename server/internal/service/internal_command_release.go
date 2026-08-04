@@ -123,6 +123,7 @@ func (s *InternalCommandService) registerReleaseFactsCommands() {
 						"type":        "array",
 						"description": "Task IDs to load. Max 50.",
 						"items":       map[string]any{"type": "string"},
+						"maxItems":    50,
 					},
 					"include_linked_docs": map[string]any{
 						"type":        "boolean",
@@ -141,7 +142,7 @@ func (s *InternalCommandService) registerReleaseFactsCommands() {
 						"description": "Whether to include git links for each task.",
 					},
 				},
-				"required":             []string{"task_ids"},
+				"required":             []string{},
 				"additionalProperties": false,
 			},
 		},
