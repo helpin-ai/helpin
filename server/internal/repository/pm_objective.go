@@ -43,6 +43,9 @@ func (r *PMObjectiveRepository) ListPage(ctx context.Context, workspaceID string
 	if err := r.listQuery(ctx, workspaceID, filters).Distinct("pm_objectives.id").Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count objectives: %w", err)
 	}
+	if total == 0 || (pagination.Page > 0 && pagination.PerPage > 0 && int64(pagination.Page) > (total-1)/int64(pagination.PerPage)+1) {
+		return []model.PMObjective{}, total, nil
+	}
 	var objectives []model.PMObjective
 	offset := (pagination.Page - 1) * pagination.PerPage
 	if err := r.listQuery(ctx, workspaceID, filters).Distinct("pm_objectives.*").Order("position ASC, created_at DESC").Offset(offset).Limit(pagination.PerPage).Find(&objectives).Error; err != nil {

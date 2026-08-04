@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -135,6 +136,16 @@ func TestPMCommandListObjectivesPagesBeforeEnrichment(t *testing.T) {
 	}
 	if queryCount > 12 {
 		t.Fatalf("pm.list_objectives queries = %d, want at most 12 regardless of off-page rows", queryCount)
+	}
+}
+
+func TestPMCommandListObjectivesHugePositivePageReturnsEmpty(t *testing.T) {
+	env := newPMObjectiveCommandTestEnv(t)
+	env.seedObjective(t, "objective-huge-page", env.workspaceID, "Huge page guard", []string{env.teamA})
+	meta := env.meta("workspace", env.workspaceID)
+	result := executePMObjectiveTestCommand(t, env.commands, context.Background(), meta, "pm.list_objectives", fmt.Sprintf(`{"page":%d,"per_page":100}`, math.MaxInt))
+	if result["total"] != float64(1) || len(result["objectives"].([]any)) != 0 {
+		t.Fatalf("huge command page returned rows: %#v", result)
 	}
 }
 
