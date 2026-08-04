@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -86,6 +87,98 @@ func TestAgentRuntimeHostExecuteCommandPropagatesSeparateAuditActor(t *testing.T
 	}
 	if gotMeta.ActorID != "" || gotMeta.AuditActorID != "user-audit" || gotMeta.AgentID != "agent-audit" {
 		t.Fatalf("command metadata = %#v", gotMeta)
+	}
+}
+
+func TestAgentRuntimeHostExecuteCommandResolvesAgentTeamScope(t *testing.T) {
+	tests := []struct {
+		name        string
+		agentID     string
+		teamIDs     []string
+		wantTeamIDs []string
+		actorID     string
+	}{
+		{name: "team scoped human run", agentID: "agent-runtime-team", teamIDs: []string{"team-b", "team-a"}, wantTeamIDs: []string{"team-a", "team-b"}, actorID: "human-runtime"},
+		{name: "workspace scoped", agentID: "agent-runtime-workspace", wantTeamIDs: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupAgentScopeTestDB(t)
+			seedAgentScopeAgent(t, db, model.Agent{
+				ID: tt.agentID, WorkspaceID: "workspace-runtime-scope", Name: tt.name, Status: "idle", RuntimeKind: "native_sdk",
+				Skills: model.AgentSkillRefs{}, ExecutionConfig: model.JSONBlob(`{}`), AllowedTools: json.RawMessage(`[]`),
+				AllowedCommands: json.RawMessage(`[]`), AllowedTargets: json.RawMessage(`[]`), ApprovalMode: "always",
+				DefaultInvocationMode: "interactive", TeamIDs: tt.teamIDs,
+			})
+
+			commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+			var gotMeta model.InternalCommandContext
+			commandService.register(InternalCommandDefinition{
+				Name:                 "test.agent_scope",
+				SupportedTargetTypes: []string{"workspace"},
+				Execute: func(_ context.Context, meta model.InternalCommandContext, _ json.RawMessage) (json.RawMessage, error) {
+					gotMeta = meta
+					return json.RawMessage(`{"ok":true}`), nil
+				},
+			})
+			host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, commandService, nil).
+				SetAgentRepository(repository.NewAgentRepository(db))
+
+			resp, err := host.ExecuteCommand(context.Background(), agentruntime.CommandExecutionRequest{
+				Meta: agentruntime.CommandExecutionContext{
+					AppID: "helpin", WorkspaceID: "workspace-runtime-scope", AgentID: tt.agentID, ExternalActorID: tt.actorID,
+					Target: agentruntime.TargetRef{Type: "workspace", ID: "workspace-runtime-scope"},
+				},
+				CommandName: "test.agent_scope",
+			})
+			if err != nil || resp == nil || resp.Error != "" {
+				t.Fatalf("ExecuteCommand error=%v response=%#v", err, resp)
+			}
+			if !gotMeta.AgentScopeResolved {
+				t.Fatalf("agent scope unresolved: %#v", gotMeta)
+			}
+			if !slices.Equal(gotMeta.AgentTeamIDs, tt.wantTeamIDs) {
+				t.Fatalf("agent team IDs = %#v, want %#v", gotMeta.AgentTeamIDs, tt.wantTeamIDs)
+			}
+			if gotMeta.ActorID != tt.actorID {
+				t.Fatalf("actor ID = %q, want %q", gotMeta.ActorID, tt.actorID)
+			}
+			if gotMeta.ActorRole != "" || len(gotMeta.ActorTeamIDs) != 0 {
+				t.Fatalf("agent scope fabricated human authorization: %#v", gotMeta)
+			}
+		})
+	}
+}
+
+func TestAgentRuntimeHostExecuteCommandRejectsUnresolvedAgentScope(t *testing.T) {
+	db := setupAgentScopeTestDB(t)
+	called := false
+	commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	commandService.register(InternalCommandDefinition{
+		Name:                 "test.requires_agent_scope",
+		SupportedTargetTypes: []string{"workspace"},
+		Execute: func(_ context.Context, _ model.InternalCommandContext, _ json.RawMessage) (json.RawMessage, error) {
+			called = true
+			return json.RawMessage(`{"ok":true}`), nil
+		},
+	})
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, commandService, nil).
+		SetAgentRepository(repository.NewAgentRepository(db))
+	resp, err := host.ExecuteCommand(context.Background(), agentruntime.CommandExecutionRequest{
+		Meta: agentruntime.CommandExecutionContext{
+			AppID: "helpin", WorkspaceID: "workspace-runtime-scope",
+			Target: agentruntime.TargetRef{Type: "workspace", ID: "workspace-runtime-scope"},
+		},
+		CommandName: "test.requires_agent_scope",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCommand transport error: %v", err)
+	}
+	if resp == nil || !strings.Contains(resp.Error, "agent_id is required") {
+		t.Fatalf("response = %#v, want missing agent scope error", resp)
+	}
+	if called {
+		t.Fatal("command executed without resolved agent scope")
 	}
 }
 

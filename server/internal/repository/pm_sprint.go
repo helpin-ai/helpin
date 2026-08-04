@@ -74,6 +74,13 @@ func (r *PMSprintRepository) listQuery(ctx context.Context, workspaceID string, 
 			query = query.Where("team_id IN ?", filters.AccessibleTeamIDs)
 		}
 	}
+	if filters.AgentTeamIDs != nil {
+		if len(filters.AgentTeamIDs) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where("team_id IN ?", filters.AgentTeamIDs)
+		}
+	}
 	if filters.Status != nil && *filters.Status != "" {
 		today := time.Now().UTC().Format("2006-01-02")
 		switch *filters.Status {

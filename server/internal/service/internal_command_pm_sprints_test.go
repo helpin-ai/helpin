@@ -149,11 +149,12 @@ func TestPMCommandActorlessCreateUsesHumanAuditActorNotAgentID(t *testing.T) {
 	}
 
 	created := executePMSprintTestCommand(t, svc, context.Background(), model.InternalCommandContext{
-		WorkspaceID:  workspaceID,
-		AgentID:      "agent-command-audit",
-		AuditActorID: "user-command-audit",
-		TargetType:   "workspace",
-		TargetID:     workspaceID,
+		WorkspaceID:        workspaceID,
+		AgentID:            "agent-command-audit",
+		AgentScopeResolved: true,
+		AuditActorID:       "user-command-audit",
+		TargetType:         "workspace",
+		TargetID:           workspaceID,
 	}, "pm.create_sprint", `{"name":"Audited","start_date":"2027-05-01","end_date":"2027-05-15","team_id":"team-command-audit"}`)
 	var audited model.PMSprint
 	if err := db.Where("id = ?", created["sprint_id"]).First(&audited).Error; err != nil {
@@ -164,10 +165,11 @@ func TestPMCommandActorlessCreateUsesHumanAuditActorNotAgentID(t *testing.T) {
 	}
 
 	created = executePMSprintTestCommand(t, svc, context.Background(), model.InternalCommandContext{
-		WorkspaceID: workspaceID,
-		AgentID:     "agent-command-audit",
-		TargetType:  "workspace",
-		TargetID:    workspaceID,
+		WorkspaceID:        workspaceID,
+		AgentID:            "agent-command-audit",
+		AgentScopeResolved: true,
+		TargetType:         "workspace",
+		TargetID:           workspaceID,
 	}, "pm.create_sprint", `{"name":"Actorless","start_date":"2027-06-01","end_date":"2027-06-15","team_id":"team-command-audit"}`)
 	var actorless model.PMSprint
 	if err := db.Where("id = ?", created["sprint_id"]).First(&actorless).Error; err != nil {
@@ -310,6 +312,148 @@ func TestPMCommandListGetAndListSprintTasks(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "sprint not found in this workspace") {
 		t.Fatalf("expected workspace isolation error, got %v", err)
 	}
+}
+
+func TestPMCommandAgentTeamScopeReadList(t *testing.T) {
+	svc, _, _, workspaceID, teamA, teamB, sprintA, sprintB := newPMSprintCommandAgentScopeEnv(t)
+	_, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: workspaceID, AgentID: "agent-unresolved", TargetType: "workspace", TargetID: workspaceID,
+	}, "pm.list_sprints", json.RawMessage(`{}`))
+	if err == nil || !strings.Contains(err.Error(), "agent team scope is unresolved") {
+		t.Fatalf("unresolved agent scope error = %v", err)
+	}
+	teamAMeta := model.InternalCommandContext{
+		WorkspaceID: workspaceID, AgentID: "agent-team-a", AgentScopeResolved: true, AgentTeamIDs: []string{teamA},
+		TargetType: "workspace", TargetID: workspaceID,
+	}
+
+	list := executePMSprintTestCommand(t, svc, context.Background(), teamAMeta, "pm.list_sprints", `{}`)
+	items := list["sprints"].([]any)
+	if list["total"] != float64(1) || len(items) != 1 || items[0].(map[string]any)["sprint_id"] != sprintA.Sprint.ID {
+		t.Fatalf("team-A agent list leaked scope: %#v", list)
+	}
+
+	for name, meta := range map[string]model.InternalCommandContext{
+		"explicit get": teamAMeta,
+		"target default get": {
+			WorkspaceID: workspaceID, AgentID: "agent-team-a", AgentScopeResolved: true, AgentTeamIDs: []string{teamA},
+			TargetType: "sprint", TargetID: sprintB.Sprint.ID,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			input := `{"sprint_id":"` + sprintB.Sprint.ID + `"}`
+			if name == "target default get" {
+				input = `{}`
+			}
+			_, err := svc.Execute(context.Background(), meta, "pm.get_sprint", json.RawMessage(input))
+			if err == nil || !strings.Contains(err.Error(), "agent does not have access") {
+				t.Fatalf("get team-B sprint error = %v", err)
+			}
+		})
+	}
+
+	targetBMeta := teamAMeta
+	targetBMeta.TargetType = "sprint"
+	targetBMeta.TargetID = sprintB.Sprint.ID
+	_, err = svc.Execute(context.Background(), targetBMeta, "pm.list_sprint_tasks", json.RawMessage(`{}`))
+	if err == nil || !strings.Contains(err.Error(), "agent does not have access") {
+		t.Fatalf("list team-B sprint tasks error = %v", err)
+	}
+
+	workspaceMeta := model.InternalCommandContext{
+		WorkspaceID: workspaceID, AgentID: "agent-workspace", AgentScopeResolved: true,
+		TargetType: "workspace", TargetID: workspaceID,
+	}
+	list = executePMSprintTestCommand(t, svc, context.Background(), workspaceMeta, "pm.list_sprints", `{}`)
+	if list["total"] != float64(2) || len(list["sprints"].([]any)) != 2 {
+		t.Fatalf("workspace-scoped agent list = %#v", list)
+	}
+	get := executePMSprintTestCommand(t, svc, context.Background(), workspaceMeta, "pm.get_sprint", `{"sprint_id":"`+sprintB.Sprint.ID+`"}`)
+	if get["sprint_id"] != sprintB.Sprint.ID || get["team_id"] != teamB {
+		t.Fatalf("workspace-scoped agent could not read team B: %#v", get)
+	}
+}
+
+func TestPMCommandAgentTeamScopeMutations(t *testing.T) {
+	svc, _, _, workspaceID, teamA, teamB, sprintA, sprintB := newPMSprintCommandAgentScopeEnv(t)
+	meta := model.InternalCommandContext{
+		WorkspaceID: workspaceID, AgentID: "agent-team-a", AgentScopeResolved: true, AgentTeamIDs: []string{teamA},
+		TargetType: "workspace", TargetID: workspaceID,
+	}
+
+	_, err := svc.Execute(context.Background(), meta, "pm.create_sprint", json.RawMessage(`{
+		"name":"Forbidden B","start_date":"2029-03-01","end_date":"2029-03-15","team_id":"`+teamB+`"
+	}`))
+	if err == nil || !strings.Contains(err.Error(), "agent does not have access") {
+		t.Fatalf("create in team B error = %v", err)
+	}
+
+	_, err = svc.Execute(context.Background(), meta, "pm.update_sprint", json.RawMessage(`{"sprint_id":"`+sprintB.Sprint.ID+`","name":"Forbidden rename"}`))
+	if err == nil || !strings.Contains(err.Error(), "agent does not have access") {
+		t.Fatalf("update team-B sprint error = %v", err)
+	}
+
+	_, err = svc.Execute(context.Background(), meta, "pm.update_sprint", json.RawMessage(`{"sprint_id":"`+sprintA.Sprint.ID+`","team_id":"`+teamB+`"}`))
+	if err == nil || !strings.Contains(err.Error(), "agent does not have access") {
+		t.Fatalf("move team-A sprint to B error = %v", err)
+	}
+}
+
+func TestPMCommandAgentTeamScopeIntersectsHuman(t *testing.T) {
+	svc, _, _, workspaceID, teamA, teamB, sprintA, sprintB := newPMSprintCommandAgentScopeEnv(t)
+	meta := model.InternalCommandContext{
+		WorkspaceID: workspaceID, AgentID: "agent-team-a", AgentScopeResolved: true, AgentTeamIDs: []string{teamA},
+		TargetType: "workspace", TargetID: workspaceID,
+	}
+
+	humanAB := &authorization.Actor{UserID: "human-ab", WorkspaceID: workspaceID, Role: "member", TeamMemberships: []authorization.TeamRole{
+		{TeamID: teamA, Role: "manager"}, {TeamID: teamB, Role: "manager"},
+	}}
+	list := executePMSprintTestCommand(t, svc, authorization.WithActor(context.Background(), humanAB), meta, "pm.list_sprints", `{}`)
+	items := list["sprints"].([]any)
+	if list["total"] != float64(1) || len(items) != 1 || items[0].(map[string]any)["sprint_id"] != sprintA.Sprint.ID {
+		t.Fatalf("human AB widened team-A agent: %#v", list)
+	}
+	_, err := svc.Execute(authorization.WithActor(context.Background(), humanAB), meta, "pm.get_sprint", json.RawMessage(`{"sprint_id":"`+sprintB.Sprint.ID+`"}`))
+	if err == nil || !strings.Contains(err.Error(), "agent does not have access") {
+		t.Fatalf("human AB widened agent get scope: %v", err)
+	}
+	_, err = svc.Execute(authorization.WithActor(context.Background(), humanAB), meta, "pm.create_sprint", json.RawMessage(`{
+		"name":"Human forbidden B","start_date":"2029-04-01","end_date":"2029-04-15","team_id":"`+teamB+`"
+	}`))
+	if err == nil || !strings.Contains(err.Error(), "agent does not have access") {
+		t.Fatalf("human AB widened agent create scope: %v", err)
+	}
+
+	humanB := &authorization.Actor{UserID: "human-b", WorkspaceID: workspaceID, Role: "member", TeamMemberships: []authorization.TeamRole{{TeamID: teamB, Role: "manager"}}}
+	list = executePMSprintTestCommand(t, svc, authorization.WithActor(context.Background(), humanB), meta, "pm.list_sprints", `{}`)
+	if list["total"] != float64(0) || len(list["sprints"].([]any)) != 0 {
+		t.Fatalf("human/agent team intersection = %#v, want empty", list)
+	}
+}
+
+func newPMSprintCommandAgentScopeEnv(t *testing.T) (*InternalCommandService, *PMSprintService, *gorm.DB, string, string, string, *model.SprintWithStats, *model.SprintWithStats) {
+	t.Helper()
+	svc, sprintService, db, workspaceID := newPMSprintCommandTestEnv(t)
+	teamA := "team-command-agent-a"
+	teamB := "team-command-agent-b"
+	seedPMSprintCommandTeam(t, db, workspaceID, teamA)
+	seedPMSprintCommandTeam(t, db, workspaceID, teamB)
+	sprintA, err := sprintService.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: workspaceID, Name: "Team A sprint", StartDate: commandMustDate(t, "2029-01-01"), EndDate: commandMustDate(t, "2029-01-15"), TeamID: &teamA,
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("create team-A sprint: %v", err)
+	}
+	sprintB, err := sprintService.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: workspaceID, Name: "Team B sprint", StartDate: commandMustDate(t, "2029-02-01"), EndDate: commandMustDate(t, "2029-02-15"), TeamID: &teamB,
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("create team-B sprint: %v", err)
+	}
+	seedPMSprintPlanningServiceState(t, db, "state-command-agent-scope", "workflow-command-agent-scope", "Todo", model.PMStateTypeUnstarted, 0)
+	seedPMSprintPlanningServiceStory(t, db, "task-command-agent-b", workspaceID, "workflow-command-agent-scope", "state-command-agent-scope", sprintB.Sprint.ID, teamB, "Team B task", 9201, 1, 1)
+	return svc, sprintService, db, workspaceID, teamA, teamB, sprintA, sprintB
 }
 
 func TestPMCommandSprintListsPageBeforeEnrichment(t *testing.T) {

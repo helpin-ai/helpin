@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,6 +34,7 @@ var (
 type AgentRuntimeHostService struct {
 	appID          string
 	runRepo        *repository.AgentRunRepository
+	agentRepo      *repository.AgentRepository
 	workspaceRepo  *repository.WorkspaceRepository
 	taskRepo       *repository.PMTaskRepository
 	epicRepo       *repository.PMEpicRepository
@@ -47,6 +49,16 @@ type AgentRuntimeHostService struct {
 	skillRepo      *repository.WorkspaceSkillRepository
 	skillStore     skillPackageStore
 	authz          *authorization.AuthzService
+}
+
+// SetAgentRepository enables repository-backed effective agent scope
+// resolution for internal command execution.
+func (s *AgentRuntimeHostService) SetAgentRepository(agentRepo *repository.AgentRepository) *AgentRuntimeHostService {
+	if s == nil {
+		return s
+	}
+	s.agentRepo = agentRepo
+	return s
 }
 
 type AgentRuntimeSkillLookupRequest struct {
@@ -437,6 +449,9 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 	if meta.WorkspaceID == "" {
 		return nil, fmt.Errorf("%w: workspace_id is required", ErrAgentRuntimeHostBadRequest)
 	}
+	if err := s.enrichCommandAgentScope(ctx, &meta); err != nil {
+		return &agentruntime.CommandExecutionResponse{Error: err.Error()}, nil
+	}
 	actor, err := s.enrichCommandActor(ctx, &meta)
 	if err != nil {
 		return &agentruntime.CommandExecutionResponse{Error: err.Error()}, nil
@@ -453,6 +468,27 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 		return &agentruntime.CommandExecutionResponse{Error: err.Error()}, nil
 	}
 	return &agentruntime.CommandExecutionResponse{Output: output}, nil
+}
+
+func (s *AgentRuntimeHostService) enrichCommandAgentScope(ctx context.Context, meta *model.InternalCommandContext) error {
+	if s == nil || s.agentRepo == nil || meta == nil {
+		return nil
+	}
+	if strings.TrimSpace(meta.AgentID) == "" {
+		return fmt.Errorf("%w: agent_id is required to resolve command scope", ErrAgentRuntimeHostForbidden)
+	}
+	agent, err := s.agentRepo.GetByID(ctx, strings.TrimSpace(meta.WorkspaceID), strings.TrimSpace(meta.AgentID))
+	if err != nil {
+		return fmt.Errorf("resolve command agent scope: %w", err)
+	}
+	if agent == nil {
+		return fmt.Errorf("%w: agent is not available in this workspace", ErrAgentRuntimeHostForbidden)
+	}
+	teamIDs := agentTeamIDsForScope(agent)
+	slices.Sort(teamIDs)
+	meta.AgentTeamIDs = teamIDs
+	meta.AgentScopeResolved = true
+	return nil
 }
 
 func (s *AgentRuntimeHostService) ResolveSkillByID(ctx context.Context, req AgentRuntimeSkillLookupRequest) (*AgentRuntimeWorkspaceSkill, error) {

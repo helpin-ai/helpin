@@ -94,7 +94,11 @@ func (s *InternalCommandService) executePMListSprints(ctx context.Context, meta 
 		}
 		req.Status = &status
 	}
-	sprints, total, page, perPage, err := s.sprintService.ListPage(ctx, meta.WorkspaceID, model.PMSprintListFilters{TeamID: req.TeamID, Status: req.Status, Archived: req.Archived}, model.PMPagination{Page: req.Page, PerPage: req.PerPage})
+	agentTeamIDs, err := commandAgentTeamFilter(meta)
+	if err != nil {
+		return nil, err
+	}
+	sprints, total, page, perPage, err := s.sprintService.ListPage(ctx, meta.WorkspaceID, model.PMSprintListFilters{TeamID: req.TeamID, Status: req.Status, Archived: req.Archived, AgentTeamIDs: agentTeamIDs}, model.PMPagination{Page: req.Page, PerPage: req.PerPage})
 	if err != nil {
 		return nil, fmt.Errorf("list sprints: %w", err)
 	}
@@ -116,7 +120,7 @@ func (s *InternalCommandService) executePMGetSprint(ctx context.Context, meta mo
 	if err != nil {
 		return nil, err
 	}
-	sprint, err := s.loadCommandSprint(ctx, meta.WorkspaceID, sprintID)
+	sprint, err := s.loadCommandSprint(ctx, meta, sprintID)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +140,7 @@ func (s *InternalCommandService) executePMListSprintTasks(ctx context.Context, m
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.loadCommandSprint(ctx, meta.WorkspaceID, sprintID); err != nil {
+	if _, err := s.loadCommandSprint(ctx, meta, sprintID); err != nil {
 		return nil, err
 	}
 	tasks, total, page, perPage, err := s.sprintService.ListTasksPage(ctx, sprintID, model.PMPagination{Page: req.Page, PerPage: req.PerPage})
@@ -167,6 +171,9 @@ func (s *InternalCommandService) executePMCreateSprint(ctx context.Context, meta
 	}
 	teamID := strings.TrimSpace(req.TeamID)
 	if err := s.validatePMSprintTeam(ctx, meta.WorkspaceID, teamID); err != nil {
+		return nil, err
+	}
+	if err := requireCommandAgentTeam(meta, &teamID); err != nil {
 		return nil, err
 	}
 	startDate, err := parsePMSprintCommandDate("start_date", req.StartDate)
@@ -219,7 +226,7 @@ func (s *InternalCommandService) executePMUpdateSprint(ctx context.Context, meta
 	if err != nil {
 		return nil, err
 	}
-	current, err := s.loadCommandSprint(ctx, meta.WorkspaceID, sprintID)
+	current, err := s.loadCommandSprint(ctx, meta, sprintID)
 	if err != nil {
 		return nil, err
 	}
@@ -228,6 +235,9 @@ func (s *InternalCommandService) executePMUpdateSprint(ctx context.Context, meta
 	if req.TeamID != nil {
 		teamID := strings.TrimSpace(*req.TeamID)
 		if err := s.validatePMSprintTeam(ctx, meta.WorkspaceID, teamID); err != nil {
+			return nil, err
+		}
+		if err := requireCommandAgentTeam(meta, &teamID); err != nil {
 			return nil, err
 		}
 		if err := requireCanManage(ctx, &teamID); err != nil {
@@ -285,13 +295,16 @@ func (s *InternalCommandService) validatePMSprintTeam(ctx context.Context, works
 	return nil
 }
 
-func (s *InternalCommandService) loadCommandSprint(ctx context.Context, workspaceID, sprintID string) (*model.SprintWithStats, error) {
+func (s *InternalCommandService) loadCommandSprint(ctx context.Context, meta model.InternalCommandContext, sprintID string) (*model.SprintWithStats, error) {
 	if s == nil || s.sprintService == nil {
 		return nil, fmt.Errorf("sprint service is not configured")
 	}
 	sprint, err := s.sprintService.GetByID(ctx, strings.TrimSpace(sprintID))
-	if err != nil || sprint == nil || sprint.Sprint.WorkspaceID != strings.TrimSpace(workspaceID) {
+	if err != nil || sprint == nil || sprint.Sprint.WorkspaceID != strings.TrimSpace(meta.WorkspaceID) {
 		return nil, fmt.Errorf("sprint not found in this workspace")
+	}
+	if err := requireCommandAgentTeam(meta, sprint.Sprint.TeamID); err != nil {
+		return nil, err
 	}
 	return sprint, nil
 }

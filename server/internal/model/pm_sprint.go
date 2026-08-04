@@ -41,6 +41,9 @@ type PMSprintListFilters struct {
 	TeamID   *string
 	Status   *string
 	Archived *bool
+	// AgentTeamIDs is an additional command-agent scope restriction.
+	// nil = workspace-scoped/no agent filter, [ids] = restrict to those teams.
+	AgentTeamIDs []string
 	// AccessibleTeamIDs enforces team-based access boundaries.
 	// nil = no filtering (admin/owner), [] = no access, [ids] = filter to these teams.
 	AccessibleTeamIDs []string

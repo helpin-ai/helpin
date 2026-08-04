@@ -1213,6 +1213,7 @@ func main() {
 		commandService,
 		gitService,
 	).SetPMSprintService(pmSprintService).
+		SetAgentRepository(agentRepo).
 		SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
 	var agentRuntimeProjectionService *service.AgentRuntimeProjectionService
 	var runFinalizers *service.AgentRunFinalizerService
