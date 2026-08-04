@@ -129,7 +129,7 @@ export function Footer() {
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Powered by Helpin"
-            className="group inline-flex w-fit items-center gap-1 whitespace-nowrap text-muted-foreground/55 transition-colors hover:text-foreground"
+            className="group inline-flex w-fit items-center gap-1 whitespace-nowrap text-muted-foreground/55"
           >
             <span>Powered by</span>
             <span data-helpin-brand-lockup className="inline-flex items-center gap-0.5">
@@ -145,7 +145,7 @@ export function Footer() {
                 aria-hidden="true"
                 className="hidden h-3 w-3 shrink-0 scale-125 dark:block"
               />
-              <span className="inline-block font-medium text-muted-foreground/80 bg-[linear-gradient(currentColor,currentColor)] bg-[length:0_1px] bg-[position:0_100%] bg-no-repeat transition-[background-size] duration-200 ease-out group-hover:bg-[length:100%_1px]">
+              <span className="inline-block font-medium text-muted-foreground/80 bg-[linear-gradient(currentColor,currentColor)] bg-[length:0_1px] bg-[position:0_100%] bg-no-repeat transition-[color,background-size] duration-200 ease-out group-hover:text-foreground group-hover:bg-[length:100%_1px]">
                 Helpin
               </span>
             </span>
