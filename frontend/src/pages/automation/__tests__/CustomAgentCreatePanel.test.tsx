@@ -206,6 +206,26 @@ describe('CustomAgentCreatePanel', () => {
     expect(container?.textContent).not.toContain('AI Provider');
   });
 
+  it('offers sprint and objective working areas in the blank-agent picker', () => {
+    const onChange = vi.fn();
+    renderPanel({ onChange });
+
+    click('Start blank');
+
+    expect(container?.textContent).toContain('Sprints');
+    expect(container?.textContent).toContain('Objectives');
+
+    click('Sprints');
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      allowed_targets: ['task', 'sprint'],
+    }));
+
+    click('Objectives');
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      allowed_targets: ['task', 'objective'],
+    }));
+  });
+
   it('shows run mode by default', () => {
     renderPanel({
       form: { ...createDefaultCustomAgentForm(), name: 'Planner' },
