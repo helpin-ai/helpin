@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -126,6 +127,55 @@ func TestPMCommandCreateSprintStrictDatesAndPrevalidatesScope(t *testing.T) {
 			t.Fatalf("missing canonical IDs: %#v", result)
 		}
 	})
+}
+
+func TestPMCommandActorlessCreateUsesHumanAuditActorNotAgentID(t *testing.T) {
+	svc, _, db, workspaceID := newPMSprintCommandTestEnv(t)
+	seedPMSprintCommandTeam(t, db, workspaceID, "team-command-audit")
+	if err := db.Exec(`INSERT INTO users (id, email, password_hash, full_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"user-command-audit", "audit@example.com", "hash", "Audit User", time.Now().UTC(), time.Now().UTC()).Error; err != nil {
+		t.Fatalf("seed audit user: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TRIGGER enforce_sprint_created_by_user
+		BEFORE INSERT ON pm_sprints
+		WHEN NEW.created_by IS NOT NULL
+		 AND NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.created_by)
+		BEGIN
+			SELECT RAISE(ABORT, 'pm_sprints_created_by_fkey');
+		END
+	`).Error; err != nil {
+		t.Fatalf("create FK compatibility trigger: %v", err)
+	}
+
+	created := executePMSprintTestCommand(t, svc, context.Background(), model.InternalCommandContext{
+		WorkspaceID:  workspaceID,
+		AgentID:      "agent-command-audit",
+		AuditActorID: "user-command-audit",
+		TargetType:   "workspace",
+		TargetID:     workspaceID,
+	}, "pm.create_sprint", `{"name":"Audited","start_date":"2027-05-01","end_date":"2027-05-15","team_id":"team-command-audit"}`)
+	var audited model.PMSprint
+	if err := db.Where("id = ?", created["sprint_id"]).First(&audited).Error; err != nil {
+		t.Fatalf("load audited sprint: %v", err)
+	}
+	if audited.CreatedBy == nil || *audited.CreatedBy != "user-command-audit" {
+		t.Fatalf("created_by = %#v, want human audit user", audited.CreatedBy)
+	}
+
+	created = executePMSprintTestCommand(t, svc, context.Background(), model.InternalCommandContext{
+		WorkspaceID: workspaceID,
+		AgentID:     "agent-command-audit",
+		TargetType:  "workspace",
+		TargetID:    workspaceID,
+	}, "pm.create_sprint", `{"name":"Actorless","start_date":"2027-06-01","end_date":"2027-06-15","team_id":"team-command-audit"}`)
+	var actorless model.PMSprint
+	if err := db.Where("id = ?", created["sprint_id"]).First(&actorless).Error; err != nil {
+		t.Fatalf("load actorless sprint: %v", err)
+	}
+	if actorless.CreatedBy != nil {
+		t.Fatalf("actorless created_by = %#v, want nil rather than agent ID", actorless.CreatedBy)
+	}
 }
 
 func TestPMCommandUpdateSprintReplacementConflictAndDestinationPermission(t *testing.T) {
@@ -262,6 +312,95 @@ func TestPMCommandListGetAndListSprintTasks(t *testing.T) {
 	}
 }
 
+func TestPMCommandSprintListsPageBeforeEnrichment(t *testing.T) {
+	t.Run("sprints", func(t *testing.T) {
+		svc, sprintService, db, workspaceID := newPMSprintCommandTestEnv(t)
+		seedPMSprintCommandTeam(t, db, workspaceID, "team-command-page-sprints")
+		teamID := "team-command-page-sprints"
+		for index, name := range []string{"First", "Second", "Third"} {
+			start := commandMustDate(t, fmt.Sprintf("2028-0%d-01", index+1))
+			end := commandMustDate(t, fmt.Sprintf("2028-0%d-15", index+1))
+			if _, err := sprintService.Create(context.Background(), model.CreateSprintRequest{
+				WorkspaceID: workspaceID, Name: name, StartDate: start, EndDate: end, TeamID: &teamID,
+			}, "actor-1"); err != nil {
+				t.Fatalf("Create sprint %s: %v", name, err)
+			}
+		}
+
+		queries := capturePMSprintCommandQueries(t, db)
+		result := executePMSprintTestCommand(t, svc, context.Background(), model.InternalCommandContext{
+			WorkspaceID: workspaceID, TargetType: "workspace", TargetID: workspaceID,
+		}, "pm.list_sprints", `{"page":1,"per_page":1}`)
+		if result["total"] != float64(3) || len(result["sprints"].([]any)) != 1 {
+			t.Fatalf("unexpected paginated result: %#v", result)
+		}
+
+		baseQueries := 0
+		pageQueryHasLimit := false
+		for _, query := range *queries {
+			upper := strings.ToUpper(query)
+			if strings.Contains(upper, "FROM `PM_SPRINTS`") && strings.Contains(upper, "WORKSPACE_ID") {
+				baseQueries++
+				if strings.Contains(upper, "LIMIT 1") {
+					pageQueryHasLimit = true
+				}
+			}
+		}
+		if baseQueries > 2 || !pageQueryHasLimit {
+			t.Fatalf("sprint page was not bounded before enrichment (base queries=%d, limited=%t):\n%s", baseQueries, pageQueryHasLimit, strings.Join(*queries, "\n"))
+		}
+	})
+
+	t.Run("tasks", func(t *testing.T) {
+		svc, sprintService, db, workspaceID := newPMSprintCommandTestEnv(t)
+		seedPMSprintCommandTeam(t, db, workspaceID, "team-command-page-tasks")
+		teamID := "team-command-page-tasks"
+		sprint, err := sprintService.Create(context.Background(), model.CreateSprintRequest{
+			WorkspaceID: workspaceID, Name: "Task page", StartDate: commandMustDate(t, "2028-05-01"), EndDate: commandMustDate(t, "2028-05-15"), TeamID: &teamID,
+		}, "actor-1")
+		if err != nil {
+			t.Fatalf("Create sprint: %v", err)
+		}
+		seedPMSprintPlanningServiceState(t, db, "state-command-page", "workflow-command-page", "Todo", model.PMStateTypeUnstarted, 0)
+		for index := 1; index <= 3; index++ {
+			seedPMSprintPlanningServiceStory(t, db, fmt.Sprintf("task-command-page-%d", index), workspaceID, "workflow-command-page", "state-command-page", sprint.Sprint.ID, teamID, fmt.Sprintf("Task %d", index), 9100+index, index, 1)
+		}
+
+		queries := capturePMSprintCommandQueries(t, db)
+		result := executePMSprintTestCommand(t, svc, context.Background(), model.InternalCommandContext{
+			WorkspaceID: workspaceID, TargetType: "sprint", TargetID: sprint.Sprint.ID,
+		}, "pm.list_sprint_tasks", `{"page":1,"per_page":1}`)
+		if result["total"] != float64(3) || len(result["tasks"].([]any)) != 1 {
+			t.Fatalf("unexpected paginated result: %#v", result)
+		}
+
+		pageQueryHasLimit := false
+		for _, query := range *queries {
+			upper := strings.ToUpper(query)
+			if strings.Contains(upper, "FROM `PM_TASKS`") && strings.Contains(upper, "ORDER BY POSITION") && strings.Contains(upper, "LIMIT 1") {
+				pageQueryHasLimit = true
+			}
+		}
+		if !pageQueryHasLimit {
+			t.Fatalf("task page was not bounded before enrichment:\n%s", strings.Join(*queries, "\n"))
+		}
+
+		*queries = nil
+		huge := executePMSprintTestCommand(t, svc, context.Background(), model.InternalCommandContext{
+			WorkspaceID: workspaceID, TargetType: "sprint", TargetID: sprint.Sprint.ID,
+		}, "pm.list_sprint_tasks", `{"page":9223372036854775807,"per_page":100}`)
+		if huge["total"] != float64(3) || len(huge["tasks"].([]any)) != 0 {
+			t.Fatalf("unexpected huge task page: %#v", huge)
+		}
+		for _, query := range *queries {
+			upper := strings.ToUpper(query)
+			if strings.Contains(upper, "FROM `PM_TASKS`") && strings.Contains(upper, "ORDER BY POSITION") {
+				t.Fatalf("huge empty task page fetched tasks for enrichment: %s", query)
+			}
+		}
+	})
+}
+
 func TestPMCommandListSprintsHugePageReturnsEmptyPage(t *testing.T) {
 	svc, sprintService, db, workspaceID := newPMSprintCommandTestEnv(t)
 	seedPMSprintCommandTeam(t, db, workspaceID, "team-command-huge-page")
@@ -276,6 +415,7 @@ func TestPMCommandListSprintsHugePageReturnsEmptyPage(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
+	queries := capturePMSprintCommandQueries(t, db)
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			t.Fatalf("huge page panicked: %v", recovered)
@@ -290,6 +430,29 @@ func TestPMCommandListSprintsHugePageReturnsEmptyPage(t *testing.T) {
 	if !ok || len(items) != 0 {
 		t.Fatalf("huge page returned %#v, want empty sprints", list["sprints"])
 	}
+	for _, query := range *queries {
+		upper := strings.ToUpper(query)
+		if strings.Contains(upper, "PM_SPRINT_LABELS") || (strings.Contains(upper, "FROM PM_TASKS") && strings.Contains(upper, "GROUP BY")) {
+			t.Fatalf("huge empty page performed enrichment query: %s", query)
+		}
+	}
+}
+
+func capturePMSprintCommandQueries(t *testing.T, db *gorm.DB) *[]string {
+	t.Helper()
+	queries := []string{}
+	const callbackName = "test:capture_pm_sprint_command_queries"
+	if err := db.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if sql := strings.TrimSpace(tx.Statement.SQL.String()); sql != "" {
+			queries = append(queries, sql)
+		}
+	}); err != nil {
+		t.Fatalf("register query capture: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Callback().Query().Remove(callbackName)
+	})
+	return &queries
 }
 
 func seedPMSprintCommandTeam(t *testing.T, db *gorm.DB, workspaceID, teamID string) {

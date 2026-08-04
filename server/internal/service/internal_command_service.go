@@ -2049,8 +2049,8 @@ func fallbackActor(meta model.InternalCommandContext) string {
 	if strings.TrimSpace(meta.ActorID) != "" {
 		return strings.TrimSpace(meta.ActorID)
 	}
-	if strings.TrimSpace(meta.AgentID) != "" {
-		return strings.TrimSpace(meta.AgentID)
+	if strings.TrimSpace(meta.AuditActorID) != "" {
+		return strings.TrimSpace(meta.AuditActorID)
 	}
 	return ""
 }

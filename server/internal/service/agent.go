@@ -3936,6 +3936,9 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, err
 		}
+		if err := validateAgentTeamScope(agent, "sprint", sprint.Sprint.TeamID); err != nil {
+			return nil, err
+		}
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
@@ -5642,6 +5645,9 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 	startReq := runtimeStartRunRequest(run, params.agent)
+	if auditActorID := s.auditActorIDForRun(ctx, run); auditActorID != "" {
+		startReq.Metadata["audit_actor_id"] = auditActorID
+	}
 	resolvedMCP := &ExternalMCPResolvedRun{}
 	selectedExternalTools := make([]string, 0)
 	for _, tool := range parseJSONStringSlice(params.agent.AllowedTools) {
@@ -5692,6 +5698,31 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 	return run, nil
+}
+
+func (s *AgentService) auditActorIDForRun(ctx context.Context, run *model.AgentRun) string {
+	if run == nil {
+		return ""
+	}
+	if actorID := strings.TrimSpace(derefString(run.TriggeredByUserID)); actorID != "" {
+		return actorID
+	}
+	if s == nil || s.agentRepo == nil || run.AgentVersionID == nil || strings.TrimSpace(*run.AgentVersionID) == "" {
+		return ""
+	}
+	versionRepo := agentVersionRepoFromAgentRepo(s.agentRepo)
+	if versionRepo == nil {
+		return ""
+	}
+	version, err := versionRepo.GetByID(ctx, run.WorkspaceID, run.AgentID, strings.TrimSpace(*run.AgentVersionID))
+	if err != nil {
+		slog.WarnContext(ctx, "resolve agent run audit actor", "error", err, "workspace_id", run.WorkspaceID, "run_id", run.ID, "agent_id", run.AgentID)
+		return ""
+	}
+	if version == nil {
+		return ""
+	}
+	return strings.TrimSpace(derefString(version.CreatedBy))
 }
 
 func (s *AgentService) failRunStart(ctx context.Context, run *model.AgentRun, agent *model.Agent, workspaceID string, startErr error) {
@@ -6172,14 +6203,13 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 
 	sprintsByID := map[string]model.PMSprint{}
 	if len(sprintIDs) > 0 && s.sprintService != nil {
-		for _, sprintID := range sprintIDs {
-			sprint, err := s.sprintService.GetByID(ctx, sprintID)
-			if err != nil {
-				slog.WarnContext(ctx, "enrich run targets: get sprint failed", "error", err, "workspace_id", workspaceID, "sprint_id", sprintID)
-				continue
-			}
-			if sprint != nil && sprint.Sprint.WorkspaceID == workspaceID {
-				sprintsByID[sprintID] = sprint.Sprint
+		sprints, err := s.sprintService.ListByIDs(ctx, workspaceID, sprintIDs)
+		if err != nil {
+			slog.WarnContext(ctx, "enrich run targets: list sprints failed", "error", err, "workspace_id", workspaceID)
+		} else {
+			sprintsByID = make(map[string]model.PMSprint, len(sprints))
+			for _, sprint := range sprints {
+				sprintsByID[sprint.ID] = sprint
 			}
 		}
 	}

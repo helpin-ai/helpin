@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -99,5 +100,112 @@ func TestStartTargetRunSprint(t *testing.T) {
 	_, err = agentService.StartTargetRun(context.Background(), workspaceID, "sprint", other.Sprint.ID, model.StartAgentRunRequest{AgentID: "agent-sprint-run"}, "actor-1")
 	if err == nil || !strings.Contains(err.Error(), "sprint not found") {
 		t.Fatalf("expected workspace isolation error, got %v", err)
+	}
+}
+
+func TestStartTargetRunSprintActorlessPropagatesAgentVersionCreatorForAudit(t *testing.T) {
+	sprintService, db, workspaceID := newSprintTestEnvWithDB(t)
+	createAgentRunActivityTables(t, db)
+	if err := db.Exec(`
+		CREATE TABLE agent_versions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			created_by TEXT,
+			deleted_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create agent versions table: %v", err)
+	}
+	seedPMSprintCommandTeam(t, db, workspaceID, "team-run-sprint-audit")
+	teamID := "team-run-sprint-audit"
+	sprint, err := sprintService.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: workspaceID,
+		Name:        "Actorless Run Sprint",
+		StartDate:   commandMustDate(t, "2027-07-01"),
+		EndDate:     commandMustDate(t, "2027-07-15"),
+		TeamID:      &teamID,
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+	versionID := "version-sprint-audit"
+	if err := db.Create(&model.Agent{
+		ID: "agent-sprint-audit", WorkspaceID: workspaceID, Name: "Sprint Auditor", Status: "idle", RuntimeKind: "native_sdk",
+		Skills: model.AgentSkillRefs{}, TriggerMode: "manual", ExecutionConfig: model.JSONBlob(`{}`), AllowedTools: json.RawMessage(`[]`),
+		AllowedCommands: json.RawMessage(`[]`), AllowedTargets: json.RawMessage(`["sprint"]`), ApprovalMode: "never", MaxConcurrentRuns: 1,
+		DefaultInvocationMode: model.InvocationModeAutonomous, ActiveVersionID: &versionID,
+	}).Error; err != nil {
+		t.Fatalf("seed sprint agent: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO agent_versions (id, workspace_id, agent_id, created_by) VALUES (?, ?, ?, ?)`,
+		versionID, workspaceID, "agent-sprint-audit", "user-agent-creator").Error; err != nil {
+		t.Fatalf("seed agent version: %v", err)
+	}
+
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	agentService := (&AgentService{
+		agentRepo: repository.NewAgentRepository(db),
+		runRepo:   repository.NewAgentRunRepository(db),
+	}).SetPMSprintService(sprintService).
+		SetAgentRuntimeClient(runtimeClient).
+		SetAgentRuntimeLaunchEnabled(true)
+	now := time.Now().UTC()
+	_, err = agentService.startTargetRun(context.Background(), workspaceID, "sprint", sprint.Sprint.ID, model.StartAgentRunRequest{
+		AgentID: "agent-sprint-audit",
+	}, nil, &model.AgentRunTriggerContext{
+		Source: model.AgentRunTriggerSourceAutomationRule, TriggerType: "cron", FiredAt: &now,
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("start actorless sprint run: %v", err)
+	}
+	if len(runtimeClient.startRunCalls) != 1 || runtimeClient.startRunCalls[0].ExternalActorID != "" {
+		t.Fatalf("actorless runtime launch = %#v", runtimeClient.startRunCalls)
+	}
+	if got := runtimeClient.startRunCalls[0].Metadata["audit_actor_id"]; got != "user-agent-creator" {
+		t.Fatalf("audit_actor_id = %#v, want agent version creator", got)
+	}
+}
+
+func TestStartTargetRunSprintActorlessRejectsAgentTeamMismatch(t *testing.T) {
+	sprintService, db, workspaceID := newSprintTestEnvWithDB(t)
+	createAgentRunActivityTables(t, db)
+	seedPMSprintCommandTeam(t, db, workspaceID, "team-run-sprint-target")
+	targetTeamID := "team-run-sprint-target"
+	sprint, err := sprintService.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: workspaceID,
+		Name:        "Team Scoped Sprint",
+		StartDate:   commandMustDate(t, "2027-08-01"),
+		EndDate:     commandMustDate(t, "2027-08-15"),
+		TeamID:      &targetTeamID,
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+	agentTeamID := "team-run-sprint-other"
+	if err := db.Create(&model.Agent{
+		ID: "agent-sprint-team-mismatch", WorkspaceID: workspaceID, Name: "Wrong Team", Status: "idle", RuntimeKind: "native_sdk",
+		Skills: model.AgentSkillRefs{}, TriggerMode: "manual", ExecutionConfig: model.JSONBlob(`{}`), AllowedTools: json.RawMessage(`[]`),
+		AllowedCommands: json.RawMessage(`[]`), AllowedTargets: json.RawMessage(`["sprint"]`), ApprovalMode: "never", MaxConcurrentRuns: 1,
+		DefaultInvocationMode: model.InvocationModeAutonomous, TeamID: &agentTeamID,
+	}).Error; err != nil {
+		t.Fatalf("seed sprint agent: %v", err)
+	}
+
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	agentService := (&AgentService{
+		agentRepo: repository.NewAgentRepository(db),
+		runRepo:   repository.NewAgentRunRepository(db),
+	}).SetPMSprintService(sprintService).
+		SetAgentRuntimeClient(runtimeClient).
+		SetAgentRuntimeLaunchEnabled(true)
+	_, err = agentService.startTargetRun(context.Background(), workspaceID, "sprint", sprint.Sprint.ID, model.StartAgentRunRequest{
+		AgentID: "agent-sprint-team-mismatch",
+	}, nil, systemRunTriggerContext("cron"), nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "cannot run on sprint targets for team "+targetTeamID) {
+		t.Fatalf("team mismatch error = %v", err)
+	}
+	if len(runtimeClient.startRunCalls) != 0 {
+		t.Fatalf("team-mismatched run reached runtime: %#v", runtimeClient.startRunCalls)
 	}
 }

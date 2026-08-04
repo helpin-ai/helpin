@@ -2,7 +2,7 @@ package service
 
 import "testing"
 
-func TestStartAgentRunCatalogIncludesCanonicalPlanningTargets(t *testing.T) {
+func TestStartAgentRunCatalogIncludesOnlyExecutablePlanningTargets(t *testing.T) {
 	var startRun *MCPToolDefinition
 	for _, definition := range specialMCPToolDefinitions() {
 		if definition.Name == "start_agent_run" {
@@ -35,16 +35,16 @@ func TestStartAgentRunCatalogIncludesCanonicalPlanningTargets(t *testing.T) {
 		targets = append(targets, target)
 	}
 
-	for _, wanted := range []string{"sprint", "objective"} {
-		found := false
-		for _, target := range targets {
-			if target == wanted {
-				found = true
-				break
-			}
+	foundSprint := false
+	for _, target := range targets {
+		if target == "sprint" {
+			foundSprint = true
 		}
-		if !found {
-			t.Errorf("target enum %v does not contain %q", targets, wanted)
+		if target == "objective" {
+			t.Errorf("target enum %v advertises objective before its executor is available", targets)
 		}
+	}
+	if !foundSprint {
+		t.Errorf("target enum %v does not contain sprint", targets)
 	}
 }

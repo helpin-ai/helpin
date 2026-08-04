@@ -3,6 +3,7 @@ package model
 type InternalCommandContext struct {
 	WorkspaceID  string   `json:"workspace_id"`
 	ActorID      string   `json:"actor_id,omitempty"`
+	AuditActorID string   `json:"audit_actor_id,omitempty"`
 	ActorRole    string   `json:"actor_role,omitempty"`
 	ActorTeamIDs []string `json:"actor_team_ids,omitempty"`
 	AgentID      string   `json:"agent_id,omitempty"`

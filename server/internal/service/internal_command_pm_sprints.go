@@ -94,16 +94,15 @@ func (s *InternalCommandService) executePMListSprints(ctx context.Context, meta 
 		}
 		req.Status = &status
 	}
-	sprints, err := s.sprintService.List(ctx, meta.WorkspaceID, model.PMSprintListFilters{TeamID: req.TeamID, Status: req.Status, Archived: req.Archived})
+	sprints, total, page, perPage, err := s.sprintService.ListPage(ctx, meta.WorkspaceID, model.PMSprintListFilters{TeamID: req.TeamID, Status: req.Status, Archived: req.Archived}, model.PMPagination{Page: req.Page, PerPage: req.PerPage})
 	if err != nil {
 		return nil, fmt.Errorf("list sprints: %w", err)
 	}
-	page, perPage, start, end := pmSprintPageBounds(req.Page, req.PerPage, len(sprints))
-	items := make([]map[string]any, 0, end-start)
-	for _, sprint := range sprints[start:end] {
+	items := make([]map[string]any, 0, len(sprints))
+	for _, sprint := range sprints {
 		items = append(items, compactCommandSprint(&sprint))
 	}
-	return mustJSON(map[string]any{"sprints": items, "page": page, "per_page": perPage, "total": len(sprints)}), nil
+	return mustJSON(map[string]any{"sprints": items, "page": page, "per_page": perPage, "total": total}), nil
 }
 
 func (s *InternalCommandService) executePMGetSprint(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -140,16 +139,15 @@ func (s *InternalCommandService) executePMListSprintTasks(ctx context.Context, m
 	if _, err := s.loadCommandSprint(ctx, meta.WorkspaceID, sprintID); err != nil {
 		return nil, err
 	}
-	tasks, err := s.sprintService.ListTasks(ctx, sprintID)
+	tasks, total, page, perPage, err := s.sprintService.ListTasksPage(ctx, sprintID, model.PMPagination{Page: req.Page, PerPage: req.PerPage})
 	if err != nil {
 		return nil, fmt.Errorf("list sprint tasks: %w", err)
 	}
-	page, perPage, start, end := pmSprintPageBounds(req.Page, req.PerPage, len(tasks))
-	items := make([]map[string]any, 0, end-start)
-	for _, task := range tasks[start:end] {
+	items := make([]map[string]any, 0, len(tasks))
+	for _, task := range tasks {
 		items = append(items, compactCommandSprintTask(task))
 	}
-	return mustJSON(map[string]any{"sprint_id": sprintID, "tasks": items, "page": page, "per_page": perPage, "total": len(tasks)}), nil
+	return mustJSON(map[string]any{"sprint_id": sprintID, "tasks": items, "page": page, "per_page": perPage, "total": total}), nil
 }
 
 func (s *InternalCommandService) executePMCreateSprint(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -337,31 +335,6 @@ func validatePMSprintCommandLabels(ctx context.Context, sprintService *PMSprintS
 		return nil, err
 	}
 	return trimmed, nil
-}
-
-func pmSprintPageBounds(page, perPage, total int) (int, int, int, int) {
-	if page <= 0 {
-		page = 1
-	}
-	if perPage <= 0 {
-		perPage = 50
-	}
-	if perPage > 100 {
-		perPage = 100
-	}
-	if total <= 0 {
-		return page, perPage, 0, 0
-	}
-	maxPage := (total-1)/perPage + 1
-	if page > maxPage {
-		return page, perPage, total, total
-	}
-	start := (page - 1) * perPage
-	end := start + perPage
-	if end > total {
-		end = total
-	}
-	return page, perPage, start, end
 }
 
 func compactCommandSprint(value *model.SprintWithStats) map[string]any {

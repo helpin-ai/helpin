@@ -56,6 +56,39 @@ func TestAgentRuntimeHostExecuteCommandUsesInternalCommandService(t *testing.T) 
 	}
 }
 
+func TestAgentRuntimeHostExecuteCommandPropagatesSeparateAuditActor(t *testing.T) {
+	commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	var gotMeta model.InternalCommandContext
+	commandService.register(InternalCommandDefinition{
+		Name:                 "test.audit_actor",
+		SupportedTargetTypes: []string{"workspace"},
+		Execute: func(_ context.Context, meta model.InternalCommandContext, _ json.RawMessage) (json.RawMessage, error) {
+			gotMeta = meta
+			return json.RawMessage(`{"ok":true}`), nil
+		},
+	})
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, commandService, nil)
+
+	resp, err := host.ExecuteCommand(context.Background(), agentruntime.CommandExecutionRequest{
+		Meta: agentruntime.CommandExecutionContext{
+			AppID:            "helpin",
+			WorkspaceID:      "workspace-audit",
+			AgentID:          "agent-audit",
+			TargetType:       "workspace",
+			TargetID:         "workspace-audit",
+			RunInputMetadata: map[string]interface{}{"audit_actor_id": "user-audit"},
+		},
+		CommandName: "test.audit_actor",
+		Input:       json.RawMessage(`{}`),
+	})
+	if err != nil || resp.Error != "" {
+		t.Fatalf("ExecuteCommand error=%v response=%#v", err, resp)
+	}
+	if gotMeta.ActorID != "" || gotMeta.AuditActorID != "user-audit" || gotMeta.AgentID != "agent-audit" {
+		t.Fatalf("command metadata = %#v", gotMeta)
+	}
+}
+
 func TestAgentRuntimeHostExecuteCommandPropagatesResolvedActor(t *testing.T) {
 	db := newTestDB(t)
 	seedUser(t, db, "user-actor-1", "actor@example.com", "Runtime Actor", "hash")

@@ -408,12 +408,13 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 		return nil, err
 	}
 	meta := model.InternalCommandContext{
-		WorkspaceID: strings.TrimSpace(req.Meta.WorkspaceID),
-		ActorID:     strings.TrimSpace(req.Meta.ExternalActorID),
-		AgentID:     strings.TrimSpace(req.Meta.AgentID),
-		RunID:       strings.TrimSpace(req.Meta.RunID),
-		TargetType:  strings.TrimSpace(req.Meta.TargetType),
-		TargetID:    strings.TrimSpace(req.Meta.TargetID),
+		WorkspaceID:  strings.TrimSpace(req.Meta.WorkspaceID),
+		ActorID:      strings.TrimSpace(req.Meta.ExternalActorID),
+		AuditActorID: runtimeMetadataString("audit_actor_id", req.Meta.RunInputMetadata, req.Meta.TargetMetadata, req.Meta.Target.Metadata),
+		AgentID:      strings.TrimSpace(req.Meta.AgentID),
+		RunID:        strings.TrimSpace(req.Meta.RunID),
+		TargetType:   strings.TrimSpace(req.Meta.TargetType),
+		TargetID:     strings.TrimSpace(req.Meta.TargetID),
 	}
 	if meta.TargetType == "" {
 		meta.TargetType = strings.TrimSpace(req.Meta.Target.Type)
@@ -768,6 +769,20 @@ func runtimeWorkspaceID(maps ...map[string]interface{}) string {
 				if text := strings.TrimSpace(fmt.Sprint(value)); text != "" && text != "<nil>" {
 					return text
 				}
+			}
+		}
+	}
+	return ""
+}
+
+func runtimeMetadataString(key string, maps ...map[string]interface{}) string {
+	for _, values := range maps {
+		if values == nil {
+			continue
+		}
+		if value, ok := values[key]; ok {
+			if text := strings.TrimSpace(fmt.Sprint(value)); text != "" && text != "<nil>" {
+				return text
 			}
 		}
 	}

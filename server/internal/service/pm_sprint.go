@@ -41,17 +41,31 @@ func (s *PMSprintService) List(ctx context.Context, workspaceID string, filters 
 	if err != nil {
 		return nil, err
 	}
-	result := make([]model.SprintWithStats, 0, len(sprints))
+	return s.sprintRepo.EnrichSprints(ctx, sprints)
+}
+
+// ListPage returns a repository-bounded sprint page with batch enrichment.
+func (s *PMSprintService) ListPage(ctx context.Context, workspaceID string, filters model.PMSprintListFilters, pagination model.PMPagination) ([]model.SprintWithStats, int, int, int, error) {
+	if workspaceID == "" {
+		return nil, 0, 0, 0, fmt.Errorf("workspace_id is required")
+	}
+	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
+	return s.sprintRepo.ListPage(ctx, workspaceID, filters, pagination)
+}
+
+// ListByIDs returns accessible sprint rows for batch target-title enrichment.
+func (s *PMSprintService) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMSprint, error) {
+	sprints, err := s.sprintRepo.ListByIDs(ctx, workspaceID, ids)
+	if err != nil {
+		return nil, err
+	}
+	accessible := sprints[:0]
 	for _, sprint := range sprints {
-		withStats, err := s.sprintRepo.GetWithStats(ctx, sprint.ID)
-		if err != nil {
-			return nil, err
-		}
-		if withStats != nil {
-			result = append(result, *withStats)
+		if canAccessTeam(ctx, sprint.TeamID) {
+			accessible = append(accessible, sprint)
 		}
 	}
-	return result, nil
+	return accessible, nil
 }
 
 // ListPlanningWorkspace returns grouped sprints and an unassigned backlog for the planning page.
@@ -408,18 +422,31 @@ func (s *PMSprintService) ListTasks(ctx context.Context, sprintID string) ([]mod
 	if err != nil {
 		return nil, err
 	}
+	return s.populateTaskKeys(ctx, tasks), nil
+}
+
+// ListTasksPage returns a repository-bounded sprint task page with batch enrichment.
+func (s *PMSprintService) ListTasksPage(ctx context.Context, sprintID string, pagination model.PMPagination) ([]model.BoardTask, int, int, int, error) {
+	tasks, total, page, perPage, err := s.sprintRepo.ListEnrichedTasksPage(ctx, sprintID, pagination)
+	if err != nil {
+		return nil, 0, page, perPage, err
+	}
+	return s.populateTaskKeys(ctx, tasks), total, page, perPage, nil
+}
+
+func (s *PMSprintService) populateTaskKeys(ctx context.Context, tasks []model.BoardTask) []model.BoardTask {
 	if len(tasks) == 0 {
-		return tasks, nil
+		return tasks
 	}
 	ws, err := s.workspaceRepo.GetByID(ctx, tasks[0].WorkspaceID)
 	if err != nil || ws == nil {
-		return tasks, nil
+		return tasks
 	}
 	for i := range tasks {
 		tasks[i].TaskKey = model.FormatTaskKey(ws.WorkspaceKey, tasks[i].DisplayID)
 		tasks[i].PMTask.TaskKey = tasks[i].TaskKey
 	}
-	return tasks, nil
+	return tasks
 }
 
 // ListPreviewTasksPage returns lightweight task previews for a sprint page.
