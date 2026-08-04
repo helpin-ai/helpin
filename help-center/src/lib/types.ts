@@ -67,6 +67,7 @@ export interface HelpCenterConfig {
   fallback_to_default_locale: boolean
   is_published: boolean
   chat_widget_enabled?: boolean
+  ai_answers_enabled?: boolean
   support_widget_key?: string | null
   seo_title: string | null
   seo_description: string | null
@@ -255,4 +256,23 @@ export interface SearchResult {
 
 export interface HelpCenterContext {
   queryClient: QueryClient
+}
+
+export interface AIAnswerCitation {
+  document_id: string
+  title: string
+  slug: string
+  public_id: string
+  space_slug: string
+  collection_slug?: string | null
+  snippet?: string
+}
+
+export interface AIAnswerResponse {
+  answer_id: string
+  status: 'answered' | 'insufficient_evidence'
+  answer?: string
+  citations: AIAnswerCitation[]
+  confidence?: number
+  cached: boolean
 }

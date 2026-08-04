@@ -255,3 +255,103 @@ func insertKnowledgeSpace(t *testing.T, db *gorm.DB, workspaceID, spaceID, space
 		t.Fatalf("insert docs space %q: %v", spaceID, err)
 	}
 }
+
+func TestDocsEmbeddingServiceIndexesHelpcenterSpaceWithoutKnowledgeSources(t *testing.T) {
+	db := newInternalKnowledgeTestDB(t)
+	ctx := context.Background()
+
+	insertKnowledgeSpace(t, db, "ws-1", "public-space", model.SpaceTypeExternalCapable)
+	if err := db.Exec(`
+		INSERT INTO docs_documents (id, workspace_id, space_id, title, status, updated_at)
+		VALUES ('public-doc', 'ws-1', 'public-space', 'Pricing', 'published', CURRENT_TIMESTAMP)
+	`).Error; err != nil {
+		t.Fatalf("insert doc: %v", err)
+	}
+	if err := db.Exec(`
+		INSERT INTO docs_helpcenter_articles (document_id, public_published_at)
+		VALUES ('public-doc', CURRENT_TIMESTAMP)
+	`).Error; err != nil {
+		t.Fatalf("insert article: %v", err)
+	}
+	if err := db.Exec(`
+		INSERT INTO docs_contents (id, document_id, content, content_text, word_count, created_at, updated_at)
+		VALUES ('content-1', 'public-doc', X'7B7D', 'The Growth plan costs $84 per month.', 7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`).Error; err != nil {
+		t.Fatalf("insert content: %v", err)
+	}
+
+	chunkRepo := repository.NewDocsChunkRepository(db)
+	embeddingService := NewDocsEmbeddingService(
+		chunkRepo,
+		nil,
+		repository.NewAgentKnowledgeSourceRepository(db),
+		repository.NewDocsContentRepository(db),
+		repository.NewDocsSpaceRepository(db),
+		repository.NewDocsHelpcenterRepository(db, false),
+		repository.NewDocsDocumentRepository(db),
+		internalKnowledgeEmbeddingProvider{},
+		"",
+		nil,
+	)
+
+	// No agent_knowledge_sources rows exist — the help center space must
+	// still be chunked (public semantic search / AI answers depend on it).
+	if err := embeddingService.RunSpaceSync(ctx, "ws-1", "public-space"); err != nil {
+		t.Fatalf("RunSpaceSync returned error: %v", err)
+	}
+
+	var chunks []model.DocsChunk
+	if err := db.Find(&chunks).Error; err != nil {
+		t.Fatalf("list docs chunks: %v", err)
+	}
+	if len(chunks) != 1 || chunks[0].DocumentID != "public-doc" {
+		t.Fatalf("indexed chunks = %+v, want one chunk for public-doc", chunks)
+	}
+}
+
+type recordingEmbeddingSyncStarter struct {
+	queued []string
+}
+
+func (r *recordingEmbeddingSyncStarter) QueueDocsEmbeddingSync(_ context.Context, workspaceID, spaceID string) error {
+	r.queued = append(r.queued, workspaceID+"/"+spaceID)
+	return nil
+}
+
+func TestQueueSpaceSyncGatesByAutoIndexability(t *testing.T) {
+	db := newInternalKnowledgeTestDB(t)
+	ctx := context.Background()
+
+	insertKnowledgeSpace(t, db, "ws-1", "public-space", model.SpaceTypeExternalCapable)
+	insertKnowledgeSpace(t, db, "ws-1", "internal-space", model.SpaceTypeInternal)
+
+	starter := &recordingEmbeddingSyncStarter{}
+	embeddingService := NewDocsEmbeddingService(
+		repository.NewDocsChunkRepository(db),
+		nil,
+		repository.NewAgentKnowledgeSourceRepository(db),
+		repository.NewDocsContentRepository(db),
+		repository.NewDocsSpaceRepository(db),
+		repository.NewDocsHelpcenterRepository(db, false),
+		repository.NewDocsDocumentRepository(db),
+		internalKnowledgeEmbeddingProvider{},
+		"",
+		starter,
+	)
+
+	// Internal space without knowledge sources: still skipped.
+	if err := embeddingService.QueueSpaceSync(ctx, "ws-1", "internal-space"); err != nil {
+		t.Fatalf("QueueSpaceSync(internal) returned error: %v", err)
+	}
+	if len(starter.queued) != 0 {
+		t.Fatalf("internal space without sources queued %v, want none", starter.queued)
+	}
+
+	// External-capable space without knowledge sources: auto-indexed.
+	if err := embeddingService.QueueSpaceSync(ctx, "ws-1", "public-space"); err != nil {
+		t.Fatalf("QueueSpaceSync(public) returned error: %v", err)
+	}
+	if len(starter.queued) != 1 || starter.queued[0] != "ws-1/public-space" {
+		t.Fatalf("queued = %v, want ws-1/public-space", starter.queued)
+	}
+}
