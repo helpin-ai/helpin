@@ -835,3 +835,63 @@ func toTSQuery(input string) string {
 	}
 	return strings.Join(nonEmpty, " & ")
 }
+
+// PublicArticleRefsByDocumentIDs resolves published help-center article
+// metadata (title, slugs, collection, space) for documents in one locale.
+// Documents without a published publication in that locale are omitted — the
+// caller may retry with the help center's default locale as fallback.
+func (r *DocsSearchRepository) PublicArticleRefsByDocumentIDs(ctx context.Context, workspaceID, locale string, documentIDs []string) ([]model.PublicSearchResultResponse, error) {
+	if len(documentIDs) == 0 {
+		return []model.PublicSearchResultResponse{}, nil
+	}
+	sql := `
+		SELECT
+			p.document_id AS id,
+			p.title AS title,
+			p.slug AS slug,
+			ha.public_id AS public_id,
+			p.locale AS locale,
+			p.excerpt AS excerpt,
+			p.collection_id AS collection_id,
+			ct.name AS collection_name,
+			ct.slug AS collection_slug,
+			cc.public_id AS collection_public_id,
+			st.slug AS space_slug,
+			st.name AS space_name
+		FROM docs_helpcenter_article_publications p
+		JOIN docs_documents d ON d.id = p.document_id
+		JOIN docs_helpcenter_articles ha ON ha.document_id = p.document_id
+		JOIN docs_helpcenter_space_translations st
+			ON st.space_id = p.space_id
+			AND st.locale = p.locale
+			AND st.status = ?
+			AND st.published_at IS NOT NULL
+		LEFT JOIN docs_helpcenter_collection_translations ct
+			ON ct.collection_id = p.collection_id
+			AND ct.locale = p.locale
+			AND ct.status = ?
+			AND ct.published_at IS NOT NULL
+		LEFT JOIN docs_collections cc ON cc.id = p.collection_id AND cc.deleted_at IS NULL
+		WHERE p.workspace_id = ?
+			AND p.locale = ?
+			AND p.document_id IN ?
+			AND d.deleted_at IS NULL
+			AND d.status = ?
+			AND ha.public_published_at IS NOT NULL
+	`
+	var results []model.PublicSearchResultResponse
+	if err := r.db.WithContext(ctx).Raw(sql,
+		model.DocsHelpcenterTranslationStatusPublished,
+		model.DocsHelpcenterTranslationStatusPublished,
+		workspaceID,
+		locale,
+		documentIDs,
+		model.DocStatusPublished,
+	).Scan(&results).Error; err != nil {
+		return nil, fmt.Errorf("resolve public article refs: %w", err)
+	}
+	for i := range results {
+		results[i].RequestedLocale = locale
+	}
+	return results, nil
+}
