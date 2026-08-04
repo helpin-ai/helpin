@@ -178,6 +178,11 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 	if overlap {
 		return nil, fmt.Errorf("sprint date range overlaps with another sprint for the same team")
 	}
+	if len(req.LabelIDs) > 0 {
+		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
+			return nil, err
+		}
+	}
 
 	sprint := &model.PMSprint{
 		WorkspaceID: req.WorkspaceID,
@@ -201,9 +206,6 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 		}
 	}
 	if len(req.LabelIDs) > 0 {
-		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
-			return nil, err
-		}
 		if err := s.sprintRepo.ReplaceLabels(ctx, sprint.ID, req.LabelIDs); err != nil {
 			return nil, err
 		}
@@ -285,6 +287,9 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 	}
 	if req.TeamID != nil {
 		sprint.TeamID = req.TeamID
+		if err := requireCanManage(ctx, sprint.TeamID); err != nil {
+			return nil, err
+		}
 	}
 	if req.Archived != nil {
 		sprint.Archived = *req.Archived
@@ -304,15 +309,17 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 	if overlap {
 		return nil, fmt.Errorf("sprint date range overlaps with another sprint for the same team")
 	}
+	if req.LabelIDs != nil {
+		if err := validateLabelScope(ctx, s.labelRepo, sprint.WorkspaceID, req.LabelIDs, allowedTeamIDs(sprint.TeamID)); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := s.sprintRepo.Update(ctx, &sprint); err != nil {
 		s.logger.ErrorContext(ctx, "failed to update sprint", "error", err, "sprint_id", id)
 		return nil, err
 	}
 	if req.LabelIDs != nil {
-		if err := validateLabelScope(ctx, s.labelRepo, sprint.WorkspaceID, req.LabelIDs, allowedTeamIDs(sprint.TeamID)); err != nil {
-			return nil, err
-		}
 		if err := s.sprintRepo.ReplaceLabels(ctx, sprint.ID, req.LabelIDs); err != nil {
 			return nil, err
 		}

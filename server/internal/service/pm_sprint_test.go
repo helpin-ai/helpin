@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/gorm"
@@ -189,6 +190,35 @@ func TestCreateSprint_WithDescription(t *testing.T) {
 	}
 	if result.Sprint.Description == nil || *result.Sprint.Description != desc {
 		t.Fatalf("description = %v, want %q", result.Sprint.Description, desc)
+	}
+}
+
+func TestCreateSprint_InvalidLabelDoesNotPersistSprint(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID := newSprintTestEnvWithDB(t)
+	seedWorkspace(t, db, "ws-sprint-other", "Other Sprint WS", "other-sprint-ws", "owner-2")
+	if err := db.Create(&model.PMLabel{ID: "label-other", WorkspaceID: "ws-sprint-other", Name: "Other"}).Error; err != nil {
+		t.Fatalf("seed cross-workspace label: %v", err)
+	}
+
+	start, end := makeSprintDates(time.Now().UTC(), 1, 14)
+	_, err := svc.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: wsID,
+		Name:        "Must not persist",
+		StartDate:   start,
+		EndDate:     end,
+		LabelIDs:    []string{"label-other"},
+	}, "actor-1")
+	if err == nil {
+		t.Fatal("expected cross-workspace label error")
+	}
+
+	var count int64
+	if err := db.Model(&model.PMSprint{}).Where("workspace_id = ? AND name = ?", wsID, "Must not persist").Count(&count).Error; err != nil {
+		t.Fatalf("count persisted sprints: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("invalid create persisted %d sprint rows, want 0", count)
 	}
 }
 
@@ -515,6 +545,89 @@ func TestUpdateSprint_ChangeDescription(t *testing.T) {
 	}
 	if updated.Sprint.Description == nil || *updated.Sprint.Description != newDesc {
 		t.Fatalf("description = %v, want %q", updated.Sprint.Description, newDesc)
+	}
+}
+
+func TestUpdateSprint_InvalidLabelDoesNotPersistScalarChanges(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID := newSprintTestEnvWithDB(t)
+	seedWorkspace(t, db, "ws-sprint-other-update", "Other Sprint WS", "other-sprint-update-ws", "owner-2")
+	if err := db.Create(&model.PMLabel{ID: "label-other-update", WorkspaceID: "ws-sprint-other-update", Name: "Other"}).Error; err != nil {
+		t.Fatalf("seed cross-workspace label: %v", err)
+	}
+
+	start, end := makeSprintDates(time.Now().UTC(), 1, 14)
+	created, err := svc.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: wsID,
+		Name:        "Original name",
+		StartDate:   start,
+		EndDate:     end,
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	newName := "Must not persist"
+	_, err = svc.Update(context.Background(), created.Sprint.ID, model.UpdateSprintRequest{
+		Name:     &newName,
+		LabelIDs: []string{"label-other-update"},
+	}, "actor-1")
+	if err == nil {
+		t.Fatal("expected cross-workspace label error")
+	}
+
+	reloaded, err := repository.NewPMSprintRepository(db).GetWithStats(context.Background(), created.Sprint.ID)
+	if err != nil {
+		t.Fatalf("reload sprint: %v", err)
+	}
+	if reloaded == nil || reloaded.Sprint.Name != "Original name" {
+		t.Fatalf("invalid update persisted scalar changes: %#v", reloaded)
+	}
+}
+
+func TestUpdateSprint_RequiresManagementOfDestinationTeam(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID := newSprintTestEnvWithDB(t)
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		"team-sprint-current", wsID, "Current Team", now, now)
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		"team-sprint-destination", wsID, "Destination Team", now, now)
+
+	currentTeamID := "team-sprint-current"
+	start, end := makeSprintDates(now, 1, 14)
+	created, err := svc.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: wsID,
+		Name:        "Team move",
+		StartDate:   start,
+		EndDate:     end,
+		TeamID:      &currentTeamID,
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	actor := &authorization.Actor{
+		UserID:      "manager-1",
+		WorkspaceID: wsID,
+		Role:        "manager",
+		TeamMemberships: []authorization.TeamRole{
+			{TeamID: currentTeamID, Role: "owner"},
+		},
+	}
+	ctx := authorization.WithActor(context.Background(), actor)
+	destinationTeamID := "team-sprint-destination"
+	_, err = svc.Update(ctx, created.Sprint.ID, model.UpdateSprintRequest{TeamID: &destinationTeamID}, actor.UserID)
+	if err == nil {
+		t.Fatal("expected destination-team management error")
+	}
+
+	reloaded, err := repository.NewPMSprintRepository(db).GetWithStats(context.Background(), created.Sprint.ID)
+	if err != nil {
+		t.Fatalf("reload sprint: %v", err)
+	}
+	if reloaded == nil || reloaded.Sprint.TeamID == nil || *reloaded.Sprint.TeamID != currentTeamID {
+		t.Fatalf("unauthorized team move persisted: %#v", reloaded)
 	}
 }
 
