@@ -452,6 +452,7 @@ Rules:
 - Use only facts stated in the chunks. Exact values (prices, limits, plan names) must appear verbatim in a chunk.
 - Do not include any URLs or links in the answer text.
 - Answer in the language of the question. Be concise: a short paragraph, or brief steps for procedures.
+- You may use simple Markdown only: **bold**, *italic*, ` + "`inline code`" + `, and bullet ("- ") or numbered ("1. ") lists. No headings, tables, blockquotes, or code fences.
 - cited_chunk_ids must list the chunk ids whose content you used.
 - If the chunks do not confidently answer the question, set can_answer=false and leave the answer empty. Never guess.
 - confidence is your honest 0-1 estimate that the answer is correct and fully grounded.

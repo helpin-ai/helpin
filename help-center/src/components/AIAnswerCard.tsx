@@ -3,6 +3,7 @@ import { Sparkles, ThumbsDown, ThumbsUp, ArrowRight } from 'lucide-react'
 import { DocsLink } from '@/components/DocsLink'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { buildCanonicalArticlePath, isMultilingualEnabled } from '@/lib/locale'
+import { renderAnswerMarkdown } from '@/lib/answerMarkdown'
 import { helpCenterService } from '@/lib/services'
 import type { AIAnswerResponse } from '@/lib/types'
 
@@ -102,8 +103,22 @@ export function AIAnswerPanel({
         className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide"
         style={{ color: 'var(--hc-text-secondary)' }}
       >
-        <Sparkles className={`h-3.5 w-3.5 ${state.phase === 'loading' ? 'animate-pulse' : ''}`} />
-        {state.phase === 'loading' ? 'AI is looking for an answer…' : 'AI answer'}
+        <Sparkles
+          className={`h-3.5 w-3.5 ${state.phase === 'loading' ? 'animate-pulse' : ''}`}
+          style={state.phase === 'loading' ? { color: 'var(--hc-accent, currentColor)' } : undefined}
+        />
+        {state.phase === 'loading' ? (
+          <span className="inline-flex items-baseline">
+            AI is looking for an answer
+            <span className="ml-0.5 inline-flex" aria-hidden="true">
+              <span className="animate-bounce [animation-delay:0ms]">.</span>
+              <span className="animate-bounce [animation-delay:150ms]">.</span>
+              <span className="animate-bounce [animation-delay:300ms]">.</span>
+            </span>
+          </span>
+        ) : (
+          'AI answer'
+        )}
       </div>
 
       {state.phase === 'loading' && (
@@ -136,12 +151,12 @@ export function AIAnswerPanel({
 
       {state.phase === 'done' && state.response.status === 'answered' && (
         <>
-          <p
-            className="whitespace-pre-wrap text-sm leading-relaxed"
+          <div
+            className="text-sm leading-relaxed"
             style={{ color: 'var(--hc-text-primary)' }}
           >
-            {state.response.answer}
-          </p>
+            {renderAnswerMarkdown(state.response.answer ?? '')}
+          </div>
 
           {state.response.citations.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
