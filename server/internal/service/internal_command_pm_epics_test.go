@@ -224,10 +224,14 @@ func TestPMCommandCreateEpicValidatesReferencesBeforeWriting(t *testing.T) {
 		t.Fatalf("pm.create_epic: %v", err)
 	}
 	var created struct {
-		EpicID string `json:"epic_id"`
+		EpicID          string `json:"epic_id"`
+		SuggestedHealth string `json:"suggested_health"`
 	}
 	if err := json.Unmarshal(output, &created); err != nil || created.EpicID == "" {
 		t.Fatalf("create output = %s, err = %v", output, err)
+	}
+	if created.SuggestedHealth != model.PMEpicHealthNone {
+		t.Fatalf("create suggested_health = %q, want %q", created.SuggestedHealth, model.PMEpicHealthNone)
 	}
 	stored, err := env.epicService.GetByID(env.adminContext, created.EpicID)
 	if err != nil {
@@ -275,6 +279,32 @@ func TestPMCommandCreateEpicValidatesReferencesBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestPMCommandCreateEpicBatchesLabelValidationReads(t *testing.T) {
+	env := newPMEpicCommandTestEnv(t)
+	labelQueries := 0
+	const callbackName = "test:count_pm_epic_label_validation_queries"
+	if err := env.db.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Table == "pm_labels" {
+			labelQueries++
+		}
+	}); err != nil {
+		t.Fatalf("register query callback: %v", err)
+	}
+	t.Cleanup(func() { _ = env.db.Callback().Query().Remove(callbackName) })
+
+	_, err := env.service.Execute(env.adminContext, env.meta("workspace", env.workspaceID, env.adminUserID), "pm.create_epic", mustJSON(map[string]any{
+		"name":      "Batch Label Validation",
+		"team_id":   env.teamA,
+		"label_ids": []string{env.labelA, env.labelB},
+	}))
+	if err != nil {
+		t.Fatalf("pm.create_epic: %v", err)
+	}
+	if labelQueries > 2 {
+		t.Fatalf("pm_labels validation queries = %d, want at most 2 batch reads", labelQueries)
+	}
+}
+
 func TestPMCommandUpdateEpicPreservesReplacesClearsAndRejectsNoop(t *testing.T) {
 	env := newPMEpicCommandTestEnv(t)
 	start := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
@@ -291,8 +321,18 @@ func TestPMCommandUpdateEpicPreservesReplacesClearsAndRejectsNoop(t *testing.T) 
 	if _, err := env.service.Execute(env.adminContext, meta, "pm.update_epic", json.RawMessage(`{"deadline":"August 30"}`)); err == nil || !strings.Contains(err.Error(), "YYYY-MM-DD") {
 		t.Fatalf("malformed update date error = %v", err)
 	}
-	if _, err := env.service.Execute(env.adminContext, meta, "pm.update_epic", json.RawMessage(`{"description":"changed"}`)); err != nil {
+	updateOutput, err := env.service.Execute(env.adminContext, meta, "pm.update_epic", json.RawMessage(`{"description":"changed"}`))
+	if err != nil {
 		t.Fatalf("update description: %v", err)
+	}
+	var updateResult struct {
+		SuggestedHealth string `json:"suggested_health"`
+	}
+	if err := json.Unmarshal(updateOutput, &updateResult); err != nil {
+		t.Fatalf("unmarshal update output: %v", err)
+	}
+	if updateResult.SuggestedHealth != model.PMEpicHealthNone {
+		t.Fatalf("update suggested_health = %q, want %q", updateResult.SuggestedHealth, model.PMEpicHealthNone)
 	}
 	preserved, err := env.epicService.GetByID(env.adminContext, created.Epic.ID)
 	if err != nil || len(preserved.Labels) != 1 || preserved.Epic.Deadline == nil {

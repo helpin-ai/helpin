@@ -480,9 +480,6 @@ func (s *InternalCommandService) validatePMCommandEpicLabels(ctx context.Context
 		if _, ok := seen[labelID]; ok {
 			continue
 		}
-		if _, err := s.validatePMCommandEpicLabel(ctx, workspaceID, labelID); err != nil {
-			return nil, err
-		}
 		seen[labelID] = struct{}{}
 		trimmed = append(trimmed, labelID)
 	}

@@ -243,6 +243,29 @@ func TestPMEpicService_Create(t *testing.T) {
 	})
 }
 
+func TestPMEpicServiceCreateAndUpdateReturnSuggestedHealth(t *testing.T) {
+	svc, wsID, userID := newEpicTestEnv(t)
+	created, err := svc.Create(context.Background(), model.CreateEpicRequest{
+		WorkspaceID: wsID,
+		Name:        "Suggested Health Epic",
+	}, userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.SuggestedHealth != model.PMEpicHealthNone {
+		t.Fatalf("create suggested_health = %q, want %q", created.SuggestedHealth, model.PMEpicHealthNone)
+	}
+
+	name := "Suggested Health Epic Updated"
+	updated, err := svc.Update(context.Background(), created.Epic.ID, model.UpdateEpicRequest{Name: &name}, userID)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.SuggestedHealth != model.PMEpicHealthNone {
+		t.Fatalf("update suggested_health = %q, want %q", updated.SuggestedHealth, model.PMEpicHealthNone)
+	}
+}
+
 func TestPMEpicServiceListTasksReturnsTableEnrichment(t *testing.T) {
 	t.Parallel()
 	svc, db, wsID, userID := newEpicTestEnvWithDB(t)

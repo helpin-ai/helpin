@@ -47,6 +47,18 @@ func (r *PMLabelRepository) GetByID(ctx context.Context, id string) (*model.PMLa
 	return &label, nil
 }
 
+// ListByIDs returns labels matching the requested IDs in one query.
+func (r *PMLabelRepository) ListByIDs(ctx context.Context, ids []string) ([]model.PMLabel, error) {
+	if len(ids) == 0 {
+		return []model.PMLabel{}, nil
+	}
+	var labels []model.PMLabel
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&labels).Error; err != nil {
+		return nil, fmt.Errorf("list labels by ids: %w", err)
+	}
+	return labels, nil
+}
+
 // GetByName returns a label by workspace/name.
 func (r *PMLabelRepository) GetByName(ctx context.Context, workspaceID string, teamID *string, name string) (*model.PMLabel, error) {
 	var label model.PMLabel

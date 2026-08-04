@@ -148,7 +148,7 @@ func (s *PMEpicService) ListPage(ctx context.Context, workspaceID string, filter
 
 // GetByID returns one epic with stats.
 func (s *PMEpicService) GetByID(ctx context.Context, id string) (*model.EpicWithStats, error) {
-	epic, err := s.epicRepo.GetWithStats(ctx, id)
+	epic, err := s.getWithSuggestedHealth(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +157,14 @@ func (s *PMEpicService) GetByID(ctx context.Context, id string) (*model.EpicWith
 	}
 	if err := requireTeamAccess(ctx, epic.Epic.TeamID); err != nil {
 		return nil, fmt.Errorf("epic not found")
+	}
+	return epic, nil
+}
+
+func (s *PMEpicService) getWithSuggestedHealth(ctx context.Context, id string) (*model.EpicWithStats, error) {
+	epic, err := s.epicRepo.GetWithStats(ctx, id)
+	if err != nil || epic == nil {
+		return epic, err
 	}
 	enrichEpicSuggestedHealth(epic)
 	return epic, nil
@@ -271,7 +279,7 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 		}
 	}
 
-	return s.epicRepo.GetWithStats(ctx, epic.ID)
+	return s.getWithSuggestedHealth(ctx, epic.ID)
 }
 
 // CreateWithAgentRun creates an epic and optionally starts the assigned agent.
@@ -449,7 +457,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		}
 	}
 
-	return s.epicRepo.GetWithStats(ctx, epic.ID)
+	return s.getWithSuggestedHealth(ctx, epic.ID)
 }
 
 func (s *PMEpicService) validatePlanningRepository(ctx context.Context, workspaceID string, repositoryID *string) error {
