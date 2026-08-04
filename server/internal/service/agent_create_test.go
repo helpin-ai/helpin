@@ -523,7 +523,10 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 		if agent.IsSystem {
 			systemPresets = append(systemPresets, agent.PresetKey)
 			wantProvider, wantModel := model.AgentModelProviderOpenAI, "gpt-5.6-terra"
-			if agent.PresetKey == model.AgentPresetAskAgent || agent.PresetKey == model.AgentPresetSupportAgent {
+			switch agent.PresetKey {
+			case model.AgentPresetTaskPlanner:
+				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultScribeAgentModel
+			case model.AgentPresetAskAgent, model.AgentPresetSupportAgent:
 				// The dock orchestrator and support agent default to a
 				// flash-tier OpenRouter model.
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultAskAgentModel
@@ -754,6 +757,68 @@ func TestEnsureBuiltInAgent_UpgradesLegacyDefaultModelToGPT56Terra(t *testing.T)
 	}
 	if reconciled.Model == nil || *reconciled.Model != "gpt-5.6-terra" {
 		t.Fatalf("expected reconciled model gpt-5.6-terra, got %+v", reconciled.Model)
+	}
+}
+
+func TestEnsureBuiltInAgent_UpgradesLegacyScribeDefaultRouting(t *testing.T) {
+	legacyModels := []string{"gpt-5.5", defaultOpenAIAgentModel}
+	for _, legacyModel := range legacyModels {
+		t.Run(legacyModel, func(t *testing.T) {
+			db := newAgentServiceTestDB(t)
+			agentRepo := repository.NewAgentRepository(db)
+			svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+			systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
+			if err != nil {
+				t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+			}
+			legacyProvider := model.AgentModelProviderOpenAI
+			systemAgent.Provider = &legacyProvider
+			systemAgent.Model = &legacyModel
+			if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+				t.Fatalf("persist legacy Scribe routing: %v", err)
+			}
+
+			reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
+			if err != nil {
+				t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+			}
+			if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenRouter {
+				t.Fatalf("expected reconciled provider openrouter, got %+v", reconciled.Provider)
+			}
+			if reconciled.Model == nil || *reconciled.Model != defaultScribeAgentModel {
+				t.Fatalf("expected reconciled model %s, got %+v", defaultScribeAgentModel, reconciled.Model)
+			}
+		})
+	}
+}
+
+func TestEnsureBuiltInAgent_PreservesCustomScribeRouting(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	customProvider := model.AgentModelProviderOpenAI
+	customModel := "gpt-5-mini"
+	systemAgent.Provider = &customProvider
+	systemAgent.Model = &customModel
+	if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+		t.Fatalf("persist custom Scribe routing: %v", err)
+	}
+
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if reconciled.Provider == nil || *reconciled.Provider != customProvider {
+		t.Fatalf("expected custom provider %s, got %+v", customProvider, reconciled.Provider)
+	}
+	if reconciled.Model == nil || *reconciled.Model != customModel {
+		t.Fatalf("expected custom model %s, got %+v", customModel, reconciled.Model)
 	}
 }
 
