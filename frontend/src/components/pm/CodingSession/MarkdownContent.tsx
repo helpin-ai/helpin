@@ -38,19 +38,6 @@ const markdownComponents: Components = {
       {children}
     </a>
   ),
-  pre: ({ children }) => (
-    <pre className="mb-3 overflow-x-auto rounded-md bg-zinc-950 px-3 py-2 text-[12px] leading-5 text-zinc-50 last:mb-0">
-      {children}
-    </pre>
-  ),
-  code: ({ className: codeClassName, children, node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => {
-    void node;
-    return (
-      <code className={cn('text-[12px]', codeClassName)} {...props}>
-        {children}
-      </code>
-    );
-  },
   inlineCode: ({ children, node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => {
     void node;
     return (
@@ -75,10 +62,12 @@ export function MarkdownContent({
       <Streamdown
         className="[&>*+*]:!mt-0"
         components={markdownComponents}
-        controls={false}
+        controls={{ code: { copy: true, download: false } }}
+        shikiTheme={['github-light', 'github-dark']}
         lineNumbers={false}
         mode={streaming ? 'streaming' : 'static'}
-        isAnimating={false}
+        isAnimating={streaming}
+        animated={{ animation: 'fadeIn', sep: 'word', duration: 300, stagger: 12 }}
         parseIncompleteMarkdown={streaming}
         rehypePlugins={[
           defaultRehypePlugins.sanitize,

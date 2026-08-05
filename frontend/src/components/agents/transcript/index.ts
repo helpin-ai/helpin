@@ -15,3 +15,5 @@ export type { TranscriptRowProps } from './TranscriptRow';
 export { TranscriptSegmentView } from './segmentRenderers';
 export type { RenderSegmentOptions } from './segmentRenderers';
 export { toolStatusChrome, formatToolDuration } from './toolRowChrome';
+export { deriveLiveStatusLabel } from './liveStatus';
+export { ScrollToLatestButton } from './ScrollToLatestButton';

@@ -42,7 +42,7 @@ export function DockTranscript({
         <TranscriptSegmentView
           key={segment.id}
           segment={segment}
-          options={{ expandable: false, fallbackUserLabel: 'You' }}
+          options={{ expandable: true, fallbackUserLabel: 'You' }}
         />
       ))}
     </div>
