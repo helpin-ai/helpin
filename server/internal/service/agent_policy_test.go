@@ -337,6 +337,45 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 			t.Errorf("Ask Agent is missing required self-execution tool %q", toolName)
 		}
 	}
+	if len(preset.AvailableSkills) != 29 {
+		t.Fatalf("Ask Agent default must expose 29 curated optional skills, got %d: %v", len(preset.AvailableSkills), preset.AvailableSkills)
+	}
+	for _, skillKey := range []string{"internal_docs_maintenance", "marketing_plan", "crm_record_operations", "competitors_changelog_tracking_report"} {
+		if !slices.Contains(preset.AvailableSkills, skillKey) {
+			t.Errorf("Ask Agent is missing available skill %q", skillKey)
+		}
+	}
+	for _, skillKey := range []string{
+		"code_implementation",
+		"code_review",
+		"support_triage_response",
+		"security_triage",
+		"task_plan_publishing",
+		"release_notes_writing",
+		"release_marketing",
+	} {
+		if slices.Contains(preset.AvailableSkills, skillKey) {
+			t.Errorf("role-bound or tool-incompatible skill %q must not be available to Ask Agent", skillKey)
+		}
+	}
+	if preset.SystemPrompt == nil || !strings.Contains(*preset.SystemPrompt, "primary execution agent") {
+		t.Fatalf("Ask Agent skill availability must preserve its managed Dock prompt, got %v", preset.SystemPrompt)
+	}
+	for _, skillKey := range preset.AvailableSkills {
+		skill, ok := agentcontract.GetBuiltInSkill(skillKey)
+		if !ok {
+			t.Errorf("Ask Agent available skill %q is not registered", skillKey)
+			continue
+		}
+		if len(skill.SupportedRuntimes) > 0 && !slices.Contains(skill.SupportedRuntimes, preset.RuntimeKind) {
+			t.Errorf("Ask Agent available skill %q does not support runtime %q", skillKey, preset.RuntimeKind)
+		}
+		for _, requiredTool := range agentcontract.NormalizeToolNames(skill.RequiredTools) {
+			if !slices.Contains(preset.AllowedTools, requiredTool) {
+				t.Errorf("Ask Agent available skill %q requires unavailable tool %q", skillKey, requiredTool)
+			}
+		}
+	}
 }
 
 func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {

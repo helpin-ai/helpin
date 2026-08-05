@@ -315,6 +315,7 @@ func runtimeSkillRefsFromHelpinAgent(agent *model.Agent) []AgentRuntimeSkillRef 
 		}
 	}
 	availableRefs := make([]AgentRuntimeSkillRef, 0, len(preset.AvailableSkills))
+	seenAvailableKeys := make(map[string]bool, len(preset.AvailableSkills))
 	for _, ref := range refs {
 		key := agentcontract.CanonicalBuiltInSkillKey(ref.Key)
 		if !availableKeys[key] {
@@ -322,6 +323,31 @@ func runtimeSkillRefsFromHelpinAgent(agent *model.Agent) []AgentRuntimeSkillRef 
 		}
 		ref.Config = withRuntimeSkillRole(ref.Config, "available")
 		availableRefs = append(availableRefs, ref)
+		seenAvailableKeys[key] = true
+	}
+	// The managed Ask Agent owns a product-curated catalog of optional skills.
+	// Materialize missing refs at launch so existing workspace rows gain that
+	// catalog without a migration. Specialist presets continue to expose only
+	// the skill refs explicitly persisted on their agent rows.
+	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
+		for _, key := range preset.AvailableSkills {
+			key = agentcontract.CanonicalBuiltInSkillKey(key)
+			if key == "" || seenAvailableKeys[key] {
+				continue
+			}
+			if _, ok := agentcontract.GetBuiltInSkill(key); !ok {
+				continue
+			}
+			ref := model.AgentSkillRef{Key: key}
+			if !helpinSkillRefSupportsRuntime(ref, agent.RuntimeKind) {
+				continue
+			}
+			availableRefs = append(availableRefs, AgentRuntimeSkillRef{
+				Key:    key,
+				Config: withRuntimeSkillRole(nil, "available"),
+			})
+			seenAvailableKeys[key] = true
+		}
 	}
 	return availableRefs
 }

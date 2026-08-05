@@ -326,7 +326,7 @@ func newAgentPresetVersionTestHandler(t *testing.T) (*AgentHandler, *gorm.DB) {
 		nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil,
 	)
-	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	return NewAgentHandler(svc), db
 }

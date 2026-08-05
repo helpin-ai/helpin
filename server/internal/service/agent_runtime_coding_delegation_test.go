@@ -160,7 +160,7 @@ func TestRuntimeAgentFromHelpinAgentRemovesRepositoryWorkspaceModeFromAskAgent(t
 	}
 }
 
-func TestRuntimeAgentFromHelpinAgentKeepsManagedAskSkillTools(t *testing.T) {
+func TestRuntimeAgentFromHelpinAgentRegistersManagedAskSkillsAndTools(t *testing.T) {
 	ask := &model.Agent{
 		ID:               "agent-ask",
 		IsSystem:         true,
@@ -177,8 +177,17 @@ func TestRuntimeAgentFromHelpinAgentKeepsManagedAskSkillTools(t *testing.T) {
 	}
 
 	out := runtimeAgentFromHelpinAgent(ask, "helpin")
-	if len(out.Skills) != 0 {
-		t.Fatalf("test precondition requires no seeded Ask skills, got %#v", out.Skills)
+	if len(out.Skills) != 29 {
+		t.Fatalf("expected curated Ask skills to be registered, got %d: %#v", len(out.Skills), out.Skills)
+	}
+	for _, skill := range out.Skills {
+		config := map[string]interface{}{}
+		if err := json.Unmarshal(skill.Config, &config); err != nil {
+			t.Fatalf("decode runtime skill config for %q: %v", skill.Key, err)
+		}
+		if config[runtimeSkillRoleConfigKey] != "available" {
+			t.Fatalf("Ask skill %q must be optional, got config %#v", skill.Key, config)
+		}
 	}
 	for _, toolName := range []string{
 		agentcontract.ToolListAvailableSkills,
