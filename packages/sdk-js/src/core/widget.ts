@@ -27,6 +27,7 @@ export interface WidgetUser {
   first_name?: string;
   last_name?: string;
   userId?: string;
+  company?: Record<string, any>;
   createdAt?: string;
   metadata?: Record<string, unknown>;
 }
@@ -947,6 +948,19 @@ export class WidgetManager {
       senderAvatar: raw?.sender_avatar_url || raw?.sender_avatar || undefined,
       systemEventType,
       viaChannel: raw?.via_channel || undefined,
+      emailVisibleText: typeof raw?.email_visible_text === 'string' ? raw.email_visible_text : undefined,
+      emailQuotedText: typeof raw?.email_quoted_text === 'string' ? raw.email_quoted_text : undefined,
+      emailHasQuotedContent: typeof raw?.email_has_quoted_content === 'boolean'
+        ? raw.email_has_quoted_content
+        : undefined,
+      emailProjectionConfidence: raw?.email_projection_confidence === 'high'
+        || raw?.email_projection_confidence === 'medium'
+        || raw?.email_projection_confidence === 'none'
+        ? raw.email_projection_confidence
+        : undefined,
+      emailProjectionVersion: typeof raw?.email_projection_version === 'number'
+        ? raw.email_projection_version
+        : undefined,
       isInternal: raw?.is_internal || false,
       attachments: WidgetManager.mapAttachments(raw?.attachments),
       createdAt: raw?.created_at || new Date().toISOString(),
@@ -1578,6 +1592,7 @@ export class WidgetManager {
               first_name: firstName,
               last_name: lastName,
               source: bootEmail ? 'sdk_identify' : 'stored_identity',
+              company: bootUser?.company,
             });
             this.currentEmail = email;
           }

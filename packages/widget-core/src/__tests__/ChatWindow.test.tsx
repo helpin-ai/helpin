@@ -204,8 +204,17 @@ describe('ChatWindow', () => {
 
     expect(getByText('Powered by')).toBeTruthy();
     expect(getByText('Helpin')).toBeTruthy();
-    expect(container.querySelector('.helpin-powered-by-brand')).not.toBeNull();
-    const mark = container.querySelector('.helpin-powered-by-icon');
+    const attribution = container.querySelector('a.helpin-powered-by.helpin-brand-attribution');
+    expect(attribution).not.toBeNull();
+    const attributionUrl = new URL(attribution?.getAttribute('href') ?? '');
+    expect(attributionUrl.searchParams.get('utm_source')).toBe('acme-ws-123');
+    expect(attributionUrl.searchParams.get('utm_medium')).toBe('referral');
+    expect(attributionUrl.searchParams.get('utm_campaign')).toBe('powered_by_helpin');
+    expect(attributionUrl.searchParams.get('utm_content')).toBe('chat_widget_footer');
+    expect(attribution?.getAttribute('href')).not.toContain('amp;');
+    expect(attribution?.children).toHaveLength(2);
+    expect(attribution?.querySelector('.helpin-brand-attribution-brand')).not.toBeNull();
+    const mark = attribution?.querySelector('.helpin-brand-attribution-icon');
     expect(mark).not.toBeNull();
     expect(mark?.getAttribute('aria-hidden')).toBe('true');
   });

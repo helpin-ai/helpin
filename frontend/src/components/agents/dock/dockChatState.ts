@@ -1,5 +1,6 @@
 import {
   parseDockChildResult,
+  stripDockLeadingContext,
   stripDockPageContext,
   type DockChildRunResult,
 } from '@/lib/dockTypes';
@@ -103,7 +104,7 @@ export function transformDockStream(stream: CodingSessionStreamState): DockTrans
       childResults.push({ sequenceNo: message.sequence_no, result: childResult });
       continue;
     }
-    const stripped = stripDockPageContext(message.content);
+    const stripped = stripDockPageContext(stripDockLeadingContext(message.content));
     if (stripped === message.content) {
       messages.push(message);
     } else {

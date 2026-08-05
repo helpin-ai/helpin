@@ -35,6 +35,11 @@ export interface Message {
   linkPreviews?: LinkPreview[];
   attachments?: Attachment[];
   viaChannel?: 'email' | 'widget';
+  emailVisibleText?: string;
+  emailQuotedText?: string;
+  emailHasQuotedContent?: boolean;
+  emailProjectionConfidence?: 'high' | 'medium' | 'none';
+  emailProjectionVersion?: number;
   isInternal: boolean;
   createdAt: string;
 }

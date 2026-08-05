@@ -197,4 +197,36 @@ describe('EmailDetailModal', () => {
 
     rendered.cleanup()
   })
+
+  it('keeps long attachment galleries reachable inside the scrollable email detail area', () => {
+    const attachments = Array.from({ length: 12 }, (_, index) => ({
+      id: `img-${index}`,
+      file_key: `support/img-${index}`,
+      file_name: `screen-${index}.png`,
+      file_type: 'image/png',
+      file_size: 2048,
+      url: `https://cdn.example.com/screen-${index}.png`,
+    }))
+    const rendered = renderModal(
+      {
+        id: 'log-many-attachments',
+        message_id: 'message-many-attachments',
+        direction: 'inbound',
+        subject: 'Many screenshots attached',
+        from_email: 'Taylor <taylor@example.com>',
+        to_email: 'Support <support@example.com>',
+        stripped_text: 'See attached images.',
+        html_body: '<p>See attached images.</p>',
+        status: 'sent',
+        created_at: '2026-06-02T10:14:00.000Z',
+      },
+      { attachments },
+    )
+
+    const detailScroll = rendered.container.querySelector('[data-testid="email-detail-scroll"]')
+    expect(detailScroll?.className).toContain('overflow-y-auto')
+    expect(rendered.container.querySelectorAll('img[alt^="screen-"]').length).toBe(12)
+
+    rendered.cleanup()
+  })
 })

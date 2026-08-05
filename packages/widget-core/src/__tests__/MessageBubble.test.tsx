@@ -86,6 +86,68 @@ describe('MessageBubble', () => {
     expect(container.textContent).toContain('Via email');
   });
 
+  it('hides quoted email history until the visitor expands it', () => {
+    const message = createMessage({
+      role: 'agent',
+      viaChannel: 'email',
+      content: 'Legacy full email with Old quoted body',
+      emailVisibleText: 'Fresh email reply',
+      emailQuotedText: 'On Tuesday someone wrote:\n\nOld quoted body',
+      emailHasQuotedContent: true,
+      emailProjectionConfidence: 'high',
+      emailProjectionVersion: 1,
+    });
+
+    const { container, getByRole } = render(<MessageBubble message={message} />);
+    expect(container.textContent).toContain('Fresh email reply');
+    expect(container.textContent).not.toContain('Old quoted body');
+
+    fireEvent.click(getByRole('button', { name: 'Show previous messages' }));
+    expect(container.textContent).toContain('Old quoted body');
+    expect(getByRole('button', { name: 'Hide previous messages' })).toBeTruthy();
+  });
+
+  it('does not show a previous-messages toggle for explicit false or missing quote text', () => {
+    const explicitFalse = render(<MessageBubble message={createMessage({
+      viaChannel: 'email',
+      emailVisibleText: 'Only reply',
+      emailHasQuotedContent: false,
+      emailProjectionVersion: 1,
+    })} />);
+    expect(explicitFalse.queryByRole('button', { name: 'Show previous messages' })).toBeNull();
+
+    const missingText = render(<MessageBubble message={createMessage({
+      viaChannel: 'email',
+      emailVisibleText: 'Only reply',
+      emailHasQuotedContent: true,
+      emailQuotedText: '',
+      emailProjectionVersion: 1,
+    })} />);
+    expect(missingText.queryByRole('button', { name: 'Show previous messages' })).toBeNull();
+  });
+
+  it('keeps email attachments visible while quoted history is collapsed or expanded', () => {
+    const message = createMessage({
+      viaChannel: 'email',
+      emailVisibleText: 'See the files below',
+      emailQuotedText: 'Earlier email',
+      emailHasQuotedContent: true,
+      attachments: [
+        { id: 'image-1', fileKey: 'image-1', fileName: 'one.png', fileType: 'image/png', fileSize: 123, url: 'https://cdn.example.com/one.png' },
+        { id: 'image-2', fileKey: 'image-2', fileName: 'two.png', fileType: 'image/png', fileSize: 456, url: 'https://cdn.example.com/two.png' },
+        { id: 'file-1', fileKey: 'file-1', fileName: 'report.pdf', fileType: 'application/pdf', fileSize: 789, url: 'https://cdn.example.com/report.pdf' },
+      ],
+    });
+
+    const rendered = render(<MessageBubble message={message} />);
+    expect(rendered.getAllByRole('img')).toHaveLength(2);
+    expect(rendered.getByRole('link', { name: /report\.pdf/i })).toBeTruthy();
+
+    fireEvent.click(rendered.getByRole('button', { name: 'Show previous messages' }));
+    expect(rendered.getAllByRole('img')).toHaveLength(2);
+    expect(rendered.getByRole('link', { name: /report\.pdf/i })).toBeTruthy();
+  });
+
   it('renders link previews for support messages', () => {
     const message = createMessage({
       role: 'agent',

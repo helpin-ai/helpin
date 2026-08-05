@@ -13,6 +13,7 @@ import type {
   AssignConversationAgentRequest,
   AssignConversationUserRequest,
   UpdateConversationCRMContactRequest,
+  UpdateConversationCRMCompanyRequest,
   UpdateConversationCustomerNameRequest,
   UpdateConversationEmailRecipientsRequest,
   AgentRun,
@@ -245,6 +246,8 @@ export const supportService = {
     api.post(`/support/inbox/conversations/${conversationId}/assign-user${qs(workspaceId)}`, payload),
   updateConversationCRMContact: (workspaceId: string, conversationId: string, payload: UpdateConversationCRMContactRequest) =>
     api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/crm-contact${qs(workspaceId)}`, payload),
+  updateConversationCRMCompany: (workspaceId: string, conversationId: string, payload: UpdateConversationCRMCompanyRequest) =>
+    api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/crm-company${qs(workspaceId)}`, payload),
   updateConversationCustomerName: (workspaceId: string, conversationId: string, payload: UpdateConversationCustomerNameRequest) =>
     api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/customer-name${qs(workspaceId)}`, payload),
   updateConversationEmailRecipients: (workspaceId: string, conversationId: string, payload: UpdateConversationEmailRecipientsRequest) =>

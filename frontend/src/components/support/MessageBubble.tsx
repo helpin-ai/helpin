@@ -354,7 +354,10 @@ export const MessageBubble = memo(function MessageBubble({
     if (!hasForwardedHeaderMarker(displayContent)) return '';
     return cleanForwardedDisplayContent(displayContent).trim();
   }, [displayContent, forwardedAttribution]);
-  const visibleContent = forwardedDisplayContent || displayContent;
+  const projectedEmailVisibleContent = message.via_channel === 'email'
+    ? message.email_visible_text?.trim() ?? ''
+    : '';
+  const visibleContent = forwardedDisplayContent || projectedEmailVisibleContent || displayContent;
   const hasTableContent = useMemo(() => containsMarkdownTable(visibleContent), [visibleContent]);
 
   // Highlight @mentions in internal notes
@@ -712,6 +715,19 @@ export const MessageBubble = memo(function MessageBubble({
     : hasTableContent
       ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
       : 'min-w-0 max-w-[min(85%,42rem)]';
+  const messageActionsMenu = (
+    <MessageActionsMenu
+      alignSide={isCustomer ? 'right' : 'left'}
+      canEdit={cancellableActive}
+      canDelete={canMutateOwnReply}
+      onEdit={handleUndoOrEdit}
+      onCopy={handleCopy}
+      onReply={handleQuoteReply}
+      onDelete={() => setDeleteDialogOpen(true)}
+      onInfo={() => setInfoOpen(true)}
+      onSaveAsShortcut={canSaveAsShortcut ? handleSaveAsShortcut : undefined}
+    />
+  );
 
   return (
     <div className={`${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
@@ -736,63 +752,57 @@ export const MessageBubble = memo(function MessageBubble({
         >
         <div
           data-slot="support-message-bubble"
-          className={`${bubbleWidthClass} group/message relative`}
+          className={`${bubbleWidthClass} group/message ${showBubble ? '' : 'relative'}`}
         >
-          <MessageActionsMenu
-            alignSide={isCustomer ? 'right' : 'left'}
-            canEdit={cancellableActive}
-            canDelete={canMutateOwnReply}
-            onEdit={handleUndoOrEdit}
-            onCopy={handleCopy}
-            onReply={handleQuoteReply}
-            onDelete={() => setDeleteDialogOpen(true)}
-            onInfo={() => setInfoOpen(true)}
-            onSaveAsShortcut={canSaveAsShortcut ? handleSaveAsShortcut : undefined}
-          />
-          {showBubble && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div
-                  className={`rounded-2xl border border-border/40 px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
-                    isCustomer
-                      ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
-                      : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
-                  } ${hasTableContent || (hasEmailBody && !renderEmailBodyAsForwardedText) ? 'overflow-hidden' : ''}`}
-                >
-                  {hasEmailBody && !renderEmailBodyAsForwardedText ? (
-                    <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
-                      <EmailBodyRenderer html={message.html_body ?? ''} collapsedByDefault={!forwardedAttribution} />
-                    </div>
-                  ) : (
-                    visibleContent && (
-                      <div
-                        className="prose-chat"
-                        data-chat-tone={isCustomer ? 'customer' : 'agent'}
-                        data-has-table={hasTableContent ? 'true' : 'false'}
-                      >
-                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
+          {showBubble ? (
+            <div data-slot="support-message-bubble-frame" className="relative">
+              {messageActionsMenu}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className={`rounded-2xl border border-border/40 px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
+                      isCustomer
+                        ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
+                        : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
+                    } ${hasTableContent || (hasEmailBody && !renderEmailBodyAsForwardedText) ? 'overflow-hidden' : ''}`}
+                  >
+                    {hasEmailBody && !renderEmailBodyAsForwardedText ? (
+                      <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
+                        <EmailBodyRenderer html={message.html_body ?? ''} collapsedByDefault />
                       </div>
-                    )
-                  )}
-                  {fileAttachments.length > 0 && (
-                    renderFileAttachments('default', visibleContent ? 'mt-2' : '')
-                  )}
-                  {linkPreviews.length > 0 && (
-                    <div className={`${visibleContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
-                      {linkPreviews.map((preview) => (
-                        <LinkPreviewCard
-                          key={`${message.id}:${preview.url}`}
-                          preview={preview}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                {tooltipContent}
-              </TooltipContent>
-            </Tooltip>
+                    ) : (
+                      visibleContent && (
+                        <div
+                          className="prose-chat"
+                          data-chat-tone={isCustomer ? 'customer' : 'agent'}
+                          data-has-table={hasTableContent ? 'true' : 'false'}
+                        >
+                          <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
+                        </div>
+                      )
+                    )}
+                    {fileAttachments.length > 0 && (
+                      renderFileAttachments('default', visibleContent ? 'mt-2' : '')
+                    )}
+                    {linkPreviews.length > 0 && (
+                      <div className={`${visibleContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
+                        {linkPreviews.map((preview) => (
+                          <LinkPreviewCard
+                            key={`${message.id}:${preview.url}`}
+                            preview={preview}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {tooltipContent}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          ) : (
+            messageActionsMenu
           )}
 
           {/* Image attachments: outside the bubble, clickable for preview */}

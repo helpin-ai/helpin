@@ -8,6 +8,7 @@ import type { DockChatDetail } from '@/lib/dockTypes';
 import type { AgentRun, CodingSessionInteraction, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
+import { DockUserMessage } from './DockUserMessage';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
 import { ExecutionStrip } from './ExecutionStrip';
 import { PendingInteractionCard } from './PendingInteractionCard';
@@ -323,13 +324,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
         {currentPlan && (
           <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
         )}
-        {pendingEcho && (
-          <div className="flex justify-end">
-            <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground opacity-80">
-              {pendingEcho}
-            </div>
-          </div>
-        )}
+        {pendingEcho && <DockUserMessage content={pendingEcho} pending />}
         {sendError && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
             <p className="mb-1 line-clamp-2 text-foreground/80">{sendError.content}</p>

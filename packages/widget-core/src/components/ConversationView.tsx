@@ -608,6 +608,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         fileUploadsEnabled={fileUploadsEnabled}
         disabled={composeDisabled}
         placeholder={composePlaceholder}
+        workspaceId={config.workspaceId}
+        workspaceName={config.workspaceName}
       />
 
       {lightboxImage && (

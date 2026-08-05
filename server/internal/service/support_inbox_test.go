@@ -2167,6 +2167,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopie
 		CustomerName:  strPtr("Casey Customer"),
 		CustomerEmail: strPtr("casey@example.com"),
 		CRMContactID:  strPtr("contact-1"),
+		CRMCompanyID:  strPtr("company-1"),
 	}
 	if err := convRepo.Create(ctx, conversation); err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -2205,13 +2206,6 @@ func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopie
 			FromObjectID:   conversation.ID,
 			ToObjectType:   model.CRMObjectContact,
 			ToObjectID:     "contact-1",
-		},
-		{
-			WorkspaceID:    env.wsID,
-			FromObjectType: model.CRMObjectSupportConversation,
-			FromObjectID:   conversation.ID,
-			ToObjectType:   model.CRMObjectCompany,
-			ToObjectID:     "company-1",
 		},
 		{
 			WorkspaceID:    env.wsID,
@@ -3105,6 +3099,157 @@ func TestSupportInboxServiceVisitorContextLastActivity(t *testing.T) {
 	}
 	if resp.LastActiveSource == nil || *resp.LastActiveSource != "crm_contact" {
 		t.Fatalf("last_active_source = %v, want crm_contact", resp.LastActiveSource)
+	}
+}
+
+func TestSupportInboxServiceUpdateConversationCRMCompany(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	const workspaceID = "ws-update-conversation-company"
+	seedWorkspace(t, db, workspaceID, "Update Conversation Company", "update-conversation-company", "user-123")
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	companyRepo := repository.NewCRMCompanyRepository(db)
+	assocRepo := repository.NewCRMAssociationRepository(db)
+	contact := &model.CRMContact{WorkspaceID: workspaceID, DisplayID: "CON-1", FirstName: "Ada", LifecycleStage: model.CRMLifecycleLead, LeadStatus: model.CRMLeadStatusNew}
+	if err := contactRepo.Create(ctx, contact); err != nil {
+		t.Fatalf("create contact: %v", err)
+	}
+	company := &model.CRMCompany{WorkspaceID: workspaceID, DisplayID: "COM-1", Name: "Acme"}
+	if err := companyRepo.Create(ctx, company); err != nil {
+		t.Fatalf("create company: %v", err)
+	}
+	conversation := &model.SupportConversation{WorkspaceID: workspaceID, Subject: "Company correction", Status: model.SupportConversationStatusOpen, CRMContactID: &contact.ID}
+	if err := conversationRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	svc := NewSupportInboxService(conversationRepo, nil, nil, nil, assocRepo, nil, nil, nil, nil, nil, contactRepo, nil, nil, nil, nil)
+	svc.SetCRMCompanyRepository(companyRepo)
+
+	updated, err := svc.UpdateConversationCRMCompany(ctx, workspaceID, conversation.ID, &company.ID, "user-123")
+	if err != nil {
+		t.Fatalf("UpdateConversationCRMCompany: %v", err)
+	}
+	if updated.CRMCompanyID == nil || *updated.CRMCompanyID != company.ID {
+		t.Fatalf("crm_company_id = %v, want %q", updated.CRMCompanyID, company.ID)
+	}
+	assocs, err := assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectContact, contact.ID)
+	if err != nil {
+		t.Fatalf("list contact associations: %v", err)
+	}
+	if len(assocs) != 1 {
+		t.Fatalf("contact company memberships = %d, want 1", len(assocs))
+	}
+	if !isPrimaryCompanyAssociationLabel(assocs[0].AssociationLabel) {
+		t.Fatalf("first company membership label = %v, want primary", assocs[0].AssociationLabel)
+	}
+
+	secondCompany := &model.CRMCompany{WorkspaceID: workspaceID, DisplayID: "COM-2", Name: "Second Account"}
+	if err := companyRepo.Create(ctx, secondCompany); err != nil {
+		t.Fatalf("create second company: %v", err)
+	}
+	if _, err := svc.UpdateConversationCRMCompany(ctx, workspaceID, conversation.ID, &secondCompany.ID, "user-123"); err != nil {
+		t.Fatalf("set second conversation company: %v", err)
+	}
+	assocs, err = assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectContact, contact.ID)
+	if err != nil {
+		t.Fatalf("list contact associations after switch: %v", err)
+	}
+	if len(assocs) != 2 {
+		t.Fatalf("contact company memberships after switch = %d, want 2", len(assocs))
+	}
+	primaryID := ""
+	for _, assoc := range assocs {
+		_, associatedCompanyID := otherAssociationSide(assoc, model.CRMObjectContact, contact.ID)
+		if isPrimaryCompanyAssociationLabel(assoc.AssociationLabel) {
+			primaryID = associatedCompanyID
+		}
+	}
+	if primaryID != company.ID {
+		t.Fatalf("primary company after manual switch = %q, want original %q", primaryID, company.ID)
+	}
+
+	const otherWorkspaceID = "ws-update-conversation-company-other"
+	seedWorkspace(t, db, otherWorkspaceID, "Other Company Workspace", "update-conversation-company-other", "user-123")
+	foreignCompany := &model.CRMCompany{WorkspaceID: otherWorkspaceID, DisplayID: "COM-1", Name: "Foreign Company"}
+	if err := companyRepo.Create(ctx, foreignCompany); err != nil {
+		t.Fatalf("create foreign company: %v", err)
+	}
+	if _, err := svc.UpdateConversationCRMCompany(ctx, workspaceID, conversation.ID, &foreignCompany.ID, "user-123"); err == nil {
+		t.Fatal("expected company from another workspace to be rejected")
+	}
+
+	cleared, err := svc.UpdateConversationCRMCompany(ctx, workspaceID, conversation.ID, nil, "user-123")
+	if err != nil {
+		t.Fatalf("clear conversation company: %v", err)
+	}
+	if cleared.CRMCompanyID != nil {
+		t.Fatalf("cleared crm_company_id = %v, want nil", cleared.CRMCompanyID)
+	}
+}
+
+func TestSupportInboxServiceVisitorContextIncludesLiveCompany(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	const workspaceID = "ws-visitor-company"
+	seedWorkspace(t, db, workspaceID, "Visitor Company", "visitor-company", "user-123")
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	companyRepo := repository.NewCRMCompanyRepository(db)
+	assocRepo := repository.NewCRMAssociationRepository(db)
+	contact := &model.CRMContact{
+		WorkspaceID: workspaceID, DisplayID: "CON-1", FirstName: "Ada",
+		LifecycleStage: model.CRMLifecycleCustomer, LeadStatus: model.CRMLeadStatusOpen,
+		CustomProperties: model.JSONB{"score": float64(92), "vip": true},
+	}
+	if err := contactRepo.Create(ctx, contact); err != nil {
+		t.Fatalf("create contact: %v", err)
+	}
+	company := &model.CRMCompany{
+		WorkspaceID: workspaceID, DisplayID: "COM-1", Name: "Acme",
+		CustomProperties: model.JSONB{"plan": "enterprise", "seats_used": float64(12), "priority_support": true},
+	}
+	if err := companyRepo.Create(ctx, company); err != nil {
+		t.Fatalf("create company: %v", err)
+	}
+	if err := assocRepo.Create(ctx, &model.CRMAssociation{WorkspaceID: workspaceID, FromObjectType: model.CRMObjectContact, FromObjectID: contact.ID, ToObjectType: model.CRMObjectCompany, ToObjectID: company.ID}); err != nil {
+		t.Fatalf("create association: %v", err)
+	}
+	conversation := &model.SupportConversation{WorkspaceID: workspaceID, Subject: "Live company", Status: model.SupportConversationStatusOpen, CRMContactID: &contact.ID, CRMCompanyID: &company.ID}
+	if err := conversationRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	svc := NewSupportInboxService(conversationRepo, nil, nil, nil, assocRepo, nil, sessionRepo, nil, nil, nil, contactRepo, nil, nil, nil, nil)
+	svc.SetCRMCompanyRepository(companyRepo)
+
+	resp, err := svc.GetVisitorContext(ctx, workspaceID, conversation.ID)
+	if err != nil {
+		t.Fatalf("GetVisitorContext: %v", err)
+	}
+	if resp.CompanyContextStatus != model.VisitorCompanyContextOK || resp.Company == nil {
+		t.Fatalf("company context = %q / %#v, want ok company", resp.CompanyContextStatus, resp.Company)
+	}
+	if resp.Company.ID != company.ID || resp.Company.CustomProperties["seats_used"] != float64(12) {
+		t.Fatalf("company = %#v, want live typed properties", resp.Company)
+	}
+	if len(resp.CompanyOptions) != 1 || resp.CompanyOptions[0].ID != company.ID {
+		t.Fatalf("company options = %#v, want selected membership", resp.CompanyOptions)
+	}
+	if resp.Contact == nil || resp.Contact.CustomProperties["score"] != float64(92) || resp.Contact.CustomProperties["vip"] != true {
+		t.Fatalf("contact custom properties = %#v, want typed scalars", resp.Contact)
+	}
+
+	company.CustomProperties["plan"] = "growth"
+	if err := companyRepo.Update(ctx, company); err != nil {
+		t.Fatalf("update company: %v", err)
+	}
+	resp, err = svc.GetVisitorContext(ctx, workspaceID, conversation.ID)
+	if err != nil {
+		t.Fatalf("GetVisitorContext after update: %v", err)
+	}
+	if resp.Company.CustomProperties["plan"] != "growth" {
+		t.Fatalf("company plan = %#v, want current growth", resp.Company.CustomProperties["plan"])
 	}
 }
 

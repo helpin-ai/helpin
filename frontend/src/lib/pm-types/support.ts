@@ -61,6 +61,7 @@ export interface SupportConversation {
   linked_task_id?: string;
   source: TicketSource;
   crm_contact_id?: string;
+  crm_company_id?: string | null;
   ai_state?: 'pending' | 'resolved' | 'escalated' | null;
   ai_resolved_at?: string;
   ai_escalated_at?: string;
@@ -554,6 +555,14 @@ export interface SupportMessage {
   html_body?: string;
   /** Markdown-friendly plaintext body — present only for inbound email messages. */
   stripped_text?: string;
+  /** Backend-projected visible reply text, excluding confidently detected history. */
+  email_visible_text?: string;
+  /** Backend-projected quoted history, retained for explicit expansion. */
+  email_quoted_text?: string;
+  /** Explicit quote-presence signal. Undefined means a legacy unprojected message. */
+  email_has_quoted_content?: boolean;
+  email_projection_confidence?: 'high' | 'medium' | 'none';
+  email_projection_version?: number;
   /** Delivery status of the outbound email for this message. Only set when the message was sent via email. */
   email_delivery_status?: 'sent' | 'delivered' | 'opened' | 'bounced' | 'spam_complaint' | string;
   /** Human-readable bounce or complaint description. Empty unless delivery failed. */
@@ -1013,6 +1022,10 @@ export interface AssignConversationUserRequest {
 
 export interface UpdateConversationCRMContactRequest {
   crm_contact_id: string | null;
+}
+
+export interface UpdateConversationCRMCompanyRequest {
+  crm_company_id: string | null;
 }
 
 export interface UpdateConversationCustomerNameRequest {

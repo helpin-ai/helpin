@@ -76,7 +76,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
           )}
 
           {!isLoading && !isError && data && (
-            <div className="flex min-h-0 flex-col px-8 py-8">
+            <div data-testid="email-detail-scroll" className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 py-8">
               <h2 className="pr-10 text-[17px] font-semibold leading-snug tracking-tight">{subject}</h2>
 
               <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">

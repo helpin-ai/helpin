@@ -643,6 +643,42 @@ describe('WidgetManager', () => {
       expect(latestOptions?.messages.at(-1)?.content).toBe('Here is what I found.');
     });
 
+    it('maps email projection fields from live message payloads', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).activeConversationId = 'conv-1';
+
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-email',
+          conversation_id: 'conv-1',
+          sender_type: 'user',
+          content: 'Legacy fallback',
+          via_channel: 'email',
+          email_visible_text: 'Visible reply',
+          email_quoted_text: '',
+          email_has_quoted_content: false,
+          email_projection_confidence: 'none',
+          email_projection_version: 1,
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.messages.at(-1)).toMatchObject({
+        emailVisibleText: 'Visible reply',
+        emailQuotedText: '',
+        emailHasQuotedContent: false,
+        emailProjectionConfidence: 'none',
+        emailProjectionVersion: 1,
+      });
+    });
+
     it('does not show optimistic AI thinking after a conversation is escalated to a human', () => {
       const sent: string[] = [];
       (widget as any).widgetConfig = {
@@ -1031,6 +1067,11 @@ describe('WidgetManager', () => {
               sender_type: 'user',
               content: 'Email reply',
               via_channel: 'email',
+              email_visible_text: 'Fresh email reply',
+              email_quoted_text: 'Earlier email',
+              email_has_quoted_content: true,
+              email_projection_confidence: 'high',
+              email_projection_version: 1,
               created_at: new Date().toISOString(),
             },
           ],
@@ -1039,6 +1080,13 @@ describe('WidgetManager', () => {
 
       const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
       expect(latestOptions?.messages?.[0]?.viaChannel).toBe('email');
+      expect(latestOptions?.messages?.[0]).toMatchObject({
+        emailVisibleText: 'Fresh email reply',
+        emailQuotedText: 'Earlier email',
+        emailHasQuotedContent: true,
+        emailProjectionConfidence: 'high',
+        emailProjectionVersion: 1,
+      });
       expect((widget as any).activeConversationId).toBe('conv-2');
       expect((widget as any).currentView).toBe('conversation');
       expect((widget as any).isOpen).toBe(true);
@@ -1203,7 +1251,11 @@ describe('WidgetManager', () => {
       };
       (widget as any).config = {
         key: 'test-key',
-        user: { email: 'boot@example.com', name: 'Boot User' },
+        user: {
+          email: 'boot@example.com',
+          name: 'Boot User',
+          company: { id: 'account-boot', name: 'Boot Account', created_at: '2025-01-01' },
+        },
       };
       (widget as any).widgetKey = 'test-key';
 
@@ -1226,6 +1278,7 @@ describe('WidgetManager', () => {
           last_name: '',
           name: 'Boot User',
           source: 'sdk_identify',
+          company: { id: 'account-boot', name: 'Boot Account', created_at: '2025-01-01' },
         },
       });
       expect((widget as any).currentEmail).toBe('boot@example.com');

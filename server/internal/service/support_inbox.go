@@ -21,6 +21,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -46,6 +47,7 @@ type SupportInboxService struct {
 	activitySvc             *PMActivityService
 	wsPublisher             *websocket.Publisher
 	contactRepo             *repository.CRMContactRepository
+	companyRepo             *repository.CRMCompanyRepository
 	userRepo                *repository.UserRepository
 	docsSpaceRepo           *repository.DocsSpaceRepository
 	docsCollectionRepo      *repository.DocsCollectionRepository
@@ -74,6 +76,11 @@ type SupportInboxService struct {
 
 func (s *SupportInboxService) SetDocsSearchRepository(docsSearchRepo *repository.DocsSearchRepository) {
 	s.docsSearchRepo = docsSearchRepo
+}
+
+func (s *SupportInboxService) SetCRMCompanyRepository(companyRepo *repository.CRMCompanyRepository) *SupportInboxService {
+	s.companyRepo = companyRepo
+	return s
 }
 
 var ErrInvalidSupportSearch = errors.New("invalid support search")
@@ -1896,8 +1903,36 @@ func hydrateEmailBodies(
 			continue
 		}
 		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
-			messages[i].HTMLBody = log.HTMLBody
+			projection := inboundhtml.ProcessedContent{
+				HTML:                 log.HTMLBody,
+				Markdown:             log.EmailVisibleText,
+				QuotedMarkdown:       log.EmailQuotedText,
+				HasQuotedContent:     log.EmailHasQuotedContent,
+				ProjectionConfidence: log.EmailProjectionConfidence,
+				ProjectionVersion:    log.EmailProjectionVersion,
+			}
+			if log.EmailProjectionVersion != inboundhtml.CurrentProjectionVersion {
+				projection = inboundhtml.Project(inboundhtml.ProjectionInput{
+					HTML:              log.HTMLBody,
+					TextBody:          log.StrippedText,
+					StrippedTextReply: log.StrippedText,
+				})
+				var metadata map[string]any
+				if json.Unmarshal([]byte(messages[i].Metadata), &metadata) == nil && forwardedAttributionFromMetadata(metadata) != nil {
+					projection.Markdown = messages[i].Content
+					projection.QuotedMarkdown = ""
+					projection.HasQuotedContent = false
+					projection.ProjectionConfidence = inboundhtml.ProjectionConfidenceNone
+				}
+			}
+
+			messages[i].HTMLBody = projection.HTML
 			messages[i].StrippedText = log.StrippedText
+			messages[i].EmailVisibleText = projection.Markdown
+			messages[i].EmailQuotedText = projection.QuotedMarkdown
+			messages[i].EmailHasQuotedContent = boolPtr(projection.HasQuotedContent)
+			messages[i].EmailProjectionConfidence = projection.ProjectionConfidence
+			messages[i].EmailProjectionVersion = projection.ProjectionVersion
 			messages[i].EmailFrom = log.FromEmail
 			messages[i].EmailTo = log.ToEmail
 			messages[i].EmailReplyTo = log.ReplyTo
@@ -2376,6 +2411,9 @@ func (s *SupportInboxService) copyConversationAssociationsToTask(
 
 	if conversation.CRMContactID != nil && strings.TrimSpace(*conversation.CRMContactID) != "" {
 		contactIDs[strings.TrimSpace(*conversation.CRMContactID)] = struct{}{}
+	}
+	if conversation.CRMCompanyID != nil && strings.TrimSpace(*conversation.CRMCompanyID) != "" {
+		companyIDs[strings.TrimSpace(*conversation.CRMCompanyID)] = struct{}{}
 	}
 
 	assocs, err := s.assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectSupportConversation, conversation.ID)
@@ -3062,6 +3100,56 @@ func (s *SupportInboxService) UpdateConversationCRMContact(ctx context.Context, 
 	return s.updateConversationCRMContact(ctx, workspaceID, conversationID, contactID, &actorID)
 }
 
+// UpdateConversationCRMCompany sets or clears stable company context.
+func (s *SupportInboxService) UpdateConversationCRMCompany(ctx context.Context, workspaceID, conversationID string, companyID *string, actorID string) (*model.SupportConversation, error) {
+	ticket, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if ticket == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	var normalizedCompanyID *string
+	if companyID != nil && strings.TrimSpace(*companyID) != "" {
+		if s.companyRepo == nil {
+			return nil, fmt.Errorf("company repository unavailable")
+		}
+		trimmed := strings.TrimSpace(*companyID)
+		company, err := s.companyRepo.GetByID(ctx, trimmed)
+		if err != nil {
+			return nil, err
+		}
+		if company == nil || company.WorkspaceID != workspaceID {
+			return nil, fmt.Errorf("company not found")
+		}
+		normalizedCompanyID = &trimmed
+		if ticket.CRMContactID != nil && strings.TrimSpace(*ticket.CRMContactID) != "" && s.assocRepo != nil {
+			if err := s.ensureContactCompanyMembershipTx(ctx, s.assocRepo, workspaceID, *ticket.CRMContactID, trimmed); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	oldCompanyID := ticket.CRMCompanyID
+	now := time.Now().UTC()
+	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
+		"crm_company_id": normalizedCompanyID,
+		"updated_at":     now,
+	}); err != nil {
+		return nil, err
+	}
+	ticket.CRMCompanyID = normalizedCompanyID
+	ticket.UpdatedAt = now
+	if s.activitySvc != nil {
+		if err := s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, &actorID, "updated", strPtr("crm_company_id"), oldCompanyID, normalizedCompanyID, nil); err != nil {
+			slog.ErrorContext(ctx, "failed to log support conversation company update", "error", err, "workspace_id", workspaceID, "conversation_id", conversationID)
+		}
+	}
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "support_conversation", EntityID: conversationID, WorkspaceID: workspaceID, ActorID: actorID})
+	return ticket, nil
+}
+
 // ListContactConversations returns support conversations linked to a CRM contact.
 func (s *SupportInboxService) ListContactConversations(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
 	conversations, total, err := s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
@@ -3188,18 +3276,19 @@ func (s *SupportInboxService) matchOrCreateCRMCompanyIdentityTx(ctx context.Cont
 	var company *model.CRMCompany
 	var err error
 	if resolved.externalID != "" {
+		if err := companyRepo.LockExternalID(ctx, workspaceID, resolved.externalID); err != nil {
+			return nil, err
+		}
 		company, err = companyRepo.GetByExternalID(ctx, workspaceID, resolved.externalID)
 		if err != nil {
 			return nil, err
 		}
-	}
-	if company == nil && resolved.domain != "" {
+	} else if resolved.domain != "" {
 		company, err = companyRepo.GetByDomain(ctx, workspaceID, resolved.domain)
 		if err != nil {
 			return nil, err
 		}
-	}
-	if company == nil && resolved.name != "" {
+	} else if resolved.name != "" {
 		company, err = companyRepo.GetByName(ctx, workspaceID, resolved.name)
 		if err != nil {
 			return nil, err
@@ -3297,43 +3386,15 @@ func syncCRMCompanyIdentity(company *model.CRMCompany, identity resolvedWidgetCo
 	return updated
 }
 
-func (s *SupportInboxService) ensurePrimaryContactCompanyAssociationTx(ctx context.Context, assocRepo *repository.CRMAssociationRepository, workspaceID, contactID, companyID string) error {
-	assoc := &model.CRMAssociation{
-		WorkspaceID:      workspaceID,
-		FromObjectType:   model.CRMObjectContact,
-		FromObjectID:     contactID,
-		ToObjectType:     model.CRMObjectCompany,
-		ToObjectID:       companyID,
-		AssociationLabel: crmAssociationStringPtr(primaryCompanyAssociationLabel),
-	}
-	if err := assocRepo.Create(ctx, assoc); err != nil {
-		return err
-	}
-
-	assocs, err := assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectContact, contactID)
-	if err != nil {
-		return err
-	}
-	for _, existing := range assocs {
-		otherType, otherID := otherAssociationSide(existing, model.CRMObjectContact, contactID)
-		if otherType != model.CRMObjectCompany {
-			continue
-		}
-		if existing.ID == assoc.ID || otherID == companyID {
-			if !isPrimaryCompanyAssociationLabel(existing.AssociationLabel) {
-				if err := assocRepo.UpdateLabel(ctx, existing.ID, crmAssociationStringPtr(primaryCompanyAssociationLabel)); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-		if isPrimaryCompanyAssociationLabel(existing.AssociationLabel) {
-			if err := assocRepo.UpdateLabel(ctx, existing.ID, nil); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+func (s *SupportInboxService) ensureContactCompanyMembershipTx(ctx context.Context, assocRepo *repository.CRMAssociationRepository, workspaceID, contactID, companyID string) error {
+	_, err := NewCRMAssociationService(assocRepo).Create(ctx, model.CreateCRMAssociationRequest{
+		WorkspaceID:    workspaceID,
+		FromObjectType: model.CRMObjectContact,
+		FromObjectID:   contactID,
+		ToObjectType:   model.CRMObjectCompany,
+		ToObjectID:     companyID,
+	})
+	return err
 }
 
 func resolveWidgetCompanyPayload(payload model.JSONB) *resolvedWidgetCompany {
@@ -3399,6 +3460,10 @@ func mergeCRMCustomProperties(existing, incoming model.JSONB) model.JSONB {
 		merged[key] = value
 	}
 	for key, value := range incoming {
+		if value == nil {
+			delete(merged, key)
+			continue
+		}
 		merged[key] = value
 	}
 	return merged

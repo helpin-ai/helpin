@@ -79,6 +79,8 @@ export const MessagesView: FunctionComponent<MessagesViewProps> = ({
         showBranding={config.branding?.showBranding ?? true}
         disabled={composeDisabled}
         placeholder={composePlaceholder}
+        workspaceId={config.workspaceId}
+        workspaceName={config.workspaceName}
       />
     </div>
   );
