@@ -13,6 +13,9 @@ const (
 	defaultAnthropicAgentModel  = "claude-opus-4-8"
 	defaultOpenAIAgentModel     = "gpt-5.6-terra"
 	defaultOpenRouterAgentModel = "openai/gpt-5.6-terra"
+	// defaultAtlasAgentModel keeps interactive epic planning on the product's
+	// preferred DeepSeek OpenRouter model.
+	defaultAtlasAgentModel = "deepseek/deepseek-v4-flash-0731"
 	// defaultScribeAgentModel keeps interactive task planning on the product's
 	// preferred fast OpenRouter model.
 	defaultScribeAgentModel = "deepseek/deepseek-v4-flash"
@@ -388,6 +391,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	commandAgentPrompt := "You are a Sub-agent handling one confirmed delegated task. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward."
 	askAgentPrompt := askAgentSystemPrompt()
 	openRouterPresetProvider := model.AgentModelProviderOpenRouter
+	atlasDefaultModel := defaultAtlasAgentModel
 	scribeDefaultModel := defaultScribeAgentModel
 	askAgentDefaultModel := defaultAskAgentModel
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
@@ -399,6 +403,10 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		agentcontract.ToolListAvailableSkills,
 		agentcontract.ToolSearchAvailableSkills,
 		agentcontract.ToolReadSkill,
+		"ensure_epic_spec_doc",
+		"write_document_content",
+		"approve_epic_spec",
+		"create_task_batch",
 	)
 	taskPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		agentcontract.ToolUpdatePlan,
@@ -424,9 +432,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Epic Planner",
 			Description:           "Interactive product planning for epics, PRDs, documents, and story creation.",
 			DefaultRole:           "Epic Planner",
-			RuntimeKind:           "codex",
-			Provider:              &openAIPresetProvider,
-			Model:                 &openAIPresetModel,
+			RuntimeKind:           "native_sdk",
+			Provider:              &openRouterPresetProvider,
+			Model:                 &atlasDefaultModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          epicPlannerTools,
@@ -434,7 +442,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    slices.Clone(productPlannerProfile.AllowedTargetTypes),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          epicPlannerPrompt,
 		},
 		{

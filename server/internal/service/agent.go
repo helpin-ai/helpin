@@ -1044,10 +1044,10 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
-		// Scribe's product default moved from OpenAI to DeepSeek V4 Flash on
+		// Atlas and Scribe product defaults moved from OpenAI to DeepSeek on
 		// OpenRouter. Only migrate the default preset when it still uses a known
 		// legacy product default, preserving custom routing choices.
-		if presetKey == model.AgentPresetTaskPlanner &&
+		if (presetKey == model.AgentPresetEpicPlanner || presetKey == model.AgentPresetTaskPlanner) &&
 			presetVersionKey == productDefaultVersionKey &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
 			(strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel ||
