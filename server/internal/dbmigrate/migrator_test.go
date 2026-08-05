@@ -93,9 +93,10 @@ func TestSupportConversationCompanyContextMigrationContract(t *testing.T) {
 		"create index if not exists idx_support_widget_sessions_crm_company_id on support_widget_sessions (crm_company_id)",
 		"foreign key (crm_company_id) references crm_companies(id) on delete set null",
 		"where from_object_type = 'contact' and to_object_type = 'company'",
-		"having count(distinct to_object_id) = 1",
+		"where from_object_type = 'company' and to_object_type = 'contact'",
+		"having count(distinct company_id) = 1",
 		"conversation.crm_company_id is null",
-		"conversation.crm_contact_id = association.from_object_id",
+		"conversation.crm_contact_id = association.contact_id",
 		"conversation.workspace_id = association.workspace_id",
 	} {
 		if !strings.Contains(sql, clause) {

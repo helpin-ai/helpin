@@ -13,7 +13,8 @@ import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { findAssignableMember, formatAssignableMemberName } from '@/lib/assignableMembers';
 import { SidebarAssociations } from './SidebarAssociations';
-import { SidebarVisitorContext } from './SidebarVisitorContext';
+import { SidebarOtherConversations, SidebarVisitorContext } from './SidebarVisitorContext';
+import { SidebarCompanyDetails } from './SidebarCompanyDetails';
 import { SupportTagPicker } from './SupportTagPicker';
 import { CustomerProfileDrawer } from './CustomerProfileDrawer';
 import { useConversation, useConversationAssignees, useVisitorContext, useAssignConversationUser, useUpdateConversationCustomerName, useUpdateConversationEmailRecipients } from '@/hooks/queries/useSupport';
@@ -664,10 +665,21 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
             conversationId={conversation.id}
           />
 
+          <SidebarCompanyDetails
+            workspaceId={workspaceId}
+            conversationId={conversation.id}
+          />
+
+          <SidebarOtherConversations
+            workspaceId={workspaceId}
+            conversationId={conversation.id}
+          />
+
           {/* ── Links / Associations ─────────────────────── */}
           <SidebarAssociations
             workspaceId={workspaceId}
             conversationId={conversation.id}
+            excludeCRMCompanyId={visitorContext?.company?.id}
           />
         </div>
         )}

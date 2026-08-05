@@ -456,6 +456,24 @@ func (h *SupportInboxHandler) UpdateConversationCRMContact(w http.ResponseWriter
 	writeJSON(w, http.StatusOK, conversation)
 }
 
+// UpdateConversationCRMCompany handles PUT /api/support/inbox/conversations/{id}/crm-company.
+func (h *SupportInboxHandler) UpdateConversationCRMCompany(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+	var req model.UpdateConversationCRMCompanyRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	conversation, err := h.supportService.UpdateConversationCRMCompany(r.Context(), workspaceID, conversationID, req.CRMCompanyID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, conversation)
+}
+
 // UpdateConversationCustomerName handles PUT /api/support/inbox/conversations/{id}/customer-name.
 func (h *SupportInboxHandler) UpdateConversationCustomerName(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

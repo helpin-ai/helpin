@@ -55,7 +55,7 @@ type SupportConversation struct {
 	// this conversation's AI turns (nil before the first AI turn; repointed
 	// when an idle-expired run gets a successor).
 	AIActiveRunID *string `json:"ai_active_run_id,omitempty" gorm:"type:uuid;index"`
-	HumanTakeover            *bool      `json:"human_takeover" gorm:"default:false;index"`
+	HumanTakeover *bool   `json:"human_takeover" gorm:"default:false;index"`
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -883,6 +883,11 @@ type UpdateConversationCRMContactRequest struct {
 	CRMContactID *string `json:"crm_contact_id"`
 }
 
+// UpdateConversationCRMCompanyRequest sets or clears explicit company context.
+type UpdateConversationCRMCompanyRequest struct {
+	CRMCompanyID *string `json:"crm_company_id"`
+}
+
 // UpdateConversationCustomerNameRequest sets the support conversation customer display name.
 type UpdateConversationCustomerNameRequest struct {
 	CustomerName string `json:"customer_name"`
@@ -1587,15 +1592,48 @@ type VisitorLocation struct {
 
 // VisitorContactData holds CRM contact details for visitor context.
 type VisitorContactData struct {
-	ID               string            `json:"id"`
-	Name             *string           `json:"name"`
-	Email            *string           `json:"email"`
-	Phone            *string           `json:"phone"`
-	JobTitle         *string           `json:"job_title"`
-	LifecycleStage   string            `json:"lifecycle_stage"`
-	LeadStatus       string            `json:"lead_status"`
-	Source           string            `json:"source"`
-	CustomProperties map[string]string `json:"custom_properties,omitempty"`
+	ID               string         `json:"id"`
+	Name             *string        `json:"name"`
+	Email            *string        `json:"email"`
+	Phone            *string        `json:"phone"`
+	JobTitle         *string        `json:"job_title"`
+	LifecycleStage   string         `json:"lifecycle_stage"`
+	LeadStatus       string         `json:"lead_status"`
+	Source           string         `json:"source"`
+	CustomProperties map[string]any `json:"custom_properties,omitempty"`
+}
+
+type VisitorCompanyContextStatus string
+
+const (
+	VisitorCompanyContextOK       VisitorCompanyContextStatus = "ok"
+	VisitorCompanyContextUnlinked VisitorCompanyContextStatus = "unlinked"
+	VisitorCompanyContextError    VisitorCompanyContextStatus = "error"
+)
+
+// VisitorCompanyData is the live CRM company linked directly to a conversation.
+type VisitorCompanyData struct {
+	ID               string         `json:"id"`
+	DisplayID        string         `json:"display_id"`
+	ExternalID       *string        `json:"external_id,omitempty"`
+	Name             string         `json:"name"`
+	Domain           *string        `json:"domain,omitempty"`
+	Industry         *string        `json:"industry,omitempty"`
+	EmployeeCount    *int           `json:"employee_count,omitempty"`
+	AnnualRevenue    *float64       `json:"annual_revenue,omitempty"`
+	Description      *string        `json:"description,omitempty"`
+	LogoURL          *string        `json:"logo_url,omitempty"`
+	CustomProperties map[string]any `json:"custom_properties"`
+	UpdatedAt        string         `json:"updated_at"`
+}
+
+// VisitorCompanyOption is a compact company membership selector option.
+type VisitorCompanyOption struct {
+	ID        string  `json:"id"`
+	DisplayID string  `json:"display_id"`
+	Name      string  `json:"name"`
+	Domain    *string `json:"domain,omitempty"`
+	LogoURL   *string `json:"logo_url,omitempty"`
 }
 
 // VisitorOtherConversation is a compact summary for other conversations in visitor context.
@@ -1609,14 +1647,17 @@ type VisitorOtherConversation struct {
 
 // VisitorContextResponse assembles all visitor intelligence for a conversation.
 type VisitorContextResponse struct {
-	Device             *VisitorDeviceInfo         `json:"device,omitempty"`
-	Location           *VisitorLocation           `json:"location,omitempty"`
-	Contact            *VisitorContactData        `json:"contact,omitempty"`
-	OtherConversations []VisitorOtherConversation `json:"other_conversations"`
-	TotalConversations int                        `json:"total_conversations"`
-	SessionCreatedAt   *string                    `json:"session_created_at,omitempty"`
-	LastActiveAt       *string                    `json:"last_active_at,omitempty"`
-	LastActiveSource   *string                    `json:"last_active_source,omitempty"`
+	Device               *VisitorDeviceInfo          `json:"device,omitempty"`
+	Location             *VisitorLocation            `json:"location,omitempty"`
+	Contact              *VisitorContactData         `json:"contact,omitempty"`
+	Company              *VisitorCompanyData         `json:"company,omitempty"`
+	CompanyOptions       []VisitorCompanyOption      `json:"company_options,omitempty"`
+	CompanyContextStatus VisitorCompanyContextStatus `json:"company_context_status"`
+	OtherConversations   []VisitorOtherConversation  `json:"other_conversations"`
+	TotalConversations   int                         `json:"total_conversations"`
+	SessionCreatedAt     *string                     `json:"session_created_at,omitempty"`
+	LastActiveAt         *string                     `json:"last_active_at,omitempty"`
+	LastActiveSource     *string                     `json:"last_active_source,omitempty"`
 }
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.

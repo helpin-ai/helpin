@@ -11,7 +11,6 @@ import {
   MapPinIcon,
   Clock01Icon,
   Link01Icon,
-  InformationCircleIcon,
   LanguageCircleIcon,
 } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
@@ -183,11 +182,10 @@ function MainInfoRow({
 export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVisitorContextProps) {
   const { data, isLoading } = useVisitorContext(workspaceId, conversationId);
   const { data: conversation } = useConversation(workspaceId, conversationId);
-  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
 
   if (isLoading || !data) return null;
 
-  const { device, location, contact, other_conversations, total_conversations } = data;
+  const { device, location, contact } = data;
 
   const hasDevice = device && device.browser !== 'Unknown';
   const locationText = [location?.city_name, location?.region_name, location?.country_name].filter(Boolean).join(', ');
@@ -206,16 +204,31 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
 
   const hasMainInfo = !!(locationText || localTime || language || channelLabel || currentPage || hasDevice);
   const hasContact = !!contact;
-  const hasOtherConvos = other_conversations.length > 0;
-
-  if (!hasDevice && !hasMainInfo && !hasContact && !hasOtherConvos) return null;
+  if (!hasDevice && !hasMainInfo && !hasContact) return null;
 
   return (
-    <div>
-      {/* User details */}
-      {hasMainInfo && (
-        <CollapsibleSection title="User details" icon={InformationCircleIcon} count={0} defaultOpen>
-          <div className="space-y-2">
+    <CollapsibleSection title="Contact Details" icon={UserIcon} count={0} defaultOpen>
+      <div className="space-y-2">
+        {contact?.job_title && <InfoRow label="Job title" value={contact.job_title} />}
+        {contact?.lifecycle_stage && (
+          <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
+            <span className="text-muted-foreground">Lifecycle</span>
+            <span>
+              <Badge variant="secondary" className={`h-4 rounded-full px-1.5 text-[10px] font-medium ${LIFECYCLE_COLORS[contact.lifecycle_stage] ?? LIFECYCLE_COLORS.other}`}>
+                {contact.lifecycle_stage}
+              </Badge>
+            </span>
+          </div>
+        )}
+        {contact?.lead_status && <InfoRow label="Lead status" value={contact.lead_status.replaceAll('_', ' ')} />}
+        {contact?.phone && <InfoRow label="Phone" value={contact.phone} />}
+        {contact?.custom_properties && Object.entries(contact.custom_properties).map(([key, value]) => (
+          <InfoRow key={key} label={key.replaceAll('_', ' ')} value={formatUnknownValue(value)} />
+        ))}
+
+        {hasMainInfo && (
+          <>
+            <div className="pt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Current visit</div>
             {channelLabel && (
               <MainInfoRow label="Channel" icon={<ArrowLeftRightIcon className="h-3.5 w-3.5" />} value={channelLabel} />
             )}
@@ -242,60 +255,42 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
             {hasDevice && browserAndOS && (
               <MainInfoRow label="Browser and OS" icon={<BrowserIcon browser={device.browser} />} value={browserAndOS} />
             )}
-          </div>
-        </CollapsibleSection>
-      )}
+          </>
+        )}
+      </div>
+    </CollapsibleSection>
+  );
+}
 
-      {/* Contact Details */}
-      {hasContact && (
-        <CollapsibleSection title="Contact Details" icon={UserIcon} count={0} defaultOpen>
-          <div className="space-y-2">
-            {contact.job_title && (
-              <InfoRow label="Job title" value={contact.job_title} />
-            )}
-            {contact.lifecycle_stage && (
-              <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
-                <span className="text-muted-foreground">Lifecycle</span>
-                <span>
-                  <Badge variant="secondary" className={`h-4 rounded-full px-1.5 text-[10px] font-medium ${LIFECYCLE_COLORS[contact.lifecycle_stage] ?? LIFECYCLE_COLORS.other}`}>
-                    {contact.lifecycle_stage}
-                  </Badge>
-                </span>
-              </div>
-            )}
-            {contact.custom_properties && Object.keys(contact.custom_properties).length > 0 && (
-              <>
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider pt-1">Custom data</div>
-                {Object.entries(contact.custom_properties).map(([key, value]) => (
-                  <InfoRow key={key} label={key} value={value} />
-                ))}
-              </>
-            )}
-          </div>
-        </CollapsibleSection>
-      )}
+function formatUnknownValue(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  return JSON.stringify(value);
+}
 
-      {/* Other Conversations */}
-      {hasOtherConvos && (
-        <CollapsibleSection title="Other Conversations" icon={Message01Icon} count={Math.max(total_conversations - 1, other_conversations.length)}>
-          <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
-            {other_conversations.map((conv) => (
-              <Link
-                key={conv.id}
-                to="/w/$slug/support/$conversationId"
-                params={{ slug: workspace?.slug ?? '', conversationId: conv.id }}
-                className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[12px] hover:bg-accent transition-colors"
-              >
-                <span className="text-muted-foreground shrink-0">#{conv.display_id}</span>
-                <span className="truncate flex-1 font-medium">{conv.subject}</span>
-                <Badge variant="secondary" className={`h-4 px-1 text-[9px] shrink-0 ${STATUS_COLORS[conv.status as ConversationStatus] ?? 'bg-gray-100 text-gray-600'}`}>
-                  {STATUS_LABELS[conv.status as ConversationStatus] ?? conv.status}
-                </Badge>
-              </Link>
-            ))}
-          </div>
-        </CollapsibleSection>
-      )}
-    </div>
+export function SidebarOtherConversations({ workspaceId, conversationId }: SidebarVisitorContextProps) {
+  const { data, isLoading } = useVisitorContext(workspaceId, conversationId);
+  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  if (isLoading || !data || data.other_conversations.length === 0) return null;
+  return (
+    <CollapsibleSection title="Other Conversations" icon={Message01Icon} count={Math.max(data.total_conversations - 1, data.other_conversations.length)}>
+      <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
+        {data.other_conversations.map((conv) => (
+          <Link
+            key={conv.id}
+            to="/w/$slug/support/$conversationId"
+            params={{ slug: workspace?.slug ?? '', conversationId: conv.id }}
+            className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[12px] transition-colors hover:bg-accent"
+          >
+            <span className="shrink-0 text-muted-foreground">#{conv.display_id}</span>
+            <span className="flex-1 truncate font-medium">{conv.subject}</span>
+            <Badge variant="secondary" className={`h-4 shrink-0 px-1 text-[9px] ${STATUS_COLORS[conv.status as ConversationStatus] ?? 'bg-gray-100 text-gray-600'}`}>
+              {STATUS_LABELS[conv.status as ConversationStatus] ?? conv.status}
+            </Badge>
+          </Link>
+        ))}
+      </div>
+    </CollapsibleSection>
   );
 }

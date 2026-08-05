@@ -16,22 +16,30 @@ CREATE INDEX IF NOT EXISTS idx_support_widget_sessions_crm_company_id
 
 -- Historical conversations can be linked without ambiguity only when their
 -- contact has exactly one contact-to-company association in the workspace.
-WITH association AS (
-    SELECT workspace_id, from_object_id, MIN(to_object_id::text)::uuid AS to_object_id
+WITH contact_company AS (
+    SELECT workspace_id, from_object_id AS contact_id, to_object_id AS company_id
     FROM crm_associations
     WHERE from_object_type = 'contact'
       AND to_object_type = 'company'
-    GROUP BY workspace_id, from_object_id
-    HAVING COUNT(DISTINCT to_object_id) = 1
+    UNION ALL
+    SELECT workspace_id, to_object_id AS contact_id, from_object_id AS company_id
+    FROM crm_associations
+    WHERE from_object_type = 'company'
+      AND to_object_type = 'contact'
+), association AS (
+    SELECT workspace_id, contact_id, MIN(company_id::text)::uuid AS company_id
+    FROM contact_company
+    GROUP BY workspace_id, contact_id
+    HAVING COUNT(DISTINCT company_id) = 1
 )
 UPDATE support_conversations AS conversation
-SET crm_company_id = association.to_object_id
+SET crm_company_id = association.company_id
 FROM association
 JOIN crm_companies AS company
-  ON company.id = association.to_object_id
+  ON company.id = association.company_id
  AND company.workspace_id = association.workspace_id
 WHERE conversation.crm_company_id IS NULL
-  AND conversation.crm_contact_id = association.from_object_id
+  AND conversation.crm_contact_id = association.contact_id
   AND conversation.workspace_id = association.workspace_id;
 
 DO $$

@@ -45,6 +45,7 @@ import type { CreateTaskRequest, GroupedAssociations } from '@/lib/pmTypes';
 interface SidebarAssociationsProps {
   workspaceId: string;
   conversationId: string;
+  excludeCRMCompanyId?: string;
 }
 
 type SectionKey = 'tasks' | 'crm' | 'docs';
@@ -56,7 +57,7 @@ const crmIconMap = {
   deal: DollarCircleIcon,
 } as const;
 
-export function SidebarAssociations({ workspaceId, conversationId }: SidebarAssociationsProps) {
+export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCompanyId }: SidebarAssociationsProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -244,7 +245,9 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   }
 
   const tasks = associationsData?.tasks ?? [];
-  const crmRecords = associationsData?.crm_records ?? [];
+  const crmRecords = (associationsData?.crm_records ?? []).filter((record) => (
+    !(record.object_type === 'company' && record.object_id === excludeCRMCompanyId)
+  ));
   const docs = associationsData?.docs ?? [];
   const visibleTasks = tasksExpanded ? tasks : tasks.slice(0, SIDEBAR_PREVIEW_LIMIT);
 

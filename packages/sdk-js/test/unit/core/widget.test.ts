@@ -1203,7 +1203,11 @@ describe('WidgetManager', () => {
       };
       (widget as any).config = {
         key: 'test-key',
-        user: { email: 'boot@example.com', name: 'Boot User' },
+        user: {
+          email: 'boot@example.com',
+          name: 'Boot User',
+          company: { id: 'account-boot', name: 'Boot Account', created_at: '2025-01-01' },
+        },
       };
       (widget as any).widgetKey = 'test-key';
 
@@ -1226,6 +1230,7 @@ describe('WidgetManager', () => {
           last_name: '',
           name: 'Boot User',
           source: 'sdk_identify',
+          company: { id: 'account-boot', name: 'Boot Account', created_at: '2025-01-01' },
         },
       });
       expect((widget as any).currentEmail).toBe('boot@example.com');

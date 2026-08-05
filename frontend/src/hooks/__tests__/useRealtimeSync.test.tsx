@@ -719,4 +719,35 @@ describe('useRealtimeSync task ordering events', () => {
     act(() => root.unmount())
     container.remove()
   })
+
+  it('refreshes live company visitor context and conversation associations', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const visitorKey = queryKeys.support.visitorContext('ws-1', 'conv-company')
+    const associationKey = queryKeys.support.conversationAssociations('ws-1', 'conv-company')
+    client.setQueryData(visitorKey, { company_context_status: 'ok' })
+    client.setQueryData(associationKey, { crm_records: [] })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => {
+      root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>)
+    })
+
+    await act(async () => {
+      captured.onEvent?.({ action: 'updated', entity: 'support_conversation', entity_id: 'conv-company', workspace_id: 'ws-1' })
+      await Promise.resolve()
+    })
+    expect(client.getQueryState(visitorKey)?.isInvalidated).toBe(true)
+    expect(client.getQueryState(associationKey)?.isInvalidated).toBe(true)
+
+    client.setQueryData(visitorKey, { company_context_status: 'ok' })
+    await act(async () => {
+      captured.onEvent?.({ action: 'updated', entity: 'crm_company', entity_id: 'company-1', workspace_id: 'ws-1' })
+      await Promise.resolve()
+    })
+    expect(client.getQueryState(visitorKey)?.isInvalidated).toBe(true)
+
+    act(() => root.unmount())
+    container.remove()
+  })
 })
