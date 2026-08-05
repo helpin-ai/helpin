@@ -55,4 +55,13 @@ describe('widget scroll styles', () => {
     expect(css).toContain('.helpin-help-link-skeleton-icon,');
     expect(css).toContain('.helpin-help-link-skeleton-line');
   });
+
+  it('keeps projected and quoted email content width-safe', () => {
+    expect(ruleBody('.helpin-email-message-content')).toContain('min-width: 0');
+    expect(ruleBody('.helpin-email-message-content')).toContain('max-width: 100%');
+    expect(ruleBody('.helpin-email-quoted-content')).toContain('overflow-wrap: anywhere');
+    expect(ruleBody('.helpin-message-content a')).toContain('overflow-wrap: anywhere');
+    expect(ruleBody('.helpin-message-content code')).toContain('word-break: break-word');
+    expect(ruleBody('.helpin-message-content pre')).toContain('overflow-x: auto');
+  });
 });

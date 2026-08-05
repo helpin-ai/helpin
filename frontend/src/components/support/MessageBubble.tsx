@@ -354,7 +354,10 @@ export const MessageBubble = memo(function MessageBubble({
     if (!hasForwardedHeaderMarker(displayContent)) return '';
     return cleanForwardedDisplayContent(displayContent).trim();
   }, [displayContent, forwardedAttribution]);
-  const visibleContent = forwardedDisplayContent || displayContent;
+  const projectedEmailVisibleContent = message.via_channel === 'email'
+    ? message.email_visible_text?.trim() ?? ''
+    : '';
+  const visibleContent = forwardedDisplayContent || projectedEmailVisibleContent || displayContent;
   const hasTableContent = useMemo(() => containsMarkdownTable(visibleContent), [visibleContent]);
 
   // Highlight @mentions in internal notes
@@ -761,7 +764,7 @@ export const MessageBubble = memo(function MessageBubble({
                 >
                   {hasEmailBody && !renderEmailBodyAsForwardedText ? (
                     <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
-                      <EmailBodyRenderer html={message.html_body ?? ''} collapsedByDefault={!forwardedAttribution} />
+                      <EmailBodyRenderer html={message.html_body ?? ''} collapsedByDefault />
                     </div>
                   ) : (
                     visibleContent && (

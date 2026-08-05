@@ -21,6 +21,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -1896,8 +1897,36 @@ func hydrateEmailBodies(
 			continue
 		}
 		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
-			messages[i].HTMLBody = log.HTMLBody
+			projection := inboundhtml.ProcessedContent{
+				HTML:                 log.HTMLBody,
+				Markdown:             log.EmailVisibleText,
+				QuotedMarkdown:       log.EmailQuotedText,
+				HasQuotedContent:     log.EmailHasQuotedContent,
+				ProjectionConfidence: log.EmailProjectionConfidence,
+				ProjectionVersion:    log.EmailProjectionVersion,
+			}
+			if log.EmailProjectionVersion != inboundhtml.CurrentProjectionVersion {
+				projection = inboundhtml.Project(inboundhtml.ProjectionInput{
+					HTML:              log.HTMLBody,
+					TextBody:          log.StrippedText,
+					StrippedTextReply: log.StrippedText,
+				})
+				var metadata map[string]any
+				if json.Unmarshal([]byte(messages[i].Metadata), &metadata) == nil && forwardedAttributionFromMetadata(metadata) != nil {
+					projection.Markdown = messages[i].Content
+					projection.QuotedMarkdown = ""
+					projection.HasQuotedContent = false
+					projection.ProjectionConfidence = inboundhtml.ProjectionConfidenceNone
+				}
+			}
+
+			messages[i].HTMLBody = projection.HTML
 			messages[i].StrippedText = log.StrippedText
+			messages[i].EmailVisibleText = projection.Markdown
+			messages[i].EmailQuotedText = projection.QuotedMarkdown
+			messages[i].EmailHasQuotedContent = boolPtr(projection.HasQuotedContent)
+			messages[i].EmailProjectionConfidence = projection.ProjectionConfidence
+			messages[i].EmailProjectionVersion = projection.ProjectionVersion
 			messages[i].EmailFrom = log.FromEmail
 			messages[i].EmailTo = log.ToEmail
 			messages[i].EmailReplyTo = log.ReplyTo

@@ -54,7 +54,7 @@ type SupportConversation struct {
 	// this conversation's AI turns (nil before the first AI turn; repointed
 	// when an idle-expired run gets a successor).
 	AIActiveRunID *string `json:"ai_active_run_id,omitempty" gorm:"type:uuid;index"`
-	HumanTakeover            *bool      `json:"human_takeover" gorm:"default:false;index"`
+	HumanTakeover *bool   `json:"human_takeover" gorm:"default:false;index"`
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -325,7 +325,12 @@ type SupportMessage struct {
 	HTMLBody string `json:"html_body,omitempty" gorm:"-"`
 	// StrippedText is the markdown-friendly plaintext variant of an inbound
 	// email's body. Same population rules as HTMLBody.
-	StrippedText string `json:"stripped_text,omitempty" gorm:"-"`
+	StrippedText              string `json:"stripped_text,omitempty" gorm:"-"`
+	EmailVisibleText          string `json:"email_visible_text,omitempty" gorm:"-"`
+	EmailQuotedText           string `json:"email_quoted_text,omitempty" gorm:"-"`
+	EmailHasQuotedContent     *bool  `json:"email_has_quoted_content,omitempty" gorm:"-"`
+	EmailProjectionConfidence string `json:"email_projection_confidence,omitempty" gorm:"-"`
+	EmailProjectionVersion    int    `json:"email_projection_version,omitempty" gorm:"-"`
 	// EmailDeliveryStatus mirrors the linked outbound support_email_log's status
 	// ("sent", "delivered", "opened", "bounced", "spam_complaint"). Only set
 	// when an email log exists for the message.
@@ -1022,18 +1027,23 @@ type WidgetSessionJoinedPayload struct {
 
 // WidgetMessageReceivedPayload is sent to widget clients for new messages.
 type WidgetMessageReceivedPayload struct {
-	ID              string                     `json:"id"`
-	ConversationID  string                     `json:"conversation_id"`
-	Content         string                     `json:"content"`
-	SenderType      string                     `json:"sender_type"`
-	MessageType     string                     `json:"message_type,omitempty"`
-	SystemEventType *string                    `json:"system_event_type,omitempty"`
-	SenderName      *string                    `json:"sender_name"`
-	SenderAvatar    *string                    `json:"sender_avatar"`
-	Metadata        *string                    `json:"metadata,omitempty"`
-	ViaChannel      string                     `json:"via_channel,omitempty"`
-	Attachments     []SupportAttachmentPayload `json:"attachments,omitempty"`
-	CreatedAt       string                     `json:"created_at"`
+	ID                        string                     `json:"id"`
+	ConversationID            string                     `json:"conversation_id"`
+	Content                   string                     `json:"content"`
+	SenderType                string                     `json:"sender_type"`
+	MessageType               string                     `json:"message_type,omitempty"`
+	SystemEventType           *string                    `json:"system_event_type,omitempty"`
+	SenderName                *string                    `json:"sender_name"`
+	SenderAvatar              *string                    `json:"sender_avatar"`
+	Metadata                  *string                    `json:"metadata,omitempty"`
+	ViaChannel                string                     `json:"via_channel,omitempty"`
+	Attachments               []SupportAttachmentPayload `json:"attachments,omitempty"`
+	EmailVisibleText          string                     `json:"email_visible_text,omitempty"`
+	EmailQuotedText           string                     `json:"email_quoted_text,omitempty"`
+	EmailHasQuotedContent     *bool                      `json:"email_has_quoted_content,omitempty"`
+	EmailProjectionConfidence string                     `json:"email_projection_confidence,omitempty"`
+	EmailProjectionVersion    int                        `json:"email_projection_version,omitempty"`
+	CreatedAt                 string                     `json:"created_at"`
 }
 
 // CannedResponseRequest is the payload for CRUD operations on canned responses.

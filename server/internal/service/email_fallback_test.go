@@ -14,6 +14,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -3240,6 +3241,18 @@ Company`,
 	if logs[0].FromEmail != "founder@company.com" {
 		t.Fatalf("log from email = %q, want founder@company.com", logs[0].FromEmail)
 	}
+	if !strings.Contains(logs[0].EmailVisibleText, "I need help with my invoice.") {
+		t.Fatalf("forwarded visible projection lost customer body: %q", logs[0].EmailVisibleText)
+	}
+	if strings.Contains(logs[0].EmailVisibleText, "Forwarded message") || strings.Contains(logs[0].EmailVisibleText, "From: Jane Customer") {
+		t.Fatalf("forwarded visible projection retained attribution headers: %q", logs[0].EmailVisibleText)
+	}
+	if logs[0].EmailHasQuotedContent || logs[0].EmailQuotedText != "" {
+		t.Fatalf("forwarded customer body was incorrectly hidden as history: %#v", logs[0])
+	}
+	if logs[0].EmailProjectionVersion != inboundhtml.CurrentProjectionVersion {
+		t.Fatalf("forwarded projection version = %d, want current", logs[0].EmailProjectionVersion)
+	}
 
 	detail, err := env.service.supportInboxService.GetMessageEmailDetail(ctx, workspaceID, messages[0].ID)
 	if err != nil {
@@ -3845,6 +3858,23 @@ func TestEmailFallbackInboundPayloadBodiesStripReplyDelimiterFromHTMLMarkdown(t 
 	}
 	if !strings.Contains(content, "Fresh HTML reply.") {
 		t.Fatalf("expected fresh reply, got %q", content)
+	}
+}
+
+func TestInboundPayloadProjectionSeparatesQuotedHistory(t *testing.T) {
+	projection := inboundPayloadProjection(model.PostmarkInboundPayload{
+		HtmlBody: `<p>Fresh customer reply.</p><div class="gmail_quote"><p>Old quoted body.</p></div>`,
+		TextBody: "Fresh customer reply.\n\nOld quoted body.",
+	})
+
+	if projection.VisibleText != "Fresh customer reply." {
+		t.Fatalf("visible text = %q, want fresh reply", projection.VisibleText)
+	}
+	if !projection.HasQuotedContent || !strings.Contains(projection.QuotedText, "Old quoted body.") {
+		t.Fatalf("expected retained quoted history, got %#v", projection)
+	}
+	if projection.Version != inboundhtml.CurrentProjectionVersion {
+		t.Fatalf("projection version = %d, want %d", projection.Version, inboundhtml.CurrentProjectionVersion)
 	}
 }
 
