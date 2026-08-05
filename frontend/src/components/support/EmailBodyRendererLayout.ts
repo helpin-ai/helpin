@@ -61,10 +61,6 @@ export function measureVisibleEmailContentHeight(doc: Document, collapsed: boole
   const body = doc.body;
   if (!body) return 40;
 
-  if (!collapsed) {
-    return Math.ceil(Math.max(body.scrollHeight, doc.documentElement?.scrollHeight ?? 0, 40));
-  }
-
   const win = doc.defaultView;
   const bodyStyle = win ? win.getComputedStyle(body) : null;
   const paddingBottom = bodyStyle ? Number.parseFloat(bodyStyle.paddingBottom || '0') || 0 : 0;
@@ -93,5 +89,14 @@ export function measureVisibleEmailContentHeight(doc: Document, collapsed: boole
     visibleBottom = Math.max(visibleBottom, el.getBoundingClientRect().bottom);
   }
 
-  return Math.ceil(Math.max(visibleBottom + paddingBottom, 40));
+  // Some email layouts let the final signature/content overflow the body's
+  // reported scroll height (for example, positioned table-based signatures).
+  // Include measured descendant bounds so the host iframe never ends before
+  // visible email content and the following attachment section stays below it.
+  const measuredVisibleHeight = visibleBottom + paddingBottom;
+  if (!collapsed) {
+    return Math.ceil(Math.max(body.scrollHeight, doc.documentElement?.scrollHeight ?? 0, measuredVisibleHeight, 40));
+  }
+
+  return Math.ceil(Math.max(measuredVisibleHeight, 40));
 }
