@@ -6,6 +6,9 @@ import {
   DOCK_SEGMENT_KINDS,
   TranscriptSegmentView,
 } from '@/components/agents/transcript';
+import { DockUserMessage } from './DockUserMessage';
+
+const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'user'] as const);
 
 /** True when the stream has at least one renderable assistant/tool segment. */
 export function dockTranscriptHasContent(
@@ -19,27 +22,42 @@ export function dockTranscriptHasContent(
  * Renders an agent run's output inline inside the Ask Agents dock — assistant
  * messages as markdown plus a compact one-line row per tool call — so a
  * one-shot agent's result is readable in the bar without opening the full
- * session sheet. Deliberately lean: assistant + tool segments only, rendered
- * flat and non-expandable through the shared transcript kit.
+ * session sheet. The main chat also shows user turns; embedded execution
+ * strips remain assistant/tool-only. All shared segments stay flat and
+ * non-expandable.
  */
 export function DockTranscript({
   stream,
   active,
+  showUserMessages = true,
   className,
 }: {
   stream: CodingSessionStreamState | null;
   /** True while the run is still executing — controls live-turn inclusion. */
   active: boolean;
+  /** Main chat shows user turns; embedded execution strips stay agent-only. */
+  showUserMessages?: boolean;
   className?: string;
 }) {
   if (!stream) return null;
-  const segments = collectSegments(stream, { includeLive: active, include: DOCK_SEGMENT_KINDS });
+  const segments = collectSegments(stream, {
+    includeLive: active,
+    include: showUserMessages ? DOCK_CHAT_SEGMENT_KINDS : DOCK_SEGMENT_KINDS,
+  });
   if (segments.length === 0) return null;
 
   return (
     <div className={cn('space-y-1.5', className)}>
       {segments.map((segment) => (
-        <TranscriptSegmentView key={segment.id} segment={segment} options={{ expandable: false }} />
+        segment.kind === 'user' ? (
+          <DockUserMessage
+            key={segment.id}
+            content={segment.message.content}
+            timestamp={segment.message.timestamp}
+          />
+        ) : (
+          <TranscriptSegmentView key={segment.id} segment={segment} options={{ expandable: false }} />
+        )
       ))}
     </div>
   );

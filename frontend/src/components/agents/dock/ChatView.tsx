@@ -8,6 +8,7 @@ import type { DockChatDetail } from '@/lib/dockTypes';
 import type { AgentRun, CodingSessionInteraction, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
+import { DockUserMessage } from './DockUserMessage';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
 import { ExecutionStrip } from './ExecutionStrip';
 import { PendingInteractionCard } from './PendingInteractionCard';
@@ -232,13 +233,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
           </p>
         )}
         {transformed && <DockTranscript stream={transformed.stream} active={runActive} />}
-        {pendingEcho && (
-          <div className="flex justify-end">
-            <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground opacity-80">
-              {pendingEcho}
-            </div>
-          </div>
-        )}
+        {pendingEcho && <DockUserMessage content={pendingEcho} pending />}
         {(sending || (runActive && run?.status !== 'paused' && !streamLoading && !transformed)) && (
           <p className="text-xs text-muted-foreground">Thinking…</p>
         )}
