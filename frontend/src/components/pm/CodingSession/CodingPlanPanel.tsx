@@ -15,6 +15,7 @@ import type { AgentRunStatus, RunPlanArtifact, RunPlanStep } from '@/lib/pmTypes
 interface CodingPlanPanelProps {
   plan: RunPlanArtifact | null;
   runStatus?: AgentRunStatus;
+  title?: string;
 }
 
 const TERMINAL_STATUSES: readonly AgentRunStatus[] = ['completed', 'failed', 'cancelled'];
@@ -23,7 +24,7 @@ function isTerminalStatus(status?: AgentRunStatus): boolean {
   return !!status && (TERMINAL_STATUSES as readonly string[]).includes(status);
 }
 
-export function CodingPlanPanel({ plan, runStatus }: CodingPlanPanelProps) {
+export function CodingPlanPanel({ plan, runStatus, title = 'Agent plan' }: CodingPlanPanelProps) {
   const steps = plan?.plan ?? [];
   const hasPlan = steps.length > 0;
   const completedCount = steps.filter((s) => s.status === 'completed').length;
@@ -50,7 +51,7 @@ export function CodingPlanPanel({ plan, runStatus }: CodingPlanPanelProps) {
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
         <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           <CheckListIcon className="h-3.5 w-3.5" />
-          Agent plan
+          {title}
         </div>
         <Badge variant="outline" className="text-[10px]">
           {badgeLabel}

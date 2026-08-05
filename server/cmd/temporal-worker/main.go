@@ -127,6 +127,7 @@ func main() {
 	workspaceSkillRepo := repository.NewWorkspaceSkillRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	dockActionProposalRepo := repository.NewDockActionProposalRepository(db)
 	commandBarPlanRepo := repository.NewCommandBarPlanRepository(db)
 	sessionSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	storyRepo := repository.NewPMTaskRepository(db)
@@ -468,6 +469,7 @@ func main() {
 		nil,
 	))
 	commandService.SetAgentRunDependencies(runRepo, artifactRepo)
+	commandService.SetDockActionProposalRepository(dockActionProposalRepo)
 	commandService.SetReleaseFactsProvider(releaseFactsService)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
 	ruleEngine := service.NewAutomationRuleEngine(

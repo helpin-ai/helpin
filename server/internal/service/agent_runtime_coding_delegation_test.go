@@ -135,6 +135,31 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 	}
 }
 
+func TestRuntimeAgentFromHelpinAgentRemovesRepositoryWorkspaceModeFromAskAgent(t *testing.T) {
+	ask := &model.Agent{
+		ID:              "agent-ask",
+		IsSystem:        true,
+		Name:            "Ask Agent",
+		PresetKey:       model.AgentPresetAskAgent,
+		RuntimeKind:     "native_sdk",
+		ExecutionConfig: []byte(`{"reasoning_effort":"high","workspace":{"mode":"repository"}}`),
+	}
+	out := runtimeAgentFromHelpinAgent(ask, "helpin")
+	values := map[string]interface{}{}
+	if err := json.Unmarshal(out.ExecutionConfig, &values); err != nil {
+		t.Fatalf("decode runtime execution config: %v", err)
+	}
+	if values["reasoning_effort"] != "high" {
+		t.Fatalf("expected unrelated execution settings preserved, got %#v", values)
+	}
+	workspaceValue, _ := values["workspace"].(map[string]interface{})
+	if workspaceValue != nil {
+		if _, exists := workspaceValue["mode"]; exists {
+			t.Fatalf("Ask Agent must not request repository workspace preparation, got %#v", values)
+		}
+	}
+}
+
 func TestRuntimeAgentFromHelpinAgentAlwaysIncludesSupportDeliveryContract(t *testing.T) {
 	staleWorkspacePrompt := "You are Echo. Answer customer questions from evidence."
 	out := runtimeAgentFromHelpinAgent(&model.Agent{

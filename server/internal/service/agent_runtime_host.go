@@ -435,7 +435,43 @@ func (s *AgentRuntimeHostService) ResolveRepositorySpec(ctx context.Context, req
 	} else if err := ensureRuntimeWorkspaceMatch(mappedWorkspaceID, workspaceID); err != nil {
 		return nil, err
 	}
-	return s.gitService.ResolveAgentRuntimeRepositorySpec(ctx, workspaceID, normalizeRuntimeTarget(req.Target), req.RunID)
+	target := runtimeRepositorySpecTarget(req, contextData, contextTargetMetadata)
+	return s.gitService.ResolveAgentRuntimeRepositorySpec(ctx, workspaceID, target, req.RunID)
+}
+
+// runtimeRepositorySpecTarget restores the concrete repository target for a
+// dynamically checked-out repository after an interactive run resumes. Agent
+// Runtime keeps the run's product target (for example, workspace) but records
+// the primary checkout identity in run input metadata. Lease validation later
+// calls repository-spec with that original product target, so the host adapter
+// must use the explicit checkout metadata rather than attempting to resolve
+// the product workspace itself as a Git repository.
+func runtimeRepositorySpecTarget(req agentruntime.PrepareWorkspaceRequest, contextMaps ...map[string]interface{}) agentruntime.TargetRef {
+	target := normalizeRuntimeTarget(req.Target)
+	if target.Type != "workspace" || strings.TrimSpace(req.WorkspaceMode) != agentruntime.WorkspaceModeRepository {
+		return target
+	}
+	maps := []map[string]interface{}{req.Metadata, target.Metadata}
+	maps = append(maps, contextMaps...)
+	repositoryID := runtimeMetadataString("repository_id", maps...)
+	repoFullName := runtimeMetadataString("repo_full_name", maps...)
+	if repositoryID == "" && repoFullName == "" {
+		return target
+	}
+	metadata := make(map[string]interface{}, len(target.Metadata)+5)
+	for key, value := range target.Metadata {
+		metadata[key] = value
+	}
+	for _, key := range []string{"repository_id", "repo_full_name", "base_branch", "work_branch", "repo_alias"} {
+		if value := runtimeMetadataString(key, maps...); value != "" {
+			metadata[key] = value
+		}
+	}
+	return agentruntime.TargetRef{
+		Type:     "repository",
+		ID:       agentRuntimeHostFirstNonEmpty(repositoryID, repoFullName),
+		Metadata: metadata,
+	}
 }
 
 func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentruntime.CommandExecutionRequest) (*agentruntime.CommandExecutionResponse, error) {

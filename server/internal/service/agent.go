@@ -963,6 +963,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 	if !ok {
 		return nil, fmt.Errorf("unsupported built-in preset %q", presetKey)
 	}
+	preset = enforceManagedAskAgentCapabilities(preset)
 	if existing != nil {
 		changed := false
 		beforePresetKey := existing.PresetKey
@@ -1056,7 +1057,15 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			changed = true
 		}
 		expectedExecutionConfig := normalizeExecutionConfigJSON(preset.ExecutionConfig)
-		if string(normalizeExecutionConfigJSON(existing.ExecutionConfig)) == "{}" && string(expectedExecutionConfig) != "{}" {
+		currentExecutionConfig := normalizeExecutionConfigJSON(existing.ExecutionConfig)
+		if presetKey == model.AgentPresetAskAgent && string(currentExecutionConfig) != string(expectedExecutionConfig) {
+			// Ask Agent execution settings are managed because stale workspace
+			// versions may carry workspace.mode=repository. That mode makes the
+			// runtime resolve the product workspace target as a repository and
+			// prevents mixed repository-read/product-write Dock workflows.
+			existing.ExecutionConfig = expectedExecutionConfig
+			changed = true
+		} else if string(currentExecutionConfig) == "{}" && string(expectedExecutionConfig) != "{}" {
 			existing.ExecutionConfig = expectedExecutionConfig
 			changed = true
 		}

@@ -132,6 +132,45 @@ The main tool families in the app are:
 
 Some mutation tools use shared internal-command backing for consistency. That should continue for new reusable business mutations, but it does not change the tool contract itself.
 
+### Dock execution grants
+
+The `ask_agent` preset exposes ordinary command-backed product mutations
+directly. This does not bypass approval: it first persists a bounded
+`dock_action_proposals` record through `prepare_dock_execution`, asks the user
+to approve only that proposal ID, then activates a 15-minute grant. The central
+`InternalCommandService.Execute` bridge checks every mutating call against the
+approved tool alias, exact top-level target constraints, and maximum call
+count. This guard belongs in the bridge so prompt mistakes or alternate model
+runtimes cannot bypass it.
+
+Dedicated agent-launch, repository-write, delivery/release, outbound support,
+and escalation operations are excluded and keep their own approval/workflow
+contracts. Read-only repository checkout, file/search/symbol, and commit-history
+tools can be exposed to the Dock directly.
+
+The Dock's delegation decision is capability-driven. `get_my_capabilities`
+reads the current run's actual immutable `allowed_tools` input and groups it
+into repository reads, product reads/mutations, skills, interactions/web, and
+agent orchestration. Prompts should tell the Dock to complete all covered
+steps itself and delegate only the smallest step needing an unavailable or
+intentionally isolated capability. Paused Dock runs are rotated when their
+stored tool set differs from the current scoped preset, so this introspection
+does not remain stale across tool or permission changes.
+
+If a Dock model attempts one ordinary product mutation before preparing a
+grant, the command bridge returns structured JSON with code
+`dock_execution_approval_required`, a durable proposal ID, and the exact
+`request_approval` input. The proposal stores the original mutation input and
+the error does not echo it. Once approved, retrying that same mutation lazily
+activates the one-call grant. Multi-operation work continues to use the
+explicit prepare/activate/finish contract.
+
+Long-lived Dock runs keep `target_type=workspace` even when the user selects a
+document, task, or CRM record as page context. Product tools that expose an
+explicit `*_id` field must accept the workspace run target when safe, treat the
+explicit ID as canonical, and verify that entity belongs to the command
+workspace. Page selection must not require recreating or retargeting the run.
+
 ### Optional skill access
 
 Each agent version owns one complete `system_prompt`. Product prompt modules

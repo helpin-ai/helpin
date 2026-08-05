@@ -7,7 +7,7 @@ import {
   TranscriptSegmentView,
 } from '@/components/agents/transcript';
 
-/** True when the stream has at least one renderable assistant/tool segment. */
+/** True when the stream has at least one renderable chat/tool segment. */
 export function dockTranscriptHasContent(
   stream: CodingSessionStreamState | null,
   active: boolean,
@@ -19,8 +19,8 @@ export function dockTranscriptHasContent(
  * Renders an agent run's output inline inside the Ask Agents dock — assistant
  * messages as markdown plus a compact one-line row per tool call — so a
  * one-shot agent's result is readable in the bar without opening the full
- * session sheet. Deliberately lean: assistant + tool segments only, rendered
- * flat and non-expandable through the shared transcript kit.
+ * session sheet. User messages stay interleaved chronologically with assistant
+ * and tool segments; implementation-only context/status rows remain hidden.
  */
 export function DockTranscript({
   stream,
@@ -39,7 +39,11 @@ export function DockTranscript({
   return (
     <div className={cn('space-y-1.5', className)}>
       {segments.map((segment) => (
-        <TranscriptSegmentView key={segment.id} segment={segment} options={{ expandable: false }} />
+        <TranscriptSegmentView
+          key={segment.id}
+          segment={segment}
+          options={{ expandable: false, fallbackUserLabel: 'You' }}
+        />
       ))}
     </div>
   );

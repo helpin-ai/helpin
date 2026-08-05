@@ -60,6 +60,26 @@ function stream(overrides: Partial<TranscriptStreamInput> = {}): TranscriptStrea
 }
 
 describe('collectSegments', () => {
+  it('renders a user prompt as a user segment instead of hidden run context', () => {
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [message({
+          event_id: 'user-prompt-1',
+          role: 'user',
+          message_type: 'prompt',
+          content: 'Create the Kafka architecture document',
+        })],
+      }),
+      { includeLive: false, include: DOCK_SEGMENT_KINDS },
+    );
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({
+      kind: 'user',
+      message: { content: 'Create the Kafka architecture document', message_type: 'prompt' },
+    });
+  });
+
   it('interleaves assistant text and tool calls from turn_segments in order', () => {
     const segments = collectSegments(
       stream({
@@ -371,19 +391,20 @@ describe('collectSegments', () => {
     ]);
   });
 
-  it('scopes kinds via the include set (dock = assistant + tool only)', () => {
+  it('scopes kinds via the include set (dock = user + assistant + tool)', () => {
     const input = stream({
       transcript_messages: [
         message({ message_type: 'status', role: 'assistant', content: 'Preparing workspace' }),
+        message({ event_id: 'user-1', message_type: 'message', role: 'user', content: 'Create the architecture doc' }),
         message({ event_id: 'event-2', turn_segments: [assistantSegment('a1', 'Done')] }),
       ],
     });
 
     const all = collectSegments(input, { includeLive: false, include: ALL_SEGMENT_KINDS });
-    expect(all.map((s) => s.kind)).toEqual(['status', 'assistant']);
+    expect(all.map((s) => s.kind)).toEqual(['status', 'user', 'assistant']);
 
     const dock = collectSegments(input, { includeLive: false, include: DOCK_SEGMENT_KINDS });
-    expect(dock.map((s) => s.kind)).toEqual(['assistant']);
+    expect(dock.map((s) => s.kind)).toEqual(['user', 'assistant']);
   });
 
   it('classifies status / context / user / review-decision messages', () => {
@@ -400,7 +421,7 @@ describe('collectSegments', () => {
       { includeLive: false },
     );
 
-    expect(segments.map((s) => s.kind)).toEqual(['context', 'context', 'status', 'user', 'review_decision']);
+    expect(segments.map((s) => s.kind)).toEqual(['user', 'context', 'status', 'user', 'review_decision']);
   });
 
   it('prepends leadingContext when context is in scope', () => {

@@ -299,6 +299,54 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 	t.Fatal("expected documentation agent preset in catalog")
 }
 
+func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
+	preset, ok := agentPresetDefinition(model.AgentPresetAskAgent)
+	if !ok {
+		t.Fatal("ask agent preset not found")
+	}
+	for _, toolName := range []string{
+		"get_my_capabilities",
+		"list_available_skills", "search_available_skills", "read_skill",
+		"list_repositories", "checkout_repository", "checkout_repositories",
+		"ripgrep", "search_files", "list_symbols", "read_file", "read_file_range",
+	} {
+		if !slices.Contains(preset.AllowedTools, toolName) {
+			t.Errorf("Ask Agent is missing required self-execution tool %q", toolName)
+		}
+	}
+}
+
+func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
+	preset := enforceManagedAskAgentCapabilities(model.AgentPresetDefinition{
+		Key:                model.AgentPresetAskAgent,
+		AllowedTools:       []string{"list_agents", "list_commits"},
+		AllowedTargetTypes: []string{"document"},
+		ExecutionConfig:    model.JSONBlob(`{"reasoning_effort":"high","workspace":{"mode":"repository"}}`),
+	})
+	for _, toolName := range []string{
+		"checkout_repository", "ripgrep", "read_file",
+		"list_available_skills", "read_skill", "update_plan",
+		"get_my_capabilities", "create_document", "prepare_dock_execution",
+	} {
+		if !slices.Contains(preset.AllowedTools, toolName) {
+			t.Errorf("managed Ask capability %q was not restored to pinned preset: %v", toolName, preset.AllowedTools)
+		}
+	}
+	if !slices.Contains(preset.AllowedTargetTypes, "workspace") {
+		t.Fatalf("managed Ask workspace target missing from %v", preset.AllowedTargetTypes)
+	}
+	var executionConfig map[string]interface{}
+	if err := json.Unmarshal(preset.ExecutionConfig, &executionConfig); err != nil {
+		t.Fatalf("decode managed Ask execution config: %v", err)
+	}
+	if executionConfig["reasoning_effort"] != "high" {
+		t.Fatalf("unrelated execution settings were not preserved: %#v", executionConfig)
+	}
+	if _, ok := executionConfig["workspace"]; ok {
+		t.Fatalf("managed Ask config retained repository workspace mode: %#v", executionConfig)
+	}
+}
+
 func TestListAgentPresetsTaskPlannerExcludesListEpicTasks(t *testing.T) {
 	presets := ListAgentPresets()
 	for _, preset := range presets {
@@ -376,7 +424,7 @@ func TestBuiltInPresetPMToolExpansionMatrix(t *testing.T) {
 		presetKey string
 		want      []string
 	}{
-		{presetKey: model.AgentPresetAskAgent, want: newPMReadTools},
+		{presetKey: model.AgentPresetAskAgent, want: allNewPMTools},
 		{presetKey: model.AgentPresetCommandAgent, want: allNewPMTools},
 		{presetKey: model.AgentPresetEpicPlanner, want: []string{"list_workspace_members", "list_pm_labels", "get_task", "list_epics", "get_epic"}},
 		{presetKey: model.AgentPresetTaskPlanner, want: []string{"list_workspace_members", "list_pm_labels", "get_task"}},

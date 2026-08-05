@@ -54,15 +54,16 @@ export const ALL_SEGMENT_KINDS: ReadonlySet<TranscriptSegmentKind> = new Set<Tra
   'review_decision',
 ]);
 
-/** The dock stays lean: assistant replies + tool calls only. */
+/** The dock stays lean while preserving conversational chronology. */
 export const DOCK_SEGMENT_KINDS: ReadonlySet<TranscriptSegmentKind> = new Set<TranscriptSegmentKind>([
   'assistant',
   'tool',
+  'user',
 ]);
 
 function isContextMessage(message: CodingSessionTranscriptMessage): boolean {
   return (
-    message.message_type === 'prompt'
+    (message.message_type === 'prompt' && message.role !== 'user')
     || message.message_type === 'developer_prompt'
     || message.message_type === 'system_prompt'
   );
@@ -152,6 +153,10 @@ export function collectSegments(
       }
       continue;
     }
+    // Runtime-backed chat messages use message_type="prompt" for the user's
+    // submitted turn. isContextMessage deliberately treats that combination
+    // as conversation, while developer/system prompts and review decisions
+    // retain their specialized presentation.
     if (message.role === 'user') {
       if (include.has('user') && message.content.trim()) {
         out.push({ kind: 'user', id: message.event_id, message });

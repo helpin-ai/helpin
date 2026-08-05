@@ -373,7 +373,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.write_document_content",
 		Alias:       "write_document_content",
 		Category:    "Docs",
-		Description: "Write document content to a document in Helpin Docs. Accepts either structured document JSON or a markdown string, which will be auto-converted.",
+		Description: "Write content to the document identified by document_id, including from a workspace-targeted Dock run. Accepts either structured document JSON or a markdown string, which will be auto-converted.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,

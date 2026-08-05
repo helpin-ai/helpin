@@ -26,6 +26,8 @@ export interface RenderSegmentOptions {
   expandable: boolean;
   /** Resolves the actor for user / review-decision segments (slider only). */
   resolveActor?: (message: CodingSessionTranscriptMessage) => CodingSessionActor | null;
+  /** Surface-specific label when actor details are intentionally unavailable. */
+  fallbackUserLabel?: string;
 }
 
 /** Renders a single normalized transcript segment as a flat one-line entry. */
@@ -48,7 +50,13 @@ export function TranscriptSegmentView({
     case 'context':
       return <ContextSegment message={segment.message} expandable={options.expandable} />;
     case 'user':
-      return <UserSegment message={segment.message} actor={options.resolveActor?.(segment.message) ?? null} />;
+      return (
+        <UserSegment
+          message={segment.message}
+          actor={options.resolveActor?.(segment.message) ?? null}
+          fallbackLabel={options.fallbackUserLabel}
+        />
+      );
     case 'review_decision':
       return <ReviewDecisionSegment message={segment.message} actor={options.resolveActor?.(segment.message) ?? null} />;
   }
@@ -253,11 +261,13 @@ function ContextSegment({
 function UserSegment({
   message,
   actor,
+  fallbackLabel = 'User',
 }: {
   message: CodingSessionTranscriptMessage;
   actor: CodingSessionActor | null;
+  fallbackLabel?: string;
 }) {
-  const actorLabel = actor?.full_name || actor?.email || 'User';
+  const actorLabel = actor?.full_name || actor?.email || fallbackLabel;
   return (
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">

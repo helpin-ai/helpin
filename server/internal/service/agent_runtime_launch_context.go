@@ -70,12 +70,46 @@ func withRepositoryWorkspaceExecutionConfig(config json.RawMessage) json.RawMess
 	return payload
 }
 
+// withoutRepositoryWorkspaceExecutionMode removes the startup workspace
+// preparation selector while preserving unrelated execution settings. The
+// Dock uses checkout_repository dynamically and keeps its primary run target
+// as the product workspace, so asking Agent Runtime to prepare that target as
+// a repository workspace is invalid.
+func withoutRepositoryWorkspaceExecutionMode(config []byte) []byte {
+	values := map[string]interface{}{}
+	if len(config) > 0 && strings.TrimSpace(string(config)) != "null" {
+		if err := json.Unmarshal(config, &values); err != nil {
+			return config
+		}
+	}
+	workspaceValue, _ := values["workspace"].(map[string]interface{})
+	if workspaceValue == nil {
+		return normalizeExecutionConfigJSON(config)
+	}
+	delete(workspaceValue, "mode")
+	if len(workspaceValue) == 0 {
+		delete(values, "workspace")
+	} else {
+		values["workspace"] = workspaceValue
+	}
+	payload, err := json.Marshal(values)
+	if err != nil {
+		return config
+	}
+	return payload
+}
+
 // withAgentRuntimeExecutionConfig adds host-owned execution selectors that
 // Agent Runtime needs but Helpin does not persist in AgentExecutionConfig.
 // Existing user/model routing fields are preserved.
 func withAgentRuntimeExecutionConfig(config json.RawMessage, agent *model.Agent) json.RawMessage {
 	if agentRequiresRepositoryWorkspace(agent) {
 		config = withRepositoryWorkspaceExecutionConfig(config)
+	} else if agent != nil && strings.TrimSpace(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
+		// Managed Ask runs are workspace-targeted orchestrators. Repository
+		// inspection is attached later by checkout_repository and must not turn
+		// the product workspace target into a repository-spec request.
+		config = withoutRepositoryWorkspaceExecutionMode(config)
 	}
 	values := map[string]interface{}{}
 	if len(config) > 0 && strings.TrimSpace(string(config)) != "null" {

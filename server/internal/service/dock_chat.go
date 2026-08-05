@@ -159,7 +159,22 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 			return nil, err
 		}
 	case model.IsAgentRunPausedStatus(currentRun.Status):
-		if _, err := s.agentService.SendRunMessage(ctx, workspaceID, currentRun.ID, userID, model.SendAgentRunMessageRequest{Content: composed}); err != nil {
+		usesCurrentTools, err := s.runUsesCurrentScopedTools(ctx, chat, userID, currentRun)
+		if err != nil {
+			return nil, err
+		}
+		if !usesCurrentTools {
+			// Tool grants are immutable runtime-start input. Rotate a paused Dock
+			// run when the managed Ask Agent contract or the user's scoped
+			// permissions changed so old chats gain new reads and lose revoked
+			// capabilities without waiting for the 72-hour idle timeout.
+			if _, err := s.agentService.CancelRun(ctx, workspaceID, currentRun.ID, userID); err != nil {
+				return nil, fmt.Errorf("rotate stale chat run: %w", err)
+			}
+			if err := s.startChatRun(ctx, chat, userID, composed, currentRun); err != nil {
+				return nil, err
+			}
+		} else if _, err := s.agentService.SendRunMessage(ctx, workspaceID, currentRun.ID, userID, model.SendAgentRunMessageRequest{Content: composed}); err != nil {
 			if !isChatRunExpiredError(err) {
 				return nil, err
 			}
@@ -187,6 +202,49 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 		return nil, fmt.Errorf("reload dock chat: %w", err)
 	}
 	return s.chatDetail(ctx, chat)
+}
+
+func (s *DockChatService) runUsesCurrentScopedTools(ctx context.Context, chat *model.DockChat, userID string, run *model.AgentRun) (bool, error) {
+	if chat == nil || run == nil {
+		return false, nil
+	}
+	agent, err := s.agentService.ensureBuiltInAgent(ctx, chat.WorkspaceID, userID, model.AgentPresetAskAgent)
+	if err != nil {
+		return false, fmt.Errorf("ensure ask agent for tool contract: %w", err)
+	}
+	current, err := s.scopedChatTools(ctx, chat.WorkspaceID, userID, agent)
+	if err != nil {
+		return false, err
+	}
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(run.Input, &input); err != nil {
+		return false, nil
+	}
+	return sameNormalizedToolSet(input.AllowedTools, current), nil
+}
+
+func sameNormalizedToolSet(left, right []string) bool {
+	leftSet := make(map[string]struct{}, len(left))
+	for _, tool := range left {
+		if tool = strings.TrimSpace(tool); tool != "" {
+			leftSet[tool] = struct{}{}
+		}
+	}
+	rightSet := make(map[string]struct{}, len(right))
+	for _, tool := range right {
+		if tool = strings.TrimSpace(tool); tool != "" {
+			rightSet[tool] = struct{}{}
+		}
+	}
+	if len(leftSet) != len(rightSet) {
+		return false
+	}
+	for tool := range leftSet {
+		if _, ok := rightSet[tool]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *DockChatService) chatDetail(ctx context.Context, chat *model.DockChat) (*model.DockChatDetail, error) {
