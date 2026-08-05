@@ -2,6 +2,10 @@
 
 Unified platform for product development, marketing task management, sales (CRM), customer support, and internal/external knowledge — powered by AI agents that work autonomously or with human approval. Helpin eliminates silos between teams and helps them operate at 10X speed by offloading work to AI agents.
 
+## Small Fix Workflow
+
+For small, well-scoped fixes, do not create or modify plan, specification, or design documents unless the user explicitly requests them. Inspect the issue, implement the fix, verify it, and commit it directly. Reserve planning, specification, and design documents for substantial multi-step work or explicit user requests.
+
 ## Working with Media
 
 When the user shares a URL to an image or screenshot, always download it using `curl -sL <url> -o /tmp/<filename>` and then view it using the Read tool. Do not use MCP fetch tools for binary image files — use curl directly to download and Read to view.
