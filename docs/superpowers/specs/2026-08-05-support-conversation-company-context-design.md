@@ -73,13 +73,13 @@ If a linked company is deleted, conversation and session references are cleared 
 
 ## Company Identity and Membership Semantics
 
-The customer-provided `company.id` is the authoritative external account/tenant identifier. Matching remains workspace-scoped and uses this order:
+The customer-provided `company.id` is the authoritative external account/tenant identifier. Matching remains workspace-scoped and follows these rules:
 
-1. external company ID;
-2. normalized domain when no matching external ID exists;
-3. exact normalized name as a final compatibility fallback.
+1. When the payload contains an external company ID, look up only that external ID. If it has no match, create a new company with that external ID. Do not fall through to domain or name matching.
+2. When the payload has no external company ID, match by normalized domain.
+3. When the payload has neither external ID nor domain, use exact normalized name as a final compatibility fallback.
 
-Domain and name matching must never replace a company that was already resolved by external ID.
+Domain and name matching must never merge, replace, or update a company that was resolved by a different external ID. This intentionally permits separate customer accounts to share a corporate domain.
 
 Sending an active company ensures a contact-company membership exists. It does not automatically make that company primary when another primary membership already exists. The first company membership may be marked primary; subsequent active companies are ordinary memberships unless an agent changes the primary relationship explicitly in CRM.
 
@@ -203,11 +203,11 @@ interface VisitorCompanyOption {
 }
 ```
 
-`VisitorContextResponse` gains optional `company` and `company_options` fields. `company` is loaded strictly from the conversation's explicit `crm_company_id`. `company_options` contains the contact's current company memberships and always includes the selected company if it is still available.
+`VisitorContextResponse` gains optional `company`, `company_options`, and `company_context_status` fields. The status is `ok` when the linked company loaded, `unlinked` when the conversation has no company, and `error` when optional company context could not be loaded. `company` is loaded strictly from the conversation's explicit `crm_company_id`. `company_options` contains the contact's current company memberships and always includes the selected company if it is still available.
 
 Unlike the existing contact DTO, company custom properties remain `Record<string, unknown>` so numbers and booleans are not flattened into strings. Contact custom properties should also retain scalar types while the two current sidebar sections are consolidated.
 
-Failure to load optional contact or company context must not prevent the conversation from rendering. Repository errors are logged with workspace, conversation, and entity IDs but never attribute values that may contain customer data.
+Failure to load optional contact or company context must not prevent the conversation from rendering. A company repository failure returns the rest of the visitor context with `company_context_status: "error"`, making the sidebar retry state deterministic. Repository errors are logged with workspace, conversation, and entity IDs but never attribute values that may contain customer data.
 
 ## Sidebar Design
 
@@ -264,7 +264,7 @@ States:
 - several memberships with widget context: show the explicit widget-selected company;
 - several memberships without context: show `Select company` and do not guess;
 - no membership: show `Link a company`;
-- missing/deleted company: show an unavailable state and allow an editor to select another company;
+- deleted company: references are cleared, so show the ordinary `Link a company` or `Select company` state based on remaining memberships;
 - loading: use a compact inline skeleton confined to the section;
 - optional context error: show a retry action without hiding the conversation.
 
@@ -300,7 +300,8 @@ Backend coverage will include:
 - explicit null removes a company custom property while omission preserves it;
 - visitor context returns the current linked company with typed custom properties and membership options;
 - manual set, replace, clear, workspace validation, activity logging, permissions, and realtime publication;
-- safe behavior when the linked company was deleted or is unavailable;
+- company deletion clears direct references and returns the ordinary unlinked state;
+- company repository failure returns a partial visitor-context response with an explicit error status;
 - association consumers prefer the direct conversation company and avoid duplicate summaries.
 
 SDK coverage will include:
@@ -319,7 +320,7 @@ Frontend coverage will include:
 - preserved section ordering;
 - merged Contact Details content and Current visit subsection;
 - Company Details row ordering and formatting;
-- one-company, multi-company, no-company, deleted-company, loading, and error states;
+- one-company, multi-company, no-company, loading, and explicit company-context error states;
 - read-only versus editable selector behavior;
 - company selection invalidates conversation, visitor-context, and association queries;
 - the active company is not duplicated in the CRM section;
@@ -327,4 +328,3 @@ Frontend coverage will include:
 - typed custom values and `Show N more` behavior.
 
 Verification will run targeted Go service/repository/handler tests, SDK unit tests, frontend support component tests, TypeScript compilation, Go tests for affected packages, frontend production build, and `git diff --check`.
-
