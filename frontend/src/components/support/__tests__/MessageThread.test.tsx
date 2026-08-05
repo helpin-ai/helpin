@@ -215,6 +215,7 @@ describe('MessageThread', () => {
     })
 
     expect(supportHooks.markConversationRead).toHaveBeenCalledWith('conv-1')
+    expect(container.querySelector('[data-slot="scroll-area"]')?.className).toContain('min-w-0')
 
     act(() => root.unmount())
   })

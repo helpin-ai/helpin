@@ -832,8 +832,10 @@
 
 /* Prose-chat: compact markdown styles for support message bubbles */
 .prose-chat {
+  min-width: 0;
+  max-width: 100%;
   word-wrap: break-word;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 .prose-chat p {
   margin: 0 0 0.5em;
@@ -851,12 +853,16 @@
   padding: 0.1em 0.3em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .prose-chat pre {
   background: oklch(0.145 0 0);
   color: oklch(0.93 0 0);
   border-radius: 0.5rem;
   padding: 0.625rem 0.75rem;
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
   margin: 0.4em 0;
 }
@@ -865,6 +871,8 @@
   padding: 0;
   color: inherit;
   font-size: 0.85em;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .prose-chat ul,
 .prose-chat ol {
