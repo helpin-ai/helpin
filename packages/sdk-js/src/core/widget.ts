@@ -27,6 +27,7 @@ export interface WidgetUser {
   first_name?: string;
   last_name?: string;
   userId?: string;
+  company?: Record<string, any>;
   createdAt?: string;
   metadata?: Record<string, unknown>;
 }
@@ -1591,6 +1592,7 @@ export class WidgetManager {
               first_name: firstName,
               last_name: lastName,
               source: bootEmail ? 'sdk_identify' : 'stored_identity',
+              company: bootUser?.company,
             });
             this.currentEmail = email;
           }

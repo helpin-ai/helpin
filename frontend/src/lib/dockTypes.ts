@@ -70,6 +70,8 @@ export const DOCK_PAGE_CONTEXT_OPEN = '<page_context>'
 export const DOCK_PAGE_CONTEXT_CLOSE = '</page_context>'
 export const DOCK_CHILD_RESULT_OPEN = '<child_run_result>'
 export const DOCK_CHILD_RESULT_CLOSE = '</child_run_result>'
+export const DOCK_PREVIOUS_CONVERSATION_OPEN = '<previous_conversation>'
+export const DOCK_PREVIOUS_CONVERSATION_CLOSE = '</previous_conversation>'
 
 export interface DockChildRunResult {
   plan_id: string
@@ -100,6 +102,26 @@ export function stripDockPageContext(content: string): string {
   const end = content.indexOf(DOCK_PAGE_CONTEXT_CLOSE, start)
   if (end < 0) return content
   return (content.slice(0, start) + content.slice(end + DOCK_PAGE_CONTEXT_CLOSE.length)).trim()
+}
+
+/** Removes backend-owned context envelopes prepended to successor-run turns. */
+export function stripDockLeadingContext(content: string): string {
+  const markers = [
+    [DOCK_PREVIOUS_CONVERSATION_OPEN, DOCK_PREVIOUS_CONVERSATION_CLOSE],
+    [DOCK_CHILD_RESULT_OPEN, DOCK_CHILD_RESULT_CLOSE],
+  ] as const
+  let visible = content.trim()
+
+  while (visible) {
+    const marker = markers.find(([open]) => visible.startsWith(open))
+    if (!marker) break
+    const [, close] = marker
+    const end = visible.indexOf(close)
+    if (end < 0) break
+    visible = visible.slice(end + close.length).trimStart()
+  }
+
+  return visible.trim()
 }
 
 /** Parses a child-run-result block if the message is one, else null. */

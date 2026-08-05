@@ -61,6 +61,7 @@ export interface SupportConversation {
   linked_task_id?: string;
   source: TicketSource;
   crm_contact_id?: string;
+  crm_company_id?: string | null;
   ai_state?: 'pending' | 'resolved' | 'escalated' | null;
   ai_resolved_at?: string;
   ai_escalated_at?: string;
@@ -1021,6 +1022,10 @@ export interface AssignConversationUserRequest {
 
 export interface UpdateConversationCRMContactRequest {
   crm_contact_id: string | null;
+}
+
+export interface UpdateConversationCRMCompanyRequest {
+  crm_company_id: string | null;
 }
 
 export interface UpdateConversationCustomerNameRequest {
