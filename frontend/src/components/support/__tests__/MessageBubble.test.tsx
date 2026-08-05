@@ -625,6 +625,46 @@ Can I export my data?`,
     active.cleanup()
   })
 
+  it('anchors message actions to the text bubble instead of image attachments', () => {
+    const message: SupportMessage = {
+      id: 'msg-with-image-attachment',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Customer',
+      content: 'Please check this screenshot.',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'widget',
+      attachments: [
+        {
+          id: 'att-image-1',
+          file_key: 'support/att-image-1',
+          file_name: 'screenshot.png',
+          file_type: 'image/png',
+          file_size: 2048,
+          url: 'https://cdn.example.com/screenshot.png',
+        },
+      ],
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const { container, cleanup } = renderBubble(message)
+    const bubbleFrame = container.querySelector('[data-slot="support-message-bubble-frame"]')
+    const actions = container.querySelector('[aria-label="Message actions"]')
+    const attachment = container.querySelector('img[alt="screenshot.png"]')
+
+    expect(bubbleFrame).toBeTruthy()
+    expect(bubbleFrame?.className).toContain('relative')
+    expect(actions).toBeTruthy()
+    expect(attachment).toBeTruthy()
+    expect(bubbleFrame?.contains(actions)).toBe(true)
+    expect(bubbleFrame?.contains(attachment)).toBe(false)
+
+    cleanup()
+  })
+
   it('renders internal note images as thumbnails with hover preview and image navigation', () => {
     const message: SupportMessage = {
       id: 'msg-note-attachments-1',
