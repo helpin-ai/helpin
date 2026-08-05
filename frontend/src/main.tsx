@@ -10,6 +10,7 @@ import { startTokenRefreshTimer, stopTokenRefreshTimer, setupVisibilityRefresh }
 import { RoutePendingState } from '@/components/layout/RoutePendingState'
 import { identifyAnalyticsUser, initializeAppAnalytics } from '@/lib/analytics'
 import { routeTree } from './routeTree.gen'
+import 'streamdown/styles.css'
 import './index.css'
 
 configureSessionStorage(createCookieSessionStorage())

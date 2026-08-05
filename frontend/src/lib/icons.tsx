@@ -164,6 +164,7 @@ import {
   SparklesIcon as _SparklesIcon,
   AiMagicIcon as _AiMagicIcon,
   SquareUnlock01Icon as _SquareUnlock01Icon,
+  StopIcon as _StopIcon,
   StarIcon as _StarIcon,
   StickyNote01Icon as _StickyNote01Icon,
   Sun01Icon as _Sun01Icon,
@@ -250,6 +251,7 @@ export const SignalLow01Icon = hi(_SignalLow01Icon);
 export const SignalMedium01Icon = hi(_SignalMedium01Icon);
 export const SmartPhone01Icon = hi(_SmartPhone01Icon);
 export const SquareUnlock01Icon = hi(_SquareUnlock01Icon);
+export const StopIcon = hi(_StopIcon);
 export const Table01Icon = hi(_Table01Icon);
 export const Tablet01Icon = hi(_Tablet01Icon);
 export const Target02Icon = hi(_Target02Icon);

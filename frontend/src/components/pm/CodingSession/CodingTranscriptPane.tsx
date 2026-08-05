@@ -28,6 +28,8 @@ import { CodingReviewHistoryPanel, type CodingReviewHistoryItem } from './Coding
 import {
   ALL_SEGMENT_KINDS,
   collectSegments,
+  deriveLiveStatusLabel,
+  ScrollToLatestButton,
   TranscriptSegmentView,
   type TranscriptSegment,
 } from '@/components/agents/transcript';
@@ -79,6 +81,7 @@ export function CodingTranscriptPane({
 }) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
   const resolvedMessageComposer: CodingSessionComposerState = messageComposer ?? {
     visible: Boolean(onSendMessage),
     enabled: Boolean(onSendMessage),
@@ -125,17 +128,22 @@ export function CodingTranscriptPane({
       {
         transcript_messages: transcriptMessages,
         live_turn_segments: visibleLiveSegments,
-        live_reasoning_message: null,
+        live_reasoning_message: liveReasoningMessage,
       },
       { includeLive, include: ALL_SEGMENT_KINDS, leadingContext: promptMessage },
     ),
-    [transcriptMessages, visibleLiveSegments, promptMessage, includeLive],
+    [transcriptMessages, visibleLiveSegments, liveReasoningMessage, promptMessage, includeLive],
   );
   const hasActiveStreamSegment = segments.some((segment) => (
     (segment.kind === 'assistant' && segment.streaming)
     || (segment.kind === 'tool' && segment.toolCall.status === 'running')
+    || (segment.kind === 'reasoning' && segment.reasoning.status === 'streaming')
   ));
   const showStreamingStatus = session?.status === 'running' && !hasActiveStreamSegment;
+  const liveStatusLabel = deriveLiveStatusLabel(
+    { live_turn_segments: visibleLiveSegments, live_reasoning_message: liveReasoningMessage },
+    session?.status,
+  );
 
   // Build a flat list of virtual items: transcript segments plus the local
   // scroll affordances (streaming status, empty state, spacer).
@@ -185,7 +193,9 @@ export function CodingTranscriptPane({
 
     const updateAutoFollow = () => {
       const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-      autoFollowRef.current = distanceFromBottom < 96;
+      const follow = distanceFromBottom < 96;
+      autoFollowRef.current = follow;
+      setAtBottom(follow);
     };
 
     updateAutoFollow();
@@ -288,7 +298,7 @@ export function CodingTranscriptPane({
       case 'streaming-status':
         return (
           <StreamingStatusText className="text-[13px]">
-            Thinking…
+            {liveStatusLabel ?? 'Thinking…'}
           </StreamingStatusText>
         );
       case 'empty':
@@ -306,7 +316,7 @@ export function CodingTranscriptPane({
           />
         );
     }
-  }, [actorForMessage]);
+  }, [actorForMessage, liveStatusLabel]);
 
   return (
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
@@ -316,7 +326,8 @@ export function CodingTranscriptPane({
         </div>
       </div>
 
-      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto pt-3">
+      <div className="relative min-h-0 flex-1">
+      <div ref={scrollContainerRef} className="h-full overflow-auto pt-3">
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4">
           <div
             className="relative w-full"
@@ -346,6 +357,16 @@ export function CodingTranscriptPane({
           })}
           </div>
         </div>
+      </div>
+      {!atBottom && (
+        <ScrollToLatestButton
+          onClick={() => {
+            autoFollowRef.current = true;
+            setAtBottom(true);
+            scrollToTail();
+          }}
+        />
+      )}
       </div>
 
       {(session?.pause_reason === 'authentication'

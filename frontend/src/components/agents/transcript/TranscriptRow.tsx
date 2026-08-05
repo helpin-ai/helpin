@@ -12,6 +12,9 @@ export interface TranscriptRowProps {
   /** When true and `children` are present, the row toggles a disclosure. */
   expandable?: boolean;
   defaultOpen?: boolean;
+  /** Controlled disclosure state; omit to let the row manage its own. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   children?: ReactNode;
 }
 
@@ -29,9 +32,16 @@ export function TranscriptRow({
   tone = 'muted',
   expandable = false,
   defaultOpen = false,
+  open: controlledOpen,
+  onOpenChange,
   children,
 }: TranscriptRowProps) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
   const canExpand = expandable && children != null;
 
   const header = (
@@ -62,7 +72,7 @@ export function TranscriptRow({
     <div>
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(!open)}
         className="w-full rounded-sm text-left transition-colors hover:bg-muted/30"
         aria-expanded={open}
       >
