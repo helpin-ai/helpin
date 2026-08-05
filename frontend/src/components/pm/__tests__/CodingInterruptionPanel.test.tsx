@@ -708,7 +708,7 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    const scrollContainer = container.querySelector('.min-h-0.flex-1.overflow-auto') as HTMLDivElement | null;
+    const scrollContainer = container.querySelector('.h-full.overflow-auto') as HTMLDivElement | null;
     expect(scrollContainer).toBeTruthy();
     if (!scrollContainer) {
       throw new Error('expected transcript scroll container');
