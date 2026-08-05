@@ -53,6 +53,8 @@ import {
 const TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string }> = [
   { value: 'task', label: 'Tasks' },
   { value: 'epic', label: 'Epics' },
+  { value: 'sprint', label: 'Sprints' },
+  { value: 'objective', label: 'Objectives' },
   { value: 'crm_deal', label: 'CRM deals' },
   { value: 'document', label: 'Docs' },
   { value: 'support_conversation', label: 'Support' },

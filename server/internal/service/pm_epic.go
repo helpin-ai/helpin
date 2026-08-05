@@ -68,7 +68,7 @@ func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters mo
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
+	filters.AccessibleTeamIDs = intersectAccessibleTeamIDs(filters.AccessibleTeamIDs, accessibleTeamIDs(ctx))
 	epics, err := s.epicRepo.List(ctx, workspaceID, filters)
 	if err != nil {
 		return nil, err
@@ -102,9 +102,53 @@ func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters mo
 	return result, nil
 }
 
+// ListPage returns a repository-bounded epic page with batch-loaded enrichment.
+func (s *PMEpicService) ListPage(ctx context.Context, workspaceID string, filters model.PMEpicListFilters, pagination model.PMPagination) ([]model.EpicWithStats, int64, error) {
+	if workspaceID == "" {
+		return nil, 0, fmt.Errorf("workspace_id is required")
+	}
+	filters.AccessibleTeamIDs = intersectAccessibleTeamIDs(filters.AccessibleTeamIDs, accessibleTeamIDs(ctx))
+	epics, total, err := s.epicRepo.ListPage(ctx, workspaceID, filters, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(epics) == 0 {
+		return []model.EpicWithStats{}, total, nil
+	}
+	epicIDs := make([]string, 0, len(epics))
+	for _, epic := range epics {
+		epicIDs = append(epicIDs, epic.ID)
+	}
+	labelsByEpic, err := s.epicRepo.ListLabelsBatch(ctx, epicIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	objectivesByEpic, err := s.epicRepo.ListObjectivesBatch(ctx, epicIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	statsByEpic, err := s.epicRepo.ComputeStatsBatch(ctx, epicIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	result := make([]model.EpicWithStats, 0, len(epics))
+	for _, epic := range epics {
+		item := model.EpicWithStats{
+			Epic:       epic,
+			Labels:     labelsByEpic[epic.ID],
+			Objectives: objectivesByEpic[epic.ID],
+			Stats:      statsByEpic[epic.ID],
+		}
+		enrichEpicSuggestedHealth(&item)
+		result = append(result, item)
+	}
+	return result, total, nil
+}
+
 // GetByID returns one epic with stats.
 func (s *PMEpicService) GetByID(ctx context.Context, id string) (*model.EpicWithStats, error) {
-	epic, err := s.epicRepo.GetWithStats(ctx, id)
+	epic, err := s.getWithSuggestedHealth(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +157,14 @@ func (s *PMEpicService) GetByID(ctx context.Context, id string) (*model.EpicWith
 	}
 	if err := requireTeamAccess(ctx, epic.Epic.TeamID); err != nil {
 		return nil, fmt.Errorf("epic not found")
+	}
+	return epic, nil
+}
+
+func (s *PMEpicService) getWithSuggestedHealth(ctx context.Context, id string) (*model.EpicWithStats, error) {
+	epic, err := s.epicRepo.GetWithStats(ctx, id)
+	if err != nil || epic == nil {
+		return epic, err
 	}
 	enrichEpicSuggestedHealth(epic)
 	return epic, nil
@@ -168,8 +220,14 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	if actorID != "" {
 		epic.CreatedBy = &actorID
 	}
+	labelIDs := dedupeIDs(req.LabelIDs)
+	if len(labelIDs) > 0 {
+		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, labelIDs, allowedTeamIDs(req.TeamID)); err != nil {
+			return nil, err
+		}
+	}
 
-	if err := s.epicRepo.Create(ctx, epic); err != nil {
+	if err := s.epicRepo.CreateWithLabels(ctx, epic, labelIDs); err != nil {
 		s.logger.ErrorContext(ctx, "failed to create epic", "error", err, "workspace_id", req.WorkspaceID)
 		return nil, err
 	}
@@ -178,15 +236,6 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 			s.logger.ErrorContext(ctx, "failed to reassign attachments to epic", "error", err, "epic_id", epic.ID, "attachment_ids", req.AttachmentIDs)
 		}
 	}
-	if len(req.LabelIDs) > 0 {
-		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
-			return nil, err
-		}
-		if err := s.epicRepo.ReplaceLabels(ctx, epic.ID, req.LabelIDs); err != nil {
-			return nil, err
-		}
-	}
-
 	if err := s.syncProgress(ctx, epic.ID); err != nil {
 		return nil, err
 	}
@@ -230,7 +279,7 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 		}
 	}
 
-	return s.epicRepo.GetWithStats(ctx, epic.ID)
+	return s.getWithSuggestedHealth(ctx, epic.ID)
 }
 
 // CreateWithAgentRun creates an epic and optionally starts the assigned agent.
@@ -275,6 +324,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := current.Epic
+	teamChanged := false
 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -286,10 +336,10 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if req.Description != nil {
 		epic.Description = req.Description
 	}
-	if req.EpicStateID != nil {
-		epic.EpicStateID = req.EpicStateID
+	if req.EpicStateID != nil || req.EpicStateIDSet {
+		epic.EpicStateID = nullableString(req.EpicStateID)
 	}
-	if req.OwnerID != nil || req.OwnerMemberID != nil {
+	if req.OwnerID != nil || req.OwnerMemberID != nil || req.OwnerSet {
 		ownerMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, current.Epic.WorkspaceID, req.OwnerMemberID, req.OwnerID)
 		if err != nil {
 			return nil, err
@@ -297,13 +347,18 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		epic.OwnerID = memberUserIDPtr(ownerMember)
 		epic.OwnerMemberID = memberIDPtr(ownerMember)
 	}
-	if req.TeamID != nil {
-		epic.TeamID = req.TeamID
+	if req.TeamID != nil || req.TeamIDSet {
+		nextTeamID := nullableString(req.TeamID)
+		if err := requireCanEditTeamEpics(ctx, nextTeamID); err != nil {
+			return nil, err
+		}
+		teamChanged = !nullableStringsEqual(epic.TeamID, nextTeamID)
+		epic.TeamID = nextTeamID
 	}
-	if req.PlannedStartDate != nil {
+	if req.PlannedStartDate != nil || req.PlannedStartDateSet {
 		epic.PlannedStartDate = req.PlannedStartDate
 	}
-	if req.Deadline != nil {
+	if req.Deadline != nil || req.DeadlineSet {
 		epic.Deadline = req.Deadline
 	}
 	if req.Position != nil {
@@ -324,11 +379,11 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if req.HealthComment != nil {
 		epic.HealthComment = req.HealthComment
 	}
-	if req.PlanningRepositoryID != nil {
+	if req.PlanningRepositoryID != nil || req.PlanningRepositoryIDSet {
 		if err := s.validatePlanningRepository(ctx, epic.WorkspaceID, req.PlanningRepositoryID); err != nil {
 			return nil, err
 		}
-		epic.PlanningRepositoryID = req.PlanningRepositoryID
+		epic.PlanningRepositoryID = nullableString(req.PlanningRepositoryID)
 	}
 	if req.AssignedAgentID != nil {
 		nextAgentID := nullableString(req.AssignedAgentID)
@@ -338,19 +393,25 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 			}
 		}
 		epic.AssignedAgentID = nextAgentID
+	} else if teamChanged && epic.AssignedAgentID != nil {
+		if s.agentService == nil {
+			return nil, fmt.Errorf("cannot change epic team while assigned agent validation is unavailable")
+		}
+		if err := s.agentService.ValidateRunnableTargetAgent(ctx, epic.WorkspaceID, *epic.AssignedAgentID, "epic", epic.TeamID); err != nil {
+			return nil, err
+		}
 	}
 
-	if err := s.epicRepo.Update(ctx, &epic); err != nil {
+	labelIDs := req.LabelIDs
+	if req.LabelIDs != nil {
+		labelIDs = dedupeIDs(req.LabelIDs)
+		if err := validateLabelScope(ctx, s.labelRepo, epic.WorkspaceID, labelIDs, allowedTeamIDs(epic.TeamID)); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.epicRepo.UpdateWithLabels(ctx, &epic, labelIDs); err != nil {
 		s.logger.ErrorContext(ctx, "failed to update epic", "error", err, "epic_id", id)
 		return nil, err
-	}
-	if req.LabelIDs != nil {
-		if err := validateLabelScope(ctx, s.labelRepo, epic.WorkspaceID, req.LabelIDs, allowedTeamIDs(epic.TeamID)); err != nil {
-			return nil, err
-		}
-		if err := s.epicRepo.ReplaceLabels(ctx, epic.ID, req.LabelIDs); err != nil {
-			return nil, err
-		}
 	}
 
 	if err := s.syncProgress(ctx, epic.ID); err != nil {
@@ -396,7 +457,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		}
 	}
 
-	return s.epicRepo.GetWithStats(ctx, epic.ID)
+	return s.getWithSuggestedHealth(ctx, epic.ID)
 }
 
 func (s *PMEpicService) validatePlanningRepository(ctx context.Context, workspaceID string, repositoryID *string) error {
@@ -617,6 +678,13 @@ func optionalActor(actorID string) *string {
 		return nil
 	}
 	return &actorID
+}
+
+func nullableStringsEqual(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return strings.TrimSpace(*left) == strings.TrimSpace(*right)
 }
 
 func stringPtr(value string) *string { return &value }

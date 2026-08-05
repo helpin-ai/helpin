@@ -185,6 +185,8 @@ export function validateCustomAgentCreateForm(form: CustomAgentFormData): string
 const TARGET_LABELS: Record<AgentTargetType, string> = {
   task: 'tasks',
   epic: 'epics',
+  sprint: 'sprints',
+  objective: 'objectives',
   repository: 'repositories',
   workspace: 'the workspace',
   crm_deal: 'CRM deals',

@@ -11,7 +11,7 @@ export function HelpinBrand({
 }: HelpinBrandProps) {
   const icon = variant === 'light-on-dark'
     ? '/brand/helpin-icon-white.svg'
-    : '/brand/helpin-icon-black.svg';
+    : '/brand/helpin-icon-ink.svg';
 
   return (
     <span
@@ -23,7 +23,7 @@ export function HelpinBrand({
         src={icon}
         alt=""
         aria-hidden="true"
-        className={`${iconClassName} shrink-0 scale-125`}
+        className={`${iconClassName} shrink-0`}
       />
       <span>Helpin</span>
     </span>

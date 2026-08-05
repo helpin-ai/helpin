@@ -7,12 +7,14 @@ import {
   AgentActions,
   AgentsListHeader,
   AgentsListTable,
+  CUSTOM_AGENT_TARGET_OPTIONS,
   canEditWorkspacePresetVersionDescription,
   getAgentAnalyticsSummary,
   getAgentRecentRunSummary,
   getAgentTokenUsageSummary,
   getAgentProviderConfigState,
   getVersionToolEditingState,
+  runNowTargetOptions,
   sortAgentsForDisplay,
 } from '../Agents';
 import type { Agent, AgentModelProviderOption, AgentPresetDefinition, AgentRun } from '@/lib/pmTypes';
@@ -214,6 +216,20 @@ const baseAgent: Agent = {
   created_at: '2026-05-07T00:00:00Z',
   updated_at: '2026-05-07T00:00:00Z',
 };
+
+describe('PM agent targets', () => {
+  it('shows sprint and objective targets and accepts both for Run now', () => {
+    const visibleTargets = CUSTOM_AGENT_TARGET_OPTIONS.map((option) => option.value);
+    expect(visibleTargets).toEqual(expect.arrayContaining(['sprint', 'objective']));
+
+    const agent = {
+      ...baseAgent,
+      is_system: false,
+      allowed_targets: ['sprint', 'objective'],
+    } satisfies Agent;
+    expect(runNowTargetOptions(agent)).toEqual(['sprint', 'objective']);
+  });
+});
 
 describe('AgentActions', () => {
   it('uses a concrete actions menu instead of a decorative row arrow', () => {

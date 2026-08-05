@@ -1,6 +1,10 @@
 package commandtools
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+)
 
 type RuntimeToolMetadata struct {
 	CommandName string
@@ -50,6 +54,13 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 			"required":             []string{},
 			"additionalProperties": false,
 		},
+	},
+	{
+		CommandName: "workspace.list_members",
+		Alias:       "list_workspace_members",
+		Category:    "Workspace",
+		Description: "List active assignable workspace members with stable member and user IDs, display names, and team IDs. Email addresses are not returned.",
+		InputSchema: boundedListSchema(nil),
 	},
 	{
 		CommandName: "docs.ensure_spec_doc",
@@ -113,7 +124,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "pm.list_tasks",
 		Alias:       "list_tasks",
 		Category:    "PM / Tasks",
-		Description: "List tasks in the current workspace with optional label, team, open-only, description, and comment filters.",
+		Description: "List tasks in the current workspace with optional text query, label, team, open-only, description, and comment filters.",
 		InputSchema: listTasksSchema(),
 	},
 	{
@@ -189,6 +200,175 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 			},
 			"required": []string{"state_id"},
 		},
+	},
+	{
+		CommandName: "pm.list_team_workflows_with_stages",
+		Alias:       "list_team_workflows_with_stages",
+		Category:    "PM / Tasks",
+		Description: "List the resolved workflow and ordered stages for one team or all workspace teams. Use this to choose a valid workflow stage before creating a task.",
+		InputSchema: boundedListSchema(map[string]any{
+			"team_id": optionalIDSchema("Optional team ID. Omit to return workflow summaries for all workspace teams."),
+		}),
+	},
+	{
+		CommandName: "pm.list_labels",
+		Alias:       "list_pm_labels",
+		Category:    "PM / Tasks",
+		Description: "List non-archived workspace and team labels that are compatible with the current actor's PM scope.",
+		InputSchema: boundedListSchema(map[string]any{
+			"team_id": optionalIDSchema("Optional team ID filter."),
+			"name":    map[string]any{"type": "string", "description": "Optional case-insensitive label name filter."},
+		}),
+	},
+	{
+		CommandName: "pm.get_task",
+		Alias:       "get_task",
+		Category:    "PM / Tasks",
+		Description: "Get one accessible task with its state, team, owners, labels, epic or sprint references, deadline, and blocking metadata.",
+		InputSchema: entityIDSchema("task_id", "Optional task ID. Omit to use the current task target when available."),
+	},
+	{
+		CommandName: "pm.update_task",
+		Alias:       "update_task",
+		Category:    "PM / Tasks",
+		Description: "Update bounded editable fields on an accessible task. Team, workflow, state, archive, and deletion changes are excluded.",
+		InputSchema: updateTaskSchema(),
+	},
+	{
+		CommandName: "pm.create_task_checklist_item",
+		Alias:       "create_task_checklist_item",
+		Category:    "PM / Tasks",
+		Description: "Create one checklist item on an accessible task.",
+		InputSchema: createTaskChecklistItemSchema(),
+	},
+	{
+		CommandName: "pm.list_task_checklist",
+		Alias:       "list_task_checklist",
+		Category:    "PM / Tasks",
+		Description: "List up to 100 checklist items belonging to one accessible task.",
+		InputSchema: listTaskChecklistSchema(),
+	},
+	{
+		CommandName: "pm.update_task_checklist_item",
+		Alias:       "update_task_checklist_item",
+		Category:    "PM / Tasks",
+		Description: "Update bounded fields on one checklist item belonging to an accessible task.",
+		InputSchema: updateTaskChecklistItemSchema(),
+	},
+	{
+		CommandName: "pm.add_comment",
+		Alias:       "add_pm_comment",
+		Category:    "PM / Tasks",
+		Description: "Add a markdown comment to a task, epic, sprint, or objective. The current entity target supplies the type and ID by default.",
+		InputSchema: addPMCommentSchema(),
+	},
+	{
+		CommandName: "pm.list_epics",
+		Alias:       "list_epics",
+		Category:    "PM / Epics",
+		Description: "List accessible epics with team, state, owner, dates, health, labels, and compact progress stats.",
+		InputSchema: listEpicsSchema(),
+	},
+	{
+		CommandName: "pm.get_epic",
+		Alias:       "get_epic",
+		Category:    "PM / Epics",
+		Description: "Get one accessible epic with description, associations, planning repository, health, and compact progress stats.",
+		InputSchema: entityIDSchema("epic_id", "Optional epic ID. Omit to use the current epic target."),
+	},
+	{
+		CommandName: "pm.create_epic",
+		Alias:       "create_epic",
+		Category:    "PM / Epics",
+		Description: "Create an epic with bounded operational fields. Agent auto-run and archive controls are excluded.",
+		InputSchema: createEpicSchema(),
+	},
+	{
+		CommandName: "pm.update_epic",
+		Alias:       "update_epic",
+		Category:    "PM / Epics",
+		Description: "Update bounded operational fields on an epic. Omitted association arrays are preserved and supplied arrays replace the complete set.",
+		InputSchema: updateEpicSchema(),
+	},
+	{
+		CommandName: "pm.list_sprints",
+		Alias:       "list_sprints",
+		Category:    "PM / Sprints",
+		Description: "List accessible sprints with dates, derived status, team, labels, and compact progress stats.",
+		InputSchema: listSprintsSchema(),
+	},
+	{
+		CommandName: "pm.get_sprint",
+		Alias:       "get_sprint",
+		Category:    "PM / Sprints",
+		Description: "Get one accessible sprint with description, dates, derived status, team, labels, and compact progress stats.",
+		InputSchema: entityIDSchema("sprint_id", "Optional sprint ID. Omit to use the current sprint target."),
+	},
+	{
+		CommandName: "pm.list_sprint_tasks",
+		Alias:       "list_sprint_tasks",
+		Category:    "PM / Sprints",
+		Description: "List compact non-archived tasks in an accessible sprint, optionally filtered by a case-insensitive text query.",
+		InputSchema: boundedListSchema(map[string]any{
+			"query":     map[string]any{"type": "string", "description": "Optional case-insensitive text query matched against task name, description, or display ID."},
+			"sprint_id": optionalIDSchema("Optional sprint ID. Omit to use the current sprint target."),
+		}),
+	},
+	{
+		CommandName: "pm.create_sprint",
+		Alias:       "create_sprint",
+		Category:    "PM / Sprints",
+		Description: "Create a sprint using YYYY-MM-DD dates, an owning team, and optional labels.",
+		InputSchema: createSprintSchema(),
+	},
+	{
+		CommandName: "pm.update_sprint",
+		Alias:       "update_sprint",
+		Category:    "PM / Sprints",
+		Description: "Update bounded sprint fields. Omitted label IDs preserve current labels and supplied IDs replace the complete set.",
+		InputSchema: updateSprintSchema(),
+	},
+	{
+		CommandName: "pm.list_objectives",
+		Alias:       "list_objectives",
+		Category:    "PM / Objectives",
+		Description: "List workspace objectives with type, state, dates, health, teams, owners, labels, linked epics, and compact stats.",
+		InputSchema: listObjectivesSchema(),
+	},
+	{
+		CommandName: "pm.get_objective",
+		Alias:       "get_objective",
+		Category:    "PM / Objectives",
+		Description: "Get one objective with description, associations, key results, linked epics, and compact progress stats.",
+		InputSchema: entityIDSchema("objective_id", "Optional objective ID. Omit to use the current objective target."),
+	},
+	{
+		CommandName: "pm.create_objective",
+		Alias:       "create_objective",
+		Category:    "PM / Objectives",
+		Description: "Create an objective with bounded operational fields and complete association sets.",
+		InputSchema: createObjectiveSchema(),
+	},
+	{
+		CommandName: "pm.update_objective",
+		Alias:       "update_objective",
+		Category:    "PM / Objectives",
+		Description: "Update bounded objective fields. Omitted association arrays are preserved and supplied arrays replace the complete set.",
+		InputSchema: updateObjectiveSchema(),
+	},
+	{
+		CommandName: "pm.create_key_result",
+		Alias:       "create_key_result",
+		Category:    "PM / Objectives",
+		Description: "Create a key result on the current objective target.",
+		InputSchema: createKeyResultSchema(),
+	},
+	{
+		CommandName: "pm.update_key_result",
+		Alias:       "update_key_result",
+		Category:    "PM / Objectives",
+		Description: "Update bounded fields on a key result belonging to the current objective target.",
+		InputSchema: updateKeyResultSchema(),
 	},
 	{
 		CommandName: "docs.write_document_content",
@@ -697,7 +877,8 @@ func createTaskSchema() map[string]any {
 			},
 			"task_type": map[string]any{
 				"type":        "string",
-				"description": "Optional task type such as feature, bug, or chore",
+				"description": "Optional task type.",
+				"enum":        taskTypeValues(),
 			},
 			"estimate": map[string]any{
 				"type":        "integer",
@@ -705,11 +886,22 @@ func createTaskSchema() map[string]any {
 			},
 			"priority": map[string]any{
 				"type":        "string",
-				"description": "Optional priority such as low, medium, high, or urgent",
+				"description": "Optional task priority.",
+				"enum":        taskPriorityValues(),
+			},
+			"severity": map[string]any{
+				"type":        "string",
+				"description": "Optional task severity.",
+				"enum":        taskSeverityValues(),
 			},
 			"epic_id": map[string]any{
 				"type":        "string",
 				"description": "Optional epic ID to link the task to. Omit this field when no epic is configured; do not send an empty string.",
+				"minLength":   1,
+			},
+			"sprint_id": map[string]any{
+				"type":        "string",
+				"description": "Optional sprint ID to link the task to. Omit this field when no sprint is configured; do not send an empty string.",
 				"minLength":   1,
 			},
 			"team_id": map[string]any{
@@ -731,15 +923,31 @@ func createTaskSchema() map[string]any {
 				"type":        "array",
 				"description": "Optional workspace member IDs to assign as owners",
 				"items":       map[string]any{"type": "string", "minLength": 1},
+				"maxItems":    100,
 			},
 			"label_ids": map[string]any{
 				"type":        "array",
 				"description": "Optional label IDs to attach to the task",
 				"items":       map[string]any{"type": "string", "minLength": 1},
+				"maxItems":    100,
 			},
 			"deadline": map[string]any{
 				"type":        "string",
-				"description": "Optional deadline as YYYY-MM-DD or RFC3339",
+				"description": "Optional deadline in YYYY-MM-DD format.",
+			},
+			"blocked": map[string]any{
+				"type":        "boolean",
+				"description": "Optional manual blocked flag.",
+			},
+			"blocker": map[string]any{
+				"type":        "string",
+				"description": "Optional description of the blocker.",
+			},
+			"checklist_items": map[string]any{
+				"type":        "array",
+				"description": "Optional checklist items to create with the task.",
+				"maxItems":    100,
+				"items":       checklistItemCreateSchema(),
 			},
 		},
 		"required":             []string{"name", "team_id"},
@@ -777,6 +985,10 @@ func listTasksSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
+			"query": map[string]any{
+				"type":        "string",
+				"description": "Optional case-insensitive text query matched against task name, description, or display ID.",
+			},
 			"label_id": map[string]any{
 				"type":        "string",
 				"description": "Optional label ID filter.",
@@ -784,6 +996,34 @@ func listTasksSchema() map[string]any {
 			"team_id": map[string]any{
 				"type":        "string",
 				"description": "Optional team ID filter.",
+			},
+			"epic_id":     optionalIDSchema("Optional epic ID filter."),
+			"sprint_id":   optionalIDSchema("Optional sprint ID filter."),
+			"workflow_id": optionalIDSchema("Optional workflow ID filter."),
+			"state_id":    optionalIDSchema("Optional workflow state ID filter."),
+			"task_type": map[string]any{
+				"type": "string",
+				"enum": taskTypeValues(),
+			},
+			"priority": map[string]any{
+				"type": "string",
+				"enum": taskPriorityValues(),
+			},
+			"severity": map[string]any{
+				"type": "string",
+				"enum": taskSeverityValues(),
+			},
+			"completed": map[string]any{
+				"type":        "boolean",
+				"description": "Optional completion-state filter.",
+			},
+			"archived": map[string]any{
+				"type":        "boolean",
+				"description": "Optional archive-state filter.",
+			},
+			"updated_after": map[string]any{
+				"type":        "string",
+				"description": "Optional lower bound for task updates in YYYY-MM-DD format.",
 			},
 			"task_id": map[string]any{
 				"type":        "string",
@@ -795,6 +1035,7 @@ func listTasksSchema() map[string]any {
 				"items": map[string]any{
 					"type": "string",
 				},
+				"maxItems": 100,
 			},
 			"owned_by_actor": map[string]any{
 				"type":        "boolean",
@@ -820,8 +1061,22 @@ func listTasksSchema() map[string]any {
 			"limit": map[string]any{
 				"type":        "integer",
 				"description": "Maximum tasks to return. Defaults to 50, max 100.",
+				"minimum":     1,
+				"maximum":     100,
+			},
+			"page": map[string]any{
+				"type":        "integer",
+				"description": "1-based result page. Defaults to 1.",
+				"minimum":     1,
+			},
+			"per_page": map[string]any{
+				"type":        "integer",
+				"description": "Results per page. Defaults to 50, max 100.",
+				"minimum":     1,
+				"maximum":     100,
 			},
 		},
+		"required":             []string{},
 		"additionalProperties": false,
 	}
 }
@@ -840,6 +1095,400 @@ func addTaskCommentSchema() map[string]any {
 			},
 		},
 		"required":             []string{"content"},
+		"additionalProperties": false,
+	}
+}
+
+func boundedListSchema(properties map[string]any) map[string]any {
+	if properties == nil {
+		properties = map[string]any{}
+	}
+	properties["page"] = map[string]any{
+		"type":        "integer",
+		"description": "1-based result page. Defaults to 1.",
+		"minimum":     1,
+	}
+	properties["per_page"] = map[string]any{
+		"type":        "integer",
+		"description": "Results per page. Defaults to 50, max 100.",
+		"minimum":     1,
+		"maximum":     100,
+	}
+	return map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"required":             []string{},
+		"additionalProperties": false,
+	}
+}
+
+func entityIDSchema(field, description string) map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			field: optionalIDSchema(description),
+		},
+		"required":             []string{},
+		"additionalProperties": false,
+	}
+}
+
+func optionalIDSchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "string",
+		"description": description,
+		"minLength":   1,
+	}
+}
+
+func optionalCreateIDSchema(description string) map[string]any {
+	return optionalIDSchema("Optional " + description + ". Omit this field when it is not configured; do not send an empty string.")
+}
+
+func clearableIDSchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "string",
+		"description": description + ", or an empty string to clear it.",
+	}
+}
+
+func replaceIDArraySchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": description + " Omit this field to preserve current associations; when supplied, it replaces the complete set; an empty array clears it.",
+		"items":       map[string]any{"type": "string", "minLength": 1},
+		"maxItems":    100,
+	}
+}
+
+func createIDArraySchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": description,
+		"items":       map[string]any{"type": "string", "minLength": 1},
+		"maxItems":    100,
+	}
+}
+
+func dateSchema(description string, clearable bool) map[string]any {
+	if clearable {
+		description += " Use YYYY-MM-DD, or an empty string to clear it."
+	} else {
+		description += " Use YYYY-MM-DD."
+	}
+	return map[string]any{"type": "string", "description": description}
+}
+
+func optionalCreateDateSchema(description string) map[string]any {
+	return map[string]any{
+		"type":        "string",
+		"description": "Optional " + description + ". Omit this field when it is not configured. When supplied, use YYYY-MM-DD.",
+	}
+}
+
+func taskTypeValues() []string {
+	return []string{model.PMTaskTypeFeature, model.PMTaskTypeBug, model.PMTaskTypeChore}
+}
+
+func taskPriorityValues() []string {
+	return []string{model.PMTaskPriorityNone, model.PMTaskPriorityLow, model.PMTaskPriorityMedium, model.PMTaskPriorityHigh, model.PMTaskPriorityUrgent}
+}
+
+func taskSeverityValues() []string {
+	return []string{model.PMTaskSeverityNone, model.PMTaskSeverityMinor, model.PMTaskSeverityMajor, model.PMTaskSeverityCritical}
+}
+
+func checklistItemCreateSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"text":        map[string]any{"type": "string", "minLength": 1},
+			"position":    map[string]any{"type": "integer", "minimum": 0},
+			"assignee_id": optionalIDSchema("Optional workspace user ID assigned to the checklist item."),
+			"due_date":    dateSchema("Optional checklist item due date.", false),
+		},
+		"required":             []string{"text"},
+		"additionalProperties": false,
+	}
+}
+
+func updateTaskSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id":          optionalIDSchema("Optional task ID. Omit to use the current task target."),
+			"name":             map[string]any{"type": "string", "minLength": 1},
+			"description":      map[string]any{"type": "string"},
+			"task_type":        map[string]any{"type": "string", "enum": taskTypeValues()},
+			"epic_id":          map[string]any{"type": "string", "description": "Epic ID to link, or an empty string to clear the epic."},
+			"sprint_id":        map[string]any{"type": "string", "description": "Sprint ID to link, or an empty string to clear the sprint."},
+			"owner_member_ids": replaceIDArraySchema("Workspace member owner IDs."),
+			"estimate":         map[string]any{"type": "integer", "minimum": 0},
+			"priority":         map[string]any{"type": "string", "enum": taskPriorityValues()},
+			"severity":         map[string]any{"type": "string", "enum": taskSeverityValues()},
+			"deadline":         dateSchema("Optional task deadline.", true),
+			"blocked":          map[string]any{"type": "boolean"},
+			"blocker":          map[string]any{"type": "string", "description": "Blocker description, or an empty string to clear it."},
+			"label_ids":        replaceIDArraySchema("Task label IDs."),
+		},
+		"required":             []string{},
+		"additionalProperties": false,
+	}
+}
+
+func createTaskChecklistItemSchema() map[string]any {
+	properties := checklistItemCreateSchema()["properties"].(map[string]any)
+	properties["task_id"] = optionalIDSchema("Optional task ID. Omit to use the current task target.")
+	return map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"required":             []string{"text"},
+		"additionalProperties": false,
+	}
+}
+
+func listTaskChecklistSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": optionalIDSchema("Optional task ID. Omit to use the current task target; parent epic and sprint targets require an explicit task ID."),
+			"limit":   map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "default": 100},
+		},
+		"required":             []string{},
+		"additionalProperties": false,
+	}
+}
+
+func updateTaskChecklistItemSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"checklist_item_id": optionalIDSchema("Checklist item ID to update."),
+			"task_id":           optionalIDSchema("Optional parent task ID. Omit to use the current task target; parent epic and sprint targets require an explicit task ID."),
+			"text":              map[string]any{"type": "string", "minLength": 1},
+			"completed":         map[string]any{"type": "boolean"},
+			"position":          map[string]any{"type": "integer", "minimum": 0},
+			"assignee_id":       map[string]any{"type": "string", "description": "Optional workspace user ID, or an empty string to clear the assignee."},
+			"due_date":          dateSchema("Optional checklist item due date.", true),
+		},
+		"required":             []string{"checklist_item_id"},
+		"additionalProperties": false,
+	}
+}
+
+func addPMCommentSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"entity_type": map[string]any{
+				"type":        "string",
+				"enum":        []string{"task", "epic", "sprint", "objective"},
+				"description": "Entity type. Omit to use the current entity target.",
+			},
+			"entity_id": optionalIDSchema("Entity ID. Omit to use the current entity target."),
+			"content":   map[string]any{"type": "string", "minLength": 1, "description": "Markdown comment body."},
+		},
+		"required":             []string{"content"},
+		"additionalProperties": false,
+	}
+}
+
+func listEpicsSchema() map[string]any {
+	return boundedListSchema(map[string]any{
+		"query":    map[string]any{"type": "string", "description": "Optional case-insensitive text query matched against epic name or description."},
+		"team_id":  optionalIDSchema("Optional team ID filter."),
+		"state_id": optionalIDSchema("Optional epic workflow state ID filter."),
+		"label_id": optionalIDSchema("Optional label ID filter."),
+		"archived": map[string]any{"type": "boolean", "description": "Optional archive-state filter."},
+	})
+}
+
+func epicEditableProperties(forUpdate bool) map[string]any {
+	properties := map[string]any{
+		"name":           map[string]any{"type": "string", "minLength": 1},
+		"description":    map[string]any{"type": "string"},
+		"color":          map[string]any{"type": "string"},
+		"health":         map[string]any{"type": "string", "enum": []string{model.PMEpicHealthNone, model.PMEpicHealthOnTrack, model.PMEpicHealthAtRisk, model.PMEpicHealthOffTrack}},
+		"health_comment": map[string]any{"type": "string"},
+	}
+	if forUpdate {
+		properties["epic_state_id"] = clearableIDSchema("Epic workflow state ID")
+		properties["owner_id"] = clearableIDSchema("Workspace user ID")
+		properties["owner_member_id"] = clearableIDSchema("Workspace member ID")
+		properties["team_id"] = clearableIDSchema("Owning team ID")
+		properties["planned_start_date"] = dateSchema("Optional planned start date.", true)
+		properties["deadline"] = dateSchema("Optional epic deadline.", true)
+		properties["planning_repository_id"] = clearableIDSchema("Planning repository ID")
+		properties["label_ids"] = replaceIDArraySchema("Epic label IDs.")
+	} else {
+		properties["epic_state_id"] = optionalCreateIDSchema("epic workflow state ID")
+		properties["owner_id"] = optionalCreateIDSchema("workspace user ID")
+		properties["owner_member_id"] = optionalCreateIDSchema("workspace member ID")
+		properties["team_id"] = optionalCreateIDSchema("owning team ID")
+		properties["planned_start_date"] = optionalCreateDateSchema("planned start date")
+		properties["deadline"] = optionalCreateDateSchema("epic deadline")
+		properties["planning_repository_id"] = optionalCreateIDSchema("planning repository ID")
+		properties["label_ids"] = createIDArraySchema("Epic label IDs to attach.")
+	}
+	return properties
+}
+
+func createEpicSchema() map[string]any {
+	properties := epicEditableProperties(false)
+	return map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"required":             []string{"name"},
+		"additionalProperties": false,
+	}
+}
+
+func updateEpicSchema() map[string]any {
+	properties := epicEditableProperties(true)
+	properties["epic_id"] = optionalIDSchema("Optional epic ID. Omit to use the current epic target.")
+	return map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"required":             []string{},
+		"additionalProperties": false,
+	}
+}
+
+func listSprintsSchema() map[string]any {
+	return boundedListSchema(map[string]any{
+		"query":   map[string]any{"type": "string", "description": "Optional case-insensitive text query matched against sprint name or description."},
+		"team_id": optionalIDSchema("Optional team ID filter."),
+		"status": map[string]any{
+			"type": "string",
+			"enum": []string{model.PMSprintStatusUnstarted, model.PMSprintStatusStarted, model.PMSprintStatusDone},
+		},
+		"archived": map[string]any{"type": "boolean", "description": "Optional archive-state filter."},
+	})
+}
+
+func createSprintSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name":        map[string]any{"type": "string", "minLength": 1},
+			"description": map[string]any{"type": "string"},
+			"start_date":  dateSchema("Sprint start date.", false),
+			"end_date":    dateSchema("Sprint end date.", false),
+			"team_id":     optionalIDSchema("Owning team ID."),
+			"label_ids":   createIDArraySchema("Sprint label IDs to attach."),
+		},
+		"required":             []string{"name", "start_date", "end_date", "team_id"},
+		"additionalProperties": false,
+	}
+}
+
+func updateSprintSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"sprint_id":   optionalIDSchema("Optional sprint ID. Omit to use the current sprint target."),
+			"name":        map[string]any{"type": "string", "minLength": 1},
+			"description": map[string]any{"type": "string"},
+			"start_date":  dateSchema("Sprint start date.", false),
+			"end_date":    dateSchema("Sprint end date.", false),
+			"team_id":     optionalIDSchema("Owning team ID."),
+			"label_ids":   replaceIDArraySchema("Sprint label IDs."),
+		},
+		"required":             []string{},
+		"additionalProperties": false,
+	}
+}
+
+func listObjectivesSchema() map[string]any {
+	return boundedListSchema(map[string]any{
+		"query":          map[string]any{"type": "string", "description": "Optional case-insensitive text query matched against objective name or description."},
+		"team_id":        optionalIDSchema("Optional linked team ID filter."),
+		"label_id":       optionalIDSchema("Optional label ID filter."),
+		"objective_type": map[string]any{"type": "string", "enum": []string{model.PMObjectiveTypeTactical, model.PMObjectiveTypeStrategic}},
+		"state":          map[string]any{"type": "string", "enum": []string{model.PMObjectiveStateNotStarted, model.PMObjectiveStateActive, model.PMObjectiveStateClosed}},
+		"archived":       map[string]any{"type": "boolean", "description": "Optional archive-state filter."},
+	})
+}
+
+func objectiveEditableProperties(forUpdate bool) map[string]any {
+	properties := map[string]any{
+		"name":           map[string]any{"type": "string", "minLength": 1},
+		"description":    map[string]any{"type": "string"},
+		"objective_type": map[string]any{"type": "string", "enum": []string{model.PMObjectiveTypeTactical, model.PMObjectiveTypeStrategic}},
+		"state":          map[string]any{"type": "string", "enum": []string{model.PMObjectiveStateNotStarted, model.PMObjectiveStateActive, model.PMObjectiveStateClosed}},
+		"health":         map[string]any{"type": "string", "enum": []string{model.PMObjectiveHealthOnTrack, model.PMObjectiveHealthAtRisk, model.PMObjectiveHealthOffTrack}},
+		"health_comment": map[string]any{"type": "string"},
+	}
+	if forUpdate {
+		properties["planned_start_date"] = dateSchema("Optional planned start date.", true)
+		properties["deadline"] = dateSchema("Optional objective deadline.", true)
+		properties["team_ids"] = replaceIDArraySchema("Linked team IDs.")
+		properties["owner_ids"] = replaceIDArraySchema("Workspace user owner IDs.")
+		properties["owner_member_ids"] = replaceIDArraySchema("Workspace member owner IDs.")
+		properties["label_ids"] = replaceIDArraySchema("Objective label IDs.")
+		properties["epic_ids"] = replaceIDArraySchema("Linked epic IDs.")
+	} else {
+		properties["state"] = map[string]any{"type": "string", "enum": []string{model.PMObjectiveStateNotStarted, model.PMObjectiveStateActive, model.PMObjectiveStateClosed}, "description": "Optional initial objective state. Omit this field to use not_started."}
+		properties["planned_start_date"] = optionalCreateDateSchema("planned start date")
+		properties["deadline"] = optionalCreateDateSchema("objective deadline")
+		properties["team_ids"] = createIDArraySchema("Team IDs to link.")
+		properties["owner_ids"] = createIDArraySchema("Workspace user owner IDs to link.")
+		properties["owner_member_ids"] = createIDArraySchema("Workspace member owner IDs to link.")
+		properties["label_ids"] = createIDArraySchema("Objective label IDs to attach.")
+		properties["epic_ids"] = createIDArraySchema("Epic IDs to link.")
+	}
+	return properties
+}
+
+func createObjectiveSchema() map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"properties":           objectiveEditableProperties(false),
+		"required":             []string{"name", "objective_type"},
+		"additionalProperties": false,
+	}
+}
+
+func updateObjectiveSchema() map[string]any {
+	properties := objectiveEditableProperties(true)
+	properties["objective_id"] = optionalIDSchema("Optional objective ID. Omit to use the current objective target.")
+	return map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"required":             []string{},
+		"additionalProperties": false,
+	}
+}
+
+func createKeyResultSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name":          map[string]any{"type": "string", "minLength": 1},
+			"result_type":   map[string]any{"type": "string", "enum": []string{model.PMKeyResultTypeBoolean, model.PMKeyResultTypePercent, model.PMKeyResultTypeNumeric}},
+			"initial_value": map[string]any{"type": "number"},
+			"current_value": map[string]any{"type": "number"},
+			"target_value":  map[string]any{"type": "number"},
+			"note":          map[string]any{"type": "string"},
+		},
+		"required":             []string{"name"},
+		"additionalProperties": false,
+	}
+}
+
+func updateKeyResultSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"key_result_id": optionalIDSchema("Key result ID to update."),
+			"name":          map[string]any{"type": "string", "minLength": 1},
+			"result_type":   map[string]any{"type": "string", "enum": []string{model.PMKeyResultTypeBoolean, model.PMKeyResultTypePercent, model.PMKeyResultTypeNumeric}},
+			"initial_value": map[string]any{"type": "number"},
+			"current_value": map[string]any{"type": "number"},
+			"target_value":  map[string]any{"type": "number"},
+			"note":          map[string]any{"type": "string"},
+		},
+		"required":             []string{"key_result_id"},
 		"additionalProperties": false,
 	}
 }

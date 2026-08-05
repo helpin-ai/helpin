@@ -564,6 +564,8 @@ type AgentService struct {
 	workspaceSkillRepo         *repository.WorkspaceSkillRepository
 	gitService                 *GitService
 	taskService                *PMTaskService
+	sprintService              *PMSprintService
+	objectiveService           *PMObjectiveService
 	workflowService            *PMWorkflowService
 	activitySvc                *PMActivityService
 	notificationService        *NotificationService
@@ -724,6 +726,26 @@ func (s *AgentService) SetRuleEngine(engine *AutomationRuleEngine) *AgentService
 
 func (s *AgentService) SetWorkflowService(workflowService *PMWorkflowService) *AgentService {
 	s.workflowService = workflowService
+	return s
+}
+
+// SetPMSprintService enables direct sprint-targeted agent runs without
+// expanding the positional AgentService constructor.
+func (s *AgentService) SetPMSprintService(sprintService *PMSprintService) *AgentService {
+	if s == nil {
+		return s
+	}
+	s.sprintService = sprintService
+	return s
+}
+
+// SetPMObjectiveService enables direct objective-targeted runs and target
+// title enrichment without expanding the positional constructor.
+func (s *AgentService) SetPMObjectiveService(objectiveService *PMObjectiveService) *AgentService {
+	if s == nil {
+		return s
+	}
+	s.objectiveService = objectiveService
 	return s
 }
 
@@ -946,6 +968,18 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		if (presetKey == model.AgentPresetAskAgent || presetKey == model.AgentPresetSupportAgent) &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
 			strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel {
+			existing.Provider = trimPtr(preset.Provider)
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
+		// Scribe's product default moved from OpenAI to DeepSeek V4 Flash on
+		// OpenRouter. Only migrate the default preset when it still uses a known
+		// legacy product default, preserving custom routing choices.
+		if presetKey == model.AgentPresetTaskPlanner &&
+			presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
+			(strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel ||
+				strings.TrimSpace(derefString(existing.Model)) == "gpt-5.5") {
 			existing.Provider = trimPtr(preset.Provider)
 			existing.Model = trimPtr(preset.Model)
 			changed = true
@@ -3290,6 +3324,19 @@ func (s *AgentService) ListWorkspaceRuns(ctx context.Context, workspaceID string
 	return normalized, total, nil
 }
 
+// CountWorkspaceRunsRequiringAttention returns the lightweight workspace badge
+// count without hydrating agent run input or output payloads.
+func (s *AgentService) CountWorkspaceRunsRequiringAttention(ctx context.Context, workspaceID string) (int64, error) {
+	if workspaceID == "" {
+		return 0, fmt.Errorf("workspace_id is required")
+	}
+	count, err := s.runRepo.CountWorkspaceRunsRequiringAttention(ctx, workspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // GetAgentAnalytics returns bucketed run and token trends for one agent.
 func (s *AgentService) GetAgentAnalytics(ctx context.Context, workspaceID, agentID, rangeKey string) (*model.AgentAnalyticsResponse, error) {
 	if workspaceID == "" {
@@ -3800,6 +3847,9 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, err
 		}
+		if err := validateAgentTeamScope(agent, "task", task.TeamID); err != nil {
+			return nil, err
+		}
 		resolved := agentcontract.ResolveAgentProfile(agent, resolveInvocationMode(agent))
 
 		var delivery *model.TaskDeliveryTarget
@@ -3870,6 +3920,9 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, err
 		}
+		if err := validateAgentTeamScope(agent, "epic", epic.TeamID); err != nil {
+			return nil, err
+		}
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
@@ -3908,6 +3961,92 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		if s.activitySvc != nil {
 			_ = s.activitySvc.Log(ctx, workspaceID, "epic", epic.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
+		}
+		s.publishRunEvent(run, derefString(actorID))
+		return run, nil
+
+	case "sprint":
+		if s.sprintService == nil {
+			return nil, fmt.Errorf("sprint service is not configured")
+		}
+		sprint, err := s.sprintService.GetByID(ctx, targetID)
+		if err != nil || sprint == nil || sprint.Sprint.WorkspaceID != workspaceID {
+			return nil, fmt.Errorf("sprint not found")
+		}
+
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "sprint")
+		if err != nil {
+			return nil, err
+		}
+		if err := validateAgentTeamScope(agent, "sprint", sprint.Sprint.TeamID); err != nil {
+			return nil, err
+		}
+		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
+			return nil, err
+		}
+		payload, err := buildAgentRunInputPayload("sprint", sprint.Sprint.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
+		if err != nil {
+			return nil, fmt.Errorf("build sprint run input: %w", err)
+		}
+
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID:          workspaceID,
+			agent:                agent,
+			targetType:           "sprint",
+			targetID:             sprint.Sprint.ID,
+			parentRunID:          parentRunID,
+			allowActiveParentRun: opts.allowActiveParentRun,
+			actorID:              actorID,
+			input:                payload,
+			trigger:              trigger,
+			invocationMode:       resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if s.activitySvc != nil {
+			if err := s.activitySvc.Log(ctx, workspaceID, "sprint", sprint.Sprint.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started")); err != nil {
+				slog.ErrorContext(ctx, "log sprint agent run activity", "error", err, "workspace_id", workspaceID, "sprint_id", sprint.Sprint.ID, "run_id", run.ID)
+			}
+		}
+		s.publishRunEvent(run, derefString(actorID))
+		return run, nil
+
+	case "objective":
+		if s.objectiveService == nil {
+			return nil, fmt.Errorf("objective service is not configured")
+		}
+		objective, err := s.objectiveService.GetByID(ctx, targetID, workspaceID)
+		if err != nil || objective == nil {
+			return nil, fmt.Errorf("objective not found")
+		}
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "objective")
+		if err != nil {
+			return nil, err
+		}
+		if err := validateAgentTeamScopes(agent, "objective", objective.Teams); err != nil {
+			return nil, err
+		}
+		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
+			return nil, err
+		}
+		payload, err := buildAgentRunInputPayload("objective", objective.Objective.ID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
+		if err != nil {
+			return nil, fmt.Errorf("build objective run input: %w", err)
+		}
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID: workspaceID, agent: agent, targetType: "objective", targetID: objective.Objective.ID,
+			parentRunID: parentRunID, allowActiveParentRun: opts.allowActiveParentRun, actorID: actorID,
+			input: payload, trigger: trigger, invocationMode: resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if s.activitySvc != nil {
+			if err := s.activitySvc.Log(ctx, workspaceID, "objective", objective.Objective.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started")); err != nil {
+				slog.ErrorContext(ctx, "log objective agent run activity", "error", err, "workspace_id", workspaceID, "objective_id", objective.Objective.ID, "run_id", run.ID)
+			}
 		}
 		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
@@ -5586,6 +5725,9 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 	startReq := runtimeStartRunRequest(run, params.agent)
+	if auditActorID := s.auditActorIDForRun(ctx, run); auditActorID != "" {
+		startReq.Metadata["audit_actor_id"] = auditActorID
+	}
 	resolvedMCP := &ExternalMCPResolvedRun{}
 	selectedExternalTools := make([]string, 0)
 	for _, tool := range parseJSONStringSlice(params.agent.AllowedTools) {
@@ -5636,6 +5778,31 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 	return run, nil
+}
+
+func (s *AgentService) auditActorIDForRun(ctx context.Context, run *model.AgentRun) string {
+	if run == nil {
+		return ""
+	}
+	if actorID := strings.TrimSpace(derefString(run.TriggeredByUserID)); actorID != "" {
+		return actorID
+	}
+	if s == nil || s.agentRepo == nil || run.AgentVersionID == nil || strings.TrimSpace(*run.AgentVersionID) == "" {
+		return ""
+	}
+	versionRepo := agentVersionRepoFromAgentRepo(s.agentRepo)
+	if versionRepo == nil {
+		return ""
+	}
+	version, err := versionRepo.GetByID(ctx, run.WorkspaceID, run.AgentID, strings.TrimSpace(*run.AgentVersionID))
+	if err != nil {
+		slog.WarnContext(ctx, "resolve agent run audit actor", "error", err, "workspace_id", run.WorkspaceID, "run_id", run.ID, "agent_id", run.AgentID)
+		return ""
+	}
+	if version == nil {
+		return ""
+	}
+	return strings.TrimSpace(derefString(version.CreatedBy))
 }
 
 func (s *AgentService) failRunStart(ctx context.Context, run *model.AgentRun, agent *model.Agent, workspaceID string, startErr error) {
@@ -5984,7 +6151,7 @@ func (s *AgentService) reconcileStuckRun(ctx context.Context, run *model.AgentRu
 	run.ErrorMessage = &errMsg
 	run.ExecutionStage = strPtr("failed")
 	run.LastHeartbeatAt = &now
-	if err := s.runRepo.Update(ctx, run); err != nil {
+	if err := s.runRepo.UpdateReconciledFailure(ctx, run); err != nil {
 		return run
 	}
 	_ = s.markAgentIdle(ctx, run.WorkspaceID, run.AgentID)
@@ -6013,7 +6180,7 @@ func (s *AgentService) failStaleRun(ctx context.Context, run *model.AgentRun, no
 	run.ErrorMessage = &errMsg
 	run.ExecutionStage = strPtr("failed_to_start")
 	run.LastHeartbeatAt = &now
-	if err := s.runRepo.Update(ctx, run); err != nil {
+	if err := s.runRepo.UpdateReconciledFailure(ctx, run); err != nil {
 		slog.WarnContext(ctx, "failed to persist stale run reconciliation", "run_id", run.ID, "error", err)
 		return run
 	}
@@ -6079,6 +6246,8 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 
 	taskIDs := make([]string, 0, len(runs))
 	epicIDs := make([]string, 0, len(runs))
+	sprintIDs := make([]string, 0, len(runs))
+	objectiveIDs := make([]string, 0, len(runs))
 	documentIDs := make([]string, 0, len(runs))
 	conversationIDs := make([]string, 0, len(runs))
 	contactIDs := make([]string, 0, len(runs))
@@ -6100,6 +6269,10 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 			taskIDs = append(taskIDs, targetID)
 		case "epic":
 			epicIDs = append(epicIDs, targetID)
+		case "sprint":
+			sprintIDs = append(sprintIDs, targetID)
+		case "objective":
+			objectiveIDs = append(objectiveIDs, targetID)
 		case "document":
 			documentIDs = append(documentIDs, targetID)
 		case "support_conversation":
@@ -6108,6 +6281,31 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 			contactIDs = append(contactIDs, targetID)
 		case "crm_deal":
 			dealIDs = append(dealIDs, targetID)
+		}
+	}
+
+	sprintsByID := map[string]model.PMSprint{}
+	if len(sprintIDs) > 0 && s.sprintService != nil {
+		sprints, err := s.sprintService.ListByIDs(ctx, workspaceID, sprintIDs)
+		if err != nil {
+			slog.WarnContext(ctx, "enrich run targets: list sprints failed", "error", err, "workspace_id", workspaceID)
+		} else {
+			sprintsByID = make(map[string]model.PMSprint, len(sprints))
+			for _, sprint := range sprints {
+				sprintsByID[sprint.ID] = sprint
+			}
+		}
+	}
+	objectivesByID := map[string]model.PMObjective{}
+	if len(objectiveIDs) > 0 && s.objectiveService != nil {
+		objectives, err := s.objectiveService.ListByIDs(ctx, workspaceID, objectiveIDs)
+		if err != nil {
+			slog.WarnContext(ctx, "enrich run targets: list objectives failed", "error", err, "workspace_id", workspaceID)
+		} else {
+			objectivesByID = make(map[string]model.PMObjective, len(objectives))
+			for _, objective := range objectives {
+				objectivesByID[objective.ID] = objective
+			}
 		}
 	}
 
@@ -6220,6 +6418,18 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 				continue
 			}
 			info.Title = epic.Name
+		case "sprint":
+			sprint, ok := sprintsByID[targetID]
+			if !ok {
+				continue
+			}
+			info.Title = sprint.Name
+		case "objective":
+			objective, ok := objectivesByID[targetID]
+			if !ok {
+				continue
+			}
+			info.Title = objective.Name
 		case "document":
 			doc, ok := documentsByID[targetID]
 			if !ok {
@@ -6351,6 +6561,22 @@ func validateAgentTeamScope(agent *model.Agent, targetType string, targetTeamID 
 		return fmt.Errorf("agent is restricted to team %s and cannot run on %s targets for team %s", strings.Join(teamIDs, ","), targetType, actualTargetTeamID)
 	}
 	return nil
+}
+
+func validateAgentTeamScopes(agent *model.Agent, targetType string, targetTeamIDs []string) error {
+	teamIDs := agentTeamIDsForScope(agent)
+	if len(teamIDs) == 0 {
+		return nil
+	}
+	for _, targetTeamID := range normalizeServiceTeamIDs(targetTeamIDs) {
+		if slices.Contains(teamIDs, targetTeamID) {
+			return nil
+		}
+	}
+	if len(targetTeamIDs) == 0 {
+		return fmt.Errorf("agent is restricted to team %s and cannot run on workspace-scoped %s targets", strings.Join(teamIDs, ","), targetType)
+	}
+	return fmt.Errorf("agent is restricted to team %s and cannot run on %s targets for teams %s", strings.Join(teamIDs, ","), targetType, strings.Join(normalizeServiceTeamIDs(targetTeamIDs), ","))
 }
 
 func resolveCreateAgentTeamIDs(req model.CreateAgentRequest) []string {

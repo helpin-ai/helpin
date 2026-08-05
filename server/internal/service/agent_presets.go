@@ -13,10 +13,58 @@ const (
 	defaultAnthropicAgentModel  = "claude-opus-4-8"
 	defaultOpenAIAgentModel     = "gpt-5.6-terra"
 	defaultOpenRouterAgentModel = "openai/gpt-5.6-terra"
+	// defaultScribeAgentModel keeps interactive task planning on the product's
+	// preferred fast OpenRouter model.
+	defaultScribeAgentModel = "deepseek/deepseek-v4-flash"
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
 	defaultAskAgentModel = "deepseek/deepseek-v4-flash-0731"
 )
+
+var newPMReadToolAliases = []string{
+	"list_workspace_members",
+	"list_pm_labels",
+	"get_task",
+	"list_epics",
+	"get_epic",
+	"list_sprints",
+	"get_sprint",
+	"list_sprint_tasks",
+	"list_objectives",
+	"get_objective",
+}
+
+var newPMWriteToolAliases = []string{
+	"update_task",
+	"create_task_checklist_item",
+	"update_task_checklist_item",
+	"add_pm_comment",
+	"create_epic",
+	"update_epic",
+	"create_sprint",
+	"update_sprint",
+	"create_objective",
+	"update_objective",
+	"create_key_result",
+	"update_key_result",
+}
+
+var epicPlannerPMReadToolAliases = []string{
+	"list_workspace_members",
+	"list_pm_labels",
+	"get_task",
+	"list_epics",
+	"get_epic",
+}
+
+var taskPlannerPMReadToolAliases = []string{
+	"list_workspace_members",
+	"list_pm_labels",
+	"get_task",
+	"list_sprints",
+	"get_sprint",
+	"list_sprint_tasks",
+}
 
 func ListAgentPresets() []model.AgentPresetDefinition {
 	presets := agentPresetDefinitions()
@@ -340,6 +388,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	commandAgentPrompt := "You are a Sub-agent handling one confirmed delegated task. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward."
 	askAgentPrompt := askAgentSystemPrompt()
 	openRouterPresetProvider := model.AgentModelProviderOpenRouter
+	scribeDefaultModel := defaultScribeAgentModel
 	askAgentDefaultModel := defaultAskAgentModel
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		agentcontract.ToolUpdatePlan,
@@ -359,6 +408,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	taskPlannerTools = slices.DeleteFunc(taskPlannerTools, func(toolName string) bool {
 		return toolName == "list_epic_tasks"
 	})
+	epicPlannerTools = appendPresetTools(epicPlannerTools, epicPlannerPMReadToolAliases)
+	taskPlannerTools = appendPresetTools(taskPlannerTools, taskPlannerPMReadToolAliases)
 
 	presets := []model.AgentPresetDefinition{
 		{
@@ -393,8 +444,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
 			DefaultRole:           "Coding Task Planner",
 			RuntimeKind:           "codex",
-			Provider:              &openAIPresetProvider,
-			Model:                 &openAIPresetModel,
+			Provider:              &openRouterPresetProvider,
+			Model:                 &scribeDefaultModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          taskPlannerTools,
@@ -485,7 +536,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Model:               &openAIPresetModel,
 			DefaultTriggerMode:  "manual",
 			AllowedTriggerModes: []string{"manual"},
-			AllowedTools: []string{
+			AllowedTools: appendPresetTools([]string{
 				agentcontract.ToolListAvailableSkills,
 				agentcontract.ToolSearchAvailableSkills,
 				agentcontract.ToolReadSkill,
@@ -529,7 +580,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 				"crawl_url",
 				"get_release_context",
 				"find_tasks_for_git_changes",
-			},
+			}, newPMReadToolAliases),
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"workspace", "document", "task", "crm_deal", "crm_contact"},
 			ApprovalMode:          "always",
@@ -597,9 +648,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          []string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repository", "checkout_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "list_spaces", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"},
+			AllowedTools:          appendPresetTools([]string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repository", "checkout_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "list_spaces", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"}, newPMReadToolAliases, newPMWriteToolAliases),
 			AllowedCommands:       []string{},
-			AllowedTargetTypes:    []string{"workspace", "document", "task", "epic", "crm_deal", "crm_contact", "repository"},
+			AllowedTargetTypes:    []string{"workspace", "document", "task", "epic", "sprint", "objective", "crm_deal", "crm_contact", "repository"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime("codex"),
@@ -638,7 +689,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 // delegated to child runs through start_agent_run / start_agent_plan behind
 // an explicit approval.
 func askAgentPresetTools() []string {
-	return []string{
+	return appendPresetTools([]string{
 		// Interaction + progress.
 		"request_user_input", "request_approval", "update_plan",
 		// Web research.
@@ -658,7 +709,15 @@ func askAgentPresetTools() []string {
 		"get_agent_run", "cancel_agent_run",
 		"create_custom_agent", "promote_run_to_agent",
 		"run_epic_delivery_pipeline",
+	}, newPMReadToolAliases)
+}
+
+func appendPresetTools(base []string, additions ...[]string) []string {
+	tools := slices.Clone(base)
+	for _, addition := range additions {
+		tools = append(tools, addition...)
 	}
+	return agentcontract.NormalizeToolNames(tools)
 }
 
 // askAgentSystemPrompt is the managed system prompt for the ask_agent preset.

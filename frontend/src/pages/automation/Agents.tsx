@@ -471,9 +471,11 @@ interface TemplateDraft {
   createStarterFlow: boolean;
 }
 
-const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string; description: string }> = [
+export const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string; description: string }> = [
   { value: 'task', label: 'Tasks', description: 'Run on tasks and task planning loops.' },
   { value: 'epic', label: 'Epics', description: 'Run on epics and planning loops.' },
+  { value: 'sprint', label: 'Sprints', description: 'Run on sprints and sprint planning loops.' },
+  { value: 'objective', label: 'Objectives', description: 'Run on objectives and outcome planning loops.' },
   { value: 'crm_deal', label: 'CRM deals', description: 'Run on CRM deal records.' },
   { value: 'document', label: 'Docs', description: 'Run on documents and docs-backed context.' },
   { value: 'support_conversation', label: 'Support', description: 'Run on support inbox conversations.' },
@@ -484,6 +486,8 @@ const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string
 const RUN_NOW_SUPPORTED_TARGETS = new Set<AgentTargetType>([
   'task',
   'epic',
+  'sprint',
+  'objective',
   'repository',
   'workspace',
   'support_conversation',
@@ -492,12 +496,16 @@ const RUN_NOW_SUPPORTED_TARGETS = new Set<AgentTargetType>([
 const RUN_NOW_TARGET_ID_LABELS: Partial<Record<AgentTargetType, string>> = {
   task: 'Task ID',
   epic: 'Epic ID',
+  sprint: 'Sprint ID',
+  objective: 'Objective ID',
   support_conversation: 'Conversation ID',
 };
 
 const RUN_NOW_TARGET_ID_PLACEHOLDERS: Partial<Record<AgentTargetType, string>> = {
   task: 'Paste a task ID',
   epic: 'Paste an epic ID',
+  sprint: 'Paste a sprint ID',
+  objective: 'Paste an objective ID',
   support_conversation: 'Paste a support conversation ID',
 };
 
@@ -745,7 +753,7 @@ function labelForAgentTarget(target: AgentTargetType) {
   return CUSTOM_AGENT_TARGET_OPTIONS.find((option) => option.value === target)?.label ?? target;
 }
 
-function runNowTargetOptions(agent: Agent | null): AgentTargetType[] {
+export function runNowTargetOptions(agent: Agent | null): AgentTargetType[] {
   if (!agent) return [];
   return normalizeTargetList(
     (agent.allowed_targets ?? [])
@@ -1118,6 +1126,8 @@ const AGENT_RUN_TARGET_LABELS: Partial<Record<AgentTargetType, string>> = {
   support_conversation: 'Support conversation',
   support_coverage_gap: 'Coverage gap',
   epic: 'Epic',
+  sprint: 'Sprint',
+  objective: 'Objective',
   document: 'Document',
   crm_deal: 'Deal',
   repository: 'Repository',

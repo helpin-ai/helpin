@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +44,89 @@ func TestNormalizeObjectiveState(t *testing.T) {
 				t.Fatalf("normalizeObjectiveState(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPMObjectiveServiceUpdateCanClearDatesWithPresenceFlags(t *testing.T) {
+	db := newTestDB(t)
+	workspaceID := "ws-objective-date-clear"
+	seedUser(t, db, "objective-date-admin", "objective-date@example.com", "Objective Date Admin", "hash")
+	seedWorkspace(t, db, workspaceID, "Objective Date", "objective-date", "objective-date-admin")
+	seedWorkspaceMember(t, db, "objective-date-member", workspaceID, "objective-date-admin", "objective-date@example.com", "Objective Date Admin", model.RoleAdmin)
+	activity := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := NewPMObjectiveService(repository.NewPMObjectiveRepository(db), repository.NewPMKeyResultRepository(db), repository.NewPMLabelRepository(db), nil, repository.NewWorkspaceRepository(db), activity, nil, nil)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	deadline := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
+	created, err := svc.Create(context.Background(), model.CreateObjectiveRequest{WorkspaceID: workspaceID, Name: "Clear dates", ObjectiveType: model.PMObjectiveTypeStrategic, PlannedStartDate: &start, Deadline: &deadline}, "objective-date-admin")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	updated, err := svc.Update(context.Background(), created.Objective.ID, model.UpdateObjectiveRequest{PlannedStartDateSet: true, DeadlineSet: true}, "objective-date-admin")
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.Objective.PlannedStartDate != nil || updated.Objective.Deadline != nil {
+		t.Fatalf("dates were not cleared: %#v", updated.Objective)
+	}
+}
+
+func TestPMObjectiveServiceCreateAndUpdateAssociationsAreAtomic(t *testing.T) {
+	db := newTestDB(t)
+	workspaceID := "ws-objective-atomic"
+	seedUser(t, db, "objective-atomic-admin", "objective-atomic@example.com", "Objective Atomic Admin", "hash")
+	seedWorkspace(t, db, workspaceID, "Objective Atomic", "objective-atomic", "objective-atomic-admin")
+	seedWorkspaceMember(t, db, "objective-atomic-member", workspaceID, "objective-atomic-admin", "objective-atomic@example.com", "Objective Atomic Admin", model.RoleAdmin)
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, "objective-atomic-team", workspaceID, "Atomic Team", now, now)
+	activity := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := NewPMObjectiveService(repository.NewPMObjectiveRepository(db), repository.NewPMKeyResultRepository(db), repository.NewPMLabelRepository(db), nil, repository.NewWorkspaceRepository(db), activity, nil, nil)
+
+	if _, err := svc.Create(context.Background(), model.CreateObjectiveRequest{
+		WorkspaceID: workspaceID, Name: "Must Roll Back", ObjectiveType: model.PMObjectiveTypeStrategic,
+		TeamIDs: []string{"objective-atomic-team", "objective-atomic-team"},
+	}, "objective-atomic-admin"); err == nil {
+		t.Fatal("expected duplicate association create to fail")
+	}
+	var createCount int64
+	if err := db.Model(&model.PMObjective{}).Where("workspace_id = ? AND name = ?", workspaceID, "Must Roll Back").Count(&createCount).Error; err != nil || createCount != 0 {
+		t.Fatalf("failed create left objective row: count=%d err=%v", createCount, err)
+	}
+
+	created, err := svc.Create(context.Background(), model.CreateObjectiveRequest{
+		WorkspaceID: workspaceID, Name: "Original", ObjectiveType: model.PMObjectiveTypeStrategic,
+		TeamIDs: []string{"objective-atomic-team"},
+	}, "objective-atomic-admin")
+	if err != nil {
+		t.Fatalf("seed objective: %v", err)
+	}
+	changed := "Changed"
+	if _, err := svc.Update(context.Background(), created.Objective.ID, model.UpdateObjectiveRequest{
+		Name: &changed, TeamIDs: []string{"objective-atomic-team", "objective-atomic-team"},
+	}, "objective-atomic-admin"); err == nil {
+		t.Fatal("expected duplicate association update to fail")
+	}
+	persisted, err := svc.GetByID(context.Background(), created.Objective.ID, workspaceID)
+	if err != nil {
+		t.Fatalf("reload objective: %v", err)
+	}
+	if persisted.Objective.Name != "Original" || len(persisted.Teams) != 1 || persisted.Teams[0] != "objective-atomic-team" {
+		t.Fatalf("failed update was partially committed: %#v", persisted)
+	}
+}
+
+func TestPMObjectiveServiceUpdateKeyResultRejectsOrphanParent(t *testing.T) {
+	db := newTestDB(t)
+	repo := repository.NewPMKeyResultRepository(db)
+	svc := NewPMObjectiveService(repository.NewPMObjectiveRepository(db), repo, repository.NewPMLabelRepository(db), nil, repository.NewWorkspaceRepository(db), nil, nil, nil)
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO pm_key_results (id, objective_id, name, result_type, initial_value, current_value, target_value, progress, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "orphan-key-result", "missing-objective", "Orphan", model.PMKeyResultTypeNumeric, 0, 0, 100, 0, now, now)
+	current := 50.0
+	if _, err := svc.UpdateKeyResult(context.Background(), "orphan-key-result", model.UpdateKeyResultRequest{CurrentValue: &current}, "actor"); err == nil || !strings.Contains(err.Error(), "objective not found") {
+		t.Fatalf("orphan update error = %v", err)
+	}
+	persisted, err := repo.GetByID(context.Background(), "orphan-key-result")
+	if err != nil || persisted.CurrentValue != 0 {
+		t.Fatalf("orphan key result was changed: kr=%#v err=%v", persisted, err)
 	}
 }
 
@@ -170,10 +254,10 @@ func TestPMObjectiveService_Create_ReassignsTemporaryAttachmentIDs(t *testing.T)
 	)
 
 	objective, err := svc.Create(ctx, model.CreateObjectiveRequest{
-		WorkspaceID:    workspaceID,
-		Name:           "Objective With Image",
-		ObjectiveType:  model.PMObjectiveTypeTactical,
-		AttachmentIDs:  []string{"attachment-objective-1"},
+		WorkspaceID:   workspaceID,
+		Name:          "Objective With Image",
+		ObjectiveType: model.PMObjectiveTypeTactical,
+		AttachmentIDs: []string{"attachment-objective-1"},
 	}, userID)
 	if err != nil {
 		t.Fatalf("Create: %v", err)

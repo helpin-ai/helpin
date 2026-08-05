@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -24,7 +25,47 @@ func NewPMSprintRepository(db *gorm.DB) *PMSprintRepository {
 
 // List returns sprints with filters.
 func (r *PMSprintRepository) List(ctx context.Context, workspaceID string, filters model.PMSprintListFilters) ([]model.PMSprint, error) {
+	query := r.listQuery(ctx, workspaceID, filters)
+
+	var sprints []model.PMSprint
+	if err := query.Order("COALESCE(start_date, created_at) DESC").Find(&sprints).Error; err != nil {
+		return nil, fmt.Errorf("list sprints: %w", err)
+	}
+	r.setSprintStatuses(sprints)
+	return sprints, nil
+}
+
+// ListPage counts and selects only the requested sprint page before enriching it.
+func (r *PMSprintRepository) ListPage(ctx context.Context, workspaceID string, filters model.PMSprintListFilters, pagination model.PMPagination) ([]model.SprintWithStats, int, int, int, error) {
+	page, perPage := normalizeSprintPagination(pagination)
+	query := r.listQuery(ctx, workspaceID, filters)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, page, perPage, fmt.Errorf("count sprints: %w", err)
+	}
+	if total == 0 || int64(page) > (total-1)/int64(perPage)+1 {
+		return []model.SprintWithStats{}, int(total), page, perPage, nil
+	}
+
+	var sprints []model.PMSprint
+	offset := (page - 1) * perPage
+	if err := query.Order("COALESCE(start_date, created_at) DESC").Offset(offset).Limit(perPage).Find(&sprints).Error; err != nil {
+		return nil, 0, page, perPage, fmt.Errorf("list sprint page: %w", err)
+	}
+	r.setSprintStatuses(sprints)
+	enriched, err := r.EnrichSprints(ctx, sprints)
+	if err != nil {
+		return nil, 0, page, perPage, err
+	}
+	return enriched, int(total), page, perPage, nil
+}
+
+func (r *PMSprintRepository) listQuery(ctx context.Context, workspaceID string, filters model.PMSprintListFilters) *gorm.DB {
 	query := r.db.WithContext(ctx).Model(&model.PMSprint{}).Where("workspace_id = ?", workspaceID)
+	if filters.Search != nil && strings.TrimSpace(*filters.Search) != "" {
+		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
+		query = query.Where("(LOWER(name) LIKE ? OR LOWER(COALESCE(description, '')) LIKE ?)", search, search)
+	}
 	if filters.TeamID != nil && *filters.TeamID != "" {
 		query = query.Where("team_id = ?", *filters.TeamID)
 	}
@@ -38,30 +79,64 @@ func (r *PMSprintRepository) List(ctx context.Context, workspaceID string, filte
 			query = query.Where("team_id IN ?", filters.AccessibleTeamIDs)
 		}
 	}
-
-	var sprints []model.PMSprint
-	if err := query.Order("COALESCE(start_date, created_at) DESC").Find(&sprints).Error; err != nil {
-		return nil, fmt.Errorf("list sprints: %w", err)
-	}
-
-	if filters.Status != nil && *filters.Status != "" {
-		filtered := make([]model.PMSprint, 0, len(sprints))
-		now := time.Now().UTC()
-		for _, it := range sprints {
-			status := computeSprintStatus(it.StartDate, it.EndDate, now)
-			if status == *filters.Status {
-				it.Status = status
-				filtered = append(filtered, it)
-			}
+	if filters.AgentTeamIDs != nil {
+		if len(filters.AgentTeamIDs) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where("team_id IN ?", filters.AgentTeamIDs)
 		}
-		return filtered, nil
 	}
+	if filters.Status != nil && *filters.Status != "" {
+		today := time.Now().UTC().Format("2006-01-02")
+		switch *filters.Status {
+		case model.PMSprintStatusUnstarted:
+			query = query.Where("start_date IS NULL OR end_date IS NULL OR start_date > ?", today)
+		case model.PMSprintStatusStarted:
+			query = query.Where("start_date IS NOT NULL AND end_date IS NOT NULL AND start_date <= ? AND end_date >= ?", today, today)
+		case model.PMSprintStatusDone:
+			query = query.Where("start_date IS NOT NULL AND end_date IS NOT NULL AND end_date < ?", today)
+		default:
+			query = query.Where("1 = 0")
+		}
+	}
+	return query
+}
 
+// ListByIDs returns sprint rows for target-title enrichment in one query.
+func (r *PMSprintRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMSprint, error) {
+	if len(ids) == 0 {
+		return []model.PMSprint{}, nil
+	}
+	var sprints []model.PMSprint
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Find(&sprints).Error; err != nil {
+		return nil, fmt.Errorf("list sprints by IDs: %w", err)
+	}
+	r.setSprintStatuses(sprints)
+	return sprints, nil
+}
+
+func (r *PMSprintRepository) setSprintStatuses(sprints []model.PMSprint) {
 	now := time.Now().UTC()
 	for i := range sprints {
 		sprints[i].Status = computeSprintStatus(sprints[i].StartDate, sprints[i].EndDate, now)
 	}
-	return sprints, nil
+}
+
+func normalizeSprintPagination(pagination model.PMPagination) (int, int) {
+	page := pagination.Page
+	if page <= 0 {
+		page = 1
+	}
+	perPage := pagination.PerPage
+	if perPage <= 0 {
+		perPage = 50
+	}
+	if perPage > 100 {
+		perPage = 100
+	}
+	return page, perPage
 }
 
 // ListPlanningWorkspace returns grouped sprint cards plus an unassigned backlog preview for the planning page.
@@ -202,6 +277,39 @@ func (r *PMSprintRepository) GetWithStats(ctx context.Context, id string) (*mode
 	return &model.SprintWithStats{Sprint: sprint, Labels: labels, Stats: stats}, nil
 }
 
+// EnrichSprints loads labels and statistics in batches for an already-bounded set.
+func (r *PMSprintRepository) EnrichSprints(ctx context.Context, sprints []model.PMSprint) ([]model.SprintWithStats, error) {
+	result := make([]model.SprintWithStats, 0, len(sprints))
+	if len(sprints) == 0 {
+		return result, nil
+	}
+
+	ids := make([]string, 0, len(sprints))
+	for _, sprint := range sprints {
+		ids = append(ids, sprint.ID)
+	}
+	labelsBySprintID, err := r.listLabelsBySprintIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	statsBySprintID, err := r.computePlanningStats(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, sprint := range sprints {
+		labels := labelsBySprintID[sprint.ID]
+		if labels == nil {
+			labels = []model.PMLabel{}
+		}
+		result = append(result, model.SprintWithStats{
+			Sprint: sprint,
+			Labels: labels,
+			Stats:  statsBySprintID[sprint.ID],
+		})
+	}
+	return result, nil
+}
+
 // Create inserts a sprint.
 func (r *PMSprintRepository) Create(ctx context.Context, sprint *model.PMSprint) error {
 	if err := r.db.WithContext(ctx).Create(sprint).Error; err != nil {
@@ -210,12 +318,41 @@ func (r *PMSprintRepository) Create(ctx context.Context, sprint *model.PMSprint)
 	return nil
 }
 
+// CreateWithLabels inserts a sprint and its label links atomically.
+func (r *PMSprintRepository) CreateWithLabels(ctx context.Context, sprint *model.PMSprint, labelIDs []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(sprint).Error; err != nil {
+			return fmt.Errorf("create sprint: %w", err)
+		}
+		if err := replaceSprintLabels(tx, sprint.ID, labelIDs); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 // Update updates a sprint.
 func (r *PMSprintRepository) Update(ctx context.Context, sprint *model.PMSprint) error {
 	if err := r.db.WithContext(ctx).Save(sprint).Error; err != nil {
 		return fmt.Errorf("update sprint: %w", err)
 	}
 	return nil
+}
+
+// UpdateWithLabels saves sprint scalar fields and, when labelIDs is non-nil,
+// replaces its label links in the same transaction.
+func (r *PMSprintRepository) UpdateWithLabels(ctx context.Context, sprint *model.PMSprint, labelIDs []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(sprint).Error; err != nil {
+			return fmt.Errorf("update sprint: %w", err)
+		}
+		if labelIDs != nil {
+			if err := replaceSprintLabels(tx, sprint.ID, labelIDs); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Delete hard-deletes a sprint.
@@ -278,17 +415,21 @@ func (r *PMSprintRepository) ComputeStats(ctx context.Context, sprintID string) 
 // ReplaceLabels replaces all labels linked to a sprint.
 func (r *PMSprintRepository) ReplaceLabels(ctx context.Context, sprintID string, labelIDs []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&model.PMSprintLabel{}, "sprint_id = ?", sprintID).Error; err != nil {
-			return fmt.Errorf("clear sprint labels: %w", err)
-		}
-		for _, labelID := range labelIDs {
-			link := model.PMSprintLabel{SprintID: sprintID, LabelID: labelID}
-			if err := tx.Create(&link).Error; err != nil {
-				return fmt.Errorf("set sprint labels: %w", err)
-			}
-		}
-		return nil
+		return replaceSprintLabels(tx, sprintID, labelIDs)
 	})
+}
+
+func replaceSprintLabels(tx *gorm.DB, sprintID string, labelIDs []string) error {
+	if err := tx.Delete(&model.PMSprintLabel{}, "sprint_id = ?", sprintID).Error; err != nil {
+		return fmt.Errorf("clear sprint labels: %w", err)
+	}
+	for _, labelID := range labelIDs {
+		link := model.PMSprintLabel{SprintID: sprintID, LabelID: labelID}
+		if err := tx.Create(&link).Error; err != nil {
+			return fmt.Errorf("set sprint labels: %w", err)
+		}
+	}
+	return nil
 }
 
 // ListTasks returns tasks in a sprint.
@@ -311,6 +452,31 @@ func (r *PMSprintRepository) ListEnrichedTasks(ctx context.Context, sprintID str
 		return nil, err
 	}
 	return NewPMTaskRepository(r.db).EnrichTasksForList(ctx, tasks), nil
+}
+
+// ListEnrichedTasksPage counts and selects only the requested task page before enrichment.
+func (r *PMSprintRepository) ListEnrichedTasksPage(ctx context.Context, sprintID string, search *string, pagination model.PMPagination) ([]model.BoardTask, int, int, int, error) {
+	page, perPage := normalizeSprintPagination(pagination)
+	query := r.db.WithContext(ctx).Model(&model.PMTask{}).
+		Where("sprint_id = ? AND archived = false", sprintID)
+	if search != nil && strings.TrimSpace(*search) != "" {
+		pattern := "%" + strings.ToLower(strings.TrimSpace(*search)) + "%"
+		query = query.Where("(LOWER(name) LIKE ? OR LOWER(COALESCE(description, '')) LIKE ? OR CAST(display_id AS TEXT) LIKE ?)", pattern, pattern, pattern)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, page, perPage, fmt.Errorf("count sprint stories: %w", err)
+	}
+	if total == 0 || int64(page) > (total-1)/int64(perPage)+1 {
+		return []model.BoardTask{}, int(total), page, perPage, nil
+	}
+
+	var tasks []model.PMTask
+	offset := (page - 1) * perPage
+	if err := query.Order("position ASC, created_at DESC").Offset(offset).Limit(perPage).Find(&tasks).Error; err != nil {
+		return nil, 0, page, perPage, fmt.Errorf("list sprint story page: %w", err)
+	}
+	return NewPMTaskRepository(r.db).EnrichTasksForList(ctx, tasks), int(total), page, perPage, nil
 }
 
 // HasDateOverlap checks whether another sprint overlaps date range for workspace/team.
@@ -349,6 +515,43 @@ func (r *PMSprintRepository) listLabels(ctx context.Context, sprintID string) ([
 		return nil, fmt.Errorf("list sprint labels: %w", err)
 	}
 	return labels, nil
+}
+
+func (r *PMSprintRepository) listLabelsBySprintIDs(ctx context.Context, sprintIDs []string) (map[string][]model.PMLabel, error) {
+	labelsBySprintID := make(map[string][]model.PMLabel, len(sprintIDs))
+	if len(sprintIDs) == 0 {
+		return labelsBySprintID, nil
+	}
+	var links []model.PMSprintLabel
+	if err := r.db.WithContext(ctx).Where("sprint_id IN ?", sprintIDs).Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("list sprint label links: %w", err)
+	}
+	if len(links) == 0 {
+		return labelsBySprintID, nil
+	}
+	labelIDs := make([]string, 0, len(links))
+	for _, link := range links {
+		labelIDs = append(labelIDs, link.LabelID)
+	}
+	var labels []model.PMLabel
+	if err := r.db.WithContext(ctx).Where("id IN ?", labelIDs).Order("name ASC").Find(&labels).Error; err != nil {
+		return nil, fmt.Errorf("list sprint labels: %w", err)
+	}
+	labelsByID := make(map[string]model.PMLabel, len(labels))
+	for _, label := range labels {
+		labelsByID[label.ID] = label
+	}
+	for _, link := range links {
+		if label, ok := labelsByID[link.LabelID]; ok {
+			labelsBySprintID[link.SprintID] = append(labelsBySprintID[link.SprintID], label)
+		}
+	}
+	for sprintID := range labelsBySprintID {
+		sort.SliceStable(labelsBySprintID[sprintID], func(i, j int) bool {
+			return labelsBySprintID[sprintID][i].Name < labelsBySprintID[sprintID][j].Name
+		})
+	}
+	return labelsBySprintID, nil
 }
 
 func computeSprintStatus(startDate, endDate *time.Time, now time.Time) string {

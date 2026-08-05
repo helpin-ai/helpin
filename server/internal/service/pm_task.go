@@ -240,7 +240,7 @@ func (s *PMTaskService) List(ctx context.Context, workspaceID string, filters mo
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
-	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
+	filters.AccessibleTeamIDs = intersectAccessibleTeamIDs(filters.AccessibleTeamIDs, accessibleTeamIDs(ctx))
 	tasks, total, err := s.taskRepo.List(ctx, workspaceID, filters, pagination)
 	if err != nil {
 		return nil, 0, err
@@ -416,17 +416,65 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	if err := validateSprintScope(ctx, s.sprintRepo, req.WorkspaceID, newTask.SprintID, newTask.TeamID); err != nil {
 		return nil, err
 	}
-	if req.Position != nil {
-		newTask.Position = *req.Position
-	} else {
-		position, err := s.taskRepo.NextPosition(ctx, req.WorkspaceID, stateID)
-		if err != nil {
-			return nil, err
+	// Resolve and validate every referenced row before opening the mutation
+	// transaction. This prevents a late invalid owner/label/checklist assignee
+	// from leaving behind a partially-created task.
+	ownerIDs, err := s.resolveOwnerUserIDs(ctx, req.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
+	if err != nil {
+		return nil, err
+	}
+	labelIDs := dedupeIDs(req.LabelIDs)
+	if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, labelIDs, allowedTeamIDs(req.TeamID)); err != nil {
+		return nil, err
+	}
+	followerIDs := dedupeIDs(req.FollowerIDs)
+	if newTask.RequesterID != nil {
+		followerIDs = append(followerIDs, *newTask.RequesterID)
+	}
+	followerIDs = dedupeIDs(append(followerIDs, ownerIDs...))
+	checklistItems := make([]model.PMChecklistItem, 0, len(req.ChecklistItems))
+	for i, ci := range req.ChecklistItems {
+		text := strings.TrimSpace(ci.Text)
+		if text == "" {
+			continue
 		}
-		newTask.Position = position
+		if ci.AssigneeID != nil && strings.TrimSpace(*ci.AssigneeID) != "" {
+			membership, err := s.workspaceRepo.GetMembership(ctx, req.WorkspaceID, strings.TrimSpace(*ci.AssigneeID))
+			if err != nil {
+				return nil, err
+			}
+			if membership == nil {
+				return nil, fmt.Errorf("checklist assignee must be an active workspace member")
+			}
+		}
+		position := i
+		if ci.Position != nil {
+			position = *ci.Position
+		}
+		checklistItems = append(checklistItems, model.PMChecklistItem{Text: text, Position: position, AssigneeID: ci.AssigneeID, DueDate: ci.DueDate})
 	}
 
-	if err := s.taskRepo.Create(ctx, newTask); err != nil {
+	if err := s.taskRepo.WithMutationTransaction(ctx, func(tasks *repository.PMTaskRepository, checklist *repository.PMChecklistItemRepository) error {
+		if err := tasks.CreateWithPosition(ctx, newTask, req.Position); err != nil {
+			return err
+		}
+		if err := tasks.ReplaceOwners(ctx, newTask.ID, ownerIDs); err != nil {
+			return err
+		}
+		if err := tasks.ReplaceFollowers(ctx, newTask.ID, followerIDs); err != nil {
+			return err
+		}
+		if err := tasks.ReplaceLabels(ctx, newTask.ID, labelIDs); err != nil {
+			return err
+		}
+		for i := range checklistItems {
+			checklistItems[i].TaskID = newTask.ID
+			if err := checklist.Create(ctx, &checklistItems[i]); err != nil {
+				return err
+			}
+		}
+		return tasks.UpdateStartedCompleted(ctx, newTask.ID)
+	}); err != nil {
 		return nil, err
 	}
 	if newTask.EpicID != nil && strings.TrimSpace(*newTask.EpicID) != "" {
@@ -459,60 +507,6 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		}
 	}
 
-	ownerIDs, err := s.resolveOwnerUserIDs(ctx, req.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
-	if err != nil {
-		return nil, err
-	}
-	for _, ownerID := range ownerIDs {
-		if err := s.taskRepo.AddOwner(ctx, newTask.ID, ownerID); err != nil {
-			return nil, err
-		}
-	}
-
-	followerIDs := dedupeIDs(req.FollowerIDs)
-	if newTask.RequesterID != nil {
-		followerIDs = append(followerIDs, *newTask.RequesterID)
-	}
-	for _, ownerID := range ownerIDs {
-		followerIDs = append(followerIDs, ownerID)
-	}
-	followerIDs = dedupeIDs(followerIDs)
-	for _, followerID := range followerIDs {
-		if err := s.taskRepo.AddFollower(ctx, newTask.ID, followerID); err != nil {
-			return nil, err
-		}
-	}
-
-	labelIDs := dedupeIDs(req.LabelIDs)
-	if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, labelIDs, allowedTeamIDs(req.TeamID)); err != nil {
-		return nil, err
-	}
-	for _, labelID := range labelIDs {
-		if err := s.taskRepo.AddLabel(ctx, newTask.ID, labelID); err != nil {
-			return nil, err
-		}
-	}
-
-	// Create checklist items from template.
-	if s.checklistRepo != nil && len(req.ChecklistItems) > 0 {
-		for i, ci := range req.ChecklistItems {
-			item := &model.PMChecklistItem{
-				TaskID:     newTask.ID,
-				Text:       strings.TrimSpace(ci.Text),
-				Position:   i,
-				AssigneeID: ci.AssigneeID,
-			}
-			if ci.Position != nil {
-				item.Position = *ci.Position
-			}
-			if item.Text != "" {
-				if err := s.checklistRepo.Create(ctx, item); err != nil {
-					s.logger.ErrorContext(ctx, "failed to create checklist item from template", "error", err, "task_id", newTask.ID)
-				}
-			}
-		}
-	}
-
 	// Create external links.
 	if s.externalLinkRepo != nil && len(req.ExternalLinks) > 0 {
 		for _, el := range req.ExternalLinks {
@@ -539,10 +533,6 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 				s.logger.ErrorContext(ctx, "failed to create external link", "error", err, "task_id", newTask.ID)
 			}
 		}
-	}
-
-	if err := s.taskRepo.UpdateStartedCompleted(ctx, newTask.ID); err != nil {
-		return nil, err
 	}
 
 	// Legacy path: evaluate epic automations from pm_automations table.
@@ -1147,6 +1137,7 @@ func (s *PMTaskService) Duplicate(ctx context.Context, taskID, actorID string) (
 				Completed:  sourceItem.Completed,
 				Position:   sourceItem.Position,
 				AssigneeID: sourceItem.AssigneeID,
+				DueDate:    sourceItem.DueDate,
 			}
 			if err := s.checklistRepo.Create(ctx, item); err != nil {
 				return nil, err
@@ -1459,7 +1450,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		}
 		current.Severity = *req.Severity
 	}
-	if req.Deadline != nil {
+	if req.Deadline != nil || req.DeadlineSet {
 		current.Deadline = req.Deadline
 	}
 	if req.Position != nil {
@@ -1468,9 +1459,9 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	if req.Blocked != nil {
 		current.Blocked = *req.Blocked
 	}
-	if req.Blocker != nil {
-		current.Blocker = req.Blocker
-		current.Blocked = strings.TrimSpace(*req.Blocker) != ""
+	if req.Blocker != nil || req.BlockerSet {
+		current.Blocker = nullableString(req.Blocker)
+		current.Blocked = req.Blocker != nil && strings.TrimSpace(*req.Blocker) != ""
 	}
 	if req.Archived != nil {
 		current.Archived = *req.Archived
@@ -1505,7 +1496,63 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		current.MovedAt = &now
 	}
 
-	if err := s.taskRepo.Update(ctx, current); err != nil {
+	var nextOwnerIDs []string
+	var previousOwnerIDs []string
+	ownerChangeRequested := req.OwnerMemberIDs != nil || req.OwnerIDs != nil
+	if req.OwnerMemberIDs != nil || req.OwnerIDs != nil {
+		nextOwnerIDs, err = s.resolveOwnerUserIDs(ctx, current.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
+		if err != nil {
+			return nil, err
+		}
+		previousOwnerIDs, err = s.taskRepo.ListOwnerUserIDs(ctx, current.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var followers []string
+	if req.FollowerIDs != nil {
+		followers = dedupeIDs(req.FollowerIDs)
+		if current.RequesterID != nil {
+			followers = append(followers, *current.RequesterID)
+		}
+		followers = dedupeIDs(followers)
+	}
+	var labelIDs []string
+	if req.LabelIDs != nil {
+		labelIDs = dedupeIDs(req.LabelIDs)
+		if err := validateLabelScope(ctx, s.labelRepo, current.WorkspaceID, labelIDs, allowedTeamIDs(current.TeamID)); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.taskRepo.WithMutationTransaction(ctx, func(tasks *repository.PMTaskRepository, _ *repository.PMChecklistItemRepository) error {
+		if err := tasks.Update(ctx, current); err != nil {
+			return err
+		}
+		if ownerChangeRequested {
+			if err := tasks.ReplaceOwners(ctx, current.ID, nextOwnerIDs); err != nil {
+				return err
+			}
+			for _, ownerID := range nextOwnerIDs {
+				if err := tasks.AddFollower(ctx, current.ID, ownerID); err != nil {
+					return err
+				}
+			}
+		}
+		if req.FollowerIDs != nil {
+			if err := tasks.ReplaceFollowers(ctx, current.ID, followers); err != nil {
+				return err
+			}
+		}
+		if req.LabelIDs != nil {
+			if err := tasks.ReplaceLabels(ctx, current.ID, labelIDs); err != nil {
+				return err
+			}
+		}
+		if stateChanged {
+			return tasks.UpdateStartedCompleted(ctx, current.ID)
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	if req.EpicID != nil {
@@ -1514,57 +1561,38 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			s.inheritEpicDeliveryTarget(ctx, current.WorkspaceID, current.ID, nextEpicID, actorID)
 		}
 	}
-
-	if req.OwnerMemberIDs != nil || req.OwnerIDs != nil {
-		nextOwnerIDs, err := s.resolveOwnerUserIDs(ctx, current.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
-		if err != nil {
-			return nil, err
-		}
-		currentOwnerIDs, err := s.taskRepo.ListOwnerUserIDs(ctx, current.ID)
-		if err != nil {
-			return nil, err
-		}
-		currentOwnerSet := stringSet(currentOwnerIDs)
-		nextOwnerSet := stringSet(nextOwnerIDs)
+	if ownerChangeRequested {
+		previousSet := stringSet(previousOwnerIDs)
+		nextSet := stringSet(nextOwnerIDs)
 		for _, ownerID := range nextOwnerIDs {
-			if _, exists := currentOwnerSet[ownerID]; !exists {
-				if err := s.AddOwner(ctx, current.ID, ownerID, actorID); err != nil {
-					return nil, err
+			if _, existed := previousSet[ownerID]; existed {
+				continue
+			}
+			if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "owner_added", stringPtr("owner"), nil, &ownerID, nil); err != nil {
+				s.logger.ErrorContext(ctx, "failed to log activity for task owner add", "error", err, "task_id", current.ID)
+			}
+			if s.followerService != nil {
+				if err := s.followerService.Follow(ctx, ownerID, "task", current.ID, current.WorkspaceID, "assigned"); err != nil {
+					s.logger.ErrorContext(ctx, "failed to auto-follow task for assigned owner", "error", err, "task_id", current.ID, "user_id", ownerID)
+				}
+			}
+			if s.notificationService != nil {
+				if err := s.notificationService.Emit(ctx, model.NotificationEventInput{WorkspaceID: current.WorkspaceID, ActorID: actorID, EventType: "task.assigned", EntityType: "task", EntityID: current.ID, Title: "assigned you to " + current.Name, Category: "assignment", Priority: "normal", TeamID: derefString(current.TeamID), ExplicitRecipients: []string{ownerID}}); err != nil {
+					s.logger.ErrorContext(ctx, "failed to emit notification for task assignment", "error", err, "task_id", current.ID, "user_id", ownerID)
 				}
 			}
 		}
-		for _, ownerID := range currentOwnerIDs {
-			if _, exists := nextOwnerSet[ownerID]; !exists {
-				if err := s.RemoveOwner(ctx, current.ID, ownerID, actorID); err != nil {
-					return nil, err
-				}
+		for _, ownerID := range previousOwnerIDs {
+			if _, retained := nextSet[ownerID]; retained {
+				continue
 			}
-		}
-	}
-	if req.FollowerIDs != nil {
-		followers := dedupeIDs(req.FollowerIDs)
-		if current.RequesterID != nil {
-			followers = append(followers, *current.RequesterID)
-		}
-		followers = dedupeIDs(followers)
-		if err := s.taskRepo.ReplaceFollowers(ctx, current.ID, followers); err != nil {
-			return nil, err
-		}
-	}
-	if req.LabelIDs != nil {
-		labelIDs := dedupeIDs(req.LabelIDs)
-		if err := validateLabelScope(ctx, s.labelRepo, current.WorkspaceID, labelIDs, allowedTeamIDs(current.TeamID)); err != nil {
-			return nil, err
-		}
-		if err := s.taskRepo.ReplaceLabels(ctx, current.ID, labelIDs); err != nil {
-			return nil, err
+			if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "owner_removed", stringPtr("owner"), &ownerID, nil, nil); err != nil {
+				s.logger.ErrorContext(ctx, "failed to log activity for task owner remove", "error", err, "task_id", current.ID)
+			}
 		}
 	}
 
 	if stateChanged {
-		if err := s.taskRepo.UpdateStartedCompleted(ctx, current.ID); err != nil {
-			return nil, err
-		}
 		// Legacy path: evaluate epic automations from pm_automations table.
 		if s.automationService != nil {
 			s.automationService.OnStoryStateChange(ctx, current, current.WorkflowStateID)

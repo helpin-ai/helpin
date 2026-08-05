@@ -29,7 +29,7 @@ func (r *PMLabelRepository) ListByWorkspace(ctx context.Context, workspaceID str
 	var labels []model.PMLabel
 	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
 	query = ApplyScopeFilter(query, opts)
-	if err := query.Order("COALESCE(team_id::text, ''), name ASC").Find(&labels).Error; err != nil {
+	if err := query.Order("team_id ASC, name ASC").Find(&labels).Error; err != nil {
 		return nil, fmt.Errorf("list labels: %w", err)
 	}
 	return labels, nil
@@ -45,6 +45,18 @@ func (r *PMLabelRepository) GetByID(ctx context.Context, id string) (*model.PMLa
 		return nil, fmt.Errorf("get label: %w", err)
 	}
 	return &label, nil
+}
+
+// ListByIDs returns labels matching the requested IDs in one query.
+func (r *PMLabelRepository) ListByIDs(ctx context.Context, ids []string) ([]model.PMLabel, error) {
+	if len(ids) == 0 {
+		return []model.PMLabel{}, nil
+	}
+	var labels []model.PMLabel
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&labels).Error; err != nil {
+		return nil, fmt.Errorf("list labels by ids: %w", err)
+	}
+	return labels, nil
 }
 
 // GetByName returns a label by workspace/name.
@@ -88,7 +100,7 @@ func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID strin
 	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
 	query = ApplyScopeFilter(query, opts)
 	var labels []model.PMLabel
-	if err := query.Order("COALESCE(team_id::text, ''), name ASC").Find(&labels).Error; err != nil {
+	if err := query.Order("team_id ASC, name ASC").Find(&labels).Error; err != nil {
 		return nil, fmt.Errorf("list labels with stats: %w", err)
 	}
 

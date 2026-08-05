@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/gorm"
@@ -52,6 +54,180 @@ func TestAgentRuntimeHostExecuteCommandUsesInternalCommandService(t *testing.T) 
 	}
 	if string(gotInput) != `{"message":"hello"}` {
 		t.Fatalf("unexpected command input: %s", gotInput)
+	}
+}
+
+func TestAgentRuntimeHostExecuteCommandPropagatesSeparateAuditActor(t *testing.T) {
+	commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	var gotMeta model.InternalCommandContext
+	commandService.register(InternalCommandDefinition{
+		Name:                 "test.audit_actor",
+		SupportedTargetTypes: []string{"workspace"},
+		Execute: func(_ context.Context, meta model.InternalCommandContext, _ json.RawMessage) (json.RawMessage, error) {
+			gotMeta = meta
+			return json.RawMessage(`{"ok":true}`), nil
+		},
+	})
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, commandService, nil)
+
+	resp, err := host.ExecuteCommand(context.Background(), agentruntime.CommandExecutionRequest{
+		Meta: agentruntime.CommandExecutionContext{
+			AppID:            "helpin",
+			WorkspaceID:      "workspace-audit",
+			AgentID:          "agent-audit",
+			TargetType:       "workspace",
+			TargetID:         "workspace-audit",
+			RunInputMetadata: map[string]interface{}{"audit_actor_id": "user-audit"},
+		},
+		CommandName: "test.audit_actor",
+		Input:       json.RawMessage(`{}`),
+	})
+	if err != nil || resp.Error != "" {
+		t.Fatalf("ExecuteCommand error=%v response=%#v", err, resp)
+	}
+	if gotMeta.ActorID != "" || gotMeta.AuditActorID != "user-audit" || gotMeta.AgentID != "agent-audit" {
+		t.Fatalf("command metadata = %#v", gotMeta)
+	}
+}
+
+func TestAgentRuntimeHostExecuteCommandResolvesAgentTeamScope(t *testing.T) {
+	tests := []struct {
+		name        string
+		agentID     string
+		teamIDs     []string
+		wantTeamIDs []string
+		actorID     string
+	}{
+		{name: "team scoped human run", agentID: "agent-runtime-team", teamIDs: []string{"team-b", "team-a"}, wantTeamIDs: []string{"team-a", "team-b"}, actorID: "human-runtime"},
+		{name: "workspace scoped", agentID: "agent-runtime-workspace", wantTeamIDs: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupAgentScopeTestDB(t)
+			seedAgentScopeAgent(t, db, model.Agent{
+				ID: tt.agentID, WorkspaceID: "workspace-runtime-scope", Name: tt.name, Status: "idle", RuntimeKind: "native_sdk",
+				Skills: model.AgentSkillRefs{}, ExecutionConfig: model.JSONBlob(`{}`), AllowedTools: json.RawMessage(`[]`),
+				AllowedCommands: json.RawMessage(`[]`), AllowedTargets: json.RawMessage(`[]`), ApprovalMode: "always",
+				DefaultInvocationMode: "interactive", TeamIDs: tt.teamIDs,
+			})
+
+			commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+			var gotMeta model.InternalCommandContext
+			commandService.register(InternalCommandDefinition{
+				Name:                 "test.agent_scope",
+				SupportedTargetTypes: []string{"workspace"},
+				Execute: func(_ context.Context, meta model.InternalCommandContext, _ json.RawMessage) (json.RawMessage, error) {
+					gotMeta = meta
+					return json.RawMessage(`{"ok":true}`), nil
+				},
+			})
+			host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, commandService, nil).
+				SetAgentRepository(repository.NewAgentRepository(db))
+
+			resp, err := host.ExecuteCommand(context.Background(), agentruntime.CommandExecutionRequest{
+				Meta: agentruntime.CommandExecutionContext{
+					AppID: "helpin", WorkspaceID: "workspace-runtime-scope", AgentID: tt.agentID, ExternalActorID: tt.actorID,
+					Target: agentruntime.TargetRef{Type: "workspace", ID: "workspace-runtime-scope"},
+				},
+				CommandName: "test.agent_scope",
+			})
+			if err != nil || resp == nil || resp.Error != "" {
+				t.Fatalf("ExecuteCommand error=%v response=%#v", err, resp)
+			}
+			if !gotMeta.AgentScopeResolved {
+				t.Fatalf("agent scope unresolved: %#v", gotMeta)
+			}
+			if !slices.Equal(gotMeta.AgentTeamIDs, tt.wantTeamIDs) {
+				t.Fatalf("agent team IDs = %#v, want %#v", gotMeta.AgentTeamIDs, tt.wantTeamIDs)
+			}
+			if gotMeta.ActorID != tt.actorID {
+				t.Fatalf("actor ID = %q, want %q", gotMeta.ActorID, tt.actorID)
+			}
+			if gotMeta.ActorRole != "" || len(gotMeta.ActorTeamIDs) != 0 {
+				t.Fatalf("agent scope fabricated human authorization: %#v", gotMeta)
+			}
+		})
+	}
+}
+
+func TestAgentRuntimeHostExecuteCommandRejectsUnresolvedAgentScope(t *testing.T) {
+	db := setupAgentScopeTestDB(t)
+	called := false
+	commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	commandService.register(InternalCommandDefinition{
+		Name:                 "test.requires_agent_scope",
+		SupportedTargetTypes: []string{"workspace"},
+		Execute: func(_ context.Context, _ model.InternalCommandContext, _ json.RawMessage) (json.RawMessage, error) {
+			called = true
+			return json.RawMessage(`{"ok":true}`), nil
+		},
+	})
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, commandService, nil).
+		SetAgentRepository(repository.NewAgentRepository(db))
+	resp, err := host.ExecuteCommand(context.Background(), agentruntime.CommandExecutionRequest{
+		Meta: agentruntime.CommandExecutionContext{
+			AppID: "helpin", WorkspaceID: "workspace-runtime-scope",
+			Target: agentruntime.TargetRef{Type: "workspace", ID: "workspace-runtime-scope"},
+		},
+		CommandName: "test.requires_agent_scope",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCommand transport error: %v", err)
+	}
+	if resp == nil || !strings.Contains(resp.Error, "agent_id is required") {
+		t.Fatalf("response = %#v, want missing agent scope error", resp)
+	}
+	if called {
+		t.Fatal("command executed without resolved agent scope")
+	}
+}
+
+func TestAgentRuntimeHostExecuteCommandPropagatesResolvedActor(t *testing.T) {
+	db := newTestDB(t)
+	seedUser(t, db, "user-actor-1", "actor@example.com", "Runtime Actor", "hash")
+	seedWorkspace(t, db, "workspace-actor-1", "Runtime Workspace", "runtime-workspace", "user-actor-1")
+	seedWorkspaceMember(t, db, "member-actor-1", "workspace-actor-1", "user-actor-1", "actor@example.com", "Runtime Actor", "manager")
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, "team-actor-1", "workspace-actor-1", "Runtime Team")
+	mustExec(t, db, `INSERT INTO team_workspace_memberships (id, team_id, workspace_member_id, role, created_at, updated_at)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, "team-member-actor-1", "team-actor-1", "member-actor-1", "owner")
+
+	commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	var gotActor *authorization.Actor
+	commandService.register(InternalCommandDefinition{
+		Name:                 "test.capture_actor",
+		SupportedTargetTypes: []string{"task"},
+		Execute: func(ctx context.Context, _ model.InternalCommandContext, _ json.RawMessage) (json.RawMessage, error) {
+			gotActor = authorization.GetActor(ctx)
+			return json.RawMessage(`{"ok":true}`), nil
+		},
+	})
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, commandService, nil).
+		SetAuthorizationService(authorization.NewAuthzService(db, authorization.NewGORMMemberRepository(db), nil))
+
+	resp, err := host.ExecuteCommand(context.Background(), agentruntime.CommandExecutionRequest{
+		Meta: agentruntime.CommandExecutionContext{
+			AppID:           "helpin",
+			ExternalActorID: "user-actor-1",
+			WorkspaceID:     "workspace-actor-1",
+			Target:          agentruntime.TargetRef{Type: "task", ID: "task-actor-1"},
+		},
+		CommandName: "test.capture_actor",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCommand returned error: %v", err)
+	}
+	if resp == nil || resp.Error != "" {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+	if gotActor == nil {
+		t.Fatal("expected resolved actor in command execution context")
+	}
+	if gotActor.Role != "manager" {
+		t.Fatalf("expected manager workspace role, got %q", gotActor.Role)
+	}
+	if len(gotActor.TeamMemberships) != 1 || gotActor.TeamMemberships[0].TeamID != "team-actor-1" || gotActor.TeamMemberships[0].Role != "owner" {
+		t.Fatalf("expected owner team role to survive actor propagation, got %#v", gotActor.TeamMemberships)
 	}
 }
 
@@ -150,6 +326,59 @@ func TestAgentRuntimeHostResolveSupportConversationBypassesMailboxMembership(t *
 	}
 	if resolved.Summary == "Support conversation: Widget installation help" {
 		t.Fatalf("unexpected support target summary: %q", resolved.Summary)
+	}
+}
+
+func TestAgentRuntimeHostResolveSprintTarget(t *testing.T) {
+	sprintService, db, workspaceID := newSprintTestEnvWithDB(t)
+	seedPMSprintCommandTeam(t, db, workspaceID, "team-runtime-sprint")
+	teamID := "team-runtime-sprint"
+	color := "#336699"
+	if err := db.Create(&model.PMLabel{ID: "label-runtime-sprint", WorkspaceID: workspaceID, Name: "Runtime", Color: &color}).Error; err != nil {
+		t.Fatalf("seed label: %v", err)
+	}
+	description := "Runtime sprint context"
+	sprint, err := sprintService.Create(context.Background(), model.CreateSprintRequest{
+		WorkspaceID: workspaceID,
+		Name:        "Runtime Sprint",
+		Description: &description,
+		StartDate:   commandMustDate(t, "2026-09-01"),
+		EndDate:     commandMustDate(t, "2026-09-15"),
+		TeamID:      &teamID,
+		LabelIDs:    []string{"label-runtime-sprint"},
+	}, "actor-1")
+	if err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetPMSprintService(sprintService)
+	resolved, err := host.ResolveTargetContext(context.Background(), agentruntime.TargetContextRequest{
+		AppID:    "helpin",
+		Target:   agentruntime.TargetRef{Type: "sprint", ID: sprint.Sprint.ID},
+		Metadata: map[string]interface{}{"workspace_id": workspaceID},
+	})
+	if err != nil {
+		t.Fatalf("ResolveTargetContext: %v", err)
+	}
+	if resolved.Summary != "Sprint: Runtime Sprint" || resolved.Target.Display == nil || resolved.Target.Display.Title != "Runtime Sprint" {
+		t.Fatalf("unexpected sprint display: %#v", resolved)
+	}
+	if resolved.Data["start_date"] != "2026-09-01" || resolved.Data["end_date"] != "2026-09-15" || resolved.Data["team_id"] != teamID {
+		t.Fatalf("unexpected sprint context dates/team: %#v", resolved.Data)
+	}
+	labels, ok := resolved.Data["labels"].([]map[string]interface{})
+	if !ok || len(labels) != 1 || labels[0]["name"] != "Runtime" {
+		t.Fatalf("unexpected sprint labels: %#v", resolved.Data["labels"])
+	}
+
+	_, err = host.ResolveTargetContext(context.Background(), agentruntime.TargetContextRequest{
+		AppID:    "helpin",
+		Target:   agentruntime.TargetRef{Type: "sprint", ID: sprint.Sprint.ID},
+		Metadata: map[string]interface{}{"workspace_id": "workspace-other"},
+	})
+	if !errors.Is(err, ErrAgentRuntimeHostForbidden) {
+		t.Fatalf("cross-workspace sprint error = %v, want forbidden", err)
 	}
 }
 

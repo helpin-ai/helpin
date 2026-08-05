@@ -574,7 +574,7 @@ func dockLaunchStepSchema() map[string]any {
 			"target": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"type": map[string]any{"type": "string", "description": "Target entity type: workspace, task, epic, document, crm_deal, crm_contact, repository, support_conversation."},
+					"type": map[string]any{"type": "string", "description": "Target entity type: workspace, task, epic, sprint, objective, document, crm_deal, crm_contact, repository, support_conversation."},
 					"id":   map[string]any{"type": "string", "description": "Target entity ID. Defaults to the workspace when omitted."},
 				},
 			},

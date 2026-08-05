@@ -26,18 +26,21 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   icons: {
     icon: [
-      { url: '/favicon.ico?v=20260803-3', sizes: 'any' },
-      { url: '/favicon.svg?v=20260803-3', type: 'image/svg+xml' },
-      { url: '/favicon-32x32.png?v=20260803-3', type: 'image/png', sizes: '32x32' },
-      { url: '/favicon-16x16.png?v=20260803-3', type: 'image/png', sizes: '16x16' },
+      { url: '/favicon.ico?v=20260804-4', sizes: 'any' },
+      { url: '/favicon.svg?v=20260804-4', type: 'image/svg+xml', media: '(prefers-color-scheme: light)' },
+      { url: '/favicon-dark.svg?v=20260804-4', type: 'image/svg+xml', media: '(prefers-color-scheme: dark)' },
+      { url: '/favicon-32x32.png?v=20260804-4', type: 'image/png', sizes: '32x32', media: '(prefers-color-scheme: light)' },
+      { url: '/favicon-32x32-dark.png?v=20260804-4', type: 'image/png', sizes: '32x32', media: '(prefers-color-scheme: dark)' },
+      { url: '/favicon-16x16.png?v=20260804-4', type: 'image/png', sizes: '16x16', media: '(prefers-color-scheme: light)' },
+      { url: '/favicon-16x16-dark.png?v=20260804-4', type: 'image/png', sizes: '16x16', media: '(prefers-color-scheme: dark)' },
     ],
-    apple: '/apple-touch-icon.png?v=20260803',
+    apple: '/apple-touch-icon.png?v=20260804',
   },
-  manifest: '/site.webmanifest?v=20260803',
+  manifest: '/site.webmanifest?v=20260804',
 };
 
 export const viewport: Viewport = {
-  themeColor: '#E8613A',
+  themeColor: '#1E1C1A',
 };
 
 export default function RootLayout({

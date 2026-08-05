@@ -3,13 +3,68 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
+
+func TestPMToolCatalogExecutorParity(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	hostAliases := map[string]string{}
+	hostPMAliases := map[string]string{}
+	for _, def := range svc.ToolDefinitions() {
+		if def.Tool == nil {
+			continue
+		}
+		alias, category := strings.TrimSpace(def.Tool.Alias), strings.TrimSpace(def.Tool.Category)
+		if def.Execute == nil {
+			t.Fatalf("exposed command %q has no executor", def.Name)
+		}
+		if def.Tool.CommandName != def.Name {
+			t.Fatalf("command %q metadata points to %q", def.Name, def.Tool.CommandName)
+		}
+		if previous, exists := hostAliases[alias]; exists {
+			t.Fatalf("duplicate executor alias %q for %s and %s", alias, previous, def.Name)
+		}
+		hostAliases[alias] = def.Name
+		if strings.HasPrefix(category, "PM /") || alias == "list_workspace_members" || alias == "list_workspace_teams" {
+			hostPMAliases[alias] = def.Name
+		}
+	}
+	catalogAliases := map[string]struct{}{}
+	for _, tool := range agentcontract.ListToolCatalog().Tools {
+		alias, category := strings.TrimSpace(tool.Name), strings.TrimSpace(tool.Category)
+		if !strings.HasPrefix(category, "PM /") && alias != "list_workspace_members" && alias != "list_workspace_teams" {
+			continue
+		}
+		if _, exists := catalogAliases[alias]; exists {
+			t.Fatalf("duplicate catalog alias %q", alias)
+		}
+		catalogAliases[alias] = struct{}{}
+	}
+	nativeRuntimeAllowlist := map[string]struct{}{"list_epic_tasks": {}}
+	for alias := range catalogAliases {
+		if _, allowed := nativeRuntimeAllowlist[alias]; allowed {
+			continue
+		}
+		if _, ok := hostAliases[alias]; !ok {
+			t.Errorf("catalog alias %q has no executor", alias)
+		}
+	}
+	for alias := range hostPMAliases {
+		if _, ok := catalogAliases[alias]; !ok {
+			t.Errorf("executor alias %q is absent from catalog", alias)
+		}
+	}
+	if commandName := hostAliases["assign_task_agent"]; commandName == "" {
+		t.Error("deprecated assign_task_agent compatibility alias is missing")
+	}
+}
 
 func TestWriteDocumentContentCommandSupportsDocumentTarget(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
@@ -268,6 +323,33 @@ func TestListWorkspaceTeamsCommandMetadataAndOutput(t *testing.T) {
 	}
 	if len(teams) != 2 || teams[0].ID != "team-1" || teams[0].Handle != "eng" || teams[1].Name != "Growth" {
 		t.Fatalf("unexpected teams output %#v", teams)
+	}
+}
+
+func TestListWorkspaceTeamsCommandCapsDeterministicOutput(t *testing.T) {
+	db := newTestDB(t)
+	now := time.Now()
+	for index := 0; index < 105; index++ {
+		id := fmt.Sprintf("team-%03d", index)
+		name := fmt.Sprintf("Team %03d", 104-index)
+		mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, id, "ws-1", name, "engineering", "feature", now, now)
+	}
+
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetSettingsRepository(repository.NewSettingsRepository(db))
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws-1", ActorID: "actor-1", TargetType: "workspace", TargetID: "ws-1"}, "workspace.list_teams", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("list teams: %v", err)
+	}
+	var teams []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(output, &teams); err != nil {
+		t.Fatalf("decode teams: %v", err)
+	}
+	if len(teams) != 100 || teams[0].Name != "Team 000" || teams[99].Name != "Team 099" {
+		t.Fatalf("bounded team output = len %d, first %#v, last %#v", len(teams), teams[0], teams[len(teams)-1])
 	}
 }
 

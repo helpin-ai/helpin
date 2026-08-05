@@ -190,4 +190,14 @@ describe('custom agent create model', () => {
     expect(summary).not.toContain('opencode');
     expect(summary).not.toContain('Anthropic');
   });
+
+  it('summarizes sprint and objective working areas', () => {
+    const form = {
+      ...createDefaultCustomAgentForm(),
+      name: 'Outcome Planner',
+      allowed_targets: ['sprint', 'objective'] as const,
+    };
+
+    expect(summarizeCustomAgentCreate(form)).toContain('sprints and objectives');
+  });
 });

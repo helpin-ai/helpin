@@ -70,6 +70,7 @@ func (PMEpicLabel) TableName() string { return "pm_epic_labels" }
 
 // PMEpicListFilters applies filters when listing epics.
 type PMEpicListFilters struct {
+	Search   *string
 	TeamID   *string
 	StateID  *string
 	LabelID  *string
@@ -119,6 +120,15 @@ type UpdateEpicRequest struct {
 	LabelIDs             []string   `json:"label_ids"`
 	PlanningRepositoryID *string    `json:"planning_repository_id"`
 	AssignedAgentID      *string    `json:"assigned_agent_id"`
+	// Presence flags are used by non-HTTP callers that must distinguish an
+	// omitted nullable field from an explicitly requested clear. Existing API
+	// callers retain the pointer-based behavior above.
+	EpicStateIDSet          bool `json:"-"`
+	OwnerSet                bool `json:"-"`
+	TeamIDSet               bool `json:"-"`
+	PlannedStartDateSet     bool `json:"-"`
+	DeadlineSet             bool `json:"-"`
+	PlanningRepositoryIDSet bool `json:"-"`
 }
 
 // UpdateEpicHealthRequest updates epic health fields.

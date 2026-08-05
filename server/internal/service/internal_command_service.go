@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,12 +18,13 @@ import (
 )
 
 type InternalCommandDefinition struct {
-	Name                 string
-	Module               string
-	Mutating             bool
-	SupportedTargetTypes []string
-	Tool                 *commandtools.RuntimeToolMetadata
-	Execute              func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error)
+	Name                   string
+	Module                 string
+	Mutating               bool
+	SupportedTargetTypes   []string
+	RequiredPermissionsAll []authorization.Permission
+	Tool                   *commandtools.RuntimeToolMetadata
+	Execute                func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error)
 }
 
 type InternalCommandService struct {
@@ -45,6 +47,12 @@ type InternalCommandService struct {
 	settingsRepo          *repository.SettingsRepository
 	taskRepo              *repository.PMTaskRepository
 	taskLinkRepo          *repository.PMTaskLinkRepository
+	workspaceRepo         *repository.WorkspaceRepository
+	epicService           *PMEpicService
+	sprintService         *PMSprintService
+	objectiveService      *PMObjectiveService
+	workflowService       *PMWorkflowService
+	checklistService      *PMChecklistItemService
 
 	supportMessageRepo        *repository.SupportMessageRepository
 	supportConversationRepo   *repository.SupportConversationRepository
@@ -98,6 +106,27 @@ func (s *InternalCommandService) SetPMLabelService(svc *PMLabelService) {
 // SetPMCommentService sets the PM comment service for command-backed comment tools.
 func (s *InternalCommandService) SetPMCommentService(svc *PMCommentService) {
 	s.commentService = svc
+}
+
+// SetPMOperationalServices wires bounded PM discovery and mutation commands
+// without expanding the already-large constructor.
+func (s *InternalCommandService) SetPMOperationalServices(
+	workspaceRepo *repository.WorkspaceRepository,
+	epicService *PMEpicService,
+	sprintService *PMSprintService,
+	objectiveService *PMObjectiveService,
+	workflowService *PMWorkflowService,
+	checklistService *PMChecklistItemService,
+) {
+	if s == nil {
+		return
+	}
+	s.workspaceRepo = workspaceRepo
+	s.epicService = epicService
+	s.sprintService = sprintService
+	s.objectiveService = objectiveService
+	s.workflowService = workflowService
+	s.checklistService = checklistService
 }
 
 // SetGitService sets the git service for delivery commands.
@@ -389,6 +418,15 @@ func (s *InternalCommandService) registerDefaults() {
 			teams, err := s.settingsRepo.ListTeams(ctx, meta.WorkspaceID)
 			if err != nil {
 				return nil, err
+			}
+			sort.Slice(teams, func(i, j int) bool {
+				if teams[i].Name == teams[j].Name {
+					return teams[i].ID < teams[j].ID
+				}
+				return teams[i].Name < teams[j].Name
+			})
+			if len(teams) > 100 {
+				teams = teams[:100]
 			}
 			results := make([]map[string]any, 0, len(teams))
 			for _, team := range teams {
@@ -743,6 +781,16 @@ func (s *InternalCommandService) registerDefaults() {
 		SupportedTargetTypes: []string{"epic"},
 		Tool:                 mustCommandToolMetadata("pm.approve_epic_spec"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.epicService == nil {
+				return nil, fmt.Errorf("epic service is not configured")
+			}
+			epic, err := s.epicService.GetByID(ctx, meta.TargetID)
+			if err != nil || epic == nil || epic.Epic.WorkspaceID != meta.WorkspaceID {
+				return nil, fmt.Errorf("epic not found")
+			}
+			if err := requireCommandAgentTeam(meta, epic.Epic.TeamID); err != nil {
+				return nil, err
+			}
 			var req model.ApproveEpicSpecRequest
 			if len(input) > 0 {
 				if err := json.Unmarshal(input, &req); err != nil {
@@ -763,6 +811,16 @@ func (s *InternalCommandService) registerDefaults() {
 		SupportedTargetTypes: []string{"epic"},
 		Tool:                 mustCommandToolMetadata("pm.create_task_batch"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.epicService == nil {
+				return nil, fmt.Errorf("epic service is not configured")
+			}
+			epic, err := s.epicService.GetByID(ctx, meta.TargetID)
+			if err != nil || epic == nil || epic.Epic.WorkspaceID != meta.WorkspaceID {
+				return nil, fmt.Errorf("epic not found")
+			}
+			if err := requireCommandAgentTeam(meta, epic.Epic.TeamID); err != nil {
+				return nil, err
+			}
 			var req struct {
 				Tasks         []model.ProposedTask `json:"tasks"`
 				ProposedTasks []model.ProposedTask `json:"proposed_tasks"`
@@ -787,7 +845,6 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 
 			var tasks []model.PMTask
-			var err error
 			if strings.TrimSpace(req.RunID) != "" {
 				legacy := model.ConfirmPlanningRequest{
 					RunID:         strings.TrimSpace(req.RunID),
@@ -1020,6 +1077,9 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("name is required")
 			}
 			teamID := stringPtrOrNil(commandDerefString(req.TeamID))
+			if err := requireCommandAgentTeam(meta, teamID); err != nil {
+				return nil, err
+			}
 			existing, err := s.labelService.labelRepo.GetByName(ctx, meta.WorkspaceID, teamID, name)
 			if err != nil {
 				return nil, err
@@ -1889,6 +1949,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerReleaseFactsCommands()
 	s.registerDocsRuntimeToolCommands()
 	s.registerDocsOrganizationCommands()
+	s.registerPMOperationalCommands()
 }
 
 // authorizeCommandActor is the central per-actor RBAC gate for command
@@ -1899,6 +1960,15 @@ func (s *InternalCommandService) authorizeCommandActor(meta model.InternalComman
 		return nil
 	}
 	if strings.TrimSpace(meta.ActorRole) == "" {
+		return nil
+	}
+	if len(def.RequiredPermissionsAll) > 0 {
+		actor := internalCommandActor(meta)
+		for _, permission := range def.RequiredPermissionsAll {
+			if !s.authz.Can(actor, permission) {
+				return fmt.Errorf("actor does not have permission to run command %q", def.Name)
+			}
+		}
 		return nil
 	}
 	perms := commandPermissionsForDefinition(def)
@@ -2001,8 +2071,8 @@ func fallbackActor(meta model.InternalCommandContext) string {
 	if strings.TrimSpace(meta.ActorID) != "" {
 		return strings.TrimSpace(meta.ActorID)
 	}
-	if strings.TrimSpace(meta.AgentID) != "" {
-		return strings.TrimSpace(meta.AgentID)
+	if strings.TrimSpace(meta.AuditActorID) != "" {
+		return strings.TrimSpace(meta.AuditActorID)
 	}
 	return ""
 }

@@ -41,17 +41,31 @@ func (s *PMSprintService) List(ctx context.Context, workspaceID string, filters 
 	if err != nil {
 		return nil, err
 	}
-	result := make([]model.SprintWithStats, 0, len(sprints))
+	return s.sprintRepo.EnrichSprints(ctx, sprints)
+}
+
+// ListPage returns a repository-bounded sprint page with batch enrichment.
+func (s *PMSprintService) ListPage(ctx context.Context, workspaceID string, filters model.PMSprintListFilters, pagination model.PMPagination) ([]model.SprintWithStats, int, int, int, error) {
+	if workspaceID == "" {
+		return nil, 0, 0, 0, fmt.Errorf("workspace_id is required")
+	}
+	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
+	return s.sprintRepo.ListPage(ctx, workspaceID, filters, pagination)
+}
+
+// ListByIDs returns accessible sprint rows for batch target-title enrichment.
+func (s *PMSprintService) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMSprint, error) {
+	sprints, err := s.sprintRepo.ListByIDs(ctx, workspaceID, ids)
+	if err != nil {
+		return nil, err
+	}
+	accessible := sprints[:0]
 	for _, sprint := range sprints {
-		withStats, err := s.sprintRepo.GetWithStats(ctx, sprint.ID)
-		if err != nil {
-			return nil, err
-		}
-		if withStats != nil {
-			result = append(result, *withStats)
+		if canAccessTeam(ctx, sprint.TeamID) {
+			accessible = append(accessible, sprint)
 		}
 	}
-	return result, nil
+	return accessible, nil
 }
 
 // ListPlanningWorkspace returns grouped sprints and an unassigned backlog for the planning page.
@@ -178,6 +192,12 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 	if overlap {
 		return nil, fmt.Errorf("sprint date range overlaps with another sprint for the same team")
 	}
+	labelIDs := dedupeIDs(req.LabelIDs)
+	if len(labelIDs) > 0 {
+		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, labelIDs, allowedTeamIDs(req.TeamID)); err != nil {
+			return nil, err
+		}
+	}
 
 	sprint := &model.PMSprint{
 		WorkspaceID: req.WorkspaceID,
@@ -191,7 +211,7 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 		sprint.CreatedBy = &actorID
 	}
 
-	if err := s.sprintRepo.Create(ctx, sprint); err != nil {
+	if err := s.sprintRepo.CreateWithLabels(ctx, sprint, labelIDs); err != nil {
 		s.logger.ErrorContext(ctx, "failed to create sprint", "error", err, "workspace_id", req.WorkspaceID)
 		return nil, err
 	}
@@ -200,15 +220,6 @@ func (s *PMSprintService) Create(ctx context.Context, req model.CreateSprintRequ
 			s.logger.ErrorContext(ctx, "failed to reassign attachments to sprint", "error", err, "sprint_id", sprint.ID, "attachment_ids", req.AttachmentIDs)
 		}
 	}
-	if len(req.LabelIDs) > 0 {
-		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
-			return nil, err
-		}
-		if err := s.sprintRepo.ReplaceLabels(ctx, sprint.ID, req.LabelIDs); err != nil {
-			return nil, err
-		}
-	}
-
 	s.logger.InfoContext(ctx, "sprint created", "sprint_id", sprint.ID, "workspace_id", sprint.WorkspaceID, "name", sprint.Name)
 	if err := s.activityService.Log(ctx, sprint.WorkspaceID, "sprint", sprint.ID, optionalActor(actorID), "created", nil, nil, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log sprint created activity", "error", err, "sprint_id", sprint.ID)
@@ -285,6 +296,9 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 	}
 	if req.TeamID != nil {
 		sprint.TeamID = req.TeamID
+		if err := requireCanManage(ctx, sprint.TeamID); err != nil {
+			return nil, err
+		}
 	}
 	if req.Archived != nil {
 		sprint.Archived = *req.Archived
@@ -304,18 +318,26 @@ func (s *PMSprintService) Update(ctx context.Context, id string, req model.Updat
 	if overlap {
 		return nil, fmt.Errorf("sprint date range overlaps with another sprint for the same team")
 	}
+	normalizedLabelIDs := req.LabelIDs
+	if req.LabelIDs != nil {
+		normalizedLabelIDs = dedupeIDs(req.LabelIDs)
+	}
+	labelIDsToValidate := normalizedLabelIDs
+	if req.TeamID != nil && req.LabelIDs == nil {
+		labelIDsToValidate = make([]string, 0, len(current.Labels))
+		for _, label := range current.Labels {
+			labelIDsToValidate = append(labelIDsToValidate, label.ID)
+		}
+	}
+	if len(labelIDsToValidate) > 0 {
+		if err := validateLabelScope(ctx, s.labelRepo, sprint.WorkspaceID, labelIDsToValidate, allowedTeamIDs(sprint.TeamID)); err != nil {
+			return nil, err
+		}
+	}
 
-	if err := s.sprintRepo.Update(ctx, &sprint); err != nil {
+	if err := s.sprintRepo.UpdateWithLabels(ctx, &sprint, normalizedLabelIDs); err != nil {
 		s.logger.ErrorContext(ctx, "failed to update sprint", "error", err, "sprint_id", id)
 		return nil, err
-	}
-	if req.LabelIDs != nil {
-		if err := validateLabelScope(ctx, s.labelRepo, sprint.WorkspaceID, req.LabelIDs, allowedTeamIDs(sprint.TeamID)); err != nil {
-			return nil, err
-		}
-		if err := s.sprintRepo.ReplaceLabels(ctx, sprint.ID, req.LabelIDs); err != nil {
-			return nil, err
-		}
 	}
 
 	s.logger.InfoContext(ctx, "sprint updated", "sprint_id", sprint.ID, "workspace_id", sprint.WorkspaceID)
@@ -400,18 +422,31 @@ func (s *PMSprintService) ListTasks(ctx context.Context, sprintID string) ([]mod
 	if err != nil {
 		return nil, err
 	}
+	return s.populateTaskKeys(ctx, tasks), nil
+}
+
+// ListTasksPage returns a repository-bounded sprint task page with batch enrichment.
+func (s *PMSprintService) ListTasksPage(ctx context.Context, sprintID string, search *string, pagination model.PMPagination) ([]model.BoardTask, int, int, int, error) {
+	tasks, total, page, perPage, err := s.sprintRepo.ListEnrichedTasksPage(ctx, sprintID, search, pagination)
+	if err != nil {
+		return nil, 0, page, perPage, err
+	}
+	return s.populateTaskKeys(ctx, tasks), total, page, perPage, nil
+}
+
+func (s *PMSprintService) populateTaskKeys(ctx context.Context, tasks []model.BoardTask) []model.BoardTask {
 	if len(tasks) == 0 {
-		return tasks, nil
+		return tasks
 	}
 	ws, err := s.workspaceRepo.GetByID(ctx, tasks[0].WorkspaceID)
 	if err != nil || ws == nil {
-		return tasks, nil
+		return tasks
 	}
 	for i := range tasks {
 		tasks[i].TaskKey = model.FormatTaskKey(ws.WorkspaceKey, tasks[i].DisplayID)
 		tasks[i].PMTask.TaskKey = tasks[i].TaskKey
 	}
-	return tasks, nil
+	return tasks
 }
 
 // ListPreviewTasksPage returns lightweight task previews for a sprint page.

@@ -81,6 +81,13 @@ type DocsHandler struct {
 	jwtManager           *auth.JWTManager
 	supportEventRecorder service.SupportEventRecorder
 	supportWidgetConfig  supportWidgetConfigProvider
+	aiSearchSvc          *service.HelpcenterAISearchService
+}
+
+// SetHelpcenterAISearchService injects the public semantic-search / AI-answer
+// service (nil leaves the endpoints returning 404-equivalent responses).
+func (h *DocsHandler) SetHelpcenterAISearchService(svc *service.HelpcenterAISearchService) {
+	h.aiSearchSvc = svc
 }
 
 type supportWidgetConfigProvider interface {
@@ -2050,10 +2057,25 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	results, err := h.searchSvc.PublicSearch(r.Context(), cfg.WorkspaceID, locale, query, spaceSlug, limit)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
+	var results []model.PublicSearchResultResponse
+	var err error
+	if mode == "semantic" && h.aiSearchSvc != nil {
+		// Semantic retrieval over public chunks; empty results or errors fall
+		// back to full-text search so the search box never regresses.
+		results, err = h.aiSearchSvc.SemanticSearch(r.Context(), cfg.WorkspaceID, locale, publicAnswerFallbackLocale(cfg, locale), query, spaceSlug, limit)
+		if err != nil {
+			slog.WarnContext(r.Context(), "helpcenter semantic search failed; falling back to full-text",
+				"error", err, "workspace_id", cfg.WorkspaceID)
+			results = nil
+		}
+	}
+	if len(results) == 0 {
+		results, err = h.searchSvc.PublicSearch(r.Context(), cfg.WorkspaceID, locale, query, spaceSlug, limit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 
 	searchSourceSignal := model.SupportCoverageSourceSelfService
@@ -2067,7 +2089,7 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 		Channel:      "widget",
 		SourceSignal: searchSourceSignal,
 		IssueSummary: query,
-		Metadata:     map[string]any{"query": query, "result_count": len(results)},
+		Metadata:     map[string]any{"query": query, "result_count": len(results), "mode": mode},
 	})
 
 	setHelpcenterCacheHeader(w, "public, max-age=60")

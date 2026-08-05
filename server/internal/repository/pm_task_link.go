@@ -20,6 +20,13 @@ func NewPMTaskLinkRepository(db *gorm.DB) *PMTaskLinkRepository {
 	return &PMTaskLinkRepository{db: db}
 }
 
+// WithTransaction runs a batch of task-link mutations atomically.
+func (r *PMTaskLinkRepository) WithTransaction(ctx context.Context, fn func(*PMTaskLinkRepository) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(&PMTaskLinkRepository{db: tx})
+	})
+}
+
 // Create inserts a new task link if it does not already exist.
 func (r *PMTaskLinkRepository) Create(ctx context.Context, link *model.PMTaskLink) error {
 	var existing model.PMTaskLink

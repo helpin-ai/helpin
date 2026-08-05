@@ -6,6 +6,7 @@ import type {
   CollectionPage,
   PreviewArticleDetail,
   SearchResult,
+  AIAnswerResponse,
   NavItem,
 } from './types'
 
@@ -91,6 +92,7 @@ export const helpCenterService = {
     query: string,
     multilingualEnabled: boolean,
     spaceSlug?: string,
+    mode?: 'semantic',
   ) =>
     api.get<SearchResult[]>(
       `${buildHelpCenterPath(
@@ -99,7 +101,36 @@ export const helpCenterService = {
         multilingualEnabled,
         '/search',
         '/search',
-      )}?q=${encodeURIComponent(query)}&limit=20${spaceSlug ? `&space=${encodeURIComponent(spaceSlug)}` : ''}`,
+      )}?q=${encodeURIComponent(query)}&limit=20${spaceSlug ? `&space=${encodeURIComponent(spaceSlug)}` : ''}${mode ? `&mode=${mode}` : ''}`,
+    ),
+
+  askAnswer: (
+    subdomain: string,
+    locale: string,
+    multilingualEnabled: boolean,
+    payload: { query: string; space?: string },
+  ) =>
+    api.post<AIAnswerResponse>(
+      buildHelpCenterPath(subdomain, locale, multilingualEnabled, '/answer', '/answer'),
+      payload,
+    ),
+
+  answerFeedback: (
+    subdomain: string,
+    locale: string,
+    multilingualEnabled: boolean,
+    answerId: string,
+    payload: { is_helpful: boolean },
+  ) =>
+    api.post(
+      buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        `/answer/${answerId}/feedback`,
+        `/answer/${answerId}/feedback`,
+      ),
+      payload,
     ),
 
   submitFeedback: (

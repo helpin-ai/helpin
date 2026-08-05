@@ -115,6 +115,7 @@ func (PMTaskLabel) TableName() string { return "pm_task_labels" }
 
 // PMTaskFilters applies filter options when listing tasks.
 type PMTaskFilters struct {
+	Search                *string
 	TeamID                *string
 	EpicID                *string
 	SprintID              *string
@@ -212,9 +213,11 @@ type UpdateTaskRequest struct {
 	Priority          *string    `json:"priority"`
 	Severity          *string    `json:"severity"`
 	Deadline          *time.Time `json:"deadline"`
+	DeadlineSet       bool       `json:"-" gorm:"-"`
 	Position          *int       `json:"position"`
 	Blocked           *bool      `json:"blocked"`
 	Blocker           *string    `json:"blocker"`
+	BlockerSet        bool       `json:"-" gorm:"-"`
 	Archived          *bool      `json:"archived"`
 	TemplateID        *string    `json:"template_id"`
 	ExternalID        *string    `json:"external_id"`

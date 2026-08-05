@@ -21,7 +21,7 @@ func (s *InternalCommandService) registerCRMReadCommands() {
 			CommandName: "crm.list_deals",
 			Alias:       "list_deals",
 			Category:    "CRM",
-			Description: "List CRM deals in the workspace. Returns deal name, stage, and amount.",
+			Description: "List CRM deals in the workspace, optionally filtered by a case-insensitive name query. Returns deal name, stage, and amount.",
 			InputSchema: crmListLimitSchema("Maximum number of deals to return (default 20, max 50)"),
 		},
 		Execute: s.executeListDeals,
@@ -34,7 +34,7 @@ func (s *InternalCommandService) registerCRMReadCommands() {
 			CommandName: "crm.list_contacts",
 			Alias:       "list_contacts",
 			Category:    "CRM",
-			Description: "List CRM contacts in the workspace. Returns name, email, and job title.",
+			Description: "List CRM contacts in the workspace, optionally filtered by a case-insensitive name, email, or job-title query. Returns name, email, and job title.",
 			InputSchema: crmListLimitSchema("Maximum number of contacts to return (default 20, max 50)"),
 		},
 		Execute: s.executeListContacts,
@@ -70,11 +70,11 @@ func (s *InternalCommandService) executeListDeals(ctx context.Context, meta mode
 	if s.crmDealService == nil {
 		return nil, fmt.Errorf("CRM deal service is not configured")
 	}
-	limit, err := parseCRMListLimit(input)
+	limit, query, err := parseCRMListLimit(input)
 	if err != nil {
 		return nil, err
 	}
-	deals, _, err := s.crmDealService.List(ctx, meta.WorkspaceID, model.CRMDealListFilters{}, model.PMPagination{Page: 1, PerPage: limit})
+	deals, _, err := s.crmDealService.List(ctx, meta.WorkspaceID, model.CRMDealListFilters{Search: stringPtrOrNil(query)}, model.PMPagination{Page: 1, PerPage: limit})
 	if err != nil {
 		return nil, fmt.Errorf("list deals: %w", err)
 	}
@@ -99,11 +99,11 @@ func (s *InternalCommandService) executeListContacts(ctx context.Context, meta m
 	if s.crmContactService == nil {
 		return nil, fmt.Errorf("CRM contact service is not configured")
 	}
-	limit, err := parseCRMListLimit(input)
+	limit, query, err := parseCRMListLimit(input)
 	if err != nil {
 		return nil, err
 	}
-	contacts, _, err := s.crmContactService.List(ctx, meta.WorkspaceID, model.CRMContactListFilters{}, model.PMPagination{Page: 1, PerPage: limit})
+	contacts, _, err := s.crmContactService.List(ctx, meta.WorkspaceID, model.CRMContactListFilters{Search: stringPtrOrNil(query)}, model.PMPagination{Page: 1, PerPage: limit})
 	if err != nil {
 		return nil, fmt.Errorf("list contacts: %w", err)
 	}
@@ -168,25 +168,30 @@ func (s *InternalCommandService) executeListBuyerSignals(ctx context.Context, me
 	return mustJSON(summaries), nil
 }
 
-func parseCRMListLimit(input json.RawMessage) (int, error) {
+func parseCRMListLimit(input json.RawMessage) (int, string, error) {
 	var req struct {
-		Limit int `json:"limit"`
+		Limit int    `json:"limit"`
+		Query string `json:"query"`
 	}
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {
-			return 0, fmt.Errorf("parse list input: %w", err)
+			return 0, "", fmt.Errorf("parse list input: %w", err)
 		}
 	}
 	if req.Limit <= 0 || req.Limit > 50 {
-		return 20, nil
+		return 20, strings.TrimSpace(req.Query), nil
 	}
-	return req.Limit, nil
+	return req.Limit, strings.TrimSpace(req.Query), nil
 }
 
 func crmListLimitSchema(limitDescription string) map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
+			"query": map[string]any{
+				"type":        "string",
+				"description": "Optional case-insensitive text query.",
+			},
 			"limit": map[string]any{
 				"type":        "integer",
 				"description": limitDescription,

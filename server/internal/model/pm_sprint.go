@@ -38,9 +38,13 @@ func (PMSprintLabel) TableName() string { return "pm_sprint_labels" }
 
 // PMSprintListFilters applies filters when listing sprints.
 type PMSprintListFilters struct {
+	Search   *string
 	TeamID   *string
 	Status   *string
 	Archived *bool
+	// AgentTeamIDs is an additional command-agent scope restriction.
+	// nil = workspace-scoped/no agent filter, [ids] = restrict to those teams.
+	AgentTeamIDs []string
 	// AccessibleTeamIDs enforces team-based access boundaries.
 	// nil = no filtering (admin/owner), [] = no access, [ids] = filter to these teams.
 	AccessibleTeamIDs []string

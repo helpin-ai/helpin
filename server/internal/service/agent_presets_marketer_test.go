@@ -62,12 +62,42 @@ func TestMiraPresetDefinitionUsesNativeHelpinTools(t *testing.T) {
 		"crawl_url",
 		"get_release_context",
 		"find_tasks_for_git_changes",
+		"list_workspace_members",
+		"list_pm_labels",
+		"get_task",
+		"list_epics",
+		"get_epic",
+		"list_sprints",
+		"get_sprint",
+		"list_sprint_tasks",
+		"list_objectives",
+		"get_objective",
 	} {
 		if !slices.Contains(preset.AllowedTools, tool) {
 			t.Fatalf("expected tool %q in %v", tool, preset.AllowedTools)
 		}
 	}
-	for _, forbidden := range []string{"web_search_brave", "run_command", "write_file", "edit_file", "apply_patch", "commit_and_push", "open_pr"} {
+	for _, forbidden := range []string{
+		"web_search_brave",
+		"run_command",
+		"write_file",
+		"edit_file",
+		"apply_patch",
+		"commit_and_push",
+		"open_pr",
+		"update_task",
+		"create_task_checklist_item",
+		"update_task_checklist_item",
+		"add_pm_comment",
+		"create_epic",
+		"update_epic",
+		"create_sprint",
+		"update_sprint",
+		"create_objective",
+		"update_objective",
+		"create_key_result",
+		"update_key_result",
+	} {
 		if slices.Contains(preset.AllowedTools, forbidden) {
 			t.Fatalf("did not expect mutating or shell/delivery repo tool %q in Mira tools: %v", forbidden, preset.AllowedTools)
 		}

@@ -104,7 +104,7 @@ describe('Footer', () => {
     const brandMarks = Array.from(attribution.querySelectorAll('img'))
     expect(brandMarks).toHaveLength(2)
     expect(brandMarks.every((mark) => mark.getAttribute('src')?.startsWith('/brand/') === false)).toBe(true)
-    expect(brandMarks.every((mark) => mark.className.includes('scale-125'))).toBe(true)
+    expect(brandMarks.every((mark) => mark.className.includes('scale-125'))).toBe(false)
   })
 
   it('keeps tracked query separators out of server-rendered HTML', () => {

@@ -212,6 +212,11 @@ type AgentRun struct {
 	MCPAttribution    *MCPAgentRunAttribution `json:"mcp_attribution,omitempty" gorm:"-"`
 }
 
+// AgentRunAttentionCountResponse is the lightweight sidebar badge response.
+type AgentRunAttentionCountResponse struct {
+	Count int64 `json:"count"`
+}
+
 // AgentRunTarget is a computed sidecar with resolved display info for the
 // run's target entity (e.g. the PM task title and task_key). It is not
 // persisted and is populated by the service layer on read paths so UI can

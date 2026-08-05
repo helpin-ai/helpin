@@ -123,6 +123,7 @@ func (s *InternalCommandService) registerReleaseFactsCommands() {
 						"type":        "array",
 						"description": "Task IDs to load. Max 50.",
 						"items":       map[string]any{"type": "string"},
+						"maxItems":    50,
 					},
 					"include_linked_docs": map[string]any{
 						"type":        "boolean",
@@ -141,7 +142,7 @@ func (s *InternalCommandService) registerReleaseFactsCommands() {
 						"description": "Whether to include git links for each task.",
 					},
 				},
-				"required":             []string{"task_ids"},
+				"required":             []string{},
 				"additionalProperties": false,
 			},
 		},
@@ -208,8 +209,25 @@ func (s *InternalCommandService) executeGetTaskContext(ctx context.Context, meta
 		}
 	}
 	req.TaskIDs = commandTrimStringSlice(req.TaskIDs)
+	if len(req.TaskIDs) == 0 && commandTaskTargetID(meta) != "" {
+		req.TaskIDs = []string{commandTaskTargetID(meta)}
+	}
 	if len(req.TaskIDs) == 0 {
 		return nil, fmt.Errorf("task_ids is required")
+	}
+	if len(req.TaskIDs) > 50 {
+		return nil, fmt.Errorf("at most 50 task_ids may be requested")
+	}
+	if s.taskService != nil {
+		for _, taskID := range req.TaskIDs {
+			detail, err := s.taskService.GetByID(ctx, taskID)
+			if err != nil || detail.Task.WorkspaceID != meta.WorkspaceID {
+				return nil, fmt.Errorf("task not found")
+			}
+			if err := s.validateTaskWithinTarget(ctx, meta, &detail.Task); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if s.releaseFactsProvider == nil {
 		return nil, fmt.Errorf("task context is not available")

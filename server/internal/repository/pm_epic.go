@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -22,16 +23,56 @@ func NewPMEpicRepository(db *gorm.DB) *PMEpicRepository {
 
 // List returns epics in a workspace with optional filters.
 func (r *PMEpicRepository) List(ctx context.Context, workspaceID string, filters model.PMEpicListFilters) ([]model.PMEpic, error) {
-	query := r.db.WithContext(ctx).Model(&model.PMEpic{}).Where("workspace_id = ?", workspaceID)
+	query := r.listQuery(ctx, workspaceID, filters)
+
+	var epics []model.PMEpic
+	if err := query.Order("pm_epics.position ASC, pm_epics.created_at DESC, pm_epics.id ASC").Find(&epics).Error; err != nil {
+		return nil, fmt.Errorf("list epics: %w", err)
+	}
+	return epics, nil
+}
+
+// ListPage returns one bounded page of epics and the total matching count.
+func (r *PMEpicRepository) ListPage(ctx context.Context, workspaceID string, filters model.PMEpicListFilters, pagination model.PMPagination) ([]model.PMEpic, int64, error) {
+	var total int64
+	if err := r.listQuery(ctx, workspaceID, filters).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count epics: %w", err)
+	}
+
+	page := pagination.Page
+	perPage := pagination.PerPage
+	if page <= 0 {
+		page = 1
+	}
+	if perPage <= 0 {
+		perPage = 50
+	}
+	var epics []model.PMEpic
+	if err := r.listQuery(ctx, workspaceID, filters).
+		Order("pm_epics.position ASC, pm_epics.created_at DESC, pm_epics.id ASC").
+		Offset((page - 1) * perPage).
+		Limit(perPage).
+		Find(&epics).Error; err != nil {
+		return nil, 0, fmt.Errorf("list epics page: %w", err)
+	}
+	return epics, total, nil
+}
+
+func (r *PMEpicRepository) listQuery(ctx context.Context, workspaceID string, filters model.PMEpicListFilters) *gorm.DB {
+	query := r.db.WithContext(ctx).Model(&model.PMEpic{}).Where("pm_epics.workspace_id = ?", workspaceID)
+	if filters.Search != nil && strings.TrimSpace(*filters.Search) != "" {
+		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
+		query = query.Where("(LOWER(pm_epics.name) LIKE ? OR LOWER(COALESCE(pm_epics.description, '')) LIKE ?)", search, search)
+	}
 
 	if filters.TeamID != nil && *filters.TeamID != "" {
-		query = query.Where("team_id = ?", *filters.TeamID)
+		query = query.Where("pm_epics.team_id = ?", *filters.TeamID)
 	}
 	if filters.StateID != nil && *filters.StateID != "" {
-		query = query.Where("epic_state_id = ?", *filters.StateID)
+		query = query.Where("pm_epics.epic_state_id = ?", *filters.StateID)
 	}
 	if filters.Archived != nil {
-		query = query.Where("archived = ?", *filters.Archived)
+		query = query.Where("pm_epics.archived = ?", *filters.Archived)
 	}
 	if filters.LabelID != nil && *filters.LabelID != "" {
 		query = query.Joins("JOIN pm_epic_labels pel ON pel.epic_id = pm_epics.id").Where("pel.label_id = ?", *filters.LabelID)
@@ -40,15 +81,10 @@ func (r *PMEpicRepository) List(ctx context.Context, workspaceID string, filters
 		if len(filters.AccessibleTeamIDs) == 0 {
 			query = query.Where("1 = 0")
 		} else {
-			query = query.Where("team_id IN ?", filters.AccessibleTeamIDs)
+			query = query.Where("pm_epics.team_id IN ?", filters.AccessibleTeamIDs)
 		}
 	}
-
-	var epics []model.PMEpic
-	if err := query.Order("position ASC, created_at DESC").Find(&epics).Error; err != nil {
-		return nil, fmt.Errorf("list epics: %w", err)
-	}
-	return epics, nil
+	return query
 }
 
 // ListByIDs returns epics by ID for a workspace.
@@ -105,12 +141,38 @@ func (r *PMEpicRepository) Create(ctx context.Context, epic *model.PMEpic) error
 	return nil
 }
 
+// CreateWithLabels inserts an epic and its label links atomically.
+func (r *PMEpicRepository) CreateWithLabels(ctx context.Context, epic *model.PMEpic, labelIDs []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txRepo := NewPMEpicRepository(tx)
+		if err := txRepo.Create(ctx, epic); err != nil {
+			return err
+		}
+		return txRepo.replaceLabels(ctx, epic.ID, labelIDs)
+	})
+}
+
 // Update updates an epic.
 func (r *PMEpicRepository) Update(ctx context.Context, epic *model.PMEpic) error {
 	if err := r.db.WithContext(ctx).Save(epic).Error; err != nil {
 		return fmt.Errorf("update epic: %w", err)
 	}
 	return nil
+}
+
+// UpdateWithLabels updates an epic and, when labelIDs is non-nil, replaces its
+// label links in the same transaction. A nil labelIDs slice preserves labels.
+func (r *PMEpicRepository) UpdateWithLabels(ctx context.Context, epic *model.PMEpic, labelIDs []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txRepo := NewPMEpicRepository(tx)
+		if err := txRepo.Update(ctx, epic); err != nil {
+			return err
+		}
+		if labelIDs == nil {
+			return nil
+		}
+		return txRepo.replaceLabels(ctx, epic.ID, labelIDs)
+	})
 }
 
 // Delete archives an epic.
@@ -160,17 +222,24 @@ func (r *PMEpicRepository) RemoveLabel(ctx context.Context, epicID, labelID stri
 // ReplaceLabels replaces all labels linked to an epic.
 func (r *PMEpicRepository) ReplaceLabels(ctx context.Context, epicID string, labelIDs []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&model.PMEpicLabel{}, "epic_id = ?", epicID).Error; err != nil {
-			return fmt.Errorf("clear epic labels: %w", err)
-		}
-		for _, labelID := range labelIDs {
-			link := model.PMEpicLabel{EpicID: epicID, LabelID: labelID}
-			if err := tx.Create(&link).Error; err != nil {
-				return fmt.Errorf("set epic labels: %w", err)
-			}
-		}
-		return nil
+		return NewPMEpicRepository(tx).replaceLabels(ctx, epicID, labelIDs)
 	})
+}
+
+// replaceLabels performs label writes on the repository's current database
+// handle. Callers that need atomicity must bind the repository to a transaction.
+func (r *PMEpicRepository) replaceLabels(ctx context.Context, epicID string, labelIDs []string) error {
+	db := r.db.WithContext(ctx)
+	if err := db.Delete(&model.PMEpicLabel{}, "epic_id = ?", epicID).Error; err != nil {
+		return fmt.Errorf("clear epic labels: %w", err)
+	}
+	for _, labelID := range labelIDs {
+		link := model.PMEpicLabel{EpicID: epicID, LabelID: labelID}
+		if err := db.Create(&link).Error; err != nil {
+			return fmt.Errorf("set epic labels: %w", err)
+		}
+	}
+	return nil
 }
 
 // ComputeStats computes derived story/point metrics for an epic.
@@ -206,6 +275,46 @@ func (r *PMEpicRepository) ComputeStats(ctx context.Context, epicID string) (mod
 		}
 	}
 	return stats, nil
+}
+
+// ComputeStatsBatch computes derived task/point metrics for multiple epics.
+func (r *PMEpicRepository) ComputeStatsBatch(ctx context.Context, epicIDs []string) (map[string]model.PMEpicStats, error) {
+	result := make(map[string]model.PMEpicStats, len(epicIDs))
+	if len(epicIDs) == 0 {
+		return result, nil
+	}
+	type row struct {
+		EpicID    string
+		StateType string
+		Count     int
+		Points    int
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Table("pm_tasks s").
+		Select("s.epic_id AS epic_id, ws.state_type AS state_type, COUNT(*) AS count, COALESCE(SUM(COALESCE(s.estimate, 0)), 0) AS points").
+		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
+		Where("s.epic_id IN ? AND s.archived = false", epicIDs).
+		Group("s.epic_id, ws.state_type").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("batch compute epic stats: %w", err)
+	}
+	for _, row := range rows {
+		stats := result[row.EpicID]
+		stats.TaskCount += row.Count
+		stats.TotalPoints += row.Points
+		switch row.StateType {
+		case model.PMStateTypeDone:
+			stats.DoneTaskCount += row.Count
+			stats.DonePoints += row.Points
+		case model.PMStateTypeStarted:
+			stats.InProgressCount += row.Count
+		case model.PMStateTypeUnstarted, model.PMStateTypeBacklog:
+			stats.UnstartedCount += row.Count
+		}
+		result[row.EpicID] = stats
+	}
+	return result, nil
 }
 
 // ListTasks returns non-archived tasks in an epic.
@@ -279,6 +388,32 @@ func (r *PMEpicRepository) ListObjectivesBatch(ctx context.Context, epicIDs []st
 			ID:   r.ObjectiveID,
 			Name: r.ObjectiveName,
 		})
+	}
+	return result, nil
+}
+
+// ListLabelsBatch returns labels grouped by epic ID for the requested epics.
+func (r *PMEpicRepository) ListLabelsBatch(ctx context.Context, epicIDs []string) (map[string][]model.PMLabel, error) {
+	result := make(map[string][]model.PMLabel, len(epicIDs))
+	if len(epicIDs) == 0 {
+		return result, nil
+	}
+	type row struct {
+		EpicRefID string `gorm:"column:epic_ref_id"`
+		model.PMLabel
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).
+		Table("pm_labels l").
+		Select("pel.epic_id AS epic_ref_id, l.*").
+		Joins("JOIN pm_epic_labels pel ON pel.label_id = l.id").
+		Where("pel.epic_id IN ?", epicIDs).
+		Order("pel.epic_id ASC, l.name ASC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("batch list epic labels: %w", err)
+	}
+	for _, row := range rows {
+		result[row.EpicRefID] = append(result[row.EpicRefID], row.PMLabel)
 	}
 	return result, nil
 }

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
@@ -18,6 +20,7 @@ import (
 const (
 	agentRuntimeHelpinBuiltInSkillIDPrefix     = "helpin_builtin:"
 	agentRuntimeHelpinBuiltInSkillObjectPrefix = "helpin-builtins/"
+	agentRuntimeObjectiveCollectionLimit       = 100
 )
 
 var (
@@ -30,21 +33,34 @@ var (
 // It exposes runtime contracts only; Helpin lifecycle policy remains in the
 // existing projection, billing, and finalizer services.
 type AgentRuntimeHostService struct {
-	appID          string
-	runRepo        *repository.AgentRunRepository
-	workspaceRepo  *repository.WorkspaceRepository
-	taskRepo       *repository.PMTaskRepository
-	epicRepo       *repository.PMEpicRepository
-	supportRepo    *repository.SupportConversationRepository
-	docsRepo       *repository.DocsDocumentRepository
-	crmContactRepo *repository.CRMContactRepository
-	crmCompanyRepo *repository.CRMCompanyRepository
-	crmDealRepo    *repository.CRMDealRepository
-	commandService *InternalCommandService
-	gitService     *GitService
-	skillRepo      *repository.WorkspaceSkillRepository
-	skillStore     skillPackageStore
-	authz          *authorization.AuthzService
+	appID            string
+	runRepo          *repository.AgentRunRepository
+	agentRepo        *repository.AgentRepository
+	workspaceRepo    *repository.WorkspaceRepository
+	taskRepo         *repository.PMTaskRepository
+	epicRepo         *repository.PMEpicRepository
+	sprintService    *PMSprintService
+	objectiveService *PMObjectiveService
+	supportRepo      *repository.SupportConversationRepository
+	docsRepo         *repository.DocsDocumentRepository
+	crmContactRepo   *repository.CRMContactRepository
+	crmCompanyRepo   *repository.CRMCompanyRepository
+	crmDealRepo      *repository.CRMDealRepository
+	commandService   *InternalCommandService
+	gitService       *GitService
+	skillRepo        *repository.WorkspaceSkillRepository
+	skillStore       skillPackageStore
+	authz            *authorization.AuthzService
+}
+
+// SetAgentRepository enables repository-backed effective agent scope
+// resolution for internal command execution.
+func (s *AgentRuntimeHostService) SetAgentRepository(agentRepo *repository.AgentRepository) *AgentRuntimeHostService {
+	if s == nil {
+		return s
+	}
+	s.agentRepo = agentRepo
+	return s
 }
 
 type AgentRuntimeSkillLookupRequest struct {
@@ -127,25 +143,45 @@ func (s *AgentRuntimeHostService) SetAuthorizationService(authz *authorization.A
 	return s
 }
 
-// enrichCommandActor resolves the external actor's workspace membership and
-// stamps role/team info onto the command context. Runs without a human actor
+// SetPMSprintService enables sprint target-context resolution without changing
+// the positional runtime-host constructor used throughout the service tests.
+func (s *AgentRuntimeHostService) SetPMSprintService(sprintService *PMSprintService) *AgentRuntimeHostService {
+	if s == nil {
+		return s
+	}
+	s.sprintService = sprintService
+	return s
+}
+
+// SetPMObjectiveService enables workspace-scoped objective target projection.
+func (s *AgentRuntimeHostService) SetPMObjectiveService(objectiveService *PMObjectiveService) *AgentRuntimeHostService {
+	if s == nil {
+		return s
+	}
+	s.objectiveService = objectiveService
+	return s
+}
+
+// enrichCommandActor resolves the external actor's workspace membership,
+// stamps role/team info onto the command metadata, and returns the full actor
+// for authorization checks in command services. Runs without a human actor
 // (schedules, automation rules) are left untouched — agent-level tool policy
 // remains their only gate. A non-member actor is rejected outright.
-func (s *AgentRuntimeHostService) enrichCommandActor(ctx context.Context, meta *model.InternalCommandContext) error {
+func (s *AgentRuntimeHostService) enrichCommandActor(ctx context.Context, meta *model.InternalCommandContext) (*authorization.Actor, error) {
 	if s == nil || s.authz == nil || meta == nil {
-		return nil
+		return nil, nil
 	}
 	actorID := strings.TrimSpace(meta.ActorID)
 	if actorID == "" {
-		return nil
+		return nil, nil
 	}
 	actor, err := s.authz.ResolveActor(ctx, meta.WorkspaceID, actorID)
 	if err != nil {
-		return fmt.Errorf("%w: actor is not an active workspace member", ErrAgentRuntimeHostForbidden)
+		return nil, fmt.Errorf("%w: actor is not an active workspace member", ErrAgentRuntimeHostForbidden)
 	}
 	meta.ActorRole = actor.Role
 	meta.ActorTeamIDs = actor.TeamIDs()
-	return nil
+	return actor, nil
 }
 
 func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req agentruntime.TargetContextRequest) (*agentruntime.TargetContext, error) {
@@ -221,6 +257,36 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		resp.Summary = fmt.Sprintf("Epic: %s", epic.Epic.Name)
 		resp.Target.Display = &agentruntime.TargetDisplay{Title: epic.Epic.Name}
 		resp.Data = runtimeEpicContextData(epic)
+	case "sprint":
+		if s.sprintService == nil {
+			return nil, fmt.Errorf("sprint target resolver is not configured")
+		}
+		sprint, err := s.sprintService.GetByID(ctx, target.ID)
+		if err != nil || sprint == nil {
+			return nil, fmt.Errorf("%w: sprint not found", ErrAgentRuntimeHostNotFound)
+		}
+		workspaceID = sprint.Sprint.WorkspaceID
+		if err := ensureRuntimeWorkspaceMatch(requestedWorkspaceID, workspaceID); err != nil {
+			return nil, err
+		}
+		resp.Summary = fmt.Sprintf("Sprint: %s", sprint.Sprint.Name)
+		resp.Target.Display = &agentruntime.TargetDisplay{Title: sprint.Sprint.Name}
+		resp.Data = runtimeSprintContextData(sprint)
+	case "objective":
+		if s.objectiveService == nil {
+			return nil, fmt.Errorf("objective target resolver is not configured")
+		}
+		objective, err := s.objectiveService.GetByID(ctx, target.ID)
+		if err != nil || objective == nil {
+			return nil, fmt.Errorf("%w: objective not found", ErrAgentRuntimeHostNotFound)
+		}
+		workspaceID = objective.Objective.WorkspaceID
+		if err := ensureRuntimeWorkspaceMatch(requestedWorkspaceID, workspaceID); err != nil {
+			return nil, err
+		}
+		resp.Summary = fmt.Sprintf("Objective: %s", objective.Objective.Name)
+		resp.Target.Display = &agentruntime.TargetDisplay{Title: objective.Objective.Name}
+		resp.Data = runtimeObjectiveContextData(objective)
 	case "support_conversation", "conversation":
 		if workspaceID == "" {
 			return nil, fmt.Errorf("%w: workspace_id metadata or run mapping is required for support conversation targets", ErrAgentRuntimeHostBadRequest)
@@ -380,12 +446,13 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 		return nil, err
 	}
 	meta := model.InternalCommandContext{
-		WorkspaceID: strings.TrimSpace(req.Meta.WorkspaceID),
-		ActorID:     strings.TrimSpace(req.Meta.ExternalActorID),
-		AgentID:     strings.TrimSpace(req.Meta.AgentID),
-		RunID:       strings.TrimSpace(req.Meta.RunID),
-		TargetType:  strings.TrimSpace(req.Meta.TargetType),
-		TargetID:    strings.TrimSpace(req.Meta.TargetID),
+		WorkspaceID:  strings.TrimSpace(req.Meta.WorkspaceID),
+		ActorID:      strings.TrimSpace(req.Meta.ExternalActorID),
+		AuditActorID: runtimeMetadataString("audit_actor_id", req.Meta.RunInputMetadata, req.Meta.TargetMetadata, req.Meta.Target.Metadata),
+		AgentID:      strings.TrimSpace(req.Meta.AgentID),
+		RunID:        strings.TrimSpace(req.Meta.RunID),
+		TargetType:   strings.TrimSpace(req.Meta.TargetType),
+		TargetID:     strings.TrimSpace(req.Meta.TargetID),
 	}
 	if meta.TargetType == "" {
 		meta.TargetType = strings.TrimSpace(req.Meta.Target.Type)
@@ -408,17 +475,46 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 	if meta.WorkspaceID == "" {
 		return nil, fmt.Errorf("%w: workspace_id is required", ErrAgentRuntimeHostBadRequest)
 	}
-	if err := s.enrichCommandActor(ctx, &meta); err != nil {
+	if err := s.enrichCommandAgentScope(ctx, &meta); err != nil {
+		return &agentruntime.CommandExecutionResponse{Error: err.Error()}, nil
+	}
+	actor, err := s.enrichCommandActor(ctx, &meta)
+	if err != nil {
 		return &agentruntime.CommandExecutionResponse{Error: err.Error()}, nil
 	}
 	if len(req.Input) == 0 {
 		req.Input = json.RawMessage(`{}`)
 	}
-	output, err := s.commandService.Execute(ctx, meta, strings.TrimSpace(req.CommandName), req.Input)
+	commandCtx := ctx
+	if actor != nil {
+		commandCtx = authorization.WithActor(commandCtx, actor)
+	}
+	output, err := s.commandService.Execute(commandCtx, meta, strings.TrimSpace(req.CommandName), req.Input)
 	if err != nil {
 		return &agentruntime.CommandExecutionResponse{Error: err.Error()}, nil
 	}
 	return &agentruntime.CommandExecutionResponse{Output: output}, nil
+}
+
+func (s *AgentRuntimeHostService) enrichCommandAgentScope(ctx context.Context, meta *model.InternalCommandContext) error {
+	if s == nil || s.agentRepo == nil || meta == nil {
+		return nil
+	}
+	if strings.TrimSpace(meta.AgentID) == "" {
+		return fmt.Errorf("%w: agent_id is required to resolve command scope", ErrAgentRuntimeHostForbidden)
+	}
+	agent, err := s.agentRepo.GetByID(ctx, strings.TrimSpace(meta.WorkspaceID), strings.TrimSpace(meta.AgentID))
+	if err != nil {
+		return fmt.Errorf("resolve command agent scope: %w", err)
+	}
+	if agent == nil {
+		return fmt.Errorf("%w: agent is not available in this workspace", ErrAgentRuntimeHostForbidden)
+	}
+	teamIDs := agentTeamIDsForScope(agent)
+	slices.Sort(teamIDs)
+	meta.AgentTeamIDs = teamIDs
+	meta.AgentScopeResolved = true
+	return nil
 }
 
 func (s *AgentRuntimeHostService) ResolveSkillByID(ctx context.Context, req AgentRuntimeSkillLookupRequest) (*AgentRuntimeWorkspaceSkill, error) {
@@ -741,6 +837,20 @@ func runtimeWorkspaceID(maps ...map[string]interface{}) string {
 	return ""
 }
 
+func runtimeMetadataString(key string, maps ...map[string]interface{}) string {
+	for _, values := range maps {
+		if values == nil {
+			continue
+		}
+		if value, ok := values[key]; ok {
+			if text := strings.TrimSpace(fmt.Sprint(value)); text != "" && text != "<nil>" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
 func agentRuntimeHostString(value *string) string {
 	if value == nil {
 		return ""
@@ -848,6 +958,78 @@ func runtimeEpicContextData(epic *model.EpicWithStats) map[string]interface{} {
 		"planning_state": epic.Epic.PlanningState,
 		"stats":          epic.Stats,
 	}
+}
+
+func runtimeSprintContextData(sprint *model.SprintWithStats) map[string]interface{} {
+	if sprint == nil {
+		return map[string]interface{}{}
+	}
+	labels := make([]map[string]interface{}, 0, len(sprint.Labels))
+	for _, label := range sprint.Labels {
+		labels = append(labels, map[string]interface{}{
+			"id":      label.ID,
+			"name":    label.Name,
+			"color":   agentRuntimeHostString(label.Color),
+			"team_id": agentRuntimeHostString(label.TeamID),
+		})
+	}
+	return map[string]interface{}{
+		"id":           sprint.Sprint.ID,
+		"workspace_id": sprint.Sprint.WorkspaceID,
+		"name":         sprint.Sprint.Name,
+		"description":  agentRuntimeHostString(sprint.Sprint.Description),
+		"start_date":   runtimeHostDateString(sprint.Sprint.StartDate),
+		"end_date":     runtimeHostDateString(sprint.Sprint.EndDate),
+		"status":       sprint.Sprint.Status,
+		"team_id":      agentRuntimeHostString(sprint.Sprint.TeamID),
+		"labels":       labels,
+		"stats":        sprint.Stats,
+	}
+}
+
+func runtimeObjectiveContextData(objective *model.ObjectiveWithDetails) map[string]interface{} {
+	if objective == nil {
+		return map[string]interface{}{}
+	}
+	labels := make([]map[string]interface{}, 0, min(len(objective.Labels), agentRuntimeObjectiveCollectionLimit))
+	for _, label := range objective.Labels[:min(len(objective.Labels), agentRuntimeObjectiveCollectionLimit)] {
+		labels = append(labels, map[string]interface{}{"id": label.ID, "name": label.Name, "color": agentRuntimeHostString(label.Color), "team_id": agentRuntimeHostString(label.TeamID)})
+	}
+	epics := make([]map[string]interface{}, 0, min(len(objective.Epics), agentRuntimeObjectiveCollectionLimit))
+	for _, epic := range objective.Epics[:min(len(objective.Epics), agentRuntimeObjectiveCollectionLimit)] {
+		epics = append(epics, map[string]interface{}{"id": epic.Epic.ID, "name": epic.Epic.Name, "team_id": agentRuntimeHostString(epic.Epic.TeamID), "stats": epic.Stats})
+	}
+	keyResults := make([]map[string]interface{}, 0, min(len(objective.KeyResults), agentRuntimeObjectiveCollectionLimit))
+	for _, keyResult := range objective.KeyResults[:min(len(objective.KeyResults), agentRuntimeObjectiveCollectionLimit)] {
+		keyResults = append(keyResults, map[string]interface{}{
+			"id": keyResult.ID, "name": keyResult.Name, "result_type": keyResult.ResultType,
+			"initial_value": keyResult.InitialValue, "current_value": keyResult.CurrentValue,
+			"target_value": keyResult.TargetValue, "progress": keyResult.Progress, "note": agentRuntimeHostString(keyResult.Note),
+		})
+	}
+	return map[string]interface{}{
+		"id": objective.Objective.ID, "workspace_id": objective.Objective.WorkspaceID, "name": objective.Objective.Name,
+		"description": agentRuntimeHostString(objective.Objective.Description), "objective_type": objective.Objective.ObjectiveType,
+		"state": objective.Objective.State, "planned_start_date": runtimeHostDateString(objective.Objective.PlannedStartDate),
+		"deadline": runtimeHostDateString(objective.Objective.Deadline), "health": objective.Objective.Health,
+		"health_comment": agentRuntimeHostString(objective.Objective.HealthComment), "teams": boundedRuntimeStrings(objective.Teams),
+		"owners": boundedRuntimeStrings(objective.Owners), "owner_member_ids": boundedRuntimeStrings(objective.OwnerMemberIDs),
+		"labels": labels, "epics": epics, "key_results": keyResults, "stats": objective.Stats,
+	}
+}
+
+func boundedRuntimeStrings(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), values[:min(len(values), agentRuntimeObjectiveCollectionLimit)]...)
+}
+
+func runtimeHostDateString(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.UTC().Format("2006-01-02")
 }
 
 func runtimeSupportConversationContextData(conversation *model.SupportConversation) map[string]interface{} {
