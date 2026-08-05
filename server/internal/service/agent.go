@@ -5849,11 +5849,20 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	_ = s.agentRepo.Update(ctx, params.agent)
 
-	if _, err := runtimeLauncher.UpsertAgent(ctx, runtimeAgent); err != nil {
+	registeredRuntimeAgent, err := runtimeLauncher.UpsertAgent(ctx, runtimeAgent)
+	if err != nil {
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
 	}
-	startReq, err := runtimeStartRunRequest(run, params.agent, runtimeAgent)
+	if registeredRuntimeAgent == nil {
+		err := fmt.Errorf("agent runtime returned an empty agent after registration")
+		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+		return nil, err
+	}
+	// Agent Runtime owns the executable tool registry. Build the run contract
+	// from the agent it accepted, rather than the local projection we sent, so
+	// allowed_tools cannot race or drift from the runtime's stored definition.
+	startReq, err := runtimeStartRunRequest(run, params.agent, *registeredRuntimeAgent)
 	if err != nil {
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err

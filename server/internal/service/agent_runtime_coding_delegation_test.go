@@ -682,6 +682,35 @@ func TestStartTargetRunDelegatesCodeBuilderTaskRunToAgentRuntime(t *testing.T) {
 	}
 }
 
+func TestStartTargetRunUsesRegisteredRuntimeAgentToolContract(t *testing.T) {
+	db := setupCodingDelegationTestDB(t)
+	now := time.Now().UTC()
+	seedCodingDelegationAgent(t, db, model.AgentPresetCodeBuilder, model.InvocationModeAutonomous, now)
+	seedCodingDelegationTaskAndDelivery(t, db, now)
+	mustExec(t, db, `UPDATE agents SET allowed_tools = ? WHERE id = ?`,
+		mustJSONStringSlice([]string{"read_file", "run_command"}), "agent-1")
+
+	runtimeClient := &fakeAgentRuntimeSignalClient{
+		upsertResult: &AgentRuntimeAgent{AllowedTools: []string{"read_file"}},
+	}
+	svc := newCodingDelegationService(t, db, runtimeClient)
+
+	actorID := "user-1"
+	_, err := svc.startTargetRunWithOptions(context.Background(), "ws-1", "task", "task-1", model.StartAgentRunRequest{
+		AgentID:      "agent-1",
+		AllowedTools: []string{"read_file", "run_command"},
+	}, &actorID, nil, nil, nil, startTargetRunOptions{})
+	if err != nil {
+		t.Fatalf("startTargetRunWithOptions returned error: %v", err)
+	}
+	if len(runtimeClient.startRunCalls) != 1 {
+		t.Fatalf("expected one runtime start call, got %d", len(runtimeClient.startRunCalls))
+	}
+	if got := runtimeClient.startRunCalls[0].AllowedTools; !slices.Equal(got, []string{"read_file"}) {
+		t.Fatalf("run tools must use the registered runtime agent contract, got %#v", got)
+	}
+}
+
 // TestStartTargetRunDelegatesReviewAgentTaskRunCompletesOnFinish covers the
 // review-agent flavor of the task chain: the run is still interactive for
 // auth/approval semantics, but it must not enter the runtime chat loop after
