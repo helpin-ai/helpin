@@ -112,8 +112,8 @@ func TestAgentDefaultsDerivedFromPreset(t *testing.T) {
 	if got := defaultRoleForPresetKey(model.AgentPresetReviewAgent); got != "QA & Code Reviewer" {
 		t.Fatalf("expected review preset role label, got %q", got)
 	}
-	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "codex" {
-		t.Fatalf("expected planner runtime default codex, got %q", got)
+	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "native_sdk" {
+		t.Fatalf("expected planner runtime default native_sdk, got %q", got)
 	}
 	if got := defaultRuntimeKindForPresetKey(model.AgentPresetSupportAgent); got != "native_sdk" {
 		t.Fatalf("expected support runtime default native_sdk, got %q", got)
@@ -202,11 +202,22 @@ func TestListAgentPresetsIncludesEpicPlanner(t *testing.T) {
 		if !preset.IsDefaultVersion {
 			t.Fatal("expected epic planner catalog entry to be marked as default version")
 		}
-		if preset.RuntimeKind != "codex" {
-			t.Fatalf("expected epic planner runtime codex, got %q", preset.RuntimeKind)
+		if preset.RuntimeKind != "native_sdk" {
+			t.Fatalf("expected epic planner runtime native_sdk, got %q", preset.RuntimeKind)
+		}
+		if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
+			t.Fatalf("expected epic planner provider openrouter, got %+v", preset.Provider)
+		}
+		if preset.Model == nil || *preset.Model != defaultAtlasAgentModel {
+			t.Fatalf("expected epic planner model %s, got %+v", defaultAtlasAgentModel, preset.Model)
 		}
 		if preset.DefaultInvocationMode != model.InvocationModeInteractive {
 			t.Fatalf("expected epic planner default mode interactive, got %q", preset.DefaultInvocationMode)
+		}
+		for _, productTool := range []string{"ensure_epic_spec_doc", "write_document_content", "approve_epic_spec", "create_task_batch"} {
+			if !slices.Contains(preset.AllowedTools, productTool) {
+				t.Fatalf("expected epic planner preset to include %q, got %v", productTool, preset.AllowedTools)
+			}
 		}
 	}
 	if !found {
@@ -220,6 +231,18 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 		t.Fatal("expected preset catalog")
 	}
 	for _, preset := range presets {
+		if preset.Key == model.AgentPresetEpicPlanner {
+			if preset.RuntimeKind != "native_sdk" {
+				t.Errorf("preset %q runtime = %q, want native_sdk", preset.Key, preset.RuntimeKind)
+			}
+			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
+				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
+			}
+			if preset.Model == nil || *preset.Model != defaultAtlasAgentModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultAtlasAgentModel)
+			}
+			continue
+		}
 		if preset.Key == model.AgentPresetTaskPlanner {
 			if preset.RuntimeKind != "native_sdk" {
 				t.Errorf("preset %q runtime = %q, want native_sdk", preset.Key, preset.RuntimeKind)
@@ -810,6 +833,10 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 		agentcontract.ToolRequestApproval,
 		agentcontract.ToolPublishPRDDraft,
 		agentcontract.ToolPublishTaskPlan,
+		"create_task_batch",
+		"ensure_epic_spec_doc",
+		"write_document_content",
+		"approve_epic_spec",
 	} {
 		if !slices.Contains(tools, required) {
 			t.Fatalf("expected migrated tool list to contain %q, got %v", required, tools)
@@ -888,6 +915,7 @@ func TestNormalizeAgentRecordStripsTaskPlannerPreviewToolsFromEpicPlanner(t *tes
 		agentcontract.ToolRequestApproval,
 		agentcontract.ToolPublishPRDDraft,
 		agentcontract.ToolPublishTaskPlan,
+		"create_task_batch",
 	} {
 		if !slices.Contains(tools, required) {
 			t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
@@ -898,7 +926,6 @@ func TestNormalizeAgentRecordStripsTaskPlannerPreviewToolsFromEpicPlanner(t *tes
 		agentcontract.ToolPreviewJSON,
 		agentcontract.ToolPublishPreview,
 		agentcontract.ToolPublishTaskPlanDoc,
-		"create_task_batch",
 	} {
 		if slices.Contains(tools, unexpected) {
 			t.Fatalf("expected sanitized tool list to exclude %q, got %v", unexpected, tools)
