@@ -206,6 +206,12 @@ describe('ChatWindow', () => {
     expect(getByText('Helpin')).toBeTruthy();
     const attribution = container.querySelector('a.helpin-powered-by.helpin-brand-attribution');
     expect(attribution).not.toBeNull();
+    const attributionUrl = new URL(attribution?.getAttribute('href') ?? '');
+    expect(attributionUrl.searchParams.get('utm_source')).toBe('acme-ws-123');
+    expect(attributionUrl.searchParams.get('utm_medium')).toBe('referral');
+    expect(attributionUrl.searchParams.get('utm_campaign')).toBe('powered_by_helpin');
+    expect(attributionUrl.searchParams.get('utm_content')).toBe('chat_widget_footer');
+    expect(attribution?.getAttribute('href')).not.toContain('amp;');
     expect(attribution?.children).toHaveLength(2);
     expect(attribution?.querySelector('.helpin-brand-attribution-brand')).not.toBeNull();
     const mark = attribution?.querySelector('.helpin-brand-attribution-icon');

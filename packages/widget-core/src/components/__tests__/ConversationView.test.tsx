@@ -57,6 +57,20 @@ function renderConversationView(overrides: RenderOverrides = {}) {
   );
 }
 
+describe('ConversationView attribution', () => {
+  it('identifies the workspace and composer placement with consistent UTMs', () => {
+    const { container } = renderConversationView();
+    const attribution = container.querySelector('a.helpin-compose-footer');
+    const attributionUrl = new URL(attribution?.getAttribute('href') ?? '');
+
+    expect(attributionUrl.searchParams.get('utm_source')).toBe('acme-ws-123');
+    expect(attributionUrl.searchParams.get('utm_medium')).toBe('referral');
+    expect(attributionUrl.searchParams.get('utm_campaign')).toBe('powered_by_helpin');
+    expect(attributionUrl.searchParams.get('utm_content')).toBe('chat_widget_composer');
+    expect(attribution?.getAttribute('href')).not.toContain('amp;');
+  });
+});
+
 describe('ConversationView escalation email capture', () => {
   it('shows email-capture card for anonymous visitor when busy', () => {
     const { getByText, getByPlaceholderText } = renderConversationView({

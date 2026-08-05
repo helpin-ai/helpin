@@ -475,7 +475,13 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
 
       {/* Powered by footer */}
       {showBranding && activeView !== 'conversation' && activeView !== 'messages' && (
-        <BrandAttribution label="Powered by" className="helpin-powered-by" />
+        <BrandAttribution
+          label="Powered by"
+          className="helpin-powered-by"
+          workspaceId={config.workspaceId}
+          workspaceName={config.workspaceName}
+          content="chat_widget_footer"
+        />
       )}
 
       {/* Bottom navigation */}

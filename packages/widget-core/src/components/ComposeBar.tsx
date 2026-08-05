@@ -15,6 +15,8 @@ interface ComposeBarProps {
   pendingAttachments?: PendingAttachment[];
   onRemoveAttachment?: (id: string) => void;
   fileUploadsEnabled?: boolean;
+  workspaceId?: string;
+  workspaceName?: string;
 }
 
 function isImageType(type: string): boolean {
@@ -37,6 +39,8 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   pendingAttachments = [],
   onRemoveAttachment,
   fileUploadsEnabled = true,
+  workspaceId,
+  workspaceName,
 }) => {
   const [message, setMessage] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
@@ -225,7 +229,13 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
         )}
       </form>
       {showBranding && (
-        <BrandAttribution label="We run on" className="helpin-compose-footer" />
+        <BrandAttribution
+          label="We run on"
+          className="helpin-compose-footer"
+          workspaceId={workspaceId}
+          workspaceName={workspaceName}
+          content="chat_widget_composer"
+        />
       )}
     </div>
   );

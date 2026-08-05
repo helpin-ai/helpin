@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -1043,20 +1044,25 @@ func TestEmailFallbackRenderBodiesAddsTrackedPoweredByFooter(t *testing.T) {
 	svc := &EmailFallbackService{}
 
 	htmlBody, textBody := svc.renderBodies(
-		[]model.SupportMessage{{Content: "Thanks."}},
+		[]model.SupportMessage{{WorkspaceID: "7d314f04-d25e-461e-8ce4-49de0527ae32", Content: "Thanks."}},
 		"Alex Agent",
-		"Acme Support",
+		"Replug",
 		"",
 		"",
 	)
+	wantURL := "https://helpin.ai/?utm_source=replug-7d314f04&utm_medium=email&utm_campaign=powered_by_helpin&utm_content=support_email_footer"
+	wantHTMLURL := html.EscapeString(wantURL)
 
 	if !strings.Contains(htmlBody, "<strong>Helpin AI</strong>") {
 		t.Fatalf("html footer should bold Helpin AI, got %q", htmlBody)
 	}
-	if !strings.Contains(htmlBody, emailFallbackPoweredByFooterURL) {
+	if !strings.Contains(htmlBody, wantHTMLURL) {
 		t.Fatalf("html footer missing tracked URL, got %q", htmlBody)
 	}
-	if !strings.Contains(textBody, emailFallbackPoweredByFooterURL) {
+	if strings.Contains(htmlBody, "&amp;amp;") {
+		t.Fatalf("html footer URL should be escaped exactly once, got %q", htmlBody)
+	}
+	if !strings.Contains(textBody, wantURL) || strings.Contains(textBody, "&amp;") {
 		t.Fatalf("text footer missing tracked URL, got %q", textBody)
 	}
 }
@@ -3820,10 +3826,11 @@ func TestEmailFallbackRenderBodiesUsesLinkedChatAndHelpinAttribution(t *testing.
 	if !strings.Contains(htmlBody, `border-top:1px solid #e5e7eb`) {
 		t.Fatalf("expected subtle bordered attribution footer, got %q", htmlBody)
 	}
-	if !strings.Contains(htmlBody, `<a href="`+emailFallbackPoweredByFooterURL+`"`) || !strings.Contains(htmlBody, `<strong>Helpin AI</strong></a>`) {
+	wantURL := "https://helpin.ai/?utm_source=acme-support&utm_medium=email&utm_campaign=powered_by_helpin&utm_content=support_email_footer"
+	if !strings.Contains(htmlBody, `<a href="`+html.EscapeString(wantURL)+`"`) || !strings.Contains(htmlBody, `<strong>Helpin AI</strong></a>`) {
 		t.Fatalf("expected Helpin AI attribution link, got %q", htmlBody)
 	}
-	if !strings.Contains(textBody, "Powered by Helpin AI: "+emailFallbackPoweredByFooterURL) {
+	if !strings.Contains(textBody, "Powered by Helpin AI: "+wantURL) {
 		t.Fatalf("expected plaintext Helpin AI attribution URL, got %q", textBody)
 	}
 }

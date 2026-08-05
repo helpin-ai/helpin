@@ -417,10 +417,53 @@ const (
 const (
 	supportEmailAttachmentMaxFileBytes     = 5 * 1024 * 1024
 	supportEmailAttachmentMaxTotalRawBytes = 7 * 1024 * 1024
-	emailFallbackPoweredByFooterURL        = "https://helpin.ai?utm_source=support_email&utm_medium=email&utm_campaign=powered_by_footer&utm_content=fallback_footer"
 	supportEmailReplyDelimiter             = "-- Please type your reply above this line --"
 	supportEmailPreviewMaxRunes            = 160
 )
+
+func helpinAttributionSlug(value, fallback string) string {
+	var slug strings.Builder
+	lastWasSeparator := false
+	for _, char := range strings.ToLower(strings.TrimSpace(value)) {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') {
+			slug.WriteRune(char)
+			lastWasSeparator = false
+			continue
+		}
+		if slug.Len() > 0 && !lastWasSeparator {
+			slug.WriteByte('-')
+			lastWasSeparator = true
+		}
+	}
+	cleaned := strings.Trim(slug.String(), "-")
+	if cleaned == "" {
+		return fallback
+	}
+	return cleaned
+}
+
+func buildHelpinAttributionSource(workspaceName, workspaceID string) string {
+	workspaceSlug := helpinAttributionSlug(workspaceName, "workspace")
+	idPrefix := strings.TrimSpace(workspaceID)
+	if len(idPrefix) > 8 {
+		idPrefix = idPrefix[:8]
+	}
+	idPrefix = helpinAttributionSlug(idPrefix, "")
+	if idPrefix == "" {
+		return workspaceSlug
+	}
+	return workspaceSlug + "-" + idPrefix
+}
+
+func buildHelpinEmailAttributionURL(workspaceName, workspaceID string) string {
+	params := []string{
+		"utm_source=" + url.QueryEscape(buildHelpinAttributionSource(workspaceName, workspaceID)),
+		"utm_medium=email",
+		"utm_campaign=powered_by_helpin",
+		"utm_content=support_email_footer",
+	}
+	return "https://helpin.ai/?" + strings.Join(params, "&")
+}
 
 type supportEmailAttachmentDownloader interface {
 	DownloadContent(ctx context.Context, attachment model.SupportAttachmentPayload) ([]byte, error)
@@ -2520,6 +2563,14 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 	}
 
 	var htmlBody strings.Builder
+	workspaceID := ""
+	for _, message := range messages {
+		if strings.TrimSpace(message.WorkspaceID) != "" {
+			workspaceID = message.WorkspaceID
+			break
+		}
+	}
+	attributionURL := buildHelpinEmailAttributionURL(workspaceName, workspaceID)
 	htmlBody.WriteString(renderSupportEmailHiddenPreheader(messages, workspaceName))
 	htmlBody.WriteString(`<p style="margin:0 0 16px;color:#9ca3af;font-size:12px;line-height:18px;">`)
 	htmlBody.WriteString(html.EscapeString(supportEmailReplyDelimiter))
@@ -2538,7 +2589,7 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 		htmlBody.WriteString(`">View conversation in browser</a></p>`)
 	}
 	htmlBody.WriteString(`<p style="border-top:1px solid #e5e7eb;margin-top:20px;padding-top:12px;color:#6b7280;font-size:12px;line-height:18px;">Powered by <a href="`)
-	htmlBody.WriteString(emailFallbackPoweredByFooterURL)
+	htmlBody.WriteString(html.EscapeString(attributionURL))
 	htmlBody.WriteString(`" style="color:#6b7280;text-decoration:none;"><strong>Helpin AI</strong></a></p>`)
 
 	textBody := supportEmailReplyDelimiter + "\n\n" + strings.Join(textChunks, "\n\n")
@@ -2549,7 +2600,7 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 	if chatLink != "" {
 		textBody += "\n\nView conversation in browser:\n" + chatLink
 	}
-	textBody += "\n\nPowered by Helpin AI: " + emailFallbackPoweredByFooterURL
+	textBody += "\n\nPowered by Helpin AI: " + attributionURL
 	return htmlBody.String(), textBody
 }
 

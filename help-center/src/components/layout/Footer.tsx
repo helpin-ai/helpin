@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { useDocsContext } from '@/contexts/DocsContext'
 import {
   Globe,
@@ -7,6 +8,11 @@ import {
 import type { FooterSocialPlatform } from '@/lib/types'
 import helpinIconBlack from '@/assets/helpin-icon-black.svg'
 import helpinIconWhite from '@/assets/helpin-icon-white.svg'
+import {
+  buildAttributionSource,
+  buildHelpinAttributionUrl,
+  HELPIN_ATTRIBUTION_BASE_URL,
+} from '@/lib/helpinAttribution'
 
 const FONT_AWESOME_BRAND_ICON_BASE = 'https://d3gk2c5xim1je2.cloudfront.net/fontawesome/v7.2.0/brands'
 
@@ -71,11 +77,11 @@ export function Footer() {
   const socialLinks = (config.footer_config?.social_links ?? []).filter((link) => link.platform && link.url)
   const showCopyright = config.footer_config?.show_copyright !== false
   const copyrightText = config.footer_config?.copyright_text
-  const attributionSource = [
-    config.subdomain || config.brand_name?.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-    config.workspace_id?.slice(0, 8),
-  ].filter(Boolean).join('-')
-  const attributionUrl = `https://helpin.ai/?utm_campaign=poweredBy&utm_medium=referral&utm_source=${encodeURIComponent(attributionSource || 'help-center')}`
+  const attributionSource = buildAttributionSource(config.subdomain || config.brand_name, config.workspace_id)
+  const attributionUrl = buildHelpinAttributionUrl(attributionSource, 'help_center_footer')
+  const setAttributionHref = useCallback((node: HTMLAnchorElement | null) => {
+    node?.setAttribute('href', attributionUrl)
+  }, [attributionUrl])
 
   return (
     <footer className="mt-28 border-t border-border/70 pt-8 pb-24 text-[12px] text-muted-foreground/60 md:pb-28">
@@ -125,7 +131,8 @@ export function Footer() {
           )}
 
           <a
-            href={attributionUrl}
+            ref={setAttributionHref}
+            href={HELPIN_ATTRIBUTION_BASE_URL}
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Powered by Helpin"
