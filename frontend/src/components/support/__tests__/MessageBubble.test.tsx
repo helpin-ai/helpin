@@ -51,6 +51,13 @@ function renderBubble(
 
 describe('MessageBubble', () => {
   beforeEach(() => {
+    if (!globalThis.ResizeObserver) {
+      globalThis.ResizeObserver = class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    }
     useAuthStore.setState({
       user: {
         id: 'viewer-1',
@@ -359,6 +366,61 @@ describe('MessageBubble', () => {
     queryClient.clear()
   })
 
+  it('uses the backend visible email projection instead of full fallback content', () => {
+    const message: SupportMessage = {
+      id: 'msg-email-projection-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Customer',
+      content: 'Fresh reply\n\nOn Tuesday someone wrote:\nOld quoted body',
+      email_visible_text: 'Fresh reply',
+      email_quoted_text: 'On Tuesday someone wrote:\nOld quoted body',
+      email_has_quoted_content: true,
+      email_projection_confidence: 'high',
+      email_projection_version: 1,
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'email',
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    expect(rendered.container.textContent).toContain('Fresh reply')
+    expect(rendered.container.textContent).not.toContain('Old quoted body')
+    rendered.cleanup()
+  })
+
+  it('defaults rich quoted email HTML to collapsed even with attribution metadata', () => {
+    const message: SupportMessage = {
+      id: 'msg-email-projection-2',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Jane Customer',
+      content: 'Fresh reply',
+      html_body: '<p>Fresh reply</p><div data-helpin-quote="true">Old quoted body</div>',
+      email_visible_text: 'Fresh reply',
+      email_quoted_text: 'Old quoted body',
+      email_has_quoted_content: true,
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'email',
+      metadata: JSON.stringify({
+        forwarded_by_email: 'founder@company.com',
+        original_sender_email: 'jane@customer.example',
+      }),
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    const iframe = rendered.container.querySelector('iframe[title="Email body"]')
+    expect(iframe?.getAttribute('data-collapsed-by-default')).toBe('true')
+    rendered.cleanup()
+  })
+
   it('renders compact forwarded attribution in the email badge', () => {
     const message: SupportMessage = {
       id: 'msg-forwarded-1',
@@ -561,6 +623,46 @@ Can I export my data?`,
     expect(active.container.textContent).toContain('Undo')
     expect(active.container.textContent).not.toContain('Delivered to email')
     active.cleanup()
+  })
+
+  it('anchors message actions to the text bubble instead of image attachments', () => {
+    const message: SupportMessage = {
+      id: 'msg-with-image-attachment',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Customer',
+      content: 'Please check this screenshot.',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'widget',
+      attachments: [
+        {
+          id: 'att-image-1',
+          file_key: 'support/att-image-1',
+          file_name: 'screenshot.png',
+          file_type: 'image/png',
+          file_size: 2048,
+          url: 'https://cdn.example.com/screenshot.png',
+        },
+      ],
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const { container, cleanup } = renderBubble(message)
+    const bubbleFrame = container.querySelector('[data-slot="support-message-bubble-frame"]')
+    const actions = container.querySelector('[aria-label="Message actions"]')
+    const attachment = container.querySelector('img[alt="screenshot.png"]')
+
+    expect(bubbleFrame).toBeTruthy()
+    expect(bubbleFrame?.className).toContain('relative')
+    expect(actions).toBeTruthy()
+    expect(attachment).toBeTruthy()
+    expect(bubbleFrame?.contains(actions)).toBe(true)
+    expect(bubbleFrame?.contains(attachment)).toBe(false)
+
+    cleanup()
   })
 
   it('renders internal note images as thumbnails with hover preview and image navigation', () => {

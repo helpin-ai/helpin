@@ -165,8 +165,19 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 			return err
 		}
 		if contactID != nil && companyID != nil {
-			if err := s.ensurePrimaryContactCompanyAssociationTx(ctx, assocRepoTx, session.WorkspaceID, *contactID, *companyID); err != nil {
+			if err := s.ensureContactCompanyMembershipTx(ctx, assocRepoTx, session.WorkspaceID, *contactID, *companyID); err != nil {
 				return err
+			}
+		}
+		if companyID != nil {
+			if err := sessionRepoTx.UpdateCompanyByID(ctx, session.WorkspaceID, session.ID, companyID); err != nil {
+				return err
+			}
+			session.CRMCompanyID = companyID
+			if session.ConversationID != nil {
+				if _, err := convRepoTx.SetCRMCompanyIfUnset(ctx, session.WorkspaceID, *session.ConversationID, *companyID); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -241,8 +252,22 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 			return err
 		}
 		if contactID != nil && companyID != nil {
-			if err := s.ensurePrimaryContactCompanyAssociationTx(ctx, assocRepoTx, workspaceID, *contactID, *companyID); err != nil {
+			if err := s.ensureContactCompanyMembershipTx(ctx, assocRepoTx, workspaceID, *contactID, *companyID); err != nil {
 				return err
+			}
+		}
+		if companyID != nil {
+			activeSessions, err := sessionRepoTx.UpdateActiveSessionsCompanyByAnonymousID(ctx, workspaceID, anonymousID, *companyID)
+			if err != nil {
+				return err
+			}
+			for _, activeSession := range activeSessions {
+				if activeSession.ConversationID == nil {
+					continue
+				}
+				if _, err := convRepoTx.SetCRMCompanyIfUnset(ctx, workspaceID, *activeSession.ConversationID, *companyID); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -448,6 +473,7 @@ func (s *SupportInboxService) WidgetCreateConversation(ctx context.Context, sess
 		CustomerName:  session.CustomerName,
 		CustomerEmail: session.CustomerEmail,
 		AnonymousID:   &session.AnonymousID,
+		CRMCompanyID:  session.CRMCompanyID,
 		Source:        "widget",
 	}
 
@@ -520,6 +546,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 			CustomerName:  session.CustomerName,
 			CustomerEmail: session.CustomerEmail,
 			AnonymousID:   &session.AnonymousID,
+			CRMCompanyID:  session.CRMCompanyID,
 			Source:        "widget",
 		}
 

@@ -26,6 +26,19 @@ func (r *CRMCompanyRepository) WithTx(tx *gorm.DB) *CRMCompanyRepository {
 	return &CRMCompanyRepository{db: tx}
 }
 
+// LockExternalID serializes workspace-scoped external company identity upserts.
+// Callers must invoke it inside the transaction that performs the lookup/create.
+func (r *CRMCompanyRepository) LockExternalID(ctx context.Context, workspaceID, externalID string) error {
+	if r.db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	key := workspaceID + "\x00" + strings.ToLower(strings.TrimSpace(externalID))
+	if err := r.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
+		return fmt.Errorf("lock company external id: %w", err)
+	}
+	return nil
+}
+
 // GetNextDisplayID generates the next sequential display ID for companies in a workspace.
 func (r *CRMCompanyRepository) GetNextDisplayID(ctx context.Context, workspaceID string) (string, error) {
 	var count int64

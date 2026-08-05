@@ -2,6 +2,10 @@
 
 Unified platform for project management, CRM, customer support, knowledge, and AI-assisted execution.
 
+## Small Fix Workflow
+
+For small, well-scoped fixes, do not create or modify plan, specification, or design documents unless the user explicitly requests them. Inspect the issue, implement the fix, verify it, and commit it directly. Reserve planning, specification, and design documents for substantial multi-step work or explicit user requests.
+
 ## Architecture
 
 - **Backend**: Go 1.24 + Chi router + GORM (PostgreSQL/Neon) + Temporal workflows

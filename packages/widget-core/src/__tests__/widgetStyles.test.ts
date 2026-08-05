@@ -19,19 +19,16 @@ describe('widget scroll styles', () => {
   });
 
   it('animates Helpin branding underlines from left to right on hover', () => {
-    expect(ruleBody('.helpin-powered-by')).toContain('text-decoration: none');
-    expect(ruleBody('.helpin-powered-by-brand')).toContain('gap: 2px');
-    expect(ruleBody('.helpin-powered-by-name')).toContain('background-size: 0 1px');
-    expect(ruleBody('.helpin-powered-by-icon')).toContain('transform: scale(1.25)');
-    expect(ruleBody('.helpin-powered-by:hover .helpin-powered-by-name')).toContain('background-size: 100% 1px');
-    expect(ruleBody('.helpin-compose-footer')).toContain('display: flex');
-    expect(ruleBody('.helpin-compose-footer')).toContain('align-items: center');
-    expect(ruleBody('.helpin-compose-footer')).toContain('justify-content: center');
-    expect(ruleBody('.helpin-compose-footer')).toContain('gap: 4px');
-    expect(ruleBody('.helpin-compose-footer-brand')).toContain('gap: 2px');
-    expect(ruleBody('.helpin-compose-footer-name')).toContain('background-size: 0 1px');
-    expect(ruleBody('.helpin-compose-footer-icon')).toContain('transform: scale(1.25)');
-    expect(ruleBody('.helpin-compose-footer:hover .helpin-compose-footer-name')).toContain('background-size: 100% 1px');
+    expect(ruleBody('.helpin-brand-attribution')).toContain('display: flex');
+    expect(ruleBody('.helpin-brand-attribution')).toContain('align-items: center');
+    expect(ruleBody('.helpin-brand-attribution')).toContain('justify-content: center');
+    expect(ruleBody('.helpin-brand-attribution')).toContain('text-decoration: none');
+    expect(ruleBody('.helpin-brand-attribution-brand')).toContain('display: inline-flex');
+    expect(ruleBody('.helpin-brand-attribution-brand')).toContain('align-items: center');
+    expect(ruleBody('.helpin-brand-attribution-brand')).toContain('gap: 2px');
+    expect(ruleBody('.helpin-brand-attribution-name')).toContain('background-size: 0 1px');
+    expect(ruleBody('.helpin-brand-attribution-icon')).toContain('transform: scale(1.25)');
+    expect(ruleBody('.helpin-brand-attribution:hover .helpin-brand-attribution-name')).toContain('background-size: 100% 1px');
   });
 
   it('slides help drilldown screens from right to left', () => {
@@ -54,5 +51,14 @@ describe('widget scroll styles', () => {
     expect(css).toContain('.helpin-message-list--smooth-enter,');
     expect(css).toContain('.helpin-help-link-skeleton-icon,');
     expect(css).toContain('.helpin-help-link-skeleton-line');
+  });
+
+  it('keeps projected and quoted email content width-safe', () => {
+    expect(ruleBody('.helpin-email-message-content')).toContain('min-width: 0');
+    expect(ruleBody('.helpin-email-message-content')).toContain('max-width: 100%');
+    expect(ruleBody('.helpin-email-quoted-content')).toContain('overflow-wrap: anywhere');
+    expect(ruleBody('.helpin-message-content a')).toContain('overflow-wrap: anywhere');
+    expect(ruleBody('.helpin-message-content code')).toContain('word-break: break-word');
+    expect(ruleBody('.helpin-message-content pre')).toContain('overflow-x: auto');
   });
 });
