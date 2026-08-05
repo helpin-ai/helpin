@@ -104,4 +104,24 @@ describe('EmailBodyRenderer collapsed quote layout', () => {
     expect(document.getElementById('quote-rule')?.getAttribute('data-helpin-quote')).toBe('true');
     expect(document.getElementById('old-thread')?.getAttribute('data-helpin-quote')).toBe('true');
   });
+
+  it('detects Word email quote headers with From, Sent, To, and Subject rows', () => {
+    document.body.innerHTML = `
+      <div class="WordSection1">
+        <p>Latest reply content.</p>
+        <div id="word-quote-header" style="border: none; border-top: solid #E1E1E1 1.0pt; padding: 3.0pt 0cm 0cm 0cm">
+          <p><b>From:</b> Arooj Bukhari &lt;support@example.com&gt;<br>
+            <b>Sent:</b> Tuesday, 04 August 2026 21:19<br>
+            <b>To:</b> customer@example.com<br>
+            <b>Subject:</b> Original question</p>
+        </div>
+        <div id="word-old-thread"><p>Older reply content.</p></div>
+      </div>
+    `;
+
+    prepareCollapsedEmailLayout(document, true);
+
+    expect(document.getElementById('word-quote-header')?.getAttribute('data-helpin-quote')).toBe('true');
+    expect(document.getElementById('word-old-thread')?.getAttribute('data-helpin-quote')).toBe('true');
+  });
 });

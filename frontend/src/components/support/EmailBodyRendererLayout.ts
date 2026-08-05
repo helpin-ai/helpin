@@ -3,6 +3,7 @@ export const COLLAPSE_HOST_ATTR = 'data-helpin-collapse-host';
 export const COLLAPSED_BODY_ATTR = 'data-helpin-collapsed';
 export const COLLAPSIBLE_SELECTOR = `[${QUOTE_ATTR}], .gmail_signature, .gmail_signature_prefix`;
 const OUTLOOK_QUOTE_BOUNDARY_SELECTOR = `#appendonsend[${QUOTE_ATTR}], #divRplyFwdMsg[${QUOTE_ATTR}]`;
+const OUTLOOK_QUOTE_HEADER_PATTERN = /\bfrom:\s*.+\bsent:\s*.+\bto:\s*.+\bsubject:/i;
 
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
@@ -24,6 +25,21 @@ function isReplacedOrAtomicElement(el: Element): boolean {
   return ['IMG', 'HR', 'TABLE', 'SVG', 'CANVAS', 'VIDEO', 'AUDIO'].includes(el.tagName);
 }
 
+function isWordQuoteHeader(el: Element): boolean {
+  const style = el.getAttribute('style')?.toLowerCase() ?? '';
+  if (!style.includes('border-top')) return false;
+  return OUTLOOK_QUOTE_HEADER_PATTERN.test(el.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+}
+
+function markQuoteBoundaryAndFollowingSiblings(marker: Element, includeMarker: boolean): void {
+  if (includeMarker) marker.setAttribute(QUOTE_ATTR, 'true');
+  let sibling = marker.nextElementSibling;
+  while (sibling) {
+    sibling.setAttribute(QUOTE_ATTR, 'true');
+    sibling = sibling.nextElementSibling;
+  }
+}
+
 function maxTextNodeBottom(doc: Document, textNode: Text): number {
   if (!textNode.textContent?.trim()) return 0;
   const range = doc.createRange();
@@ -41,10 +57,12 @@ export function prepareCollapsedEmailLayout(doc: Document, collapsed: boolean): 
   if (!collapsed) return;
 
   doc.querySelectorAll(OUTLOOK_QUOTE_BOUNDARY_SELECTOR).forEach((marker) => {
-    let sibling = marker.nextElementSibling;
-    while (sibling) {
-      sibling.setAttribute(QUOTE_ATTR, 'true');
-      sibling = sibling.nextElementSibling;
+    markQuoteBoundaryAndFollowingSiblings(marker, false);
+  });
+
+  doc.querySelectorAll('*').forEach((element) => {
+    if (isWordQuoteHeader(element)) {
+      markQuoteBoundaryAndFollowingSiblings(element, true);
     }
   });
 
