@@ -494,3 +494,35 @@ func TestGetTaskContextCatalogAllowsTargetDefaultAndCapsIDs(t *testing.T) {
 	}
 	t.Fatal("get_task_context missing from tool catalog")
 }
+
+func TestBrowserToolCatalogContracts(t *testing.T) {
+	catalog := ListToolCatalog()
+	want := map[string]bool{
+		"browser_open": false, "browser_snapshot": false,
+		"browser_act": false, "browser_screenshot": false,
+	}
+	for _, tool := range catalog.Tools {
+		if _, ok := want[tool.Name]; !ok {
+			continue
+		}
+		want[tool.Name] = true
+		if tool.Category != "Browser" {
+			t.Fatalf("%s category = %q", tool.Name, tool.Category)
+		}
+		schema, ok := tool.InputSchema.(map[string]any)
+		if !ok || schema["type"] != "object" || schema["additionalProperties"] != false {
+			t.Fatalf("%s schema is not a strict object: %#v", tool.Name, tool.InputSchema)
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Fatalf("%s missing from tool catalog", name)
+		}
+	}
+	profile := GetRuntimeProfile("documentation")
+	for name := range want {
+		if indexOf(profile.AllowedTools, name) < 0 {
+			t.Fatalf("documentation profile missing %s", name)
+		}
+	}
+}

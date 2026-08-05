@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
 	"github.com/helpin-ai/helpin/server/internal/agentcontract"
@@ -51,6 +54,121 @@ type AgentRuntimeHostService struct {
 	skillRepo        *repository.WorkspaceSkillRepository
 	skillStore       skillPackageStore
 	authz            *authorization.AuthzService
+	artifactRepo     agentRuntimeBrowserArtifactRepository
+	assetStore       agentRuntimeBrowserAssetStore
+}
+
+type agentRuntimeBrowserAssetStore interface {
+	PutObject(ctx context.Context, key, contentType string, size int64, body io.Reader, publicRead bool) error
+	DeleteObject(ctx context.Context, key string) error
+	PublicURL(key string) string
+}
+
+type agentRuntimeBrowserArtifactRepository interface {
+	NextSequence(ctx context.Context, workspaceID, runID string) (int, error)
+	Create(ctx context.Context, artifact *model.AgentRunArtifact) error
+}
+
+// SetBrowserAssetStore enables durable screenshot uploads from agent-runtime.
+func (s *AgentRuntimeHostService) SetBrowserAssetStore(artifactRepo *repository.AgentRunArtifactRepository, assetStore agentRuntimeBrowserAssetStore) *AgentRuntimeHostService {
+	if s == nil {
+		return s
+	}
+	s.artifactRepo = artifactRepo
+	s.assetStore = assetStore
+	return s
+}
+
+type AgentRuntimeBrowserAssetUpload struct {
+	AppID        string
+	RuntimeRunID string
+	WorkspaceID  string
+	FileName     string
+	ContentType  string
+	Size         int64
+	Body         io.Reader
+}
+
+type AgentRuntimeBrowserAsset struct {
+	AssetID   string `json:"asset_id"`
+	URL       string `json:"url"`
+	ObjectKey string `json:"object_key"`
+}
+
+// UploadBrowserAsset validates the runtime-to-host run mapping, stores a
+// screenshot, and records it as a first-class Helpin run artifact.
+func (s *AgentRuntimeHostService) UploadBrowserAsset(ctx context.Context, upload AgentRuntimeBrowserAssetUpload) (*AgentRuntimeBrowserAsset, error) {
+	if s == nil || s.runRepo == nil || s.artifactRepo == nil || s.assetStore == nil {
+		return nil, fmt.Errorf("browser screenshot storage is unavailable")
+	}
+	if err := s.validateAppID(upload.AppID); err != nil {
+		return nil, err
+	}
+	upload.RuntimeRunID = strings.TrimSpace(upload.RuntimeRunID)
+	upload.WorkspaceID = strings.TrimSpace(upload.WorkspaceID)
+	if upload.RuntimeRunID == "" {
+		return nil, fmt.Errorf("%w: run_id is required", ErrAgentRuntimeHostBadRequest)
+	}
+	if upload.WorkspaceID == "" {
+		return nil, fmt.Errorf("%w: workspace_id is required", ErrAgentRuntimeHostBadRequest)
+	}
+	if upload.Body == nil || upload.Size <= 0 || upload.Size > 10*1024*1024 {
+		return nil, fmt.Errorf("%w: screenshot must be between 1 byte and 10 MB", ErrAgentRuntimeHostBadRequest)
+	}
+	contentType := strings.ToLower(strings.TrimSpace(strings.Split(upload.ContentType, ";")[0]))
+	ext := ""
+	switch contentType {
+	case "image/png":
+		ext = ".png"
+	case "image/jpeg":
+		ext = ".jpg"
+	default:
+		return nil, fmt.Errorf("%w: screenshot content type must be image/png or image/jpeg", ErrAgentRuntimeHostBadRequest)
+	}
+	run, err := s.runRepo.GetByExternalRuntimeID(ctx, agentRuntimeName, upload.RuntimeRunID)
+	if err != nil {
+		return nil, err
+	}
+	if run == nil {
+		return nil, fmt.Errorf("%w: agent run not found", ErrAgentRuntimeHostNotFound)
+	}
+	if strings.TrimSpace(run.WorkspaceID) != upload.WorkspaceID {
+		return nil, fmt.Errorf("%w: run does not belong to requested workspace", ErrAgentRuntimeHostForbidden)
+	}
+	assetID := uuid.NewString()
+	objectKey := fmt.Sprintf("agent-runs/%s/%s/browser/%s%s", upload.WorkspaceID, run.ID, assetID, ext)
+	assetURL := s.assetStore.PublicURL(objectKey)
+	if strings.TrimSpace(assetURL) == "" {
+		return nil, fmt.Errorf("browser screenshot public URL is unavailable")
+	}
+	if err := s.assetStore.PutObject(ctx, objectKey, contentType, upload.Size, upload.Body, true); err != nil {
+		return nil, err
+	}
+	sequence, err := s.artifactRepo.NextSequence(ctx, upload.WorkspaceID, run.ID)
+	if err != nil {
+		if deleteErr := s.assetStore.DeleteObject(ctx, objectKey); deleteErr != nil {
+			return nil, fmt.Errorf("next browser screenshot artifact sequence: %w; cleanup failed: %v", err, deleteErr)
+		}
+		return nil, err
+	}
+	name := strings.TrimSpace(filepath.Base(upload.FileName))
+	metadata, _ := json.Marshal(map[string]any{
+		"asset_id": assetID, "url": assetURL, "file_name": name,
+		"content_type": contentType, "size_bytes": upload.Size,
+		"runtime_run_id": upload.RuntimeRunID, "source": "agent-browser",
+	})
+	artifact := &model.AgentRunArtifact{
+		ID: assetID, WorkspaceID: upload.WorkspaceID, RunID: run.ID,
+		ArtifactType: "browser_screenshot", Format: strings.TrimPrefix(ext, "."),
+		StorageMode: "object", ObjectKey: &objectKey, Metadata: metadata, SequenceNo: sequence,
+	}
+	if err := s.artifactRepo.Create(ctx, artifact); err != nil {
+		if deleteErr := s.assetStore.DeleteObject(ctx, objectKey); deleteErr != nil {
+			return nil, fmt.Errorf("create browser screenshot artifact: %w; cleanup failed: %v", err, deleteErr)
+		}
+		return nil, err
+	}
+	return &AgentRuntimeBrowserAsset{AssetID: assetID, URL: assetURL, ObjectKey: objectKey}, nil
 }
 
 // SetAgentRepository enables repository-backed effective agent scope

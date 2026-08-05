@@ -415,6 +415,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.Post("/target-context", h.AgentRuntimeHost.ResolveTargetContext)
 					r.Post("/workspace/repository-spec", h.AgentRuntimeHost.ResolveRepositorySpec)
 					r.Post("/commands/execute", h.AgentRuntimeHost.ExecuteCommand)
+					r.Post("/assets/browser-screenshots", h.AgentRuntimeHost.UploadBrowserAsset)
 					r.Post("/skills/by-id", h.AgentRuntimeHost.ResolveSkillByID)
 					r.Post("/skills/active-by-key", h.AgentRuntimeHost.ResolveActiveSkillByKey)
 					r.Get("/skill-packages/objects/*", h.AgentRuntimeHost.GetSkillPackageObject)

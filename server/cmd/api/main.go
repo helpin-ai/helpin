@@ -1220,6 +1220,7 @@ func main() {
 	).SetPMSprintService(pmSprintService).
 		SetPMObjectiveService(pmObjectiveService).
 		SetAgentRepository(agentRepo).
+		SetBrowserAssetStore(agentRunArtifactRepo, s3Client).
 		SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
 	var agentRuntimeProjectionService *service.AgentRuntimeProjectionService
 	var runFinalizers *service.AgentRunFinalizerService
