@@ -6,6 +6,9 @@ metadata:
   required_tools:
     - publish_prd_draft
     - request_user_input
+    - ensure_epic_spec_doc
+    - write_document_content
+    - approve_epic_spec
   supported_runtimes:
     - native_sdk
 ---
@@ -70,5 +73,7 @@ Do not include:
 ## After PRD Approval
 
 - Treat the approved `publish_prd_draft` artifact as the source of truth.
-- The platform will persist the approved PRD artifact to the canonical epic document and update the durable planning facts.
-- After approval, continue from the refreshed state instead of replaying the PRD through document-mutation tools.
+- Call `ensure_epic_spec_doc` with `{}` and read the `document_id` from its JSON result.
+- Call `write_document_content` with that `document_id` and the full approved PRD markdown as `content`.
+- Call `approve_epic_spec` with `{}` to record the current document content as the epic's approved spec version.
+- Continue to task planning only after all three product tool calls succeed. Do not claim persistence or attachment based on approval alone.

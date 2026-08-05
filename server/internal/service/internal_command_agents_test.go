@@ -222,6 +222,31 @@ func TestVerifyDockApprovalLaunch(t *testing.T) {
 	})
 }
 
+func TestResolvedDockApprovalActionReturnsStoredLaunchInstructions(t *testing.T) {
+	db := setupDockApprovalTestDB(t)
+	svc := &InternalCommandService{agentRunInteractionRepo: repository.NewAgentRunInteractionRepository(db)}
+	chatRun := &model.AgentRun{ID: "run-approved-action", WorkspaceID: "ws-1"}
+	meta := model.InternalCommandContext{WorkspaceID: "ws-1", ActorID: "user-1"}
+	approved := []dockLaunchStep{{AgentID: "agent-1", Instructions: "create the complete document", Target: dockLaunchTarget{Type: "workspace", ID: "ws-1"}}}
+	interaction := seedDockApproval(t, db, chatRun.ID, func(i *model.AgentRunInteraction) {
+		i.RequestPayload = dockApprovalRequestPayload(t, map[string]interface{}{"steps": approved})
+	})
+
+	_, action, err := svc.resolvedDockApprovalAction(context.Background(), meta, chatRun, interaction.ID, dockApprovalPayloadKind)
+	if err != nil {
+		t.Fatalf("resolvedDockApprovalAction() = %v", err)
+	}
+	var payload struct {
+		Steps []dockLaunchStep `json:"steps"`
+	}
+	if err := json.Unmarshal(action, &payload); err != nil {
+		t.Fatalf("decode approved action: %v", err)
+	}
+	if len(payload.Steps) != 1 || payload.Steps[0].Instructions != approved[0].Instructions {
+		t.Fatalf("approved steps = %#v, want stored instructions", payload.Steps)
+	}
+}
+
 func TestAgentOrchestrationToolDescriptionsUseSubAgentTerminology(t *testing.T) {
 	svc := &InternalCommandService{definitions: map[string]InternalCommandDefinition{}}
 	svc.registerAgentOrchestrationCommands()

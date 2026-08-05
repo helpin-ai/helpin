@@ -112,8 +112,8 @@ func TestAgentDefaultsDerivedFromPreset(t *testing.T) {
 	if got := defaultRoleForPresetKey(model.AgentPresetReviewAgent); got != "QA & Code Reviewer" {
 		t.Fatalf("expected review preset role label, got %q", got)
 	}
-	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "codex" {
-		t.Fatalf("expected planner runtime default codex, got %q", got)
+	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "native_sdk" {
+		t.Fatalf("expected planner runtime default native_sdk, got %q", got)
 	}
 	if got := defaultRuntimeKindForPresetKey(model.AgentPresetSupportAgent); got != "native_sdk" {
 		t.Fatalf("expected support runtime default native_sdk, got %q", got)
@@ -202,11 +202,22 @@ func TestListAgentPresetsIncludesEpicPlanner(t *testing.T) {
 		if !preset.IsDefaultVersion {
 			t.Fatal("expected epic planner catalog entry to be marked as default version")
 		}
-		if preset.RuntimeKind != "codex" {
-			t.Fatalf("expected epic planner runtime codex, got %q", preset.RuntimeKind)
+		if preset.RuntimeKind != "native_sdk" {
+			t.Fatalf("expected epic planner runtime native_sdk, got %q", preset.RuntimeKind)
+		}
+		if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
+			t.Fatalf("expected epic planner provider openrouter, got %+v", preset.Provider)
+		}
+		if preset.Model == nil || *preset.Model != defaultAtlasAgentModel {
+			t.Fatalf("expected epic planner model %s, got %+v", defaultAtlasAgentModel, preset.Model)
 		}
 		if preset.DefaultInvocationMode != model.InvocationModeInteractive {
 			t.Fatalf("expected epic planner default mode interactive, got %q", preset.DefaultInvocationMode)
+		}
+		for _, productTool := range []string{"ensure_epic_spec_doc", "write_document_content", "approve_epic_spec", "create_task_batch"} {
+			if !slices.Contains(preset.AllowedTools, productTool) {
+				t.Fatalf("expected epic planner preset to include %q, got %v", productTool, preset.AllowedTools)
+			}
 		}
 	}
 	if !found {
@@ -220,7 +231,22 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 		t.Fatal("expected preset catalog")
 	}
 	for _, preset := range presets {
+		if preset.Key == model.AgentPresetEpicPlanner {
+			if preset.RuntimeKind != "native_sdk" {
+				t.Errorf("preset %q runtime = %q, want native_sdk", preset.Key, preset.RuntimeKind)
+			}
+			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
+				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
+			}
+			if preset.Model == nil || *preset.Model != defaultAtlasAgentModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultAtlasAgentModel)
+			}
+			continue
+		}
 		if preset.Key == model.AgentPresetTaskPlanner {
+			if preset.RuntimeKind != "native_sdk" {
+				t.Errorf("preset %q runtime = %q, want native_sdk", preset.Key, preset.RuntimeKind)
+			}
 			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
 				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
 			}
@@ -294,6 +320,54 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 		return
 	}
 	t.Fatal("expected documentation agent preset in catalog")
+}
+
+func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
+	preset, ok := agentPresetDefinition(model.AgentPresetAskAgent)
+	if !ok {
+		t.Fatal("ask agent preset not found")
+	}
+	for _, toolName := range []string{
+		"get_my_capabilities",
+		"list_available_skills", "search_available_skills", "read_skill",
+		"list_repositories", "checkout_repository", "checkout_repositories",
+		"ripgrep", "search_files", "list_symbols", "read_file", "read_file_range",
+	} {
+		if !slices.Contains(preset.AllowedTools, toolName) {
+			t.Errorf("Ask Agent is missing required self-execution tool %q", toolName)
+		}
+	}
+}
+
+func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
+	preset := enforceManagedAskAgentCapabilities(model.AgentPresetDefinition{
+		Key:                model.AgentPresetAskAgent,
+		AllowedTools:       []string{"list_agents", "list_commits"},
+		AllowedTargetTypes: []string{"document"},
+		ExecutionConfig:    model.JSONBlob(`{"reasoning_effort":"high","workspace":{"mode":"repository"}}`),
+	})
+	for _, toolName := range []string{
+		"checkout_repository", "ripgrep", "read_file",
+		"list_available_skills", "read_skill", "update_plan",
+		"get_my_capabilities", "create_document", "prepare_dock_execution",
+	} {
+		if !slices.Contains(preset.AllowedTools, toolName) {
+			t.Errorf("managed Ask capability %q was not restored to pinned preset: %v", toolName, preset.AllowedTools)
+		}
+	}
+	if !slices.Contains(preset.AllowedTargetTypes, "workspace") {
+		t.Fatalf("managed Ask workspace target missing from %v", preset.AllowedTargetTypes)
+	}
+	var executionConfig map[string]interface{}
+	if err := json.Unmarshal(preset.ExecutionConfig, &executionConfig); err != nil {
+		t.Fatalf("decode managed Ask execution config: %v", err)
+	}
+	if executionConfig["reasoning_effort"] != "high" {
+		t.Fatalf("unrelated execution settings were not preserved: %#v", executionConfig)
+	}
+	if _, ok := executionConfig["workspace"]; ok {
+		t.Fatalf("managed Ask config retained repository workspace mode: %#v", executionConfig)
+	}
 }
 
 func TestListAgentPresetsTaskPlannerExcludesListEpicTasks(t *testing.T) {
@@ -373,7 +447,7 @@ func TestBuiltInPresetPMToolExpansionMatrix(t *testing.T) {
 		presetKey string
 		want      []string
 	}{
-		{presetKey: model.AgentPresetAskAgent, want: newPMReadTools},
+		{presetKey: model.AgentPresetAskAgent, want: allNewPMTools},
 		{presetKey: model.AgentPresetCommandAgent, want: allNewPMTools},
 		{presetKey: model.AgentPresetEpicPlanner, want: []string{"list_workspace_members", "list_pm_labels", "get_task", "list_epics", "get_epic"}},
 		{presetKey: model.AgentPresetTaskPlanner, want: []string{"list_workspace_members", "list_pm_labels", "get_task", "list_sprints", "get_sprint", "list_sprint_tasks"}},
@@ -759,6 +833,10 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 		agentcontract.ToolRequestApproval,
 		agentcontract.ToolPublishPRDDraft,
 		agentcontract.ToolPublishTaskPlan,
+		"create_task_batch",
+		"ensure_epic_spec_doc",
+		"write_document_content",
+		"approve_epic_spec",
 	} {
 		if !slices.Contains(tools, required) {
 			t.Fatalf("expected migrated tool list to contain %q, got %v", required, tools)
@@ -837,6 +915,7 @@ func TestNormalizeAgentRecordStripsTaskPlannerPreviewToolsFromEpicPlanner(t *tes
 		agentcontract.ToolRequestApproval,
 		agentcontract.ToolPublishPRDDraft,
 		agentcontract.ToolPublishTaskPlan,
+		"create_task_batch",
 	} {
 		if !slices.Contains(tools, required) {
 			t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
@@ -847,7 +926,6 @@ func TestNormalizeAgentRecordStripsTaskPlannerPreviewToolsFromEpicPlanner(t *tes
 		agentcontract.ToolPreviewJSON,
 		agentcontract.ToolPublishPreview,
 		agentcontract.ToolPublishTaskPlanDoc,
-		"create_task_batch",
 	} {
 		if slices.Contains(tools, unexpected) {
 			t.Fatalf("expected sanitized tool list to exclude %q, got %v", unexpected, tools)

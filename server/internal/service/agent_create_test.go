@@ -524,6 +524,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 			systemPresets = append(systemPresets, agent.PresetKey)
 			wantProvider, wantModel := model.AgentModelProviderOpenAI, "gpt-5.6-terra"
 			switch agent.PresetKey {
+			case model.AgentPresetEpicPlanner:
+				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultAtlasAgentModel
 			case model.AgentPresetTaskPlanner:
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultScribeAgentModel
 			case model.AgentPresetAskAgent, model.AgentPresetSupportAgent:
@@ -790,6 +792,74 @@ func TestEnsureBuiltInAgent_UpgradesLegacyScribeDefaultRouting(t *testing.T) {
 				t.Fatalf("expected reconciled model %s, got %+v", defaultScribeAgentModel, reconciled.Model)
 			}
 		})
+	}
+}
+
+func TestEnsureBuiltInAgent_UpgradesLegacyAtlasDefaultRouting(t *testing.T) {
+	legacyModels := []string{"gpt-5.5", defaultOpenAIAgentModel}
+	for _, legacyModel := range legacyModels {
+		t.Run(legacyModel, func(t *testing.T) {
+			db := newAgentServiceTestDB(t)
+			agentRepo := repository.NewAgentRepository(db)
+			svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+			systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetEpicPlanner)
+			if err != nil {
+				t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+			}
+			legacyProvider := model.AgentModelProviderOpenAI
+			systemAgent.Provider = &legacyProvider
+			systemAgent.Model = &legacyModel
+			if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+				t.Fatalf("persist legacy Atlas routing: %v", err)
+			}
+
+			reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetEpicPlanner)
+			if err != nil {
+				t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+			}
+			if reconciled.RuntimeKind != "native_sdk" {
+				t.Fatalf("expected reconciled runtime native_sdk, got %q", reconciled.RuntimeKind)
+			}
+			if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenRouter {
+				t.Fatalf("expected reconciled provider openrouter, got %+v", reconciled.Provider)
+			}
+			if reconciled.Model == nil || *reconciled.Model != defaultAtlasAgentModel {
+				t.Fatalf("expected reconciled model %s, got %+v", defaultAtlasAgentModel, reconciled.Model)
+			}
+		})
+	}
+}
+
+func TestEnsureBuiltInAgent_PreservesCustomAtlasRouting(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetEpicPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	customProvider := model.AgentModelProviderOpenAI
+	customModel := "gpt-5-mini"
+	systemAgent.Provider = &customProvider
+	systemAgent.Model = &customModel
+	if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+		t.Fatalf("persist custom Atlas routing: %v", err)
+	}
+
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetEpicPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if reconciled.RuntimeKind != "native_sdk" {
+		t.Fatalf("expected reconciled runtime native_sdk, got %q", reconciled.RuntimeKind)
+	}
+	if reconciled.Provider == nil || *reconciled.Provider != customProvider {
+		t.Fatalf("expected custom provider %s, got %+v", customProvider, reconciled.Provider)
+	}
+	if reconciled.Model == nil || *reconciled.Model != customModel {
+		t.Fatalf("expected custom model %s, got %+v", customModel, reconciled.Model)
 	}
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolveDockComposerState, transformDockStream } from '../dockChatState';
 import { parseDockChildResult, parseDockPlanConfirm, stripDockPageContext } from '@/lib/dockTypes';
+import { collectSegments, DOCK_SEGMENT_KINDS } from '@/components/agents/transcript';
 import type { CodingSessionStreamState } from '@/lib/pmTypes';
 
 function emptyStream(): CodingSessionStreamState {
@@ -51,6 +52,7 @@ describe('transformDockStream', () => {
       {
         event_id: 'e1',
         role: 'user',
+        message_type: 'prompt',
         content: 'what is up?\n\n<page_context>{"entity_type":"task"}</page_context>',
         timestamp: 't',
         sequence_no: 1,
@@ -67,6 +69,8 @@ describe('transformDockStream', () => {
     const result = transformDockStream(stream);
     expect(result.stream.transcript_messages).toHaveLength(2);
     expect(result.stream.transcript_messages[0].content).toBe('what is up?');
+    expect(collectSegments(result.stream, { includeLive: false, include: DOCK_SEGMENT_KINDS })[0])
+      .toMatchObject({ kind: 'user', message: { content: 'what is up?' } });
     expect(result.childResults).toHaveLength(1);
     expect(result.childResults[0].result.plan_id).toBe('p1');
   });
@@ -83,6 +87,8 @@ describe('transformDockStream ordering', () => {
     ];
     const result = transformDockStream(stream);
     expect(result.stream.transcript_messages.map((m) => m.content)).toEqual(['question', 'answer']);
+    expect(collectSegments(result.stream, { includeLive: false, include: DOCK_SEGMENT_KINDS }).map((segment) => segment.kind))
+      .toEqual(['user', 'assistant']);
   });
 
   it('falls back to sequence for identical timestamps', () => {
@@ -122,5 +128,10 @@ describe('dock marker parsing', () => {
   it('parseDockPlanConfirm requires the dock kind', () => {
     expect(parseDockPlanConfirm({ kind: 'other' })).toBeNull();
     expect(parseDockPlanConfirm({ kind: 'dock_plan_confirm', summary: 's' })?.summary).toBe('s');
+    expect(parseDockPlanConfirm({
+      phase: 'dock_execution_confirm',
+      summary: 'Create a document',
+      action: { proposal_id: 'proposal-1' },
+    })?.action?.proposal_id).toBe('proposal-1');
   });
 });

@@ -417,6 +417,48 @@ func TestAgentRuntimeHostRepositorySpecFallsBackToRuntimeRunMapping(t *testing.T
 	}
 }
 
+func TestAgentRuntimeHostRepositorySpecRestoresDynamicCheckoutTargetAfterResume(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	ensureAgentRuntimeHostRunTable(t, db)
+	mustExec(t, db, `INSERT INTO agent_runs (
+		id, workspace_id, agent_id, target_type, target_id, runtime_kind, status, external_runtime, external_runtime_id, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"run-helpin-dock", "ws-1", "agent-ask", "workspace", "ws-1", "native_sdk", "running", agentRuntimeName, "run-runtime-dock")
+
+	host := NewAgentRuntimeHostService(
+		"helpin",
+		repository.NewAgentRunRepository(db),
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		newGitDeliveryStatusService(db, &fakeGitHubAppClient{}),
+	)
+
+	spec, err := host.ResolveRepositorySpec(context.Background(), agentruntime.PrepareWorkspaceRequest{
+		AppID:         "helpin",
+		RunID:         "run-runtime-dock",
+		AgentID:       "agent-ask",
+		RuntimeKind:   "native_sdk",
+		Target:        agentruntime.TargetRef{Type: "workspace", ID: "ws-1"},
+		WorkspaceMode: agentruntime.WorkspaceModeRepository,
+		Metadata: map[string]interface{}{
+			"workspace_id":   "ws-1",
+			"repository_id":  "repo-1",
+			"repo_full_name": "acme/api",
+			"base_branch":    "release",
+			"work_branch":    "agent/dock-read",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveRepositorySpec returned error after dynamic checkout resume: %v", err)
+	}
+	if spec.Metadata["repository_id"] != "repo-1" || spec.Metadata["repo_full_name"] != "acme/api" {
+		t.Fatalf("dynamic checkout repository identity was not restored: %#v", spec.Metadata)
+	}
+	if spec.BaseBranch != "release" || spec.WorkBranch != "agent/dock-read" {
+		t.Fatalf("dynamic checkout branches were not preserved: %#v", spec)
+	}
+}
+
 func ensureAgentRuntimeHostRunTable(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.Exec(`CREATE TABLE IF NOT EXISTS agent_runs (

@@ -66,10 +66,12 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.ensure_spec_doc",
 		Alias:       "ensure_epic_spec_doc",
 		Category:    "Docs",
-		Description: "Create or load the canonical product spec document for the current epic. Returns document metadata, whether an approved spec exists, the current task count, and a planning_hint for branching.",
+		Description: "Create or load the canonical product spec document for the current epic and attach it to that epic. Returns the document_id and title.",
 		InputSchema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"required":             []string{},
+			"additionalProperties": false,
 		},
 	},
 	{
@@ -90,13 +92,15 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		Category:    "PM / Tasks",
 		Description: "Mark the current epic spec document as approved and record the approved spec version on the epic.",
 		InputSchema: map[string]any{
-			"type": "object",
+			"type":                 "object",
+			"additionalProperties": false,
 			"properties": map[string]any{
 				"version_id": map[string]any{
 					"type":        "string",
 					"description": "Optional existing document version ID to approve. Omit to approve the current document content.",
 				},
 			},
+			"required": []string{},
 		},
 	},
 	{
@@ -374,7 +378,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.write_document_content",
 		Alias:       "write_document_content",
 		Category:    "Docs",
-		Description: "Write document content to a document in Helpin Docs. Accepts either structured document JSON or a markdown string, which will be auto-converted.",
+		Description: "Write content to the document identified by document_id, including from a workspace-targeted Dock run. Accepts either structured document JSON or a markdown string, which will be auto-converted.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,

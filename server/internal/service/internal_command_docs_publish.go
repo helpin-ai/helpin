@@ -75,7 +75,7 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 		Name:                 "docs.publish_document_change_proposal",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"document"},
+		SupportedTargetTypes: []string{"workspace", "document"},
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "docs.publish_document_change_proposal",
 			Alias:       "publish_document_change_proposal",

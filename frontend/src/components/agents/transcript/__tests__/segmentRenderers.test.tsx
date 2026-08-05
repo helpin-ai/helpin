@@ -118,3 +118,31 @@ describe('TranscriptSegmentView — reasoning', () => {
     expect(container.textContent).toContain('Considering the edge cases.');
   });
 });
+
+describe('TranscriptSegmentView — user', () => {
+  it('uses the Dock fallback label and renders the message bubble', () => {
+    const segment: TranscriptSegment = {
+      kind: 'user',
+      id: 'user-1',
+      message: {
+        event_id: 'user-1',
+        role: 'user',
+        message_type: 'message',
+        content: 'Inspect the repository and create a document.',
+        timestamp: '2026-08-05T07:00:00Z',
+        sequence_no: 1,
+      },
+    };
+    act(() => {
+      root.render(
+        <TranscriptSegmentView
+          segment={segment}
+          options={{ expandable: false, fallbackUserLabel: 'You' }}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('You');
+    expect(container.textContent).toContain('Inspect the repository and create a document.');
+  });
+});

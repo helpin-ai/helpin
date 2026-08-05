@@ -4,6 +4,7 @@ import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import {
   BotIcon,
   ArrowDown01Icon,
@@ -939,7 +940,7 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
       provider,
       agent.execution_config ?? preset?.execution_config,
     ),
-    system_prompt: preset?.instruction_preamble?.trim() || agent.system_prompt || preset?.system_prompt || '',
+    system_prompt: agent.system_prompt || preset?.system_prompt || preset?.instruction_preamble?.trim() || '',
     instruction_preamble: preset?.instruction_preamble ?? '',
     instruction_skills: preset?.instruction_skills ?? [],
     available_skill_keys: preset?.available_skills ?? [],
@@ -1090,14 +1091,6 @@ function agentSkillIdentity(skill: Pick<SkillCatalogEntry, 'id' | 'key'> | Agent
 function agentSkillDisplayName(skill: Pick<SkillCatalogEntry, 'title' | 'key'> | undefined, fallbackKey: string) {
   return skill?.title?.trim() || fallbackKey;
 }
-
-const NATIVE_AVAILABLE_SKILLS_SYSTEM_PROMPT_GUIDANCE = `## Available Skills
-
-This agent has available skills it can choose to use when they are relevant to the task. Use list_available_skills or search_available_skills to inspect options, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default.`;
-
-const RUNTIME_AVAILABLE_SKILLS_SYSTEM_PROMPT_GUIDANCE = `## Available Skills
-
-This agent has available skills it can use when they would help or are required for the task. Use the runtime's skill access mechanism to inspect and apply only the specific skill instructions the task needs. Do not load every available skill by default.`;
 
 function customAgentFormDirtyKey(form: AgentFormData) {
   return JSON.stringify(comparableCustomAgentForm(form));
@@ -2553,7 +2546,6 @@ export function AgentsPage() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [automationOpen, setAutomationOpen] = useState(false);
   const [compiledPromptOpen, setCompiledPromptOpen] = useState(false);
-  const [openCoreSkillKeys, setOpenCoreSkillKeys] = useState<string[]>([]);
   const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [versionSkillsOpen, setVersionSkillsOpen] = useState(false);
@@ -2929,15 +2921,22 @@ export function AgentsPage() {
   }, [agentAnalyticsRange, editingAgent?.id, loadAgentAnalytics, systemDrawerOpen, systemDrawerTab]);
 
   useEffect(() => {
-    const handler = () => {
-      void loadFleetData();
-      if (systemDrawerOpen && systemDrawerTab === 'analytics' && editingAgent?.id) {
-        void loadAgentAnalytics(editingAgent.id, agentAnalyticsRange);
-      }
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const handler = (event: Event) => {
+      if (!isAgentRunLifecycleEvent(event)) return;
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void loadFleetData();
+        if (systemDrawerOpen && systemDrawerTab === 'analytics' && editingAgent?.id) {
+          void loadAgentAnalytics(editingAgent.id, agentAnalyticsRange);
+        }
+      }, 400);
     };
     window.addEventListener('agent_run-created', handler);
     window.addEventListener('agent_run-updated', handler);
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       window.removeEventListener('agent_run-created', handler);
       window.removeEventListener('agent_run-updated', handler);
     };
@@ -3446,8 +3445,7 @@ export function AgentsPage() {
       provider: form.provider,
       model: form.model.trim(),
       execution_config: buildExecutionConfigPayload(form),
-      system_prompt: hasCoreSkills ? undefined : form.system_prompt.trim() || undefined,
-      instruction_preamble: hasCoreSkills ? form.system_prompt.trim() : undefined,
+      system_prompt: form.system_prompt.trim() || undefined,
       instruction_skills: form.instruction_skills,
       available_skills: form.available_skill_keys,
       allowed_tools: normalizeToolList(form.allowed_tools),
@@ -3462,7 +3460,7 @@ export function AgentsPage() {
       setForm((current) => ({
         ...current,
         preset_version_key: res.data?.version_key ?? current.preset_version_key,
-        system_prompt: res.data?.instruction_preamble?.trim() || res.data?.system_prompt || current.system_prompt,
+        system_prompt: res.data?.system_prompt || current.system_prompt,
         instruction_preamble: res.data?.instruction_preamble ?? current.instruction_preamble,
         instruction_skills: res.data?.instruction_skills ?? current.instruction_skills,
         available_skill_keys: res.data?.available_skills ?? current.available_skill_keys,
@@ -3522,8 +3520,7 @@ export function AgentsPage() {
       provider: form.provider,
       model: form.model.trim(),
       execution_config: buildExecutionConfigPayload(form),
-      system_prompt: hasCoreSkills ? undefined : form.system_prompt.trim() || undefined,
-      instruction_preamble: hasCoreSkills ? form.system_prompt.trim() : undefined,
+      system_prompt: form.system_prompt.trim() || undefined,
       instruction_skills: form.instruction_skills,
       available_skills: form.available_skill_keys,
       allowed_tools: normalizeToolList(form.allowed_tools),
@@ -3754,12 +3751,15 @@ export function AgentsPage() {
   const isEditingCustomVersion = editingCustomAgent && !versionDraftOpen && Boolean(selectedCustomVersion);
   const systemVersionReadOnly = editingSystemAgent && !versionDraftOpen && !isEditingWorkspaceVersion;
   const versionReadOnly = editingSystemAgent ? systemVersionReadOnly : false;
+  const versionSystemPromptValue = versionReadOnly
+    ? selectedPreset?.system_prompt?.trim() || form.system_prompt
+    : form.system_prompt;
   const hasWorkspaceVersionChanges = Boolean(isEditingWorkspaceVersion && selectedPreset && (
     form.runtime_kind !== selectedPreset.runtime_kind ||
     form.provider !== (selectedPreset.provider ?? '') ||
     form.model.trim() !== (selectedPreset.model ?? '') ||
     stableConfigJSON(buildExecutionConfigPayload(form)) !== stableConfigJSON(selectedPreset.execution_config) ||
-    form.system_prompt.trim() !== (selectedPreset.instruction_preamble || selectedPreset.system_prompt || '').trim() ||
+    form.system_prompt.trim() !== (selectedPreset.system_prompt || selectedPreset.instruction_preamble || '').trim() ||
     stableJSON(form.instruction_skills) !== stableJSON(selectedPreset.instruction_skills ?? []) ||
     stableJSON(form.available_skill_keys) !== stableJSON(selectedPreset.available_skills ?? []) ||
     stableJSON(normalizeToolList(form.allowed_tools)) !== stableJSON(normalizeToolList(selectedPreset.allowed_tools ?? [])) ||
@@ -3910,8 +3910,6 @@ export function AgentsPage() {
   const skillCatalogEntries = skillCatalog?.skills ?? [];
   const attachedSkillIdentities = new Set(form.skills.map(agentSkillIdentity));
   const availableSkillEntries = skillCatalogEntries.filter((s) => !attachedSkillIdentities.has(agentSkillIdentity(s)));
-  const coreSkillItems = form.instruction_skills.map((key) => ({ key, identity: key }));
-  const hasCoreSkills = coreSkillItems.length > 0;
   const availableSystemSkillItems = form.available_skill_keys.map((key) => ({ key, identity: key }));
   const versionSkillItems = editingCustomAgent
     ? form.skills.map((skill) => ({ key: skill.key, identity: agentSkillIdentity(skill) }))
@@ -4007,7 +4005,7 @@ export function AgentsPage() {
       provider: nextProvider,
       model: nextPreset.model ?? '',
       ...deriveExecutionConfigFields(nextPreset.runtime_kind, nextProvider, nextPreset.execution_config),
-      system_prompt: nextPreset.instruction_preamble?.trim() || nextPreset.system_prompt || '',
+      system_prompt: nextPreset.system_prompt || nextPreset.instruction_preamble?.trim() || '',
       instruction_preamble: nextPreset.instruction_preamble ?? '',
       instruction_skills: nextPreset.instruction_skills ?? [],
       available_skill_keys: nextPreset.available_skills ?? [],
@@ -4869,7 +4867,7 @@ export function AgentsPage() {
                       <div className="space-y-4 border-t border-border/60 p-4">
                         <div>
                           <Textarea
-                            value={form.system_prompt}
+                            value={versionSystemPromptValue}
                             readOnly={versionReadOnly}
                             onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
                             rows={12}
@@ -4882,56 +4880,6 @@ export function AgentsPage() {
                             )}
                           />
                         </div>
-                        {coreSkillItems.length > 0 && (
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-3 pt-2">
-                              <span className="h-px flex-1 bg-border/60" />
-                              <p className="text-xs font-medium text-muted-foreground">These core skills are sent with the system prompt</p>
-                              <span className="h-px flex-1 bg-border/60" />
-                            </div>
-                            <div className="space-y-2">
-                              {coreSkillItems.map((skill, idx) => {
-                                const entry = skillCatalogEntries.find((s) => s.key === skill.key);
-                                const instructionPreview = entry?.instructions?.trim() || entry?.description?.trim();
-                                return (
-                                  <Collapsible.Root
-                                    key={skill.identity}
-                                    open={openCoreSkillKeys.includes(skill.identity)}
-                                    onOpenChange={(open) => setOpenCoreSkillKeys((current) => (
-                                      open
-                                        ? Array.from(new Set([...current, skill.identity]))
-                                        : current.filter((key) => key !== skill.identity)
-                                    ))}
-                                    className="overflow-hidden rounded-lg border border-border/50 bg-muted/20"
-                                  >
-                                    <Collapsible.Trigger asChild>
-                                      <button type="button" className="group flex w-full items-center gap-2 px-3 py-2 text-left">
-                                        <ArrowRight01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-background text-[10px] font-semibold text-muted-foreground">{idx + 1}</span>
-                                        <BookOpen01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                        <span className="min-w-0 flex-1 truncate text-xs font-medium">{agentSkillDisplayName(entry, skill.key)}</span>
-                                        <span className="font-mono text-[10px] text-muted-foreground">{skill.key}</span>
-                                      </button>
-                                    </Collapsible.Trigger>
-                                    <Collapsible.Content>
-                                      <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap border-t border-border/50 px-3 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">{instructionPreview || (skillCatalog ? 'Skill details are not available in the current catalog response.' : 'Loading skill details...')}</pre>
-                                    </Collapsible.Content>
-                                  </Collapsible.Root>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                        {versionSkillItems.length > 0 && (
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-3 pt-2">
-                              <span className="h-px flex-1 bg-border/60" />
-                              <p className="text-xs font-medium text-muted-foreground">Available skills guidance is sent with the system prompt</p>
-                              <span className="h-px flex-1 bg-border/60" />
-                            </div>
-                            <pre className="whitespace-pre-wrap rounded-lg border border-border/50 bg-muted/20 px-3 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">{form.runtime_kind === 'native_sdk' ? NATIVE_AVAILABLE_SKILLS_SYSTEM_PROMPT_GUIDANCE : RUNTIME_AVAILABLE_SKILLS_SYSTEM_PROMPT_GUIDANCE}</pre>
-                          </div>
-                        )}
                       </div>
                     </Collapsible.Content>
                   </Collapsible.Root>

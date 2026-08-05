@@ -1,4 +1,5 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
   BotIcon,
@@ -20,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import { useTitle } from '@/hooks/useTitle';
 import { formatRunTokenUsage } from '@/lib/agentTokenUsage';
+import { queryKeys } from '@/lib/queryKeys';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 import { automationService } from '@/lib/services/automationService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -155,63 +157,32 @@ export function AgentRunsPage() {
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   usePermissions(access);
 
-  const [runs, setRuns] = useState<AgentRun[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [totalRuns, setTotalRuns] = useState(0);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(() => initialRunIdFromLocation());
   const [drawerOpen, setDrawerOpen] = useState(() => Boolean(initialRunIdFromLocation()));
-
-  const loadData = useCallback(async (isRefresh = false) => {
-    if (!workspaceId) return;
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-
-    try {
-      const [runsRes, agentsRes] = await Promise.all([
-        automationService.listWorkspaceRuns(workspaceId, 1, 100),
-        automationService.listAgents(workspaceId),
-      ]);
-
-      if (runsRes.error) {
-        setError(runsRes.error);
-      } else {
-        setRuns(runsRes.data?.data ?? []);
-        setTotalRuns(runsRes.data?.total ?? 0);
-      }
-
-      if (agentsRes.error) {
-        setError((current) => current ?? agentsRes.error ?? 'Failed to load agents');
-      } else {
-        setAgents(agentsRes.data ?? []);
-      }
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [workspaceId]);
-
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
-
-  useEffect(() => {
-    const handler = () => {
-      void loadData(true);
-    };
-    window.addEventListener('agent_run-created', handler);
-    window.addEventListener('agent_run-updated', handler);
-    return () => {
-      window.removeEventListener('agent_run-created', handler);
-      window.removeEventListener('agent_run-updated', handler);
-    };
-  }, [loadData]);
+  const runsQuery = useQuery({
+    queryKey: queryKeys.automation.runs(workspaceId ?? '', 1, 100),
+    queryFn: async () => {
+      const response = await automationService.listWorkspaceRuns(workspaceId!, 1, 100);
+      if (response.error) throw new Error(response.error);
+      return response.data;
+    },
+    enabled: !!workspaceId,
+  });
+  const agentsQuery = useQuery({
+    queryKey: queryKeys.automation.agents(workspaceId ?? ''),
+    queryFn: async () => {
+      const response = await automationService.listAgents(workspaceId!);
+      if (response.error) throw new Error(response.error);
+      return response.data ?? [];
+    },
+    enabled: !!workspaceId,
+  });
+  const runs = runsQuery.data?.data ?? [];
+  const agents = agentsQuery.data ?? [];
+  const totalRuns = runsQuery.data?.total ?? 0;
+  const loading = runsQuery.isPending || agentsQuery.isPending;
+  const refreshing = runsQuery.isFetching || agentsQuery.isFetching;
+  const error = runsQuery.error?.message ?? agentsQuery.error?.message ?? null;
 
   const agentNameById = useMemo(
     () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
@@ -251,7 +222,12 @@ export function AgentRunsPage() {
         <div className="flex items-center gap-2">
           <Badge variant="outline">{activeRuns.length} active</Badge>
           <Badge variant="outline">{runs.filter((run) => run.invocation_mode === 'interactive').length} interactive</Badge>
-          <Button variant="outline" size="sm" onClick={() => void loadData(true)} disabled={refreshing}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void Promise.all([runsQuery.refetch(), agentsQuery.refetch()])}
+            disabled={refreshing}
+          >
             {refreshing ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ArrowReloadHorizontalIcon className="mr-1.5 h-3.5 w-3.5" />}
             Refresh
           </Button>

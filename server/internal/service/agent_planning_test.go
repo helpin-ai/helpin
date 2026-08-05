@@ -188,6 +188,78 @@ func TestApproveEpicSpecIsIdempotentForAlreadyApprovedSpec(t *testing.T) {
 	}
 }
 
+func TestEnsureEpicSpecDocumentRepairsMissingEpicAttachment(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	for _, stmt := range []string{
+		`CREATE TABLE docs_documents (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			space_id TEXT NOT NULL,
+			title TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'draft',
+			visibility TEXT NOT NULL DEFAULT 'workspace_wide',
+			created_by TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME
+		)`,
+		`CREATE TABLE docs_links (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			block_id TEXT,
+			linked_object_type TEXT NOT NULL,
+			linked_object_id TEXT NOT NULL,
+			link_context TEXT NOT NULL DEFAULT 'attached',
+			created_by TEXT NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create docs table: %v", err)
+		}
+	}
+
+	workspaceID := "ws-ensure-epic-spec"
+	epicID := "epic-ensure-spec"
+	docID := "doc-ensure-spec"
+	actorID := "user-ensure-spec"
+	if err := db.Exec(
+		`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, 'draft', 'workspace_wide', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		docID, workspaceID, "space-product-specs", "Epic Product Spec", actorID,
+	).Error; err != nil {
+		t.Fatalf("create docs document: %v", err)
+	}
+
+	svc := &AgentService{
+		docsDocumentRepo: repository.NewDocsDocumentRepository(db),
+		docsLinkRepo:     repository.NewDocsLinkRepository(db),
+	}
+	epic := &model.PMEpic{
+		ID:             epicID,
+		WorkspaceID:    workspaceID,
+		Name:           "Epic",
+		SpecDocumentID: &docID,
+	}
+
+	if _, err := svc.ensureEpicSpecDocument(ctx, workspaceID, epic, actorID); err != nil {
+		t.Fatalf("ensureEpicSpecDocument: %v", err)
+	}
+
+	var linkCount int64
+	if err := db.Model(&model.DocsLink{}).
+		Where("workspace_id = ? AND document_id = ? AND linked_object_type = ? AND linked_object_id = ?", workspaceID, docID, model.LinkedObjectEpic, epicID).
+		Count(&linkCount).Error; err != nil {
+		t.Fatalf("count epic document links: %v", err)
+	}
+	if linkCount != 1 {
+		t.Fatalf("expected missing epic document attachment to be repaired, got %d links", linkCount)
+	}
+}
+
 func TestValidatePlanningStoriesNormalizesPlannerEnums(t *testing.T) {
 	priority := "critical"
 	stories := []model.ProposedTask{

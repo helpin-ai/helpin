@@ -33,21 +33,21 @@ type SkillInterface struct {
 }
 
 type SkillPolicy struct {
-	AllowImplicitInvocation            *bool                      `yaml:"allow_implicit_invocation,omitempty"`
-	CompletionRequiresInteractionKinds []string                   `yaml:"completion_requires_interaction_kinds,omitempty"`
-	InteractionContracts               []SkillInteractionContract `yaml:"interaction_contracts,omitempty"`
+	AllowImplicitInvocation            *bool                      `json:"allow_implicit_invocation,omitempty" yaml:"allow_implicit_invocation,omitempty"`
+	CompletionRequiresInteractionKinds []string                   `json:"completion_requires_interaction_kinds,omitempty" yaml:"completion_requires_interaction_kinds,omitempty"`
+	InteractionContracts               []SkillInteractionContract `json:"interaction_contracts,omitempty" yaml:"interaction_contracts,omitempty"`
 }
 
 type SkillInteractionContract struct {
-	Kind       string                               `yaml:"kind,omitempty"`
-	Schema     string                               `yaml:"schema,omitempty"`
-	Transports map[string]SkillInteractionTransport `yaml:"transports,omitempty"`
+	Kind       string                               `json:"kind,omitempty" yaml:"kind,omitempty"`
+	Schema     string                               `json:"schema,omitempty" yaml:"schema,omitempty"`
+	Transports map[string]SkillInteractionTransport `json:"transports,omitempty" yaml:"transports,omitempty"`
 }
 
 type SkillInteractionTransport struct {
-	Type       string `yaml:"type,omitempty"`
-	ToolName   string `yaml:"tool_name,omitempty"`
-	BlockLabel string `yaml:"block_label,omitempty"`
+	Type       string `json:"type,omitempty" yaml:"type,omitempty"`
+	ToolName   string `json:"tool_name,omitempty" yaml:"tool_name,omitempty"`
+	BlockLabel string `json:"block_label,omitempty" yaml:"block_label,omitempty"`
 }
 
 type SkillDependency struct {

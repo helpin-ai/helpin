@@ -77,7 +77,7 @@ func TestEffectiveRuntimeRefsFallsBackForBuiltInDefaultVersion(t *testing.T) {
 	}
 }
 
-func TestEffectiveRuntimeRefsFallsBackToCoreSkillsForCoreOnlyBuiltInPreset(t *testing.T) {
+func TestEffectiveRuntimeRefsFallsBackToAllRuntimeSkillsForBuiltInPreset(t *testing.T) {
 	agent := &model.Agent{
 		IsSystem:         true,
 		PresetKey:        model.AgentPresetEpicPlanner,
@@ -90,6 +90,28 @@ func TestEffectiveRuntimeRefsFallsBackToCoreSkillsForCoreOnlyBuiltInPreset(t *te
 	}
 	if refs[0].Key != "prd_task_plan_approval" {
 		t.Fatalf("expected first fallback skill %q, got %q", "prd_task_plan_approval", refs[0].Key)
+	}
+	if refs[len(refs)-1].Key != "task_plan_publishing" {
+		t.Fatalf("expected Atlas available tool skill in fallback refs, got %#v", refs)
+	}
+}
+
+func TestEffectiveRuntimeRefsMergesAvailableSkillsWithPersistedCoreSelection(t *testing.T) {
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetEpicPlanner,
+		PresetVersionKey: "epic_planner_default",
+		Skills: model.AgentSkillRefs{{
+			Key: "engineering_planner_operating_rules",
+		}},
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) != 6 {
+		t.Fatalf("expected five Atlas core refs and one available tool ref, got %#v", refs)
+	}
+	if refs[len(refs)-1].Key != "task_plan_publishing" {
+		t.Fatalf("expected available tool skill after core refs, got %#v", refs)
 	}
 }
 

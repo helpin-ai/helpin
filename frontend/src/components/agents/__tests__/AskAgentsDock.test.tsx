@@ -181,6 +181,35 @@ describe('AskAgentsDock', () => {
     );
   });
 
+  it('reconciles immediately when a message continues on the same run', async () => {
+    const run = { id: 'run-1', status: 'running', pause_reason: 'none' } as never;
+    const detail = chatDetail({
+      chat: { ...CHAT, active_run_id: 'run-1' },
+      run,
+    });
+    mocks.getChat.mockResolvedValue({ data: detail, error: null });
+    mocks.getChatRun.mockResolvedValue({
+      data: { id: 'run-1', status: 'running', stream_state_snapshot: null },
+      error: null,
+    });
+    mocks.sendMessage.mockResolvedValue({ data: detail, error: null });
+
+    await renderDock();
+    await waitForText('Sprint questions');
+    const snapshotCallsBeforeSend = mocks.getChatRun.mock.calls.length;
+    const eventCallsBeforeSend = mocks.listChatRunEvents.mock.calls.length;
+
+    const textarea = dockTextarea();
+    await act(async () => {
+      setTextareaValue(textarea, 'continue this run');
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await flush();
+
+    expect(mocks.getChatRun.mock.calls.length).toBeGreaterThan(snapshotCallsBeforeSend);
+    expect(mocks.listChatRunEvents.mock.calls.length).toBeGreaterThan(eventCallsBeforeSend);
+  });
+
   it('opens with a prefilled draft from the helpin:ask-agents event', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();

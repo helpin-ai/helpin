@@ -63,6 +63,17 @@ func TestRuntimeStartRunRequestPropagatesPlannerSelectors(t *testing.T) {
 	}
 }
 
+func TestInitialAgentRunContextReturnsExactEnrichedInstructions(t *testing.T) {
+	payload, err := buildAgentRunInputPayload("task", "task-1", nil, nil, nil, strPtr("Operator notes:\nKeep scope narrow."), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &model.AgentRun{Input: json.RawMessage(payload)}
+	if got := initialAgentRunContext(run); got != "Operator notes:\nKeep scope narrow." {
+		t.Fatalf("initial context = %q", got)
+	}
+}
+
 func TestBuildDelegatedEpicLaunchContextIncludesDurableFacts(t *testing.T) {
 	description := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Reduce onboarding friction."}]}]}`
 	teamID := "team-1"

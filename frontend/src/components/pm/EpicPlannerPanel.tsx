@@ -22,6 +22,7 @@ import { isAgentAvailableForTarget } from '@/lib/agentAccess';
 import { agentService } from '@/lib/services/agentService';
 import { cn } from '@/lib/utils';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { ACTIVE_RUN_STATUSES, STATUS_META, getAgentRunDisplayStatus } from './agentRunConstants';
 import {
   HISTORY_VISIBLE_ROW_LIMIT,
@@ -338,6 +339,7 @@ export function EpicPlannerPanel({
 
   useEffect(() => {
     const handler = (event: Event) => {
+      if (!isAgentRunLifecycleEvent(event)) return;
       const detail = (event as CustomEvent).detail as {
         parent_type?: string;
         parent_id?: string;

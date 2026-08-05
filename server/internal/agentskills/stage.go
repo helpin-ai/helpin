@@ -27,7 +27,7 @@ func EffectiveRuntimeRefs(agent *model.Agent) model.AgentSkillRefs {
 	if shouldUseBuiltInAvailableSkillFallback(agent) {
 		if bundle, ok := agentcontract.BuiltInPresetSkillBundleForPreset(agent.EffectivePresetKey()); ok {
 			if len(explicitRefs) > 0 {
-				return mergeRequiredBuiltInCoreSkillRefs(bundle.CoreSkillKeys, explicitRefs)
+				return mergeRequiredBuiltInRuntimeSkillRefs(agentcontract.RuntimeSkillKeysForPresetBundle(bundle), explicitRefs)
 			}
 			runtimeSkillKeys := agentcontract.RuntimeSkillKeysForPresetBundle(bundle)
 			refs := make(model.AgentSkillRefs, 0, len(runtimeSkillKeys))
@@ -44,16 +44,16 @@ func EffectiveRuntimeRefs(agent *model.Agent) model.AgentSkillRefs {
 	return explicitRefs
 }
 
-func mergeRequiredBuiltInCoreSkillRefs(coreSkillKeys []string, explicitRefs model.AgentSkillRefs) model.AgentSkillRefs {
-	if len(coreSkillKeys) == 0 {
+func mergeRequiredBuiltInRuntimeSkillRefs(requiredSkillKeys []string, explicitRefs model.AgentSkillRefs) model.AgentSkillRefs {
+	if len(requiredSkillKeys) == 0 {
 		return explicitRefs
 	}
 
-	refs := make(model.AgentSkillRefs, 0, len(coreSkillKeys)+len(explicitRefs))
+	refs := make(model.AgentSkillRefs, 0, len(requiredSkillKeys)+len(explicitRefs))
 	usedExplicitRefs := make([]bool, len(explicitRefs))
-	for _, coreKey := range coreSkillKeys {
-		coreKey = agentcontract.CanonicalBuiltInSkillKey(coreKey)
-		if coreKey == "" {
+	for _, requiredKey := range requiredSkillKeys {
+		requiredKey = agentcontract.CanonicalBuiltInSkillKey(requiredKey)
+		if requiredKey == "" {
 			continue
 		}
 
@@ -65,7 +65,7 @@ func mergeRequiredBuiltInCoreSkillRefs(coreSkillKeys []string, explicitRefs mode
 			if usedExplicitRefs[index] || ref.SkillID != nil {
 				continue
 			}
-			if agentcontract.CanonicalBuiltInSkillKey(ref.Key) == coreKey {
+			if agentcontract.CanonicalBuiltInSkillKey(ref.Key) == requiredKey {
 				matchedIndex = index
 				break
 			}
@@ -75,7 +75,7 @@ func mergeRequiredBuiltInCoreSkillRefs(coreSkillKeys []string, explicitRefs mode
 			usedExplicitRefs[matchedIndex] = true
 			continue
 		}
-		refs = append(refs, model.AgentSkillRef{Key: coreKey})
+		refs = append(refs, model.AgentSkillRef{Key: requiredKey})
 	}
 
 	for index, ref := range explicitRefs {

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -17,9 +18,9 @@ import (
 )
 
 // dockApprovalPayloadKind is the request_approval payload kind the dock
-// orchestrator must use before any mutating agents.* command. The payload's
-// `action` object must equal the tool input (minus approval_interaction_id) —
-// enforced server-side by canonical-hash comparison, not by prompt trust.
+// orchestrator must use before any mutating agents.* command. Launch and agent
+// draft calls resolve their immutable action by approval interaction ID;
+// legacy dedicated actions retain canonical-hash validation.
 const dockApprovalPayloadKind = "dock_plan_confirm"
 
 // supportApprovalPayloadKind is the request_approval payload kind a support
@@ -64,6 +65,11 @@ type dockGetRunResponse struct {
 func (s *InternalCommandService) SetAgentOrchestrationDependencies(commandBar *CommandBarService, interactionRepo *repository.AgentRunInteractionRepository) {
 	s.commandBarService = commandBar
 	s.agentRunInteractionRepo = interactionRepo
+}
+
+// SetDockActionProposalRepository wires durable, scoped Dock execution grants.
+func (s *InternalCommandService) SetDockActionProposalRepository(repo *repository.DockActionProposalRepository) {
+	s.dockActionProposalRepo = repo
 }
 
 // dockLaunchTarget identifies the entity a launched child run acts on.
@@ -255,23 +261,41 @@ func normalizeDockGetRunRequest(req dockGetRunRequest) (dockGetRunRequest, error
 // content matches actionHash, and that it has not been consumed by an earlier
 // launch.
 func (s *InternalCommandService) verifyDockApproval(ctx context.Context, meta model.InternalCommandContext, chatRun *model.AgentRun, interactionID, actionType, actionHash, payloadKind string) (*model.AgentRunInteraction, error) {
+	interaction, approvedAction, err := s.resolvedDockApprovalAction(ctx, meta, chatRun, interactionID, payloadKind)
+	if err != nil {
+		return nil, err
+	}
+	approvedHash, err := dockApprovedActionHash(actionType, approvedAction)
+	if err != nil {
+		return nil, err
+	}
+	if approvedHash != actionHash {
+		return nil, fmt.Errorf("approved action does not match this call: launch with only approval_interaction_id or pass exactly the approved parameters")
+	}
+	return interaction, nil
+}
+
+// resolvedDockApprovalAction returns the immutable action stored on one
+// approved, unconsumed interaction. Callers use this for ID-only execution so
+// the model never needs to reconstruct long instructions after approval.
+func (s *InternalCommandService) resolvedDockApprovalAction(ctx context.Context, meta model.InternalCommandContext, chatRun *model.AgentRun, interactionID, payloadKind string) (*model.AgentRunInteraction, json.RawMessage, error) {
 	if s.agentRunInteractionRepo == nil {
-		return nil, fmt.Errorf("interaction repository is not configured")
+		return nil, nil, fmt.Errorf("interaction repository is not configured")
 	}
 	interactionID = strings.TrimSpace(interactionID)
 	if interactionID == "" {
-		return nil, fmt.Errorf("approval_interaction_id is required: call request_approval with a %q payload first", payloadKind)
+		return nil, nil, fmt.Errorf("approval_interaction_id is required: call request_approval with a %q payload first", payloadKind)
 	}
 	interaction, err := s.agentRunInteractionRepo.GetByID(ctx, meta.WorkspaceID, chatRun.ID, interactionID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if interaction == nil {
 		// The agent knows the runtime-side interaction id; the projected row
 		// has its own id and records the runtime id in runtime_metadata.
 		interactions, listErr := s.agentRunInteractionRepo.ListByRun(ctx, meta.WorkspaceID, chatRun.ID)
 		if listErr != nil {
-			return nil, listErr
+			return nil, nil, listErr
 		}
 		for index := range interactions {
 			if agentRunInteractionHasRuntimeInteractionID(interactions[index], interactionID) {
@@ -281,19 +305,19 @@ func (s *InternalCommandService) verifyDockApproval(ctx context.Context, meta mo
 		}
 	}
 	if interaction == nil {
-		return nil, fmt.Errorf("approval interaction not found on this chat run")
+		return nil, nil, fmt.Errorf("approval interaction not found on this chat run")
 	}
 	if interaction.InteractionKind != model.AgentRunInteractionKindApprovalRequest {
-		return nil, fmt.Errorf("interaction %q is not an approval request", interactionID)
+		return nil, nil, fmt.Errorf("interaction %q is not an approval request", interactionID)
 	}
 	if interaction.Status != model.AgentRunInteractionStatusResolved {
-		return nil, fmt.Errorf("approval interaction is not resolved yet")
+		return nil, nil, fmt.Errorf("approval interaction is not resolved yet")
 	}
 	var response struct {
 		Decision string `json:"decision"`
 	}
 	if err := json.Unmarshal(interaction.ResponsePayload, &response); err != nil || strings.TrimSpace(response.Decision) != "approve" {
-		return nil, fmt.Errorf("the user did not approve this action")
+		return nil, nil, fmt.Errorf("the user did not approve this action")
 	}
 	// The runtime's request_approval tool carries the dock contract as
 	// phase="dock_plan_confirm" plus a structured `action` object (also
@@ -307,34 +331,57 @@ func (s *InternalCommandService) verifyDockApproval(ctx context.Context, meta mo
 		} `json:"raw_input"`
 	}
 	if err := json.Unmarshal(interaction.RequestPayload, &request); err != nil {
-		return nil, fmt.Errorf("approval payload is not valid JSON")
+		return nil, nil, fmt.Errorf("approval payload is not valid JSON")
 	}
 	kind := strings.TrimSpace(firstNonEmptyString(request.Kind, request.Phase))
 	if kind != payloadKind {
-		return nil, fmt.Errorf("approval must use phase %q with the proposed action", payloadKind)
+		return nil, nil, fmt.Errorf("approval must use phase %q with the proposed action", payloadKind)
 	}
 	approvedAction := request.Action
 	if len(approvedAction) == 0 {
 		approvedAction = request.RawInput.Action
 	}
 	if len(approvedAction) == 0 {
-		return nil, fmt.Errorf("approval is missing the structured action: call request_approval with phase %q and an action object matching the tool call", payloadKind)
-	}
-	approvedHash, err := dockApprovedActionHash(actionType, approvedAction)
-	if err != nil {
-		return nil, err
-	}
-	if approvedHash != actionHash {
-		return nil, fmt.Errorf("approved action does not match this call: request approval for exactly the parameters you pass to the tool")
+		return nil, nil, fmt.Errorf("approval is missing the structured action: call request_approval with phase %q and an action object", payloadKind)
 	}
 	var runtimeMetadata map[string]interface{}
 	_ = json.Unmarshal(interaction.RuntimeMetadata, &runtimeMetadata)
 	if runtimeMetadata != nil {
 		if consumed, ok := runtimeMetadata["dock_action_consumed"].(bool); ok && consumed {
-			return nil, fmt.Errorf("this approval was already used; request a new approval")
+			return nil, nil, fmt.Errorf("this approval was already used; request a new approval")
 		}
 	}
-	return interaction, nil
+	return interaction, approvedAction, nil
+}
+
+func (s *InternalCommandService) approvedDockLaunchSteps(ctx context.Context, meta model.InternalCommandContext, approvalInteractionID string) ([]dockLaunchStep, string, error) {
+	chatRun, kind, err := s.resolveOrchestratorRun(ctx, meta)
+	if err != nil {
+		return nil, "", err
+	}
+	payloadKind := dockApprovalPayloadKind
+	if kind == orchestratorRunSupport {
+		payloadKind = supportApprovalPayloadKind
+	}
+	_, action, err := s.resolvedDockApprovalAction(ctx, meta, chatRun, approvalInteractionID, payloadKind)
+	if err != nil {
+		return nil, "", err
+	}
+	var payload struct {
+		Prompt string           `json:"prompt"`
+		Steps  []dockLaunchStep `json:"steps"`
+	}
+	if err := json.Unmarshal(action, &payload); err != nil {
+		return nil, "", fmt.Errorf("approval action does not contain launch steps")
+	}
+	if len(payload.Steps) == 0 {
+		var step dockLaunchStep
+		if err := json.Unmarshal(action, &step); err != nil || strings.TrimSpace(step.Instructions) == "" {
+			return nil, "", fmt.Errorf("approval action does not contain launch steps")
+		}
+		payload.Steps = []dockLaunchStep{step}
+	}
+	return normalizeDockLaunchSteps(payload.Steps), strings.TrimSpace(payload.Prompt), nil
 }
 
 // dockApprovedActionHash re-canonicalizes the approval payload's action object
@@ -527,6 +574,12 @@ type dockCreateAgentAction struct {
 	Description string `json:"description"`
 }
 
+type dockAgentDraftSpec struct {
+	Draft    model.CustomAgentDraft         `json:"draft"`
+	Reasons  []model.CustomAgentDraftReason `json:"reasons,omitempty"`
+	Warnings []string                       `json:"warnings,omitempty"`
+}
+
 func (a dockCreateAgentAction) normalized() dockCreateAgentAction {
 	return dockCreateAgentAction{
 		Name:        strings.TrimSpace(a.Name),
@@ -603,7 +656,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.start_run",
 			Alias:       "start_agent_run",
 			Category:    "Agents",
-			Description: "Start one sub-agent run (a saved agent by id, or a Sub-agent with limited tools). Dock chats require a resolved dock_plan_confirm approval whose action matches this call exactly. Support chat runs auto-approve when allowed_tools is a non-empty set of read-only tools; otherwise a support_plan_confirm approval resolved by a teammate is required. The result is delivered back into this chat when the run finishes.",
+			Description: "Start one approved sub-agent run. For Dock launches, pass only approval_interaction_id and the server loads the immutable step from the approved dock_plan_confirm action. Support chat runs may still pass a complete read-only step without approval. The result is delivered back into this chat when the run finishes.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -614,7 +667,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 					"allowed_tools":           dockLaunchStepSchema()["properties"].(map[string]any)["allowed_tools"],
 					"approval_interaction_id": map[string]any{"type": "string", "description": "ID of the resolved approval interaction (dock_plan_confirm or support_plan_confirm). Omit only for auto-approved read-only support launches."},
 				},
-				"required":             []string{"instructions"},
+				"required":             []string{},
 				"additionalProperties": false,
 			},
 		},
@@ -625,6 +678,16 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			}
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse start run input: %w", err)
+			}
+			if strings.TrimSpace(req.Instructions) == "" && strings.TrimSpace(req.ApprovalInteractionID) != "" {
+				steps, _, err := s.approvedDockLaunchSteps(ctx, meta, req.ApprovalInteractionID)
+				if err != nil {
+					return nil, err
+				}
+				if len(steps) != 1 {
+					return nil, fmt.Errorf("approved action contains %d steps; use start_agent_plan", len(steps))
+				}
+				req.dockLaunchStep = steps[0]
 			}
 			return s.executeDockLaunch(ctx, meta, []dockLaunchStep{req.dockLaunchStep}, req.ApprovalInteractionID, req.Instructions)
 		},
@@ -639,7 +702,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.start_plan",
 			Alias:       "start_agent_plan",
 			Category:    "Agents",
-			Description: "Start a multi-step plan of sub-agent runs (fan-out or dependency-ordered DAG via depends_on_step_indexes). Dock chats require a resolved dock_plan_confirm approval whose action matches this call exactly. Support chat runs auto-approve when every step's allowed_tools is a non-empty set of read-only tools; otherwise a support_plan_confirm approval resolved by a teammate is required. Results are delivered back into this chat when the plan settles.",
+			Description: "Start an approved multi-step sub-agent plan. For Dock launches, pass only approval_interaction_id and the server loads the immutable steps from the approved dock_plan_confirm action. Support chat runs may still pass complete read-only steps without approval. Results are delivered back into this chat when the plan settles.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -647,7 +710,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 					"steps":                   map[string]any{"type": "array", "items": dockLaunchStepSchema(), "description": "Plan steps in order."},
 					"approval_interaction_id": map[string]any{"type": "string", "description": "ID of the resolved approval interaction (dock_plan_confirm or support_plan_confirm). Omit only for auto-approved read-only support launches."},
 				},
-				"required":             []string{"steps"},
+				"required":             []string{},
 				"additionalProperties": false,
 			},
 		},
@@ -659,6 +722,16 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			}
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse start plan input: %w", err)
+			}
+			if len(req.Steps) == 0 && strings.TrimSpace(req.ApprovalInteractionID) != "" {
+				steps, approvedPrompt, err := s.approvedDockLaunchSteps(ctx, meta, req.ApprovalInteractionID)
+				if err != nil {
+					return nil, err
+				}
+				req.Steps = steps
+				if strings.TrimSpace(req.Prompt) == "" {
+					req.Prompt = approvedPrompt
+				}
 			}
 			return s.executeDockLaunch(ctx, meta, req.Steps, req.ApprovalInteractionID, req.Prompt)
 		},
@@ -841,6 +914,73 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 	})
 
 	s.register(InternalCommandDefinition{
+		Name:                 "agents.draft_agent",
+		Module:               "agents",
+		Mutating:             false,
+		SupportedTargetTypes: launchTargets,
+		Tool: &commandtools.RuntimeToolMetadata{
+			CommandName: "agents.draft_agent",
+			Alias:       "draft_custom_agent",
+			Category:    "Agents",
+			Description: "Draft and persist a complete reusable-agent proposal, including prompt, tools, targets, skills, runtime, and warnings. Review the result, then request dock_plan_confirm approval with action {\"proposal_id\":...} before create_custom_agent.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name":        map[string]any{"type": "string", "description": "Optional name override applied to the generated draft."},
+					"description": map[string]any{"type": "string", "minLength": 10, "description": "Detailed responsibilities and expected outcomes for the reusable agent."},
+				},
+				"required":             []string{"description"},
+				"additionalProperties": false,
+			},
+		},
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.agentService == nil {
+				return nil, fmt.Errorf("agent service is not configured")
+			}
+			if s.dockActionProposalRepo == nil {
+				return nil, fmt.Errorf("dock action proposal repository is not configured")
+			}
+			var req dockCreateAgentAction
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse draft agent input: %w", err)
+			}
+			req = req.normalized()
+			if len(req.Description) < 10 {
+				return nil, fmt.Errorf("description must be at least 10 characters")
+			}
+			chatRun, err := s.resolveDockChatRun(ctx, meta)
+			if err != nil {
+				return nil, err
+			}
+			draftResp, err := s.agentService.DraftCustomAgent(ctx, meta.WorkspaceID, model.CustomAgentDraftRequest{Description: req.Description})
+			if err != nil {
+				return nil, fmt.Errorf("draft agent: %w", err)
+			}
+			if req.Name != "" {
+				draftResp.Draft.Name = req.Name
+			}
+			spec := dockAgentDraftSpec{Draft: draftResp.Draft, Reasons: draftResp.Reasons, Warnings: draftResp.Warnings}
+			specJSON, err := json.Marshal(spec)
+			if err != nil {
+				return nil, fmt.Errorf("encode agent draft proposal: %w", err)
+			}
+			proposal := &model.DockActionProposal{
+				WorkspaceID: meta.WorkspaceID, DockChatRunID: chatRun.ID, ActorID: meta.ActorID,
+				Kind: model.DockActionProposalKindAgentDraft, Status: model.DockActionProposalStatusPrepared,
+				Summary: "Create reusable agent " + draftResp.Draft.Name, Spec: specJSON, Usage: json.RawMessage(`{}`),
+				ExpiresAt: time.Now().UTC().Add(72 * time.Hour),
+			}
+			if err := s.dockActionProposalRepo.Create(ctx, proposal); err != nil {
+				return nil, err
+			}
+			return mustJSON(map[string]interface{}{
+				"proposal_id": proposal.ID, "draft": draftResp.Draft, "reasons": draftResp.Reasons, "warnings": draftResp.Warnings,
+				"approval": map[string]interface{}{"phase": dockApprovalPayloadKind, "action": map[string]string{"proposal_id": proposal.ID}},
+			}), nil
+		},
+	})
+
+	s.register(InternalCommandDefinition{
 		Name:                 "agents.create_agent",
 		Module:               "agents",
 		Mutating:             true,
@@ -849,21 +989,18 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.create_agent",
 			Alias:       "create_custom_agent",
 			Category:    "Agents",
-			Description: "Create a reusable custom agent from a description (drafted server-side). Requires a resolved dock_plan_confirm approval whose action matches this call exactly.",
+			Description: "Create the reusable custom agent stored by draft_custom_agent. Pass only the resolved dock_plan_confirm approval_interaction_id; the server loads the immutable approved draft and its full capabilities.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"name":                    map[string]any{"type": "string", "description": "Optional name override for the new agent."},
-					"description":             map[string]any{"type": "string", "description": "What the agent should do; used to draft its prompt, tools, and targets."},
 					"approval_interaction_id": map[string]any{"type": "string"},
 				},
-				"required":             []string{"description", "approval_interaction_id"},
+				"required":             []string{"approval_interaction_id"},
 				"additionalProperties": false,
 			},
 		},
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
-				dockCreateAgentAction
 				ApprovalInteractionID string `json:"approval_interaction_id"`
 			}
 			if err := json.Unmarshal(input, &req); err != nil {
@@ -872,33 +1009,49 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			if s.agentService == nil {
 				return nil, fmt.Errorf("agent service is not configured")
 			}
+			if s.dockActionProposalRepo == nil {
+				return nil, fmt.Errorf("dock action proposal repository is not configured")
+			}
 			chatRun, err := s.resolveDockChatRun(ctx, meta)
 			if err != nil {
 				return nil, err
 			}
-			action := req.dockCreateAgentAction.normalized()
-			if action.Description == "" {
-				return nil, fmt.Errorf("description is required")
-			}
-			actionHash, err := dockActionHash(action)
+			interaction, approvedAction, err := s.resolvedDockApprovalAction(ctx, meta, chatRun, req.ApprovalInteractionID, dockApprovalPayloadKind)
 			if err != nil {
 				return nil, err
 			}
-			interaction, err := s.verifyDockApproval(ctx, meta, chatRun, req.ApprovalInteractionID, "create_agent", actionHash, dockApprovalPayloadKind)
+			var approved struct {
+				ProposalID string `json:"proposal_id"`
+			}
+			if err := json.Unmarshal(approvedAction, &approved); err != nil || strings.TrimSpace(approved.ProposalID) == "" {
+				return nil, fmt.Errorf("approval action must contain the draft proposal_id")
+			}
+			proposal, err := s.dockActionProposalRepo.GetByID(ctx, meta.WorkspaceID, strings.TrimSpace(approved.ProposalID))
 			if err != nil {
 				return nil, err
 			}
-			draftResp, err := s.agentService.DraftCustomAgent(ctx, meta.WorkspaceID, model.CustomAgentDraftRequest{Description: action.Description})
-			if err != nil {
-				return nil, fmt.Errorf("draft agent: %w", err)
+			if proposal == nil || proposal.DockChatRunID != chatRun.ID || proposal.ActorID != meta.ActorID || proposal.Kind != model.DockActionProposalKindAgentDraft {
+				return nil, fmt.Errorf("approved agent draft proposal was not prepared by this chat")
 			}
-			createReq := commandBarCreateAgentRequestFromDraft(meta.WorkspaceID, draftResp.Draft, model.ConfirmCommandBarChatProposalRequest{
-				Name: stringPtrIfNotEmpty(action.Name),
-			})
+			activated, err := s.dockActionProposalRepo.Activate(ctx, meta.WorkspaceID, proposal.ID, interaction.ID, time.Now().UTC())
+			if err != nil {
+				return nil, err
+			}
+			if !activated {
+				return nil, fmt.Errorf("agent draft proposal is expired or already used")
+			}
+			var spec dockAgentDraftSpec
+			if err := json.Unmarshal(proposal.Spec, &spec); err != nil {
+				_ = s.dockActionProposalRepo.ResetActivation(ctx, meta.WorkspaceID, proposal.ID, interaction.ID)
+				return nil, fmt.Errorf("decode agent draft proposal: %w", err)
+			}
+			createReq := commandBarCreateAgentRequestFromDraft(meta.WorkspaceID, spec.Draft, model.ConfirmCommandBarChatProposalRequest{})
 			agent, err := s.agentService.CreateAgent(ctx, createReq, meta.ActorID)
 			if err != nil {
+				_ = s.dockActionProposalRepo.ResetActivation(ctx, meta.WorkspaceID, proposal.ID, interaction.ID)
 				return nil, fmt.Errorf("create agent: %w", err)
 			}
+			_, _ = s.dockActionProposalRepo.Complete(ctx, meta.WorkspaceID, proposal.ID, time.Now().UTC())
 			s.consumeDockApproval(ctx, interaction, agent.ID)
 			return mustJSON(map[string]interface{}{
 				"agent_id":        agent.ID,

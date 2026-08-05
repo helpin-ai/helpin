@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,24 @@ func TestPMToolCatalogExecutorParity(t *testing.T) {
 	}
 }
 
+func TestGroupDockCapabilitiesSupportsSelfExecutionDecision(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	summary := svc.groupDockCapabilities([]string{
+		"list_available_skills", "search_available_skills", "read_skill",
+		"checkout_repository", "read_file", "ripgrep",
+		"create_document", "prepare_dock_execution",
+	})
+	if summary["can_load_skills"] != true {
+		t.Fatalf("can_load_skills = %#v, want true", summary["can_load_skills"])
+	}
+	if summary["can_read_repositories"] != true {
+		t.Fatalf("can_read_repositories = %#v, want true", summary["can_read_repositories"])
+	}
+	if summary["can_execute_product_mutations"] != true {
+		t.Fatalf("can_execute_product_mutations = %#v, want true", summary["can_execute_product_mutations"])
+	}
+}
+
 func TestWriteDocumentContentCommandSupportsDocumentTarget(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 
@@ -74,13 +93,23 @@ func TestWriteDocumentContentCommandSupportsDocumentTarget(t *testing.T) {
 		t.Fatal("expected docs.write_document_content definition")
 	}
 
-	for _, targetType := range def.SupportedTargetTypes {
-		if targetType == "document" {
-			return
+	for _, required := range []string{"workspace", "document"} {
+		if !slices.Contains(def.SupportedTargetTypes, required) {
+			t.Fatalf("expected docs.write_document_content to support target type %q, got %#v", required, def.SupportedTargetTypes)
 		}
 	}
-
-	t.Fatalf("expected docs.write_document_content to support target type document, got %#v", def.SupportedTargetTypes)
+	proposal, ok := svc.Definition("docs.publish_document_change_proposal")
+	if !ok || !slices.Contains(proposal.SupportedTargetTypes, "workspace") {
+		t.Fatalf("expected document proposal to support workspace Dock target, got %#v", proposal.SupportedTargetTypes)
+	}
+	block, ok := svc.Definition("docs.update_document_block")
+	if !ok || !slices.Contains(block.SupportedTargetTypes, "workspace") {
+		t.Fatalf("expected block update to support workspace Dock target, got %#v", block.SupportedTargetTypes)
+	}
+	link, ok := svc.Definition("docs.link_document_to_object")
+	if !ok || !slices.Contains(link.SupportedTargetTypes, "workspace") {
+		t.Fatalf("expected document linking to support workspace Dock target, got %#v", link.SupportedTargetTypes)
+	}
 }
 
 func TestEnsureTaskPlanDocumentToolContractAttachesAndReturnsDocumentID(t *testing.T) {
@@ -95,6 +124,21 @@ func TestEnsureTaskPlanDocumentToolContractAttachesAndReturnsDocumentID(t *testi
 	}
 	schema := def.Tool.InputSchema
 	if schema["additionalProperties"] != false {
+		t.Fatalf("expected closed empty-object schema, got %#v", def.Tool.InputSchema)
+	}
+}
+
+func TestEnsureEpicSpecDocumentToolContractAttachesAndReturnsDocumentID(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+
+	def, ok := svc.Definition("docs.ensure_spec_doc")
+	if !ok || def.Tool == nil {
+		t.Fatal("expected docs.ensure_spec_doc runtime tool definition")
+	}
+	if !strings.Contains(def.Tool.Description, "attach it to that epic") || !strings.Contains(def.Tool.Description, "document_id") {
+		t.Fatalf("unexpected ensure epic spec document description %q", def.Tool.Description)
+	}
+	if def.Tool.InputSchema["additionalProperties"] != false {
 		t.Fatalf("expected closed empty-object schema, got %#v", def.Tool.InputSchema)
 	}
 }

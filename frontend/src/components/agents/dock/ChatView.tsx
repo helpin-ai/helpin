@@ -11,6 +11,7 @@ import { DockTranscript } from './DockTranscript';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
 import { ExecutionStrip } from './ExecutionStrip';
 import { PendingInteractionCard } from './PendingInteractionCard';
+import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { planSummaryToRunPlan } from './planSummary';
 import { useAgentRunStream, type AgentRunStreamFetchers } from './useAgentRunStream';
 import {
@@ -67,7 +68,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
     [chatId],
   );
 
-  const { streamState, pendingInteraction, loading: streamLoading, refetch, clearPendingInteraction } =
+  const { currentPlan, streamState, pendingInteraction, loading: streamLoading, refetch, clearPendingInteraction } =
     useAgentRunStream(workspaceId, run?.id, !!run, runActive ? 5_000 : 0, fetchers);
 
   const refreshDetail = useCallback(async () => {
@@ -89,13 +90,21 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
   // handled inside useAgentRunStream; this keeps status/pause_reason fresh).
   useEffect(() => {
     if (!run?.id) return;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const handler = (event: Event) => {
       const detailPayload = (event as CustomEvent<{ entity_id?: string }>).detail;
       if (detailPayload?.entity_id !== run.id) return;
-      void refreshDetail();
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void refreshDetail();
+      }, 100);
     };
     window.addEventListener('agent_run-updated', handler);
-    return () => window.removeEventListener('agent_run-updated', handler);
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      window.removeEventListener('agent_run-updated', handler);
+    };
   }, [refreshDetail, run?.id]);
 
   // Child plans launched from this chat.
@@ -163,7 +172,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
   useEffect(() => {
     const node = scrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [transformed, pendingEcho, pendingInteraction]);
+  }, [transformed, currentPlan, pendingEcho, pendingInteraction]);
 
   const effectiveInteraction = pendingInteraction ?? fallbackInteraction;
   const dockConfirm = effectiveInteraction ? parseDockPlanConfirm(effectiveInteraction.request_payload) : null;
@@ -192,7 +201,12 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
         return;
       }
       setDetail(res.data);
-      void refetch();
+      if (run?.id && res.data.run?.id === run.id) {
+        // Same backing run: reconcile the persisted user message immediately.
+        void refetch();
+      }
+      // Successor run: useAgentRunStream will reset and fetch with the returned
+      // run id instead of invoking this render's predecessor refetch closure.
     } finally {
       setSending(false);
     }
@@ -232,6 +246,9 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
           </p>
         )}
         {transformed && <DockTranscript stream={transformed.stream} active={runActive} />}
+        {currentPlan && (
+          <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
+        )}
         {pendingEcho && (
           <div className="flex justify-end">
             <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground opacity-80">

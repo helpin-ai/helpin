@@ -371,6 +371,37 @@ describe('buildCodingSessionStreamState', () => {
     });
   });
 
+  it('preserves failed persisted tool invocations after replay', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-failed-tool',
+        type: 'assistant.message.completed',
+        sequence_no: 2,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'assistant-failed-tool-1',
+          content: '',
+          role: 'assistant',
+          tool_invocations: [
+            {
+              tool_call_id: 'tool-failed-1',
+              tool_name: 'read_skill',
+              input: { key: 'missing' },
+              output_summary: 'Skill is unavailable',
+              status: 'failed',
+              error: 'skill is not available to this agent',
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(state.transcript_messages[0]?.tool_calls?.[0]).toMatchObject({
+      status: 'failed',
+      result: { error: 'skill is not available to this agent' },
+    });
+  });
+
   it('keeps earlier Codex text and tool segments when the final message becomes persisted', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({

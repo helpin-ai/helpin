@@ -24,9 +24,9 @@ afterEach(() => {
   container.remove();
 });
 
-function render(plan: RunPlanArtifact | null, runStatus?: AgentRunStatus) {
+function render(plan: RunPlanArtifact | null, runStatus?: AgentRunStatus, title?: string) {
   act(() => {
-    root.render(<CodingPlanPanel plan={plan} runStatus={runStatus} />);
+    root.render(<CodingPlanPanel plan={plan} runStatus={runStatus} title={title} />);
   });
 }
 
@@ -47,6 +47,12 @@ const completedPlan: RunPlanArtifact = {
 };
 
 describe('CodingPlanPanel', () => {
+  it('supports a surface-specific title', () => {
+    render(stalePlan, 'running', 'Work plan');
+    expect(container.textContent).toContain('Work plan');
+    expect(container.textContent).not.toContain('Agent plan');
+  });
+
   describe('live run (non-terminal)', () => {
     it('shows a spinner for in_progress steps and the running counter', () => {
       render(stalePlan, 'running');
