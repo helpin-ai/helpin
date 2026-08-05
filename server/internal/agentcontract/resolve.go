@@ -14,7 +14,7 @@ type ResolvedProfile struct {
 	Tools            []string
 	Commands         []string
 	TargetTypes      []string
-	ApprovalMode     string // "never", "mutating_tools", "always", "preset_default"
+	ApprovalMode     string // "never", "risk_based", "mutating_tools", "always", "preset_default"
 	ApprovalRequired bool
 	RequiresRepo     bool
 	Queue            string
@@ -85,7 +85,7 @@ func ResolveApprovalState(resolved ResolvedProfile) string {
 	switch resolved.ApprovalMode {
 	case "never":
 		return "not_required"
-	case "mutating_tools":
+	case "risk_based", "mutating_tools":
 		return "not_required"
 	case "always":
 		return "pending"

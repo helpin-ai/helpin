@@ -327,8 +327,12 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	if !ok {
 		t.Fatal("ask agent preset not found")
 	}
+	if preset.ApprovalMode != "risk_based" {
+		t.Fatalf("Ask Agent approval mode = %q, want risk_based", preset.ApprovalMode)
+	}
 	for _, toolName := range []string{
 		"get_my_capabilities",
+		"create_task", "create_document", "write_document_content",
 		"list_available_skills", "search_available_skills", "read_skill",
 		"list_repositories", "checkout_repository", "checkout_repositories",
 		"ripgrep", "search_files", "list_symbols", "read_file", "read_file_range",
@@ -361,6 +365,9 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	if preset.SystemPrompt == nil || !strings.Contains(*preset.SystemPrompt, "primary execution agent") {
 		t.Fatalf("Ask Agent skill availability must preserve its managed Dock prompt, got %v", preset.SystemPrompt)
 	}
+	if !strings.Contains(*preset.SystemPrompt, "routine reversible workspace mutations execute directly") || !strings.Contains(*preset.SystemPrompt, "Call them directly with the complete step or plan") {
+		t.Fatalf("Ask Agent prompt is missing risk-based direct execution guidance: %s", *preset.SystemPrompt)
+	}
 	for _, skillKey := range preset.AvailableSkills {
 		skill, ok := agentcontract.GetBuiltInSkill(skillKey)
 		if !ok {
@@ -385,6 +392,9 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 		AllowedTargetTypes: []string{"document"},
 		ExecutionConfig:    model.JSONBlob(`{"reasoning_effort":"high","workspace":{"mode":"repository"}}`),
 	})
+	if preset.ApprovalMode != "risk_based" {
+		t.Fatalf("managed Ask approval mode = %q, want risk_based", preset.ApprovalMode)
+	}
 	for _, toolName := range []string{
 		"checkout_repository", "ripgrep", "read_file",
 		"list_available_skills", "read_skill", "update_plan",
@@ -803,6 +813,21 @@ func TestNormalizeAgentRecordResetsInvalidRuntimeForPreset(t *testing.T) {
 
 	if agent.RuntimeKind != "codex" {
 		t.Fatalf("expected review agent runtime to preserve codex, got %q", agent.RuntimeKind)
+	}
+}
+
+func TestNormalizeAgentRecordUpgradesAskAgentToRiskBasedApproval(t *testing.T) {
+	agent := &model.Agent{
+		IsSystem:     true,
+		PresetKey:    model.AgentPresetAskAgent,
+		RuntimeKind:  "native_sdk",
+		ApprovalMode: "never",
+	}
+
+	normalizeAgentRecord(agent)
+
+	if agent.ApprovalMode != "risk_based" {
+		t.Fatalf("Ask Agent approval mode = %q, want risk_based", agent.ApprovalMode)
 	}
 }
 

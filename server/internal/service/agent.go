@@ -2136,7 +2136,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		AllowedTools:               normalizeAllowedToolsJSON(mustJSONStringSlice(basePreset.AllowedTools)),
 		AllowedTargets:             mustJSONStringSlice(basePreset.AllowedTargetTypes),
 		SupportedModes:             mustJSONStringSlice(normalizedSupportedModes),
-		ApprovalMode:               "never",
+		ApprovalMode:               basePreset.ApprovalMode,
 		DefaultInvocationMode:      defaultInvocationMode,
 		CreatedBy:                  trimPtr(&actorID),
 	}

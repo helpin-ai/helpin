@@ -28,6 +28,16 @@ type InternalCommandDefinition struct {
 	Execute                func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error)
 }
 
+func (d InternalCommandDefinition) RiskLevel() string {
+	if !d.Mutating {
+		return commandtools.RiskLevelRead
+	}
+	if d.Tool != nil && strings.TrimSpace(d.Tool.RiskLevel) != "" {
+		return strings.TrimSpace(d.Tool.RiskLevel)
+	}
+	return commandtools.RiskLevelSensitive
+}
+
 type InternalCommandService struct {
 	agentService          *AgentService
 	taskService           *PMTaskService
@@ -330,6 +340,9 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 }
 
 func (s *InternalCommandService) register(def InternalCommandDefinition) {
+	if def.Tool != nil {
+		def.Tool.RiskLevel = def.RiskLevel()
+	}
 	s.definitions[def.Name] = def
 }
 

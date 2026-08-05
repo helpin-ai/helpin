@@ -132,21 +132,27 @@ The main tool families in the app are:
 
 Some mutation tools use shared internal-command backing for consistency. That should continue for new reusable business mutations, but it does not change the tool contract itself.
 
-### Dock execution grants
+### Tool risk and Dock execution
 
-The `ask_agent` preset exposes ordinary command-backed product mutations
-directly. This does not bypass approval: it first persists a bounded
-`dock_action_proposals` record through `prepare_dock_execution`, asks the user
-to approve only that proposal ID, then activates a 15-minute grant. The central
-`InternalCommandService.Execute` bridge checks every mutating call against the
-approved tool alias, exact top-level target constraints, and maximum call
-count. This guard belongs in the bridge so prompt mistakes or alternate model
-runtimes cannot bypass it.
+Every mutating tool has a runtime risk classification: `routine_mutation`,
+`sensitive_mutation`, or `destructive_mutation`; reads resolve to `read`.
+Unclassified mutations default to sensitive. Risk belongs to canonical tool
+metadata, not an individual agent prompt or a list of Ask-Agent exceptions.
 
-Dedicated agent-launch, repository-write, delivery/release, outbound support,
-and escalation operations are excluded and keep their own approval/workflow
-contracts. Read-only repository checkout, file/search/symbol, and commit-history
-tools can be exposed to the Dock directly.
+The `ask_agent` preset uses `approval_mode=risk_based`. Reads and routine,
+reversible product mutations execute directly. Sensitive and destructive calls
+are intercepted by Agent Runtime before execution, persisted with their exact
+input, and executed once after approval. The Helpin command bridge continues to
+enforce authentication, actor permissions, workspace/target scope, and domain
+invariants, but does not ask for a second approval when the runtime owns the
+configured policy.
+
+`prepare_dock_execution` remains as a backward-compatible and explicit grouped
+approval mechanism. Agents using `approval_mode=never` retain the legacy host
+proposal guard. Repository writes, delivery/release actions, outbound support,
+publishing, deletion, and force or bulk destructive operations must remain
+sensitive or destructive. Read-only repository checkout, file/search/symbol,
+and commit-history tools can be exposed to the Dock directly.
 
 The Dock's delegation decision is capability-driven. `get_my_capabilities`
 reads the current run's actual immutable `allowed_tools` input and groups it
@@ -157,13 +163,9 @@ intentionally isolated capability. Paused Dock runs are rotated when their
 stored tool set differs from the current scoped preset, so this introspection
 does not remain stale across tool or permission changes.
 
-If a Dock model attempts one ordinary product mutation before preparing a
-grant, the command bridge returns structured JSON with code
-`dock_execution_approval_required`, a durable proposal ID, and the exact
-`request_approval` input. The proposal stores the original mutation input and
-the error does not echo it. Once approved, retrying that same mutation lazily
-activates the one-call grant. Multi-operation work continues to use the
-explicit prepare/activate/finish contract.
+Legacy Dock runs without runtime-owned approval still receive structured
+`dock_execution_approval_required` recovery errors. New risk-based runs must
+not use that failure-first flow: runtime approval happens before tool execution.
 
 Long-lived Dock runs keep `target_type=workspace` even when the user selects a
 document, task, or CRM record as page context. Product tools that expose an

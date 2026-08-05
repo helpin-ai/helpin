@@ -12,13 +12,22 @@ type RuntimeToolMetadata struct {
 	Category    string
 	Description string
 	InputSchema map[string]any
+	RiskLevel   string
 }
+
+const (
+	RiskLevelRead        = "read"
+	RiskLevelRoutine     = "routine_mutation"
+	RiskLevelSensitive   = "sensitive_mutation"
+	RiskLevelDestructive = "destructive_mutation"
+)
 
 func ToolMetadataForAlias(alias string) (*RuntimeToolMetadata, bool) {
 	alias = strings.TrimSpace(alias)
 	for _, meta := range sharedRuntimeTools {
 		if meta.Alias == alias {
 			copied := meta
+			copied.RiskLevel = runtimeToolRiskLevel(copied.Alias)
 			return &copied, true
 		}
 	}
@@ -30,6 +39,7 @@ func ToolMetadataForCommand(name string) (*RuntimeToolMetadata, bool) {
 	for _, meta := range sharedRuntimeTools {
 		if meta.CommandName == name {
 			copied := meta
+			copied.RiskLevel = runtimeToolRiskLevel(copied.Alias)
 			return &copied, true
 		}
 	}
@@ -38,8 +48,45 @@ func ToolMetadataForCommand(name string) (*RuntimeToolMetadata, bool) {
 
 func AllRuntimeToolMetadata() []RuntimeToolMetadata {
 	all := make([]RuntimeToolMetadata, len(sharedRuntimeTools))
-	copy(all, sharedRuntimeTools)
+	for index, meta := range sharedRuntimeTools {
+		meta.RiskLevel = runtimeToolRiskLevel(meta.Alias)
+		all[index] = meta
+	}
 	return all
+}
+
+// runtimeToolRiskLevel classifies command-backed mutations independently of
+// any agent preset. An empty value is a safe fallback: callers treat an
+// unclassified mutation as sensitive, never as routine.
+func runtimeToolRiskLevel(alias string) string {
+	if level, ok := runtimeToolRiskLevels[strings.TrimSpace(alias)]; ok {
+		return level
+	}
+	return ""
+}
+
+var runtimeToolRiskLevels = map[string]string{
+	"create_space": RiskLevelRoutine, "create_collection": RiskLevelRoutine,
+	"create_document": RiskLevelRoutine, "update_space": RiskLevelRoutine,
+	"update_collection": RiskLevelRoutine, "move_document": RiskLevelRoutine,
+	"write_document_content": RiskLevelRoutine, "update_document_block": RiskLevelRoutine,
+	"link_document_to_object": RiskLevelRoutine, "ensure_epic_spec_doc": RiskLevelRoutine,
+	"ensure_task_plan_doc": RiskLevelRoutine, "publish_document_change_proposal": RiskLevelRoutine,
+	"publish_ai_section_candidate": RiskLevelRoutine,
+	"create_task":                  RiskLevelRoutine, "create_task_batch": RiskLevelRoutine,
+	"create_task_checklist_item": RiskLevelRoutine, "update_task_checklist_item": RiskLevelRoutine,
+	"update_task": RiskLevelRoutine, "update_task_state": RiskLevelRoutine,
+	"update_story_state": RiskLevelRoutine, "set_task_dependencies": RiskLevelRoutine,
+	"ensure_task_label": RiskLevelRoutine, "add_task_comment": RiskLevelRoutine,
+	"create_epic": RiskLevelRoutine, "update_epic": RiskLevelRoutine,
+	"create_sprint": RiskLevelRoutine, "update_sprint": RiskLevelRoutine,
+	"create_objective": RiskLevelRoutine, "update_objective": RiskLevelRoutine,
+	"add_deal_note": RiskLevelRoutine, "update_deal_stage": RiskLevelRoutine,
+	"ensure_crm_contact_company": RiskLevelRoutine, "enrich_crm_contact": RiskLevelRoutine,
+	"enrich_crm_company": RiskLevelRoutine, "draft_support_reply": RiskLevelRoutine,
+	"update_conversation_status": RiskLevelRoutine,
+	"send_support_reply":         RiskLevelSensitive, "escalate_to_human": RiskLevelSensitive,
+	"run_epic_delivery_pipeline": RiskLevelDestructive,
 }
 
 var sharedRuntimeTools = []RuntimeToolMetadata{

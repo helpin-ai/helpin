@@ -485,9 +485,11 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 			}
 		}
 	default:
-		interaction, err = s.verifyDockApproval(ctx, meta, chatRun, approvalInteractionID, "launch", actionHash, dockApprovalPayloadKind)
-		if err != nil {
-			return nil, err
+		if !s.runtimeOwnsCommandApproval(ctx, meta) {
+			interaction, err = s.verifyDockApproval(ctx, meta, chatRun, approvalInteractionID, "launch", actionHash, dockApprovalPayloadKind)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -656,7 +658,8 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.start_run",
 			Alias:       "start_agent_run",
 			Category:    "Agents",
-			Description: "Start one approved sub-agent run. For Dock launches, pass only approval_interaction_id and the server loads the immutable step from the approved dock_plan_confirm action. Support chat runs may still pass a complete read-only step without approval. The result is delivered back into this chat when the run finishes.",
+			Description: "Start one bounded sub-agent run. Dock agents using runtime approval policy pass the complete step directly; legacy approved launches may pass only approval_interaction_id. The result is delivered back into this chat when the run finishes.",
+			RiskLevel:   commandtools.RiskLevelRoutine,
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -665,7 +668,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 					"target":                  dockLaunchStepSchema()["properties"].(map[string]any)["target"],
 					"instructions":            dockLaunchStepSchema()["properties"].(map[string]any)["instructions"],
 					"allowed_tools":           dockLaunchStepSchema()["properties"].(map[string]any)["allowed_tools"],
-					"approval_interaction_id": map[string]any{"type": "string", "description": "ID of the resolved approval interaction (dock_plan_confirm or support_plan_confirm). Omit only for auto-approved read-only support launches."},
+					"approval_interaction_id": map[string]any{"type": "string", "description": "Optional resolved legacy dock_plan_confirm or support_plan_confirm interaction ID."},
 				},
 				"required":             []string{},
 				"additionalProperties": false,
@@ -702,13 +705,14 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.start_plan",
 			Alias:       "start_agent_plan",
 			Category:    "Agents",
-			Description: "Start an approved multi-step sub-agent plan. For Dock launches, pass only approval_interaction_id and the server loads the immutable steps from the approved dock_plan_confirm action. Support chat runs may still pass complete read-only steps without approval. Results are delivered back into this chat when the plan settles.",
+			Description: "Start a bounded multi-step sub-agent plan. Dock agents using runtime approval policy pass the complete plan directly; legacy approved launches may pass only approval_interaction_id. Results are delivered back into this chat when the plan settles.",
+			RiskLevel:   commandtools.RiskLevelRoutine,
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"prompt":                  map[string]any{"type": "string", "description": "Short description of the overall plan (shown in run surfaces)."},
 					"steps":                   map[string]any{"type": "array", "items": dockLaunchStepSchema(), "description": "Plan steps in order."},
-					"approval_interaction_id": map[string]any{"type": "string", "description": "ID of the resolved approval interaction (dock_plan_confirm or support_plan_confirm). Omit only for auto-approved read-only support launches."},
+					"approval_interaction_id": map[string]any{"type": "string", "description": "Optional resolved legacy dock_plan_confirm or support_plan_confirm interaction ID."},
 				},
 				"required":             []string{},
 				"additionalProperties": false,

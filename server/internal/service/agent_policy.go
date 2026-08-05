@@ -160,7 +160,11 @@ func normalizeAgentRecord(agent *model.Agent) {
 		agent.ApprovalMode = "never"
 	}
 	if agent.IsSystem {
-		agent.ApprovalMode = "never"
+		if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetAskAgent && hasPreset {
+			agent.ApprovalMode = preset.ApprovalMode
+		} else {
+			agent.ApprovalMode = "never"
+		}
 	}
 	if strings.TrimSpace(agent.Role) == "" {
 		if hasPreset && preset.DefaultRole != "" {
