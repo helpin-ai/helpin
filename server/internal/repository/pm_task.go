@@ -327,6 +327,10 @@ func buildDoneTaskGroups(tasks []model.BoardTask, now time.Time) []model.TaskGro
 func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters model.PMTaskFilters, pagination model.PMPagination) ([]model.BoardTask, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.PMTask{}).Where("workspace_id = ?", workspaceID)
 
+	if filters.Search != nil && strings.TrimSpace(*filters.Search) != "" {
+		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
+		query = query.Where("(LOWER(pm_tasks.name) LIKE ? OR LOWER(COALESCE(pm_tasks.description, '')) LIKE ? OR CAST(pm_tasks.display_id AS TEXT) LIKE ?)", search, search, search)
+	}
 	query = applyTaskStringFilter(query, "pm_tasks.team_id", filters.TeamID)
 	query = applyTaskStringFilter(query, "pm_tasks.epic_id", filters.EpicID)
 	query = applyTaskStringFilter(query, "pm_tasks.sprint_id", filters.SprintID)

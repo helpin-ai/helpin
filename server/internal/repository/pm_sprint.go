@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -61,6 +62,10 @@ func (r *PMSprintRepository) ListPage(ctx context.Context, workspaceID string, f
 
 func (r *PMSprintRepository) listQuery(ctx context.Context, workspaceID string, filters model.PMSprintListFilters) *gorm.DB {
 	query := r.db.WithContext(ctx).Model(&model.PMSprint{}).Where("workspace_id = ?", workspaceID)
+	if filters.Search != nil && strings.TrimSpace(*filters.Search) != "" {
+		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
+		query = query.Where("(LOWER(name) LIKE ? OR LOWER(COALESCE(description, '')) LIKE ?)", search, search)
+	}
 	if filters.TeamID != nil && *filters.TeamID != "" {
 		query = query.Where("team_id = ?", *filters.TeamID)
 	}
@@ -450,10 +455,14 @@ func (r *PMSprintRepository) ListEnrichedTasks(ctx context.Context, sprintID str
 }
 
 // ListEnrichedTasksPage counts and selects only the requested task page before enrichment.
-func (r *PMSprintRepository) ListEnrichedTasksPage(ctx context.Context, sprintID string, pagination model.PMPagination) ([]model.BoardTask, int, int, int, error) {
+func (r *PMSprintRepository) ListEnrichedTasksPage(ctx context.Context, sprintID string, search *string, pagination model.PMPagination) ([]model.BoardTask, int, int, int, error) {
 	page, perPage := normalizeSprintPagination(pagination)
 	query := r.db.WithContext(ctx).Model(&model.PMTask{}).
 		Where("sprint_id = ? AND archived = false", sprintID)
+	if search != nil && strings.TrimSpace(*search) != "" {
+		pattern := "%" + strings.ToLower(strings.TrimSpace(*search)) + "%"
+		query = query.Where("(LOWER(name) LIKE ? OR LOWER(COALESCE(description, '')) LIKE ? OR CAST(display_id AS TEXT) LIKE ?)", pattern, pattern, pattern)
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, page, perPage, fmt.Errorf("count sprint stories: %w", err)

@@ -115,6 +115,7 @@ func (PMTaskLabel) TableName() string { return "pm_task_labels" }
 
 // PMTaskFilters applies filter options when listing tasks.
 type PMTaskFilters struct {
+	Search                *string
 	TeamID                *string
 	EpicID                *string
 	SprintID              *string

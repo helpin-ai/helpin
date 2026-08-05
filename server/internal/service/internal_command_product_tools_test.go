@@ -356,6 +356,19 @@ func TestCRMListDealsCommandReturnsDealSummaries(t *testing.T) {
 	if deals[0].Amount == nil || *deals[0].Amount != 4200.0 {
 		t.Fatalf("unexpected deal amount %#v", deals[0])
 	}
+	filtered, err := svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws-1", TargetType: "workspace", TargetID: "ws-1"}, "crm.list_deals", json.RawMessage(`{"query":"no-such-deal"}`))
+	if err != nil {
+		t.Fatalf("query crm.list_deals returned error: %v", err)
+	}
+	var filteredDeals []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(filtered, &filteredDeals); err != nil {
+		t.Fatalf("unmarshal filtered deals: %v", err)
+	}
+	if len(filteredDeals) != 0 {
+		t.Fatalf("unexpected filtered deals %#v", filteredDeals)
+	}
 }
 
 func TestCRMListContactsCommandReturnsContactSummaries(t *testing.T) {
@@ -363,6 +376,8 @@ func TestCRMListContactsCommandReturnsContactSummaries(t *testing.T) {
 	now := time.Now()
 	mustExec(t, db, `INSERT INTO crm_contacts (id, workspace_id, display_id, first_name, last_name, email, job_title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"contact-1", "ws-1", "C-1", "Ada", "Lovelace", "ada@example.com", "CTO", now, now)
+	mustExec(t, db, `INSERT INTO crm_contacts (id, workspace_id, display_id, first_name, last_name, email, job_title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"contact-2", "ws-1", "C-2", "Grace", "Hopper", "grace@example.com", "Admiral", now.Add(time.Second), now.Add(time.Second))
 
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	svc.SetCRMReadServices(NewCRMContactService(repository.NewCRMContactRepository(db)), nil)
@@ -371,7 +386,7 @@ func TestCRMListContactsCommandReturnsContactSummaries(t *testing.T) {
 		WorkspaceID: "ws-1",
 		TargetType:  "workspace",
 		TargetID:    "ws-1",
-	}, "crm.list_contacts", json.RawMessage(`{"limit":5}`))
+	}, "crm.list_contacts", json.RawMessage(`{"query":"ada","limit":5}`))
 	if err != nil {
 		t.Fatalf("crm.list_contacts returned error: %v", err)
 	}

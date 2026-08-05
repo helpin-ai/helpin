@@ -38,6 +38,7 @@ func (PMSprintLabel) TableName() string { return "pm_sprint_labels" }
 
 // PMSprintListFilters applies filters when listing sprints.
 type PMSprintListFilters struct {
+	Search   *string
 	TeamID   *string
 	Status   *string
 	Archived *bool

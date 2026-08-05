@@ -124,7 +124,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "pm.list_tasks",
 		Alias:       "list_tasks",
 		Category:    "PM / Tasks",
-		Description: "List tasks in the current workspace with optional label, team, open-only, description, and comment filters.",
+		Description: "List tasks in the current workspace with optional text query, label, team, open-only, description, and comment filters.",
 		InputSchema: listTasksSchema(),
 	},
 	{
@@ -308,8 +308,9 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "pm.list_sprint_tasks",
 		Alias:       "list_sprint_tasks",
 		Category:    "PM / Sprints",
-		Description: "List compact non-archived tasks in an accessible sprint.",
+		Description: "List compact non-archived tasks in an accessible sprint, optionally filtered by a case-insensitive text query.",
 		InputSchema: boundedListSchema(map[string]any{
+			"query":     map[string]any{"type": "string", "description": "Optional case-insensitive text query matched against task name, description, or display ID."},
 			"sprint_id": optionalIDSchema("Optional sprint ID. Omit to use the current sprint target."),
 		}),
 	},
@@ -984,6 +985,10 @@ func listTasksSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
+			"query": map[string]any{
+				"type":        "string",
+				"description": "Optional case-insensitive text query matched against task name, description, or display ID.",
+			},
 			"label_id": map[string]any{
 				"type":        "string",
 				"description": "Optional label ID filter.",
@@ -1290,6 +1295,7 @@ func addPMCommentSchema() map[string]any {
 
 func listEpicsSchema() map[string]any {
 	return boundedListSchema(map[string]any{
+		"query":    map[string]any{"type": "string", "description": "Optional case-insensitive text query matched against epic name or description."},
 		"team_id":  optionalIDSchema("Optional team ID filter."),
 		"state_id": optionalIDSchema("Optional epic workflow state ID filter."),
 		"label_id": optionalIDSchema("Optional label ID filter."),
@@ -1350,6 +1356,7 @@ func updateEpicSchema() map[string]any {
 
 func listSprintsSchema() map[string]any {
 	return boundedListSchema(map[string]any{
+		"query":   map[string]any{"type": "string", "description": "Optional case-insensitive text query matched against sprint name or description."},
 		"team_id": optionalIDSchema("Optional team ID filter."),
 		"status": map[string]any{
 			"type": "string",
@@ -1394,6 +1401,7 @@ func updateSprintSchema() map[string]any {
 
 func listObjectivesSchema() map[string]any {
 	return boundedListSchema(map[string]any{
+		"query":          map[string]any{"type": "string", "description": "Optional case-insensitive text query matched against objective name or description."},
 		"team_id":        optionalIDSchema("Optional linked team ID filter."),
 		"label_id":       optionalIDSchema("Optional label ID filter."),
 		"objective_type": map[string]any{"type": "string", "enum": []string{model.PMObjectiveTypeTactical, model.PMObjectiveTypeStrategic}},

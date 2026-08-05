@@ -60,6 +60,7 @@ func (s *InternalCommandService) executePMListSprints(ctx context.Context, meta 
 		return nil, fmt.Errorf("sprint service is not configured")
 	}
 	var req struct {
+		Query    *string `json:"query"`
 		TeamID   *string `json:"team_id"`
 		Status   *string `json:"status"`
 		Archived *bool   `json:"archived"`
@@ -89,7 +90,7 @@ func (s *InternalCommandService) executePMListSprints(ctx context.Context, meta 
 	if err != nil {
 		return nil, err
 	}
-	sprints, total, page, perPage, err := s.sprintService.ListPage(ctx, meta.WorkspaceID, model.PMSprintListFilters{TeamID: req.TeamID, Status: req.Status, Archived: req.Archived, AgentTeamIDs: agentTeamIDs}, model.PMPagination{Page: req.Page, PerPage: req.PerPage})
+	sprints, total, page, perPage, err := s.sprintService.ListPage(ctx, meta.WorkspaceID, model.PMSprintListFilters{Search: req.Query, TeamID: req.TeamID, Status: req.Status, Archived: req.Archived, AgentTeamIDs: agentTeamIDs}, model.PMPagination{Page: req.Page, PerPage: req.PerPage})
 	if err != nil {
 		return nil, fmt.Errorf("list sprints: %w", err)
 	}
@@ -120,9 +121,10 @@ func (s *InternalCommandService) executePMGetSprint(ctx context.Context, meta mo
 
 func (s *InternalCommandService) executePMListSprintTasks(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 	var req struct {
-		SprintID string `json:"sprint_id"`
-		Page     int    `json:"page"`
-		PerPage  int    `json:"per_page"`
+		SprintID string  `json:"sprint_id"`
+		Query    *string `json:"query"`
+		Page     int     `json:"page"`
+		PerPage  int     `json:"per_page"`
 	}
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, fmt.Errorf("parse list sprint tasks input: %w", err)
@@ -134,7 +136,7 @@ func (s *InternalCommandService) executePMListSprintTasks(ctx context.Context, m
 	if _, err := s.loadCommandSprint(ctx, meta, sprintID); err != nil {
 		return nil, err
 	}
-	tasks, total, page, perPage, err := s.sprintService.ListTasksPage(ctx, sprintID, model.PMPagination{Page: req.Page, PerPage: req.PerPage})
+	tasks, total, page, perPage, err := s.sprintService.ListTasksPage(ctx, sprintID, req.Query, model.PMPagination{Page: req.Page, PerPage: req.PerPage})
 	if err != nil {
 		return nil, fmt.Errorf("list sprint tasks: %w", err)
 	}

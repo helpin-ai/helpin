@@ -204,6 +204,14 @@ func TestPMCommandListTasksFilters(t *testing.T) {
 	if strings.Contains(string(out), "task-b") {
 		t.Fatalf("team-scoped task list leaked task-b: %s", out)
 	}
+
+	out, err = env.service.Execute(context.Background(), env.meta("workspace", env.workspaceID), "pm.list_tasks", json.RawMessage(`{"query":"TASK-B","archived":false,"page":1,"per_page":25}`))
+	if err != nil {
+		t.Fatalf("query task list: %v", err)
+	}
+	if !strings.Contains(string(out), `"total":1`) || !strings.Contains(string(out), `"task_id":"task-b"`) || strings.Contains(string(out), `"task_id":"task-a"`) {
+		t.Fatalf("query task list = %s", out)
+	}
 }
 
 func TestPMCommandCreateTask(t *testing.T) {

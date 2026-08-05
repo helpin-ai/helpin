@@ -88,6 +88,7 @@ func (s *InternalCommandService) executePMListEpics(ctx context.Context, meta mo
 		return nil, err
 	}
 	var req struct {
+		Query    string `json:"query"`
 		TeamID   string `json:"team_id"`
 		StateID  string `json:"state_id"`
 		LabelID  string `json:"label_id"`
@@ -136,7 +137,7 @@ func (s *InternalCommandService) executePMListEpics(ctx context.Context, meta mo
 		}
 	}
 	filters := model.PMEpicListFilters{
-		TeamID: stringPtrOrNil(teamID), StateID: stringPtrOrNil(stateID), LabelID: stringPtrOrNil(labelID), Archived: req.Archived,
+		Search: stringPtrOrNil(req.Query), TeamID: stringPtrOrNil(teamID), StateID: stringPtrOrNil(stateID), LabelID: stringPtrOrNil(labelID), Archived: req.Archived,
 	}
 	if len(agentTeams) > 0 {
 		filters.AccessibleTeamIDs = agentTeams

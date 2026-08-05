@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -145,8 +146,8 @@ func (r *CRMDealRepository) List(ctx context.Context, workspaceID string, filter
 		query = query.Where("owner_member_id = ?", *filters.OwnerMemberID)
 	}
 	if filters.Search != nil && *filters.Search != "" {
-		search := "%" + *filters.Search + "%"
-		query = query.Where("name ILIKE ?", search)
+		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
+		query = query.Where("LOWER(name) LIKE ?", search)
 	}
 
 	var total int64

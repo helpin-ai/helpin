@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -56,6 +57,10 @@ func (r *PMObjectiveRepository) ListPage(ctx context.Context, workspaceID string
 
 func (r *PMObjectiveRepository) listQuery(ctx context.Context, workspaceID string, filters model.PMObjectiveListFilters) *gorm.DB {
 	query := r.db.WithContext(ctx).Model(&model.PMObjective{}).Where("workspace_id = ?", workspaceID)
+	if filters.Search != nil && strings.TrimSpace(*filters.Search) != "" {
+		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
+		query = query.Where("(LOWER(pm_objectives.name) LIKE ? OR LOWER(COALESCE(pm_objectives.description, '')) LIKE ?)", search, search)
+	}
 
 	if filters.ObjectiveType != nil && *filters.ObjectiveType != "" {
 		query = query.Where("objective_type = ?", *filters.ObjectiveType)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -59,6 +60,10 @@ func (r *PMEpicRepository) ListPage(ctx context.Context, workspaceID string, fil
 
 func (r *PMEpicRepository) listQuery(ctx context.Context, workspaceID string, filters model.PMEpicListFilters) *gorm.DB {
 	query := r.db.WithContext(ctx).Model(&model.PMEpic{}).Where("pm_epics.workspace_id = ?", workspaceID)
+	if filters.Search != nil && strings.TrimSpace(*filters.Search) != "" {
+		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
+		query = query.Where("(LOWER(pm_epics.name) LIKE ? OR LOWER(COALESCE(pm_epics.description, '')) LIKE ?)", search, search)
+	}
 
 	if filters.TeamID != nil && *filters.TeamID != "" {
 		query = query.Where("pm_epics.team_id = ?", *filters.TeamID)
