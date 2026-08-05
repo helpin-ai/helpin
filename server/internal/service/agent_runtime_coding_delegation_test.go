@@ -160,6 +160,37 @@ func TestRuntimeAgentFromHelpinAgentRemovesRepositoryWorkspaceModeFromAskAgent(t
 	}
 }
 
+func TestRuntimeAgentFromHelpinAgentKeepsManagedAskSkillTools(t *testing.T) {
+	ask := &model.Agent{
+		ID:               "agent-ask",
+		IsSystem:         true,
+		Name:             "Ask Agent",
+		PresetKey:        model.AgentPresetAskAgent,
+		PresetVersionKey: "ask_agent_default",
+		RuntimeKind:      "native_sdk",
+		AllowedTools: mustJSONStringSlice([]string{
+			agentcontract.ToolListAvailableSkills,
+			agentcontract.ToolSearchAvailableSkills,
+			agentcontract.ToolReadSkill,
+			"list_tasks",
+		}),
+	}
+
+	out := runtimeAgentFromHelpinAgent(ask, "helpin")
+	if len(out.Skills) != 0 {
+		t.Fatalf("test precondition requires no seeded Ask skills, got %#v", out.Skills)
+	}
+	for _, toolName := range []string{
+		agentcontract.ToolListAvailableSkills,
+		agentcontract.ToolSearchAvailableSkills,
+		agentcontract.ToolReadSkill,
+	} {
+		if !slices.Contains(out.AllowedTools, toolName) {
+			t.Fatalf("managed Ask Agent must retain %q, got %#v", toolName, out.AllowedTools)
+		}
+	}
+}
+
 func TestRuntimeAgentFromHelpinAgentAlwaysIncludesSupportDeliveryContract(t *testing.T) {
 	staleWorkspacePrompt := "You are Echo. Answer customer questions from evidence."
 	out := runtimeAgentFromHelpinAgent(&model.Agent{

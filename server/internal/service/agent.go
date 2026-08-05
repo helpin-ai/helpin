@@ -255,7 +255,12 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		ApprovalMode:          strings.TrimSpace(agent.ApprovalMode),
 		DefaultInvocationMode: strings.TrimSpace(agent.DefaultInvocationMode),
 	}
-	if usesVersionOwnedSystemPrompt(agent) && !hasAvailableRuntimeSkills(out.Skills) {
+	// Ask Agent owns skill discovery as a managed Dock capability. Keep those
+	// tools registered even before a workspace assigns optional skills; an
+	// empty discovery result is valid and the run contract must still match.
+	if usesVersionOwnedSystemPrompt(agent) &&
+		normalizePresetKey(agent.EffectivePresetKey()) != model.AgentPresetAskAgent &&
+		!hasAvailableRuntimeSkills(out.Skills) {
 		out.AllowedTools = slices.DeleteFunc(out.AllowedTools, func(toolName string) bool {
 			switch agentcontract.CanonicalToolName(toolName) {
 			case agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill:
@@ -398,9 +403,13 @@ func helpinSkillRefSupportsRuntime(ref model.AgentSkillRef, runtimeKind string) 
 	return false
 }
 
-func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntimeStartRunRequest {
+func runtimeStartRunRequest(
+	run *model.AgentRun,
+	agent *model.Agent,
+	runtimeAgent AgentRuntimeAgent,
+) (AgentRuntimeStartRunRequest, error) {
 	if run == nil {
-		return AgentRuntimeStartRunRequest{}
+		return AgentRuntimeStartRunRequest{}, nil
 	}
 	var input model.AgentRunInputPayload
 	if len(run.Input) > 0 {
@@ -458,19 +467,49 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 	if mode == "" {
 		mode = model.InvocationModeAutonomous
 	}
+	allowedTools, err := runtimeRunAllowedToolSubset(input.AllowedTools, runtimeAgent.AllowedTools)
+	if err != nil {
+		return AgentRuntimeStartRunRequest{}, err
+	}
 	return AgentRuntimeStartRunRequest{
 		HostRunID:       strings.TrimSpace(run.ID),
 		AgentID:         strings.TrimSpace(run.AgentID),
 		Target:          AgentRuntimeTargetRef{Type: strings.TrimSpace(run.TargetType), ID: strings.TrimSpace(run.TargetID), Metadata: metadata},
 		Instructions:    strings.TrimSpace(input.AdditionalContext),
-		AllowedTools:    normalizeStringSlice(input.AllowedTools),
+		AllowedTools:    allowedTools,
 		ExternalActorID: strings.TrimSpace(derefString(run.TriggeredByUserID)),
 		Mode:            mode,
 		ExecutionMode:   agentRuntimeExecutionModeDurable,
 		Trigger:         trigger,
 		Metadata:        metadata,
 		TurnPolicy:      runtimeTurnPolicy(run, agent, mode, 0),
+	}, nil
+}
+
+// runtimeRunAllowedToolSubset keeps the run-level narrowing contract within
+// the exact agent contract that is upserted immediately before launch. Helpin
+// may project an agent more narrowly than its persisted product definition
+// (for example, by removing skill tools when no skills are available), while
+// the durable run input still contains the broader product tool set.
+func runtimeRunAllowedToolSubset(requested, agentAllowed []string) ([]string, error) {
+	requested = agentcontract.NormalizeToolNames(requested)
+	if len(requested) == 0 {
+		return nil, nil
 	}
+	allowedSet := make(map[string]struct{}, len(agentAllowed))
+	for _, toolName := range agentcontract.NormalizeToolNames(agentAllowed) {
+		allowedSet[toolName] = struct{}{}
+	}
+	subset := make([]string, 0, len(requested))
+	for _, toolName := range requested {
+		if _, ok := allowedSet[toolName]; ok {
+			subset = append(subset, toolName)
+		}
+	}
+	if len(subset) == 0 {
+		return nil, fmt.Errorf("run allowed_tools do not overlap the projected runtime agent tools")
+	}
+	return subset, nil
 }
 
 // defaultDockChatIdleTimeoutSeconds bounds how long a dock chat run stays
@@ -5814,7 +5853,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
 	}
-	startReq := runtimeStartRunRequest(run, params.agent)
+	startReq, err := runtimeStartRunRequest(run, params.agent, runtimeAgent)
+	if err != nil {
+		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+		return nil, err
+	}
 	if auditActorID := s.auditActorIDForRun(ctx, run); auditActorID != "" {
 		startReq.Metadata["audit_actor_id"] = auditActorID
 	}
