@@ -315,6 +315,7 @@ func runtimeSkillRefsFromHelpinAgent(agent *model.Agent) []AgentRuntimeSkillRef 
 		}
 	}
 	availableRefs := make([]AgentRuntimeSkillRef, 0, len(preset.AvailableSkills))
+	seenAvailableKeys := make(map[string]bool, len(preset.AvailableSkills))
 	for _, ref := range refs {
 		key := agentcontract.CanonicalBuiltInSkillKey(ref.Key)
 		if !availableKeys[key] {
@@ -322,6 +323,31 @@ func runtimeSkillRefsFromHelpinAgent(agent *model.Agent) []AgentRuntimeSkillRef 
 		}
 		ref.Config = withRuntimeSkillRole(ref.Config, "available")
 		availableRefs = append(availableRefs, ref)
+		seenAvailableKeys[key] = true
+	}
+	// The managed Ask Agent owns a product-curated catalog of optional skills.
+	// Materialize missing refs at launch so existing workspace rows gain that
+	// catalog without a migration. Specialist presets continue to expose only
+	// the skill refs explicitly persisted on their agent rows.
+	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
+		for _, key := range preset.AvailableSkills {
+			key = agentcontract.CanonicalBuiltInSkillKey(key)
+			if key == "" || seenAvailableKeys[key] {
+				continue
+			}
+			if _, ok := agentcontract.GetBuiltInSkill(key); !ok {
+				continue
+			}
+			ref := model.AgentSkillRef{Key: key}
+			if !helpinSkillRefSupportsRuntime(ref, agent.RuntimeKind) {
+				continue
+			}
+			availableRefs = append(availableRefs, AgentRuntimeSkillRef{
+				Key:    key,
+				Config: withRuntimeSkillRole(nil, "available"),
+			})
+			seenAvailableKeys[key] = true
+		}
 	}
 	return availableRefs
 }
@@ -5849,11 +5875,20 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	_ = s.agentRepo.Update(ctx, params.agent)
 
-	if _, err := runtimeLauncher.UpsertAgent(ctx, runtimeAgent); err != nil {
+	registeredRuntimeAgent, err := runtimeLauncher.UpsertAgent(ctx, runtimeAgent)
+	if err != nil {
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
 	}
-	startReq, err := runtimeStartRunRequest(run, params.agent, runtimeAgent)
+	if registeredRuntimeAgent == nil {
+		err := fmt.Errorf("agent runtime returned an empty agent after registration")
+		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+		return nil, err
+	}
+	// Agent Runtime owns the executable tool registry. Build the run contract
+	// from the agent it accepted, rather than the local projection we sent, so
+	// allowed_tools cannot race or drift from the runtime's stored definition.
+	startReq, err := runtimeStartRunRequest(run, params.agent, *registeredRuntimeAgent)
 	if err != nil {
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
