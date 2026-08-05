@@ -14,11 +14,10 @@ import {
 import { HelpArticleView } from './HelpArticleView';
 import { ConversationView } from './ConversationView';
 import { ConversationListView } from './ConversationListView';
-import { HelpinMark } from './HelpinMark';
+import { BrandAttribution } from './BrandAttribution';
 import { XIcon } from './icons';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
-const HELPIN_BRANDING_URL = 'https://helpin.ai/?utm_source=helpin_widget&utm_medium=widget&utm_campaign=powered_by';
 
 interface ChatWindowProps {
   config: WidgetConfig;
@@ -476,18 +475,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
 
       {/* Powered by footer */}
       {showBranding && activeView !== 'conversation' && activeView !== 'messages' && (
-        <a
-          href={HELPIN_BRANDING_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="helpin-powered-by"
-        >
-          <span>Powered by</span>
-          <span className="helpin-powered-by-brand">
-            <HelpinMark className="helpin-powered-by-icon" />
-            <span className="helpin-powered-by-name">Helpin</span>
-          </span>
-        </a>
+        <BrandAttribution label="Powered by" className="helpin-powered-by" />
       )}
 
       {/* Bottom navigation */}

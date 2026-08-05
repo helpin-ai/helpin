@@ -204,8 +204,11 @@ describe('ChatWindow', () => {
 
     expect(getByText('Powered by')).toBeTruthy();
     expect(getByText('Helpin')).toBeTruthy();
-    expect(container.querySelector('.helpin-powered-by-brand')).not.toBeNull();
-    const mark = container.querySelector('.helpin-powered-by-icon');
+    const attribution = container.querySelector('a.helpin-powered-by.helpin-brand-attribution');
+    expect(attribution).not.toBeNull();
+    expect(attribution?.children).toHaveLength(2);
+    expect(attribution?.querySelector('.helpin-brand-attribution-brand')).not.toBeNull();
+    const mark = attribution?.querySelector('.helpin-brand-attribution-icon');
     expect(mark).not.toBeNull();
     expect(mark?.getAttribute('aria-hidden')).toBe('true');
   });

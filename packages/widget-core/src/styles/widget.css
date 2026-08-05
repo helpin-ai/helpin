@@ -1327,18 +1327,17 @@
 }
 
 /* ===== POWERED BY FOOTER ===== */
-.helpin-powered-by {
+.helpin-brand-attribution {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 4px 16px 8px;
   font-size: 11px;
   color: var(--helpin-fg-muted);
   text-decoration: none;
 }
 
-.helpin-powered-by-name {
+.helpin-brand-attribution-name {
   display: inline-block;
   font-weight: 600;
   color: var(--helpin-fg-secondary);
@@ -1349,13 +1348,13 @@
   transition: background-size 0.18s ease;
 }
 
-.helpin-powered-by-brand {
+.helpin-brand-attribution-brand {
   display: inline-flex;
   align-items: center;
   gap: 2px;
 }
 
-.helpin-powered-by-icon {
+.helpin-brand-attribution-icon {
   display: block;
   width: 12px;
   height: 12px;
@@ -1364,8 +1363,12 @@
   transform-origin: center;
 }
 
-.helpin-powered-by:hover .helpin-powered-by-name {
+.helpin-brand-attribution:hover .helpin-brand-attribution-name {
   background-size: 100% 1px;
+}
+
+.helpin-powered-by {
+  padding: 4px 16px 8px;
 }
 
 /* ===== Conversation List View ===== */
@@ -2323,49 +2326,7 @@
 
 /* Footer text below compose */
 .helpin-compose-footer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  text-align: center;
-  font-size: 11px;
-  color: var(--helpin-fg-muted);
   padding: 8px 0 2px;
-}
-
-.helpin-compose-footer-link {
-  display: inline-flex;
-  align-items: center;
-  color: var(--helpin-fg-secondary);
-  text-decoration: none;
-}
-
-.helpin-compose-footer-name {
-  display: inline-block;
-  background-image: linear-gradient(currentColor, currentColor);
-  background-position: 0 100%;
-  background-repeat: no-repeat;
-  background-size: 0 1px;
-  transition: background-size 0.18s ease;
-}
-
-.helpin-compose-footer-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.helpin-compose-footer-icon {
-  display: block;
-  width: 12px;
-  height: 12px;
-  flex: 0 0 auto;
-  transform: scale(1.25);
-  transform-origin: center;
-}
-
-.helpin-compose-footer:hover .helpin-compose-footer-name {
-  background-size: 100% 1px;
 }
 
 /* Conversation View */
