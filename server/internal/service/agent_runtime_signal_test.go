@@ -20,6 +20,7 @@ type fakeAgentRuntimeSignalClient struct {
 	startAuthCalls       []string
 	cancelAuthCalls      []string
 	upsertAgents         []AgentRuntimeAgent
+	upsertResult         *AgentRuntimeAgent
 	startRunCalls        []AgentRuntimeStartRunRequest
 	appID                string
 	getCalls             []string
@@ -61,6 +62,10 @@ func (c *fakeAgentRuntimeSignalClient) UpsertAgent(_ context.Context, agent Agen
 	c.upsertAgents = append(c.upsertAgents, agent)
 	if c.upsertErr != nil {
 		return nil, c.upsertErr
+	}
+	if c.upsertResult != nil {
+		result := *c.upsertResult
+		return &result, nil
 	}
 	return &agent, nil
 }

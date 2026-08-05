@@ -160,6 +160,46 @@ func TestRuntimeAgentFromHelpinAgentRemovesRepositoryWorkspaceModeFromAskAgent(t
 	}
 }
 
+func TestRuntimeAgentFromHelpinAgentRegistersManagedAskSkillsAndTools(t *testing.T) {
+	ask := &model.Agent{
+		ID:               "agent-ask",
+		IsSystem:         true,
+		Name:             "Ask Agent",
+		PresetKey:        model.AgentPresetAskAgent,
+		PresetVersionKey: "ask_agent_default",
+		RuntimeKind:      "native_sdk",
+		AllowedTools: mustJSONStringSlice([]string{
+			agentcontract.ToolListAvailableSkills,
+			agentcontract.ToolSearchAvailableSkills,
+			agentcontract.ToolReadSkill,
+			"list_tasks",
+		}),
+	}
+
+	out := runtimeAgentFromHelpinAgent(ask, "helpin")
+	if len(out.Skills) != 29 {
+		t.Fatalf("expected curated Ask skills to be registered, got %d: %#v", len(out.Skills), out.Skills)
+	}
+	for _, skill := range out.Skills {
+		config := map[string]interface{}{}
+		if err := json.Unmarshal(skill.Config, &config); err != nil {
+			t.Fatalf("decode runtime skill config for %q: %v", skill.Key, err)
+		}
+		if config[runtimeSkillRoleConfigKey] != "available" {
+			t.Fatalf("Ask skill %q must be optional, got config %#v", skill.Key, config)
+		}
+	}
+	for _, toolName := range []string{
+		agentcontract.ToolListAvailableSkills,
+		agentcontract.ToolSearchAvailableSkills,
+		agentcontract.ToolReadSkill,
+	} {
+		if !slices.Contains(out.AllowedTools, toolName) {
+			t.Fatalf("managed Ask Agent must retain %q, got %#v", toolName, out.AllowedTools)
+		}
+	}
+}
+
 func TestRuntimeAgentFromHelpinAgentAlwaysIncludesSupportDeliveryContract(t *testing.T) {
 	staleWorkspacePrompt := "You are Echo. Answer customer questions from evidence."
 	out := runtimeAgentFromHelpinAgent(&model.Agent{
@@ -648,6 +688,35 @@ func TestStartTargetRunDelegatesCodeBuilderTaskRunToAgentRuntime(t *testing.T) {
 	}
 	if reloaded.WorkflowID != nil || reloaded.WorkflowRunID != nil {
 		t.Fatalf("expected no local Temporal workflow, got %v/%v", reloaded.WorkflowID, reloaded.WorkflowRunID)
+	}
+}
+
+func TestStartTargetRunUsesRegisteredRuntimeAgentToolContract(t *testing.T) {
+	db := setupCodingDelegationTestDB(t)
+	now := time.Now().UTC()
+	seedCodingDelegationAgent(t, db, model.AgentPresetCodeBuilder, model.InvocationModeAutonomous, now)
+	seedCodingDelegationTaskAndDelivery(t, db, now)
+	mustExec(t, db, `UPDATE agents SET allowed_tools = ? WHERE id = ?`,
+		mustJSONStringSlice([]string{"read_file", "run_command"}), "agent-1")
+
+	runtimeClient := &fakeAgentRuntimeSignalClient{
+		upsertResult: &AgentRuntimeAgent{AllowedTools: []string{"read_file"}},
+	}
+	svc := newCodingDelegationService(t, db, runtimeClient)
+
+	actorID := "user-1"
+	_, err := svc.startTargetRunWithOptions(context.Background(), "ws-1", "task", "task-1", model.StartAgentRunRequest{
+		AgentID:      "agent-1",
+		AllowedTools: []string{"read_file", "run_command"},
+	}, &actorID, nil, nil, nil, startTargetRunOptions{})
+	if err != nil {
+		t.Fatalf("startTargetRunWithOptions returned error: %v", err)
+	}
+	if len(runtimeClient.startRunCalls) != 1 {
+		t.Fatalf("expected one runtime start call, got %d", len(runtimeClient.startRunCalls))
+	}
+	if got := runtimeClient.startRunCalls[0].AllowedTools; !slices.Equal(got, []string{"read_file"}) {
+		t.Fatalf("run tools must use the registered runtime agent contract, got %#v", got)
 	}
 }
 

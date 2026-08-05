@@ -684,6 +684,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTools:          askAgentPresetTools(),
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"workspace"},
+			AvailableSkills:        askAgentAvailableSkills(),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime("native_sdk"),
@@ -731,6 +732,44 @@ func askAgentPresetTools() []string {
 		"draft_custom_agent", "create_custom_agent", "promote_run_to_agent",
 		"run_epic_delivery_pipeline",
 	}, newPMReadToolAliases, newPMWriteToolAliases)
+}
+
+// askAgentAvailableSkills is intentionally broader than a specialist's core
+// bundle, but excludes role-bound execution contracts (coding, review, live
+// support, security scanning, and planner state machines) and skills that
+// require tools outside the Dock's managed surface.
+func askAgentAvailableSkills() []string {
+	return []string{
+		"docs_architecture_review",
+		"public_help_doc_writing",
+		"api_reference_doc_writing",
+		"internal_docs_maintenance",
+		"public_help_docs_maintenance",
+		"api_docs_maintenance",
+		"post_release_docs_update",
+		"support_gap_docs_update",
+		"marketing_context_setup",
+		"marketing_plan",
+		"customer_research_synthesis",
+		"marketing_copywriting",
+		"conversion_optimization",
+		"lifecycle_messaging",
+		"launch_marketing",
+		"seo_content_strategy",
+		"competitive_positioning",
+		"lead_generation_strategy",
+		"outbound_campaign_planning",
+		"ads_creative_planning",
+		"community_partnerships_planning",
+		"marketing_revops_planning",
+		"monetization_strategy",
+		"market_research",
+		"competitor_research",
+		"distribution_research",
+		"seo_research",
+		"crm_record_operations",
+		"competitors_changelog_tracking_report",
+	}
 }
 
 // enforceManagedAskAgentCapabilities keeps the Dock's core execution surface
