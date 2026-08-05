@@ -64,3 +64,52 @@ func TestCreateKeepsLegacySequentialVersionsAsExistingVersions(t *testing.T) {
 		t.Fatalf("migration filename = %q, want timestamp prefix", filepath.Base(path))
 	}
 }
+
+func TestSupportConversationCompanyContextMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+
+	var migration *Migration
+	for i := range migrations {
+		if migrations[i].Version == "202608050001" {
+			migration = &migrations[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatal("expected support conversation company context migration 202608050001 to be registered")
+	}
+	if migration.Name != "support_conversation_company_context" {
+		t.Fatalf("migration name = %q, want %q", migration.Name, "support_conversation_company_context")
+	}
+
+	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+	for _, clause := range []string{
+		"alter table support_conversations add column if not exists crm_company_id uuid",
+		"alter table support_widget_sessions add column if not exists crm_company_id uuid",
+		"create index if not exists idx_support_conversations_crm_company_id on support_conversations (crm_company_id)",
+		"create index if not exists idx_support_widget_sessions_crm_company_id on support_widget_sessions (crm_company_id)",
+		"foreign key (crm_company_id) references crm_companies(id) on delete set null",
+		"where from_object_type = 'contact' and to_object_type = 'company'",
+		"having count(distinct to_object_id) = 1",
+		"conversation.crm_company_id is null",
+		"conversation.crm_contact_id = association.from_object_id",
+		"conversation.workspace_id = association.workspace_id",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("migration SQL missing contract clause %q", clause)
+		}
+	}
+
+	if got := strings.Count(sql, "foreign key (crm_company_id) references crm_companies(id) on delete set null"); got != 2 {
+		t.Errorf("company foreign key count = %d, want 2", got)
+	}
+	if got := strings.Count(sql, "if not exists ( select 1 from pg_constraint"); got != 2 {
+		t.Errorf("idempotent foreign-key guard count = %d, want 2", got)
+	}
+	if strings.Contains(sql, "update support_widget_sessions") {
+		t.Error("migration must not infer company context for existing widget sessions")
+	}
+}

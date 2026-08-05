@@ -37,6 +37,7 @@ type SupportConversation struct {
 	Source                         string          `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
 	AnonymousID                    *string         `json:"anonymous_id" gorm:"index"`
 	CRMContactID                   *string         `json:"crm_contact_id" gorm:"type:uuid;index"`
+	CRMCompanyID                   *string         `json:"crm_company_id" gorm:"type:uuid;index"`
 	ResolvedAt                     *time.Time      `json:"resolved_at"`
 	ClosedAt                       *time.Time      `json:"closed_at"`
 	TeamLastSeenAt                 *time.Time      `json:"team_last_seen_at" gorm:"type:timestamptz"`
@@ -400,6 +401,7 @@ type SupportWidgetSession struct {
 	CountryName    *string    `json:"country_name,omitempty" gorm:"size:128"`
 	RegionName     *string    `json:"region_name,omitempty" gorm:"size:128"`
 	CityName       *string    `json:"city_name,omitempty" gorm:"size:128"`
+	CRMCompanyID   *string    `json:"crm_company_id" gorm:"type:uuid;index"`
 	LastActiveAt   *time.Time `json:"last_active_at,omitempty" gorm:"type:timestamptz;index"`
 	RevokedAt      *time.Time `json:"-" gorm:"index"`
 	ExpiresAt      time.Time  `json:"expires_at" gorm:"not null"`
