@@ -443,11 +443,10 @@ func runtimeStartRunRequest(
 		_ = json.Unmarshal(run.Input, &input)
 	}
 	metadata := map[string]interface{}{
-		"workspace_id":             strings.TrimSpace(run.WorkspaceID),
-		"browser_profile_scope_id": strings.TrimSpace(run.WorkspaceID),
-		"target_type":              strings.TrimSpace(run.TargetType),
-		"target_id":                strings.TrimSpace(run.TargetID),
-		"helpin_run_id":            strings.TrimSpace(run.ID),
+		"workspace_id":  strings.TrimSpace(run.WorkspaceID),
+		"target_type":   strings.TrimSpace(run.TargetType),
+		"target_id":     strings.TrimSpace(run.TargetID),
+		"helpin_run_id": strings.TrimSpace(run.ID),
 	}
 	if agent != nil && strings.TrimSpace(agent.PresetKey) != "" {
 		metadata["preset_key"] = strings.TrimSpace(agent.PresetKey)

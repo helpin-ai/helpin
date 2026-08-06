@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "browser_open",
-      "description": "Open an allowed page in the workspace's authenticated browser profile and return a compact interactive snapshot. Use fetch_url or crawl_url for public pages that do not require interaction.",
+      "description": "Open an allowed page in the workspace's ephemeral browser session and return a compact interactive snapshot. Use fetch_url or crawl_url for public pages that do not require interaction.",
       "category": "Browser",
       "input_schema": {
         "type": "object",

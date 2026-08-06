@@ -48,7 +48,6 @@ config. Set/verify:
 | `EXA_API_KEY` | Exa provider key | Required when Helpin agents enable `web_search_exa`. Restart both the runtime API and durable worker after adding or rotating it. |
 | `AGENT_RUNTIME_BROWSER_ENABLED` | `true` | Enables the shared Kernel browser infrastructure; apps still opt in independently in `AGENT_RUNTIME_APP_CONFIG`. |
 | `KERNEL_API_KEY` | Kernel API key | Shared runtime infrastructure credential; never exposed to host apps or models. |
-| `AGENT_RUNTIME_BROWSER_PROFILE_NAME_SALT` | generate: `openssl rand -hex 32` | Derives opaque, app-namespaced persistent profile names. |
 | `AGENT_RUNTIME_BROWSER_SESSION_TIMEOUT_SECONDS` | `300` | Safety timeout; the runtime also closes each session when the run ends. |
 
 ### `AGENT_RUNTIME_APP_CONFIG` value (canonical)
@@ -88,7 +87,6 @@ Doppler (ops-pending action — cannot be done from either repo):
       "browser": {
         "enabled": true,
         "allowed_domains": ["*"],
-        "profile_scope_metadata_key": "browser_profile_scope_id",
         "artifact_provider": {
           "transport": "http",
           "upload_endpoint": "https://stage.helpin.ai/api/internal/agent-runtime/artifacts",
