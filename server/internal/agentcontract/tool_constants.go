@@ -17,6 +17,7 @@ const (
 	ToolPublishTaskPlan               = "publish_task_plan"
 	ToolPublishTaskPlanDoc            = "publish_task_plan_doc"
 	ToolPublishDocumentChangeProposal = "publish_document_change_proposal"
+	ToolCompleteSupportCoverageGap    = "complete_support_coverage_gap"
 
 	ToolScanSemgrep  = "scan_semgrep"
 	ToolScanTrivy    = "scan_trivy"

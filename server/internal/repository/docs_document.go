@@ -151,6 +151,15 @@ func (r *DocsDocumentRepository) ListPublishedBySpace(ctx context.Context, works
 
 // List returns documents for a workspace with optional filters.
 func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID *string, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
+	return r.list(ctx, workspaceID, spaceID, collectionID, status, teamID, nil, draftViewerID, includeArchived)
+}
+
+// ListWithOwner returns documents for a workspace with an optional owner filter.
+func (r *DocsDocumentRepository) ListWithOwner(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID, ownerID *string, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
+	return r.list(ctx, workspaceID, spaceID, collectionID, status, teamID, ownerID, draftViewerID, includeArchived)
+}
+
+func (r *DocsDocumentRepository) list(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID, ownerID *string, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
 	query := r.db.WithContext(ctx).
 		Model(&model.DocsDocument{}).
 		Select(`docs_documents.*, COALESCE(pending_proposals.pending_change_proposal_count, 0) AS pending_change_proposal_count`).
@@ -177,6 +186,9 @@ func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, s
 	}
 	if teamID != nil && *teamID != "" {
 		query = query.Where("docs_documents.team_id = ?", *teamID)
+	}
+	if ownerID != nil && *ownerID != "" {
+		query = query.Where("docs_documents.owner_id = ?", *ownerID)
 	}
 
 	// If draftViewerID is set, hide other users' drafts (admins/owners pass empty to see all).

@@ -1,8 +1,8 @@
-# Agent Runtime Staging Enablement Runbook
+# Agent Runtime Staging Runbook
 
-Ops runbook for enabling delegated Helpin agent runs on staging
-(stage.helpin.ai) against the shared `agent-runtime` service. Local setup lives
-in `docs/AGENT_RUNTIME_LOCAL.md`; this document covers staging only.
+Ops runbook for running Helpin agents on staging (stage.helpin.ai) through the
+shared `agent-runtime` service. Local setup lives in
+`docs/AGENT_RUNTIME_LOCAL.md`; this document covers staging only.
 
 > Current architecture: Agent Runtime is Helpin's only agent executor. Setting
 > `AGENT_RUNTIME_LAUNCH_ENABLED=false` does not roll back to an in-process
@@ -54,7 +54,7 @@ config. Set/verify:
 
 Canonical copy with endpoint-derivation table:
 `agent-runtime` repo -> `docs/staging-app-config.md`. Merged form to paste into
-Doppler (ops-pending action — cannot be done from either repo):
+Doppler:
 
 ```json
 {
@@ -114,7 +114,7 @@ Doppler (ops-pending action — cannot be done from either repo):
 
 ## Step 2 — Deploy runtime config and verify auth
 
-1. ArgoCD: sync the `agent-runtime` staging app (ops-pending action) so pods
+1. ArgoCD: sync the `agent-runtime` staging app so pods
    restart and pick up the new `agent-runtime-secrets` values (ExternalSecret
    refresh interval is 1m; pods still need a restart to see changed env).
 2. Verify runtime is up and fails closed:
@@ -160,7 +160,7 @@ A `503 internal API not configured` means staging Helpin is missing
 Staging Helpin env comes entirely from the `helpin-secrets` secret via
 `envFrom` in `k8s/stage/server.yaml` and `k8s/stage/temporal-worker.yaml` — the
 manifests carry no per-variable env lists for these, so no manifest change is
-needed; all four keys are Doppler-only (ops-pending action):
+needed; all four keys are Doppler-only:
 
 | Secret | Value |
 | --- | --- |
@@ -181,14 +181,14 @@ up the environment. The flag must be true before launching agent runs.
   (`agent_runtime_projection.go`) using Helpin's `NATS_URL`; it creates the
   stream if missing.
 - Therefore the runtime's `AGENT_RUNTIME_NATS_URL` and Helpin's `NATS_URL`
-  MUST point at the same NATS JetStream cluster. If they differ, delegated runs
+  MUST point at the same NATS JetStream cluster. If they differ, runtime runs
   launch but never project status back — rows stay in their launch state until
   the reconciliation sweep backstop.
 - Verify from a debug pod:
   `nats -s "$NATS_URL" stream info AGENT_RUNTIME_EVENTS` shows the stream, and
   after Step 6 message counts grow during a run.
 
-## Step 6 — Flag rollout order
+## Step 6 — Validate execution
 
 1. Runtime config deployed and verified (Steps 1–2).
 2. Helpin `/api/internal/...` verified 401 from outside (Step 3).
@@ -196,8 +196,8 @@ up the environment. The flag must be true before launching agent runs.
    config and restart Helpin server + temporal-worker.
 4. Confirm an authenticated runtime capabilities request succeeds before
    launching a run.
-5. Smoke test: launch a marketer-preset workspace run
-   on staging and confirm in the Helpin DB:
+5. Smoke test one system agent and one custom agent on staging. Confirm for
+   both Helpin runs:
    - `agent_runs.external_runtime = 'agent-runtime'`
    - `agent_runs.external_runtime_id` set, no Helpin `workflow_id`
    - status/messages progress via projection (NATS), not just the sweep
@@ -210,15 +210,15 @@ up the environment. The flag must be true before launching agent runs.
 - Do not use `AGENT_RUNTIME_LAUNCH_ENABLED=false` as a rollback: it disables
   new run starts because no in-process executor exists. Roll back the runtime
   deployment/configuration while keeping the Helpin flag enabled.
-- In-flight delegated runs are NOT orphaned: the runtime keeps executing them
+- In-flight runtime runs are not orphaned: the runtime keeps executing them
   and the Helpin projection consumer (which runs regardless of the launch flag)
   finishes projecting their terminal state.
 - Do not remove the `helpin` entry from `AGENT_RUNTIME_APP_CONFIG` while
-  delegated runs are still active — the runtime needs the callbacks to finish
-  them. Remove it only after all delegated runs are terminal, and again
+  runtime runs are still active — the runtime needs the callbacks to finish
+  them. Remove it only after all runtime runs are terminal, and again
   preserve the usermaven entry when editing.
 
-## Ops-pending checklist (actions outside git)
+## Deployment checklist
 
 - [ ] Runtime Doppler (project behind `doppler-agent-runtime-api`, staging
       config): set `AGENT_RUNTIME_SERVICE_TOKEN`, merged
@@ -229,7 +229,6 @@ up the environment. The flag must be true before launching agent runs.
 - [ ] Helpin Doppler (`helpin-secrets` source, staging config): set the four
       `AGENT_RUNTIME_*` keys and confirm `INTERNAL_API_SECRET`.
 - [ ] Restart staging Helpin server + temporal-worker deployments.
-- [ ] Flag flip to `true` after verification, staging only.
-- [ ] After applying the slimmed Temporal worker manifest, run
-      `scripts/agent-runtime-retirement/delete-retired-deployments.sh <staging-kubectl-context> --confirm`
-      so the five removed zero-replica Deployment objects do not linger.
+- [ ] Confirm `AGENT_RUNTIME_LAUNCH_ENABLED=true`; false disables new agent
+      execution and is not a fallback mechanism.
+- [ ] Complete one system-agent and one custom-agent smoke run.

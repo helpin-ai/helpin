@@ -30,6 +30,7 @@ type AgentRuntimeRun = agentruntime.AgentRun
 type AgentRuntimeMessage = agentruntime.AgentRunMessage
 type AgentRuntimeArtifact = agentruntime.AgentRunArtifact
 type AgentRuntimeInteraction = agentruntime.AgentRunInteraction
+type AgentRuntimeToolCall = agentruntime.ToolCall
 type AgentRuntimeEventEnvelope = agentruntime.EventEnvelope
 type AgentRuntimeEventListResponse = agentruntime.EventListResponse
 
@@ -115,6 +116,10 @@ func (c *AgentRuntimeClient) ListArtifacts(ctx context.Context, runtimeRunID str
 
 func (c *AgentRuntimeClient) ListInteractions(ctx context.Context, runtimeRunID string) ([]AgentRuntimeInteraction, error) {
 	return c.client.ListInteractions(ctx, runtimeRunID)
+}
+
+func (c *AgentRuntimeClient) ListToolCalls(ctx context.Context, runtimeRunID string) ([]AgentRuntimeToolCall, error) {
+	return c.client.ListToolCalls(ctx, runtimeRunID)
 }
 
 func (c *AgentRuntimeClient) ResumeRun(ctx context.Context, runtimeRunID string, req AgentRuntimeResumeRunRequest) (*AgentRuntimeRun, error) {

@@ -760,6 +760,21 @@
   color: oklch(0.88 0.08 75);
 }
 
+/* Block targeted by a pending change proposal, plus the review card anchored
+   beneath it. The card is React-owned UI injected as a widget decoration. */
+.docs-editor-prose .docs-proposal-target {
+  border-left: 3px solid var(--primary);
+  padding-left: 0.75rem;
+  background: color-mix(in oklch, var(--primary) 6%, transparent);
+}
+.docs-proposal-widget {
+  display: block;
+  user-select: text;
+}
+.docs-proposal-widget .docs-proposal-card {
+  font-family: var(--font-sans);
+}
+
 .tiptap ul[data-type="taskList"] {
   list-style: none;
   padding-left: 0;

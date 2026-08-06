@@ -22,6 +22,7 @@ const (
 	agentRuntimeFinalizerPlanningSummaryKey           = "agent_runtime_finalizer_planning"
 	agentRuntimeFinalizerRepositoryDeliverySummaryKey = "agent_runtime_finalizer_repository_delivery"
 	agentRuntimeFinalizerCommandBarPlanSummaryKey     = "agent_runtime_finalizer_command_bar_plan"
+	agentRuntimeFinalizerSupportCoverageGapSummaryKey = "agent_runtime_finalizer_support_coverage_gap"
 	agentRuntimeSupportSentMessageIDSummaryKey        = "sent_message_id"
 )
 
@@ -61,23 +62,28 @@ type agentRunFinalizerCommandBarPlanAdvancer interface {
 	AdvanceCommandBarPlanForDelegatedRun(ctx context.Context, run *model.AgentRun) (*model.AgentRun, error)
 }
 
+type agentRunFinalizerSupportCoverageService interface {
+	RecordAgentOutcome(ctx context.Context, workspaceID, gapID, outcome, documentID string) error
+}
+
 // AgentRunFinalizerService fires the product side effects that Temporal
 // activities apply when a run reaches a terminal state, for delegated
 // agent-runtime runs projected back via NATS. Every finalizer is individually
 // idempotent (marker in output_summary or natural create-if-not-exists) and a
 // failing finalizer never blocks the others or the status projection.
 type AgentRunFinalizerService struct {
-	runRepo            agentRuntimeProjectionRunRepository
-	agentRepo          agentRunFinalizerAgentRepository
-	taskRepo           agentRunFinalizerTaskRepository
-	epicRepo           agentRunFinalizerEpicRepository
-	conversationRepo   agentRunFinalizerConversationRepository
-	supportMessageRepo agentRunFinalizerSupportMessageRepository
-	ruleEngine         agentRunFinalizerRuleEvaluator
-	repositoryDelivery agentRunFinalizerRepositoryDeliveryService
+	runRepo             agentRuntimeProjectionRunRepository
+	agentRepo           agentRunFinalizerAgentRepository
+	taskRepo            agentRunFinalizerTaskRepository
+	epicRepo            agentRunFinalizerEpicRepository
+	conversationRepo    agentRunFinalizerConversationRepository
+	supportMessageRepo  agentRunFinalizerSupportMessageRepository
+	ruleEngine          agentRunFinalizerRuleEvaluator
+	repositoryDelivery  agentRunFinalizerRepositoryDeliveryService
 	commandBarAdvancer  agentRunFinalizerCommandBarPlanAdvancer
 	dockChatNotifier    agentRunFinalizerDockChatNotifier
 	supportChatNotifier agentRunFinalizerDockChatNotifier
+	supportCoverage     agentRunFinalizerSupportCoverageService
 	wsPublisher         websocket.EventPublisher
 }
 
@@ -175,6 +181,18 @@ func (s *AgentRunFinalizerService) SetSupportChatResultNotifier(notifier agentRu
 	return s
 }
 
+// SetSupportCoverageService wires the idempotent coverage-gap outcome
+// finalizer used as a backstop for the terminal tool.
+func (s *AgentRunFinalizerService) SetSupportCoverageService(coverage agentRunFinalizerSupportCoverageService) *AgentRunFinalizerService {
+	if s == nil {
+		return s
+	}
+	if coverage != nil {
+		s.supportCoverage = coverage
+	}
+	return s
+}
+
 // FinalizeTerminalRun applies product side effects for a delegated run that
 // just transitioned into a terminal status (the caller threads the
 // transitioned signal; this must never be invoked for redelivered terminal
@@ -196,6 +214,7 @@ func (s *AgentRunFinalizerService) FinalizeTerminalRun(ctx context.Context, run 
 		{name: "agent_status", run: s.finalizeAgentStatus},
 		{name: "automation_rules", completedOnly: true, run: s.finalizeRunCompletedRules},
 		{name: "support_draft", completedOnly: true, needsSummary: true, run: s.finalizeSupportDraft},
+		{name: "support_coverage_gap", completedOnly: true, run: s.finalizeSupportCoverageGap},
 		{name: "planning_output", completedOnly: true, run: func(ctx context.Context, run *model.AgentRun) error {
 			return s.finalizePlanningOutput(ctx, run, runtimeSummaryAvailable)
 		}},
@@ -230,6 +249,34 @@ func (s *AgentRunFinalizerService) FinalizeTerminalRun(ctx context.Context, run 
 			)
 		}
 	}
+}
+
+func (s *AgentRunFinalizerService) finalizeSupportCoverageGap(ctx context.Context, run *model.AgentRun) error {
+	if s.supportCoverage == nil || run == nil || strings.TrimSpace(run.TargetType) != "support_coverage_gap" {
+		return nil
+	}
+	if runOutputSummaryFlag(run.OutputSummary, agentRuntimeFinalizerSupportCoverageGapSummaryKey) {
+		return nil
+	}
+	if strings.TrimSpace(string(run.OutputSummary)) == "" {
+		return nil
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(run.OutputSummary, &body); err != nil {
+		return fmt.Errorf("decode support coverage gap outcome: %w", err)
+	}
+	raw := body[supportCoverageGapOutcomeSummaryKey]
+	if len(raw) == 0 {
+		return nil
+	}
+	var outcome supportCoverageGapOutcomeSummary
+	if err := json.Unmarshal(raw, &outcome); err != nil {
+		return fmt.Errorf("decode support coverage gap outcome contract: %w", err)
+	}
+	if err := s.supportCoverage.RecordAgentOutcome(ctx, run.WorkspaceID, run.TargetID, outcome.Outcome, outcome.DocumentID); err != nil {
+		return err
+	}
+	return s.markRunOutputSummaryFlag(ctx, run, agentRuntimeFinalizerSupportCoverageGapSummaryKey)
 }
 
 // finalizeAgentStatus mirrors temporalapp markAgentIdle: flip the agent back

@@ -5,6 +5,7 @@ metadata:
   title: Public Help Docs Maintenance
   supported_runtimes:
     - native_sdk
+    - codex
 ---
 
 Use this skill when updating existing public help center articles.

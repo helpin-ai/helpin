@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -196,7 +197,11 @@ func (r *DocsBlockRepository) SyncDocumentBlocksTx(ctx context.Context, tx *gorm
 		if existing, ok := existingByID[block.ID]; ok {
 			changed = false
 			revision = existing.Revision
-			if !bytes.Equal(bytes.TrimSpace(existing.Content), bytes.TrimSpace(block.Content)) || existing.DeletedAt != nil || existing.SortKey != block.SortKey {
+			// Only content edits (or restoring a deleted block) bump the
+			// revision. Position changes reassign every following block's
+			// sort key, so counting them would invalidate pending block
+			// proposals on untouched blocks.
+			if !docsBlockContentEqual(existing.Content, block.Content) || existing.DeletedAt != nil {
 				revision++
 				changed = true
 			}
@@ -303,6 +308,48 @@ func hasSeen(seen map[string]struct{}, id string) bool {
 
 func blockSortKey(index int) string {
 	return fmt.Sprintf("%012d", index)
+}
+
+// docsBlockContentEqual compares block content semantically. Editor and server
+// saves serialize the same node differently (key order, whitespace, null-valued
+// default attrs such as textAlign), and treating those round-trips as content
+// edits would bump every block's revision and invalidate pending proposals.
+func docsBlockContentEqual(a, b json.RawMessage) bool {
+	if bytes.Equal(bytes.TrimSpace(a), bytes.TrimSpace(b)) {
+		return true
+	}
+	var av, bv any
+	if err := json.Unmarshal(a, &av); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(b, &bv); err != nil {
+		return false
+	}
+	return reflect.DeepEqual(stripNullValues(av), stripNullValues(bv))
+}
+
+// stripNullValues removes null-valued object entries recursively; ProseMirror
+// treats a null attr the same as an absent one.
+func stripNullValues(v any) any {
+	switch value := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(value))
+		for key, entry := range value {
+			if entry == nil {
+				continue
+			}
+			out[key] = stripNullValues(entry)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(value))
+		for _, entry := range value {
+			out = append(out, stripNullValues(entry))
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 func ptrIfNonEmpty(s string) *string {

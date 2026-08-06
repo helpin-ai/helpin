@@ -1,590 +1,132 @@
 # Coding Agent Runtime Flow
 
-This document explains the current repository-execution flow for coding agents, with emphasis on:
+This document describes repository-backed agent execution after the Agent
+Runtime hard cutover. It applies to Forge/Code Builder, Lens/Review Agent, and
+custom agents configured for repository work.
 
-- Forge / Code Builder runs
-- `codex` vs `opencode` runtime behavior
-- repository checkout and branch preparation
-- base-branch sync before execution
-- commit / push / PR ownership
-- recovery and failure paths
+For the broader ownership and trigger model, see
+`docs/AGENTS_AND_AUTOMATION.md`.
 
-For the broader generic agent executor model, see `docs/AGENTS_AND_AUTOMATION.md`.
-This document is specifically about repository-backed coding delivery.
+## Boundary
 
-Use this doc when changing:
+Helpin owns product configuration and delivery semantics. Agent Runtime owns
+the execution workspace and model/tool loop.
 
-- `server/internal/temporalapp/activities.go`
-- `server/internal/worker/codex.go`
-- `server/internal/worker/opencode.go`
-- Forge / Code Builder presets
+| Helpin | Agent Runtime |
+| --- | --- |
+| Resolve workspace agent, version, target, repository, and delivery target | Store the projected executable agent definition |
+| Enforce workspace/team access, entitlements, billing, tools, and targets | Enforce accepted runtime/tool/workspace policy |
+| Create the Helpin `agent_run` and launch metadata | Create and execute the runtime run/workflow |
+| Supply target context, domain commands, skills, and repository spec | Prepare the repository workspace and expose runtime tools |
+| Project runtime events into product records | Run `native_sdk`, `codex`, or `opencode` |
+| Apply product finalizers such as PR/task/git-link bookkeeping | Persist transcript, interactions, artifacts, usage, and repository outcome |
 
-## Scope
+System and custom agents use this same boundary. `is_system` never selects a
+coding executor.
 
-This document covers coding-agent runs that operate on a repository-backed target such as a task with a delivery target.
+## Executable configuration
 
-It does not try to explain:
+A repository-capable agent is still an ordinary agent definition composed
+from:
 
-- generic planner-only runs
-- support-agent reply drafting
-- non-repository custom-agent flows
+- `runtime_kind`, provider, model, and execution config;
+- system prompt and skills;
+- allowed tools and targets;
+- approval and invocation policy;
+- repository workspace mode and access policy.
 
-## Main components
+Forge and Lens receive these values from managed presets. A custom agent may
+request the same generic repository capabilities through explicit
+configuration, but it does not inherit or track those presets.
 
-The coding-agent runtime flow spans four layers:
+Runtime kinds select adapters only:
 
-1. Product / configuration layer
-   - agent preset
-   - runtime kind
-   - task delivery target
-2. Temporal orchestration layer
-   - workspace prep
-   - branch selection
-   - branch sync
-   - backend delivery steps
-3. Runtime layer
-   - Codex app-server runtime
-   - OpenCode runtime
-4. Repository delivery layer
-   - local commit
-   - backend push
-   - PR metadata / task git link updates
+- `native_sdk`: in-process model/tool loop inside Agent Runtime;
+- `codex`: Codex app-server execution inside Agent Runtime;
+- `opencode`: OpenCode command execution inside Agent Runtime.
 
-Key files:
-
-- `server/internal/temporalapp/activities.go`
-- `server/internal/worker/codex.go`
-- `server/internal/worker/codex_session_host.go`
-- `server/internal/worker/codex_command_guards.go`
-- `server/internal/worker/git_persistence.go`
-- `server/internal/worker/opencode.go`
-- `server/internal/service/agent_presets.go`
-- `server/internal/service/agent_system_prompts.go`
-
-## Runtime kinds
-
-There are three important runtime families in the backend:
-
-- `native_sdk`
-  - Eino/model-loop backend runtime
-  - used for generic agents where the product chooses the native backend
-  - can consume the same Helpin MCP product tools and planner contracts as Codex
-- `codex`
-  - Codex CLI / app-server runtime
-  - used by Forge / Code Builder system agents
-  - current product direction for repository coding runs
-- `opencode`
-  - older coding runtime still supported in code
-  - still valid for some legacy or custom agents
-
-Current Code Builder default:
-
-- preset family: `code_builder`
-- default preset version: `code_builder_local_commit_delivery`
-- runtime kind: `codex`
-
-Runtime kind selects the backend adapter, not a separate product behavior path.
-System agents, custom agents, and one-shot command agents still execute as
-normal `agent_run` records. Planner/review/support behavior is expressed
-through prompts, skills, allowed tools, targets, and artifact contracts, not a
-separate native planner controller.
-
-Helpin product and interaction tools are model-facing through the run-scoped
-Helpin MCP bridge using names such as `mcp__helpin__update_plan` and
-`mcp__helpin__request_user_input`. Backend policy and persistence normalize
-those calls back to canonical bare aliases.
-
-## High-level lifecycle
-
-For a repository-backed Code Builder run, the lifecycle is:
-
-1. Resolve target and delivery target.
-2. Prepare local workspace clone.
-3. Checkout the effective working ref.
-4. Sync base branch into the working branch before execution.
-5. Start the runtime.
-6. Persist runtime changes.
-7. Push / record delivery state.
-8. Persist assistant message, artifacts, and run state.
-
-In simplified form:
+## Launch sequence
 
 ```text
-start run
-  -> resolve task delivery target
-  -> prepare workspace
-  -> checkout working branch
-  -> sync base into working
-  -> run Codex / OpenCode
-  -> persist local commit or pushed state
-  -> backend delivery bookkeeping
-  -> finalize run
+manual action, flow, schedule, or orchestration
+  -> Helpin resolves agent + active version + target
+  -> Helpin resolves repository/delivery metadata
+  -> Helpin creates agent_run
+  -> Helpin upserts executable agent into Agent Runtime
+  -> Helpin starts runtime run with target and instructions
+  -> Agent Runtime resolves target context and repository spec from Helpin
+  -> Agent Runtime prepares isolated workspace and branch
+  -> selected runtime adapter executes tools/model turns
+  -> Agent Runtime commits/pushes when configured and reports repository result
+  -> runtime events project into Helpin
+  -> Helpin applies delivery finalizers and returns the agent to idle
 ```
 
-ASCII view:
-
-```text
-                  +----------------------+
-                  | start agent_run      |
-                  +----------+-----------+
-                             |
-                             v
-                  +----------------------+
-                  | resolve delivery     |
-                  | base + working refs  |
-                  +----------+-----------+
-                             |
-                             v
-                  +----------------------+
-                  | prepare workspace    |
-                  | clone / reuse repo   |
-                  +----------+-----------+
-                             |
-                             v
-                  +----------------------+
-                  | checkout working ref |
-                  +----------+-----------+
-                             |
-                             v
-                  +----------------------+
-                  | sync base into work  |
-                  +----------+-----------+
-                             |
-               +-------------+--------------+
-               |                            |
-               v                            v
-     +--------------------+      +----------------------+
-     | runtime executes   |      | fail / recover first |
-     | codex or opencode  |      | depending on state   |
-     +----------+---------+      +----------------------+
-                |
-                v
-     +---------------------------+
-     | persist changes + deliver |
-     +-------------+-------------+
-                   |
-                   v
-     +---------------------------+
-     | artifacts + run finalize  |
-     +---------------------------+
-```
-
-## Delivery target resolution
-
-For task-backed repo runs, Temporal resolves a `task_delivery_target`.
-
-The effective values come from:
-
-- the saved delivery target
-- any explicit run-time branch overrides
-- workspace/team repo defaults
-- repository default branch
-
-Important outcomes:
-
-- `BaseBranch`
-  - usually the team default base branch or repository default branch
-- `WorkingBranch`
-  - either an explicitly stored branch or a generated task branch
-
-If the run requires a repo and a working branch is known, Temporal ensures the remote branch exists before execution.
-
-## Checkout behavior
-
-Checkout logic is:
-
-1. If remote `working_branch` exists:
-   - fetch explicit remote-tracking ref for that branch
-   - check out local working branch from `origin/<working_branch>`
-2. Otherwise:
-   - fetch `origin/<base_branch>`
-   - create local working branch from base
-3. If needed, bootstrap the remote working branch from base
-
-This means an existing remote working branch wins over base branch for checkout.
-
-ASCII checkout path:
-
-```text
-                   +------------------------------+
-                   | do we already have a remote  |
-                   | working branch?              |
-                   +---------------+--------------+
-                                   |
-                    +--------------+--------------+
-                    |                             |
-                  yes                            no
-                    |                             |
-                    v                             v
-      +-----------------------------+   +-----------------------------+
-      | fetch origin/<working>      |   | fetch origin/<base>         |
-      | checkout local working from |   | create local working from   |
-      | origin/<working>            |   | origin/<base>               |
-      +-----------------------------+   +-----------------------------+
-                    |                             |
-                    +--------------+--------------+
-                                   |
-                                   v
-                      +--------------------------+
-                      | continue into base sync  |
-                      +--------------------------+
-```
-
-## Base sync before execution
-
-After checkout, Temporal always evaluates whether the configured base branch needs to be brought into the working branch.
-
-This is a backend-owned repository-preparation step, not a model decision.
-
-Normal path:
-
-- fetch `origin/<base_branch>`
-- if base is already contained in working branch:
-  - no-op
-- otherwise:
-  - merge `origin/<base_branch>` into the checked-out working branch
-
-Why it exists:
-
-- Codex should see the actual repo state it needs to edit
-- branch freshness is execution-environment state, not prompt-only context
-
-ASCII base-sync decision flow:
-
-```text
-                +---------------------------------+
-                | base_branch and working_branch  |
-                | both present?                   |
-                +----------------+----------------+
-                                 |
-                     +-----------+-----------+
-                     |                       |
-                    no                      yes
-                     |                       |
-                     v                       v
-             +---------------+    +--------------------------+
-             | no-op         |    | same branch name?        |
-             +---------------+    +-------------+------------+
-                                               |
-                                 +-------------+-------------+
-                                 |                           |
-                                yes                          no
-                                 |                           |
-                                 v                           v
-                        +----------------+       +-------------------------+
-                        | no-op          |       | fetch origin/<base>     |
-                        | same_branch    |       | check merge relation    |
-                        +----------------+       +------------+------------+
-                                                             |
-                                         +-------------------+-------------------+
-                                         |                                       |
-                                  already contains base                    needs sync
-                                         |                                       |
-                                         v                                       v
-                               +--------------------+               +----------------------+
-                               | no-op              |               | try merge base into  |
-                               | up_to_date         |               | working              |
-                               +--------------------+               +----------+-----------+
-                                                                                 |
-                                              +----------------------------------+----------------------------------+
-                                              |                                  |                                  |
-                                         clean merge                      merge conflicts                    unrelated history
-                                              |                                  |                                  |
-                                              v                                  v                                  v
-                                   +--------------------+      +----------------------------+      +-----------------------------+
-                                   | status=merged      |      | Codex: continue conflicted |      | backup old tip             |
-                                   | continue           |      | Non-Codex: fail           |      | rebuild working from base  |
-                                   +--------------------+      +----------------------------+      | or fail if active PR       |
-                                                                                                    +-----------------------------+
-```
-
-## Branch sync outcomes
-
-`branchSync.Status` can fall into several states:
-
-- `not_applicable`
-  - no base/working branch pair to sync
-- `same_branch`
-  - base branch and working branch are the same
-- `up_to_date`
-  - working already contains base
-- `merged`
-  - base merged cleanly into working before runtime execution
-- `conflicted`
-  - merge produced real conflicts
-- `recreated_from_base`
-  - working branch had unrelated history and was rebuilt from base
-- `unrelated_history`
-  - working branch had unrelated history and could not be safely auto-rewritten
-
-### Shared history, clean merge
-
-Behavior:
-
-- merge base into working
-- continue into runtime
-
-### Shared history, merge conflicts
-
-Behavior:
-
-- leave repo in merge-conflict state
-- set `branchSync.Status = "conflicted"`
-- if runtime is Codex:
-  - continue
-  - Codex is instructed to resolve conflicts before further implementation
-- if runtime is not Codex:
-  - fail run
-
-### Unrelated histories
-
-This means the checked-out working branch and the configured base branch do not share a merge base.
-
-This can happen if:
-
-- the branch was created from the wrong repository history
-- the repo was rewritten
-- stale branch metadata points at an unrelated branch
-
-Plain `git merge origin/<base>` is not valid in this state.
-
-Current behavior for system-managed task branches without an active PR:
-
-1. Create a backup branch from the old unrelated tip.
-2. Push that backup branch to origin.
-3. Recreate the working branch from `origin/<base_branch>`.
-4. Rewrite the remote working branch using explicit `--force-with-lease=<old_sha>`.
-5. Continue the run on the repaired working branch.
-
-Backup branch naming:
+Agent Runtime is the only executor. A missing/disabled runtime causes the run
+start to fail; Helpin does not start a local Temporal agent workflow.
 
-- `helpin-backup/unrelated-history/<timestamp>-<sha>`
+## Repository preparation
 
-Important property:
+Repository preparation is selected through execution configuration, not agent
+ownership. For managed Code Builder and Review Agent presets, Helpin injects
+repository workspace mode. Custom agents must explicitly carry compatible
+workspace configuration and be allowed to target the repository-backed object.
 
-- the old divergent history is preserved remotely on the backup branch
-- the canonical task branch is repaired to descend from the configured base branch
+Agent Runtime asks Helpin's workspace provider for an authorized repository
+spec. The spec identifies the repository, base branch, working branch, and
+credentials without moving workspace tenancy or repository authorization into
+Agent Runtime.
 
-Fail-closed exception:
+The runtime then creates an isolated `WorkspaceLease`, checks out the effective
+working branch, stages runtime skills, and runs all filesystem, command, patch,
+and git tools inside that lease.
 
-- if the delivery target already has an active PR on that working branch, Forge does not auto-rewrite it
-- in that case the run fails with an explicit error
+## Tools and policy
 
-ASCII unrelated-history recovery path:
+Effective capability is the intersection of:
 
-```text
-              +--------------------------------------+
-              | working branch has no merge-base     |
-              | with configured base branch          |
-              +-------------------+------------------+
-                                  |
-                    +-------------+-------------+
-                    |                           |
-                 active PR                    no active PR
-                    |                           |
-                    v                           v
-      +-----------------------------+   +----------------------------------+
-      | fail closed                 |   | create backup branch from old tip|
-      | do not rewrite branch       |   | push backup branch               |
-      +-----------------------------+   | recreate working from base       |
-                                        | push with explicit lease         |
-                                        | continue run                     |
-                                        +----------------------------------+
-```
+1. tools registered for the Helpin app;
+2. tools allowed by the agent definition;
+3. any narrower run-level tool list;
+4. skill runtime/tool requirements;
+5. command guards, approval policy, and workspace access mode.
 
-## Codex runtime behavior
+Run-level configuration can narrow an agent's tools but cannot expand them.
+Helpin product tools use the run-scoped MCP bridge; repository-native tools may
+be supplied directly by the selected adapter/runtime registry.
 
-Forge / Code Builder now runs on `codex`.
+## Delivery ownership
 
-### What Codex is responsible for
+Repository mutation and product delivery are related but separate:
 
-Codex is responsible for:
+- Agent Runtime owns files changed during execution, runtime git operations,
+  and the repository result written into the runtime output summary.
+- Helpin owns delivery targets, pull-request creation/association, task git
+  links, product activity, notifications, and idempotent terminal finalizers.
 
-- inspecting the repository
-- editing files
-- resolving merge conflicts when branch sync leaves the repo conflicted
-- running validation
-- producing a local commit
+This split keeps Agent Runtime host-neutral while allowing Helpin to enforce
+its repository and project-management semantics.
 
-### What Codex is not responsible for
+## Pauses and recovery
 
-Codex is not supposed to:
+Interactive coding runs may pause for user input, approval, review checkpoints,
+MCP authentication, or Codex authentication. Agent Runtime persists the session
+and interaction; Helpin mirrors it and forwards the eventual response/resume.
 
-- push the branch
-- open a PR
-- manage backend delivery state
+Terminal runtime events are idempotently projected into Helpin. Reconciliation
+is a backstop for missed live events. Delivery finalizers must remain safe to
+retry because event delivery is at least once.
 
-That is stated in two places:
+Cancellation and failure also flow through Agent Runtime. Helpin projects the
+terminal state, records the error, releases product-level active-agent state,
+and applies only the finalizers valid for that outcome.
 
-- preset / system prompt
-- runtime-specific Codex instructions
+## Architectural rules
 
-### Hard guardrails
-
-Prompt instructions are not enough, so Codex sessions also install command guards.
-
-Current guards:
-
-- block `git push`
-- block `gh pr ...`
-
-This is done by prepending wrapper scripts to `PATH` inside the Codex session.
-
-### Local commit only
-
-At post-run persistence time, Codex:
-
-- stages changes
-- validates the staged result
-- creates a local commit
-- records `LocalGitCommit` metadata on the execution context
-
-It does not push from inside the runtime.
-
-### Merge-resolution sanity checks
-
-If branch sync entered the `conflicted` state and Codex is expected to resolve it, finalization validates that the merge is truly resolved before creating the local commit.
-
-Current checks:
-
-- no unmerged paths remain
-- no staged conflict markers remain
-
-If those checks fail:
-
-- no commit is created
-- no backend push happens
-- the run fails closed
-
-## Backend-owned Codex delivery
-
-After successful Codex execution:
-
-1. Temporal reads `execCtx.LocalGitCommit`.
-2. Temporal pushes the branch from backend orchestration.
-3. Temporal records branch / commit metadata.
-4. Temporal saves the `git_delivery_result` artifact.
-
-This makes final remote delivery deterministic and retryable at the orchestration layer.
-
-Why this split exists:
-
-- model writes code
-- backend owns repository state transitions
-
-That boundary is intentional.
-
-ASCII delivery ownership:
-
-```text
-           CODEX FLOW                              OPENCODE FLOW
-
-   edit files in runtime                    edit files in runtime
-   -> stage changes                         -> stage changes
-   -> validate merge state                  -> commit
-   -> local commit                          -> push from runtime
-   -> return LocalGitCommit                 -> record pushed branch
-   -> backend push
-   -> backend record delivery
-```
-
-## OpenCode runtime behavior
-
-`opencode` still exists and behaves differently today.
-
-OpenCode currently:
-
-- edits files
-- stages changes
-- creates a commit
-- pushes the branch from inside the runtime
-
-That means:
-
-- Codex delivery is backend-owned after local commit
-- OpenCode delivery is still runtime-owned
-
-This asymmetry is acceptable for legacy support, but Forge / Code Builder system agents are now migrated toward Codex so that the modern default path uses backend-owned delivery.
-
-## Forge preset and migration behavior
-
-The Code Builder / Forge preset now assumes:
-
-- runtime kind `codex`
-- local commit only
-- backend-managed delivery
-
-Existing built-in Forge agents are migrated to:
-
-- preset version `code_builder_local_commit_delivery`
-- runtime kind `codex`
-
-Service-side normalization also realigns legacy system Forge agents to the preset runtime, so stale `opencode` runtime values do not survive on built-in Code Builder agents.
-
-## Why branch sync is backend-owned
-
-The branch sync step is intentionally not left to the model because it is:
-
-- environment preparation
-- deterministic repo orchestration
-- safety-sensitive
-
-The model should operate on the repo state it is given, not be asked to infer and repair repo freshness from prompt text alone.
-
-## Failure modes and intended responses
-
-### Clean merge failure due to real conflicts
-
-Expected behavior:
-
-- Codex receives conflicted repo
-- Codex resolves conflicts
-- finalization verifies the result before committing
-
-### Unrelated history with no active PR
-
-Expected behavior:
-
-- backup old tip
-- recreate task branch from base
-- continue run
-
-### Unrelated history with active PR
-
-Expected behavior:
-
-- fail closed
-- do not rewrite branch under an open PR
-
-### Remote rewrite lease fails
-
-Expected behavior:
-
-- fail closed
-- this means the remote branch changed after the old SHA was observed
-- a later run can re-evaluate with fresh branch state
-
-### Codex tries to push directly
-
-Expected behavior:
-
-- command guard blocks it
-- backend remains the only delivery path for Codex runs
-
-## Practical mental model
-
-The easiest way to reason about the current system is:
-
-- Temporal owns repo preparation and repo delivery
-- Codex owns code changes and merge resolution
-- Forge is a Codex-backed system agent with backend-owned delivery
-- OpenCode is still supported but is a legacy-style runtime with in-runtime push behavior
-
-## Future cleanup opportunities
-
-Likely follow-up improvements:
-
-- surface unrelated-history backup branch names in run facts and UI
-- surface branch-sync status more explicitly in run detail views
-- converge OpenCode onto the same local-commit / backend-push model if legacy support remains necessary
-- add operator-facing remediation guidance when active PR prevents unrelated-history repair
+- Do not add a Helpin-local coding executor.
+- Do not branch execution on `is_system`.
+- Do not encode Forge or Lens as runtime subclasses.
+- Add reusable behavior as prompts, skills, tools, targets, or execution policy.
+- Keep workspace tenancy, user authorization, and product delivery in Helpin.
+- Keep runtime adapters, workspaces, tool execution, and durable run mechanics
+  in Agent Runtime.

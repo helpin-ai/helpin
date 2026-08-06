@@ -233,7 +233,7 @@ func TestSupportCoverageClusterRebuildSuggestsSharedAllWeakNoSearchResultObjects
 	}
 }
 
-func TestSupportCoverageClusterRebuildAutoMergesSemanticClusterWithoutRelatedArticle(t *testing.T) {
+func TestSupportCoverageClusterRebuildAutoMergesCompatibleSemanticClusterWithoutRelatedArticle(t *testing.T) {
 	_, _, db := setupCoverageTestEnv(t)
 	repo := repository.NewSupportCoverageRepository(db)
 	svc := NewSupportCoverageClusterRebuildService(repo, &fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}, {0.99, 0.01, 0}}}, "")
@@ -244,8 +244,8 @@ func TestSupportCoverageClusterRebuildAutoMergesSemanticClusterWithoutRelatedArt
 		ID:            "gap-cancel-action",
 		WorkspaceID:   "ws-1",
 		DedupeKey:     "cancel-action",
-		GapKind:       "action",
-		GapCategory:   model.SupportCoverageGapCategoryAction,
+		GapKind:       "content",
+		GapCategory:   model.SupportCoverageGapCategoryKnowledge,
 		Title:         "Cancel subscription action is unavailable",
 		Status:        model.SupportCoverageGapStatusOpen,
 		Confidence:    0.9,
@@ -313,7 +313,7 @@ func TestSupportCoverageClusterRebuildAutoMergesSemanticClusterWithoutRelatedArt
 	}
 }
 
-func TestSupportCoverageClusterRebuildUsesTransitiveClusters(t *testing.T) {
+func TestSupportCoverageClusterRebuildUsesOnlyDirectPairsForTransitiveCluster(t *testing.T) {
 	_, _, db := setupCoverageTestEnv(t)
 	repo := repository.NewSupportCoverageRepository(db)
 	svc := NewSupportCoverageClusterRebuildService(repo, &fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}, {0.8, 0.6, 0}, {0.28, 0.96, 0}}}, "")
@@ -328,7 +328,6 @@ func TestSupportCoverageClusterRebuildUsesTransitiveClusters(t *testing.T) {
 	for _, gap := range gaps {
 		seedCoverageGapForRebuild(t, db, gap)
 	}
-
 	result, err := svc.RebuildWorkspace(ctx, "ws-1")
 	if err != nil {
 		t.Fatalf("RebuildWorkspace: %v", err)
@@ -338,6 +337,59 @@ func TestSupportCoverageClusterRebuildUsesTransitiveClusters(t *testing.T) {
 	}
 	if result.AutoMerged != 0 {
 		t.Fatalf("AutoMerged=%d, want 0 for transitive title-only cluster", result.AutoMerged)
+	}
+	if result.SuggestionsCreated != 2 {
+		t.Fatalf("SuggestionsCreated=%d, want 2 direct-edge suggestions", result.SuggestionsCreated)
+	}
+	var suggestions []model.SupportCoverageGapMergeSuggestion
+	if err := db.Where("status = ?", model.SupportCoverageMergeSuggestionStatusPending).Order("pair_key ASC").Find(&suggestions).Error; err != nil {
+		t.Fatalf("list suggestions: %v", err)
+	}
+	wantPairs := map[string]bool{
+		repository.CoverageGapPairKey("gap-reset-password", "gap-password-login"): true,
+		repository.CoverageGapPairKey("gap-password-login", "gap-login-access"):   true,
+	}
+	for _, suggestion := range suggestions {
+		if !wantPairs[suggestion.PairKey] {
+			t.Fatalf("unexpected transitive suggestion pair %q", suggestion.PairKey)
+		}
+		if suggestion.SimilarityScore < 0.79 || suggestion.SimilarityScore > 0.81 {
+			t.Fatalf("pair %q score=%f, want direct score near 0.80", suggestion.PairKey, suggestion.SimilarityScore)
+		}
+		var metadata map[string]any
+		if err := json.Unmarshal(suggestion.Metadata, &metadata); err != nil {
+			t.Fatalf("unmarshal suggestion metadata: %v", err)
+		}
+		if metadata["similarity_basis"] != "direct_pair" {
+			t.Fatalf("pair %q metadata=%v, want direct_pair basis", suggestion.PairKey, metadata)
+		}
+		delete(wantPairs, suggestion.PairKey)
+	}
+	if len(wantPairs) != 0 {
+		t.Fatalf("missing direct suggestion pairs: %v", wantPairs)
+	}
+}
+
+func TestSupportCoverageClusterRebuildDoesNotSuggestIncompatibleGapKinds(t *testing.T) {
+	_, _, db := setupCoverageTestEnv(t)
+	repo := repository.NewSupportCoverageRepository(db)
+	svc := NewSupportCoverageClusterRebuildService(repo, &fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}, {1, 0, 0}}}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	for _, gap := range []model.SupportCoverageGap{
+		{ID: "gap-action", WorkspaceID: "ws-1", DedupeKey: "action", GapKind: "action", GapCategory: model.SupportCoverageGapCategoryAction, Title: "Cancel subscription action unavailable", Status: model.SupportCoverageGapStatusOpen, Confidence: 0.9, EvidenceCount: 2, FirstSeenAt: now.Add(-2 * time.Hour), LastSeenAt: now.Add(-2 * time.Hour)},
+		{ID: "gap-content", WorkspaceID: "ws-1", DedupeKey: "content", GapKind: "content", GapCategory: model.SupportCoverageGapCategoryKnowledge, Title: "Cancellation documentation missing", Status: model.SupportCoverageGapStatusOpen, Confidence: 0.9, EvidenceCount: 2, FirstSeenAt: now.Add(-time.Hour), LastSeenAt: now.Add(-time.Hour)},
+	} {
+		seedCoverageGapForRebuild(t, db, gap)
+	}
+
+	result, err := svc.RebuildWorkspace(ctx, "ws-1")
+	if err != nil {
+		t.Fatalf("RebuildWorkspace: %v", err)
+	}
+	if result.ClustersFound != 0 || result.AutoMerged != 0 || result.SuggestionsCreated != 0 {
+		t.Fatalf("result=%+v, want incompatible gaps kept separate", result)
 	}
 }
 

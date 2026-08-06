@@ -70,7 +70,7 @@ var runtimeToolRiskLevels = map[string]string{
 	"create_document": RiskLevelRoutine, "update_space": RiskLevelRoutine,
 	"update_collection": RiskLevelRoutine, "move_document": RiskLevelRoutine,
 	"write_document_content": RiskLevelRoutine, "update_document_block": RiskLevelRoutine,
-	"insert_document_image":   RiskLevelRoutine,
+	"insert_document_block": RiskLevelRoutine, "insert_document_image": RiskLevelRoutine,
 	"link_document_to_object": RiskLevelRoutine, "ensure_epic_spec_doc": RiskLevelRoutine,
 	"ensure_task_plan_doc": RiskLevelRoutine, "publish_document_change_proposal": RiskLevelRoutine,
 	"publish_ai_section_candidate": RiskLevelRoutine,
@@ -85,8 +85,9 @@ var runtimeToolRiskLevels = map[string]string{
 	"add_deal_note": RiskLevelRoutine, "update_deal_stage": RiskLevelRoutine,
 	"ensure_crm_contact_company": RiskLevelRoutine, "enrich_crm_contact": RiskLevelRoutine,
 	"enrich_crm_company": RiskLevelRoutine, "draft_support_reply": RiskLevelRoutine,
-	"update_conversation_status": RiskLevelRoutine,
-	"send_support_reply":         RiskLevelSensitive, "escalate_to_human": RiskLevelSensitive,
+	"update_conversation_status":    RiskLevelRoutine,
+	"complete_support_coverage_gap": RiskLevelRoutine,
+	"send_support_reply":            RiskLevelSensitive, "escalate_to_human": RiskLevelSensitive,
 	"run_epic_delivery_pipeline": RiskLevelDestructive,
 }
 
@@ -850,7 +851,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.update_document_block",
 		Alias:       "update_document_block",
 		Category:    "Docs",
-		Description: "Update one addressable block in a Helpin Docs document using its current revision.",
+		Description: "Update one addressable block in a Helpin Docs document using its current revision. The response includes the block's new revision; other blocks' revisions are unaffected, so sequential updates can reuse revisions from one get_document_blocks call.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -864,7 +865,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 				"revision": map[string]any{
 					"type":        "integer",
-					"description": "The current block revision from read_document",
+					"description": "The current block revision from get_document_blocks",
 				},
 				"content": map[string]any{
 					"type":        "object",
@@ -872,6 +873,36 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 			},
 			"required": []string{"document_id", "block_id", "revision", "content"},
+		},
+	},
+	{
+		CommandName: "docs.insert_document_block",
+		Alias:       "insert_document_block",
+		Category:    "Docs",
+		Description: "Insert new content between existing blocks of a Helpin Docs document without rewriting them. Each top-level markdown block in content becomes one document block.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"document_id": map[string]any{
+					"type":        "string",
+					"description": "The document that receives the new blocks",
+				},
+				"content": map[string]any{
+					"type":        "string",
+					"description": "Markdown for the new content. May contain multiple blocks (for example a heading followed by a paragraph).",
+				},
+				"after_block_id": map[string]any{
+					"type":        "string",
+					"description": "Optional block ID from get_document_blocks after which to insert; omit to use position",
+				},
+				"position": map[string]any{
+					"type":        "string",
+					"enum":        []string{"start", "end"},
+					"description": "Where to insert when after_block_id is omitted. Defaults to end.",
+				},
+			},
+			"required":             []string{"document_id", "content"},
+			"additionalProperties": false,
 		},
 	},
 	{
