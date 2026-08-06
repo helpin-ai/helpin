@@ -243,15 +243,19 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 			}
 			continue
 		}
-		if preset.Key == model.AgentPresetTaskPlanner {
+		if preset.Key == model.AgentPresetTaskPlanner || preset.Key == model.AgentPresetDocumentationAgent {
 			if preset.RuntimeKind != "native_sdk" {
 				t.Errorf("preset %q runtime = %q, want native_sdk", preset.Key, preset.RuntimeKind)
 			}
 			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
 				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
 			}
-			if preset.Model == nil || *preset.Model != defaultScribeAgentModel {
-				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultScribeAgentModel)
+			wantModel := defaultScribeAgentModel
+			if preset.Key == model.AgentPresetDocumentationAgent {
+				wantModel = defaultQuillAgentModel
+			}
+			if preset.Model == nil || *preset.Model != wantModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, wantModel)
 			}
 			continue
 		}
@@ -301,8 +305,14 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 		if preset.VersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetDocumentationAgent) {
 			t.Fatalf("expected documentation default version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetDocumentationAgent), preset.VersionKey)
 		}
-		if preset.RuntimeKind != "codex" {
-			t.Fatalf("expected documentation runtime codex, got %q", preset.RuntimeKind)
+		if preset.RuntimeKind != "native_sdk" {
+			t.Fatalf("expected documentation runtime native_sdk, got %q", preset.RuntimeKind)
+		}
+		if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
+			t.Fatalf("expected documentation provider openrouter, got %+v", preset.Provider)
+		}
+		if preset.Model == nil || *preset.Model != defaultQuillAgentModel {
+			t.Fatalf("expected documentation model %s, got %+v", defaultQuillAgentModel, preset.Model)
 		}
 		if preset.DefaultInvocationMode != model.InvocationModeInteractive {
 			t.Fatalf("expected documentation default mode interactive, got %q", preset.DefaultInvocationMode)

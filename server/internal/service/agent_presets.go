@@ -19,6 +19,8 @@ const (
 	// defaultScribeAgentModel keeps interactive task planning on the product's
 	// preferred fast OpenRouter model.
 	defaultScribeAgentModel = "deepseek/deepseek-v4-flash"
+	// Quill shares Scribe's fast OpenRouter model by default.
+	defaultQuillAgentModel = defaultScribeAgentModel
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
 	defaultAskAgentModel = "deepseek/deepseek-v4-flash-0731"
@@ -393,6 +395,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	openRouterPresetProvider := model.AgentModelProviderOpenRouter
 	atlasDefaultModel := defaultAtlasAgentModel
 	scribeDefaultModel := defaultScribeAgentModel
+	quillDefaultModel := defaultQuillAgentModel
 	askAgentDefaultModel := defaultAskAgentModel
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		agentcontract.ToolUpdatePlan,
@@ -520,9 +523,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Documentation Agent",
 			Description:           "Keeps internal docs, public help docs, and API docs accurate, organized, and current.",
 			DefaultRole:           "Documentation Agent",
-			RuntimeKind:           "codex",
-			Provider:              &openAIPresetProvider,
-			Model:                 &openAIPresetModel,
+			RuntimeKind:           "native_sdk",
+			Provider:              &openRouterPresetProvider,
+			Model:                 &quillDefaultModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(documentationProfile.AllowedTools),
@@ -530,7 +533,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    slices.Clone(documentationProfile.AllowedTargetTypes),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          documentationPrompt,
 		},
 		{
