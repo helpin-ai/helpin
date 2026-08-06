@@ -1,5 +1,5 @@
 import type { ComponentPropsWithoutRef, MouseEvent } from 'react';
-import { Streamdown, defaultRehypePlugins, defaultRemarkPlugins, type Components } from 'streamdown';
+import { Streamdown, defaultRehypePlugins, defaultRemarkPlugins, type Components, type ExtraProps } from 'streamdown';
 import { toast } from 'sonner';
 
 import { automationService } from '@/lib/services/automationService';
@@ -11,7 +11,8 @@ import {
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
-function MarkdownLink({ children, href }: ComponentPropsWithoutRef<'a'>) {
+function MarkdownLink(props: (ComponentPropsWithoutRef<'a'> | Record<string, unknown>) & ExtraProps) {
+  const { children, href } = props as ComponentPropsWithoutRef<'a'>;
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const reference = parseHelpinReferenceMarker(href);
   if (!reference) {
