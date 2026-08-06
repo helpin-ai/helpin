@@ -291,19 +291,16 @@ func TestAgentRuntimeProjectionMapsLifecycleByHostRunID(t *testing.T) {
 	}
 }
 
-func TestAgentRuntimeProjectionRejectsProseOnlyQuillCoverageCompletion(t *testing.T) {
+func TestAgentRuntimeProjectionRejectsProseOnlyCustomAgentCoverageCompletion(t *testing.T) {
 	run := &model.AgentRun{
-		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-quill",
+		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-custom",
 		TargetType: "support_coverage_gap", TargetID: "gap-1",
 		Status: model.AgentRunStatusRunning,
 	}
 	repo := &fakeAgentRuntimeProjectionRunRepo{byID: map[string]*model.AgentRun{run.ID: run}}
 	svc := &AgentRuntimeProjectionService{
 		runRepo: repo,
-		agentRepo: &fakeAgentRuntimeProjectionAgentRepo{agent: &model.Agent{
-			ID: "agent-quill", PresetKey: model.AgentPresetDocumentationAgent,
-		}},
-		now: time.Now,
+		now:     time.Now,
 	}
 
 	err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
@@ -320,7 +317,7 @@ func TestAgentRuntimeProjectionRejectsProseOnlyQuillCoverageCompletion(t *testin
 	}
 }
 
-func TestAgentRuntimeProjectionAcceptsDurableQuillCoverageCompletion(t *testing.T) {
+func TestAgentRuntimeProjectionAcceptsDurableCustomAgentCoverageCompletion(t *testing.T) {
 	outcome := supportCoverageGapOutcomeSummary{
 		Outcome: SupportCoverageAgentOutcomeReviewReady, Action: SupportCoverageAgentActionProposalSubmitted,
 		SourceStatus: SupportCoverageAgentSourceVerified, DocumentID: "doc-1", ProposalID: "proposal-1",
@@ -333,17 +330,14 @@ func TestAgentRuntimeProjectionAcceptsDurableQuillCoverageCompletion(t *testing.
 		t.Fatal(err)
 	}
 	run := &model.AgentRun{
-		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-quill",
+		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-custom",
 		TargetType: "support_coverage_gap", TargetID: "gap-1",
 		Status: model.AgentRunStatusRunning, OutputSummary: summary,
 	}
 	repo := &fakeAgentRuntimeProjectionRunRepo{byID: map[string]*model.AgentRun{run.ID: run}}
 	svc := &AgentRuntimeProjectionService{
 		runRepo: repo,
-		agentRepo: &fakeAgentRuntimeProjectionAgentRepo{agent: &model.Agent{
-			ID: "agent-quill", PresetKey: model.AgentPresetDocumentationAgent,
-		}},
-		now: time.Now,
+		now:     time.Now,
 	}
 
 	err = svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
@@ -366,7 +360,7 @@ func TestHasDurableSupportCoverageGapOutcomeAcceptsLegacyProposal(t *testing.T) 
 
 func TestAgentRuntimeProjectionRecoversReviewReadyCoverageDocument(t *testing.T) {
 	run := &model.AgentRun{
-		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-quill",
+		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-custom",
 		TargetType: "support_coverage_gap", TargetID: "gap-1",
 		Status: model.AgentRunStatusRunning,
 	}
@@ -378,10 +372,7 @@ func TestAgentRuntimeProjectionRecoversReviewReadyCoverageDocument(t *testing.T)
 		}},
 	}}
 	svc := &AgentRuntimeProjectionService{
-		runRepo: repo,
-		agentRepo: &fakeAgentRuntimeProjectionAgentRepo{agent: &model.Agent{
-			ID: "agent-quill", PresetKey: model.AgentPresetDocumentationAgent,
-		}},
+		runRepo:            repo,
 		agentRuntimeClient: runtimeClient,
 		now:                time.Now,
 	}

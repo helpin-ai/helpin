@@ -451,8 +451,8 @@ func runtimeStartRunRequest(
 	if agent != nil && strings.TrimSpace(agent.PresetKey) != "" {
 		metadata["preset_key"] = strings.TrimSpace(agent.PresetKey)
 	}
-	if run.TargetType == "support_coverage_gap" && agent != nil && normalizePresetKey(agent.PresetKey) == model.AgentPresetDocumentationAgent {
-		metadata["completion_required_tools"] = []string{agentcontract.ToolCompleteSupportCoverageGap}
+	if requiredTools := targetCompletionRequiredTools(run.TargetType); len(requiredTools) > 0 {
+		metadata["completion_required_tools"] = requiredTools
 	}
 	if strings.TrimSpace(input.Stage) != "" {
 		metadata["planning_stage"] = strings.TrimSpace(input.Stage)
@@ -3773,20 +3773,48 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 	return s.startTargetRun(ctx, workspaceID, targetType, targetID, req, strPtr(actorID), manualRunTriggerContext(), nil, nil)
 }
 
-func supportCoverageGapRunAllowedTools(agent *model.Agent, requested []string) []string {
-	tools := append([]string(nil), requested...)
-	if agent == nil || normalizePresetKey(agent.PresetKey) != model.AgentPresetDocumentationAgent {
-		return tools
-	}
-	for _, toolName := range agentcontract.NormalizeToolNames(tools) {
-		if toolName == agentcontract.ToolCompleteSupportCoverageGap {
-			return tools
-		}
-	}
-	if len(tools) == 0 {
+func targetCompletionRequiredTools(targetType string) []string {
+	switch strings.TrimSpace(targetType) {
+	case "support_coverage_gap":
+		return []string{agentcontract.ToolCompleteSupportCoverageGap}
+	default:
 		return nil
 	}
-	return append(tools, agentcontract.ToolCompleteSupportCoverageGap)
+}
+
+// runAllowedToolsForTargetContract applies target-owned completion
+// requirements without expanding the selected agent's saved authorization.
+// An empty requested set means the run inherits the full agent tool set.
+func runAllowedToolsForTargetContract(agent *model.Agent, targetType string, requested []string) ([]string, error) {
+	required := targetCompletionRequiredTools(targetType)
+	tools := agentcontract.NormalizeToolNames(requested)
+	if len(required) == 0 {
+		return tools, nil
+	}
+	if agent == nil {
+		return nil, fmt.Errorf("agent is required for target %q", strings.TrimSpace(targetType))
+	}
+
+	agentAllowed := make(map[string]struct{})
+	for _, toolName := range agentcontract.NormalizeToolNames(parseJSONStringSlice(agent.AllowedTools)) {
+		agentAllowed[toolName] = struct{}{}
+	}
+	requestedSet := make(map[string]struct{}, len(tools))
+	for _, toolName := range tools {
+		requestedSet[toolName] = struct{}{}
+	}
+	for _, toolName := range required {
+		if _, ok := agentAllowed[toolName]; !ok {
+			return nil, fmt.Errorf("agent %q must allow tool %q to run target %q", strings.TrimSpace(agent.Name), toolName, strings.TrimSpace(targetType))
+		}
+		if len(tools) > 0 {
+			if _, ok := requestedSet[toolName]; !ok {
+				tools = append(tools, toolName)
+				requestedSet[toolName] = struct{}{}
+			}
+		}
+	}
+	return tools, nil
 }
 
 func supportCoverageGapRunContext(detail *model.SupportCoverageGapDetail, extra *string) string {
@@ -4352,7 +4380,10 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, err
 		}
-		coverageAllowedTools := supportCoverageGapRunAllowedTools(agent, req.AllowedTools)
+		coverageAllowedTools, err := runAllowedToolsForTargetContract(agent, "support_coverage_gap", req.AllowedTools)
+		if err != nil {
+			return nil, err
+		}
 		if err := validateRunAllowedTools(coverageAllowedTools, agent); err != nil {
 			return nil, err
 		}

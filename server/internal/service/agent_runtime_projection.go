@@ -32,7 +32,7 @@ const (
 	agentRuntimeEventCodexAuthStateChanged        = "codex_auth.state_changed"
 	agentRuntimeExecutionStageAuthCompleted       = "auth_completed"
 	agentRuntimeExecutionStageAwaitingAuth        = "awaiting_auth"
-	agentRuntimeCoverageCompletionError           = "Quill finished without a durable support coverage disposition; create or update review-ready documentation, record a routed or blocked finding, then call complete_support_coverage_gap"
+	agentRuntimeCoverageCompletionError           = "the agent finished without a durable support coverage disposition; create or update review-ready documentation, record a routed or blocked finding, then call complete_support_coverage_gap"
 )
 
 var errAgentRuntimeProjectionRunNotFound = errors.New("agent runtime projection run not found")
@@ -555,7 +555,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			run.CompletedAt = &now
 			changed = true
 		}
-		if s.requiresQuillCoverageCompletion(ctx, run) {
+		if requiresSupportCoverageCompletion(run) {
 			s.mergeRuntimeOutputSummaryForFinalizers(ctx, run)
 			if !hasDurableSupportCoverageGapOutcome(run.OutputSummary) && !s.recoverSupportCoverageGapOutcomeFromToolCalls(ctx, run) {
 				message := agentRuntimeCoverageCompletionError
@@ -782,25 +782,12 @@ func (s *AgentRuntimeProjectionService) mergeRuntimeOutputSummaryForFinalizers(c
 	return true
 }
 
-// requiresQuillCoverageCompletion scopes the host-side terminal safeguard to
-// Documentation Agent coverage-gap runs. Agent Runtime owns the primary
+// requiresSupportCoverageCompletion scopes the host-side terminal safeguard
+// to the target-owned coverage contract. Agent Runtime owns the primary
 // required-tool retry; this prevents an older or drifting runtime from
 // projecting a prose-only turn as successful in Helpin.
-func (s *AgentRuntimeProjectionService) requiresQuillCoverageCompletion(ctx context.Context, run *model.AgentRun) bool {
-	if s == nil || s.agentRepo == nil || run == nil || strings.TrimSpace(run.TargetType) != "support_coverage_gap" {
-		return false
-	}
-	agent, err := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID)
-	if err != nil {
-		slog.ErrorContext(ctx, "support coverage completion agent lookup failed",
-			"error", err,
-			"workspace_id", run.WorkspaceID,
-			"run_id", run.ID,
-			"agent_id", run.AgentID,
-		)
-		return false
-	}
-	return agent != nil && normalizePresetKey(agent.PresetKey) == model.AgentPresetDocumentationAgent
+func requiresSupportCoverageCompletion(run *model.AgentRun) bool {
+	return run != nil && strings.TrimSpace(run.TargetType) == "support_coverage_gap"
 }
 
 func hasDurableSupportCoverageGapOutcome(summary json.RawMessage) bool {
@@ -847,7 +834,7 @@ func hasDurableSupportCoverageGapOutcome(summary json.RawMessage) bool {
 	}
 }
 
-// recoverSupportCoverageGapOutcomeFromToolCalls prevents a completed Quill
+// recoverSupportCoverageGapOutcomeFromToolCalls prevents a completed coverage
 // run from being reported as failed when it already persisted reviewable Docs
 // work but omitted the terminal disposition call. The recovery is deliberately
 // conservative: it only trusts successful durable Docs mutation/proposal tool
@@ -905,7 +892,7 @@ func (s *AgentRuntimeProjectionService) recoverSupportCoverageGapOutcomeFromTool
 			Outcome: SupportCoverageAgentOutcomeReviewReady, Action: action,
 			DocumentID: documentID, ProposalID: proposalID,
 			DocumentationEvidence: "Recovered from a successful durable Docs tool call recorded for this run.",
-			Summary:               "Quill persisted documentation work but omitted the final disposition; recovered as review-ready for human verification.",
+			Summary:               "The agent persisted documentation work but omitted the final disposition; recovered as review-ready for human verification.",
 			Recovered:             true,
 			RecordedAt:            time.Now().UTC().Format(time.RFC3339),
 		}

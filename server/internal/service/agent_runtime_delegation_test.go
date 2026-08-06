@@ -68,12 +68,12 @@ func TestRuntimeStartRunRequestPropagatesPlannerSelectors(t *testing.T) {
 	}
 }
 
-func TestRuntimeStartRunRequestScopesCoverageCompletionToQuillGapRuns(t *testing.T) {
+func TestRuntimeStartRunRequestScopesCompletionToCoverageTarget(t *testing.T) {
 	run := &model.AgentRun{
-		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-quill",
+		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-custom",
 		TargetType: "support_coverage_gap", TargetID: "gap-1",
 	}
-	agent := &model.Agent{ID: "agent-quill", PresetKey: model.AgentPresetDocumentationAgent}
+	agent := &model.Agent{ID: "agent-custom"}
 	req, err := runtimeStartRunRequest(run, agent, runtimeAgentFromHelpinAgent(agent, "helpin"))
 	if err != nil {
 		t.Fatalf("runtimeStartRunRequest returned error: %v", err)
@@ -91,6 +91,43 @@ func TestRuntimeStartRunRequestScopesCoverageCompletionToQuillGapRuns(t *testing
 	}
 	if _, exists := req.Metadata["completion_required_tools"]; exists {
 		t.Fatalf("document run inherited coverage completion tools: %#v", req.Metadata)
+	}
+}
+
+func TestRunAllowedToolsForCoverageTargetRequiresAgentAuthorization(t *testing.T) {
+	agent := &model.Agent{Name: "Custom docs agent", AllowedTools: json.RawMessage(`["read_file"]`)}
+	_, err := runAllowedToolsForTargetContract(agent, "support_coverage_gap", nil)
+	if err == nil || !strings.Contains(err.Error(), agentcontract.ToolCompleteSupportCoverageGap) {
+		t.Fatalf("expected missing completion tool error, got %v", err)
+	}
+}
+
+func TestRunAllowedToolsForCoverageTargetPreservesRequiredToolWhenNarrowed(t *testing.T) {
+	agent := &model.Agent{
+		Name:         "Custom docs agent",
+		AllowedTools: json.RawMessage(`["read_file","complete_support_coverage_gap"]`),
+	}
+	tools, err := runAllowedToolsForTargetContract(agent, "support_coverage_gap", []string{"read_file"})
+	if err != nil {
+		t.Fatalf("runAllowedToolsForTargetContract returned error: %v", err)
+	}
+	want := []string{"read_file", agentcontract.ToolCompleteSupportCoverageGap}
+	if !slices.Equal(tools, want) {
+		t.Fatalf("coverage run tools = %#v, want %#v", tools, want)
+	}
+}
+
+func TestRunAllowedToolsForCoverageTargetInheritsAuthorizedAgentTools(t *testing.T) {
+	agent := &model.Agent{
+		Name:         "Custom docs agent",
+		AllowedTools: json.RawMessage(`["complete_support_coverage_gap"]`),
+	}
+	tools, err := runAllowedToolsForTargetContract(agent, "support_coverage_gap", nil)
+	if err != nil {
+		t.Fatalf("runAllowedToolsForTargetContract returned error: %v", err)
+	}
+	if tools != nil {
+		t.Fatalf("inherited run tools = %#v, want nil", tools)
 	}
 }
 
