@@ -1529,6 +1529,12 @@ export function DocsEditor({
 
   useEffect(() => {
     onEditorReady?.(editor)
+    return () => {
+      // The document review view unmounts this component. Do not leave its
+      // destroyed TipTap instance in the parent, where sibling controls can
+      // try to read editor.view before the next editor has mounted.
+      onEditorReady?.(null)
+    }
   }, [editor, onEditorReady])
 
   useEffect(() => {

@@ -185,7 +185,7 @@ function collectJSONText(node: JSONContent): string {
 }
 
 function getFocusedEditorBlockId(editor: TiptapEditor | null): string | null {
-  if (!editor) return null
+  if (!editor || editor.isDestroyed) return null
   const { from } = editor.state.selection
   const $from = editor.state.doc.resolve(from)
   for (let depth = $from.depth; depth >= 0; depth -= 1) {
