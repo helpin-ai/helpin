@@ -275,7 +275,7 @@ export function renderMarkdown(text: string): string {
     return ph;
   });
 
-  processed = processed.replace(/\\(\r?\n)/g, '$1');
+  processed = processed.replace(/\\+(\r?\n)/g, '$1');
 
   // Phase 2: Split into lines, process blocks (block detection on raw text, escaping at leaf level)
   const lines = processed.split('\n');
