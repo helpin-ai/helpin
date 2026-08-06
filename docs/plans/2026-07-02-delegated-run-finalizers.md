@@ -9,7 +9,9 @@ support runs across all trigger paths (manual, inbox auto, widget auto-run).
 `epic_planner`/`task_planner` were evaluated against the deferred list below and NOT
 flipped; the blocking gaps (context assembly, phase metadata, approved-preview
 application, completion policy, fail-on-invalid-output) are enumerated as
-"Planner parity blockers" in `docs/AGENT_RUNTIME_LOCAL.md`.
+the migration-era planner parity blockers. Those blockers and the local
+executor were later retired; current execution architecture is documented in
+`docs/AGENTS_AND_AUTOMATION.md`.
 
 ## Problem
 

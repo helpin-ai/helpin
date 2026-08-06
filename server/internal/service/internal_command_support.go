@@ -13,6 +13,7 @@ import (
 )
 
 var supportCommandTargetTypes = []string{"conversation", "support_conversation"}
+var supportReadCommandTargetTypes = []string{"conversation", "support_conversation", "support_coverage_gap"}
 
 // registerSupportCommands registers command-backed variants of the native
 // support tools so delegated runtime runs can use them through the internal
@@ -22,7 +23,7 @@ func (s *InternalCommandService) registerSupportCommands() {
 		Name:                 "support.list_conversation_messages",
 		Module:               "support",
 		Mutating:             false,
-		SupportedTargetTypes: supportCommandTargetTypes,
+		SupportedTargetTypes: supportReadCommandTargetTypes,
 		Tool:                 mustCommandToolMetadata("support.list_conversation_messages"),
 		Execute:              s.executeListConversationMessages,
 	})

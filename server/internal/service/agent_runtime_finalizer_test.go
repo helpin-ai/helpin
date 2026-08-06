@@ -19,6 +19,17 @@ type fakeFinalizerAgentRepo struct {
 	updates  int
 }
 
+type fakeFinalizerSupportCoverage struct {
+	calls []supportCoverageGapOutcomeSummary
+	gapID string
+}
+
+func (f *fakeFinalizerSupportCoverage) RecordAgentOutcome(_ context.Context, _, gapID, outcome, documentID string) error {
+	f.gapID = gapID
+	f.calls = append(f.calls, supportCoverageGapOutcomeSummary{Outcome: outcome, DocumentID: documentID})
+	return nil
+}
+
 func (r *fakeFinalizerAgentRepo) GetByID(_ context.Context, _, _ string) (*model.Agent, error) {
 	r.getCalls++
 	if r.getErr != nil {
@@ -678,8 +689,8 @@ func TestAgentRuntimeFinalizersCommandBarPlanAdvancerFailureIsIsolated(t *testin
 }
 
 func TestMergeRuntimeOutputSummaryPayloadPreservesHostMarkers(t *testing.T) {
-	local := json.RawMessage(`{"agent_runtime_usage_consumed":true,"agent_runtime_finalizer_agent_idle":true}`)
-	runtime := json.RawMessage(`{"draft_reply":{"content":"hello"},"agent_runtime_usage_consumed":false,"status":"success"}`)
+	local := json.RawMessage(`{"agent_runtime_usage_consumed":true,"agent_runtime_finalizer_agent_idle":true,"support_coverage_gap_outcome":{"outcome":"resolved","action":"document_updated","document_id":"doc-host","summary":"host validated"}}`)
+	runtime := json.RawMessage(`{"draft_reply":{"content":"hello"},"agent_runtime_usage_consumed":false,"support_coverage_gap_outcome":{"outcome":"handoff","summary":"runtime supplied"},"status":"success"}`)
 	merged := mergeRuntimeOutputSummaryPayload(local, runtime)
 	var body map[string]any
 	if err := json.Unmarshal(merged, &body); err != nil {
@@ -691,11 +702,42 @@ func TestMergeRuntimeOutputSummaryPayloadPreservesHostMarkers(t *testing.T) {
 	if idle, _ := body["agent_runtime_finalizer_agent_idle"].(bool); !idle {
 		t.Fatalf("host marker lost in merge: %s", string(merged))
 	}
+	coverage, _ := body[supportCoverageGapOutcomeSummaryKey].(map[string]any)
+	if coverage["document_id"] != "doc-host" || coverage["outcome"] != SupportCoverageAgentOutcomeResolved {
+		t.Fatalf("host-validated support coverage outcome lost in merge: %s", string(merged))
+	}
 	if _, ok := body["draft_reply"]; !ok {
 		t.Fatalf("runtime contract key missing after merge: %s", string(merged))
 	}
 	if status, _ := body["status"].(string); status != "success" {
 		t.Fatalf("runtime key not merged: %s", string(merged))
+	}
+}
+
+func TestAgentRuntimeFinalizerReappliesSupportCoverageGapOutcome(t *testing.T) {
+	outcome := supportCoverageGapOutcomeSummary{
+		Outcome: SupportCoverageAgentOutcomeResolved, DocumentID: "doc-1", Summary: "Updated reset guidance.",
+	}
+	payload, err := json.Marshal(map[string]any{supportCoverageGapOutcomeSummaryKey: outcome})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &model.AgentRun{
+		ID: "run-gap", WorkspaceID: "ws-1", TargetType: "support_coverage_gap", TargetID: "gap-1",
+		Status: model.AgentRunStatusCompleted, OutputSummary: payload,
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{byID: map[string]*model.AgentRun{run.ID: run}}
+	coverage := &fakeFinalizerSupportCoverage{}
+	finalizers := (&AgentRunFinalizerService{runRepo: runRepo}).SetSupportCoverageService(coverage)
+
+	if err := finalizers.finalizeSupportCoverageGap(context.Background(), run); err != nil {
+		t.Fatalf("finalizeSupportCoverageGap returned error: %v", err)
+	}
+	if len(coverage.calls) != 1 || coverage.gapID != "gap-1" || coverage.calls[0].DocumentID != "doc-1" {
+		t.Fatalf("unexpected coverage finalizer calls: %#v gap=%q", coverage.calls, coverage.gapID)
+	}
+	if !runOutputSummaryFlag(run.OutputSummary, agentRuntimeFinalizerSupportCoverageGapSummaryKey) {
+		t.Fatalf("coverage finalizer marker missing: %s", string(run.OutputSummary))
 	}
 }
 

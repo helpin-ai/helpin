@@ -200,7 +200,7 @@ interface DocFilters {
   include_archived?: string
 }
 
-export function useDocsDocuments(wsId: string, filters?: DocFilters) {
+export function useDocsDocuments(wsId: string, filters?: DocFilters, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: [...queryKeys.docs.documents(wsId), filters],
     queryFn: async () => {
@@ -215,7 +215,7 @@ export function useDocsDocuments(wsId: string, filters?: DocFilters) {
       console.log('[DEBUG] useDocsDocuments response:', result)
       return unwrap(result)
     },
-    enabled: !!wsId,
+    enabled: !!wsId && (options?.enabled ?? true),
   })
 }
 

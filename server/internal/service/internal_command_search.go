@@ -53,7 +53,7 @@ func (s *InternalCommandService) registerWorkspaceSearchCommands() {
 		Name:                   "workspace.search",
 		Module:                 "workspace",
 		Mutating:               false,
-		SupportedTargetTypes:   []string{"workspace", "task", "epic", "sprint", "objective", "document", "crm_deal", "crm_contact", "support_conversation"},
+		SupportedTargetTypes:   []string{"workspace", "task", "epic", "sprint", "objective", "document", "crm_deal", "crm_contact", "support_conversation", "support_coverage_gap"},
 		RequiredPermissionsAll: []authorization.Permission{authorization.PermSearchRead},
 		Tool:                   mustCommandToolMetadata("workspace.search"),
 		Execute:                s.executeSearchWorkspace,

@@ -117,6 +117,7 @@ import { MissingArticleTranslationDialog } from '@/components/docs/helpcenter/Mi
 import { PublishSlugDialog } from '@/components/docs/helpcenter/PublishSlugDialog'
 import { PendingProposalBadge } from '@/components/docs/proposals/PendingProposalBadge'
 import { ProposalReviewView } from '@/components/docs/proposals/ProposalReviewView'
+import { InlineProposalReview } from '@/components/docs/InlineProposalReview'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { CommentThread } from '@/components/pm/CommentThread'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -159,10 +160,18 @@ function DocCollectionIcon({ name }: { name?: string | null }) {
 
 import type { DocumentOutlineItem } from '@/components/docs/DocsOutlineMinimap'
 
+// Document JSON reaches this page from several sources (saved content, version
+// snapshots, coverage handoff, translation drafts) and agents can author it
+// directly, so a malformed node must degrade the outline rather than take down
+// the whole document view.
+function childNodes(node: JSONContent | undefined): JSONContent[] {
+  return Array.isArray(node?.content) ? node.content : []
+}
+
 function collectDocumentOutline(content: JSONContent | null | undefined): DocumentOutlineItem[] {
   const items: DocumentOutlineItem[] = []
   const walk = (node: JSONContent | undefined) => {
-    if (!node) return
+    if (!node || typeof node !== 'object') return
     if (node.type === 'heading') {
       const text = collectJSONText(node).trim()
       if (text) {
@@ -173,19 +182,20 @@ function collectDocumentOutline(content: JSONContent | null | undefined): Docume
         })
       }
     }
-    node.content?.forEach(walk)
+    childNodes(node).forEach(walk)
   }
   walk(content ?? undefined)
   return items
 }
 
-function collectJSONText(node: JSONContent): string {
+function collectJSONText(node: JSONContent | undefined): string {
+  if (!node || typeof node !== 'object') return ''
   if (typeof node.text === 'string') return node.text
-  return node.content?.map(collectJSONText).join('') ?? ''
+  return childNodes(node).map(collectJSONText).join('')
 }
 
 function getFocusedEditorBlockId(editor: TiptapEditor | null): string | null {
-  if (!editor) return null
+  if (!editor || editor.isDestroyed) return null
   const { from } = editor.state.selection
   const $from = editor.state.doc.resolve(from)
   for (let depth = $from.depth; depth >= 0; depth -= 1) {
@@ -200,7 +210,7 @@ function useFocusedDocsBlockId(editor: TiptapEditor | null) {
   const [blockId, setBlockId] = useState<string | null>(() => getFocusedEditorBlockId(editor))
 
   useEffect(() => {
-    if (!editor) {
+    if (!editor || editor.isDestroyed) {
       setBlockId(null)
       return
     }
@@ -245,10 +255,12 @@ function buildDocsBlockCommandContext(doc: DocsDocument | undefined, block: Docs
 function DocsPendingProposalsBanner({
   proposal,
   count,
+  reviewLabel,
   onReview,
 }: {
   proposal: DocsChangeProposal
   count: number
+  reviewLabel: string
   onReview: () => void
 }) {
   const scopeLabel = proposal.scope === 'block' ? 'Block change' : 'Document change'
@@ -271,7 +283,7 @@ function DocsPendingProposalsBanner({
         <div className="flex shrink-0 items-center gap-2 lg:justify-end">
           <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={onReview}>
             <ViewIcon className="h-3 w-3" />
-            Review
+            {reviewLabel}
           </Button>
         </div>
       </div>
@@ -412,6 +424,8 @@ export function DocsDocumentDetail({
   const saveContent = useSaveDocsContent(wsId)
   const applyChangeProposal = useApplyDocsChangeProposal(wsId)
   const discardChangeProposal = useDiscardDocsChangeProposal(wsId)
+  const applyingProposalId = applyChangeProposal.isPending ? applyChangeProposal.variables?.proposalId ?? null : null
+  const discardingProposalId = discardChangeProposal.isPending ? discardChangeProposal.variables?.proposalId ?? null : null
   const updateDoc = useUpdateDocsDocument(wsId)
   const publishDoc = usePublishDocsDocument(wsId)
   const unpublishDoc = useUnpublishDocsDocument(wsId)
@@ -662,8 +676,10 @@ export function DocsDocumentDetail({
     }
   }, [previewVersion, revertVersion, docId])
 
-  const handleApplyChangeProposal = useCallback(async () => {
-    const proposal = activeReviewProposal ?? visibleChangeProposal
+  const handleApplyChangeProposal = useCallback(async (proposalId?: string) => {
+    const proposal = proposalId
+      ? changeProposals.find((item) => item.id === proposalId) ?? activeReviewProposal
+      : activeReviewProposal ?? visibleChangeProposal
     if (!proposal) return
     try {
       await applyChangeProposal.mutateAsync({ docId, proposalId: proposal.id })
@@ -671,12 +687,19 @@ export function DocsDocumentDetail({
       setProposalStatusMessage('Proposal applied. The document has been updated.')
       if (activeReviewProposal) setProposalSearchId(null)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to apply proposal')
+      const message = err instanceof Error ? err.message : 'Failed to apply proposal'
+      toast.error(
+        message.includes('stale')
+          ? 'This block was edited after the proposal was created. Discard it and ask the agent to re-propose from the latest version.'
+          : message,
+      )
     }
-  }, [activeReviewProposal, applyChangeProposal, docId, setProposalSearchId, visibleChangeProposal])
+  }, [activeReviewProposal, applyChangeProposal, changeProposals, docId, setProposalSearchId, visibleChangeProposal])
 
-  const handleDiscardChangeProposal = useCallback(async () => {
-    const proposal = activeReviewProposal ?? visibleChangeProposal
+  const handleDiscardChangeProposal = useCallback(async (proposalId?: string) => {
+    const proposal = proposalId
+      ? changeProposals.find((item) => item.id === proposalId) ?? activeReviewProposal
+      : activeReviewProposal ?? visibleChangeProposal
     if (!proposal) return
     if (!window.confirm("Discard Quill's proposal? You'll lose this draft.")) return
     try {
@@ -687,7 +710,42 @@ export function DocsDocumentDetail({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to discard proposal')
     }
-  }, [activeReviewProposal, discardChangeProposal, docId, setProposalSearchId, visibleChangeProposal])
+  }, [activeReviewProposal, changeProposals, discardChangeProposal, docId, setProposalSearchId, visibleChangeProposal])
+
+  // A deep link to a pending block proposal (?proposal=<id>) resolves to the
+  // inline card rather than the standalone review screen, which is now only
+  // used for document-scope rewrites.
+  useEffect(() => {
+    if (!proposalSearchId || !activeReviewProposal) return
+    if (activeReviewProposal.scope !== 'block' || activeReviewProposal.status !== 'pending') return
+    const blockId = activeReviewProposal.block_id?.trim()
+    if (!blockId || !editorInstance || editorInstance.isDestroyed) return
+    setProposalSearchId(null)
+    requestAnimationFrame(() => {
+      if (!editorInstance || editorInstance.isDestroyed) return
+      editorInstance.view.dom
+        .querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }, [activeReviewProposal, editorInstance, proposalSearchId, setProposalSearchId])
+
+  // Block proposals are reviewed inline, so the banner jumps to the block
+  // rather than opening a separate review screen.
+  const handleRevealChangeProposal = useCallback((proposal: DocsChangeProposal) => {
+    const blockId = proposal.scope === 'block' ? proposal.block_id?.trim() : ''
+    if (!blockId || !editorInstance || editorInstance.isDestroyed) {
+      setProposalSearchId(proposal.id)
+      return
+    }
+    const target = editorInstance.view.dom.querySelector<HTMLElement>(
+      `[data-block-id="${CSS.escape(blockId)}"]`,
+    )
+    if (!target) {
+      setProposalSearchId(proposal.id)
+      return
+    }
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [editorInstance, setProposalSearchId])
 
   // Title state — keep a local draft only for the active document.
   const [titleDraftState, setTitleDraftState] = useState<{ docId: string; value: string } | null>(null)
@@ -1630,7 +1688,8 @@ export function DocsDocumentDetail({
         <DocsPendingProposalsBanner
           proposal={visibleChangeProposal}
           count={changeProposals.length}
-          onReview={() => setProposalSearchId(visibleChangeProposal.id)}
+          reviewLabel={visibleChangeProposal.scope === 'block' ? 'Jump to change' : 'Review'}
+          onReview={() => handleRevealChangeProposal(visibleChangeProposal)}
         />
       )}
 
@@ -1659,7 +1718,11 @@ export function DocsDocumentDetail({
           <ProposalReviewView
             proposal={activeReviewProposal}
             pendingProposals={changeProposals}
-            currentText={content?.content_text ?? ''}
+            currentText={
+              activeReviewProposal.scope === 'block'
+                ? (blocks.find((block) => block.id === activeReviewProposal.block_id)?.content_text ?? '')
+                : (content?.content_text ?? '')
+            }
             canEdit={canEditDocs && !effectiveReadOnly}
             applying={applyChangeProposal.isPending}
             discarding={discardChangeProposal.isPending}
@@ -1700,6 +1763,19 @@ export function DocsDocumentDetail({
             editor={editorInstance}
             onComment={(anchor) => handleCreateCommentAnchor(anchor)}
           />
+          {!previewVersion && (
+            <InlineProposalReview
+              editor={editorInstance}
+              proposals={changeProposals}
+              blocks={blocks}
+              canEdit={canEditDocs && !effectiveReadOnly}
+              applyingProposalId={applyingProposalId}
+              discardingProposalId={discardingProposalId}
+              workspaceId={wsId}
+              onApply={handleApplyChangeProposal}
+              onDiscard={handleDiscardChangeProposal}
+            />
+          )}
           {previewVersion ? (
             <DocsEditor
               key={`preview-${previewVersion.id}`}

@@ -15,7 +15,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 		Name:                 "docs.create_space",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.create_space"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsSpaceService == nil {
@@ -38,7 +38,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 		Name:                 "docs.create_collection",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.create_collection"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsSpaceService == nil || s.docsCollectionService == nil {
@@ -77,7 +77,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 		Name:                 "docs.update_space",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.update_space"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsSpaceService == nil {
@@ -109,7 +109,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 		Name:                 "docs.update_collection",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.update_collection"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsCollectionService == nil {
@@ -156,7 +156,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 		Name:                 "docs.move_document",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.move_document"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsDocumentService == nil || s.docsSpaceService == nil || s.docsCollectionService == nil {
@@ -207,7 +207,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 		Name:                 "docs.list_spaces",
 		Module:               "docs",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "repository", "conversation", "support_conversation", "deal", "crm_deal", "contact", "crm_contact"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "repository", "conversation", "support_conversation", "deal", "crm_deal", "contact", "crm_contact", "support_coverage_gap"},
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "docs.list_spaces",
 			Alias:       "list_spaces",
@@ -255,7 +255,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 		Name:                 "docs.list_collections",
 		Module:               "docs",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "repository"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "repository", "support_coverage_gap"},
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "docs.list_collections",
 			Alias:       "list_collections",

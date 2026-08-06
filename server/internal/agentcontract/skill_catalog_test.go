@@ -233,7 +233,8 @@ func TestDocumentationSkillsDeclareExpectedGuidance(t *testing.T) {
 		"support_gap_docs_update": {
 			"Read the gap evidence before deciding what to write",
 			"Decide whether the gap needs a new article, an update to an existing article, or an information architecture change",
-			"Do not close or mark a gap resolved until the doc work is actually created, updated, or explicitly handed off",
+			"Keep run completion separate from gap resolution",
+			"Use `resolved` only for a verified document fix",
 		},
 	}
 
@@ -244,6 +245,9 @@ func TestDocumentationSkillsDeclareExpectedGuidance(t *testing.T) {
 		}
 		if !containsString(skill.SupportedRuntimes, "native_sdk") {
 			t.Fatalf("expected %s to support native_sdk, got %v", key, skill.SupportedRuntimes)
+		}
+		if !containsString(skill.SupportedRuntimes, "codex") {
+			t.Fatalf("expected %s to support codex, got %v", key, skill.SupportedRuntimes)
 		}
 		for _, snippet := range snippets {
 			if !strings.Contains(skill.Instructions, snippet) {
@@ -448,7 +452,8 @@ func TestDocumentationAgentPromptUsesCuratedSkillSelectionGuide(t *testing.T) {
 		t.Fatal("expected documentation agent prompt")
 	}
 	for _, snippet := range []string{
-		"You are Quill, the workspace documentation agent.",
+		"You are Quill, the workspace documentation-health agent.",
+		"Your primary job is to keep the workspace's documentation accurate, complete, discoverable, and current.",
 		"## Documentation Modes",
 		"## Skill Selection",
 		"When available, use list_available_skills or search_available_skills to inspect relevant skill options, then use read_skill only for the specific skill guidance the task needs.",
@@ -456,6 +461,8 @@ func TestDocumentationAgentPromptUsesCuratedSkillSelectionGuide(t *testing.T) {
 		"Use public help docs skills for customer-facing how-to",
 		"Use API docs skills for endpoints, schemas, authentication",
 		"Use support-gap skills when customer questions or support evidence reveal missing, stale, or weak documentation.",
+		"inspect shipped implementation and relevant tests when a linked repository is available and relevant",
+		"search existing workspace docs first",
 	} {
 		if !strings.Contains(*prompt, snippet) {
 			t.Fatalf("expected Quill prompt to contain %q\n%s", snippet, *prompt)

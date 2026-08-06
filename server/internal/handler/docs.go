@@ -374,6 +374,7 @@ func (h *DocsHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	collectionID := ptrIfSet(q.Get("collection_id"))
 	status := ptrIfSet(q.Get("status"))
 	teamID := ptrIfSet(q.Get("team_id"))
+	ownerID := ptrIfSet(q.Get("owner_id"))
 	includeArchived := q.Get("include_archived") == "true"
 
 	role := ""
@@ -393,7 +394,7 @@ func (h *DocsHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 		"raw_query", r.URL.RawQuery,
 	)
 
-	docs, err := h.documentSvc.List(r.Context(), wsID, spaceID, collectionID, status, teamID, userID, role, includeArchived)
+	docs, err := h.documentSvc.ListWithOwner(r.Context(), wsID, spaceID, collectionID, status, teamID, ownerID, userID, role, includeArchived)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

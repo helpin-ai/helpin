@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -63,6 +65,85 @@ func TestRuntimeStartRunRequestPropagatesPlannerSelectors(t *testing.T) {
 	}
 	if req.Metadata["preset_key"] != model.AgentPresetEpicPlanner || req.Metadata["planning_stage"] != model.PlanningStagePlanTasks {
 		t.Fatalf("missing planner selectors: %#v", req.Metadata)
+	}
+}
+
+func TestRuntimeStartRunRequestScopesCompletionToCoverageTarget(t *testing.T) {
+	run := &model.AgentRun{
+		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-custom",
+		TargetType: "support_coverage_gap", TargetID: "gap-1",
+	}
+	agent := &model.Agent{ID: "agent-custom"}
+	req, err := runtimeStartRunRequest(run, agent, runtimeAgentFromHelpinAgent(agent, "helpin"))
+	if err != nil {
+		t.Fatalf("runtimeStartRunRequest returned error: %v", err)
+	}
+	required, ok := req.Metadata["completion_required_tools"].([]string)
+	wantRequired := []string{agentcontract.ToolCompleteSupportCoverageGap}
+	if !ok || !slices.Equal(required, wantRequired) {
+		t.Fatalf("coverage completion tools = %#v", req.Metadata["completion_required_tools"])
+	}
+
+	run.TargetType = "document"
+	req, err = runtimeStartRunRequest(run, agent, runtimeAgentFromHelpinAgent(agent, "helpin"))
+	if err != nil {
+		t.Fatalf("document runtimeStartRunRequest returned error: %v", err)
+	}
+	if _, exists := req.Metadata["completion_required_tools"]; exists {
+		t.Fatalf("document run inherited coverage completion tools: %#v", req.Metadata)
+	}
+}
+
+func TestRunAllowedToolsForCoverageTargetRequiresAgentAuthorization(t *testing.T) {
+	agent := &model.Agent{Name: "Custom docs agent", AllowedTools: json.RawMessage(`["read_file"]`)}
+	_, err := runAllowedToolsForTargetContract(agent, "support_coverage_gap", nil)
+	if err == nil || !strings.Contains(err.Error(), agentcontract.ToolCompleteSupportCoverageGap) {
+		t.Fatalf("expected missing completion tool error, got %v", err)
+	}
+}
+
+func TestRunAllowedToolsForCoverageTargetPreservesRequiredToolWhenNarrowed(t *testing.T) {
+	agent := &model.Agent{
+		Name:         "Custom docs agent",
+		AllowedTools: json.RawMessage(`["read_file","complete_support_coverage_gap"]`),
+	}
+	tools, err := runAllowedToolsForTargetContract(agent, "support_coverage_gap", []string{"read_file"})
+	if err != nil {
+		t.Fatalf("runAllowedToolsForTargetContract returned error: %v", err)
+	}
+	want := []string{"read_file", agentcontract.ToolCompleteSupportCoverageGap}
+	if !slices.Equal(tools, want) {
+		t.Fatalf("coverage run tools = %#v, want %#v", tools, want)
+	}
+}
+
+func TestRunAllowedToolsForCoverageTargetInheritsAuthorizedAgentTools(t *testing.T) {
+	agent := &model.Agent{
+		Name:         "Custom docs agent",
+		AllowedTools: json.RawMessage(`["complete_support_coverage_gap"]`),
+	}
+	tools, err := runAllowedToolsForTargetContract(agent, "support_coverage_gap", nil)
+	if err != nil {
+		t.Fatalf("runAllowedToolsForTargetContract returned error: %v", err)
+	}
+	if tools != nil {
+		t.Fatalf("inherited run tools = %#v, want nil", tools)
+	}
+}
+
+func TestSupportCoverageGapRunInstructionsRequireDocsAndRepositoryVerification(t *testing.T) {
+	instructions := supportCoverageGapAgentInstructions(&model.SupportCoverageGapDetail{
+		SupportCoverageGap: model.SupportCoverageGap{V1GapType: "feature_overview"},
+	})
+	for _, expected := range []string{
+		"Search the current workspace documentation before deciding the disposition",
+		"Inspect a repository only when product or feature implementation is a relevant source of truth",
+		"a successful search with no relevant match is valid evidence for feature_not_found",
+		"Finish every run by calling complete_support_coverage_gap with the disposition",
+	} {
+		if !strings.Contains(instructions, expected) {
+			t.Fatalf("expected coverage instructions to contain %q\n%s", expected, instructions)
+		}
 	}
 }
 

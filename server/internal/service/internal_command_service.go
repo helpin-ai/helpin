@@ -90,6 +90,7 @@ type InternalCommandService struct {
 	supportProcessingRepo     *repository.AIMessageProcessingRepository
 	supportUsageMeter         *AIUsageMeter
 	supportRunCloser          supportChatRunCloser
+	supportCoverageService    *SupportCoverageService
 	authz                     *authorization.AuthzService
 
 	definitions map[string]InternalCommandDefinition
@@ -284,6 +285,15 @@ func (s *InternalCommandService) SetAgentRunDependencies(
 	}
 	s.agentRunRepo = runRepo
 	s.agentRunArtifactRepo = artifactRepo
+}
+
+// SetSupportCoverageService wires the support-gap outcome operation used by
+// documentation-agent completion.
+func (s *InternalCommandService) SetSupportCoverageService(svc *SupportCoverageService) {
+	if s == nil {
+		return
+	}
+	s.supportCoverageService = svc
 }
 
 func NewInternalCommandService(
@@ -567,7 +577,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "workspace.list_teams",
 		Module:               "workspace",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "document", "deal", "contact", "company", "conversation"},
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "document", "deal", "contact", "company", "conversation", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("workspace.list_teams"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.settingsRepo == nil {
@@ -623,7 +633,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.list_documents",
 		Module:               "docs",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "crm_deal"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "crm_deal", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.list_documents"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsDocumentService == nil {
@@ -735,7 +745,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.read_document",
 		Module:               "docs",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"document", "workspace", "epic", "task", "story", "crm_deal"},
+		SupportedTargetTypes: []string{"document", "workspace", "epic", "task", "story", "crm_deal", "support_coverage_gap"},
 		Tool:                 internalReadDocumentToolMetadata(),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsDocumentService == nil {
@@ -796,7 +806,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.get_document_blocks",
 		Module:               "docs",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"document", "workspace", "epic", "task", "story", "crm_deal"},
+		SupportedTargetTypes: []string{"document", "workspace", "epic", "task", "story", "crm_deal", "support_coverage_gap"},
 		Tool:                 internalGetDocumentBlocksToolMetadata(),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsBlockService == nil {
@@ -1421,7 +1431,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "pm.add_task_comment",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "task", "story"},
+		SupportedTargetTypes: []string{"workspace", "task", "story", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("pm.add_task_comment"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.commentService == nil || s.taskService == nil {
@@ -1563,7 +1573,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.write_document_content",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "crm_deal"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "crm_deal", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.write_document_content"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
@@ -1594,6 +1604,9 @@ func (s *InternalCommandService) registerDefaults() {
 			if documentContentIsEffectivelyEmpty(docContent) {
 				return nil, fmt.Errorf("content must not be empty")
 			}
+			if err := tiptap.ValidateDocument(docContent); err != nil {
+				return nil, err
+			}
 			if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
 				return nil, err
 			}
@@ -1608,7 +1621,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.update_document_block",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "document"},
+		SupportedTargetTypes: []string{"workspace", "document", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.update_document_block"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsBlockService == nil {
@@ -1642,14 +1655,20 @@ func (s *InternalCommandService) registerDefaults() {
 			if err != nil {
 				return nil, err
 			}
-			return mustJSON(map[string]any{"document_id": req.DocumentID, "block_id": req.BlockID, "content_id": content.ID}), nil
+			response := map[string]any{"document_id": req.DocumentID, "block_id": req.BlockID, "content_id": content.ID}
+			// Return the new revision so sequential multi-block edits do not
+			// need a get_document_blocks round trip between updates.
+			if block, err := s.docsBlockService.Get(ctx, req.DocumentID, req.BlockID); err == nil {
+				response["revision"] = block.Revision
+			}
+			return mustJSON(response), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
 		Name:                 "git.list_repositories",
 		Module:               "git",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "repository", "epic", "task", "document", "crm_deal", "crm_contact"},
+		SupportedTargetTypes: []string{"workspace", "repository", "epic", "task", "document", "crm_deal", "crm_contact", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("git.list_repositories"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.gitService == nil {
@@ -1679,7 +1698,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.create_document",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "task", "story", "crm_deal", "workspace"},
+		SupportedTargetTypes: []string{"epic", "task", "story", "crm_deal", "workspace", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.create_document"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
@@ -1738,7 +1757,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.link_document_to_object",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "deal", "crm_deal"},
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "deal", "crm_deal", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.link_document_to_object"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
@@ -2126,6 +2145,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerSupportKnowledgeCommands()
 	s.registerSupportReplyCommands()
 	s.registerSupportCommands()
+	s.registerSupportCoverageCommands()
 	s.registerSupportOperationalCommands()
 	s.registerCRMReadCommands()
 	s.registerCRMOperationalCommands()

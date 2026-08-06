@@ -188,6 +188,7 @@ export interface DocsChangeProposal {
   revision?: number;
   summary: string;
   content_markdown: string;
+  base_markdown?: string;
   content: unknown;
   sources?: DocsChangeProposalSource[];
   created_by: string;

@@ -1305,6 +1305,11 @@ func main() {
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
+	commandService.SetSupportCoverageService(supportCoverageService)
+	agentRuntimeHostService.SetSupportCoverageService(supportCoverageService)
+	if runFinalizers != nil {
+		runFinalizers.SetSupportCoverageService(supportCoverageService)
+	}
 	agentService.SetSupportCoverageService(supportCoverageService)
 	supportCoverageService.SetDocsBlockService(docsBlockService)
 	supportCoverageService.SetTemporalClient(temporalClient)
