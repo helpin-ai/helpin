@@ -45,6 +45,7 @@ func TestMiraPresetDefinitionUsesNativeHelpinTools(t *testing.T) {
 		"ripgrep",
 		"grep",
 		"list_symbols",
+		"search_workspace",
 		"list_documents",
 		"read_document",
 		"create_document",

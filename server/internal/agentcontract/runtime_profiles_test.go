@@ -9,9 +9,35 @@ import (
 
 func TestDocumentationRuntimeProfileIncludesOrganizationTools(t *testing.T) {
 	profile := GetRuntimeProfile(model.AgentPresetDocumentationAgent)
-	for _, tool := range []string{"list_spaces", "create_space", "create_collection", "update_space", "update_collection", "move_document", "link_document_to_object"} {
+	for _, tool := range []string{"search_workspace", "list_spaces", "create_space", "create_collection", "update_space", "update_collection", "move_document", "link_document_to_object"} {
 		if !slices.Contains(profile.AllowedTools, tool) {
 			t.Fatalf("documentation runtime profile is missing %q", tool)
+		}
+	}
+}
+
+func TestWorkspaceSearchRuntimeProfileAlignment(t *testing.T) {
+	for _, presetKey := range []string{
+		model.AgentPresetEpicPlanner,
+		model.AgentPresetTaskPlanner,
+		model.AgentPresetCRMOperator,
+		model.AgentPresetMarketer,
+		model.AgentPresetDocumentationAgent,
+	} {
+		profile := GetRuntimeProfile(presetKey)
+		if !slices.Contains(profile.AllowedTools, "search_workspace") {
+			t.Errorf("runtime profile %q is missing search_workspace", presetKey)
+		}
+	}
+
+	for _, presetKey := range []string{
+		model.AgentPresetSupportAgent,
+		model.AgentPresetCodeBuilder,
+		model.AgentPresetReviewAgent,
+	} {
+		profile := GetRuntimeProfile(presetKey)
+		if slices.Contains(profile.AllowedTools, "search_workspace") {
+			t.Errorf("narrow runtime profile %q must not expose search_workspace", presetKey)
 		}
 	}
 }

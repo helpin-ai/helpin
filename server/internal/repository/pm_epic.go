@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"gorm.io/gorm"
@@ -47,10 +48,19 @@ func (r *PMEpicRepository) ListPage(ctx context.Context, workspaceID string, fil
 	if perPage <= 0 {
 		perPage = 50
 	}
+	offset := 0
+	if pagination.Offset != nil {
+		offset = *pagination.Offset
+	} else {
+		if page-1 > math.MaxInt/perPage {
+			return []model.PMEpic{}, total, nil
+		}
+		offset = (page - 1) * perPage
+	}
 	var epics []model.PMEpic
 	if err := r.listQuery(ctx, workspaceID, filters).
 		Order("pm_epics.position ASC, pm_epics.created_at DESC, pm_epics.id ASC").
-		Offset((page - 1) * perPage).
+		Offset(offset).
 		Limit(perPage).
 		Find(&epics).Error; err != nil {
 		return nil, 0, fmt.Errorf("list epics page: %w", err)

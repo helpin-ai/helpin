@@ -95,6 +95,8 @@ func (s *InternalCommandService) executePMListEpics(ctx context.Context, meta mo
 		Archived *bool  `json:"archived"`
 		Page     int    `json:"page"`
 		PerPage  int    `json:"per_page"`
+		Limit    int    `json:"limit"`
+		Offset   *int   `json:"offset"`
 	}
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {
@@ -105,7 +107,7 @@ func (s *InternalCommandService) executePMListEpics(ctx context.Context, meta mo
 	if err != nil {
 		return nil, err
 	}
-	page, perPage, err := normalizePMCommandPagination(req.Page, req.PerPage)
+	pagination, offset, limit, err := normalizeCommandPagination(req.Page, req.PerPage, req.Limit, req.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +144,7 @@ func (s *InternalCommandService) executePMListEpics(ctx context.Context, meta mo
 	if len(agentTeams) > 0 {
 		filters.AccessibleTeamIDs = agentTeams
 	}
-	epics, total, err := s.epicService.ListPage(ctx, meta.WorkspaceID, filters, model.PMPagination{Page: page, PerPage: perPage})
+	epics, total, err := s.epicService.ListPage(ctx, meta.WorkspaceID, filters, pagination)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +152,13 @@ func (s *InternalCommandService) executePMListEpics(ctx context.Context, meta mo
 	for i := range epics {
 		items = append(items, compactPMCommandEpic(&epics[i], false))
 	}
-	return mustJSON(map[string]any{"epics": items, "total": total, "page": page, "per_page": perPage}), nil
+	response := commandPaginationOutput(total, offset, limit, len(items))
+	response["epics"] = items
+	if req.Page > 0 || req.PerPage > 0 {
+		response["page"] = pagination.Page
+		response["per_page"] = pagination.PerPage
+	}
+	return mustJSON(response), nil
 }
 
 func (s *InternalCommandService) executePMGetEpic(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {

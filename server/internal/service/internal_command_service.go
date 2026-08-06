@@ -64,6 +64,9 @@ type InternalCommandService struct {
 	objectiveService      *PMObjectiveService
 	workflowService       *PMWorkflowService
 	checklistService      *PMChecklistItemService
+	workspaceSearch       workspaceSearchProvider
+	crmSearch             *CRMSearchService
+	supportInboxService   *SupportInboxService
 
 	supportMessageRepo        *repository.SupportMessageRepository
 	supportConversationRepo   *repository.SupportConversationRepository
@@ -139,6 +142,17 @@ func (s *InternalCommandService) SetPMOperationalServices(
 	s.objectiveService = objectiveService
 	s.workflowService = workflowService
 	s.checklistService = checklistService
+}
+
+// SetWorkspaceSearchServices wires the shared, permission-aware discovery
+// services used by the command-backed search_workspace tool.
+func (s *InternalCommandService) SetWorkspaceSearchServices(workspace *SearchService, crm *CRMSearchService, support *SupportInboxService) {
+	if s == nil {
+		return
+	}
+	s.workspaceSearch = workspace
+	s.crmSearch = crm
+	s.supportInboxService = support
 }
 
 // SetGitService sets the git service for delivery commands.
@@ -536,7 +550,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if s.settingsRepo == nil {
 				return nil, fmt.Errorf("settings repository is not configured")
 			}
-			var req struct{}
+			var req pmCommandPage
 			if len(input) > 0 {
 				if err := json.Unmarshal(input, &req); err != nil {
 					return nil, fmt.Errorf("parse list workspace teams input: %w", err)
@@ -552,9 +566,6 @@ func (s *InternalCommandService) registerDefaults() {
 				}
 				return teams[i].Name < teams[j].Name
 			})
-			if len(teams) > 100 {
-				teams = teams[:100]
-			}
 			results := make([]map[string]any, 0, len(teams))
 			for _, team := range teams {
 				item := map[string]any{
@@ -571,7 +582,18 @@ func (s *InternalCommandService) registerDefaults() {
 				}
 				results = append(results, item)
 			}
-			return mustJSON(results), nil
+			pagination, offset, limit, err := normalizeCommandPagination(req.Page, req.PerPage, req.Limit, req.Offset)
+			if err != nil {
+				return nil, err
+			}
+			items := boundedCommandOffset(results, offset, limit)
+			response := commandPaginationOutput(int64(len(results)), offset, limit, len(items))
+			response["teams"] = items
+			if req.Page > 0 || req.PerPage > 0 {
+				response["page"] = pagination.Page
+				response["per_page"] = pagination.PerPage
+			}
+			return mustJSON(response), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -579,13 +601,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "docs",
 		Mutating:             false,
 		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "crm_deal"},
-		Tool: &commandtools.RuntimeToolMetadata{
-			CommandName: "docs.list_documents",
-			Alias:       "list_documents",
-			Category:    "Docs",
-			Description: "List Helpin Docs documents in the current workspace. Use status=draft for questions about documents that need to be published.",
-			InputSchema: internalListDocumentsSchema(),
-		},
+		Tool:                 mustCommandToolMetadata("docs.list_documents"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsDocumentService == nil {
 				return nil, fmt.Errorf("docs document service is not available")
@@ -597,6 +613,7 @@ func (s *InternalCommandService) registerDefaults() {
 				Status          string `json:"status"`
 				IncludeArchived bool   `json:"include_archived"`
 				Limit           int    `json:"limit"`
+				Offset          int    `json:"offset"`
 			}
 			if len(input) > 0 {
 				if err := json.Unmarshal(input, &req); err != nil {
@@ -615,6 +632,9 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			if limit > 100 {
 				limit = 100
+			}
+			if req.Offset < 0 {
+				return nil, fmt.Errorf("offset must be zero or greater")
 			}
 			docs, err := s.docsDocumentService.List(
 				ctx,
@@ -638,11 +658,10 @@ func (s *InternalCommandService) registerDefaults() {
 			for _, doc := range docs {
 				counts[doc.Status]++
 			}
-			results := make([]map[string]any, 0, min(len(docs), limit))
-			for i, doc := range docs {
-				if i >= limit {
-					break
-				}
+			start := min(req.Offset, len(docs))
+			end := min(start+limit, len(docs))
+			results := make([]map[string]any, 0, end-start)
+			for _, doc := range docs[start:end] {
 				item := map[string]any{
 					"document_id":      doc.ID,
 					"title":            doc.Title,
@@ -672,20 +691,20 @@ func (s *InternalCommandService) registerDefaults() {
 				}
 				results = append(results, item)
 			}
-			return mustJSON(map[string]any{
-				"documents":        results,
-				"total":            len(docs),
-				"returned":         len(results),
-				"counts_by_status": counts,
-				"filters": map[string]any{
-					"space_id":         strings.TrimSpace(req.SpaceID),
-					"collection_id":    strings.TrimSpace(req.CollectionID),
-					"team_id":          strings.TrimSpace(req.TeamID),
-					"status":           status,
-					"include_archived": req.IncludeArchived,
-					"limit":            limit,
-				},
-			}), nil
+			response := commandPaginationOutput(int64(len(docs)), req.Offset, limit, len(results))
+			response["documents"] = results
+			response["returned"] = len(results)
+			response["counts_by_status"] = counts
+			response["filters"] = map[string]any{
+				"space_id":         strings.TrimSpace(req.SpaceID),
+				"collection_id":    strings.TrimSpace(req.CollectionID),
+				"team_id":          strings.TrimSpace(req.TeamID),
+				"status":           status,
+				"include_archived": req.IncludeArchived,
+				"limit":            limit,
+				"offset":           req.Offset,
+			}
+			return mustJSON(response), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -2083,6 +2102,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerDocsRuntimeToolCommands()
 	s.registerDocsOrganizationCommands()
 	s.registerPMOperationalCommands()
+	s.registerWorkspaceSearchCommands()
 }
 
 // requireCommandDocumentInWorkspace makes an explicit document_id the
@@ -2379,40 +2399,6 @@ func internalGetDocumentBlocksToolMetadata() *commandtools.RuntimeToolMetadata {
 			},
 			"additionalProperties": false,
 		},
-	}
-}
-
-func internalListDocumentsSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"space_id": map[string]any{
-				"type":        "string",
-				"description": "Optional Docs space ID filter.",
-			},
-			"collection_id": map[string]any{
-				"type":        "string",
-				"description": "Optional collection ID filter.",
-			},
-			"team_id": map[string]any{
-				"type":        "string",
-				"description": "Optional team ID filter.",
-			},
-			"status": map[string]any{
-				"type":        "string",
-				"description": "Optional document status filter. Use draft for documents that need publishing.",
-				"enum":        []string{"draft", "published", "archived"},
-			},
-			"include_archived": map[string]any{
-				"type":        "boolean",
-				"description": "When true, include archived documents when status is omitted.",
-			},
-			"limit": map[string]any{
-				"type":        "integer",
-				"description": "Maximum documents to return. Defaults to 50, max 100.",
-			},
-		},
-		"additionalProperties": false,
 	}
 }
 
@@ -2735,15 +2721,23 @@ func buildCompactTaskItem(task model.BoardTask, comments []model.CommentWithAuth
 	return item
 }
 
-func marshalCompactTaskResponse(tasks []map[string]any, total int64, limit int) (json.RawMessage, error) {
+func marshalCompactTaskResponse(tasks []map[string]any, total int64, limit int, offsets ...int) (json.RawMessage, error) {
+	offset := 0
+	if len(offsets) > 0 {
+		offset = offsets[0]
+	}
 	response := map[string]any{
 		"_helpin_compaction": helpinCommandCompactionHint(),
 		"tasks":              tasks,
 		"total":              total,
 		"limit":              limit,
+		"offset":             offset,
 		"returned_tasks":     len(tasks),
 		"detail_level":       "compact",
 	}
+	paging := commandPaginationOutput(total, offset, limit, len(tasks))
+	response["has_more"] = paging["has_more"]
+	response["next_offset"] = paging["next_offset"]
 	out, err := json.Marshal(response)
 	if err != nil {
 		return nil, err

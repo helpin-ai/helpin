@@ -40,6 +40,19 @@ func normalizeSearchText(value string) string {
 }
 
 func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string, taskKeyDisplayID int) (*model.SearchResponse, error) {
+	return r.SearchLimit(ctx, workspaceID, query, taskKeyDisplayID, searchLimit)
+}
+
+// SearchLimit searches each supported entity group with a bounded per-group
+// result limit. Callers that paginate a merged result set can request enough
+// candidates to cover the desired offset without changing legacy callers.
+func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query string, taskKeyDisplayID, limit int) (*model.SearchResponse, error) {
+	if limit <= 0 {
+		limit = searchLimit
+	}
+	if limit > 600 {
+		limit = 600
+	}
 	normalizedQuery := normalizeSearchText(query)
 	if normalizedQuery == "" && taskKeyDisplayID <= 0 {
 		return &model.SearchResponse{
@@ -105,7 +118,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 				WHERE workspace_id = ? AND archived = false
 				  AND (`+normalizedText("name")+` LIKE ? OR CAST(display_id AS TEXT) LIKE ?)
 				ORDER BY updated_at DESC
-				LIMIT ?`, workspaceID, pattern, pattern, searchLimit).
+				LIMIT ?`, workspaceID, pattern, pattern, limit).
 			Scan(&textResults).Error; err != nil {
 			setErr(fmt.Errorf("search stories: %w", err))
 			return
@@ -134,7 +147,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 				WHERE workspace_id = ? AND archived = false
 				  AND `+normalizedText("name")+` LIKE ?
 				ORDER BY updated_at DESC
-				LIMIT ?`, workspaceID, pattern, searchLimit).
+				LIMIT ?`, workspaceID, pattern, limit).
 			Scan(&epics).Error; err != nil {
 			setErr(fmt.Errorf("search epics: %w", err))
 		}
@@ -148,7 +161,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 				WHERE workspace_id = ? AND archived = false
 				  AND `+normalizedText("name")+` LIKE ?
 				ORDER BY updated_at DESC
-				LIMIT ?`, workspaceID, pattern, searchLimit).
+				LIMIT ?`, workspaceID, pattern, limit).
 			Scan(&sprints).Error; err != nil {
 			setErr(fmt.Errorf("search sprints: %w", err))
 		}
@@ -162,7 +175,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 				WHERE workspace_id = ? AND archived = false
 				  AND `+normalizedText("name")+` LIKE ?
 				ORDER BY updated_at DESC
-				LIMIT ?`, workspaceID, pattern, searchLimit).
+				LIMIT ?`, workspaceID, pattern, limit).
 			Scan(&objectives).Error; err != nil {
 			setErr(fmt.Errorf("search objectives: %w", err))
 		}
@@ -181,7 +194,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 				  AND (`+normalizedText("wm.display_name")+` LIKE ? OR `+normalizedText("wm.email")+` LIKE ?)
 				GROUP BY wm.id, wm.display_name
 				ORDER BY wm.display_name ASC
-				LIMIT ?`, workspaceID, pattern, pattern, searchLimit).
+				LIMIT ?`, workspaceID, pattern, pattern, limit).
 			Scan(&members).Error; err != nil {
 			setErr(fmt.Errorf("search members: %w", err))
 		}
@@ -196,7 +209,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 				  AND status != 'archived'
 				  AND `+normalizedText("title")+` LIKE ?
 				ORDER BY updated_at DESC
-				LIMIT ?`, workspaceID, pattern, searchLimit).
+				LIMIT ?`, workspaceID, pattern, limit).
 			Scan(&documents).Error; err != nil {
 			setErr(fmt.Errorf("search documents: %w", err))
 		}

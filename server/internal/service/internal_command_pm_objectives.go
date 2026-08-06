@@ -120,13 +120,15 @@ func (s *InternalCommandService) executePMListObjectives(ctx context.Context, me
 		Archived      *bool   `json:"archived"`
 		Page          int     `json:"page"`
 		PerPage       int     `json:"per_page"`
+		Limit         int     `json:"limit"`
+		Offset        *int    `json:"offset"`
 	}
 	if len(input) > 0 {
 		if err := decodePMObjectiveCommandInput(input, &req); err != nil {
 			return nil, fmt.Errorf("parse list objectives input: %w", err)
 		}
 	}
-	page, perPage, err := normalizePMCommandPagination(req.Page, req.PerPage)
+	pagination, offset, limit, err := normalizeCommandPagination(req.Page, req.PerPage, req.Limit, req.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +155,7 @@ func (s *InternalCommandService) executePMListObjectives(ctx context.Context, me
 	filters := model.PMObjectiveListFilters{
 		Search: req.Query, TeamID: req.TeamID, LabelID: req.LabelID, ObjectiveType: req.ObjectiveType, State: req.State, Archived: req.Archived,
 	}
-	objectives, total, err := s.objectiveService.ListPage(ctx, meta.WorkspaceID, filters, model.PMPagination{Page: page, PerPage: perPage})
+	objectives, total, err := s.objectiveService.ListPage(ctx, meta.WorkspaceID, filters, pagination)
 	if err != nil {
 		return nil, fmt.Errorf("list objectives: %w", err)
 	}
@@ -161,7 +163,13 @@ func (s *InternalCommandService) executePMListObjectives(ctx context.Context, me
 	for i := range objectives {
 		items = append(items, compactPMCommandObjective(&objectives[i], false))
 	}
-	return mustJSON(map[string]any{"objectives": items, "total": total, "page": page, "per_page": perPage}), nil
+	response := commandPaginationOutput(total, offset, limit, len(items))
+	response["objectives"] = items
+	if req.Page > 0 || req.PerPage > 0 {
+		response["page"] = pagination.Page
+		response["per_page"] = pagination.PerPage
+	}
+	return mustJSON(response), nil
 }
 
 func (s *InternalCommandService) executePMGetObjective(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {

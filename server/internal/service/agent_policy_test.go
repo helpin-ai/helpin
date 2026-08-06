@@ -333,6 +333,7 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	for _, toolName := range []string{
 		"get_my_capabilities",
 		"create_task", "create_document", "write_document_content",
+		"search_workspace",
 		"list_available_skills", "search_available_skills", "read_skill",
 		"list_repositories", "checkout_repository", "checkout_repositories",
 		"ripgrep", "search_files", "list_symbols", "read_file", "read_file_range",
@@ -340,6 +341,9 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 		if !slices.Contains(preset.AllowedTools, toolName) {
 			t.Errorf("Ask Agent is missing required self-execution tool %q", toolName)
 		}
+	}
+	if slices.Contains(preset.AllowedTools, "search_documents") {
+		t.Fatal("Ask Agent should use consolidated search_workspace instead of search_documents")
 	}
 	if len(preset.AvailableSkills) != 29 {
 		t.Fatalf("Ask Agent default must expose 29 curated optional skills, got %d: %v", len(preset.AvailableSkills), preset.AvailableSkills)
@@ -398,7 +402,7 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 	for _, toolName := range []string{
 		"checkout_repository", "ripgrep", "read_file",
 		"list_available_skills", "read_skill", "update_plan",
-		"get_my_capabilities", "create_document", "prepare_dock_execution",
+		"get_my_capabilities", "search_workspace", "create_document", "prepare_dock_execution",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {
 			t.Errorf("managed Ask capability %q was not restored to pinned preset: %v", toolName, preset.AllowedTools)
@@ -540,6 +544,48 @@ func TestBuiltInPresetPMToolExpansionMatrix(t *testing.T) {
 				seen[toolName] = struct{}{}
 			}
 		})
+	}
+}
+
+func TestWorkspaceSearchPresetAlignment(t *testing.T) {
+	searchPresets := map[string]bool{
+		model.AgentPresetAskAgent:           true,
+		model.AgentPresetEpicPlanner:        true,
+		model.AgentPresetTaskPlanner:        true,
+		model.AgentPresetCRMOperator:        true,
+		model.AgentPresetMarketer:           true,
+		model.AgentPresetDocumentationAgent: true,
+		model.AgentPresetCommandAgent:       true,
+	}
+	excludedPresets := map[string]bool{
+		model.AgentPresetSupportAgent: true,
+		model.AgentPresetCodeBuilder:  true,
+		model.AgentPresetReviewAgent:  true,
+	}
+
+	for _, preset := range ListAgentPresets() {
+		hasSearch := slices.Contains(preset.AllowedTools, "search_workspace")
+		switch {
+		case searchPresets[preset.Key]:
+			if !hasSearch {
+				t.Errorf("preset %q is missing search_workspace", preset.Key)
+			}
+			if preset.SystemPrompt == nil || !strings.Contains(*preset.SystemPrompt, "next_offset") {
+				t.Errorf("preset %q is missing workspace search pagination guidance", preset.Key)
+			}
+			if !strings.Contains(*preset.SystemPrompt, "## Workspace Discovery") {
+				t.Errorf("preset %q is missing shared workspace discovery guidance", preset.Key)
+			}
+			if preset.Key != model.AgentPresetAskAgent {
+				if !slices.Contains(preset.AllowedTools, "search_documents") {
+					t.Errorf("specialist preset %q must retain search_documents", preset.Key)
+				}
+			}
+		case excludedPresets[preset.Key]:
+			if hasSearch {
+				t.Errorf("narrow preset %q must not expose search_workspace", preset.Key)
+			}
+		}
 	}
 }
 

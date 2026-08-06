@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -17,52 +16,22 @@ func (s *InternalCommandService) registerCRMReadCommands() {
 		Name:     "crm.list_deals",
 		Module:   "crm",
 		Mutating: false,
-		Tool: &commandtools.RuntimeToolMetadata{
-			CommandName: "crm.list_deals",
-			Alias:       "list_deals",
-			Category:    "CRM",
-			Description: "List CRM deals in the workspace, optionally filtered by a case-insensitive name query. Returns deal name, stage, and amount.",
-			InputSchema: crmListLimitSchema("Maximum number of deals to return (default 20, max 50)"),
-		},
-		Execute: s.executeListDeals,
+		Tool:     mustCommandToolMetadata("crm.list_deals"),
+		Execute:  s.executeListDeals,
 	})
 	s.register(InternalCommandDefinition{
 		Name:     "crm.list_contacts",
 		Module:   "crm",
 		Mutating: false,
-		Tool: &commandtools.RuntimeToolMetadata{
-			CommandName: "crm.list_contacts",
-			Alias:       "list_contacts",
-			Category:    "CRM",
-			Description: "List CRM contacts in the workspace, optionally filtered by a case-insensitive name, email, or job-title query. Returns name, email, and job title.",
-			InputSchema: crmListLimitSchema("Maximum number of contacts to return (default 20, max 50)"),
-		},
-		Execute: s.executeListContacts,
+		Tool:     mustCommandToolMetadata("crm.list_contacts"),
+		Execute:  s.executeListContacts,
 	})
 	s.register(InternalCommandDefinition{
 		Name:     "crm.list_buyer_signals",
 		Module:   "crm",
 		Mutating: false,
-		Tool: &commandtools.RuntimeToolMetadata{
-			CommandName: "crm.list_buyer_signals",
-			Alias:       "list_buyer_signals",
-			Category:    "CRM",
-			Description: "List detected buyer signals from emails, meetings, and support conversations.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"deal_id": map[string]any{
-						"type":        "string",
-						"description": "Optional deal ID to filter signals for a specific deal",
-					},
-					"limit": map[string]any{
-						"type":        "integer",
-						"description": "Maximum number of signals to return (default 20, max 50)",
-					},
-				},
-			},
-		},
-		Execute: s.executeListBuyerSignals,
+		Tool:     mustCommandToolMetadata("crm.list_buyer_signals"),
+		Execute:  s.executeListBuyerSignals,
 	})
 }
 
@@ -70,11 +39,11 @@ func (s *InternalCommandService) executeListDeals(ctx context.Context, meta mode
 	if s.crmDealService == nil {
 		return nil, fmt.Errorf("CRM deal service is not configured")
 	}
-	limit, query, err := parseCRMListLimit(input)
+	limit, offset, query, err := parseCRMListLimit(input)
 	if err != nil {
 		return nil, err
 	}
-	deals, _, err := s.crmDealService.List(ctx, meta.WorkspaceID, model.CRMDealListFilters{Search: stringPtrOrNil(query)}, model.PMPagination{Page: 1, PerPage: limit})
+	deals, total, err := s.crmDealService.List(ctx, meta.WorkspaceID, model.CRMDealListFilters{Search: stringPtrOrNil(query)}, model.PMPagination{Page: 1, PerPage: limit, Offset: &offset})
 	if err != nil {
 		return nil, fmt.Errorf("list deals: %w", err)
 	}
@@ -92,18 +61,20 @@ func (s *InternalCommandService) executeListDeals(ctx context.Context, meta mode
 		}
 		summaries = append(summaries, dealSummary{ID: d.ID, Name: d.Name, Stage: stageName, Amount: d.Amount})
 	}
-	return mustJSON(summaries), nil
+	response := commandPaginationOutput(total, offset, limit, len(summaries))
+	response["deals"] = summaries
+	return mustJSON(response), nil
 }
 
 func (s *InternalCommandService) executeListContacts(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 	if s.crmContactService == nil {
 		return nil, fmt.Errorf("CRM contact service is not configured")
 	}
-	limit, query, err := parseCRMListLimit(input)
+	limit, offset, query, err := parseCRMListLimit(input)
 	if err != nil {
 		return nil, err
 	}
-	contacts, _, err := s.crmContactService.List(ctx, meta.WorkspaceID, model.CRMContactListFilters{Search: stringPtrOrNil(query)}, model.PMPagination{Page: 1, PerPage: limit})
+	contacts, total, err := s.crmContactService.List(ctx, meta.WorkspaceID, model.CRMContactListFilters{Search: stringPtrOrNil(query)}, model.PMPagination{Page: 1, PerPage: limit, Offset: &offset})
 	if err != nil {
 		return nil, fmt.Errorf("list contacts: %w", err)
 	}
@@ -118,7 +89,9 @@ func (s *InternalCommandService) executeListContacts(ctx context.Context, meta m
 	for _, c := range contacts {
 		summaries = append(summaries, contactSummary{ID: c.ID, FirstName: c.FirstName, LastName: c.LastName, Email: c.Email, JobTitle: c.JobTitle})
 	}
-	return mustJSON(summaries), nil
+	response := commandPaginationOutput(total, offset, limit, len(summaries))
+	response["contacts"] = summaries
+	return mustJSON(response), nil
 }
 
 func (s *InternalCommandService) executeListBuyerSignals(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -128,6 +101,7 @@ func (s *InternalCommandService) executeListBuyerSignals(ctx context.Context, me
 	var req struct {
 		DealID *string `json:"deal_id"`
 		Limit  int     `json:"limit"`
+		Offset int     `json:"offset"`
 	}
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {
@@ -135,14 +109,20 @@ func (s *InternalCommandService) executeListBuyerSignals(ctx context.Context, me
 		}
 	}
 	limit := req.Limit
-	if limit <= 0 || limit > 50 {
+	if limit == 0 {
 		limit = 20
+	}
+	if limit < 1 || limit > 50 {
+		return nil, fmt.Errorf("limit must be between 1 and 50")
+	}
+	if req.Offset < 0 {
+		return nil, fmt.Errorf("offset must be zero or greater")
 	}
 	dealID := req.DealID
 	if dealID == nil && strings.TrimSpace(meta.TargetType) == "crm_deal" && strings.TrimSpace(meta.TargetID) != "" {
 		dealID = stringPtrOrNil(meta.TargetID)
 	}
-	signals, _, err := s.crmSignalService.ListSignals(ctx, meta.WorkspaceID, model.CRMBuyerSignalListFilters{DealID: dealID}, model.PMPagination{Page: 1, PerPage: limit})
+	signals, total, err := s.crmSignalService.ListSignals(ctx, meta.WorkspaceID, model.CRMBuyerSignalListFilters{DealID: dealID}, model.PMPagination{Page: 1, PerPage: limit, Offset: &req.Offset})
 	if err != nil {
 		return nil, fmt.Errorf("list buyer signals: %w", err)
 	}
@@ -165,37 +145,30 @@ func (s *InternalCommandService) executeListBuyerSignals(ctx context.Context, me
 			ContactID:  sig.ContactID,
 		})
 	}
-	return mustJSON(summaries), nil
+	response := commandPaginationOutput(total, req.Offset, limit, len(summaries))
+	response["buyer_signals"] = summaries
+	return mustJSON(response), nil
 }
 
-func parseCRMListLimit(input json.RawMessage) (int, string, error) {
+func parseCRMListLimit(input json.RawMessage) (int, int, string, error) {
 	var req struct {
-		Limit int    `json:"limit"`
-		Query string `json:"query"`
+		Limit  int    `json:"limit"`
+		Offset int    `json:"offset"`
+		Query  string `json:"query"`
 	}
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {
-			return 0, "", fmt.Errorf("parse list input: %w", err)
+			return 0, 0, "", fmt.Errorf("parse list input: %w", err)
 		}
 	}
-	if req.Limit <= 0 || req.Limit > 50 {
-		return 20, strings.TrimSpace(req.Query), nil
+	if req.Limit == 0 {
+		req.Limit = 20
 	}
-	return req.Limit, strings.TrimSpace(req.Query), nil
-}
-
-func crmListLimitSchema(limitDescription string) map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"query": map[string]any{
-				"type":        "string",
-				"description": "Optional case-insensitive text query.",
-			},
-			"limit": map[string]any{
-				"type":        "integer",
-				"description": limitDescription,
-			},
-		},
+	if req.Limit < 1 || req.Limit > 50 {
+		return 0, 0, "", fmt.Errorf("limit must be between 1 and 50")
 	}
+	if req.Offset < 0 {
+		return 0, 0, "", fmt.Errorf("offset must be zero or greater")
+	}
+	return req.Limit, req.Offset, strings.TrimSpace(req.Query), nil
 }

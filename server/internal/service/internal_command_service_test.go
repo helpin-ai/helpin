@@ -355,18 +355,20 @@ func TestListWorkspaceTeamsCommandMetadataAndOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workspace.list_teams returned error: %v", err)
 	}
-	var teams []struct {
-		ID              string `json:"id"`
-		Name            string `json:"name"`
-		Handle          string `json:"handle"`
-		TeamType        string `json:"team_type"`
-		DefaultTaskType string `json:"default_task_type"`
+	var result struct {
+		Teams []struct {
+			ID              string `json:"id"`
+			Name            string `json:"name"`
+			Handle          string `json:"handle"`
+			TeamType        string `json:"team_type"`
+			DefaultTaskType string `json:"default_task_type"`
+		} `json:"teams"`
 	}
-	if err := json.Unmarshal(output, &teams); err != nil {
+	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("unmarshal output: %v\n%s", err, string(output))
 	}
-	if len(teams) != 2 || teams[0].ID != "team-1" || teams[0].Handle != "eng" || teams[1].Name != "Growth" {
-		t.Fatalf("unexpected teams output %#v", teams)
+	if len(result.Teams) != 2 || result.Teams[0].ID != "team-1" || result.Teams[0].Handle != "eng" || result.Teams[1].Name != "Growth" {
+		t.Fatalf("unexpected teams output %#v", result.Teams)
 	}
 }
 
@@ -381,19 +383,23 @@ func TestListWorkspaceTeamsCommandCapsDeterministicOutput(t *testing.T) {
 
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	svc.SetSettingsRepository(repository.NewSettingsRepository(db))
-	output, err := svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws-1", ActorID: "actor-1", TargetType: "workspace", TargetID: "ws-1"}, "workspace.list_teams", json.RawMessage(`{}`))
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws-1", ActorID: "actor-1", TargetType: "workspace", TargetID: "ws-1"}, "workspace.list_teams", json.RawMessage(`{"limit":100,"offset":0}`))
 	if err != nil {
 		t.Fatalf("list teams: %v", err)
 	}
-	var teams []struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
+	var result struct {
+		Teams []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"teams"`
+		HasMore    bool `json:"has_more"`
+		NextOffset *int `json:"next_offset"`
 	}
-	if err := json.Unmarshal(output, &teams); err != nil {
+	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("decode teams: %v", err)
 	}
-	if len(teams) != 100 || teams[0].Name != "Team 000" || teams[99].Name != "Team 099" {
-		t.Fatalf("bounded team output = len %d, first %#v, last %#v", len(teams), teams[0], teams[len(teams)-1])
+	if len(result.Teams) != 100 || result.Teams[0].Name != "Team 000" || result.Teams[99].Name != "Team 099" || !result.HasMore || result.NextOffset == nil || *result.NextOffset != 100 {
+		t.Fatalf("bounded team output = %#v", result)
 	}
 }
 

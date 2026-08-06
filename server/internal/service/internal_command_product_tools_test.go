@@ -87,23 +87,26 @@ func TestListConversationMessagesCommandReturnsConversationMessages(t *testing.T
 	if err != nil {
 		t.Fatalf("support.list_conversation_messages returned error: %v", err)
 	}
-	var messages []struct {
-		SenderType string `json:"sender_type"`
-		Content    string `json:"content"`
-		IsInternal bool   `json:"is_internal"`
-		CreatedAt  string `json:"created_at"`
+	var result struct {
+		Messages []struct {
+			SenderType string `json:"sender_type"`
+			Content    string `json:"content"`
+			IsInternal bool   `json:"is_internal"`
+			CreatedAt  string `json:"created_at"`
+		} `json:"messages"`
+		Total int `json:"total"`
 	}
-	if err := json.Unmarshal(output, &messages); err != nil {
+	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("unmarshal output: %v\n%s", err, string(output))
 	}
-	if len(messages) != 2 {
-		t.Fatalf("expected 2 messages, got %#v", messages)
+	if result.Total != 2 || len(result.Messages) != 2 {
+		t.Fatalf("expected 2 messages, got %#v", result)
 	}
-	if messages[0].SenderType != "customer" || messages[0].Content != "The widget will not load." {
-		t.Fatalf("unexpected first message %#v", messages[0])
+	if result.Messages[0].SenderType != "customer" || result.Messages[0].Content != "The widget will not load." {
+		t.Fatalf("unexpected first message %#v", result.Messages[0])
 	}
-	if !messages[1].IsInternal {
-		t.Fatalf("expected internal note to be included, got %#v", messages[1])
+	if !result.Messages[1].IsInternal {
+		t.Fatalf("expected internal note to be included, got %#v", result.Messages[1])
 	}
 }
 
@@ -341,33 +344,37 @@ func TestCRMListDealsCommandReturnsDealSummaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("crm.list_deals returned error: %v", err)
 	}
-	var deals []struct {
-		ID     string   `json:"id"`
-		Name   string   `json:"name"`
-		Stage  string   `json:"stage"`
-		Amount *float64 `json:"amount"`
+	var result struct {
+		Deals []struct {
+			ID     string   `json:"id"`
+			Name   string   `json:"name"`
+			Stage  string   `json:"stage"`
+			Amount *float64 `json:"amount"`
+		} `json:"deals"`
 	}
-	if err := json.Unmarshal(output, &deals); err != nil {
+	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("unmarshal output: %v\n%s", err, string(output))
 	}
-	if len(deals) != 1 || deals[0].ID != "deal-1" || deals[0].Stage != "Qualified" {
-		t.Fatalf("unexpected deals %#v", deals)
+	if len(result.Deals) != 1 || result.Deals[0].ID != "deal-1" || result.Deals[0].Stage != "Qualified" {
+		t.Fatalf("unexpected deals %#v", result.Deals)
 	}
-	if deals[0].Amount == nil || *deals[0].Amount != 4200.0 {
-		t.Fatalf("unexpected deal amount %#v", deals[0])
+	if result.Deals[0].Amount == nil || *result.Deals[0].Amount != 4200.0 {
+		t.Fatalf("unexpected deal amount %#v", result.Deals[0])
 	}
 	filtered, err := svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws-1", TargetType: "workspace", TargetID: "ws-1"}, "crm.list_deals", json.RawMessage(`{"query":"no-such-deal"}`))
 	if err != nil {
 		t.Fatalf("query crm.list_deals returned error: %v", err)
 	}
-	var filteredDeals []struct {
-		ID string `json:"id"`
+	var filteredResult struct {
+		Deals []struct {
+			ID string `json:"id"`
+		} `json:"deals"`
 	}
-	if err := json.Unmarshal(filtered, &filteredDeals); err != nil {
+	if err := json.Unmarshal(filtered, &filteredResult); err != nil {
 		t.Fatalf("unmarshal filtered deals: %v", err)
 	}
-	if len(filteredDeals) != 0 {
-		t.Fatalf("unexpected filtered deals %#v", filteredDeals)
+	if len(filteredResult.Deals) != 0 {
+		t.Fatalf("unexpected filtered deals %#v", filteredResult.Deals)
 	}
 }
 
@@ -390,18 +397,20 @@ func TestCRMListContactsCommandReturnsContactSummaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("crm.list_contacts returned error: %v", err)
 	}
-	var contacts []struct {
-		ID        string  `json:"id"`
-		FirstName string  `json:"first_name"`
-		LastName  *string `json:"last_name"`
-		Email     *string `json:"email"`
-		JobTitle  *string `json:"job_title"`
+	var result struct {
+		Contacts []struct {
+			ID        string  `json:"id"`
+			FirstName string  `json:"first_name"`
+			LastName  *string `json:"last_name"`
+			Email     *string `json:"email"`
+			JobTitle  *string `json:"job_title"`
+		} `json:"contacts"`
 	}
-	if err := json.Unmarshal(output, &contacts); err != nil {
+	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("unmarshal output: %v\n%s", err, string(output))
 	}
-	if len(contacts) != 1 || contacts[0].FirstName != "Ada" || contacts[0].Email == nil || *contacts[0].Email != "ada@example.com" {
-		t.Fatalf("unexpected contacts %#v", contacts)
+	if len(result.Contacts) != 1 || result.Contacts[0].FirstName != "Ada" || result.Contacts[0].Email == nil || *result.Contacts[0].Email != "ada@example.com" {
+		t.Fatalf("unexpected contacts %#v", result.Contacts)
 	}
 }
 
@@ -420,18 +429,20 @@ func TestCRMListBuyerSignalsCommandFiltersByDeal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("crm.list_buyer_signals returned error: %v", err)
 	}
-	var signals []struct {
-		ID         string  `json:"id"`
-		SignalType string  `json:"signal_type"`
-		Summary    string  `json:"summary"`
-		Confidence float64 `json:"confidence"`
-		DealID     *string `json:"deal_id"`
+	var result struct {
+		Signals []struct {
+			ID         string  `json:"id"`
+			SignalType string  `json:"signal_type"`
+			Summary    string  `json:"summary"`
+			Confidence float64 `json:"confidence"`
+			DealID     *string `json:"deal_id"`
+		} `json:"buyer_signals"`
 	}
-	if err := json.Unmarshal(output, &signals); err != nil {
+	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("unmarshal output: %v\n%s", err, string(output))
 	}
-	if len(signals) != 1 || signals[0].ID != "signal-1" || signals[0].SignalType != "buying_intent" || signals[0].Confidence != 0.92 {
-		t.Fatalf("unexpected signals %#v", signals)
+	if len(result.Signals) != 1 || result.Signals[0].ID != "signal-1" || result.Signals[0].SignalType != "buying_intent" || result.Signals[0].Confidence != 0.92 {
+		t.Fatalf("unexpected signals %#v", result.Signals)
 	}
 }
 
@@ -567,7 +578,7 @@ func TestReleaseGetTaskContextCommandRequiresTaskIDs(t *testing.T) {
 	}
 
 	_, err := def.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws-1"}, json.RawMessage(`{"task_ids":[" "]}`))
-	if err == nil || !strings.Contains(err.Error(), "task_ids is required") {
+	if err == nil || !strings.Contains(err.Error(), "task_ids or task_keys is required") {
 		t.Fatalf("expected task_ids error, got %v", err)
 	}
 	if _, err := svc.Execute(context.Background(), model.InternalCommandContext{

@@ -19,27 +19,8 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 		Name:     "docs.search_documents",
 		Module:   "docs",
 		Mutating: false,
-		Tool: &commandtools.RuntimeToolMetadata{
-			CommandName: "docs.search_documents",
-			Alias:       "search_documents",
-			Category:    "Docs",
-			Description: "Search documents by keyword across the workspace. Use only when you need to find other documents or the current document ID is unknown; do not use it to inspect a known current document.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"query": map[string]any{
-						"type":        "string",
-						"description": "Search query",
-					},
-					"limit": map[string]any{
-						"type":        "integer",
-						"description": "Maximum results to return (default 10, max 20)",
-					},
-				},
-				"required": []string{"query"},
-			},
-		},
-		Execute: s.executeSearchDocuments,
+		Tool:     mustCommandToolMetadata("docs.search_documents"),
+		Execute:  s.executeSearchDocuments,
 	})
 	s.register(InternalCommandDefinition{
 		Name:     "docs.publish_prd_draft",
@@ -89,8 +70,9 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 
 func (s *InternalCommandService) executeSearchDocuments(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 	var req struct {
-		Query string `json:"query"`
-		Limit int    `json:"limit"`
+		Query  string `json:"query"`
+		Limit  int    `json:"limit"`
+		Offset int    `json:"offset"`
 	}
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {
@@ -101,13 +83,19 @@ func (s *InternalCommandService) executeSearchDocuments(ctx context.Context, met
 	if query == "" {
 		return nil, fmt.Errorf("query is required")
 	}
-	if req.Limit <= 0 || req.Limit > 20 {
+	if req.Limit == 0 {
 		req.Limit = 10
+	}
+	if req.Limit < 1 || req.Limit > 20 {
+		return nil, fmt.Errorf("limit must be between 1 and 20")
+	}
+	if req.Offset < 0 {
+		return nil, fmt.Errorf("offset must be zero or greater")
 	}
 	if s.docsSearchRepo == nil {
 		return nil, fmt.Errorf("docs search is not available")
 	}
-	results, err := s.docsSearchRepo.Search(ctx, meta.WorkspaceID, query, nil, nil, req.Limit)
+	results, err := s.docsSearchRepo.Search(ctx, meta.WorkspaceID, query, nil, nil, req.Offset+req.Limit+1)
 	if err != nil {
 		return nil, fmt.Errorf("search documents: %w", err)
 	}
@@ -115,11 +103,15 @@ func (s *InternalCommandService) executeSearchDocuments(ctx context.Context, met
 		ID    string `json:"id"`
 		Title string `json:"title"`
 	}
-	hits := make([]docsSearchHit, 0, len(results))
-	for _, result := range results {
+	start := min(req.Offset, len(results))
+	end := min(start+req.Limit, len(results))
+	hits := make([]docsSearchHit, 0, end-start)
+	for _, result := range results[start:end] {
 		hits = append(hits, docsSearchHit{ID: result.ID, Title: result.Title})
 	}
-	return mustJSON(hits), nil
+	response := commandPaginationOutput(int64(len(results)), req.Offset, req.Limit, len(hits))
+	response["documents"] = hits
+	return mustJSON(response), nil
 }
 
 // executePublishRunPreview persists a run preview artifact for fixed-panel

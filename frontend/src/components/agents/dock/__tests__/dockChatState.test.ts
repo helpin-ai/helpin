@@ -91,6 +91,20 @@ describe('transformDockStream ordering', () => {
       .toEqual(['user', 'assistant']);
   });
 
+  it('interleaves turns when assistant replies were projected in one late batch', () => {
+    const stream = emptyStream();
+    stream.transcript_messages = [
+      { event_id: 'u1', role: 'user', content: 'q1', timestamp: '2026-08-03T07:00:00Z', sequence_no: 1 },
+      { event_id: 'u2', role: 'user', content: 'q2', timestamp: '2026-08-03T07:05:00Z', sequence_no: 2 },
+      // Replayed assistant events keep their original sent_at even though they
+      // were persisted together after both user messages.
+      { event_id: 'a1', role: 'assistant', content: 'a1', timestamp: '2026-08-03T07:01:00Z', sequence_no: 3 },
+      { event_id: 'a2', role: 'assistant', content: 'a2', timestamp: '2026-08-03T07:06:00Z', sequence_no: 4 },
+    ];
+    const result = transformDockStream(stream);
+    expect(result.stream.transcript_messages.map((m) => m.content)).toEqual(['q1', 'a1', 'q2', 'a2']);
+  });
+
   it('falls back to sequence for identical timestamps', () => {
     const stream = emptyStream();
     stream.transcript_messages = [

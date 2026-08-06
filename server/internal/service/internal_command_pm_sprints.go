@@ -66,6 +66,8 @@ func (s *InternalCommandService) executePMListSprints(ctx context.Context, meta 
 		Archived *bool   `json:"archived"`
 		Page     int     `json:"page"`
 		PerPage  int     `json:"per_page"`
+		Limit    int     `json:"limit"`
+		Offset   *int    `json:"offset"`
 	}
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, fmt.Errorf("parse list sprints input: %w", err)
@@ -90,7 +92,11 @@ func (s *InternalCommandService) executePMListSprints(ctx context.Context, meta 
 	if err != nil {
 		return nil, err
 	}
-	sprints, total, page, perPage, err := s.sprintService.ListPage(ctx, meta.WorkspaceID, model.PMSprintListFilters{Search: req.Query, TeamID: req.TeamID, Status: req.Status, Archived: req.Archived, AgentTeamIDs: agentTeamIDs}, model.PMPagination{Page: req.Page, PerPage: req.PerPage})
+	pagination, offset, limit, err := normalizeCommandPagination(req.Page, req.PerPage, req.Limit, req.Offset)
+	if err != nil {
+		return nil, err
+	}
+	sprints, total, _, _, err := s.sprintService.ListPage(ctx, meta.WorkspaceID, model.PMSprintListFilters{Search: req.Query, TeamID: req.TeamID, Status: req.Status, Archived: req.Archived, AgentTeamIDs: agentTeamIDs}, pagination)
 	if err != nil {
 		return nil, fmt.Errorf("list sprints: %w", err)
 	}
@@ -98,7 +104,13 @@ func (s *InternalCommandService) executePMListSprints(ctx context.Context, meta 
 	for _, sprint := range sprints {
 		items = append(items, compactCommandSprint(&sprint))
 	}
-	return mustJSON(map[string]any{"sprints": items, "page": page, "per_page": perPage, "total": total}), nil
+	response := commandPaginationOutput(int64(total), offset, limit, len(items))
+	response["sprints"] = items
+	if req.Page > 0 || req.PerPage > 0 {
+		response["page"] = pagination.Page
+		response["per_page"] = pagination.PerPage
+	}
+	return mustJSON(response), nil
 }
 
 func (s *InternalCommandService) executePMGetSprint(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -125,6 +137,8 @@ func (s *InternalCommandService) executePMListSprintTasks(ctx context.Context, m
 		Query    *string `json:"query"`
 		Page     int     `json:"page"`
 		PerPage  int     `json:"per_page"`
+		Limit    int     `json:"limit"`
+		Offset   *int    `json:"offset"`
 	}
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, fmt.Errorf("parse list sprint tasks input: %w", err)
@@ -136,7 +150,11 @@ func (s *InternalCommandService) executePMListSprintTasks(ctx context.Context, m
 	if _, err := s.loadCommandSprint(ctx, meta, sprintID); err != nil {
 		return nil, err
 	}
-	tasks, total, page, perPage, err := s.sprintService.ListTasksPage(ctx, sprintID, req.Query, model.PMPagination{Page: req.Page, PerPage: req.PerPage})
+	pagination, offset, limit, err := normalizeCommandPagination(req.Page, req.PerPage, req.Limit, req.Offset)
+	if err != nil {
+		return nil, err
+	}
+	tasks, total, _, _, err := s.sprintService.ListTasksPage(ctx, sprintID, req.Query, pagination)
 	if err != nil {
 		return nil, fmt.Errorf("list sprint tasks: %w", err)
 	}
@@ -144,7 +162,14 @@ func (s *InternalCommandService) executePMListSprintTasks(ctx context.Context, m
 	for _, task := range tasks {
 		items = append(items, compactCommandSprintTask(task))
 	}
-	return mustJSON(map[string]any{"sprint_id": sprintID, "tasks": items, "page": page, "per_page": perPage, "total": total}), nil
+	response := commandPaginationOutput(int64(total), offset, limit, len(items))
+	response["sprint_id"] = sprintID
+	response["tasks"] = items
+	if req.Page > 0 || req.PerPage > 0 {
+		response["page"] = pagination.Page
+		response["per_page"] = pagination.PerPage
+	}
+	return mustJSON(response), nil
 }
 
 func (s *InternalCommandService) executePMCreateSprint(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {

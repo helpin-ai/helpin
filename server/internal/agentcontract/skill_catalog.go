@@ -18,6 +18,7 @@ type PresetSkillBundle struct {
 	SkillKeys          []string
 	CoreSkillKeys      []string
 	AvailableSkillKeys []string
+	WorkspaceSearch    bool
 }
 
 var builtInSkillDefinitions = mustLoadBuiltInSkillDefinitions()
@@ -79,23 +80,26 @@ var builtInSkillAliases = map[string]string{
 
 var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 	model.AgentPresetEpicPlanner: {
-		Preamble:      "You are Atlas, the workspace epic planner. You run the full PRD-to-tasks loop inside a single interactive agent run.",
-		SkillKeys:     []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
-		CoreSkillKeys: []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
+		Preamble:        "You are Atlas, the workspace epic planner. You run the full PRD-to-tasks loop inside a single interactive agent run.",
+		SkillKeys:       []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
+		CoreSkillKeys:   []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
+		WorkspaceSearch: true,
 		// Atlas behavior lives only in the version-owned system prompt. This
 		// reloadable skill is deliberately limited to the structured tool contract
 		// that is easy to forget late in a long approval-driven run.
 		AvailableSkillKeys: []string{"task_plan_publishing"},
 	},
 	model.AgentPresetTaskPlanner: {
-		Preamble:      "You are Scribe, the workspace task planner. You run a focused planning conversation for one task or work item.",
-		SkillKeys:     []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"},
-		CoreSkillKeys: []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"},
+		Preamble:        "You are Scribe, the workspace task planner. You run a focused planning conversation for one task or work item.",
+		SkillKeys:       []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"},
+		CoreSkillKeys:   []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"},
+		WorkspaceSearch: true,
 	},
 	model.AgentPresetCRMOperator: {
-		Preamble:      "You are Beacon, the workspace CRM operator. You help manage customer records, deal workflows, and sales signals across the workspace.",
-		SkillKeys:     []string{"crm_record_operations"},
-		CoreSkillKeys: []string{"crm_record_operations"},
+		Preamble:        "You are Beacon, the workspace CRM operator. You help manage customer records, deal workflows, and sales signals across the workspace.",
+		SkillKeys:       []string{"crm_record_operations"},
+		CoreSkillKeys:   []string{"crm_record_operations"},
+		WorkspaceSearch: true,
 	},
 	model.AgentPresetSupportAgent: {
 		Preamble:      "You are Echo, the workspace support agent. You help triage support conversations, draft replies, and route customer issues.",
@@ -104,8 +108,9 @@ var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 		CoreSkillKeys: []string{"support_triage_response"},
 	},
 	model.AgentPresetDocumentationAgent: {
-		Preamble:     "You are Quill, the workspace documentation agent. You help create, update, and organize internal docs, public help docs, and API docs.",
-		SystemPrompt: quillSystemPrompt,
+		Preamble:        "You are Quill, the workspace documentation agent. You help create, update, and organize internal docs, public help docs, and API docs.",
+		SystemPrompt:    quillSystemPrompt,
+		WorkspaceSearch: true,
 		SkillKeys: []string{
 			"docs_architecture_review",
 			"public_help_doc_writing",
@@ -128,8 +133,9 @@ var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 		},
 	},
 	model.AgentPresetMarketer: {
-		Preamble:     "You are Mira, the workspace marketer. You help with positioning, campaigns, copy, lifecycle messaging, launches, conversion ideas, and marketing research.",
-		SystemPrompt: miraSystemPrompt,
+		Preamble:        "You are Mira, the workspace marketer. You help with positioning, campaigns, copy, lifecycle messaging, launches, conversion ideas, and marketing research.",
+		SystemPrompt:    miraSystemPrompt,
+		WorkspaceSearch: true,
 		SkillKeys: []string{
 			"marketing_context_setup",
 			"marketing_plan",
@@ -522,10 +528,26 @@ func InstructionTemplateVersionForPresetWithAvailableSkills(preamble string, cor
 }
 
 func compiledPromptForPresetBundle(bundle PresetSkillBundle) string {
+	var prompt string
 	if strings.TrimSpace(bundle.SystemPrompt) != "" {
-		return strings.TrimSpace(bundle.SystemPrompt)
+		prompt = strings.TrimSpace(bundle.SystemPrompt)
+	} else {
+		prompt = CompilePresetInstructionsWithAvailableSkills(bundle.Preamble, coreSkillKeysForPresetBundle(bundle), bundle.AvailableSkillKeys)
 	}
-	return CompilePresetInstructionsWithAvailableSkills(bundle.Preamble, coreSkillKeysForPresetBundle(bundle), bundle.AvailableSkillKeys)
+	if bundle.WorkspaceSearch {
+		prompt = strings.TrimSpace(prompt + "\n\n" + WorkspaceSearchPromptGuidance())
+	}
+	return prompt
+}
+
+// WorkspaceSearchPromptGuidance keeps cross-entity lookup and pagination
+// behavior consistent across system presets that expose search_workspace.
+func WorkspaceSearchPromptGuidance() string {
+	return strings.TrimSpace(`## Workspace Discovery
+
+- Use search_workspace to resolve an entity by its human-readable key or name. Then pass the returned ID to the appropriate get, context, read, or mutation tool.
+- Use entity-specific list tools for browsing and structured filtered reports. When a result has has_more=true, continue with next_offset instead of requesting an oversized page.
+- When available, use search_documents for full-text document-content searches; use search_workspace for cross-entity discovery.`)
 }
 
 func BuiltInPresetPrompt(presetKey string) *string {

@@ -23,23 +23,8 @@ func (s *InternalCommandService) registerSupportCommands() {
 		Module:               "support",
 		Mutating:             false,
 		SupportedTargetTypes: supportCommandTargetTypes,
-		Tool: &commandtools.RuntimeToolMetadata{
-			CommandName: "support.list_conversation_messages",
-			Alias:       "list_conversation_messages",
-			Category:    "Support",
-			Description: "List the current support conversation messages.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"conversation_id": map[string]any{
-						"type":        "string",
-						"description": "Optional conversation ID. Defaults to the current conversation target.",
-					},
-				},
-				"additionalProperties": false,
-			},
-		},
-		Execute: s.executeListConversationMessages,
+		Tool:                 mustCommandToolMetadata("support.list_conversation_messages"),
+		Execute:              s.executeListConversationMessages,
 	})
 	s.register(InternalCommandDefinition{
 		Name:                 "support.draft_reply",
@@ -107,6 +92,8 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 	}
 	var req struct {
 		ConversationID string `json:"conversation_id"`
+		Limit          int    `json:"limit"`
+		Offset         int    `json:"offset"`
 	}
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {
@@ -116,6 +103,15 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 	conversationID := firstNonEmptyCommand(req.ConversationID, commandConversationTargetID(meta))
 	if conversationID == "" {
 		return nil, fmt.Errorf("no support conversation associated with this run")
+	}
+	if req.Limit == 0 {
+		req.Limit = 50
+	}
+	if req.Limit < 1 || req.Limit > 100 {
+		return nil, fmt.Errorf("limit must be between 1 and 100")
+	}
+	if req.Offset < 0 {
+		return nil, fmt.Errorf("offset must be zero or greater")
 	}
 	messages, err := s.supportMessageRepo.ListByConversation(ctx, meta.WorkspaceID, conversationID, true)
 	if err != nil {
@@ -127,8 +123,10 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 		IsInternal bool   `json:"is_internal"`
 		CreatedAt  string `json:"created_at"`
 	}
-	result := make([]ticketMessage, 0, len(messages))
-	for _, message := range messages {
+	start := min(req.Offset, len(messages))
+	end := min(start+req.Limit, len(messages))
+	result := make([]ticketMessage, 0, end-start)
+	for _, message := range messages[start:end] {
 		result = append(result, ticketMessage{
 			SenderType: message.SenderType,
 			Content:    message.Content,
@@ -136,7 +134,9 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 			CreatedAt:  message.CreatedAt.Format(time.RFC3339),
 		})
 	}
-	return mustJSON(result), nil
+	response := commandPaginationOutput(int64(len(messages)), req.Offset, req.Limit, len(result))
+	response["messages"] = result
+	return mustJSON(response), nil
 }
 
 // executeDraftSupportReply stages a support draft on the run's output summary

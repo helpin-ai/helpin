@@ -1185,6 +1185,7 @@ func main() {
 	commandService.SetDocsBlockService(docsBlockService)
 	commandService.SetSupportDependencies(supportMessageRepo, supportConversationRepo, wsPublisher)
 	commandService.SetCRMReadServices(crmContactService, crmSignalService)
+	commandService.SetWorkspaceSearchServices(searchService, crmSearchService, supportInboxService)
 	commandService.SetDocsSearchRepository(docsSearchRepo)
 	commandService.SetDocsChangeProposalService(docsChangeProposalService)
 	commandService.SetAgentRunDependencies(agentRunRepo, agentRunArtifactRepo)
