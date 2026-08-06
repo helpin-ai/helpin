@@ -59,6 +59,8 @@ type InternalCommandService struct {
 	supportMessageRepo        *repository.SupportMessageRepository
 	supportConversationRepo   *repository.SupportConversationRepository
 	supportEventPublisher     websocket.EventPublisher
+	supportInboxService       *SupportInboxService
+	supportTagService         *SupportTagService
 	crmContactService         *CRMContactService
 	crmSignalService          *CRMSignalService
 	docsSearchRepo            *repository.DocsSearchRepository
@@ -189,6 +191,16 @@ func (s *InternalCommandService) SetSupportDependencies(
 	s.supportMessageRepo = messageRepo
 	s.supportConversationRepo = conversationRepo
 	s.supportEventPublisher = publisher
+}
+
+// SetSupportOperationalServices wires permission-aware Support discovery and
+// triage commands through the same services used by the inbox UI.
+func (s *InternalCommandService) SetSupportOperationalServices(inboxService *SupportInboxService, tagService *SupportTagService) {
+	if s == nil {
+		return
+	}
+	s.supportInboxService = inboxService
+	s.supportTagService = tagService
 }
 
 // SetCRMReadServices wires read-only CRM listing services used by command-backed
@@ -1957,6 +1969,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerSupportKnowledgeCommands()
 	s.registerSupportReplyCommands()
 	s.registerSupportCommands()
+	s.registerSupportOperationalCommands()
 	s.registerCRMReadCommands()
 	s.registerCRMOperationalCommands()
 	s.registerReleaseFactsCommands()

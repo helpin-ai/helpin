@@ -2194,6 +2194,16 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 // LinkConversationStory links a conversation to a task.
 func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspaceID, ticketID, storyID, actorID string) error {
+	trimmed := strings.TrimSpace(storyID)
+	if trimmed == "" {
+		return fmt.Errorf("task_id is required")
+	}
+	return s.UpdateConversationLinkedTask(ctx, workspaceID, ticketID, &trimmed, actorID)
+}
+
+// UpdateConversationLinkedTask sets or clears the PM task associated with a
+// support conversation and keeps the generic association table synchronized.
+func (s *SupportInboxService) UpdateConversationLinkedTask(ctx context.Context, workspaceID, ticketID string, storyID *string, actorID string) error {
 	ticket, err := s.loadConversationAccessible(ctx, workspaceID, ticketID)
 	if err != nil {
 		return err
@@ -2202,24 +2212,46 @@ func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspa
 		return fmt.Errorf("ticket not found")
 	}
 
-	ticket.LinkedTaskID = &storyID
+	var normalizedTaskID *string
+	if storyID != nil && strings.TrimSpace(*storyID) != "" {
+		trimmed := strings.TrimSpace(*storyID)
+		if s.taskService != nil {
+			task, err := s.taskService.GetByID(ctx, trimmed)
+			if err != nil || task == nil || task.Task.WorkspaceID != workspaceID {
+				return fmt.Errorf("task not found")
+			}
+		}
+		normalizedTaskID = &trimmed
+	}
+
+	ticket.LinkedTaskID = normalizedTaskID
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return err
 	}
-
-	assoc := &model.CRMAssociation{
-		WorkspaceID:    workspaceID,
-		FromObjectType: model.CRMObjectSupportConversation,
-		FromObjectID:   ticketID,
-		ToObjectType:   model.CRMObjectTask,
-		ToObjectID:     storyID,
+	if s.assocRepo == nil {
+		return fmt.Errorf("CRM association repository is unavailable")
 	}
-	if err := s.assocRepo.Create(ctx, assoc); err != nil {
+	existing, err := s.assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectSupportConversation, ticketID)
+	if err != nil {
 		return err
+	}
+	for _, assoc := range existing {
+		otherType, otherID := otherAssociationSide(assoc, model.CRMObjectSupportConversation, ticketID)
+		if otherType == model.CRMObjectTask && (normalizedTaskID == nil || otherID != *normalizedTaskID) {
+			if err := s.assocRepo.Delete(ctx, assoc.ID); err != nil {
+				return err
+			}
+		}
+	}
+	if normalizedTaskID != nil {
+		assoc := &model.CRMAssociation{WorkspaceID: workspaceID, FromObjectType: model.CRMObjectSupportConversation, FromObjectID: ticketID, ToObjectType: model.CRMObjectTask, ToObjectID: *normalizedTaskID}
+		if err := s.assocRepo.Create(ctx, assoc); err != nil {
+			return err
+		}
 	}
 
 	if s.activitySvc != nil {
-		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("linked_task_id"), nil, &storyID, nil)
+		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("linked_task_id"), nil, normalizedTaskID, nil)
 	}
 
 	s.wsPublisher.Publish(websocket.Event{
