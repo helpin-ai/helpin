@@ -358,44 +358,83 @@ func TestHasDurableSupportCoverageGapOutcomeAcceptsLegacyProposal(t *testing.T) 
 	}
 }
 
-func TestAgentRuntimeProjectionRecoversReviewReadyCoverageDocument(t *testing.T) {
-	run := &model.AgentRun{
-		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-custom",
-		TargetType: "support_coverage_gap", TargetID: "gap-1",
-		Status: model.AgentRunStatusRunning,
-	}
-	repo := &fakeAgentRuntimeProjectionRunRepo{byID: map[string]*model.AgentRun{run.ID: run}}
-	runtimeClient := &fakeAgentRuntimeSignalClient{toolCalls: map[string][]AgentRuntimeToolCall{
-		"runtime-gap": {{
-			ToolName: "mcp__helpin__create_document",
-			Output:   json.RawMessage(`{"id":"doc-created","status":"draft"}`),
-		}},
-	}}
-	svc := &AgentRuntimeProjectionService{
-		runRepo:            repo,
-		agentRuntimeClient: runtimeClient,
-		now:                time.Now,
+func TestAgentRuntimeProjectionRecoversReviewReadyCoverageDocumentAcrossRuntimeAuditFormats(t *testing.T) {
+	tests := []struct {
+		name   string
+		output json.RawMessage
+	}{
+		{
+			name:   "native sdk output envelope",
+			output: json.RawMessage(`{"runtime_kind":"native_sdk","output":"{\"id\":\"doc-created\",\"status\":\"draft\"}"}`),
+		},
+		{
+			name:   "codex dynamic tool result envelope",
+			output: json.RawMessage(`{"runtime_kind":"codex","result":{"success":true,"contentItems":[{"type":"inputText","text":"{\"id\":\"doc-created\",\"status\":\"draft\"}"}]}}`),
+		},
+		{
+			name:   "codex mcp result envelope",
+			output: json.RawMessage(`{"runtime_kind":"codex","result":{"id":"doc-created","status":"draft"}}`),
+		},
 	}
 
-	err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
-		RunID: "runtime-gap", HostRunID: run.ID, Type: agentruntime.EventRunCompleted,
-	})
-	if err != nil {
-		t.Fatalf("ApplyEvent returned error: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := &model.AgentRun{
+				ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-custom",
+				TargetType: "support_coverage_gap", TargetID: "gap-1",
+				Status: model.AgentRunStatusRunning,
+			}
+			repo := &fakeAgentRuntimeProjectionRunRepo{byID: map[string]*model.AgentRun{run.ID: run}}
+			runtimeClient := &fakeAgentRuntimeSignalClient{toolCalls: map[string][]AgentRuntimeToolCall{
+				"runtime-gap": {{
+					ToolName: "mcp__helpin__create_document",
+					Output:   tt.output,
+				}},
+			}}
+			svc := &AgentRuntimeProjectionService{
+				runRepo:            repo,
+				agentRuntimeClient: runtimeClient,
+				now:                time.Now,
+			}
+
+			err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+				RunID: "runtime-gap", HostRunID: run.ID, Type: agentruntime.EventRunCompleted,
+			})
+			if err != nil {
+				t.Fatalf("ApplyEvent returned error: %v", err)
+			}
+			if run.Status != model.AgentRunStatusCompleted {
+				t.Fatalf("expected durable document recovery to complete the run, got %q (%v)", run.Status, run.ErrorMessage)
+			}
+			var body map[string]json.RawMessage
+			if err := json.Unmarshal(run.OutputSummary, &body); err != nil {
+				t.Fatalf("decode recovered summary: %v", err)
+			}
+			var outcome supportCoverageGapOutcomeSummary
+			if err := json.Unmarshal(body[supportCoverageGapOutcomeSummaryKey], &outcome); err != nil {
+				t.Fatalf("decode recovered outcome: %v", err)
+			}
+			if outcome.Outcome != SupportCoverageAgentOutcomeReviewReady || outcome.Action != SupportCoverageAgentActionDocumentCreated || outcome.DocumentID != "doc-created" || !outcome.Recovered {
+				t.Fatalf("unexpected recovered outcome: %#v", outcome)
+			}
+		})
 	}
-	if run.Status != model.AgentRunStatusCompleted {
-		t.Fatalf("expected durable document recovery to complete the run, got %q (%v)", run.Status, run.ErrorMessage)
+}
+
+func TestFirstRuntimeToolCallStringReadsNativeAndCodexInputs(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  json.RawMessage
+	}{
+		{name: "native sdk direct input", raw: json.RawMessage(`{"document_id":"doc-native"}`)},
+		{name: "codex arguments envelope", raw: json.RawMessage(`{"runtime_kind":"codex","arguments":{"document_id":"doc-native"}}`)},
 	}
-	var body map[string]json.RawMessage
-	if err := json.Unmarshal(run.OutputSummary, &body); err != nil {
-		t.Fatalf("decode recovered summary: %v", err)
-	}
-	var outcome supportCoverageGapOutcomeSummary
-	if err := json.Unmarshal(body[supportCoverageGapOutcomeSummaryKey], &outcome); err != nil {
-		t.Fatalf("decode recovered outcome: %v", err)
-	}
-	if outcome.Outcome != SupportCoverageAgentOutcomeReviewReady || outcome.Action != SupportCoverageAgentActionDocumentCreated || outcome.DocumentID != "doc-created" || !outcome.Recovered {
-		t.Fatalf("unexpected recovered outcome: %#v", outcome)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := firstRuntimeToolCallString(tt.raw, "document_id"); got != "doc-native" {
+				t.Fatalf("document_id = %q, want doc-native", got)
+			}
+		})
 	}
 }
 

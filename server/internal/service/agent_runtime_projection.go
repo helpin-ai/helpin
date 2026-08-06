@@ -917,13 +917,55 @@ func firstRuntimeToolCallString(raw json.RawMessage, keys ...string) string {
 	if len(raw) == 0 {
 		return ""
 	}
-	var body map[string]any
-	if json.Unmarshal(raw, &body) != nil {
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
 		return ""
 	}
-	for _, key := range keys {
-		if value := strings.TrimSpace(fmt.Sprint(body[key])); value != "" && value != "<nil>" {
-			return value
+	return firstRuntimeToolCallValueString(value, keys, 0)
+}
+
+// firstRuntimeToolCallValueString reads both Agent Runtime audit formats:
+// native_sdk wraps the command response as JSON text under output, while
+// Codex records it under result and may wrap text inside contentItems.
+func firstRuntimeToolCallValueString(value any, keys []string, depth int) string {
+	if value == nil || depth > 8 {
+		return ""
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, key := range keys {
+			switch candidate := typed[key].(type) {
+			case string:
+				if trimmed := strings.TrimSpace(candidate); trimmed != "" {
+					return trimmed
+				}
+			case json.Number:
+				if trimmed := strings.TrimSpace(candidate.String()); trimmed != "" {
+					return trimmed
+				}
+			}
+		}
+		for _, envelopeKey := range []string{"result", "output", "arguments", "contentItems", "content_items", "content", "text", "data", "response"} {
+			if candidate, ok := typed[envelopeKey]; ok {
+				if found := firstRuntimeToolCallValueString(candidate, keys, depth+1); found != "" {
+					return found
+				}
+			}
+		}
+	case []any:
+		for _, candidate := range typed {
+			if found := firstRuntimeToolCallValueString(candidate, keys, depth+1); found != "" {
+				return found
+			}
+		}
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" || !json.Valid([]byte(trimmed)) {
+			return ""
+		}
+		var nested any
+		if json.Unmarshal([]byte(trimmed), &nested) == nil {
+			return firstRuntimeToolCallValueString(nested, keys, depth+1)
 		}
 	}
 	return ""
