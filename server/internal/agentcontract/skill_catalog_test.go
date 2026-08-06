@@ -460,6 +460,8 @@ func TestDocumentationAgentPromptUsesCuratedSkillSelectionGuide(t *testing.T) {
 		"Use public help docs skills for customer-facing how-to",
 		"Use API docs skills for endpoints, schemas, authentication",
 		"Use support-gap skills when customer questions or support evidence reveal missing, stale, or weak documentation.",
+		"inspect the shipped implementation and relevant tests in the linked repository before drafting",
+		"search existing workspace docs first",
 	} {
 		if !strings.Contains(*prompt, snippet) {
 			t.Fatalf("expected Quill prompt to contain %q\n%s", snippet, *prompt)

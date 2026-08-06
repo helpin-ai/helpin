@@ -31,6 +31,7 @@ const (
 	agentRuntimeEventCodexAuthStateChanged        = "codex_auth.state_changed"
 	agentRuntimeExecutionStageAuthCompleted       = "auth_completed"
 	agentRuntimeExecutionStageAwaitingAuth        = "awaiting_auth"
+	agentRuntimeCoverageCompletionError           = "Quill finished without a durable support coverage outcome; inspect the current docs and product repository, create or update the documentation work, then call complete_support_coverage_gap"
 )
 
 var errAgentRuntimeProjectionRunNotFound = errors.New("agent runtime projection run not found")
@@ -549,6 +550,15 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			run.CompletedAt = &now
 			changed = true
 		}
+		if s.requiresQuillCoverageCompletion(ctx, run) {
+			s.mergeRuntimeOutputSummaryForFinalizers(ctx, run)
+			if !hasDurableSupportCoverageGapOutcome(run.OutputSummary) {
+				message := agentRuntimeCoverageCompletionError
+				run.ErrorMessage = &message
+				changed = setRunStatus(run, model.AgentRunStatusFailed, model.AgentRunPauseReasonNone) || changed
+				break
+			}
+		}
 		changed = setRunStatus(run, model.AgentRunStatusCompleted, model.AgentRunPauseReasonNone) || changed
 	case agentruntime.EventRunFailed:
 		if run.CompletedAt == nil {
@@ -767,6 +777,54 @@ func (s *AgentRuntimeProjectionService) mergeRuntimeOutputSummaryForFinalizers(c
 	return true
 }
 
+// requiresQuillCoverageCompletion scopes the host-side terminal safeguard to
+// Documentation Agent coverage-gap runs. Agent Runtime owns the primary
+// required-tool retry; this prevents an older or drifting runtime from
+// projecting a prose-only turn as successful in Helpin.
+func (s *AgentRuntimeProjectionService) requiresQuillCoverageCompletion(ctx context.Context, run *model.AgentRun) bool {
+	if s == nil || s.agentRepo == nil || run == nil || strings.TrimSpace(run.TargetType) != "support_coverage_gap" {
+		return false
+	}
+	agent, err := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID)
+	if err != nil {
+		slog.ErrorContext(ctx, "support coverage completion agent lookup failed",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+			"agent_id", run.AgentID,
+		)
+		return false
+	}
+	return agent != nil && normalizePresetKey(agent.PresetKey) == model.AgentPresetDocumentationAgent
+}
+
+func hasDurableSupportCoverageGapOutcome(summary json.RawMessage) bool {
+	if len(summary) == 0 {
+		return false
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(summary, &body); err != nil {
+		return false
+	}
+	var outcome supportCoverageGapOutcomeSummary
+	if err := json.Unmarshal(body[supportCoverageGapOutcomeSummaryKey], &outcome); err != nil {
+		return false
+	}
+	if strings.TrimSpace(outcome.Summary) == "" {
+		return false
+	}
+	switch strings.TrimSpace(outcome.Outcome) {
+	case SupportCoverageAgentOutcomeResolved:
+		return strings.TrimSpace(outcome.DocumentID) != ""
+	case SupportCoverageAgentOutcomeProposalSubmitted:
+		return strings.TrimSpace(outcome.DocumentID) != "" && strings.TrimSpace(outcome.ProposalID) != ""
+	case SupportCoverageAgentOutcomeHandoff:
+		return true
+	default:
+		return false
+	}
+}
+
 // mergeRuntimeOutputSummaryPayload overlays runtime summary keys onto the
 // local summary, preserving host-reserved marker keys.
 func mergeRuntimeOutputSummaryPayload(local, runtime json.RawMessage) json.RawMessage {
@@ -783,7 +841,7 @@ func mergeRuntimeOutputSummaryPayload(local, runtime json.RawMessage) json.RawMe
 		_ = json.Unmarshal(local, &localBody)
 	}
 	for key, value := range runtimeBody {
-		if strings.HasPrefix(key, "agent_runtime_") {
+		if strings.HasPrefix(key, "agent_runtime_") || key == supportCoverageGapOutcomeSummaryKey {
 			continue
 		}
 		localBody[key] = value

@@ -689,8 +689,8 @@ func TestAgentRuntimeFinalizersCommandBarPlanAdvancerFailureIsIsolated(t *testin
 }
 
 func TestMergeRuntimeOutputSummaryPayloadPreservesHostMarkers(t *testing.T) {
-	local := json.RawMessage(`{"agent_runtime_usage_consumed":true,"agent_runtime_finalizer_agent_idle":true}`)
-	runtime := json.RawMessage(`{"draft_reply":{"content":"hello"},"agent_runtime_usage_consumed":false,"status":"success"}`)
+	local := json.RawMessage(`{"agent_runtime_usage_consumed":true,"agent_runtime_finalizer_agent_idle":true,"support_coverage_gap_outcome":{"outcome":"resolved","document_id":"doc-host","summary":"host validated"}}`)
+	runtime := json.RawMessage(`{"draft_reply":{"content":"hello"},"agent_runtime_usage_consumed":false,"support_coverage_gap_outcome":{"outcome":"handoff","summary":"runtime supplied"},"status":"success"}`)
 	merged := mergeRuntimeOutputSummaryPayload(local, runtime)
 	var body map[string]any
 	if err := json.Unmarshal(merged, &body); err != nil {
@@ -701,6 +701,10 @@ func TestMergeRuntimeOutputSummaryPayloadPreservesHostMarkers(t *testing.T) {
 	}
 	if idle, _ := body["agent_runtime_finalizer_agent_idle"].(bool); !idle {
 		t.Fatalf("host marker lost in merge: %s", string(merged))
+	}
+	coverage, _ := body[supportCoverageGapOutcomeSummaryKey].(map[string]any)
+	if coverage["document_id"] != "doc-host" || coverage["outcome"] != SupportCoverageAgentOutcomeResolved {
+		t.Fatalf("host-validated support coverage outcome lost in merge: %s", string(merged))
 	}
 	if _, ok := body["draft_reply"]; !ok {
 		t.Fatalf("runtime contract key missing after merge: %s", string(merged))

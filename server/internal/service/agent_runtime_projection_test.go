@@ -291,6 +291,69 @@ func TestAgentRuntimeProjectionMapsLifecycleByHostRunID(t *testing.T) {
 	}
 }
 
+func TestAgentRuntimeProjectionRejectsProseOnlyQuillCoverageCompletion(t *testing.T) {
+	run := &model.AgentRun{
+		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-quill",
+		TargetType: "support_coverage_gap", TargetID: "gap-1",
+		Status: model.AgentRunStatusRunning,
+	}
+	repo := &fakeAgentRuntimeProjectionRunRepo{byID: map[string]*model.AgentRun{run.ID: run}}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: repo,
+		agentRepo: &fakeAgentRuntimeProjectionAgentRepo{agent: &model.Agent{
+			ID: "agent-quill", PresetKey: model.AgentPresetDocumentationAgent,
+		}},
+		now: time.Now,
+	}
+
+	err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "runtime-gap", HostRunID: run.ID, Type: agentruntime.EventRunCompleted,
+	})
+	if err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	if run.Status != model.AgentRunStatusFailed {
+		t.Fatalf("expected prose-only coverage run to fail, got %q", run.Status)
+	}
+	if run.ErrorMessage == nil || !strings.Contains(*run.ErrorMessage, "complete_support_coverage_gap") {
+		t.Fatalf("expected repair-oriented completion error, got %#v", run.ErrorMessage)
+	}
+}
+
+func TestAgentRuntimeProjectionAcceptsDurableQuillCoverageCompletion(t *testing.T) {
+	outcome := supportCoverageGapOutcomeSummary{
+		Outcome: SupportCoverageAgentOutcomeProposalSubmitted, DocumentID: "doc-1", ProposalID: "proposal-1",
+		Summary: "Proposed a verified command bar help article.",
+	}
+	summary, err := json.Marshal(map[string]any{supportCoverageGapOutcomeSummaryKey: outcome})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &model.AgentRun{
+		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-quill",
+		TargetType: "support_coverage_gap", TargetID: "gap-1",
+		Status: model.AgentRunStatusRunning, OutputSummary: summary,
+	}
+	repo := &fakeAgentRuntimeProjectionRunRepo{byID: map[string]*model.AgentRun{run.ID: run}}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: repo,
+		agentRepo: &fakeAgentRuntimeProjectionAgentRepo{agent: &model.Agent{
+			ID: "agent-quill", PresetKey: model.AgentPresetDocumentationAgent,
+		}},
+		now: time.Now,
+	}
+
+	err = svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "runtime-gap", HostRunID: run.ID, Type: agentruntime.EventRunCompleted,
+	})
+	if err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	if run.Status != model.AgentRunStatusCompleted {
+		t.Fatalf("expected durable coverage run to complete, got %q (%v)", run.Status, run.ErrorMessage)
+	}
+}
+
 func TestAgentRuntimeProjectionStoresWorkspacePreparedBranchSyncSummary(t *testing.T) {
 	run := &model.AgentRun{
 		ID:            "run-helpin",
