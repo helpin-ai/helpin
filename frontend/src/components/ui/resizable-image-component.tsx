@@ -5,6 +5,8 @@ import { TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, Maximize01I
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { LoadingImage } from '@/components/ui/loading-image';
 import { useImageActions } from '@/hooks/useImageActions';
+import { parseHelpinReference } from '@/lib/helpinReferences';
+import { automationService } from '@/lib/services/automationService';
 
 const MIN_WIDTH = 100;
 
@@ -21,9 +23,51 @@ const ALIGNMENT_OPTIONS = [
 ] as const;
 
 export function ResizableImageComponent({ node, updateAttributes, selected: _selected, deleteNode, editor, extension }: NodeViewProps) {
-  const { src, darkSrc, alt, caption, width, height, aspectRatio: storedAspectRatio, alignment, linkUrl, linkNewTab } = node.attrs;
+  const { src, darkSrc, alt, caption, width, height, aspectRatio: storedAspectRatio, alignment, linkUrl, linkNewTab, artifactId } = node.attrs;
   const { copyImage, downloadImage, openInNewTab: _openInNewTab } = useImageActions();
   const enableCaption = extension.options.enableCaption ?? true;
+  const workspaceId = extension.options.workspaceId as string | undefined;
+  const srcReference = parseHelpinReference(typeof src === 'string' ? src : undefined);
+  const resolvedArtifactId = artifactId || (srcReference?.type === 'artifacts' ? srcReference.id : null);
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(resolvedArtifactId ? null : src);
+  const [artifactError, setArtifactError] = useState(false);
+  const [artifactRefresh, setArtifactRefresh] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    let refreshTimer: number | undefined;
+    if (!resolvedArtifactId) {
+      setResolvedSrc(src);
+      setArtifactError(false);
+      return () => { cancelled = true; };
+    }
+    if (!workspaceId) {
+      setResolvedSrc(null);
+      setArtifactError(true);
+      return () => { cancelled = true; };
+    }
+    setResolvedSrc(null);
+    setArtifactError(false);
+    void automationService.getArtifactContentURL(workspaceId, resolvedArtifactId).then((response) => {
+      if (cancelled) return;
+      if (response.error || !response.data?.url) {
+        setArtifactError(true);
+        return;
+      }
+      setResolvedSrc(response.data.url);
+      const expiresAt = Date.parse(response.data.expires_at);
+      if (Number.isFinite(expiresAt)) {
+        refreshTimer = window.setTimeout(
+          () => setArtifactRefresh((value) => value + 1),
+          Math.max(30_000, expiresAt - Date.now() - 60_000),
+        );
+      }
+    });
+    return () => {
+      cancelled = true;
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+    };
+  }, [artifactRefresh, resolvedArtifactId, src, workspaceId]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -204,19 +248,25 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
           ...(aspectRatio ? { aspectRatio: String(aspectRatio) } : {}),
         }}
       >
-        <LoadingImage
-          ref={imageRef}
-          src={src}
-          alt={alt ?? ''}
-          onLoad={handleImageLoad}
-          draggable={false}
-          containerClassName={`${darkSrc ? 'dark:hidden' : 'block'} max-w-full overflow-hidden rounded-md`}
-          className="block max-w-full rounded-md"
-          style={{
-            width: currentWidth,
-            ...(aspectRatio ? { aspectRatio: String(aspectRatio) } : {}),
-          }}
-        />
+        {resolvedSrc ? (
+          <LoadingImage
+            ref={imageRef}
+            src={resolvedSrc}
+            alt={alt ?? ''}
+            onLoad={handleImageLoad}
+            draggable={false}
+            containerClassName={`${darkSrc ? 'dark:hidden' : 'block'} max-w-full overflow-hidden rounded-md`}
+            className="block max-w-full rounded-md"
+            style={{
+              width: currentWidth,
+              ...(aspectRatio ? { aspectRatio: String(aspectRatio) } : {}),
+            }}
+          />
+        ) : (
+          <div className="flex min-h-32 items-center justify-center rounded-md border border-border/60 bg-muted/40 px-4 text-center text-xs text-muted-foreground">
+            {artifactError ? 'Private image is unavailable' : 'Loading private image…'}
+          </div>
+        )}
         {darkSrc && (
           <LoadingImage
             src={darkSrc}
@@ -325,7 +375,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
             <QuickTooltip label="Download">
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); downloadImage(src, alt); }}
+                onClick={(e) => { e.stopPropagation(); if (resolvedSrc) downloadImage(resolvedSrc, alt); }}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               >
                 <Download04Icon className="h-4 w-4" />
@@ -334,7 +384,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
             <QuickTooltip label="Copy image">
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); copyImage(src); }}
+                onClick={(e) => { e.stopPropagation(); if (resolvedSrc) copyImage(resolvedSrc); }}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               >
                 <Copy01Icon className="h-4 w-4" />
@@ -449,7 +499,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
       )}
 
       {/* Fullscreen overlay */}
-      {isFullscreen && (
+      {isFullscreen && resolvedSrc && (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
           onClick={() => setIsFullscreen(false)}
@@ -464,7 +514,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
             </button>
           </QuickTooltip>
           <LoadingImage
-            src={src}
+            src={resolvedSrc}
             alt={alt ?? ''}
             containerClassName="max-h-[90vh] max-w-[90vw] overflow-hidden rounded-lg"
             className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"

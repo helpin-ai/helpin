@@ -102,7 +102,7 @@ var docsBlockRegistry = map[docsBlockKind]docsBlockDefinition{
 		Kind:              docsBlockKindImage,
 		Label:             "Image",
 		AgentReadableKind: "image",
-		Attrs:             []string{"src", "alt", "caption", "align"},
+		Attrs:             []string{"src", "alt", "caption", "align", "artifactId"},
 	},
 	docsBlockKindVideo: {
 		Kind:              docsBlockKindVideo,

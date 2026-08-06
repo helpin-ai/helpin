@@ -210,7 +210,7 @@ func validateCustomAgentDraft(
 
 func normalizeDraftApprovalMode(value string) string {
 	switch strings.TrimSpace(value) {
-	case "never", "mutating_tools", "preset_default":
+	case "never", "risk_based", "mutating_tools", "preset_default":
 		return strings.TrimSpace(value)
 	default:
 		return "mutating_tools"

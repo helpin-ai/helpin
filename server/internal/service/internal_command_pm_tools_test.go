@@ -150,6 +150,28 @@ func TestPMCommandListWorkspaceMembers(t *testing.T) {
 	}
 }
 
+func TestPMCommandListWorkspaceMembersSupportsOffsetPagination(t *testing.T) {
+	env := newPMCommandTestEnv(t)
+	out, err := env.service.Execute(context.Background(), env.meta("workspace", env.workspaceID), "workspace.list_members", json.RawMessage(`{"limit":1,"offset":1}`))
+	if err != nil {
+		t.Fatalf("list members with offset: %v", err)
+	}
+	var result struct {
+		Members []struct {
+			MemberID string `json:"member_id"`
+		} `json:"members"`
+		Total      int  `json:"total"`
+		HasMore    bool `json:"has_more"`
+		NextOffset *int `json:"next_offset"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		t.Fatalf("decode members: %v", err)
+	}
+	if result.Total != 2 || len(result.Members) != 1 || result.Members[0].MemberID != "member-2" || result.HasMore || result.NextOffset != nil {
+		t.Fatalf("unexpected offset page: %#v", result)
+	}
+}
+
 func TestPMCommandListLabels(t *testing.T) {
 	env := newPMCommandTestEnv(t)
 	ctx := authorization.WithActor(context.Background(), &authorization.Actor{UserID: env.actorID, WorkspaceID: env.workspaceID, Role: model.RoleMember, TeamMemberships: []authorization.TeamRole{{TeamID: "team-a", Role: "member"}}})
@@ -184,7 +206,8 @@ func TestPMCommandListTasksFilters(t *testing.T) {
 	}
 	var result struct {
 		Tasks []struct {
-			TaskID string `json:"task_id"`
+			TaskID       string `json:"task_id"`
+			MarkdownLink string `json:"markdown_link"`
 		} `json:"tasks"`
 		Total   int64 `json:"total"`
 		Page    int   `json:"page"`
@@ -193,8 +216,14 @@ func TestPMCommandListTasksFilters(t *testing.T) {
 	if err := json.Unmarshal(out, &result); err != nil {
 		t.Fatalf("decode tasks: %v", err)
 	}
+	if strings.Contains(string(out), `"resource_uri"`) {
+		t.Fatalf("task output should not duplicate markdown_link with resource_uri: %s", out)
+	}
 	if result.Total != 1 || len(result.Tasks) != 1 || result.Tasks[0].TaskID != "task-a" || result.Page != 1 || result.PerPage != 25 {
 		t.Fatalf("unexpected filtered tasks: %#v", result)
+	}
+	if result.Tasks[0].MarkdownLink != "[task-a](helpin://tasks/task-a)" {
+		t.Fatalf("task markdown_link = %q", result.Tasks[0].MarkdownLink)
 	}
 
 	out, err = env.service.Execute(ctx, meta, "pm.list_tasks", json.RawMessage(`{"archived":false,"page":1,"per_page":100}`))
@@ -463,6 +492,29 @@ func TestPMCommandTaskProjectionDoesNotLeakOwnerOrLabelInternals(t *testing.T) {
 	}
 	if len(projected.Labels) != 1 || len(projected.Labels[0]) != 4 || projected.Labels[0]["label_id"] != "label-a" || projected.Labels[0]["name"] != "Alpha" || projected.Labels[0]["color"] != "#123456" || projected.Labels[0]["team_id"] != "team-a" {
 		t.Fatalf("label projection = %#v", projected.Labels)
+	}
+}
+
+func TestPMCommandGetTaskAcceptsHumanTaskKey(t *testing.T) {
+	env := newPMCommandTestEnv(t)
+	mustExec(t, env.db, `UPDATE workspaces SET workspace_key = ? WHERE id = ?`, "USE", env.workspaceID)
+	seedPMCommandTask(t, env.db, "task-key", "ws-1", "team-a", "wf-a", "state-a", "", "", 488)
+
+	out, err := env.service.Execute(context.Background(), env.meta("workspace", env.workspaceID), "pm.get_task", json.RawMessage(`{"task_key":"use-488"}`))
+	if err != nil {
+		t.Fatalf("get task by key: %v", err)
+	}
+	if !strings.Contains(string(out), `"task_id":"task-key"`) || !strings.Contains(string(out), `"task_key":"USE-488"`) {
+		t.Fatalf("unexpected task-key result: %s", out)
+	}
+
+	provider := &fakeReleaseFactsProvider{}
+	env.service.SetReleaseFactsProvider(provider)
+	if _, err := env.service.Execute(context.Background(), env.meta("workspace", env.workspaceID), "release.get_task_context", json.RawMessage(`{"task_keys":["USE-488"]}`)); err != nil {
+		t.Fatalf("get task context by key: %v", err)
+	}
+	if provider.taskReq == nil || len(provider.taskReq.TaskIDs) != 1 || provider.taskReq.TaskIDs[0] != "task-key" {
+		t.Fatalf("task context did not resolve the human key: %#v", provider.taskReq)
 	}
 }
 

@@ -79,6 +79,9 @@ func (r *CRMContactRepository) List(ctx context.Context, workspaceID string, fil
 
 	var contacts []model.CRMContact
 	offset := (pagination.Page - 1) * pagination.PerPage
+	if pagination.Offset != nil {
+		offset = *pagination.Offset
+	}
 	if err := query.Order("created_at DESC").Offset(offset).Limit(pagination.PerPage).Find(&contacts).Error; err != nil {
 		return nil, 0, fmt.Errorf("list contacts: %w", err)
 	}

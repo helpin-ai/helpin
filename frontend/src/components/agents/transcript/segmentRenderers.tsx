@@ -25,6 +25,8 @@ import type { TranscriptSegment } from './segments';
 export interface RenderSegmentOptions {
   /** When true, rows with bodies (args/result/diff/reasoning) expand on click. */
   expandable: boolean;
+  /** Whether long assistant text should use the Show more / Show less control. */
+  collapseLongAssistantContent?: boolean;
   /** Resolves the actor for user / review-decision segments (slider only). */
   resolveActor?: (message: CodingSessionTranscriptMessage) => CodingSessionActor | null;
   /** Surface-specific label when actor details are intentionally unavailable. */
@@ -41,7 +43,13 @@ export function TranscriptSegmentView({
 }) {
   switch (segment.kind) {
     case 'assistant':
-      return <AssistantSegment content={segment.content} streaming={segment.streaming} expandable={options.expandable} />;
+      return (
+        <AssistantSegment
+          content={segment.content}
+          streaming={segment.streaming}
+          expandable={options.collapseLongAssistantContent ?? options.expandable}
+        />
+      );
     case 'tool':
       return <ToolSegment toolCall={segment.toolCall} expandable={options.expandable} />;
     case 'reasoning':

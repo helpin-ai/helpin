@@ -241,6 +241,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		}
 	}
 	effectiveSystemPrompt = agentcontract.EnsureSupportRuntimeDeliveryContract(agent.EffectivePresetKey(), effectiveSystemPrompt)
+	effectiveSystemPrompt = agentcontract.EnsureAskAgentExecutionPolicy(agent.EffectivePresetKey(), effectiveSystemPrompt)
 	out := AgentRuntimeAgent{
 		ID:                    strings.TrimSpace(agent.ID),
 		AppID:                 strings.TrimSpace(appID),
@@ -2136,7 +2137,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		AllowedTools:               normalizeAllowedToolsJSON(mustJSONStringSlice(basePreset.AllowedTools)),
 		AllowedTargets:             mustJSONStringSlice(basePreset.AllowedTargetTypes),
 		SupportedModes:             mustJSONStringSlice(normalizedSupportedModes),
-		ApprovalMode:               "never",
+		ApprovalMode:               basePreset.ApprovalMode,
 		DefaultInvocationMode:      defaultInvocationMode,
 		CreatedBy:                  trimPtr(&actorID),
 	}
@@ -3635,7 +3636,16 @@ func (s *AgentService) ListRunArtifacts(ctx context.Context, workspaceID, runID 
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.artifactRepo.ListByRun(ctx, workspaceID, runID)
+	artifacts, err := s.artifactRepo.ListByRun(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	// Object keys are storage internals. User-facing callers receive the
+	// artifact id and resolve private content through the authorized endpoint.
+	for i := range artifacts {
+		artifacts[i].ObjectKey = nil
+	}
+	return artifacts, nil
 }
 
 // ListRunMessages returns persisted conversation history for a run.

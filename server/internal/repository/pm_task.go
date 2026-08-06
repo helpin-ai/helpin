@@ -393,12 +393,16 @@ func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters
 	if perPage <= 0 {
 		perPage = 50
 	}
-	if page-1 > math.MaxInt/perPage {
+	if pagination.Offset == nil && page-1 > math.MaxInt/perPage {
 		return []model.BoardTask{}, total, nil
+	}
+	offset := (page - 1) * perPage
+	if pagination.Offset != nil {
+		offset = *pagination.Offset
 	}
 
 	var tasks []model.PMTask
-	if err := query.Order("updated_at DESC").Offset((page - 1) * perPage).Limit(perPage).Find(&tasks).Error; err != nil {
+	if err := query.Order("updated_at DESC").Offset(offset).Limit(perPage).Find(&tasks).Error; err != nil {
 		return nil, 0, fmt.Errorf("list tasks: %w", err)
 	}
 

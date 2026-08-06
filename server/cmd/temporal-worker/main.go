@@ -459,6 +459,11 @@ func main() {
 		service.NewCRMContactService(crmContactRepo),
 		service.NewCRMSignalService(crmSignalRepo, crmSummaryService),
 	)
+	commandService.SetWorkspaceSearchServices(
+		service.NewSearchService(repository.NewSearchRepository(db), workspaceRepo),
+		service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo),
+		nil,
+	)
 	commandService.SetDocsSearchRepository(docsSearchRepo)
 	commandService.SetDocsChangeProposalService(service.NewDocsChangeProposalService(
 		docsChangeProposalRepo,

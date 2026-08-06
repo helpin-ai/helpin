@@ -339,6 +339,9 @@ func (s *InternalCommandService) authorizeDockMutation(ctx context.Context, meta
 	if s.agentRunRepo == nil || strings.TrimSpace(meta.RunID) == "" || def.Module == "agents" {
 		return nil
 	}
+	if s.runtimeOwnsCommandApproval(ctx, meta) {
+		return nil
+	}
 	run, err := s.resolveCommandRun(ctx, meta)
 	if err != nil || run == nil || run.DockChatID == nil || strings.TrimSpace(*run.DockChatID) == "" {
 		return err
@@ -400,6 +403,25 @@ func (s *InternalCommandService) authorizeDockMutation(ctx context.Context, meta
 		}
 	}
 	return s.prepareDockMutationApprovalRequired(ctx, meta, run, alias, values)
+}
+
+// runtimeOwnsCommandApproval prevents Helpin from asking for a second Dock
+// approval after Agent Runtime has applied the configured per-tool policy.
+// Approval mode "never" retains the legacy host proposal guard.
+func (s *InternalCommandService) runtimeOwnsCommandApproval(ctx context.Context, meta model.InternalCommandContext) bool {
+	if s == nil || s.agentService == nil || strings.TrimSpace(meta.AgentID) == "" || strings.TrimSpace(meta.WorkspaceID) == "" {
+		return false
+	}
+	agent, err := s.agentService.GetAgent(ctx, meta.WorkspaceID, meta.AgentID)
+	if err != nil || agent == nil {
+		return false
+	}
+	switch strings.TrimSpace(agent.ApprovalMode) {
+	case "risk_based", "mutating_tools", "always":
+		return true
+	default:
+		return false
+	}
 }
 
 // activateApprovedDockMutation makes the common single-mutation flow robust

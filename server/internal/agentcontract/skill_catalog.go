@@ -18,6 +18,7 @@ type PresetSkillBundle struct {
 	SkillKeys          []string
 	CoreSkillKeys      []string
 	AvailableSkillKeys []string
+	WorkspaceSearch    bool
 }
 
 var builtInSkillDefinitions = mustLoadBuiltInSkillDefinitions()
@@ -79,23 +80,26 @@ var builtInSkillAliases = map[string]string{
 
 var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 	model.AgentPresetEpicPlanner: {
-		Preamble:      "You are Atlas, the workspace epic planner. You run the full PRD-to-tasks loop inside a single interactive agent run.",
-		SkillKeys:     []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
-		CoreSkillKeys: []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
+		Preamble:        "You are Atlas, the workspace epic planner. You run the full PRD-to-tasks loop inside a single interactive agent run.",
+		SkillKeys:       []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
+		CoreSkillKeys:   []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
+		WorkspaceSearch: true,
 		// Atlas behavior lives only in the version-owned system prompt. This
 		// reloadable skill is deliberately limited to the structured tool contract
 		// that is easy to forget late in a long approval-driven run.
 		AvailableSkillKeys: []string{"task_plan_publishing"},
 	},
 	model.AgentPresetTaskPlanner: {
-		Preamble:      "You are Scribe, the workspace task planner. You run a focused planning conversation for one task or work item.",
-		SkillKeys:     []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"},
-		CoreSkillKeys: []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"},
+		Preamble:        "You are Scribe, the workspace task planner. You run a focused planning conversation for one task or work item.",
+		SkillKeys:       []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"},
+		CoreSkillKeys:   []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"},
+		WorkspaceSearch: true,
 	},
 	model.AgentPresetCRMOperator: {
-		Preamble:      "You are Beacon, the workspace CRM operator. You help manage customer records, deal workflows, and sales signals across the workspace.",
-		SkillKeys:     []string{"crm_record_operations"},
-		CoreSkillKeys: []string{"crm_record_operations"},
+		Preamble:        "You are Beacon, the workspace CRM operator. You help manage customer records, deal workflows, and sales signals across the workspace.",
+		SkillKeys:       []string{"crm_record_operations"},
+		CoreSkillKeys:   []string{"crm_record_operations"},
+		WorkspaceSearch: true,
 	},
 	model.AgentPresetSupportAgent: {
 		Preamble:      "You are Echo, the workspace support agent. You help triage support conversations, draft replies, and route customer issues.",
@@ -104,8 +108,9 @@ var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 		CoreSkillKeys: []string{"support_triage_response"},
 	},
 	model.AgentPresetDocumentationAgent: {
-		Preamble:     "You are Quill, the workspace documentation agent. You help create, update, and organize internal docs, public help docs, and API docs.",
-		SystemPrompt: quillSystemPrompt,
+		Preamble:        "You are Quill, the workspace documentation agent. You help create, update, and organize internal docs, public help docs, and API docs.",
+		SystemPrompt:    quillSystemPrompt,
+		WorkspaceSearch: true,
 		SkillKeys: []string{
 			"docs_architecture_review",
 			"public_help_doc_writing",
@@ -128,8 +133,9 @@ var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 		},
 	},
 	model.AgentPresetMarketer: {
-		Preamble:     "You are Mira, the workspace marketer. You help with positioning, campaigns, copy, lifecycle messaging, launches, conversion ideas, and marketing research.",
-		SystemPrompt: miraSystemPrompt,
+		Preamble:        "You are Mira, the workspace marketer. You help with positioning, campaigns, copy, lifecycle messaging, launches, conversion ideas, and marketing research.",
+		SystemPrompt:    miraSystemPrompt,
+		WorkspaceSearch: true,
 		SkillKeys: []string{
 			"marketing_context_setup",
 			"marketing_plan",
@@ -256,6 +262,31 @@ func EnsureSupportRuntimeDeliveryContract(presetKey, prompt string) string {
 		return supportRuntimeDeliveryContract
 	}
 	return prompt + "\n\n" + supportRuntimeDeliveryContract
+}
+
+const askAgentExecutionPolicy = `## Required Ask Agent execution policy
+
+These product-owned rules override conflicting workspace instructions about whether work should be completed directly or delegated.
+
+- You are the primary workspace execution agent. Complete a request yourself whenever your available tools and skills cover its steps.
+- Before delegating, map the remaining steps to your current tools and skills. If they cover the work, execute it directly.
+- Use your own tools for web research and synthesis, workspace and read-only repository inspection, planning with update_plan, task and document creation or updates, and ordinary PM or CRM mutations.
+- Do not launch a child agent merely because a request has multiple steps, creates a durable artifact, uses mutation tools, combines research with writing, or may consume many tokens.
+- Delegate only when the user explicitly requests it, independent work should run in parallel, execution is genuinely long-running or background-oriented, isolated repository modification or specialist review is needed, or a required capability is unavailable to you but available to the child.
+- Call routine mutation and bounded child-launch tools directly. Do not call request_approval preemptively; the tool or runtime will pause and request approval when its risk policy requires it.`
+
+// EnsureAskAgentExecutionPolicy adds the non-optional Dock execution policy at
+// launch. Workspace preset versions may customize Ask Agent instructions, but
+// they cannot restore delegation-first behavior or manual approval probing.
+func EnsureAskAgentExecutionPolicy(presetKey, prompt string) string {
+	prompt = strings.TrimSpace(prompt)
+	if strings.TrimSpace(presetKey) != model.AgentPresetAskAgent || strings.Contains(prompt, "Required Ask Agent execution policy") {
+		return prompt
+	}
+	if prompt == "" {
+		return askAgentExecutionPolicy
+	}
+	return prompt + "\n\n" + askAgentExecutionPolicy
 }
 
 const quillSystemPrompt = `You are Quill, the workspace documentation agent.
@@ -497,10 +528,26 @@ func InstructionTemplateVersionForPresetWithAvailableSkills(preamble string, cor
 }
 
 func compiledPromptForPresetBundle(bundle PresetSkillBundle) string {
+	var prompt string
 	if strings.TrimSpace(bundle.SystemPrompt) != "" {
-		return strings.TrimSpace(bundle.SystemPrompt)
+		prompt = strings.TrimSpace(bundle.SystemPrompt)
+	} else {
+		prompt = CompilePresetInstructionsWithAvailableSkills(bundle.Preamble, coreSkillKeysForPresetBundle(bundle), bundle.AvailableSkillKeys)
 	}
-	return CompilePresetInstructionsWithAvailableSkills(bundle.Preamble, coreSkillKeysForPresetBundle(bundle), bundle.AvailableSkillKeys)
+	if bundle.WorkspaceSearch {
+		prompt = strings.TrimSpace(prompt + "\n\n" + WorkspaceSearchPromptGuidance())
+	}
+	return prompt
+}
+
+// WorkspaceSearchPromptGuidance keeps cross-entity lookup and pagination
+// behavior consistent across system presets that expose search_workspace.
+func WorkspaceSearchPromptGuidance() string {
+	return strings.TrimSpace(`## Workspace Discovery
+
+- Use search_workspace for keyword and identity lookup, including requests asking which tasks mention, contain, discuss, talk about, or relate to a term. Narrow entity_types when the user names a specific entity kind. Then pass returned IDs to the appropriate get, context, read, or mutation tool when more detail is needed.
+- Use entity-specific list tools only for enumeration and structured filters such as status, owner, team, or date. Do not list broad collections and inspect items one by one when a search query can answer the request. When a result has has_more=true, continue with next_offset instead of requesting an oversized page.
+- When available, use search_documents for full-text document-content searches; use search_workspace for cross-entity discovery.`)
 }
 
 func BuiltInPresetPrompt(presetKey string) *string {

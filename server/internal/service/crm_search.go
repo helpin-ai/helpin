@@ -10,7 +10,7 @@ import (
 
 // CRMSearchResult represents a unified search result across CRM objects.
 type CRMSearchResult struct {
-	Type   string      `json:"type"`   // contact, company, deal
+	Type   string      `json:"type"` // contact, company, deal
 	ID     string      `json:"id"`
 	Name   string      `json:"name"`
 	Detail string      `json:"detail"` // email for contacts, domain for companies, amount for deals
@@ -35,12 +35,23 @@ func NewCRMSearchService(contactRepo *repository.CRMContactRepository, companyRe
 
 // Search performs a unified search across contacts, companies, and deals.
 func (s *CRMSearchService) Search(ctx context.Context, workspaceID, query string) ([]CRMSearchResult, error) {
+	return s.SearchLimit(ctx, workspaceID, query, 10)
+}
+
+// SearchLimit searches each CRM entity group with a bounded per-group limit.
+func (s *CRMSearchService) SearchLimit(ctx context.Context, workspaceID, query string, limit int) ([]CRMSearchResult, error) {
 	if workspaceID == "" || query == "" {
 		return nil, fmt.Errorf("workspace_id and query are required")
 	}
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 600 {
+		limit = 600
+	}
 
 	var results []CRMSearchResult
-	pagination := model.PMPagination{Page: 1, PerPage: 10}
+	pagination := model.PMPagination{Page: 1, PerPage: limit}
 
 	// Search contacts.
 	contacts, _, err := s.contactRepo.List(ctx, workspaceID, model.CRMContactListFilters{

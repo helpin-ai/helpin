@@ -256,6 +256,36 @@ describe('collectSegments', () => {
     ]);
   });
 
+  it('keeps earlier turns interleaved when the live timeline spans multiple chat turns', () => {
+    // A long-lived chat run accumulates every assistant segment in
+    // live_turn_segments, but user messages only exist in the transcript.
+    // Segments from turns before the last user message must keep their
+    // transcript position instead of being hoisted below all user messages.
+    const input = stream({
+      transcript_messages: [
+        message({ event_id: 'u1', role: 'user', content: 'q1', timestamp: '2026-06-15T00:00:01Z', sequence_no: 1 }),
+        message({ event_id: 'p1', message_id: 'a1', content: 'answer one', timestamp: '2026-06-15T00:00:02Z', sequence_no: 2 }),
+        message({ event_id: 'u2', role: 'user', content: 'q2', timestamp: '2026-06-15T00:01:00Z', sequence_no: 3 }),
+        message({ event_id: 'p2', message_id: 'a2', content: 'answer two', timestamp: '2026-06-15T00:01:05Z', sequence_no: 4 }),
+      ],
+      live_turn_segments: [
+        assistantSegment('a1', 'answer one'),
+        assistantSegment('a2', 'answer two'),
+        assistantSegment('a3', 'streaming tail', 'streaming'),
+      ],
+    });
+
+    const segments = collectSegments(input, { includeLive: true, include: DOCK_SEGMENT_KINDS });
+
+    expect(segments.map((s) => (s.kind === 'user' ? `user:${s.message.content}` : (s as { content: string }).content))).toEqual([
+      'user:q1',
+      'answer one',
+      'user:q2',
+      'answer two',
+      'streaming tail',
+    ]);
+  });
+
   it.each([
     'I have a web search result for the competitor digest.',
     'ffer has launched a new publishing workflow for teams.',
