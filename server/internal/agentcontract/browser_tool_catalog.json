@@ -2,13 +2,14 @@
   "tools": [
     {
       "name": "browser_open",
-      "description": "Open an allowed page in the workspace's ephemeral browser session and return a compact interactive snapshot. Use fetch_url or crawl_url for public pages that do not require interaction.",
+      "description": "Open an allowed page in the workspace's ephemeral browser session, wait briefly for client rendering, and return the final URL, title, and a compact interactive snapshot. Use fetch_url or crawl_url for public pages that do not require interaction.",
       "category": "Browser",
       "input_schema": {
         "type": "object",
         "properties": {
           "url": { "type": "string", "minLength": 1, "description": "HTTP or HTTPS URL on a workspace-approved domain." },
-          "depth": { "type": "integer", "minimum": 1, "maximum": 8, "description": "Snapshot depth. Defaults to 5." }
+          "depth": { "type": "integer", "minimum": 1, "maximum": 8, "description": "Snapshot depth. Defaults to 5." },
+          "wait_ms": { "type": "integer", "minimum": 0, "maximum": 10000, "description": "Additional client-rendering settle time after the load event. Defaults to 1500 milliseconds." }
         },
         "required": ["url"],
         "additionalProperties": false
@@ -17,7 +18,7 @@
     },
     {
       "name": "browser_snapshot",
-      "description": "Refresh the current page's bounded accessibility snapshot and element references.",
+      "description": "Return the current page URL, title, and a refreshed bounded accessibility snapshot with element references.",
       "category": "Browser",
       "input_schema": {
         "type": "object",
@@ -32,7 +33,7 @@
     },
     {
       "name": "browser_act",
-      "description": "Perform one bounded browser interaction using an element reference from the latest snapshot, then return a refreshed compact snapshot.",
+      "description": "Perform one bounded browser interaction using an element reference from the latest snapshot, then return the resulting URL, title, and refreshed compact snapshot.",
       "category": "Browser",
       "input_schema": {
         "type": "object",
