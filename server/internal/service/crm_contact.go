@@ -248,7 +248,9 @@ func (s *CRMContactService) Update(ctx context.Context, id string, req model.Upd
 	if req.LeadStatus != nil {
 		contact.LeadStatus = *req.LeadStatus
 	}
-	if req.OwnerMemberID != nil {
+	if req.ClearOwner {
+		contact.OwnerMemberID = nil
+	} else if req.OwnerMemberID != nil {
 		contact.OwnerMemberID = req.OwnerMemberID
 	}
 	if req.AvatarURL != nil {

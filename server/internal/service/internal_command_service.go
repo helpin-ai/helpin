@@ -34,6 +34,8 @@ type InternalCommandService struct {
 	commentService        *PMCommentService
 	crmDealService        *CRMDealService
 	crmActivityService    *CRMActivityService
+	crmCompanyService     *CRMCompanyService
+	crmAssociationService *CRMAssociationService
 	crmEnrichmentService  *CRMEnrichmentService
 	docsDocumentService   *DocsDocumentService
 	docsSpaceService      *DocsSpaceService
@@ -197,6 +199,16 @@ func (s *InternalCommandService) SetCRMReadServices(contactService *CRMContactSe
 	}
 	s.crmContactService = contactService
 	s.crmSignalService = signalService
+}
+
+// SetCRMOperationalServices wires bounded company and association operations.
+// Contact, deal, and activity services are provided by existing constructor/setters.
+func (s *InternalCommandService) SetCRMOperationalServices(companyService *CRMCompanyService, associationService *CRMAssociationService) {
+	if s == nil {
+		return
+	}
+	s.crmCompanyService = companyService
+	s.crmAssociationService = associationService
 }
 
 // SetDocsSearchRepository wires the docs full-text search used by docs.search_documents.
@@ -1946,6 +1958,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerSupportReplyCommands()
 	s.registerSupportCommands()
 	s.registerCRMReadCommands()
+	s.registerCRMOperationalCommands()
 	s.registerReleaseFactsCommands()
 	s.registerDocsRuntimeToolCommands()
 	s.registerDocsOrganizationCommands()
