@@ -213,6 +213,7 @@ function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight }: EmailBo
         ref={iframeRef}
         srcDoc={srcDoc}
         onLoad={handleLoad}
+        data-collapsed-by-default={collapsedByDefault ? 'true' : 'false'}
         // allow-same-origin lets us manipulate the DOM (link rewrite).
         // allow-popups-to-escape-sandbox lets clicked links open normally.
         // No allow-scripts — author script is neutralized.

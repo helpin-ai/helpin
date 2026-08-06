@@ -342,6 +342,7 @@ func (r *SupportInboxSessionRepository) Create(ctx context.Context, session *mod
 		"country_name":    session.CountryName,
 		"region_name":     session.RegionName,
 		"city_name":       session.CityName,
+		"crm_company_id":  session.CRMCompanyID,
 		"last_active_at":  session.LastActiveAt,
 		"revoked_at":      session.RevokedAt,
 		"expires_at":      session.ExpiresAt,
@@ -2172,6 +2173,53 @@ func (r *SupportInboxSessionRepository) UpdateSessionsByAnonymousID(ctx context.
 		return fmt.Errorf("backfill session identity: %w", err)
 	}
 	return nil
+}
+
+// UpdateCompanyByID changes company context for one exact widget session.
+func (r *SupportInboxSessionRepository) UpdateCompanyByID(ctx context.Context, workspaceID, sessionID string, companyID *string) error {
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportWidgetSession{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, sessionID).
+		UpdateColumn("crm_company_id", companyID)
+	if result.Error != nil {
+		return fmt.Errorf("update session company: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("update session company: session not found")
+	}
+	return nil
+}
+
+// UpdateActiveSessionsCompanyByAnonymousID updates mutable company context only
+// on non-revoked, unexpired sessions and returns the sessions in that scope.
+func (r *SupportInboxSessionRepository) UpdateActiveSessionsCompanyByAnonymousID(ctx context.Context, workspaceID, anonymousID, companyID string) ([]model.SupportWidgetSession, error) {
+	now := time.Now()
+	scope := r.db.WithContext(ctx).
+		Model(&model.SupportWidgetSession{}).
+		Where("workspace_id = ? AND anonymous_id = ? AND revoked_at IS NULL AND expires_at > ?", workspaceID, anonymousID, now)
+	if err := scope.UpdateColumn("crm_company_id", companyID).Error; err != nil {
+		return nil, fmt.Errorf("update active session company: %w", err)
+	}
+	var sessions []model.SupportWidgetSession
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND anonymous_id = ? AND revoked_at IS NULL AND expires_at > ?", workspaceID, anonymousID, now).
+		Find(&sessions).Error; err != nil {
+		return nil, fmt.Errorf("list active sessions after company update: %w", err)
+	}
+	return sessions, nil
+}
+
+// SetCRMCompanyIfUnset captures stable company identity without overwriting a
+// conversation that already has explicit context.
+func (r *SupportConversationRepository) SetCRMCompanyIfUnset(ctx context.Context, workspaceID, conversationID, companyID string) (bool, error) {
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportConversation{}).
+		Where("workspace_id = ? AND id = ? AND crm_company_id IS NULL", workspaceID, conversationID).
+		UpdateColumn("crm_company_id", companyID)
+	if result.Error != nil {
+		return false, fmt.Errorf("set conversation company if unset: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
 }
 
 // DB returns the underlying *gorm.DB for transaction support.

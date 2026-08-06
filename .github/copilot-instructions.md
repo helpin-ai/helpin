@@ -1,0 +1,5 @@
+# Repository Agent Guidance
+
+Follow the repository-wide instructions in `AGENTS.md`.
+
+For small, well-scoped fixes, do not create or modify plan, specification, or design documents unless the user explicitly requests them. Inspect the issue, implement the fix, verify it, and commit it directly.

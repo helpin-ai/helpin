@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -91,5 +92,70 @@ func TestHydrateEmailBodiesAddsInboundBodiesAndOutboundStatus(t *testing.T) {
 	}
 	if messages[3].HTMLBody != "" || messages[3].EmailDeliveryStatus != "" {
 		t.Fatalf("expected unmatched widget message to remain unhydrated, got %#v", messages[3])
+	}
+}
+
+func TestHydrateEmailBodiesUsesCurrentProjectionIncludingExplicitFalse(t *testing.T) {
+	viaEmail := "email"
+	messages := []model.SupportMessage{
+		{ID: "quoted", ViaChannel: &viaEmail},
+		{ID: "not-quoted", ViaChannel: &viaEmail},
+	}
+	reader := fakeSupportEmailLogReader{logs: []model.SupportEmailLog{
+		{
+			Direction:                 "inbound",
+			MessageIDs:                model.DocsStringArray{"quoted"},
+			EmailVisibleText:          "Fresh reply",
+			EmailQuotedText:           "Old reply",
+			EmailHasQuotedContent:     true,
+			EmailProjectionConfidence: inboundhtml.ProjectionConfidenceHigh,
+			EmailProjectionVersion:    inboundhtml.CurrentProjectionVersion,
+		},
+		{
+			Direction:                 "inbound",
+			MessageIDs:                model.DocsStringArray{"not-quoted"},
+			EmailVisibleText:          "Only reply",
+			EmailHasQuotedContent:     false,
+			EmailProjectionConfidence: inboundhtml.ProjectionConfidenceNone,
+			EmailProjectionVersion:    inboundhtml.CurrentProjectionVersion,
+		},
+	}}
+
+	hydrateEmailBodies(context.Background(), reader, "workspace-1", "conversation-1", messages)
+
+	if messages[0].EmailVisibleText != "Fresh reply" || messages[0].EmailQuotedText != "Old reply" {
+		t.Fatalf("current quoted projection not hydrated: %#v", messages[0])
+	}
+	if messages[0].EmailHasQuotedContent == nil || !*messages[0].EmailHasQuotedContent {
+		t.Fatalf("quoted projection flag = %#v, want true", messages[0].EmailHasQuotedContent)
+	}
+	if messages[1].EmailHasQuotedContent == nil || *messages[1].EmailHasQuotedContent {
+		t.Fatalf("no-quote projection flag = %#v, want explicit false", messages[1].EmailHasQuotedContent)
+	}
+}
+
+func TestHydrateEmailBodiesProjectsLegacyHTMLInMemory(t *testing.T) {
+	viaEmail := "email"
+	messages := []model.SupportMessage{{ID: "legacy", ViaChannel: &viaEmail}}
+	reader := fakeSupportEmailLogReader{logs: []model.SupportEmailLog{{
+		Direction:    "inbound",
+		MessageIDs:   model.DocsStringArray{"legacy"},
+		HTMLBody:     `<p>Fresh reply</p><div class="gmail_quote"><p>Old reply</p></div>`,
+		StrippedText: "Fresh reply",
+	}}}
+
+	hydrateEmailBodies(context.Background(), reader, "workspace-1", "conversation-1", messages)
+
+	if messages[0].EmailVisibleText != "Fresh reply" || messages[0].EmailQuotedText != "Old reply" {
+		t.Fatalf("legacy projection = %#v", messages[0])
+	}
+	if messages[0].EmailHasQuotedContent == nil || !*messages[0].EmailHasQuotedContent {
+		t.Fatalf("legacy quote flag = %#v, want true", messages[0].EmailHasQuotedContent)
+	}
+	if messages[0].EmailProjectionVersion != inboundhtml.CurrentProjectionVersion {
+		t.Fatalf("legacy projection version = %d, want current", messages[0].EmailProjectionVersion)
+	}
+	if messages[0].HTMLBody == "" {
+		t.Fatal("legacy rich HTML was discarded")
 	}
 }

@@ -787,11 +787,12 @@ func TestSupportInboxServiceIdentifyByAnonymousIDCreatesCompanyAndPrimaryAssocia
 	}
 
 	session := &model.SupportWidgetSession{
-		WorkspaceID:  workspaceID,
-		SessionToken: "widget-company-token",
-		AnonymousID:  anonymousID,
-		IsAnonymous:  true,
-		ExpiresAt:    time.Now().Add(24 * time.Hour),
+		WorkspaceID:    workspaceID,
+		ConversationID: &conversation.ID,
+		SessionToken:   "widget-company-token",
+		AnonymousID:    anonymousID,
+		IsAnonymous:    true,
+		ExpiresAt:      time.Now().Add(24 * time.Hour),
 	}
 	if err := sessionRepo.Create(ctx, session); err != nil {
 		t.Fatalf("create session: %v", err)
@@ -858,6 +859,297 @@ func TestSupportInboxServiceIdentifyByAnonymousIDCreatesCompanyAndPrimaryAssocia
 	}
 	if assocs[0].AssociationLabel == nil || *assocs[0].AssociationLabel != primaryCompanyAssociationLabel {
 		t.Fatalf("association label = %v, want primary", assocs[0].AssociationLabel)
+	}
+	linkedConversation, err := conversationRepo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("get linked conversation after first identify: %v", err)
+	}
+	if linkedConversation.CRMCompanyID == nil || *linkedConversation.CRMCompanyID != company.ID {
+		t.Fatalf("conversation crm_company_id = %v, want %q", linkedConversation.CRMCompanyID, company.ID)
+	}
+
+	if err := svcWithWidgetRepos(installationRepo, conversationRepo, sessionRepo, contactRepo).IdentifyByAnonymousID(ctx, widgetKey, anonymousID, model.WidgetIdentityPayload{
+		Email:  email,
+		Source: "sdk_identify",
+		Company: model.JSONB{
+			"id":   "company-456",
+			"name": "Beta Inc",
+		},
+	}); err != nil {
+		t.Fatalf("IdentifyByAnonymousID second company: %v", err)
+	}
+
+	companies, _, err = companyRepo.List(ctx, workspaceID, model.CRMCompanyListFilters{}, model.PMPagination{Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("list companies after switch: %v", err)
+	}
+	if len(companies) != 2 {
+		t.Fatalf("company count after switch = %d, want 2", len(companies))
+	}
+	assocs, err = assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectContact, contacts[0].ID)
+	if err != nil {
+		t.Fatalf("list associations after switch: %v", err)
+	}
+	if len(assocs) != 2 {
+		t.Fatalf("association count after switch = %d, want 2", len(assocs))
+	}
+	primaryCompanyID := ""
+	for _, assoc := range assocs {
+		_, associatedCompanyID := otherAssociationSide(assoc, model.CRMObjectContact, contacts[0].ID)
+		if isPrimaryCompanyAssociationLabel(assoc.AssociationLabel) {
+			if primaryCompanyID != "" {
+				t.Fatalf("multiple primary company memberships: %q and %q", primaryCompanyID, associatedCompanyID)
+			}
+			primaryCompanyID = associatedCompanyID
+		}
+	}
+	if primaryCompanyID != company.ID {
+		t.Fatalf("primary company after active-company switch = %q, want original %q", primaryCompanyID, company.ID)
+	}
+	secondCompany, err := companyRepo.GetByExternalID(ctx, workspaceID, "company-456")
+	if err != nil || secondCompany == nil {
+		t.Fatalf("get second company = %#v, %v", secondCompany, err)
+	}
+	updatedSession, err := sessionRepo.GetByToken(ctx, session.SessionToken)
+	if err != nil {
+		t.Fatalf("get session after switch: %v", err)
+	}
+	if updatedSession.CRMCompanyID == nil || *updatedSession.CRMCompanyID != secondCompany.ID {
+		t.Fatalf("session crm_company_id after switch = %v, want %q", updatedSession.CRMCompanyID, secondCompany.ID)
+	}
+	linkedConversation, err = conversationRepo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("get linked conversation after switch: %v", err)
+	}
+	if linkedConversation.CRMCompanyID == nil || *linkedConversation.CRMCompanyID != company.ID {
+		t.Fatalf("conversation crm_company_id after switch = %v, want stable %q", linkedConversation.CRMCompanyID, company.ID)
+	}
+}
+
+func TestSupportInboxServiceIdentifyCompanySkipsExpiredSessionConversation(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	const (
+		workspaceID = "ws-widget-expired-company"
+		widgetKey   = "wk_widget_expired_company"
+		anonymousID = "anon-expired-company"
+	)
+	seedWorkspace(t, db, workspaceID, "Expired Company", "expired-company", "user-123")
+	installationRepo := repository.NewSupportInboxInstallationRepository(db)
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	if err := installationRepo.Create(ctx, &model.SupportWidgetInstallation{WorkspaceID: workspaceID, WidgetKey: widgetKey, SecretKey: "sk-expired-company", Settings: "{}", Active: true}); err != nil {
+		t.Fatalf("create installation: %v", err)
+	}
+	conversation := &model.SupportConversation{WorkspaceID: workspaceID, Subject: "Expired session", Status: "open", AnonymousID: strPtr(anonymousID)}
+	if err := conversationRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	session := &model.SupportWidgetSession{WorkspaceID: workspaceID, ConversationID: &conversation.ID, SessionToken: "expired-company-token", AnonymousID: anonymousID, IsAnonymous: true, ExpiresAt: time.Now().Add(-time.Hour)}
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create expired session: %v", err)
+	}
+
+	if err := svcWithWidgetRepos(installationRepo, conversationRepo, sessionRepo, contactRepo).IdentifyByAnonymousID(ctx, widgetKey, anonymousID, model.WidgetIdentityPayload{
+		Email:   "expired@example.com",
+		Company: model.JSONB{"id": "expired-company", "name": "Expired Co"},
+	}); err != nil {
+		t.Fatalf("IdentifyByAnonymousID: %v", err)
+	}
+	updated, err := conversationRepo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	if updated.CRMCompanyID != nil {
+		t.Fatalf("expired session conversation crm_company_id = %v, want nil", updated.CRMCompanyID)
+	}
+}
+
+func TestSupportInboxServiceUpgradeWidgetSessionUpdatesOnlyCurrentSessionCompany(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	const (
+		workspaceID = "ws-widget-upgrade-current-company"
+		anonymousID = "anon-upgrade-current-company"
+	)
+	seedWorkspace(t, db, workspaceID, "Widget Current Company", "widget-current-company", "user-123")
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+
+	currentConversation := &model.SupportConversation{WorkspaceID: workspaceID, Subject: "Current tab", Status: "open", AnonymousID: strPtr(anonymousID)}
+	otherConversation := &model.SupportConversation{WorkspaceID: workspaceID, Subject: "Other tab", Status: "open", AnonymousID: strPtr(anonymousID)}
+	for _, conversation := range []*model.SupportConversation{currentConversation, otherConversation} {
+		if err := conversationRepo.Create(ctx, conversation); err != nil {
+			t.Fatalf("create conversation: %v", err)
+		}
+	}
+	currentSession := &model.SupportWidgetSession{
+		WorkspaceID: workspaceID, ConversationID: &currentConversation.ID,
+		SessionToken: "current-company-token", AnonymousID: anonymousID,
+		IsAnonymous: true, ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	otherSession := &model.SupportWidgetSession{
+		WorkspaceID: workspaceID, ConversationID: &otherConversation.ID,
+		SessionToken: "other-company-token", AnonymousID: anonymousID,
+		IsAnonymous: true, ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	for _, session := range []*model.SupportWidgetSession{currentSession, otherSession} {
+		if err := sessionRepo.Create(ctx, session); err != nil {
+			t.Fatalf("create session: %v", err)
+		}
+	}
+
+	svc := svcWithWidgetRepos(nil, conversationRepo, sessionRepo, contactRepo)
+	if err := svc.UpgradeWidgetSession(ctx, currentSession.SessionToken, model.WidgetIdentityPayload{
+		Email:   "current@example.com",
+		Company: model.JSONB{"id": "current-account", "name": "Current Account"},
+	}); err != nil {
+		t.Fatalf("UpgradeWidgetSession: %v", err)
+	}
+
+	updatedCurrentSession, err := sessionRepo.GetByToken(ctx, currentSession.SessionToken)
+	if err != nil {
+		t.Fatalf("get current session: %v", err)
+	}
+	updatedOtherSession, err := sessionRepo.GetByToken(ctx, otherSession.SessionToken)
+	if err != nil {
+		t.Fatalf("get other session: %v", err)
+	}
+	if updatedCurrentSession.CRMCompanyID == nil {
+		t.Fatal("current session company was not captured")
+	}
+	if updatedOtherSession.CRMCompanyID != nil {
+		t.Fatalf("other active session company = %v, want nil", updatedOtherSession.CRMCompanyID)
+	}
+
+	updatedCurrentConversation, err := conversationRepo.GetByID(ctx, workspaceID, currentConversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("get current conversation: %v", err)
+	}
+	updatedOtherConversation, err := conversationRepo.GetByID(ctx, workspaceID, otherConversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("get other conversation: %v", err)
+	}
+	if updatedCurrentConversation.CRMCompanyID == nil || *updatedCurrentConversation.CRMCompanyID != *updatedCurrentSession.CRMCompanyID {
+		t.Fatalf("current conversation company = %v, want current session company %v", updatedCurrentConversation.CRMCompanyID, updatedCurrentSession.CRMCompanyID)
+	}
+	if updatedOtherConversation.CRMCompanyID != nil {
+		t.Fatalf("other active conversation company = %v, want nil", updatedOtherConversation.CRMCompanyID)
+	}
+}
+
+func TestSupportInboxServiceWidgetCreateConversationCopiesSessionCompany(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	const workspaceID = "ws-widget-create-company"
+	seedWorkspace(t, db, workspaceID, "Widget Create Company", "widget-create-company", "user-123")
+	company := &model.CRMCompany{WorkspaceID: workspaceID, DisplayID: "COM-1", Name: "Acme"}
+	if err := repository.NewCRMCompanyRepository(db).Create(ctx, company); err != nil {
+		t.Fatalf("create company: %v", err)
+	}
+	session := &model.SupportWidgetSession{
+		WorkspaceID:  workspaceID,
+		SessionToken: "widget-create-company-token",
+		AnonymousID:  "anon-widget-create-company",
+		IsAnonymous:  true,
+		CRMCompanyID: &company.ID,
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	svc := NewSupportInboxService(
+		conversationRepo,
+		repository.NewSupportMailboxRepository(db),
+		nil, nil, nil,
+		repository.NewSupportInboxInstallationRepository(db),
+		sessionRepo,
+		nil, nil, nil,
+		repository.NewCRMContactRepository(db),
+		nil, nil, nil, nil,
+	)
+	created, err := svc.WidgetCreateConversation(ctx, session.SessionToken)
+	if err != nil {
+		t.Fatalf("WidgetCreateConversation: %v", err)
+	}
+	if created.CRMCompanyID == nil || *created.CRMCompanyID != company.ID {
+		t.Fatalf("created conversation crm_company_id = %v, want %q", created.CRMCompanyID, company.ID)
+	}
+}
+
+func TestSupportInboxServiceCompanyExternalIDDoesNotFallBackToDomainOrName(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	const workspaceID = "ws-authoritative-company-id"
+	seedWorkspace(t, db, workspaceID, "Authoritative Company", "authoritative-company", "user-123")
+
+	companyRepo := repository.NewCRMCompanyRepository(db)
+	existingExternalID := "tenant-existing"
+	domain := "shared.example"
+	existing := &model.CRMCompany{
+		WorkspaceID: workspaceID,
+		DisplayID:   "COM-1",
+		ExternalID:  &existingExternalID,
+		Name:        "Shared Company",
+		Domain:      &domain,
+	}
+	if err := companyRepo.Create(ctx, existing); err != nil {
+		t.Fatalf("create existing company: %v", err)
+	}
+
+	companyID, err := (&SupportInboxService{}).matchOrCreateCRMCompanyIdentityTx(ctx, companyRepo, workspaceID, model.WidgetIdentityPayload{
+		Company: model.JSONB{
+			"id":     "tenant-new",
+			"name":   "Shared Company",
+			"domain": domain,
+		},
+	})
+	if err != nil {
+		t.Fatalf("matchOrCreateCRMCompanyIdentityTx: %v", err)
+	}
+	if companyID == nil || *companyID == existing.ID {
+		t.Fatalf("resolved company = %v, want a distinct company from %q", companyID, existing.ID)
+	}
+	companies, _, err := companyRepo.List(ctx, workspaceID, model.CRMCompanyListFilters{}, model.PMPagination{Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("list companies: %v", err)
+	}
+	if len(companies) != 2 {
+		t.Fatalf("company count = %d, want 2", len(companies))
+	}
+}
+
+func TestSyncCRMCompanyIdentityDeletesExplicitNullCustomProperty(t *testing.T) {
+	company := &model.CRMCompany{
+		Name: "Acme",
+		CustomProperties: model.JSONB{
+			"plan":         "enterprise",
+			"support_tier": "gold",
+		},
+	}
+	identity := resolvedWidgetCompany{
+		name: "Acme",
+		customProperties: model.JSONB{
+			"plan":       nil,
+			"seats_used": float64(12),
+		},
+	}
+
+	if !syncCRMCompanyIdentity(company, identity) {
+		t.Fatal("expected identity sync to report a change")
+	}
+	if _, ok := company.CustomProperties["plan"]; ok {
+		t.Fatalf("plan property = %#v, want removed", company.CustomProperties["plan"])
+	}
+	if company.CustomProperties["support_tier"] != "gold" {
+		t.Fatalf("support_tier = %#v, want preserved", company.CustomProperties["support_tier"])
+	}
+	if company.CustomProperties["seats_used"] != float64(12) {
+		t.Fatalf("seats_used = %#v, want numeric 12", company.CustomProperties["seats_used"])
 	}
 }
 

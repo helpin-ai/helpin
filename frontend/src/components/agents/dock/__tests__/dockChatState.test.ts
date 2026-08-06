@@ -74,6 +74,36 @@ describe('transformDockStream', () => {
     expect(result.childResults).toHaveLength(1);
     expect(result.childResults[0].result.plan_id).toBe('p1');
   });
+
+  it('hides successor-run carry-forward blocks while preserving the latest user turn', () => {
+    const stream = emptyStream();
+    stream.transcript_messages = [
+      {
+        event_id: 'successor-user-turn',
+        role: 'user',
+        content: [
+          '<previous_conversation>',
+          'This chat continues an earlier conversation whose run ended (completed). Recent transcript:',
+          'user: Which tasks are stale?',
+          'assistant: Three tasks are stale.',
+          '</previous_conversation>',
+          '',
+          '<child_run_result>{"plan_id":"p1","status":"completed","runs":[]}</child_run_result>',
+          '',
+          'Can you assign those tasks to me?',
+          '',
+          '<page_context>{"entity_type":"task"}</page_context>',
+        ].join('\n'),
+        timestamp: '2026-08-05T10:00:00Z',
+        sequence_no: 1,
+      },
+    ];
+
+    const result = transformDockStream(stream);
+
+    expect(result.stream.transcript_messages).toHaveLength(1);
+    expect(result.stream.transcript_messages[0].content).toBe('Can you assign those tasks to me?');
+  });
 });
 
 describe('transformDockStream ordering', () => {

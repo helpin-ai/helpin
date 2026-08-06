@@ -121,6 +121,48 @@ function LinkPreviews({ previews, outgoing }: { previews: NonNullable<Message['l
   );
 }
 
+function MessageContent({ message }: { message: Message }) {
+  const [quotedExpanded, setQuotedExpanded] = useState(false);
+  const isEmail = message.viaChannel === 'email';
+  const visibleContent = isEmail && message.emailVisibleText !== undefined
+    ? message.emailVisibleText
+    : message.content;
+  const quotedContent = message.emailQuotedText?.trim() ?? '';
+  const hasQuotedContent = isEmail
+    && message.emailHasQuotedContent === true
+    && quotedContent.length > 0;
+
+  return (
+    <div className={isEmail ? 'helpin-email-message-content' : undefined}>
+      {visibleContent.trim().length > 0 && (
+        <div
+          className="helpin-message-content"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(visibleContent) }}
+        />
+      )}
+
+      {hasQuotedContent && (
+        <div className="helpin-email-history">
+          <button
+            type="button"
+            className="helpin-email-history-toggle"
+            aria-expanded={quotedExpanded}
+            onClick={() => setQuotedExpanded(previous => !previous)}
+          >
+            {quotedExpanded ? 'Hide previous messages' : 'Show previous messages'}
+          </button>
+          {quotedExpanded && (
+            <div
+              className="helpin-message-content helpin-email-quoted-content"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(quotedContent) }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SourcePopover({ sources }: { sources: NonNullable<Message['sources']> }) {
   const [open, setOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -205,7 +247,10 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
     .filter(Boolean)
     .join(' ');
 
-  const hasTextContent = message.content.trim().length > 0;
+  const displayContent = message.viaChannel === 'email' && message.emailVisibleText !== undefined
+    ? message.emailVisibleText
+    : message.content;
+  const hasTextContent = displayContent.trim().length > 0;
   const hasFiles = message.attachments?.some(a => a.url && !isImageType(a.fileType)) ?? false;
   const hasImages = message.attachments?.some(a => a.url && isImageType(a.fileType)) ?? false;
   const hasSources = Boolean(message.sources && message.sources.length > 0);
@@ -273,10 +318,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
           <div className="helpin-message-agent-bubble-wrap">
             {showBubble && (
               <div className={bubbleClass} data-tooltip={tooltipText}>
-                <div
-                  className="helpin-message-content"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-                />
+                <MessageContent message={message} />
 
                 {message.viaChannel === 'email' && (
                   <div className="helpin-message-channel">Via email</div>
@@ -314,10 +356,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
         <>
           {showBubble && (
             <div className={bubbleClass} data-tooltip={tooltipText}>
-              <div
-                className="helpin-message-content"
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-              />
+              <MessageContent message={message} />
               {message.viaChannel === 'email' && (
                 <div className="helpin-message-channel">Via email</div>
               )}

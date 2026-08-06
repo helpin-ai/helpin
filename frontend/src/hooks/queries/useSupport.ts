@@ -1288,6 +1288,22 @@ export function useUpdateConversationCustomerName(workspaceId: string) {
   });
 }
 
+export function useUpdateConversationCRMCompany(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, companyId }: { conversationId: string; companyId: string | null }) =>
+      supportService.updateConversationCRMCompany(workspaceId, conversationId, { crm_company_id: companyId }).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.visitorContext(workspaceId, variables.conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(workspaceId, variables.conversationId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update company', { description: error.message });
+    },
+  });
+}
+
 export function useUpdateConversationEmailRecipients(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({

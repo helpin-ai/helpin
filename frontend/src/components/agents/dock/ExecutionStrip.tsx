@@ -284,7 +284,7 @@ function PlanStrip({
             <>
               {showRail ? renderRail() : null}
               {isSingleStep && hasTranscript ? (
-                <DockTranscript stream={transcriptState} active={singleActive} />
+                <DockTranscript stream={transcriptState} active={singleActive} showUserMessages={false} />
               ) : (
                 <div className="space-y-1.5">
                   {plan.steps.map((step, i) => {
@@ -448,7 +448,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
           {open && targetLabel(run) ? (
             <p className="text-[11px] text-muted-foreground">{targetLabel(run)}</p>
           ) : null}
-          <DockTranscript stream={stream.streamState} active={isActive} />
+          <DockTranscript stream={stream.streamState} active={isActive} showUserMessages={false} />
           {run.error_message ? (
             <p className="rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">{run.error_message}</p>
           ) : null}

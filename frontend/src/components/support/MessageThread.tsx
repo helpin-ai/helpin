@@ -1011,7 +1011,7 @@ export function MessageThread({
       )}
 
       {/* Messages area with light background (Crisp-style) */}
-      <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 bg-muted/20">
+      <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 min-w-0 bg-muted/20">
         <div className="px-4 pb-10 pt-2">
           {isThreadLoading && <MessageSkeleton />}
           {!isThreadLoading && messages.length === 0 && (

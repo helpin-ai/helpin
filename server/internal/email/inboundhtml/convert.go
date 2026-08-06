@@ -57,6 +57,17 @@ const RemoteImageSrcAttr = "data-helpin-remote-src"
 // but preserve the reference for future inline-attachment rendering.
 const CIDAttr = "data-helpin-cid"
 
+const (
+	// CurrentProjectionVersion identifies the parser behavior used to derive
+	// visible and quoted email text. Persisted projections with an older
+	// version can be recomputed from their canonical stored bodies.
+	CurrentProjectionVersion = 1
+
+	ProjectionConfidenceNone   = "none"
+	ProjectionConfidenceMedium = "medium"
+	ProjectionConfidenceHigh   = "high"
+)
+
 var (
 	// collapsedLinesRe collapses 3+ consecutive blank lines into one blank line.
 	collapsedLinesRe = regexp.MustCompile(`\n{3,}`)
@@ -120,6 +131,23 @@ var (
 	// so email CSS can't overlay the host UI — iframes isolate painting,
 	// but belt-and-suspenders here is cheap.
 	cssPositionLockRe = regexp.MustCompile(`(?i)position\s*:\s*(fixed|sticky)`)
+
+	wordHeaderRoles = map[string]string{
+		// English.
+		"from": "from", "sent": "sent", "date": "sent", "to": "to", "subject": "subject",
+		// Spanish.
+		"de": "from", "enviado": "sent", "fecha": "sent", "para": "to", "asunto": "subject",
+		// German.
+		"von": "from", "gesendet": "sent", "datum": "sent", "an": "to", "betreff": "subject",
+		// French.
+		"expéditeur": "from", "envoyé": "sent", "à": "to", "objet": "subject",
+		// Italian.
+		"da": "from", "inviato": "sent", "a": "to", "oggetto": "subject",
+		// Portuguese.
+		"enviada": "sent", "enviado em": "sent", "assunto": "subject",
+		// Dutch.
+		"van": "from", "verzonden": "sent", "aan": "to", "onderwerp": "subject",
+	}
 
 	// markdownConverter renders sanitized HTML to markdown. The table plugin
 	// preserves grids; base+commonmark cover paragraphs, lists, anchors,
@@ -204,8 +232,60 @@ func buildHTMLPolicy() *bluemonday.Policy {
 // a sanitized HTML fragment safe to inject into a sandboxed iframe; Markdown
 // is a plaintext-friendly rendering with quoted history removed.
 type ProcessedContent struct {
-	HTML     string
-	Markdown string
+	HTML                 string
+	Markdown             string
+	QuotedMarkdown       string
+	HasQuotedContent     bool
+	ProjectionConfidence string
+	ProjectionVersion    int
+}
+
+// ProjectionInput contains the canonical variants supplied by an inbound
+// email provider. HTML and TextBody are retained by callers; this package
+// only derives safe display projections from them. StrippedTextReply is used
+// conservatively when it is an unambiguous prefix of TextBody.
+type ProjectionInput struct {
+	HTML              string
+	TextBody          string
+	StrippedTextReply string
+}
+
+// Project derives the rich HTML body, visible reply text, and quoted history
+// from an inbound email. Structural HTML boundaries take precedence. A
+// provider-supplied plain-text split is accepted only when it is deterministic
+// and leaves a non-empty quoted remainder.
+func Project(input ProjectionInput) ProcessedContent {
+	result := ProcessedContent{
+		ProjectionConfidence: ProjectionConfidenceNone,
+		ProjectionVersion:    CurrentProjectionVersion,
+	}
+
+	cleanHTML, confidence := buildCleanHTMLProjection(strings.TrimSpace(input.HTML))
+	result.HTML = cleanHTML
+
+	if cleanHTML != "" {
+		visibleHTML, quotedHTML, hasStructuralQuote := splitAnnotatedHTML(cleanHTML)
+		result.Markdown = convertSanitizedHTMLToMarkdown(visibleHTML, input.TextBody)
+		result.QuotedMarkdown = convertSanitizedHTMLToMarkdown(quotedHTML, "")
+		if hasStructuralQuote && strings.TrimSpace(result.QuotedMarkdown) != "" {
+			result.HasQuotedContent = true
+			result.ProjectionConfidence = confidence
+			return result
+		}
+	}
+
+	if visible, quoted, ok := splitPlainTextReply(input.TextBody, input.StrippedTextReply); ok {
+		result.Markdown = truncate(visible, maxMarkdownLen)
+		result.QuotedMarkdown = truncate(quoted, maxMarkdownLen)
+		result.HasQuotedContent = true
+		result.ProjectionConfidence = ProjectionConfidenceHigh
+		return result
+	}
+
+	if result.Markdown == "" {
+		result.Markdown = truncate(strings.TrimSpace(input.TextBody), maxMarkdownLen)
+	}
+	return result
 }
 
 // Process converts inbound email HTML into both a sanitized HTML variant
@@ -213,66 +293,33 @@ type ProcessedContent struct {
 // plainText is used as a markdown fallback when html is empty or conversion
 // yields nothing. Returned strings are capped; see maxHTMLLen, maxMarkdownLen.
 func Process(html, plainText string) ProcessedContent {
-	html = strings.TrimSpace(html)
-	if html == "" {
-		return ProcessedContent{Markdown: truncate(strings.TrimSpace(plainText), maxMarkdownLen)}
-	}
-	return ProcessedContent{
-		HTML:     buildCleanHTML(html),
-		Markdown: Convert(html, plainText),
-	}
+	return Project(ProjectionInput{HTML: html, TextBody: plainText})
 }
 
 // Convert converts inbound email HTML into sanitized markdown. If html is
 // empty or the converted result is empty, it returns the trimmed plainText
 // fallback. The returned string is capped at maxMarkdownLen characters.
 func Convert(html, plainText string) string {
-	html = strings.TrimSpace(html)
-	if html == "" {
-		return truncate(strings.TrimSpace(plainText), maxMarkdownLen)
-	}
-
-	stripped, err := stripQuotedHistory(html)
-	if err != nil {
-		// Fall back to the raw HTML on parse failure — sanitizer still runs,
-		// we just won't remove quoted history.
-		stripped = html
-	}
-
-	safe := markdownPolicy.Sanitize(stripped)
-
-	md, err := markdownConverter.ConvertString(safe)
-	if err != nil || strings.TrimSpace(md) == "" {
-		return truncate(strings.TrimSpace(plainText), maxMarkdownLen)
-	}
-
-	md = collapsedLinesRe.ReplaceAllString(md, "\n\n")
-	return truncate(strings.TrimSpace(md), maxMarkdownLen)
+	return Process(html, plainText).Markdown
 }
 
-// buildCleanHTML returns a sanitized HTML fragment with tracking pixels
-// removed, quoted sections annotated for frontend collapsing, and remote
-// image sources stripped (moved to data-helpin-remote-src) so external
-// images don't leak the reader's IP until they opt in.
-func buildCleanHTML(html string) string {
+func buildCleanHTMLProjection(html string) (string, string) {
+	if strings.TrimSpace(html) == "" {
+		return "", ProjectionConfidenceNone
+	}
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
 		// Sanitize raw string as a best-effort fallback.
-		return truncate(strings.TrimSpace(htmlPolicy.Sanitize(html)), maxHTMLLen)
+		return truncate(strings.TrimSpace(htmlPolicy.Sanitize(html)), maxHTMLLen), ProjectionConfidenceNone
 	}
 
-	// Mark (don't remove) quoted history so frontend can collapse it behind
-	// a toggle while keeping the thread auditable.
-	for _, sel := range quotedReplySelectors {
-		doc.Find(sel).SetAttr(QuotedAttr, "true")
-	}
-	markOutlookQuotedSiblings(doc)
+	confidence := markQuotedHistory(doc)
 
 	hoistHeadStylesIntoBody(doc)
 
 	body, err := bodyInnerHTML(doc)
 	if err != nil {
-		return ""
+		return "", ProjectionConfidenceNone
 	}
 
 	// Bluemonday hard-strips <style> element contents regardless of the
@@ -284,7 +331,7 @@ func buildCleanHTML(html string) string {
 	safe := htmlPolicy.Sanitize(body)
 	safe = restoreStyleBlocks(safe, styleBlocks)
 
-	return truncate(strings.TrimSpace(safe), maxHTMLLen)
+	return truncate(strings.TrimSpace(safe), maxHTMLLen), confidence
 }
 
 // hoistHeadStylesIntoBody relocates every <style> element that the HTML
@@ -350,40 +397,153 @@ func sanitizeCSS(css string) string {
 	return css
 }
 
-// stripQuotedHistory removes quoted-reply wrappers and tracking pixels using
-// DOM-level selectors so nested tags don't break the cleanup. Used by the
-// markdown pipeline; the HTML pipeline marks instead of removing.
-func stripQuotedHistory(html string) (string, error) {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
-	if err != nil {
-		return "", err
+// markQuotedHistory annotates structurally identified quote boundaries and
+// returns the strongest confidence used. Known client wrappers are high
+// confidence. Word/Outlook reply headers are medium confidence because they
+// are inferred from a bordered header containing several localized roles.
+func markQuotedHistory(doc *goquery.Document) string {
+	confidence := ProjectionConfidenceNone
+	quotedSelector := "[" + QuotedAttr + "='true']"
+
+	if doc.Find(quotedSelector).Length() > 0 {
+		confidence = ProjectionConfidenceHigh
 	}
-	removeOutlookQuotedSiblings(doc)
 	for _, sel := range quotedReplySelectors {
-		doc.Find(sel).Remove()
+		if matches := doc.Find(sel); matches.Length() > 0 {
+			matches.SetAttr(QuotedAttr, "true")
+			confidence = ProjectionConfidenceHigh
+		}
 	}
+	if markOutlookQuotedSiblings(doc) {
+		confidence = ProjectionConfidenceHigh
+	}
+
+	doc.Find("[style]").Each(func(_ int, candidate *goquery.Selection) {
+		style := strings.ToLower(candidate.AttrOr("style", ""))
+		if !strings.Contains(style, "border-top") || candidate.Is(quotedSelector) || candidate.ParentsFiltered(quotedSelector).Length() > 0 {
+			return
+		}
+		if !hasWordHeaderRoles(candidate) {
+			return
+		}
+
+		candidate.SetAttr(QuotedAttr, "true")
+		candidate.NextAll().SetAttr(QuotedAttr, "true")
+		if confidence == ProjectionConfidenceNone {
+			confidence = ProjectionConfidenceMedium
+		}
+	})
+
+	return confidence
+}
+
+func hasWordHeaderRoles(candidate *goquery.Selection) bool {
+	roles := make(map[string]bool, 4)
+	candidate.Find("b, strong").Each(func(_ int, label *goquery.Selection) {
+		normalized := normalizeHeaderLabel(label.Text())
+		if role, ok := wordHeaderRoles[normalized]; ok {
+			roles[role] = true
+		}
+	})
+
+	return roles["from"] && roles["subject"] && (roles["sent"] || roles["to"])
+}
+
+func normalizeHeaderLabel(label string) string {
+	label = strings.ReplaceAll(label, "\u00a0", " ")
+	label = strings.ToLower(strings.TrimSpace(label))
+	label = strings.TrimSpace(strings.TrimRight(label, ":："))
+	return strings.Join(strings.Fields(label), " ")
+}
+
+// splitAnnotatedHTML returns the visible and quoted fragments. Only
+// top-level marked nodes are serialized into quotedHTML, preventing nested
+// client wrappers from duplicating their content.
+func splitAnnotatedHTML(cleanHTML string) (visibleHTML, quotedHTML string, hasQuote bool) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(cleanHTML))
+	if err != nil {
+		return cleanHTML, "", false
+	}
+
+	quotedSelector := "[" + QuotedAttr + "='true']"
+	var quoted strings.Builder
+	doc.Find(quotedSelector).Each(func(_ int, selection *goquery.Selection) {
+		if selection.ParentsFiltered(quotedSelector).Length() > 0 {
+			return
+		}
+		hasQuote = true
+		fragment, outerErr := goquery.OuterHtml(selection)
+		if outerErr == nil {
+			quoted.WriteString(fragment)
+			quoted.WriteByte('\n')
+		}
+	})
+
+	doc.Find(quotedSelector).Remove()
 	for _, sel := range trackingPixelSelectors {
 		doc.Find(sel).Remove()
 	}
-	return bodyInnerHTML(doc)
+	visibleHTML, err = bodyInnerHTML(doc)
+	if err != nil {
+		visibleHTML = cleanHTML
+	}
+	return visibleHTML, quoted.String(), hasQuote
 }
 
-func markOutlookQuotedSiblings(doc *goquery.Document) {
+func convertSanitizedHTMLToMarkdown(fragment, fallback string) string {
+	fragment = strings.TrimSpace(fragment)
+	if fragment == "" {
+		return truncate(strings.TrimSpace(fallback), maxMarkdownLen)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(fragment))
+	if err == nil {
+		for _, sel := range trackingPixelSelectors {
+			doc.Find(sel).Remove()
+		}
+		if body, bodyErr := bodyInnerHTML(doc); bodyErr == nil {
+			fragment = body
+		}
+	}
+
+	safe := markdownPolicy.Sanitize(fragment)
+	md, err := markdownConverter.ConvertString(safe)
+	if err != nil || strings.TrimSpace(md) == "" {
+		return truncate(strings.TrimSpace(fallback), maxMarkdownLen)
+	}
+	md = collapsedLinesRe.ReplaceAllString(md, "\n\n")
+	return truncate(strings.TrimSpace(md), maxMarkdownLen)
+}
+
+func splitPlainTextReply(textBody, strippedReply string) (visible, quoted string, ok bool) {
+	full := strings.TrimSpace(strings.ReplaceAll(textBody, "\r\n", "\n"))
+	stripped := strings.TrimSpace(strings.ReplaceAll(strippedReply, "\r\n", "\n"))
+	if full == "" || stripped == "" || !strings.HasPrefix(full, stripped) || strings.Count(full, stripped) != 1 {
+		return "", "", false
+	}
+	if len(full) > len(stripped) {
+		next := full[len(stripped)]
+		if next != ' ' && next != '\t' && next != '\n' && next != '\r' {
+			return "", "", false
+		}
+	}
+	remainder := strings.TrimSpace(full[len(stripped):])
+	if remainder == "" {
+		return "", "", false
+	}
+	return stripped, remainder, true
+}
+
+func markOutlookQuotedSiblings(doc *goquery.Document) bool {
+	marked := false
 	for _, sel := range outlookQuoteBoundarySelectors {
 		doc.Find(sel).Each(func(_ int, marker *goquery.Selection) {
+			marked = true
 			marker.SetAttr(QuotedAttr, "true")
 			marker.NextAll().SetAttr(QuotedAttr, "true")
 		})
 	}
-}
-
-func removeOutlookQuotedSiblings(doc *goquery.Document) {
-	for _, sel := range outlookQuoteBoundarySelectors {
-		doc.Find(sel).Each(func(_ int, marker *goquery.Selection) {
-			marker.NextAll().Remove()
-			marker.Remove()
-		})
-	}
+	return marked
 }
 
 // bodyInnerHTML returns the inner HTML of the document's <body>, falling

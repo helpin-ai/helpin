@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -1042,20 +1044,25 @@ func TestEmailFallbackRenderBodiesAddsTrackedPoweredByFooter(t *testing.T) {
 	svc := &EmailFallbackService{}
 
 	htmlBody, textBody := svc.renderBodies(
-		[]model.SupportMessage{{Content: "Thanks."}},
+		[]model.SupportMessage{{WorkspaceID: "7d314f04-d25e-461e-8ce4-49de0527ae32", Content: "Thanks."}},
 		"Alex Agent",
-		"Acme Support",
+		"Replug",
 		"",
 		"",
 	)
+	wantURL := "https://helpin.ai/?utm_source=replug-7d314f04&utm_medium=email&utm_campaign=powered_by_helpin&utm_content=support_email_footer"
+	wantHTMLURL := html.EscapeString(wantURL)
 
 	if !strings.Contains(htmlBody, "<strong>Helpin AI</strong>") {
 		t.Fatalf("html footer should bold Helpin AI, got %q", htmlBody)
 	}
-	if !strings.Contains(htmlBody, emailFallbackPoweredByFooterURL) {
+	if !strings.Contains(htmlBody, wantHTMLURL) {
 		t.Fatalf("html footer missing tracked URL, got %q", htmlBody)
 	}
-	if !strings.Contains(textBody, emailFallbackPoweredByFooterURL) {
+	if strings.Contains(htmlBody, "&amp;amp;") {
+		t.Fatalf("html footer URL should be escaped exactly once, got %q", htmlBody)
+	}
+	if !strings.Contains(textBody, wantURL) || strings.Contains(textBody, "&amp;") {
 		t.Fatalf("text footer missing tracked URL, got %q", textBody)
 	}
 }
@@ -3240,6 +3247,18 @@ Company`,
 	if logs[0].FromEmail != "founder@company.com" {
 		t.Fatalf("log from email = %q, want founder@company.com", logs[0].FromEmail)
 	}
+	if !strings.Contains(logs[0].EmailVisibleText, "I need help with my invoice.") {
+		t.Fatalf("forwarded visible projection lost customer body: %q", logs[0].EmailVisibleText)
+	}
+	if strings.Contains(logs[0].EmailVisibleText, "Forwarded message") || strings.Contains(logs[0].EmailVisibleText, "From: Jane Customer") {
+		t.Fatalf("forwarded visible projection retained attribution headers: %q", logs[0].EmailVisibleText)
+	}
+	if logs[0].EmailHasQuotedContent || logs[0].EmailQuotedText != "" {
+		t.Fatalf("forwarded customer body was incorrectly hidden as history: %#v", logs[0])
+	}
+	if logs[0].EmailProjectionVersion != inboundhtml.CurrentProjectionVersion {
+		t.Fatalf("forwarded projection version = %d, want current", logs[0].EmailProjectionVersion)
+	}
 
 	detail, err := env.service.supportInboxService.GetMessageEmailDetail(ctx, workspaceID, messages[0].ID)
 	if err != nil {
@@ -3807,10 +3826,11 @@ func TestEmailFallbackRenderBodiesUsesLinkedChatAndHelpinAttribution(t *testing.
 	if !strings.Contains(htmlBody, `border-top:1px solid #e5e7eb`) {
 		t.Fatalf("expected subtle bordered attribution footer, got %q", htmlBody)
 	}
-	if !strings.Contains(htmlBody, `<a href="`+emailFallbackPoweredByFooterURL+`"`) || !strings.Contains(htmlBody, `<strong>Helpin AI</strong></a>`) {
+	wantURL := "https://helpin.ai/?utm_source=acme-support&utm_medium=email&utm_campaign=powered_by_helpin&utm_content=support_email_footer"
+	if !strings.Contains(htmlBody, `<a href="`+html.EscapeString(wantURL)+`"`) || !strings.Contains(htmlBody, `<strong>Helpin AI</strong></a>`) {
 		t.Fatalf("expected Helpin AI attribution link, got %q", htmlBody)
 	}
-	if !strings.Contains(textBody, "Powered by Helpin AI: "+emailFallbackPoweredByFooterURL) {
+	if !strings.Contains(textBody, "Powered by Helpin AI: "+wantURL) {
 		t.Fatalf("expected plaintext Helpin AI attribution URL, got %q", textBody)
 	}
 }
@@ -3845,6 +3865,23 @@ func TestEmailFallbackInboundPayloadBodiesStripReplyDelimiterFromHTMLMarkdown(t 
 	}
 	if !strings.Contains(content, "Fresh HTML reply.") {
 		t.Fatalf("expected fresh reply, got %q", content)
+	}
+}
+
+func TestInboundPayloadProjectionSeparatesQuotedHistory(t *testing.T) {
+	projection := inboundPayloadProjection(model.PostmarkInboundPayload{
+		HtmlBody: `<p>Fresh customer reply.</p><div class="gmail_quote"><p>Old quoted body.</p></div>`,
+		TextBody: "Fresh customer reply.\n\nOld quoted body.",
+	})
+
+	if projection.VisibleText != "Fresh customer reply." {
+		t.Fatalf("visible text = %q, want fresh reply", projection.VisibleText)
+	}
+	if !projection.HasQuotedContent || !strings.Contains(projection.QuotedText, "Old quoted body.") {
+		t.Fatalf("expected retained quoted history, got %#v", projection)
+	}
+	if projection.Version != inboundhtml.CurrentProjectionVersion {
+		t.Fatalf("projection version = %d, want %d", projection.Version, inboundhtml.CurrentProjectionVersion)
 	}
 }
 
