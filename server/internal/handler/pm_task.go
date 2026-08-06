@@ -31,35 +31,10 @@ func (h *PMTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
-	archived, err := queryBoolPtr(r, "archived")
+	filters, err := taskListFilters(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid archived query param")
 		return
-	}
-	filters := model.PMTaskFilters{
-		TeamID:                queryStringPtr(r, "team_id"),
-		EpicID:                queryStringPtr(r, "epic_id"),
-		SprintID:              queryStringPtr(r, "sprint_id"),
-		ContactID:             queryStringPtr(r, "contact_id"),
-		CompanyID:             queryStringPtr(r, "company_id"),
-		DealID:                queryStringPtr(r, "deal_id"),
-		SupportConversationID: queryStringPtr(r, "support_conversation_id"),
-		IncludeContacts:       r.URL.Query().Get("include_contacts") == "true",
-		IncludeCompanies:      r.URL.Query().Get("include_companies") == "true",
-		IncludeDeals:          r.URL.Query().Get("include_deals") == "true",
-		IncludeSupport:        r.URL.Query().Get("include_support") == "true",
-		WorkflowID:            queryStringPtr(r, "workflow_id"),
-		WorkflowStateID:       queryStringPtr(r, "state_id"),
-		TaskType:              queryStringPtr(r, "task_type"),
-		OwnerMemberIDs:        queryStringValues(r, "owner_member_ids"),
-		RequesterID:           queryStringPtr(r, "requester_id"),
-		RequesterMemberID:     queryStringPtr(r, "requester_member_id"),
-		LabelID:               queryStringPtr(r, "label_id"),
-		Priority:              queryStringPtr(r, "priority"),
-		Severity:              queryStringPtr(r, "severity"),
-		Blocked:               queryStringPtr(r, "blocked"),
-		Blocking:              queryStringPtr(r, "blocking"),
-		Archived:              archived,
 	}
 	pagination := queryPagination(r)
 
@@ -83,6 +58,39 @@ func (h *PMTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 		PerPage:    pagination.PerPage,
 		TotalPages: totalPages,
 	})
+}
+
+func taskListFilters(r *http.Request) (model.PMTaskFilters, error) {
+	archived, err := queryBoolPtr(r, "archived")
+	if err != nil {
+		return model.PMTaskFilters{}, err
+	}
+	return model.PMTaskFilters{
+		Search:                queryStringPtr(r, "search"),
+		TeamID:                queryStringPtr(r, "team_id"),
+		EpicID:                queryStringPtr(r, "epic_id"),
+		SprintID:              queryStringPtr(r, "sprint_id"),
+		ContactID:             queryStringPtr(r, "contact_id"),
+		CompanyID:             queryStringPtr(r, "company_id"),
+		DealID:                queryStringPtr(r, "deal_id"),
+		SupportConversationID: queryStringPtr(r, "support_conversation_id"),
+		IncludeContacts:       r.URL.Query().Get("include_contacts") == "true",
+		IncludeCompanies:      r.URL.Query().Get("include_companies") == "true",
+		IncludeDeals:          r.URL.Query().Get("include_deals") == "true",
+		IncludeSupport:        r.URL.Query().Get("include_support") == "true",
+		WorkflowID:            queryStringPtr(r, "workflow_id"),
+		WorkflowStateID:       queryStringPtr(r, "state_id"),
+		TaskType:              queryStringPtr(r, "task_type"),
+		OwnerMemberIDs:        queryStringValues(r, "owner_member_ids"),
+		RequesterID:           queryStringPtr(r, "requester_id"),
+		RequesterMemberID:     queryStringPtr(r, "requester_member_id"),
+		LabelID:               queryStringPtr(r, "label_id"),
+		Priority:              queryStringPtr(r, "priority"),
+		Severity:              queryStringPtr(r, "severity"),
+		Blocked:               queryStringPtr(r, "blocked"),
+		Blocking:              queryStringPtr(r, "blocking"),
+		Archived:              archived,
+	}, nil
 }
 
 // ListBoard handles GET /api/pm/tasks/board?workflow_id=...&team_id=...&per_state_limit=...

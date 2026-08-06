@@ -42,6 +42,7 @@ export const pmTaskService = {
     filters?: {
       page?: number;
       per_page?: number;
+      search?: string;
       team_id?: string;
       epic_id?: string;
       sprint_id?: string;
