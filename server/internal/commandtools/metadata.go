@@ -434,10 +434,16 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		Alias:       "list_crm_associations",
 		Category:    "CRM / Discovery",
 		Description: "List a bounded set of associations for one existing workspace object.",
-		InputSchema: operationalListSchema(map[string]any{
+		InputSchema: closedObjectSchema(map[string]any{
 			"object_type": crmObjectTypeSchema(),
 			"object_id":   optionalIDSchema("Object ID whose associations should be listed."),
-		}),
+			"limit": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of results. Defaults to 50, max 100.",
+				"minimum":     1,
+				"maximum":     100,
+			},
+		}, []string{"object_type", "object_id"}),
 	},
 	{
 		CommandName: "crm.update_contact",

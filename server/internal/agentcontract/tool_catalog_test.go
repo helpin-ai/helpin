@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 func TestPMToolCatalogContracts(t *testing.T) {
@@ -224,6 +225,45 @@ func TestPMToolCatalogContracts(t *testing.T) {
 
 	if _, ok := toolsByName["assign_task_agent"]; !ok {
 		t.Fatal("deprecated assign_task_agent compatibility entry was removed")
+	}
+}
+
+func TestSafeOperationalToolCatalogContracts(t *testing.T) {
+	expected := map[string]string{
+		"update_task_delivery_target": "PM / Delivery", "update_epic_delivery_target": "PM / Delivery",
+		"update_document_metadata": "Docs",
+		"get_crm_contact":          "CRM / Discovery", "get_crm_company": "CRM / Discovery", "get_crm_deal": "CRM / Discovery",
+		"list_crm_companies": "CRM / Discovery", "list_crm_pipelines": "CRM / Discovery", "list_crm_associations": "CRM / Discovery",
+		"update_crm_contact": "CRM / Operations", "update_crm_company": "CRM / Operations", "update_crm_deal": "CRM / Operations",
+		"add_crm_activity": "CRM / Operations", "link_crm_objects": "CRM / Operations", "unlink_crm_association": "CRM / Operations", "set_primary_contact_company": "CRM / Operations",
+		"list_support_conversations": "Support / Discovery", "get_support_conversation": "Support / Discovery", "list_support_tags": "Support / Discovery", "list_support_inboxes": "Support / Discovery", "list_support_assignees": "Support / Discovery",
+		"assign_support_conversation": "Support / Triage", "move_support_conversation": "Support / Triage", "add_support_conversation_tag": "Support / Triage", "remove_support_conversation_tag": "Support / Triage",
+		"link_support_conversation_task": "Support / Triage", "link_support_conversation_contact": "Support / Triage", "update_support_conversation_subject": "Support / Triage",
+	}
+	catalog := ListToolCatalog()
+	byName := make(map[string]model.ToolCatalogEntry, len(catalog.Tools))
+	for _, tool := range catalog.Tools {
+		byName[tool.Name] = tool
+	}
+	for alias, category := range expected {
+		tool, ok := byName[alias]
+		if !ok {
+			t.Errorf("catalog entry missing for %q", alias)
+			continue
+		}
+		metadata, ok := commandtools.ToolMetadataForAlias(alias)
+		if !ok {
+			t.Fatalf("metadata missing for %q", alias)
+		}
+		if tool.Category != category || tool.Description != metadata.Description || !reflect.DeepEqual(tool.InputSchema, normalizeJSONValue(metadata.InputSchema)) {
+			t.Errorf("catalog entry %q drifted from canonical metadata", alias)
+		}
+		assertClosedObjectSchemas(t, tool.InputSchema, alias)
+	}
+	for _, category := range []string{"PM / Delivery", "CRM / Discovery", "CRM / Operations", "Support / Discovery", "Support / Triage"} {
+		if indexOf(catalog.Categories, category) < 0 {
+			t.Errorf("catalog category %q missing", category)
+		}
 	}
 }
 

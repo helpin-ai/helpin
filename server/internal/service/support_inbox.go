@@ -2204,6 +2204,9 @@ func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspa
 // UpdateConversationLinkedTask sets or clears the PM task associated with a
 // support conversation and keeps the generic association table synchronized.
 func (s *SupportInboxService) UpdateConversationLinkedTask(ctx context.Context, workspaceID, ticketID string, storyID *string, actorID string) error {
+	if s.assocRepo == nil {
+		return fmt.Errorf("CRM association repository is unavailable")
+	}
 	ticket, err := s.loadConversationAccessible(ctx, workspaceID, ticketID)
 	if err != nil {
 		return err
@@ -2227,9 +2230,6 @@ func (s *SupportInboxService) UpdateConversationLinkedTask(ctx context.Context, 
 	ticket.LinkedTaskID = normalizedTaskID
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return err
-	}
-	if s.assocRepo == nil {
-		return fmt.Errorf("CRM association repository is unavailable")
 	}
 	existing, err := s.assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectSupportConversation, ticketID)
 	if err != nil {
