@@ -23,9 +23,28 @@ const (
 	coverageDailyBatchWorkflowID = "coverage-gap-daily-batch"
 	coverageDailyBatchSchedule   = "0 3 * * *"
 
-	SupportCoverageAgentOutcomeResolved          = "resolved"
+	SupportCoverageAgentOutcomeResolved    = "resolved"
+	SupportCoverageAgentOutcomeReviewReady = "review_ready"
+	SupportCoverageAgentOutcomeRouted      = "routed"
+	SupportCoverageAgentOutcomeBlocked     = "blocked"
+
+	// Compatibility values accepted from in-flight runs using the original
+	// completion contract. New tool schemas do not advertise these values.
 	SupportCoverageAgentOutcomeProposalSubmitted = "proposal_submitted"
 	SupportCoverageAgentOutcomeHandoff           = "handoff"
+
+	SupportCoverageAgentActionDocumentCreated        = "document_created"
+	SupportCoverageAgentActionDocumentUpdated        = "document_updated"
+	SupportCoverageAgentActionProposalSubmitted      = "proposal_submitted"
+	SupportCoverageAgentActionExistingDocsSufficient = "existing_docs_sufficient"
+	SupportCoverageAgentActionFeatureNotFound        = "feature_not_found"
+	SupportCoverageAgentActionNonDocGap              = "non_doc_gap"
+	SupportCoverageAgentActionSourceUnavailable      = "source_unavailable"
+
+	SupportCoverageAgentSourceVerified      = "verified"
+	SupportCoverageAgentSourceNotFound      = "not_found"
+	SupportCoverageAgentSourceNotApplicable = "not_applicable"
+	SupportCoverageAgentSourceUnavailable   = "unavailable"
 )
 
 // SupportCoverageService orchestrates gap detection, evidence
@@ -327,11 +346,16 @@ func (s *SupportCoverageService) RecordAgentOutcome(ctx context.Context, workspa
 	}
 
 	switch outcome {
-	case SupportCoverageAgentOutcomeHandoff:
+	case SupportCoverageAgentOutcomeRouted:
+		if documentID != "" {
+			return s.coverageRepo.LinkGapArticle(ctx, gapID, documentID, workspaceID)
+		}
 		return nil
-	case SupportCoverageAgentOutcomeProposalSubmitted:
+	case SupportCoverageAgentOutcomeBlocked, SupportCoverageAgentOutcomeHandoff:
+		return nil
+	case SupportCoverageAgentOutcomeReviewReady, SupportCoverageAgentOutcomeProposalSubmitted:
 		if documentID == "" {
-			return fmt.Errorf("document_id is required for proposal_submitted")
+			return fmt.Errorf("document_id is required for review_ready")
 		}
 		return s.coverageRepo.LinkGapArticle(ctx, gapID, documentID, workspaceID)
 	case SupportCoverageAgentOutcomeResolved:
@@ -349,7 +373,7 @@ func (s *SupportCoverageService) RecordAgentOutcome(ctx context.Context, workspa
 		}
 		return s.AddDocumentToGap(ctx, workspaceID, gapID, documentID)
 	default:
-		return fmt.Errorf("outcome must be resolved, proposal_submitted, or handoff")
+		return fmt.Errorf("outcome must be resolved, review_ready, routed, or blocked")
 	}
 }
 

@@ -322,8 +322,11 @@ func TestAgentRuntimeProjectionRejectsProseOnlyQuillCoverageCompletion(t *testin
 
 func TestAgentRuntimeProjectionAcceptsDurableQuillCoverageCompletion(t *testing.T) {
 	outcome := supportCoverageGapOutcomeSummary{
-		Outcome: SupportCoverageAgentOutcomeProposalSubmitted, DocumentID: "doc-1", ProposalID: "proposal-1",
-		Summary: "Proposed a verified command bar help article.",
+		Outcome: SupportCoverageAgentOutcomeReviewReady, Action: SupportCoverageAgentActionProposalSubmitted,
+		SourceStatus: SupportCoverageAgentSourceVerified, DocumentID: "doc-1", ProposalID: "proposal-1",
+		DocumentationEvidence: "No existing command bar article was found.",
+		SourceEvidence:        "Verified the command bar implementation.",
+		Summary:               "Proposed a verified command bar help article.",
 	}
 	summary, err := json.Marshal(map[string]any{supportCoverageGapOutcomeSummaryKey: outcome})
 	if err != nil {
@@ -351,6 +354,57 @@ func TestAgentRuntimeProjectionAcceptsDurableQuillCoverageCompletion(t *testing.
 	}
 	if run.Status != model.AgentRunStatusCompleted {
 		t.Fatalf("expected durable coverage run to complete, got %q (%v)", run.Status, run.ErrorMessage)
+	}
+}
+
+func TestHasDurableSupportCoverageGapOutcomeAcceptsLegacyProposal(t *testing.T) {
+	summary := json.RawMessage(`{"support_coverage_gap_outcome":{"outcome":"proposal_submitted","document_id":"doc-legacy","proposal_id":"proposal-legacy","summary":"Submitted for review."}}`)
+	if !hasDurableSupportCoverageGapOutcome(summary) {
+		t.Fatal("expected an in-flight legacy proposal outcome to remain valid")
+	}
+}
+
+func TestAgentRuntimeProjectionRecoversReviewReadyCoverageDocument(t *testing.T) {
+	run := &model.AgentRun{
+		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-quill",
+		TargetType: "support_coverage_gap", TargetID: "gap-1",
+		Status: model.AgentRunStatusRunning,
+	}
+	repo := &fakeAgentRuntimeProjectionRunRepo{byID: map[string]*model.AgentRun{run.ID: run}}
+	runtimeClient := &fakeAgentRuntimeSignalClient{toolCalls: map[string][]AgentRuntimeToolCall{
+		"runtime-gap": {{
+			ToolName: "mcp__helpin__create_document",
+			Output:   json.RawMessage(`{"id":"doc-created","status":"draft"}`),
+		}},
+	}}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: repo,
+		agentRepo: &fakeAgentRuntimeProjectionAgentRepo{agent: &model.Agent{
+			ID: "agent-quill", PresetKey: model.AgentPresetDocumentationAgent,
+		}},
+		agentRuntimeClient: runtimeClient,
+		now:                time.Now,
+	}
+
+	err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "runtime-gap", HostRunID: run.ID, Type: agentruntime.EventRunCompleted,
+	})
+	if err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	if run.Status != model.AgentRunStatusCompleted {
+		t.Fatalf("expected durable document recovery to complete the run, got %q (%v)", run.Status, run.ErrorMessage)
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(run.OutputSummary, &body); err != nil {
+		t.Fatalf("decode recovered summary: %v", err)
+	}
+	var outcome supportCoverageGapOutcomeSummary
+	if err := json.Unmarshal(body[supportCoverageGapOutcomeSummaryKey], &outcome); err != nil {
+		t.Fatalf("decode recovered outcome: %v", err)
+	}
+	if outcome.Outcome != SupportCoverageAgentOutcomeReviewReady || outcome.Action != SupportCoverageAgentActionDocumentCreated || outcome.DocumentID != "doc-created" || !outcome.Recovered {
+		t.Fatalf("unexpected recovered outcome: %#v", outcome)
 	}
 }
 

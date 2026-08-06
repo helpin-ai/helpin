@@ -145,6 +145,16 @@ func TestCompleteSupportCoverageGapToolContract(t *testing.T) {
 	if def.Tool.InputSchema["additionalProperties"] != false {
 		t.Fatalf("terminal tool schema is not strict: %#v", def.Tool.InputSchema)
 	}
+	required, _ := def.Tool.InputSchema["required"].([]string)
+	for _, field := range []string{"outcome", "action", "source_status", "documentation_evidence", "summary"} {
+		if !slices.Contains(required, field) {
+			t.Fatalf("terminal tool schema does not require %q: %#v", field, def.Tool.InputSchema)
+		}
+	}
+	properties, _ := def.Tool.InputSchema["properties"].(map[string]any)
+	if properties["handoff_owner"] == nil || properties["source_evidence"] == nil {
+		t.Fatalf("terminal tool schema is missing disposition evidence fields: %#v", properties)
+	}
 }
 
 func TestEnsureTaskPlanDocumentToolContractAttachesAndReturnsDocumentID(t *testing.T) {

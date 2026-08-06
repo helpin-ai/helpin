@@ -302,6 +302,43 @@ func TestSupportCoverageRecordAgentOutcomeIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestSupportCoverageReviewReadyOutcomeKeepsGapOpenAndLinksDocument(t *testing.T) {
+	_, coverageSvc, db := setupCoverageTestEnv(t)
+	if err := db.Exec(`CREATE TABLE docs_documents (id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '')`).Error; err != nil {
+		t.Fatalf("create docs table: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_documents (id, title) VALUES ('doc-draft', 'Command bar draft')`).Error; err != nil {
+		t.Fatalf("seed docs table: %v", err)
+	}
+	ctx := context.Background()
+	now := time.Now().UTC()
+	repo := repository.NewSupportCoverageRepository(db)
+	if _, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+		ID: "gap-review", WorkspaceID: "ws-1", DedupeKey: "review-outcome",
+		FirstSeenAt: now, LastSeenAt: now,
+	}); err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+
+	if err := coverageSvc.RecordAgentOutcome(ctx, "ws-1", "gap-review", SupportCoverageAgentOutcomeReviewReady, "doc-draft"); err != nil {
+		t.Fatalf("RecordAgentOutcome: %v", err)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.Where("id = ?", "gap-review").First(&gap).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.Status != model.SupportCoverageGapStatusOpen || gap.ResultDocumentID != nil {
+		t.Fatalf("review-ready gap should remain open without a result document: %#v", gap)
+	}
+	var links int64
+	if err := db.Model(&model.SupportCoverageGapArticle{}).Where("gap_id = ? AND document_id = ?", "gap-review", "doc-draft").Count(&links).Error; err != nil {
+		t.Fatalf("count links: %v", err)
+	}
+	if links != 1 {
+		t.Fatalf("gap article links = %d, want 1", links)
+	}
+}
+
 func TestSupportCoverage_AIHandoff_NoRetrieval_CreatesGap(t *testing.T) {
 	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
 	ctx := context.Background()

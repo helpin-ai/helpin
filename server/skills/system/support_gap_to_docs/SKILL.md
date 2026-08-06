@@ -18,12 +18,14 @@ Use this skill when working from a support coverage gap, repeated customer quest
 - Identify the customer question, failed search, weak answer, stale article, or conflicting article.
 - Distinguish one-off confusion from a durable documentation gap.
 
-## Verify Product Behavior
+## Verify The Relevant Source
 
-- For product or feature questions, list and check out the relevant linked repository before drafting.
-- Search the source for the feature, then read the relevant implementation and tests to verify entry points, behavior, permissions, limitations, and user-visible terminology.
+- For product or feature questions, inspect a linked repository when one is available and implementation is the relevant source of truth.
+- Search the source for the feature, then read matching implementation and tests to verify entry points, behavior, permissions, limitations, and user-visible terminology.
+- A successful repository search with no relevant match is valid evidence for `feature_not_found`; do not force an unrelated file read merely to satisfy a checklist.
+- Repository inspection is not applicable when policy, process, data, or another authoritative source governs the answer.
 - Treat PRDs, architecture notes, and task descriptions as leads, not proof that behavior shipped.
-- If repository access is unavailable, do not invent product behavior. Request the missing access or record an explicit blocked handoff.
+- If a required source is unavailable, do not invent product behavior. Record a blocked disposition, or create review-ready work that clearly identifies the verification gap.
 
 ## Decide The Doc Action
 
@@ -34,8 +36,8 @@ Use this skill when working from a support coverage gap, repeated customer quest
 
 ## Completion Rules
 
-- Do not close or mark a gap resolved until the doc work is actually created, updated, or explicitly handed off because the required source of truth is unavailable.
+- Keep run completion separate from gap resolution: a run may complete with review-ready work, a routed finding, or a blocked disposition while the gap remains open.
 - Finish every support coverage gap run by calling `complete_support_coverage_gap` with the durable outcome.
-- Use `resolved` only after the document was actually created or updated. Use `proposal_submitted` for a persisted review proposal, or `handoff` when a human must take over.
+- Use `resolved` only for a verified document fix. Use `review_ready` for a durable draft or proposal, `routed` for a completed non-documentation finding, and `blocked` when a required source is unavailable.
 - Preserve the evidence trail so reviewers understand why the doc changed.
 - For public help docs, draft or request approval before publishing.

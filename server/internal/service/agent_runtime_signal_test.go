@@ -27,11 +27,13 @@ type fakeAgentRuntimeSignalClient struct {
 	listMessageCalls     []string
 	listArtifactCalls    []string
 	listInteractionCalls []string
+	listToolCallCalls    []string
 	listV2EventCalls     []int64
 	getRuns              map[string]*AgentRuntimeRun
 	messages             map[string][]AgentRuntimeMessage
 	artifacts            map[string][]AgentRuntimeArtifact
 	interactions         map[string][]AgentRuntimeInteraction
+	toolCalls            map[string][]AgentRuntimeToolCall
 	v2Events             map[string][]AgentRuntimeEventEnvelope
 	getErr               error
 	listErr              error
@@ -132,6 +134,14 @@ func (c *fakeAgentRuntimeSignalClient) ListInteractions(_ context.Context, runti
 		return nil, c.listErr
 	}
 	return append([]AgentRuntimeInteraction(nil), c.interactions[runtimeRunID]...), nil
+}
+
+func (c *fakeAgentRuntimeSignalClient) ListToolCalls(_ context.Context, runtimeRunID string) ([]AgentRuntimeToolCall, error) {
+	c.listToolCallCalls = append(c.listToolCallCalls, runtimeRunID)
+	if c.listErr != nil {
+		return nil, c.listErr
+	}
+	return append([]AgentRuntimeToolCall(nil), c.toolCalls[runtimeRunID]...), nil
 }
 
 func (c *fakeAgentRuntimeSignalClient) ResumeRun(_ context.Context, runtimeRunID string, req AgentRuntimeResumeRunRequest) (*AgentRuntimeRun, error) {

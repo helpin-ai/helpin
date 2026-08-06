@@ -79,14 +79,7 @@ func TestRuntimeStartRunRequestScopesCoverageCompletionToQuillGapRuns(t *testing
 		t.Fatalf("runtimeStartRunRequest returned error: %v", err)
 	}
 	required, ok := req.Metadata["completion_required_tools"].([]string)
-	wantRequired := []string{
-		"search_documents",
-		"list_repositories",
-		"checkout_repository",
-		"ripgrep",
-		"read_file",
-		agentcontract.ToolCompleteSupportCoverageGap,
-	}
+	wantRequired := []string{agentcontract.ToolCompleteSupportCoverageGap}
 	if !ok || !slices.Equal(required, wantRequired) {
 		t.Fatalf("coverage completion tools = %#v", req.Metadata["completion_required_tools"])
 	}
@@ -106,10 +99,10 @@ func TestSupportCoverageGapRunInstructionsRequireDocsAndRepositoryVerification(t
 		SupportCoverageGap: model.SupportCoverageGap{V1GapType: "feature_overview"},
 	})
 	for _, expected := range []string{
-		"Search the current workspace documentation before drafting",
-		"list and check out the relevant repository",
-		"read the relevant implementation and tests",
-		"Do not finish the run until a document was created or updated",
+		"Search the current workspace documentation before deciding the disposition",
+		"Inspect a repository only when product or feature implementation is a relevant source of truth",
+		"a successful search with no relevant match is valid evidence for feature_not_found",
+		"Finish every run by calling complete_support_coverage_gap with the disposition",
 	} {
 		if !strings.Contains(instructions, expected) {
 			t.Fatalf("expected coverage instructions to contain %q\n%s", expected, instructions)

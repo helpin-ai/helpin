@@ -689,7 +689,7 @@ func TestAgentRuntimeFinalizersCommandBarPlanAdvancerFailureIsIsolated(t *testin
 }
 
 func TestMergeRuntimeOutputSummaryPayloadPreservesHostMarkers(t *testing.T) {
-	local := json.RawMessage(`{"agent_runtime_usage_consumed":true,"agent_runtime_finalizer_agent_idle":true,"support_coverage_gap_outcome":{"outcome":"resolved","document_id":"doc-host","summary":"host validated"}}`)
+	local := json.RawMessage(`{"agent_runtime_usage_consumed":true,"agent_runtime_finalizer_agent_idle":true,"support_coverage_gap_outcome":{"outcome":"resolved","action":"document_updated","document_id":"doc-host","summary":"host validated"}}`)
 	runtime := json.RawMessage(`{"draft_reply":{"content":"hello"},"agent_runtime_usage_consumed":false,"support_coverage_gap_outcome":{"outcome":"handoff","summary":"runtime supplied"},"status":"success"}`)
 	merged := mergeRuntimeOutputSummaryPayload(local, runtime)
 	var body map[string]any

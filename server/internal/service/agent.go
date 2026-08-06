@@ -452,14 +452,7 @@ func runtimeStartRunRequest(
 		metadata["preset_key"] = strings.TrimSpace(agent.PresetKey)
 	}
 	if run.TargetType == "support_coverage_gap" && agent != nil && normalizePresetKey(agent.PresetKey) == model.AgentPresetDocumentationAgent {
-		metadata["completion_required_tools"] = []string{
-			"search_documents",
-			"list_repositories",
-			"checkout_repository",
-			"ripgrep",
-			"read_file",
-			agentcontract.ToolCompleteSupportCoverageGap,
-		}
+		metadata["completion_required_tools"] = []string{agentcontract.ToolCompleteSupportCoverageGap}
 	}
 	if strings.TrimSpace(input.Stage) != "" {
 		metadata["planning_stage"] = strings.TrimSpace(input.Stage)
@@ -3952,14 +3945,15 @@ func supportCoverageGapAgentInstructions(detail *model.SupportCoverageGapDetail)
 		"- Treat this support coverage gap as an operations inbox item, not a generic writing prompt.",
 		"- First decide whether the fix belongs in public help docs, API docs, internal docs, multiple surfaces, or outside documentation.",
 		"- Use recommended_action=" + action + " as the starting strategy, then verify it against evidence and related docs.",
-		"- Search the current workspace documentation before drafting, even when the gap has no linked article.",
-		"- For product or feature questions, inspect the implementation before writing: list and check out the relevant repository, search the source, and read the relevant implementation and tests. Do not treat a PRD or architecture note as proof of shipped behavior.",
-		"- If repository access is unavailable, do not invent product behavior or finish with a prose-only promise; request the missing access or record an explicit blocked handoff.",
+		"- Search the current workspace documentation before deciding the disposition, even when the gap has no linked article.",
+		"- Inspect a repository only when product or feature implementation is a relevant source of truth. If repositories are available, search the relevant source and read matching implementation or tests; a successful search with no relevant match is valid evidence for feature_not_found.",
+		"- Repository inspection is not required for policy, process, data, or other gaps whose authoritative source is elsewhere. Record source_status=not_applicable and explain the source used.",
+		"- If a relevant repository or other required source is unavailable, do not invent behavior. Use blocked/source_unavailable or create review-ready documentation that clearly records the verification gap.",
 		"- If this is a data, action, policy, or workflow gap, only create docs when documentation is part of the fix; otherwise prepare a concise handoff that names the owner, missing capability, and customer impact.",
 		"- Prefer improving linked docs for weak or conflicting gaps; avoid creating duplicate articles.",
 		"- For missing docs, write the right document type and place it in the appropriate collection or propose where it belongs.",
 		"- For needs_review gaps, summarize the ambiguity and ask for clarification or create a review checkpoint before drafting.",
-		"- Do not finish the run until a document was created or updated, a durable review proposal was submitted, or an explicit blocked handoff was recorded with complete_support_coverage_gap.",
+		"- Finish every run by calling complete_support_coverage_gap with the disposition: resolved for a verified fix, review_ready for a durable draft or proposal, routed for a completed non-doc investigation, or blocked when required source access is unavailable.",
 	}, "\n")
 }
 

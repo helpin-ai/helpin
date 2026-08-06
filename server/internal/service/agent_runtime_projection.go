@@ -16,6 +16,7 @@ import (
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 	"github.com/nats-io/nats.go"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -31,7 +32,7 @@ const (
 	agentRuntimeEventCodexAuthStateChanged        = "codex_auth.state_changed"
 	agentRuntimeExecutionStageAuthCompleted       = "auth_completed"
 	agentRuntimeExecutionStageAwaitingAuth        = "awaiting_auth"
-	agentRuntimeCoverageCompletionError           = "Quill finished without a durable support coverage outcome; inspect the current docs and product repository, create or update the documentation work, then call complete_support_coverage_gap"
+	agentRuntimeCoverageCompletionError           = "Quill finished without a durable support coverage disposition; create or update review-ready documentation, record a routed or blocked finding, then call complete_support_coverage_gap"
 )
 
 var errAgentRuntimeProjectionRunNotFound = errors.New("agent runtime projection run not found")
@@ -78,6 +79,10 @@ type agentRuntimeProjectionSessionSnapshotRepository interface {
 
 type agentRuntimeV2ReplayClient interface {
 	ListV2Events(ctx context.Context, runtimeRunID string, afterSequence int64) (*AgentRuntimeEventListResponse, error)
+}
+
+type agentRuntimeToolCallClient interface {
+	ListToolCalls(ctx context.Context, runtimeRunID string) ([]AgentRuntimeToolCall, error)
 }
 
 // AgentRuntimeProjectionService projects Agent Runtime lifecycle events back
@@ -552,7 +557,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		if s.requiresQuillCoverageCompletion(ctx, run) {
 			s.mergeRuntimeOutputSummaryForFinalizers(ctx, run)
-			if !hasDurableSupportCoverageGapOutcome(run.OutputSummary) {
+			if !hasDurableSupportCoverageGapOutcome(run.OutputSummary) && !s.recoverSupportCoverageGapOutcomeFromToolCalls(ctx, run) {
 				message := agentRuntimeCoverageCompletionError
 				run.ErrorMessage = &message
 				changed = setRunStatus(run, model.AgentRunStatusFailed, model.AgentRunPauseReasonNone) || changed
@@ -810,19 +815,131 @@ func hasDurableSupportCoverageGapOutcome(summary json.RawMessage) bool {
 	if err := json.Unmarshal(body[supportCoverageGapOutcomeSummaryKey], &outcome); err != nil {
 		return false
 	}
-	if strings.TrimSpace(outcome.Summary) == "" {
+	legacy := completeSupportCoverageGapRequest{
+		Outcome: outcome.Outcome, Action: outcome.Action, SourceStatus: outcome.SourceStatus,
+		DocumentID: outcome.DocumentID, ProposalID: outcome.ProposalID, HandoffOwner: outcome.HandoffOwner,
+		DocumentationEvidence: outcome.DocumentationEvidence, SourceEvidence: outcome.SourceEvidence, Summary: outcome.Summary,
+	}
+	normalizeCompleteSupportCoverageGapRequest(&legacy)
+	outcome.Outcome = legacy.Outcome
+	outcome.Action = legacy.Action
+	outcome.SourceStatus = legacy.SourceStatus
+	outcome.HandoffOwner = legacy.HandoffOwner
+	outcome.DocumentationEvidence = legacy.DocumentationEvidence
+	if strings.TrimSpace(outcome.Summary) == "" || strings.TrimSpace(outcome.Action) == "" {
 		return false
 	}
 	switch strings.TrimSpace(outcome.Outcome) {
 	case SupportCoverageAgentOutcomeResolved:
-		return strings.TrimSpace(outcome.DocumentID) != ""
-	case SupportCoverageAgentOutcomeProposalSubmitted:
-		return strings.TrimSpace(outcome.DocumentID) != "" && strings.TrimSpace(outcome.ProposalID) != ""
-	case SupportCoverageAgentOutcomeHandoff:
-		return true
+		return strings.TrimSpace(outcome.DocumentID) != "" &&
+			(outcome.Action == SupportCoverageAgentActionDocumentCreated || outcome.Action == SupportCoverageAgentActionDocumentUpdated)
+	case SupportCoverageAgentOutcomeReviewReady:
+		if strings.TrimSpace(outcome.DocumentID) == "" {
+			return false
+		}
+		return outcome.Action != SupportCoverageAgentActionProposalSubmitted || strings.TrimSpace(outcome.ProposalID) != ""
+	case SupportCoverageAgentOutcomeRouted:
+		return strings.TrimSpace(outcome.HandoffOwner) != ""
+	case SupportCoverageAgentOutcomeBlocked:
+		return outcome.Action == SupportCoverageAgentActionSourceUnavailable && strings.TrimSpace(outcome.HandoffOwner) != ""
 	default:
 		return false
 	}
+}
+
+// recoverSupportCoverageGapOutcomeFromToolCalls prevents a completed Quill
+// run from being reported as failed when it already persisted reviewable Docs
+// work but omitted the terminal disposition call. The recovery is deliberately
+// conservative: it only trusts successful durable Docs mutation/proposal tool
+// calls recorded by Agent Runtime, and keeps the gap open as review_ready.
+func (s *AgentRuntimeProjectionService) recoverSupportCoverageGapOutcomeFromToolCalls(ctx context.Context, run *model.AgentRun) bool {
+	if s == nil || run == nil || s.agentRuntimeClient == nil {
+		return false
+	}
+	client, ok := s.agentRuntimeClient.(agentRuntimeToolCallClient)
+	if !ok {
+		return false
+	}
+	runtimeRunID := strings.TrimSpace(derefString(run.ExternalRuntimeID))
+	if runtimeRunID == "" {
+		return false
+	}
+	calls, err := client.ListToolCalls(ctx, runtimeRunID)
+	if err != nil {
+		slog.ErrorContext(ctx, "support coverage tool-call recovery failed",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+			"runtime_run_id", runtimeRunID,
+		)
+		return false
+	}
+	var recovered *supportCoverageGapOutcomeSummary
+	for _, call := range calls {
+		if strings.TrimSpace(call.Error) != "" || call.ApprovalRequired {
+			continue
+		}
+		toolName := agentcontract.CanonicalToolName(call.ToolName)
+		action := ""
+		documentID := ""
+		proposalID := ""
+		switch toolName {
+		case "create_document":
+			action = SupportCoverageAgentActionDocumentCreated
+			documentID = firstRuntimeToolCallString(call.Output, "document_id", "id")
+		case "write_document_content", "update_document_block", "insert_document_block", "insert_document_image":
+			action = SupportCoverageAgentActionDocumentUpdated
+			documentID = firstRuntimeToolCallString(call.Output, "document_id")
+			if documentID == "" {
+				documentID = firstRuntimeToolCallString(call.Input, "document_id")
+			}
+		case agentcontract.ToolPublishDocumentChangeProposal:
+			action = SupportCoverageAgentActionProposalSubmitted
+			documentID = firstRuntimeToolCallString(call.Output, "document_id")
+			proposalID = firstRuntimeToolCallString(call.Output, "proposal_id")
+		}
+		if action == "" || documentID == "" || (action == SupportCoverageAgentActionProposalSubmitted && proposalID == "") {
+			continue
+		}
+		recovered = &supportCoverageGapOutcomeSummary{
+			Outcome: SupportCoverageAgentOutcomeReviewReady, Action: action,
+			DocumentID: documentID, ProposalID: proposalID,
+			DocumentationEvidence: "Recovered from a successful durable Docs tool call recorded for this run.",
+			Summary:               "Quill persisted documentation work but omitted the final disposition; recovered as review-ready for human verification.",
+			Recovered:             true,
+			RecordedAt:            time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+	if recovered == nil {
+		return false
+	}
+	body := map[string]any{}
+	if len(run.OutputSummary) > 0 {
+		_ = json.Unmarshal(run.OutputSummary, &body)
+	}
+	body[supportCoverageGapOutcomeSummaryKey] = recovered
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return false
+	}
+	run.OutputSummary = payload
+	return true
+}
+
+func firstRuntimeToolCallString(raw json.RawMessage, keys ...string) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var body map[string]any
+	if json.Unmarshal(raw, &body) != nil {
+		return ""
+	}
+	for _, key := range keys {
+		if value := strings.TrimSpace(fmt.Sprint(body[key])); value != "" && value != "<nil>" {
+			return value
+		}
+	}
+	return ""
 }
 
 // mergeRuntimeOutputSummaryPayload overlays runtime summary keys onto the
