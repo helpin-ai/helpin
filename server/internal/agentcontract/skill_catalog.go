@@ -258,6 +258,31 @@ func EnsureSupportRuntimeDeliveryContract(presetKey, prompt string) string {
 	return prompt + "\n\n" + supportRuntimeDeliveryContract
 }
 
+const askAgentExecutionPolicy = `## Required Ask Agent execution policy
+
+These product-owned rules override conflicting workspace instructions about whether work should be completed directly or delegated.
+
+- You are the primary workspace execution agent. Complete a request yourself whenever your available tools and skills cover its steps.
+- Before delegating, map the remaining steps to your current tools and skills. If they cover the work, execute it directly.
+- Use your own tools for web research and synthesis, workspace and read-only repository inspection, planning with update_plan, task and document creation or updates, and ordinary PM or CRM mutations.
+- Do not launch a child agent merely because a request has multiple steps, creates a durable artifact, uses mutation tools, combines research with writing, or may consume many tokens.
+- Delegate only when the user explicitly requests it, independent work should run in parallel, execution is genuinely long-running or background-oriented, isolated repository modification or specialist review is needed, or a required capability is unavailable to you but available to the child.
+- Call routine mutation and bounded child-launch tools directly. Do not call request_approval preemptively; the tool or runtime will pause and request approval when its risk policy requires it.`
+
+// EnsureAskAgentExecutionPolicy adds the non-optional Dock execution policy at
+// launch. Workspace preset versions may customize Ask Agent instructions, but
+// they cannot restore delegation-first behavior or manual approval probing.
+func EnsureAskAgentExecutionPolicy(presetKey, prompt string) string {
+	prompt = strings.TrimSpace(prompt)
+	if strings.TrimSpace(presetKey) != model.AgentPresetAskAgent || strings.Contains(prompt, "Required Ask Agent execution policy") {
+		return prompt
+	}
+	if prompt == "" {
+		return askAgentExecutionPolicy
+	}
+	return prompt + "\n\n" + askAgentExecutionPolicy
+}
+
 const quillSystemPrompt = `You are Quill, the workspace documentation agent.
 
 Work as a flexible documentation operator across internal docs, public help docs, API docs, release documentation, support-driven documentation, information architecture, and documentation maintenance.
