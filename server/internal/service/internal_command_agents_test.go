@@ -331,6 +331,25 @@ func TestAskAgentPromptRecoversTruncatedResultWithoutRerun(t *testing.T) {
 	}
 }
 
+func TestAskAgentPromptLinksResolvedWorkspaceEntities(t *testing.T) {
+	prompt := askAgentSystemPrompt()
+	for _, required := range []string{
+		"markdown_link",
+		"machine-only values",
+		"pass the appropriate ID verbatim to later tool calls",
+		"never pass markdown_link as a tool argument",
+		"do not show raw IDs unless the user explicitly asks for them",
+		"presentation-only",
+		"copy markdown_link verbatim into the response",
+		"mandatory in prose, bullets, tables, summaries, and follow-up answers",
+		"Never output the entity's plain key or name in place of an available markdown_link",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("Ask Agent prompt missing %q", required)
+		}
+	}
+}
+
 func TestGetAgentRunRetrievesOwnedPersistedResultWithoutNewPlan(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	if err := db.Exec(`CREATE TABLE command_bar_plans (

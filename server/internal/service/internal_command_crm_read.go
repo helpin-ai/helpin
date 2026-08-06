@@ -48,10 +48,11 @@ func (s *InternalCommandService) executeListDeals(ctx context.Context, meta mode
 		return nil, fmt.Errorf("list deals: %w", err)
 	}
 	type dealSummary struct {
-		ID     string   `json:"id"`
-		Name   string   `json:"name"`
-		Stage  string   `json:"stage,omitempty"`
-		Amount *float64 `json:"amount,omitempty"`
+		ID           string   `json:"id"`
+		MarkdownLink string   `json:"markdown_link"`
+		Name         string   `json:"name"`
+		Stage        string   `json:"stage,omitempty"`
+		Amount       *float64 `json:"amount,omitempty"`
 	}
 	summaries := make([]dealSummary, 0, len(deals))
 	for _, d := range deals {
@@ -59,7 +60,7 @@ func (s *InternalCommandService) executeListDeals(ctx context.Context, meta mode
 		if d.Stage != nil {
 			stageName = d.Stage.Name
 		}
-		summaries = append(summaries, dealSummary{ID: d.ID, Name: d.Name, Stage: stageName, Amount: d.Amount})
+		summaries = append(summaries, dealSummary{ID: d.ID, MarkdownLink: helpinMarkdownLink(d.Name, "deals", d.ID), Name: d.Name, Stage: stageName, Amount: d.Amount})
 	}
 	response := commandPaginationOutput(total, offset, limit, len(summaries))
 	response["deals"] = summaries
@@ -79,15 +80,20 @@ func (s *InternalCommandService) executeListContacts(ctx context.Context, meta m
 		return nil, fmt.Errorf("list contacts: %w", err)
 	}
 	type contactSummary struct {
-		ID        string  `json:"id"`
-		FirstName string  `json:"first_name"`
-		LastName  *string `json:"last_name,omitempty"`
-		Email     *string `json:"email,omitempty"`
-		JobTitle  *string `json:"job_title,omitempty"`
+		ID           string  `json:"id"`
+		MarkdownLink string  `json:"markdown_link"`
+		FirstName    string  `json:"first_name"`
+		LastName     *string `json:"last_name,omitempty"`
+		Email        *string `json:"email,omitempty"`
+		JobTitle     *string `json:"job_title,omitempty"`
 	}
 	summaries := make([]contactSummary, 0, len(contacts))
 	for _, c := range contacts {
-		summaries = append(summaries, contactSummary{ID: c.ID, FirstName: c.FirstName, LastName: c.LastName, Email: c.Email, JobTitle: c.JobTitle})
+		label := strings.TrimSpace(c.FirstName + " " + commandDerefString(c.LastName))
+		if label == "" {
+			label = commandDerefString(c.Email)
+		}
+		summaries = append(summaries, contactSummary{ID: c.ID, MarkdownLink: helpinMarkdownLink(label, "contacts", c.ID), FirstName: c.FirstName, LastName: c.LastName, Email: c.Email, JobTitle: c.JobTitle})
 	}
 	response := commandPaginationOutput(total, offset, limit, len(summaries))
 	response["contacts"] = summaries

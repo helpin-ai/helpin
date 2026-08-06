@@ -515,6 +515,7 @@ func (s *InternalCommandService) executeListPMTasks(ctx context.Context, meta mo
 func compactCommandBoardTask(task model.BoardTask) map[string]any {
 	return map[string]any{
 		"task_id":          task.ID,
+		"markdown_link":    helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID),
 		"display_id":       task.DisplayID,
 		"task_key":         task.TaskKey,
 		"name":             task.Name,
@@ -919,7 +920,7 @@ func (s *InternalCommandService) executeListTaskChecklist(ctx context.Context, m
 	if err != nil {
 		return nil, err
 	}
-	return mustJSON(map[string]any{"task_id": task.ID, "items": items, "total": total, "has_more": hasMore}), nil
+	return mustJSON(map[string]any{"task_id": task.ID, "markdown_link": helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID), "items": items, "total": total, "has_more": hasMore}), nil
 }
 
 func (s *InternalCommandService) executeCreateTaskChecklistItem(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -1328,6 +1329,7 @@ func compactCommandTask(detail *model.TaskDetail) map[string]any {
 	}
 	return map[string]any{
 		"task_id":          task.ID,
+		"markdown_link":    helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID),
 		"display_id":       task.DisplayID,
 		"task_key":         task.TaskKey,
 		"workspace_id":     task.WorkspaceID,

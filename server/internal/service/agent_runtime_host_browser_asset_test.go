@@ -73,7 +73,7 @@ func TestAgentRuntimeHostUploadBrowserAssetPersistsMappedRunArtifact(t *testing.
 	if err != nil {
 		t.Fatalf("UploadBrowserAsset: %v", err)
 	}
-	if asset.ArtifactID == "" || asset.ArtifactRef != "helpin-artifact://"+asset.ArtifactID || asset.Visibility != "private" {
+	if asset.ArtifactID == "" || asset.ArtifactRef != "helpin://artifacts/"+asset.ArtifactID || asset.Visibility != "private" {
 		t.Fatalf("unexpected asset: %#v", asset)
 	}
 	artifacts, err := repository.NewAgentRunArtifactRepository(db).ListByRun(context.Background(), run.WorkspaceID, run.ID)

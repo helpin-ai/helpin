@@ -548,7 +548,7 @@ func pmEpicUpdateHasEditableField(req pmEpicUpdateCommandInput) bool {
 func compactPMCommandEpic(value *model.EpicWithStats, detailed bool) map[string]any {
 	epic := value.Epic
 	result := map[string]any{
-		"epic_id": epic.ID, "name": epic.Name, "team_id": epic.TeamID, "epic_state_id": epic.EpicStateID,
+		"epic_id": epic.ID, "markdown_link": helpinMarkdownLink(epic.Name, "epics", epic.ID), "name": epic.Name, "team_id": epic.TeamID, "epic_state_id": epic.EpicStateID,
 		"owner_id": epic.OwnerID, "owner_member_id": epic.OwnerMemberID,
 		"planned_start_date": formatPMCommandDateOnly(epic.PlannedStartDate), "deadline": formatPMCommandDateOnly(epic.Deadline),
 		"color": epic.Color, "health": epic.Health, "started": epic.Started, "completed": epic.Completed,

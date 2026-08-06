@@ -95,7 +95,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "workspace.search",
 		Alias:       "search_workspace",
 		Category:    "Workspace",
-		Description: "Search accessible workspace entities by keyword or identity. Task searches match task keys, names, and descriptions. Use this for requests asking which entities mention, contain, discuss, or relate to a term; use list tools only for enumeration or structured filtering.",
+		Description: "Search accessible workspace entities by keyword or identity. Every displayed result must use its returned markdown_link verbatim. Task searches match task keys, names, and descriptions. Use this for requests asking which entities mention, contain, discuss, or relate to a term; use list tools only for enumeration or structured filtering.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -123,7 +123,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.list_documents",
 		Alias:       "list_documents",
 		Category:    "Docs",
-		Description: "List Helpin Docs documents in the current workspace. Use status=draft for questions about documents that need to be published.",
+		Description: "List Helpin Docs documents in the current workspace. Every displayed document must use its returned markdown_link verbatim. Use status=draft for questions about documents that need to be published.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -143,7 +143,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.search_documents",
 		Alias:       "search_documents",
 		Category:    "Docs",
-		Description: "Search documents by keyword across the workspace. Use only when you need to find other documents or the current document ID is unknown; do not use it to inspect a known current document.",
+		Description: "Search documents by keyword across the workspace. Every displayed document must use its returned markdown_link verbatim. Use only when you need to find other documents or the current document ID is unknown; do not use it to inspect a known current document.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -293,7 +293,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "pm.list_tasks",
 		Alias:       "list_tasks",
 		Category:    "PM / Tasks",
-		Description: "List tasks in the current workspace with optional text query, label, team, open-only, description, and comment filters.",
+		Description: "List tasks in the current workspace with optional text query, label, team, open-only, description, and comment filters. Every displayed task must use its returned markdown_link verbatim.",
 		InputSchema: listTasksSchema(),
 	},
 	{

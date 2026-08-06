@@ -48,6 +48,7 @@ type dockGetRunRequest struct {
 
 type dockGetRunResponse struct {
 	RunID           string                     `json:"run_id"`
+	MarkdownLink    string                     `json:"markdown_link"`
 	Status          string                     `json:"status"`
 	PauseReason     string                     `json:"pause_reason"`
 	AgentID         string                     `json:"agent_id"`
@@ -811,13 +812,14 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 				return nil, fmt.Errorf("run not found")
 			}
 			response := dockGetRunResponse{
-				RunID:       run.ID,
-				Status:      run.Status,
-				PauseReason: run.PauseReason,
-				AgentID:     run.AgentID,
-				TargetType:  run.TargetType,
-				TargetID:    run.TargetID,
-				Error:       strings.TrimSpace(derefString(run.ErrorMessage)),
+				RunID:        run.ID,
+				MarkdownLink: helpinMarkdownLink("Agent run", "agent-runs", run.ID),
+				Status:       run.Status,
+				PauseReason:  run.PauseReason,
+				AgentID:      run.AgentID,
+				TargetType:   run.TargetType,
+				TargetID:     run.TargetID,
+				Error:        strings.TrimSpace(derefString(run.ErrorMessage)),
 			}
 			if req.DetailLevel == "result" {
 				if s.agentService == nil || s.agentService.runMessageRepo == nil {

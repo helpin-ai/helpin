@@ -5,6 +5,7 @@ import { TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, Maximize01I
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { LoadingImage } from '@/components/ui/loading-image';
 import { useImageActions } from '@/hooks/useImageActions';
+import { parseHelpinReference } from '@/lib/helpinReferences';
 import { automationService } from '@/lib/services/automationService';
 
 const MIN_WIDTH = 100;
@@ -26,14 +27,16 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
   const { copyImage, downloadImage, openInNewTab: _openInNewTab } = useImageActions();
   const enableCaption = extension.options.enableCaption ?? true;
   const workspaceId = extension.options.workspaceId as string | undefined;
-  const [resolvedSrc, setResolvedSrc] = useState<string | null>(artifactId ? null : src);
+  const srcReference = parseHelpinReference(typeof src === 'string' ? src : undefined);
+  const resolvedArtifactId = artifactId || (srcReference?.type === 'artifacts' ? srcReference.id : null);
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(resolvedArtifactId ? null : src);
   const [artifactError, setArtifactError] = useState(false);
   const [artifactRefresh, setArtifactRefresh] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     let refreshTimer: number | undefined;
-    if (!artifactId) {
+    if (!resolvedArtifactId) {
       setResolvedSrc(src);
       setArtifactError(false);
       return () => { cancelled = true; };
@@ -45,7 +48,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
     }
     setResolvedSrc(null);
     setArtifactError(false);
-    void automationService.getArtifactContentURL(workspaceId, artifactId).then((response) => {
+    void automationService.getArtifactContentURL(workspaceId, resolvedArtifactId).then((response) => {
       if (cancelled) return;
       if (response.error || !response.data?.url) {
         setArtifactError(true);
@@ -64,7 +67,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
       cancelled = true;
       if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
     };
-  }, [artifactId, artifactRefresh, src, workspaceId]);
+  }, [artifactRefresh, resolvedArtifactId, src, workspaceId]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);

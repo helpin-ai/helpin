@@ -206,7 +206,8 @@ func TestPMCommandListTasksFilters(t *testing.T) {
 	}
 	var result struct {
 		Tasks []struct {
-			TaskID string `json:"task_id"`
+			TaskID       string `json:"task_id"`
+			MarkdownLink string `json:"markdown_link"`
 		} `json:"tasks"`
 		Total   int64 `json:"total"`
 		Page    int   `json:"page"`
@@ -215,8 +216,14 @@ func TestPMCommandListTasksFilters(t *testing.T) {
 	if err := json.Unmarshal(out, &result); err != nil {
 		t.Fatalf("decode tasks: %v", err)
 	}
+	if strings.Contains(string(out), `"resource_uri"`) {
+		t.Fatalf("task output should not duplicate markdown_link with resource_uri: %s", out)
+	}
 	if result.Total != 1 || len(result.Tasks) != 1 || result.Tasks[0].TaskID != "task-a" || result.Page != 1 || result.PerPage != 25 {
 		t.Fatalf("unexpected filtered tasks: %#v", result)
+	}
+	if result.Tasks[0].MarkdownLink != "[task-a](helpin://tasks/task-a)" {
+		t.Fatalf("task markdown_link = %q", result.Tasks[0].MarkdownLink)
 	}
 
 	out, err = env.service.Execute(ctx, meta, "pm.list_tasks", json.RawMessage(`{"archived":false,"page":1,"per_page":100}`))

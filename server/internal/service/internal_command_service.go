@@ -664,6 +664,7 @@ func (s *InternalCommandService) registerDefaults() {
 			for _, doc := range docs[start:end] {
 				item := map[string]any{
 					"document_id":      doc.ID,
+					"markdown_link":    helpinMarkdownLink(doc.Title, "documents", doc.ID),
 					"title":            doc.Title,
 					"status":           doc.Status,
 					"space_id":         doc.SpaceID,
@@ -737,9 +738,11 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("document not found")
 			}
 			out := map[string]any{
-				"id":     doc.ID,
-				"title":  doc.Title,
-				"status": doc.Status,
+				"id":            doc.ID,
+				"document_id":   doc.ID,
+				"markdown_link": helpinMarkdownLink(doc.Title, "documents", doc.ID),
+				"title":         doc.Title,
+				"status":        doc.Status,
 			}
 			if doc.TeamID != nil && strings.TrimSpace(*doc.TeamID) != "" {
 				out["team_id"] = strings.TrimSpace(*doc.TeamID)
@@ -903,7 +906,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if err != nil {
 				return nil, err
 			}
-			return mustJSON(map[string]any{"document_id": doc.ID, "title": doc.Title}), nil
+			return mustJSON(map[string]any{"document_id": doc.ID, "markdown_link": helpinMarkdownLink(doc.Title, "documents", doc.ID), "title": doc.Title}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -917,7 +920,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if err != nil {
 				return nil, err
 			}
-			return mustJSON(map[string]any{"document_id": doc.ID, "title": doc.Title}), nil
+			return mustJSON(map[string]any{"document_id": doc.ID, "markdown_link": helpinMarkdownLink(doc.Title, "documents", doc.ID), "title": doc.Title}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -1007,9 +1010,10 @@ func (s *InternalCommandService) registerDefaults() {
 			for idx, task := range tasks {
 				ref := strings.TrimSpace(req.Tasks[idx].Ref)
 				results = append(results, map[string]any{
-					"ref":     ref,
-					"task_id": task.ID,
-					"name":    task.Name,
+					"ref":           ref,
+					"task_id":       task.ID,
+					"markdown_link": helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID),
+					"name":          task.Name,
 				})
 			}
 			return mustJSON(map[string]any{"tasks": results}), nil
@@ -1176,16 +1180,17 @@ func (s *InternalCommandService) registerDefaults() {
 				stateName = strings.TrimSpace(detail.State.Name)
 			}
 			return mustJSON(map[string]any{
-				"task_id":      detail.Task.ID,
-				"display_id":   detail.Task.DisplayID,
-				"task_key":     detail.Task.TaskKey,
-				"name":         detail.Task.Name,
-				"team_id":      detail.Task.TeamID,
-				"workflow_id":  detail.Task.WorkflowID,
-				"state_id":     detail.Task.WorkflowStateID,
-				"state_name":   stateName,
-				"workspace_id": detail.Task.WorkspaceID,
-				"epic_id":      detail.Task.EpicID,
+				"task_id":       detail.Task.ID,
+				"markdown_link": helpinTaskMarkdownLink(detail.Task.TaskKey, detail.Task.Name, detail.Task.ID),
+				"display_id":    detail.Task.DisplayID,
+				"task_key":      detail.Task.TaskKey,
+				"name":          detail.Task.Name,
+				"team_id":       detail.Task.TeamID,
+				"workflow_id":   detail.Task.WorkflowID,
+				"state_id":      detail.Task.WorkflowStateID,
+				"state_name":    stateName,
+				"workspace_id":  detail.Task.WorkspaceID,
+				"epic_id":       detail.Task.EpicID,
 			}), nil
 		},
 	})
@@ -1354,19 +1359,20 @@ func (s *InternalCommandService) registerDefaults() {
 					continue
 				}
 				item := map[string]any{
-					"task_id":     task.ID,
-					"display_id":  task.DisplayID,
-					"task_key":    task.TaskKey,
-					"name":        task.Name,
-					"team_id":     task.TeamID,
-					"state_id":    task.WorkflowStateID,
-					"state_name":  task.StateName,
-					"completed":   task.Completed,
-					"priority":    task.Priority,
-					"severity":    task.Severity,
-					"external_id": task.ExternalID,
-					"updated_at":  task.UpdatedAt,
-					"labels":      task.Labels,
+					"task_id":       task.ID,
+					"markdown_link": helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID),
+					"display_id":    task.DisplayID,
+					"task_key":      task.TaskKey,
+					"name":          task.Name,
+					"team_id":       task.TeamID,
+					"state_id":      task.WorkflowStateID,
+					"state_name":    task.StateName,
+					"completed":     task.Completed,
+					"priority":      task.Priority,
+					"severity":      task.Severity,
+					"external_id":   task.ExternalID,
+					"updated_at":    task.UpdatedAt,
+					"labels":        task.Labels,
 				}
 				if req.IncludeDescriptions {
 					item["description"] = task.Description
@@ -2344,7 +2350,7 @@ func internalReadDocumentToolMetadata() *commandtools.RuntimeToolMetadata {
 		CommandName: "docs.read_document",
 		Alias:       "read_document",
 		Category:    "Docs",
-		Description: "Read a known Helpin Docs document by ID. Returns metadata, a bounded plain-text excerpt, and the first page of compact addressable blocks.",
+		Description: "Read a known Helpin Docs document by ID. Returns metadata including markdown_link, a bounded plain-text excerpt, and the first page of compact addressable blocks.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -2661,18 +2667,19 @@ func (s *InternalCommandService) listSingleTaskCommand(ctx context.Context, meta
 	total := int64(0)
 	if !openOnly || !task.Completed {
 		item := map[string]any{
-			"task_id":     task.ID,
-			"display_id":  task.DisplayID,
-			"task_key":    task.TaskKey,
-			"name":        task.Name,
-			"team_id":     task.TeamID,
-			"state_id":    task.WorkflowStateID,
-			"completed":   task.Completed,
-			"priority":    task.Priority,
-			"severity":    task.Severity,
-			"external_id": task.ExternalID,
-			"updated_at":  task.UpdatedAt,
-			"labels":      detail.Labels,
+			"task_id":       task.ID,
+			"markdown_link": helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID),
+			"display_id":    task.DisplayID,
+			"task_key":      task.TaskKey,
+			"name":          task.Name,
+			"team_id":       task.TeamID,
+			"state_id":      task.WorkflowStateID,
+			"completed":     task.Completed,
+			"priority":      task.Priority,
+			"severity":      task.Severity,
+			"external_id":   task.ExternalID,
+			"updated_at":    task.UpdatedAt,
+			"labels":        detail.Labels,
 		}
 		if detail.State != nil {
 			item["state_name"] = detail.State.Name
@@ -2703,6 +2710,7 @@ func buildCompactTaskItem(task model.BoardTask, comments []model.CommentWithAuth
 	description := commandDerefString(task.Description)
 	item := map[string]any{
 		"task_id":             task.ID,
+		"markdown_link":       helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID),
 		"display_id":          task.DisplayID,
 		"task_key":            task.TaskKey,
 		"name":                task.Name,

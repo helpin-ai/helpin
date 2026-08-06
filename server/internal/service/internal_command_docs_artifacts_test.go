@@ -61,7 +61,7 @@ func TestInsertDocumentImageUsesPrivateWorkspaceArtifactReference(t *testing.T) 
 		t.Fatalf("unexpected blocks: %#v", blocks)
 	}
 	content := string(blocks[0].Content)
-	if !strings.Contains(content, `"artifactId":"`+artifactID+`"`) || !strings.Contains(content, `"src":"helpin-artifact://`+artifactID+`"`) {
+	if !strings.Contains(content, `"artifactId":"`+artifactID+`"`) || !strings.Contains(content, `"src":"helpin://artifacts/`+artifactID+`"`) {
 		t.Fatalf("private artifact reference missing from block: %s", content)
 	}
 }

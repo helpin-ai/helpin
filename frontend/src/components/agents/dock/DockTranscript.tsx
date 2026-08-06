@@ -35,6 +35,7 @@ export function DockTranscript({
   if (!stream) return null;
   const segments = collectSegments(stream, { includeLive: active, include: DOCK_SEGMENT_KINDS });
   if (segments.length === 0) return null;
+  const latestAssistantSegmentId = [...segments].reverse().find((segment) => segment.kind === 'assistant')?.id;
 
   return (
     <div className={cn('space-y-1.5', className)}>
@@ -42,7 +43,11 @@ export function DockTranscript({
         <TranscriptSegmentView
           key={segment.id}
           segment={segment}
-          options={{ expandable: true, fallbackUserLabel: 'You' }}
+          options={{
+            expandable: true,
+            collapseLongAssistantContent: segment.kind !== 'assistant' || segment.id !== latestAssistantSegmentId,
+            fallbackUserLabel: 'You',
+          }}
         />
       ))}
     </div>

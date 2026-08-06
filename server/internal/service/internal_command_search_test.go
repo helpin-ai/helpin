@@ -29,10 +29,11 @@ func TestSearchWorkspaceRanksExactTaskKeyAndPaginates(t *testing.T) {
 	}
 	var result struct {
 		Results []struct {
-			EntityType string   `json:"entity_type"`
-			ID         string   `json:"id"`
-			Key        string   `json:"key"`
-			MatchedOn  []string `json:"matched_on"`
+			EntityType   string   `json:"entity_type"`
+			ID           string   `json:"id"`
+			MarkdownLink string   `json:"markdown_link"`
+			Key          string   `json:"key"`
+			MatchedOn    []string `json:"matched_on"`
 		} `json:"results"`
 		Limit  int `json:"limit"`
 		Offset int `json:"offset"`
@@ -42,6 +43,9 @@ func TestSearchWorkspaceRanksExactTaskKeyAndPaginates(t *testing.T) {
 	}
 	if len(result.Results) != 1 || result.Results[0].EntityType != "task" || result.Results[0].ID != "task-488" || result.Results[0].Key != "USE-488" || result.Limit != 1 || result.Offset != 0 {
 		t.Fatalf("unexpected search result: %#v", result)
+	}
+	if result.Results[0].MarkdownLink != "[USE-488](helpin://tasks/task-488)" {
+		t.Fatalf("search markdown_link = %q", result.Results[0].MarkdownLink)
 	}
 	foundExactKey := false
 	for _, matchedOn := range result.Results[0].MatchedOn {

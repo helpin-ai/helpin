@@ -379,17 +379,18 @@ func compactCommandSprint(value *model.SprintWithStats) map[string]any {
 		})
 	}
 	return map[string]any{
-		"id":           value.Sprint.ID,
-		"sprint_id":    value.Sprint.ID,
-		"workspace_id": value.Sprint.WorkspaceID,
-		"name":         value.Sprint.Name,
-		"description":  commandDerefString(value.Sprint.Description),
-		"start_date":   pmSprintCommandDateString(value.Sprint.StartDate),
-		"end_date":     pmSprintCommandDateString(value.Sprint.EndDate),
-		"status":       value.Sprint.Status,
-		"team_id":      commandDerefString(value.Sprint.TeamID),
-		"labels":       labels,
-		"stats":        value.Stats,
+		"id":            value.Sprint.ID,
+		"sprint_id":     value.Sprint.ID,
+		"markdown_link": helpinMarkdownLink(value.Sprint.Name, "sprints", value.Sprint.ID),
+		"workspace_id":  value.Sprint.WorkspaceID,
+		"name":          value.Sprint.Name,
+		"description":   commandDerefString(value.Sprint.Description),
+		"start_date":    pmSprintCommandDateString(value.Sprint.StartDate),
+		"end_date":      pmSprintCommandDateString(value.Sprint.EndDate),
+		"status":        value.Sprint.Status,
+		"team_id":       commandDerefString(value.Sprint.TeamID),
+		"labels":        labels,
+		"stats":         value.Stats,
 	}
 }
 
@@ -404,7 +405,7 @@ func compactCommandSprintTask(task model.BoardTask) map[string]any {
 		})
 	}
 	return map[string]any{
-		"id": task.ID, "task_id": task.ID, "display_id": task.DisplayID, "task_key": task.TaskKey,
+		"id": task.ID, "task_id": task.ID, "markdown_link": helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID), "display_id": task.DisplayID, "task_key": task.TaskKey,
 		"name": task.Name, "task_type": task.TaskType, "priority": task.Priority, "severity": task.Severity,
 		"team_id": commandDerefString(task.TeamID), "workflow_id": task.WorkflowID, "state_id": task.WorkflowStateID,
 		"state_name": commandDerefString(task.StateName), "state_type": commandDerefString(task.StateType),

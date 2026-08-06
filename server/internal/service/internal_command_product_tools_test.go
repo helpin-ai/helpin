@@ -346,10 +346,11 @@ func TestCRMListDealsCommandReturnsDealSummaries(t *testing.T) {
 	}
 	var result struct {
 		Deals []struct {
-			ID     string   `json:"id"`
-			Name   string   `json:"name"`
-			Stage  string   `json:"stage"`
-			Amount *float64 `json:"amount"`
+			ID           string   `json:"id"`
+			MarkdownLink string   `json:"markdown_link"`
+			Name         string   `json:"name"`
+			Stage        string   `json:"stage"`
+			Amount       *float64 `json:"amount"`
 		} `json:"deals"`
 	}
 	if err := json.Unmarshal(output, &result); err != nil {
@@ -357,6 +358,9 @@ func TestCRMListDealsCommandReturnsDealSummaries(t *testing.T) {
 	}
 	if len(result.Deals) != 1 || result.Deals[0].ID != "deal-1" || result.Deals[0].Stage != "Qualified" {
 		t.Fatalf("unexpected deals %#v", result.Deals)
+	}
+	if result.Deals[0].MarkdownLink != "[Acme expansion](helpin://deals/deal-1)" {
+		t.Fatalf("deal markdown_link = %q", result.Deals[0].MarkdownLink)
 	}
 	if result.Deals[0].Amount == nil || *result.Deals[0].Amount != 4200.0 {
 		t.Fatalf("unexpected deal amount %#v", result.Deals[0])
@@ -399,11 +403,12 @@ func TestCRMListContactsCommandReturnsContactSummaries(t *testing.T) {
 	}
 	var result struct {
 		Contacts []struct {
-			ID        string  `json:"id"`
-			FirstName string  `json:"first_name"`
-			LastName  *string `json:"last_name"`
-			Email     *string `json:"email"`
-			JobTitle  *string `json:"job_title"`
+			ID           string  `json:"id"`
+			MarkdownLink string  `json:"markdown_link"`
+			FirstName    string  `json:"first_name"`
+			LastName     *string `json:"last_name"`
+			Email        *string `json:"email"`
+			JobTitle     *string `json:"job_title"`
 		} `json:"contacts"`
 	}
 	if err := json.Unmarshal(output, &result); err != nil {
@@ -411,6 +416,9 @@ func TestCRMListContactsCommandReturnsContactSummaries(t *testing.T) {
 	}
 	if len(result.Contacts) != 1 || result.Contacts[0].FirstName != "Ada" || result.Contacts[0].Email == nil || *result.Contacts[0].Email != "ada@example.com" {
 		t.Fatalf("unexpected contacts %#v", result.Contacts)
+	}
+	if result.Contacts[0].MarkdownLink != "[Ada Lovelace](helpin://contacts/contact-1)" {
+		t.Fatalf("contact markdown_link = %q", result.Contacts[0].MarkdownLink)
 	}
 }
 

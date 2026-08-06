@@ -35,13 +35,14 @@ type workspaceSearchProvider interface {
 }
 
 type workspaceSearchItem struct {
-	EntityType string   `json:"entity_type"`
-	ID         string   `json:"id"`
-	Key        string   `json:"key,omitempty"`
-	Title      string   `json:"title"`
-	Context    string   `json:"context,omitempty"`
-	MatchedOn  []string `json:"matched_on,omitempty"`
-	score      float64
+	EntityType   string   `json:"entity_type"`
+	ID           string   `json:"id"`
+	MarkdownLink string   `json:"markdown_link,omitempty"`
+	Key          string   `json:"key,omitempty"`
+	Title        string   `json:"title"`
+	Context      string   `json:"context,omitempty"`
+	MatchedOn    []string `json:"matched_on,omitempty"`
+	score        float64
 }
 
 func (s *InternalCommandService) registerWorkspaceSearchCommands() {
@@ -210,7 +211,11 @@ func (s *InternalCommandService) collectWorkspaceSearchItems(ctx context.Context
 					}
 				}
 				contextText := value.TeamName
-				items = append(items, workspaceSearchItem{EntityType: entityType, ID: value.ID, Key: value.TaskKey, Title: value.Name, Context: contextText, MatchedOn: []string{"search_text"}})
+				label := value.Name
+				if entityType == "task" && strings.TrimSpace(value.TaskKey) != "" {
+					label = value.TaskKey
+				}
+				items = append(items, workspaceSearchItem{EntityType: entityType, ID: value.ID, MarkdownLink: helpinMarkdownLinkForEntityType(label, entityType, value.ID), Key: value.TaskKey, Title: value.Name, Context: contextText, MatchedOn: []string{"search_text"}})
 			}
 		}
 		appendCore("task", result.Tasks)
@@ -228,7 +233,7 @@ func (s *InternalCommandService) collectWorkspaceSearchItems(ctx context.Context
 		for _, result := range results {
 			entityType := "crm_" + strings.TrimSpace(result.Type)
 			if types[entityType] {
-				items = append(items, workspaceSearchItem{EntityType: entityType, ID: result.ID, Title: result.Name, Context: result.Detail})
+				items = append(items, workspaceSearchItem{EntityType: entityType, ID: result.ID, MarkdownLink: helpinMarkdownLinkForEntityType(result.Name, entityType, result.ID), Title: result.Name, Context: result.Detail})
 			}
 		}
 	}
@@ -302,7 +307,7 @@ func (s *InternalCommandService) searchWorkspaceSupport(ctx context.Context, met
 			key = fmt.Sprintf("%d", result.DisplayID)
 		}
 		items = append(items, workspaceSearchItem{
-			EntityType: "support_conversation", ID: conversation.ID, Key: key,
+			EntityType: "support_conversation", ID: conversation.ID, MarkdownLink: helpinMarkdownLink(title, "support-conversations", conversation.ID), Key: key,
 			Title: title, Context: strings.TrimSpace(result.Snippet), MatchedOn: result.MatchedFields, score: result.Score,
 		})
 	}

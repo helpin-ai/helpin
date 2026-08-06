@@ -169,7 +169,7 @@ func (s *AgentRuntimeHostService) UploadBrowserAsset(ctx context.Context, upload
 		}
 	}
 	metadata, _ := json.Marshal(map[string]any{
-		"artifact_id": assetID, "artifact_ref": "helpin-artifact://" + assetID, "visibility": "private", "file_name": name,
+		"artifact_id": assetID, "artifact_ref": artifactReference(assetID), "visibility": "private", "file_name": name,
 		"content_type": contentType, "size_bytes": upload.Size,
 		"runtime_run_id": upload.RuntimeRunID, "source": "agent-browser", "capture": captureMetadata,
 	})
@@ -185,7 +185,7 @@ func (s *AgentRuntimeHostService) UploadBrowserAsset(ctx context.Context, upload
 		return nil, err
 	}
 	return &AgentRuntimeBrowserAsset{
-		ArtifactID: assetID, ArtifactRef: "helpin-artifact://" + assetID, Visibility: "private",
+		ArtifactID: assetID, ArtifactRef: artifactReference(assetID), Visibility: "private",
 		FileName: name, ContentType: contentType, SizeBytes: upload.Size,
 	}, nil
 }

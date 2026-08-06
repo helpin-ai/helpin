@@ -111,7 +111,7 @@ func (s *InternalCommandService) executeInsertDocumentImage(ctx context.Context,
 	}
 
 	attrs := map[string]any{
-		"src":        "helpin-artifact://" + artifact.ID,
+		"src":        artifactReference(artifact.ID),
 		"artifactId": artifact.ID,
 		"alt":        req.Alt,
 		"width":      "100%",
@@ -133,7 +133,7 @@ func (s *InternalCommandService) executeInsertDocumentImage(ctx context.Context,
 		"document_id":  req.DocumentID,
 		"content_id":   content.ID,
 		"artifact_id":  artifact.ID,
-		"artifact_ref": "helpin-artifact://" + artifact.ID,
+		"artifact_ref": artifactReference(artifact.ID),
 		"visibility":   "private",
 	}), nil
 }
@@ -170,14 +170,15 @@ func (s *InternalCommandService) executeSearchDocuments(ctx context.Context, met
 		return nil, fmt.Errorf("search documents: %w", err)
 	}
 	type docsSearchHit struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
+		ID           string `json:"id"`
+		MarkdownLink string `json:"markdown_link"`
+		Title        string `json:"title"`
 	}
 	start := min(req.Offset, len(results))
 	end := min(start+req.Limit, len(results))
 	hits := make([]docsSearchHit, 0, end-start)
 	for _, result := range results[start:end] {
-		hits = append(hits, docsSearchHit{ID: result.ID, Title: result.Title})
+		hits = append(hits, docsSearchHit{ID: result.ID, MarkdownLink: helpinMarkdownLink(result.Title, "documents", result.ID), Title: result.Title})
 	}
 	response := commandPaginationOutput(int64(len(results)), req.Offset, req.Limit, len(hits))
 	response["documents"] = hits

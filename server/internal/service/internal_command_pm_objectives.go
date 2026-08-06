@@ -601,7 +601,7 @@ func derefStringSlice(value *[]string) []string {
 func compactPMCommandObjective(value *model.ObjectiveWithDetails, detailed bool) map[string]any {
 	objective := value.Objective
 	result := map[string]any{
-		"objective_id": objective.ID, "workspace_id": objective.WorkspaceID, "name": objective.Name,
+		"objective_id": objective.ID, "markdown_link": helpinMarkdownLink(objective.Name, "objectives", objective.ID), "workspace_id": objective.WorkspaceID, "name": objective.Name,
 		"objective_type": objective.ObjectiveType, "state": objective.State,
 		"planned_start_date": formatPMObjectiveCommandDate(objective.PlannedStartDate), "deadline": formatPMObjectiveCommandDate(objective.Deadline),
 		"health": objective.Health, "archived": objective.Archived, "teams": boundedPMObjectiveCommandStrings(value.Teams),
