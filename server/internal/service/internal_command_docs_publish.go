@@ -16,30 +16,19 @@ import (
 // native docs search and product publish tools.
 func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 	s.register(InternalCommandDefinition{
+		Name:                 "docs.insert_document_image",
+		Module:               "docs",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"workspace", "document"},
+		Tool:                 mustCommandToolMetadata("docs.insert_document_image"),
+		Execute:              s.executeInsertDocumentImage,
+	})
+	s.register(InternalCommandDefinition{
 		Name:     "docs.search_documents",
 		Module:   "docs",
 		Mutating: false,
-		Tool: &commandtools.RuntimeToolMetadata{
-			CommandName: "docs.search_documents",
-			Alias:       "search_documents",
-			Category:    "Docs",
-			Description: "Search documents by keyword across the workspace. Use only when you need to find other documents or the current document ID is unknown; do not use it to inspect a known current document.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"query": map[string]any{
-						"type":        "string",
-						"description": "Search query",
-					},
-					"limit": map[string]any{
-						"type":        "integer",
-						"description": "Maximum results to return (default 10, max 20)",
-					},
-				},
-				"required": []string{"query"},
-			},
-		},
-		Execute: s.executeSearchDocuments,
+		Tool:     mustCommandToolMetadata("docs.search_documents"),
+		Execute:  s.executeSearchDocuments,
 	})
 	s.register(InternalCommandDefinition{
 		Name:     "docs.publish_prd_draft",
@@ -75,7 +64,7 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 		Name:                 "docs.publish_document_change_proposal",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"document"},
+		SupportedTargetTypes: []string{"workspace", "document"},
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "docs.publish_document_change_proposal",
 			Alias:       "publish_document_change_proposal",
@@ -87,10 +76,73 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 	})
 }
 
+func (s *InternalCommandService) executeInsertDocumentImage(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	if s.docsBlockService == nil {
+		return nil, fmt.Errorf("docs block service is not available")
+	}
+	if s.agentRunArtifactRepo == nil {
+		return nil, fmt.Errorf("agent run artifact repository is not available")
+	}
+	var req struct {
+		DocumentID   string  `json:"document_id"`
+		ArtifactID   string  `json:"artifact_id"`
+		AfterBlockID *string `json:"after_block_id,omitempty"`
+		Alt          string  `json:"alt"`
+		Caption      *string `json:"caption,omitempty"`
+	}
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, fmt.Errorf("parse insert document image input: %w", err)
+	}
+	req.DocumentID = strings.TrimSpace(req.DocumentID)
+	req.ArtifactID = strings.TrimSpace(req.ArtifactID)
+	req.Alt = strings.TrimSpace(req.Alt)
+	if req.DocumentID == "" || req.ArtifactID == "" || req.Alt == "" {
+		return nil, fmt.Errorf("document_id, artifact_id, and alt are required")
+	}
+	if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
+		return nil, err
+	}
+	artifact, err := s.agentRunArtifactRepo.GetByIDAndWorkspace(ctx, meta.WorkspaceID, req.ArtifactID)
+	if err != nil {
+		return nil, err
+	}
+	if artifact == nil || artifact.ArtifactType != model.AgentRunArtifactTypeBrowserScreenshot || artifact.StorageMode != "object" || artifact.ObjectKey == nil || strings.TrimSpace(*artifact.ObjectKey) == "" {
+		return nil, fmt.Errorf("private browser screenshot artifact not found")
+	}
+
+	attrs := map[string]any{
+		"src":        artifactReference(artifact.ID),
+		"artifactId": artifact.ID,
+		"alt":        req.Alt,
+		"width":      "100%",
+		"height":     "auto",
+		"alignment":  "center",
+	}
+	if req.Caption != nil && strings.TrimSpace(*req.Caption) != "" {
+		attrs["caption"] = strings.TrimSpace(*req.Caption)
+	}
+	block, err := json.Marshal(map[string]any{"type": "resizableImage", "attrs": attrs})
+	if err != nil {
+		return nil, fmt.Errorf("encode document image block: %w", err)
+	}
+	content, err := s.docsBlockService.Create(ctx, req.DocumentID, req.AfterBlockID, block, meta.ActorID)
+	if err != nil {
+		return nil, err
+	}
+	return mustJSON(map[string]any{
+		"document_id":  req.DocumentID,
+		"content_id":   content.ID,
+		"artifact_id":  artifact.ID,
+		"artifact_ref": artifactReference(artifact.ID),
+		"visibility":   "private",
+	}), nil
+}
+
 func (s *InternalCommandService) executeSearchDocuments(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 	var req struct {
-		Query string `json:"query"`
-		Limit int    `json:"limit"`
+		Query  string `json:"query"`
+		Limit  int    `json:"limit"`
+		Offset int    `json:"offset"`
 	}
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {
@@ -101,25 +153,36 @@ func (s *InternalCommandService) executeSearchDocuments(ctx context.Context, met
 	if query == "" {
 		return nil, fmt.Errorf("query is required")
 	}
-	if req.Limit <= 0 || req.Limit > 20 {
+	if req.Limit == 0 {
 		req.Limit = 10
+	}
+	if req.Limit < 1 || req.Limit > 20 {
+		return nil, fmt.Errorf("limit must be between 1 and 20")
+	}
+	if req.Offset < 0 {
+		return nil, fmt.Errorf("offset must be zero or greater")
 	}
 	if s.docsSearchRepo == nil {
 		return nil, fmt.Errorf("docs search is not available")
 	}
-	results, err := s.docsSearchRepo.Search(ctx, meta.WorkspaceID, query, nil, nil, req.Limit)
+	results, err := s.docsSearchRepo.Search(ctx, meta.WorkspaceID, query, nil, nil, req.Offset+req.Limit+1)
 	if err != nil {
 		return nil, fmt.Errorf("search documents: %w", err)
 	}
 	type docsSearchHit struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
+		ID           string `json:"id"`
+		MarkdownLink string `json:"markdown_link"`
+		Title        string `json:"title"`
 	}
-	hits := make([]docsSearchHit, 0, len(results))
-	for _, result := range results {
-		hits = append(hits, docsSearchHit{ID: result.ID, Title: result.Title})
+	start := min(req.Offset, len(results))
+	end := min(start+req.Limit, len(results))
+	hits := make([]docsSearchHit, 0, end-start)
+	for _, result := range results[start:end] {
+		hits = append(hits, docsSearchHit{ID: result.ID, MarkdownLink: helpinMarkdownLink(result.Title, "documents", result.ID), Title: result.Title})
 	}
-	return mustJSON(hits), nil
+	response := commandPaginationOutput(int64(len(results)), req.Offset, req.Limit, len(hits))
+	response["documents"] = hits
+	return mustJSON(response), nil
 }
 
 // executePublishRunPreview persists a run preview artifact for fixed-panel

@@ -397,7 +397,9 @@ describe('CodingTranscriptPane', () => {
 
     expect(container.textContent).toContain('This streamed prose should render inline in the coding-session transcript.');
     expect(container.textContent).toContain('Second streamed chunk.');
-    expect(container.textContent).not.toContain('Hidden reasoning stream');
+    // Live reasoning renders as an open "Thinking…" disclosure row while streaming.
+    expect(container.textContent).toContain('Thinking…');
+    expect(container.textContent).toContain('Hidden reasoning stream');
     expect(container.textContent).toContain('Read Dockerfile');
     expect(container.textContent.indexOf('This streamed prose should render inline')).toBeLessThan(
       container.textContent.indexOf('Read Dockerfile'),

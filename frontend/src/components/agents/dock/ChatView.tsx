@@ -12,6 +12,9 @@ import { DockUserMessage } from './DockUserMessage';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
 import { ExecutionStrip } from './ExecutionStrip';
 import { PendingInteractionCard } from './PendingInteractionCard';
+import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
+import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
+import { deriveLiveStatusLabel, ScrollToLatestButton } from '@/components/agents/transcript';
 import { planSummaryToRunPlan } from './planSummary';
 import { useAgentRunStream, type AgentRunStreamFetchers } from './useAgentRunStream';
 import {
@@ -42,8 +45,12 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
   const [plans, setPlans] = useState<CommandBarPlanSummary[]>([]);
   const [value, setValue] = useState('');
   const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [pendingEcho, setPendingEcho] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<{ message: string; content: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const autoFollowRef = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
 
   const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
   const [contextCleared, setContextCleared] = useState(false);
@@ -68,7 +75,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
     [chatId],
   );
 
-  const { streamState, pendingInteraction, loading: streamLoading, refetch, clearPendingInteraction } =
+  const { currentPlan, streamState, pendingInteraction, refetch, clearPendingInteraction } =
     useAgentRunStream(workspaceId, run?.id, !!run, runActive ? 5_000 : 0, fetchers);
 
   const refreshDetail = useCallback(async () => {
@@ -83,6 +90,9 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
     setPlans([]);
     setDetailLoading(true);
     setPendingEcho(null);
+    setSendError(null);
+    autoFollowRef.current = true;
+    setAtBottom(true);
     void refreshDetail().finally(() => setDetailLoading(false));
   }, [refreshDetail]);
 
@@ -90,13 +100,21 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
   // handled inside useAgentRunStream; this keeps status/pause_reason fresh).
   useEffect(() => {
     if (!run?.id) return;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const handler = (event: Event) => {
       const detailPayload = (event as CustomEvent<{ entity_id?: string }>).detail;
       if (detailPayload?.entity_id !== run.id) return;
-      void refreshDetail();
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void refreshDetail();
+      }, 100);
     };
     window.addEventListener('agent_run-updated', handler);
-    return () => window.removeEventListener('agent_run-updated', handler);
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      window.removeEventListener('agent_run-updated', handler);
+    };
   }, [refreshDetail, run?.id]);
 
   // Child plans launched from this chat.
@@ -160,11 +178,35 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
     if (matched) setPendingEcho(null);
   }, [pendingEcho, transformed]);
 
-  // Keep the transcript pinned to the bottom as content streams in.
+  // Track whether the user is near the tail; only then keep auto-following.
   useEffect(() => {
     const node = scrollRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
-  }, [transformed, pendingEcho, pendingInteraction]);
+    if (!node) return;
+    const update = () => {
+      const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+      const follow = distanceFromBottom < 96;
+      autoFollowRef.current = follow;
+      setAtBottom(follow);
+    };
+    update();
+    node.addEventListener('scroll', update, { passive: true });
+    return () => node.removeEventListener('scroll', update);
+  }, []);
+
+  const scrollToLatest = useCallback(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    autoFollowRef.current = true;
+    setAtBottom(true);
+    node.scrollTop = node.scrollHeight;
+  }, []);
+
+  // Keep the transcript pinned to the bottom as content streams in, unless the
+  // user has scrolled up to read earlier turns.
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (node && autoFollowRef.current) node.scrollTop = node.scrollHeight;
+  }, [transformed, currentPlan, pendingEcho, pendingInteraction, sendError]);
 
   const effectiveInteraction = pendingInteraction ?? fallbackInteraction;
   const dockConfirm = effectiveInteraction ? parseDockPlanConfirm(effectiveInteraction.request_payload) : null;
@@ -175,29 +217,58 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
     detailLoading || sending,
   );
 
+  const sendContent = useCallback(
+    async (content: string) => {
+      if (!content || sending) return;
+      setSending(true);
+      setSendError(null);
+      setPendingEcho(content);
+      autoFollowRef.current = true;
+      setAtBottom(true);
+      try {
+        const res = await dockChatService.sendMessage(workspaceId, chatId, {
+          content,
+          page_context: effectivePageContext ?? undefined,
+        });
+        if (res.error || !res.data) {
+          setPendingEcho(null);
+          setSendError({ message: res.error ?? 'Failed to send message', content });
+          return;
+        }
+        setDetail(res.data);
+        if (run?.id && res.data.run?.id === run.id) {
+          // Same backing run: reconcile the persisted user message immediately.
+          void refetch();
+        }
+        // Successor run: useAgentRunStream will reset and fetch with the returned
+        // run id instead of invoking this render's predecessor refetch closure.
+      } finally {
+        setSending(false);
+      }
+    },
+    [chatId, effectivePageContext, refetch, run?.id, sending, workspaceId],
+  );
+
   const submit = async () => {
     const content = value.trim();
-    if (!content || sending) return;
-    setSending(true);
-    setPendingEcho(content);
+    if (!content) return;
     setValue('');
+    await sendContent(content);
+  };
+
+  const canStop = runActive && (run?.status === 'queued' || run?.status === 'running');
+  const handleStop = useCallback(async () => {
+    if (stopping) return;
+    setStopping(true);
     try {
-      const res = await dockChatService.sendMessage(workspaceId, chatId, {
-        content,
-        page_context: effectivePageContext ?? undefined,
-      });
-      if (res.error || !res.data) {
-        toast.error(res.error ?? 'Failed to send message');
-        setPendingEcho(null);
-        setValue(content);
-        return;
-      }
-      setDetail(res.data);
+      const res = await dockChatService.cancelChatRun(workspaceId, chatId);
+      if (res.error) toast.error(res.error);
+      void refreshDetail();
       void refetch();
     } finally {
-      setSending(false);
+      setStopping(false);
     }
-  };
+  }, [chatId, refetch, refreshDetail, stopping, workspaceId]);
 
   const resolveInteraction = useCallback(
     async (interactionId: string, payload: { response_payload: Record<string, unknown>; followup_message?: string }) => {
@@ -213,6 +284,22 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
     [chatId, clearPendingInteraction, refetch, refreshDetail, workspaceId],
   );
 
+  // One-line live status under the transcript: prefer the running tool's
+  // label, hidden while assistant text is actively streaming (the text itself
+  // is the status then).
+  const liveStatusLabel = useMemo(() => {
+    if (sending) return 'Thinking…';
+    if (!runActive || run?.status === 'paused') return null;
+    const stream = transformed?.stream ?? null;
+    const lastLive = stream?.live_turn_segments[stream.live_turn_segments.length - 1];
+    const assistantStreaming =
+      lastLive?.kind === 'assistant_message'
+      && lastLive.assistant_message.status === 'streaming'
+      && lastLive.assistant_message.content.trim().length > 0;
+    if (assistantStreaming) return null;
+    return deriveLiveStatusLabel(stream, run?.status);
+  }, [run?.status, runActive, sending, transformed]);
+
   const runsById = useMemo(() => {
     const map: Record<string, AgentRun> = {};
     for (const plan of plans) {
@@ -223,6 +310,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} className="max-h-[60vh] min-h-24 flex-1 space-y-3 overflow-y-auto px-4 py-3">
         {detailLoading && !detail && (
           <p className="py-6 text-center text-sm text-muted-foreground">Loading chat…</p>
@@ -233,9 +321,39 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
           </p>
         )}
         {transformed && <DockTranscript stream={transformed.stream} active={runActive} />}
+        {currentPlan && (
+          <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
+        )}
         {pendingEcho && <DockUserMessage content={pendingEcho} pending />}
-        {(sending || (runActive && run?.status !== 'paused' && !streamLoading && !transformed)) && (
-          <p className="text-xs text-muted-foreground">Thinking…</p>
+        {sendError && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
+            <p className="mb-1 line-clamp-2 text-foreground/80">{sendError.content}</p>
+            <div className="flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-destructive">{sendError.message}</span>
+              <div className="flex shrink-0 items-center gap-3">
+                <button
+                  type="button"
+                  className="font-medium text-foreground hover:underline"
+                  onClick={() => void sendContent(sendError.content)}
+                >
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:underline"
+                  onClick={() => {
+                    setValue(sendError.content);
+                    setSendError(null);
+                  }}
+                >
+                  Edit message
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {liveStatusLabel && (
+          <StreamingStatusText className="text-xs">{liveStatusLabel}</StreamingStatusText>
         )}
         {plans.length > 0 && (
           <div className="space-y-2 rounded-lg border border-indigo-200/60 bg-indigo-50/50 p-2 dark:border-indigo-500/20 dark:bg-indigo-500/[0.07]">
@@ -278,6 +396,8 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
           />
         )}
       </div>
+      {!atBottom && <ScrollToLatestButton onClick={scrollToLatest} />}
+      </div>
       {composer.visible && (
         <div className="border-t border-border/60 p-2">
           <DockInput
@@ -296,6 +416,8 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
             busy={sending}
             disabled={!composer.enabled}
             textareaRef={textareaRef}
+            onStop={canStop ? () => void handleStop() : undefined}
+            stopping={stopping}
           />
         </div>
       )}

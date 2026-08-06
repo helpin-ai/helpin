@@ -127,7 +127,7 @@ vi.mock('@tiptap/extension-table-cell', () => ({ TableCell: {} }))
 vi.mock('@tiptap/extension-task-list', () => ({ TaskList: {} }))
 
 vi.mock('@/components/ui/resizable-image-extension', () => ({
-  ResizableImageExtension: {},
+  ResizableImageExtension: { configure: () => ({}) },
 }))
 
 vi.mock('../SlashMenuExtension', () => ({

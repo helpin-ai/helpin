@@ -111,42 +111,8 @@ func (s *InternalCommandService) registerReleaseFactsCommands() {
 		Name:     "release.get_task_context",
 		Module:   "release",
 		Mutating: false,
-		Tool: &commandtools.RuntimeToolMetadata{
-			CommandName: "release.get_task_context",
-			Alias:       "get_task_context",
-			Category:    "Release",
-			Description: "Load compact task context with optional linked docs, document content, comments, and git links for specific task IDs.",
-			InputSchema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"task_ids": map[string]any{
-						"type":        "array",
-						"description": "Task IDs to load. Max 50.",
-						"items":       map[string]any{"type": "string"},
-						"maxItems":    50,
-					},
-					"include_linked_docs": map[string]any{
-						"type":        "boolean",
-						"description": "Whether to include linked document metadata.",
-					},
-					"include_document_content": map[string]any{
-						"type":        "boolean",
-						"description": "Whether to include linked document content text. Only used when include_linked_docs is true.",
-					},
-					"include_comments": map[string]any{
-						"type":        "boolean",
-						"description": "Whether to include task comments.",
-					},
-					"include_git_links": map[string]any{
-						"type":        "boolean",
-						"description": "Whether to include git links for each task.",
-					},
-				},
-				"required":             []string{},
-				"additionalProperties": false,
-			},
-		},
-		Execute: s.executeGetTaskContext,
+		Tool:     mustCommandToolMetadata("release.get_task_context"),
+		Execute:  s.executeGetTaskContext,
 	})
 }
 
@@ -209,11 +175,20 @@ func (s *InternalCommandService) executeGetTaskContext(ctx context.Context, meta
 		}
 	}
 	req.TaskIDs = commandTrimStringSlice(req.TaskIDs)
+	req.TaskKeys = commandTrimStringSlice(req.TaskKeys)
+	for _, taskKey := range req.TaskKeys {
+		taskID, err := s.resolveCommandTaskKey(ctx, meta, taskKey)
+		if err != nil {
+			return nil, err
+		}
+		req.TaskIDs = append(req.TaskIDs, taskID)
+	}
+	req.TaskIDs = uniqueNonEmptyStringsWithLimit(req.TaskIDs, 51)
 	if len(req.TaskIDs) == 0 && commandTaskTargetID(meta) != "" {
 		req.TaskIDs = []string{commandTaskTargetID(meta)}
 	}
 	if len(req.TaskIDs) == 0 {
-		return nil, fmt.Errorf("task_ids is required")
+		return nil, fmt.Errorf("task_ids or task_keys is required")
 	}
 	if len(req.TaskIDs) > 50 {
 		return nil, fmt.Errorf("at most 50 task_ids may be requested")

@@ -58,3 +58,15 @@ func TestIsDockChatRunExpiredError(t *testing.T) {
 		t.Error("isChatRunExpiredError() = true for unrelated error, want false")
 	}
 }
+
+func TestSameNormalizedToolSet(t *testing.T) {
+	if !sameNormalizedToolSet([]string{" read_file ", "ripgrep", "read_file"}, []string{"ripgrep", "read_file"}) {
+		t.Fatal("same tool set with whitespace, order, and duplicates was reported stale")
+	}
+	if sameNormalizedToolSet([]string{"list_repositories", "list_commits"}, []string{"list_repositories", "checkout_repository", "ripgrep", "read_file"}) {
+		t.Fatal("old metadata-only repository tool set was reported current")
+	}
+	if sameNormalizedToolSet([]string{"read_file", "write_file"}, []string{"read_file"}) {
+		t.Fatal("run retaining a revoked tool was reported current")
+	}
+}

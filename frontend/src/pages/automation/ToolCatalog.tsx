@@ -39,6 +39,7 @@ const CATEGORY_ICONS: Record<string, typeof Wrench01Icon> = {
   Commands: TerminalIcon,
   Security: Wrench01Icon,
   'Web Search': GlobeIcon,
+  Browser: GlobeIcon,
   Git: GitBranchIcon,
   Interaction: MessagePreview01Icon,
   'PM / Tasks': FileSearchIcon,

@@ -241,6 +241,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		}
 	}
 	effectiveSystemPrompt = agentcontract.EnsureSupportRuntimeDeliveryContract(agent.EffectivePresetKey(), effectiveSystemPrompt)
+	effectiveSystemPrompt = agentcontract.EnsureAskAgentExecutionPolicy(agent.EffectivePresetKey(), effectiveSystemPrompt)
 	out := AgentRuntimeAgent{
 		ID:                    strings.TrimSpace(agent.ID),
 		AppID:                 strings.TrimSpace(appID),
@@ -249,11 +250,26 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		Provider:              strings.TrimSpace(derefString(agent.Provider)),
 		Model:                 strings.TrimSpace(derefString(agent.Model)),
 		SystemPrompt:          agentcontract.RenderRuntimeToolNamesInInstructionsForRuntime(effectiveSystemPrompt, agent.RuntimeKind),
-		Skills:                runtimeSkillRefsFromHelpin(agentskills.EffectiveRuntimeRefs(agent), agent.RuntimeKind),
+		Skills:                runtimeSkillRefsFromHelpinAgent(agent),
 		AllowedTools:          parseJSONStringSlice(agent.AllowedTools),
 		AllowedTargets:        parseJSONStringSlice(agent.AllowedTargets),
 		ApprovalMode:          strings.TrimSpace(agent.ApprovalMode),
 		DefaultInvocationMode: strings.TrimSpace(agent.DefaultInvocationMode),
+	}
+	// Ask Agent owns skill discovery as a managed Dock capability. Keep those
+	// tools registered even before a workspace assigns optional skills; an
+	// empty discovery result is valid and the run contract must still match.
+	if usesVersionOwnedSystemPrompt(agent) &&
+		normalizePresetKey(agent.EffectivePresetKey()) != model.AgentPresetAskAgent &&
+		!hasAvailableRuntimeSkills(out.Skills) {
+		out.AllowedTools = slices.DeleteFunc(out.AllowedTools, func(toolName string) bool {
+			switch agentcontract.CanonicalToolName(toolName) {
+			case agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill:
+				return true
+			default:
+				return false
+			}
+		})
 	}
 	if len(agent.ExecutionConfig) > 0 && strings.TrimSpace(string(agent.ExecutionConfig)) != "null" {
 		out.ExecutionConfig = append([]byte(nil), agent.ExecutionConfig...)
@@ -269,6 +285,93 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		out.DefaultInvocationMode = model.InvocationModeAutonomous
 	}
 	return out
+}
+
+func hasAvailableRuntimeSkills(refs []AgentRuntimeSkillRef) bool {
+	for _, ref := range refs {
+		var values map[string]any
+		if json.Unmarshal(ref.Config, &values) == nil && strings.TrimSpace(fmt.Sprint(values[runtimeSkillRoleConfigKey])) == "available" {
+			return true
+		}
+	}
+	return false
+}
+
+const runtimeSkillRoleConfigKey = "runtime_skill_role"
+
+func runtimeSkillRefsFromHelpinAgent(agent *model.Agent) []AgentRuntimeSkillRef {
+	if agent == nil {
+		return nil
+	}
+	refs := runtimeSkillRefsFromHelpin(agentskills.EffectiveRuntimeRefs(agent), agent.RuntimeKind)
+	preset, ok := agentPresetVersionDefinition(agent.EffectivePresetKey(), agent.EffectivePresetVersionKey())
+	if !ok {
+		return refs
+	}
+	availableKeys := make(map[string]bool, len(preset.AvailableSkills))
+	for _, key := range preset.AvailableSkills {
+		key = agentcontract.CanonicalBuiltInSkillKey(key)
+		if key != "" {
+			availableKeys[key] = true
+		}
+	}
+	availableRefs := make([]AgentRuntimeSkillRef, 0, len(preset.AvailableSkills))
+	seenAvailableKeys := make(map[string]bool, len(preset.AvailableSkills))
+	for _, ref := range refs {
+		key := agentcontract.CanonicalBuiltInSkillKey(ref.Key)
+		if !availableKeys[key] {
+			continue
+		}
+		ref.Config = withRuntimeSkillRole(ref.Config, "available")
+		availableRefs = append(availableRefs, ref)
+		seenAvailableKeys[key] = true
+	}
+	// The managed Ask Agent owns a product-curated catalog of optional skills.
+	// Materialize missing refs at launch so existing workspace rows gain that
+	// catalog without a migration. Specialist presets continue to expose only
+	// the skill refs explicitly persisted on their agent rows.
+	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
+		for _, key := range preset.AvailableSkills {
+			key = agentcontract.CanonicalBuiltInSkillKey(key)
+			if key == "" || seenAvailableKeys[key] {
+				continue
+			}
+			if _, ok := agentcontract.GetBuiltInSkill(key); !ok {
+				continue
+			}
+			ref := model.AgentSkillRef{Key: key}
+			if !helpinSkillRefSupportsRuntime(ref, agent.RuntimeKind) {
+				continue
+			}
+			availableRefs = append(availableRefs, AgentRuntimeSkillRef{
+				Key:    key,
+				Config: withRuntimeSkillRole(nil, "available"),
+			})
+			seenAvailableKeys[key] = true
+		}
+	}
+	return availableRefs
+}
+
+func usesVersionOwnedSystemPrompt(agent *model.Agent) bool {
+	if agent == nil {
+		return false
+	}
+	_, ok := agentPresetVersionDefinition(agent.EffectivePresetKey(), agent.EffectivePresetVersionKey())
+	return ok
+}
+
+func withRuntimeSkillRole(config json.RawMessage, role string) json.RawMessage {
+	values := map[string]any{}
+	if len(config) > 0 && strings.TrimSpace(string(config)) != "null" {
+		_ = json.Unmarshal(config, &values)
+	}
+	values[runtimeSkillRoleConfigKey] = role
+	payload, err := json.Marshal(values)
+	if err != nil {
+		return config
+	}
+	return payload
 }
 
 func runtimeSkillRefsFromHelpin(refs model.AgentSkillRefs, runtimeKind string) []AgentRuntimeSkillRef {
@@ -327,9 +430,13 @@ func helpinSkillRefSupportsRuntime(ref model.AgentSkillRef, runtimeKind string) 
 	return false
 }
 
-func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntimeStartRunRequest {
+func runtimeStartRunRequest(
+	run *model.AgentRun,
+	agent *model.Agent,
+	runtimeAgent AgentRuntimeAgent,
+) (AgentRuntimeStartRunRequest, error) {
 	if run == nil {
-		return AgentRuntimeStartRunRequest{}
+		return AgentRuntimeStartRunRequest{}, nil
 	}
 	var input model.AgentRunInputPayload
 	if len(run.Input) > 0 {
@@ -387,19 +494,49 @@ func runtimeStartRunRequest(run *model.AgentRun, agent *model.Agent) AgentRuntim
 	if mode == "" {
 		mode = model.InvocationModeAutonomous
 	}
+	allowedTools, err := runtimeRunAllowedToolSubset(input.AllowedTools, runtimeAgent.AllowedTools)
+	if err != nil {
+		return AgentRuntimeStartRunRequest{}, err
+	}
 	return AgentRuntimeStartRunRequest{
 		HostRunID:       strings.TrimSpace(run.ID),
 		AgentID:         strings.TrimSpace(run.AgentID),
 		Target:          AgentRuntimeTargetRef{Type: strings.TrimSpace(run.TargetType), ID: strings.TrimSpace(run.TargetID), Metadata: metadata},
 		Instructions:    strings.TrimSpace(input.AdditionalContext),
-		AllowedTools:    normalizeStringSlice(input.AllowedTools),
+		AllowedTools:    allowedTools,
 		ExternalActorID: strings.TrimSpace(derefString(run.TriggeredByUserID)),
 		Mode:            mode,
 		ExecutionMode:   agentRuntimeExecutionModeDurable,
 		Trigger:         trigger,
 		Metadata:        metadata,
 		TurnPolicy:      runtimeTurnPolicy(run, agent, mode, 0),
+	}, nil
+}
+
+// runtimeRunAllowedToolSubset keeps the run-level narrowing contract within
+// the exact agent contract that is upserted immediately before launch. Helpin
+// may project an agent more narrowly than its persisted product definition
+// (for example, by removing skill tools when no skills are available), while
+// the durable run input still contains the broader product tool set.
+func runtimeRunAllowedToolSubset(requested, agentAllowed []string) ([]string, error) {
+	requested = agentcontract.NormalizeToolNames(requested)
+	if len(requested) == 0 {
+		return nil, nil
 	}
+	allowedSet := make(map[string]struct{}, len(agentAllowed))
+	for _, toolName := range agentcontract.NormalizeToolNames(agentAllowed) {
+		allowedSet[toolName] = struct{}{}
+	}
+	subset := make([]string, 0, len(requested))
+	for _, toolName := range requested {
+		if _, ok := allowedSet[toolName]; ok {
+			subset = append(subset, toolName)
+		}
+	}
+	if len(subset) == 0 {
+		return nil, fmt.Errorf("run allowed_tools do not overlap the projected runtime agent tools")
+	}
+	return subset, nil
 }
 
 // defaultDockChatIdleTimeoutSeconds bounds how long a dock chat run stays
@@ -892,6 +1029,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 	if !ok {
 		return nil, fmt.Errorf("unsupported built-in preset %q", presetKey)
 	}
+	preset = enforceManagedAskAgentCapabilities(preset)
 	if existing != nil {
 		changed := false
 		beforePresetKey := existing.PresetKey
@@ -972,10 +1110,10 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
-		// Scribe's product default moved from OpenAI to DeepSeek V4 Flash on
+		// Atlas and Scribe product defaults moved from OpenAI to DeepSeek on
 		// OpenRouter. Only migrate the default preset when it still uses a known
 		// legacy product default, preserving custom routing choices.
-		if presetKey == model.AgentPresetTaskPlanner &&
+		if (presetKey == model.AgentPresetEpicPlanner || presetKey == model.AgentPresetTaskPlanner) &&
 			presetVersionKey == productDefaultVersionKey &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
 			(strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel ||
@@ -985,7 +1123,15 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			changed = true
 		}
 		expectedExecutionConfig := normalizeExecutionConfigJSON(preset.ExecutionConfig)
-		if string(normalizeExecutionConfigJSON(existing.ExecutionConfig)) == "{}" && string(expectedExecutionConfig) != "{}" {
+		currentExecutionConfig := normalizeExecutionConfigJSON(existing.ExecutionConfig)
+		if presetKey == model.AgentPresetAskAgent && string(currentExecutionConfig) != string(expectedExecutionConfig) {
+			// Ask Agent execution settings are managed because stale workspace
+			// versions may carry workspace.mode=repository. That mode makes the
+			// runtime resolve the product workspace target as a repository and
+			// prevents mixed repository-read/product-write Dock workflows.
+			existing.ExecutionConfig = expectedExecutionConfig
+			changed = true
+		} else if string(currentExecutionConfig) == "{}" && string(expectedExecutionConfig) != "{}" {
 			existing.ExecutionConfig = expectedExecutionConfig
 			changed = true
 		}
@@ -1991,7 +2137,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		AllowedTools:               normalizeAllowedToolsJSON(mustJSONStringSlice(basePreset.AllowedTools)),
 		AllowedTargets:             mustJSONStringSlice(basePreset.AllowedTargetTypes),
 		SupportedModes:             mustJSONStringSlice(normalizedSupportedModes),
-		ApprovalMode:               "never",
+		ApprovalMode:               basePreset.ApprovalMode,
 		DefaultInvocationMode:      defaultInvocationMode,
 		CreatedBy:                  trimPtr(&actorID),
 	}
@@ -3490,7 +3636,16 @@ func (s *AgentService) ListRunArtifacts(ctx context.Context, workspaceID, runID 
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.artifactRepo.ListByRun(ctx, workspaceID, runID)
+	artifacts, err := s.artifactRepo.ListByRun(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	// Object keys are storage internals. User-facing callers receive the
+	// artifact id and resolve private content through the authorized endpoint.
+	for i := range artifacts {
+		artifacts[i].ObjectKey = nil
+	}
+	return artifacts, nil
 }
 
 // ListRunMessages returns persisted conversation history for a run.
@@ -5695,6 +5850,16 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
 		return nil, err
 	}
+	// Some embedders construct AgentService without transcript persistence. Keep
+	// that legacy setup working while making the launch prompt durable whenever
+	// the run-message repository is available (as it is in production).
+	if initialContext := initialAgentRunContext(run); initialContext != "" && s.runMessageRepo != nil {
+		if _, err := s.createRunMessage(ctx, run, "user", "prompt", initialContext); err != nil {
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, run, err)
+			return nil, err
+		}
+	}
 	s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, run, nil)
 
 	// Agent Runtime is the only execution path — a run that cannot delegate
@@ -5720,11 +5885,24 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	_ = s.agentRepo.Update(ctx, params.agent)
 
-	if _, err := runtimeLauncher.UpsertAgent(ctx, runtimeAgent); err != nil {
+	registeredRuntimeAgent, err := runtimeLauncher.UpsertAgent(ctx, runtimeAgent)
+	if err != nil {
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
 	}
-	startReq := runtimeStartRunRequest(run, params.agent)
+	if registeredRuntimeAgent == nil {
+		err := fmt.Errorf("agent runtime returned an empty agent after registration")
+		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+		return nil, err
+	}
+	// Agent Runtime owns the executable tool registry. Build the run contract
+	// from the agent it accepted, rather than the local projection we sent, so
+	// allowed_tools cannot race or drift from the runtime's stored definition.
+	startReq, err := runtimeStartRunRequest(run, params.agent, *registeredRuntimeAgent)
+	if err != nil {
+		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+		return nil, err
+	}
 	if auditActorID := s.auditActorIDForRun(ctx, run); auditActorID != "" {
 		startReq.Metadata["audit_actor_id"] = auditActorID
 	}
@@ -5976,6 +6154,17 @@ func (s *AgentService) logTargetAgentRunActivity(ctx context.Context, run *model
 	}
 
 	_ = s.activitySvc.Log(ctx, run.WorkspaceID, entityType, entityID, strPtr(actorID), "updated", strPtr("agent_run"), nil, strPtr(action), metadata)
+}
+
+func initialAgentRunContext(run *model.AgentRun) string {
+	if run == nil || len(run.Input) == 0 {
+		return ""
+	}
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(run.Input, &input); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(input.AdditionalContext)
 }
 
 func (s *AgentService) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string) (*model.AgentRunMessage, error) {

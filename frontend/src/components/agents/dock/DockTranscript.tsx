@@ -6,8 +6,6 @@ import {
   DOCK_SEGMENT_KINDS,
   TranscriptSegmentView,
 } from '@/components/agents/transcript';
-import { DockUserMessage } from './DockUserMessage';
-
 const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'user'] as const);
 
 /** True when the stream has at least one renderable assistant/tool segment. */
@@ -45,19 +43,20 @@ export function DockTranscript({
     include: showUserMessages ? DOCK_CHAT_SEGMENT_KINDS : DOCK_SEGMENT_KINDS,
   });
   if (segments.length === 0) return null;
+  const latestAssistantSegmentId = [...segments].reverse().find((segment) => segment.kind === 'assistant')?.id;
 
   return (
     <div className={cn('space-y-1.5', className)}>
       {segments.map((segment) => (
-        segment.kind === 'user' ? (
-          <DockUserMessage
-            key={segment.id}
-            content={segment.message.content}
-            timestamp={segment.message.timestamp}
-          />
-        ) : (
-          <TranscriptSegmentView key={segment.id} segment={segment} options={{ expandable: false }} />
-        )
+        <TranscriptSegmentView
+          key={segment.id}
+          segment={segment}
+          options={{
+            expandable: true,
+            collapseLongAssistantContent: segment.kind !== 'assistant' || segment.id !== latestAssistantSegmentId,
+            fallbackUserLabel: 'You',
+          }}
+        />
       ))}
     </div>
   );

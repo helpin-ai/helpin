@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -178,6 +179,65 @@ func TestScheduledRuleStartAgentRunDelegatesToAgentRuntime(t *testing.T) {
 	}
 	if execution.Status == model.AgentTriggerExecutionStatusFailed {
 		t.Fatalf("expected non-failed trigger execution, got %q (%v)", execution.Status, execution.ErrorMessage)
+	}
+}
+
+func TestCreateRunRecordsTriggerFailureWhenLaunchPromptPersistenceFails(t *testing.T) {
+	db := setupAutomationDelegationTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	triggerExecRepo := repository.NewAgentTriggerExecutionRepository(db)
+	// setupAutomationDelegationTestDB intentionally has no agent_run_messages
+	// table, so a configured repository reaches the prompt-persistence failure
+	// path after the run row has been created.
+	messageRepo := repository.NewAgentRunMessageRepository(db)
+	service := (&AgentService{
+		runRepo:        runRepo,
+		runMessageRepo: messageRepo,
+	}).SetTriggerExecutionRepository(triggerExecRepo)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	agentID := "22222222-2222-2222-2222-222222222222"
+	ruleID := "33333333-3333-3333-3333-333333333333"
+	trigger := &model.AgentRunTriggerContext{
+		Source:      model.AgentRunTriggerSourceAutomationRule,
+		TriggerType: model.TriggerCron,
+		RuleID:      &ruleID,
+	}
+	payload, err := json.Marshal(model.AgentRunInputPayload{AdditionalContext: "Persist this launch context."})
+	if err != nil {
+		t.Fatalf("marshal run input: %v", err)
+	}
+
+	_, err = service.createRun(context.Background(), createRunParams{
+		workspaceID: workspaceID,
+		agent: &model.Agent{
+			ID:          agentID,
+			IsSystem:    true,
+			PresetKey:   model.AgentPresetMarketer,
+			RuntimeKind: "native_sdk",
+		},
+		targetType: "workspace",
+		targetID:   workspaceID,
+		trigger:    trigger,
+		input:      payload,
+	})
+	if err == nil {
+		t.Fatal("expected launch prompt persistence to fail")
+	}
+
+	var executions []model.AgentTriggerExecution
+	if err := db.Find(&executions).Error; err != nil {
+		t.Fatalf("list trigger executions: %v", err)
+	}
+	if len(executions) != 1 {
+		t.Fatalf("expected one failed trigger execution, got %#v", executions)
+	}
+	execution := executions[0]
+	if execution.Status != model.AgentTriggerExecutionStatusFailed || execution.ErrorMessage == nil {
+		t.Fatalf("expected failed trigger execution with error, got %#v", execution)
+	}
+	if execution.RunID == nil || strings.TrimSpace(*execution.RunID) == "" {
+		t.Fatalf("expected failed trigger execution to retain its created run ID, got %#v", execution)
 	}
 }
 

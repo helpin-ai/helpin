@@ -511,7 +511,7 @@ describe('CodingInterruptionPanel', () => {
     });
   });
 
-  it('renders a system prompt card when no prompt artifact exists', () => {
+  it('does not render the agent system prompt as user context', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -533,15 +533,15 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    expect(container.textContent).toContain('System prompt');
-    expect(container.textContent).toContain('Research configured competitors');
+    expect(container.textContent).not.toContain('System prompt');
+    expect(container.textContent).not.toContain('Research configured competitors');
 
     act(() => {
       root.unmount();
     });
   });
 
-  it('prefers developer prompt artifacts over the session system prompt', () => {
+  it('uses the user section of legacy prompt artifacts', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -564,8 +564,9 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    expect(container.textContent).toContain('Developer prompt');
-    expect(container.textContent).toContain('Use the repository conventions');
+    expect(container.textContent).toContain('Prompt');
+    expect(container.textContent).toContain('Implement the requested change');
+    expect(container.textContent).not.toContain('Use the repository conventions');
     expect(container.textContent).not.toContain('Fallback native agent system prompt');
 
     act(() => {
@@ -707,7 +708,7 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    const scrollContainer = container.querySelector('.min-h-0.flex-1.overflow-auto') as HTMLDivElement | null;
+    const scrollContainer = container.querySelector('.h-full.overflow-auto') as HTMLDivElement | null;
     expect(scrollContainer).toBeTruthy();
     if (!scrollContainer) {
       throw new Error('expected transcript scroll container');

@@ -27,6 +27,7 @@ func TestResolveApprovalStateByMode(t *testing.T) {
 		want string
 	}{
 		{name: "no approval", mode: "never", want: "not_required"},
+		{name: "risk based", mode: "risk_based", want: "not_required"},
 		{name: "mutating tools", mode: "mutating_tools", want: "not_required"},
 		{name: "before run and tools", mode: "always", want: "pending"},
 	}

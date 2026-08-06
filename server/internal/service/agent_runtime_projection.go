@@ -94,12 +94,12 @@ type AgentRuntimeProjectionService struct {
 	// supportChatPauseHook is set after the NATS consumer may already be
 	// running, so access is atomic.
 	supportChatPauseHook atomic.Pointer[supportChatPauseHookFunc]
-	wsPublisher         websocket.EventPublisher
-	appID               string
-	eventProtocol       string
-	now                 func() time.Time
-	v2ReplayMu          sync.Mutex
-	v2ReplayThrough     map[string]int64
+	wsPublisher          websocket.EventPublisher
+	appID                string
+	eventProtocol        string
+	now                  func() time.Time
+	v2ReplayMu           sync.Mutex
+	v2ReplayThrough      map[string]int64
 }
 
 type agentRuntimeUsagePayload struct {
@@ -995,6 +995,10 @@ func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx cont
 		ToolInvocations:  toolInvocations,
 		TurnSegments:     runtimeMessageTurnSegments(runtimeMessageID, content, toolInvocations),
 		SequenceNo:       sequenceNo,
+		// The chat transcript orders by created_at; the envelope's sent_at is
+		// the emission time the runtime persisted with the event, so replayed
+		// events keep conversation order instead of clustering at insert time.
+		CreatedAt: s.eventTime(event),
 	}
 	if err := s.runMessageRepo.Create(ctx, message); err != nil {
 		return err
@@ -1672,6 +1676,8 @@ type runtimeToolInvocation struct {
 	Input               json.RawMessage `json:"input"`
 	OutputSummary       string          `json:"output_summary"`
 	DurationMs          int64           `json:"duration_ms"`
+	Status              string          `json:"status"`
+	Error               string          `json:"error"`
 	AssistantBeforeTool bool            `json:"assistant_before_tool"`
 }
 
@@ -1715,18 +1721,29 @@ func runtimeMessageTurnSegments(runtimeMessageID, content string, toolInvocation
 		if segmentID == "" {
 			segmentID = fmt.Sprintf("%s-tool-%d", runtimeMessageID, index)
 		}
+		status := strings.ToLower(strings.TrimSpace(invocation.Status))
+		if status != "failed" {
+			if strings.TrimSpace(invocation.Error) != "" {
+				status = "failed"
+			} else {
+				status = "completed"
+			}
+		}
 		toolCall := &model.CodingSessionLiveToolCall{
 			ToolCallID: segmentID,
 			ToolName:   strings.TrimSpace(invocation.ToolName),
 			ArgsText:   strings.TrimSpace(string(invocation.Input)),
-			Status:     "completed",
+			Status:     status,
 		}
 		if invocation.DurationMs > 0 {
 			duration := invocation.DurationMs
 			toolCall.DurationMs = &duration
 		}
-		if summary := strings.TrimSpace(invocation.OutputSummary); summary != "" {
+		if summary, errorText := strings.TrimSpace(invocation.OutputSummary), strings.TrimSpace(invocation.Error); summary != "" || errorText != "" {
 			toolCall.Result = &model.CodingSessionLiveToolResult{Content: summary}
+			if errorText != "" {
+				toolCall.Result.Error = &errorText
+			}
 		}
 		segments = append(segments, model.CodingSessionLiveTurnSegment{
 			SegmentID: segmentID,

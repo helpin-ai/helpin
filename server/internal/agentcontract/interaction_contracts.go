@@ -47,6 +47,26 @@ func NormalizeInteractionContracts(contracts []SkillInteractionContract) []Skill
 	return out
 }
 
+// AggregateSkillPolicies keeps runtime enforcement separate from prompt
+// composition. Prompt modules may be compiled into one version-owned system
+// prompt while their interaction requirements remain machine-readable.
+func AggregateSkillPolicies(policies ...SkillPolicy) SkillPolicy {
+	var aggregate SkillPolicy
+	for _, policy := range policies {
+		if policy.AllowImplicitInvocation != nil {
+			value := *policy.AllowImplicitInvocation
+			if aggregate.AllowImplicitInvocation == nil || !value {
+				aggregate.AllowImplicitInvocation = &value
+			}
+		}
+		aggregate.CompletionRequiresInteractionKinds = append(aggregate.CompletionRequiresInteractionKinds, policy.CompletionRequiresInteractionKinds...)
+		aggregate.InteractionContracts = append(aggregate.InteractionContracts, policy.InteractionContracts...)
+	}
+	aggregate.CompletionRequiresInteractionKinds = SortedUniqueStrings(aggregate.CompletionRequiresInteractionKinds)
+	aggregate.InteractionContracts = NormalizeInteractionContracts(aggregate.InteractionContracts)
+	return aggregate
+}
+
 func normalizeInteractionContract(contract SkillInteractionContract) SkillInteractionContract {
 	contract.Kind = strings.TrimSpace(contract.Kind)
 	contract.Schema = strings.TrimSpace(contract.Schema)

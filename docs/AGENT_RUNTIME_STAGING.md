@@ -46,6 +46,9 @@ config. Set/verify:
 | `AGENT_RUNTIME_EVENT_SINK` | `log,nats` | Enables NATS publishing alongside logs. |
 | `AGENT_RUNTIME_NATS_URL` | same NATS URL as Helpin's `NATS_URL` | See "NATS sharing" below. |
 | `EXA_API_KEY` | Exa provider key | Required when Helpin agents enable `web_search_exa`. Restart both the runtime API and durable worker after adding or rotating it. |
+| `AGENT_RUNTIME_BROWSER_ENABLED` | `true` | Enables the shared Kernel browser infrastructure; apps still opt in independently in `AGENT_RUNTIME_APP_CONFIG`. |
+| `KERNEL_API_KEY` | Kernel API key | Shared runtime infrastructure credential; never exposed to host apps or models. |
+| `AGENT_RUNTIME_BROWSER_SESSION_TIMEOUT_SECONDS` | `300` | Idle safety timeout; paused turns retain the session, while terminal runs close it explicitly. |
 
 ### `AGENT_RUNTIME_APP_CONFIG` value (canonical)
 
@@ -80,6 +83,15 @@ Doppler (ops-pending action — cannot be done from either repo):
         "base_url": "https://stage.helpin.ai/api/internal/agent-runtime/workspace",
         "token": "<HELPIN_INTERNAL_API_SECRET>",
         "root_dir": "/var/lib/agent-runtime-workspaces"
+      },
+      "browser": {
+        "enabled": true,
+        "allowed_domains": ["*"],
+        "artifact_provider": {
+          "transport": "http",
+          "upload_endpoint": "https://stage.helpin.ai/api/internal/agent-runtime/artifacts",
+          "token": "<HELPIN_INTERNAL_API_SECRET>"
+        }
       }
     }
   ]
@@ -94,7 +106,11 @@ Doppler (ops-pending action — cannot be done from either repo):
 - The runtime appends fixed path suffixes; the base URLs above resolve to
   exactly the routes Helpin registers in `internal/router/router.go`:
   `/target-context`, `/commands/execute`, `/workspace/repository-spec`,
-  `/skills/by-id`, `/skills/active-by-key`, `/skill-packages/objects/*`.
+  `/skills/by-id`, `/skills/active-by-key`, `/skill-packages/objects/*`, and
+  `/artifacts`.
+- `allowed_domains: ["*"]` permits authenticated navigation to any HTTP(S)
+  host for Helpin runs. Other apps retain their own browser enablement, domain
+  policy, profile namespace, and artifact provider.
 
 ## Step 2 — Deploy runtime config and verify auth
 
@@ -207,7 +223,8 @@ up the environment. The flag must be true before launching agent runs.
 - [ ] Runtime Doppler (project behind `doppler-agent-runtime-api`, staging
       config): set `AGENT_RUNTIME_SERVICE_TOKEN`, merged
       `AGENT_RUNTIME_APP_CONFIG` (usermaven preserved), `AGENT_RUNTIME_EVENT_SINK`,
-      `AGENT_RUNTIME_NATS_URL`, and `EXA_API_KEY` when Exa search is enabled.
+      `AGENT_RUNTIME_NATS_URL`, browser infrastructure keys, and `EXA_API_KEY`
+      when Exa search is enabled.
 - [ ] ArgoCD sync of the `agent-runtime` staging app + API and worker pod restart.
 - [ ] Helpin Doppler (`helpin-secrets` source, staging config): set the four
       `AGENT_RUNTIME_*` keys and confirm `INTERNAL_API_SECRET`.

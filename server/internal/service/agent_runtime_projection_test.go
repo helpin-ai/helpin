@@ -605,6 +605,70 @@ func TestAgentRuntimeProjectionMirrorsAssistantMessageCompletedIdempotently(t *t
 	}
 }
 
+func TestAgentRuntimeProjectionMirrorsAssistantMessageCompletedWithEventTimestamp(t *testing.T) {
+	now := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
+	sentAt := now.Add(-45 * time.Minute)
+	run := &model.AgentRun{
+		ID:                "helpin-run-message-time",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		Status:            model.AgentRunStatusRunning,
+		PauseReason:       model.AgentRunPauseReasonNone,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_message_time"),
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byID:       map[string]*model.AgentRun{run.ID: run},
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_message_time": run},
+	}
+	messageRepo := &fakeAgentRuntimeProjectionMessageRepo{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:        runRepo,
+		runMessageRepo: messageRepo,
+		now:            func() time.Time { return now },
+	}
+
+	// Replayed events carry their original sent_at; the mirrored message must
+	// keep it so the chat transcript stays in conversation order.
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID:     "run_runtime_message_time",
+		HostRunID: run.ID,
+		Type:      "assistant_message_completed",
+		SentAt:    sentAt,
+		Data: map[string]any{
+			"message_id": "runtime-message-time-1",
+			"content":    "Replayed reply.",
+		},
+	}); err != nil {
+		t.Fatalf("ApplyEvent returned error: %v", err)
+	}
+	if len(messageRepo.messages) != 1 {
+		t.Fatalf("expected one mirrored message, got %d", len(messageRepo.messages))
+	}
+	if got := messageRepo.messages[0].CreatedAt; !got.Equal(sentAt) {
+		t.Fatalf("mirrored message CreatedAt = %v, want event sent_at %v", got, sentAt)
+	}
+
+	// Without a sent_at the projection clock still stamps a non-zero time.
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID:     "run_runtime_message_time",
+		HostRunID: run.ID,
+		Type:      "assistant_message_completed",
+		Data: map[string]any{
+			"message_id": "runtime-message-time-2",
+			"content":    "Live reply.",
+		},
+	}); err != nil {
+		t.Fatalf("ApplyEvent without sent_at returned error: %v", err)
+	}
+	if len(messageRepo.messages) != 2 {
+		t.Fatalf("expected two mirrored messages, got %d", len(messageRepo.messages))
+	}
+	if got := messageRepo.messages[1].CreatedAt; !got.Equal(now) {
+		t.Fatalf("fallback CreatedAt = %v, want projection now %v", got, now)
+	}
+}
+
 func TestAgentRuntimeProjectionPersistsCodingSessionStreamSnapshot(t *testing.T) {
 	run := &model.AgentRun{
 		ID:                "helpin-run-stream",
@@ -1911,6 +1975,21 @@ func TestRuntimeMessageTurnSegmentsPreservesCodexPreambleBeforeTool(t *testing.T
 	}
 	if segments[1].SegmentID != "tool-1" || segments[1].ToolCall == nil || segments[1].ToolCall.ToolCallID != "tool-1" {
 		t.Fatalf("expected stable tool identity, got %#v", segments[1])
+	}
+}
+
+func TestRuntimeMessageTurnSegmentsPreservesFailedToolStatus(t *testing.T) {
+	invocations := []byte(`[{"tool_call_id":"tool-failed","tool_name":"read_skill","input":{"key":"missing"},"output_summary":"not found","status":"failed","error":"skill is not available"}]`)
+	payload := runtimeMessageTurnSegments("msg-failed", "", invocations)
+	var segments []model.CodingSessionLiveTurnSegment
+	if err := json.Unmarshal(payload, &segments); err != nil {
+		t.Fatalf("unmarshal segments: %v", err)
+	}
+	if len(segments) != 1 || segments[0].ToolCall == nil || segments[0].ToolCall.Status != "failed" {
+		t.Fatalf("expected persisted failure, got %#v", segments)
+	}
+	if segments[0].ToolCall.Result == nil || segments[0].ToolCall.Result.Error == nil || *segments[0].ToolCall.Result.Error != "skill is not available" {
+		t.Fatalf("expected persisted tool error, got %#v", segments[0].ToolCall.Result)
 	}
 }
 

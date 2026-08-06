@@ -64,10 +64,32 @@ const applyPatchSegment: TranscriptSegment = {
 };
 
 describe('TranscriptSegmentView — tool', () => {
-  it('renders a successful tool with no further info as a flat, non-expandable one-liner', () => {
+  it('renders a successful tool with args as a collapsed row that expands to show them', () => {
     render(toolSegment, true);
 
     expect(container.textContent).toContain('Run go build ./...');
+    const toggle = container.querySelector('button');
+    expect(toggle).not.toBeNull();
+    expect(container.querySelector('div.hidden')).not.toBeNull();
+
+    act(() => toggle?.click());
+    expect(container.querySelector('div.hidden')).toBeNull();
+    expect(container.textContent).toContain('go build ./...');
+  });
+
+  it('renders a successful tool with no args or result as a flat, non-expandable one-liner', () => {
+    const bareToolSegment: TranscriptSegment = {
+      kind: 'tool',
+      id: 'tool-bare',
+      toolCall: {
+        tool_call_id: 'tc-bare',
+        tool_name: 'run_command',
+        args_text: '',
+        status: 'completed',
+      },
+    };
+    render(bareToolSegment, true);
+
     expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('div.hidden')).toBeNull();
   });
@@ -103,7 +125,7 @@ describe('TranscriptSegmentView — tool', () => {
 });
 
 describe('TranscriptSegmentView — reasoning', () => {
-  it('shows a collapsed one-line "Thinking" row that reveals the reasoning text', () => {
+  it('shows a collapsed one-line "Thought" row that reveals the reasoning text', () => {
     const segment: TranscriptSegment = {
       kind: 'reasoning',
       id: 'reasoning-1',
@@ -111,10 +133,55 @@ describe('TranscriptSegmentView — reasoning', () => {
     };
     render(segment, true);
 
-    expect(container.textContent).toContain('Thinking');
+    expect(container.textContent).toContain('Thought');
     const toggle = container.querySelector('button');
     expect(toggle).not.toBeNull();
     act(() => toggle?.click());
     expect(container.textContent).toContain('Considering the edge cases.');
+  });
+
+  it('labels completed reasoning with its duration when timestamps are present', () => {
+    const segment: TranscriptSegment = {
+      kind: 'reasoning',
+      id: 'reasoning-2',
+      reasoning: {
+        message_id: 'r2',
+        content: 'Weighing options.',
+        status: 'completed',
+        started_at: '2026-08-05T07:00:00Z',
+        completed_at: '2026-08-05T07:00:12Z',
+      },
+    };
+    render(segment, true);
+
+    expect(container.textContent).toContain('Thought for 12s');
+  });
+});
+
+describe('TranscriptSegmentView — user', () => {
+  it('uses the Dock fallback label and renders the message bubble', () => {
+    const segment: TranscriptSegment = {
+      kind: 'user',
+      id: 'user-1',
+      message: {
+        event_id: 'user-1',
+        role: 'user',
+        message_type: 'message',
+        content: 'Inspect the repository and create a document.',
+        timestamp: '2026-08-05T07:00:00Z',
+        sequence_no: 1,
+      },
+    };
+    act(() => {
+      root.render(
+        <TranscriptSegmentView
+          segment={segment}
+          options={{ expandable: false, fallbackUserLabel: 'You' }}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('You');
+    expect(container.textContent).toContain('Inspect the repository and create a document.');
   });
 });

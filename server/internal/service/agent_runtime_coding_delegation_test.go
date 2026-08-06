@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -133,6 +135,71 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 	}
 }
 
+func TestRuntimeAgentFromHelpinAgentRemovesRepositoryWorkspaceModeFromAskAgent(t *testing.T) {
+	ask := &model.Agent{
+		ID:              "agent-ask",
+		IsSystem:        true,
+		Name:            "Ask Agent",
+		PresetKey:       model.AgentPresetAskAgent,
+		RuntimeKind:     "native_sdk",
+		ExecutionConfig: []byte(`{"reasoning_effort":"high","workspace":{"mode":"repository"}}`),
+	}
+	out := runtimeAgentFromHelpinAgent(ask, "helpin")
+	values := map[string]interface{}{}
+	if err := json.Unmarshal(out.ExecutionConfig, &values); err != nil {
+		t.Fatalf("decode runtime execution config: %v", err)
+	}
+	if values["reasoning_effort"] != "high" {
+		t.Fatalf("expected unrelated execution settings preserved, got %#v", values)
+	}
+	workspaceValue, _ := values["workspace"].(map[string]interface{})
+	if workspaceValue != nil {
+		if _, exists := workspaceValue["mode"]; exists {
+			t.Fatalf("Ask Agent must not request repository workspace preparation, got %#v", values)
+		}
+	}
+}
+
+func TestRuntimeAgentFromHelpinAgentRegistersManagedAskSkillsAndTools(t *testing.T) {
+	ask := &model.Agent{
+		ID:               "agent-ask",
+		IsSystem:         true,
+		Name:             "Ask Agent",
+		PresetKey:        model.AgentPresetAskAgent,
+		PresetVersionKey: "ask_agent_default",
+		RuntimeKind:      "native_sdk",
+		AllowedTools: mustJSONStringSlice([]string{
+			agentcontract.ToolListAvailableSkills,
+			agentcontract.ToolSearchAvailableSkills,
+			agentcontract.ToolReadSkill,
+			"list_tasks",
+		}),
+	}
+
+	out := runtimeAgentFromHelpinAgent(ask, "helpin")
+	if len(out.Skills) != 29 {
+		t.Fatalf("expected curated Ask skills to be registered, got %d: %#v", len(out.Skills), out.Skills)
+	}
+	for _, skill := range out.Skills {
+		config := map[string]interface{}{}
+		if err := json.Unmarshal(skill.Config, &config); err != nil {
+			t.Fatalf("decode runtime skill config for %q: %v", skill.Key, err)
+		}
+		if config[runtimeSkillRoleConfigKey] != "available" {
+			t.Fatalf("Ask skill %q must be optional, got config %#v", skill.Key, config)
+		}
+	}
+	for _, toolName := range []string{
+		agentcontract.ToolListAvailableSkills,
+		agentcontract.ToolSearchAvailableSkills,
+		agentcontract.ToolReadSkill,
+	} {
+		if !slices.Contains(out.AllowedTools, toolName) {
+			t.Fatalf("managed Ask Agent must retain %q, got %#v", toolName, out.AllowedTools)
+		}
+	}
+}
+
 func TestRuntimeAgentFromHelpinAgentAlwaysIncludesSupportDeliveryContract(t *testing.T) {
 	staleWorkspacePrompt := "You are Echo. Answer customer questions from evidence."
 	out := runtimeAgentFromHelpinAgent(&model.Agent{
@@ -154,8 +221,7 @@ func TestRuntimeAgentFromHelpinAgentAlwaysIncludesSupportDeliveryContract(t *tes
 	}
 }
 
-func TestRuntimeAgentFromHelpinAgentIncludesImplicitScribeSkills(t *testing.T) {
-	qualifiedPrompt := "Publish with `mcp__helpin__publish_task_plan_doc`, then call `mcp__helpin__request_approval`."
+func TestRuntimeAgentFromHelpinAgentSendsScribeAsOnePromptWithoutCoreSkillRefs(t *testing.T) {
 	scribe := &model.Agent{
 		ID:               "agent-scribe",
 		IsSystem:         true,
@@ -163,32 +229,127 @@ func TestRuntimeAgentFromHelpinAgentIncludesImplicitScribeSkills(t *testing.T) {
 		PresetKey:        model.AgentPresetTaskPlanner,
 		PresetVersionKey: "task_planner_default",
 		RuntimeKind:      "codex",
-		SystemPrompt:     &qualifiedPrompt,
+		SystemPrompt:     defaultSystemPromptForPreset(model.AgentPresetTaskPlanner),
 		// Reproduce a persisted partial selection from before the approval
 		// skill became a required Scribe core skill.
 		Skills: model.AgentSkillRefs{{Key: "engineering_planner_operating_rules"}},
 	}
 
 	out := runtimeAgentFromHelpinAgent(scribe, "helpin")
-	got := make(map[string]bool, len(out.Skills))
-	for _, ref := range out.Skills {
-		got[ref.Key] = true
+	if len(out.Skills) != 0 {
+		t.Fatalf("Scribe core behavior must be one system prompt, got runtime skill refs %#v", out.Skills)
 	}
-	// Native-authored skills use runtime-backed logical tools under Codex. The
-	// delegated agent must receive the complete Scribe workflow, not only the
-	// approval protocol that guards its completion.
-	for _, key := range []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"} {
-		if !got[key] {
-			t.Fatalf("expected delegated Scribe skill %q, got %#v", key, out.Skills)
+	for _, expected := range []string{"You are Scribe", "publish_task_plan_doc", "request_approval", "prepared repository"} {
+		if !strings.Contains(out.SystemPrompt, expected) {
+			t.Fatalf("Scribe system prompt missing %q:\n%s", expected, out.SystemPrompt)
 		}
 	}
-	for _, toolName := range []string{"`publish_task_plan_doc`", "`request_approval`"} {
-		if !strings.Contains(out.SystemPrompt, toolName) {
-			t.Fatalf("expected delegated Scribe prompt to contain logical tool name %s, got %q", toolName, out.SystemPrompt)
+	for _, forbidden := range []string{agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill} {
+		if slices.Contains(out.AllowedTools, forbidden) {
+			t.Fatalf("Scribe has no optional skills and must not advertise %q: %#v", forbidden, out.AllowedTools)
 		}
+	}
+	var executionConfig map[string]any
+	if err := json.Unmarshal(out.ExecutionConfig, &executionConfig); err != nil || executionConfig["runtime_policy"] == nil {
+		t.Fatalf("Scribe interaction policy must be separate from its prompt: %#v, err=%v", executionConfig, err)
 	}
 	if strings.Contains(out.SystemPrompt, "mcp__helpin__") {
 		t.Fatalf("expected delegated Codex prompt to remove Helpin MCP qualification, got %q", out.SystemPrompt)
+	}
+}
+
+func TestRuntimeAgentFromHelpinAgentSendsAtlasAsOnePromptWithOnlyToolSkillReloadable(t *testing.T) {
+	atlas := &model.Agent{
+		ID:               "agent-atlas",
+		IsSystem:         true,
+		Name:             "Atlas",
+		PresetKey:        model.AgentPresetEpicPlanner,
+		PresetVersionKey: "epic_planner_default",
+		RuntimeKind:      "codex",
+		SystemPrompt:     defaultSystemPromptForPreset(model.AgentPresetEpicPlanner),
+		AllowedTools: mustJSONStringSlice([]string{
+			agentcontract.ToolPublishTaskPlan,
+			agentcontract.ToolListAvailableSkills,
+			agentcontract.ToolSearchAvailableSkills,
+			agentcontract.ToolReadSkill,
+		}),
+		// Reproduce a persisted partial selection. Exact preset versions use the
+		// version-owned prompt and must not leak this behavior module as a skill.
+		Skills: model.AgentSkillRefs{{Key: "engineering_planner_operating_rules"}},
+	}
+
+	out := runtimeAgentFromHelpinAgent(atlas, "helpin")
+	for _, expected := range []string{"You are Atlas", "publish_prd_draft", "publish_task_plan", "request_approval"} {
+		if !strings.Contains(out.SystemPrompt, expected) {
+			t.Fatalf("Atlas system prompt missing %q:\n%s", expected, out.SystemPrompt)
+		}
+	}
+	if len(out.Skills) != 1 {
+		t.Fatalf("Atlas must expose only the late-stage tool playbook, got %#v", out.Skills)
+	}
+	got := make(map[string]bool, len(out.Skills))
+	for _, ref := range out.Skills {
+		got[ref.Key] = true
+		var config map[string]any
+		if err := json.Unmarshal(ref.Config, &config); err != nil || config[runtimeSkillRoleConfigKey] != "available" {
+			t.Fatalf("Atlas tool playbook %q must be on-demand only: %#v", ref.Key, ref.Config)
+		}
+	}
+	if !got["task_plan_publishing"] {
+		t.Fatalf("Atlas task-plan publishing contract is not reloadable: %#v", out.Skills)
+	}
+	for _, behaviorKey := range []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"} {
+		if got[behaviorKey] {
+			t.Fatalf("Atlas behavior %q leaked into available skills: %#v", behaviorKey, out.Skills)
+		}
+	}
+	for _, required := range []string{agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill} {
+		if !slices.Contains(out.AllowedTools, required) {
+			t.Fatalf("Atlas must advertise %q for late-phase refresh: %#v", required, out.AllowedTools)
+		}
+	}
+	var executionConfig map[string]any
+	if err := json.Unmarshal(out.ExecutionConfig, &executionConfig); err != nil || executionConfig["runtime_policy"] == nil {
+		t.Fatalf("Atlas interaction policy must be separate from its prompt: %#v, err=%v", executionConfig, err)
+	}
+}
+
+func TestRuntimeAgentFromHelpinAgentLeavesCustomSkillContractUnchanged(t *testing.T) {
+	custom := &model.Agent{
+		ID:          "agent-custom",
+		Name:        "Custom",
+		RuntimeKind: "native_sdk",
+		Skills: model.AgentSkillRefs{{
+			Key:    "workspace_skill",
+			Config: model.JSONBlob(`{"audience":"engineering"}`),
+		}},
+	}
+
+	out := runtimeAgentFromHelpinAgent(custom, "helpin")
+	if len(out.Skills) != 1 || string(out.Skills[0].Config) != `{"audience":"engineering"}` {
+		t.Fatalf("custom agents must retain the legacy skill contract, got %#v", out.Skills)
+	}
+}
+
+func TestRuntimeAgentFromHelpinAgentSendsOnlyOptionalSkillsForDiscovery(t *testing.T) {
+	quill := &model.Agent{
+		ID:               "agent-quill",
+		IsSystem:         true,
+		Name:             "Quill",
+		PresetKey:        model.AgentPresetDocumentationAgent,
+		PresetVersionKey: "documentation_agent_default",
+		RuntimeKind:      "native_sdk",
+		SystemPrompt:     defaultSystemPromptForPreset(model.AgentPresetDocumentationAgent),
+	}
+	out := runtimeAgentFromHelpinAgent(quill, "helpin")
+	if len(out.Skills) == 0 {
+		t.Fatal("expected Quill optional skills to remain discoverable")
+	}
+	for _, ref := range out.Skills {
+		var config map[string]any
+		if err := json.Unmarshal(ref.Config, &config); err != nil || config[runtimeSkillRoleConfigKey] != "available" {
+			t.Fatalf("optional skill %q was not classified for discovery: %#v", ref.Key, ref.Config)
+		}
 	}
 }
 
@@ -527,6 +688,35 @@ func TestStartTargetRunDelegatesCodeBuilderTaskRunToAgentRuntime(t *testing.T) {
 	}
 	if reloaded.WorkflowID != nil || reloaded.WorkflowRunID != nil {
 		t.Fatalf("expected no local Temporal workflow, got %v/%v", reloaded.WorkflowID, reloaded.WorkflowRunID)
+	}
+}
+
+func TestStartTargetRunUsesRegisteredRuntimeAgentToolContract(t *testing.T) {
+	db := setupCodingDelegationTestDB(t)
+	now := time.Now().UTC()
+	seedCodingDelegationAgent(t, db, model.AgentPresetCodeBuilder, model.InvocationModeAutonomous, now)
+	seedCodingDelegationTaskAndDelivery(t, db, now)
+	mustExec(t, db, `UPDATE agents SET allowed_tools = ? WHERE id = ?`,
+		mustJSONStringSlice([]string{"read_file", "run_command"}), "agent-1")
+
+	runtimeClient := &fakeAgentRuntimeSignalClient{
+		upsertResult: &AgentRuntimeAgent{AllowedTools: []string{"read_file"}},
+	}
+	svc := newCodingDelegationService(t, db, runtimeClient)
+
+	actorID := "user-1"
+	_, err := svc.startTargetRunWithOptions(context.Background(), "ws-1", "task", "task-1", model.StartAgentRunRequest{
+		AgentID:      "agent-1",
+		AllowedTools: []string{"read_file", "run_command"},
+	}, &actorID, nil, nil, nil, startTargetRunOptions{})
+	if err != nil {
+		t.Fatalf("startTargetRunWithOptions returned error: %v", err)
+	}
+	if len(runtimeClient.startRunCalls) != 1 {
+		t.Fatalf("expected one runtime start call, got %d", len(runtimeClient.startRunCalls))
+	}
+	if got := runtimeClient.startRunCalls[0].AllowedTools; !slices.Equal(got, []string{"read_file"}) {
+		t.Fatalf("run tools must use the registered runtime agent contract, got %#v", got)
 	}
 }
 

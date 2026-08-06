@@ -10,6 +10,7 @@ import {
   PlusSignIcon,
   RecordIcon,
   Search01Icon,
+  StopIcon,
   Tick01Icon,
   Cancel01Icon,
   UserIcon,
@@ -93,6 +94,9 @@ export interface DockInputProps {
   disabled?: boolean;
   autoFocus?: boolean;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
+  /** When set, the send button becomes a stop button for the active run. */
+  onStop?: () => void;
+  stopping?: boolean;
 }
 
 export function DockInput({
@@ -111,6 +115,8 @@ export function DockInput({
   disabled,
   autoFocus,
   textareaRef,
+  onStop,
+  stopping,
 }: DockInputProps) {
   const localRef = useRef<HTMLTextAreaElement | null>(null);
   const ref = textareaRef ?? localRef;
@@ -191,24 +197,46 @@ export function DockInput({
           disabled={disabled}
           className="block w-full flex-1 resize-none bg-transparent py-1 text-sm leading-5 placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"
         />
-        <button
-          type="button"
-          onClick={onSubmit}
-          disabled={sendDisabled}
-          title="Send"
-          className={cn(
-            'mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
-            sendDisabled
-              ? 'cursor-not-allowed bg-muted text-muted-foreground'
-              : 'bg-orange-500 text-white hover:bg-orange-500/90',
-          )}
-        >
-          {busy ? (
-            <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <ArrowUp01Icon className="h-3.5 w-3.5" />
-          )}
-        </button>
+        {onStop ? (
+          <button
+            type="button"
+            onClick={onStop}
+            disabled={stopping}
+            title="Stop agent"
+            aria-label="Stop agent"
+            className={cn(
+              'mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
+              stopping
+                ? 'cursor-not-allowed bg-muted text-muted-foreground'
+                : 'bg-foreground text-background hover:bg-foreground/85',
+            )}
+          >
+            {stopping ? (
+              <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <StopIcon className="h-3.5 w-3.5" />
+            )}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={sendDisabled}
+            title="Send"
+            className={cn(
+              'mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
+              sendDisabled
+                ? 'cursor-not-allowed bg-muted text-muted-foreground'
+                : 'bg-orange-500 text-white hover:bg-orange-500/90',
+            )}
+          >
+            {busy ? (
+              <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ArrowUp01Icon className="h-3.5 w-3.5" />
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

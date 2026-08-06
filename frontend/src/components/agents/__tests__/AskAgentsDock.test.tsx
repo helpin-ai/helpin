@@ -181,6 +181,99 @@ describe('AskAgentsDock', () => {
     );
   });
 
+  it('shows a stop button for an active run and cancels through the chat service', async () => {
+    mocks.getChat.mockResolvedValue({
+      data: chatDetail({
+        chat: { ...CHAT, active_run_id: 'run-1' },
+        run: { id: 'run-1', status: 'running', pause_reason: 'none' } as never,
+      }),
+      error: null,
+    });
+    mocks.getChatRun.mockResolvedValue({
+      data: { id: 'run-1', status: 'running', stream_state_snapshot: null },
+      error: null,
+    });
+    mocks.cancelChatRun.mockResolvedValue({ data: null, error: null });
+
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const stopButton = document.body.querySelector('[data-helpin-dock] [aria-label="Stop agent"]');
+    expect(stopButton).not.toBeNull();
+    await act(async () => {
+      (stopButton as HTMLButtonElement).click();
+    });
+    await flush();
+
+    expect(mocks.cancelChatRun).toHaveBeenCalledWith('ws-1', 'chat-1');
+  });
+
+  it('renders an inline error with retry when sending fails', async () => {
+    mocks.sendMessage.mockResolvedValue({ data: null, error: 'network unreachable' });
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const textarea = dockTextarea();
+    await act(async () => {
+      setTextareaValue(textarea, 'list open tasks');
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await flush();
+
+    await waitForText('network unreachable');
+    const retry = Array.from(document.body.querySelectorAll('[data-helpin-dock] button'))
+      .find((button) => button.textContent === 'Retry');
+    expect(retry).not.toBeUndefined();
+
+    mocks.sendMessage.mockResolvedValue({
+      data: chatDetail({
+        chat: { ...CHAT, active_run_id: 'run-1' },
+        run: { id: 'run-1', status: 'running', pause_reason: 'none' } as never,
+      }),
+      error: null,
+    });
+    await act(async () => {
+      (retry as HTMLButtonElement).click();
+    });
+    await flush();
+
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(2);
+    expect(mocks.sendMessage).toHaveBeenLastCalledWith(
+      'ws-1',
+      'chat-1',
+      expect.objectContaining({ content: 'list open tasks' }),
+    );
+  });
+
+  it('reconciles immediately when a message continues on the same run', async () => {
+    const run = { id: 'run-1', status: 'running', pause_reason: 'none' } as never;
+    const detail = chatDetail({
+      chat: { ...CHAT, active_run_id: 'run-1' },
+      run,
+    });
+    mocks.getChat.mockResolvedValue({ data: detail, error: null });
+    mocks.getChatRun.mockResolvedValue({
+      data: { id: 'run-1', status: 'running', stream_state_snapshot: null },
+      error: null,
+    });
+    mocks.sendMessage.mockResolvedValue({ data: detail, error: null });
+
+    await renderDock();
+    await waitForText('Sprint questions');
+    const snapshotCallsBeforeSend = mocks.getChatRun.mock.calls.length;
+    const eventCallsBeforeSend = mocks.listChatRunEvents.mock.calls.length;
+
+    const textarea = dockTextarea();
+    await act(async () => {
+      setTextareaValue(textarea, 'continue this run');
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await flush();
+
+    expect(mocks.getChatRun.mock.calls.length).toBeGreaterThan(snapshotCallsBeforeSend);
+    expect(mocks.listChatRunEvents.mock.calls.length).toBeGreaterThan(eventCallsBeforeSend);
+  });
+
   it('opens with a prefilled draft from the helpin:ask-agents event', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();

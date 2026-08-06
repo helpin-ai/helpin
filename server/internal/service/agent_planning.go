@@ -627,6 +627,9 @@ func (s *AgentService) ensureEpicSpecDocument(ctx context.Context, workspaceID s
 			return nil, err
 		}
 		if doc != nil {
+			if err := s.ensureEpicSpecLink(ctx, workspaceID, doc.ID, epic.ID, actorID); err != nil {
+				return nil, err
+			}
 			return doc, nil
 		}
 	}

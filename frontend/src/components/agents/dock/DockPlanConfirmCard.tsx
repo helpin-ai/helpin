@@ -49,6 +49,31 @@ export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCard
           ))}
         </ol>
       )}
+      {(action.operations?.length ?? 0) > 0 && (
+        <div className="mb-2 space-y-1.5">
+          {action.operations!.map((operation, index) => (
+            <div key={`${operation.tool_name}-${index}`} className="rounded-md border border-border/60 bg-background/80 px-2.5 py-1.5">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="font-mono font-medium text-foreground">{operation.tool_name}</span>
+                <span className="text-muted-foreground">up to {operation.max_calls ?? 1} call{(operation.max_calls ?? 1) === 1 ? '' : 's'}</span>
+              </div>
+              {operation.constraints && Object.keys(operation.constraints).length > 0 && (
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {Object.entries(operation.constraints).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {(action.expected_outcomes?.length ?? 0) > 0 && (
+        <ul className="mb-2 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+          {action.expected_outcomes!.map((outcome, index) => <li key={index}>{outcome}</li>)}
+        </ul>
+      )}
+      {action.proposal_id && (action.operations?.length ?? 0) === 0 && steps.length === 0 && (
+        <p className="mb-2 text-xs text-muted-foreground">Scoped execution proposal <span className="font-mono">{action.proposal_id.slice(0, 8)}</span></p>
+      )}
       {action.description && (
         <p className="mb-2 text-muted-foreground">
           New agent{action.name ? ` “${action.name}”` : ''}: {action.description}

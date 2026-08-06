@@ -215,6 +215,7 @@ func main() {
 			&model.AgentRunMessage{},
 			&model.AgentRunArtifact{},
 			&model.AgentRunInteraction{},
+			&model.DockActionProposal{},
 			// Public MCP tables are intentionally excluded. Their constraints,
 			// partial indexes, and retention fields are owned exclusively by
 			// versioned migration 202607100003_public_mcp.sql. Letting GORM
@@ -600,6 +601,7 @@ func main() {
 	agentRunRepo.SetTriggerExecutionRepository(agentTriggerExecutionRepo)
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	agentRunInteractionRepo := repository.NewAgentRunInteractionRepository(db)
+	dockActionProposalRepo := repository.NewDockActionProposalRepository(db)
 	commandBarPlanRepo := repository.NewCommandBarPlanRepository(db)
 	commandBarPlanDismissalRepo := repository.NewCommandBarPlanDismissalRepository(db)
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
@@ -1187,9 +1189,11 @@ func main() {
 	commandService.SetSupportOperationalServices(supportInboxService, supportTagService)
 	commandService.SetCRMReadServices(crmContactService, crmSignalService)
 	commandService.SetCRMOperationalServices(crmCompanyService, crmAssociationService)
+	commandService.SetWorkspaceSearchServices(searchService, crmSearchService, supportInboxService)
 	commandService.SetDocsSearchRepository(docsSearchRepo)
 	commandService.SetDocsChangeProposalService(docsChangeProposalService)
 	commandService.SetAgentRunDependencies(agentRunRepo, agentRunArtifactRepo)
+	commandService.SetDockActionProposalRepository(dockActionProposalRepo)
 	commandService.SetReleaseFactsProvider(service.NewReleaseFactsService(
 		gitIntegrationRepo,
 		gitRepositoryRepo,
@@ -1221,6 +1225,7 @@ func main() {
 	).SetPMSprintService(pmSprintService).
 		SetPMObjectiveService(pmObjectiveService).
 		SetAgentRepository(agentRepo).
+		SetBrowserAssetStore(agentRunArtifactRepo, s3Client).
 		SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
 	var agentRuntimeProjectionService *service.AgentRuntimeProjectionService
 	var runFinalizers *service.AgentRunFinalizerService

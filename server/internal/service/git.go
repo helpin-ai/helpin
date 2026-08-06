@@ -2078,6 +2078,23 @@ func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, work
 		if repo == nil {
 			return nil, fmt.Errorf("repository is not available")
 		}
+		// Epic-derived task targets use the epic integration branch as their
+		// clone base. Task creation intentionally records that delivery lane
+		// before any implementation run starts, so the branch may still exist
+		// only as product metadata when an automatic planning run (for example,
+		// Scribe) asks Agent Runtime to prepare its checkout. Materialize the
+		// branch at this boundary before returning a repository spec; otherwise
+		// Agent Runtime correctly attempts to clone a remote branch that does
+		// not exist yet.
+		if model.NormalizeTaskDeliveryTargetSource(deliveryTarget.TargetSource) == model.TaskDeliveryTargetSourceEpic {
+			epicID := strings.TrimSpace(derefString(deliveryTarget.SourceEpicID))
+			if epicID == "" {
+				return nil, fmt.Errorf("epic-derived task delivery target has no source epic")
+			}
+			if _, err := s.EnsureEpicBranch(ctx, workspaceID, epicID, "", runID); err != nil {
+				return nil, fmt.Errorf("ensure epic base branch for task checkout: %w", err)
+			}
+		}
 		baseBranch, workingBranch, err = s.ResolveTaskRunBranchValues(ctx, workspaceID, target.ID)
 		if err != nil {
 			return nil, err

@@ -6,6 +6,7 @@ metadata:
   required_tools:
     - publish_task_plan
     - update_plan
+    - create_task_batch
   supported_runtimes:
     - native_sdk
 ---
@@ -139,11 +140,11 @@ Every task must include concrete acceptance criteria using GIVEN/WHEN/THEN forma
 
 Order tasks by dependency graph: enablers first, then independent tasks, then dependent tasks.
 
-When you have enough information, call `publish_task_plan` with the full current plan. Each `publish_task_plan` call replaces the previous task plan preview.
+When you have enough information, load the `task_plan_publishing` skill with `read_skill` before publishing or requesting approval, then follow that skill's current tool contract. Each `publish_task_plan` call replaces the previous task plan preview.
 
 ## After Task Approval
 
 - Treat the approved `publish_task_plan` artifact as the source of truth.
-- The platform will apply that approved artifact and create the tasks.
-- After approval, do not replay the same plan through task-creation or document-mutation tools.
+- Call `create_task_batch` with `{"proposed_tasks":[...]}`, using the full approved `proposed_tasks` array and preserving every approved field and `dependency_refs`.
+- Finish only after `create_task_batch` succeeds. Do not claim the task plan was applied based on approval alone.
 - Do not write the PRD again.

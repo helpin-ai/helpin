@@ -122,6 +122,13 @@ func (s *MCPService) executeAuthorizedMCPTool(
 	arguments json.RawMessage,
 ) (*MCPToolResult, error) {
 	if tool.CommandName != "" {
+		if tool.Name == "search_workspace" {
+			var err error
+			arguments, err = s.prepareMCPWorkspaceSearchArguments(principal, actor, arguments)
+			if err != nil {
+				return nil, err
+			}
+		}
 		var taskContextInput *model.GetTaskContextRequest
 		if tool.Name == "get_task_context" {
 			var input model.GetTaskContextRequest
@@ -129,6 +136,23 @@ func (s *MCPService) executeAuthorizedMCPTool(
 				return nil, err
 			}
 			for _, taskID := range input.TaskIDs {
+				task, err := s.accessibleMCPTask(ctx, principal, taskID)
+				if err != nil {
+					return nil, err
+				}
+				if task == nil {
+					return nil, ErrMCPNotFound
+				}
+			}
+			for _, taskKey := range input.TaskKeys {
+				taskID, err := s.commands.resolveCommandTaskKey(ctx, model.InternalCommandContext{
+					WorkspaceID: principal.WorkspaceID,
+					ActorID:     principal.UserID,
+					ActorRole:   actor.Role,
+				}, taskKey)
+				if err != nil {
+					return nil, err
+				}
 				task, err := s.accessibleMCPTask(ctx, principal, taskID)
 				if err != nil {
 					return nil, err
@@ -190,6 +214,37 @@ func (s *MCPService) executeAuthorizedMCPTool(
 		return &MCPToolResult{Summary: tool.Title + " completed.", Data: data}, nil
 	}
 	return s.executeSpecialMCPTool(ctx, principal, actor, tool.Name, arguments)
+}
+
+func (s *MCPService) prepareMCPWorkspaceSearchArguments(principal *model.MCPPrincipal, actor *authorization.Actor, arguments json.RawMessage) (json.RawMessage, error) {
+	var input workspaceSearchInput
+	if err := decodeMCPArguments(arguments, &input); err != nil {
+		return nil, err
+	}
+	allowed := map[string]bool{
+		"task": true, "epic": true, "sprint": true, "objective": true,
+		"document": true, "workspace_member": true,
+	}
+	if containsMCPValue(principal.Toolsets, MCPToolsetCRM) && containsMCPValue(principal.Scopes, MCPScopeCRMRead) && s.authz.Can(actor, authorization.PermCRMRead) {
+		allowed["crm_contact"], allowed["crm_company"], allowed["crm_deal"] = true, true, true
+	}
+	if containsMCPValue(principal.Toolsets, MCPToolsetSupport) && containsMCPValue(principal.Scopes, MCPScopeSupportRead) && s.authz.Can(actor, authorization.PermSupportRead) {
+		allowed["support_conversation"] = true
+	}
+	if len(input.EntityTypes) == 0 {
+		input.EntityTypes = orderedAllowedWorkspaceSearchTypes(allowed)
+	} else {
+		for _, entityType := range input.EntityTypes {
+			if !allowed[strings.ToLower(strings.TrimSpace(entityType))] {
+				return nil, ErrMCPForbidden
+			}
+		}
+	}
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return nil, fmt.Errorf("encode workspace search arguments: %w", err)
+	}
+	return encoded, nil
 }
 
 func (s *MCPService) executeSpecialMCPTool(
@@ -715,16 +770,22 @@ func (s *MCPService) executeSpecialMCPTool(
 			Status string `json:"status"`
 			Search string `json:"search"`
 			Limit  int    `json:"limit"`
+			Offset int    `json:"offset"`
 		}
 		if err := decodeMCPArguments(arguments, &input); err != nil {
 			return nil, err
 		}
 		input.Limit = normalizeMCPLimit(input.Limit)
-		items, total, err := s.support.ListConversations(ctx, principal.WorkspaceID, input.Status, "", model.PMPagination{Page: 1, PerPage: input.Limit}, input.Search)
+		if input.Offset < 0 {
+			return nil, fmt.Errorf("offset must be zero or greater")
+		}
+		items, total, err := s.support.ListConversations(ctx, principal.WorkspaceID, input.Status, "", model.PMPagination{Page: 1, PerPage: input.Limit, Offset: &input.Offset}, input.Search)
 		if err != nil {
 			return nil, err
 		}
-		return &MCPToolResult{Summary: fmt.Sprintf("Returned %d of %d support conversations.", len(items), total), Data: map[string]any{"items": items, "total": total}}, nil
+		paging := commandPaginationOutput(total, input.Offset, input.Limit, len(items))
+		paging["items"] = items
+		return &MCPToolResult{Summary: fmt.Sprintf("Returned %d of %d support conversations.", len(items), total), Data: paging}, nil
 
 	case "get_support_conversation":
 		var input struct {
@@ -742,6 +803,8 @@ func (s *MCPService) executeSpecialMCPTool(
 	case "list_conversation_messages":
 		var input struct {
 			ConversationID string `json:"conversation_id"`
+			Limit          int    `json:"limit"`
+			Offset         int    `json:"offset"`
 		}
 		if err := decodeMCPArguments(arguments, &input); err != nil {
 			return nil, err
@@ -750,7 +813,16 @@ func (s *MCPService) executeSpecialMCPTool(
 		if err != nil {
 			return nil, err
 		}
-		return &MCPToolResult{Summary: fmt.Sprintf("Returned %d support messages.", len(messages)), Data: messages}, nil
+		input.Limit = normalizeMCPLimit(input.Limit)
+		if input.Offset < 0 {
+			return nil, fmt.Errorf("offset must be zero or greater")
+		}
+		start := min(input.Offset, len(messages))
+		end := min(start+input.Limit, len(messages))
+		items := messages[start:end]
+		paging := commandPaginationOutput(int64(len(messages)), input.Offset, input.Limit, len(items))
+		paging["items"] = items
+		return &MCPToolResult{Summary: fmt.Sprintf("Returned %d of %d support messages.", len(items), len(messages)), Data: paging}, nil
 
 	case "list_agents":
 		agents, err := s.agents.ListAgentsForActor(ctx, principal.WorkspaceID, actor)

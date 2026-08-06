@@ -47,6 +47,10 @@ export interface DockPlanConfirmPayload {
 
 export interface DockPlanConfirmAction {
   steps?: DockPlanConfirmStep[]
+  // Direct Dock execution proposal form.
+  proposal_id?: string
+  operations?: DockExecutionOperation[]
+  expected_outcomes?: string[]
   // create_agent form
   name?: string
   description?: string
@@ -54,6 +58,12 @@ export interface DockPlanConfirmAction {
   run_id?: string
   allowed_tools?: string[]
   allowed_targets?: string[]
+}
+
+export interface DockExecutionOperation {
+  tool_name: string
+  max_calls?: number
+  constraints?: Record<string, unknown>
 }
 
 export interface DockPlanConfirmStep {
@@ -144,6 +154,7 @@ export function parseDockChildResult(content: string): DockChildRunResult | null
 export function parseDockPlanConfirm(payload: unknown): DockPlanConfirmPayload | null {
   if (!payload || typeof payload !== 'object') return null
   const candidate = payload as DockPlanConfirmPayload
-  if (candidate.kind !== 'dock_plan_confirm' && candidate.phase !== 'dock_plan_confirm') return null
+  const phase = candidate.kind ?? candidate.phase
+  if (phase !== 'dock_plan_confirm' && phase !== 'dock_execution_confirm') return null
   return { ...candidate, action: candidate.action ?? candidate.raw_input?.action }
 }

@@ -390,6 +390,7 @@ describe('useRealtimeSync task ordering events', () => {
       agent_id: 'agent-2',
       status: 'running',
       pause_reason: '',
+      update_kind: 'progress',
     }))
 
     const state = usePMBoardStore.getState()
@@ -411,6 +412,120 @@ describe('useRealtimeSync task ordering events', () => {
 
     window.removeEventListener('agent_run-updated', updated)
     window.removeEventListener('agent_run-created', created)
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('patches a running transition once without invalidating broad queries on repeated progress', async () => {
+    usePMBoardStore.setState({
+      columns: [{
+        state: { id: 'state-todo', state_type: 'backlog' },
+        tasks: [{
+          id: 'task-1',
+          latest_run_id: 'run-1',
+          latest_run_agent_id: 'agent-1',
+          latest_run_status: 'queued',
+          latest_run_pause_reason: null,
+          latest_run_at: '2026-08-04T08:00:00Z',
+        }],
+        task_count: 1,
+        point_total: 0,
+        has_more: false,
+      }] as never,
+      memberColumns: [],
+    })
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(queryKeys.automation.runs('ws-1', 1, 100), {
+      data: [{ id: 'run-1', agent_id: 'agent-1', status: 'queued', pause_reason: 'none' }],
+      total: 1,
+    })
+    const invalidateQueries = vi.spyOn(client, 'invalidateQueries')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+
+    const emitProgress = (sentAt: string) => captured.onEvent?.({
+      action: 'updated',
+      entity: 'agent_run',
+      entity_id: 'run-1',
+      workspace_id: 'ws-1',
+      parent_type: 'task',
+      parent_id: 'task-1',
+      sent_at: sentAt,
+      data: { agent_id: 'agent-1', status: 'running', pause_reason: 'none' },
+    })
+
+    await act(async () => {
+      emitProgress('2026-08-04T09:00:00Z')
+      await Promise.resolve()
+    })
+    const firstTask = usePMBoardStore.getState().columns[0]?.tasks[0]
+    expect(firstTask?.latest_run_at).toBe('2026-08-04T09:00:00Z')
+    expect(client.getQueryData(queryKeys.automation.runs('ws-1', 1, 100))).toEqual(expect.objectContaining({
+      data: [expect.objectContaining({ status: 'running' })],
+    }))
+
+    await act(async () => {
+      emitProgress('2026-08-04T09:01:00Z')
+      vi.advanceTimersByTime(500)
+      await Promise.resolve()
+    })
+    const secondTask = usePMBoardStore.getState().columns[0]?.tasks[0]
+    expect(secondTask).toBe(firstTask)
+    expect(secondTask?.latest_run_at).toBe('2026-08-04T09:00:00Z')
+    expect(invalidateQueries).not.toHaveBeenCalled()
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('coalesces lifecycle invalidations and refreshes the standalone attention count', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateQueries = vi.spyOn(client, 'invalidateQueries')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+
+    const pausedEvent = {
+      action: 'updated',
+      entity: 'agent_run',
+      entity_id: 'run-1',
+      workspace_id: 'ws-1',
+      parent_type: 'task',
+      parent_id: 'task-1',
+      data: { agent_id: 'agent-1', status: 'paused', pause_reason: 'human_input' },
+    }
+    await act(async () => {
+      captured.onEvent?.(pausedEvent)
+      captured.onEvent?.(pausedEvent)
+      vi.advanceTimersByTime(450)
+      await Promise.resolve()
+    })
+
+    expect(invalidateQueries.mock.calls.filter(([options]) =>
+      JSON.stringify(options.queryKey) === JSON.stringify(queryKeys.automation.runsRoot('ws-1')),
+    )).toHaveLength(1)
+    expect(invalidateQueries.mock.calls.filter(([options]) =>
+      JSON.stringify(options.queryKey) === JSON.stringify(queryKeys.automation.runAttentionCount('ws-1')),
+    )).toHaveLength(1)
+
     act(() => root.unmount())
     container.remove()
   })

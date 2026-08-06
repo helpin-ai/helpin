@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,6 +18,55 @@ import (
 type AgentRuntimeHostHandler struct {
 	host       *service.AgentRuntimeHostService
 	projection *service.AgentRuntimeProjectionService
+}
+
+func (h *AgentRuntimeHostHandler) UploadBrowserAsset(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.host == nil {
+		writeError(w, http.StatusServiceUnavailable, "agent runtime host unavailable")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024+1024*1024)
+	if err := r.ParseMultipartForm(10 * 1024 * 1024); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid screenshot upload")
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "file is required")
+		return
+	}
+	defer file.Close()
+	payload, err := io.ReadAll(io.LimitReader(file, 10*1024*1024+1))
+	if err != nil || len(payload) == 0 || len(payload) > 10*1024*1024 {
+		writeError(w, http.StatusBadRequest, "screenshot must be between 1 byte and 10 MB")
+		return
+	}
+	contentType := http.DetectContentType(payload)
+	asset, err := h.host.UploadBrowserAsset(r.Context(), service.AgentRuntimeBrowserAssetUpload{
+		AppID: r.FormValue("app_id"), RuntimeRunID: r.FormValue("run_id"), ArtifactType: r.FormValue("artifact_type"), Metadata: json.RawMessage(r.FormValue("metadata")),
+		FileName: header.Filename, ContentType: contentType, Size: int64(len(payload)), Body: bytes.NewReader(payload),
+	})
+	if err != nil {
+		writeAgentRuntimeHostError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, asset)
+}
+
+func (h *AgentRuntimeHostHandler) BrowserArtifactContentURL(w http.ResponseWriter, r *http.Request) {
+	if h == nil || h.host == nil {
+		writeError(w, http.StatusServiceUnavailable, "agent runtime host unavailable")
+		return
+	}
+	content, err := h.host.BrowserArtifactContentURL(r.Context(), r.URL.Query().Get("workspace_id"), chi.URLParam(r, "id"))
+	if err != nil {
+		writeAgentRuntimeHostError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, content)
 }
 
 func NewAgentRuntimeHostHandler(host *service.AgentRuntimeHostService) *AgentRuntimeHostHandler {

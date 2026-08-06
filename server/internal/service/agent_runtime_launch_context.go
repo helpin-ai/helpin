@@ -70,12 +70,46 @@ func withRepositoryWorkspaceExecutionConfig(config json.RawMessage) json.RawMess
 	return payload
 }
 
+// withoutRepositoryWorkspaceExecutionMode removes the startup workspace
+// preparation selector while preserving unrelated execution settings. The
+// Dock uses checkout_repository dynamically and keeps its primary run target
+// as the product workspace, so asking Agent Runtime to prepare that target as
+// a repository workspace is invalid.
+func withoutRepositoryWorkspaceExecutionMode(config []byte) []byte {
+	values := map[string]interface{}{}
+	if len(config) > 0 && strings.TrimSpace(string(config)) != "null" {
+		if err := json.Unmarshal(config, &values); err != nil {
+			return config
+		}
+	}
+	workspaceValue, _ := values["workspace"].(map[string]interface{})
+	if workspaceValue == nil {
+		return normalizeExecutionConfigJSON(config)
+	}
+	delete(workspaceValue, "mode")
+	if len(workspaceValue) == 0 {
+		delete(values, "workspace")
+	} else {
+		values["workspace"] = workspaceValue
+	}
+	payload, err := json.Marshal(values)
+	if err != nil {
+		return config
+	}
+	return payload
+}
+
 // withAgentRuntimeExecutionConfig adds host-owned execution selectors that
 // Agent Runtime needs but Helpin does not persist in AgentExecutionConfig.
 // Existing user/model routing fields are preserved.
 func withAgentRuntimeExecutionConfig(config json.RawMessage, agent *model.Agent) json.RawMessage {
 	if agentRequiresRepositoryWorkspace(agent) {
 		config = withRepositoryWorkspaceExecutionConfig(config)
+	} else if agent != nil && strings.TrimSpace(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
+		// Managed Ask runs are workspace-targeted orchestrators. Repository
+		// inspection is attached later by checkout_repository and must not turn
+		// the product workspace target into a repository-spec request.
+		config = withoutRepositoryWorkspaceExecutionMode(config)
 	}
 	values := map[string]interface{}{}
 	if len(config) > 0 && strings.TrimSpace(string(config)) != "null" {
@@ -98,6 +132,9 @@ func withAgentRuntimeExecutionConfig(config json.RawMessage, agent *model.Agent)
 		if presetKey := strings.TrimSpace(agent.EffectivePresetKey()); presetKey != "" {
 			values["preset_key"] = presetKey
 		}
+		if policy, ok := runtimePolicyForAgent(agent); ok {
+			values["runtime_policy"] = policy
+		}
 		if strings.TrimSpace(agent.RuntimeKind) == "native_sdk" {
 			values["max_tool_steps"] = agentcontract.DefaultWorkflowConfigForAgent(agent).MaxIterations
 		}
@@ -107,6 +144,26 @@ func withAgentRuntimeExecutionConfig(config json.RawMessage, agent *model.Agent)
 		return config
 	}
 	return payload
+}
+
+func runtimePolicyForAgent(agent *model.Agent) (agentcontract.SkillPolicy, bool) {
+	if agent == nil {
+		return agentcontract.SkillPolicy{}, false
+	}
+	preset, ok := agentPresetVersionDefinition(agent.EffectivePresetKey(), agent.EffectivePresetVersionKey())
+	if !ok {
+		return agentcontract.SkillPolicy{}, false
+	}
+	policies := make([]agentcontract.SkillPolicy, 0, len(preset.InstructionSkills))
+	for _, key := range preset.InstructionSkills {
+		definition, exists := agentcontract.GetBuiltInSkill(key)
+		if !exists {
+			continue
+		}
+		policies = append(policies, definition.Policy)
+	}
+	policy := agentcontract.AggregateSkillPolicies(policies...)
+	return policy, policy.AllowImplicitInvocation != nil || len(policy.CompletionRequiresInteractionKinds) > 0 || len(policy.InteractionContracts) > 0
 }
 
 func agentRepositoryAccessMode(agent *model.Agent) string {
@@ -202,12 +259,29 @@ func (s *AgentService) buildDelegatedTaskLaunchContext(ctx context.Context, task
 		}
 	}
 	sections = append(sections, s.delegatedTaskEpicSections(ctx, task)...)
+	if repository := delegatedTaskRepositorySection(delivery); repository != "" {
+		sections = append(sections, repository)
+	}
 	if branches := delegatedTaskBranchSection(delivery, req.BaseBranch, req.WorkingBranch); branches != "" {
 		sections = append(sections, branches)
 	}
 	sections = append(sections, s.delegatedTaskPlanDocumentSections(ctx, task)...)
 
 	return strings.TrimSpace(strings.Join(sections, "\n\n"))
+}
+
+func delegatedTaskRepositorySection(delivery *model.TaskDeliveryTarget) string {
+	if delivery == nil {
+		return ""
+	}
+	repository := strings.TrimSpace(derefString(delivery.RepoFullName))
+	if repository == "" {
+		repository = strings.TrimSpace(derefString(delivery.RepositoryID))
+	}
+	if repository == "" {
+		return ""
+	}
+	return fmt.Sprintf("Prepared repository: `%s`. Agent Runtime checks out this repository before execution. Inspect the current workspace directly; do not ask which repository to use or call repository checkout tools unless filesystem tools report that no checkout exists.", repository)
 }
 
 // buildDelegatedEpicLaunchContext carries the durable planning facts that the

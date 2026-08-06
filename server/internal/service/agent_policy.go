@@ -160,7 +160,11 @@ func normalizeAgentRecord(agent *model.Agent) {
 		agent.ApprovalMode = "never"
 	}
 	if agent.IsSystem {
-		agent.ApprovalMode = "never"
+		if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetAskAgent && hasPreset {
+			agent.ApprovalMode = preset.ApprovalMode
+		} else {
+			agent.ApprovalMode = "never"
+		}
 	}
 	if strings.TrimSpace(agent.Role) == "" {
 		if hasPreset && preset.DefaultRole != "" {
@@ -325,18 +329,18 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 			agentcontract.ToolRequestApproval,
 			agentcontract.ToolPublishPRDDraft,
 			agentcontract.ToolPublishTaskPlan,
+			"ensure_epic_spec_doc",
+			"write_document_content",
+			"approve_epic_spec",
+			"create_task_batch",
 		}
 		policy.disallowedExtraTools = []string{
 			agentcontract.ToolPreviewMarkdown,
 			agentcontract.ToolPreviewJSON,
 			agentcontract.ToolPublishPreview,
 			agentcontract.ToolPublishTaskPlanDoc,
-			"ensure_epic_spec_doc",
 			"ensure_task_plan_doc",
-			"write_document_content",
 			"link_document_to_object",
-			"approve_epic_spec",
-			"create_task_batch",
 			"assign_task_agent",
 			"set_task_dependencies",
 			"write_file",

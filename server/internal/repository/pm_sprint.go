@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -43,12 +44,20 @@ func (r *PMSprintRepository) ListPage(ctx context.Context, workspaceID string, f
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, page, perPage, fmt.Errorf("count sprints: %w", err)
 	}
-	if total == 0 || int64(page) > (total-1)/int64(perPage)+1 {
+	offset := 0
+	if pagination.Offset != nil {
+		offset = *pagination.Offset
+	} else {
+		if page-1 > math.MaxInt/perPage {
+			return []model.SprintWithStats{}, int(total), page, perPage, nil
+		}
+		offset = (page - 1) * perPage
+	}
+	if total == 0 || int64(offset) >= total {
 		return []model.SprintWithStats{}, int(total), page, perPage, nil
 	}
 
 	var sprints []model.PMSprint
-	offset := (page - 1) * perPage
 	if err := query.Order("COALESCE(start_date, created_at) DESC").Offset(offset).Limit(perPage).Find(&sprints).Error; err != nil {
 		return nil, 0, page, perPage, fmt.Errorf("list sprint page: %w", err)
 	}
@@ -467,12 +476,20 @@ func (r *PMSprintRepository) ListEnrichedTasksPage(ctx context.Context, sprintID
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, page, perPage, fmt.Errorf("count sprint stories: %w", err)
 	}
-	if total == 0 || int64(page) > (total-1)/int64(perPage)+1 {
+	offset := 0
+	if pagination.Offset != nil {
+		offset = *pagination.Offset
+	} else {
+		if page-1 > math.MaxInt/perPage {
+			return []model.BoardTask{}, int(total), page, perPage, nil
+		}
+		offset = (page - 1) * perPage
+	}
+	if total == 0 || int64(offset) >= total {
 		return []model.BoardTask{}, int(total), page, perPage, nil
 	}
 
 	var tasks []model.PMTask
-	offset := (page - 1) * perPage
 	if err := query.Order("position ASC, created_at DESC").Offset(offset).Limit(perPage).Find(&tasks).Error; err != nil {
 		return nil, 0, page, perPage, fmt.Errorf("list sprint story page: %w", err)
 	}

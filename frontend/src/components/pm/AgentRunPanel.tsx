@@ -26,6 +26,7 @@ import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import type { Agent, AgentPresetKey, AgentRun, GitRepository, TaskDeliveryTarget } from '@/lib/pmTypes';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from './agentRunConstants';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 
 interface Props {
   taskId: string;
@@ -344,6 +345,7 @@ export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentI
   );
   useEffect(() => {
     const handler = (event: Event) => {
+      if (!isAgentRunLifecycleEvent(event)) return;
       const detail = (event as CustomEvent).detail as { parent_type?: string; parent_id?: string } | undefined;
       if (detail?.parent_type === 'task' && detail.parent_id === taskId) {
         void fetchRuns();

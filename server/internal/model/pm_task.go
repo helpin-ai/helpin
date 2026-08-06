@@ -150,6 +150,9 @@ type PMTaskFilters struct {
 type PMPagination struct {
 	Page    int
 	PerPage int
+	// Offset is the canonical agent-tool pagination position. Nil preserves
+	// legacy page/per_page behavior for existing API callers.
+	Offset *int
 }
 
 // CreateTaskRequest is the payload for creating a task.

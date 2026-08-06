@@ -18,6 +18,7 @@ const supportChildHandoffInstruction = "Support research handoff: Report only di
 
 type dockRunArtifactReference struct {
 	ArtifactID   string `json:"artifact_id"`
+	ResourceURI  string `json:"resource_uri"`
 	ArtifactType string `json:"artifact_type"`
 	Format       string `json:"format"`
 	StorageMode  string `json:"storage_mode"`
@@ -106,6 +107,7 @@ func dockRunArtifactReferences(artifacts []model.AgentRunArtifact) []dockRunArti
 		}
 		references = append(references, dockRunArtifactReference{
 			ArtifactID:   artifact.ID,
+			ResourceURI:  artifactReference(artifact.ID),
 			ArtifactType: typeName,
 			Format:       strings.TrimSpace(artifact.Format),
 			StorageMode:  strings.TrimSpace(artifact.StorageMode),

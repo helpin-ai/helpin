@@ -27,20 +27,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, StateTypeIcon, PriorityIcon } from '@/lib/pmConstants';
 import type { Task, StateType } from '@/lib/pmTypes';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { isAgentRunEventDetail, type AgentRunEventDetail } from '@/lib/agentRunRealtime';
 
 type Mode = 'assigned' | 'requested';
 type DeadlineStatus = 'overdue' | 'approaching' | 'normal';
-type AgentRunEventDetail = {
-  entity?: string;
-  entity_id?: string;
-  parent_type?: string;
-  parent_id?: string;
-  sent_at?: string;
-  agent_id?: string;
-  status?: string;
-  pause_reason?: Task['latest_run_pause_reason'];
-};
-
 const DEADLINE_PILL_STYLE: Record<DeadlineStatus, string> = {
   overdue: 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400',
   approaching: 'border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-400',
@@ -83,14 +73,8 @@ function getAgentRunLabel(task: Task) {
 
 function normalizePauseReason(value: AgentRunEventDetail['pause_reason']) {
   if (!value || value === 'none') return null;
-  return value;
+  return value as Task['latest_run_pause_reason'];
 }
-
-function isAgentRunEventDetail(value: unknown): value is AgentRunEventDetail {
-  return typeof value === 'object' && value !== null;
-}
-
-
 
 export function MyWorkPage() {
   useTitle('My Work');
@@ -144,11 +128,21 @@ export function MyWorkPage() {
               ? normalizePauseReason(detail.pause_reason)
               : task.latest_run_pause_reason;
 
+        const nextRunId = detail.entity_id || task.latest_run_id;
+        const nextAgentId = detail.agent_id || task.latest_run_agent_id;
+        const nextStatus = detail.status || task.latest_run_status;
+        if (
+          nextRunId === task.latest_run_id
+          && nextAgentId === task.latest_run_agent_id
+          && nextStatus === task.latest_run_status
+          && nextPauseReason === task.latest_run_pause_reason
+        ) return task;
+
         return {
           ...task,
-          latest_run_id: detail.entity_id || task.latest_run_id,
-          latest_run_agent_id: detail.agent_id || task.latest_run_agent_id,
-          latest_run_status: detail.status || task.latest_run_status,
+          latest_run_id: nextRunId,
+          latest_run_agent_id: nextAgentId,
+          latest_run_status: nextStatus,
           latest_run_pause_reason: nextPauseReason,
           latest_run_at: detail.sent_at || new Date().toISOString(),
         };

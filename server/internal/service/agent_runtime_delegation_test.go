@@ -57,9 +57,62 @@ func TestRuntimeStartRunRequestPropagatesPlannerSelectors(t *testing.T) {
 	}
 	run := &model.AgentRun{ID: "run-1", WorkspaceID: "workspace-1", AgentID: "agent-1", TargetType: "epic", TargetID: "epic-1", Input: json.RawMessage(payload)}
 	agent := &model.Agent{ID: "agent-1", PresetKey: model.AgentPresetEpicPlanner}
-	req := runtimeStartRunRequest(run, agent)
+	req, err := runtimeStartRunRequest(run, agent, runtimeAgentFromHelpinAgent(agent, "helpin"))
+	if err != nil {
+		t.Fatalf("runtimeStartRunRequest returned error: %v", err)
+	}
 	if req.Metadata["preset_key"] != model.AgentPresetEpicPlanner || req.Metadata["planning_stage"] != model.PlanningStagePlanTasks {
 		t.Fatalf("missing planner selectors: %#v", req.Metadata)
+	}
+}
+
+func TestRuntimeStartRunRequestUsesProjectedAgentToolSubset(t *testing.T) {
+	run := &model.AgentRun{
+		ID:         "run-1",
+		AgentID:    "agent-1",
+		TargetType: "workspace",
+		TargetID:   "workspace-1",
+		Input:      json.RawMessage(`{"allowed_tools":["list_available_skills","list_tasks"]}`),
+	}
+	agent := &model.Agent{ID: "agent-1"}
+	runtimeAgent := AgentRuntimeAgent{AllowedTools: []string{"list_tasks"}}
+
+	req, err := runtimeStartRunRequest(run, agent, runtimeAgent)
+	if err != nil {
+		t.Fatalf("runtimeStartRunRequest returned error: %v", err)
+	}
+	if len(req.AllowedTools) != 1 || req.AllowedTools[0] != "list_tasks" {
+		t.Fatalf("run tools must be narrowed to the projected agent contract, got %#v", req.AllowedTools)
+	}
+}
+
+func TestRuntimeStartRunRequestRejectsDisjointProjectedAgentTools(t *testing.T) {
+	run := &model.AgentRun{
+		ID:         "run-1",
+		AgentID:    "agent-1",
+		TargetType: "workspace",
+		TargetID:   "workspace-1",
+		Input:      json.RawMessage(`{"allowed_tools":["list_available_skills"]}`),
+	}
+
+	_, err := runtimeStartRunRequest(
+		run,
+		&model.Agent{ID: "agent-1"},
+		AgentRuntimeAgent{AllowedTools: []string{"list_tasks"}},
+	)
+	if err == nil || !strings.Contains(err.Error(), "do not overlap") {
+		t.Fatalf("expected a repair-oriented disjoint tool error, got %v", err)
+	}
+}
+
+func TestInitialAgentRunContextReturnsExactEnrichedInstructions(t *testing.T) {
+	payload, err := buildAgentRunInputPayload("task", "task-1", nil, nil, nil, strPtr("Operator notes:\nKeep scope narrow."), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &model.AgentRun{Input: json.RawMessage(payload)}
+	if got := initialAgentRunContext(run); got != "Operator notes:\nKeep scope narrow." {
+		t.Fatalf("initial context = %q", got)
 	}
 }
 

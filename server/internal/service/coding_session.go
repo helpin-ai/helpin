@@ -709,15 +709,25 @@ func approvalRequestResumeContent(requestPayload, responsePayload json.RawMessag
 		}
 		switch strings.ToLower(strings.TrimSpace(request.Phase)) {
 		case "prd":
-			if response.Message != "" {
-				return response.Message
+			lines := []string{
+				"Approved PRD.",
+				"Call ensure_epic_spec_doc with {} to create or load and attach the canonical epic PRD document. Then call write_document_content with the returned document_id and the full approved markdown. Then call approve_epic_spec with {} to record the approved spec version.",
+				"Do not claim the PRD was persisted or attached, and do not continue to task planning, until all three tool calls succeed.",
 			}
-			return "Approved PRD. Continue to task planning."
+			if response.Message != "" {
+				lines = append(lines, "Human note: "+response.Message)
+			}
+			return strings.Join(lines, "\n")
 		case "tasks":
-			if response.Message != "" {
-				return response.Message
+			lines := []string{
+				"Approved task plan.",
+				"Call create_task_batch with the full approved proposed_tasks array using {\"proposed_tasks\":[...]}. Preserve every approved task field and dependency_refs.",
+				"Do not claim the task plan was applied and do not finish until create_task_batch succeeds.",
 			}
-			return "Approved task plan. Apply it and create tasks."
+			if response.Message != "" {
+				lines = append(lines, "Human note: "+response.Message)
+			}
+			return strings.Join(lines, "\n")
 		case "task_doc":
 			lines := []string{
 				"Approved task planning document.",

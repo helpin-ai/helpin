@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { File01Icon, Loading01Icon, LockKeyIcon } from '@/lib/icons';
+import { Copy01Icon, File01Icon, Loading01Icon, LockKeyIcon, Tick01Icon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -16,16 +16,21 @@ import { PublishedToolPreviewCard } from '@/components/pm/CodingSession/Publishe
 import { describeToolCall, type ToolCallPresentation } from '@/components/pm/CodingSession/toolCallPresentation';
 import { isToolName } from '@/lib/toolNames';
 import { formatCodingSessionRelative } from '@/components/pm/CodingSession/codingSessionUtils';
+import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { TranscriptRow } from './TranscriptRow';
 import { formatToolDuration, toolStatusChrome } from './toolRowChrome';
 import type { TranscriptSegment } from './segments';
 
 export interface RenderSegmentOptions {
-  /** Slider passes true (depth on click); dock passes false (flat, lossy). */
+  /** When true, rows with bodies (args/result/diff/reasoning) expand on click. */
   expandable: boolean;
+  /** Whether long assistant text should use the Show more / Show less control. */
+  collapseLongAssistantContent?: boolean;
   /** Resolves the actor for user / review-decision segments (slider only). */
   resolveActor?: (message: CodingSessionTranscriptMessage) => CodingSessionActor | null;
+  /** Surface-specific label when actor details are intentionally unavailable. */
+  fallbackUserLabel?: string;
 }
 
 /** Renders a single normalized transcript segment as a flat one-line entry. */
@@ -38,7 +43,13 @@ export function TranscriptSegmentView({
 }) {
   switch (segment.kind) {
     case 'assistant':
-      return <AssistantSegment content={segment.content} streaming={segment.streaming} expandable={options.expandable} />;
+      return (
+        <AssistantSegment
+          content={segment.content}
+          streaming={segment.streaming}
+          expandable={options.collapseLongAssistantContent ?? options.expandable}
+        />
+      );
     case 'tool':
       return <ToolSegment toolCall={segment.toolCall} expandable={options.expandable} />;
     case 'reasoning':
@@ -48,7 +59,13 @@ export function TranscriptSegmentView({
     case 'context':
       return <ContextSegment message={segment.message} expandable={options.expandable} />;
     case 'user':
-      return <UserSegment message={segment.message} actor={options.resolveActor?.(segment.message) ?? null} />;
+      return (
+        <UserSegment
+          message={segment.message}
+          actor={options.resolveActor?.(segment.message) ?? null}
+          fallbackLabel={options.fallbackUserLabel}
+        />
+      );
     case 'review_decision':
       return <ReviewDecisionSegment message={segment.message} actor={options.resolveActor?.(segment.message) ?? null} />;
   }
@@ -65,10 +82,36 @@ function AssistantSegment({
   streaming?: boolean;
   expandable: boolean;
 }) {
-  if (!expandable) {
-    return <MarkdownContent content={content} streaming={streaming} className="text-[13px] leading-6 text-foreground/90" />;
-  }
-  return <CollapsibleMarkdown content={content} streaming={streaming} />;
+  return (
+    <div className="group/assistant relative">
+      {expandable ? (
+        <CollapsibleMarkdown content={content} streaming={streaming} />
+      ) : (
+        <MarkdownContent content={content} streaming={streaming} className="text-[13px] leading-6 text-foreground/90" />
+      )}
+      {!streaming && <CopyMessageButton content={content} />}
+    </div>
+  );
+}
+
+function CopyMessageButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label="Copy message"
+      title="Copy message"
+      onClick={() => {
+        void navigator.clipboard.writeText(content).then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className="absolute -right-1 -top-1 rounded-md border border-border/70 bg-background/95 p-1 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/assistant:opacity-100"
+    >
+      {copied ? <Tick01Icon className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy01Icon className="h-3 w-3" />}
+    </button>
+  );
 }
 
 // ─── Tool call ───────────────────────────────────────────────────────────────
@@ -80,11 +123,12 @@ function ToolSegment({ toolCall, expandable }: { toolCall: CodingSessionLiveTool
     && !isApplyPatch
     && toolCall.args_text.trim().length > 0
     && isPublishedPreviewToolName(toolCall.tool_name);
-  // A tool row earns a chevron only when it has a body worth opening:
-  // failures (args + error output), apply_patch diffs, or a published-preview
-  // card. Plain successful tools stay as flat one-liners. apply_patch opens by
-  // default; failures stay collapsed.
-  const hasBody = failed || isApplyPatch || hasPublishedPreview;
+  // Any tool with a body (args, result, diff, preview card, or error output)
+  // earns a chevron; rows stay collapsed one-liners by default so detail is a
+  // click away. apply_patch opens by default; everything else stays collapsed.
+  const hasArgsOrResult = toolCall.args_text.trim().length > 0
+    || !!(toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim());
+  const hasBody = failed || isApplyPatch || hasPublishedPreview || hasArgsOrResult;
   const rowExpandable = expandable && hasBody;
   const { icon, className } = toolStatusChrome(toolCall.status);
   const presentation = describeToolCall(toolCall);
@@ -148,9 +192,9 @@ function ToolBody({
             ? <ApplyPatchDiff argsText={argsText || resultText} />
             : argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
           {resultText && !isApplyPatch ? (
-            failed
-              ? <CollapsibleCodeBlock text={resultText} failed />
-              : <p className="text-[11px] text-muted-foreground">{resultText.length > 200 ? `${resultText.slice(0, 200)}…` : resultText}</p>
+            failed || resultText.length > 300
+              ? <CollapsibleCodeBlock text={resultText} failed={failed} />
+              : <p className="text-[11px] text-muted-foreground">{resultText}</p>
           ) : null}
           {isApplyPatch && failed && resultText ? (
             <CollapsibleCodeBlock text={resultText} failed />
@@ -172,20 +216,43 @@ function ReasoningSegment({
 }) {
   const streaming = reasoning.status === 'streaming';
   const hasContent = reasoning.content.trim().length > 0;
+  // Open while streaming, auto-collapse on completion — unless the user has
+  // toggled the row themselves, in which case their choice wins.
+  const [open, setOpen] = useState(streaming);
+  const [userToggled, setUserToggled] = useState(false);
+  const [prevStreaming, setPrevStreaming] = useState(streaming);
+  if (prevStreaming !== streaming) {
+    setPrevStreaming(streaming);
+    if (!userToggled) setOpen(streaming);
+  }
+
+  const thoughtDurationMs =
+    reasoning.started_at && reasoning.completed_at
+      ? Date.parse(reasoning.completed_at) - Date.parse(reasoning.started_at)
+      : 0;
+  const label = streaming
+    ? 'Thinking…'
+    : thoughtDurationMs > 0
+      ? `Thought for ${formatCodingSessionElapsed(thoughtDurationMs)}`
+      : 'Thought';
 
   return (
     <TranscriptRow
       icon={<LockKeyIcon className="h-3 w-3" />}
       iconClassName="text-muted-foreground"
-      label={streaming ? 'Thinking…' : 'Thinking'}
+      label={label}
       tone="muted"
       meta={streaming ? 'Live' : undefined}
       expandable={expandable}
-      defaultOpen={streaming}
+      open={expandable ? open : undefined}
+      onOpenChange={(next) => {
+        setUserToggled(true);
+        setOpen(next);
+      }}
     >
       <div className="text-xs text-muted-foreground">
         {hasContent ? (
-          <div className="whitespace-pre-wrap leading-6">{reasoning.content}</div>
+          <div className={cn('whitespace-pre-wrap leading-6', streaming && 'italic')}>{reasoning.content}</div>
         ) : (
           <div className="rounded-lg border border-border bg-card px-3 py-2">
             Reasoning is being tracked separately from the assistant reply.
@@ -225,7 +292,11 @@ function ContextSegment({
   message: CodingSessionTranscriptMessage;
   expandable: boolean;
 }) {
-  const label = message.message_type === 'system_prompt' ? 'System prompt' : 'Developer prompt';
+  const label = message.message_type === 'system_prompt'
+    ? 'System prompt'
+    : message.message_type === 'prompt'
+      ? 'Prompt'
+      : 'Developer prompt';
   return (
     <TranscriptRow
       icon={<File01Icon className="h-3 w-3" />}
@@ -249,11 +320,13 @@ function ContextSegment({
 function UserSegment({
   message,
   actor,
+  fallbackLabel = 'User',
 }: {
   message: CodingSessionTranscriptMessage;
   actor: CodingSessionActor | null;
+  fallbackLabel?: string;
 }) {
-  const actorLabel = actor?.full_name || actor?.email || 'User';
+  const actorLabel = actor?.full_name || actor?.email || fallbackLabel;
   return (
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">

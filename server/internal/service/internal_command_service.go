@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -25,6 +26,16 @@ type InternalCommandDefinition struct {
 	RequiredPermissionsAll []authorization.Permission
 	Tool                   *commandtools.RuntimeToolMetadata
 	Execute                func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error)
+}
+
+func (d InternalCommandDefinition) RiskLevel() string {
+	if !d.Mutating {
+		return commandtools.RiskLevelRead
+	}
+	if d.Tool != nil && strings.TrimSpace(d.Tool.RiskLevel) != "" {
+		return strings.TrimSpace(d.Tool.RiskLevel)
+	}
+	return commandtools.RiskLevelSensitive
 }
 
 type InternalCommandService struct {
@@ -55,6 +66,8 @@ type InternalCommandService struct {
 	objectiveService      *PMObjectiveService
 	workflowService       *PMWorkflowService
 	checklistService      *PMChecklistItemService
+	workspaceSearch       workspaceSearchProvider
+	crmSearch             *CRMSearchService
 
 	supportMessageRepo        *repository.SupportMessageRepository
 	supportConversationRepo   *repository.SupportConversationRepository
@@ -69,6 +82,7 @@ type InternalCommandService struct {
 	agentRunRepo              *repository.AgentRunRepository
 	agentRunArtifactRepo      *repository.AgentRunArtifactRepository
 	agentRunInteractionRepo   *repository.AgentRunInteractionRepository
+	dockActionProposalRepo    *repository.DockActionProposalRepository
 	commandBarService         *CommandBarService
 	supportKnowledgeSearcher  supportKnowledgeSearcher
 	supportRunEvidenceRepo    *repository.SupportRunEvidenceRepository
@@ -131,6 +145,17 @@ func (s *InternalCommandService) SetPMOperationalServices(
 	s.objectiveService = objectiveService
 	s.workflowService = workflowService
 	s.checklistService = checklistService
+}
+
+// SetWorkspaceSearchServices wires the shared, permission-aware discovery
+// services used by the command-backed search_workspace tool.
+func (s *InternalCommandService) SetWorkspaceSearchServices(workspace *SearchService, crm *CRMSearchService, support *SupportInboxService) {
+	if s == nil {
+		return
+	}
+	s.workspaceSearch = workspace
+	s.crmSearch = crm
+	s.supportInboxService = support
 }
 
 // SetGitService sets the git service for delivery commands.
@@ -284,6 +309,7 @@ func NewInternalCommandService(
 		definitions:        make(map[string]InternalCommandDefinition),
 	}
 	svc.registerDefaults()
+	svc.registerDockExecutionCommands()
 	return svc
 }
 
@@ -335,6 +361,11 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 	if err := s.authorizeCommandActor(meta, def); err != nil {
 		return nil, err
 	}
+	if def.Mutating {
+		if err := s.authorizeDockMutation(ctx, meta, def, input); err != nil {
+			return nil, err
+		}
+	}
 	output, err := def.Execute(ctx, meta, input)
 	if err != nil {
 		return nil, err
@@ -346,6 +377,9 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 }
 
 func (s *InternalCommandService) register(def InternalCommandDefinition) {
+	if def.Tool != nil {
+		def.Tool.RiskLevel = def.RiskLevel()
+	}
 	s.definitions[def.Name] = def
 }
 
@@ -424,6 +458,112 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
+		Name:                 "agents.get_my_capabilities",
+		Module:               "agents",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "document", "deal", "crm_deal", "contact", "crm_contact", "company", "conversation", "support_conversation", "repository"},
+		Tool: &commandtools.RuntimeToolMetadata{
+			CommandName: "agents.get_my_capabilities",
+			Alias:       "get_my_capabilities",
+			Category:    "Agents",
+			Description: "Inspect the current run's actual granted tools, grouped by capability. Use this before delegation when unsure whether the Dock can complete every step itself. For skill guidance, use list_available_skills/search_available_skills/read_skill.",
+			InputSchema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"required":             []string{},
+				"additionalProperties": false,
+			},
+		},
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			var req struct{}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse get my capabilities input: %w", err)
+				}
+			}
+			run, err := s.resolveCommandRun(ctx, meta)
+			if err != nil {
+				return nil, err
+			}
+			var runInput model.AgentRunInputPayload
+			if err := json.Unmarshal(run.Input, &runInput); err != nil {
+				return nil, fmt.Errorf("decode current run capabilities: %w", err)
+			}
+			return mustJSON(map[string]interface{}{
+				"run_id":        run.ID,
+				"target_type":   run.TargetType,
+				"target_id":     run.TargetID,
+				"capabilities":  s.groupDockCapabilities(runInput.AllowedTools),
+				"decision_rule": "Complete all steps covered by these tools in the Dock. Delegate only the smallest remaining step that requires an unavailable or intentionally isolated capability.",
+			}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "agents.get_capabilities",
+		Module:               "agents",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "document", "deal", "crm_deal", "contact", "crm_contact", "company", "conversation", "support_conversation", "repository"},
+		Tool: &commandtools.RuntimeToolMetadata{
+			CommandName: "agents.get_capabilities",
+			Alias:       "get_agent_capabilities",
+			Category:    "Agents",
+			Description: "Get one actor-visible saved agent's complete launch capabilities, including configured tools, targets, skills, runtime, and invocation mode. Use after list_agents when deciding whether an agent can complete the proposed work; omitting allowed_tools from a launch preserves these defaults.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"agent_id": map[string]any{"type": "string", "description": "Saved agent ID returned by list_agents."},
+				},
+				"required":             []string{"agent_id"},
+				"additionalProperties": false,
+			},
+		},
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.agentService == nil {
+				return nil, fmt.Errorf("agent service is not configured")
+			}
+			var req struct {
+				AgentID string `json:"agent_id"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse get agent capabilities input: %w", err)
+			}
+			req.AgentID = strings.TrimSpace(req.AgentID)
+			if req.AgentID == "" {
+				return nil, fmt.Errorf("agent_id is required")
+			}
+			agents, err := s.agentService.ListAgentsForActor(ctx, meta.WorkspaceID, internalCommandActor(meta))
+			if err != nil {
+				return nil, err
+			}
+			var selected *model.Agent
+			for index := range agents {
+				if agents[index].ID == req.AgentID {
+					selected = &agents[index]
+					break
+				}
+			}
+			if selected == nil {
+				return nil, fmt.Errorf("agent not found or is not visible to this actor")
+			}
+			return mustJSON(map[string]interface{}{
+				"agent_id":                selected.ID,
+				"name":                    selected.Name,
+				"preset_key":              selected.PresetKey,
+				"role":                    selected.Role,
+				"runtime_kind":            selected.RuntimeKind,
+				"provider":                selected.Provider,
+				"model":                   selected.Model,
+				"skills":                  selected.Skills,
+				"allowed_tools":           parseJSONStringSlice(selected.AllowedTools),
+				"allowed_targets":         parseJSONStringSlice(selected.AllowedTargets),
+				"approval_mode":           selected.ApprovalMode,
+				"default_invocation_mode": selected.DefaultInvocationMode,
+				"max_concurrent_runs":     selected.MaxConcurrentRuns,
+				"launch_note":             "Omit allowed_tools in start_agent_run/start_agent_plan to preserve these configured defaults.",
+			}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
 		Name:                 "workspace.list_teams",
 		Module:               "workspace",
 		Mutating:             false,
@@ -433,7 +573,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if s.settingsRepo == nil {
 				return nil, fmt.Errorf("settings repository is not configured")
 			}
-			var req struct{}
+			var req pmCommandPage
 			if len(input) > 0 {
 				if err := json.Unmarshal(input, &req); err != nil {
 					return nil, fmt.Errorf("parse list workspace teams input: %w", err)
@@ -449,9 +589,6 @@ func (s *InternalCommandService) registerDefaults() {
 				}
 				return teams[i].Name < teams[j].Name
 			})
-			if len(teams) > 100 {
-				teams = teams[:100]
-			}
 			results := make([]map[string]any, 0, len(teams))
 			for _, team := range teams {
 				item := map[string]any{
@@ -468,7 +605,18 @@ func (s *InternalCommandService) registerDefaults() {
 				}
 				results = append(results, item)
 			}
-			return mustJSON(results), nil
+			pagination, offset, limit, err := normalizeCommandPagination(req.Page, req.PerPage, req.Limit, req.Offset)
+			if err != nil {
+				return nil, err
+			}
+			items := boundedCommandOffset(results, offset, limit)
+			response := commandPaginationOutput(int64(len(results)), offset, limit, len(items))
+			response["teams"] = items
+			if req.Page > 0 || req.PerPage > 0 {
+				response["page"] = pagination.Page
+				response["per_page"] = pagination.PerPage
+			}
+			return mustJSON(response), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -476,13 +624,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Module:               "docs",
 		Mutating:             false,
 		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "crm_deal"},
-		Tool: &commandtools.RuntimeToolMetadata{
-			CommandName: "docs.list_documents",
-			Alias:       "list_documents",
-			Category:    "Docs",
-			Description: "List Helpin Docs documents in the current workspace. Use status=draft for questions about documents that need to be published.",
-			InputSchema: internalListDocumentsSchema(),
-		},
+		Tool:                 mustCommandToolMetadata("docs.list_documents"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsDocumentService == nil {
 				return nil, fmt.Errorf("docs document service is not available")
@@ -494,6 +636,7 @@ func (s *InternalCommandService) registerDefaults() {
 				Status          string `json:"status"`
 				IncludeArchived bool   `json:"include_archived"`
 				Limit           int    `json:"limit"`
+				Offset          int    `json:"offset"`
 			}
 			if len(input) > 0 {
 				if err := json.Unmarshal(input, &req); err != nil {
@@ -512,6 +655,9 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			if limit > 100 {
 				limit = 100
+			}
+			if req.Offset < 0 {
+				return nil, fmt.Errorf("offset must be zero or greater")
 			}
 			docs, err := s.docsDocumentService.List(
 				ctx,
@@ -535,13 +681,13 @@ func (s *InternalCommandService) registerDefaults() {
 			for _, doc := range docs {
 				counts[doc.Status]++
 			}
-			results := make([]map[string]any, 0, min(len(docs), limit))
-			for i, doc := range docs {
-				if i >= limit {
-					break
-				}
+			start := min(req.Offset, len(docs))
+			end := min(start+limit, len(docs))
+			results := make([]map[string]any, 0, end-start)
+			for _, doc := range docs[start:end] {
 				item := map[string]any{
 					"document_id":      doc.ID,
+					"markdown_link":    helpinMarkdownLink(doc.Title, "documents", doc.ID),
 					"title":            doc.Title,
 					"status":           doc.Status,
 					"space_id":         doc.SpaceID,
@@ -569,20 +715,20 @@ func (s *InternalCommandService) registerDefaults() {
 				}
 				results = append(results, item)
 			}
-			return mustJSON(map[string]any{
-				"documents":        results,
-				"total":            len(docs),
-				"returned":         len(results),
-				"counts_by_status": counts,
-				"filters": map[string]any{
-					"space_id":         strings.TrimSpace(req.SpaceID),
-					"collection_id":    strings.TrimSpace(req.CollectionID),
-					"team_id":          strings.TrimSpace(req.TeamID),
-					"status":           status,
-					"include_archived": req.IncludeArchived,
-					"limit":            limit,
-				},
-			}), nil
+			response := commandPaginationOutput(int64(len(docs)), req.Offset, limit, len(results))
+			response["documents"] = results
+			response["returned"] = len(results)
+			response["counts_by_status"] = counts
+			response["filters"] = map[string]any{
+				"space_id":         strings.TrimSpace(req.SpaceID),
+				"collection_id":    strings.TrimSpace(req.CollectionID),
+				"team_id":          strings.TrimSpace(req.TeamID),
+				"status":           status,
+				"include_archived": req.IncludeArchived,
+				"limit":            limit,
+				"offset":           req.Offset,
+			}
+			return mustJSON(response), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -615,9 +761,11 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("document not found")
 			}
 			out := map[string]any{
-				"id":     doc.ID,
-				"title":  doc.Title,
-				"status": doc.Status,
+				"id":            doc.ID,
+				"document_id":   doc.ID,
+				"markdown_link": helpinMarkdownLink(doc.Title, "documents", doc.ID),
+				"title":         doc.Title,
+				"status":        doc.Status,
 			}
 			if doc.TeamID != nil && strings.TrimSpace(*doc.TeamID) != "" {
 				out["team_id"] = strings.TrimSpace(*doc.TeamID)
@@ -781,7 +929,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if err != nil {
 				return nil, err
 			}
-			return mustJSON(map[string]any{"document_id": doc.ID, "title": doc.Title}), nil
+			return mustJSON(map[string]any{"document_id": doc.ID, "markdown_link": helpinMarkdownLink(doc.Title, "documents", doc.ID), "title": doc.Title}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -795,7 +943,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if err != nil {
 				return nil, err
 			}
-			return mustJSON(map[string]any{"document_id": doc.ID, "title": doc.Title}), nil
+			return mustJSON(map[string]any{"document_id": doc.ID, "markdown_link": helpinMarkdownLink(doc.Title, "documents", doc.ID), "title": doc.Title}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -885,9 +1033,10 @@ func (s *InternalCommandService) registerDefaults() {
 			for idx, task := range tasks {
 				ref := strings.TrimSpace(req.Tasks[idx].Ref)
 				results = append(results, map[string]any{
-					"ref":     ref,
-					"task_id": task.ID,
-					"name":    task.Name,
+					"ref":           ref,
+					"task_id":       task.ID,
+					"markdown_link": helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID),
+					"name":          task.Name,
 				})
 			}
 			return mustJSON(map[string]any{"tasks": results}), nil
@@ -1054,16 +1203,17 @@ func (s *InternalCommandService) registerDefaults() {
 				stateName = strings.TrimSpace(detail.State.Name)
 			}
 			return mustJSON(map[string]any{
-				"task_id":      detail.Task.ID,
-				"display_id":   detail.Task.DisplayID,
-				"task_key":     detail.Task.TaskKey,
-				"name":         detail.Task.Name,
-				"team_id":      detail.Task.TeamID,
-				"workflow_id":  detail.Task.WorkflowID,
-				"state_id":     detail.Task.WorkflowStateID,
-				"state_name":   stateName,
-				"workspace_id": detail.Task.WorkspaceID,
-				"epic_id":      detail.Task.EpicID,
+				"task_id":       detail.Task.ID,
+				"markdown_link": helpinTaskMarkdownLink(detail.Task.TaskKey, detail.Task.Name, detail.Task.ID),
+				"display_id":    detail.Task.DisplayID,
+				"task_key":      detail.Task.TaskKey,
+				"name":          detail.Task.Name,
+				"team_id":       detail.Task.TeamID,
+				"workflow_id":   detail.Task.WorkflowID,
+				"state_id":      detail.Task.WorkflowStateID,
+				"state_name":    stateName,
+				"workspace_id":  detail.Task.WorkspaceID,
+				"epic_id":       detail.Task.EpicID,
 			}), nil
 		},
 	})
@@ -1232,19 +1382,20 @@ func (s *InternalCommandService) registerDefaults() {
 					continue
 				}
 				item := map[string]any{
-					"task_id":     task.ID,
-					"display_id":  task.DisplayID,
-					"task_key":    task.TaskKey,
-					"name":        task.Name,
-					"team_id":     task.TeamID,
-					"state_id":    task.WorkflowStateID,
-					"state_name":  task.StateName,
-					"completed":   task.Completed,
-					"priority":    task.Priority,
-					"severity":    task.Severity,
-					"external_id": task.ExternalID,
-					"updated_at":  task.UpdatedAt,
-					"labels":      task.Labels,
+					"task_id":       task.ID,
+					"markdown_link": helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID),
+					"display_id":    task.DisplayID,
+					"task_key":      task.TaskKey,
+					"name":          task.Name,
+					"team_id":       task.TeamID,
+					"state_id":      task.WorkflowStateID,
+					"state_name":    task.StateName,
+					"completed":     task.Completed,
+					"priority":      task.Priority,
+					"severity":      task.Severity,
+					"external_id":   task.ExternalID,
+					"updated_at":    task.UpdatedAt,
+					"labels":        task.Labels,
 				}
 				if req.IncludeDescriptions {
 					item["description"] = task.Description
@@ -1412,7 +1563,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.write_document_content",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"document", "epic", "task", "story", "crm_deal"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "crm_deal"},
 		Tool:                 mustCommandToolMetadata("docs.write_document_content"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
@@ -1443,6 +1594,9 @@ func (s *InternalCommandService) registerDefaults() {
 			if documentContentIsEffectivelyEmpty(docContent) {
 				return nil, fmt.Errorf("content must not be empty")
 			}
+			if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
+				return nil, err
+			}
 			content, err := s.docsContentService.Save(ctx, req.DocumentID, docContent, meta.ActorID)
 			if err != nil {
 				return nil, err
@@ -1454,7 +1608,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.update_document_block",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"document"},
+		SupportedTargetTypes: []string{"workspace", "document"},
 		Tool:                 mustCommandToolMetadata("docs.update_document_block"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsBlockService == nil {
@@ -1480,6 +1634,9 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			if len(req.Content) == 0 || strings.TrimSpace(string(req.Content)) == "" || strings.TrimSpace(string(req.Content)) == "null" {
 				return nil, fmt.Errorf("content is required")
+			}
+			if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
+				return nil, err
 			}
 			content, err := s.docsBlockService.Patch(ctx, req.DocumentID, req.BlockID, req.Revision, req.Content, meta.ActorID)
 			if err != nil {
@@ -1581,7 +1738,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.link_document_to_object",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "task", "story", "deal", "crm_deal"},
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "deal", "crm_deal"},
 		Tool:                 mustCommandToolMetadata("docs.link_document_to_object"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
@@ -1978,6 +2135,78 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerDocsMetadataCommands()
 	s.registerPMOperationalCommands()
 	s.registerPMDeliveryCommands()
+	s.registerWorkspaceSearchCommands()
+}
+
+// requireCommandDocumentInWorkspace makes an explicit document_id the
+// canonical target for workspace-scoped Dock commands without weakening
+// tenant boundaries. Selected page context does not retarget the long-lived
+// run, so document mutations must validate the supplied ID directly.
+func (s *InternalCommandService) requireCommandDocumentInWorkspace(ctx context.Context, workspaceID, documentID string) error {
+	if s.docsDocumentService == nil {
+		return fmt.Errorf("docs document service is not available")
+	}
+	document, err := s.docsDocumentService.Get(ctx, strings.TrimSpace(documentID))
+	if err != nil {
+		return err
+	}
+	if document == nil || document.WorkspaceID != strings.TrimSpace(workspaceID) {
+		return fmt.Errorf("document not found")
+	}
+	return nil
+}
+
+func (s *InternalCommandService) groupDockCapabilities(tools []string) map[string]interface{} {
+	groups := map[string][]string{
+		"repository_read":     {},
+		"product_read":        {},
+		"product_mutation":    {},
+		"skills":              {},
+		"interaction_web":     {},
+		"agent_orchestration": {},
+		"other":               {},
+	}
+	repositoryReads := map[string]bool{
+		"list_repositories": true, "checkout_repository": true, "checkout_repositories": true,
+		"list_commits": true, "read_file": true, "read_files": true, "read_file_range": true,
+		"list_directory": true, "search_files": true, "ripgrep": true, "grep": true, "list_symbols": true,
+	}
+	skillTools := map[string]bool{"list_available_skills": true, "search_available_skills": true, "read_skill": true}
+	interactionWebTools := map[string]bool{
+		"request_user_input": true, "request_approval": true, "update_plan": true,
+		"web_search_brave": true, "web_search_exa": true, "fetch_url": true, "crawl_url": true,
+	}
+	for _, tool := range normalizeStringSlice(tools) {
+		switch {
+		case repositoryReads[tool]:
+			groups["repository_read"] = append(groups["repository_read"], tool)
+		case skillTools[tool]:
+			groups["skills"] = append(groups["skills"], tool)
+		case interactionWebTools[tool]:
+			groups["interaction_web"] = append(groups["interaction_web"], tool)
+		default:
+			if def, ok := s.definitionByToolAlias(tool); ok {
+				if def.Module == "agents" {
+					groups["agent_orchestration"] = append(groups["agent_orchestration"], tool)
+				} else if def.Mutating {
+					groups["product_mutation"] = append(groups["product_mutation"], tool)
+				} else {
+					groups["product_read"] = append(groups["product_read"], tool)
+				}
+			} else {
+				groups["other"] = append(groups["other"], tool)
+			}
+		}
+	}
+	for key := range groups {
+		slices.Sort(groups[key])
+	}
+	return map[string]interface{}{
+		"groups":                        groups,
+		"can_load_skills":               len(groups["skills"]) == 3,
+		"can_read_repositories":         slices.Contains(groups["repository_read"], "checkout_repository") && slices.Contains(groups["repository_read"], "read_file") && slices.Contains(groups["repository_read"], "ripgrep"),
+		"can_execute_product_mutations": slices.Contains(groups["agent_orchestration"], "prepare_dock_execution") && len(groups["product_mutation"]) > 0,
+	}
 }
 
 // authorizeCommandActor is the central per-actor RBAC gate for command
@@ -2148,7 +2377,7 @@ func internalReadDocumentToolMetadata() *commandtools.RuntimeToolMetadata {
 		CommandName: "docs.read_document",
 		Alias:       "read_document",
 		Category:    "Docs",
-		Description: "Read a known Helpin Docs document by ID. Returns metadata, a bounded plain-text excerpt, and the first page of compact addressable blocks.",
+		Description: "Read a known Helpin Docs document by ID. Returns metadata including markdown_link, a bounded plain-text excerpt, and the first page of compact addressable blocks.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -2203,40 +2432,6 @@ func internalGetDocumentBlocksToolMetadata() *commandtools.RuntimeToolMetadata {
 			},
 			"additionalProperties": false,
 		},
-	}
-}
-
-func internalListDocumentsSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"space_id": map[string]any{
-				"type":        "string",
-				"description": "Optional Docs space ID filter.",
-			},
-			"collection_id": map[string]any{
-				"type":        "string",
-				"description": "Optional collection ID filter.",
-			},
-			"team_id": map[string]any{
-				"type":        "string",
-				"description": "Optional team ID filter.",
-			},
-			"status": map[string]any{
-				"type":        "string",
-				"description": "Optional document status filter. Use draft for documents that need publishing.",
-				"enum":        []string{"draft", "published", "archived"},
-			},
-			"include_archived": map[string]any{
-				"type":        "boolean",
-				"description": "When true, include archived documents when status is omitted.",
-			},
-			"limit": map[string]any{
-				"type":        "integer",
-				"description": "Maximum documents to return. Defaults to 50, max 100.",
-			},
-		},
-		"additionalProperties": false,
 	}
 }
 
@@ -2499,18 +2694,19 @@ func (s *InternalCommandService) listSingleTaskCommand(ctx context.Context, meta
 	total := int64(0)
 	if !openOnly || !task.Completed {
 		item := map[string]any{
-			"task_id":     task.ID,
-			"display_id":  task.DisplayID,
-			"task_key":    task.TaskKey,
-			"name":        task.Name,
-			"team_id":     task.TeamID,
-			"state_id":    task.WorkflowStateID,
-			"completed":   task.Completed,
-			"priority":    task.Priority,
-			"severity":    task.Severity,
-			"external_id": task.ExternalID,
-			"updated_at":  task.UpdatedAt,
-			"labels":      detail.Labels,
+			"task_id":       task.ID,
+			"markdown_link": helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID),
+			"display_id":    task.DisplayID,
+			"task_key":      task.TaskKey,
+			"name":          task.Name,
+			"team_id":       task.TeamID,
+			"state_id":      task.WorkflowStateID,
+			"completed":     task.Completed,
+			"priority":      task.Priority,
+			"severity":      task.Severity,
+			"external_id":   task.ExternalID,
+			"updated_at":    task.UpdatedAt,
+			"labels":        detail.Labels,
 		}
 		if detail.State != nil {
 			item["state_name"] = detail.State.Name
@@ -2541,6 +2737,7 @@ func buildCompactTaskItem(task model.BoardTask, comments []model.CommentWithAuth
 	description := commandDerefString(task.Description)
 	item := map[string]any{
 		"task_id":             task.ID,
+		"markdown_link":       helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID),
 		"display_id":          task.DisplayID,
 		"task_key":            task.TaskKey,
 		"name":                task.Name,
@@ -2559,15 +2756,23 @@ func buildCompactTaskItem(task model.BoardTask, comments []model.CommentWithAuth
 	return item
 }
 
-func marshalCompactTaskResponse(tasks []map[string]any, total int64, limit int) (json.RawMessage, error) {
+func marshalCompactTaskResponse(tasks []map[string]any, total int64, limit int, offsets ...int) (json.RawMessage, error) {
+	offset := 0
+	if len(offsets) > 0 {
+		offset = offsets[0]
+	}
 	response := map[string]any{
 		"_helpin_compaction": helpinCommandCompactionHint(),
 		"tasks":              tasks,
 		"total":              total,
 		"limit":              limit,
+		"offset":             offset,
 		"returned_tasks":     len(tasks),
 		"detail_level":       "compact",
 	}
+	paging := commandPaginationOutput(total, offset, limit, len(tasks))
+	response["has_more"] = paging["has_more"]
+	response["next_offset"] = paging["next_offset"]
 	out, err := json.Marshal(response)
 	if err != nil {
 		return nil, err
