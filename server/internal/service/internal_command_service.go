@@ -1950,6 +1950,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerDocsRuntimeToolCommands()
 	s.registerDocsOrganizationCommands()
 	s.registerPMOperationalCommands()
+	s.registerPMDeliveryCommands()
 }
 
 // authorizeCommandActor is the central per-actor RBAC gate for command
