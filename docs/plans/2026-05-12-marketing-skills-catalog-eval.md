@@ -138,7 +138,10 @@ Wire to existing trigger surfaces (`story.state_entered`, `agent_run.approved`, 
 | **Trial signup activation watch** | `user.trial_started` + 24h delay | onboarding-cro audit of user's path → email-sequence (activation) |
 | **Weekly growth pulse** | `cron` weekly | seo-audit + page-cro audit + ab-test-setup readouts → digest task in PM |
 
-All match the trigger surfaces already in the codebase (`agent.trigger_mode`, `agent.schedule`, automation rules with `event` / `cron`). No new orchestration primitives needed.
+All match the trigger surfaces already in the codebase (`agent.trigger_mode`
+and automation rules with `event` / `cron`). No new orchestration primitives
+are needed. The former per-agent schedule field was later removed in favor of
+scheduled flows.
 
 ---
 
@@ -221,4 +224,3 @@ These are the real gaps. Each row is a recommendation, not a must-do.
 - **22 of the 28 recommended skills work today** — 15 fully, 7 in degraded-but-useful mode.
 - **6 skills need new tools.** None require a brand-new product surface; all map to additions that strengthen Helpin's existing CRM/PM/email/agents.
 - Biggest leverage moves are **`schedule_email_sequence`** (turns Gmail+CRM into a real marketing-automation engine) and **CRM write tools** (long overdue regardless of marketing skills).
-
