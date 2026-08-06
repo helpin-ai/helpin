@@ -3,7 +3,8 @@ package service
 import (
 	"bytes"
 	"context"
-	"fmt"
+	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -20,8 +21,8 @@ type fakeBrowserAssetStore struct {
 }
 
 func (s *fakeBrowserAssetStore) PutObject(_ context.Context, key, _ string, _ int64, body io.Reader, publicRead bool) error {
-	if !publicRead {
-		return fmt.Errorf("browser screenshots must be externally renderable")
+	if publicRead {
+		return errors.New("browser screenshots must be private")
 	}
 	payload, err := io.ReadAll(body)
 	if err != nil {
@@ -40,8 +41,8 @@ func (s *fakeBrowserAssetStore) DeleteObject(_ context.Context, key string) erro
 	return nil
 }
 
-func (s *fakeBrowserAssetStore) PublicURL(key string) string {
-	return "https://assets.example.com/" + key
+func (s *fakeBrowserAssetStore) GeneratePresignedInlineGetURL(key string) (string, error) {
+	return "https://private-assets.example.com/" + key + "?signed=true", nil
 }
 
 func TestAgentRuntimeHostUploadBrowserAssetPersistsMappedRunArtifact(t *testing.T) {
@@ -65,13 +66,14 @@ func TestAgentRuntimeHostUploadBrowserAssetPersistsMappedRunArtifact(t *testing.
 		SetBrowserAssetStore(repository.NewAgentRunArtifactRepository(db), store)
 	png := []byte("\x89PNG\r\n\x1a\nfixture")
 	asset, err := host.UploadBrowserAsset(context.Background(), AgentRuntimeBrowserAssetUpload{
-		AppID: "helpin", RuntimeRunID: externalRuntimeID, WorkspaceID: run.WorkspaceID,
+		AppID: "helpin", RuntimeRunID: externalRuntimeID, ArtifactType: model.AgentRunArtifactTypeBrowserScreenshot,
+		Metadata: json.RawMessage(`{"annotated":true,"full_page":false}`),
 		FileName: "Settings.png", ContentType: "image/png", Size: int64(len(png)), Body: bytes.NewReader(png),
 	})
 	if err != nil {
 		t.Fatalf("UploadBrowserAsset: %v", err)
 	}
-	if asset.AssetID == "" || !strings.HasPrefix(asset.URL, "https://assets.example.com/agent-runs/") {
+	if asset.ArtifactID == "" || asset.ArtifactRef != "helpin-artifact://"+asset.ArtifactID || asset.Visibility != "private" {
 		t.Fatalf("unexpected asset: %#v", asset)
 	}
 	artifacts, err := repository.NewAgentRunArtifactRepository(db).ListByRun(context.Background(), run.WorkspaceID, run.ID)
@@ -81,9 +83,16 @@ func TestAgentRuntimeHostUploadBrowserAssetPersistsMappedRunArtifact(t *testing.
 	if artifacts[0].ArtifactType != "browser_screenshot" || artifacts[0].StorageMode != "object" || artifacts[0].ObjectKey == nil {
 		t.Fatalf("unexpected artifact: %#v", artifacts[0])
 	}
+	if strings.Contains(string(artifacts[0].Metadata), "https://") || !strings.Contains(string(artifacts[0].Metadata), `"visibility":"private"`) {
+		t.Fatalf("unexpected private artifact metadata: %s", artifacts[0].Metadata)
+	}
+	content, err := host.BrowserArtifactContentURL(context.Background(), run.WorkspaceID, asset.ArtifactID)
+	if err != nil || !strings.Contains(content.URL, "signed=true") {
+		t.Fatalf("private content URL=%#v err=%v", content, err)
+	}
 }
 
-func TestAgentRuntimeHostUploadBrowserAssetRejectsWorkspaceMismatch(t *testing.T) {
+func TestAgentRuntimeHostUploadBrowserAssetRejectsUnsupportedArtifactType(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:agent-runtime-browser-asset-mismatch?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -104,11 +113,11 @@ func TestAgentRuntimeHostUploadBrowserAssetRejectsWorkspaceMismatch(t *testing.T
 		SetBrowserAssetStore(repository.NewAgentRunArtifactRepository(db), store)
 	png := []byte("\x89PNG\r\n\x1a\nfixture")
 	_, err = host.UploadBrowserAsset(context.Background(), AgentRuntimeBrowserAssetUpload{
-		AppID: "helpin", RuntimeRunID: externalRuntimeID, WorkspaceID: "77777777-7777-7777-7777-777777777777",
+		AppID: "helpin", RuntimeRunID: externalRuntimeID, ArtifactType: "arbitrary_file",
 		FileName: "shot.png", ContentType: "image/png", Size: int64(len(png)), Body: bytes.NewReader(png),
 	})
-	if err == nil || !strings.Contains(err.Error(), "does not belong") {
-		t.Fatalf("expected workspace mismatch, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "artifact_type") {
+		t.Fatalf("expected artifact type rejection, got %v", err)
 	}
 	if len(store.objects) != 0 {
 		t.Fatalf("mismatched upload wrote objects: %#v", store.objects)

@@ -706,6 +706,8 @@ func askAgentPresetTools() []string {
 		"request_user_input", "request_approval", "update_plan",
 		// Web research.
 		"web_search_brave", "web_search_exa", "fetch_url", "crawl_url",
+		// Authenticated browser inspection and private screenshot artifacts.
+		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot",
 		// Workspace / PM reads.
 		"list_workspace_teams", "list_team_workflows_with_stages",
 		"search_workspace", "list_tasks", "get_task_context",
@@ -714,7 +716,7 @@ func askAgentPresetTools() []string {
 		"read_document", "get_document_blocks",
 		"create_space", "create_collection", "create_document", "update_space",
 		"update_collection", "move_document", "write_document_content",
-		"update_document_block", "link_document_to_object",
+		"update_document_block", "insert_document_image", "link_document_to_object",
 		"publish_document_change_proposal", "publish_ai_section_candidate",
 		// CRM reads and approval-gated writes.
 		"list_deals", "list_contacts", "list_buyer_signals", "add_deal_note",

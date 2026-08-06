@@ -443,10 +443,11 @@ func runtimeStartRunRequest(
 		_ = json.Unmarshal(run.Input, &input)
 	}
 	metadata := map[string]interface{}{
-		"workspace_id":  strings.TrimSpace(run.WorkspaceID),
-		"target_type":   strings.TrimSpace(run.TargetType),
-		"target_id":     strings.TrimSpace(run.TargetID),
-		"helpin_run_id": strings.TrimSpace(run.ID),
+		"workspace_id":             strings.TrimSpace(run.WorkspaceID),
+		"browser_profile_scope_id": strings.TrimSpace(run.WorkspaceID),
+		"target_type":              strings.TrimSpace(run.TargetType),
+		"target_id":                strings.TrimSpace(run.TargetID),
+		"helpin_run_id":            strings.TrimSpace(run.ID),
 	}
 	if agent != nil && strings.TrimSpace(agent.PresetKey) != "" {
 		metadata["preset_key"] = strings.TrimSpace(agent.PresetKey)
@@ -3636,7 +3637,16 @@ func (s *AgentService) ListRunArtifacts(ctx context.Context, workspaceID, runID 
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.artifactRepo.ListByRun(ctx, workspaceID, runID)
+	artifacts, err := s.artifactRepo.ListByRun(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	// Object keys are storage internals. User-facing callers receive the
+	// artifact id and resolve private content through the authorized endpoint.
+	for i := range artifacts {
+		artifacts[i].ObjectKey = nil
+	}
+	return artifacts, nil
 }
 
 // ListRunMessages returns persisted conversation history for a run.

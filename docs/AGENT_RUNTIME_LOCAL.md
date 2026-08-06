@@ -56,14 +56,24 @@ port. If Helpin is on `:8080`, use:
         "base_url": "http://127.0.0.1:8080/api/internal/agent-runtime/skills",
         "package_base_url": "http://127.0.0.1:8080/api/internal/agent-runtime/skill-packages",
         "token": "dev-token"
+      },
+      "browser": {
+        "enabled": true,
+        "allowed_domains": ["*"],
+        "profile_scope_metadata_key": "browser_profile_scope_id",
+        "artifact_provider": {
+          "transport": "http",
+          "upload_endpoint": "http://127.0.0.1:8080/api/internal/agent-runtime/artifacts",
+          "token": "dev-token"
+        }
       }
     }
   ]
 }
 ```
 
-If Helpin is running on another port, update all three callback URLs. The runtime
-must send the same bearer token as `AGENT_RUNTIME_SERVICE_TOKEN`.
+If Helpin is running on another port, update all callback URLs. The runtime
+must send the same bearer token as Helpin's `INTERNAL_API_SECRET`.
 
 ## Runtime Env
 
@@ -75,6 +85,10 @@ AGENT_RUNTIME_STORE_DRIVER=sqlite
 AGENT_RUNTIME_SQLITE_DSN=.local/helpin-agent-runtime.sqlite3
 AGENT_RUNTIME_SERVICE_TOKEN=dev-token
 AGENT_RUNTIME_APP_CONFIG=@/tmp/helpin-app-config.json
+AGENT_RUNTIME_BROWSER_ENABLED=true
+KERNEL_API_KEY=<kernel-api-key>
+AGENT_RUNTIME_BROWSER_PROFILE_NAME_SALT=<random-secret>
+AGENT_RUNTIME_BROWSER_SESSION_TIMEOUT_SECONDS=300
 TEMPORAL_ADDRESS=localhost:7233
 TEMPORAL_NAMESPACE=default
 TEMPORAL_TASK_QUEUE_PREFIX=helpin-

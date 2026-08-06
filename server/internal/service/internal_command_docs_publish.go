@@ -16,6 +16,14 @@ import (
 // native docs search and product publish tools.
 func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 	s.register(InternalCommandDefinition{
+		Name:                 "docs.insert_document_image",
+		Module:               "docs",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"workspace", "document"},
+		Tool:                 mustCommandToolMetadata("docs.insert_document_image"),
+		Execute:              s.executeInsertDocumentImage,
+	})
+	s.register(InternalCommandDefinition{
 		Name:     "docs.search_documents",
 		Module:   "docs",
 		Mutating: false,
@@ -66,6 +74,68 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 		},
 		Execute: s.executePublishDocumentChangeProposal,
 	})
+}
+
+func (s *InternalCommandService) executeInsertDocumentImage(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	if s.docsBlockService == nil {
+		return nil, fmt.Errorf("docs block service is not available")
+	}
+	if s.agentRunArtifactRepo == nil {
+		return nil, fmt.Errorf("agent run artifact repository is not available")
+	}
+	var req struct {
+		DocumentID   string  `json:"document_id"`
+		ArtifactID   string  `json:"artifact_id"`
+		AfterBlockID *string `json:"after_block_id,omitempty"`
+		Alt          string  `json:"alt"`
+		Caption      *string `json:"caption,omitempty"`
+	}
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, fmt.Errorf("parse insert document image input: %w", err)
+	}
+	req.DocumentID = strings.TrimSpace(req.DocumentID)
+	req.ArtifactID = strings.TrimSpace(req.ArtifactID)
+	req.Alt = strings.TrimSpace(req.Alt)
+	if req.DocumentID == "" || req.ArtifactID == "" || req.Alt == "" {
+		return nil, fmt.Errorf("document_id, artifact_id, and alt are required")
+	}
+	if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
+		return nil, err
+	}
+	artifact, err := s.agentRunArtifactRepo.GetByIDAndWorkspace(ctx, meta.WorkspaceID, req.ArtifactID)
+	if err != nil {
+		return nil, err
+	}
+	if artifact == nil || artifact.ArtifactType != model.AgentRunArtifactTypeBrowserScreenshot || artifact.StorageMode != "object" || artifact.ObjectKey == nil || strings.TrimSpace(*artifact.ObjectKey) == "" {
+		return nil, fmt.Errorf("private browser screenshot artifact not found")
+	}
+
+	attrs := map[string]any{
+		"src":        "helpin-artifact://" + artifact.ID,
+		"artifactId": artifact.ID,
+		"alt":        req.Alt,
+		"width":      "100%",
+		"height":     "auto",
+		"alignment":  "center",
+	}
+	if req.Caption != nil && strings.TrimSpace(*req.Caption) != "" {
+		attrs["caption"] = strings.TrimSpace(*req.Caption)
+	}
+	block, err := json.Marshal(map[string]any{"type": "resizableImage", "attrs": attrs})
+	if err != nil {
+		return nil, fmt.Errorf("encode document image block: %w", err)
+	}
+	content, err := s.docsBlockService.Create(ctx, req.DocumentID, req.AfterBlockID, block, meta.ActorID)
+	if err != nil {
+		return nil, err
+	}
+	return mustJSON(map[string]any{
+		"document_id":  req.DocumentID,
+		"content_id":   content.ID,
+		"artifact_id":  artifact.ID,
+		"artifact_ref": "helpin-artifact://" + artifact.ID,
+		"visibility":   "private",
+	}), nil
 }
 
 func (s *InternalCommandService) executeSearchDocuments(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {

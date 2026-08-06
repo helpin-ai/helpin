@@ -70,6 +70,7 @@ var runtimeToolRiskLevels = map[string]string{
 	"create_document": RiskLevelRoutine, "update_space": RiskLevelRoutine,
 	"update_collection": RiskLevelRoutine, "move_document": RiskLevelRoutine,
 	"write_document_content": RiskLevelRoutine, "update_document_block": RiskLevelRoutine,
+	"insert_document_image":   RiskLevelRoutine,
 	"link_document_to_object": RiskLevelRoutine, "ensure_epic_spec_doc": RiskLevelRoutine,
 	"ensure_task_plan_doc": RiskLevelRoutine, "publish_document_change_proposal": RiskLevelRoutine,
 	"publish_ai_section_candidate": RiskLevelRoutine,
@@ -647,6 +648,39 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 			},
 			"required": []string{"document_id", "block_id", "revision", "content"},
+		},
+	},
+	{
+		CommandName: "docs.insert_document_image",
+		Alias:       "insert_document_image",
+		Category:    "Docs",
+		Description: "Insert a private browser screenshot artifact into a Helpin Docs document. The artifact must belong to the current workspace; only its opaque artifact ID is persisted.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"document_id": map[string]any{
+					"type":        "string",
+					"description": "The document that will receive the image",
+				},
+				"artifact_id": map[string]any{
+					"type":        "string",
+					"description": "The artifact_id returned by browser_screenshot",
+				},
+				"after_block_id": map[string]any{
+					"type":        "string",
+					"description": "Optional block ID after which to insert the image; omit to append",
+				},
+				"alt": map[string]any{
+					"type":        "string",
+					"description": "Accessible description of the screenshot",
+				},
+				"caption": map[string]any{
+					"type":        "string",
+					"description": "Optional visible image caption",
+				},
+			},
+			"required":             []string{"document_id", "artifact_id", "alt"},
+			"additionalProperties": false,
 		},
 	},
 	{
