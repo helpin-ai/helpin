@@ -346,6 +346,7 @@ type DocsChangeProposal struct {
 	Revision        int             `json:"revision,omitempty" gorm:"not null;default:0"`
 	Summary         string          `json:"summary" gorm:"type:text;not null"`
 	ContentMarkdown string          `json:"content_markdown" gorm:"type:text;not null"`
+	BaseMarkdown    string          `json:"base_markdown,omitempty" gorm:"type:text"`
 	Content         json.RawMessage `json:"content" gorm:"type:jsonb;not null"`
 	Sources         json.RawMessage `json:"sources,omitempty" gorm:"type:jsonb;not null;default:'[]'"`
 	CreatedBy       string          `json:"created_by" gorm:"not null"`

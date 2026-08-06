@@ -51,6 +51,7 @@ import { EntityEmbedExtension, type DocsEntityEmbedType, type EntityEmbedAttrs }
 import { EntityMentionExtension } from './EntityMentionExtension'
 import { SavedViewEmbedExtension } from './SavedViewEmbedExtension'
 import { CommentAnchorExtension, type DocsCommentDecorationAnchor } from './CommentAnchorExtension'
+import { ProposalAnchorExtension } from './ProposalAnchorExtension'
 import { DocsTaskItemExtension } from './DocsTaskItemExtension'
 import { TaskItemMetadataToolbar } from './TaskItemMetadataToolbar'
 import { ToggleSectionExtension } from './ToggleSectionExtension'
@@ -866,6 +867,12 @@ export function DocsEditor({
     initialContent ? JSON.stringify(initialContent) : null,
   )
   const editorReadyRef = useRef(false)
+  // Set when TipTap cannot parse the stored document into its schema. The
+  // editor then holds a degraded (often empty) doc, so autosaving it would
+  // overwrite the real content with the damage. Saves stay blocked until the
+  // document is reloaded with content that parses.
+  const contentErrorRef = useRef(false)
+  const [contentError, setContentError] = useState<string | null>(null)
   const pendingPresenceClearRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const lastEditingPresenceRef = useRef<string | null>(null)
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
@@ -907,6 +914,7 @@ export function DocsEditor({
 
   const doSave = useCallback(
     async (json: JSONContent) => {
+      if (contentErrorRef.current) return
       const snapshot = JSON.stringify(json)
       if (lastSavedSnapshotRef.current === snapshot) {
         setSaveStatus('idle')
@@ -942,6 +950,7 @@ export function DocsEditor({
 
   const scheduleSave = useCallback(
     (json: JSONContent) => {
+      if (contentErrorRef.current) return
       setSaveStatus('unsaved')
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       saveTimerRef.current = setTimeout(() => doSave(json), autoSaveMs)
@@ -1384,6 +1393,7 @@ export function DocsEditor({
       CommentAnchorExtension.configure({
         onOpenComment: (commentId) => onOpenCommentRef.current?.(commentId),
       }),
+      ProposalAnchorExtension,
       ToggleSectionExtension,
       FileAttachmentExtension,
       TableOfContentsExtension,
@@ -1523,12 +1533,23 @@ export function DocsEditor({
       // Use requestAnimationFrame to ensure all mount-time updates have settled
       requestAnimationFrame(() => { editorReadyRef.current = true })
     },
+    // Surface unparseable stored content instead of silently loading a
+    // degraded document and letting autosave persist the loss.
+    enableContentCheck: true,
+    onContentError: ({ error }) => {
+      contentErrorRef.current = true
+      setContentError(error instanceof Error ? error.message : String(error))
+    },
   })
 
   editorRef.current = editor
 
+  // Publish the instance upward, and retract it on unmount. Without the
+  // cleanup the parent keeps a destroyed editor, and anything that remounts
+  // against it (gutters, hover affordances) touches editor.view and throws.
   useEffect(() => {
     onEditorReady?.(editor)
+    return () => onEditorReady?.(null)
   }, [editor, onEditorReady])
 
   useEffect(() => {
@@ -1545,12 +1566,14 @@ export function DocsEditor({
     editor.commands.setCommentAnchors(anchors as DocsCommentDecorationAnchor[])
   }, [commentAnchors, editor])
 
-  // Sync editable state when readOnly prop changes (e.g. after unlock)
+  // Sync editable state when readOnly prop changes (e.g. after unlock).
+  // A content error also locks editing: the loaded document is not what is
+  // stored, so edits on top of it would compound the damage.
   useEffect(() => {
     if (editor) {
-      editor.setEditable(!readOnly)
+      editor.setEditable(!readOnly && !contentError)
     }
-  }, [editor, readOnly])
+  }, [contentError, editor, readOnly])
 
   // Update content if initial content changes AFTER mount (e.g. after revert).
   // Skip the first run — useEditor already sets initial content on mount.
@@ -1564,6 +1587,15 @@ export function DocsEditor({
     const currentJson = JSON.stringify(editor.getJSON())
     const newJson = JSON.stringify(initialContent)
     if (currentJson !== newJson) {
+      // Give the incoming document a clean slate; onContentError re-flags it
+      // if this content does not parse either.
+      contentErrorRef.current = false
+      setContentError(null)
+      // Drop any queued save: it holds the pre-update document, and letting it
+      // land would overwrite the content that just arrived (for example an
+      // applied change proposal) a couple of seconds later.
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      pendingContentRef.current = null
       skipNextSaveRef.current = true
       const { from, to } = editor.state.selection
       const wasFocused = editor.isFocused
@@ -1837,6 +1869,18 @@ img { max-width: 100%; }
         )}
 
         {topBanner}
+
+        {contentError && (
+          <div className="border-b border-destructive/30 bg-destructive/10 px-6 py-3 text-sm text-destructive">
+            <p className="font-medium">This document could not be loaded correctly.</p>
+            <p className="mt-1 text-destructive/90">
+              Its stored content is not valid document data, so what you see below is incomplete.
+              Editing and autosave are disabled to protect the original. Restore an earlier version
+              from the history panel to recover it.
+            </p>
+            <p className="mt-1 font-mono text-xs text-destructive/70">{contentError}</p>
+          </div>
+        )}
 
         {sourceView ? (
           /* Source view — full width, fills remaining height */

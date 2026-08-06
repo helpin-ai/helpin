@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -168,6 +169,194 @@ func TestCoverageMaterializerAttachesHighConfidenceFindingToExistingGap(t *testi
 	}
 	if analysis.GapID == nil || *analysis.GapID != existing.ID {
 		t.Fatalf("analysis gap_id=%v, want %s", analysis.GapID, existing.ID)
+	}
+}
+
+func TestCoverageMaterializerSkipsIncompatibleNearestGap(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}}}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	for _, gap := range []model.SupportCoverageGap{
+		{
+			ID:                  "gap-action",
+			WorkspaceID:         "ws-1",
+			DedupeKey:           "semantic:action",
+			Title:               "Refund action is unavailable",
+			Status:              model.SupportCoverageGapStatusOpen,
+			GapKind:             "action",
+			GapCategory:         model.SupportCoverageGapCategoryAction,
+			EvidenceCount:       10,
+			FirstSeenAt:         now.Add(-2 * time.Hour),
+			LastSeenAt:          now.Add(-2 * time.Hour),
+			Embedding:           "[1,0,0]",
+			EmbeddingProvider:   coverageEmbeddingProviderName,
+			EmbeddingModel:      coverageDefaultEmbeddingModel,
+			EmbeddingVersion:    coverageGapEmbeddingVersion,
+			EmbeddingDimensions: 3,
+			EmbeddingTextHash:   "action-hash",
+			EmbeddingUpdatedAt:  &now,
+		},
+		{
+			ID:                  "gap-content",
+			WorkspaceID:         "ws-1",
+			DedupeKey:           "semantic:content",
+			Title:               "Refund criteria documentation",
+			Status:              model.SupportCoverageGapStatusOpen,
+			GapKind:             "content",
+			GapCategory:         model.SupportCoverageGapCategoryKnowledge,
+			EvidenceCount:       5,
+			FirstSeenAt:         now.Add(-time.Hour),
+			LastSeenAt:          now.Add(-time.Hour),
+			Embedding:           "[0.95,0.3122499,0]",
+			EmbeddingProvider:   coverageEmbeddingProviderName,
+			EmbeddingModel:      coverageDefaultEmbeddingModel,
+			EmbeddingVersion:    coverageGapEmbeddingVersion,
+			EmbeddingDimensions: 3,
+			EmbeddingTextHash:   "content-hash",
+			EmbeddingUpdatedAt:  &now,
+		},
+	} {
+		if _, _, err := coverageRepo.UpsertOpenGapByDedupeKeyNoBump(ctx, &gap); err != nil {
+			t.Fatalf("seed gap %s: %v", gap.ID, err)
+		}
+	}
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need documented refund exception criteria.", "Refund exception criteria", now)
+
+	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	if err != nil {
+		t.Fatalf("materializeRunFindings: %v", err)
+	}
+	if result.ExistingGapAttached != 1 || result.NewGapsCreated != 0 {
+		t.Fatalf("result=%+v, want attachment to compatible existing gap", result)
+	}
+	var analysis model.SupportCoverageConversationAnalysis
+	if err := db.First(&analysis, "id = ?", "analysis-1").Error; err != nil {
+		t.Fatalf("load analysis: %v", err)
+	}
+	if analysis.GapID == nil || *analysis.GapID != "gap-content" {
+		t.Fatalf("analysis gap_id=%v, want gap-content", analysis.GapID)
+	}
+}
+
+func TestCoverageMaterializerDoesNotAttachAcrossConflictingTargetDocuments(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}}}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	existing, _, err := coverageRepo.UpsertOpenGapByDedupeKeyNoBump(ctx, &model.SupportCoverageGap{
+		ID:                  "gap-existing",
+		WorkspaceID:         "ws-1",
+		DedupeKey:           "semantic:existing-doc",
+		Title:               "Refund exception documentation",
+		Status:              model.SupportCoverageGapStatusOpen,
+		GapKind:             "content",
+		GapCategory:         model.SupportCoverageGapCategoryKnowledge,
+		EvidenceCount:       3,
+		FirstSeenAt:         now.Add(-time.Hour),
+		LastSeenAt:          now.Add(-time.Hour),
+		Embedding:           "[1,0,0]",
+		EmbeddingProvider:   coverageEmbeddingProviderName,
+		EmbeddingModel:      coverageDefaultEmbeddingModel,
+		EmbeddingVersion:    coverageGapEmbeddingVersion,
+		EmbeddingDimensions: 3,
+		EmbeddingTextHash:   "existing-doc-hash",
+		EmbeddingUpdatedAt:  &now,
+	})
+	if err != nil {
+		t.Fatalf("seed existing gap: %v", err)
+	}
+	if err := db.Create(&model.SupportCoverageGapArticle{
+		ID:          "gap-article-a",
+		GapID:       existing.ID,
+		DocumentID:  "doc-a",
+		WorkspaceID: "ws-1",
+		CreatedAt:   now,
+	}).Error; err != nil {
+		t.Fatalf("link existing gap article: %v", err)
+	}
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need refund exception criteria.", "Refund exception criteria", now)
+	raw, _ := json.Marshal(CoverageConversationAnalysisResult{
+		HasGap:         true,
+		GapKind:        "content",
+		GapCategory:    model.SupportCoverageGapCategoryKnowledge,
+		CanonicalTitle: "Refund exception criteria",
+		CustomerNeed:   "Customers need refund exception criteria.",
+		RecommendedFixes: []CoverageRecommendedFix{{
+			Type:       model.SupportCoverageFixUpdateArticle,
+			TargetType: "docs",
+			TargetID:   "doc-b",
+			Priority:   model.SupportCoverageRecommendationPriorityPrimary,
+		}},
+	})
+	if err := db.Model(&model.SupportCoverageConversationAnalysis{}).
+		Where("id = ?", "analysis-1").
+		Update("raw_output", raw).Error; err != nil {
+		t.Fatalf("update analysis raw output: %v", err)
+	}
+
+	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	if err != nil {
+		t.Fatalf("materializeRunFindings: %v", err)
+	}
+	if result.ExistingGapAttached != 0 || result.NewGapsCreated != 1 {
+		t.Fatalf("result=%+v, want a new gap for conflicting target documents", result)
+	}
+	var analysis model.SupportCoverageConversationAnalysis
+	if err := db.First(&analysis, "id = ?", "analysis-1").Error; err != nil {
+		t.Fatalf("load analysis: %v", err)
+	}
+	if analysis.GapID == nil || *analysis.GapID == existing.ID {
+		t.Fatalf("analysis gap_id=%v, want a new gap instead of %s", analysis.GapID, existing.ID)
+	}
+}
+
+func TestCoverageMaterializerCompleteLinkPreventsTransitiveCluster(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{vectors: [][]float32{
+			{1, 0, 0},
+			{0.9063078, 0.4226183, 0},
+			{0.6427876, 0.7660444, 0},
+		}}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-a", "run-1", "conversation-a", "Reset password email is missing.", "Reset password email", now)
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-b", "run-1", "conversation-b", "Password login recovery instructions are missing.", "Password login recovery", now.Add(time.Minute))
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-c", "run-1", "conversation-c", "Login access documentation is missing.", "Login access documentation", now.Add(2*time.Minute))
+
+	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	if err != nil {
+		t.Fatalf("materializeRunFindings: %v", err)
+	}
+	if result.NewGapsCreated != 2 || result.SameRunFindingsMerged != 1 {
+		t.Fatalf("result=%+v, want two complete-link clusters", result)
+	}
+	var gaps []model.SupportCoverageGap
+	if err := db.Order("id ASC").Find(&gaps).Error; err != nil {
+		t.Fatalf("list gaps: %v", err)
+	}
+	if len(gaps) != 2 {
+		t.Fatalf("gaps=%d, want 2", len(gaps))
+	}
+	counts := []int{gaps[0].EvidenceCount, gaps[1].EvidenceCount}
+	sort.Ints(counts)
+	if counts[0] != 1 || counts[1] != 2 {
+		t.Fatalf("evidence counts=%v, want [1 2]", counts)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 // DocsBlockService exposes block-level operations while keeping docs_contents
@@ -49,6 +50,19 @@ func attachDocsBlockAgentReadable(blocks []model.DocsBlock) {
 	for idx := range blocks {
 		blocks[idx].AgentReadable = docsBlockAgentProjection(blocks[idx])
 	}
+}
+
+// Get returns one live block of the document, with its agent projection.
+func (s *DocsBlockService) Get(ctx context.Context, documentID, blockID string) (*model.DocsBlock, error) {
+	block, err := s.blockRepo.GetByID(ctx, blockID)
+	if err != nil {
+		return nil, err
+	}
+	if block == nil || block.DocumentID != documentID || block.DeletedAt != nil {
+		return nil, fmt.Errorf("block not found")
+	}
+	block.AgentReadable = docsBlockAgentProjection(*block)
+	return block, nil
 }
 
 func (s *DocsBlockService) Patch(ctx context.Context, documentID, blockID string, expectedRevision int, content json.RawMessage, actorID string) (*model.DocsContent, error) {
@@ -104,20 +118,40 @@ func (s *DocsBlockService) Patch(ctx context.Context, documentID, blockID string
 }
 
 func (s *DocsBlockService) Create(ctx context.Context, documentID string, afterBlockID *string, content json.RawMessage, actorID string) (*model.DocsContent, error) {
+	saved, _, err := s.CreateBlocks(ctx, documentID, afterBlockID, false, []json.RawMessage{content}, actorID)
+	return saved, err
+}
+
+// CreateBlocks inserts one or more block nodes at a single position. When
+// afterBlockID is set the nodes are inserted right after it; otherwise they are
+// prepended when atStart is true or appended at the end of the document. It
+// returns the saved aggregate plus the stable IDs assigned to the inserted
+// blocks, in insertion order.
+func (s *DocsBlockService) CreateBlocks(ctx context.Context, documentID string, afterBlockID *string, atStart bool, contents []json.RawMessage, actorID string) (*model.DocsContent, []string, error) {
+	if len(contents) == 0 {
+		return nil, nil, fmt.Errorf("at least one block is required")
+	}
 	doc, err := s.loadEditableDocument(ctx, documentID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	node, err := decodeBlockNode(content)
-	if err != nil {
-		return nil, err
+	nodes := make([]map[string]any, 0, len(contents))
+	for _, content := range contents {
+		node, err := decodeBlockNode(content)
+		if err != nil {
+			return nil, nil, err
+		}
+		setAggregateBlockID(node, "")
+		nodes = append(nodes, node)
 	}
-	setAggregateBlockID(node, "")
 	aggregate, err := s.currentAggregate(ctx, documentID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	insertAt := len(aggregate.Content)
+	if atStart {
+		insertAt = 0
+	}
 	if afterBlockID != nil && strings.TrimSpace(*afterBlockID) != "" {
 		insertAt = -1
 		for i, child := range aggregate.Content {
@@ -127,24 +161,30 @@ func (s *DocsBlockService) Create(ctx context.Context, documentID string, afterB
 			}
 		}
 		if insertAt < 0 {
-			return nil, fmt.Errorf("after block not found")
+			return nil, nil, fmt.Errorf("after block not found")
 		}
 	}
-	aggregate.Content = append(aggregate.Content, nil)
-	copy(aggregate.Content[insertAt+1:], aggregate.Content[insertAt:])
-	aggregate.Content[insertAt] = node
+	next := make([]map[string]any, 0, len(aggregate.Content)+len(nodes))
+	next = append(next, aggregate.Content[:insertAt]...)
+	next = append(next, nodes...)
+	next = append(next, aggregate.Content[insertAt:]...)
+	aggregate.Content = next
 	raw, _ := json.Marshal(aggregate)
 	saved, err := s.contentSvc.Save(ctx, documentID, raw, actorID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	createdID, createdType := aggregateBlockAt(saved.Content, insertAt)
-	s.logBlockActivity(ctx, doc, actorID, "block_created", map[string]interface{}{
-		"block_id":       createdID,
-		"block_type":     firstNonBlank(createdType, asBlockString(node["type"])),
-		"after_block_id": derefString(afterBlockID),
-	})
-	return saved, nil
+	createdIDs := make([]string, 0, len(nodes))
+	for i, node := range nodes {
+		createdID, createdType := aggregateBlockAt(saved.Content, insertAt+i)
+		createdIDs = append(createdIDs, createdID)
+		s.logBlockActivity(ctx, doc, actorID, "block_created", map[string]interface{}{
+			"block_id":       createdID,
+			"block_type":     firstNonBlank(createdType, asBlockString(node["type"])),
+			"after_block_id": derefString(afterBlockID),
+		})
+	}
+	return saved, createdIDs, nil
 }
 
 func (s *DocsBlockService) Reorder(ctx context.Context, documentID string, blockIDs []string, actorID string) (*model.DocsContent, error) {
@@ -344,6 +384,12 @@ func decodeBlockNode(raw json.RawMessage) (map[string]any, error) {
 	}
 	if strings.TrimSpace(asBlockString(node["type"])) == "" {
 		return nil, fmt.Errorf("block content must include type")
+	}
+	// Reject structurally invalid nodes here rather than storing them: a bad
+	// shape (for example "content" as a string) survives the round trip and
+	// then breaks every reader of the document.
+	if err := tiptap.ValidateBlockNode(raw); err != nil {
+		return nil, err
 	}
 	return node, nil
 }

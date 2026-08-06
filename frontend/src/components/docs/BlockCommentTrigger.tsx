@@ -23,14 +23,14 @@ export function BlockCommentTrigger({ editor, onComment }: BlockCommentTriggerPr
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (!editor) return
+    if (!editor || editor.isDestroyed) return
     const wrapper = editor.view.dom.closest('.docs-editor-wrapper') as HTMLElement | null
     setHost(wrapper)
   }, [editor])
 
   const closestBlock = useCallback(
     (target: Element | null): HTMLElement | null => {
-      if (!editor || !target) return null
+      if (!editor || editor.isDestroyed || !target) return null
       const editorDOM = editor.view.dom
       let el: Element | null = target
       while (el && editorDOM.contains(el) && el !== editorDOM) {
@@ -45,7 +45,7 @@ export function BlockCommentTrigger({ editor, onComment }: BlockCommentTriggerPr
   )
 
   useEffect(() => {
-    if (!editor) return
+    if (!editor || editor.isDestroyed) return
     const editorDOM = editor.view.dom
     const wrapper = editorDOM.closest('.docs-editor-wrapper') as HTMLElement | null
     if (!wrapper) return

@@ -451,6 +451,9 @@ func runtimeStartRunRequest(
 	if agent != nil && strings.TrimSpace(agent.PresetKey) != "" {
 		metadata["preset_key"] = strings.TrimSpace(agent.PresetKey)
 	}
+	if requiredTools := targetCompletionRequiredTools(run.TargetType); len(requiredTools) > 0 {
+		metadata["completion_required_tools"] = requiredTools
+	}
 	if strings.TrimSpace(input.Stage) != "" {
 		metadata["planning_stage"] = strings.TrimSpace(input.Stage)
 	}
@@ -1110,10 +1113,10 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
-		// Atlas and Scribe product defaults moved from OpenAI to DeepSeek on
+		// Atlas, Scribe, and Quill product defaults moved from OpenAI to DeepSeek on
 		// OpenRouter. Only migrate the default preset when it still uses a known
 		// legacy product default, preserving custom routing choices.
-		if (presetKey == model.AgentPresetEpicPlanner || presetKey == model.AgentPresetTaskPlanner) &&
+		if (presetKey == model.AgentPresetEpicPlanner || presetKey == model.AgentPresetTaskPlanner || presetKey == model.AgentPresetDocumentationAgent) &&
 			presetVersionKey == productDefaultVersionKey &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
 			(strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel ||
@@ -3770,6 +3773,50 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 	return s.startTargetRun(ctx, workspaceID, targetType, targetID, req, strPtr(actorID), manualRunTriggerContext(), nil, nil)
 }
 
+func targetCompletionRequiredTools(targetType string) []string {
+	switch strings.TrimSpace(targetType) {
+	case "support_coverage_gap":
+		return []string{agentcontract.ToolCompleteSupportCoverageGap}
+	default:
+		return nil
+	}
+}
+
+// runAllowedToolsForTargetContract applies target-owned completion
+// requirements without expanding the selected agent's saved authorization.
+// An empty requested set means the run inherits the full agent tool set.
+func runAllowedToolsForTargetContract(agent *model.Agent, targetType string, requested []string) ([]string, error) {
+	required := targetCompletionRequiredTools(targetType)
+	tools := agentcontract.NormalizeToolNames(requested)
+	if len(required) == 0 {
+		return tools, nil
+	}
+	if agent == nil {
+		return nil, fmt.Errorf("agent is required for target %q", strings.TrimSpace(targetType))
+	}
+
+	agentAllowed := make(map[string]struct{})
+	for _, toolName := range agentcontract.NormalizeToolNames(parseJSONStringSlice(agent.AllowedTools)) {
+		agentAllowed[toolName] = struct{}{}
+	}
+	requestedSet := make(map[string]struct{}, len(tools))
+	for _, toolName := range tools {
+		requestedSet[toolName] = struct{}{}
+	}
+	for _, toolName := range required {
+		if _, ok := agentAllowed[toolName]; !ok {
+			return nil, fmt.Errorf("agent %q must allow tool %q to run target %q", strings.TrimSpace(agent.Name), toolName, strings.TrimSpace(targetType))
+		}
+		if len(tools) > 0 {
+			if _, ok := requestedSet[toolName]; !ok {
+				tools = append(tools, toolName)
+				requestedSet[toolName] = struct{}{}
+			}
+		}
+	}
+	return tools, nil
+}
+
 func supportCoverageGapRunContext(detail *model.SupportCoverageGapDetail, extra *string) string {
 	sections := make([]string, 0, 5)
 	if trimmed := strings.TrimSpace(derefString(extra)); trimmed != "" {
@@ -3926,11 +3973,15 @@ func supportCoverageGapAgentInstructions(detail *model.SupportCoverageGapDetail)
 		"- Treat this support coverage gap as an operations inbox item, not a generic writing prompt.",
 		"- First decide whether the fix belongs in public help docs, API docs, internal docs, multiple surfaces, or outside documentation.",
 		"- Use recommended_action=" + action + " as the starting strategy, then verify it against evidence and related docs.",
+		"- Search the current workspace documentation before deciding the disposition, even when the gap has no linked article.",
+		"- Inspect a repository only when product or feature implementation is a relevant source of truth. If repositories are available, search the relevant source and read matching implementation or tests; a successful search with no relevant match is valid evidence for feature_not_found.",
+		"- Repository inspection is not required for policy, process, data, or other gaps whose authoritative source is elsewhere. Record source_status=not_applicable and explain the source used.",
+		"- If a relevant repository or other required source is unavailable, do not invent behavior. Use blocked/source_unavailable or create review-ready documentation that clearly records the verification gap.",
 		"- If this is a data, action, policy, or workflow gap, only create docs when documentation is part of the fix; otherwise prepare a concise handoff that names the owner, missing capability, and customer impact.",
 		"- Prefer improving linked docs for weak or conflicting gaps; avoid creating duplicate articles.",
 		"- For missing docs, write the right document type and place it in the appropriate collection or propose where it belongs.",
 		"- For needs_review gaps, summarize the ambiguity and ask for clarification or create a review checkpoint before drafting.",
-		"- Do not mark the gap resolved unless a draft, proposal, or explicit human handoff exists.",
+		"- Finish every run by calling complete_support_coverage_gap with the disposition: resolved for a verified fix, review_ready for a durable draft or proposal, routed for a completed non-doc investigation, or blocked when required source access is unavailable.",
 	}, "\n")
 }
 
@@ -4329,12 +4380,16 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, err
 		}
-		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
+		coverageAllowedTools, err := runAllowedToolsForTargetContract(agent, "support_coverage_gap", req.AllowedTools)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateRunAllowedTools(coverageAllowedTools, agent); err != nil {
 			return nil, err
 		}
 
 		context := supportCoverageGapRunContext(detail, req.AdditionalContext)
-		input, err := buildAgentRunInputPayload("support_coverage_gap", detail.ID, trigger, event, req.Output, &context, req.AllowedTools, workspaceContext)
+		input, err := buildAgentRunInputPayload("support_coverage_gap", detail.ID, trigger, event, req.Output, &context, coverageAllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build support coverage gap run input: %w", err)
 		}

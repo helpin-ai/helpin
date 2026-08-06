@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
@@ -329,6 +330,63 @@ func TestAgentRuntimeHostResolveSupportConversationBypassesMailboxMembership(t *
 	}
 }
 
+func TestAgentRuntimeHostResolveSupportCoverageGapTarget(t *testing.T) {
+	_, coverage, db := setupCoverageTestEnv(t)
+	if err := db.Exec(`CREATE TABLE workspaces (
+		id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL, workspace_key TEXT,
+		owner_id TEXT NOT NULL, organization_id TEXT, description TEXT,
+		company_product_context TEXT, website_url TEXT, logo_url TEXT,
+		timezone TEXT NOT NULL DEFAULT 'UTC', created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create workspace target table: %v", err)
+	}
+	now := time.Now().UTC()
+	workspace := &model.Workspace{ID: "ws-gap", Name: "Acme", Slug: "acme", OwnerID: "user-1"}
+	if err := db.Create(workspace).Error; err != nil {
+		t.Fatalf("seed workspace: %v", err)
+	}
+	gap := &model.SupportCoverageGap{ID: "gap-1", WorkspaceID: workspace.ID, Title: "Password reset docs are missing"}
+	if err := db.Exec(`INSERT INTO support_coverage_gaps (
+		id, workspace_id, dedupe_key, title, status, evidence_count, confidence,
+		metadata, first_seen_at, last_seen_at, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		gap.ID, gap.WorkspaceID, "reset-password", gap.Title, model.SupportCoverageGapStatusOpen,
+		2, 0.91, []byte(`{}`), now, now, now, now,
+	).Error; err != nil {
+		t.Fatalf("seed coverage gap: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO support_gap_evidence (
+		id, gap_id, workspace_id, evidence_type, excerpt, metadata, created_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"evidence-1", gap.ID, workspace.ID, model.SupportEventDocsIssueFeedback,
+		"How can I reset my password?", []byte(`{}`), now,
+	).Error; err != nil {
+		t.Fatalf("seed gap evidence: %v", err)
+	}
+	host := NewAgentRuntimeHostService(
+		"helpin", nil, repository.NewWorkspaceRepository(db), nil, nil,
+		nil, nil, nil, nil, nil, nil, nil,
+	).SetSupportCoverageService(coverage)
+
+	resolved, err := host.ResolveTargetContext(context.Background(), agentruntime.TargetContextRequest{
+		AppID: "helpin", Target: agentruntime.TargetRef{Type: "support_coverage_gap", ID: gap.ID},
+		Metadata: map[string]interface{}{"workspace_id": workspace.ID},
+	})
+	if err != nil {
+		t.Fatalf("ResolveTargetContext returned error: %v", err)
+	}
+	if resolved.Target.Display == nil || resolved.Target.Display.Title != gap.Title {
+		t.Fatalf("unexpected gap target display: %#v", resolved.Target.Display)
+	}
+	if !strings.Contains(resolved.Summary, "How can I reset my password?") || !strings.Contains(resolved.Summary, "evidence_count=2") {
+		t.Fatalf("gap target summary lacks evidence: %q", resolved.Summary)
+	}
+	gapData, ok := resolved.Data["support_coverage_gap"].(map[string]interface{})
+	if !ok || gapData["id"] != gap.ID || gapData["title"] != gap.Title {
+		t.Fatalf("unexpected typed gap context: %#v", resolved.Data)
+	}
+}
+
 func TestAgentRuntimeHostResolveSprintTarget(t *testing.T) {
 	sprintService, db, workspaceID := newSprintTestEnvWithDB(t)
 	seedPMSprintCommandTeam(t, db, workspaceID, "team-runtime-sprint")
@@ -456,6 +514,53 @@ func TestAgentRuntimeHostRepositorySpecRestoresDynamicCheckoutTargetAfterResume(
 	}
 	if spec.BaseBranch != "release" || spec.WorkBranch != "agent/dock-read" {
 		t.Fatalf("dynamic checkout branches were not preserved: %#v", spec)
+	}
+}
+
+func TestAgentRuntimeHostRepositorySpecRestoresCoverageCheckoutAcrossRuntimeKinds(t *testing.T) {
+	for _, runtimeKind := range []string{"codex", "native_sdk"} {
+		t.Run(runtimeKind, func(t *testing.T) {
+			db := newTestDB(t)
+			seedGitDeliveryStatusFixture(t, db)
+			ensureAgentRuntimeHostRunTable(t, db)
+			runtimeRunID := "run-runtime-gap-" + runtimeKind
+			mustExec(t, db, `INSERT INTO agent_runs (
+				id, workspace_id, agent_id, target_type, target_id, runtime_kind, status, external_runtime, external_runtime_id, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+				"run-helpin-gap-"+runtimeKind, "ws-1", "agent-quill", "support_coverage_gap", "gap-1", runtimeKind, "running", agentRuntimeName, runtimeRunID)
+
+			host := NewAgentRuntimeHostService(
+				"helpin",
+				repository.NewAgentRunRepository(db),
+				nil, nil, nil, nil, nil, nil, nil, nil, nil,
+				newGitDeliveryStatusService(db, &fakeGitHubAppClient{}),
+			)
+
+			spec, err := host.ResolveRepositorySpec(context.Background(), agentruntime.PrepareWorkspaceRequest{
+				AppID:         "helpin",
+				RunID:         runtimeRunID,
+				AgentID:       "agent-quill",
+				RuntimeKind:   runtimeKind,
+				Target:        agentruntime.TargetRef{Type: "support_coverage_gap", ID: "gap-1"},
+				WorkspaceMode: agentruntime.WorkspaceModeRepository,
+				Metadata: map[string]interface{}{
+					"workspace_id":   "ws-1",
+					"repository_id":  "repo-1",
+					"repo_full_name": "acme/api",
+					"base_branch":    "release",
+					"work_branch":    "agent/quill-review",
+				},
+			})
+			if err != nil {
+				t.Fatalf("ResolveRepositorySpec returned error after coverage-gap resume: %v", err)
+			}
+			if spec.Metadata["repository_id"] != "repo-1" || spec.Metadata["repo_full_name"] != "acme/api" {
+				t.Fatalf("coverage checkout repository identity was not restored: %#v", spec.Metadata)
+			}
+			if spec.BaseBranch != "release" || spec.WorkBranch != "agent/quill-review" {
+				t.Fatalf("coverage checkout branches were not preserved: %#v", spec)
+			}
+		})
 	}
 }
 

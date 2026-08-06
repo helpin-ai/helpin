@@ -45,6 +45,7 @@ type AgentRuntimeHostService struct {
 	sprintService    *PMSprintService
 	objectiveService *PMObjectiveService
 	supportRepo      *repository.SupportConversationRepository
+	supportCoverage  *SupportCoverageService
 	docsRepo         *repository.DocsDocumentRepository
 	crmContactRepo   *repository.CRMContactRepository
 	crmCompanyRepo   *repository.CRMCompanyRepository
@@ -324,6 +325,16 @@ func (s *AgentRuntimeHostService) SetPMObjectiveService(objectiveService *PMObje
 	return s
 }
 
+// SetSupportCoverageService enables typed support coverage gap target
+// resolution for documentation-agent runs.
+func (s *AgentRuntimeHostService) SetSupportCoverageService(coverageService *SupportCoverageService) *AgentRuntimeHostService {
+	if s == nil {
+		return s
+	}
+	s.supportCoverage = coverageService
+	return s
+}
+
 // enrichCommandActor resolves the external actor's workspace membership,
 // stamps role/team info onto the command metadata, and returns the full actor
 // for authorization checks in command services. Runs without a human actor
@@ -489,6 +500,43 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 				"resolve_generic_product_references": true,
 			}
 		}
+	case "support_coverage_gap":
+		if workspaceID == "" {
+			return nil, fmt.Errorf("%w: workspace_id metadata or run mapping is required for support coverage gap targets", ErrAgentRuntimeHostBadRequest)
+		}
+		if s.supportCoverage == nil {
+			return nil, fmt.Errorf("support coverage target resolver is not configured")
+		}
+		detail, err := s.supportCoverage.GetGapDetail(ctx, workspaceID, target.ID)
+		if err != nil {
+			return nil, err
+		}
+		if detail == nil {
+			return nil, fmt.Errorf("%w: support coverage gap not found", ErrAgentRuntimeHostNotFound)
+		}
+		workspaceID = detail.WorkspaceID
+		if err := ensureRuntimeWorkspaceMatch(requestedWorkspaceID, workspaceID); err != nil {
+			return nil, err
+		}
+		resp.Summary = supportCoverageGapRunContext(detail, nil)
+		resp.Target.Display = &agentruntime.TargetDisplay{Title: detail.Title}
+		resp.Data = runtimeSupportCoverageGapContextData(detail)
+		if s.workspaceRepo != nil {
+			workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+			if err != nil {
+				return nil, err
+			}
+			if workspace != nil {
+				resp.Data["workspace"] = runtimeWorkspaceContextData(workspace)
+				resp.Data["product_context"] = map[string]interface{}{
+					"name":                               workspace.Name,
+					"website_url":                        agentRuntimeHostString(workspace.WebsiteURL),
+					"summary":                            agentRuntimeHostString(workspace.Description),
+					"is_current_website_product":         true,
+					"resolve_generic_product_references": true,
+				}
+			}
+		}
 	case "document":
 		doc, err := s.docsRepo.GetByID(ctx, target.ID)
 		if err != nil {
@@ -574,6 +622,22 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 	return resp, nil
 }
 
+func runtimeSupportCoverageGapContextData(detail *model.SupportCoverageGapDetail) map[string]interface{} {
+	if detail == nil {
+		return map[string]interface{}{}
+	}
+	body := map[string]interface{}{}
+	payload, err := json.Marshal(detail)
+	if err == nil {
+		_ = json.Unmarshal(payload, &body)
+	}
+	return map[string]interface{}{
+		"target_type":          "support_coverage_gap",
+		"target_id":            detail.ID,
+		"support_coverage_gap": body,
+	}
+}
+
 func (s *AgentRuntimeHostService) ResolveRepositorySpec(ctx context.Context, req agentruntime.PrepareWorkspaceRequest) (*agentruntime.RepositoryWorkspaceSpec, error) {
 	if s == nil || s.gitService == nil {
 		return nil, fmt.Errorf("repository workspace provider is not configured")
@@ -603,14 +667,14 @@ func (s *AgentRuntimeHostService) ResolveRepositorySpec(ctx context.Context, req
 
 // runtimeRepositorySpecTarget restores the concrete repository target for a
 // dynamically checked-out repository after an interactive run resumes. Agent
-// Runtime keeps the run's product target (for example, workspace) but records
-// the primary checkout identity in run input metadata. Lease validation later
-// calls repository-spec with that original product target, so the host adapter
-// must use the explicit checkout metadata rather than attempting to resolve
-// the product workspace itself as a Git repository.
+// Runtime keeps the run's product target (for example, a workspace or support
+// coverage gap) but records the primary checkout identity in run input
+// metadata. Lease validation later calls repository-spec with that original
+// product target, so the host adapter must use the explicit checkout metadata
+// rather than attempting to resolve the product object as a Git repository.
 func runtimeRepositorySpecTarget(req agentruntime.PrepareWorkspaceRequest, contextMaps ...map[string]interface{}) agentruntime.TargetRef {
 	target := normalizeRuntimeTarget(req.Target)
-	if target.Type != "workspace" || strings.TrimSpace(req.WorkspaceMode) != agentruntime.WorkspaceModeRepository {
+	if target.Type == "repository" || strings.TrimSpace(req.WorkspaceMode) != agentruntime.WorkspaceModeRepository {
 		return target
 	}
 	maps := []map[string]interface{}{req.Metadata, target.Metadata}

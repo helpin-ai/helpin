@@ -22,7 +22,6 @@ import {
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { useAuthStore } from '@/stores/authStore'
 import {
   useDocsDocuments,
   useArchiveDocsDocument,
@@ -69,11 +68,10 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
   useTitle(title)
   const navigate = useNavigate()
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
-  const user = useAuthStore((s) => s.user)
   const wsId = workspace?.id ?? ''
   const wsSlug = workspace?.slug ?? ''
 
-  const { data: access } = useWorkspaceAccess(wsId)
+  const { data: access, isLoading: isAccessLoading } = useWorkspaceAccess(wsId)
   const { canEditDocs } = usePermissions(access)
 
   const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
@@ -85,11 +83,15 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
 
   const filters = useMemo(() => {
     if (filterMode === 'drafts') return { status: 'draft' }
-    if (filterMode === 'my' && user?.id) return { owner_id: user.id }
+    if (filterMode === 'my' && access?.membership.id) {
+      return { owner_id: access.membership.id, include_archived: 'true' }
+    }
     return {}
-  }, [filterMode, user?.id])
+  }, [filterMode, access?.membership.id])
 
-  const { data: rawDocuments, isLoading } = useDocsDocuments(wsId, filters)
+  const { data: rawDocuments, isLoading } = useDocsDocuments(wsId, filters, {
+    enabled: filterMode !== 'my' || !!access?.membership.id,
+  })
   const { data: members = [] } = useAssignableMembers(wsId)
   const archiveDoc = useArchiveDocsDocument(wsId)
   const unarchiveDoc = useUnarchiveDocsDocument(wsId)
@@ -167,7 +169,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
         <p className="text-sm text-muted-foreground">{description}</p>
       </header>
 
-      {isLoading ? (
+      {isLoading || (filterMode === 'my' && isAccessLoading) ? (
         <div className="space-y-2 py-4">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="h-10 animate-pulse rounded-md bg-muted/60" />

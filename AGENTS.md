@@ -323,13 +323,15 @@ paths:
   - differ mainly in backend-owned defaults, prompt/skill bundles, allowed tools, and product launch surfaces
 - `custom agents`
   - `is_system = false`
-  - generic executors
+  - workspace-managed, versioned generic executors
   - use the same `agent_run` executor path as system agents
   - should gather most context through tools after receiving a minimal trigger payload
 
 Current executor model:
 
 - `agent_run` is the durable execution primitive for system agents, custom agents, and one-shot command agents
+- Agent Runtime is the only agent executor; Helpin owns workspace tenancy,
+  configuration, authorization, triggers, launch surfaces, and product finalizers
 - `runtime_kind` selects the backend adapter (`native_sdk`, `codex`, or `opencode` where configured), not a separate product behavior path
 - planner/review/support behavior is expressed through prompt, skills, allowed tools, targets, and artifact contracts
 - Helpin product and interaction tools are model-facing through MCP runtime names such as `mcp__helpin__update_plan` and `mcp__helpin__request_user_input`; backend policy and persistence still use canonical bare aliases
@@ -338,8 +340,8 @@ Current trigger surfaces in code:
 
 - manual run actions
 - agent `trigger_mode`
-- agent `schedule`
-- automation-rule triggers: `story.state_entered`, `agent_run.approved`, `cron`
+- automation-rule event triggers such as `task.state_entered` and `agent_run.approved`
+- automation-rule `cron`
 
 Billing and AI usage rules for agent launch surfaces:
 
