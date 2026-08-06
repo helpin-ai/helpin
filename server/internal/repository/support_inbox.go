@@ -1415,11 +1415,15 @@ func (r *SupportConversationRepository) Search(ctx context.Context, params Conve
 		SupportSearchScore float64 `gorm:"column:support_search_score"`
 	}
 	selectSQL := fmt.Sprintf(`support_conversations.*, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon, (%s) AS support_search_score`, scoreSQL)
+	offset := (page - 1) * perPage
+	if params.Pagination.Offset != nil {
+		offset = *params.Pagination.Offset
+	}
 	if err := fetch.
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Select(selectSQL, scoreArgs...).
 		Order(supportSearchOrder(sortOrder, params.Query)).
-		Offset((page - 1) * perPage).
+		Offset(offset).
 		Limit(perPage).
 		Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("search conversations: %w", err)
@@ -1473,6 +1477,9 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 		perPage = 50
 	}
 	offset := (page - 1) * perPage
+	if params.Pagination.Offset != nil {
+		offset = *params.Pagination.Offset
+	}
 
 	// Fresh query for fetch — Count() taints the SELECT clause
 	fetch := r.db.WithContext(ctx).Table("support_conversations").Where("support_conversations.workspace_id = ?", params.WorkspaceID)

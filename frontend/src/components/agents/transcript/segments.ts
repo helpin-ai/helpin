@@ -209,7 +209,26 @@ export function collectSegments(
   }
 
   if (opts.includeLive) {
+    // Indexes hoisted out of `out` and re-emitted at their live position.
     const matchedPersistedIndexes = new Set<number>();
+    // Indexes already represented (hoisted OR settled) — excluded from
+    // further live matching either way.
+    const consumedPersistedIndexes = new Set<number>();
+    // The live timeline accumulates across every turn of a long-lived chat
+    // run, but it only carries assistant/tool segments — never user
+    // messages. Hoisting all matched segments to the tail would therefore
+    // stack every user message above the whole assistant history. Segments
+    // from turns that already ended (before the last user message) are
+    // settled: they keep their transcript position and their live
+    // counterparts are dropped. Only the current turn's tail follows the
+    // live timeline's ordering.
+    let lastUserIndex = -1;
+    for (let index = out.length - 1; index >= 0; index -= 1) {
+      if (out[index].kind === 'user') {
+        lastUserIndex = index;
+        break;
+      }
+    }
     const liveOut: TranscriptSegment[] = [];
     if (stream.live_reasoning_message && include.has('reasoning')) {
       liveOut.push({
@@ -224,10 +243,12 @@ export function collectSegments(
         if (!content || !include.has('assistant')) continue;
 
         const persisted = persistedAssistantSegments.find((candidate) => (
-          !matchedPersistedIndexes.has(candidate.outIndex)
+          !consumedPersistedIndexes.has(candidate.outIndex)
           && candidate.segment.messageId === segment.assistant_message.message_id
         ));
         if (persisted) {
+          consumedPersistedIndexes.add(persisted.outIndex);
+          if (persisted.outIndex < lastUserIndex) continue;
           matchedPersistedIndexes.add(persisted.outIndex);
           // The persisted body is authoritative and complete, but the live
           // timeline supplies its correct position among tool calls.
@@ -245,10 +266,12 @@ export function collectSegments(
       } else if (segment.kind === 'tool_call' && !isToolName(segment.tool_call.tool_name, 'update_plan')) {
         if (!include.has('tool')) continue;
         const persisted = persistedToolSegments.find((candidate) => (
-          !matchedPersistedIndexes.has(candidate.outIndex)
+          !consumedPersistedIndexes.has(candidate.outIndex)
           && candidate.segment.toolCall.tool_call_id === segment.tool_call.tool_call_id
         ));
         if (persisted) {
+          consumedPersistedIndexes.add(persisted.outIndex);
+          if (persisted.outIndex < lastUserIndex) continue;
           matchedPersistedIndexes.add(persisted.outIndex);
           liveOut.push(persisted.segment);
         } else {

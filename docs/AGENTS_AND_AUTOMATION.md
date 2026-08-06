@@ -285,6 +285,21 @@ Repo-local execution tools such as file reads, patching, and shell commands may
 still be provided directly by a backend where appropriate. Helpin product tools
 should go through MCP for both `native_sdk` and `codex`.
 
+Authenticated browser automation is also runtime-owned. The canonical browser
+bundle is `browser_open`, `browser_snapshot`, `browser_act`, and
+`browser_screenshot`. Agent Runtime executes the bounded contracts through the
+pinned `agent-browser` CLI and Kernel; Helpin owns selection metadata and the
+durable S3-backed screenshot asset endpoint. Each app/run receives an isolated,
+short-lived browser session without a persistent Kernel profile. Paused turns
+retain the session; the runtime closes it when the run becomes terminal, and
+Kernel's configured idle timeout is the fallback. Login state does not survive
+a closed or timed-out session.
+
+Use web search, `fetch_url`, or `crawl_url` for public read-only research. Use
+the browser bundle only for authenticated pages, UI interactions, or visual
+capture. Browser output is compact and screenshots return asset metadata rather
+than inline image bytes.
+
 When writing prompts, skill markdown, or planner guidance, use the runtime-facing
 tool name from the prompt renderer, for example `mcp__helpin__update_plan`, not
 the bare alias. When writing backend tests, policies, or artifact decoders, use

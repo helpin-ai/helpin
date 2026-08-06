@@ -995,6 +995,10 @@ func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx cont
 		ToolInvocations:  toolInvocations,
 		TurnSegments:     runtimeMessageTurnSegments(runtimeMessageID, content, toolInvocations),
 		SequenceNo:       sequenceNo,
+		// The chat transcript orders by created_at; the envelope's sent_at is
+		// the emission time the runtime persisted with the event, so replayed
+		// events keep conversation order instead of clustering at insert time.
+		CreatedAt: s.eventTime(event),
 	}
 	if err := s.runMessageRepo.Create(ctx, message); err != nil {
 		return err

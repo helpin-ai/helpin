@@ -1,8 +1,10 @@
-import { File01Icon, FileCodeIcon, CheckmarkCircle02Icon, GitPullRequestIcon, BotIcon, CheckListIcon, SecurityCheckIcon } from '@/lib/icons';
+import { useEffect, useState } from 'react';
+import { File01Icon, FileCodeIcon, CheckmarkCircle02Icon, GitPullRequestIcon, BotIcon, CheckListIcon, SecurityCheckIcon, Image01Icon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { AgentRunArtifact } from '@/lib/pmTypes';
 import { ARTIFACT_TYPE_LABELS } from './agentRunConstants';
+import { automationService } from '@/lib/services/automationService';
 
 const ARTIFACT_ICONS: Record<string, React.ReactNode> = {
   conversation_log: <File01Icon className="h-3.5 w-3.5" />,
@@ -28,6 +30,7 @@ const ARTIFACT_ICONS: Record<string, React.ReactNode> = {
   run_plan: <CheckListIcon className="h-3.5 w-3.5" />,
   review_findings: <SecurityCheckIcon className="h-3.5 w-3.5" />,
   review_decision: <SecurityCheckIcon className="h-3.5 w-3.5" />,
+  browser_screenshot: <Image01Icon className="h-3.5 w-3.5" />,
 };
 
 interface Props {
@@ -42,6 +45,28 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
   const reviewFindings = artifact.artifact_type === 'review_findings' ? parseReviewFindingsArtifact(artifact.inline_content) : null;
   const reviewDecision = artifact.artifact_type === 'review_decision' ? parseReviewDecisionArtifact(artifact.inline_content) : null;
   const linkedDecision = artifact.artifact_type === 'review_findings' ? parseReviewDecisionArtifact(reviewDecisionArtifact?.inline_content) : null;
+  const [screenshotURL, setScreenshotURL] = useState<string | null>(null);
+  const [screenshotError, setScreenshotError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (artifact.artifact_type !== 'browser_screenshot') {
+      setScreenshotURL(null);
+      setScreenshotError(false);
+      return () => { cancelled = true; };
+    }
+    setScreenshotURL(null);
+    setScreenshotError(false);
+    void automationService.getArtifactContentURL(artifact.workspace_id, artifact.id).then((response) => {
+      if (cancelled) return;
+      if (response.error || !response.data?.url) {
+        setScreenshotError(true);
+        return;
+      }
+      setScreenshotURL(response.data.url);
+    });
+    return () => { cancelled = true; };
+  }, [artifact.artifact_type, artifact.id, artifact.workspace_id]);
 
   return (
     <div className="min-w-0 overflow-hidden rounded border border-border/60 bg-muted/30 p-2">
@@ -50,7 +75,22 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
         <span className="capitalize">{label}</span>
         <span className="text-muted-foreground">({artifact.format})</span>
       </div>
-      {runPlan ? (
+      {artifact.artifact_type === 'browser_screenshot' ? (
+        screenshotURL ? (
+          <a href={screenshotURL} target="_blank" rel="noreferrer" className="block overflow-hidden rounded border border-border/60 bg-background">
+            <img
+              src={screenshotURL}
+              alt={typeof artifact.metadata?.file_name === 'string' ? artifact.metadata.file_name : 'Browser screenshot'}
+              className="max-h-72 w-full object-contain"
+              onError={() => { setScreenshotURL(null); setScreenshotError(true); }}
+            />
+          </a>
+        ) : (
+          <div className="rounded border border-border/60 bg-background px-2 py-4 text-center text-[11px] text-muted-foreground">
+            {screenshotError ? 'Screenshot is unavailable' : 'Loading screenshot…'}
+          </div>
+        )
+      ) : runPlan ? (
         <div className="space-y-1 text-[11px] text-muted-foreground">
           {runPlan.note ? <p>{runPlan.note}</p> : null}
           <ul className="space-y-1">

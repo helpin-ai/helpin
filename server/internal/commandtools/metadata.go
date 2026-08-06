@@ -12,13 +12,22 @@ type RuntimeToolMetadata struct {
 	Category    string
 	Description string
 	InputSchema map[string]any
+	RiskLevel   string
 }
+
+const (
+	RiskLevelRead        = "read"
+	RiskLevelRoutine     = "routine_mutation"
+	RiskLevelSensitive   = "sensitive_mutation"
+	RiskLevelDestructive = "destructive_mutation"
+)
 
 func ToolMetadataForAlias(alias string) (*RuntimeToolMetadata, bool) {
 	alias = strings.TrimSpace(alias)
 	for _, meta := range sharedRuntimeTools {
 		if meta.Alias == alias {
 			copied := meta
+			copied.RiskLevel = runtimeToolRiskLevel(copied.Alias)
 			return &copied, true
 		}
 	}
@@ -30,6 +39,7 @@ func ToolMetadataForCommand(name string) (*RuntimeToolMetadata, bool) {
 	for _, meta := range sharedRuntimeTools {
 		if meta.CommandName == name {
 			copied := meta
+			copied.RiskLevel = runtimeToolRiskLevel(copied.Alias)
 			return &copied, true
 		}
 	}
@@ -38,19 +48,174 @@ func ToolMetadataForCommand(name string) (*RuntimeToolMetadata, bool) {
 
 func AllRuntimeToolMetadata() []RuntimeToolMetadata {
 	all := make([]RuntimeToolMetadata, len(sharedRuntimeTools))
-	copy(all, sharedRuntimeTools)
+	for index, meta := range sharedRuntimeTools {
+		meta.RiskLevel = runtimeToolRiskLevel(meta.Alias)
+		all[index] = meta
+	}
 	return all
 }
 
+// runtimeToolRiskLevel classifies command-backed mutations independently of
+// any agent preset. An empty value is a safe fallback: callers treat an
+// unclassified mutation as sensitive, never as routine.
+func runtimeToolRiskLevel(alias string) string {
+	if level, ok := runtimeToolRiskLevels[strings.TrimSpace(alias)]; ok {
+		return level
+	}
+	return ""
+}
+
+var runtimeToolRiskLevels = map[string]string{
+	"create_space": RiskLevelRoutine, "create_collection": RiskLevelRoutine,
+	"create_document": RiskLevelRoutine, "update_space": RiskLevelRoutine,
+	"update_collection": RiskLevelRoutine, "move_document": RiskLevelRoutine,
+	"write_document_content": RiskLevelRoutine, "update_document_block": RiskLevelRoutine,
+	"insert_document_image":   RiskLevelRoutine,
+	"link_document_to_object": RiskLevelRoutine, "ensure_epic_spec_doc": RiskLevelRoutine,
+	"ensure_task_plan_doc": RiskLevelRoutine, "publish_document_change_proposal": RiskLevelRoutine,
+	"publish_ai_section_candidate": RiskLevelRoutine,
+	"create_task":                  RiskLevelRoutine, "create_task_batch": RiskLevelRoutine,
+	"create_task_checklist_item": RiskLevelRoutine, "update_task_checklist_item": RiskLevelRoutine,
+	"update_task": RiskLevelRoutine, "update_task_state": RiskLevelRoutine,
+	"update_story_state": RiskLevelRoutine, "set_task_dependencies": RiskLevelRoutine,
+	"ensure_task_label": RiskLevelRoutine, "add_task_comment": RiskLevelRoutine,
+	"create_epic": RiskLevelRoutine, "update_epic": RiskLevelRoutine,
+	"create_sprint": RiskLevelRoutine, "update_sprint": RiskLevelRoutine,
+	"create_objective": RiskLevelRoutine, "update_objective": RiskLevelRoutine,
+	"add_deal_note": RiskLevelRoutine, "update_deal_stage": RiskLevelRoutine,
+	"ensure_crm_contact_company": RiskLevelRoutine, "enrich_crm_contact": RiskLevelRoutine,
+	"enrich_crm_company": RiskLevelRoutine, "draft_support_reply": RiskLevelRoutine,
+	"update_conversation_status": RiskLevelRoutine,
+	"send_support_reply":         RiskLevelSensitive, "escalate_to_human": RiskLevelSensitive,
+	"run_epic_delivery_pipeline": RiskLevelDestructive,
+}
+
 var sharedRuntimeTools = []RuntimeToolMetadata{
+	{
+		CommandName: "workspace.search",
+		Alias:       "search_workspace",
+		Category:    "Workspace",
+		Description: "Search accessible workspace entities by keyword or identity. Every displayed result must use its returned markdown_link verbatim. Task searches match task keys, names, and descriptions. Use this for requests asking which entities mention, contain, discuss, or relate to a term; use list tools only for enumeration or structured filtering.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{"type": "string", "minLength": 1, "maxLength": 500, "description": "Keyword, UUID, task key, name, email, domain, or support subject to find. Task keywords are matched against names and descriptions."},
+				"entity_types": map[string]any{
+					"type": "array", "maxItems": 10, "uniqueItems": true,
+					"description": "Optional entity types to search. Omit to search every accessible type.",
+					"items":       map[string]any{"type": "string", "enum": []string{"task", "epic", "sprint", "objective", "document", "workspace_member", "crm_contact", "crm_company", "crm_deal", "support_conversation"}},
+				},
+				"limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum results to return. Defaults to 10, max 50."},
+				"offset": map[string]any{"type": "integer", "minimum": 0, "maximum": 500, "description": "Zero-based result offset. Use next_offset from the previous response."},
+			},
+			"required":             []string{"query"},
+			"additionalProperties": false,
+		},
+	},
 	{
 		CommandName: "workspace.list_teams",
 		Alias:       "list_workspace_teams",
 		Category:    "Workspace",
 		Description: "List workspace teams that the agent can use for team selection, task filtering, or planning context.",
+		InputSchema: boundedListSchema(nil),
+	},
+	{
+		CommandName: "docs.list_documents",
+		Alias:       "list_documents",
+		Category:    "Docs",
+		Description: "List Helpin Docs documents in the current workspace. Every displayed document must use its returned markdown_link verbatim. Use status=draft for questions about documents that need to be published.",
 		InputSchema: map[string]any{
-			"type":                 "object",
-			"properties":           map[string]any{},
+			"type": "object",
+			"properties": map[string]any{
+				"space_id":         map[string]any{"type": "string"},
+				"collection_id":    map[string]any{"type": "string"},
+				"team_id":          map[string]any{"type": "string"},
+				"status":           map[string]any{"type": "string", "enum": []string{"draft", "published", "archived"}},
+				"include_archived": map[string]any{"type": "boolean"},
+				"limit":            map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "Maximum documents to return. Defaults to 50, max 100."},
+				"offset":           map[string]any{"type": "integer", "minimum": 0, "description": "Zero-based result offset. Use next_offset from the previous response."},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+	},
+	{
+		CommandName: "docs.search_documents",
+		Alias:       "search_documents",
+		Category:    "Docs",
+		Description: "Search documents by keyword across the workspace. Every displayed document must use its returned markdown_link verbatim. Use only when you need to find other documents or the current document ID is unknown; do not use it to inspect a known current document.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query":  map[string]any{"type": "string", "minLength": 1, "description": "Search query"},
+				"limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "description": "Maximum results to return. Defaults to 10, max 20."},
+				"offset": map[string]any{"type": "integer", "minimum": 0, "description": "Zero-based result offset. Use next_offset from the previous response."},
+			},
+			"required":             []string{"query"},
+			"additionalProperties": false,
+		},
+	},
+	{
+		CommandName: "crm.list_deals",
+		Alias:       "list_deals",
+		Category:    "CRM",
+		Description: "List CRM deals in the workspace, optionally filtered by a case-insensitive name query. Returns deal name, stage, and amount.",
+		InputSchema: paginatedQuerySchema(50, 20, "Maximum number of deals to return. Defaults to 20, max 50."),
+	},
+	{
+		CommandName: "crm.list_contacts",
+		Alias:       "list_contacts",
+		Category:    "CRM",
+		Description: "List CRM contacts in the workspace, optionally filtered by a case-insensitive name, email, or job-title query. Returns name, email, and job title.",
+		InputSchema: paginatedQuerySchema(50, 20, "Maximum number of contacts to return. Defaults to 20, max 50."),
+	},
+	{
+		CommandName: "crm.list_buyer_signals",
+		Alias:       "list_buyer_signals",
+		Category:    "CRM",
+		Description: "List detected buyer signals from emails, meetings, and support conversations.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"deal_id": map[string]any{"type": "string", "description": "Optional deal ID to filter signals for a specific deal."},
+				"limit":   map[string]any{"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum number of signals to return. Defaults to 20, max 50."},
+				"offset":  map[string]any{"type": "integer", "minimum": 0, "description": "Zero-based result offset. Use next_offset from the previous response."},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+	},
+	{
+		CommandName: "support.list_conversation_messages",
+		Alias:       "list_conversation_messages",
+		Category:    "Support",
+		Description: "List the current support conversation messages.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"conversation_id": map[string]any{"type": "string", "description": "Optional conversation ID. Defaults to the current conversation target."},
+				"limit":           map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "Maximum messages to return. Defaults to 50, max 100."},
+				"offset":          map[string]any{"type": "integer", "minimum": 0, "description": "Zero-based result offset. Use next_offset from the previous response."},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+	},
+	{
+		CommandName: "release.get_task_context",
+		Alias:       "get_task_context",
+		Category:    "Release",
+		Description: "Load compact task context with optional linked docs, document content, comments, and git links for specific task IDs or human task keys.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"task_ids":                 map[string]any{"type": "array", "description": "Task IDs to load. Combined maximum with task_keys is 50.", "items": map[string]any{"type": "string"}, "maxItems": 50},
+				"task_keys":                map[string]any{"type": "array", "description": "Human task keys to load, for example USE-488. Combined maximum with task_ids is 50.", "items": map[string]any{"type": "string"}, "maxItems": 50},
+				"include_linked_docs":      map[string]any{"type": "boolean", "description": "Whether to include linked document metadata."},
+				"include_document_content": map[string]any{"type": "boolean", "description": "Whether to include linked document content text. Only used when include_linked_docs is true."},
+				"include_comments":         map[string]any{"type": "boolean", "description": "Whether to include task comments."},
+				"include_git_links":        map[string]any{"type": "boolean", "description": "Whether to include git links for each task."},
+			},
 			"required":             []string{},
 			"additionalProperties": false,
 		},
@@ -128,7 +293,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "pm.list_tasks",
 		Alias:       "list_tasks",
 		Category:    "PM / Tasks",
-		Description: "List tasks in the current workspace with optional text query, label, team, open-only, description, and comment filters.",
+		Description: "List tasks in the current workspace with optional text query, label, team, open-only, description, and comment filters. Every displayed task must use its returned markdown_link verbatim.",
 		InputSchema: listTasksSchema(),
 	},
 	{
@@ -228,8 +393,16 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "pm.get_task",
 		Alias:       "get_task",
 		Category:    "PM / Tasks",
-		Description: "Get one accessible task with its state, team, owners, labels, epic or sprint references, deadline, and blocking metadata.",
-		InputSchema: entityIDSchema("task_id", "Optional task ID. Omit to use the current task target when available."),
+		Description: "Get one accessible task by UUID or human task key with its state, team, owners, labels, epic or sprint references, deadline, and blocking metadata.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"task_id":  optionalIDSchema("Optional task UUID. Omit to use task_key or the current task target."),
+				"task_key": map[string]any{"type": "string", "description": "Optional human task key, for example USE-488."},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
 	},
 	{
 		CommandName: "pm.update_task",
@@ -475,6 +648,39 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 			},
 			"required": []string{"document_id", "block_id", "revision", "content"},
+		},
+	},
+	{
+		CommandName: "docs.insert_document_image",
+		Alias:       "insert_document_image",
+		Category:    "Docs",
+		Description: "Insert a private browser screenshot artifact into a Helpin Docs document. The artifact must belong to the current workspace; only its opaque artifact ID is persisted.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"document_id": map[string]any{
+					"type":        "string",
+					"description": "The document that will receive the image",
+				},
+				"artifact_id": map[string]any{
+					"type":        "string",
+					"description": "The artifact_id returned by browser_screenshot",
+				},
+				"after_block_id": map[string]any{
+					"type":        "string",
+					"description": "Optional block ID after which to insert the image; omit to append",
+				},
+				"alt": map[string]any{
+					"type":        "string",
+					"description": "Accessible description of the screenshot",
+				},
+				"caption": map[string]any{
+					"type":        "string",
+					"description": "Optional visible image caption",
+				},
+			},
+			"required":             []string{"document_id", "artifact_id", "alt"},
+			"additionalProperties": false,
 		},
 	},
 	{
@@ -1070,14 +1276,19 @@ func listTasksSchema() map[string]any {
 			},
 			"page": map[string]any{
 				"type":        "integer",
-				"description": "1-based result page. Defaults to 1.",
+				"description": "Deprecated compatibility input. 1-based result page. Do not combine with limit or offset.",
 				"minimum":     1,
 			},
 			"per_page": map[string]any{
 				"type":        "integer",
-				"description": "Results per page. Defaults to 50, max 100.",
+				"description": "Deprecated compatibility input. Results per page, max 100. Do not combine with limit or offset.",
 				"minimum":     1,
 				"maximum":     100,
+			},
+			"offset": map[string]any{
+				"type":        "integer",
+				"description": "Zero-based result offset. Use next_offset from the previous response.",
+				"minimum":     0,
 			},
 		},
 		"required":             []string{},
@@ -1109,18 +1320,42 @@ func boundedListSchema(properties map[string]any) map[string]any {
 	}
 	properties["page"] = map[string]any{
 		"type":        "integer",
-		"description": "1-based result page. Defaults to 1.",
+		"description": "Deprecated compatibility input. 1-based result page. Do not combine with limit or offset.",
 		"minimum":     1,
 	}
 	properties["per_page"] = map[string]any{
 		"type":        "integer",
-		"description": "Results per page. Defaults to 50, max 100.",
+		"description": "Deprecated compatibility input. Results per page, max 100. Do not combine with limit or offset.",
 		"minimum":     1,
 		"maximum":     100,
+	}
+	properties["limit"] = map[string]any{
+		"type":        "integer",
+		"description": "Maximum results to return. Defaults to 50, max 100.",
+		"minimum":     1,
+		"maximum":     100,
+	}
+	properties["offset"] = map[string]any{
+		"type":        "integer",
+		"description": "Zero-based result offset. Use next_offset from the previous response.",
+		"minimum":     0,
 	}
 	return map[string]any{
 		"type":                 "object",
 		"properties":           properties,
+		"required":             []string{},
+		"additionalProperties": false,
+	}
+}
+
+func paginatedQuerySchema(maxLimit, defaultLimit int, limitDescription string) map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"query":  map[string]any{"type": "string", "description": "Optional case-insensitive search query."},
+			"limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": maxLimit, "default": defaultLimit, "description": limitDescription},
+			"offset": map[string]any{"type": "integer", "minimum": 0, "description": "Zero-based result offset. Use next_offset from the previous response."},
+		},
 		"required":             []string{},
 		"additionalProperties": false,
 	}

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -1269,6 +1270,18 @@ func (r *AgentRunArtifactRepository) ListByRun(ctx context.Context, workspaceID,
 		return nil, fmt.Errorf("list run artifacts: %w", err)
 	}
 	return artifacts, nil
+}
+
+// GetByIDAndWorkspace returns one artifact without allowing cross-workspace lookup.
+func (r *AgentRunArtifactRepository) GetByIDAndWorkspace(ctx context.Context, workspaceID, artifactID string) (*model.AgentRunArtifact, error) {
+	var artifact model.AgentRunArtifact
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, artifactID).First(&artifact).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get run artifact: %w", err)
+	}
+	return &artifact, nil
 }
 
 // NextSequence returns the next sequence number for a run artifact.

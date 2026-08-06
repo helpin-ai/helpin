@@ -483,6 +483,10 @@ func TestGetTaskContextCatalogAllowsTargetDefaultAndCapsIDs(t *testing.T) {
 		if taskIDs["maxItems"] != float64(50) {
 			t.Fatalf("get_task_context task_ids maxItems = %#v, want 50", taskIDs["maxItems"])
 		}
+		taskKeys, ok := properties["task_keys"].(map[string]any)
+		if !ok || taskKeys["maxItems"] != float64(50) {
+			t.Fatalf("get_task_context task_keys = %#v, want maxItems 50", properties["task_keys"])
+		}
 		if required, ok := schema["required"].([]any); ok {
 			for _, field := range required {
 				if field == "task_ids" {
@@ -493,4 +497,66 @@ func TestGetTaskContextCatalogAllowsTargetDefaultAndCapsIDs(t *testing.T) {
 		return
 	}
 	t.Fatal("get_task_context missing from tool catalog")
+}
+
+func TestWorkspaceDiscoveryCatalogUsesCanonicalSearchAndPagination(t *testing.T) {
+	catalog := ListToolCatalog()
+	tools := make(map[string]any, len(catalog.Tools))
+	for _, tool := range catalog.Tools {
+		tools[tool.Name] = tool.InputSchema
+	}
+	for _, alias := range []string{
+		"search_workspace", "list_workspace_teams", "list_workspace_members", "list_tasks", "list_epics", "list_sprints",
+		"list_sprint_tasks", "list_objectives", "list_documents", "search_documents",
+		"list_deals", "list_contacts", "list_buyer_signals", "list_conversation_messages",
+	} {
+		schema := requireCatalogSchema(t, tools, alias)
+		properties := schemaProperties(t, alias, schema)
+		if _, ok := properties["limit"]; !ok {
+			t.Errorf("%s is missing limit", alias)
+		}
+		if _, ok := properties["offset"]; !ok {
+			t.Errorf("%s is missing offset", alias)
+		}
+	}
+	search := requireCatalogSchema(t, tools, "search_workspace")
+	assertRequiredFields(t, "search_workspace", search, []string{"query"})
+	assertSchemaFields(t, "search_workspace", search, []string{"entity_types", "limit", "offset"})
+	for _, tool := range catalog.Tools {
+		if tool.Name == "search_workspace" && !strings.Contains(tool.Description, "names, and descriptions") {
+			t.Fatalf("search_workspace must advertise task-description matching: %q", tool.Description)
+		}
+	}
+}
+
+func TestBrowserToolCatalogContracts(t *testing.T) {
+	catalog := ListToolCatalog()
+	want := map[string]bool{
+		"browser_open": false, "browser_snapshot": false,
+		"browser_act": false, "browser_screenshot": false,
+	}
+	for _, tool := range catalog.Tools {
+		if _, ok := want[tool.Name]; !ok {
+			continue
+		}
+		want[tool.Name] = true
+		if tool.Category != "Browser" {
+			t.Fatalf("%s category = %q", tool.Name, tool.Category)
+		}
+		schema, ok := tool.InputSchema.(map[string]any)
+		if !ok || schema["type"] != "object" || schema["additionalProperties"] != false {
+			t.Fatalf("%s schema is not a strict object: %#v", tool.Name, tool.InputSchema)
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Fatalf("%s missing from tool catalog", name)
+		}
+	}
+	profile := GetRuntimeProfile("documentation")
+	for name := range want {
+		if indexOf(profile.AllowedTools, name) < 0 {
+			t.Fatalf("documentation profile missing %s", name)
+		}
+	}
 }

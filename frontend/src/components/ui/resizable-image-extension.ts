@@ -7,6 +7,7 @@ export interface ResizableImageOptions {
   HTMLAttributes: Record<string, unknown>;
   enableCaption: boolean;
   defaultAlignment: 'left' | 'center' | 'right';
+  workspaceId?: string;
 }
 
 declare module '@tiptap/core' {
@@ -20,6 +21,7 @@ declare module '@tiptap/core' {
         height?: string;
         aspectRatio?: number | null;
         attachmentId?: string | null;
+        artifactId?: string | null;
         caption?: string | null;
       }) => ReturnType;
     };
@@ -37,6 +39,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       HTMLAttributes: {},
       enableCaption: true,
       defaultAlignment: 'center',
+      workspaceId: undefined,
     };
   },
 
@@ -49,6 +52,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       height: { default: 'auto' },
       aspectRatio: { default: null },
       attachmentId: { default: null },
+      artifactId: { default: null },
       caption: { default: null },
       alignment: { default: this.options.defaultAlignment },
       linkUrl: { default: null },
@@ -70,6 +74,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
             ? Number(dom.getAttribute('data-aspect-ratio'))
             : null,
           attachmentId: dom.getAttribute('data-attachment-id'),
+          artifactId: dom.getAttribute('data-artifact-id'),
           caption: dom.getAttribute('data-caption'),
           alignment: dom.getAttribute('data-alignment') || this.options.defaultAlignment,
           linkUrl: dom.getAttribute('data-link-url') || null,
@@ -80,10 +85,11 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
   },
 
   renderHTML({ HTMLAttributes }) {
-    const { aspectRatio, attachmentId, caption, alignment, linkUrl, linkNewTab, ...rest } = HTMLAttributes;
+    const { aspectRatio, attachmentId, artifactId, caption, alignment, linkUrl, linkNewTab, ...rest } = HTMLAttributes;
     return ['img', mergeAttributes(this.options.HTMLAttributes, rest, {
       ...(aspectRatio ? { 'data-aspect-ratio': aspectRatio } : {}),
       ...(attachmentId ? { 'data-attachment-id': attachmentId } : {}),
+      ...(artifactId ? { 'data-artifact-id': artifactId } : {}),
       ...(this.options.enableCaption && caption ? { 'data-caption': caption } : {}),
       ...(alignment && alignment !== 'center' ? { 'data-alignment': alignment } : {}),
       ...(linkUrl ? { 'data-link-url': linkUrl, 'data-link-new-tab': String(linkNewTab ?? true) } : {}),

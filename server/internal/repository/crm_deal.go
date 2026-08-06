@@ -157,6 +157,9 @@ func (r *CRMDealRepository) List(ctx context.Context, workspaceID string, filter
 
 	var deals []model.CRMDeal
 	offset := (pagination.Page - 1) * pagination.PerPage
+	if pagination.Offset != nil {
+		offset = *pagination.Offset
+	}
 	if err := query.
 		Preload("Pipeline").
 		Preload("Stage").

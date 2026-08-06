@@ -102,7 +102,7 @@ export const docsBlockRegistry = {
     kind: 'resizableImage',
     label: 'Image',
     description: 'Upload an image',
-    attrs: ['src', 'alt', 'caption', 'align'],
+    attrs: ['src', 'alt', 'caption', 'align', 'artifactId'],
     agentReadableKind: 'image',
   },
 } satisfies Record<DocsBlockKind, DocsBlockDefinition>;

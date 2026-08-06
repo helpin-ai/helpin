@@ -127,6 +127,50 @@ func TestDockMutationRequiresMatchingBoundedGrant(t *testing.T) {
 	}
 }
 
+func TestRiskBasedDockMutationExecutesWithoutLegacyApprovalFailure(t *testing.T) {
+	svc, db, meta := setupDockExecutionGuardTest(t)
+	if err := db.Exec(`CREATE TABLE agents (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL,
+		preset_key TEXT, preset_version_key TEXT, source_preset_key TEXT, source_preset_version_key TEXT,
+		status TEXT, runtime_kind TEXT, approval_mode TEXT, allowed_tools BLOB, allowed_commands BLOB,
+		allowed_targets BLOB, skills BLOB, execution_config BLOB, default_invocation_mode TEXT,
+		created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agents: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, preset_key, preset_version_key, status, runtime_kind, approval_mode,
+		allowed_tools, allowed_commands, allowed_targets, skills, execution_config, default_invocation_mode
+	) VALUES (?, ?, true, ?, ?, 'active', 'native_sdk', 'risk_based', CAST('[]' AS BLOB), CAST('[]' AS BLOB), CAST('["workspace"]' AS BLOB), CAST('[]' AS BLOB), CAST('{}' AS BLOB), 'interactive')`,
+		"ask-agent", meta.WorkspaceID, model.AgentPresetAskAgent,
+		defaultPresetVersionKeyForPresetKey(model.AgentPresetAskAgent)).Error; err != nil {
+		t.Fatalf("create Ask Agent: %v", err)
+	}
+	svc.agentService = &AgentService{agentRepo: repository.NewAgentRepository(db)}
+	meta.AgentID = "ask-agent"
+	input := json.RawMessage(`{"document_id":"doc-1"}`)
+
+	output, err := svc.Execute(context.Background(), meta, "docs.test_mutation", input)
+	if err != nil {
+		t.Fatalf("risk-based routine mutation returned a legacy approval failure: %v", err)
+	}
+	if string(output) != string(input) {
+		t.Fatalf("output = %s, want %s", output, input)
+	}
+}
+
+func TestInternalCommandRegistrationDefaultsUnclassifiedMutationToSensitive(t *testing.T) {
+	svc := &InternalCommandService{definitions: map[string]InternalCommandDefinition{}}
+	svc.register(InternalCommandDefinition{
+		Name: "docs.unclassified", Mutating: true,
+		Tool: &commandtools.RuntimeToolMetadata{CommandName: "docs.unclassified", Alias: "unclassified"},
+	})
+	def, ok := svc.Definition("docs.unclassified")
+	if !ok || def.Tool == nil || def.Tool.RiskLevel != commandtools.RiskLevelSensitive {
+		t.Fatalf("unclassified mutation did not default to sensitive: %#v", def)
+	}
+}
+
 func TestDockMutationEarlyCallReturnsCompactApprovalAndRetryAutoActivates(t *testing.T) {
 	svc, db, meta := setupDockExecutionGuardTest(t)
 	ctx := context.Background()

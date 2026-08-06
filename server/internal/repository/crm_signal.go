@@ -84,6 +84,9 @@ func (r *CRMSignalRepository) ListSignals(ctx context.Context, workspaceID strin
 
 	var signals []model.CRMBuyerSignal
 	offset := (pagination.Page - 1) * pagination.PerPage
+	if pagination.Offset != nil {
+		offset = *pagination.Offset
+	}
 	if err := query.Order("detected_at DESC").Offset(offset).Limit(pagination.PerPage).Find(&signals).Error; err != nil {
 		return nil, 0, fmt.Errorf("list buyer signals: %w", err)
 	}

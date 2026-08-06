@@ -215,6 +215,9 @@ export const automationService = {
   listRunArtifacts: (workspaceId: string, runId: string) =>
     api.get<AgentRunArtifact[]>(`/automation/runs/${runId}/artifacts${qs(workspaceId)}`),
 
+  getArtifactContentURL: (workspaceId: string, artifactId: string) =>
+    api.get<{ url: string; expires_at: string }>(`/agent-artifacts/${encodeURIComponent(artifactId)}/content-url${qs(workspaceId)}`),
+
   resumeRun: (workspaceId: string, runId: string, payload: ResumeAgentRunRequest) =>
     api.post<AgentRun>(`/automation/runs/${runId}/resume${qs(workspaceId)}`, payload),
 

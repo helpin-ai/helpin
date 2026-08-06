@@ -6,6 +6,11 @@ export const AGENT_APPROVAL_OPTIONS: ReadonlyArray<{
   description: string;
 }> = [
   {
+    value: 'risk_based',
+    label: 'Approve high-risk actions',
+    description: 'Reads and routine reversible changes run immediately. Sensitive and destructive actions require approval.',
+  },
+  {
     value: 'mutating_tools',
     label: 'Approve writes and actions',
     description: 'Read-only work starts immediately. A team member approves each write or other mutating action.',

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,27 +18,72 @@ import (
 var pmDiscoveryTargets = []string{"workspace", "task", "story", "epic", "sprint", "objective"}
 
 type pmCommandPage struct {
-	Page    int `json:"page"`
-	PerPage int `json:"per_page"`
+	Page    int  `json:"page"`
+	PerPage int  `json:"per_page"`
+	Limit   int  `json:"limit"`
+	Offset  *int `json:"offset"`
 }
 
-func (p pmCommandPage) normalized() (int, int) {
-	page := p.Page
+func normalizeCommandPagination(page, perPage, limit int, offset *int) (model.PMPagination, int, int, error) {
+	canonical := limit != 0 || offset != nil
+	legacy := page != 0 || perPage != 0
+	if canonical && legacy {
+		return model.PMPagination{}, 0, 0, fmt.Errorf("use limit/offset or page/per_page, not both")
+	}
+	if canonical {
+		if limit == 0 {
+			limit = 50
+		}
+		if limit < 1 || limit > 100 {
+			return model.PMPagination{}, 0, 0, fmt.Errorf("limit must be between 1 and 100")
+		}
+		value := 0
+		if offset != nil {
+			value = *offset
+		}
+		if value < 0 {
+			return model.PMPagination{}, 0, 0, fmt.Errorf("offset must be zero or greater")
+		}
+		return model.PMPagination{Page: 1, PerPage: limit, Offset: &value}, value, limit, nil
+	}
 	if page <= 0 {
 		page = 1
 	}
-	perPage := p.PerPage
 	if perPage <= 0 {
 		perPage = 50
 	}
 	if perPage > 100 {
-		perPage = 100
+		return model.PMPagination{}, 0, 0, fmt.Errorf("per_page must not exceed 100")
 	}
-	return page, perPage
+	if page-1 > math.MaxInt/perPage {
+		value := math.MaxInt
+		return model.PMPagination{Page: page, PerPage: perPage, Offset: &value}, value, perPage, nil
+	}
+	value := (page - 1) * perPage
+	return model.PMPagination{Page: page, PerPage: perPage, Offset: &value}, value, perPage, nil
 }
 
+func commandPaginationOutput(total int64, offset, limit, returned int) map[string]any {
+	consumed := returned
+	if consumed == 0 && int64(offset) < total {
+		consumed = limit
+	}
+	hasMore := int64(offset+consumed) < total
+	var nextOffset *int
+	if hasMore {
+		next := offset + consumed
+		nextOffset = &next
+	}
+	return map[string]any{
+		"total": total, "limit": limit, "offset": offset,
+		"has_more": hasMore, "next_offset": nextOffset,
+	}
+}
+
+// boundedPMCommandPage is retained for callers and tests that still exercise
+// the legacy page/per_page compatibility path.
 func boundedPMCommandPage[T any](values []T, page, perPage int) []T {
-	if page <= 0 || perPage <= 0 || page-1 > math.MaxInt/perPage {
+	if page <= 0 || perPage <= 0 || page-1 > len(values)/perPage {
 		return []T{}
 	}
 	start := (page - 1) * perPage
@@ -49,6 +95,17 @@ func boundedPMCommandPage[T any](values []T, page, perPage int) []T {
 		end = len(values)
 	}
 	return values[start:end]
+}
+
+func boundedCommandOffset[T any](values []T, offset, limit int) []T {
+	if offset < 0 || limit <= 0 || offset >= len(values) {
+		return []T{}
+	}
+	end := offset + limit
+	if end > len(values) {
+		end = len(values)
+	}
+	return values[offset:end]
 }
 
 func (s *InternalCommandService) registerPMOperationalCommands() {
@@ -132,13 +189,18 @@ func (s *InternalCommandService) executeListWorkspaceMembers(ctx context.Context
 			"team_ids":     teamIDs,
 		})
 	}
-	page, perPage := req.normalized()
-	return mustJSON(map[string]any{
-		"members":  boundedPMCommandPage(rows, page, perPage),
-		"total":    len(rows),
-		"page":     page,
-		"per_page": perPage,
-	}), nil
+	pagination, offset, limit, err := normalizeCommandPagination(req.Page, req.PerPage, req.Limit, req.Offset)
+	if err != nil {
+		return nil, err
+	}
+	items := boundedCommandOffset(rows, offset, limit)
+	response := commandPaginationOutput(int64(len(rows)), offset, limit, len(items))
+	response["members"] = items
+	if req.Page > 0 || req.PerPage > 0 {
+		response["page"] = pagination.Page
+		response["per_page"] = pagination.PerPage
+	}
+	return mustJSON(response), nil
 }
 
 func (s *InternalCommandService) executeListPMLabels(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -189,13 +251,18 @@ func (s *InternalCommandService) executeListPMLabels(ctx context.Context, meta m
 			"color":    label.Color,
 		})
 	}
-	page, perPage := req.normalized()
-	return mustJSON(map[string]any{
-		"labels":   boundedPMCommandPage(rows, page, perPage),
-		"total":    len(rows),
-		"page":     page,
-		"per_page": perPage,
-	}), nil
+	pagination, offset, limit, err := normalizeCommandPagination(req.Page, req.PerPage, req.Limit, req.Offset)
+	if err != nil {
+		return nil, err
+	}
+	items := boundedCommandOffset(rows, offset, limit)
+	response := commandPaginationOutput(int64(len(rows)), offset, limit, len(items))
+	response["labels"] = items
+	if req.Page > 0 || req.PerPage > 0 {
+		response["page"] = pagination.Page
+		response["per_page"] = pagination.PerPage
+	}
+	return mustJSON(response), nil
 }
 
 func (s *InternalCommandService) executeListPMTeamWorkflows(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -264,13 +331,18 @@ func (s *InternalCommandService) executeListPMTeamWorkflows(ctx context.Context,
 	if requestedTeamID != "" && len(rows) == 0 {
 		return nil, fmt.Errorf("team not found")
 	}
-	page, perPage := req.normalized()
-	return mustJSON(map[string]any{
-		"workflows": boundedPMCommandPage(rows, page, perPage),
-		"total":     len(rows),
-		"page":      page,
-		"per_page":  perPage,
-	}), nil
+	pagination, offset, limit, err := normalizeCommandPagination(req.Page, req.PerPage, req.Limit, req.Offset)
+	if err != nil {
+		return nil, err
+	}
+	items := boundedCommandOffset(rows, offset, limit)
+	response := commandPaginationOutput(int64(len(rows)), offset, limit, len(items))
+	response["workflows"] = items
+	if req.Page > 0 || req.PerPage > 0 {
+		response["page"] = pagination.Page
+		response["per_page"] = pagination.PerPage
+	}
+	return mustJSON(response), nil
 }
 
 func resolvedCommandTeamWorkflow(workflows []model.WorkflowWithStates, teamID string) *model.WorkflowWithStates {
@@ -315,7 +387,6 @@ func (s *InternalCommandService) executeListPMTasks(ctx context.Context, meta mo
 		IncludeDescriptions bool     `json:"include_descriptions"`
 		IncludeComments     bool     `json:"include_comments"`
 		DetailLevel         string   `json:"detail_level"`
-		Limit               int      `json:"limit"`
 	}
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {
@@ -355,12 +426,9 @@ func (s *InternalCommandService) executeListPMTasks(ctx context.Context, meta mo
 			return nil, fmt.Errorf("updated_after must be YYYY-MM-DD")
 		}
 	}
-	page, perPage := req.normalized()
-	if req.Limit > 0 && req.PerPage <= 0 {
-		perPage = req.Limit
-		if perPage > 100 {
-			perPage = 100
-		}
+	pagination, offset, limit, err := normalizeCommandPagination(req.Page, req.PerPage, req.Limit, req.Offset)
+	if err != nil {
+		return nil, err
 	}
 	archived := req.Archived
 	completed := req.Completed
@@ -394,7 +462,7 @@ func (s *InternalCommandService) executeListPMTasks(ctx context.Context, meta mo
 	} else if len(agentTeams) > 0 {
 		filters.AccessibleTeamIDs = agentTeams
 	}
-	tasks, total, err := s.taskService.List(ctx, meta.WorkspaceID, filters, model.PMPagination{Page: page, PerPage: perPage})
+	tasks, total, err := s.taskService.List(ctx, meta.WorkspaceID, filters, pagination)
 	if err != nil {
 		return nil, err
 	}
@@ -432,20 +500,22 @@ func (s *InternalCommandService) executeListPMTasks(ctx context.Context, meta mo
 		rows = append(rows, row)
 	}
 	if detailLevel == "compact" {
-		return marshalCompactTaskResponse(rows, total, perPage)
+		return marshalCompactTaskResponse(rows, total, limit, offset)
 	}
-	return mustJSON(map[string]any{
-		"tasks":        rows,
-		"total":        total,
-		"page":         page,
-		"per_page":     perPage,
-		"detail_level": detailLevel,
-	}), nil
+	response := commandPaginationOutput(total, offset, limit, len(rows))
+	response["tasks"] = rows
+	response["detail_level"] = detailLevel
+	if req.Page > 0 || req.PerPage > 0 {
+		response["page"] = pagination.Page
+		response["per_page"] = pagination.PerPage
+	}
+	return mustJSON(response), nil
 }
 
 func compactCommandBoardTask(task model.BoardTask) map[string]any {
 	return map[string]any{
 		"task_id":          task.ID,
+		"markdown_link":    helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID),
 		"display_id":       task.DisplayID,
 		"task_key":         task.TaskKey,
 		"name":             task.Name,
@@ -671,14 +741,24 @@ func (s *InternalCommandService) executeGetPMTask(ctx context.Context, meta mode
 		return nil, fmt.Errorf("task service is not configured")
 	}
 	var req struct {
-		TaskID string `json:"task_id"`
+		TaskID  string `json:"task_id"`
+		TaskKey string `json:"task_key"`
 	}
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {
 			return nil, fmt.Errorf("parse get task input: %w", err)
 		}
 	}
-	taskID, err := resolveCommandEntityID(meta, req.TaskID, "task")
+	if strings.TrimSpace(req.TaskID) != "" && strings.TrimSpace(req.TaskKey) != "" {
+		return nil, fmt.Errorf("provide only one of task_id or task_key")
+	}
+	taskID := strings.TrimSpace(req.TaskID)
+	var err error
+	if strings.TrimSpace(req.TaskKey) != "" {
+		taskID, err = s.resolveCommandTaskKey(ctx, meta, req.TaskKey)
+	} else {
+		taskID, err = resolveCommandEntityID(meta, taskID, "task")
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -693,6 +773,40 @@ func (s *InternalCommandService) executeGetPMTask(ctx context.Context, meta mode
 		return nil, err
 	}
 	return mustJSON(compactCommandTask(detail)), nil
+}
+
+func (s *InternalCommandService) resolveCommandTaskKey(ctx context.Context, meta model.InternalCommandContext, taskKey string) (string, error) {
+	taskKey = strings.ToUpper(strings.TrimSpace(taskKey))
+	match := searchTaskKeyPattern.FindStringSubmatch(taskKey)
+	if match == nil {
+		return "", fmt.Errorf("task_key must look like USE-488")
+	}
+	displayID, err := strconv.Atoi(match[2])
+	if err != nil || displayID <= 0 {
+		return "", fmt.Errorf("task_key must look like USE-488")
+	}
+	if s.taskService == nil {
+		return "", fmt.Errorf("task service is not configured")
+	}
+	workspaceKey := strings.TrimSpace(s.taskService.GetWorkspaceKey(ctx, meta.WorkspaceID))
+	if !strings.EqualFold(match[1], workspaceKey) {
+		validAlias := false
+		if s.workspaceRepo != nil {
+			workspace, lookupErr := s.workspaceRepo.FindWorkspaceByKeyOrAlias(ctx, match[1])
+			validAlias = lookupErr == nil && workspace != nil && workspace.ID == meta.WorkspaceID
+		}
+		if !validAlias {
+			return "", fmt.Errorf("task not found")
+		}
+	}
+	detail, err := s.taskService.GetByDisplayID(ctx, meta.WorkspaceID, displayID)
+	if err != nil || detail == nil || detail.Task.WorkspaceID != meta.WorkspaceID {
+		return "", fmt.Errorf("task not found")
+	}
+	if err := s.validateTaskWithinTarget(ctx, meta, &detail.Task); err != nil {
+		return "", err
+	}
+	return detail.Task.ID, nil
 }
 
 func (s *InternalCommandService) executeUpdatePMTask(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -806,7 +920,7 @@ func (s *InternalCommandService) executeListTaskChecklist(ctx context.Context, m
 	if err != nil {
 		return nil, err
 	}
-	return mustJSON(map[string]any{"task_id": task.ID, "items": items, "total": total, "has_more": hasMore}), nil
+	return mustJSON(map[string]any{"task_id": task.ID, "markdown_link": helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID), "items": items, "total": total, "has_more": hasMore}), nil
 }
 
 func (s *InternalCommandService) executeCreateTaskChecklistItem(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -1215,6 +1329,7 @@ func compactCommandTask(detail *model.TaskDetail) map[string]any {
 	}
 	return map[string]any{
 		"task_id":          task.ID,
+		"markdown_link":    helpinTaskMarkdownLink(task.TaskKey, task.Name, task.ID),
 		"display_id":       task.DisplayID,
 		"task_key":         task.TaskKey,
 		"workspace_id":     task.WorkspaceID,

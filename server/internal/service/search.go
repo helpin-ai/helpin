@@ -13,6 +13,8 @@ import (
 
 var searchTaskKeyPattern = regexp.MustCompile(`^([A-Z]{2,5})-(\d+)$`)
 
+const searchDefaultLimit = 20
+
 type SearchService struct {
 	searchRepo    *repository.SearchRepository
 	workspaceRepo *repository.WorkspaceRepository
@@ -23,6 +25,12 @@ func NewSearchService(searchRepo *repository.SearchRepository, workspaceRepo *re
 }
 
 func (s *SearchService) Search(ctx context.Context, workspaceID, query string) (*model.SearchResponse, error) {
+	return s.SearchLimit(ctx, workspaceID, query, searchDefaultLimit)
+}
+
+// SearchLimit returns a bounded per-entity candidate set for callers that
+// paginate or rank a merged workspace result list.
+func (s *SearchService) SearchLimit(ctx context.Context, workspaceID, query string, limit int) (*model.SearchResponse, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -51,7 +59,7 @@ func (s *SearchService) Search(ctx context.Context, workspaceID, query string) (
 		}
 	}
 
-	resp, err := s.searchRepo.Search(ctx, resolvedWorkspaceID, query, resolvedDisplayID)
+	resp, err := s.searchRepo.SearchLimit(ctx, resolvedWorkspaceID, query, resolvedDisplayID, limit)
 	if err != nil {
 		return nil, err
 	}

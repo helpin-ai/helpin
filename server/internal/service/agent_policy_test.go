@@ -312,7 +312,7 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 				t.Fatalf("expected documentation target %q in %v", targetType, preset.AllowedTargetTypes)
 			}
 		}
-		for _, toolName := range []string{"list_repositories", "checkout_repository", "checkout_repositories", "read_file", "list_documents", "create_document", "write_document_content", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
+		for _, toolName := range []string{"list_repositories", "checkout_repository", "checkout_repositories", "read_file", "list_documents", "create_document", "write_document_content", "insert_document_image", "browser_open", "browser_screenshot", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
 			if !slices.Contains(preset.AllowedTools, toolName) {
 				t.Fatalf("expected documentation tool %q in %v", toolName, preset.AllowedTools)
 			}
@@ -327,8 +327,14 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	if !ok {
 		t.Fatal("ask agent preset not found")
 	}
+	if preset.ApprovalMode != "risk_based" {
+		t.Fatalf("Ask Agent approval mode = %q, want risk_based", preset.ApprovalMode)
+	}
 	for _, toolName := range []string{
 		"get_my_capabilities",
+		"create_task", "create_document", "write_document_content", "insert_document_image",
+		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot",
+		"search_workspace", "search_documents",
 		"list_available_skills", "search_available_skills", "read_skill",
 		"list_repositories", "checkout_repository", "checkout_repositories",
 		"ripgrep", "search_files", "list_symbols", "read_file", "read_file_range",
@@ -361,6 +367,9 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	if preset.SystemPrompt == nil || !strings.Contains(*preset.SystemPrompt, "primary execution agent") {
 		t.Fatalf("Ask Agent skill availability must preserve its managed Dock prompt, got %v", preset.SystemPrompt)
 	}
+	if !strings.Contains(*preset.SystemPrompt, "routine reversible workspace mutations execute directly") || !strings.Contains(*preset.SystemPrompt, "Call them directly with the complete step or plan") {
+		t.Fatalf("Ask Agent prompt is missing risk-based direct execution guidance: %s", *preset.SystemPrompt)
+	}
 	for _, skillKey := range preset.AvailableSkills {
 		skill, ok := agentcontract.GetBuiltInSkill(skillKey)
 		if !ok {
@@ -385,10 +394,13 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 		AllowedTargetTypes: []string{"document"},
 		ExecutionConfig:    model.JSONBlob(`{"reasoning_effort":"high","workspace":{"mode":"repository"}}`),
 	})
+	if preset.ApprovalMode != "risk_based" {
+		t.Fatalf("managed Ask approval mode = %q, want risk_based", preset.ApprovalMode)
+	}
 	for _, toolName := range []string{
 		"checkout_repository", "ripgrep", "read_file",
 		"list_available_skills", "read_skill", "update_plan",
-		"get_my_capabilities", "create_document", "prepare_dock_execution",
+		"get_my_capabilities", "search_workspace", "search_documents", "create_document", "prepare_dock_execution",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {
 			t.Errorf("managed Ask capability %q was not restored to pinned preset: %v", toolName, preset.AllowedTools)
@@ -530,6 +542,48 @@ func TestBuiltInPresetPMToolExpansionMatrix(t *testing.T) {
 				seen[toolName] = struct{}{}
 			}
 		})
+	}
+}
+
+func TestWorkspaceSearchPresetAlignment(t *testing.T) {
+	searchPresets := map[string]bool{
+		model.AgentPresetAskAgent:           true,
+		model.AgentPresetEpicPlanner:        true,
+		model.AgentPresetTaskPlanner:        true,
+		model.AgentPresetCRMOperator:        true,
+		model.AgentPresetMarketer:           true,
+		model.AgentPresetDocumentationAgent: true,
+		model.AgentPresetCommandAgent:       true,
+	}
+	excludedPresets := map[string]bool{
+		model.AgentPresetSupportAgent: true,
+		model.AgentPresetCodeBuilder:  true,
+		model.AgentPresetReviewAgent:  true,
+	}
+
+	for _, preset := range ListAgentPresets() {
+		hasSearch := slices.Contains(preset.AllowedTools, "search_workspace")
+		switch {
+		case searchPresets[preset.Key]:
+			if !hasSearch {
+				t.Errorf("preset %q is missing search_workspace", preset.Key)
+			}
+			if preset.SystemPrompt == nil || !strings.Contains(*preset.SystemPrompt, "next_offset") {
+				t.Errorf("preset %q is missing workspace search pagination guidance", preset.Key)
+			}
+			if !strings.Contains(*preset.SystemPrompt, "## Workspace Discovery") {
+				t.Errorf("preset %q is missing shared workspace discovery guidance", preset.Key)
+			}
+			if preset.Key != model.AgentPresetAskAgent {
+				if !slices.Contains(preset.AllowedTools, "search_documents") {
+					t.Errorf("specialist preset %q must retain search_documents", preset.Key)
+				}
+			}
+		case excludedPresets[preset.Key]:
+			if hasSearch {
+				t.Errorf("narrow preset %q must not expose search_workspace", preset.Key)
+			}
+		}
 	}
 }
 
@@ -803,6 +857,21 @@ func TestNormalizeAgentRecordResetsInvalidRuntimeForPreset(t *testing.T) {
 
 	if agent.RuntimeKind != "codex" {
 		t.Fatalf("expected review agent runtime to preserve codex, got %q", agent.RuntimeKind)
+	}
+}
+
+func TestNormalizeAgentRecordUpgradesAskAgentToRiskBasedApproval(t *testing.T) {
+	agent := &model.Agent{
+		IsSystem:     true,
+		PresetKey:    model.AgentPresetAskAgent,
+		RuntimeKind:  "native_sdk",
+		ApprovalMode: "never",
+	}
+
+	normalizeAgentRecord(agent)
+
+	if agent.ApprovalMode != "risk_based" {
+		t.Fatalf("Ask Agent approval mode = %q, want risk_based", agent.ApprovalMode)
 	}
 }
 

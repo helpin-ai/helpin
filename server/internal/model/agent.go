@@ -500,6 +500,7 @@ const (
 )
 
 const AgentRunArtifactTypeToolCall = "tool_call"
+const AgentRunArtifactTypeBrowserScreenshot = "browser_screenshot"
 
 const (
 	AgentRunPauseReasonNone           = "none"
