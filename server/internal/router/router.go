@@ -1025,6 +1025,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/sprints/{id}", h.PMSprint.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/sprints/{id}", h.PMSprint.Delete)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/tasks", h.PMSprint.ListTasks)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/sprints/{id}/tasks/link", h.PMSprint.LinkTasks)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/preview-tasks", h.PMSprint.ListPreviewTasks)
 
 				// Tasks — pm.read / pm.edit

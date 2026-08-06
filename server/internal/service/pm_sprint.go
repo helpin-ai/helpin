@@ -15,6 +15,7 @@ import (
 // PMSprintService contains sprint business logic.
 type PMSprintService struct {
 	sprintRepo          *repository.PMSprintRepository
+	taskRepo            *repository.PMTaskRepository
 	closeoutRepo        *repository.PMSprintCloseoutRepository
 	labelRepo           *repository.PMLabelRepository
 	attachmentRepo      *repository.PMAttachmentRepository
@@ -27,8 +28,8 @@ type PMSprintService struct {
 }
 
 // NewPMSprintService creates a new PMSprintService.
-func NewPMSprintService(sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, attachmentRepo *repository.PMAttachmentRepository, workspaceRepo *repository.WorkspaceRepository, settingsRepo *repository.SettingsRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, closeoutRepo *repository.PMSprintCloseoutRepository) *PMSprintService {
-	return &PMSprintService{sprintRepo: sprintRepo, closeoutRepo: closeoutRepo, labelRepo: labelRepo, attachmentRepo: attachmentRepo, workspaceRepo: workspaceRepo, settingsRepo: settingsRepo, activityService: activityService, wsPublisher: wsPublisher, notificationService: notificationService, logger: slog.Default().With("service", "pm_sprint")}
+func NewPMSprintService(sprintRepo *repository.PMSprintRepository, taskRepo *repository.PMTaskRepository, labelRepo *repository.PMLabelRepository, attachmentRepo *repository.PMAttachmentRepository, workspaceRepo *repository.WorkspaceRepository, settingsRepo *repository.SettingsRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, closeoutRepo *repository.PMSprintCloseoutRepository) *PMSprintService {
+	return &PMSprintService{sprintRepo: sprintRepo, taskRepo: taskRepo, closeoutRepo: closeoutRepo, labelRepo: labelRepo, attachmentRepo: attachmentRepo, workspaceRepo: workspaceRepo, settingsRepo: settingsRepo, activityService: activityService, wsPublisher: wsPublisher, notificationService: notificationService, logger: slog.Default().With("service", "pm_sprint")}
 }
 
 // List returns sprints with filters.
@@ -423,6 +424,116 @@ func (s *PMSprintService) ListTasks(ctx context.Context, sprintID string) ([]mod
 		return nil, err
 	}
 	return s.populateTaskKeys(ctx, tasks), nil
+}
+
+// LinkTasks atomically links backlog tasks or moves existing same-team tasks into a sprint.
+func (s *PMSprintService) LinkTasks(ctx context.Context, workspaceID, sprintID string, taskIDs []string, actorID string) (*model.LinkSprintTasksResponse, error) {
+	ids := dedupeIDs(taskIDs)
+	if workspaceID == "" || strings.TrimSpace(sprintID) == "" {
+		return nil, fmt.Errorf("workspace_id and sprint_id are required")
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("at least one task_id is required")
+	}
+	if len(ids) > 100 {
+		return nil, fmt.Errorf("at most 100 task_ids are allowed")
+	}
+	if s.taskRepo == nil {
+		return nil, fmt.Errorf("task repository is not configured")
+	}
+
+	sprint, err := s.sprintRepo.GetByID(ctx, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	if sprint == nil || sprint.Sprint.WorkspaceID != workspaceID || sprint.Sprint.Archived {
+		return nil, fmt.Errorf("sprint not found")
+	}
+	if sprint.Sprint.TeamID == nil || strings.TrimSpace(*sprint.Sprint.TeamID) == "" {
+		return nil, fmt.Errorf("assign the sprint to a team before linking tasks")
+	}
+	if err := requireTeamAccess(ctx, sprint.Sprint.TeamID); err != nil {
+		return nil, err
+	}
+
+	var changed []model.PMTask
+	previousSprintIDs := make(map[string]string)
+	result := &model.LinkSprintTasksResponse{}
+	if err := s.taskRepo.WithMutationTransaction(ctx, func(tasks *repository.PMTaskRepository, _ *repository.PMChecklistItemRepository) error {
+		selected, err := tasks.ListByIDs(ctx, workspaceID, ids)
+		if err != nil {
+			return err
+		}
+		if len(selected) != len(ids) {
+			return fmt.Errorf("one or more tasks were not found")
+		}
+		for index := range selected {
+			task := &selected[index]
+			if task.Archived {
+				return fmt.Errorf("archived tasks cannot be linked")
+			}
+			if task.TeamID == nil || strings.TrimSpace(*task.TeamID) != strings.TrimSpace(*sprint.Sprint.TeamID) {
+				return fmt.Errorf("all tasks must belong to the same team as the sprint")
+			}
+			if err := requireTeamAccess(ctx, task.TeamID); err != nil {
+				return err
+			}
+			previousSprintID := stringValue(task.SprintID)
+			if previousSprintID == sprintID {
+				continue
+			}
+			if previousSprintID != "" {
+				result.MovedCount++
+				previousSprintIDs[task.ID] = previousSprintID
+			}
+			if err := tasks.UpdateSprintID(ctx, task.ID, stringPtr(sprintID)); err != nil {
+				return err
+			}
+			task.SprintID = stringPtr(sprintID)
+			changed = append(changed, *task)
+			result.LinkedCount++
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	oldNames := make(map[string]string)
+	if len(previousSprintIDs) > 0 {
+		oldIDs := make([]string, 0, len(previousSprintIDs))
+		seen := make(map[string]struct{}, len(previousSprintIDs))
+		for _, oldID := range previousSprintIDs {
+			if _, ok := seen[oldID]; ok {
+				continue
+			}
+			seen[oldID] = struct{}{}
+			oldIDs = append(oldIDs, oldID)
+		}
+		if oldSprints, listErr := s.sprintRepo.ListByIDs(ctx, workspaceID, oldIDs); listErr == nil {
+			for _, oldSprint := range oldSprints {
+				oldNames[oldSprint.ID] = oldSprint.Name
+			}
+		}
+	}
+	workspaceKey := ""
+	if workspace, workspaceErr := s.workspaceRepo.GetByID(ctx, workspaceID); workspaceErr == nil && workspace != nil {
+		workspaceKey = workspace.WorkspaceKey
+	}
+	for index := range changed {
+		task := &changed[index]
+		action := planningLinkActivityAction("sprint", oldNames[previousSprintIDs[task.ID]], sprint.Sprint.Name)
+		if action != "" && s.activityService != nil {
+			if logErr := s.activityService.Log(ctx, workspaceID, "task", task.ID, optionalActor(actorID), action, nil, nil, nil, nil); logErr != nil {
+				s.logger.ErrorContext(ctx, "failed to log task sprint link", "error", logErr, "task_id", task.ID, "sprint_id", sprintID)
+			}
+		}
+		if s.wsPublisher != nil {
+			s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: task.ID, WorkspaceID: workspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(workspaceKey, task.DisplayID)})
+		}
+	}
+
+	s.logger.InfoContext(ctx, "tasks linked to sprint", "workspace_id", workspaceID, "sprint_id", sprintID, "linked_count", result.LinkedCount, "moved_count", result.MovedCount, "actor_id", actorID)
+	return result, nil
 }
 
 // ListTasksPage returns a repository-bounded sprint task page with batch enrichment.

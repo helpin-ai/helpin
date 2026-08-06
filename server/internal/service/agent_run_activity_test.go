@@ -340,6 +340,7 @@ func TestEnrichRunTargetsResolvesSprintTargetInfo(t *testing.T) {
 	}
 	svc.SetPMSprintService(NewPMSprintService(
 		repository.NewPMSprintRepository(testDB.DB),
+		repository.NewPMTaskRepository(testDB.DB),
 		repository.NewPMLabelRepository(testDB.DB),
 		nil,
 		nil,

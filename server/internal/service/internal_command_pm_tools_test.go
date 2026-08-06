@@ -88,7 +88,7 @@ func newPMCommandTestEnv(t *testing.T) *pmCommandTestEnv {
 	commandService.SetPMOperationalServices(
 		workspaceRepo,
 		NewPMEpicService(epicRepo, taskRepo, labelRepo, nil, nil, workspaceRepo, activityService, nil, nil),
-		NewPMSprintService(sprintRepo, labelRepo, nil, workspaceRepo, repository.NewSettingsRepository(db), activityService, nil, nil, nil),
+		NewPMSprintService(sprintRepo, taskRepo, labelRepo, nil, workspaceRepo, repository.NewSettingsRepository(db), activityService, nil, nil, nil),
 		nil,
 		NewPMWorkflowService(workflowRepo, taskRepo, labelRepo, nil),
 		checklistService,

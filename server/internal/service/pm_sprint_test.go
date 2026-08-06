@@ -33,6 +33,7 @@ func newSprintTestEnvWithDB(t *testing.T) (*PMSprintService, *gorm.DB, string) {
 
 	svc := NewPMSprintService(
 		sprintRepo,
+		repository.NewPMTaskRepository(db),
 		labelRepo,
 		repository.NewPMAttachmentRepository(db),
 		repository.NewWorkspaceRepository(db),
@@ -1026,6 +1027,7 @@ func TestGetCurrentSprint_WithTeamID(t *testing.T) {
 	activityService := NewPMActivityService(activityRepo)
 	svc := NewPMSprintService(
 		sprintRepo,
+		repository.NewPMTaskRepository(db),
 		labelRepo,
 		repository.NewPMAttachmentRepository(db),
 		repository.NewWorkspaceRepository(db),
