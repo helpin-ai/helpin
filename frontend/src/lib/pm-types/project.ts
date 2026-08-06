@@ -283,6 +283,7 @@ export interface SprintPlanningTaskPreview {
 export interface SprintPlanningCard {
   sprint: PMSprint;
   stats: PMSprintStats;
+  closeout?: SprintCloseoutListItem;
   preview_tasks: SprintPlanningTaskPreview[];
   task_preview_overflow: number;
 }

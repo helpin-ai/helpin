@@ -33,6 +33,7 @@ import type { PaginatedResponse, SprintPlanningCard, SprintPlanningTaskPreview }
 import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
 import { SprintPlanningColumnActions } from './SprintPlanningColumnActions';
 import { cn } from '@/lib/utils';
+import { getSprintProgress } from './sprintProgress';
 
 const SPRINT_PREVIEW_PAGE_SIZE = 20;
 const SPRINT_TASK_ROW_GAP = 10;
@@ -108,8 +109,9 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
   const previewQuery = useInfiniteSprintPreviewTasks(workspaceId, card.sprint.id, previewTasks, cardTotal, SPRINT_PREVIEW_PAGE_SIZE);
   const previewQueryTotal = previewQuery.data?.pages[0]?.total;
   const total = typeof previewQueryTotal === 'number' ? previewQueryTotal : cardTotal;
-  const done = card.stats.done_task_count;
-  const pctDone = total > 0 ? Math.round((done / total) * 100) : 0;
+  const progress = getSprintProgress(card.stats, card.closeout);
+  const done = progress.completedTasks;
+  const pctDone = progress.percentage;
   const listRef = useRef<HTMLDivElement | null>(null);
   const previewSignature = useMemo(
     () => `${total}:${previewTasks.map((task) => task.id).join(',')}`,
@@ -265,8 +267,11 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
               {pctDone > 0 && <div className="bg-emerald-500 transition-all" style={{ width: `${pctDone}%` }} />}
             </div>
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>{done}/{total} tasks done</span>
-              <span>{card.stats.done_points}/{card.stats.total_points} pts</span>
+              <span>
+                {done}/{progress.committedTasks} tasks {progress.historical ? 'completed' : 'done'}
+                {progress.historical && progress.rolledOverTasks > 0 ? ` · ${progress.rolledOverTasks} rolled over` : ''}
+              </span>
+              <span>{progress.completedPoints}/{progress.committedPoints} pts {progress.historical ? 'completed' : ''}</span>
             </div>
           </div>
         </CardHeader>
