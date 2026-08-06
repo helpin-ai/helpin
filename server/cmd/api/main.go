@@ -862,6 +862,7 @@ func main() {
 		SetEpicDeliveryDependencies(epicDeliveryTargetRepo, pmEpicRepo).
 		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
 	pmTaskService.SetGitService(gitService)
+	pmEpicService.SetGitService(gitService)
 	var agentRuntimeClient *service.AgentRuntimeClient
 	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
 		agentRuntimeClient, err = service.NewAgentRuntimeClient(cfg.AgentRuntimeBaseURL, cfg.AgentRuntimeAppID, cfg.AgentRuntimeServiceToken, nil, cfg.AgentRuntimeEventProtocol)
@@ -1529,7 +1530,7 @@ func main() {
 	handlers := router.Handlers{
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
-		Health:          handler.NewHealthHandler(s3Client, geoIPResolver),
+		Health:                    handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
 			ClientID:     cfg.GoogleAuthClientID,
 			ClientSecret: cfg.GoogleAuthClientSecret,
