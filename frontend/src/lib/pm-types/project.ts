@@ -164,6 +164,15 @@ export interface LinkEpicTasksResponse {
   moved_count: number;
 }
 
+export interface LinkSprintTasksRequest {
+  task_ids: string[];
+}
+
+export interface LinkSprintTasksResponse {
+  linked_count: number;
+  moved_count: number;
+}
+
 export type RoadmapEpic = EpicWithStats;
 
 export interface RoadmapData {

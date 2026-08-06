@@ -11,6 +11,7 @@ import { useDeleteSprint, useSprintPlanningWorkspace, useWorkspaceAccess, usePer
 import { queryKeys } from '@/lib/queryKeys';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningTaskPreview } from '@/lib/pmTypes';
+import type { LinkSprintTasksResponse } from '@/lib/pmTypes';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { unwrap } from '@/lib/queryUtils';
@@ -26,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { LinkTasksToSprintDialog } from '@/components/pm/sprints/LinkTasksToSprintDialog';
 import {
   ArrowUpRight01Icon,
   Copy01Icon,
@@ -39,6 +41,13 @@ const BACKLOG_LIMIT = 50;
 
 interface SprintsPageProps {
   teamId?: string;
+}
+
+interface SprintLinkTarget {
+  id: string;
+  name: string;
+  teamId: string;
+  teamName: string;
 }
 
 interface ArchivedSprintRowProps {
@@ -324,6 +333,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   const [backlogOpen, setBacklogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<SprintStatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [linkTarget, setLinkTarget] = useState<SprintLinkTarget | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase();
 
@@ -431,6 +441,38 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     });
   };
 
+  const handleOpenLinkTasks = (sprintId: string) => {
+    const card = planningQuery.data?.buckets
+      .flatMap((bucket) => bucket.sprints ?? [])
+      .find((entry) => entry.sprint.id === sprintId);
+    const sprintTeamId = card?.sprint.team_id ?? '';
+    if (!card || !sprintTeamId) {
+      toast.error('Assign this sprint to a team before linking tasks.');
+      return;
+    }
+    setLinkTarget({
+      id: card.sprint.id,
+      name: card.sprint.name,
+      teamId: sprintTeamId,
+      teamName: teams.find((team) => team.id === sprintTeamId)?.name ?? 'this team',
+    });
+  };
+
+  const handleTasksLinked = (result: LinkSprintTasksResponse) => {
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: planningQueryKey }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) }),
+    ]);
+    const linkedLabel = `${result.linked_count} task${result.linked_count === 1 ? '' : 's'}`;
+    if (result.moved_count > 0) {
+      toast.success(`Linked ${linkedLabel}; ${result.moved_count} moved from another sprint.`);
+      return;
+    }
+    toast.success(`Linked ${linkedLabel} to this sprint.`);
+  };
+
   // Check unfiltered data for any sprints (to distinguish "no sprints ever" from "no sprints matching filter")
   const hasAnySprintUnfiltered = Boolean(planningQuery.data?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
   const hasAnySprintFiltered = Boolean(filteredWorkspace?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
@@ -514,10 +556,24 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
           onOpenSprint={(sprintId) => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId } })}
           onOpenTask={handleOpenTask}
           onCreateSprint={() => openCreate('sprint', { teamId: teamId || undefined })}
+          onLinkTasks={handleOpenLinkTasks}
           onCreateTask={handleCreateTask}
           onAssignTask={handleAssignTask}
         />
       )}
+
+      {linkTarget ? (
+        <LinkTasksToSprintDialog
+          open
+          onOpenChange={(open) => { if (!open) setLinkTarget(null); }}
+          workspaceId={workspaceId}
+          sprintId={linkTarget.id}
+          sprintName={linkTarget.name}
+          teamId={linkTarget.teamId}
+          teamName={linkTarget.teamName}
+          onLinked={handleTasksLinked}
+        />
+      ) : null}
     </div>
   );
 }
