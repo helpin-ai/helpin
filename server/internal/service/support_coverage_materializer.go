@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -101,7 +103,8 @@ func (s *SupportCoverageDailyAnalyzer) materializeRunFindings(ctx context.Contex
 			continue
 		}
 		primary := coveragePrimaryFinding(group)
-		gap, created, err := s.createMaterializedGap(ctx, workspaceID, primary, now)
+		representative := coverageRepresentativeFinding(group)
+		gap, created, err := s.createMaterializedGap(ctx, workspaceID, primary, representative, now)
 		if err != nil {
 			return nil, err
 		}
@@ -151,12 +154,16 @@ func (s *SupportCoverageDailyAnalyzer) matchExistingMaterializedGap(ctx context.
 	}
 	var best *model.SupportCoverageGapListItem
 	bestScore := 0.0
+	incoming := coverageMaterializedFindingCandidate(finding)
 	for _, candidate := range candidates {
 		if candidate.Embedding == "" ||
 			candidate.EmbeddingProvider != coverageEmbeddingProviderName ||
 			candidate.EmbeddingModel != modelName ||
 			candidate.EmbeddingVersion != coverageGapEmbeddingVersion ||
 			candidate.EmbeddingDimensions != len(finding.Vector) {
+			continue
+		}
+		if !coverageClusterCompatible(incoming, candidate) {
 			continue
 		}
 		score := coverageCosineSimilarity(finding.Vector, coverageParseVectorLiteral(candidate.Embedding))
@@ -189,12 +196,16 @@ func (s *SupportCoverageDailyAnalyzer) matchRecentClosedMaterializedGap(ctx cont
 	}
 	var best *model.SupportCoverageGapListItem
 	bestScore := 0.0
+	incoming := coverageMaterializedFindingCandidate(finding)
 	for _, candidate := range candidates {
 		if candidate.Embedding == "" ||
 			candidate.EmbeddingProvider != coverageEmbeddingProviderName ||
 			candidate.EmbeddingModel != modelName ||
 			candidate.EmbeddingVersion != coverageGapEmbeddingVersion ||
 			candidate.EmbeddingDimensions != len(finding.Vector) {
+			continue
+		}
+		if !coverageClusterCompatible(incoming, candidate) {
 			continue
 		}
 		score := coverageCosineSimilarity(finding.Vector, coverageParseVectorLiteral(candidate.Embedding))
@@ -208,6 +219,44 @@ func (s *SupportCoverageDailyAnalyzer) matchRecentClosedMaterializedGap(ctx cont
 		return nil, nil
 	}
 	return best, nil
+}
+
+func coverageMaterializedFindingCandidate(finding coverageMaterializedFinding) model.SupportCoverageGapListItem {
+	title := firstNonEmptyCoverageString(finding.Analysis.CanonicalTitle, finding.Analysis.CustomerNeed)
+	return model.SupportCoverageGapListItem{
+		SupportCoverageGap: model.SupportCoverageGap{
+			WorkspaceID: finding.Analysis.WorkspaceID,
+			GapKind:     finding.Analysis.GapKind,
+			GapCategory: finding.Analysis.GapCategory,
+			Title:       title,
+		},
+		CanonicalTitle:   finding.Analysis.CanonicalTitle,
+		CustomerNeedText: finding.Analysis.CustomerNeed,
+		RelatedArticleID: coverageAnalysisTargetDocumentID(finding.Analysis),
+	}
+}
+
+func coverageAnalysisTargetDocumentID(analysis model.SupportCoverageConversationAnalysis) *string {
+	if len(analysis.RawOutput) == 0 {
+		return nil
+	}
+	var result CoverageConversationAnalysisResult
+	if err := json.Unmarshal(analysis.RawOutput, &result); err != nil {
+		return nil
+	}
+	for _, primaryOnly := range []bool{true, false} {
+		for _, fix := range result.RecommendedFixes {
+			if primaryOnly && fix.Priority != model.SupportCoverageRecommendationPriorityPrimary {
+				continue
+			}
+			if strings.TrimSpace(fix.TargetType) != "docs" || strings.TrimSpace(fix.TargetID) == "" {
+				continue
+			}
+			documentID := strings.TrimSpace(fix.TargetID)
+			return &documentID
+		}
+	}
+	return nil
 }
 
 func (s *SupportCoverageDailyAnalyzer) embedMaterializationFindings(ctx context.Context, analyses []model.SupportCoverageConversationAnalysis, result *CoverageMaterializationResult) ([]coverageMaterializedFinding, error) {
@@ -264,35 +313,57 @@ func coverageMaterializationGroups(findings []coverageMaterializedFinding) [][]c
 	if len(findings) == 0 {
 		return nil
 	}
-	parent := make([]int, len(findings))
-	for idx := range parent {
-		parent[idx] = idx
+	type materializationPair struct {
+		left  int
+		right int
+		score float64
 	}
-	var find func(int) int
-	find = func(x int) int {
-		if parent[x] != x {
-			parent[x] = find(parent[x])
-		}
-		return parent[x]
-	}
-	union := func(a, b int) {
-		ra := find(a)
-		rb := find(b)
-		if ra != rb {
-			parent[rb] = ra
-		}
+	pairs := make([]materializationPair, 0)
+	compatible := make([][]bool, len(findings))
+	for idx := range compatible {
+		compatible[idx] = make([]bool, len(findings))
+		compatible[idx][idx] = true
 	}
 	for i := 0; i < len(findings); i++ {
 		for j := i + 1; j < len(findings); j++ {
-			if coverageFindingsSameCluster(findings[i], findings[j]) {
-				union(i, j)
+			score, ok := coverageFindingsClusterScore(findings[i], findings[j])
+			compatible[i][j] = ok
+			compatible[j][i] = ok
+			if ok {
+				pairs = append(pairs, materializationPair{left: i, right: j, score: score})
 			}
 		}
+	}
+	sort.SliceStable(pairs, func(i, j int) bool {
+		if pairs[i].score == pairs[j].score {
+			leftI := findings[pairs[i].left].Analysis.ID + ":" + findings[pairs[i].right].Analysis.ID
+			leftJ := findings[pairs[j].left].Analysis.ID + ":" + findings[pairs[j].right].Analysis.ID
+			return leftI < leftJ
+		}
+		return pairs[i].score > pairs[j].score
+	})
+	uf := newCoverageClusterUnionFind(len(findings))
+	members := make(map[int][]int, len(findings))
+	for idx := range findings {
+		members[idx] = []int{idx}
+	}
+	for _, pair := range pairs {
+		leftRoot := uf.find(pair.left)
+		rightRoot := uf.find(pair.right)
+		if leftRoot == rightRoot {
+			continue
+		}
+		if !coverageMaterializationCanUnion(members[leftRoot], members[rightRoot], compatible) {
+			continue
+		}
+		uf.parent[rightRoot] = leftRoot
+		members[leftRoot] = append(members[leftRoot], members[rightRoot]...)
+		delete(members, rightRoot)
 	}
 	byRoot := map[int][]coverageMaterializedFinding{}
 	order := []int{}
 	for idx, finding := range findings {
-		root := find(idx)
+		root := uf.find(idx)
 		if _, ok := byRoot[root]; !ok {
 			order = append(order, root)
 		}
@@ -305,13 +376,28 @@ func coverageMaterializationGroups(findings []coverageMaterializedFinding) [][]c
 	return groups
 }
 
-func coverageFindingsSameCluster(a, b coverageMaterializedFinding) bool {
+func coverageFindingsClusterScore(a, b coverageMaterializedFinding) (float64, bool) {
+	if !coverageClusterCompatible(coverageMaterializedFindingCandidate(a), coverageMaterializedFindingCandidate(b)) {
+		return 0, false
+	}
 	aNeed := coverageNormalizeEmbeddingText(a.Analysis.CustomerNeed)
 	bNeed := coverageNormalizeEmbeddingText(b.Analysis.CustomerNeed)
 	if aNeed != "" && aNeed == bNeed {
-		return true
+		return 1, true
 	}
-	return coverageCosineSimilarity(a.Vector, b.Vector) >= coverageSameRunClusterThreshold
+	score := coverageCosineSimilarity(a.Vector, b.Vector)
+	return score, score >= coverageSameRunClusterThreshold
+}
+
+func coverageMaterializationCanUnion(left, right []int, compatible [][]bool) bool {
+	for _, leftIndex := range left {
+		for _, rightIndex := range right {
+			if !compatible[leftIndex][rightIndex] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func coveragePrimaryFinding(group []coverageMaterializedFinding) coverageMaterializedFinding {
@@ -328,13 +414,34 @@ func coveragePrimaryFinding(group []coverageMaterializedFinding) coverageMateria
 	return primary
 }
 
-func (s *SupportCoverageDailyAnalyzer) createMaterializedGap(ctx context.Context, workspaceID string, primary coverageMaterializedFinding, now time.Time) (*model.SupportCoverageGap, bool, error) {
+func coverageRepresentativeFinding(group []coverageMaterializedFinding) coverageMaterializedFinding {
+	representative := group[0]
+	bestAverage := -1.0
+	for _, candidate := range group {
+		total := 0.0
+		for _, other := range group {
+			total += coverageCosineSimilarity(candidate.Vector, other.Vector)
+		}
+		average := total / float64(len(group))
+		if average > bestAverage || (average == bestAverage && candidate.Analysis.ID < representative.Analysis.ID) {
+			representative = candidate
+			bestAverage = average
+		}
+	}
+	return representative
+}
+
+func (s *SupportCoverageDailyAnalyzer) createMaterializedGap(ctx context.Context, workspaceID string, primary coverageMaterializedFinding, representative coverageMaterializedFinding, now time.Time) (*model.SupportCoverageGap, bool, error) {
 	title := coverageTruncate(firstNonEmptyCoverageString(primary.Analysis.CanonicalTitle, primary.Analysis.CustomerNeed, "Coverage gap"), 160)
 	dedupeKey := coverageDeterministicClusterKey(workspaceID, primary.Text)
 	if dedupeKey == "" {
 		dedupeKey = "semantic:" + primary.Analysis.ID
 	}
-	metadata, _ := json.Marshal(map[string]any{"source": "daily_conversation_analysis", "primary_analysis_id": primary.Analysis.ID})
+	metadata, _ := json.Marshal(map[string]any{
+		"source":                     "daily_conversation_analysis",
+		"primary_analysis_id":        primary.Analysis.ID,
+		"representative_analysis_id": representative.Analysis.ID,
+	})
 	gap := &model.SupportCoverageGap{
 		ID:                  uuid.New().String(),
 		WorkspaceID:         workspaceID,
@@ -350,12 +457,12 @@ func (s *SupportCoverageDailyAnalyzer) createMaterializedGap(ctx context.Context
 		Metadata:            metadata,
 		FirstSeenAt:         now,
 		LastSeenAt:          now,
-		Embedding:           coverageVectorLiteral(primary.Vector),
+		Embedding:           coverageVectorLiteral(representative.Vector),
 		EmbeddingProvider:   coverageEmbeddingProviderName,
 		EmbeddingModel:      coverageEmbeddingModel(s.embeddingModel),
 		EmbeddingVersion:    coverageGapEmbeddingVersion,
-		EmbeddingDimensions: len(primary.Vector),
-		EmbeddingTextHash:   coverageEmbeddingTextHash(primary.Text),
+		EmbeddingDimensions: len(representative.Vector),
+		EmbeddingTextHash:   coverageEmbeddingTextHash(representative.Text),
 		EmbeddingUpdatedAt:  &now,
 	}
 	return s.coverageRepo.UpsertOpenGapByDedupeKeyNoBump(ctx, gap)
