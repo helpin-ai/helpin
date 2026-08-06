@@ -6,8 +6,6 @@ import {
   DOCK_SEGMENT_KINDS,
   TranscriptSegmentView,
 } from '@/components/agents/transcript';
-import { DockUserMessage } from './DockUserMessage';
-
 const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'user'] as const);
 
 /** True when the stream has at least one renderable assistant/tool segment. */
