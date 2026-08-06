@@ -667,14 +667,14 @@ func (s *AgentRuntimeHostService) ResolveRepositorySpec(ctx context.Context, req
 
 // runtimeRepositorySpecTarget restores the concrete repository target for a
 // dynamically checked-out repository after an interactive run resumes. Agent
-// Runtime keeps the run's product target (for example, workspace) but records
-// the primary checkout identity in run input metadata. Lease validation later
-// calls repository-spec with that original product target, so the host adapter
-// must use the explicit checkout metadata rather than attempting to resolve
-// the product workspace itself as a Git repository.
+// Runtime keeps the run's product target (for example, a workspace or support
+// coverage gap) but records the primary checkout identity in run input
+// metadata. Lease validation later calls repository-spec with that original
+// product target, so the host adapter must use the explicit checkout metadata
+// rather than attempting to resolve the product object as a Git repository.
 func runtimeRepositorySpecTarget(req agentruntime.PrepareWorkspaceRequest, contextMaps ...map[string]interface{}) agentruntime.TargetRef {
 	target := normalizeRuntimeTarget(req.Target)
-	if target.Type != "workspace" || strings.TrimSpace(req.WorkspaceMode) != agentruntime.WorkspaceModeRepository {
+	if target.Type == "repository" || strings.TrimSpace(req.WorkspaceMode) != agentruntime.WorkspaceModeRepository {
 		return target
 	}
 	maps := []map[string]interface{}{req.Metadata, target.Metadata}
