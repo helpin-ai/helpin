@@ -1949,6 +1949,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerReleaseFactsCommands()
 	s.registerDocsRuntimeToolCommands()
 	s.registerDocsOrganizationCommands()
+	s.registerDocsMetadataCommands()
 	s.registerPMOperationalCommands()
 	s.registerPMDeliveryCommands()
 }

@@ -205,7 +205,10 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 	if req.TemplateKey != nil {
 		updates["template_key"] = *req.TemplateKey
 	}
-	if req.Excerpt != nil {
+	if req.ClearExcerpt {
+		updates["excerpt"] = nil
+		shouldRefreshTranslations = true
+	} else if req.Excerpt != nil {
 		updates["excerpt"] = *req.Excerpt
 		shouldRefreshTranslations = true
 	}
