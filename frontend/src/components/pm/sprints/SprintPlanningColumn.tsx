@@ -12,7 +12,6 @@ import {
   Link01Icon,
   Loading01Icon,
   MoreHorizontalIcon,
-  PlusSignIcon,
 } from '@/lib/icons';
 import { format, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
@@ -32,6 +31,7 @@ import { queryKeys } from '@/lib/queryKeys';
 import type { AssignableMember } from '@/lib/types';
 import type { PaginatedResponse, SprintPlanningCard, SprintPlanningTaskPreview } from '@/lib/pmTypes';
 import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
+import { SprintPlanningColumnActions } from './SprintPlanningColumnActions';
 import { cn } from '@/lib/utils';
 
 const SPRINT_PREVIEW_PAGE_SIZE = 20;
@@ -47,6 +47,7 @@ interface SprintPlanningColumnProps {
   isDropTargetActive?: boolean;
   onOpenSprint: (sprintId: string) => void;
   onOpenTask: (taskId: string) => void;
+  onLinkTasks: (sprintId: string) => void;
   onCreateTask: (sprintId: string) => void;
 }
 
@@ -64,6 +65,7 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
   isDropTargetActive = false,
   onOpenSprint,
   onOpenTask,
+  onLinkTasks,
   onCreateTask,
 }: SprintPlanningColumnProps) {
   const queryClient = useQueryClient();
@@ -325,17 +327,13 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
             </div>
           ) : null}
 
-          {canEdit && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-auto w-full gap-2 text-muted-foreground"
-              onClick={() => onCreateTask(card.sprint.id)}
-            >
-              <PlusSignIcon className="h-4 w-4" />
-              Create task
-            </Button>
-          )}
+          {canEdit ? (
+            <SprintPlanningColumnActions
+              linkTasksDisabledReason={card.sprint.team_id ? null : 'Assign this sprint to a team before linking tasks.'}
+              onLinkTasks={() => onLinkTasks(card.sprint.id)}
+              onCreateTask={() => onCreateTask(card.sprint.id)}
+            />
+          ) : null}
         </CardContent>
         <ConfirmDialog
           open={deleteOpen}

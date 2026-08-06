@@ -41,6 +41,7 @@ interface SprintPlanningWorkspaceProps {
   onOpenSprint: (sprintId: string) => void;
   onOpenTask: (taskId: string) => void;
   onCreateSprint: () => void;
+  onLinkTasks: (sprintId: string) => void;
   onCreateTask: (sprintId?: string) => void;
   onAssignTask: (task: SprintPlanningTaskPreview, sprintId: string | null) => void;
 }
@@ -57,6 +58,7 @@ export function SprintPlanningWorkspace({
   onOpenSprint,
   onOpenTask,
   onCreateSprint,
+  onLinkTasks,
   onCreateTask,
   onAssignTask,
 }: SprintPlanningWorkspaceProps) {
@@ -192,6 +194,7 @@ export function SprintPlanningWorkspace({
                 isDropTargetActive={activeDropTargetId === `sprint:${card.sprint.id}`}
                 onOpenSprint={onOpenSprint}
                 onOpenTask={onOpenTask}
+                onLinkTasks={onLinkTasks}
                 onCreateTask={onCreateTask}
               />
             ))}

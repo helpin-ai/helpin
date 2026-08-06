@@ -1,6 +1,8 @@
 import { api } from '../api';
 import type {
   CreateSprintRequest,
+  LinkSprintTasksRequest,
+  LinkSprintTasksResponse,
   PaginatedResponse,
   SprintCloseoutListResponse,
   SprintCloseoutResponse,
@@ -62,6 +64,8 @@ export const pmSprintService = {
     }),
   remove: (workspaceId: string, id: string) => api.del(`/pm/sprints/${id}${qs(workspaceId)}`),
   listTasks: (workspaceId: string, id: string) => api.get<Task[]>(`/pm/sprints/${id}/tasks${qs(workspaceId)}`),
+  linkTasks: (workspaceId: string, id: string, payload: LinkSprintTasksRequest) =>
+    api.post<LinkSprintTasksResponse>(`/pm/sprints/${id}/tasks/link${qs(workspaceId)}`, payload),
   getCloseout: (workspaceId: string, id: string) =>
     api.get<SprintCloseoutResponse>(`/pm/sprints/${id}/closeout${qs(workspaceId)}`),
   listCloseouts: (

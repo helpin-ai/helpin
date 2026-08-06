@@ -322,6 +322,30 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 	t.Fatal("expected documentation agent preset in catalog")
 }
 
+func TestOperationalPresetsExposeRelevantSafeTools(t *testing.T) {
+	expected := map[string][]string{
+		model.AgentPresetCRMOperator:        {"get_crm_contact", "get_crm_company", "get_crm_deal", "list_crm_companies", "list_crm_pipelines", "list_crm_associations", "update_crm_contact", "update_crm_company", "update_crm_deal", "add_crm_activity", "link_crm_objects", "unlink_crm_association", "set_primary_contact_company"},
+		model.AgentPresetDocumentationAgent: {"update_document_metadata"},
+		model.AgentPresetSupportAgent:       {"list_support_conversations", "assign_support_conversation", "update_support_conversation_subject"},
+		model.AgentPresetCommandAgent:       {"get_crm_contact", "update_crm_contact", "list_support_conversations", "assign_support_conversation", "link_support_conversation_task", "update_document_metadata"},
+	}
+	byKey := map[string]model.AgentPresetDefinition{}
+	for _, preset := range ListAgentPresets() {
+		byKey[preset.Key] = preset
+	}
+	for key, tools := range expected {
+		preset, ok := byKey[key]
+		if !ok {
+			t.Fatalf("preset %s missing", key)
+		}
+		for _, tool := range tools {
+			if !slices.Contains(preset.AllowedTools, tool) {
+				t.Errorf("preset %s missing %s", key, tool)
+			}
+		}
+	}
+}
+
 func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	preset, ok := agentPresetDefinition(model.AgentPresetAskAgent)
 	if !ok {

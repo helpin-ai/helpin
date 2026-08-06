@@ -141,6 +141,7 @@ type UpdateCRMContactRequest struct {
 	LifecycleStage   *string                `json:"lifecycle_stage"`
 	LeadStatus       *string                `json:"lead_status"`
 	OwnerMemberID    *string                `json:"owner_member_id"`
+	ClearOwner       bool                   `json:"clear_owner"`
 	AvatarURL        *string                `json:"avatar_url"`
 	Source           *string                `json:"source"`
 	CustomProperties map[string]interface{} `json:"custom_properties"`

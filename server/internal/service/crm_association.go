@@ -161,6 +161,41 @@ func (s *CRMAssociationService) Delete(ctx context.Context, id string) error {
 	return s.assocRepo.Delete(ctx, id)
 }
 
+// GetScoped returns an association only when it belongs to the supplied workspace.
+func (s *CRMAssociationService) GetScoped(ctx context.Context, workspaceID, id string) (*model.CRMAssociation, error) {
+	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(id) == "" {
+		return nil, fmt.Errorf("association not found")
+	}
+	assoc, err := s.assocRepo.GetByID(ctx, strings.TrimSpace(id))
+	if err != nil || assoc == nil || assoc.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("association not found")
+	}
+	return assoc, nil
+}
+
+// DeleteScoped removes an association without permitting cross-workspace IDs.
+func (s *CRMAssociationService) DeleteScoped(ctx context.Context, workspaceID, id string) error {
+	assoc, err := s.GetScoped(ctx, workspaceID, id)
+	if err != nil {
+		return err
+	}
+	return s.assocRepo.Delete(ctx, assoc.ID)
+}
+
+// SetPrimaryContactCompany creates or reuses a contact-company association and
+// makes it the only primary company association for that contact.
+func (s *CRMAssociationService) SetPrimaryContactCompany(ctx context.Context, workspaceID, contactID, companyID string) (*model.CRMAssociation, error) {
+	label := primaryCompanyAssociationLabel
+	assoc, err := s.Create(ctx, model.CreateCRMAssociationRequest{
+		WorkspaceID: workspaceID, FromObjectType: model.CRMObjectContact, FromObjectID: strings.TrimSpace(contactID),
+		ToObjectType: model.CRMObjectCompany, ToObjectID: strings.TrimSpace(companyID), AssociationLabel: &label,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.GetScoped(ctx, workspaceID, assoc.ID)
+}
+
 // ListByObject returns all associations for a given object.
 func (s *CRMAssociationService) ListByObject(ctx context.Context, workspaceID, objectType, objectID string) ([]model.CRMAssociation, error) {
 	if workspaceID == "" {

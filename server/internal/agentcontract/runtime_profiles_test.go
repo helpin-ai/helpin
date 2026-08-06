@@ -67,3 +67,22 @@ func TestExcludedPresetRuntimeProfilesHaveNoNewPMTools(t *testing.T) {
 		}
 	}
 }
+
+func TestOperationalRuntimeProfilesExposeRelevantSafeTools(t *testing.T) {
+	tests := []struct {
+		preset string
+		tools  []string
+	}{
+		{model.AgentPresetEpicPlanner, []string{"update_task_delivery_target", "update_epic_delivery_target"}},
+		{model.AgentPresetDocumentationAgent, []string{"update_document_metadata"}},
+		{model.AgentPresetSupportAgent, []string{"list_support_conversations", "get_support_conversation", "list_support_tags", "list_support_inboxes", "list_support_assignees", "assign_support_conversation", "move_support_conversation", "add_support_conversation_tag", "remove_support_conversation_tag", "link_support_conversation_task", "link_support_conversation_contact", "update_support_conversation_subject"}},
+	}
+	for _, tt := range tests {
+		profile := GetRuntimeProfile(tt.preset)
+		for _, tool := range tt.tools {
+			if !slices.Contains(profile.AllowedTools, tool) {
+				t.Errorf("profile %s missing %s", tt.preset, tool)
+			}
+		}
+	}
+}

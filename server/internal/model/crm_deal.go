@@ -78,9 +78,9 @@ type CreateCRMPipelineStageItem struct {
 
 // UpdateCRMPipelineRequest is the payload for updating a pipeline.
 type UpdateCRMPipelineRequest struct {
-	Name      *string                       `json:"name"`
-	IsDefault *bool                         `json:"is_default"`
-	Stages    []UpdateCRMPipelineStageItem  `json:"stages"`
+	Name      *string                      `json:"name"`
+	IsDefault *bool                        `json:"is_default"`
+	Stages    []UpdateCRMPipelineStageItem `json:"stages"`
 }
 
 // UpdateCRMPipelineStageItem is a stage within a pipeline update request.
@@ -113,10 +113,14 @@ type UpdateCRMDealRequest struct {
 	PipelineID       *string                `json:"pipeline_id"`
 	StageID          *string                `json:"stage_id"`
 	Amount           *float64               `json:"amount"`
+	ClearAmount      bool                   `json:"clear_amount"`
 	Currency         *string                `json:"currency"`
 	CloseDate        *time.Time             `json:"close_date"`
+	ClearCloseDate   bool                   `json:"clear_close_date"`
 	OwnerMemberID    *string                `json:"owner_member_id"`
+	ClearOwner       bool                   `json:"clear_owner"`
 	Probability      *int                   `json:"probability"`
+	ClearProbability bool                   `json:"clear_probability"`
 	CustomProperties map[string]interface{} `json:"custom_properties"`
 }
 

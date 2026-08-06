@@ -142,6 +142,7 @@ func TestPMSprintHandler_ListCloseouts(t *testing.T) {
 func newPMSprintCloseoutHandlerService(db *gorm.DB) *service.PMSprintService {
 	return service.NewPMSprintService(
 		repository.NewPMSprintRepository(db),
+		repository.NewPMTaskRepository(db),
 		repository.NewPMLabelRepository(db),
 		repository.NewPMAttachmentRepository(db),
 		repository.NewWorkspaceRepository(db),

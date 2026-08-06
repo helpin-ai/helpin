@@ -109,7 +109,9 @@ func (s *CRMCompanyService) Update(ctx context.Context, id string, req model.Upd
 	if req.LogoURL != nil {
 		company.LogoURL = req.LogoURL
 	}
-	if req.OwnerMemberID != nil {
+	if req.ClearOwner {
+		company.OwnerMemberID = nil
+	} else if req.OwnerMemberID != nil {
 		company.OwnerMemberID = req.OwnerMemberID
 	}
 	if req.CustomProperties != nil {

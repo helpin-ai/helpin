@@ -4,6 +4,8 @@ import type {
   CreateEpicResponse,
   CreateEpicRequest,
   EpicWithStats,
+  LinkEpicTasksRequest,
+  LinkEpicTasksResponse,
   PaginatedResponse,
   Task,
   UpdateEpicHealthRequest,
@@ -55,6 +57,8 @@ export const pmEpicService = {
     }),
   remove: (workspaceId: string, id: string) => api.del(`/pm/epics/${id}${qs(workspaceId)}`),
   listTasks: (workspaceId: string, id: string) => api.get<Task[]>(`/pm/epics/${id}/tasks${qs(workspaceId)}`),
+  linkTasks: (workspaceId: string, id: string, payload: LinkEpicTasksRequest) =>
+    api.post<LinkEpicTasksResponse>(`/pm/epics/${id}/tasks/link${qs(workspaceId)}`, payload),
   updateHealth: (workspaceId: string, id: string, payload: UpdateEpicHealthRequest) =>
     api.put(`/pm/epics/${id}/health${qs(workspaceId)}`, payload),
 };

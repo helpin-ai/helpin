@@ -58,6 +58,116 @@ func createTestEpic(t *testing.T, svc *PMEpicService, wsID, userID, name string)
 	return epic
 }
 
+func seedEpicTaskLinkFixture(t *testing.T, db *gorm.DB, workspaceID string) {
+	t.Helper()
+	now := time.Now().UTC()
+	for _, team := range []struct{ id, name string }{{"team-link-a", "Alpha"}, {"team-link-b", "Beta"}} {
+		mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, team.id, workspaceID, team.name, now, now)
+	}
+	for _, workflow := range []struct{ id, teamID, stateID string }{{"wf-link-a", "team-link-a", "state-link-a"}, {"wf-link-b", "team-link-b", "state-link-b"}} {
+		mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, workflow.id, workspaceID, workflow.id, workflow.teamID, workflow.stateID, now, now)
+		mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, workflow.stateID, workflow.id, "Todo", model.PMStateTypeUnstarted, 0, true, now, now)
+	}
+	mustExec(t, db, `INSERT INTO pm_epics (id, workspace_id, name, team_id, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, "epic-link-target", workspaceID, "Target epic", "team-link-a", false, now, now)
+	mustExec(t, db, `INSERT INTO pm_epics (id, workspace_id, name, team_id, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, "epic-link-old", workspaceID, "Old epic", "team-link-a", false, now, now)
+	mustExec(t, db, `INSERT INTO pm_epics (id, workspace_id, name, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, "epic-link-no-team", workspaceID, "Legacy epic", false, now, now)
+	seedPMCommandTask(t, db, "task-link-new", workspaceID, "team-link-a", "wf-link-a", "state-link-a", "", "", 101)
+	seedPMCommandTask(t, db, "task-link-move", workspaceID, "team-link-a", "wf-link-a", "state-link-a", "epic-link-old", "", 102)
+	seedPMCommandTask(t, db, "task-link-other-team", workspaceID, "team-link-b", "wf-link-b", "state-link-b", "", "", 103)
+	seedPMCommandTask(t, db, "task-link-archived", workspaceID, "team-link-a", "wf-link-a", "state-link-a", "", "", 104)
+	mustExec(t, db, `UPDATE pm_tasks SET archived = TRUE WHERE id = ?`, "task-link-archived")
+}
+
+func TestPMEpicServiceLinkTasksLinksAndMovesSameTeamTasks(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	seedEpicTaskLinkFixture(t, db, wsID)
+
+	result, err := svc.LinkTasks(context.Background(), wsID, "epic-link-target", []string{"task-link-new", "task-link-move", "task-link-new"}, userID)
+	if err != nil {
+		t.Fatalf("LinkTasks: %v", err)
+	}
+	if result.LinkedCount != 2 || result.MovedCount != 1 {
+		t.Fatalf("result = %#v, want linked=2 moved=1", result)
+	}
+	for _, taskID := range []string{"task-link-new", "task-link-move"} {
+		var epicID *string
+		if err := db.Model(&model.PMTask{}).Select("epic_id").Where("id = ?", taskID).Scan(&epicID).Error; err != nil {
+			t.Fatalf("load %s: %v", taskID, err)
+		}
+		if epicID == nil || *epicID != "epic-link-target" {
+			t.Fatalf("%s epic_id = %v, want epic-link-target", taskID, epicID)
+		}
+	}
+}
+
+func TestPMEpicServiceLinkTasksRejectsMixedTeamsAtomically(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	seedEpicTaskLinkFixture(t, db, wsID)
+
+	_, err := svc.LinkTasks(context.Background(), wsID, "epic-link-target", []string{"task-link-new", "task-link-other-team"}, userID)
+	if err == nil || !strings.Contains(err.Error(), "same team") {
+		t.Fatalf("error = %v, want same-team validation", err)
+	}
+	var epicID *string
+	if err := db.Model(&model.PMTask{}).Select("epic_id").Where("id = ?", "task-link-new").Scan(&epicID).Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if epicID != nil {
+		t.Fatalf("task-link-new mutated after rejected batch: %v", *epicID)
+	}
+}
+
+func TestPMEpicServiceLinkTasksRejectsEpicWithoutTeam(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	seedEpicTaskLinkFixture(t, db, wsID)
+
+	_, err := svc.LinkTasks(context.Background(), wsID, "epic-link-no-team", []string{"task-link-new"}, userID)
+	if err == nil || !strings.Contains(err.Error(), "assign the epic to a team") {
+		t.Fatalf("error = %v, want team assignment guidance", err)
+	}
+}
+
+func TestPMEpicServiceLinkTasksRejectsArchivedTask(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	seedEpicTaskLinkFixture(t, db, wsID)
+
+	_, err := svc.LinkTasks(context.Background(), wsID, "epic-link-target", []string{"task-link-archived"}, userID)
+	if err == nil || !strings.Contains(err.Error(), "archived") {
+		t.Fatalf("error = %v, want archived-task validation", err)
+	}
+}
+
+func TestPMEpicServiceLinkTasksRejectsMissingTaskAtomically(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	seedEpicTaskLinkFixture(t, db, wsID)
+
+	_, err := svc.LinkTasks(context.Background(), wsID, "epic-link-target", []string{"task-link-new", "task-link-missing"}, userID)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("error = %v, want missing-task validation", err)
+	}
+	var epicID *string
+	if err := db.Model(&model.PMTask{}).Select("epic_id").Where("id = ?", "task-link-new").Scan(&epicID).Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if epicID != nil {
+		t.Fatalf("task-link-new mutated after rejected batch: %v", *epicID)
+	}
+}
+
+func TestPMEpicServiceLinkTasksRejectsActorOutsideEpicTeam(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	seedEpicTaskLinkFixture(t, db, wsID)
+	ctx := authorization.WithActor(context.Background(), &authorization.Actor{
+		UserID: userID, WorkspaceID: wsID, Role: model.RoleMember,
+		TeamMemberships: []authorization.TeamRole{{TeamID: "team-link-b", Role: model.RoleMember}},
+	})
+
+	_, err := svc.LinkTasks(ctx, wsID, "epic-link-target", []string{"task-link-new"}, userID)
+	if err == nil {
+		t.Fatal("expected team access error")
+	}
+}
+
 func TestPMEpicService_Create(t *testing.T) {
 	t.Parallel()
 	svc, wsID, userID := newEpicTestEnv(t)

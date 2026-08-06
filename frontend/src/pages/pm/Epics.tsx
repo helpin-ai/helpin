@@ -1872,7 +1872,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       <header className="flex items-center justify-between px-4 pt-4 md:px-6 md:pt-6">
         {showHeaderIntro ? (
           <div>
