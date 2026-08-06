@@ -9,7 +9,10 @@ import (
 
 func TestDocumentationRuntimeProfileIncludesOrganizationTools(t *testing.T) {
 	profile := GetRuntimeProfile(model.AgentPresetDocumentationAgent)
-	for _, tool := range []string{"search_workspace", "list_spaces", "create_space", "create_collection", "update_space", "update_collection", "move_document", "link_document_to_object"} {
+	if profile.RuntimeKind != "codex" {
+		t.Fatalf("documentation runtime profile = %q, want codex", profile.RuntimeKind)
+	}
+	for _, tool := range []string{"search_workspace", "list_spaces", "create_space", "create_collection", "update_space", "update_collection", "move_document", "link_document_to_object", "complete_support_coverage_gap"} {
 		if !slices.Contains(profile.AllowedTools, tool) {
 			t.Fatalf("documentation runtime profile is missing %q", tool)
 		}

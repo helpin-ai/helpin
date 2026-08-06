@@ -22,6 +22,10 @@ var ErrReanalysisAlreadyRunning = errors.New("reanalysis already in progress")
 const (
 	coverageDailyBatchWorkflowID = "coverage-gap-daily-batch"
 	coverageDailyBatchSchedule   = "0 3 * * *"
+
+	SupportCoverageAgentOutcomeResolved          = "resolved"
+	SupportCoverageAgentOutcomeProposalSubmitted = "proposal_submitted"
+	SupportCoverageAgentOutcomeHandoff           = "handoff"
 )
 
 // SupportCoverageService orchestrates gap detection, evidence
@@ -299,6 +303,54 @@ func (s *SupportCoverageService) AddDocumentToGap(ctx context.Context, workspace
 		return err
 	}
 	return s.coverageRepo.LinkGapArticle(ctx, gapID, documentID, workspaceID)
+}
+
+// RecordAgentOutcome idempotently applies the durable result of a
+// documentation-agent run to its support coverage gap.
+func (s *SupportCoverageService) RecordAgentOutcome(ctx context.Context, workspaceID, gapID, outcome, documentID string) error {
+	if s == nil || s.coverageRepo == nil {
+		return fmt.Errorf("support coverage service is not configured")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	gapID = strings.TrimSpace(gapID)
+	outcome = strings.TrimSpace(outcome)
+	documentID = strings.TrimSpace(documentID)
+	if workspaceID == "" || gapID == "" {
+		return fmt.Errorf("workspace_id and gap_id are required")
+	}
+	detail, err := s.coverageRepo.GetGapDetail(ctx, workspaceID, gapID)
+	if err != nil {
+		return err
+	}
+	if detail == nil {
+		return fmt.Errorf("gap not found")
+	}
+
+	switch outcome {
+	case SupportCoverageAgentOutcomeHandoff:
+		return nil
+	case SupportCoverageAgentOutcomeProposalSubmitted:
+		if documentID == "" {
+			return fmt.Errorf("document_id is required for proposal_submitted")
+		}
+		return s.coverageRepo.LinkGapArticle(ctx, gapID, documentID, workspaceID)
+	case SupportCoverageAgentOutcomeResolved:
+		if documentID == "" {
+			return fmt.Errorf("document_id is required for resolved")
+		}
+		if detail.Status == model.SupportCoverageGapStatusDone {
+			if detail.ResultDocumentID != nil && strings.TrimSpace(*detail.ResultDocumentID) != documentID {
+				return fmt.Errorf("gap is already resolved with a different document")
+			}
+			return s.coverageRepo.LinkGapArticle(ctx, gapID, documentID, workspaceID)
+		}
+		if detail.Status != model.SupportCoverageGapStatusOpen {
+			return fmt.Errorf("gap is not open")
+		}
+		return s.AddDocumentToGap(ctx, workspaceID, gapID, documentID)
+	default:
+		return fmt.Errorf("outcome must be resolved, proposal_submitted, or handoff")
+	}
 }
 
 func IsGapResolutionConflict(err error) bool {

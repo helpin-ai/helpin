@@ -112,6 +112,41 @@ func TestWriteDocumentContentCommandSupportsDocumentTarget(t *testing.T) {
 	}
 }
 
+func TestDocumentationCoverageGapToolsAcceptCoverageTarget(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	commandsByAlias := make(map[string]InternalCommandDefinition)
+	for _, def := range svc.ToolDefinitions() {
+		commandsByAlias[def.Tool.Alias] = def
+	}
+	profile := agentcontract.GetRuntimeProfile(model.AgentPresetDocumentationAgent)
+	for _, toolName := range profile.AllowedTools {
+		def, ok := commandsByAlias[toolName]
+		if !ok || len(def.SupportedTargetTypes) == 0 {
+			continue
+		}
+		if !slices.Contains(def.SupportedTargetTypes, "support_coverage_gap") {
+			t.Errorf("documentation tool %q (%s) rejects support_coverage_gap", toolName, def.Name)
+		}
+	}
+}
+
+func TestCompleteSupportCoverageGapToolContract(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	def, ok := svc.Definition("support.complete_coverage_gap")
+	if !ok || def.Tool == nil {
+		t.Fatal("complete support coverage gap tool is not registered")
+	}
+	if !def.Mutating || def.Tool.Alias != agentcontract.ToolCompleteSupportCoverageGap {
+		t.Fatalf("unexpected terminal tool metadata: %#v", def)
+	}
+	if !slices.Equal(def.SupportedTargetTypes, []string{"support_coverage_gap"}) {
+		t.Fatalf("terminal tool targets = %#v", def.SupportedTargetTypes)
+	}
+	if def.Tool.InputSchema["additionalProperties"] != false {
+		t.Fatalf("terminal tool schema is not strict: %#v", def.Tool.InputSchema)
+	}
+}
+
 func TestEnsureTaskPlanDocumentToolContractAttachesAndReturnsDocumentID(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 

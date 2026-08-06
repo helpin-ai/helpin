@@ -474,6 +474,7 @@ func main() {
 		nil,
 	))
 	commandService.SetAgentRunDependencies(runRepo, artifactRepo)
+	commandService.SetSupportCoverageService(supportCoverageService)
 	commandService.SetDockActionProposalRepository(dockActionProposalRepo)
 	commandService.SetReleaseFactsProvider(releaseFactsService)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)

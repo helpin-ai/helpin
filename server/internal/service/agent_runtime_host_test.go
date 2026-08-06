@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
@@ -326,6 +327,63 @@ func TestAgentRuntimeHostResolveSupportConversationBypassesMailboxMembership(t *
 	}
 	if resolved.Summary == "Support conversation: Widget installation help" {
 		t.Fatalf("unexpected support target summary: %q", resolved.Summary)
+	}
+}
+
+func TestAgentRuntimeHostResolveSupportCoverageGapTarget(t *testing.T) {
+	_, coverage, db := setupCoverageTestEnv(t)
+	if err := db.Exec(`CREATE TABLE workspaces (
+		id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL, workspace_key TEXT,
+		owner_id TEXT NOT NULL, organization_id TEXT, description TEXT,
+		company_product_context TEXT, website_url TEXT, logo_url TEXT,
+		timezone TEXT NOT NULL DEFAULT 'UTC', created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create workspace target table: %v", err)
+	}
+	now := time.Now().UTC()
+	workspace := &model.Workspace{ID: "ws-gap", Name: "Acme", Slug: "acme", OwnerID: "user-1"}
+	if err := db.Create(workspace).Error; err != nil {
+		t.Fatalf("seed workspace: %v", err)
+	}
+	gap := &model.SupportCoverageGap{ID: "gap-1", WorkspaceID: workspace.ID, Title: "Password reset docs are missing"}
+	if err := db.Exec(`INSERT INTO support_coverage_gaps (
+		id, workspace_id, dedupe_key, title, status, evidence_count, confidence,
+		metadata, first_seen_at, last_seen_at, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		gap.ID, gap.WorkspaceID, "reset-password", gap.Title, model.SupportCoverageGapStatusOpen,
+		2, 0.91, []byte(`{}`), now, now, now, now,
+	).Error; err != nil {
+		t.Fatalf("seed coverage gap: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO support_gap_evidence (
+		id, gap_id, workspace_id, evidence_type, excerpt, metadata, created_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"evidence-1", gap.ID, workspace.ID, model.SupportEventDocsIssueFeedback,
+		"How can I reset my password?", []byte(`{}`), now,
+	).Error; err != nil {
+		t.Fatalf("seed gap evidence: %v", err)
+	}
+	host := NewAgentRuntimeHostService(
+		"helpin", nil, repository.NewWorkspaceRepository(db), nil, nil,
+		nil, nil, nil, nil, nil, nil, nil,
+	).SetSupportCoverageService(coverage)
+
+	resolved, err := host.ResolveTargetContext(context.Background(), agentruntime.TargetContextRequest{
+		AppID: "helpin", Target: agentruntime.TargetRef{Type: "support_coverage_gap", ID: gap.ID},
+		Metadata: map[string]interface{}{"workspace_id": workspace.ID},
+	})
+	if err != nil {
+		t.Fatalf("ResolveTargetContext returned error: %v", err)
+	}
+	if resolved.Target.Display == nil || resolved.Target.Display.Title != gap.Title {
+		t.Fatalf("unexpected gap target display: %#v", resolved.Target.Display)
+	}
+	if !strings.Contains(resolved.Summary, "How can I reset my password?") || !strings.Contains(resolved.Summary, "evidence_count=2") {
+		t.Fatalf("gap target summary lacks evidence: %q", resolved.Summary)
+	}
+	gapData, ok := resolved.Data["support_coverage_gap"].(map[string]interface{})
+	if !ok || gapData["id"] != gap.ID || gapData["title"] != gap.Title {
+		t.Fatalf("unexpected typed gap context: %#v", resolved.Data)
 	}
 }
 

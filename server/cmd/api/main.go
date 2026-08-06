@@ -1302,6 +1302,11 @@ func main() {
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
+	commandService.SetSupportCoverageService(supportCoverageService)
+	agentRuntimeHostService.SetSupportCoverageService(supportCoverageService)
+	if runFinalizers != nil {
+		runFinalizers.SetSupportCoverageService(supportCoverageService)
+	}
 	agentService.SetSupportCoverageService(supportCoverageService)
 	supportCoverageService.SetDocsBlockService(docsBlockService)
 	supportCoverageService.SetTemporalClient(temporalClient)
@@ -1532,7 +1537,7 @@ func main() {
 	handlers := router.Handlers{
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
-		Health:          handler.NewHealthHandler(s3Client, geoIPResolver),
+		Health:                    handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
 			ClientID:     cfg.GoogleAuthClientID,
 			ClientSecret: cfg.GoogleAuthClientSecret,

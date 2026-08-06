@@ -15,7 +15,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-var pmDiscoveryTargets = []string{"workspace", "task", "story", "epic", "sprint", "objective"}
+var pmDiscoveryTargets = []string{"workspace", "task", "story", "epic", "sprint", "objective", "support_coverage_gap"}
 
 type pmCommandPage struct {
 	Page    int  `json:"page"`
@@ -611,7 +611,7 @@ func (s *InternalCommandService) extendExistingPMTaskCommands() {
 		Name:                 "pm.add_task_comment",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "task", "story", "epic", "sprint"},
+		SupportedTargetTypes: []string{"workspace", "task", "story", "epic", "sprint", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("pm.add_task_comment"),
 		Execute:              s.executeAddTaskComment,
 	})

@@ -263,6 +263,45 @@ func TestSupportCoverage_AddDocumentToGapClosesWithResultDocument(t *testing.T) 
 	}
 }
 
+func TestSupportCoverageRecordAgentOutcomeIsIdempotent(t *testing.T) {
+	_, coverageSvc, db := setupCoverageTestEnv(t)
+	if err := db.Exec(`CREATE TABLE docs_documents (id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '')`).Error; err != nil {
+		t.Fatalf("create docs table: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_documents (id, title) VALUES ('doc-1', 'Reset passwords')`).Error; err != nil {
+		t.Fatalf("seed docs table: %v", err)
+	}
+	ctx := context.Background()
+	now := time.Now().UTC()
+	repo := repository.NewSupportCoverageRepository(db)
+	if _, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+		ID: "gap-agent", WorkspaceID: "ws-1", DedupeKey: "agent-outcome",
+		FirstSeenAt: now, LastSeenAt: now,
+	}); err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := coverageSvc.RecordAgentOutcome(ctx, "ws-1", "gap-agent", SupportCoverageAgentOutcomeResolved, "doc-1"); err != nil {
+			t.Fatalf("RecordAgentOutcome attempt %d: %v", attempt+1, err)
+		}
+	}
+	var gap model.SupportCoverageGap
+	if err := db.Where("id = ?", "gap-agent").First(&gap).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.Status != model.SupportCoverageGapStatusDone || gap.ResultDocumentID == nil || *gap.ResultDocumentID != "doc-1" {
+		t.Fatalf("unexpected resolved gap: %#v", gap)
+	}
+	var links int64
+	if err := db.Model(&model.SupportCoverageGapArticle{}).Where("gap_id = ? AND document_id = ?", "gap-agent", "doc-1").Count(&links).Error; err != nil {
+		t.Fatalf("count links: %v", err)
+	}
+	if links != 1 {
+		t.Fatalf("gap article links = %d, want 1", links)
+	}
+}
+
 func TestSupportCoverage_AIHandoff_NoRetrieval_CreatesGap(t *testing.T) {
 	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
 	ctx := context.Background()

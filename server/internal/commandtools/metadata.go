@@ -85,8 +85,9 @@ var runtimeToolRiskLevels = map[string]string{
 	"add_deal_note": RiskLevelRoutine, "update_deal_stage": RiskLevelRoutine,
 	"ensure_crm_contact_company": RiskLevelRoutine, "enrich_crm_contact": RiskLevelRoutine,
 	"enrich_crm_company": RiskLevelRoutine, "draft_support_reply": RiskLevelRoutine,
-	"update_conversation_status": RiskLevelRoutine,
-	"send_support_reply":         RiskLevelSensitive, "escalate_to_human": RiskLevelSensitive,
+	"update_conversation_status":    RiskLevelRoutine,
+	"complete_support_coverage_gap": RiskLevelRoutine,
+	"send_support_reply":            RiskLevelSensitive, "escalate_to_human": RiskLevelSensitive,
 	"run_epic_delivery_pipeline": RiskLevelDestructive,
 }
 

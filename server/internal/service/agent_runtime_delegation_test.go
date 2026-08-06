@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -63,6 +64,31 @@ func TestRuntimeStartRunRequestPropagatesPlannerSelectors(t *testing.T) {
 	}
 	if req.Metadata["preset_key"] != model.AgentPresetEpicPlanner || req.Metadata["planning_stage"] != model.PlanningStagePlanTasks {
 		t.Fatalf("missing planner selectors: %#v", req.Metadata)
+	}
+}
+
+func TestRuntimeStartRunRequestScopesCoverageCompletionToQuillGapRuns(t *testing.T) {
+	run := &model.AgentRun{
+		ID: "run-gap", WorkspaceID: "workspace-1", AgentID: "agent-quill",
+		TargetType: "support_coverage_gap", TargetID: "gap-1",
+	}
+	agent := &model.Agent{ID: "agent-quill", PresetKey: model.AgentPresetDocumentationAgent}
+	req, err := runtimeStartRunRequest(run, agent, runtimeAgentFromHelpinAgent(agent, "helpin"))
+	if err != nil {
+		t.Fatalf("runtimeStartRunRequest returned error: %v", err)
+	}
+	required, ok := req.Metadata["completion_required_tools"].([]string)
+	if !ok || len(required) != 1 || required[0] != agentcontract.ToolCompleteSupportCoverageGap {
+		t.Fatalf("coverage completion tools = %#v", req.Metadata["completion_required_tools"])
+	}
+
+	run.TargetType = "document"
+	req, err = runtimeStartRunRequest(run, agent, runtimeAgentFromHelpinAgent(agent, "helpin"))
+	if err != nil {
+		t.Fatalf("document runtimeStartRunRequest returned error: %v", err)
+	}
+	if _, exists := req.Metadata["completion_required_tools"]; exists {
+		t.Fatalf("document run inherited coverage completion tools: %#v", req.Metadata)
 	}
 }
 

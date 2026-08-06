@@ -245,6 +245,9 @@ func TestDocumentationSkillsDeclareExpectedGuidance(t *testing.T) {
 		if !containsString(skill.SupportedRuntimes, "native_sdk") {
 			t.Fatalf("expected %s to support native_sdk, got %v", key, skill.SupportedRuntimes)
 		}
+		if !containsString(skill.SupportedRuntimes, "codex") {
+			t.Fatalf("expected %s to support codex, got %v", key, skill.SupportedRuntimes)
+		}
 		for _, snippet := range snippets {
 			if !strings.Contains(skill.Instructions, snippet) {
 				t.Fatalf("expected %s instructions to contain %q\n%s", key, snippet, skill.Instructions)
@@ -448,7 +451,8 @@ func TestDocumentationAgentPromptUsesCuratedSkillSelectionGuide(t *testing.T) {
 		t.Fatal("expected documentation agent prompt")
 	}
 	for _, snippet := range []string{
-		"You are Quill, the workspace documentation agent.",
+		"You are Quill, the workspace documentation-health agent.",
+		"Your primary job is to keep the workspace's documentation accurate, complete, discoverable, and current.",
 		"## Documentation Modes",
 		"## Skill Selection",
 		"When available, use list_available_skills or search_available_skills to inspect relevant skill options, then use read_skill only for the specific skill guidance the task needs.",

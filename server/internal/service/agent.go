@@ -451,6 +451,9 @@ func runtimeStartRunRequest(
 	if agent != nil && strings.TrimSpace(agent.PresetKey) != "" {
 		metadata["preset_key"] = strings.TrimSpace(agent.PresetKey)
 	}
+	if run.TargetType == "support_coverage_gap" && agent != nil && normalizePresetKey(agent.PresetKey) == model.AgentPresetDocumentationAgent {
+		metadata["completion_required_tools"] = []string{agentcontract.ToolCompleteSupportCoverageGap}
+	}
 	if strings.TrimSpace(input.Stage) != "" {
 		metadata["planning_stage"] = strings.TrimSpace(input.Stage)
 	}
@@ -3770,6 +3773,22 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 	return s.startTargetRun(ctx, workspaceID, targetType, targetID, req, strPtr(actorID), manualRunTriggerContext(), nil, nil)
 }
 
+func supportCoverageGapRunAllowedTools(agent *model.Agent, requested []string) []string {
+	tools := append([]string(nil), requested...)
+	if agent == nil || normalizePresetKey(agent.PresetKey) != model.AgentPresetDocumentationAgent {
+		return tools
+	}
+	for _, toolName := range agentcontract.NormalizeToolNames(tools) {
+		if toolName == agentcontract.ToolCompleteSupportCoverageGap {
+			return tools
+		}
+	}
+	if len(tools) == 0 {
+		return nil
+	}
+	return append(tools, agentcontract.ToolCompleteSupportCoverageGap)
+}
+
 func supportCoverageGapRunContext(detail *model.SupportCoverageGapDetail, extra *string) string {
 	sections := make([]string, 0, 5)
 	if trimmed := strings.TrimSpace(derefString(extra)); trimmed != "" {
@@ -4329,12 +4348,13 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, err
 		}
-		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
+		coverageAllowedTools := supportCoverageGapRunAllowedTools(agent, req.AllowedTools)
+		if err := validateRunAllowedTools(coverageAllowedTools, agent); err != nil {
 			return nil, err
 		}
 
 		context := supportCoverageGapRunContext(detail, req.AdditionalContext)
-		input, err := buildAgentRunInputPayload("support_coverage_gap", detail.ID, trigger, event, req.Output, &context, req.AllowedTools, workspaceContext)
+		input, err := buildAgentRunInputPayload("support_coverage_gap", detail.ID, trigger, event, req.Output, &context, coverageAllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build support coverage gap run input: %w", err)
 		}

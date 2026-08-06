@@ -19,7 +19,7 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 		Name:                 "docs.insert_document_image",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "document"},
+		SupportedTargetTypes: []string{"workspace", "document", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.insert_document_image"),
 		Execute:              s.executeInsertDocumentImage,
 	})
@@ -64,7 +64,7 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 		Name:                 "docs.publish_document_change_proposal",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "document"},
+		SupportedTargetTypes: []string{"workspace", "document", "support_coverage_gap"},
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "docs.publish_document_change_proposal",
 			Alias:       "publish_document_change_proposal",
