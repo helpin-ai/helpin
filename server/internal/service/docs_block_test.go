@@ -67,6 +67,181 @@ func TestDocsBlockServiceCreateReorderDelete(t *testing.T) {
 	assertBlockTexts(t, blocks, []string{"Second", "First"})
 }
 
+func TestDocsBlockServiceInsertKeepsSiblingRevisions(t *testing.T) {
+	db := setupDocsBlockServiceTestDB(t)
+	ctx := context.Background()
+	documentID := "10000000-0000-0000-0000-000000000001"
+	workspaceID := "20000000-0000-0000-0000-000000000001"
+	insertDocsBlockServiceTestDocument(t, db, documentID, workspaceID, false)
+
+	blockRepo, contentSvc, blockSvc := newDocsBlockServiceTestServices(db)
+	if _, err := contentSvc.Save(ctx, documentID, json.RawMessage(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"First"}]},{"type":"paragraph","content":[{"type":"text","text":"Second"}]}]}`), "30000000-0000-0000-0000-000000000001"); err != nil {
+		t.Fatalf("save initial content: %v", err)
+	}
+	blocks, err := blockRepo.ListByDocument(ctx, documentID, false)
+	if err != nil {
+		t.Fatalf("list initial blocks: %v", err)
+	}
+	second := blocks[1]
+
+	// Inserting between First and Second shifts Second's position; its
+	// revision must not change, so pending proposals against it stay valid.
+	if _, err := blockSvc.Create(ctx, documentID, &blocks[0].ID, json.RawMessage(`{"type":"paragraph","content":[{"type":"text","text":"Inserted"}]}`), "30000000-0000-0000-0000-000000000002"); err != nil {
+		t.Fatalf("create block: %v", err)
+	}
+	blocks, err = blockRepo.ListByDocument(ctx, documentID, false)
+	if err != nil {
+		t.Fatalf("list blocks after create: %v", err)
+	}
+	assertBlockTexts(t, blocks, []string{"First", "Inserted", "Second"})
+	if blocks[2].Revision != second.Revision {
+		t.Fatalf("second block revision = %d after insert, want %d", blocks[2].Revision, second.Revision)
+	}
+
+	if _, err := blockSvc.Patch(ctx, documentID, second.ID, second.Revision, json.RawMessage(`{"type":"paragraph","content":[{"type":"text","text":"Second updated"}]}`), "30000000-0000-0000-0000-000000000003"); err != nil {
+		t.Fatalf("patch with pre-insert revision: %v", err)
+	}
+}
+
+func TestDocsBlockServiceRejectsMalformedBlockContent(t *testing.T) {
+	db := setupDocsBlockServiceTestDB(t)
+	ctx := context.Background()
+	documentID := "10000000-0000-0000-0000-000000000001"
+	workspaceID := "20000000-0000-0000-0000-000000000001"
+	insertDocsBlockServiceTestDocument(t, db, documentID, workspaceID, false)
+
+	blockRepo, contentSvc, blockSvc := newDocsBlockServiceTestServices(db)
+	original := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Original"}]}]}`
+	if _, err := contentSvc.Save(ctx, documentID, json.RawMessage(original), "30000000-0000-0000-0000-000000000001"); err != nil {
+		t.Fatalf("save initial content: %v", err)
+	}
+	blocks, err := blockRepo.ListByDocument(ctx, documentID, false)
+	if err != nil {
+		t.Fatalf("list initial blocks: %v", err)
+	}
+	block := blocks[0]
+
+	// "content" as a string instead of child nodes: accepted before, it broke
+	// every reader of the document once stored.
+	malformed := []struct {
+		name    string
+		content string
+	}{
+		{name: "content as string", content: `{"type":"paragraph","content":"Just text"}`},
+		{name: "content as object", content: `{"type":"paragraph","content":{"type":"text","text":"Hi"}}`},
+		{name: "nested content as string", content: `{"type":"bulletList","content":[{"type":"listItem","content":"x"}]}`},
+	}
+	for _, tt := range malformed {
+		t.Run("patch/"+tt.name, func(t *testing.T) {
+			if _, err := blockSvc.Patch(ctx, documentID, block.ID, block.Revision, json.RawMessage(tt.content), "30000000-0000-0000-0000-000000000002"); err == nil {
+				t.Fatalf("Patch() accepted malformed block content %s", tt.content)
+			}
+		})
+		t.Run("create/"+tt.name, func(t *testing.T) {
+			if _, err := blockSvc.Create(ctx, documentID, nil, json.RawMessage(tt.content), "30000000-0000-0000-0000-000000000002"); err == nil {
+				t.Fatalf("Create() accepted malformed block content %s", tt.content)
+			}
+		})
+	}
+
+	// The stored document must be untouched by the rejected writes.
+	saved, err := contentSvc.Get(ctx, documentID)
+	if err != nil {
+		t.Fatalf("get content: %v", err)
+	}
+	if !strings.Contains(string(saved.Content), "Original") {
+		t.Fatalf("document content changed after rejected writes: %s", string(saved.Content))
+	}
+	after, err := blockRepo.ListByDocument(ctx, documentID, false)
+	if err != nil {
+		t.Fatalf("list blocks: %v", err)
+	}
+	if len(after) != 1 || after[0].Revision != block.Revision {
+		t.Fatalf("blocks changed after rejected writes: %#v", after)
+	}
+}
+
+func TestDocsBlockServiceEditorRoundTripKeepsRevisions(t *testing.T) {
+	db := setupDocsBlockServiceTestDB(t)
+	ctx := context.Background()
+	documentID := "10000000-0000-0000-0000-000000000001"
+	workspaceID := "20000000-0000-0000-0000-000000000001"
+	insertDocsBlockServiceTestDocument(t, db, documentID, workspaceID, false)
+
+	blockRepo, contentSvc, _ := newDocsBlockServiceTestServices(db)
+	if _, err := contentSvc.Save(ctx, documentID, json.RawMessage(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Alpha"}]}]}`), "30000000-0000-0000-0000-000000000001"); err != nil {
+		t.Fatalf("save initial content: %v", err)
+	}
+	blocks, err := blockRepo.ListByDocument(ctx, documentID, false)
+	if err != nil {
+		t.Fatalf("list initial blocks: %v", err)
+	}
+
+	// The editor serializes the same node with different key order and
+	// null-valued default attrs; that must not read as a content edit.
+	editorSave := fmt.Sprintf(`{"type":"doc","content":[{"type":"paragraph","attrs":{"blockId":"%s","textAlign":null},"content":[{"type":"text","text":"Alpha"}]}]}`, blocks[0].ID)
+	if _, err := contentSvc.Save(ctx, documentID, json.RawMessage(editorSave), "30000000-0000-0000-0000-000000000001"); err != nil {
+		t.Fatalf("editor resave: %v", err)
+	}
+	after, err := blockRepo.ListByDocument(ctx, documentID, false)
+	if err != nil {
+		t.Fatalf("list blocks after resave: %v", err)
+	}
+	if len(after) != 1 || after[0].ID != blocks[0].ID {
+		t.Fatalf("expected the same block to survive, got %#v", after)
+	}
+	if after[0].Revision != blocks[0].Revision {
+		t.Fatalf("revision = %d after editor round trip, want %d", after[0].Revision, blocks[0].Revision)
+	}
+}
+
+func TestDocsBlockServiceCreateBlocksInsertsMultiple(t *testing.T) {
+	db := setupDocsBlockServiceTestDB(t)
+	ctx := context.Background()
+	documentID := "10000000-0000-0000-0000-000000000001"
+	workspaceID := "20000000-0000-0000-0000-000000000001"
+	insertDocsBlockServiceTestDocument(t, db, documentID, workspaceID, false)
+
+	blockRepo, contentSvc, blockSvc := newDocsBlockServiceTestServices(db)
+	if _, err := contentSvc.Save(ctx, documentID, json.RawMessage(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"First"}]},{"type":"paragraph","content":[{"type":"text","text":"Second"}]}]}`), "30000000-0000-0000-0000-000000000001"); err != nil {
+		t.Fatalf("save initial content: %v", err)
+	}
+	blocks, err := blockRepo.ListByDocument(ctx, documentID, false)
+	if err != nil {
+		t.Fatalf("list initial blocks: %v", err)
+	}
+
+	_, createdIDs, err := blockSvc.CreateBlocks(ctx, documentID, &blocks[0].ID, false, []json.RawMessage{
+		json.RawMessage(`{"type":"heading","attrs":{"level":2},"content":[{"type":"text","text":"Middle heading"}]}`),
+		json.RawMessage(`{"type":"paragraph","content":[{"type":"text","text":"Middle body"}]}`),
+	}, "30000000-0000-0000-0000-000000000002")
+	if err != nil {
+		t.Fatalf("create blocks: %v", err)
+	}
+	if len(createdIDs) != 2 {
+		t.Fatalf("expected 2 created block ids, got %d", len(createdIDs))
+	}
+	blocks, err = blockRepo.ListByDocument(ctx, documentID, false)
+	if err != nil {
+		t.Fatalf("list blocks after create: %v", err)
+	}
+	assertBlockTexts(t, blocks, []string{"First", "Middle heading", "Middle body", "Second"})
+	if blocks[1].ID != createdIDs[0] || blocks[2].ID != createdIDs[1] {
+		t.Fatalf("created ids %v do not match inserted blocks %q, %q", createdIDs, blocks[1].ID, blocks[2].ID)
+	}
+
+	if _, _, err := blockSvc.CreateBlocks(ctx, documentID, nil, true, []json.RawMessage{
+		json.RawMessage(`{"type":"paragraph","content":[{"type":"text","text":"Prepended"}]}`),
+	}, "30000000-0000-0000-0000-000000000003"); err != nil {
+		t.Fatalf("create blocks at start: %v", err)
+	}
+	blocks, err = blockRepo.ListByDocument(ctx, documentID, false)
+	if err != nil {
+		t.Fatalf("list blocks after prepend: %v", err)
+	}
+	assertBlockTexts(t, blocks, []string{"Prepended", "First", "Middle heading", "Middle body", "Second"})
+}
+
 func TestDocsBlockServicePatchRejectsStaleRevision(t *testing.T) {
 	db := setupDocsBlockServiceTestDB(t)
 	ctx := context.Background()

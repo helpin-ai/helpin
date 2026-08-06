@@ -9,27 +9,8 @@ import {
 } from '@/lib/icons'
 import { Button } from '@/components/ui/button'
 import { cn, timeAgo } from '@/lib/utils'
+import { buildMarkdownDiff } from '@/lib/markdownDiff'
 import type { DocsChangeProposal } from '@/lib/docsTypes'
-
-type ProposalDiffRow = { kind: 'kept' | 'added' | 'deleted'; text: string }
-
-function buildSimpleMarkdownDiff(currentText: string, proposedText: string): ProposalDiffRow[] {
-  const current = currentText.split(/\r?\n/).map((line) => line.trimEnd())
-  const proposed = proposedText.split(/\r?\n/).map((line) => line.trimEnd())
-  const max = Math.max(current.length, proposed.length)
-  const rows: ProposalDiffRow[] = []
-  for (let i = 0; i < max; i += 1) {
-    const before = current[i] ?? ''
-    const after = proposed[i] ?? ''
-    if (before === after) {
-      if (before) rows.push({ kind: 'kept', text: before })
-      continue
-    }
-    if (before) rows.push({ kind: 'deleted', text: before })
-    if (after) rows.push({ kind: 'added', text: after })
-  }
-  return rows
-}
 
 function proposalSourceHref(source: NonNullable<DocsChangeProposal['sources']>[number], workspaceSlug: string): string | null {
   if (source.url) return source.url
@@ -65,9 +46,13 @@ export function ProposalReviewView({
   onSelectProposal: (proposalId: string) => void
 }) {
   const titleRef = useRef<HTMLHeadingElement | null>(null)
+  // Prefer the markdown snapshot captured when the proposal was created so
+  // both diff sides share formatting; currentText is the fallback for older
+  // proposals that predate base_markdown.
+  const baseText = proposal.base_markdown || currentText
   const rows = useMemo(
-    () => buildSimpleMarkdownDiff(currentText, proposal.content_markdown ?? ''),
-    [currentText, proposal.content_markdown],
+    () => buildMarkdownDiff(baseText, proposal.content_markdown ?? ''),
+    [baseText, proposal.content_markdown],
   )
   const pendingIndex = pendingProposals.findIndex((item) => item.id === proposal.id)
   const isPending = proposal.status === 'pending'
@@ -176,14 +161,26 @@ export function ProposalReviewView({
                 className={cn(
                   'grid grid-cols-[2.25rem_1fr] gap-2 px-4 py-1',
                   row.kind === 'added' && 'border-l-4 border-l-emerald-500 bg-emerald-500/10 text-emerald-950 dark:text-emerald-100',
-                  row.kind === 'deleted' && 'border-l-4 border-l-rose-500 bg-rose-500/10 text-rose-950 line-through dark:text-rose-100',
+                  row.kind === 'deleted' && 'border-l-4 border-l-rose-500 bg-rose-500/10 text-rose-950 dark:text-rose-100',
                   row.kind === 'kept' && 'text-muted-foreground',
                 )}
               >
                 <span className="select-none text-muted-foreground">
                   {row.kind === 'added' ? '+' : row.kind === 'deleted' ? '-' : ''}
                 </span>
-                <span className="whitespace-pre-wrap break-words">{row.text}</span>
+                <span className="whitespace-pre-wrap break-words">
+                  {row.kind === 'kept' ? row.text : row.segments.map((segment, segmentIndex) => (
+                    <span
+                      key={segmentIndex}
+                      className={cn(
+                        segment.changed && row.kind === 'added' && 'rounded-sm bg-emerald-500/30',
+                        segment.changed && row.kind === 'deleted' && 'rounded-sm bg-rose-500/30 line-through',
+                      )}
+                    >
+                      {segment.text}
+                    </span>
+                  ))}
+                </span>
               </div>
             )) : (
               <div className="px-4 py-6 text-sm text-muted-foreground">No text changes detected.</div>

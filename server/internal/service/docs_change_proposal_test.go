@@ -100,6 +100,7 @@ func setupDocsChangeProposalServiceTestDB(t *testing.T) *gorm.DB {
 			revision INTEGER NOT NULL DEFAULT 0,
 			summary TEXT NOT NULL,
 			content_markdown TEXT NOT NULL,
+			base_markdown TEXT NOT NULL DEFAULT '',
 			content BLOB NOT NULL,
 			sources BLOB NOT NULL DEFAULT '[]',
 			created_by TEXT NOT NULL,
@@ -240,6 +241,46 @@ func (r *recordingProposalVersionSnapshotter) SnapshotOnProposalApply(_ context.
 	r.proposalID = proposal.ID
 	r.versionType = model.VersionTypeProposalApply
 	return &model.DocsVersion{VersionType: model.VersionTypeProposalApply}, nil
+}
+
+func TestDocsChangeProposalServiceCreateCapturesBaseMarkdown(t *testing.T) {
+	ctx := context.Background()
+	db := setupDocsChangeProposalServiceTestDB(t)
+	docRepo := repository.NewDocsDocumentRepository(db)
+	proposalRepo := repository.NewDocsChangeProposalRepository(db)
+	contentSvc := NewDocsContentService(repository.NewDocsContentRepository(db), docRepo, nil)
+	svc := NewDocsChangeProposalService(proposalRepo, docRepo, contentSvc, nil, nil, nil)
+	now := time.Now().UTC()
+
+	if err := db.WithContext(ctx).Exec(
+		`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"doc-1", "ws-1", "space-1", "Billing", model.DocStatusPublished, model.SpaceVisibilityWorkspaceWide, "user-1", now, now,
+	).Error; err != nil {
+		t.Fatalf("seed doc: %v", err)
+	}
+	if err := db.WithContext(ctx).Exec(
+		`INSERT INTO docs_contents (id, document_id, content, content_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"content-1", "doc-1",
+		[]byte(`{"type":"doc","content":[{"type":"heading","attrs":{"level":2},"content":[{"type":"text","text":"Refunds"}]},{"type":"paragraph","content":[{"type":"text","text":"Refunds take 5 days."}]}]}`),
+		"Refunds\nRefunds take 5 days.", now, now,
+	).Error; err != nil {
+		t.Fatalf("seed content: %v", err)
+	}
+
+	created, err := svc.Create(ctx, "ws-1", model.CreateDocsChangeProposalRequest{
+		Scope:           "document",
+		DocumentID:      "doc-1",
+		Summary:         "Update refund policy",
+		ContentMarkdown: "## Refunds\n\nRefunds take 10 days.",
+		Content:         []byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Refunds take 10 days."}]}]}`),
+		CreatedBy:       "agent-1",
+	})
+	if err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+	if !strings.Contains(created.BaseMarkdown, "## Refunds") || !strings.Contains(created.BaseMarkdown, "Refunds take 5 days.") {
+		t.Fatalf("BaseMarkdown = %q, want current content rendered as markdown", created.BaseMarkdown)
+	}
 }
 
 func TestDocsChangeProposalServiceApplyRecordsProposalApplyVersionSnapshot(t *testing.T) {

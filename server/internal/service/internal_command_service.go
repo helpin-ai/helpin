@@ -1581,6 +1581,9 @@ func (s *InternalCommandService) registerDefaults() {
 			if documentContentIsEffectivelyEmpty(docContent) {
 				return nil, fmt.Errorf("content must not be empty")
 			}
+			if err := tiptap.ValidateDocument(docContent); err != nil {
+				return nil, err
+			}
 			if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
 				return nil, err
 			}
@@ -1629,7 +1632,13 @@ func (s *InternalCommandService) registerDefaults() {
 			if err != nil {
 				return nil, err
 			}
-			return mustJSON(map[string]any{"document_id": req.DocumentID, "block_id": req.BlockID, "content_id": content.ID}), nil
+			response := map[string]any{"document_id": req.DocumentID, "block_id": req.BlockID, "content_id": content.ID}
+			// Return the new revision so sequential multi-block edits do not
+			// need a get_document_blocks round trip between updates.
+			if block, err := s.docsBlockService.Get(ctx, req.DocumentID, req.BlockID); err == nil {
+				response["revision"] = block.Revision
+			}
+			return mustJSON(response), nil
 		},
 	})
 	s.register(InternalCommandDefinition{

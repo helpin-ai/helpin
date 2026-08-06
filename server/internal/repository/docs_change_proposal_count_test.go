@@ -63,6 +63,7 @@ func setupDocsProposalCountTestDB(t *testing.T) *gorm.DB {
 			revision INTEGER NOT NULL DEFAULT 0,
 			summary TEXT NOT NULL,
 			content_markdown TEXT NOT NULL,
+			base_markdown TEXT NOT NULL DEFAULT '',
 			content BLOB NOT NULL,
 			sources BLOB NOT NULL DEFAULT '[]',
 			created_by TEXT NOT NULL,

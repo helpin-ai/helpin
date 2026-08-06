@@ -31,7 +31,7 @@ async function transformNode(
     return transform.transform(node, ctx);
   }
 
-  if (!node.content?.length) {
+  if (!Array.isArray(node.content) || node.content.length === 0) {
     return { ...node };
   }
 

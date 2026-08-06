@@ -24,6 +24,14 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 		Execute:              s.executeInsertDocumentImage,
 	})
 	s.register(InternalCommandDefinition{
+		Name:                 "docs.insert_document_block",
+		Module:               "docs",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"workspace", "document", "support_coverage_gap"},
+		Tool:                 mustCommandToolMetadata("docs.insert_document_block"),
+		Execute:              s.executeInsertDocumentBlock,
+	})
+	s.register(InternalCommandDefinition{
 		Name:     "docs.search_documents",
 		Module:   "docs",
 		Mutating: false,
@@ -135,6 +143,56 @@ func (s *InternalCommandService) executeInsertDocumentImage(ctx context.Context,
 		"artifact_id":  artifact.ID,
 		"artifact_ref": artifactReference(artifact.ID),
 		"visibility":   "private",
+	}), nil
+}
+
+func (s *InternalCommandService) executeInsertDocumentBlock(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	if s.docsBlockService == nil {
+		return nil, fmt.Errorf("docs block service is not available")
+	}
+	var req struct {
+		DocumentID   string  `json:"document_id"`
+		Content      string  `json:"content"`
+		AfterBlockID *string `json:"after_block_id,omitempty"`
+		Position     string  `json:"position"`
+	}
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, fmt.Errorf("parse insert document block input: %w", err)
+	}
+	req.DocumentID = strings.TrimSpace(firstNonEmptyCommand(req.DocumentID, currentDocumentTargetID(meta)))
+	req.Content = strings.TrimSpace(req.Content)
+	req.Position = strings.ToLower(strings.TrimSpace(req.Position))
+	if req.DocumentID == "" {
+		return nil, fmt.Errorf("document_id is required")
+	}
+	if req.Content == "" {
+		return nil, fmt.Errorf("content is required")
+	}
+	switch req.Position {
+	case "", "start", "end":
+	default:
+		return nil, fmt.Errorf("position must be start or end")
+	}
+	if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
+		return nil, err
+	}
+	var generated struct {
+		Content []json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(tiptap.MarkdownToJSON(req.Content), &generated); err != nil {
+		return nil, fmt.Errorf("parse block markdown: %w", err)
+	}
+	if len(generated.Content) == 0 {
+		return nil, fmt.Errorf("content must not be empty")
+	}
+	content, blockIDs, err := s.docsBlockService.CreateBlocks(ctx, req.DocumentID, req.AfterBlockID, req.Position == "start", generated.Content, meta.ActorID)
+	if err != nil {
+		return nil, err
+	}
+	return mustJSON(map[string]any{
+		"document_id": req.DocumentID,
+		"content_id":  content.ID,
+		"block_ids":   blockIDs,
 	}), nil
 }
 
@@ -384,6 +442,15 @@ func commandProposalBlockContentFromMarkdown(current json.RawMessage, markdown s
 	if len(generated.Content) == 0 {
 		return nil, fmt.Errorf("content must not be empty")
 	}
+	// A block proposal replaces exactly one block. Keeping only the first node
+	// would silently drop the rest at apply time while the reviewer is shown
+	// the full markdown, so reject the mismatch instead.
+	if len(generated.Content) > 1 {
+		return nil, fmt.Errorf(
+			"block proposals must contain exactly one block, but this markdown produced %d; propose one block at a time, or use insert_document_block to add new blocks",
+			len(generated.Content),
+		)
+	}
 	next := generated.Content[0]
 	if currentAttrs, _ := currentNode["attrs"].(map[string]any); currentAttrs != nil {
 		attrs, _ := next["attrs"].(map[string]any)
@@ -446,7 +513,7 @@ func commandDocumentChangeProposalSchema() map[string]any {
 			},
 			"content": map[string]any{
 				"type":        "string",
-				"description": "Replacement markdown. For document scope, provide the full document. For block scope, provide replacement markdown for the focused block only.",
+				"description": "Replacement markdown. For document scope, provide the full document. For block scope, provide markdown for exactly one block (a single paragraph, heading, list, or code block) — multi-block markdown is rejected; add new blocks with insert_document_block instead.",
 			},
 			"summary": map[string]any{
 				"type":        "string",
