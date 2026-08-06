@@ -385,6 +385,7 @@ func main() {
 	}
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
+	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo, wsPublisher)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
 	docsBlockService := service.NewDocsBlockService(docsBlockRepo, docsContentService, docsDocumentRepo)
 	docsBlockService.SetActivityService(pmActivityService)
@@ -435,6 +436,8 @@ func main() {
 		nil,
 	)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
+	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
+	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo)
 	pmLabelService := service.NewPMLabelService(labelRepo, wsPublisher)
@@ -452,13 +455,17 @@ func main() {
 	commandService.SetPMLabelService(pmLabelService)
 	commandService.SetPMCommentService(pmCommentService)
 	commandService.SetCRMEnrichmentService(crmEnrichmentService)
+	commandService.SetPMOperationalServices(workspaceRepo, nil, nil, nil, nil, nil)
+	commandService.SetGitService(gitService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
+	commandService.SetDocsOrganizationServices(docsSpaceService, nil)
 	commandService.SetDocsBlockService(docsBlockService)
 	commandService.SetSupportDependencies(supportMessageRepo, conversationRepo, wsPublisher)
 	commandService.SetCRMReadServices(
 		service.NewCRMContactService(crmContactRepo),
 		service.NewCRMSignalService(crmSignalRepo, crmSummaryService),
 	)
+	commandService.SetCRMOperationalServices(crmCompanyService, crmAssociationService)
 	commandService.SetWorkspaceSearchServices(
 		service.NewSearchService(repository.NewSearchRepository(db), workspaceRepo),
 		service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo),
@@ -503,8 +510,6 @@ func main() {
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
 	dealMgmtActivities := temporalapp.NewDealManagementActivities(dealAutomationService)
-
-	_ = crmCompanyRepo // available for future enrichment activities
 
 	scheduledRuleActivities := temporalapp.NewScheduledRuleActivities(ruleEngine)
 	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)

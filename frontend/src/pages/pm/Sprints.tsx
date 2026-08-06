@@ -7,10 +7,11 @@ import { useTitle } from '@/hooks/useTitle';
 import { SprintPlanningFilters, type SprintStatusFilter } from '@/components/pm/sprints/SprintPlanningFilters';
 import { SprintPlanningWorkspace } from '@/components/pm/sprints/SprintPlanningWorkspace';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import { useDeleteSprint, useSprintPlanningWorkspace, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useDeleteSprint, useSprintCloseouts, useSprintPlanningWorkspace, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { queryKeys } from '@/lib/queryKeys';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningTaskPreview } from '@/lib/pmTypes';
+import type { LinkSprintTasksResponse } from '@/lib/pmTypes';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { unwrap } from '@/lib/queryUtils';
@@ -26,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { LinkTasksToSprintDialog } from '@/components/pm/sprints/LinkTasksToSprintDialog';
 import {
   ArrowUpRight01Icon,
   Copy01Icon,
@@ -41,10 +43,18 @@ interface SprintsPageProps {
   teamId?: string;
 }
 
+interface SprintLinkTarget {
+  id: string;
+  name: string;
+  teamId: string;
+  teamName: string;
+}
+
 interface ArchivedSprintRowProps {
   card: {
     sprint: { id: string; name: string; start_date: string | null; end_date: string | null };
     stats: { task_count: number; done_task_count: number };
+    closeout?: { committed_count: number; completed_count: number; rolled_over_count: number; committed_points: number; completed_points: number };
   };
   workspaceId: string;
   workspaceSlug: string;
@@ -81,6 +91,9 @@ function ArchivedSprintRow({ card, workspaceId, workspaceSlug, canEdit, onOpen }
     });
   };
 
+  const committedTasks = card.closeout?.committed_count ?? card.stats.task_count;
+  const completedTasks = card.closeout?.completed_count ?? card.stats.done_task_count;
+  const rolledOverTasks = card.closeout?.rolled_over_count ?? 0;
   return (
     <div
       role="button"
@@ -100,7 +113,8 @@ function ArchivedSprintRow({ card, workspaceId, workspaceSlug, canEdit, onOpen }
       </div>
       <div className="flex shrink-0 items-center gap-3">
         <span className="text-xs text-muted-foreground">
-          {card.stats.done_task_count}/{card.stats.task_count} tasks
+          {completedTasks}/{committedTasks} tasks {card.closeout ? 'completed' : 'done'}
+          {card.closeout && rolledOverTasks > 0 ? ` · ${rolledOverTasks} rolled over` : ''}
         </span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -324,6 +338,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   const [backlogOpen, setBacklogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<SprintStatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [linkTarget, setLinkTarget] = useState<SprintLinkTarget | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase();
 
@@ -342,6 +357,11 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   );
 
   const planningQuery = useSprintPlanningWorkspace(workspaceId, filters);
+  const closeoutsQuery = useSprintCloseouts(workspaceId, { team_id: teamId || undefined });
+  const closeoutBySprintId = useMemo(
+    () => new Map((closeoutsQuery.data?.items ?? []).map((item) => [item.sprint_id, item] as const)),
+    [closeoutsQuery.data?.items],
+  );
   const planningQueryKey = useMemo(
     () => queryKeys.pm.sprintPlanning(workspaceId, filters as Record<string, unknown> | undefined),
     [workspaceId, filters],
@@ -363,34 +383,48 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   const filteredWorkspace = useMemo(() => {
     if (!planningQuery.data || isArchived) return planningQuery.data ?? null;
 
+    const workspaceWithCloseouts: SprintPlanningWorkspaceData = {
+      ...planningQuery.data,
+      buckets: planningQuery.data.buckets.map((bucket) => ({
+        ...bucket,
+        sprints: bucket.sprints.map((card) => ({
+          ...card,
+          closeout: closeoutBySprintId.get(card.sprint.id),
+        })),
+      })),
+    };
+
     const bucketKey = statusFilter === 'upcoming' ? 'upcoming' : statusFilter === 'active' ? 'active' : 'completed';
     const statusBuckets = statusFilter === 'all'
-      ? planningQuery.data.buckets
-      : planningQuery.data.buckets.filter((b) => b.key === bucketKey);
+      ? workspaceWithCloseouts.buckets
+      : workspaceWithCloseouts.buckets.filter((b) => b.key === bucketKey);
 
     if (!normalizedSearchQuery) {
       return statusFilter === 'all'
-        ? planningQuery.data
+        ? workspaceWithCloseouts
         : {
-            ...planningQuery.data,
+            ...workspaceWithCloseouts,
             buckets: statusBuckets,
           };
     }
 
     return {
-      ...planningQuery.data,
+      ...workspaceWithCloseouts,
       buckets: statusBuckets.map((bucket) => ({
         ...bucket,
         sprints: (bucket.sprints ?? []).filter((card) => sprintMatchesSearch(card, normalizedSearchQuery)),
       })),
     };
-  }, [planningQuery.data, statusFilter, isArchived, normalizedSearchQuery]);
+  }, [planningQuery.data, closeoutBySprintId, statusFilter, isArchived, normalizedSearchQuery]);
 
   const filteredArchivedSprints = useMemo(() => {
-    const archivedSprints = archivedQuery.data ?? [];
+    const archivedSprints = (archivedQuery.data ?? []).map((card) => ({
+      ...card,
+      closeout: closeoutBySprintId.get(card.sprint.id),
+    }));
     if (!normalizedSearchQuery) return archivedSprints;
     return archivedSprints.filter((card) => sprintMatchesSearch(card, normalizedSearchQuery));
-  }, [archivedQuery.data, normalizedSearchQuery]);
+  }, [archivedQuery.data, closeoutBySprintId, normalizedSearchQuery]);
 
   const handleAssignTask = async (task: SprintPlanningTaskPreview, sprintId: string | null) => {
     if (!planningQuery.data || !canEdit) return;
@@ -429,6 +463,38 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
       ownerMemberId: undefined,
       sprintId,
     });
+  };
+
+  const handleOpenLinkTasks = (sprintId: string) => {
+    const card = planningQuery.data?.buckets
+      .flatMap((bucket) => bucket.sprints ?? [])
+      .find((entry) => entry.sprint.id === sprintId);
+    const sprintTeamId = card?.sprint.team_id ?? '';
+    if (!card || !sprintTeamId) {
+      toast.error('Assign this sprint to a team before linking tasks.');
+      return;
+    }
+    setLinkTarget({
+      id: card.sprint.id,
+      name: card.sprint.name,
+      teamId: sprintTeamId,
+      teamName: teams.find((team) => team.id === sprintTeamId)?.name ?? 'this team',
+    });
+  };
+
+  const handleTasksLinked = (result: LinkSprintTasksResponse) => {
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: planningQueryKey }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) }),
+    ]);
+    const linkedLabel = `${result.linked_count} task${result.linked_count === 1 ? '' : 's'}`;
+    if (result.moved_count > 0) {
+      toast.success(`Linked ${linkedLabel}; ${result.moved_count} moved from another sprint.`);
+      return;
+    }
+    toast.success(`Linked ${linkedLabel} to this sprint.`);
   };
 
   // Check unfiltered data for any sprints (to distinguish "no sprints ever" from "no sprints matching filter")
@@ -514,10 +580,24 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
           onOpenSprint={(sprintId) => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId } })}
           onOpenTask={handleOpenTask}
           onCreateSprint={() => openCreate('sprint', { teamId: teamId || undefined })}
+          onLinkTasks={handleOpenLinkTasks}
           onCreateTask={handleCreateTask}
           onAssignTask={handleAssignTask}
         />
       )}
+
+      {linkTarget ? (
+        <LinkTasksToSprintDialog
+          open
+          onOpenChange={(open) => { if (!open) setLinkTarget(null); }}
+          workspaceId={workspaceId}
+          sprintId={linkTarget.id}
+          sprintName={linkTarget.name}
+          teamId={linkTarget.teamId}
+          teamName={linkTarget.teamName}
+          onLinked={handleTasksLinked}
+        />
+      ) : null}
     </div>
   );
 }

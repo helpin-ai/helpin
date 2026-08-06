@@ -49,6 +49,7 @@ type UpdateCRMCompanyRequest struct {
 	Description      *string                `json:"description"`
 	LogoURL          *string                `json:"logo_url"`
 	OwnerMemberID    *string                `json:"owner_member_id"`
+	ClearOwner       bool                   `json:"clear_owner"`
 	CustomProperties map[string]interface{} `json:"custom_properties"`
 }
 

@@ -71,6 +71,25 @@ var taskPlannerPMReadToolAliases = []string{
 	"list_sprint_tasks",
 }
 
+var safeCRMDiscoveryToolAliases = []string{
+	"get_crm_contact", "get_crm_company", "get_crm_deal",
+	"list_crm_companies", "list_crm_pipelines", "list_crm_associations",
+}
+
+var safeCRMWriteToolAliases = []string{
+	"update_crm_contact", "update_crm_company", "update_crm_deal", "add_crm_activity",
+	"link_crm_objects", "unlink_crm_association", "set_primary_contact_company",
+}
+
+var safeSupportDiscoveryToolAliases = []string{
+	"list_support_conversations", "get_support_conversation", "list_support_tags", "list_support_inboxes", "list_support_assignees",
+}
+
+var safeSupportWriteToolAliases = []string{
+	"assign_support_conversation", "move_support_conversation", "add_support_conversation_tag", "remove_support_conversation_tag",
+	"link_support_conversation_task", "link_support_conversation_contact", "update_support_conversation_subject",
+}
+
 func ListAgentPresets() []model.AgentPresetDefinition {
 	presets := agentPresetDefinitions()
 	out := make([]model.AgentPresetDefinition, len(presets))
@@ -484,9 +503,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          []string{agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill, "search_workspace", "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"},
+			AllowedTools:          appendPresetTools([]string{agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill, "search_workspace", "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"}, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases),
 			AllowedCommands:       []string{},
-			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "support_conversation", "document", "workspace"},
+			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "crm_company", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime("codex"),
@@ -595,9 +614,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 				"crawl_url",
 				"get_release_context",
 				"find_tasks_for_git_changes",
-			}, newPMReadToolAliases),
+			}, newPMReadToolAliases, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases),
 			AllowedCommands:       []string{},
-			AllowedTargetTypes:    []string{"workspace", "document", "task", "crm_deal", "crm_contact"},
+			AllowedTargetTypes:    []string{"workspace", "document", "task", "crm_deal", "crm_contact", "crm_company"},
 			ApprovalMode:          "always",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime("codex"),
@@ -663,9 +682,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          appendPresetTools([]string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repository", "checkout_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "list_spaces", "search_workspace", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"}, newPMReadToolAliases, newPMWriteToolAliases),
+			AllowedTools:          appendPresetTools([]string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repository", "checkout_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "list_spaces", "search_workspace", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "update_document_metadata", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"}, newPMReadToolAliases, newPMWriteToolAliases, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases, safeSupportDiscoveryToolAliases, safeSupportWriteToolAliases),
 			AllowedCommands:       []string{},
-			AllowedTargetTypes:    []string{"workspace", "document", "task", "epic", "sprint", "objective", "crm_deal", "crm_contact", "repository"},
+			AllowedTargetTypes:    []string{"workspace", "document", "task", "epic", "sprint", "objective", "crm_deal", "crm_contact", "crm_company", "support_conversation", "repository"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime("codex"),
@@ -737,7 +756,7 @@ func askAgentPresetTools() []string {
 		"get_agent_run", "cancel_agent_run",
 		"draft_custom_agent", "create_custom_agent", "promote_run_to_agent",
 		"run_epic_delivery_pipeline",
-	}, newPMReadToolAliases, newPMWriteToolAliases)
+	}, newPMReadToolAliases, newPMWriteToolAliases, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases, safeSupportDiscoveryToolAliases, safeSupportWriteToolAliases)
 }
 
 // askAgentAvailableSkills is intentionally broader than a specialist's core

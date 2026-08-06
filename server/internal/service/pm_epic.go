@@ -24,6 +24,7 @@ type PMEpicService struct {
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
 	agentService        *AgentService
+	gitService          *GitService
 	logger              *slog.Logger
 }
 
@@ -46,6 +47,11 @@ func NewPMEpicService(epicRepo *repository.PMEpicRepository, taskRepo *repositor
 // SetAgentService sets the agent service (breaks circular dependency).
 func (s *PMEpicService) SetAgentService(svc *AgentService) {
 	s.agentService = svc
+}
+
+// SetGitService enables task delivery-target inheritance after epic linking.
+func (s *PMEpicService) SetGitService(svc *GitService) {
+	s.gitService = svc
 }
 
 // requireAdmin checks that the actor has owner or admin role.
@@ -611,6 +617,119 @@ func (s *PMEpicService) ListTasks(ctx context.Context, epicID string) ([]model.B
 		tasks[i].PMTask.TaskKey = tasks[i].TaskKey
 	}
 	return tasks, nil
+}
+
+// LinkTasks atomically links or moves existing same-team tasks into an epic.
+func (s *PMEpicService) LinkTasks(ctx context.Context, workspaceID, epicID string, taskIDs []string, actorID string) (*model.LinkEpicTasksResponse, error) {
+	ids := dedupeIDs(taskIDs)
+	if workspaceID == "" || strings.TrimSpace(epicID) == "" {
+		return nil, fmt.Errorf("workspace_id and epic_id are required")
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("at least one task_id is required")
+	}
+	if len(ids) > 100 {
+		return nil, fmt.Errorf("at most 100 task_ids are allowed")
+	}
+
+	epic, err := s.epicRepo.GetByID(ctx, epicID)
+	if err != nil {
+		return nil, err
+	}
+	if epic == nil || epic.Epic.WorkspaceID != workspaceID || epic.Epic.Archived {
+		return nil, fmt.Errorf("epic not found")
+	}
+	if epic.Epic.TeamID == nil || strings.TrimSpace(*epic.Epic.TeamID) == "" {
+		return nil, fmt.Errorf("assign the epic to a team before linking tasks")
+	}
+	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
+		return nil, err
+	}
+
+	var changed []model.PMTask
+	previousEpicIDs := make(map[string]string)
+	result := &model.LinkEpicTasksResponse{}
+	if err := s.taskRepo.WithMutationTransaction(ctx, func(tasks *repository.PMTaskRepository, _ *repository.PMChecklistItemRepository) error {
+		selected, err := tasks.ListByIDs(ctx, workspaceID, ids)
+		if err != nil {
+			return err
+		}
+		if len(selected) != len(ids) {
+			return fmt.Errorf("one or more tasks were not found")
+		}
+		for index := range selected {
+			task := &selected[index]
+			if task.Archived {
+				return fmt.Errorf("archived tasks cannot be linked")
+			}
+			if task.TeamID == nil || strings.TrimSpace(*task.TeamID) != strings.TrimSpace(*epic.Epic.TeamID) {
+				return fmt.Errorf("all tasks must belong to the same team as the epic")
+			}
+			if err := requireTeamAccess(ctx, task.TeamID); err != nil {
+				return err
+			}
+			previousEpicID := stringValue(task.EpicID)
+			if previousEpicID == epicID {
+				continue
+			}
+			if previousEpicID != "" {
+				result.MovedCount++
+				previousEpicIDs[task.ID] = previousEpicID
+			}
+			task.EpicID = stringPtr(epicID)
+			if err := tasks.Update(ctx, task); err != nil {
+				return err
+			}
+			changed = append(changed, *task)
+			result.LinkedCount++
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	oldNames := make(map[string]string)
+	if len(previousEpicIDs) > 0 {
+		oldIDs := make([]string, 0, len(previousEpicIDs))
+		seen := make(map[string]struct{}, len(previousEpicIDs))
+		for _, oldID := range previousEpicIDs {
+			if _, ok := seen[oldID]; ok {
+				continue
+			}
+			seen[oldID] = struct{}{}
+			oldIDs = append(oldIDs, oldID)
+		}
+		if oldEpics, listErr := s.epicRepo.ListByIDs(ctx, workspaceID, oldIDs); listErr == nil {
+			for _, oldEpic := range oldEpics {
+				oldNames[oldEpic.ID] = oldEpic.Name
+			}
+		}
+	}
+	workspaceKey := ""
+	if workspace, workspaceErr := s.workspaceRepo.GetByID(ctx, workspaceID); workspaceErr == nil && workspace != nil {
+		workspaceKey = workspace.WorkspaceKey
+	}
+	for index := range changed {
+		task := &changed[index]
+		if s.gitService != nil {
+			if _, _, syncErr := s.gitService.SyncTaskDeliveryTargetToEpic(ctx, workspaceID, task.ID, epicID, actorID, false); syncErr != nil {
+				s.logger.WarnContext(ctx, "failed to inherit epic delivery target after task link", "error", syncErr, "workspace_id", workspaceID, "task_id", task.ID, "epic_id", epicID)
+			}
+		}
+		oldName := oldNames[previousEpicIDs[task.ID]]
+		action := planningLinkActivityAction("epic", oldName, epic.Epic.Name)
+		if action != "" && s.activityService != nil {
+			if logErr := s.activityService.Log(ctx, workspaceID, "task", task.ID, optionalActor(actorID), action, nil, nil, nil, nil); logErr != nil {
+				s.logger.ErrorContext(ctx, "failed to log task epic link", "error", logErr, "task_id", task.ID, "epic_id", epicID)
+			}
+		}
+		if s.wsPublisher != nil {
+			s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: task.ID, WorkspaceID: workspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(workspaceKey, task.DisplayID)})
+		}
+	}
+
+	s.logger.InfoContext(ctx, "tasks linked to epic", "workspace_id", workspaceID, "epic_id", epicID, "linked_count", result.LinkedCount, "moved_count", result.MovedCount, "actor_id", actorID)
+	return result, nil
 }
 
 // ListActivity returns epic activity entries.

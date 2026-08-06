@@ -274,19 +274,27 @@ func (s *CRMDealService) Update(ctx context.Context, id string, req model.Update
 	if req.StageID != nil {
 		deal.StageID = *req.StageID
 	}
-	if req.Amount != nil {
+	if req.ClearAmount {
+		deal.Amount = nil
+	} else if req.Amount != nil {
 		deal.Amount = req.Amount
 	}
 	if req.Currency != nil {
 		deal.Currency = *req.Currency
 	}
-	if req.CloseDate != nil {
+	if req.ClearCloseDate {
+		deal.CloseDate = nil
+	} else if req.CloseDate != nil {
 		deal.CloseDate = req.CloseDate
 	}
-	if req.OwnerMemberID != nil {
+	if req.ClearOwner {
+		deal.OwnerMemberID = nil
+	} else if req.OwnerMemberID != nil {
 		deal.OwnerMemberID = req.OwnerMemberID
 	}
-	if req.Probability != nil {
+	if req.ClearProbability {
+		deal.Probability = nil
+	} else if req.Probability != nil {
 		deal.Probability = req.Probability
 	}
 	if req.CustomProperties != nil {

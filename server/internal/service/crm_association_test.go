@@ -2,12 +2,55 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/gorm"
 )
+
+func TestCRMAssociationServiceScopedDeleteRejectsOtherWorkspace(t *testing.T) {
+	db := newAssociationsTestDB(t)
+	svc := NewCRMAssociationService(repository.NewCRMAssociationRepository(db))
+	seedCRMAssociation(t, db, "assoc-scoped", "ws-2", model.CRMObjectContact, "contact-2", model.CRMObjectCompany, "company-2")
+	if err := svc.DeleteScoped(context.Background(), "ws-1", "assoc-scoped"); err == nil || !strings.Contains(err.Error(), "association not found") {
+		t.Fatalf("expected scoped not-found error, got %v", err)
+	}
+	var count int64
+	if err := db.Model(&model.CRMAssociation{}).Where("id = ?", "assoc-scoped").Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("cross-workspace association was deleted")
+	}
+}
+
+func TestCRMAssociationServiceSetsPrimaryContactCompany(t *testing.T) {
+	db := newAssociationsTestDB(t)
+	svc := NewCRMAssociationService(repository.NewCRMAssociationRepository(db))
+	seedCRMAssociation(t, db, "assoc-old", "ws-1", model.CRMObjectContact, "contact-1", model.CRMObjectCompany, "company-1")
+	seedCRMAssociation(t, db, "assoc-new", "ws-1", model.CRMObjectContact, "contact-1", model.CRMObjectCompany, "company-2")
+	primary := "primary"
+	if err := db.Model(&model.CRMAssociation{}).Where("id = ?", "assoc-old").Update("association_label", &primary).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	assoc, err := svc.SetPrimaryContactCompany(context.Background(), "ws-1", "contact-1", "company-2")
+	if err != nil {
+		t.Fatalf("set primary company: %v", err)
+	}
+	if assoc.ID != "assoc-new" || !isPrimaryCompanyAssociationLabel(assoc.AssociationLabel) {
+		t.Fatalf("unexpected primary association: %#v", assoc)
+	}
+	old, err := svc.GetScoped(context.Background(), "ws-1", "assoc-old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.AssociationLabel != nil {
+		t.Fatalf("old primary label was not cleared: %#v", old)
+	}
+}
 
 func TestListByObjectEnrichedIncludesInferredCompanyContactAssociations(t *testing.T) {
 	db := newAssociationsTestDB(t)

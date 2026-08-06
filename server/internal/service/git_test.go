@@ -1377,6 +1377,23 @@ func TestUpdateTaskDeliveryTargetRejectsUnselectedRepository(t *testing.T) {
 	}
 }
 
+func TestUpdateTaskDeliveryTargetCanClearConfiguration(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	svc := newGitDeliveryStatusService(db, nil)
+
+	target, err := svc.UpdateTaskDeliveryTarget(context.Background(), "ws-1", "task-1", model.UpdateTaskDeliveryTargetRequest{ClearTarget: true}, "actor-1")
+	if err != nil {
+		t.Fatalf("clear task delivery target: %v", err)
+	}
+	if target.RepositoryID != nil || target.RepoFullName != nil || target.IntegrationID != nil || target.BaseBranch != nil || target.WorkingBranch != nil {
+		t.Fatalf("delivery target was not cleared: %#v", target)
+	}
+	if target.DeliveryState != "unconfigured" {
+		t.Fatalf("delivery state = %q, want unconfigured", target.DeliveryState)
+	}
+}
+
 func TestResolveTaskDeliveryTargetForRunRejectsUnselectedRepository(t *testing.T) {
 	db := newTestDB(t)
 	seedGitDeliveryStatusFixture(t, db)

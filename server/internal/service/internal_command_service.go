@@ -45,6 +45,8 @@ type InternalCommandService struct {
 	commentService        *PMCommentService
 	crmDealService        *CRMDealService
 	crmActivityService    *CRMActivityService
+	crmCompanyService     *CRMCompanyService
+	crmAssociationService *CRMAssociationService
 	crmEnrichmentService  *CRMEnrichmentService
 	docsDocumentService   *DocsDocumentService
 	docsSpaceService      *DocsSpaceService
@@ -66,11 +68,12 @@ type InternalCommandService struct {
 	checklistService      *PMChecklistItemService
 	workspaceSearch       workspaceSearchProvider
 	crmSearch             *CRMSearchService
-	supportInboxService   *SupportInboxService
 
 	supportMessageRepo        *repository.SupportMessageRepository
 	supportConversationRepo   *repository.SupportConversationRepository
 	supportEventPublisher     websocket.EventPublisher
+	supportInboxService       *SupportInboxService
+	supportTagService         *SupportTagService
 	crmContactService         *CRMContactService
 	crmSignalService          *CRMSignalService
 	docsSearchRepo            *repository.DocsSearchRepository
@@ -216,6 +219,16 @@ func (s *InternalCommandService) SetSupportDependencies(
 	s.supportEventPublisher = publisher
 }
 
+// SetSupportOperationalServices wires permission-aware Support discovery and
+// triage commands through the same services used by the inbox UI.
+func (s *InternalCommandService) SetSupportOperationalServices(inboxService *SupportInboxService, tagService *SupportTagService) {
+	if s == nil {
+		return
+	}
+	s.supportInboxService = inboxService
+	s.supportTagService = tagService
+}
+
 // SetCRMReadServices wires read-only CRM listing services used by command-backed
 // CRM tools (contacts and buyer signals; deals use the existing deal service).
 func (s *InternalCommandService) SetCRMReadServices(contactService *CRMContactService, signalService *CRMSignalService) {
@@ -224,6 +237,16 @@ func (s *InternalCommandService) SetCRMReadServices(contactService *CRMContactSe
 	}
 	s.crmContactService = contactService
 	s.crmSignalService = signalService
+}
+
+// SetCRMOperationalServices wires bounded company and association operations.
+// Contact, deal, and activity services are provided by existing constructor/setters.
+func (s *InternalCommandService) SetCRMOperationalServices(companyService *CRMCompanyService, associationService *CRMAssociationService) {
+	if s == nil {
+		return
+	}
+	s.crmCompanyService = companyService
+	s.crmAssociationService = associationService
 }
 
 // SetDocsSearchRepository wires the docs full-text search used by docs.search_documents.
@@ -2123,11 +2146,15 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerSupportReplyCommands()
 	s.registerSupportCommands()
 	s.registerSupportCoverageCommands()
+	s.registerSupportOperationalCommands()
 	s.registerCRMReadCommands()
+	s.registerCRMOperationalCommands()
 	s.registerReleaseFactsCommands()
 	s.registerDocsRuntimeToolCommands()
 	s.registerDocsOrganizationCommands()
+	s.registerDocsMetadataCommands()
 	s.registerPMOperationalCommands()
+	s.registerPMDeliveryCommands()
 	s.registerWorkspaceSearchCommands()
 }
 

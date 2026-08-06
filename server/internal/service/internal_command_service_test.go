@@ -67,6 +67,27 @@ func TestPMToolCatalogExecutorParity(t *testing.T) {
 	}
 }
 
+func TestSafeOperationalToolExecutorParity(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	expected := []string{
+		"update_task_delivery_target", "update_epic_delivery_target", "update_document_metadata",
+		"get_crm_contact", "get_crm_company", "get_crm_deal", "list_crm_companies", "list_crm_pipelines", "list_crm_associations",
+		"update_crm_contact", "update_crm_company", "update_crm_deal", "add_crm_activity", "link_crm_objects", "unlink_crm_association", "set_primary_contact_company",
+		"list_support_conversations", "get_support_conversation", "list_support_tags", "list_support_inboxes", "list_support_assignees",
+		"assign_support_conversation", "move_support_conversation", "add_support_conversation_tag", "remove_support_conversation_tag", "link_support_conversation_task", "link_support_conversation_contact", "update_support_conversation_subject",
+	}
+	aliases := map[string]InternalCommandDefinition{}
+	for _, def := range svc.ToolDefinitions() {
+		aliases[def.Tool.Alias] = def
+	}
+	for _, alias := range expected {
+		def, ok := aliases[alias]
+		if !ok || def.Execute == nil {
+			t.Errorf("safe operational alias %q has no executor", alias)
+		}
+	}
+}
+
 func TestGroupDockCapabilitiesSupportsSelfExecutionDecision(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	summary := svc.groupDockCapabilities([]string{

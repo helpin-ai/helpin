@@ -137,6 +137,17 @@ type UpdateEpicHealthRequest struct {
 	Comment *string `json:"comment"`
 }
 
+// LinkEpicTasksRequest links or moves existing same-team tasks into an epic.
+type LinkEpicTasksRequest struct {
+	TaskIDs []string `json:"task_ids"`
+}
+
+// LinkEpicTasksResponse summarizes an atomic epic task-linking operation.
+type LinkEpicTasksResponse struct {
+	LinkedCount int `json:"linked_count"`
+	MovedCount  int `json:"moved_count"`
+}
+
 // PMEpicStats contains derived epic progress metrics.
 type PMEpicStats struct {
 	TaskCount       int `json:"task_count"`

@@ -1492,6 +1492,21 @@ func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, 
 	if err != nil {
 		return nil, err
 	}
+	if req.ClearTarget {
+		target.RepositoryID = nil
+		target.RepoFullName = nil
+		target.IntegrationID = nil
+		target.BaseBranch = nil
+		target.WorkingBranch = nil
+		target.DeliveryState = "unconfigured"
+		target.TargetSource = model.TaskDeliveryTargetSourceManual
+		target.SourceEpicID = nil
+		if err := s.deliveryRepo.Save(ctx, target); err != nil {
+			return nil, err
+		}
+		s.publishTaskDeliveryTargetUpdated(ctx, workspaceID, storyID, actorID, target)
+		return target, nil
+	}
 
 	if req.RepositoryID != nil && *req.RepositoryID != "" {
 		repo, err := s.repoRepo.GetEnabledByID(ctx, workspaceID, *req.RepositoryID)
@@ -1539,21 +1554,17 @@ func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, 
 		return nil, err
 	}
 
+	s.publishTaskDeliveryTargetUpdated(ctx, workspaceID, storyID, actorID, target)
+	return target, nil
+}
+
+func (s *GitService) publishTaskDeliveryTargetUpdated(ctx context.Context, workspaceID, taskID, actorID string, target *model.TaskDeliveryTarget) {
 	if s.activitySvc != nil && actorID != "" {
-		_ = s.activitySvc.Log(ctx, workspaceID, "task", storyID, &actorID, "updated", strPtr("delivery_target"), nil, target.RepoFullName, nil)
+		_ = s.activitySvc.Log(ctx, workspaceID, "task", taskID, &actorID, "updated", strPtr("delivery_target"), nil, target.RepoFullName, nil)
 	}
 	if s.wsPublisher != nil {
-		s.wsPublisher.Publish(websocket.Event{
-			Action:      "updated",
-			Entity:      "task_delivery_target",
-			EntityID:    target.ID,
-			WorkspaceID: workspaceID,
-			ParentType:  "task",
-			ParentID:    storyID,
-			ActorID:     actorID,
-		})
+		s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task_delivery_target", EntityID: target.ID, WorkspaceID: workspaceID, ParentType: "task", ParentID: taskID, ActorID: actorID})
 	}
-	return target, nil
 }
 
 // GetEpicDeliveryTarget resolves or creates the current integration branch for an epic.
@@ -1604,6 +1615,19 @@ func (s *GitService) UpdateEpicDeliveryTarget(ctx context.Context, workspaceID, 
 	target, err := s.GetEpicDeliveryTarget(ctx, workspaceID, epicID)
 	if err != nil {
 		return nil, err
+	}
+	if req.ClearTarget {
+		target.RepositoryID = nil
+		target.RepoFullName = nil
+		target.IntegrationID = nil
+		target.BaseBranch = nil
+		target.EpicBranch = nil
+		target.DeliveryState = "unconfigured"
+		if err := s.epicDeliveryRepo.Save(ctx, target); err != nil {
+			return nil, err
+		}
+		s.publishEpicDeliveryTargetUpdated(workspaceID, epicID, actorID, target)
+		return target, nil
 	}
 	if req.RepositoryID != nil && strings.TrimSpace(*req.RepositoryID) != "" {
 		repo, err := s.repoRepo.GetEnabledByID(ctx, workspaceID, strings.TrimSpace(*req.RepositoryID))

@@ -549,6 +549,230 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		InputSchema: updateKeyResultSchema(),
 	},
 	{
+		CommandName: "pm.update_task_delivery_target",
+		Alias:       "update_task_delivery_target",
+		Category:    "PM / Delivery",
+		Description: "Set or clear the repository and branch delivery target for an accessible task.",
+		InputSchema: deliveryTargetSchema("task_id", "working_branch"),
+	},
+	{
+		CommandName: "pm.update_epic_delivery_target",
+		Alias:       "update_epic_delivery_target",
+		Category:    "PM / Delivery",
+		Description: "Set or clear the repository and branch delivery target for an accessible epic.",
+		InputSchema: deliveryTargetSchema("epic_id", "epic_branch"),
+	},
+	{
+		CommandName: "docs.update_document_metadata",
+		Alias:       "update_document_metadata",
+		Category:    "Docs",
+		Description: "Update bounded metadata on an accessible document without changing its content, location, template, or publication state.",
+		InputSchema: updateDocumentMetadataSchema(),
+	},
+	{
+		CommandName: "crm.get_contact",
+		Alias:       "get_crm_contact",
+		Category:    "CRM / Discovery",
+		Description: "Get one CRM contact in the current workspace.",
+		InputSchema: requiredEntityIDSchema("contact_id"),
+	},
+	{
+		CommandName: "crm.get_company",
+		Alias:       "get_crm_company",
+		Category:    "CRM / Discovery",
+		Description: "Get one CRM company in the current workspace.",
+		InputSchema: requiredEntityIDSchema("company_id"),
+	},
+	{
+		CommandName: "crm.get_deal",
+		Alias:       "get_crm_deal",
+		Category:    "CRM / Discovery",
+		Description: "Get one CRM deal in the current workspace.",
+		InputSchema: requiredEntityIDSchema("deal_id"),
+	},
+	{
+		CommandName: "crm.list_companies",
+		Alias:       "list_crm_companies",
+		Category:    "CRM / Discovery",
+		Description: "List a bounded set of CRM companies in the current workspace.",
+		InputSchema: operationalListSchema(map[string]any{
+			"query":           map[string]any{"type": "string", "maxLength": 500},
+			"owner_member_id": optionalIDSchema("Optional owner member ID filter."),
+		}),
+	},
+	{
+		CommandName: "crm.list_pipelines",
+		Alias:       "list_crm_pipelines",
+		Category:    "CRM / Discovery",
+		Description: "List CRM pipelines and their ordered stages in the current workspace.",
+		InputSchema: operationalListSchema(nil),
+	},
+	{
+		CommandName: "crm.list_associations",
+		Alias:       "list_crm_associations",
+		Category:    "CRM / Discovery",
+		Description: "List a bounded set of associations for one existing workspace object.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"object_type": crmObjectTypeSchema(),
+			"object_id":   optionalIDSchema("Object ID whose associations should be listed."),
+			"limit": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of results. Defaults to 50, max 100.",
+				"minimum":     1,
+				"maximum":     100,
+			},
+		}, []string{"object_type", "object_id"}),
+	},
+	{
+		CommandName: "crm.update_contact",
+		Alias:       "update_crm_contact",
+		Category:    "CRM / Operations",
+		Description: "Update only lifecycle stage, lead status, owner, or labels on an existing CRM contact.",
+		InputSchema: updateCRMContactSchema(),
+	},
+	{
+		CommandName: "crm.update_company",
+		Alias:       "update_crm_company",
+		Category:    "CRM / Operations",
+		Description: "Update only the owner of an existing CRM company.",
+		InputSchema: updateCRMCompanySchema(),
+	},
+	{
+		CommandName: "crm.update_deal",
+		Alias:       "update_crm_deal",
+		Category:    "CRM / Operations",
+		Description: "Update bounded operational fields on an existing CRM deal.",
+		InputSchema: updateCRMDealSchema(),
+	},
+	{
+		CommandName: "crm.add_activity",
+		Alias:       "add_crm_activity",
+		Category:    "CRM / Operations",
+		Description: "Log a note, call, meeting, or email against exactly one existing CRM contact, company, or deal.",
+		InputSchema: addCRMActivitySchema(),
+	},
+	{
+		CommandName: "crm.link_objects",
+		Alias:       "link_crm_objects",
+		Category:    "CRM / Operations",
+		Description: "Create a safe association between two existing objects in the current workspace.",
+		InputSchema: linkCRMObjectsSchema(),
+	},
+	{
+		CommandName: "crm.unlink_association",
+		Alias:       "unlink_crm_association",
+		Category:    "CRM / Operations",
+		Description: "Remove one existing CRM association by ID without deleting either linked object.",
+		InputSchema: requiredEntityIDSchema("association_id"),
+	},
+	{
+		CommandName: "crm.set_primary_contact_company",
+		Alias:       "set_primary_contact_company",
+		Category:    "CRM / Operations",
+		Description: "Set an existing company as the primary company for an existing contact in the current workspace.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"contact_id": optionalIDSchema("Existing CRM contact ID."),
+			"company_id": optionalIDSchema("Existing CRM company ID."),
+		}, []string{"contact_id", "company_id"}),
+	},
+	{
+		CommandName: "support.list_conversations",
+		Alias:       "list_support_conversations",
+		Category:    "Support / Discovery",
+		Description: "List a bounded set of support conversations with optional status, priority, inbox, and search filters.",
+		InputSchema: operationalListSchema(map[string]any{
+			"status":   map[string]any{"type": "string"},
+			"priority": map[string]any{"type": "string"},
+			"inbox_id": optionalIDSchema("Optional inbox or mailbox ID filter."),
+			"query":    map[string]any{"type": "string", "maxLength": 500},
+		}),
+	},
+	{
+		CommandName: "support.get_conversation",
+		Alias:       "get_support_conversation",
+		Category:    "Support / Discovery",
+		Description: "Get one support conversation in the current workspace.",
+		InputSchema: requiredEntityIDSchema("conversation_id"),
+	},
+	{
+		CommandName: "support.list_tags",
+		Alias:       "list_support_tags",
+		Category:    "Support / Discovery",
+		Description: "List a bounded set of support tags in the current workspace.",
+		InputSchema: operationalListSchema(nil),
+	},
+	{
+		CommandName: "support.list_inboxes",
+		Alias:       "list_support_inboxes",
+		Category:    "Support / Discovery",
+		Description: "List a bounded set of support inboxes available to the current actor.",
+		InputSchema: operationalListSchema(nil),
+	},
+	{
+		CommandName: "support.list_assignees",
+		Alias:       "list_support_assignees",
+		Category:    "Support / Discovery",
+		Description: "List assignable users for one support conversation.",
+		InputSchema: operationalListSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+		}),
+	},
+	{
+		CommandName: "support.assign_conversation",
+		Alias:       "assign_support_conversation",
+		Category:    "Support / Triage",
+		Description: "Assign or unassign an existing support conversation.",
+		InputSchema: supportAssociationUpdateSchema("assignee_user_id", "Workspace user ID to assign."),
+	},
+	{
+		CommandName: "support.move_conversation",
+		Alias:       "move_support_conversation",
+		Category:    "Support / Triage",
+		Description: "Move an existing support conversation to another accessible inbox.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+			"inbox_id":        optionalIDSchema("Destination inbox or mailbox ID."),
+		}, []string{"conversation_id", "inbox_id"}),
+	},
+	{
+		CommandName: "support.add_conversation_tag",
+		Alias:       "add_support_conversation_tag",
+		Category:    "Support / Triage",
+		Description: "Add an existing support tag to a conversation.",
+		InputSchema: supportTagMutationSchema(),
+	},
+	{
+		CommandName: "support.remove_conversation_tag",
+		Alias:       "remove_support_conversation_tag",
+		Category:    "Support / Triage",
+		Description: "Remove a support tag from a conversation.",
+		InputSchema: supportTagMutationSchema(),
+	},
+	{
+		CommandName: "support.link_conversation_task",
+		Alias:       "link_support_conversation_task",
+		Category:    "Support / Triage",
+		Description: "Link or unlink an existing PM task from a support conversation.",
+		InputSchema: supportAssociationUpdateSchema("task_id", "Existing PM task ID to link."),
+	},
+	{
+		CommandName: "support.link_conversation_contact",
+		Alias:       "link_support_conversation_contact",
+		Category:    "Support / Triage",
+		Description: "Link or unlink an existing CRM contact from a support conversation.",
+		InputSchema: supportAssociationUpdateSchema("contact_id", "Existing CRM contact ID to link."),
+	},
+	{
+		CommandName: "support.update_conversation_subject",
+		Alias:       "update_support_conversation_subject",
+		Category:    "Support / Triage",
+		Description: "Update the subject of an existing support conversation.",
+		InputSchema: closedObjectSchema(map[string]any{
+			"conversation_id": optionalIDSchema("Support conversation ID."),
+			"subject":         map[string]any{"type": "string", "minLength": 1, "maxLength": 500},
+		}, []string{"conversation_id", "subject"}),
+	},
+	{
 		CommandName: "docs.write_document_content",
 		Alias:       "write_document_content",
 		Category:    "Docs",
@@ -1390,6 +1614,156 @@ func paginatedQuerySchema(maxLimit, defaultLimit int, limitDescription string) m
 		"required":             []string{},
 		"additionalProperties": false,
 	}
+}
+
+func closedObjectSchema(properties map[string]any, required []string) map[string]any {
+	if properties == nil {
+		properties = map[string]any{}
+	}
+	if required == nil {
+		required = []string{}
+	}
+	return map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"required":             required,
+		"additionalProperties": false,
+	}
+}
+
+func operationalListSchema(properties map[string]any) map[string]any {
+	if properties == nil {
+		properties = map[string]any{}
+	}
+	properties["limit"] = map[string]any{
+		"type":        "integer",
+		"description": "Maximum number of results. Defaults to 50, max 100.",
+		"minimum":     1,
+		"maximum":     100,
+	}
+	return closedObjectSchema(properties, nil)
+}
+
+func requiredEntityIDSchema(field string) map[string]any {
+	return closedObjectSchema(map[string]any{
+		field: optionalIDSchema("Existing object ID."),
+	}, []string{field})
+}
+
+func deliveryTargetSchema(idField, branchField string) map[string]any {
+	return closedObjectSchema(map[string]any{
+		idField:         optionalIDSchema("Optional target ID. Omit to use the current run target."),
+		"repository_id": optionalIDSchema("Enabled workspace repository ID."),
+		"base_branch":   map[string]any{"type": "string", "minLength": 1, "maxLength": 255},
+		branchField:     map[string]any{"type": "string", "minLength": 1, "maxLength": 255},
+		"clear_target":  map[string]any{"type": "boolean", "description": "Set true to clear the configured repository and branches."},
+	}, nil)
+}
+
+func updateDocumentMetadataSchema() map[string]any {
+	return closedObjectSchema(map[string]any{
+		"document_id":   optionalIDSchema("Existing document ID."),
+		"title":         map[string]any{"type": "string", "minLength": 1, "maxLength": 500},
+		"owner_id":      optionalIDSchema("Workspace user ID that should own the document."),
+		"clear_owner":   map[string]any{"type": "boolean"},
+		"excerpt":       map[string]any{"type": "string", "maxLength": 5000},
+		"clear_excerpt": map[string]any{"type": "boolean"},
+		"icon":          map[string]any{"type": "string", "maxLength": 100},
+		"clear_icon":    map[string]any{"type": "boolean"},
+		"tags": map[string]any{
+			"type": "array", "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "maxItems": 100,
+		},
+		"is_pinned": map[string]any{"type": "boolean"},
+	}, []string{"document_id"})
+}
+
+func updateCRMContactSchema() map[string]any {
+	return closedObjectSchema(map[string]any{
+		"contact_id": optionalIDSchema("Existing CRM contact ID."),
+		"lifecycle_stage": map[string]any{"type": "string", "enum": []string{
+			model.CRMLifecycleSubscriber, model.CRMLifecycleLead, model.CRMLifecycleMarketingQualified,
+			model.CRMLifecycleSalesQualified, model.CRMLifecycleOpportunity, model.CRMLifecycleCustomer, model.CRMLifecycleEvangelist,
+		}},
+		"lead_status": map[string]any{"type": "string", "enum": []string{
+			model.CRMLeadStatusNew, model.CRMLeadStatusOpen, model.CRMLeadStatusInProgress, model.CRMLeadStatusUnqualified,
+		}},
+		"owner_member_id": optionalIDSchema("Workspace member ID that should own the contact."),
+		"clear_owner":     map[string]any{"type": "boolean"},
+		"labels": map[string]any{
+			"type": "array", "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "maxItems": 100,
+		},
+	}, []string{"contact_id"})
+}
+
+func updateCRMCompanySchema() map[string]any {
+	return closedObjectSchema(map[string]any{
+		"company_id":      optionalIDSchema("Existing CRM company ID."),
+		"owner_member_id": optionalIDSchema("Workspace member ID that should own the company."),
+		"clear_owner":     map[string]any{"type": "boolean"},
+	}, []string{"company_id"})
+}
+
+func updateCRMDealSchema() map[string]any {
+	return closedObjectSchema(map[string]any{
+		"deal_id":           optionalIDSchema("Existing CRM deal ID."),
+		"name":              map[string]any{"type": "string", "minLength": 1, "maxLength": 500},
+		"pipeline_id":       optionalIDSchema("Existing pipeline ID."),
+		"stage_id":          optionalIDSchema("Existing stage ID in the selected pipeline."),
+		"amount":            map[string]any{"type": "number", "minimum": 0},
+		"clear_amount":      map[string]any{"type": "boolean"},
+		"currency":          map[string]any{"type": "string", "minLength": 3, "maxLength": 3},
+		"close_date":        map[string]any{"type": "string", "format": "date"},
+		"clear_close_date":  map[string]any{"type": "boolean"},
+		"owner_member_id":   optionalIDSchema("Workspace member ID that should own the deal."),
+		"clear_owner":       map[string]any{"type": "boolean"},
+		"probability":       map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
+		"clear_probability": map[string]any{"type": "boolean"},
+	}, []string{"deal_id"})
+}
+
+func addCRMActivitySchema() map[string]any {
+	return closedObjectSchema(map[string]any{
+		"activity_type":   map[string]any{"type": "string", "enum": []string{model.CRMActivityNote, model.CRMActivityCall, model.CRMActivityMeeting, model.CRMActivityEmail}},
+		"contact_id":      optionalIDSchema("Existing CRM contact ID."),
+		"company_id":      optionalIDSchema("Existing CRM company ID."),
+		"deal_id":         optionalIDSchema("Existing CRM deal ID."),
+		"owner_member_id": optionalIDSchema("Optional workspace member ID credited for the activity."),
+		"subject":         map[string]any{"type": "string", "maxLength": 500},
+		"body":            map[string]any{"type": "string", "maxLength": 50000},
+		"occurred_at":     map[string]any{"type": "string", "format": "date-time"},
+	}, []string{"activity_type"})
+}
+
+func crmObjectTypeSchema() map[string]any {
+	return map[string]any{"type": "string", "enum": []string{
+		model.CRMObjectContact, model.CRMObjectCompany, model.CRMObjectDeal,
+		model.CRMObjectEpic, model.CRMObjectTask, model.CRMObjectSupportConversation,
+	}}
+}
+
+func linkCRMObjectsSchema() map[string]any {
+	return closedObjectSchema(map[string]any{
+		"from_object_type":  crmObjectTypeSchema(),
+		"from_object_id":    optionalIDSchema("Existing source object ID."),
+		"to_object_type":    crmObjectTypeSchema(),
+		"to_object_id":      optionalIDSchema("Existing destination object ID."),
+		"association_label": map[string]any{"type": "string", "maxLength": 100},
+	}, []string{"from_object_type", "from_object_id", "to_object_type", "to_object_id"})
+}
+
+func supportAssociationUpdateSchema(field, description string) map[string]any {
+	return closedObjectSchema(map[string]any{
+		"conversation_id": optionalIDSchema("Support conversation ID."),
+		field:             optionalIDSchema(description),
+		"clear":           map[string]any{"type": "boolean", "description": "Set true to remove the current association."},
+	}, []string{"conversation_id"})
+}
+
+func supportTagMutationSchema() map[string]any {
+	return closedObjectSchema(map[string]any{
+		"conversation_id": optionalIDSchema("Support conversation ID."),
+		"tag_id":          optionalIDSchema("Existing support tag ID."),
+	}, []string{"conversation_id", "tag_id"})
 }
 
 func entityIDSchema(field, description string) map[string]any {

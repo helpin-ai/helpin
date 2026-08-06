@@ -829,6 +829,7 @@ type UpdateDocsDocumentRequest struct {
 	OwnerID      *string  `json:"owner_id"`
 	TemplateKey  *string  `json:"template_key"`
 	Excerpt      *string  `json:"excerpt"`
+	ClearExcerpt bool     `json:"clear_excerpt"`
 	Icon         *string  `json:"icon"`
 	Tags         []string `json:"tags"`
 	IsPinned     *bool    `json:"is_pinned"`

@@ -155,6 +155,24 @@ export interface CreateEpicResponse {
   agent_run_error?: string;
 }
 
+export interface LinkEpicTasksRequest {
+  task_ids: string[];
+}
+
+export interface LinkEpicTasksResponse {
+  linked_count: number;
+  moved_count: number;
+}
+
+export interface LinkSprintTasksRequest {
+  task_ids: string[];
+}
+
+export interface LinkSprintTasksResponse {
+  linked_count: number;
+  moved_count: number;
+}
+
 export type RoadmapEpic = EpicWithStats;
 
 export interface RoadmapData {
@@ -265,6 +283,7 @@ export interface SprintPlanningTaskPreview {
 export interface SprintPlanningCard {
   sprint: PMSprint;
   stats: PMSprintStats;
+  closeout?: SprintCloseoutListItem;
   preview_tasks: SprintPlanningTaskPreview[];
   task_preview_overflow: number;
 }

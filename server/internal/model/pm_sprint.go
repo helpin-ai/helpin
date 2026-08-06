@@ -84,6 +84,17 @@ type UpdateSprintRequest struct {
 	LabelIDs    []string   `json:"label_ids"`
 }
 
+// LinkSprintTasksRequest links or moves existing same-team tasks into a sprint.
+type LinkSprintTasksRequest struct {
+	TaskIDs []string `json:"task_ids"`
+}
+
+// LinkSprintTasksResponse summarizes an atomic sprint task-linking operation.
+type LinkSprintTasksResponse struct {
+	LinkedCount int `json:"linked_count"`
+	MovedCount  int `json:"moved_count"`
+}
+
 // PMSprintStats contains derived sprint progress metrics.
 type PMSprintStats struct {
 	TaskCount     int `json:"task_count"`
