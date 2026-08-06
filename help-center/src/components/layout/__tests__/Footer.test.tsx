@@ -99,7 +99,9 @@ describe('Footer', () => {
     expect(brandLockup).not.toBeNull()
     expect(attribution.className).not.toContain('hover:text-foreground')
     expect(within(attribution).getByText('Powered by').className).not.toContain('group-hover:text-foreground')
-    expect(within(attribution).getByText('Helpin').className).toContain('group-hover:text-foreground')
+    const helpinText = within(attribution).getByText('Helpin')
+    expect(helpinText.className).toContain('dark:text-white')
+    expect(helpinText.className).toContain('group-hover:text-foreground')
 
     const brandMarks = Array.from(attribution.querySelectorAll('img'))
     expect(brandMarks).toHaveLength(2)

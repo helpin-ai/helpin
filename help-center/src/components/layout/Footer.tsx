@@ -152,7 +152,7 @@ export function Footer() {
                 aria-hidden="true"
                 className="hidden h-3 w-3 shrink-0 dark:block"
               />
-              <span className="inline-block font-medium text-muted-foreground/80 bg-[linear-gradient(currentColor,currentColor)] bg-[length:0_1px] bg-[position:0_100%] bg-no-repeat transition-[color,background-size] duration-200 ease-out group-hover:text-foreground group-hover:bg-[length:100%_1px]">
+              <span className="inline-block font-medium text-muted-foreground/80 dark:text-white bg-[linear-gradient(currentColor,currentColor)] bg-[length:0_1px] bg-[position:0_100%] bg-no-repeat transition-[color,background-size] duration-200 ease-out group-hover:text-foreground group-hover:bg-[length:100%_1px]">
                 Helpin
               </span>
             </span>
