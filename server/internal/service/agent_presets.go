@@ -388,7 +388,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	documentationPrompt := defaultSystemPromptForPreset(model.AgentPresetDocumentationAgent)
 	codeBuilderPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
 	reviewPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
-	commandAgentPrompt := "You are a Sub-agent handling one confirmed delegated task. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward."
+	commandAgentPrompt := strings.TrimSpace("You are a Sub-agent handling one confirmed delegated task. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward.\n\n" + agentcontract.WorkspaceSearchPromptGuidance())
 	askAgentPrompt := askAgentSystemPrompt()
 	openRouterPresetProvider := model.AgentModelProviderOpenRouter
 	atlasDefaultModel := defaultAtlasAgentModel
@@ -481,7 +481,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          []string{agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill, "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"},
+			AllowedTools:          []string{agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill, "search_workspace", "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"},
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
@@ -567,6 +567,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 				"ripgrep",
 				"grep",
 				"list_symbols",
+				"search_workspace",
 				"list_documents",
 				"list_collections",
 				"read_document",
@@ -659,7 +660,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          appendPresetTools([]string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repository", "checkout_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "list_spaces", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"}, newPMReadToolAliases, newPMWriteToolAliases),
+			AllowedTools:          appendPresetTools([]string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repository", "checkout_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "list_spaces", "search_workspace", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"}, newPMReadToolAliases, newPMWriteToolAliases),
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"workspace", "document", "task", "epic", "sprint", "objective", "crm_deal", "crm_contact", "repository"},
 			ApprovalMode:          "never",
@@ -707,10 +708,10 @@ func askAgentPresetTools() []string {
 		"web_search_brave", "web_search_exa", "fetch_url", "crawl_url",
 		// Workspace / PM reads.
 		"list_workspace_teams", "list_team_workflows_with_stages",
-		"list_tasks", "get_task_context",
+		"search_workspace", "list_tasks", "get_task_context",
 		// Docs reads and approval-gated writes.
 		"list_spaces", "list_documents", "list_collections",
-		"read_document", "get_document_blocks", "search_documents",
+		"read_document", "get_document_blocks",
 		"create_space", "create_collection", "create_document", "update_space",
 		"update_collection", "move_document", "write_document_content",
 		"update_document_block", "link_document_to_object",
@@ -801,7 +802,7 @@ func appendPresetTools(base []string, additions ...[]string) []string {
 
 // askAgentSystemPrompt is the managed system prompt for the ask_agent preset.
 func askAgentSystemPrompt() string {
-	return strings.TrimSpace(`You are Ask Agent, the Helpin dock assistant. Each conversation is one long-lived chat with a single user inside one workspace. You are the primary execution agent: research, plan, load relevant skills, and complete ordinary workspace work directly.
+	prompt := strings.TrimSpace(`You are Ask Agent, the Helpin dock assistant. Each conversation is one long-lived chat with a single user inside one workspace. You are the primary execution agent: research, plan, load relevant skills, and complete ordinary workspace work directly.
 
 ## Answering questions
 - Answer factual, status, count, list, search, and summary questions directly using your read-only tools, then reply in plain markdown.
@@ -843,6 +844,7 @@ func askAgentSystemPrompt() string {
 ## Style
 - Be concise and direct. Ask a clarifying question (request_user_input for structured input, or a plain reply) only when the target or scope is genuinely ambiguous.
 - Never fabricate workspace data — if a tool cannot answer it, say so and offer to launch a run that can.`)
+	return strings.TrimSpace(prompt + "\n\n" + agentcontract.WorkspaceSearchPromptGuidance())
 }
 
 func filterPresetTools(base []string, required ...string) []string {
