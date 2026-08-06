@@ -18,6 +18,25 @@ vi.mock('@/lib/api', () => ({
 
 import { docsService } from '@/lib/services/docsService'
 
+describe('docsService.listDocuments', () => {
+  afterEach(() => {
+    getMock.mockReset()
+  })
+
+  it('sends owner and archived filters for the My Documents view', async () => {
+    getMock.mockResolvedValueOnce({ data: [], error: null, status: 200 })
+
+    await docsService.listDocuments('ws-1', {
+      owner_id: 'member-1',
+      include_archived: 'true',
+    })
+
+    expect(getMock).toHaveBeenCalledWith(
+      '/docs/documents?workspace_id=ws-1&owner_id=member-1&include_archived=true',
+    )
+  })
+})
+
 describe('docsService.getCollectionDeleteImpact', () => {
   afterEach(() => {
     getMock.mockReset()

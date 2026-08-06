@@ -145,13 +145,22 @@ func (s *DocsDocumentService) Get(ctx context.Context, id string) (*model.DocsDo
 
 // List returns documents with optional filters.
 func (s *DocsDocumentService) List(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID *string, userID, role string, includeArchived bool) ([]model.DocsDocument, error) {
+	return s.list(ctx, workspaceID, spaceID, collectionID, status, teamID, nil, userID, role, includeArchived)
+}
+
+// ListWithOwner returns documents with optional filters, including owner.
+func (s *DocsDocumentService) ListWithOwner(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID, ownerID *string, userID, role string, includeArchived bool) ([]model.DocsDocument, error) {
+	return s.list(ctx, workspaceID, spaceID, collectionID, status, teamID, ownerID, userID, role, includeArchived)
+}
+
+func (s *DocsDocumentService) list(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID, ownerID *string, userID, role string, includeArchived bool) ([]model.DocsDocument, error) {
 	// Admins/owners can see all drafts; others only see their own.
 	isAdminOrOwner := role == "admin" || role == "owner"
 	var draftViewerID string
 	if !isAdminOrOwner {
 		draftViewerID = userID
 	}
-	return s.docRepo.List(ctx, workspaceID, spaceID, collectionID, status, teamID, draftViewerID, includeArchived)
+	return s.docRepo.ListWithOwner(ctx, workspaceID, spaceID, collectionID, status, teamID, ownerID, draftViewerID, includeArchived)
 }
 
 // Update updates a document's metadata.
