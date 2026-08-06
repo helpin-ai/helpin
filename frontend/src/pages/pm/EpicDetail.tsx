@@ -60,7 +60,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { ActivityLogEntry, AttachmentResponse, CommentWithAuthor, CreateTaskRequest, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
+import type { ActivityLogEntry, AttachmentResponse, CommentWithAuthor, CreateTaskRequest, EpicWithStats, EpicHealth, GitRepository, LinkEpicTasksResponse, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
 import { getEpicTaskCount } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
@@ -93,6 +93,8 @@ import { ExternalLinks } from '@/components/pm/ExternalLinks';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { LinkTasksToEpicDialog } from '@/components/pm/LinkTasksToEpicDialog';
+import { getLinkTasksDisabledReason } from '@/components/pm/epicTaskLinking';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -219,6 +221,7 @@ export function EpicDetailPage() {
   const [taskTableSaveError, setTaskTableSaveError] = useState<string | null>(null);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [linkTasksOpen, setLinkTasksOpen] = useState(false);
   const [createTaskWorkflow, setCreateTaskWorkflow] = useState<WorkflowWithStates | null>(null);
   const [openingCreateTask, setOpeningCreateTask] = useState(false);
   const [pendingTeamChange, setPendingTeamChange] = useState<{
@@ -532,6 +535,11 @@ export function EpicDetailPage() {
     : teams.length === 0
       ? 'Join a team to add tasks to this epic.'
       : null;
+  const linkTasksTeamId = epic?.epic.team_id ?? '';
+  const linkTasksTeamName = linkTasksTeamId
+    ? findTeamName(linkTasksTeamId) ?? 'this team'
+    : '';
+  const linkTasksDisabledReason = getLinkTasksDisabledReason(canEdit, linkTasksTeamId);
   const preferredCreateTaskTeamId = useMemo(() => {
     if (epic?.epic.team_id && teams.some((team) => team.id === epic.epic.team_id)) {
       return epic.epic.team_id;
@@ -645,6 +653,16 @@ export function EpicDetailPage() {
         }
       : undefined;
   }, [fetchData]);
+
+  const handleTasksLinked = useCallback(async (result: LinkEpicTasksResponse) => {
+    await Promise.all([fetchData(false), reloadActivity(), delivery.reload()]);
+    const linkedLabel = `${result.linked_count} task${result.linked_count === 1 ? '' : 's'}`;
+    if (result.moved_count > 0) {
+      toast.success(`Linked ${linkedLabel}; ${result.moved_count} moved from another epic.`);
+      return;
+    }
+    toast.success(`Linked ${linkedLabel} to this epic.`);
+  }, [delivery, fetchData, reloadActivity]);
 
   const selectedObjectives = useMemo<ObjectivePickerSelection[]>(
     () => (epic?.objectives ?? []).map((objective) => ({
@@ -787,6 +805,18 @@ export function EpicDetailPage() {
         View on Tasks page
       </Button>
       <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+        onClick={() => setLinkTasksOpen(true)}
+        disabled={linkTasksDisabledReason !== null}
+        title={linkTasksDisabledReason ?? undefined}
+      >
+        <Link01Icon className="h-3.5 w-3.5" />
+        Link tasks
+      </Button>
+      <Button
         variant="ghost"
         size="sm"
         className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
@@ -804,21 +834,33 @@ export function EpicDetailPage() {
     </div>
   );
 
-  const renderGhostAddTaskRow = (className: string) => (
-    <button
-      type="button"
-      className={className}
-      onClick={() => void handleStartCreateTask()}
-      disabled={!canCreateTask || openingCreateTask}
-      title={createTaskDisabledReason ?? undefined}
-    >
-      {openingCreateTask ? (
-        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
-      ) : (
-        <PlusSignIcon className="h-3.5 w-3.5" />
-      )}
-      <span>Add task</span>
-    </button>
+  const renderEmptyTaskActions = () => (
+    <div className="flex h-9 items-center border-t border-dashed border-border/60">
+      <button
+        type="button"
+        className="flex h-full flex-1 items-center gap-2 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={() => setLinkTasksOpen(true)}
+        disabled={linkTasksDisabledReason !== null}
+        title={linkTasksDisabledReason ?? undefined}
+      >
+        <Link01Icon className="h-3.5 w-3.5" />
+        <span>Link existing tasks</span>
+      </button>
+      <button
+        type="button"
+        className="flex h-full flex-1 items-center gap-2 border-l border-dashed border-border/60 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={() => void handleStartCreateTask()}
+        disabled={!canCreateTask || openingCreateTask}
+        title={createTaskDisabledReason ?? undefined}
+      >
+        {openingCreateTask ? (
+          <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <PlusSignIcon className="h-3.5 w-3.5" />
+        )}
+        <span>Create task</span>
+      </button>
+    </div>
   );
 
   if (loading) {
@@ -1072,9 +1114,7 @@ export function EpicDetailPage() {
                 <div className="px-3 py-3">
                   <p className="text-sm text-muted-foreground">No tasks linked yet.</p>
                 </div>
-                {renderGhostAddTaskRow(
-                  'flex h-9 w-full items-center gap-2 border-t border-dashed border-border/60 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60',
-                )}
+                {renderEmptyTaskActions()}
               </div>
             ) : workflow ? (
               <div className="mt-3 -mx-3">
@@ -1518,6 +1558,19 @@ export function EpicDetailPage() {
           setSaving(false);
         }}
       />
+
+      {workspaceId && linkTasksTeamId ? (
+        <LinkTasksToEpicDialog
+          open={linkTasksOpen}
+          onOpenChange={setLinkTasksOpen}
+          workspaceId={workspaceId}
+          epicId={epic.epic.id}
+          epicName={epic.epic.name}
+          teamId={linkTasksTeamId}
+          teamName={linkTasksTeamName}
+          onLinked={(result) => void handleTasksLinked(result)}
+        />
+      ) : null}
 
       {createTaskWorkflow ? (
         <CreateTaskModal
