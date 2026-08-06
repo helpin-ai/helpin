@@ -334,7 +334,7 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 		"get_my_capabilities",
 		"create_task", "create_document", "write_document_content", "insert_document_image",
 		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot",
-		"search_workspace",
+		"search_workspace", "search_documents",
 		"list_available_skills", "search_available_skills", "read_skill",
 		"list_repositories", "checkout_repository", "checkout_repositories",
 		"ripgrep", "search_files", "list_symbols", "read_file", "read_file_range",
@@ -342,9 +342,6 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 		if !slices.Contains(preset.AllowedTools, toolName) {
 			t.Errorf("Ask Agent is missing required self-execution tool %q", toolName)
 		}
-	}
-	if slices.Contains(preset.AllowedTools, "search_documents") {
-		t.Fatal("Ask Agent should use consolidated search_workspace instead of search_documents")
 	}
 	if len(preset.AvailableSkills) != 29 {
 		t.Fatalf("Ask Agent default must expose 29 curated optional skills, got %d: %v", len(preset.AvailableSkills), preset.AvailableSkills)
@@ -403,7 +400,7 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 	for _, toolName := range []string{
 		"checkout_repository", "ripgrep", "read_file",
 		"list_available_skills", "read_skill", "update_plan",
-		"get_my_capabilities", "search_workspace", "create_document", "prepare_dock_execution",
+		"get_my_capabilities", "search_workspace", "search_documents", "create_document", "prepare_dock_execution",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {
 			t.Errorf("managed Ask capability %q was not restored to pinned preset: %v", toolName, preset.AllowedTools)

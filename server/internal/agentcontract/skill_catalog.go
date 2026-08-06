@@ -545,8 +545,8 @@ func compiledPromptForPresetBundle(bundle PresetSkillBundle) string {
 func WorkspaceSearchPromptGuidance() string {
 	return strings.TrimSpace(`## Workspace Discovery
 
-- Use search_workspace to resolve an entity by its human-readable key or name. Then pass the returned ID to the appropriate get, context, read, or mutation tool.
-- Use entity-specific list tools for browsing and structured filtered reports. When a result has has_more=true, continue with next_offset instead of requesting an oversized page.
+- Use search_workspace for keyword and identity lookup, including requests asking which tasks mention, contain, discuss, talk about, or relate to a term. Narrow entity_types when the user names a specific entity kind. Then pass returned IDs to the appropriate get, context, read, or mutation tool when more detail is needed.
+- Use entity-specific list tools only for enumeration and structured filters such as status, owner, team, or date. Do not list broad collections and inspect items one by one when a search query can answer the request. When a result has has_more=true, continue with next_offset instead of requesting an oversized page.
 - When available, use search_documents for full-text document-content searches; use search_workspace for cross-entity discovery.`)
 }
 

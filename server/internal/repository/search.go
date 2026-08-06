@@ -39,6 +39,15 @@ func normalizeSearchText(value string) string {
 	return strings.TrimSpace(b.String())
 }
 
+func normalizedSearchColumn(column string) string {
+	return "regexp_replace(lower(coalesce(" + column + ", '')), '[^[:alnum:]]+', ' ', 'g')"
+}
+
+func taskSearchPredicate() string {
+	return "(" + normalizedSearchColumn("name") + " LIKE ? OR " +
+		normalizedSearchColumn("description") + " LIKE ? OR CAST(display_id AS TEXT) LIKE ?)"
+}
+
 func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string, taskKeyDisplayID int) (*model.SearchResponse, error) {
 	return r.SearchLimit(ctx, workspaceID, query, taskKeyDisplayID, searchLimit)
 }
@@ -66,10 +75,6 @@ func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query s
 	}
 
 	pattern := "%" + normalizedQuery + "%"
-	normalizedText := func(column string) string {
-		return "regexp_replace(lower(coalesce(" + column + ", '')), '[^[:alnum:]]+', ' ', 'g')"
-	}
-
 	var (
 		stories    []model.SearchResult
 		epics      []model.SearchResult
@@ -116,9 +121,9 @@ func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query s
 			Raw(`SELECT id, name, 'task' AS type, display_id, team_id
 				FROM pm_tasks
 				WHERE workspace_id = ? AND archived = false
-				  AND (`+normalizedText("name")+` LIKE ? OR CAST(display_id AS TEXT) LIKE ?)
+				  AND `+taskSearchPredicate()+`
 				ORDER BY updated_at DESC
-				LIMIT ?`, workspaceID, pattern, pattern, limit).
+				LIMIT ?`, workspaceID, pattern, pattern, pattern, limit).
 			Scan(&textResults).Error; err != nil {
 			setErr(fmt.Errorf("search stories: %w", err))
 			return
@@ -145,7 +150,7 @@ func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query s
 			Raw(`SELECT id, name, 'epic' AS type
 				FROM pm_epics
 				WHERE workspace_id = ? AND archived = false
-				  AND `+normalizedText("name")+` LIKE ?
+				  AND `+normalizedSearchColumn("name")+` LIKE ?
 				ORDER BY updated_at DESC
 				LIMIT ?`, workspaceID, pattern, limit).
 			Scan(&epics).Error; err != nil {
@@ -159,7 +164,7 @@ func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query s
 			Raw(`SELECT id, name, 'sprint' AS type
 				FROM pm_sprints
 				WHERE workspace_id = ? AND archived = false
-				  AND `+normalizedText("name")+` LIKE ?
+				  AND `+normalizedSearchColumn("name")+` LIKE ?
 				ORDER BY updated_at DESC
 				LIMIT ?`, workspaceID, pattern, limit).
 			Scan(&sprints).Error; err != nil {
@@ -173,7 +178,7 @@ func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query s
 			Raw(`SELECT id, name, 'objective' AS type
 				FROM pm_objectives
 				WHERE workspace_id = ? AND archived = false
-				  AND `+normalizedText("name")+` LIKE ?
+				  AND `+normalizedSearchColumn("name")+` LIKE ?
 				ORDER BY updated_at DESC
 				LIMIT ?`, workspaceID, pattern, limit).
 			Scan(&objectives).Error; err != nil {
@@ -191,7 +196,7 @@ func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query s
 				LEFT JOIN team_workspace_memberships twm ON twm.workspace_member_id = wm.id
 				LEFT JOIN workspace_teams wt ON wt.id = twm.team_id
 				WHERE wm.workspace_id = ? AND wm.status IN ('active', 'pending')
-				  AND (`+normalizedText("wm.display_name")+` LIKE ? OR `+normalizedText("wm.email")+` LIKE ?)
+				  AND (`+normalizedSearchColumn("wm.display_name")+` LIKE ? OR `+normalizedSearchColumn("wm.email")+` LIKE ?)
 				GROUP BY wm.id, wm.display_name
 				ORDER BY wm.display_name ASC
 				LIMIT ?`, workspaceID, pattern, pattern, limit).
@@ -207,7 +212,7 @@ func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query s
 				FROM docs_documents
 				WHERE workspace_id = ? AND deleted_at IS NULL
 				  AND status != 'archived'
-				  AND `+normalizedText("title")+` LIKE ?
+				  AND `+normalizedSearchColumn("title")+` LIKE ?
 				ORDER BY updated_at DESC
 				LIMIT ?`, workspaceID, pattern, limit).
 			Scan(&documents).Error; err != nil {

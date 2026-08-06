@@ -95,11 +95,11 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "workspace.search",
 		Alias:       "search_workspace",
 		Category:    "Workspace",
-		Description: "Search accessible workspace entities with ranked exact-key, name, email, domain, title, and text matches. Use this to find an entity; use list tools only for browsing or filtered reporting.",
+		Description: "Search accessible workspace entities by keyword or identity. Task searches match task keys, names, and descriptions. Use this for requests asking which entities mention, contain, discuss, or relate to a term; use list tools only for enumeration or structured filtering.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"query": map[string]any{"type": "string", "minLength": 1, "maxLength": 500, "description": "Text, UUID, task key, name, email, domain, or support subject to find."},
+				"query": map[string]any{"type": "string", "minLength": 1, "maxLength": 500, "description": "Keyword, UUID, task key, name, email, domain, or support subject to find. Task keywords are matched against names and descriptions."},
 				"entity_types": map[string]any{
 					"type": "array", "maxItems": 10, "uniqueItems": true,
 					"description": "Optional entity types to search. Omit to search every accessible type.",

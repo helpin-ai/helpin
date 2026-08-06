@@ -522,6 +522,11 @@ func TestWorkspaceDiscoveryCatalogUsesCanonicalSearchAndPagination(t *testing.T)
 	search := requireCatalogSchema(t, tools, "search_workspace")
 	assertRequiredFields(t, "search_workspace", search, []string{"query"})
 	assertSchemaFields(t, "search_workspace", search, []string{"entity_types", "limit", "offset"})
+	for _, tool := range catalog.Tools {
+		if tool.Name == "search_workspace" && !strings.Contains(tool.Description, "names, and descriptions") {
+			t.Fatalf("search_workspace must advertise task-description matching: %q", tool.Description)
+		}
+	}
 }
 
 func TestBrowserToolCatalogContracts(t *testing.T) {

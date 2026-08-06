@@ -713,7 +713,7 @@ func askAgentPresetTools() []string {
 		"search_workspace", "list_tasks", "get_task_context",
 		// Docs reads and approval-gated writes.
 		"list_spaces", "list_documents", "list_collections",
-		"read_document", "get_document_blocks",
+		"read_document", "get_document_blocks", "search_documents",
 		"create_space", "create_collection", "create_document", "update_space",
 		"update_collection", "move_document", "write_document_content",
 		"update_document_block", "insert_document_image", "link_document_to_object",
