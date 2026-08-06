@@ -7,7 +7,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { SprintPlanningFilters, type SprintStatusFilter } from '@/components/pm/sprints/SprintPlanningFilters';
 import { SprintPlanningWorkspace } from '@/components/pm/sprints/SprintPlanningWorkspace';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import { useDeleteSprint, useSprintPlanningWorkspace, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useDeleteSprint, useSprintCloseouts, useSprintPlanningWorkspace, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { queryKeys } from '@/lib/queryKeys';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningTaskPreview } from '@/lib/pmTypes';
@@ -54,6 +54,7 @@ interface ArchivedSprintRowProps {
   card: {
     sprint: { id: string; name: string; start_date: string | null; end_date: string | null };
     stats: { task_count: number; done_task_count: number };
+    closeout?: { committed_count: number; completed_count: number; rolled_over_count: number; committed_points: number; completed_points: number };
   };
   workspaceId: string;
   workspaceSlug: string;
@@ -90,6 +91,9 @@ function ArchivedSprintRow({ card, workspaceId, workspaceSlug, canEdit, onOpen }
     });
   };
 
+  const committedTasks = card.closeout?.committed_count ?? card.stats.task_count;
+  const completedTasks = card.closeout?.completed_count ?? card.stats.done_task_count;
+  const rolledOverTasks = card.closeout?.rolled_over_count ?? 0;
   return (
     <div
       role="button"
@@ -109,7 +113,8 @@ function ArchivedSprintRow({ card, workspaceId, workspaceSlug, canEdit, onOpen }
       </div>
       <div className="flex shrink-0 items-center gap-3">
         <span className="text-xs text-muted-foreground">
-          {card.stats.done_task_count}/{card.stats.task_count} tasks
+          {completedTasks}/{committedTasks} tasks {card.closeout ? 'completed' : 'done'}
+          {card.closeout && rolledOverTasks > 0 ? ` · ${rolledOverTasks} rolled over` : ''}
         </span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -352,6 +357,11 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   );
 
   const planningQuery = useSprintPlanningWorkspace(workspaceId, filters);
+  const closeoutsQuery = useSprintCloseouts(workspaceId, { team_id: teamId || undefined });
+  const closeoutBySprintId = useMemo(
+    () => new Map((closeoutsQuery.data?.items ?? []).map((item) => [item.sprint_id, item] as const)),
+    [closeoutsQuery.data?.items],
+  );
   const planningQueryKey = useMemo(
     () => queryKeys.pm.sprintPlanning(workspaceId, filters as Record<string, unknown> | undefined),
     [workspaceId, filters],
@@ -373,34 +383,48 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   const filteredWorkspace = useMemo(() => {
     if (!planningQuery.data || isArchived) return planningQuery.data ?? null;
 
+    const workspaceWithCloseouts: SprintPlanningWorkspaceData = {
+      ...planningQuery.data,
+      buckets: planningQuery.data.buckets.map((bucket) => ({
+        ...bucket,
+        sprints: bucket.sprints.map((card) => ({
+          ...card,
+          closeout: closeoutBySprintId.get(card.sprint.id),
+        })),
+      })),
+    };
+
     const bucketKey = statusFilter === 'upcoming' ? 'upcoming' : statusFilter === 'active' ? 'active' : 'completed';
     const statusBuckets = statusFilter === 'all'
-      ? planningQuery.data.buckets
-      : planningQuery.data.buckets.filter((b) => b.key === bucketKey);
+      ? workspaceWithCloseouts.buckets
+      : workspaceWithCloseouts.buckets.filter((b) => b.key === bucketKey);
 
     if (!normalizedSearchQuery) {
       return statusFilter === 'all'
-        ? planningQuery.data
+        ? workspaceWithCloseouts
         : {
-            ...planningQuery.data,
+            ...workspaceWithCloseouts,
             buckets: statusBuckets,
           };
     }
 
     return {
-      ...planningQuery.data,
+      ...workspaceWithCloseouts,
       buckets: statusBuckets.map((bucket) => ({
         ...bucket,
         sprints: (bucket.sprints ?? []).filter((card) => sprintMatchesSearch(card, normalizedSearchQuery)),
       })),
     };
-  }, [planningQuery.data, statusFilter, isArchived, normalizedSearchQuery]);
+  }, [planningQuery.data, closeoutBySprintId, statusFilter, isArchived, normalizedSearchQuery]);
 
   const filteredArchivedSprints = useMemo(() => {
-    const archivedSprints = archivedQuery.data ?? [];
+    const archivedSprints = (archivedQuery.data ?? []).map((card) => ({
+      ...card,
+      closeout: closeoutBySprintId.get(card.sprint.id),
+    }));
     if (!normalizedSearchQuery) return archivedSprints;
     return archivedSprints.filter((card) => sprintMatchesSearch(card, normalizedSearchQuery));
-  }, [archivedQuery.data, normalizedSearchQuery]);
+  }, [archivedQuery.data, closeoutBySprintId, normalizedSearchQuery]);
 
   const handleAssignTask = async (task: SprintPlanningTaskPreview, sprintId: string | null) => {
     if (!planningQuery.data || !canEdit) return;
