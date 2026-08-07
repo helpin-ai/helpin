@@ -531,7 +531,7 @@ export function SprintDetailPage() {
             </div>
             <Progress value={progress} className="h-2 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
             <p className="text-xs text-muted-foreground">
-              {sprint.stats.done_task_count}/{sprint.stats.task_count} tasks done · {sprint.stats.done_points}/{sprint.stats.total_points} points
+              {sprint.stats.done_task_count}/{sprint.stats.task_count} tasks done
             </p>
           </div>
 
