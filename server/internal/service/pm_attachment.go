@@ -291,6 +291,28 @@ func (s *PMAttachmentService) ContentURL(ctx context.Context, id string) (string
 	return downloadURL, nil
 }
 
+// SourceURL returns a provider-readable URL for a document editor image.
+func (s *PMAttachmentService) SourceURL(ctx context.Context, id, workspaceID, entityID string) (string, error) {
+	if s.s3Client == nil {
+		return "", fmt.Errorf("file storage is not configured")
+	}
+	attachment, err := s.attachmentRepo.GetByID(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if attachment == nil || !attachment.IsUploaded || attachment.WorkspaceID != workspaceID || attachment.EntityType != "editor_upload" || attachment.EntityID != entityID || !strings.HasPrefix(attachment.ContentType, "image/") {
+		return "", fmt.Errorf("image attachment not found")
+	}
+	if s.s3Client.HasPublicURL() {
+		return s.s3Client.PublicURL(attachment.StorageKey), nil
+	}
+	url, err := s.s3Client.GeneratePresignedGetURL(attachment.StorageKey, attachment.FileName)
+	if err != nil {
+		return "", fmt.Errorf("generate source image URL: %w", err)
+	}
+	return url, nil
+}
+
 func (s *PMAttachmentService) shouldDeleteStorageObject(ctx context.Context, attachment *model.PMAttachment) bool {
 	if s.s3Client == nil || attachment == nil || attachment.StorageKey == "" || !attachment.IsUploaded {
 		return false

@@ -8,6 +8,7 @@ export interface ResizableImageOptions {
   enableCaption: boolean;
   defaultAlignment: 'left' | 'center' | 'right';
   workspaceId?: string;
+  documentId?: string;
 }
 
 declare module '@tiptap/core' {
@@ -40,6 +41,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       enableCaption: true,
       defaultAlignment: 'center',
       workspaceId: undefined,
+      documentId: undefined,
     };
   },
 

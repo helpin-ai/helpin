@@ -741,6 +741,7 @@ func main() {
 	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmTaskRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, settingsRepo, pmActivityService, wsPublisher, notificationService, pmSprintCloseoutRepo)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmTaskRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo, s3Client)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
+	docsImageEditService := service.NewDocsImageEditService(cfg.FalAPIKey, pmAttachmentService)
 	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, pmTaskRepo, wsPublisher, notificationService, workspaceRepo)
 	docsEmbedResolverService := service.NewDocsEmbedResolverService(cfg.CrawlerProxyURLs)
@@ -1649,6 +1650,7 @@ func main() {
 
 	// Set support event recorder on DocsHandler after handler creation.
 	handlers.Docs.SetSupportEventRecorder(supportEventRecorder)
+	handlers.Docs.SetImageEditService(docsImageEditService)
 	handlers.Docs.SetSupportWidgetConfigProvider(supportInboxService)
 	handlers.Docs.SetHelpcenterAISearchService(helpcenterAISearchService)
 

@@ -46,27 +46,29 @@ type Config struct {
 	AWSPublicBaseURL   string // Optional public asset base URL (R2 custom domain / CDN)
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
-	AnthropicAPIKey         string
-	AnthropicBaseURL        string
-	OpenAIAPIKey            string
-	OpenAIBaseURL           string
-	OpenAIEmbeddingModel    string
-	SupportRerankerURL      string
-	SupportRerankerModel    string
-	SupportRerankerAPIKey   string
-	OpenRouterAPIKey        string
-	OpenRouterBaseURL       string
+	AnthropicAPIKey  string
+	AnthropicBaseURL string
+	OpenAIAPIKey     string
+	// FalAPIKey is used by the server-side image editing tool.
+	FalAPIKey             string
+	OpenAIBaseURL         string
+	OpenAIEmbeddingModel  string
+	SupportRerankerURL    string
+	SupportRerankerModel  string
+	SupportRerankerAPIKey string
+	OpenRouterAPIKey      string
+	OpenRouterBaseURL     string
 	// Help center AI answer routing. Empty values resolve to a flash-tier
 	// default on the first chat provider that has an API key configured.
 	HelpcenterAnswerProvider string
 	HelpcenterAnswerModel    string
-	CodexOpenAIAuthMode     string
-	CodexEnableChatGPTOAuth bool
-	CodexChatGPTAccessToken string
-	CodexChatGPTAccountID   string
-	CloudflareAccountID     string
-	CloudflareAPIToken      string
-	CloudflareAPIBaseURL    string
+	CodexOpenAIAuthMode      string
+	CodexEnableChatGPTOAuth  bool
+	CodexChatGPTAccessToken  string
+	CodexChatGPTAccountID    string
+	CloudflareAccountID      string
+	CloudflareAPIToken       string
+	CloudflareAPIBaseURL     string
 
 	// Website content crawler (optional — controls crawl engine and proxy)
 	CrawlerMode      string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
@@ -270,6 +272,7 @@ func Load() (*Config, error) {
 		AnthropicAPIKey:                        os.Getenv("ANTHROPIC_API_KEY"),
 		AnthropicBaseURL:                       strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL")),
 		OpenAIAPIKey:                           strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+		FalAPIKey:                              strings.TrimSpace(os.Getenv("FAL_KEY")),
 		OpenAIBaseURL:                          strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
 		OpenAIEmbeddingModel:                   strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_MODEL")),
 		SupportRerankerURL:                     strings.TrimRight(strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_URL")), "/"),

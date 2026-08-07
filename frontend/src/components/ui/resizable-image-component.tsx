@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
-import { TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, Maximize01Icon, Download04Icon, Copy01Icon, Link01Icon, Delete01Icon, Cancel01Icon, Tick01Icon, CursorTextIcon } from '@/lib/icons';
+import { TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, Maximize01Icon, Download04Icon, Copy01Icon, Link01Icon, Delete01Icon, Cancel01Icon, Tick01Icon, CursorTextIcon, MagicWand01Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { LoadingImage } from '@/components/ui/loading-image';
+import { DocsImageEditDialog } from "@/components/docs/DocsImageEditDialog";
 import { useImageActions } from '@/hooks/useImageActions';
 import { parseHelpinReference } from '@/lib/helpinReferences';
 import { automationService } from '@/lib/services/automationService';
@@ -27,6 +28,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
   const { copyImage, downloadImage, openInNewTab: _openInNewTab } = useImageActions();
   const enableCaption = extension.options.enableCaption ?? true;
   const workspaceId = extension.options.workspaceId as string | undefined;
+  const documentId = extension.options.documentId as string | undefined;
   const srcReference = parseHelpinReference(typeof src === 'string' ? src : undefined);
   const resolvedArtifactId = artifactId || (srcReference?.type === 'artifacts' ? srcReference.id : null);
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(resolvedArtifactId ? null : src);
@@ -80,6 +82,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
   const [showSettings, setShowSettings] = useState(false);
   const [showAlignMenu, setShowAlignMenu] = useState(false);
   const [showAltInput, setShowAltInput] = useState(false);
+  const [showImageEditor, setShowImageEditor] = useState(false);
   const [altText, setAltText] = useState<string>(alt ?? '');
   const [captionText, setCaptionText] = useState<string>(caption ?? '');
   const [linkInput, setLinkInput] = useState<string>(linkUrl ?? '');
@@ -390,6 +393,13 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                 <Copy01Icon className="h-4 w-4" />
               </button>
             </QuickTooltip>
+            {workspaceId && documentId && node.attrs.attachmentId && resolvedSrc && (
+              <QuickTooltip label="Edit with AI">
+                <button type="button" onClick={(e) => { e.stopPropagation(); setShowImageEditor(true); }} className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground">
+                  <MagicWand01Icon className="h-4 w-4" />
+                </button>
+              </QuickTooltip>
+            )}
             <QuickTooltip label="Add link">
               <button
                 type="button"
@@ -521,6 +531,17 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
             onClick={(e) => e.stopPropagation()}
           />
         </div>
+      )}
+      {workspaceId && documentId && node.attrs.attachmentId && resolvedSrc && (
+        <DocsImageEditDialog
+          open={showImageEditor}
+          onOpenChange={setShowImageEditor}
+          workspaceId={workspaceId}
+          documentId={documentId}
+          sourceAttachmentId={node.attrs.attachmentId}
+          sourceUrl={resolvedSrc}
+          onUse={({ attachmentId, url }) => updateAttributes({ src: url, attachmentId })}
+        />
       )}
     </NodeViewWrapper>
   );
