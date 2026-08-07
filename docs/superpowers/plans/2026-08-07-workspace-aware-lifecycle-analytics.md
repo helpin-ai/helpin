@@ -102,6 +102,21 @@ Usermaven company attributes should be derived snapshots, recalculated server-si
 
 Do not send all workspace IDs or nested per-workspace activation blobs as company attributes. Raw workspace-specific behavior remains in event properties.
 
+## Customer.io server-side workstream
+
+The frontend Customer.io SDK remains useful for immediate interaction events, but it is not sufficient for lifecycle automation. The backend Customer.io Track API path must become the authoritative source for data that cannot depend on a browser session:
+
+- Workspace and organization object upserts.
+- All active workspace and organization relationships, including role/status changes and revocations.
+- Workspace creation and membership lifecycle events.
+- Trial start, trial expiry, upgrade, downgrade, cancellation, reactivation, and payment failure events.
+- Workspace billing attributes and organization aggregate attributes.
+- Idempotent delivery using Stripe event IDs or application event IDs.
+- Retryable delivery with structured logging and no impact on the underlying product or billing operation.
+- A one-time backfill for existing users, organizations, workspaces, and active relationships.
+
+The existing implementation is in `server/internal/service/customer_io.go`, with object type IDs already configured as workspace `1` and organization `2`. The implementation phase should extend that path rather than introduce a duplicate Customer.io client.
+
 ## File map
 
 ### Frontend analytics and module instrumentation
@@ -180,6 +195,20 @@ Do not send all workspace IDs or nested per-workspace activation blobs as compan
 - [ ] Run Customer.io adapter tests using a fake HTTP server; no live credentials in tests.
 - [ ] Commit: `feat: sync Customer.io workspace relationships`.
 
+### Task 3a: Enable authoritative Customer.io server-side delivery
+
+**Files:** `server/internal/service/customer_io.go`, `server/internal/config/config.go`, `server/cmd/api/main.go`, billing/webhook services, lifecycle event tests, deployment environment examples, and a backfill command or job.
+
+- [ ] Confirm production Customer.io Track API credentials and region configuration are available through deployment secrets.
+- [ ] Add server-side event delivery to the existing Customer.io client using the same canonical event names and workspace context as the frontend.
+- [ ] Emit billing and trial lifecycle events after successful durable state transitions, never from browser-only code.
+- [ ] Add idempotency keys and retry behavior for Customer.io requests; log failures with `workspace_id`, `organization_id`, and event name but never credentials or sensitive payloads.
+- [ ] Add a backfill operation that identifies all users, organizations, workspaces, and active memberships, then upserts object and relationship state safely.
+- [ ] Add a reconciliation operation for organizations and workspaces whose Customer.io state may have drifted.
+- [ ] Test duplicate Stripe webhook delivery, Customer.io timeout, 4xx/5xx responses, partial relationship sync, and replayed backfill records.
+- [ ] Verify that disabling Customer.io credentials leaves signup, workspace creation, membership changes, billing, and module actions functional.
+- [ ] Commit: `feat: enable server-side Customer.io lifecycle delivery`.
+
 ### Task 4: Emit authoritative workspace billing lifecycle events
 
 **Files:** `server/internal/service/billing.go`, Stripe webhook handler/service files, `server/internal/analytics/*`, billing tests.
@@ -249,10 +278,10 @@ Recommended initial campaigns:
 
 1. Deploy contract builders and disabled provider adapters.
 2. Enable Usermaven event properties and organization aggregates in staging.
-3. Enable Customer.io workspace/relationship synchronization in staging.
-4. Backfill current organization aggregates and workspace relationships.
-5. Enable billing lifecycle events and validate trial expiry targeting.
-6. Enable module first-value events one module at a time.
+3. Enable Customer.io server-side object and relationship synchronization in staging.
+4. Backfill current organization aggregates, workspace objects, and all active relationships.
+5. Enable server-side billing lifecycle events and validate trial expiry targeting.
+6. Enable frontend module first-value events one module at a time.
 7. Build campaigns in draft mode and test with an internal organization.
 8. Activate owner/admin trial campaigns first.
 9. Activate one module education campaign, measure noise and activation lift, then expand.
