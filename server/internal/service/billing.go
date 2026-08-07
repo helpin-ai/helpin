@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -551,7 +552,35 @@ func (s *BillingService) ExpireOverdueTrials(ctx context.Context) (int64, error)
 	if s.repo == nil {
 		return 0, nil
 	}
-	return s.repo.ExpireOverdueTrials(ctx, s.now().UTC())
+	now := s.now().UTC()
+	workspaceIDs, err := s.repo.ListOverdueTrialWorkspaceIDs(ctx, now)
+	if err != nil {
+		return 0, err
+	}
+	if len(workspaceIDs) == 0 {
+		return 0, nil
+	}
+
+	expired, err := s.repo.ExpireOverdueTrials(ctx, now)
+	if err != nil {
+		return 0, err
+	}
+	for _, workspaceID := range workspaceIDs {
+		billing, getErr := s.repo.GetByWorkspaceID(ctx, workspaceID)
+		if getErr != nil {
+			slog.ErrorContext(ctx, "failed to load expired workspace billing for Customer.io", "error", getErr, "workspace_id", workspaceID)
+			continue
+		}
+		attributes := map[string]any{"expired_at": now}
+		if billing != nil {
+			attributes["plan"] = billing.Plan
+			if billing.TrialEndsAt != nil {
+				attributes["trial_ends_at"] = billing.TrialEndsAt
+			}
+		}
+		s.trackCustomerIOWorkspaceEvent(ctx, workspaceID, "trial_expired", now, attributes)
+	}
+	return expired, nil
 }
 
 func (s *BillingService) PreviewWorkspacePlanChange(ctx context.Context, input BillingPlanChangeRequest) (*BillingPlanChangePreview, error) {

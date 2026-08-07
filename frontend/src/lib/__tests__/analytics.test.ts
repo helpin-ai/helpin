@@ -282,11 +282,7 @@ describe('app analytics', () => {
       company: expect.objectContaining({ id: 'org-1', name: 'Acme Inc' }),
     }));
     expect(clients.customerio.identify).toHaveBeenCalledWith('user-1', expect.objectContaining({ email: 'waqar@example.com' }));
-    expect(clients.usermaven.group).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'ws-1',
-      name: 'Acme',
-      custom: expect.objectContaining({ organization_name: 'Acme Inc' }),
-    }));
+    expect(clients.usermaven.group).not.toHaveBeenCalled();
     expect(clients.customerio.group).toHaveBeenCalledWith('ws-1', expect.objectContaining({
       objectTypeId: '1',
       name: 'Acme',

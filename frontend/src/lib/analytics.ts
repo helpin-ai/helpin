@@ -393,12 +393,10 @@ export function identifyAnalyticsWorkspace(
   organizationOrOptions?: OrganizationWithRole | AnalyticsOptions | null,
   maybeOptions?: AnalyticsOptions,
 ) {
-  const { organization, options } = normalizeWorkspaceArgs(organizationOrOptions, maybeOptions);
+  const { options } = normalizeWorkspaceArgs(organizationOrOptions, maybeOptions);
   if (!workspace || !shouldEnableAppAnalytics(hostFor(options))) return;
-  const traits = buildAnalyticsWorkspaceTraits(workspace, access, organization);
   const customerIoTraits = buildCustomerIoWorkspaceTraits(workspace, access);
   const clients = clientsFor(options);
-  void clients.usermaven.group(traits);
   void clients.customerio.group(workspace.id, customerIoTraits);
 }
 
