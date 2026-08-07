@@ -2,7 +2,7 @@ import { memo, useEffect, type CSSProperties } from 'react'
 import { createFileRoute, Link, Navigate, Outlet, useLocation } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, CircleAlert } from 'lucide-react'
-import { useWorkspaceBySlug } from '@/hooks/queries/useWorkspaces'
+import { useWorkspaceBySlug, useWorkspaces } from '@/hooks/queries/useWorkspaces'
 import { useSession, useWorkspaceAccess } from '@/hooks/queries/useSession'
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
 import { useWorkspaceBilling } from '@/hooks/queries/useBilling'
@@ -25,7 +25,7 @@ import { queryKeys } from '@/lib/queryKeys'
 import { isWorkspaceSupportRoute } from '@/lib/workspaceRoutes'
 import { BILLING_CHOOSE_PLAN_SEARCH, BILLING_OVERVIEW_SEARCH } from '@/lib/billingNavigation'
 import { WORKSPACE_AUTH_VIEWPORT_CLASS_NAME } from '@/lib/authenticatedLayout'
-import { identifyAnalyticsOrganization, identifyAnalyticsWorkspace } from '@/lib/analytics'
+import { identifyAnalyticsOrganization, identifyAnalyticsWorkspace, trackWorkspaceActivationEvent } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
 import type { WorkspaceBillingSummary } from '@/lib/types'
 import { useAuthStore } from '@/stores/authStore'
@@ -53,6 +53,7 @@ function WorkspaceLayout() {
   const isOwner = access?.membership?.role === 'owner'
   const user = useAuthStore((s) => s.user)
   const currentOrganization = orgs?.find((org) => org.id === workspace?.organization_id) ?? null
+  const { data: organizationWorkspaces = [] } = useWorkspaces(currentOrganization?.id)
 
   // Selection stores (Zustand) — sync from query data
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
@@ -67,8 +68,31 @@ function WorkspaceLayout() {
   useEffect(() => {
     if (!workspace) return
     identifyAnalyticsWorkspace({ ...workspace, billing: billing ?? workspace.billing }, access, currentOrganization)
-    identifyAnalyticsOrganization(currentOrganization, user)
-  }, [access, billing, currentOrganization, user, workspace])
+    identifyAnalyticsOrganization(currentOrganization, user, undefined, organizationWorkspaces)
+  }, [access, billing, currentOrganization, organizationWorkspaces, user, workspace])
+
+  useEffect(() => {
+    if (!workspace || !access) return
+    const match = location.pathname.match(/\/(pm|docs|support|crm|automation)(?:\/|$)/)
+    const module = match?.[1]
+    if (!module) return
+
+    const storageKey = `helpin:module-viewed:${workspace.id}:${module}`
+    try {
+      if (sessionStorage.getItem(storageKey)) return
+      sessionStorage.setItem(storageKey, new Date().toISOString())
+    } catch {
+      // Analytics should remain best-effort when browser storage is unavailable.
+    }
+
+    trackWorkspaceActivationEvent(
+      'module_viewed',
+      { ...workspace, billing: billing ?? workspace.billing },
+      access,
+      currentOrganization,
+      { module, milestone: 'module_entry', path: location.pathname },
+    )
+  }, [access, billing, currentOrganization, location.pathname, workspace])
 
   // Sync organization selection
   useEffect(() => {

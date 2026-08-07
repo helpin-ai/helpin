@@ -168,6 +168,18 @@ func (r *BillingRepository) ExpireOverdueTrials(ctx context.Context, now time.Ti
 	return result.RowsAffected, nil
 }
 
+func (r *BillingRepository) ListOverdueTrialWorkspaceIDs(ctx context.Context, now time.Time) ([]string, error) {
+	var workspaceIDs []string
+	err := r.db.WithContext(ctx).
+		Model(&model.WorkspaceBilling{}).
+		Where("status = ? AND trial_ends_at IS NOT NULL AND trial_ends_at <= ? AND stripe_subscription_id IS NULL", model.BillingStatusTrialing, now).
+		Pluck("workspace_id", &workspaceIDs).Error
+	if err != nil {
+		return nil, fmt.Errorf("list overdue billing trial workspaces: %w", err)
+	}
+	return workspaceIDs, nil
+}
+
 type BillingConsumeResult struct {
 	Billing     *model.WorkspaceBilling
 	AlreadyUsed bool

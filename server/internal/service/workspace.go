@@ -222,7 +222,7 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 	s.logger.InfoContext(ctx, "workspace created", "workspace_id", ws.ID, "name", ws.Name, "slug", ws.Slug)
 	if s.customerIOIdentity != nil {
 		s.customerIOIdentity.SyncUserByID(ctx, ownerID)
-		s.customerIOIdentity.SyncWorkspace(ctx, ws.ID, ownerID)
+		s.customerIOIdentity.SyncWorkspace(ctx, ws.ID, "")
 	}
 
 	return &model.WorkspaceWithRole{
@@ -538,7 +538,13 @@ func (s *WorkspaceService) UpdateMember(ctx context.Context, workspaceID, actorI
 		}
 	}
 
-	return s.workspaceRepo.UpdateMemberRole(ctx, workspaceID, memberID, req.Role)
+	if err := s.workspaceRepo.UpdateMemberRole(ctx, workspaceID, memberID, req.Role); err != nil {
+		return err
+	}
+	if s.customerIOIdentity != nil {
+		s.customerIOIdentity.SyncWorkspace(ctx, workspaceID, "")
+	}
+	return nil
 }
 
 // UpdateSupportTaskPreferences updates support task preferences for the calling member.
@@ -600,5 +606,11 @@ func (s *WorkspaceService) RemoveMember(ctx context.Context, workspaceID, actorI
 	}
 
 	s.logger.InfoContext(ctx, "workspace member removed", "workspace_id", workspaceID, "actor_id", actorID, "member_id", memberID)
+	if s.customerIOIdentity != nil {
+		if targetMember.UserID != nil {
+			s.customerIOIdentity.DeleteWorkspaceRelationship(ctx, workspaceID, *targetMember.UserID)
+		}
+		s.customerIOIdentity.SyncWorkspace(ctx, workspaceID, "")
+	}
 	return nil
 }

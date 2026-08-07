@@ -91,6 +91,7 @@ describe('renderMarkdown', () => {
     expect(result).toBe('<p>How may we help you?</p><p>Which plan are you interested in?</p>');
   });
 
+
   it('renders headings downscaled to h3-h5', () => {
     const input = '# Heading 1\n## Heading 2\n### Heading 3';
     const result = renderMarkdown(input);

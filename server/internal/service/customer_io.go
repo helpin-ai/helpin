@@ -62,10 +62,21 @@ type CustomerIOOrganizationIdentity struct {
 	MonthlyDueCents    int
 }
 
+type CustomerIOEvent struct {
+	UserID     string
+	EventID    string
+	Name       string
+	OccurredAt time.Time
+	Attributes map[string]any
+}
+
 type customerIOEntityPayload struct {
 	Type             string                       `json:"type"`
 	Identifiers      map[string]string            `json:"identifiers"`
 	Action           string                       `json:"action"`
+	ID               string                       `json:"id,omitempty"`
+	Name             string                       `json:"name,omitempty"`
+	Timestamp        int64                        `json:"timestamp,omitempty"`
 	Attributes       map[string]any               `json:"attributes,omitempty"`
 	CIORelationships []customerIORelationshipBody `json:"cio_relationships,omitempty"`
 }
@@ -113,6 +124,44 @@ func (c *CustomerIOTrackClient) IdentifyUser(ctx context.Context, user *model.Us
 		Identifiers: map[string]string{"id": user.ID},
 		Action:      "identify",
 		Attributes:  customerIOUserAttributes(user),
+	}
+	return c.postEntity(ctx, payload)
+}
+
+func (c *CustomerIOTrackClient) TrackEvent(ctx context.Context, event CustomerIOEvent) error {
+	if !c.Enabled() || strings.TrimSpace(event.UserID) == "" || strings.TrimSpace(event.Name) == "" {
+		return nil
+	}
+	occurredAt := event.OccurredAt
+	if occurredAt.IsZero() {
+		occurredAt = time.Now().UTC()
+	}
+	payload := customerIOEntityPayload{
+		Type:        "person",
+		Identifiers: map[string]string{"id": event.UserID},
+		Action:      "event",
+		ID:          strings.TrimSpace(event.EventID),
+		Name:        strings.TrimSpace(event.Name),
+		Timestamp:   occurredAt.UTC().Unix(),
+		Attributes:  compactAttributes(event.Attributes),
+	}
+	return c.postEntity(ctx, payload)
+}
+
+func (c *CustomerIOTrackClient) DeletePersonRelationship(ctx context.Context, userID, objectTypeID, objectID string) error {
+	if !c.Enabled() || strings.TrimSpace(userID) == "" || strings.TrimSpace(objectTypeID) == "" || strings.TrimSpace(objectID) == "" {
+		return nil
+	}
+	payload := customerIOEntityPayload{
+		Type:        "person",
+		Identifiers: map[string]string{"id": userID},
+		Action:      "delete_relationships",
+		CIORelationships: []customerIORelationshipBody{{
+			Identifiers: map[string]string{
+				"object_type_id": objectTypeID,
+				"object_id":      objectID,
+			},
+		}},
 	}
 	return c.postEntity(ctx, payload)
 }
@@ -339,8 +388,94 @@ func (s *CustomerIOIdentityService) SyncUserByID(ctx context.Context, userID str
 	s.SyncUser(ctx, user)
 }
 
+func (s *CustomerIOIdentityService) TrackEvent(ctx context.Context, event CustomerIOEvent) {
+	if !s.Enabled() {
+		return
+	}
+	if err := s.client.TrackEvent(ctx, event); err != nil {
+		s.logger.ErrorContext(ctx, "failed to track customer.io event", "error", err, "event_name", event.Name, "user_id", event.UserID, "workspace_id", event.Attributes["workspace_id"])
+	}
+}
+
+// TrackWorkspaceEvent fans a workspace-scoped event out to its active members.
+// The recipient's workspace role is included in the event so Customer.io can
+// target owner/admin campaigns without relying on a global person role.
+func (s *CustomerIOIdentityService) TrackWorkspaceEvent(ctx context.Context, workspaceID, name string, occurredAt time.Time, attributes map[string]any) {
+	if !s.Enabled() || s.workspaceRepo == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(name) == "" {
+		return
+	}
+	workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil || workspace == nil {
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to load workspace for customer.io event", "error", err, "workspace_id", workspaceID)
+		}
+		return
+	}
+	members, err := s.workspaceRepo.ListMembers(ctx, workspaceID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to load workspace members for customer.io event", "error", err, "workspace_id", workspaceID)
+		return
+	}
+	if len(members) == 0 {
+		members = []model.MemberWithUser{{UserID: workspace.OwnerID, Role: model.RoleOwner}}
+	}
+	billing := s.workspaceBillingSummary(ctx, workspaceID)
+	base := cloneAnalyticsAttributes(attributes)
+	base["workspace_id"] = workspaceID
+	if workspace.OrganizationID != nil {
+		base["organization_id"] = *workspace.OrganizationID
+	}
+	if billing != nil {
+		base["plan"] = billing.Plan
+		base["billing_status"] = billing.Status
+		base["trialing"] = billing.Trialing
+		base["trial_ends_at"] = billing.TrialEndsAt
+	}
+	for _, member := range members {
+		props := cloneAnalyticsAttributes(base)
+		props["workspace_role"] = member.Role
+		props["membership_status"] = model.WorkspaceMemberStatusActive
+		s.TrackEvent(ctx, CustomerIOEvent{
+			UserID:     member.UserID,
+			Name:       name,
+			OccurredAt: occurredAt,
+			Attributes: props,
+		})
+	}
+}
+
+func (s *CustomerIOIdentityService) DeleteWorkspaceRelationship(ctx context.Context, workspaceID, userID string) {
+	if !s.Enabled() || s.client == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(userID) == "" {
+		return
+	}
+	if err := s.client.DeletePersonRelationship(ctx, userID, s.client.workspaceObjectTypeID, workspaceID); err != nil {
+		s.logger.ErrorContext(ctx, "failed to delete customer.io workspace relationship", "error", err, "workspace_id", workspaceID, "user_id", userID)
+	}
+}
+
+func (s *CustomerIOIdentityService) DeleteOrganizationRelationship(ctx context.Context, organizationID, userID string) {
+	if !s.Enabled() || s.client == nil || strings.TrimSpace(organizationID) == "" || strings.TrimSpace(userID) == "" {
+		return
+	}
+	if err := s.client.DeletePersonRelationship(ctx, userID, s.client.organizationObjectTypeID, organizationID); err != nil {
+		s.logger.ErrorContext(ctx, "failed to delete customer.io organization relationship", "error", err, "organization_id", organizationID, "user_id", userID)
+	}
+}
+
+func cloneAnalyticsAttributes(source map[string]any) map[string]any {
+	clone := make(map[string]any, len(source)+4)
+	for key, value := range source {
+		clone[key] = value
+	}
+	return clone
+}
+
 func (s *CustomerIOIdentityService) SyncWorkspace(ctx context.Context, workspaceID, relationshipUserID string) {
 	if !s.Enabled() || s.workspaceRepo == nil || strings.TrimSpace(workspaceID) == "" {
+		return
+	}
+	if strings.TrimSpace(relationshipUserID) == "" {
+		s.SyncWorkspaceMembers(ctx, workspaceID)
 		return
 	}
 	workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
@@ -351,24 +486,9 @@ func (s *CustomerIOIdentityService) SyncWorkspace(ctx context.Context, workspace
 	if workspace == nil {
 		return
 	}
-	var billingSummary *BillingSummary
-	if s.billingRepo != nil {
-		billing, err := s.billingRepo.GetByWorkspaceID(ctx, workspaceID)
-		if err != nil {
-			s.logger.ErrorContext(ctx, "failed to load billing for customer.io sync", "error", err, "workspace_id", workspaceID)
-		} else if billing != nil {
-			billingSummary = customerIOBillingSummary(ctx, billing, s.workspaceRepo)
-		}
-	}
+	billingSummary := s.workspaceBillingSummary(ctx, workspaceID)
 	role, status, teamMemberships := s.relationshipDetails(ctx, workspaceID, relationshipUserID)
-	if err := s.client.IdentifyWorkspace(ctx, CustomerIOWorkspaceIdentity{
-		Workspace:          workspace,
-		Billing:            billingSummary,
-		RelationshipUserID: relationshipUserID,
-		RelationshipRole:   role,
-		RelationshipStatus: status,
-		TeamMemberships:    teamMemberships,
-	}); err != nil {
+	if err := s.identifyWorkspaceRelationship(ctx, workspace, billingSummary, relationshipUserID, role, status, teamMemberships); err != nil {
 		s.logger.ErrorContext(ctx, "failed to sync customer.io workspace", "error", err, "workspace_id", workspaceID)
 	}
 	if workspace.OrganizationID != nil && strings.TrimSpace(*workspace.OrganizationID) != "" {
@@ -376,8 +496,71 @@ func (s *CustomerIOIdentityService) SyncWorkspace(ctx context.Context, workspace
 	}
 }
 
+// SyncWorkspaceMembers upserts a workspace object and every active member
+// relationship. It is used by authoritative backend flows so relationship
+// state does not depend on a user visiting the workspace in the browser.
+func (s *CustomerIOIdentityService) SyncWorkspaceMembers(ctx context.Context, workspaceID string) {
+	if !s.Enabled() || s.workspaceRepo == nil || strings.TrimSpace(workspaceID) == "" {
+		return
+	}
+	workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil || workspace == nil {
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to load workspace for customer.io member sync", "error", err, "workspace_id", workspaceID)
+		}
+		return
+	}
+	billingSummary := s.workspaceBillingSummary(ctx, workspaceID)
+	members, err := s.workspaceRepo.ListMembers(ctx, workspaceID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to load workspace members for customer.io sync", "error", err, "workspace_id", workspaceID)
+		return
+	}
+	if len(members) == 0 {
+		members = []model.MemberWithUser{{UserID: workspace.OwnerID, Role: model.RoleOwner}}
+	}
+	for _, member := range members {
+		if err := s.identifyWorkspaceRelationship(ctx, workspace, billingSummary, member.UserID, member.Role, model.WorkspaceMemberStatusActive, 0); err != nil {
+			s.logger.ErrorContext(ctx, "failed to sync customer.io workspace relationship", "error", err, "workspace_id", workspaceID, "user_id", member.UserID)
+		}
+	}
+	if workspace.OrganizationID != nil && strings.TrimSpace(*workspace.OrganizationID) != "" {
+		s.SyncOrganization(ctx, *workspace.OrganizationID, "")
+	}
+}
+
+func (s *CustomerIOIdentityService) workspaceBillingSummary(ctx context.Context, workspaceID string) *BillingSummary {
+	if s.billingRepo == nil {
+		return nil
+	}
+	billing, err := s.billingRepo.GetByWorkspaceID(ctx, workspaceID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to load billing for customer.io sync", "error", err, "workspace_id", workspaceID)
+		return nil
+	}
+	if billing == nil {
+		return nil
+	}
+	return customerIOBillingSummary(ctx, billing, s.workspaceRepo)
+}
+
+func (s *CustomerIOIdentityService) identifyWorkspaceRelationship(ctx context.Context, workspace *model.Workspace, billing *BillingSummary, userID, role, status string, teamMemberships int) error {
+	return s.client.IdentifyWorkspace(ctx, CustomerIOWorkspaceIdentity{
+		Workspace:          workspace,
+		Billing:            billing,
+		RelationshipUserID: userID,
+		RelationshipRole:   role,
+		RelationshipStatus: status,
+		TeamMemberships:    teamMemberships,
+	})
+}
+
 func (s *CustomerIOIdentityService) SyncOrganization(ctx context.Context, orgID, relationshipUserID string) {
 	if !s.Enabled() || s.orgRepo == nil || strings.TrimSpace(orgID) == "" {
+		return
+	}
+	if strings.TrimSpace(relationshipUserID) == "" {
+		s.SyncOrganizationMembers(ctx, orgID)
 		return
 	}
 	org, err := s.orgRepo.GetByID(ctx, orgID)
@@ -410,6 +593,48 @@ func (s *CustomerIOIdentityService) SyncOrganization(ctx context.Context, orgID,
 		MonthlyDueCents:    summary.MonthlyDueCents,
 	}); err != nil {
 		s.logger.ErrorContext(ctx, "failed to sync customer.io organization", "error", err, "organization_id", orgID)
+	}
+}
+
+// SyncOrganizationMembers upserts an organization object and every member
+// relationship, including each member's organization role.
+func (s *CustomerIOIdentityService) SyncOrganizationMembers(ctx context.Context, orgID string) {
+	if !s.Enabled() || s.orgRepo == nil || strings.TrimSpace(orgID) == "" {
+		return
+	}
+	org, err := s.orgRepo.GetByID(ctx, orgID)
+	if err != nil || org == nil {
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to load organization for customer.io member sync", "error", err, "organization_id", orgID)
+		}
+		return
+	}
+	summary := s.organizationSummary(ctx, orgID)
+	members, err := s.orgRepo.ListMembers(ctx, orgID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to load organization members for customer.io sync", "error", err, "organization_id", orgID)
+		return
+	}
+	if len(members) == 0 {
+		members = []model.MemberWithUser{{UserID: org.OwnerID, Role: model.RoleOwner}}
+	}
+	for _, member := range members {
+		if err := s.client.IdentifyOrganization(ctx, CustomerIOOrganizationIdentity{
+			Organization:       org,
+			RelationshipUserID: member.UserID,
+			RelationshipRole:   member.Role,
+			MemberCount:        summary.MemberCount,
+			WorkspaceCount:     summary.WorkspaceCount,
+			TrialingWorkspaces: summary.TrialingWorkspaces,
+			ActiveWorkspaces:   summary.ActiveWorkspaces,
+			LockedWorkspaces:   summary.LockedWorkspaces,
+			HighestPlan:        summary.HighestPlan,
+			HasTrialWorkspace:  summary.HasTrialWorkspace,
+			HasPaidWorkspace:   summary.HasPaidWorkspace,
+			MonthlyDueCents:    summary.MonthlyDueCents,
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to sync customer.io organization relationship", "error", err, "organization_id", orgID, "user_id", member.UserID)
+		}
 	}
 }
 

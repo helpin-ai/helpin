@@ -73,6 +73,7 @@ type DocsHandler struct {
 	translationSvc       *service.DocsHelpcenterTranslationService
 	searchSvc            *service.DocsSearchService
 	importService        *service.DocsImportService
+	imageEditSvc         *service.DocsImageEditService
 	embeddingSvc         *service.DocsEmbeddingService
 	embedResolverSvc     *service.DocsEmbedResolverService
 	entityRefResolverSvc *service.DocsEntityReferenceResolverService
@@ -144,6 +145,32 @@ func NewDocsHandler(
 		commentService:       commentService,
 		jwtManager:           jwtManager,
 	}
+}
+
+// SetImageEditService injects the reusable document image editing tool.
+func (h *DocsHandler) SetImageEditService(svc *service.DocsImageEditService) { h.imageEditSvc = svc }
+
+// EditImage handles POST /docs/documents/{docId}/images/edit.
+func (h *DocsHandler) EditImage(w http.ResponseWriter, r *http.Request) {
+	docID := chi.URLParam(r, "docId")
+	if _, ok := h.requireDocumentInWorkspace(w, r, docID); !ok {
+		return
+	}
+	var req model.EditDocsImageRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if h.imageEditSvc == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI image editing is not configured")
+		return
+	}
+	result, err := h.imageEditSvc.Edit(r.Context(), getWorkspaceID(r), middleware.GetUserID(r.Context()), docID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // SetSupportEventRecorder injects the event recorder for coverage telemetry.

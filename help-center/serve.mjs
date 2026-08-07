@@ -15,6 +15,7 @@ import {
   renderSitemapXml,
   resolvePublicUrlParts,
 } from './serverSeo.mjs'
+import { prefixAssetUrls } from './assetUrls.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLIENT_DIR = path.join(__dirname, 'dist', 'client')
@@ -37,24 +38,32 @@ const MIME_TYPES = {
   '.map': 'application/json',
 }
 
-function serveStaticFile(response, filePath) {
+function serveStaticFile(response, filePath, basepath = '') {
   const ext = path.extname(filePath)
   const contentType = MIME_TYPES[ext] || 'application/octet-stream'
   const stat = fs.statSync(filePath)
   response.statusCode = 200
   response.setHeader('Content-Type', contentType)
-  response.setHeader('Content-Length', stat.size)
   response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+
+  if (basepath && (ext === '.js' || ext === '.mjs' || ext === '.css')) {
+    const body = prefixAssetUrls(fs.readFileSync(filePath, 'utf8'), basepath)
+    response.setHeader('Content-Length', Buffer.byteLength(body))
+    response.end(body)
+    return
+  }
+
+  response.setHeader('Content-Length', stat.size)
   fs.createReadStream(filePath).pipe(response)
 }
 
-function tryServeStatic(url, response) {
+function tryServeStatic(url, response, basepath = '') {
   if (!url.pathname.startsWith('/assets/')) return false
   const safePath = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, '')
   const filePath = path.join(CLIENT_DIR, safePath)
   if (!filePath.startsWith(CLIENT_DIR)) return false
   if (!fs.existsSync(filePath)) return false
-  serveStaticFile(response, filePath)
+  serveStaticFile(response, filePath, basepath)
   return true
 }
 
@@ -523,11 +532,6 @@ function stripBasepath(pathname, basepath) {
   return pathname
 }
 
-function prefixAssetUrls(html, basepath) {
-  if (!basepath) return html
-  return html.replaceAll(/([("'=])\/assets\//g, `$1${basepath}/assets/`)
-}
-
 async function maybeResolvePublicRedirect(request, routeUrl, hcContext) {
   if (!shouldAttemptRedirectResolution(request.method, routeUrl.pathname)) {
     return null
@@ -613,7 +617,7 @@ async function handleRequest(request, response) {
       return
     }
 
-    if (tryServeStatic(routeUrl, response)) {
+    if (tryServeStatic(routeUrl, response, hcContext.basepath)) {
       return
     }
 

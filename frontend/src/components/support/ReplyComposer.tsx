@@ -58,6 +58,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { trackWorkspaceFirstValueOnce } from '@/lib/analytics';
 import { toast } from 'sonner';
 import type { AssignableMember } from '@/lib/types';
 import type { SupportAIRewriteOperation, SupportAttachmentPayload, SupportCannedResponse } from '@/lib/pmTypes';
@@ -1480,6 +1481,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
       ...(!isInternal && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
       ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
     });
+
+    if (!isInternal) {
+      trackWorkspaceFirstValueOnce(workspaceId, 'support', 'first_reply_sent', {
+        conversation_id: conversationId,
+      });
+    }
 
     // Clean up preview URLs
     pendingAttachments.forEach((a) => { if (a.previewUrl && a.previewObjectUrl) URL.revokeObjectURL(a.previewUrl); });

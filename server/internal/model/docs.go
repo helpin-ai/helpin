@@ -890,6 +890,18 @@ type ImportDocsExternalImageResponse struct {
 	URL string `json:"url"`
 }
 
+// EditDocsImageRequest describes an AI edit to a document image attachment.
+type EditDocsImageRequest struct {
+	SourceAttachmentID string `json:"source_attachment_id"`
+	Prompt             string `json:"prompt"`
+	AnnotationDataURL  string `json:"annotation_data_url,omitempty"`
+}
+
+// EditDocsImageResponse identifies the stored output image.
+type EditDocsImageResponse struct {
+	AttachmentID string `json:"attachment_id"`
+}
+
 // CreateDocsVersionRequest is the payload for manually creating a version snapshot.
 type CreateDocsVersionRequest struct {
 	SnapshotLabel *string `json:"snapshot_label"`

@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCreateDeal, usePipelines, useContacts } from '@/hooks/queries';
 import { entityCreatedToastIcons, showEntityCreatedToast } from '@/components/ui/entity-created-toast';
+import { trackWorkspaceFirstValueOnce } from '@/lib/analytics';
 
 interface CreateDealDialogProps {
   open: boolean;
@@ -69,6 +70,9 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
         currency,
         close_date: closeDate ? `${closeDate}T00:00:00Z` : undefined,
         probability: probability ? parseInt(probability) : undefined,
+      });
+      trackWorkspaceFirstValueOnce(wsId, 'crm', 'first_deal_created', {
+        deal_id: deal.id,
       });
       showEntityCreatedToast({
         entityLabel: 'Deal',

@@ -240,6 +240,7 @@ func (s *OrganizationService) RemoveMember(ctx context.Context, orgID, actorID, 
 		return err
 	}
 	if s.customerIOIdentity != nil {
+		s.customerIOIdentity.DeleteOrganizationRelationship(ctx, orgID, targetUserID)
 		s.customerIOIdentity.SyncOrganization(ctx, orgID, actorID)
 	}
 	return nil

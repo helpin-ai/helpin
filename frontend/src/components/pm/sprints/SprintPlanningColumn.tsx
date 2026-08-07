@@ -268,10 +268,9 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
             </div>
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
               <span>
-                {done}/{progress.committedTasks} tasks {progress.historical ? 'completed' : 'done'}
+                {done}/{progress.committedTasks} tasks done
                 {progress.historical && progress.rolledOverTasks > 0 ? ` · ${progress.rolledOverTasks} rolled over` : ''}
               </span>
-              <span>{progress.completedPoints}/{progress.committedPoints} pts {progress.historical ? 'completed' : ''}</span>
             </div>
           </div>
         </CardHeader>
