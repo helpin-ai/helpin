@@ -26,7 +26,7 @@ type docsMetadataCommandInput struct {
 func (s *InternalCommandService) registerDocsMetadataCommands() {
 	s.register(InternalCommandDefinition{
 		Name: "docs.update_document_metadata", Module: "docs", Mutating: true,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.update_document_metadata"), Execute: s.executeDocsUpdateDocumentMetadata,
 	})
 }
