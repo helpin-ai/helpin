@@ -314,6 +314,9 @@ export const docsService = {
   importExternalImage: (wsId: string, imageUrl: string) =>
     api.post<{ url: string }>(`/docs/images/import${qs(wsId)}`, { image_url: imageUrl }),
 
+  editImage: (wsId: string, docId: string, payload: { source_attachment_id: string; prompt: string; annotation_data_url?: string }) =>
+    api.post<{ attachment_id: string }>(`/docs/documents/${docId}/images/edit${qs(wsId)}`, payload),
+
   // ── Help Center Article ─────────────────────────────────────────────────
   submitArticleFeedback: (wsId: string, docId: string, payload: DocsArticleFeedbackRequest) =>
     api.post(`/docs/articles/${docId}/feedback${qs(wsId)}`, payload),

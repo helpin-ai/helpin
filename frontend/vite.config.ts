@@ -7,6 +7,9 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  const hmrHost = env.VITE_HMR_HOST?.trim()
+  const hmrClientPort = Number(env.VITE_HMR_CLIENT_PORT) || undefined
+
   return {
   plugins: [
     TanStackRouterVite({ autoCodeSplitting: true }),
@@ -30,7 +33,10 @@ export default defineConfig(({ mode }) => {
     headers: {
       'Cache-Control': 'no-store',
     },
-    allowedHosts: ["helpin-dev-fe.tryunhide.com", "dev-azhar.helpin.ai"],
+    allowedHosts: ["helpin-dev-fe.tryunhide.com", "dev-azhar.helpin.ai", "azhar.dev.helpin.ai"],
+    ...(hmrHost ? {
+      hmr: { host: hmrHost, protocol: "wss", clientPort: hmrClientPort ?? 443 },
+    } : {}),
   },
   resolve: {
     dedupe: ['react', 'react-dom', '@tanstack/react-query', 'zustand'],
