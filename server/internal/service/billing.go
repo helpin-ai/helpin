@@ -376,6 +376,9 @@ func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceI
 		return nil, err
 	}
 	s.syncCustomerIOWorkspace(ctx, workspaceID)
+	s.trackCustomerIOWorkspaceEvent(ctx, workspaceID, "trial_started", now, map[string]any{
+		"trial_ends_at": trialEnds,
+	})
 	return summary, nil
 }
 
@@ -963,6 +966,9 @@ func (s *BillingService) ApplyStripeInvoicePaymentFailed(ctx context.Context, ev
 		}
 	}
 	s.syncCustomerIOWorkspace(ctx, billing.WorkspaceID)
+	s.trackCustomerIOWorkspaceEvent(ctx, billing.WorkspaceID, "payment_failed", now, map[string]any{
+		"payment_failed_at": now,
+	})
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -1005,6 +1011,7 @@ func (s *BillingService) ApplyStripeInvoicePaymentSucceeded(ctx context.Context,
 		}
 	}
 	s.syncCustomerIOWorkspace(ctx, billing.WorkspaceID)
+	s.trackCustomerIOWorkspaceEvent(ctx, billing.WorkspaceID, "payment_succeeded", s.now().UTC(), nil)
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -1055,6 +1062,9 @@ func (s *BillingService) ApplyStripeTrialWillEnd(ctx context.Context, event Bill
 		}
 	}
 	s.syncCustomerIOWorkspace(ctx, billing.WorkspaceID)
+	s.trackCustomerIOWorkspaceEvent(ctx, billing.WorkspaceID, "trial_will_end", now, map[string]any{
+		"trial_ends_at": trialEnd,
+	})
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -1063,6 +1073,13 @@ func (s *BillingService) syncCustomerIOWorkspace(ctx context.Context, workspaceI
 		return
 	}
 	s.customerIO.SyncWorkspace(ctx, workspaceID, "")
+}
+
+func (s *BillingService) trackCustomerIOWorkspaceEvent(ctx context.Context, workspaceID, name string, occurredAt time.Time, attributes map[string]any) {
+	if s.customerIO == nil || strings.TrimSpace(workspaceID) == "" {
+		return
+	}
+	s.customerIO.TrackWorkspaceEvent(ctx, workspaceID, name, occurredAt, attributes)
 }
 
 func (s *BillingService) billingForStripeInvoiceEvent(ctx context.Context, event BillingStripeInvoiceEvent) (*model.WorkspaceBilling, error) {

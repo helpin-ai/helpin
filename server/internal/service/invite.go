@@ -27,6 +27,7 @@ type InviteService struct {
 	jwtManager       *auth.JWTManager
 	logger           *slog.Logger
 	billingService   *BillingService
+	customerIO       *CustomerIOIdentityService
 }
 
 // NewInviteService creates a new InviteService.
@@ -55,6 +56,10 @@ func NewInviteService(
 
 func (s *InviteService) SetBillingService(billingService *BillingService) {
 	s.billingService = billingService
+}
+
+func (s *InviteService) SetCustomerIOIdentityService(identity *CustomerIOIdentityService) {
+	s.customerIO = identity
 }
 
 func generateToken() (string, error) {
@@ -254,6 +259,10 @@ func (s *InviteService) AcceptInvitation(ctx context.Context, token, userID stri
 	if err := s.invitationRepo.UpdateStatus(ctx, inv.ID, "accepted", &now); err != nil {
 		return fmt.Errorf("update invitation status: %w", err)
 	}
+	if s.customerIO != nil {
+		s.customerIO.SyncUserByID(ctx, userID)
+		s.customerIO.SyncWorkspace(ctx, inv.WorkspaceID, "")
+	}
 
 	return nil
 }
@@ -333,6 +342,10 @@ func (s *InviteService) AcceptInvitationWithSignup(ctx context.Context, req mode
 	now := time.Now()
 	if err := s.invitationRepo.UpdateStatus(ctx, inv.ID, "accepted", &now); err != nil {
 		return nil, fmt.Errorf("update invitation status: %w", err)
+	}
+	if s.customerIO != nil {
+		s.customerIO.SyncUser(ctx, user)
+		s.customerIO.SyncWorkspace(ctx, inv.WorkspaceID, "")
 	}
 
 	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, false)
@@ -494,6 +507,9 @@ func (s *InviteService) RevokeInvitation(ctx context.Context, invitationID, user
 		}
 	}
 	s.cleanupInvitationPreassignments(ctx, invitationID)
+	if s.customerIO != nil {
+		s.customerIO.SyncWorkspace(ctx, inv.WorkspaceID, "")
+	}
 
 	s.logger.InfoContext(ctx, "invitation revoked",
 		"invitation_id", invitationID,
