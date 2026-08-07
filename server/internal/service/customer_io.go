@@ -420,11 +420,7 @@ func (s *CustomerIOIdentityService) TrackWorkspaceEvent(ctx context.Context, wor
 		members = []model.MemberWithUser{{UserID: workspace.OwnerID, Role: model.RoleOwner}}
 	}
 	billing := s.workspaceBillingSummary(ctx, workspaceID)
-	base := cloneAnalyticsAttributes(attributes)
-	base["workspace_id"] = workspaceID
-	if workspace.OrganizationID != nil {
-		base["organization_id"] = *workspace.OrganizationID
-	}
+	base := customerIOWorkspaceEventAttributes(attributes, workspace)
 	if billing != nil {
 		base["plan"] = billing.Plan
 		base["billing_status"] = billing.Status
@@ -442,6 +438,19 @@ func (s *CustomerIOIdentityService) TrackWorkspaceEvent(ctx context.Context, wor
 			Attributes: props,
 		})
 	}
+}
+
+func customerIOWorkspaceEventAttributes(attributes map[string]any, workspace *model.Workspace) map[string]any {
+	base := cloneAnalyticsAttributes(attributes)
+	if workspace == nil {
+		return base
+	}
+	base["workspace_id"] = workspace.ID
+	base["workspace_slug"] = workspace.Slug
+	if workspace.OrganizationID != nil {
+		base["organization_id"] = *workspace.OrganizationID
+	}
+	return base
 }
 
 func (s *CustomerIOIdentityService) DeleteWorkspaceRelationship(ctx context.Context, workspaceID, userID string) {
