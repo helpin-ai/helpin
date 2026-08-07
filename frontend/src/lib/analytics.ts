@@ -202,8 +202,8 @@ function normalizeWorkspaceArgs(
   return { organization: organizationOrOptions ?? undefined, options: maybeOptions };
 }
 
-export function buildAnalyticsOrganizationTraits(organization: OrganizationWithRole): AnalyticsTraits {
-  return {
+export function buildAnalyticsOrganizationTraits(organization: OrganizationWithRole, workspaces?: Workspace[]): AnalyticsTraits {
+  const traits: AnalyticsTraits = {
     id: organization.id,
     name: organization.name,
     created_at: organization.created_at,
@@ -214,9 +214,23 @@ export function buildAnalyticsOrganizationTraits(organization: OrganizationWithR
       has_logo: !!organization.logo_url,
     },
   };
+  if (workspaces) {
+    const paid = workspaces.filter((workspace) => workspace.billing?.status === 'active');
+    const trialing = workspaces.filter((workspace) => workspace.billing?.trialing);
+    traits.custom = {
+      ...(traits.custom as Record<string, unknown>),
+      workspace_count: workspaces.length,
+      paid_workspace_count: paid.length,
+      trialing_workspace_count: trialing.length,
+      organization_trialing: trialing.length > 0,
+      organization_plan_mix: [...new Set(workspaces.map((workspace) => getWorkspaceAnalyticsPlan(workspace)))],
+      aggregates_updated_at: new Date().toISOString(),
+    };
+  }
+  return traits;
 }
 
-export function buildAnalyticsUserTraits(user: User, organization?: OrganizationWithRole | null): AnalyticsTraits {
+export function buildAnalyticsUserTraits(user: User, organization?: OrganizationWithRole | null, workspaces?: Workspace[]): AnalyticsTraits {
   const { firstName, lastName } = splitFullName(user.full_name);
   const traits: AnalyticsTraits = {
     id: user.id,
@@ -241,7 +255,7 @@ export function buildAnalyticsUserTraits(user: User, organization?: Organization
     },
   };
   if (organization) {
-    traits.company = buildAnalyticsOrganizationTraits(organization);
+    traits.company = buildAnalyticsOrganizationTraits(organization, workspaces);
   }
   return traits;
 }
@@ -379,12 +393,10 @@ export function identifyAnalyticsWorkspace(
   organizationOrOptions?: OrganizationWithRole | AnalyticsOptions | null,
   maybeOptions?: AnalyticsOptions,
 ) {
-  const { organization, options } = normalizeWorkspaceArgs(organizationOrOptions, maybeOptions);
+  const { options } = normalizeWorkspaceArgs(organizationOrOptions, maybeOptions);
   if (!workspace || !shouldEnableAppAnalytics(hostFor(options))) return;
-  const traits = buildAnalyticsWorkspaceTraits(workspace, access, organization);
   const customerIoTraits = buildCustomerIoWorkspaceTraits(workspace, access);
   const clients = clientsFor(options);
-  void clients.usermaven.group(traits);
   void clients.customerio.group(workspace.id, customerIoTraits);
 }
 
@@ -392,11 +404,12 @@ export function identifyAnalyticsOrganization(
   organization: OrganizationWithRole | null | undefined,
   user?: User | null,
   options?: AnalyticsOptions,
+  workspaces?: Workspace[],
 ) {
   if (!organization || !shouldEnableAppAnalytics(hostFor(options))) return;
   const clients = clientsFor(options);
   if (user) {
-    void clients.usermaven.id(buildAnalyticsUserTraits(user, organization));
+    void clients.usermaven.id(buildAnalyticsUserTraits(user, organization, workspaces));
   }
   clients.usermaven.track('organization_identified', {
     organization_id: organization.id,
@@ -406,6 +419,9 @@ export function identifyAnalyticsOrganization(
     owner_user_id: organization.owner_id,
     user_id: user?.id,
     has_logo: !!organization.logo_url,
+    workspace_count: workspaces?.length,
+    paid_workspace_count: workspaces?.filter((workspace) => workspace.billing?.status === 'active').length,
+    trialing_workspace_count: workspaces?.filter((workspace) => workspace.billing?.trialing).length,
   });
 }
 
@@ -418,6 +434,69 @@ export function trackAnalyticsEvent(
   const clients = clientsFor(options);
   clients.usermaven.track(eventName, properties);
   void clients.customerio.track(eventName, properties);
+}
+
+export function buildAnalyticsWorkspaceEventProperties(
+  eventName: string,
+  workspace: Workspace,
+  access?: WorkspaceAccess | null,
+  organization?: OrganizationWithRole | null,
+  extra?: Record<string, unknown>,
+) {
+  return {
+    ...buildAnalyticsBillingEventProperties(eventName, workspace.id, workspace.billing, {
+      workspace_name: workspace.name,
+      workspace_slug: workspace.slug,
+      workspace_key: workspace.workspace_key,
+      organization_id: workspace.organization_id,
+      organization_name: organization?.name,
+      organization_slug: organization?.slug,
+      workspace_role: access?.membership?.role ?? workspace.role,
+      membership_status: access?.membership?.status,
+      enabled_modules: access?.modules ?? [],
+      module_count: access?.modules?.length ?? 0,
+      ...extra,
+    }),
+  };
+}
+
+export function trackWorkspaceActivationEvent(
+  eventName: string,
+  workspace: Workspace | null | undefined,
+  access?: WorkspaceAccess | null,
+  organization?: OrganizationWithRole | null,
+  extra?: Record<string, unknown>,
+  options?: AnalyticsOptions,
+) {
+  if (!workspace) return;
+  trackAnalyticsEvent(
+    eventName,
+    buildAnalyticsWorkspaceEventProperties(eventName, workspace, access, organization, extra),
+    options,
+  );
+}
+
+export function trackWorkspaceFirstValueOnce(
+  workspaceId: string,
+  module: string,
+  milestone: string,
+  properties?: Record<string, unknown>,
+  options?: AnalyticsOptions,
+) {
+  if (!workspaceId) return;
+  const storageKey = `helpin:activation:${workspaceId}:${module}:${milestone}`;
+  try {
+    if (localStorage.getItem(storageKey)) return;
+    localStorage.setItem(storageKey, new Date().toISOString());
+  } catch {
+    // Analytics remains best-effort when browser storage is unavailable.
+  }
+  trackAnalyticsEvent('module_first_value', {
+    workspace_id: workspaceId,
+    module,
+    milestone,
+    ...properties,
+  }, options);
 }
 
 export function trackWorkspaceBillingEvent(

@@ -75,6 +75,86 @@ func TestCustomerIOTrackClientIdentifiesPersonWithTrackAPIEntityShape(t *testing
 	}
 }
 
+func TestCustomerIOTrackClientTracksPersonEventWithWorkspaceContext(t *testing.T) {
+	var got map[string]any
+	httpClient := &http.Client{Transport: customerIORoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		return customerIOTestResponse(http.StatusOK), nil
+	})}
+
+	client := NewCustomerIOTrackClient(CustomerIOTrackConfig{
+		SiteID:     "site-id",
+		APIKey:     "api-key",
+		Region:     "us",
+		Endpoint:   "https://customer.test",
+		HTTPClient: httpClient,
+	})
+
+	eventAt := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	err := client.TrackEvent(context.Background(), CustomerIOEvent{
+		UserID:     "user-1",
+		EventID:    "event-1",
+		Name:       "module_first_value",
+		OccurredAt: eventAt,
+		Attributes: map[string]any{
+			"workspace_id":    "workspace-1",
+			"organization_id": "org-1",
+			"module":          "support",
+			"milestone":       "first_reply_sent",
+		},
+	})
+	if err != nil {
+		t.Fatalf("TrackEvent: %v", err)
+	}
+
+	if got["type"] != "person" || got["action"] != "event" {
+		t.Fatalf("unexpected envelope: %#v", got)
+	}
+	identifiers := got["identifiers"].(map[string]any)
+	if identifiers["id"] != "user-1" {
+		t.Fatalf("person id = %#v, want user-1", identifiers["id"])
+	}
+	if got["name"] != "module_first_value" || got["id"] != "event-1" {
+		t.Fatalf("unexpected event identity: %#v", got)
+	}
+	if got["timestamp"] != float64(eventAt.Unix()) {
+		t.Fatalf("timestamp = %#v, want %d", got["timestamp"], eventAt.Unix())
+	}
+	attrs := got["attributes"].(map[string]any)
+	if attrs["workspace_id"] != "workspace-1" || attrs["module"] != "support" {
+		t.Fatalf("unexpected event attributes: %#v", attrs)
+	}
+}
+
+func TestCustomerIOTrackClientDeletesPersonRelationship(t *testing.T) {
+	var got map[string]any
+	httpClient := &http.Client{Transport: customerIORoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		return customerIOTestResponse(http.StatusOK), nil
+	})}
+	client := NewCustomerIOTrackClient(CustomerIOTrackConfig{SiteID: "site-id", APIKey: "api-key", Endpoint: "https://customer.test", HTTPClient: httpClient})
+	if err := client.DeletePersonRelationship(context.Background(), "user-1", "1", "workspace-1"); err != nil {
+		t.Fatalf("DeletePersonRelationship: %v", err)
+	}
+	if got["type"] != "person" || got["action"] != "delete_relationships" {
+		t.Fatalf("unexpected envelope: %#v", got)
+	}
+	identifiers := got["identifiers"].(map[string]any)
+	if identifiers["id"] != "user-1" {
+		t.Fatalf("person id = %#v, want user-1", identifiers["id"])
+	}
+	relationships := got["cio_relationships"].([]any)
+	relationship := relationships[0].(map[string]any)
+	object := relationship["identifiers"].(map[string]any)
+	if object["object_type_id"] != "1" || object["object_id"] != "workspace-1" {
+		t.Fatalf("unexpected relationship identifiers: %#v", object)
+	}
+}
+
 func TestCustomerIOTrackClientIdentifiesWorkspaceObjectWithRelationship(t *testing.T) {
 	var got map[string]any
 	httpClient := &http.Client{Transport: customerIORoundTripFunc(func(r *http.Request) (*http.Response, error) {

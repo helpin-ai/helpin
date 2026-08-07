@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -376,6 +377,9 @@ func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceI
 		return nil, err
 	}
 	s.syncCustomerIOWorkspace(ctx, workspaceID)
+	s.trackCustomerIOWorkspaceEvent(ctx, workspaceID, "trial_started", now, map[string]any{
+		"trial_ends_at": trialEnds,
+	})
 	return summary, nil
 }
 
@@ -548,7 +552,35 @@ func (s *BillingService) ExpireOverdueTrials(ctx context.Context) (int64, error)
 	if s.repo == nil {
 		return 0, nil
 	}
-	return s.repo.ExpireOverdueTrials(ctx, s.now().UTC())
+	now := s.now().UTC()
+	workspaceIDs, err := s.repo.ListOverdueTrialWorkspaceIDs(ctx, now)
+	if err != nil {
+		return 0, err
+	}
+	if len(workspaceIDs) == 0 {
+		return 0, nil
+	}
+
+	expired, err := s.repo.ExpireOverdueTrials(ctx, now)
+	if err != nil {
+		return 0, err
+	}
+	for _, workspaceID := range workspaceIDs {
+		billing, getErr := s.repo.GetByWorkspaceID(ctx, workspaceID)
+		if getErr != nil {
+			slog.ErrorContext(ctx, "failed to load expired workspace billing for Customer.io", "error", getErr, "workspace_id", workspaceID)
+			continue
+		}
+		attributes := map[string]any{"expired_at": now}
+		if billing != nil {
+			attributes["plan"] = billing.Plan
+			if billing.TrialEndsAt != nil {
+				attributes["trial_ends_at"] = billing.TrialEndsAt
+			}
+		}
+		s.trackCustomerIOWorkspaceEvent(ctx, workspaceID, "trial_expired", now, attributes)
+	}
+	return expired, nil
 }
 
 func (s *BillingService) PreviewWorkspacePlanChange(ctx context.Context, input BillingPlanChangeRequest) (*BillingPlanChangePreview, error) {
@@ -963,6 +995,9 @@ func (s *BillingService) ApplyStripeInvoicePaymentFailed(ctx context.Context, ev
 		}
 	}
 	s.syncCustomerIOWorkspace(ctx, billing.WorkspaceID)
+	s.trackCustomerIOWorkspaceEvent(ctx, billing.WorkspaceID, "payment_failed", now, map[string]any{
+		"payment_failed_at": now,
+	})
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -1005,6 +1040,7 @@ func (s *BillingService) ApplyStripeInvoicePaymentSucceeded(ctx context.Context,
 		}
 	}
 	s.syncCustomerIOWorkspace(ctx, billing.WorkspaceID)
+	s.trackCustomerIOWorkspaceEvent(ctx, billing.WorkspaceID, "payment_succeeded", s.now().UTC(), nil)
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -1055,6 +1091,9 @@ func (s *BillingService) ApplyStripeTrialWillEnd(ctx context.Context, event Bill
 		}
 	}
 	s.syncCustomerIOWorkspace(ctx, billing.WorkspaceID)
+	s.trackCustomerIOWorkspaceEvent(ctx, billing.WorkspaceID, "trial_will_end", now, map[string]any{
+		"trial_ends_at": trialEnd,
+	})
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -1063,6 +1102,13 @@ func (s *BillingService) syncCustomerIOWorkspace(ctx context.Context, workspaceI
 		return
 	}
 	s.customerIO.SyncWorkspace(ctx, workspaceID, "")
+}
+
+func (s *BillingService) trackCustomerIOWorkspaceEvent(ctx context.Context, workspaceID, name string, occurredAt time.Time, attributes map[string]any) {
+	if s.customerIO == nil || strings.TrimSpace(workspaceID) == "" {
+		return
+	}
+	s.customerIO.TrackWorkspaceEvent(ctx, workspaceID, name, occurredAt, attributes)
 }
 
 func (s *BillingService) billingForStripeInvoiceEvent(ctx context.Context, event BillingStripeInvoiceEvent) (*model.WorkspaceBilling, error) {

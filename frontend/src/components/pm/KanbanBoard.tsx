@@ -42,6 +42,7 @@ import { BoardDisplayMenu } from './BoardDisplayMenu';
 import { ListDisplayMenu } from './ListDisplayMenu';
 import { BoardToolbarSlot } from './BoardToolbarSlot';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
+import { trackWorkspaceFirstValueOnce } from '@/lib/analytics';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { createPMDnDTraceID } from '@/lib/pmDnDDebug';
 import { DragPreviewManager, PM_BOARD_DRAG_ACTIVATION_DISTANCE, PM_BOARD_DRAG_OVER_THROTTLE_MS, useActiveTask, useColumnDragPreview, useColumnDropPlaceholderIndex, useDropPlaceholderHeight, commitDropBeforeClearingPreview, getBaseDragSourceColumnId, getDragStartTaskRect, getPMBoardScrollContainerClassName, getStateColumnTaskGroupsForRender, getTaskDropPlaceholderId, getTaskDropPlaceholderPreview, hasDragPreviewChanged, resolveBoardDropTarget } from './KanbanBoard.dnd';
@@ -1155,6 +1156,11 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
   const handleCreate = useCallback(
     async (payload: CreateTaskRequest) => {
       const task = await createTask(payload);
+      if (task) {
+        trackWorkspaceFirstValueOnce(workspaceId, 'pm', 'first_task_created', {
+          task_id: task.id,
+        });
+      }
       return task
         ? {
             id: task.id,

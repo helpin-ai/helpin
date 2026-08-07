@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { CollectionTreePicker } from '@/components/docs/CollectionTreePicker'
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog'
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired'
+import { trackWorkspaceFirstValueOnce } from '@/lib/analytics'
 
 interface CreateDocumentDialogProps {
   wsId: string
@@ -88,6 +89,9 @@ export function CreateDocumentDialog({
         title: title.trim(),
         space_id: spaceId,
         collection_id: collectionId || undefined,
+      })
+      trackWorkspaceFirstValueOnce(wsId, 'docs', 'first_document_created', {
+        document_id: doc.id,
       })
       toast.success('Document created')
       reset()

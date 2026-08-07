@@ -1414,6 +1414,7 @@ func main() {
 	}
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, appEmailClient, cfg.AppBaseURL, jwtManager)
 	inviteService.SetBillingService(billingService)
+	inviteService.SetCustomerIOIdentityService(customerIOIdentityService)
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
