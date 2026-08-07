@@ -75,6 +75,23 @@ func TestCustomerIOTrackClientIdentifiesPersonWithTrackAPIEntityShape(t *testing
 	}
 }
 
+func TestCustomerIOWorkspaceEventAttributesIncludeSlug(t *testing.T) {
+	got := customerIOWorkspaceEventAttributes(
+		map[string]any{"source": "backend"},
+		&model.Workspace{ID: "workspace-1", Slug: "acme-team"},
+	)
+
+	if got["workspace_id"] != "workspace-1" {
+		t.Fatalf("workspace_id = %#v, want workspace-1", got["workspace_id"])
+	}
+	if got["workspace_slug"] != "acme-team" {
+		t.Fatalf("workspace_slug = %#v, want acme-team", got["workspace_slug"])
+	}
+	if got["source"] != "backend" {
+		t.Fatalf("existing attributes changed: %#v", got)
+	}
+}
+
 func TestCustomerIOTrackClientTracksPersonEventWithWorkspaceContext(t *testing.T) {
 	var got map[string]any
 	httpClient := &http.Client{Transport: customerIORoundTripFunc(func(r *http.Request) (*http.Response, error) {
