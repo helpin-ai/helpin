@@ -16,6 +16,7 @@ import {
   resetAnalytics,
   shouldEnableAppAnalytics,
   trackAnalyticsEvent,
+  trackWorkspaceActivationEvent,
   type AnalyticsClients,
 } from '../analytics';
 
@@ -196,6 +197,21 @@ describe('app analytics', () => {
     });
   });
 
+  it('adds organization workspace billing aggregates without flattening them onto the user', () => {
+    const traits = buildAnalyticsOrganizationTraits(baseOrganization, [
+      baseWorkspace,
+      { ...baseWorkspace, id: 'ws-2', billing: { ...baseWorkspace.billing!, status: 'active', trialing: false } },
+    ]);
+
+    expect(traits.custom).toMatchObject({
+      workspace_count: 2,
+      paid_workspace_count: 1,
+      trialing_workspace_count: 1,
+      organization_trialing: true,
+      organization_plan_mix: ['growth'],
+    });
+  });
+
   it('builds workspace/company traits with billing and relationship context', () => {
     expect(buildAnalyticsWorkspaceTraits(baseWorkspace, baseAccess, baseOrganization)).toMatchObject({
       id: 'ws-1',
@@ -315,5 +331,33 @@ describe('app analytics', () => {
     expect(clients.customerio.track).toHaveBeenCalledWith('workspace_created', { workspace_id: 'ws-1' });
     expect(clients.usermaven.reset).toHaveBeenCalled();
     expect(clients.customerio.reset).toHaveBeenCalled();
+  });
+
+  it('tracks activation events with workspace and membership context', () => {
+    const clients = makeClients();
+
+    trackWorkspaceActivationEvent(
+      'module_first_value',
+      baseWorkspace,
+      baseAccess,
+      baseOrganization,
+      { module: 'support', milestone: 'first_reply_sent' },
+      { hostname: 'app.helpin.ai', clients },
+    );
+
+    expect(clients.usermaven.track).toHaveBeenCalledWith('module_first_value', expect.objectContaining({
+      workspace_id: 'ws-1',
+      organization_id: 'org-1',
+      workspace_role: 'owner',
+      module: 'support',
+      milestone: 'first_reply_sent',
+    }));
+    expect(clients.customerio.track).toHaveBeenCalledWith('module_first_value', expect.objectContaining({
+      workspace_id: 'ws-1',
+      organization_id: 'org-1',
+      workspace_role: 'owner',
+      module: 'support',
+      milestone: 'first_reply_sent',
+    }));
   });
 });
