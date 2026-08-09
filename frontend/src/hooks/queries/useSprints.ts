@@ -93,6 +93,25 @@ export function useInfiniteSprintPreviewTasks(
   })
 }
 
+export function useInfiniteSprintBacklogTasks(
+  wsId: string,
+  teamId: string | undefined,
+  perPage = 50,
+) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.pm.sprintBacklogTasks(wsId, teamId),
+    queryFn: async ({ pageParam }) => unwrap(await pmSprintService.listBacklogTasks(wsId, {
+      team_id: teamId,
+      page: pageParam as number,
+      per_page: perPage,
+    })),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage.page < lastPage.total_pages ? lastPage.page + 1 : undefined,
+    enabled: !!wsId,
+    staleTime: 30_000,
+  })
+}
+
 export function useCreateSprint(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
@@ -126,6 +145,7 @@ export function useDeleteSprint(wsId: string) {
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprints(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprintCloseouts(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintBacklogTasksRoot(wsId) })
     },
   })
 }

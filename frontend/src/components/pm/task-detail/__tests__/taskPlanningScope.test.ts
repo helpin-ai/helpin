@@ -26,6 +26,23 @@ const sprints: SprintWithStats[] = [
   },
   {
     sprint: {
+      id: 'sprint-completed',
+      workspace_id: 'ws-1',
+      name: 'Completed Sprint',
+      goal: '',
+      status: 'done',
+      start_date: '2026-03-01T00:00:00Z',
+      end_date: '2026-03-15T00:00:00Z',
+      team_id: 'team-a',
+      archived: false,
+      created_at: '2026-03-01T00:00:00Z',
+      updated_at: '2026-03-15T00:00:00Z',
+    },
+    labels: [],
+    stats: { task_count: 1, done_task_count: 1, total_points: 3, done_points: 3 },
+  },
+  {
+    sprint: {
       id: 'sprint-team-b',
       workspace_id: 'ws-1',
       name: 'Team B Sprint',
@@ -104,5 +121,10 @@ describe('task planning scope', () => {
         listTeamId: null,
       }).map((entry) => entry.sprint.id),
     ).toEqual(['sprint-workspace']);
+  });
+
+  it('hides completed sprints unless they are already assigned to the task', () => {
+    expect(getVisibleSprintsForTaskScope(sprints, { listTeamId: 'team-a' }).map((entry) => entry.sprint.id)).not.toContain('sprint-completed');
+    expect(getVisibleSprintsForTaskScope(sprints, { listTeamId: 'team-a', currentSprintId: 'sprint-completed' }).map((entry) => entry.sprint.id)).toContain('sprint-completed');
   });
 });

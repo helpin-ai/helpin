@@ -27,6 +27,7 @@ func seedSprintTaskLinkFixture(t *testing.T, db *gorm.DB, workspaceID string) {
 	}{{"sprint-link-target", "Target sprint", stringPtr("team-sprint-link-a")}, {"sprint-link-old", "Old sprint", stringPtr("team-sprint-link-a")}, {"sprint-link-no-team", "Legacy sprint", nil}} {
 		mustExec(t, db, `INSERT INTO pm_sprints (id, workspace_id, name, start_date, end_date, team_id, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, sprint.id, workspaceID, sprint.name, now, now.AddDate(0, 0, 14), sprint.teamID, false, now, now)
 	}
+	mustExec(t, db, `INSERT INTO pm_sprints (id, workspace_id, name, start_date, end_date, team_id, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "sprint-link-completed", workspaceID, "Completed sprint", now.AddDate(0, 0, -14), now.AddDate(0, 0, -7), "team-sprint-link-a", false, now, now)
 	seedPMCommandTask(t, db, "task-sprint-link-backlog", workspaceID, "team-sprint-link-a", "wf-sprint-link-a", "state-sprint-link-a", "", "", 201)
 	seedPMCommandTask(t, db, "task-sprint-link-move", workspaceID, "team-sprint-link-a", "wf-sprint-link-a", "state-sprint-link-a", "", "sprint-link-old", 202)
 	seedPMCommandTask(t, db, "task-sprint-link-other-team", workspaceID, "team-sprint-link-b", "wf-sprint-link-b", "state-sprint-link-b", "", "", 203)
@@ -80,6 +81,16 @@ func TestPMSprintServiceLinkTasksRejectsSprintWithoutTeam(t *testing.T) {
 	_, err := svc.LinkTasks(context.Background(), workspaceID, "sprint-link-no-team", []string{"task-sprint-link-backlog"}, "actor-1")
 	if err == nil || !strings.Contains(err.Error(), "assign the sprint to a team") {
 		t.Fatalf("error = %v, want team assignment guidance", err)
+	}
+}
+
+func TestPMSprintServiceLinkTasksRejectsCompletedSprint(t *testing.T) {
+	svc, db, workspaceID := newSprintTestEnvWithDB(t)
+	seedSprintTaskLinkFixture(t, db, workspaceID)
+
+	_, err := svc.LinkTasks(context.Background(), workspaceID, "sprint-link-completed", []string{"task-sprint-link-backlog"}, "actor-1")
+	if err == nil || !strings.Contains(err.Error(), "completed sprints") {
+		t.Fatalf("error = %v, want completed-sprint validation", err)
 	}
 }
 
