@@ -235,6 +235,22 @@ export function getTaskAgentRunPickerLabel(_args: {
   return 'Agent';
 }
 
+export function getTaskAgentRunSelectedAgentId<TAgent extends Pick<Agent, 'id'>>({
+  selectedAgentId,
+  agents,
+  suggestedAgent,
+  selectionLocked,
+}: {
+  selectedAgentId: string;
+  agents: TAgent[];
+  suggestedAgent: TAgent | null | undefined;
+  selectionLocked: boolean;
+}) {
+  if (!suggestedAgent) return '';
+  const selectedAgentExists = selectedAgentId && agents.some((agent) => agent.id === selectedAgentId);
+  return !selectedAgentExists || selectionLocked ? suggestedAgent.id : selectedAgentId;
+}
+
 export function getTaskAgentRunExecutionContextLockReason({
   activeRun,
   activeRunAgentName,
@@ -397,19 +413,14 @@ export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentI
   const latestRun = runs[0];
   const latestRunBlocksSelection = Boolean(latestRun && ACTIVE_RUN_STATUSES.has(latestRun.status));
   useEffect(() => {
-    if (!suggestedAgent) {
-      if (selectedAgentId) setSelectedAgentId('');
-      return;
-    }
-    const selectedAgentExists = selectedAgentId && taskRunnableAgents.some((agent) => agent.id === selectedAgentId);
-    if (
-      !selectedAgentExists ||
-      latestRunBlocksSelection ||
-      (latestRun?.status === 'completed' && selectedAgentId === latestRun.agent_id)
-    ) {
-      setSelectedAgentId(suggestedAgent.id);
-    }
-  }, [latestRun?.agent_id, latestRun?.status, latestRunBlocksSelection, selectedAgentId, suggestedAgent, taskRunnableAgents]);
+    const nextAgentId = getTaskAgentRunSelectedAgentId({
+      selectedAgentId,
+      agents: taskRunnableAgents,
+      suggestedAgent,
+      selectionLocked: latestRunBlocksSelection,
+    });
+    if (nextAgentId !== selectedAgentId) setSelectedAgentId(nextAgentId);
+  }, [latestRunBlocksSelection, selectedAgentId, suggestedAgent, taskRunnableAgents]);
   const selectedAgent = useMemo(
     () => agents.find((agent) => agent.id === selectedAgentId) ?? suggestedAgent,
     [agents, suggestedAgent, selectedAgentId],
