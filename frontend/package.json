@@ -11,7 +11,7 @@
     "build": "NODE_OPTIONS=--max-old-space-size=4096 tsc -b && NODE_OPTIONS=--max-old-space-size=4096 vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "NODE_OPTIONS=--max-old-space-size=4096 vitest run",
     "test:watch": "vitest",
     "test:e2e:support": "playwright test --config=./playwright.support.config.ts --project=chromium",
     "test:e2e:support:install": "playwright install chromium",
