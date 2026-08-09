@@ -37,6 +37,12 @@ const (
 	AgentRunTriggerTypeCommandBar = "command_bar"
 )
 
+// Native SDK tool-step limits mirror the bounds enforced by Agent Runtime.
+const (
+	MinNativeToolSteps = 1
+	MaxNativeToolSteps = 1000
+)
+
 // Agent represents an LLM agent in a workspace.
 type Agent struct {
 	ID                         string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -809,6 +815,7 @@ type AgentModelProviderOption struct {
 type AgentExecutionConfig struct {
 	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
 	ServiceTier     *string `json:"service_tier,omitempty"`
+	MaxToolSteps    *int    `json:"max_tool_steps,omitempty"`
 }
 
 type AgentSkillRef struct {
@@ -1000,7 +1007,7 @@ func (c AgentExecutionConfig) Normalize() AgentExecutionConfig {
 
 func (c AgentExecutionConfig) IsZero() bool {
 	normalized := c.Normalize()
-	return normalized.ReasoningEffort == nil && normalized.ServiceTier == nil
+	return normalized.ReasoningEffort == nil && normalized.ServiceTier == nil && normalized.MaxToolSteps == nil
 }
 
 func ParseAgentExecutionConfig(raw []byte) (AgentExecutionConfig, error) {

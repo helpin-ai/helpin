@@ -842,6 +842,68 @@ func TestValidateModelRoutingAllowsCodexReasoningConfig(t *testing.T) {
 	}
 }
 
+func TestParseAndValidateExecutionConfigAllowsNativeToolStepLimit(t *testing.T) {
+	agent := &model.Agent{
+		RuntimeKind:     "native_sdk",
+		ExecutionConfig: model.JSONBlob(`{"max_tool_steps":640}`),
+	}
+
+	config, err := parseAndValidateExecutionConfig(agent)
+	if err != nil {
+		t.Fatalf("expected native tool step limit to validate, got %v", err)
+	}
+	if config.MaxToolSteps == nil || *config.MaxToolSteps != 640 {
+		t.Fatalf("MaxToolSteps = %#v, want 640", config.MaxToolSteps)
+	}
+	if got := strings.TrimSpace(string(model.MarshalAgentExecutionConfig(config))); got != `{"max_tool_steps":640}` {
+		t.Fatalf("normalized execution config = %s, want max_tool_steps", got)
+	}
+}
+
+func TestParseAndValidateExecutionConfigRejectsInvalidNativeToolStepLimit(t *testing.T) {
+	tests := []struct {
+		name        string
+		runtimeKind string
+		config      model.JSONBlob
+		wantError   string
+	}{
+		{
+			name:        "zero",
+			runtimeKind: "native_sdk",
+			config:      model.JSONBlob(`{"max_tool_steps":0}`),
+			wantError:   "must be between 1 and 1000",
+		},
+		{
+			name:        "above maximum",
+			runtimeKind: "native_sdk",
+			config:      model.JSONBlob(`{"max_tool_steps":1001}`),
+			wantError:   "must be between 1 and 1000",
+		},
+		{
+			name:        "codex runtime",
+			runtimeKind: "codex",
+			config:      model.JSONBlob(`{"max_tool_steps":500}`),
+			wantError:   "only supported for runtime_kind native_sdk",
+		},
+		{
+			name:        "native model control",
+			runtimeKind: "native_sdk",
+			config:      model.JSONBlob(`{"reasoning_effort":"high"}`),
+			wantError:   "model controls are only supported for runtime_kind codex",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := &model.Agent{RuntimeKind: tt.runtimeKind, ExecutionConfig: tt.config}
+			_, err := parseAndValidateExecutionConfig(agent)
+			if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("parseAndValidateExecutionConfig() error = %v, want containing %q", err, tt.wantError)
+			}
+		})
+	}
+}
+
 func TestValidateRuntimeForAgentAllowsReviewAgentCodexPreset(t *testing.T) {
 	openAI := model.AgentModelProviderOpenAI
 	agent := &model.Agent{

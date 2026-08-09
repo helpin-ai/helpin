@@ -19,16 +19,27 @@ type Publisher struct {
 	hub   *Hub
 	relay *RedisRelay // nil when running in local-only mode
 	js    nats.JetStreamContext
+	queue chan Event
 }
+
+// Keep publication asynchronous without launching one goroutine per event.
+// A single dispatcher preserves the order in which a publisher accepts events;
+// the bounded buffer applies backpressure instead of silently dropping stream
+// deltas when a downstream transport is slow.
+const publisherQueueSize = 4096
 
 // NewPublisher creates a new publisher. relay may be nil for local-only mode.
 func NewPublisher(hub *Hub, relay *RedisRelay) *Publisher {
-	return &Publisher{hub: hub, relay: relay}
+	p := &Publisher{hub: hub, relay: relay, queue: make(chan Event, publisherQueueSize)}
+	go p.run()
+	return p
 }
 
 // NewJetStreamPublisher creates a new JetStream-backed publisher for cross-process events.
 func NewJetStreamPublisher(js nats.JetStreamContext) *Publisher {
-	return &Publisher{js: js}
+	p := &Publisher{js: js, queue: make(chan Event, publisherQueueSize)}
+	go p.run()
+	return p
 }
 
 // Publish broadcasts an event asynchronously. Safe to call on a nil receiver.
@@ -44,16 +55,39 @@ func (p *Publisher) Publish(event Event) {
 			"entity", event.Entity, "action", event.Action, "entity_id", event.EntityID)
 	}
 
+	// Publishers are constructed with a queue. Retain a synchronous fallback
+	// for zero-value publishers used by small tests or integrations so Publish
+	// remains nil-safe and backwards compatible.
+	if p.queue == nil {
+		p.deliver(event)
+		return
+	}
+	p.queue <- event
+}
+
+func (p *Publisher) run() {
+	for event := range p.queue {
+		p.deliver(event)
+	}
+}
+
+func (p *Publisher) deliver(event Event) {
 	if p.hub != nil {
-		go p.hub.Broadcast(event)
+		p.hub.Broadcast(event)
 	}
 
 	if p.relay != nil {
-		go p.relay.Publish(context.Background(), event)
+		if err := p.relay.Publish(context.Background(), event); err != nil {
+			slog.Error("redis websocket event publish failed",
+				"entity", event.Entity,
+				"workspace_id", event.WorkspaceID,
+				"error", err,
+			)
+		}
 	}
 
 	if p.js != nil {
-		go p.publishJetStream(event)
+		p.publishJetStream(event)
 	}
 }
 

@@ -41,6 +41,7 @@ export type AgentServiceTier = 'fast' | 'flex';
 export interface AgentExecutionConfig {
   reasoning_effort?: AgentReasoningEffort;
   service_tier?: AgentServiceTier;
+  max_tool_steps?: number;
 }
 
 export interface Agent {

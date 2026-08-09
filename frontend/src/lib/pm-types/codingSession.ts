@@ -146,6 +146,10 @@ export interface CodingSessionActor {
   email: string;
   full_name: string;
   avatar_url?: string;
+  avatar_style?: string;
+  avatar_seed?: string;
+  avatar_background_mode?: string;
+  avatar_background_color?: string;
 }
 
 export interface CodingSessionEvent {

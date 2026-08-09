@@ -313,10 +313,14 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		}
 		if user != nil {
 			triggeredBy = &model.CodingSessionActor{
-				ID:        user.ID,
-				Email:     user.Email,
-				FullName:  user.FullName,
-				AvatarURL: user.AvatarURL,
+				ID:                    user.ID,
+				Email:                 user.Email,
+				FullName:              user.FullName,
+				AvatarURL:             user.AvatarURL,
+				AvatarStyle:           user.AvatarStyle,
+				AvatarSeed:            user.AvatarSeed,
+				AvatarBackgroundMode:  user.AvatarBackgroundMode,
+				AvatarBackgroundColor: user.AvatarBackgroundColor,
 			}
 		}
 	}

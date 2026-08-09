@@ -267,6 +267,10 @@ export function CodingTranscriptPane({
         email: member.email,
         full_name: member.full_name,
         avatar_url: member.avatar_url,
+        avatar_style: member.avatar_style,
+        avatar_seed: member.avatar_seed,
+        avatar_background_mode: member.avatar_background_mode,
+        avatar_background_color: member.avatar_background_color,
       });
     }
     return map;
@@ -281,7 +285,8 @@ export function CodingTranscriptPane({
         const resolver = memberActorByUserId.get(message.resolver_user_id);
         if (resolver) return resolver;
       }
-      return triggeredBy;
+      if (!triggeredBy) return null;
+      return memberActorByUserId.get(triggeredBy.id) ?? triggeredBy;
     },
     [memberActorByUserId, triggeredBy],
   );

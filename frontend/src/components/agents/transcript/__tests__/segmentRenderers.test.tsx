@@ -1,10 +1,18 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TranscriptSegmentView } from '../segmentRenderers';
 import type { TranscriptSegment } from '../segments';
+
+const mocks = vi.hoisted(() => ({
+  resolveTeamMemberAvatarSrc: vi.fn(),
+}));
+
+vi.mock('@/lib/teamMemberAvatar', () => ({
+  resolveTeamMemberAvatarSrc: mocks.resolveTeamMemberAvatarSrc,
+}));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -12,6 +20,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  mocks.resolveTeamMemberAvatarSrc.mockReset();
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -183,5 +192,49 @@ describe('TranscriptSegmentView — user', () => {
 
     expect(container.textContent).toContain('You');
     expect(container.textContent).toContain('Inspect the repository and create a document.');
+  });
+
+  it('renders the actor\'s configured avatar', () => {
+    const segment: TranscriptSegment = {
+      kind: 'user',
+      id: 'user-avatar',
+      message: {
+        event_id: 'user-avatar',
+        role: 'user',
+        message_type: 'message',
+        content: 'Use my saved avatar.',
+        timestamp: '2026-08-05T07:00:00Z',
+        sequence_no: 1,
+      },
+    };
+
+    act(() => {
+      root.render(
+        <TranscriptSegmentView
+          segment={segment}
+          options={{
+            expandable: false,
+            resolveActor: () => ({
+              id: 'user-1',
+              email: 'alice@example.com',
+              full_name: 'Alice Johnson',
+              avatar_style: 'personas',
+              avatar_seed: 'alice-seed',
+              avatar_background_mode: 'color',
+              avatar_background_color: '#fbbf24',
+            }),
+          }}
+        />,
+      );
+    });
+
+    expect(mocks.resolveTeamMemberAvatarSrc).toHaveBeenCalledWith({
+      avatarUrl: undefined,
+      avatarStyle: 'personas',
+      avatarSeed: 'alice-seed',
+      avatarBackgroundMode: 'color',
+      avatarBackgroundColor: '#fbbf24',
+      fallbackSeed: 'Alice Johnson',
+    });
   });
 });
