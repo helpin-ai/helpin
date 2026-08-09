@@ -2941,8 +2941,8 @@ function InlineSprintCell({
   const [open, setOpen] = useState(false);
   const sprintName = task.sprint_id ? sprintMap.get(task.sprint_id) ?? 'Unknown' : null;
   const visibleSprints = useMemo(
-    () => getVisibleSprintsForTaskScope(sprints, { taskTeamId, listTeamId }),
-    [listTeamId, sprints, taskTeamId],
+    () => getVisibleSprintsForTaskScope(sprints, { taskTeamId, listTeamId, currentSprintId: task.sprint_id }),
+    [listTeamId, sprints, task.sprint_id, taskTeamId],
   );
 
   if (!open) {

@@ -1,4 +1,5 @@
 import type { SprintWithStats } from '@/lib/pmTypes';
+import { isSprintOpenForPlanning } from '@/lib/pmSprintOptions';
 
 export function isEpicSelectableForTaskTeam(
   epicTeamId?: string | null,
@@ -31,18 +32,23 @@ export function getVisibleSprintsForTaskScope(
   {
     taskTeamId,
     listTeamId,
+    currentSprintId,
   }: {
     taskTeamId?: string | null;
     listTeamId?: string | null;
+    currentSprintId?: string | null;
   },
 ) {
+  const selectableSprints = sprints.filter((entry) =>
+    isSprintOpenForPlanning(entry.sprint.status) || entry.sprint.id === currentSprintId,
+  );
   if (listTeamId === undefined) {
-    return sprints;
+    return selectableSprints;
   }
 
   const effectiveTeamId = taskTeamId ?? listTeamId ?? null;
 
-  return sprints.filter((entry) =>
+  return selectableSprints.filter((entry) =>
     isSprintSelectableForTaskTeam(entry.sprint.team_id ?? null, effectiveTeamId),
   );
 }

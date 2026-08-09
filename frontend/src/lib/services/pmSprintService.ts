@@ -81,4 +81,10 @@ export const pmSprintService = {
   ) => api.get<PaginatedResponse<SprintPlanningTaskPreview[]>>(
     `/pm/sprints/${id}/preview-tasks${qs(workspaceId)}${filterQuery(pagination ?? {})}`,
   ),
+  listBacklogTasks: (
+    workspaceId: string,
+    filters?: { team_id?: string; page?: number; per_page?: number },
+  ) => api.get<PaginatedResponse<SprintPlanningTaskPreview[]>>(
+    `/pm/sprints/backlog-tasks${qs(workspaceId)}${filterQuery(filters ?? {})}`,
+  ),
 };

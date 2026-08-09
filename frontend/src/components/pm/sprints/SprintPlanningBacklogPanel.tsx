@@ -16,10 +16,13 @@ interface SprintPlanningBacklogPanelProps {
   onToggle: () => void;
   tasks: SprintPlanningTaskPreview[];
   total: number;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   ownerByMemberId: Map<string, AssignableMember>;
   canEdit: boolean;
   onOpenTask: (taskId: string) => void;
-  onAddToActiveSprint: (task: SprintPlanningTaskPreview) => void;
+  onAddToActiveSprint?: (task: SprintPlanningTaskPreview) => void;
   onCreateTask: () => void;
 }
 
@@ -44,6 +47,9 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
   onToggle,
   tasks,
   total,
+  hasMore,
+  loadingMore,
+  onLoadMore,
   ownerByMemberId,
   canEdit,
   onOpenTask,
@@ -82,7 +88,7 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
         type="button"
         onClick={onToggle}
         className={cn(
-          'hidden h-[calc(100vh-13rem)] w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border/60 bg-card transition-colors hover:bg-muted/50 xl:flex',
+          'flex h-[calc(100vh-13rem)] w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border/60 bg-card transition-colors hover:bg-muted/50',
           isOver && 'border-primary/50 ring-2 ring-primary/20',
         )}
       >
@@ -97,10 +103,12 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
   }
 
   return (
+    <>
+      <button type="button" aria-label="Close backlog" className="fixed inset-0 z-40 bg-background/60 backdrop-blur-[1px] xl:hidden" onClick={onToggle} />
       <Card
         ref={setNodeRef}
         className={cn(
-          'hidden h-[calc(100vh-13rem)] w-[340px] shrink-0 border-border/60 xl:flex xl:flex-col',
+          'fixed inset-x-3 bottom-3 top-16 z-50 flex flex-col border-border/60 xl:static xl:z-auto xl:h-[calc(100vh-13rem)] xl:w-[340px] xl:shrink-0',
           isOver && 'border-primary/50 ring-2 ring-primary/20',
         )}
       >
@@ -195,10 +203,10 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
                     task={task}
                     owner={task.owner_member_ids?.[0] ? ownerByMemberId.get(task.owner_member_ids[0]) : undefined}
                     compact
-                    showBacklogAction={canEdit}
+                    showBacklogAction={canEdit && Boolean(onAddToActiveSprint)}
                     canDrag={canEdit}
                     onOpenTask={onOpenTask}
-                    onAddToSprint={canEdit ? () => onAddToActiveSprint(task) : undefined}
+                    onAddToSprint={canEdit && onAddToActiveSprint ? () => onAddToActiveSprint(task) : undefined}
                   />
                 ))
               ) : (
@@ -212,6 +220,11 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
                 </div>
               )}
             </div>
+            {hasMore ? (
+              <Button variant="ghost" size="sm" className="mt-2 w-full" disabled={loadingMore} onClick={onLoadMore}>
+                {loadingMore ? 'Loading…' : 'Load more backlog tasks'}
+              </Button>
+            ) : null}
           </div>
 
           {canEdit ? (
@@ -222,5 +235,6 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
           ) : null}
         </CardContent>
       </Card>
+    </>
   );
 });

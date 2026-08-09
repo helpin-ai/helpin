@@ -38,6 +38,11 @@ interface SprintPlanningWorkspaceProps {
   canEdit: boolean;
   canCreateSprint: boolean;
   members: AssignableMember[];
+  backlogTasks: SprintPlanningTaskPreview[];
+  backlogTotal: number;
+  backlogHasMore: boolean;
+  backlogLoadingMore: boolean;
+  onLoadMoreBacklog: () => void;
   onOpenSprint: (sprintId: string) => void;
   onOpenTask: (taskId: string) => void;
   onCreateSprint: () => void;
@@ -55,6 +60,11 @@ export function SprintPlanningWorkspace({
   canEdit,
   canCreateSprint,
   members,
+  backlogTasks,
+  backlogTotal,
+  backlogHasMore,
+  backlogLoadingMore,
+  onLoadMoreBacklog,
   onOpenSprint,
   onOpenTask,
   onCreateSprint,
@@ -74,7 +84,6 @@ export function SprintPlanningWorkspace({
   const preferredSprintId =
     workspace?.buckets.find((bucket) => bucket.key === 'active')?.sprints?.[0]?.sprint.id ??
     workspace?.buckets.find((bucket) => bucket.key === 'upcoming')?.sprints?.[0]?.sprint.id ??
-    workspace?.buckets.flatMap((bucket) => bucket.sprints ?? [])?.[0]?.sprint.id ??
     null;
   const hasAnySprint = Boolean(workspace?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
 
@@ -157,12 +166,12 @@ export function SprintPlanningWorkspace({
   // The ref bridges the gap: when activeTask clears but workspace data
   // hasn't updated yet, droppedTaskIdRef still filters the card out.
   const hideStoryId = activeTask?.id ?? droppedTaskIdRef.current;
-  const backlogTasks = useMemo(() => {
-    const raw = workspace?.backlog_tasks ?? [];
+  const visibleBacklogTasks = useMemo(() => {
+    const raw = backlogTasks;
     if (!hideStoryId) return raw;
     return raw.filter((s) => s.id !== hideStoryId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hideStoryId uses ref, recompute when backlog changes
-  }, [workspace?.backlog_tasks, activeTask]);
+  }, [backlogTasks, activeTask]);
 
   // Stable ordered list of sprint cards — avoids recreating during drag
   const sprintCards = useMemo(
@@ -204,12 +213,15 @@ export function SprintPlanningWorkspace({
         <SprintPlanningBacklogPanel
           open={backlogOpen}
           onToggle={onBacklogToggle}
-          tasks={backlogTasks}
-          total={workspace.backlog_total}
+          tasks={visibleBacklogTasks}
+          total={backlogTotal}
+          hasMore={backlogHasMore}
+          loadingMore={backlogLoadingMore}
+          onLoadMore={onLoadMoreBacklog}
           ownerByMemberId={ownerByMemberId}
           canEdit={canEdit}
           onOpenTask={onOpenTask}
-          onAddToActiveSprint={(task) => onAssignTask(task, preferredSprintId)}
+          onAddToActiveSprint={preferredSprintId ? (task) => onAssignTask(task, preferredSprintId) : undefined}
           onCreateTask={() => onCreateTask()}
         />
       </div>

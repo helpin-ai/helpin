@@ -7,6 +7,17 @@ export interface SprintOptionGroup {
   options: Array<{ value: string; label: string }>;
 }
 
+export function formatSprintDateOnly(value: string, options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }) {
+  const match = value.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', options);
+}
+
+export function isSprintOpenForPlanning(status: string) {
+  return status !== 'done';
+}
+
 export function buildSprintOptionGroups(
   sprints: SprintWithStats[],
   teams: WorkspaceTeam[],
@@ -15,7 +26,7 @@ export function buildSprintOptionGroups(
   if (teamId) {
     const teamName = teams.find((team) => team.id === teamId)?.name ?? 'Team sprints';
     const options = sprints
-      .filter((entry) => entry.sprint.team_id === teamId)
+      .filter((entry) => entry.sprint.team_id === teamId && isSprintOpenForPlanning(entry.sprint.status))
       .map((entry) => ({ value: entry.sprint.id, label: entry.sprint.name }));
 
     return options.length > 0 ? [{ key: teamId, label: teamName, options }] : [];
@@ -40,6 +51,7 @@ export function buildSprintOptionGroups(
   orderedGroups.push(workspaceGroup);
 
   for (const entry of sprints) {
+    if (!isSprintOpenForPlanning(entry.sprint.status)) continue;
     const key = entry.sprint.team_id ?? workspaceGroup.key;
     const fallback = {
       key,

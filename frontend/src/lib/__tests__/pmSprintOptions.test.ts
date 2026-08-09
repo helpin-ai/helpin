@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSprintOptionGroups } from '@/lib/pmSprintOptions';
+import { buildSprintOptionGroups, formatSprintDateOnly, isSprintOpenForPlanning } from '@/lib/pmSprintOptions';
 import type { SprintWithStats } from '@/lib/pmTypes';
 import type { WorkspaceTeam } from '@/lib/types';
 
@@ -83,9 +83,36 @@ const sprints: SprintWithStats[] = [
     labels: [],
     stats: { task_count: 0, done_task_count: 0, total_points: 0, done_points: 0 },
   },
+  {
+    sprint: {
+      id: 'sprint-completed',
+      workspace_id: 'ws-1',
+      name: 'Completed Sprint',
+      goal: '',
+      status: 'done',
+      start_date: '2026-03-01T00:00:00Z',
+      end_date: '2026-03-08T00:00:00Z',
+      team_id: 'team-eng',
+      archived: false,
+      created_at: '2026-03-01T00:00:00Z',
+      updated_at: '2026-03-08T00:00:00Z',
+    },
+    labels: [],
+    stats: { task_count: 1, done_task_count: 1, total_points: 3, done_points: 3 },
+  },
 ];
 
 describe('pmSprintOptions', () => {
+  it('formats UTC date-only values without shifting the calendar day', () => {
+    expect(formatSprintDateOnly('2026-03-27T00:00:00Z')).toBe('Mar 27');
+  });
+
+  it('prevents planning mutations on completed sprints', () => {
+    expect(isSprintOpenForPlanning('started')).toBe(true);
+    expect(isSprintOpenForPlanning('unstarted')).toBe(true);
+    expect(isSprintOpenForPlanning('done')).toBe(false);
+  });
+
   it('returns only the selected team sprints when a team is selected', () => {
     expect(buildSprintOptionGroups(sprints, teams, 'team-eng')).toEqual([
       {

@@ -118,6 +118,7 @@ import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/p
 import { getTaskPatchSignature, isBlockedTaskPatch } from '@/components/pm/task-detail/taskAutosaveFailure';
 import { hasVisibleTaskAssociations } from '@/components/pm/task-detail/taskRelationshipVisibility';
 import { queryKeys } from '@/lib/queryKeys';
+import { isSprintOpenForPlanning } from '@/lib/pmSprintOptions';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import { resolveTaskTeamWorkflow, resolveTaskWorkflowStates } from '@/components/pm/task-detail/taskWorkflowResolution';
 import {
@@ -627,9 +628,10 @@ function TaskDetailPanelBody({
   const availableSprints = useMemo(
     () =>
       sprints.filter((entry) =>
-        isSprintSelectableForTaskTeam(entry.sprint.team_id ?? null, form.team_id || null),
+        (isSprintOpenForPlanning(entry.sprint.status) || entry.sprint.id === form.sprint_id)
+        && isSprintSelectableForTaskTeam(entry.sprint.team_id ?? null, form.team_id || null),
       ),
-    [form.team_id, sprints],
+    [form.sprint_id, form.team_id, sprints],
   );
 
   // Group epics by lifecycle: not started → in progress → completed.

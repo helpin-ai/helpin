@@ -78,6 +78,20 @@ func TestPMSprintHandler_PlanningWorkspace(t *testing.T) {
 	if payload.BacklogTotal != 1 {
 		t.Fatalf("backlog_total = %d, want 1", payload.BacklogTotal)
 	}
+
+	backlogReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/pm/sprints/backlog-tasks?workspace_id=%s&team_id=%s&page=1&per_page=1", workspaceID, teamID), nil)
+	backlogRR := httptest.NewRecorder()
+	handler.ListBacklogTasks(backlogRR, backlogReq.WithContext(context.Background()))
+	if backlogRR.Code != http.StatusOK {
+		t.Fatalf("backlog status = %d, want 200, body=%s", backlogRR.Code, backlogRR.Body.String())
+	}
+	var backlogPayload model.PaginatedResponse
+	if err := json.Unmarshal(backlogRR.Body.Bytes(), &backlogPayload); err != nil {
+		t.Fatalf("decode backlog response: %v", err)
+	}
+	if backlogPayload.Total != 1 || backlogPayload.Page != 1 || backlogPayload.PerPage != 1 {
+		t.Fatalf("backlog pagination = %+v, want total/page/per_page 1/1/1", backlogPayload)
+	}
 }
 
 func newPMSprintPlanningHandlerTestDB(t *testing.T) *gorm.DB {

@@ -288,6 +288,9 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     if (event.entity === 'task') {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, event.entity_id) })
       queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintBacklogTasksRoot(workspaceId) })
     } else if (event.entity === 'workflow') {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.workflows(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.epicStates(workspaceId) })

@@ -293,7 +293,14 @@ export function SprintDetailPage() {
     [form?.team_id, findTeamName],
   );
 
-  const workflow = workflows[0] ?? null;
+  const workflow = useMemo(
+    () => workflows.find((item) => item.workflow.id === tasks[0]?.workflow_id)
+      ?? workflows.find((item) => item.workflow.team_id === form?.team_id)
+      ?? workflows.find((item) => !item.workflow.team_id)
+      ?? workflows[0]
+      ?? null,
+    [form?.team_id, tasks, workflows],
+  );
 
   // Resources: unique people from task owners + sprint team members
   const resources = useMemo(() => {
@@ -331,21 +338,32 @@ export function SprintDetailPage() {
     [location, navigate, slug],
   );
 
-  // Refresh tasks when global panel updates/archives a task
+  const refreshSprintAndTasks = useCallback(async () => {
+    if (!workspaceId) return;
+    const [sprintRes, tasksRes] = await Promise.all([
+      pmSprintService.get(workspaceId, sprintId),
+      pmSprintService.listTasks(workspaceId, sprintId),
+    ]);
+    if (sprintRes.data) setSprint(sprintRes.data);
+    if (tasksRes.data) setTasks(tasksRes.data);
+  }, [sprintId, workspaceId]);
+
+  // Refresh tasks and progress when global panel updates/archives a task.
   useEffect(() => {
-    const refresh = () => {
-      if (!workspaceId) return;
-      pmSprintService.listTasks(workspaceId, sprintId).then((res) => {
-        if (res.data) setTasks(res.data);
-      });
-    };
+    const refresh = () => { void refreshSprintAndTasks(); };
     window.addEventListener('task-panel-updated', refresh);
     window.addEventListener('task-panel-archived', refresh);
+    window.addEventListener('task-updated', refresh);
+    window.addEventListener('task-deleted', refresh);
+    window.addEventListener('task-created', refresh);
     return () => {
       window.removeEventListener('task-panel-updated', refresh);
       window.removeEventListener('task-panel-archived', refresh);
+      window.removeEventListener('task-updated', refresh);
+      window.removeEventListener('task-deleted', refresh);
+      window.removeEventListener('task-created', refresh);
     };
-  }, [workspaceId, sprintId]);
+  }, [refreshSprintAndTasks]);
 
   const goBack = () => navigate({
     to: '/w/$slug/pm/sprints',
@@ -578,9 +596,7 @@ export function SprintDetailPage() {
                   externalTasks={tasks}
                   onOpenTask={openTask}
                   onBulkOperationComplete={async () => {
-                    if (!workspaceId) return;
-                    const tasksRes = await pmSprintService.listTasks(workspaceId, sprintId);
-                    if (tasksRes.data) setTasks(tasksRes.data);
+                    await refreshSprintAndTasks();
                   }}
                 />
               </div>
