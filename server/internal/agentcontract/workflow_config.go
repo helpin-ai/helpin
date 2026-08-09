@@ -35,6 +35,7 @@ type WorkflowConfig struct {
 const (
 	defaultWorkflowMaxIterations  = 50
 	plannerWorkflowMaxIterations  = 300
+	askAgentWorkflowMaxIterations = model.MaxNativeToolSteps
 	defaultWorkflowTimeoutMinutes = 30
 	defaultWorkflowCommandTimeout = 2 * time.Minute
 )
@@ -47,7 +48,9 @@ func DefaultWorkflowConfig() *WorkflowConfig {
 // DefaultWorkflowConfigForAgent returns host-side runtime defaults for an agent.
 func DefaultWorkflowConfigForAgent(agent *model.Agent) *WorkflowConfig {
 	maxIterations := defaultWorkflowMaxIterations
-	if isHighToolBudgetAgent(agent) {
+	if agent != nil && strings.TrimSpace(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
+		maxIterations = askAgentWorkflowMaxIterations
+	} else if isHighToolBudgetAgent(agent) {
 		maxIterations = plannerWorkflowMaxIterations
 	}
 	return &WorkflowConfig{

@@ -40,7 +40,14 @@ import { agentService } from '@/lib/services/agentService';
 import { gitService } from '@/lib/services/gitService';
 import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
-import { AGENT_RUNTIME_HELP_TEXT, AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
+import {
+  AGENT_RUNTIME_HELP_TEXT,
+  AGENT_RUNTIME_LABELS,
+  MAX_NATIVE_TOOL_STEPS,
+  MIN_NATIVE_TOOL_STEPS,
+  isValidNativeToolStepLimit,
+  parseNativeToolStepLimit,
+} from '@/lib/agentRuntime';
 import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
 import { buildAutomationActivityPath, buildAutomationFlowsPath, buildAutomationToolConnectionsPath } from '@/lib/automationUi';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
@@ -411,6 +418,7 @@ interface AgentFormData {
   model: string;
   reasoning_effort: AgentReasoningEffort | '';
   service_tier: AgentServiceTier | '';
+  max_tool_steps: string;
   system_prompt: string;
   instruction_preamble: string;
   instruction_skills: string[];
@@ -794,28 +802,37 @@ function deriveExecutionConfigFields(
   runtimeKind: AgentRuntimeKind,
   provider: AgentModelProvider,
   executionConfig?: AgentExecutionConfig,
-): Pick<AgentFormData, 'reasoning_effort' | 'service_tier'> {
+): Pick<AgentFormData, 'reasoning_effort' | 'service_tier' | 'max_tool_steps'> {
   const normalizedProvider = normalizeProviderForRuntime(runtimeKind, provider);
   const reasoningEffort = runtimeKind === 'codex' ? (executionConfig?.reasoning_effort ?? '') : '';
   const serviceTier = runtimeKind === 'codex' && normalizedProvider === 'openai'
     ? (executionConfig?.service_tier ?? '')
     : '';
+  const maxToolSteps = runtimeKind === 'native_sdk' && executionConfig?.max_tool_steps
+    ? String(executionConfig.max_tool_steps)
+    : '';
   return {
     reasoning_effort: reasoningEffort,
     service_tier: serviceTier,
+    max_tool_steps: maxToolSteps,
   };
 }
 
 function buildExecutionConfigPayload(form: AgentFormData): AgentExecutionConfig | undefined {
-  if (form.runtime_kind !== 'codex') {
-    return undefined;
-  }
   const config: AgentExecutionConfig = {};
-  if (form.reasoning_effort) {
-    config.reasoning_effort = form.reasoning_effort;
+  if (form.runtime_kind === 'codex') {
+    if (form.reasoning_effort) {
+      config.reasoning_effort = form.reasoning_effort;
+    }
+    if (form.provider === 'openai' && form.service_tier) {
+      config.service_tier = form.service_tier;
+    }
   }
-  if (form.provider === 'openai' && form.service_tier) {
-    config.service_tier = form.service_tier;
+  if (form.runtime_kind === 'native_sdk') {
+    const maxToolSteps = parseNativeToolStepLimit(form.max_tool_steps);
+    if (maxToolSteps !== undefined) {
+      config.max_tool_steps = maxToolSteps;
+    }
   }
   return Object.keys(config).length > 0 ? config : undefined;
 }
@@ -845,13 +862,23 @@ function normalizeDefaultInvocationMode(
 function hasConfiguredAdvancedFields(agent: Agent | null, presets: AgentPresetDefinition[]): boolean {
   if (!agent) return false;
   if (!agent.is_system) {
-    return Boolean(agent.monthly_token_budget || agent.execution_config?.reasoning_effort || agent.execution_config?.service_tier);
+    return Boolean(
+      agent.monthly_token_budget
+      || agent.execution_config?.reasoning_effort
+      || agent.execution_config?.service_tier
+      || agent.execution_config?.max_tool_steps,
+    );
   }
   const presetKey = fallbackPresetKey(agent);
   const presetVersionKey = agent.preset_version_key ?? fallbackPresetVersionKey(presetKey);
   return (
     agent.runtime_kind !== presetRuntimeKindForSelection(presetKey, presetVersionKey, presets) ||
-    Boolean(agent.monthly_token_budget || agent.execution_config?.reasoning_effort || agent.execution_config?.service_tier)
+    Boolean(
+      agent.monthly_token_budget
+      || agent.execution_config?.reasoning_effort
+      || agent.execution_config?.service_tier
+      || agent.execution_config?.max_tool_steps,
+    )
   );
 }
 
@@ -1064,6 +1091,7 @@ function comparableCustomAgentForm(form: AgentFormData) {
     model: form.model.trim(),
     reasoning_effort: form.runtime_kind === 'codex' ? form.reasoning_effort : '',
     service_tier: form.runtime_kind === 'codex' && provider === 'openai' ? form.service_tier : '',
+    max_tool_steps: form.runtime_kind === 'native_sdk' ? parseNativeToolStepLimit(form.max_tool_steps) ?? 0 : 0,
     system_prompt: form.system_prompt.trim(),
     monthly_token_budget: normalizeTokenBudgetFormValue(form.monthly_token_budget),
     team_ids: teamIDs,
@@ -1353,6 +1381,56 @@ function FieldLabel({ htmlFor, children, tooltip }: { htmlFor?: string; children
           </TooltipContent>
         </Tooltip>
       )}
+    </div>
+  );
+}
+
+function NativeToolStepLimitField({
+  id,
+  value,
+  disabled = false,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const valid = isValidNativeToolStepLimit('native_sdk', value);
+  const helpID = `${id}-help`;
+  return (
+    <div className="space-y-2">
+      <FieldLabel
+        htmlFor={id}
+        tooltip="Maximum model and tool-call rounds in one run. Leave empty to use the agent default."
+      >
+        Tool step limit
+      </FieldLabel>
+      <Input
+        id={id}
+        type="number"
+        min={MIN_NATIVE_TOOL_STEPS}
+        max={MAX_NATIVE_TOOL_STEPS}
+        step={1}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Use agent default"
+        aria-invalid={!valid}
+        aria-describedby={helpID}
+        className="h-9 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive/30"
+      />
+      <p
+        id={helpID}
+        className={cn(
+          'text-[11px] leading-relaxed',
+          valid ? 'text-muted-foreground' : 'text-destructive',
+        )}
+      >
+        {valid
+          ? `${MIN_NATIVE_TOOL_STEPS}–${MAX_NATIVE_TOOL_STEPS} rounds per run.`
+          : `Enter a whole number from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}.`}
+      </p>
     </div>
   );
 }
@@ -3793,6 +3871,7 @@ export function AgentsPage() {
     ?? templateDraft?.template.starter_flows?.[0];
   const supportsReasoningEffort = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_reasoning_effort);
   const supportsServiceTier = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_service_tier);
+  const maxToolStepsValid = isValidNativeToolStepLimit(form.runtime_kind, form.max_tool_steps);
   const versionToolEditingState = getVersionToolEditingState({ versionReadOnly, runtimeKind: form.runtime_kind });
   const isBlankCustomCreate = !editingAgent && !templateDraft;
   const isCustomEdit = Boolean(editingAgent && !editingAgent.is_system && !templateDraft);
@@ -3816,6 +3895,9 @@ export function AgentsPage() {
     }
     if (!providerConfigState.selectedProviderOption) {
       missing.push('compatible AI provider');
+    }
+    if (!maxToolStepsValid) {
+      missing.push(`tool step limit from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}`);
     }
     if (starterFlowEnabled && templateDraft?.template.key === 'release_notes_writer') {
       if (!templateForm.repository_id) missing.push('repository');
@@ -5317,6 +5399,15 @@ export function AgentsPage() {
                             </p>
                           </div>
 
+                          {form.runtime_kind === 'native_sdk' && (
+                            <NativeToolStepLimitField
+                              id="system-agent-tool-step-limit"
+                              value={form.max_tool_steps}
+                              disabled={versionReadOnly}
+                              onChange={(value) => setForm((current) => ({ ...current, max_tool_steps: value }))}
+                            />
+                          )}
+
                           {supportsReasoningEffort && (
                             <div className="space-y-2">
                               <FieldLabel>Reasoning Effort</FieldLabel>
@@ -5415,7 +5506,13 @@ export function AgentsPage() {
               </Button>
               <Button
                 size="sm"
-	                disabled={saving || !(isEditingWorkspaceVersion || isEditingCustomVersion) || !hasVersionChanges || !providerConfigState.selectedProviderOption}
+                disabled={
+                  saving
+                  || !(isEditingWorkspaceVersion || isEditingCustomVersion)
+                  || !hasVersionChanges
+                  || !providerConfigState.selectedProviderOption
+                  || !maxToolStepsValid
+                }
                 onClick={() => handleSaveWorkspaceVersion()}
               >
                 {saving ? 'Saving…' : 'Save'}
@@ -5496,7 +5593,7 @@ export function AgentsPage() {
             <Button
               type="button"
               size="sm"
-              disabled={creatingVersion || !versionLabelDraft.trim()}
+              disabled={creatingVersion || !versionLabelDraft.trim() || !maxToolStepsValid}
               onClick={handleCreatePresetVersion}
             >
               {creatingVersion ? 'Creating…' : 'Create custom version'}
@@ -7205,6 +7302,13 @@ export function AgentsPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                )}
+                {form.runtime_kind === 'native_sdk' && (
+                  <NativeToolStepLimitField
+                    id="agent-tool-step-limit"
+                    value={form.max_tool_steps}
+                    onChange={(value) => setForm((current) => ({ ...current, max_tool_steps: value }))}
+                  />
                 )}
                 <div className="space-y-2">
                   <FieldLabel

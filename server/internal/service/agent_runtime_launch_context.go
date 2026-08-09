@@ -136,7 +136,9 @@ func withAgentRuntimeExecutionConfig(config json.RawMessage, agent *model.Agent)
 			values["runtime_policy"] = policy
 		}
 		if strings.TrimSpace(agent.RuntimeKind) == "native_sdk" {
-			values["max_tool_steps"] = agentcontract.DefaultWorkflowConfigForAgent(agent).MaxIterations
+			if _, configured := values["max_tool_steps"]; !configured {
+				values["max_tool_steps"] = agentcontract.DefaultWorkflowConfigForAgent(agent).MaxIterations
+			}
 		}
 	}
 	payload, err := json.Marshal(values)
