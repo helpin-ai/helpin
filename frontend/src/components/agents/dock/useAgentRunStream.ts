@@ -86,6 +86,7 @@ export function useAgentRunStream(
   const persistedSeqRef = useRef(0);
   const runtimeSeqRef = useRef(0);
   const eventsRef = useRef<CodingSessionEvent[]>([]);
+  const pendingRuntimeEventsRef = useRef<Map<number, CodingSessionEvent>>(new Map());
   const snapshotRef = useRef<CodingSessionStreamSnapshot | null>(null);
   const generationRef = useRef(0);
   const loadingCountRef = useRef(0);
@@ -110,6 +111,22 @@ export function useAgentRunStream(
     setPendingInteraction((current) =>
       current?.interaction_id === trimmed ? null : current,
     );
+  }, []);
+
+  const flushContiguousRuntimeEvents = useCallback(() => {
+    const contiguous: CodingSessionEvent[] = [];
+    let nextSequence = runtimeSeqRef.current + 1;
+    while (pendingRuntimeEventsRef.current.has(nextSequence)) {
+      const event = pendingRuntimeEventsRef.current.get(nextSequence);
+      pendingRuntimeEventsRef.current.delete(nextSequence);
+      if (event) contiguous.push(event);
+      runtimeSeqRef.current = nextSequence;
+      nextSequence += 1;
+    }
+    if (contiguous.length > 0) {
+      eventsRef.current = upsertCodingSessionEvents(eventsRef.current, contiguous);
+      persistedSeqRef.current = maxPersistedCodingSessionSequence(eventsRef.current);
+    }
   }, []);
 
   const refetch = useCallback(async () => {
@@ -158,6 +175,19 @@ export function useAgentRunStream(
           incomingSnapshot,
         );
         runtimeSeqRef.current = Math.max(runtimeSeqRef.current, incomingSequence);
+
+        // The snapshot is authoritative through its runtime watermark. Discard
+        // buffered websocket events it already contains, then append only a
+        // contiguous tail. This lets snapshots bridge legitimate gaps caused by
+        // runtime events that are not projected to the browser.
+        if (terminal) {
+          pendingRuntimeEventsRef.current.clear();
+        } else {
+          for (const sequence of pendingRuntimeEventsRef.current.keys()) {
+            if (sequence <= incomingSequence) pendingRuntimeEventsRef.current.delete(sequence);
+          }
+          flushContiguousRuntimeEvents();
+        }
       }
 
       publishStreamState();
@@ -167,7 +197,7 @@ export function useAgentRunStream(
         setLoading(loadingCountRef.current > 0);
       }
     }
-  }, [fetchers, publishStreamState, runId, workspaceId]);
+  }, [fetchers, flushContiguousRuntimeEvents, publishStreamState, runId, workspaceId]);
 
   const ingestRealtimeEvent = useCallback((event: CodingSessionEvent) => {
     if (!runId || event.session_id !== runId || event.run_id !== runId) return false;
@@ -180,21 +210,30 @@ export function useAgentRunStream(
       ? event.runtime_metadata.source.trim()
       : '';
     const runtimeV2 = source === 'agent-runtime-v2';
-    const hasRuntimeGap = runtimeV2
-      && event.sequence_no > 0
-      && (
-        (runtimeSeqRef.current === 0 && event.sequence_no > 1)
-        || (runtimeSeqRef.current > 0 && event.sequence_no > runtimeSeqRef.current + 1)
-      );
+    if (runtimeV2 && event.sequence_no > 0) {
+      if (event.sequence_no > runtimeSeqRef.current + 1) {
+        // Do not expose a later text fragment before its missing predecessor.
+        // Reconciliation will either supply the missing event or replace this
+        // buffer with a snapshot whose watermark covers the gap.
+        pendingRuntimeEventsRef.current.set(event.sequence_no, event);
+        return true;
+      }
+
+      eventsRef.current = upsertCodingSessionEvents(eventsRef.current, [event]);
+      persistedSeqRef.current = maxPersistedCodingSessionSequence(eventsRef.current);
+      if (event.sequence_no === runtimeSeqRef.current + 1) {
+        runtimeSeqRef.current = event.sequence_no;
+        flushContiguousRuntimeEvents();
+      }
+      publishStreamState();
+      return false;
+    }
 
     eventsRef.current = upsertCodingSessionEvents(eventsRef.current, [event]);
     persistedSeqRef.current = maxPersistedCodingSessionSequence(eventsRef.current);
-    if (runtimeV2 && event.sequence_no > 0) {
-      runtimeSeqRef.current = Math.max(runtimeSeqRef.current, event.sequence_no);
-    }
     publishStreamState();
-    return hasRuntimeGap;
-  }, [publishStreamState, runId]);
+    return false;
+  }, [flushContiguousRuntimeEvents, publishStreamState, runId]);
 
   // Reset on workspace, chat fetcher, or run change. The generation token
   // prevents a predecessor request from committing after the new run mounts.
@@ -204,6 +243,7 @@ export function useAgentRunStream(
     persistedSeqRef.current = 0;
     runtimeSeqRef.current = 0;
     eventsRef.current = [];
+    pendingRuntimeEventsRef.current = new Map();
     snapshotRef.current = null;
     clearedInteractionIdsRef.current = new Set();
     setCurrentPlan(null);
