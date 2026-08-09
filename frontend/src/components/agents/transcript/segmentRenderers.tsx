@@ -335,6 +335,10 @@ function UserSegment({
         <UserAvatar
           name={actorLabel}
           avatarUrl={actor?.avatar_url}
+          avatarStyle={actor?.avatar_style}
+          avatarSeed={actor?.avatar_seed}
+          avatarBackgroundMode={actor?.avatar_background_mode}
+          avatarBackgroundColor={actor?.avatar_background_color}
           className="h-6 w-6"
           fallbackClassName="text-[10px]"
         />
@@ -368,6 +372,10 @@ function ReviewDecisionSegment({
         <UserAvatar
           name={reviewerName}
           avatarUrl={actor?.avatar_url}
+          avatarStyle={actor?.avatar_style}
+          avatarSeed={actor?.avatar_seed}
+          avatarBackgroundMode={actor?.avatar_background_mode}
+          avatarBackgroundColor={actor?.avatar_background_color}
           className="h-6 w-6"
           fallbackClassName="text-[10px]"
         />

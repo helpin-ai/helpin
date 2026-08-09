@@ -6,6 +6,7 @@ import {
   DOCK_SEGMENT_KINDS,
   TranscriptSegmentView,
 } from '@/components/agents/transcript';
+import { useAuthStore } from '@/stores/authStore';
 const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'user'] as const);
 
 /** True when the stream has at least one renderable assistant/tool segment. */
@@ -37,6 +38,7 @@ export function DockTranscript({
   showUserMessages?: boolean;
   className?: string;
 }) {
+  const user = useAuthStore((state) => state.user);
   if (!stream) return null;
   const segments = collectSegments(stream, {
     includeLive: active,
@@ -55,6 +57,18 @@ export function DockTranscript({
             expandable: true,
             collapseLongAssistantContent: segment.kind !== 'assistant' || segment.id !== latestAssistantSegmentId,
             fallbackUserLabel: 'You',
+            resolveActor: user
+              ? () => ({
+                  id: user.id,
+                  email: user.email,
+                  full_name: user.full_name,
+                  avatar_url: user.avatar_url,
+                  avatar_style: user.avatar_style,
+                  avatar_seed: user.avatar_seed,
+                  avatar_background_mode: user.avatar_background_mode,
+                  avatar_background_color: user.avatar_background_color,
+                })
+              : undefined,
           }}
         />
       ))}
