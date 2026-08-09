@@ -5,6 +5,7 @@ import {
   getTaskAgentRunLaunchState,
   getTaskAgentRunPickerLabel,
   getTaskAgentRunPrimaryAction,
+  getTaskAgentRunSelectedAgentId,
   getTaskAgentRunSuggestedAgent,
 } from '../AgentRunPanel';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
@@ -221,6 +222,31 @@ describe('getTaskAgentRunSuggestedAgent', () => {
       runs: [run({ agent_id: 'scribe', status: 'completed' })],
       activeRun: run({ agent_id: 'forge', status: 'running' }),
     })?.id).toBe('forge');
+  });
+});
+
+describe('getTaskAgentRunSelectedAgentId', () => {
+  const agents = [
+    agent({ id: 'scribe', name: 'Scribe', preset_key: 'task_planner' }),
+    agent({ id: 'forge', name: 'Forge', preset_key: 'code_builder' }),
+  ];
+
+  it('preserves a valid manual selection after the previous run completes', () => {
+    expect(getTaskAgentRunSelectedAgentId({
+      selectedAgentId: 'scribe',
+      agents,
+      suggestedAgent: agents[1],
+      selectionLocked: false,
+    })).toBe('scribe');
+  });
+
+  it('uses the suggested agent while an active run locks selection', () => {
+    expect(getTaskAgentRunSelectedAgentId({
+      selectedAgentId: 'scribe',
+      agents,
+      suggestedAgent: agents[1],
+      selectionLocked: true,
+    })).toBe('forge');
   });
 });
 
