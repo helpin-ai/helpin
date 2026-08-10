@@ -24,6 +24,7 @@ require (
 	github.com/markusmobius/go-trafilatura v1.12.2
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/nats-io/nats.go v1.49.0
+	github.com/oklog/ulid/v2 v2.1.1
 	github.com/oschwald/maxminddb-golang/v2 v2.1.1
 	github.com/oxffaa/gopher-parse-sitemap v0.0.0-20191021113419-005d2eb1def4
 	github.com/redis/go-redis/v9 v9.18.0
