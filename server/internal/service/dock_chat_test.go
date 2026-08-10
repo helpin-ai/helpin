@@ -60,13 +60,13 @@ func TestDockChatListCursorPagination(t *testing.T) {
 
 func TestComposeDockChatTurn(t *testing.T) {
 	t.Run("without page context returns content unchanged", func(t *testing.T) {
-		if got := composeDockChatTurn("hello", nil); got != "hello" {
+		if got := composeDockChatTurn("hello", nil, nil); got != "hello" {
 			t.Errorf("composeDockChatTurn() = %q, want %q", got, "hello")
 		}
 	})
 
 	t.Run("with page context appends block", func(t *testing.T) {
-		got := composeDockChatTurn("hello", map[string]interface{}{"entity_type": "task", "entity_id": "t1"})
+		got := composeDockChatTurn("hello", map[string]interface{}{"entity_type": "task", "entity_id": "t1"}, nil)
 		if !strings.HasPrefix(got, "hello\n\n<page_context>") || !strings.HasSuffix(got, "</page_context>") {
 			t.Errorf("composeDockChatTurn() = %q, want page context block", got)
 		}
@@ -74,6 +74,34 @@ func TestComposeDockChatTurn(t *testing.T) {
 			t.Errorf("composeDockChatTurn() missing entity data: %q", got)
 		}
 	})
+
+	t.Run("with references appends structured block", func(t *testing.T) {
+		got := composeDockChatTurn("compare these", nil, []model.DockEntityReference{
+			{EntityType: "task", EntityID: "task-1", DisplayTitle: "HEL-42 · Checkout"},
+			{EntityType: "document", EntityID: "doc-1", DisplayTitle: "Launch requirements"},
+		})
+		if !strings.Contains(got, `<references>[{"entity_type":"task"`) || !strings.HasSuffix(got, "</references>") {
+			t.Errorf("composeDockChatTurn() = %q, want references block", got)
+		}
+	})
+}
+
+func TestNormalizeDockChatReferences(t *testing.T) {
+	references, err := normalizeDockChatReferences([]model.DockEntityReference{
+		{EntityType: " task ", EntityID: " task-1 ", DisplayTitle: " HEL-42 · Checkout "},
+		{EntityType: "task", EntityID: "task-1", DisplayTitle: "Duplicate"},
+	})
+	if err != nil {
+		t.Fatalf("normalizeDockChatReferences returned error: %v", err)
+	}
+	if len(references) != 1 || references[0].EntityID != "task-1" || references[0].DisplayTitle != "HEL-42 · Checkout" {
+		t.Fatalf("normalized references = %#v", references)
+	}
+	if _, err := normalizeDockChatReferences([]model.DockEntityReference{
+		{EntityType: "workspace", EntityID: "ws-1", DisplayTitle: "Workspace"},
+	}); err == nil {
+		t.Fatal("expected unsupported reference type error")
+	}
 }
 
 func TestDockChatTitleFromContent(t *testing.T) {

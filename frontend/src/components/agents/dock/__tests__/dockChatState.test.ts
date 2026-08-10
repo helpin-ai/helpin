@@ -151,6 +151,14 @@ describe('dock marker parsing', () => {
     expect(stripDockPageContext('hello')).toBe('hello');
   });
 
+  it('stripDockPageContext hides page context and supplemental references', () => {
+    expect(stripDockPageContext([
+      'compare these',
+      '<page_context>{"entity_type":"workspace"}</page_context>',
+      '<references>[{"entity_type":"task","entity_id":"task-1"}]</references>',
+    ].join('\n\n'))).toBe('compare these');
+  });
+
   it('parseDockChildResult rejects non-result content', () => {
     expect(parseDockChildResult('hello')).toBeNull();
     expect(parseDockChildResult('<child_run_result>not json</child_run_result>')).toBeNull();

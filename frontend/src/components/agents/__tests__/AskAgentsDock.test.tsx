@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   startRunAuth: vi.fn(),
   cancelRunAuth: vi.fn(),
   getPlan: vi.fn(),
+  searchEntities: vi.fn(),
 }));
 
 vi.mock('@/lib/services/dockChatService', () => ({
@@ -65,6 +66,13 @@ vi.mock('@/lib/services/commandBarService', () => ({
   commandBarService: {
     getPlan: mocks.getPlan,
   },
+}));
+
+vi.mock('@/components/docs/entitySearch', () => ({
+  entityTypeLabel: (type: string) => ({
+    task: 'Task', document: 'Doc', epic: 'Epic', contact: 'Contact', deal: 'Deal',
+  })[type] ?? type,
+  searchDocsEntityItems: mocks.searchEntities,
 }));
 
 const CHAT: DockChat = {
@@ -145,6 +153,7 @@ beforeEach(() => {
   mocks.listChatRunEvents.mockResolvedValue({ data: { events: [], next_sequence_no: 0 }, error: null });
   mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [] }, error: null });
   mocks.getPlan.mockResolvedValue({ data: null, error: null });
+  mocks.searchEntities.mockResolvedValue({ items: [], error: null });
 });
 
 afterEach(() => {
@@ -289,6 +298,55 @@ describe('AskAgentsDock', () => {
       'chat-1',
       expect.objectContaining({ content: 'list open tasks' }),
     );
+  });
+
+  it('attaches a searched task reference to the message payload', async () => {
+    mocks.searchEntities.mockResolvedValue({
+      items: [{
+        entityType: 'task',
+        entityId: 'task-42',
+        title: 'Polish the agent dock',
+        displayId: 'HLP-42',
+        meta: 'HLP-42 · Platform',
+      }],
+      error: null,
+    });
+    mocks.sendMessage.mockResolvedValue({ data: chatDetail(), error: null });
+    await renderDock();
+    await waitForText('Add reference');
+
+    const addReference = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('Add reference'));
+    await act(async () => {
+      addReference?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 220));
+    });
+    await waitForText('Polish the agent dock');
+    await flush();
+    expect(document.querySelector('[data-helpin-dock]')?.getAttribute('aria-hidden')).toBeNull();
+
+    const taskResult = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('Polish the agent dock'));
+    await act(async () => {
+      taskResult?.click();
+    });
+    await waitForText('HLP-42 · Polish the agent dock');
+
+    const textarea = dockTextarea();
+    await act(async () => {
+      setTextareaValue(textarea, 'Use this task as context');
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await flush();
+
+    expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-1', expect.objectContaining({
+      content: 'Use this task as context',
+      references: [{
+        entity_type: 'task',
+        entity_id: 'task-42',
+        display_title: 'HLP-42 · Polish the agent dock',
+      }],
+    }));
   });
 
   it('shows a stop button for an active run and cancels through the chat service', async () => {

@@ -702,7 +702,8 @@ func (s *AgentRuntimeHostService) ResolveRepositorySpec(ctx context.Context, req
 // rather than attempting to resolve the product object as a Git repository.
 func runtimeRepositorySpecTarget(req agentruntime.PrepareWorkspaceRequest, contextMaps ...map[string]interface{}) agentruntime.TargetRef {
 	target := normalizeRuntimeTarget(req.Target)
-	if target.Type == "repository" || strings.TrimSpace(req.WorkspaceMode) != agentruntime.WorkspaceModeRepository {
+	if target.Type == "repository" || target.Type == "task" || target.Type == "story" ||
+		strings.TrimSpace(req.WorkspaceMode) != agentruntime.WorkspaceModeRepository {
 		return target
 	}
 	maps := []map[string]interface{}{req.Metadata, target.Metadata}

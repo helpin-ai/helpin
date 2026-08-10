@@ -29,6 +29,8 @@ const (
 	dockChatCarryForwardChars  = 500
 	dockChatCarryForwardTotal  = 6000
 	dockChatPageContextOpenTag = "<page_context>"
+	dockChatReferencesOpenTag  = "<references>"
+	dockChatReferencesMax      = 10
 	dockChatListDefaultLimit   = 30
 	dockChatListMaxLimit       = 50
 )
@@ -193,7 +195,11 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 		return nil, err
 	}
 
-	composed := composeDockChatTurn(content, req.PageContext)
+	references, err := normalizeDockChatReferences(req.References)
+	if err != nil {
+		return nil, err
+	}
+	composed := composeDockChatTurn(content, req.PageContext, references)
 
 	var currentRun *model.AgentRun
 	if chat.ActiveRunID != nil {
@@ -474,15 +480,48 @@ func (s *DockChatService) buildCarryForward(ctx context.Context, previousRun *mo
 	return b.String()
 }
 
-func composeDockChatTurn(content string, pageContext map[string]interface{}) string {
-	if len(pageContext) == 0 {
-		return content
+func composeDockChatTurn(content string, pageContext map[string]interface{}, references []model.DockEntityReference) string {
+	blocks := []string{content}
+	if len(pageContext) > 0 {
+		if encoded, err := json.Marshal(pageContext); err == nil {
+			blocks = append(blocks, dockChatPageContextOpenTag+string(encoded)+"</page_context>")
+		}
 	}
-	encoded, err := json.Marshal(pageContext)
-	if err != nil {
-		return content
+	if len(references) > 0 {
+		if encoded, err := json.Marshal(references); err == nil {
+			blocks = append(blocks, dockChatReferencesOpenTag+string(encoded)+"</references>")
+		}
 	}
-	return content + "\n\n" + dockChatPageContextOpenTag + string(encoded) + "</page_context>"
+	return strings.Join(blocks, "\n\n")
+}
+
+func normalizeDockChatReferences(references []model.DockEntityReference) ([]model.DockEntityReference, error) {
+	if len(references) > dockChatReferencesMax {
+		return nil, fmt.Errorf("at most %d references are allowed", dockChatReferencesMax)
+	}
+	allowedTypes := map[string]struct{}{
+		"task": {}, "epic": {}, "document": {}, "crm_contact": {}, "crm_deal": {},
+	}
+	seen := make(map[string]struct{}, len(references))
+	normalized := make([]model.DockEntityReference, 0, len(references))
+	for _, reference := range references {
+		reference.EntityType = strings.TrimSpace(reference.EntityType)
+		reference.EntityID = strings.TrimSpace(reference.EntityID)
+		reference.DisplayTitle = strings.TrimSpace(reference.DisplayTitle)
+		if _, ok := allowedTypes[reference.EntityType]; !ok {
+			return nil, fmt.Errorf("unsupported reference type %q", reference.EntityType)
+		}
+		if reference.EntityID == "" || reference.DisplayTitle == "" {
+			return nil, fmt.Errorf("reference entity_id and display_title are required")
+		}
+		key := reference.EntityType + ":" + reference.EntityID
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, reference)
+	}
+	return normalized, nil
 }
 
 func dockChatTitleFromContent(content string) string {
