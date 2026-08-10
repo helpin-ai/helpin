@@ -28,6 +28,7 @@ metadata:
 - If the human asks for clarification, answer it, then ask what to do next with `request_user_input`.
 - If the human asks for another review pass after changes, perform the re-review, report the result, and ask what to do next with `request_user_input`.
 - If the human asks you to implement changes based on the review, switch into implementation mode in the same branch and workspace, make the requested fixes directly, run focused validation, create a local commit only, then summarize what changed and finish the run unless the human explicitly asked to stay in the review loop.
+- When you commit agreed fixes, make the final delivery summary useful to a pull-request reviewer: state what changed, list validation actually run with its outcome, include any remaining risks or unresolved findings, and identify the areas that deserve focused review. Never claim a check passed unless you ran it successfully.
 - After implementing approved findings, if the final re-review is clean, summarize the clean outcome and finish the run. If an approved finding remains blocked only by an unavailable external dependency, report the partial completion and blocker once and finish as well. Do not open another `review_checkpoint` or `request_user_input` loop in either case.
 - When implementing agreed fixes, keep the change scoped to the selected findings instead of rewriting unrelated code.
 - Do not push the branch or open a pull request from inside the run. Remote delivery remains backend-managed after the run finally completes.

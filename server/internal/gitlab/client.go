@@ -57,16 +57,17 @@ type Branch struct {
 
 // MergeRequest is a GitLab merge request.
 type MergeRequest struct {
-	IID       int    `json:"iid"`
-	Title     string `json:"title"`
-	WebURL    string `json:"web_url"`
-	State     string `json:"state"`
-	Source    string `json:"source_branch"`
-	Target    string `json:"target_branch"`
-	MergeSHA  string `json:"merge_commit_sha"`
-	SHA       string `json:"sha"`
-	MergedAt  string `json:"merged_at"`
-	UpdatedAt string `json:"updated_at"`
+	IID         int    `json:"iid"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	WebURL      string `json:"web_url"`
+	State       string `json:"state"`
+	Source      string `json:"source_branch"`
+	Target      string `json:"target_branch"`
+	MergeSHA    string `json:"merge_commit_sha"`
+	SHA         string `json:"sha"`
+	MergedAt    string `json:"merged_at"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 // ProjectWebhook is a GitLab project webhook.
@@ -197,6 +198,17 @@ func (c *Client) CreateMergeRequest(ctx context.Context, accessToken string, pro
 	}
 	var mr MergeRequest
 	if err := c.do(ctx, accessToken, http.MethodPost, fmt.Sprintf("%s/projects/%d/merge_requests", c.apiBaseURL, projectID), payload, &mr); err != nil {
+		return nil, err
+	}
+	return &mr, nil
+}
+
+// UpdateMergeRequestDescription refreshes the Helpin-managed section of an
+// existing merge request after a later delivery run.
+func (c *Client) UpdateMergeRequestDescription(ctx context.Context, accessToken string, projectID int64, mergeRequestIID int, description string) (*MergeRequest, error) {
+	payload := map[string]string{"description": description}
+	var mr MergeRequest
+	if err := c.do(ctx, accessToken, http.MethodPut, fmt.Sprintf("%s/projects/%d/merge_requests/%d", c.apiBaseURL, projectID, mergeRequestIID), payload, &mr); err != nil {
 		return nil, err
 	}
 	return &mr, nil

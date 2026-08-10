@@ -10,6 +10,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/prcontent"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -19,6 +20,7 @@ import (
 type AgentRunRepositoryDelivery struct {
 	Branch    string
 	CommitSHA string
+	AgentName string
 }
 
 // AgentRunRepositoryDeliveryResult describes the pull/merge request ensured
@@ -55,7 +57,7 @@ func (s *GitService) FinalizeDelegatedRunDelivery(ctx context.Context, run *mode
 	if head == "" || head == base {
 		return nil, nil
 	}
-	title, body := s.delegatedRunPullRequestContent(ctx, run, head, base)
+	title, body := s.buildDelegatedRunPullRequestContent(ctx, run, delivery, head, base)
 	result, err := s.ensureDelegatedRunPullRequest(ctx, integration, repo, head, base, title, body)
 	if err != nil {
 		s.markDelegatedTaskDeliveryPRFailed(ctx, run, taskTarget)
@@ -211,6 +213,16 @@ func (s *GitService) ensureDelegatedRunMergeRequest(ctx context.Context, integra
 	}
 	if len(existing) > 0 {
 		mr := existing[0]
+		mergedDescription := prcontent.Merge(mr.Description, body)
+		if mergedDescription != strings.TrimSpace(mr.Description) {
+			updated, updateErr := client.UpdateMergeRequestDescription(ctx, token, projectID, mr.IID, mergedDescription)
+			if updateErr != nil {
+				return nil, fmt.Errorf("update gitlab merge request: %w", updateErr)
+			}
+			if updated != nil {
+				mr = *updated
+			}
+		}
 		return &AgentRunRepositoryDeliveryResult{
 			Provider: "gitlab",
 			Number:   mr.IID,
@@ -366,85 +378,6 @@ func (s *GitService) markDelegatedTaskDeliveryPRFailed(ctx context.Context, run 
 			"task_id", taskTarget.TaskID,
 		)
 	}
-}
-
-// delegatedRunPullRequestContent ports temporalapp
-// buildDeliveryPullRequestContent using service repositories: task key + name
-// (or epic name) for the title, and a context block for the body.
-func (s *GitService) delegatedRunPullRequestContent(ctx context.Context, run *model.AgentRun, head, base string) (string, string) {
-	title := ""
-	taskLine := ""
-	switch run.TargetType {
-	case "task", "story":
-		title, taskLine = s.delegatedRunTaskTitle(ctx, run)
-	case "epic":
-		if s.epicRepo != nil {
-			if epicWithStats, err := s.epicRepo.GetByID(ctx, strings.TrimSpace(run.TargetID)); err == nil && epicWithStats != nil {
-				if name := strings.TrimSpace(epicWithStats.Epic.Name); name != "" {
-					title = "Merge epic: " + name
-				}
-			}
-		}
-	}
-	if title == "" {
-		title = fmt.Sprintf("Automated changes from %s", head)
-	}
-
-	lines := []string{
-		"Automated pull request opened by Helpin.",
-		"",
-		"## Context",
-	}
-	if taskLine != "" {
-		lines = append(lines, taskLine)
-	}
-	if head != "" {
-		lines = append(lines, "- Branch: `"+head+"`")
-	}
-	if base != "" {
-		lines = append(lines, "- Base branch: `"+base+"`")
-	}
-	if strings.TrimSpace(run.ID) != "" {
-		lines = append(lines, "- Run ID: `"+run.ID+"`")
-	}
-	return title, strings.Join(lines, "\n")
-}
-
-// delegatedRunTaskTitle builds "KEY-123: Name" for a task/story run when the
-// task and workspace key are resolvable, falling back gracefully.
-func (s *GitService) delegatedRunTaskTitle(ctx context.Context, run *model.AgentRun) (string, string) {
-	taskID := delegatedRunTaskID(run)
-	if taskID == "" || s.taskRepo == nil {
-		return "", ""
-	}
-	task, err := s.taskRepo.GetRawByID(ctx, taskID)
-	if err != nil || task == nil {
-		return "", ""
-	}
-	taskName := strings.TrimSpace(task.Name)
-	taskKey := ""
-	if s.workspaceRepo != nil && task.DisplayID > 0 {
-		if workspace, err := s.workspaceRepo.GetByID(ctx, run.WorkspaceID); err == nil && workspace != nil && strings.TrimSpace(workspace.WorkspaceKey) != "" {
-			taskKey = strings.TrimSpace(model.FormatTaskKey(workspace.WorkspaceKey, task.DisplayID))
-		}
-	}
-	title := taskName
-	switch {
-	case taskKey != "" && title != "":
-		title = fmt.Sprintf("%s: %s", taskKey, title)
-	case taskKey != "":
-		title = taskKey
-	}
-	taskLine := ""
-	switch {
-	case taskKey != "" && taskName != "":
-		taskLine = fmt.Sprintf("- Task: %s — %s", taskKey, taskName)
-	case taskKey != "":
-		taskLine = "- Task: " + taskKey
-	case taskName != "":
-		taskLine = "- Task: " + taskName
-	}
-	return title, taskLine
 }
 
 // delegatedRunTaskID resolves the task a task/story run targets.
