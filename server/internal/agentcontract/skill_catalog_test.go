@@ -634,6 +634,18 @@ func TestReviewAgentSkillDeclaresCompletionInteractionPolicy(t *testing.T) {
 	if inputContract.Transports["codex"].Type != InteractionTransportTypeRuntimeBridge {
 		t.Fatalf("expected codex request_user_input runtime bridge transport, got %+v", inputContract.Transports["codex"])
 	}
+	for _, instruction := range []string{
+		"Do not ask for the same missing value again in the current run.",
+		"Do not offer a selectable option whose label merely promises to provide it",
+		"Ask at most once for a missing path, credential, deployment configuration, or other dependency outside the available workspace.",
+		"Never use `review_checkpoint` to collect a path/configuration or to reconfirm a blocker",
+		"finish whenever no useful in-scope action remains; an explicit \"done\" reply is not required.",
+		"report the partial completion and blocker once and finish as well.",
+	} {
+		if !strings.Contains(skill.Instructions, instruction) {
+			t.Fatalf("expected review skill to contain terminal blocker guidance %q\n%s", instruction, skill.Instructions)
+		}
+	}
 }
 
 func TestApprovalProtocolSkillDeclaresPlannerCompletionInteractionPolicy(t *testing.T) {

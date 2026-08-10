@@ -42,7 +42,15 @@ func NewJetStreamPublisher(js nats.JetStreamContext) *Publisher {
 	return p
 }
 
-// Publish broadcasts an event asynchronously. Safe to call on a nil receiver.
+// NewOrderedJetStreamPublisher creates a synchronous JetStream publisher.
+// It is intended for singleton projectors whose input must not be acknowledged
+// until the corresponding WebSocket event has entered the shared event stream.
+func NewOrderedJetStreamPublisher(js nats.JetStreamContext) *Publisher {
+	return &Publisher{js: js}
+}
+
+// Publish broadcasts an event. Standard publishers enqueue asynchronously;
+// ordered publishers deliver synchronously. Safe to call on a nil receiver.
 // Events without a WorkspaceID are logged as errors since they will not reach
 // any clients (Hub.Broadcast routes by WorkspaceID).
 func (p *Publisher) Publish(event Event) {

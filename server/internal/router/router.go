@@ -786,6 +786,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}", h.DockChat.GetChat)
 				r.With(requireCommandBarRead()).Patch("/chats/{chatID}", h.DockChat.UpdateChat)
 				r.With(requireCommandBarRead()).Post("/chats/{chatID}/messages", h.DockChat.SendMessage)
+				r.With(requireCommandBarRead()).Post("/chats/{chatID}/title", h.DockChat.GenerateTitle)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run", h.DockChat.GetChatRun)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run/events", h.DockChat.ListChatRunEvents)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run/interactions", h.DockChat.ListChatRunInteractions)

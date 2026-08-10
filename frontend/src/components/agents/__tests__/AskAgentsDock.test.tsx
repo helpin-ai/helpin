@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   getChat: vi.fn(),
   updateChat: vi.fn(),
   sendMessage: vi.fn(),
+  generateTitle: vi.fn(),
   getChatRun: vi.fn(),
   listChatRunEvents: vi.fn(),
   listChatRunInteractions: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock('@/lib/services/dockChatService', () => ({
     getChat: mocks.getChat,
     updateChat: mocks.updateChat,
     sendMessage: mocks.sendMessage,
+    generateTitle: mocks.generateTitle,
     getChatRun: mocks.getChatRun,
     listChatRunEvents: mocks.listChatRunEvents,
     listChatRunInteractions: mocks.listChatRunInteractions,
@@ -144,6 +146,7 @@ beforeEach(() => {
   mocks.listRuns.mockResolvedValue({ data: { runs: [], attention_count: 0 }, error: null });
   mocks.getChat.mockResolvedValue({ data: chatDetail(), error: null });
   mocks.getChatRun.mockResolvedValue({ data: null, error: null });
+  mocks.generateTitle.mockResolvedValue({ data: null, error: null });
   mocks.getRunSnapshot.mockResolvedValue({
     data: { id: 'agent-run-1', status: 'paused', pause_reason: 'human_approval', stream_state_snapshot: null },
     error: null,
@@ -191,6 +194,16 @@ async function waitForText(text: string) {
     await flush();
   }
   throw new Error(`Missing text: ${text}`);
+}
+
+async function waitForCondition(condition: () => boolean, message: string) {
+  for (let i = 0; i < 20; i += 1) {
+    if (condition()) return;
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+  }
+  throw new Error(message);
 }
 
 function dockTextarea(): HTMLTextAreaElement {
@@ -241,6 +254,62 @@ describe('AskAgentsDock', () => {
     expect(textarea.disabled).toBe(false);
   });
 
+  it('shows running, paused, and stopped chat lifecycle indicators', async () => {
+    const recent = new Date().toISOString();
+    const chats: DockChat[] = [
+      { ...CHAT, id: 'chat-running', title: 'Running chat', active_run_id: 'run-running', active_run_status: 'running' },
+      { ...CHAT, id: 'chat-paused', title: 'Paused chat', active_run_id: 'run-paused', active_run_status: 'paused' },
+      { ...CHAT, id: 'chat-fallback-paused', title: 'Fallback paused chat', active_run_id: 'run-fallback-paused', updated_at: recent },
+      { ...CHAT, id: 'chat-stopped', title: 'Stopped chat', active_run_id: 'run-stopped', active_run_status: 'completed' },
+      { ...CHAT, id: 'chat-timeout', title: 'Timed out chat', active_run_id: 'run-timeout' },
+    ];
+    mocks.listChats.mockResolvedValue({ data: { chats }, error: null });
+
+    await renderDock();
+    await waitForText('Stopped chat');
+
+    const runningRow = document.body.querySelector('[aria-label="Running chat, Running"]')?.closest('.agent-dock-roster-row');
+    const pausedRow = document.body.querySelector('[aria-label="Paused chat, Paused"]')?.closest('.agent-dock-roster-row');
+    const fallbackPausedRow = document.body.querySelector('[aria-label="Fallback paused chat, Paused"]')?.closest('.agent-dock-roster-row');
+    const stoppedRow = document.body.querySelector('[aria-label="Stopped chat, Stopped"]')?.closest('.agent-dock-roster-row');
+    const timedOutRow = document.body.querySelector('[aria-label="Timed out chat, Stopped"]')?.closest('.agent-dock-roster-row');
+    expect(runningRow?.querySelector('[data-agent-dock-chat-status="running"]')).not.toBeNull();
+    expect(runningRow?.querySelector('.agent-dock-chat-running-pulse')).not.toBeNull();
+    expect(pausedRow?.querySelector('[data-agent-dock-chat-status="paused"]')?.children).toHaveLength(2);
+    expect(fallbackPausedRow?.querySelector('[data-agent-dock-chat-status="paused"]')).not.toBeNull();
+    expect(stoppedRow?.querySelector('[data-agent-dock-chat-status="stopped"]')).not.toBeNull();
+    expect(timedOutRow?.querySelector('[data-agent-dock-chat-status="stopped"]')).not.toBeNull();
+  });
+
+  it('applies the authoritative paused status from chat detail when the list omits it', async () => {
+    const listedChat = { ...CHAT, active_run_id: 'run-paused' };
+    const pausedRun = { id: 'run-paused', status: 'paused', pause_reason: 'awaiting_user_message' } as never;
+    mocks.listChats.mockResolvedValue({ data: { chats: [listedChat] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: listedChat, run: pausedRun }), error: null });
+
+    await renderDock();
+    await waitForCondition(
+      () => useDockStore.getState().chats[0]?.active_run_status === 'paused',
+      'Paused chat detail was not projected into the roster',
+    );
+
+    expect(document.body.querySelector('[aria-label="Sprint questions, Paused"]')).not.toBeNull();
+    expect(useDockStore.getState().chats[0]?.active_run_status).toBe('paused');
+  });
+
+  it('refreshes chat lifecycle state when a run update arrives', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+    expect(mocks.listChats).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'run-1' } }));
+      await new Promise((resolve) => window.setTimeout(resolve, 220));
+    });
+
+    expect(mocks.listChats).toHaveBeenCalledTimes(2);
+  });
+
   it('opens chat actions above the dock and archives a conversation', async () => {
     mocks.updateChat.mockResolvedValue({
       data: { ...CHAT, archived_at: '2026-08-10T00:00:00Z' },
@@ -251,6 +320,11 @@ describe('AskAgentsDock', () => {
 
     const trigger = document.body.querySelector<HTMLButtonElement>('[aria-label="Actions for Sprint questions"]');
     expect(trigger).not.toBeNull();
+    expect(trigger?.className).toContain('absolute');
+    expect(trigger?.className).toContain('group-hover:opacity-100');
+    const chatRow = trigger?.closest('.agent-dock-roster-row');
+    const timestamp = chatRow?.querySelector('[data-agent-dock-chat-time]');
+    expect(timestamp?.className).toContain('ms-auto');
     await act(async () => {
       trigger?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
     });
@@ -298,6 +372,43 @@ describe('AskAgentsDock', () => {
       'chat-1',
       expect.objectContaining({ content: 'list open tasks' }),
     );
+    expect(mocks.generateTitle).not.toHaveBeenCalled();
+  });
+
+  it('generates a semantic title after the first message without blocking send', async () => {
+    const untitled = { ...CHAT, title: '' };
+    const titled = { ...CHAT, title: 'Prioritize open tasks', active_run_id: 'run-1' };
+    mocks.listChats.mockResolvedValue({ data: { chats: [untitled] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: untitled }), error: null });
+    mocks.sendMessage.mockResolvedValue({
+      data: chatDetail({
+        chat: { ...untitled, active_run_id: 'run-1' },
+        run: { id: 'run-1', status: 'running', pause_reason: 'none' } as never,
+      }),
+      error: null,
+    });
+    mocks.generateTitle.mockImplementation(async () => {
+      mocks.listChats.mockResolvedValue({ data: { chats: [titled] }, error: null });
+      return { data: titled, error: null };
+    });
+
+    await renderDock();
+    await waitForText('Untitled chat');
+    const textarea = dockTextarea();
+    await waitForCondition(() => !textarea.disabled, 'Dock composer did not become ready');
+    await act(async () => {
+      setTextareaValue(textarea, 'Which open tasks should we prioritize this week?');
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await waitForCondition(() => mocks.generateTitle.mock.calls.length === 1, 'Semantic title request was not sent');
+
+    expect(mocks.generateTitle).toHaveBeenCalledWith('ws-1', 'chat-1', expect.objectContaining({
+      content: 'Which open tasks should we prioritize this week?',
+    }));
+    await waitForText('Prioritize open tasks');
+    const titleWords = Array.from(document.body.querySelectorAll<HTMLElement>('.agent-dock-title-word'));
+    expect(titleWords.length).toBeGreaterThan(0);
+    expect(titleWords.some((word) => word.style.animationDelay === '110ms')).toBe(true);
   });
 
   it('attaches a searched task reference to the message payload', async () => {
@@ -462,7 +573,7 @@ describe('AskAgentsDock', () => {
     await waitForText('Sprint questions');
 
     const agentsButton = Array.from(document.body.querySelectorAll('[data-helpin-dock] button')).find(
-      (b) => b.textContent === 'Agents',
+      (b) => b.textContent === 'Agent runs',
     );
     expect(agentsButton).toBeTruthy();
     await act(async () => {
@@ -499,6 +610,7 @@ describe('AskAgentsDock', () => {
     expect(footer).not.toBeNull();
     expect(footer?.className).toContain('border-t');
     expect(footer?.contains(newButton ?? null)).toBe(true);
+    expect(newButton?.className).toContain('border-[#e6e3dd]');
     expect(document.body.querySelector('.agent-dock-roster-controls')?.contains(newButton ?? null)).toBe(false);
     await act(async () => {
       (newButton as HTMLButtonElement).click();

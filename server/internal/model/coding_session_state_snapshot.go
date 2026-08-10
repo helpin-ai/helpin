@@ -15,6 +15,7 @@ type CodingSessionStateSnapshot struct {
 	WorkspaceID     string          `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_coding_session_state_snapshots_run"`
 	RunID           string          `json:"run_id" gorm:"type:uuid;not null;uniqueIndex:idx_coding_session_state_snapshots_run"`
 	SchemaVersion   string          `json:"schema_version" gorm:"not null;default:'helpin.coding_session.stream.v1'"`
+	ThroughSequence int64           `json:"through_sequence" gorm:"not null;default:0"`
 	SnapshotPayload json.RawMessage `json:"snapshot_payload" gorm:"type:jsonb;not null;default:'{}'"`
 	CreatedAt       time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt       time.Time       `json:"updated_at" gorm:"autoUpdateTime"`

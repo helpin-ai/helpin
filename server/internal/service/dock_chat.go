@@ -50,6 +50,7 @@ type DockChatService struct {
 	agentService   *AgentService
 	commandService *InternalCommandService
 	authz          *authorization.AuthzService
+	titleLLM       dockChatTitleLLM
 }
 
 // NewDockChatService creates a DockChatService.
@@ -98,6 +99,9 @@ func (s *DockChatService) ListChats(ctx context.Context, workspaceID, userID str
 
 	chats, err := s.chatRepo.ListByWorkspaceUser(ctx, workspaceID, userID, limit+1, before, beforeID)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.hydrateActiveRunStatuses(ctx, workspaceID, chats); err != nil {
 		return nil, err
 	}
 	response := &model.DockChatListResponse{Chats: chats}
@@ -155,7 +159,15 @@ func (s *DockChatService) UpdateChat(ctx context.Context, workspaceID, userID, c
 	if err := s.chatRepo.Update(ctx, workspaceID, chat.ID, updates); err != nil {
 		return nil, fmt.Errorf("update dock chat: %w", err)
 	}
-	return s.chatRepo.GetByID(ctx, workspaceID, chat.ID)
+	updated, err := s.chatRepo.GetByID(ctx, workspaceID, chat.ID)
+	if err != nil || updated == nil {
+		return updated, err
+	}
+	chats := []model.DockChat{*updated}
+	if err := s.hydrateActiveRunStatuses(ctx, workspaceID, chats); err != nil {
+		return nil, err
+	}
+	return &chats[0], nil
 }
 
 // GetChat returns the chat with a summary of its current backing run.
@@ -247,9 +259,6 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 
 	now := time.Now().UTC()
 	updates := map[string]interface{}{"last_message_at": now}
-	if strings.TrimSpace(chat.Title) == "" {
-		updates["title"] = dockChatTitleFromContent(content)
-	}
 	if err := s.chatRepo.Update(ctx, workspaceID, chat.ID, updates); err != nil {
 		return nil, fmt.Errorf("touch dock chat: %w", err)
 	}
@@ -311,6 +320,10 @@ func (s *DockChatService) chatDetail(ctx context.Context, chat *model.DockChat) 
 		if err != nil {
 			return nil, fmt.Errorf("get chat run: %w", err)
 		}
+		if run != nil {
+			model.NormalizeAgentRunPauseState(run)
+			detail.Chat.ActiveRunStatus = run.Status
+		}
 		detail.Run = run
 	}
 	if s.planRepo != nil {
@@ -322,6 +335,49 @@ func (s *DockChatService) chatDetail(ctx context.Context, chat *model.DockChat) 
 		}
 	}
 	return detail, nil
+}
+
+// hydrateActiveRunStatuses attaches the current backing-run lifecycle to a
+// page of chats in one query so roster indicators do not require N+1 reads.
+func (s *DockChatService) hydrateActiveRunStatuses(ctx context.Context, workspaceID string, chats []model.DockChat) error {
+	if s.runRepo == nil || len(chats) == 0 {
+		return nil
+	}
+	runIDs := make([]string, 0, len(chats))
+	seen := make(map[string]struct{}, len(chats))
+	for i := range chats {
+		if chats[i].ActiveRunID == nil {
+			continue
+		}
+		runID := strings.TrimSpace(*chats[i].ActiveRunID)
+		if runID == "" {
+			continue
+		}
+		if _, exists := seen[runID]; exists {
+			continue
+		}
+		seen[runID] = struct{}{}
+		runIDs = append(runIDs, runID)
+	}
+	if len(runIDs) == 0 {
+		return nil
+	}
+
+	runs, err := s.runRepo.ListByIDs(ctx, workspaceID, runIDs)
+	if err != nil {
+		return fmt.Errorf("list dock chat run statuses: %w", err)
+	}
+	statusByID := make(map[string]string, len(runs))
+	for i := range runs {
+		model.NormalizeAgentRunPauseState(&runs[i])
+		statusByID[runs[i].ID] = runs[i].Status
+	}
+	for i := range chats {
+		if chats[i].ActiveRunID != nil {
+			chats[i].ActiveRunStatus = statusByID[strings.TrimSpace(*chats[i].ActiveRunID)]
+		}
+	}
+	return nil
 }
 
 func (s *DockChatService) ownedChat(ctx context.Context, workspaceID, userID, chatID string) (*model.DockChat, error) {

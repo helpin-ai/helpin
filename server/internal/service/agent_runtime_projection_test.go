@@ -189,9 +189,11 @@ func (r *fakeAgentRuntimeProjectionInteractionRepo) Update(_ context.Context, in
 }
 
 type fakeAgentRuntimeProjectionSessionSnapshotRepo struct {
-	record  *model.CodingSessionStateSnapshot
-	upserts int
-	deletes int
+	record        *model.CodingSessionStateSnapshot
+	upserts       int
+	deletes       int
+	upsertStarted chan<- struct{}
+	releaseUpsert <-chan struct{}
 }
 
 type fakeAgentRuntimeProjectionPublisher struct {
@@ -210,15 +212,28 @@ func (r *fakeAgentRuntimeProjectionSessionSnapshotRepo) GetByRun(_ context.Conte
 	return &copy, nil
 }
 
-func (r *fakeAgentRuntimeProjectionSessionSnapshotRepo) Upsert(_ context.Context, snapshot *model.CodingSessionStateSnapshot) error {
+func (r *fakeAgentRuntimeProjectionSessionSnapshotRepo) UpsertIfNewer(
+	_ context.Context,
+	snapshot *model.CodingSessionStateSnapshot,
+) (bool, error) {
 	r.upserts++
+	if r.upsertStarted != nil {
+		r.upsertStarted <- struct{}{}
+	}
+	if r.releaseUpsert != nil {
+		<-r.releaseUpsert
+	}
 	if snapshot == nil {
 		r.record = nil
-		return nil
+		return false, nil
+	}
+	if r.record != nil && snapshot.ThroughSequence > 0 &&
+		r.record.ThroughSequence >= snapshot.ThroughSequence {
+		return false, nil
 	}
 	copy := *snapshot
 	r.record = &copy
-	return nil
+	return true, nil
 }
 
 func (r *fakeAgentRuntimeProjectionSessionSnapshotRepo) DeleteByRun(_ context.Context, _, _ string) error {
@@ -958,6 +973,147 @@ func TestAgentRuntimeProjectionPersistsCodingSessionStreamSnapshot(t *testing.T)
 	}
 	if liveEvent.RuntimeMetadata["source"] != "agent-runtime-v2" {
 		t.Fatalf("unexpected live event source: %#v", liveEvent.RuntimeMetadata)
+	}
+}
+
+func TestAgentRuntimeProjectionDoesNotPublishStaleStreamEvent(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-stale-stream",
+		WorkspaceID:       "ws-1",
+		Status:            model.AgentRunStatusRunning,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_stale_stream"),
+	}
+	payload, err := model.EncodeCodingSessionStreamSnapshot(&model.CodingSessionStreamSnapshot{
+		ThroughSequence: 10,
+		LiveAssistantMessage: &model.CodingSessionLiveAssistantMessage{
+			MessageID: "assistant-1",
+			Content:   "newer state",
+			Status:    "streaming",
+		},
+	})
+	if err != nil {
+		t.Fatalf("encode snapshot: %v", err)
+	}
+	snapshotRepo := &fakeAgentRuntimeProjectionSessionSnapshotRepo{
+		record: &model.CodingSessionStateSnapshot{
+			WorkspaceID:     run.WorkspaceID,
+			RunID:           run.ID,
+			ThroughSequence: 10,
+			SnapshotPayload: payload,
+		},
+	}
+	publisher := &fakeAgentRuntimeProjectionPublisher{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: &fakeAgentRuntimeProjectionRunRepo{
+			byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_stale_stream": run},
+		},
+		sessionSnapshotRepo: snapshotRepo,
+		wsPublisher:         publisher,
+		eventProtocol:       "v2",
+		now:                 time.Now,
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		EventID:    "stale-event",
+		RunID:      "run_runtime_stale_stream",
+		SequenceNo: 9,
+		Type:       "assistant_message_delta",
+		Data:       map[string]any{"message_id": "assistant-1", "content": " stale"},
+	}); err != nil {
+		t.Fatalf("ApplyEvent stale delta returned error: %v", err)
+	}
+	if snapshotRepo.upserts != 0 {
+		t.Fatalf("stale event caused %d snapshot upserts", snapshotRepo.upserts)
+	}
+	if len(publisher.events) != 0 {
+		t.Fatalf("stale event was published: %#v", publisher.events)
+	}
+}
+
+func TestAgentRuntimeProjectionSerializesConcurrentEventsForOneRun(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-concurrent-stream",
+		WorkspaceID:       "ws-1",
+		Status:            model.AgentRunStatusRunning,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_concurrent_stream"),
+	}
+	upsertStarted := make(chan struct{}, 1)
+	releaseUpsert := make(chan struct{})
+	snapshotRepo := &fakeAgentRuntimeProjectionSessionSnapshotRepo{
+		upsertStarted: upsertStarted,
+		releaseUpsert: releaseUpsert,
+	}
+	publisher := &fakeAgentRuntimeProjectionPublisher{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: &fakeAgentRuntimeProjectionRunRepo{
+			byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_concurrent_stream": run},
+		},
+		sessionSnapshotRepo: snapshotRepo,
+		wsPublisher:         publisher,
+		eventProtocol:       "v2",
+		now:                 time.Now,
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+			EventID:    "event-1",
+			RunID:      "run_runtime_concurrent_stream",
+			SequenceNo: 1,
+			Type:       "assistant_message_started",
+			Data:       map[string]any{"message_id": "assistant-1"},
+		})
+	}()
+	select {
+	case <-upsertStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first event did not reach snapshot upsert")
+	}
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+			EventID:    "event-2",
+			RunID:      "run_runtime_concurrent_stream",
+			SequenceNo: 2,
+			Type:       "assistant_message_delta",
+			Data:       map[string]any{"message_id": "assistant-1", "content": "hello"},
+		})
+	}()
+	select {
+	case <-upsertStarted:
+		t.Fatal("second event entered snapshot upsert while the first event was still applying")
+	case <-time.After(40 * time.Millisecond):
+	}
+	close(releaseUpsert)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first ApplyEvent returned error: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second ApplyEvent returned error: %v", err)
+	}
+
+	if len(publisher.events) != 2 {
+		t.Fatalf("published events = %#v, want two", publisher.events)
+	}
+	for index, published := range publisher.events {
+		var event model.CodingSessionEvent
+		if err := json.Unmarshal(published.Data, &event); err != nil {
+			t.Fatalf("decode published event %d: %v", index, err)
+		}
+		if event.SequenceNo != index+1 {
+			t.Fatalf("published sequence at index %d = %d, want %d", index, event.SequenceNo, index+1)
+		}
+	}
+	snapshot, err := model.DecodeCodingSessionStreamSnapshot(snapshotRepo.record.SnapshotPayload)
+	if err != nil {
+		t.Fatalf("decode final snapshot: %v", err)
+	}
+	if snapshot.ThroughSequence != 2 || snapshot.LiveAssistantMessage == nil ||
+		snapshot.LiveAssistantMessage.Content != "hello" {
+		t.Fatalf("final snapshot = %#v, want ordered sequence 2 state", snapshot)
 	}
 }
 

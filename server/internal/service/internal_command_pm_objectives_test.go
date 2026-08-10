@@ -338,7 +338,7 @@ func TestPMCommandKeyResultsRequireCurrentObjectiveParent(t *testing.T) {
 		t.Fatalf("key result no-op error = %v", err)
 	}
 	workspaceMeta := env.meta("workspace", env.workspaceID)
-	if _, err := env.commands.Execute(ctx, workspaceMeta, "pm.create_key_result", json.RawMessage(`{"name":"No parent"}`)); err == nil || !strings.Contains(err.Error(), "does not support target type") {
+	if _, err := env.commands.Execute(ctx, workspaceMeta, "pm.create_key_result", json.RawMessage(`{"name":"No parent"}`)); err == nil || !strings.Contains(err.Error(), "objective_id is required") {
 		t.Fatalf("workspace key result error = %v", err)
 	}
 	crossWorkspaceMeta := env.meta("objective", "objective-kr-other")
