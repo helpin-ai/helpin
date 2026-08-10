@@ -555,6 +555,57 @@ func TestAgentRuntimeProjectionPausedRunBackfillsAndPublishesPendingInteraction(
 	}
 }
 
+func TestAgentRuntimeProjectionPreservesCodexNativeApprovalKinds(t *testing.T) {
+	tests := []struct {
+		name             string
+		runtimeKind      string
+		responseMetadata string
+		wantKind         string
+	}{
+		{name: "legacy command", runtimeKind: "human_approval", responseMetadata: `{"codex_request_kind":"command_execution"}`, wantKind: model.AgentRunInteractionKindCommandExecutionApproval},
+		{name: "legacy file change", runtimeKind: "human_approval", responseMetadata: `{"codex_request_kind":"file_change"}`, wantKind: model.AgentRunInteractionKindFileChangeApproval},
+		{name: "legacy permissions", runtimeKind: "human_approval", responseMetadata: `{"codex_request_kind":"permissions"}`, wantKind: model.AgentRunInteractionKindPermissionsApproval},
+		{name: "typed file change", runtimeKind: "file_change_approval", responseMetadata: `{}`, wantKind: model.AgentRunInteractionKindFileChangeApproval},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1", RuntimeKind: "codex"}
+			repo := &fakeAgentRuntimeProjectionInteractionRepo{}
+			svc := &AgentRuntimeProjectionService{interactionRepo: repo, runRepo: &fakeAgentRuntimeProjectionRunRepo{}}
+			runtimeInteraction := AgentRuntimeInteraction{
+				ID:              "runtime-interaction-1",
+				RuntimeKind:     "codex",
+				InteractionKind: tt.runtimeKind,
+				Status:          model.AgentRunInteractionStatusPending,
+				RequestPayload:  json.RawMessage(`{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1"}`),
+				ResponsePayload: json.RawMessage(tt.responseMetadata),
+			}
+			if err := svc.upsertRuntimeInteraction(context.Background(), run, runtimeInteraction); err != nil {
+				t.Fatalf("upsert pending interaction: %v", err)
+			}
+			if len(repo.interactions) != 1 {
+				t.Fatalf("expected one interaction, got %#v", repo.interactions)
+			}
+			projected := repo.interactions[0]
+			if projected.InteractionKind != tt.wantKind || projected.RequestSchemaVersion != model.AgentRunInteractionSchemaVersionCodexV2 {
+				t.Fatalf("unexpected projected contract: %#v", projected)
+			}
+
+			// Legacy runtime rows overwrite their temporary metadata when they
+			// resolve. The projected native kind must remain stable afterward.
+			runtimeInteraction.Status = model.AgentRunInteractionStatusResolved
+			runtimeInteraction.ResponsePayload = json.RawMessage(`{"decision":"accept"}`)
+			if err := svc.upsertRuntimeInteraction(context.Background(), run, runtimeInteraction); err != nil {
+				t.Fatalf("upsert resolved interaction: %v", err)
+			}
+			projected = repo.interactions[0]
+			if projected.InteractionKind != tt.wantKind || projected.RequestSchemaVersion != model.AgentRunInteractionSchemaVersionCodexV2 {
+				t.Fatalf("resolved projection lost native contract: %#v", projected)
+			}
+		})
+	}
+}
+
 func TestAgentRuntimeProjectionCancelsPendingInteractionsOnTerminalEvent(t *testing.T) {
 	now := time.Date(2026, 7, 3, 12, 0, 0, 0, time.UTC)
 	run := &model.AgentRun{

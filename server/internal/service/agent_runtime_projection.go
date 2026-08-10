@@ -1721,13 +1721,14 @@ func (s *AgentRuntimeProjectionService) upsertRuntimeInteraction(ctx context.Con
 		}
 		return nil
 	}
+	interactionKind := projectedRuntimeInteractionKind(runtimeInteraction, run.RuntimeKind)
 	interaction := &model.AgentRunInteraction{
 		WorkspaceID:          run.WorkspaceID,
 		RunID:                run.ID,
 		RuntimeKind:          firstNonEmptyString(strings.TrimSpace(runtimeInteraction.RuntimeKind), strings.TrimSpace(run.RuntimeKind)),
-		InteractionKind:      normalizeRuntimeInteractionKind(runtimeInteraction.InteractionKind),
+		InteractionKind:      interactionKind,
 		Status:               normalizeRuntimeInteractionStatus(runtimeInteraction.Status),
-		RequestSchemaVersion: model.AgentRunInteractionSchemaVersionHelpinV1,
+		RequestSchemaVersion: projectedRuntimeInteractionSchemaVersion(runtimeInteraction, run.RuntimeKind, interactionKind),
 		RequestID:            strPtr(runtimeInteractionID),
 		Title:                stringPtrIfNotEmpty(runtimeInteraction.Title),
 		Summary:              stringPtrIfNotEmpty(runtimeInteraction.Summary),
@@ -1987,8 +1988,16 @@ func applyRuntimeInteraction(interaction *model.AgentRunInteraction, runtimeInte
 		interaction.RuntimeKind = value
 		changed = true
 	}
-	if value := normalizeRuntimeInteractionKind(runtimeInteraction.InteractionKind); strings.TrimSpace(interaction.InteractionKind) != value {
-		interaction.InteractionKind = value
+	projectedKind := projectedRuntimeInteractionKind(runtimeInteraction, run.RuntimeKind)
+	if projectedKind == model.AgentRunInteractionKindApprovalRequest && isCodexNativeApprovalInteractionKind(interaction.InteractionKind) {
+		projectedKind = strings.TrimSpace(interaction.InteractionKind)
+	}
+	if strings.TrimSpace(interaction.InteractionKind) != projectedKind {
+		interaction.InteractionKind = projectedKind
+		changed = true
+	}
+	if value := projectedRuntimeInteractionSchemaVersion(runtimeInteraction, run.RuntimeKind, projectedKind); strings.TrimSpace(interaction.RequestSchemaVersion) != value {
+		interaction.RequestSchemaVersion = value
 		changed = true
 	}
 	if value := normalizeRuntimeInteractionStatus(runtimeInteraction.Status); strings.TrimSpace(interaction.Status) != value {
@@ -2069,6 +2078,47 @@ func normalizeRuntimeInteractionKind(kind string) string {
 			return model.AgentRunInteractionKindRequestUserInput
 		}
 		return strings.TrimSpace(kind)
+	}
+}
+
+func projectedRuntimeInteractionKind(interaction AgentRuntimeInteraction, fallbackRuntimeKind string) string {
+	kind := normalizeRuntimeInteractionKind(interaction.InteractionKind)
+	if kind != model.AgentRunInteractionKindApprovalRequest || firstNonEmptyString(strings.TrimSpace(interaction.RuntimeKind), strings.TrimSpace(fallbackRuntimeKind)) != "codex" {
+		return kind
+	}
+	var metadata struct {
+		CodexRequestKind string `json:"codex_request_kind"`
+	}
+	if err := json.Unmarshal(interaction.ResponsePayload, &metadata); err != nil {
+		return kind
+	}
+	switch strings.TrimSpace(metadata.CodexRequestKind) {
+	case "command_execution":
+		return model.AgentRunInteractionKindCommandExecutionApproval
+	case "file_change":
+		return model.AgentRunInteractionKindFileChangeApproval
+	case "permissions":
+		return model.AgentRunInteractionKindPermissionsApproval
+	default:
+		return kind
+	}
+}
+
+func projectedRuntimeInteractionSchemaVersion(interaction AgentRuntimeInteraction, fallbackRuntimeKind, kind string) string {
+	if firstNonEmptyString(strings.TrimSpace(interaction.RuntimeKind), strings.TrimSpace(fallbackRuntimeKind)) == "codex" && isCodexNativeApprovalInteractionKind(kind) {
+		return model.AgentRunInteractionSchemaVersionCodexV2
+	}
+	return model.AgentRunInteractionSchemaVersionHelpinV1
+}
+
+func isCodexNativeApprovalInteractionKind(kind string) bool {
+	switch strings.TrimSpace(kind) {
+	case model.AgentRunInteractionKindCommandExecutionApproval,
+		model.AgentRunInteractionKindFileChangeApproval,
+		model.AgentRunInteractionKindPermissionsApproval:
+		return true
+	default:
+		return false
 	}
 }
 
