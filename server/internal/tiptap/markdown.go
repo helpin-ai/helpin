@@ -38,6 +38,7 @@ func MarkdownToJSON(markdown string) json.RawMessage {
 	if root == nil || len(root.Content) == 0 {
 		return emptyDoc()
 	}
+	normalizeDocumentTree(root)
 
 	payload, _ := json.Marshal(root)
 	return payload
@@ -105,6 +106,52 @@ func convertParagraph(n ast.Node, source []byte) *Node {
 	p := &Node{Type: "paragraph"}
 	p.Content = children
 	return p
+}
+
+// normalizeDocumentTree enforces TipTap structural constraints that Markdown
+// does not: block images cannot remain inside inline text containers, lists
+// cannot be empty, and list items must start with a paragraph.
+func normalizeDocumentTree(node *Node) {
+	for i := range node.Content {
+		normalizeDocumentTree(&node.Content[i])
+	}
+
+	content := make([]Node, 0, len(node.Content))
+	for _, child := range node.Content {
+		if (child.Type == "bulletList" || child.Type == "orderedList") && len(child.Content) == 0 {
+			continue
+		}
+		if child.Type != "paragraph" && child.Type != "heading" {
+			content = append(content, child)
+			continue
+		}
+
+		start := 0
+		for i, inline := range child.Content {
+			if inline.Type != "resizableImage" {
+				continue
+			}
+			if i > start {
+				textBlock := child
+				textBlock.Content = append([]Node(nil), child.Content[start:i]...)
+				content = append(content, textBlock)
+			}
+			content = append(content, inline)
+			start = i + 1
+		}
+		if start == 0 {
+			content = append(content, child)
+		} else if start < len(child.Content) {
+			textBlock := child
+			textBlock.Content = append([]Node(nil), child.Content[start:]...)
+			content = append(content, textBlock)
+		}
+	}
+
+	if node.Type == "listItem" && (len(content) == 0 || content[0].Type != "paragraph") {
+		content = append([]Node{{Type: "paragraph"}}, content...)
+	}
+	node.Content = content
 }
 
 func convertHeading(n ast.Node, source []byte) *Node {
@@ -447,8 +494,9 @@ func convertEmphasis(n ast.Node, source []byte, marks []Mark) []Node {
 }
 
 func convertCodeSpan(n ast.Node, source []byte, marks []Mark) []Node {
-	newMarks := appendMark(marks, Mark{Type: "code"})
-	return convertInlineChildren(n, source, newMarks)
+	// TipTap's code mark excludes every other mark. Markdown can nest code
+	// inside emphasis or links, so discard the inherited marks here.
+	return convertInlineChildren(n, source, []Mark{{Type: "code"}})
 }
 
 func convertLink(n ast.Node, source []byte, marks []Mark) []Node {
@@ -523,8 +571,14 @@ func makeTextNode(txt string, marks []Mark) Node {
 	return n
 }
 
-// appendMark returns a new mark slice with the given mark appended.
+// appendMark returns a new mark slice with the given mark appended. TipTap
+// permits at most one mark of each type on a text node.
 func appendMark(marks []Mark, m Mark) []Mark {
+	for _, existing := range marks {
+		if existing.Type == m.Type {
+			return marks
+		}
+	}
 	newMarks := make([]Mark, len(marks)+1)
 	copy(newMarks, marks)
 	newMarks[len(marks)] = m
