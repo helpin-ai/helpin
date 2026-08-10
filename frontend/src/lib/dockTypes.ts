@@ -19,6 +19,7 @@ export interface DockChat {
   user_id: string
   title: string
   active_run_id?: string | null
+  active_run_status?: AgentRun['status'] | null
   last_message_at?: string | null
   archived_at?: string | null
   created_at: string
@@ -44,6 +45,11 @@ export interface SendDockChatMessageRequest {
 }
 
 export type DockEntityReference = CommandBarPageContext
+
+export interface GenerateDockChatTitleRequest {
+  content: string
+  page_context?: CommandBarPageContext
+}
 
 export interface UpdateDockChatRequest {
   title?: string

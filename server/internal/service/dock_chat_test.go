@@ -8,11 +8,30 @@ import (
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+type scriptedDockChatTitleLLM struct {
+	response string
+	err      error
+	requests []llm.ChatRequest
+	metered  []AIUsageMeteringContext
+}
+
+func (s *scriptedDockChatTitleLLM) ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	s.requests = append(s.requests, req)
+	if metering, ok := AIUsageMeteringFromContext(ctx); ok {
+		s.metered = append(s.metered, metering)
+	}
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &llm.ChatResponse{Content: s.response}, nil
+}
 
 func TestDockChatListCursorPagination(t *testing.T) {
 	dbName := fmt.Sprintf("file:dock_chat_cursor_%d?mode=memory&cache=shared", time.Now().UnixNano())
@@ -55,6 +74,140 @@ func TestDockChatListCursorPagination(t *testing.T) {
 	}
 	if _, err := service.ListChats(context.Background(), "ws-1", "user-1", 2, "not-a-cursor"); !errors.Is(err, ErrDockChatInvalidCursor) {
 		t.Fatalf("invalid cursor error = %v, want %v", err, ErrDockChatInvalidCursor)
+	}
+}
+
+func TestDockChatListHydratesActiveRunStatus(t *testing.T) {
+	dbName := fmt.Sprintf("file:dock_chat_status_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE dock_chats (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
+		title TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create dock chats: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE agent_runs (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, status TEXT,
+		pause_reason TEXT, approval_state TEXT, execution_stage TEXT,
+		created_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agent runs: %v", err)
+	}
+	now := time.Date(2026, 8, 10, 7, 0, 0, 0, time.UTC)
+	if err := db.Exec(`INSERT INTO agent_runs (id, workspace_id, status, pause_reason, approval_state, created_at)
+		VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)`,
+		"run-running", "ws-1", model.AgentRunStatusRunning, model.AgentRunPauseReasonNone, "not_required", now,
+		"run-paused", "ws-1", model.AgentRunStatusPaused, model.AgentRunPauseReasonUserMessage, "not_required", now,
+		"run-completed", "ws-1", model.AgentRunStatusCompleted, model.AgentRunPauseReasonNone, "not_required", now,
+	).Error; err != nil {
+		t.Fatalf("seed agent runs: %v", err)
+	}
+	runningID := "run-running"
+	pausedID := "run-paused"
+	completedID := "run-completed"
+	chats := []model.DockChat{
+		{ID: "chat-running", WorkspaceID: "ws-1", UserID: "user-1", Title: "Running", ActiveRunID: &runningID, CreatedAt: now.Add(3 * time.Minute), UpdatedAt: now.Add(3 * time.Minute)},
+		{ID: "chat-paused", WorkspaceID: "ws-1", UserID: "user-1", Title: "Paused", ActiveRunID: &pausedID, CreatedAt: now.Add(2 * time.Minute), UpdatedAt: now.Add(2 * time.Minute)},
+		{ID: "chat-completed", WorkspaceID: "ws-1", UserID: "user-1", Title: "Completed", ActiveRunID: &completedID, CreatedAt: now.Add(time.Minute), UpdatedAt: now.Add(time.Minute)},
+		{ID: "chat-empty", WorkspaceID: "ws-1", UserID: "user-1", Title: "Empty", CreatedAt: now, UpdatedAt: now},
+	}
+	if err := db.Create(&chats).Error; err != nil {
+		t.Fatalf("seed dock chats: %v", err)
+	}
+
+	service := &DockChatService{
+		chatRepo: repository.NewDockChatRepository(db),
+		runRepo:  repository.NewAgentRunRepository(db),
+	}
+	result, err := service.ListChats(context.Background(), "ws-1", "user-1", 10, "")
+	if err != nil {
+		t.Fatalf("list chats: %v", err)
+	}
+	want := map[string]string{
+		"chat-running":   model.AgentRunStatusRunning,
+		"chat-paused":    model.AgentRunStatusPaused,
+		"chat-completed": model.AgentRunStatusCompleted,
+		"chat-empty":     "",
+	}
+	for _, chat := range result.Chats {
+		if chat.ActiveRunStatus != want[chat.ID] {
+			t.Errorf("chat %s active run status = %q, want %q", chat.ID, chat.ActiveRunStatus, want[chat.ID])
+		}
+	}
+}
+
+func TestDockChatGenerateTitleUsesSemanticCompletion(t *testing.T) {
+	dbName := fmt.Sprintf("file:dock_chat_title_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE dock_chats (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
+		title TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create dock chats: %v", err)
+	}
+	now := time.Date(2026, 8, 10, 7, 0, 0, 0, time.UTC)
+	chat := model.DockChat{ID: "chat-1", WorkspaceID: "ws-1", UserID: "user-1", CreatedAt: now, UpdatedAt: now}
+	if err := db.Create(&chat).Error; err != nil {
+		t.Fatalf("seed dock chat: %v", err)
+	}
+	provider := &scriptedDockChatTitleLLM{response: `{"title":"  Investigate HLP-42 latency.  "}`}
+	service := (&DockChatService{chatRepo: repository.NewDockChatRepository(db)}).SetTitleLLM(provider)
+
+	updated, err := service.GenerateTitle(context.Background(), "ws-1", "user-1", "chat-1", model.GenerateDockChatTitleRequest{
+		Content: "Can you investigate why HLP-42 has become slow after the latest deployment?",
+	})
+	if err != nil {
+		t.Fatalf("generate title: %v", err)
+	}
+	if updated.Title != "Investigate HLP-42 latency" {
+		t.Errorf("title = %q, want semantic title", updated.Title)
+	}
+	if len(provider.requests) != 1 || !provider.requests[0].JSONMode || provider.requests[0].MaxTokens != 80 {
+		t.Fatalf("unexpected title request: %#v", provider.requests)
+	}
+	if len(provider.metered) != 1 || provider.metered[0].FeatureKey != BillingFeatureDockChatTitle {
+		t.Fatalf("unexpected title metering: %#v", provider.metered)
+	}
+}
+
+func TestDockChatGenerateTitlePreservesManualTitle(t *testing.T) {
+	dbName := fmt.Sprintf("file:dock_chat_manual_title_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE dock_chats (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
+		title TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create dock chats: %v", err)
+	}
+	now := time.Date(2026, 8, 10, 7, 0, 0, 0, time.UTC)
+	chat := model.DockChat{ID: "chat-1", WorkspaceID: "ws-1", UserID: "user-1", Title: "My release notes", CreatedAt: now, UpdatedAt: now}
+	if err := db.Create(&chat).Error; err != nil {
+		t.Fatalf("seed dock chat: %v", err)
+	}
+	provider := &scriptedDockChatTitleLLM{response: `{"title":"Replacement"}`}
+	service := (&DockChatService{chatRepo: repository.NewDockChatRepository(db)}).SetTitleLLM(provider)
+
+	updated, err := service.GenerateTitle(context.Background(), "ws-1", "user-1", "chat-1", model.GenerateDockChatTitleRequest{Content: "Replace it"})
+	if err != nil {
+		t.Fatalf("generate title: %v", err)
+	}
+	if updated.Title != "My release notes" {
+		t.Errorf("title = %q, want manual title preserved", updated.Title)
+	}
+	if len(provider.requests) != 0 {
+		t.Fatalf("LLM called %d times for named chat, want 0", len(provider.requests))
 	}
 }
 

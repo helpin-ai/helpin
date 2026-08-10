@@ -41,6 +41,7 @@ const (
 	BillingFeatureAgentPromptImprovement  = "agent_prompt_improvement"
 	BillingFeatureDataImportSetup         = "data_import_setup"
 	BillingFeatureCompanyProductContext   = "company_product_context_generation"
+	BillingFeatureDockChatTitle           = "dock_chat_title_generation"
 )
 
 // AIUsageCalculation is the normalized token usage input for internal AI usage
@@ -153,6 +154,7 @@ var aiUsageFeatures = map[string]AIUsageFeatureDefinition{
 	BillingFeatureAgentPromptImprovement:  {FeatureKey: BillingFeatureAgentPromptImprovement, Label: "Agent prompt improvement", Category: "Setup", Chargeable: false},
 	BillingFeatureDataImportSetup:         {FeatureKey: BillingFeatureDataImportSetup, Label: "Data import setup", Category: "Setup", Chargeable: false},
 	BillingFeatureCompanyProductContext:   {FeatureKey: BillingFeatureCompanyProductContext, Label: "Company/product context generation", Category: "Setup", Chargeable: false},
+	BillingFeatureDockChatTitle:           {FeatureKey: BillingFeatureDockChatTitle, Label: "Dock chat title", Category: "Agents", Chargeable: false},
 }
 
 func NewAIUsageMeter(consumer aiUsageCreditConsumer) *AIUsageMeter {

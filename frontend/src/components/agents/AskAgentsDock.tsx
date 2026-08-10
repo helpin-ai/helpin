@@ -22,6 +22,7 @@ import { DockRunView } from './dock/DockRunView';
 import { useAgentRunStream, type AgentRunStreamFetchers } from './dock/useAgentRunStream';
 import { dockRunContext, dockRunTitle, presentDockRun } from './dock/dockPresentation';
 import { buildCodingSessionPath } from '@/lib/codingSessionSurface';
+import { AnimatedDockChatTitle } from './dock/AnimatedDockChatTitle';
 
 type AskAgentsEventDetail = { query?: string; mode?: 'compose' | 'runs'; runId?: string; chatId?: string };
 type DockFocusTarget = 'composer' | 'selection' | 'header';
@@ -152,16 +153,38 @@ export function AskAgentsDock() {
       return;
     }
     const firstPage = result.data.chats ?? [];
+    const currentChats = useDockStore.getState().chats;
+    const currentById = new Map(currentChats.map((chat) => [chat.id, chat]));
+    const mergedFirstPage = firstPage.map((chat) => {
+      const current = currentById.get(chat.id);
+      if (!chat.active_run_status && current
+        && current.active_run_id === chat.active_run_id && current.active_run_status) {
+        return { ...chat, active_run_status: current.active_run_status };
+      }
+      return chat;
+    });
     if (preserveLoaded) {
       const firstPageIds = new Set(firstPage.map((chat) => chat.id));
-      const existing = useDockStore.getState().chats.filter((chat) => !firstPageIds.has(chat.id));
-      setChats([...firstPage, ...existing]);
+      const existing = currentChats.filter((chat) => !firstPageIds.has(chat.id));
+      setChats([...mergedFirstPage, ...existing]);
     } else {
-      setChats(firstPage);
+      setChats(mergedFirstPage);
     }
     setNextChatCursor(result.data.next_cursor ?? null);
     setChatsLoading(false);
   }, [setChats, workspaceId]);
+
+  const updateChatRunStatus = useCallback((runId: string | null, status: DockChat['active_run_status']) => {
+    if (!runId || !status) return;
+    const current = useDockStore.getState().chats;
+    let changed = false;
+    const next = current.map((chat) => {
+      if (chat.active_run_id !== runId || chat.active_run_status === status) return chat;
+      changed = true;
+      return { ...chat, active_run_status: status };
+    });
+    if (changed) setChats(next);
+  }, [setChats]);
 
   const loadMoreChats = useCallback(async () => {
     if (!workspaceId || !nextChatCursor || loadingMoreChatsRef.current) return;
@@ -257,11 +280,13 @@ export function AskAgentsDock() {
   useEffect(() => {
     if (!workspaceId) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const refresh = () => {
+    const refresh = (event: Event) => {
+      const detail = (event as CustomEvent<{ entity_id?: string; status?: DockChat['active_run_status'] }>).detail;
+      updateChatRunStatus(detail?.entity_id ?? null, detail?.status ?? null);
       if (timer) return;
       timer = setTimeout(() => {
         timer = null;
-        void refreshRuns();
+        void Promise.all([refreshRuns(), refreshChats(true)]);
       }, 180);
     };
     window.addEventListener('agent_run-updated', refresh);
@@ -271,7 +296,7 @@ export function AskAgentsDock() {
       window.removeEventListener('agent_run-updated', refresh);
       window.removeEventListener('coding_session-updated', refresh);
     };
-  }, [refreshRuns, workspaceId]);
+  }, [refreshChats, refreshRuns, updateChatRunStatus, workspaceId]);
 
   const rememberFocusSource = useCallback((source?: HTMLElement | null) => {
     const active = document.activeElement;
@@ -445,7 +470,7 @@ export function AskAgentsDock() {
             id="agent-dock-panel"
             role="dialog"
             aria-modal="true"
-            aria-label="Agents and chats"
+            aria-label="Agent runs and chats"
             tabIndex={-1}
             className="agent-dock-panel pointer-events-auto flex h-[min(600px,calc(100dvh-104px))] w-[min(900px,92vw)] min-h-[360px] overflow-hidden rounded-[18px] border border-[#e6e3dd] bg-[#fffefa] shadow-[0_30px_70px_-26px_rgba(28,27,25,.5)] dark:border-[#37352f] dark:bg-[#242320]"
           >
@@ -479,7 +504,7 @@ export function AskAgentsDock() {
             />
             <section className="flex min-w-0 flex-1 flex-col bg-[#fffefa] dark:bg-[#242320]">
               <DockPaneHeader
-                key={tab === 'agents' ? `agents:${activeRun?.run.id ?? 'empty'}` : `chats:${activeChat?.id ?? 'empty'}:${activeChat?.title ?? ''}`}
+                key={tab === 'agents' ? `agents:${activeRun?.run.id ?? 'empty'}` : `chats:${activeChat?.id ?? 'empty'}`}
                 tab={tab}
                 run={activeRun}
                 chat={activeChat}
@@ -519,6 +544,7 @@ export function AskAgentsDock() {
                   draftValue={drafts[`chat:${activeChat.id}`] ?? ''}
                   onDraftChange={(value) => setDraft(`chat:${activeChat.id}`, value)}
                   onChatChanged={() => void refreshChats(true)}
+                  onRunStatusChange={updateChatRunStatus}
                   streamController={chatStreamController}
                   onPresenceChange={handleChatPresenceChange}
                   onRunIdChange={handleChatRunIdChange}
@@ -617,7 +643,9 @@ function DockPaneHeader({
           />
         ) : (
           <span className="block truncate text-[13.5px] font-semibold text-[#1c1b19] dark:text-[#eeeae1]">
-            {tab === 'agents' ? (run ? dockRunTitle(run) : 'Agents') : chat?.title.trim() || 'New chat'}
+            {tab === 'agents'
+              ? (run ? dockRunTitle(run) : 'Agent runs')
+              : <AnimatedDockChatTitle title={chat?.title.trim() || 'New chat'} />}
           </span>
         )}
         <span className="block truncate font-mono text-[10.5px] text-[#a5a29b]">
@@ -642,7 +670,7 @@ function DockPaneHeader({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="z-[70]">
-            <DropdownMenuItem onSelect={() => setEditingTitle(true)}>Rename</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { setTitle(chat.title); setEditingTitle(true); }}>Rename</DropdownMenuItem>
             <DropdownMenuItem className="text-destructive" onSelect={() => void onArchiveChat(chat.id)}>Archive</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

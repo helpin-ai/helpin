@@ -328,6 +328,14 @@
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.03); }
 }
+@keyframes agent-dock-chat-running-pulse {
+  0% { opacity: .7; transform: scale(.75); }
+  70%, 100% { opacity: 0; transform: scale(1.9); }
+}
+@keyframes agent-dock-title-word {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .agent-dock-root {
   pointer-events: none;
   transition: opacity var(--speed-quick) ease-out;
@@ -350,6 +358,12 @@
 }
 .agent-dock-attention-nudge {
   animation: agent-dock-nudge 300ms var(--ease-out-quart) both;
+}
+.agent-dock-chat-running-pulse {
+  animation: agent-dock-chat-running-pulse 1.65s ease-out infinite;
+}
+.agent-dock-title-word {
+  animation: agent-dock-title-word 150ms var(--ease-out-quart) both;
 }
 
 @media (max-width: 999px) {
@@ -498,7 +512,9 @@
   }
   .agent-dock-panel,
   .agent-dock-attention-dot,
-  .agent-dock-attention-nudge {
+  .agent-dock-attention-nudge,
+  .agent-dock-chat-running-pulse,
+  .agent-dock-title-word {
     animation: none;
   }
 }

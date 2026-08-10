@@ -91,6 +91,18 @@ func (r *DockChatRepository) SetActiveRun(ctx context.Context, workspaceID, id, 
 	return r.Update(ctx, workspaceID, id, map[string]interface{}{"active_run_id": runID})
 }
 
+// SetTitleIfEmpty assigns an automatic title without overwriting a user rename.
+func (r *DockChatRepository) SetTitleIfEmpty(ctx context.Context, workspaceID, id, title string) error {
+	if r == nil || r.db == nil {
+		return gorm.ErrInvalidDB
+	}
+	return r.db.WithContext(ctx).
+		Model(&model.DockChat{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, id).
+		Where("TRIM(COALESCE(title, '')) = ''").
+		Update("title", title).Error
+}
+
 // TouchLastMessage bumps the chat's last activity timestamp.
 func (r *DockChatRepository) TouchLastMessage(ctx context.Context, workspaceID, id string, at time.Time) error {
 	return r.Update(ctx, workspaceID, id, map[string]interface{}{"last_message_at": at})

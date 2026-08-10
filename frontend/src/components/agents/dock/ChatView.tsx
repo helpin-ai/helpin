@@ -34,6 +34,7 @@ interface ChatViewProps {
   draftValue?: string;
   onDraftChange?: (value: string) => void;
   onChatChanged?: () => void;
+  onRunStatusChange?: (runId: string | null, status: AgentRun['status'] | null) => void;
   streamController: AgentRunStreamState;
   onPresenceChange?: (state: AskAgentAvatarState | null) => void;
   onRunIdChange?: (runId: string | null) => void;
@@ -56,6 +57,7 @@ export function ChatView({
   draftValue,
   onDraftChange,
   onChatChanged,
+  onRunStatusChange,
   streamController,
   onPresenceChange,
   onRunIdChange,
@@ -100,6 +102,9 @@ export function ChatView({
   useEffect(() => {
     onRunIdChange?.(run?.id ?? null);
   }, [onRunIdChange, run?.id]);
+  useEffect(() => {
+    onRunStatusChange?.(run?.id ?? null, run?.status ?? null);
+  }, [onRunStatusChange, run?.id, run?.status]);
 
   const { currentPlan, streamState, pendingInteraction, refetch, clearPendingInteraction } =
     streamController;
@@ -257,6 +262,7 @@ export function ChatView({
   const sendContent = useCallback(
     async (content: string, messageReferences: DockEntityReference[] = references) => {
       if (!content || sending) return;
+      const needsTitle = !detail?.chat.title.trim();
       setSending(true);
       setSendError(null);
       setPendingEcho(content);
@@ -276,6 +282,17 @@ export function ChatView({
         setReferences([]);
         setDetail(res.data);
         onChatChanged?.();
+        if (needsTitle) {
+          void (async () => {
+            const titleResult = await dockChatService.generateTitle(workspaceId, chatId, {
+              content,
+              page_context: effectivePageContext ?? undefined,
+            });
+            if (!titleResult.data) return;
+            setDetail((current) => current ? { ...current, chat: titleResult.data! } : current);
+            onChatChanged?.();
+          })();
+        }
         if (run?.id && res.data.run?.id === run.id) {
           // Same backing run: reconcile the persisted user message immediately.
           void refetch();
@@ -286,7 +303,7 @@ export function ChatView({
         setSending(false);
       }
     },
-    [chatId, effectivePageContext, onChatChanged, references, refetch, run?.id, sending, workspaceId],
+    [chatId, detail?.chat.title, effectivePageContext, onChatChanged, references, refetch, run?.id, sending, workspaceId],
   );
 
   const submit = async () => {
