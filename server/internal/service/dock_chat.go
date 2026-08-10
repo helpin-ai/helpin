@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,9 @@ import (
 // by the requesting user.
 var ErrDockChatNotFound = errors.New("dock chat not found")
 
+// ErrDockChatInvalidCursor is returned for malformed list pagination cursors.
+var ErrDockChatInvalidCursor = errors.New("invalid dock chat cursor")
+
 const (
 	dockChatTriggerType        = "dock_chat"
 	dockChatTitleMaxRunes      = 60
@@ -25,7 +29,14 @@ const (
 	dockChatCarryForwardChars  = 500
 	dockChatCarryForwardTotal  = 6000
 	dockChatPageContextOpenTag = "<page_context>"
+	dockChatListDefaultLimit   = 30
+	dockChatListMaxLimit       = 50
 )
+
+type dockChatCursor struct {
+	ActivityAt time.Time `json:"activity_at"`
+	ID         string    `json:"id"`
+}
 
 // DockChatService owns dock chats: user-scoped conversations whose turns are
 // executed by an agent-runtime chat-mode run of the ask_agent preset.
@@ -60,9 +71,49 @@ func NewDockChatService(
 	}
 }
 
-// ListChats returns the user's unarchived chats, most recently active first.
-func (s *DockChatService) ListChats(ctx context.Context, workspaceID, userID string) ([]model.DockChat, error) {
-	return s.chatRepo.ListByWorkspaceUser(ctx, workspaceID, userID, 50)
+// ListChats returns one stable cursor page of the user's unarchived chats.
+func (s *DockChatService) ListChats(ctx context.Context, workspaceID, userID string, limit int, encodedCursor string) (*model.DockChatListResponse, error) {
+	if limit <= 0 {
+		limit = dockChatListDefaultLimit
+	}
+	if limit > dockChatListMaxLimit {
+		limit = dockChatListMaxLimit
+	}
+	var before *time.Time
+	var beforeID string
+	if encodedCursor != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(encodedCursor)
+		if err != nil {
+			return nil, ErrDockChatInvalidCursor
+		}
+		var cursor dockChatCursor
+		if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.ActivityAt.IsZero() || cursor.ID == "" {
+			return nil, ErrDockChatInvalidCursor
+		}
+		before = &cursor.ActivityAt
+		beforeID = cursor.ID
+	}
+
+	chats, err := s.chatRepo.ListByWorkspaceUser(ctx, workspaceID, userID, limit+1, before, beforeID)
+	if err != nil {
+		return nil, err
+	}
+	response := &model.DockChatListResponse{Chats: chats}
+	if len(chats) > limit {
+		response.Chats = chats[:limit]
+		last := response.Chats[len(response.Chats)-1]
+		activityAt := last.CreatedAt
+		if last.LastMessageAt != nil {
+			activityAt = *last.LastMessageAt
+		}
+		payload, err := json.Marshal(dockChatCursor{ActivityAt: activityAt, ID: last.ID})
+		if err != nil {
+			return nil, fmt.Errorf("encode dock chat cursor: %w", err)
+		}
+		next := base64.RawURLEncoding.EncodeToString(payload)
+		response.NextCursor = &next
+	}
+	return response, nil
 }
 
 // CreateChat creates an empty chat; its backing run starts lazily on the

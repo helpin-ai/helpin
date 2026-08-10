@@ -425,6 +425,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
             onClearContext={() => setContextCleared(true)}
             busy={sending}
             disabled={!composer.enabled}
+            autoFocus
             textareaRef={textareaRef}
             onStop={canStop ? () => void handleStop() : undefined}
             stopping={stopping}

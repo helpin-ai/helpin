@@ -2,6 +2,7 @@ import { api } from '../api';
 import type {
   DockChat,
   DockChatDetail,
+  DockChatListResponse,
   DockRunListResponse,
   SendDockChatMessageRequest,
   UpdateDockChatRequest,
@@ -19,8 +20,11 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const dockChatService = {
-  listChats: (workspaceId: string) =>
-    api.get<{ chats: DockChat[] }>(`/dock/chats${qs(workspaceId)}`),
+  listChats: (workspaceId: string, cursor?: string | null, limit = 30) => {
+    const query = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
+    return api.get<DockChatListResponse>(`/dock/chats?${query.toString()}`);
+  },
   createChat: (workspaceId: string, title = '') =>
     api.post<DockChat>(`/dock/chats${qs(workspaceId)}`, { title }),
   getChat: (workspaceId: string, chatId: string) =>

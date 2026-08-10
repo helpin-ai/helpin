@@ -273,21 +273,42 @@
     width: min(760px, 94vw);
   }
   .agent-dock-roster {
-    width: 62px;
+    width: 68px;
   }
   .agent-dock-roster-controls {
     padding-inline: 8px;
   }
-  .agent-dock-tab {
-    overflow: hidden;
-    font-size: 0;
+  .agent-dock-tab-list {
+    flex-direction: column;
+    gap: 4px;
+    padding: 0;
+    background: transparent;
   }
-  .agent-dock-tab::first-letter {
-    font-size: 11px;
+  .agent-dock-tab {
+    min-height: 44px;
+    flex: none;
+    padding: 0;
+  }
+  .agent-dock-tab-icon,
+  .agent-dock-new-chat-icon {
+    display: inline-flex !important;
+  }
+  .agent-dock-chat-marker {
+    display: grid !important;
+  }
+  .agent-dock-chat-row-dot {
+    display: none;
+  }
+  .agent-dock-tab-copy {
+    display: none;
   }
   .agent-dock-new-chat {
+    min-height: 44px;
     justify-content: center;
     padding-inline: 0;
+  }
+  .agent-dock-new-chat .agent-dock-sparkle {
+    display: none;
   }
   .agent-dock-roster-copy,
   .agent-dock-chat-menu {
@@ -298,12 +319,21 @@
     justify-content: center;
     padding-inline: 0;
   }
+  .agent-dock-group-header {
+    min-height: 28px;
+  }
+  .agent-dock-roster-row {
+    min-height: 48px;
+  }
   .agent-dock-roster-row > button {
     flex: 0 0 auto;
   }
 }
 
 @media (max-width: 719px) {
+  .helpin-query-devtools {
+    display: none;
+  }
   .agent-dock-anchor {
     inset: 0;
     bottom: 0;
@@ -324,6 +354,26 @@
   .agent-dock-trigger {
     margin-bottom: calc(14px + env(safe-area-inset-bottom));
   }
+  .agent-dock-header-action {
+    height: 44px;
+    width: 44px;
+  }
+  .agent-dock-trigger-segment {
+    min-height: 40px;
+  }
+  .agent-dock-stack-item,
+  .agent-dock-stack-more {
+    height: 36px;
+    min-width: 36px;
+    width: 36px;
+  }
+  .agent-dock-attention-badge {
+    height: 36px;
+  }
+  .agent-dock-toggle {
+    height: 40px;
+    width: 32px;
+  }
   .agent-dock-panel textarea {
     font-size: 16px;
   }
@@ -335,13 +385,17 @@
 
 @media (max-width: 520px) {
   .agent-dock-attention-badge {
-    max-width: 28px;
-    overflow: hidden;
-    padding-inline: 10px;
-    color: transparent;
+    width: 34px;
+    min-width: 34px;
+    justify-content: center;
+    padding-inline: 0;
   }
   .agent-dock-attention-badge .agent-dock-attention-dot {
     flex: none;
+  }
+  .agent-dock-attention-copy,
+  .agent-dock-shortcut {
+    display: none;
   }
   .agent-dock-stack-item:nth-child(n+3) {
     display: none;

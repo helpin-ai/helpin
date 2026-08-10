@@ -169,6 +169,17 @@ function dockTextarea(): HTMLTextAreaElement {
   return textarea as HTMLTextAreaElement;
 }
 
+async function waitForComposerFocus() {
+  for (let i = 0; i < 10; i += 1) {
+    const textarea = dockTextarea();
+    if (document.activeElement === textarea) return;
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+  }
+  expect(document.activeElement).toBe(dockTextarea());
+}
+
 function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
   setter?.call(textarea, value);
@@ -193,8 +204,41 @@ describe('AskAgentsDock', () => {
     await waitForText('Sprint questions');
     expect(mocks.listChats).toHaveBeenCalled();
     expect(mocks.getChat).toHaveBeenCalledWith('ws-1', 'chat-1');
+    expect(document.querySelector('.agent-dock-chat-row-dot')).not.toBeNull();
+    expect(document.querySelector('.agent-dock-chat-marker')).not.toBeNull();
+    expect(document.body.textContent).not.toContain('Ask Agent · Conversation');
     const textarea = dockTextarea();
     expect(textarea.disabled).toBe(false);
+  });
+
+  it('opens chat actions above the dock and archives a conversation', async () => {
+    mocks.updateChat.mockResolvedValue({
+      data: { ...CHAT, archived_at: '2026-08-10T00:00:00Z' },
+      error: null,
+    });
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const trigger = document.body.querySelector<HTMLButtonElement>('[aria-label="Actions for Sprint questions"]');
+    expect(trigger).not.toBeNull();
+    await act(async () => {
+      trigger?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    });
+    await waitForText('Rename');
+
+    const menu = document.body.querySelector<HTMLElement>('[data-slot="dropdown-menu-content"]');
+    expect(menu?.className).toContain('z-[70]');
+    expect(menu?.textContent).toContain('Rename');
+    expect(menu?.textContent).toContain('Archive');
+
+    const archive = Array.from(menu?.querySelectorAll<HTMLElement>('[data-slot="dropdown-menu-item"]') ?? [])
+      .find((item) => item.textContent === 'Archive');
+    await act(async () => {
+      archive?.click();
+    });
+    await flush();
+
+    expect(mocks.updateChat).toHaveBeenCalledWith('ws-1', 'chat-1', { archived: true });
   });
 
   it('sends a message through the dock chat service', async () => {
@@ -389,6 +433,89 @@ describe('AskAgentsDock', () => {
 
     expect(document.body.textContent).toContain('Ask agents');
     expect(document.body.textContent).toContain('1 agent need your attention');
+  });
+
+  it('routes each collapsed dock segment to its own destination', async () => {
+    useDockStore.setState({ collapsed: true, tab: 'chats' });
+    mocks.listRuns.mockResolvedValue({ data: { runs: [DOCK_RUN], attention_count: 1 }, error: null });
+    await renderDock();
+    await waitForText('Ask agents');
+
+    const runButton = document.body.querySelector<HTMLButtonElement>('[aria-label^="Open HLP-42"]');
+    expect(runButton).toBeTruthy();
+    await act(async () => { runButton?.click(); });
+    expect(useDockStore.getState()).toMatchObject({ collapsed: false, tab: 'agents', activeRunId: 'agent-run-1' });
+
+    const closeButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Close agent dock"]');
+    await act(async () => {
+      closeButton?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+
+    const askButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Ask agents"]');
+    await act(async () => {
+      askButton?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+    expect(useDockStore.getState()).toMatchObject({ collapsed: false, tab: 'chats' });
+    await waitForComposerFocus();
+  });
+
+  it('keeps agent status and full-session actions out of chat headers', async () => {
+    useDockStore.setState({ tab: 'chats', activeRunId: 'agent-run-1' });
+    mocks.listRuns.mockResolvedValue({ data: { runs: [DOCK_RUN], attention_count: 1 }, error: null });
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const header = document.body.querySelector('[data-dock-header]');
+    expect(header?.textContent).not.toContain('Approve');
+    expect(header?.querySelector('[aria-label="Open full agent session"]')).toBeNull();
+    expect(header?.querySelector('[aria-label="Conversation actions"]')).not.toBeNull();
+  });
+
+  it('restores focus to the segment that opened the dock', async () => {
+    useDockStore.setState({ collapsed: true });
+    await renderDock();
+    const askButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Ask agents"]');
+    await act(async () => {
+      askButton?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+    await waitForComposerFocus();
+    expect(document.body.style.overflow).toBe('hidden');
+
+    const closeButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Close agent dock"]');
+    await act(async () => {
+      closeButton?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+    expect(document.activeElement).toBe(askButton);
+    expect(document.body.style.overflow).toBe('');
+  });
+
+  it('loads the next cursor page when the chat roster nears its end', async () => {
+    const olderChat: DockChat = { ...CHAT, id: 'chat-older', title: 'Older conversation' };
+    mocks.listChats.mockReset();
+    mocks.listChats
+      .mockResolvedValueOnce({ data: { chats: [CHAT], next_cursor: 'cursor-1' }, error: null })
+      .mockResolvedValueOnce({ data: { chats: [olderChat], next_cursor: null }, error: null });
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const roster = document.body.querySelector<HTMLElement>('[role="tabpanel"]');
+    expect(roster).toBeTruthy();
+    Object.defineProperties(roster!, {
+      scrollHeight: { configurable: true, value: 1_000 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, value: 450 },
+    });
+    await act(async () => {
+      roster?.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(mocks.listChats).toHaveBeenLastCalledWith('ws-1', 'cursor-1');
+    await waitForText('Older conversation');
   });
 
   it('renders and resolves an approval for a personal agent run', async () => {

@@ -31,12 +31,19 @@ func NewDockChatHandler(dockChatService *service.DockChatService, agentService *
 func (h *DockChatHandler) ListChats(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	userID := middleware.GetUserID(r.Context())
-	chats, err := h.dockChatService.ListChats(r.Context(), workspaceID, userID)
+	response, err := h.dockChatService.ListChats(
+		r.Context(), workspaceID, userID,
+		parseIntQuery(r, "limit", 30), r.URL.Query().Get("cursor"),
+	)
 	if err != nil {
+		if errors.Is(err, service.ErrDockChatInvalidCursor) {
+			writeError(w, http.StatusBadRequest, "invalid cursor")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to list chats")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"chats": chats})
+	writeJSON(w, http.StatusOK, response)
 }
 
 // CreateChat handles POST /api/dock/chats.

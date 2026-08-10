@@ -131,8 +131,8 @@ export function DockInput({
   }, [value, ref]);
 
   useEffect(() => {
-    if (autoFocus) ref.current?.focus();
-  }, [autoFocus, ref]);
+    if (autoFocus && !disabled) ref.current?.focus();
+  }, [autoFocus, disabled, ref]);
 
   const placeholder = placeholderOverride ?? (
     mode === 'list'

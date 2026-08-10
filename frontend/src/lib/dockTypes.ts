@@ -32,6 +32,11 @@ export interface DockChatDetail {
   plans?: CommandBarPlanSummary[]
 }
 
+export interface DockChatListResponse {
+  chats: DockChat[]
+  next_cursor?: string | null
+}
+
 export interface SendDockChatMessageRequest {
   content: string
   page_context?: CommandBarPageContext

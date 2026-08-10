@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
-import { toast } from 'sonner';
-import { AiMagicIcon, MoreHorizontalIcon } from '@/lib/icons';
+import { AiMagicIcon, BotIcon, MoreHorizontalIcon, NotificationBubbleIcon, PlusSignIcon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import {
   DropdownMenu,
@@ -8,7 +7,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { dockChatService } from '@/lib/services/dockChatService';
 import type { DockChat, DockRunSummary } from '@/lib/dockTypes';
 import { cn } from '@/lib/utils';
 import {
@@ -34,7 +32,11 @@ interface DockRosterProps {
   onSelectRun: (runId: string) => void;
   onSelectChat: (chatId: string) => void;
   onNewChat: () => void;
-  onChatsChanged: () => void;
+  onRenameChat: (chatId: string, title: string) => Promise<boolean>;
+  onArchiveChat: (chatId: string) => Promise<boolean>;
+  hasMoreChats?: boolean;
+  loadingMoreChats?: boolean;
+  onLoadMoreChats?: () => void;
   onRetryRuns: () => void;
   onRetryChats: () => void;
 }
@@ -49,7 +51,7 @@ export function DockRoster(props: DockRosterProps) {
   return (
     <aside className="agent-dock-roster flex min-h-0 w-[300px] shrink-0 flex-col border-e border-[#f1efea] bg-[#fbfaf8] dark:border-[#302f2b] dark:bg-[#1d1c1a]">
       <div className="agent-dock-roster-controls flex flex-col gap-2.5 px-3 pb-2.5 pt-3">
-        <div className="flex rounded-[9px] bg-[#f0eee9] p-[3px] dark:bg-[#292824]" role="tablist" aria-label="Dock views">
+        <div className="agent-dock-tab-list flex rounded-[9px] bg-[#f0eee9] p-[3px] dark:bg-[#292824]" role="tablist" aria-label="Dock views">
           {(['agents', 'chats'] as const).map((tab) => (
             <button
               key={tab}
@@ -58,31 +60,45 @@ export function DockRoster(props: DockRosterProps) {
               aria-selected={props.tab === tab}
               onClick={() => props.onTabChange(tab)}
               className={cn(
-                'agent-dock-tab min-w-0 flex-1 rounded-[7px] py-1.5 text-[12.5px] font-semibold capitalize transition-colors',
+                'agent-dock-tab flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[7px] py-1.5 text-[12.5px] font-semibold capitalize transition-colors',
                 props.tab === tab
                   ? 'bg-[#fffefa] text-[#1c1b19] shadow-sm dark:bg-[#37352f] dark:text-[#f2efe8]'
                   : 'text-[#8a8781] hover:text-[#4b4945] dark:text-[#96928a] dark:hover:text-[#d4d0c7]',
               )}
             >
-              {tab === 'agents' ? 'Agents' : 'Chats'}
+              <span className="agent-dock-tab-icon hidden" aria-hidden>
+                {tab === 'agents' ? <BotIcon className="h-4 w-4" /> : <NotificationBubbleIcon className="h-4 w-4" />}
+              </span>
+              <span className="agent-dock-tab-copy">{tab === 'agents' ? 'Agents' : 'Chats'}</span>
             </button>
           ))}
         </div>
         <button
           type="button"
+          aria-label="New chat or task"
           onClick={props.onNewChat}
           className="agent-dock-new-chat flex min-h-8 items-center gap-2 rounded-[9px] border border-[#eae7e0] bg-[#fffefa] px-2.5 py-1.5 text-start text-[12.5px] text-[#8a8781] transition hover:border-[#d8d3c9] hover:text-[#4b4945] dark:border-[#34322d] dark:bg-[#242320] dark:text-[#a9a59d]"
         >
-          <span className="agent-dock-sparkle grid h-[11px] w-[11px] shrink-0 place-items-center rounded-[4px]">
-            <AiMagicIcon className="h-2.5 w-2.5 text-white" />
-          </span>
+          <span className="agent-dock-new-chat-icon hidden" aria-hidden><PlusSignIcon className="h-4 w-4" /></span>
+          <span className="agent-dock-sparkle grid h-[11px] w-[11px] shrink-0 place-items-center rounded-[4px]" aria-hidden><AiMagicIcon className="h-2.5 w-2.5 text-white" /></span>
           <span className="agent-dock-roster-copy truncate">New chat or task</span>
           <kbd className="agent-dock-roster-copy ms-auto rounded border border-[#eeece7] px-1 font-mono text-[10.5px] text-[#b3b0a9] dark:border-[#3a3832]">N</kbd>
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto pb-2" role="tabpanel">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto pb-2"
+        role="tabpanel"
+        onScroll={(event) => {
+          if (!props.hasMoreChats || props.loadingMoreChats || props.tab !== 'chats') return;
+          const target = event.currentTarget;
+          if (target.scrollHeight - target.scrollTop - target.clientHeight < 120) props.onLoadMoreChats?.();
+        }}
+      >
         {props.tab === 'agents' ? <AgentRows {...props} /> : <ChatRows {...props} />}
+        {props.tab === 'chats' && props.loadingMoreChats ? (
+          <p className="agent-dock-roster-copy px-3 py-2 text-center text-[11px] text-[#8a8781]">Loading more…</p>
+        ) : null}
       </div>
     </aside>
   );
@@ -141,6 +157,7 @@ function RunRow({ summary, selected, onSelect }: { summary: DockRunSummary; sele
     <button
       type="button"
       onClick={onSelect}
+      aria-label={`${dockRunTitle(summary)}, ${presentation.label}`}
       aria-current={selected ? 'true' : undefined}
       title={`${dockRunTitle(summary)} — ${presentation.label}`}
       className={cn(
@@ -163,7 +180,7 @@ function RunRow({ summary, selected, onSelect }: { summary: DockRunSummary; sele
 
 function DockAgentAvatar({ summary, dot }: { summary: DockRunSummary; dot: string }) {
   return (
-    <span className="relative shrink-0">
+    <span className="relative flex h-[26px] w-[26px] shrink-0 leading-none">
       <AgentAvatar
         name={summary.agent.name}
         presetKey={summary.agent.preset_key}
@@ -183,14 +200,10 @@ function ChatRows(props: DockRosterProps) {
     const title = renameValue.trim();
     setRenamingId(null);
     if (!title) return;
-    const result = await dockChatService.updateChat(props.workspaceId, chatId, { title });
-    if (result.error) toast.error(result.error);
-    props.onChatsChanged();
+    await props.onRenameChat(chatId, title);
   };
   const archive = async (chatId: string) => {
-    const result = await dockChatService.updateChat(props.workspaceId, chatId, { archived: true });
-    if (result.error) toast.error(result.error);
-    props.onChatsChanged();
+    await props.onArchiveChat(chatId);
   };
 
   if (props.loadingChats && props.chats.length === 0) return <RosterMessage>Loading conversations…</RosterMessage>;
@@ -214,10 +227,7 @@ function ChatRows(props: DockRosterProps) {
         >
           {renamingId === chat.id ? (
             <div className="flex min-w-0 flex-1 items-center gap-[9px]">
-            <span className="relative grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[9px] bg-[#eee8df] text-[#b45309] dark:bg-[#38332b] dark:text-[#e6a75d]">
-              <AiMagicIcon className="h-3.5 w-3.5" />
-              <span className="absolute -bottom-0.5 -end-0.5 h-[9px] w-[9px] rounded-full border-2 border-[#fbfaf8] bg-[#a5a29b] dark:border-[#1d1c1a]" />
-            </span>
+            <span className="agent-dock-chat-row-dot h-1.5 w-1.5 shrink-0 rounded-full bg-[#a5a29b]" aria-hidden />
             <input
               autoFocus
               aria-label="Conversation title"
@@ -233,14 +243,17 @@ function ChatRows(props: DockRosterProps) {
             />
             </div>
           ) : (
-            <button type="button" className="flex min-w-0 flex-1 items-center gap-[9px] text-start" onClick={() => props.onSelectChat(chat.id)}>
-              <span className="relative grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[9px] bg-[#eee8df] text-[#b45309] dark:bg-[#38332b] dark:text-[#e6a75d]">
-                <AiMagicIcon className="h-3.5 w-3.5" />
-                <span className="absolute -bottom-0.5 -end-0.5 h-[9px] w-[9px] rounded-full border-2 border-[#fbfaf8] bg-[#a5a29b] dark:border-[#1d1c1a]" />
-              </span>
+            <button
+              type="button"
+              aria-label={chat.title.trim() || 'Untitled chat'}
+              aria-current={props.selectedChatId === chat.id ? 'true' : undefined}
+              className="flex min-w-0 flex-1 items-center gap-[9px] text-start"
+              onClick={() => props.onSelectChat(chat.id)}
+            >
+              <ChatMarker title={chat.title} />
+              <span className="agent-dock-chat-row-dot h-1.5 w-1.5 shrink-0 rounded-full bg-[#a5a29b]" aria-hidden />
               <span className="agent-dock-roster-copy min-w-0 flex-1">
                 <span className="block truncate text-[12.5px] font-medium text-[#1c1b19] dark:text-[#eeeae1]">{chat.title.trim() || 'Untitled chat'}</span>
-                <span className="mt-px block truncate text-[11px] text-[#8a8781] dark:text-[#96928a]">Ask Agent · Conversation</span>
               </span>
               <time className="agent-dock-roster-copy shrink-0 font-mono text-[10.5px] text-[#b3b0a9]" dateTime={chat.last_message_at ?? chat.updated_at}>
                 {relativeDockTime(chat.last_message_at ?? chat.updated_at)}
@@ -253,7 +266,7 @@ function ChatRows(props: DockRosterProps) {
                 <MoreHorizontalIcon className="h-3.5 w-3.5" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="z-[70]">
               <DropdownMenuItem onSelect={() => { setRenamingId(chat.id); setRenameValue(chat.title); }}>Rename</DropdownMenuItem>
               <DropdownMenuItem className="text-destructive" onSelect={() => void archive(chat.id)}>Archive</DropdownMenuItem>
             </DropdownMenuContent>
@@ -261,6 +274,20 @@ function ChatRows(props: DockRosterProps) {
         </div>
       ))}
     </section>
+  );
+}
+
+function ChatMarker({ title }: { title: string }) {
+  const label = title.trim() || 'Untitled chat';
+  const initial = label.match(/[\p{L}\p{N}]/u)?.[0]?.toLocaleUpperCase() ?? '·';
+  return (
+    <span
+      aria-hidden
+      className="agent-dock-chat-marker relative hidden h-[28px] w-[28px] shrink-0 place-items-center rounded-[9px] bg-[#eee8df] text-[11px] font-bold text-[#8a6a43] dark:bg-[#38332b] dark:text-[#d0aa7b]"
+    >
+      {initial}
+      <span className="absolute -bottom-0.5 -end-0.5 h-2 w-2 rounded-full border-2 border-[#fbfaf8] bg-[#a5a29b] dark:border-[#1d1c1a]" />
+    </span>
   );
 }
 
