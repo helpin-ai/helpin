@@ -48,10 +48,15 @@
 - Create: `server/internal/repository/customer_io_outbox.go`
 - Modify: `server/internal/repository/customer_io_outbox_test.go`
 
-- [ ] Write failing tests for duplicate enqueue, exclusive live claims, expired-lease reclaim, attempt increments, stale-token no-ops, current-token completion/retry/failure, and 2 KiB error truncation.
-- [ ] Run `cd server && go test ./internal/repository -run TestCustomerIOLifecycleOutbox -count=1`; verify behavioral failures.
-- [ ] Implement narrow `Enqueue`, `ClaimDue`, `MarkDelivered`, `ScheduleRetry`, and `MarkFailed` operations. PostgreSQL uses `FOR UPDATE SKIP LOCKED`; all result updates require row ID, processing status, and claim token.
-- [ ] Re-run the focused repository tests; expect PASS.
+- [ ] Write a failing enqueue test for semantic-key deduplication; run `cd server && go test ./internal/repository -run TestCustomerIOLifecycleOutboxEnqueue -count=1` and verify RED.
+- [ ] Implement only `Enqueue`; re-run the enqueue test and expect GREEN.
+- [ ] Write failing claim tests for exclusive live claims, expired-lease reclaim, and atomic attempt increments; run `go test ./internal/repository -run TestCustomerIOLifecycleOutboxClaim -count=1` and verify RED.
+- [ ] Implement only `ClaimDue` using PostgreSQL `FOR UPDATE SKIP LOCKED` and dialect-safe SQLite test behavior; re-run and expect GREEN.
+- [ ] Write failing fenced-completion tests for stale-token no-op and current-token delivery; run `go test ./internal/repository -run TestCustomerIOLifecycleOutboxMarkDelivered -count=1` and verify RED.
+- [ ] Implement only `MarkDelivered` with row ID, processing status, and claim token predicates; re-run and expect GREEN.
+- [ ] Write failing retry/failure tests for stale/current tokens and attempt state; run `go test ./internal/repository -run 'TestCustomerIOLifecycleOutbox(ScheduleRetry|MarkFailed)' -count=1` and verify RED.
+- [ ] Implement `ScheduleRetry` and `MarkFailed`; re-run and expect GREEN.
+- [ ] Write a failing 2 KiB error-truncation test; implement the minimal truncation helper and re-run it GREEN.
 - [ ] Commit with `git commit -m "feat(customerio): add fenced outbox claims"`.
 
 ### Task 3: Track Client Contract And Stable IDs
@@ -92,7 +97,6 @@
 ### Task 5: Atomic Stripe Billing Events
 
 **Files:**
-- Modify: `server/internal/model/billing.go`
 - Modify: `server/internal/handler/billing.go`
 - Modify: `server/internal/handler/billing_test.go`
 - Modify: `server/internal/repository/billing.go`
@@ -100,10 +104,12 @@
 - Modify: `server/internal/service/billing_test.go`
 
 - [ ] Add a failing handler test proving `stripe.Event.Created` reaches `OccurredAt` for invoice and trial-ending inputs; add a service test proving zero provider time falls back to receipt time.
-- [ ] Run `cd server && go test ./internal/handler -run TestBillingStripeOccurredAt -count=1`; verify RED.
+- [ ] Run `cd server && go test ./internal/handler -run TestBillingStripeOccurredAt -count=1` and `go test ./internal/service -run TestBillingStripeOccurredAtFallback -count=1`; verify both RED.
 - [ ] Add `OccurredAt` to normalized Stripe inputs and populate it in `server/internal/handler/billing.go`; re-run the handler test and expect PASS.
-- [ ] Add a repository transaction coordinator `InBillingLifecycleTransaction(ctx, outboxRepo, fn)` whose callback receives transaction-bound billing and outbox repositories sharing one `*gorm.DB`, without exposing GORM to the service layer.
-- [ ] Add `LockStripeWebhookEvent(ctx, id, eventType)` on the transaction-bound billing repository: insert on conflict, then `SELECT ... FOR UPDATE`; return false when already processed.
+- [ ] Re-run `TestBillingStripeOccurredAtFallback` after adding receipt-time fallback in the service; expect GREEN and assert the outbox `occurred_at` value.
+- [ ] Write failing repository tests for a shared transaction rollback and for concurrent-style locking of one unprocessed Stripe webhook row; run `go test ./internal/repository -run 'TestBillingLifecycleTransaction|TestLockStripeWebhookEvent' -count=1` and verify RED.
+- [ ] Add a repository transaction coordinator `InBillingLifecycleTransaction(ctx, outboxRepo, fn)` whose callback receives transaction-bound billing and outbox repositories sharing one `*gorm.DB`, without exposing GORM to the service layer. Add `LockStripeWebhookEvent(ctx, id, eventType)` that inserts on conflict, then selects for update and returns false when already processed.
+- [ ] Re-run the two repository tests and expect GREEN.
 - [ ] Write a failing payment-failed test asserting the locked webhook row, billing mutation, recipient snapshot, outbox insert, and processed marker commit together; cover enqueue rollback and duplicate/concurrent-style calls.
 - [ ] Run `cd server && go test ./internal/service -run TestBillingServicePaymentFailedCustomerIOOutbox -count=1`; verify RED.
 - [ ] Implement the minimal payment-failed transaction flow and remove both synchronous Customer.io sync/event calls; re-run and expect PASS.
@@ -126,7 +132,9 @@
 - [ ] Run `cd server && go test ./internal/service -run TestCustomerIOLifecycleOutboxWorkerRetry -count=1`; verify RED.
 - [ ] Implement five-minute leases, ten attempts, capped exponential backoff, bounded jitter, and fenced result updates; re-run and expect PASS.
 - [ ] Write a failing disabled-credentials test; implement the guard so no rows are claimed or attempts burned; re-run and expect PASS.
-- [ ] Add `Run(ctx, interval)` and wire production dependencies in `server/cmd/api/main.go`: construct the outbox repository, inject it into billing transaction coordination and worker delivery, then start the poller only after all dependencies exist.
+- [ ] Write a failing `TestCustomerIOLifecycleOutboxWorkerRunStopsOnCancel` test proving the lifecycle loop exits and signals completion after context cancellation.
+- [ ] Add `Run(ctx, interval)` and re-run the cancellation test GREEN.
+- [ ] Wire production dependencies in `server/cmd/api/main.go`: construct the outbox repository, inject it into billing transaction coordination and worker delivery, then start the poller only after all dependencies exist. Use the passing cancellation contract for shutdown wiring.
 - [ ] Use a cancellable worker context plus wait group; cancel and wait during graceful shutdown. Do not add another deployment or worktree.
 - [ ] Run focused tests plus `go test ./cmd/api ./internal/service ./internal/repository`; expect PASS.
 - [ ] Commit with `git commit -m "feat(customerio): deliver lifecycle outbox events"`.
