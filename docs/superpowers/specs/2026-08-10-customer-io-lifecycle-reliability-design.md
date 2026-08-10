@@ -47,7 +47,7 @@ Every covered billing transition uses one database transaction for the billing m
 
 Stripe webhook handlers continue to use their existing webhook idempotency records. They enqueue using a semantic key based on the Stripe event ID. A database error rolls back the billing mutation, outbox record, and processed marker together, allowing Stripe replay to retry the complete operation.
 
-`trial_started` atomically creates the initial billing row and its outbox record. It uses a workspace-and-trial-end semantic key because it can originate from Helpin rather than Stripe.
+`trial_started` uses an insert-only initialization transaction: `INSERT ... ON CONFLICT (workspace_id) DO NOTHING RETURNING ...` (or an equivalent locked recheck). Only the transaction that returns the newly persisted billing row may snapshot recipients and enqueue the event. Its semantic key uses the workspace ID and the persisted returned `trial_ends_at`, because the event can originate from Helpin rather than Stripe. A transaction that loses the insert race reloads and returns the existing billing state without enqueueing.
 
 Normalized Stripe webhook inputs gain the provider event creation time. That value is the lifecycle occurrence time and the timestamp embedded in Customer.io event IDs. Receipt time is used only when the provider timestamp is unavailable.
 
@@ -105,6 +105,7 @@ The repository exposes narrow operations for atomic billing transitions/enqueue,
 Tests will prove:
 
 - concurrent-style repeated expiry sweeps transition and enqueue once;
+- concurrent-style repeated trial initialization creates billing and enqueues `trial_started` once;
 - expiry state and outbox insertion are atomic;
 - duplicate semantic keys do not create duplicate rows;
 - retry claims reuse stable per-recipient ULIDs;
