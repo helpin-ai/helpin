@@ -177,13 +177,34 @@ func (r *DocsContentRepository) ListBySpaceWithImportHTML(ctx context.Context, s
 	return contents, nil
 }
 
+// ListImportSourceObjectIDs returns completed imported source IDs in a space.
+func (r *DocsContentRepository) ListImportSourceObjectIDs(
+	ctx context.Context,
+	spaceID string,
+	sourceSystem string,
+) ([]string, error) {
+	var sourceIDs []string
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsContent{}).
+		Joins("JOIN docs_documents dd ON dd.id = docs_contents.document_id").
+		Where("dd.space_id = ? AND docs_contents.import_source_system = ?", spaceID, sourceSystem).
+		Where("docs_contents.import_source_object_id IS NOT NULL").
+		Pluck("docs_contents.import_source_object_id", &sourceIDs).Error; err != nil {
+		return nil, fmt.Errorf("list imported source object ids: %w", err)
+	}
+	return sourceIDs, nil
+}
+
 // UpdateImportProvenance sets the import source fields on a content record.
-func (r *DocsContentRepository) UpdateImportProvenance(ctx context.Context, contentID, sourceHTML, sourceSystem, sourceObjectID string) {
-	r.db.WithContext(ctx).Model(&model.DocsContent{}).Where("id = ?", contentID).Updates(map[string]interface{}{
+func (r *DocsContentRepository) UpdateImportProvenance(ctx context.Context, contentID, sourceHTML, sourceSystem, sourceObjectID string) error {
+	if err := r.db.WithContext(ctx).Model(&model.DocsContent{}).Where("id = ?", contentID).Updates(map[string]interface{}{
 		"import_source_html":      sourceHTML,
 		"import_source_system":    sourceSystem,
 		"import_source_object_id": sourceObjectID,
-	})
+	}).Error; err != nil {
+		return fmt.Errorf("update import provenance: %w", err)
+	}
+	return nil
 }
 
 // extractPlainText extracts plain text from TipTap/ProseMirror JSON content.

@@ -25,6 +25,7 @@ export function ImportHistory({ workspaceId, source }: { workspaceId: string; so
   const [loading, setLoading] = useState(true);
   const [reconvertingId, setReconvertingId] = useState<string | null>(null);
   const [reconvertConfirmId, setReconvertConfirmId] = useState<string | null>(null);
+  const [cancelingId, setCancelingId] = useState<string | null>(null);
 
   useEffect(() => {
     docsImportService.listJobs(workspaceId).then(({ data }) => {
@@ -53,6 +54,20 @@ export function ImportHistory({ workspaceId, source }: { workspaceId: string; so
         `Re-converted ${data.converted} of ${data.total} documents${data.failed > 0 ? ` (${data.failed} failed)` : ''}${qualityBits.length > 0 ? `. ${qualityBits.join(', ')}` : ''}`,
       );
     }
+  };
+
+  const handleCancel = async (jobId: string) => {
+    setCancelingId(jobId);
+    const { error } = await docsImportService.cancel(workspaceId, jobId);
+    setCancelingId(null);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setJobs((current) =>
+      current.map((job) => (job.id === jobId ? { ...job, status: 'interrupted' } : job)),
+    );
+    toast.success('Import canceled');
   };
 
   if (loading) return null;
@@ -104,6 +119,17 @@ export function ImportHistory({ workspaceId, source }: { workspaceId: string; so
                     </Badge>
                   </TableCell>
                   <TableCell>
+                    {(job.status === 'pending' || job.status === 'running') && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={cancelingId === job.id}
+                        onClick={() => handleCancel(job.id)}
+                      >
+                        {cancelingId === job.id ? 'Canceling...' : 'Cancel'}
+                      </Button>
+                    )}
                     {job.status === 'done' && (
                       <QuickTooltip label="Re-run conversion with latest logic. Overwrites imported doc content.">
                         <Button

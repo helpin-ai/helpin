@@ -1087,7 +1087,7 @@ func main() {
 			Model:        cfg.DocsImportAIConversionModel,
 			ArticleLimit: cfg.DocsImportAIConversionArticleLimit,
 		},
-	)
+	).SetTemporalClient(temporalClient, resolvePMImportEncryptionKey(cfg))
 	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)
 	docsCollectionService.SetTranslationService(docsHelpcenterTranslationService)
 	docsDocumentService.SetTranslationService(docsHelpcenterTranslationService)
