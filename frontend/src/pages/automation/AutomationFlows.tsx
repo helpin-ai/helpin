@@ -1,22 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Clock03Icon,
   ArrowRight01Icon,
   FilterIcon,
-  GitBranchIcon,
-  GitPullRequestIcon,
   HelpCircleIcon,
   BookOpen01Icon,
   Cancel01Icon,
   MoreHorizontalIcon,
-  PlayIcon,
   PlusSignIcon,
   Search01Icon,
   SourceCodeIcon,
-  SparklesIcon,
-  Tag01Icon,
-  ZapIcon,
 } from '@/lib/icons';
 import { toast } from 'sonner';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
@@ -4700,7 +4693,7 @@ export function AutomationFlowsPage({
   }
 
   return (
-    <div className="mx-auto max-w-[1080px] px-4 pb-24 pt-8 text-[#1A1917] dark:text-foreground sm:px-7 sm:pt-11">
+    <div className="mx-auto max-w-5xl text-[#1A1917] dark:text-foreground">
       <FlowTemplateGallery
         open={galleryOpen}
         onOpenChange={(open) => {
@@ -4821,8 +4814,8 @@ export function AutomationFlowsPage({
         onDelete={openDeleteFlow}
       />
 
-      <div className="mb-[34px] flex items-start justify-between gap-8">
-        <div className="max-w-[560px] space-y-2">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div className="space-y-1">
           <h1 className="text-xl font-semibold">Flows</h1>
           <p className="text-sm text-muted-foreground">When something happens, do something. Flows keep agents working without anyone prompting them.</p>
         </div>
