@@ -2743,6 +2743,7 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			run_id TEXT NOT NULL,
 			schema_version TEXT NOT NULL,
+			through_sequence INTEGER NOT NULL DEFAULT 0,
 			snapshot_payload BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			created_at DATETIME,
 			updated_at DATETIME,

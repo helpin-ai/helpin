@@ -19,6 +19,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	tclient "go.temporal.io/sdk/client"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -28,6 +29,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/cache"
 	"github.com/helpin-ai/helpin/server/internal/config"
+	"github.com/helpin-ai/helpin/server/internal/coordination"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
 	"github.com/helpin-ai/helpin/server/internal/email"
@@ -548,6 +550,10 @@ func main() {
 			slog.Error("jetstream bridge stopped (non-fatal in dev)", "error", err)
 		}
 	}()
+	// Agent-runtime transcript projections are published through the durable
+	// workspace-event bridge. Every API pod consumes that bridge independently,
+	// so all WebSocket owners observe one sequenced publication path.
+	agentRuntimeProjectionPublisher := ws.NewOrderedJetStreamPublisher(jetstream)
 
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
@@ -1246,21 +1252,43 @@ func main() {
 			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
 			SetTranscriptRepositories(agentRunMessageRepo, agentRunArtifactRepo, agentRunInteractionRepo).
 			SetCodingSessionSnapshotRepository(codingSessionStateSnapshotRepo).
-			SetWebSocketPublisher(wsPublisher).
+			SetWebSocketPublisher(agentRuntimeProjectionPublisher).
 			SetRunFinalizers(runFinalizers)
 	}
 	agentRuntimeProjectionCancel := context.CancelFunc(func() {})
 	var projectionCtx context.Context
 	if agentRuntimeProjectionService != nil {
 		projectionCtx, agentRuntimeProjectionCancel = context.WithCancel(context.Background())
+		projectionLeader := coordination.NewPostgresLeader(sqlDB, coordination.PostgresLeaderOptions{
+			Name: fmt.Sprintf(
+				"agent-runtime-projection:%s:%s",
+				cfg.AgentRuntimeAppID,
+				cfg.AgentRuntimeEventProtocol,
+			),
+			InstanceID: realtimeInstanceID,
+		})
 		go func() {
-			if err := agentRuntimeProjectionService.StartNATSConsumer(projectionCtx, jetstream); err != nil {
-				slog.Error("agent runtime projection consumer stopped", "error", err)
-			}
-		}()
-		go func() {
-			if err := agentRuntimeProjectionService.StartReconciliationSweep(projectionCtx, time.Minute, 2*time.Minute, 50); err != nil {
-				slog.Error("agent runtime reconciliation sweep stopped", "error", err)
+			err := projectionLeader.Run(projectionCtx, func(leaderCtx context.Context) error {
+				group, groupCtx := errgroup.WithContext(leaderCtx)
+				group.Go(func() error {
+					err := agentRuntimeProjectionService.StartNATSConsumer(groupCtx, jetstream)
+					if err == nil && groupCtx.Err() == nil {
+						return errors.New("agent runtime projection consumer exited unexpectedly")
+					}
+					return err
+				})
+				group.Go(func() error {
+					return agentRuntimeProjectionService.StartReconciliationSweep(
+						groupCtx,
+						time.Minute,
+						2*time.Minute,
+						50,
+					)
+				})
+				return group.Wait()
+			})
+			if err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("agent runtime projection leadership stopped", "error", err)
 			}
 		}()
 		// Self-healing backstop for command-bar plan advancement: the
