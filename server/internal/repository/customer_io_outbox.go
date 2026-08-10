@@ -3,7 +3,9 @@ package repository
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -14,14 +16,21 @@ import (
 
 const customerIOLastErrorMaxBytes = 2 * 1024
 
+var _customerIOSQLiteClaimMutex sync.Mutex
+
 // CustomerIOLifecycleOutboxRepository persists Customer.io lifecycle delivery work.
 type CustomerIOLifecycleOutboxRepository struct {
-	db *gorm.DB
+	db      *gorm.DB
+	claimMu *sync.Mutex
 }
 
 // NewCustomerIOLifecycleOutboxRepository creates a Customer.io lifecycle outbox repository.
 func NewCustomerIOLifecycleOutboxRepository(db *gorm.DB) *CustomerIOLifecycleOutboxRepository {
-	return &CustomerIOLifecycleOutboxRepository{db: db}
+	repository := &CustomerIOLifecycleOutboxRepository{db: db}
+	if db != nil && db.Dialector != nil && db.Dialector.Name() == "sqlite" {
+		repository.claimMu = &_customerIOSQLiteClaimMutex
+	}
+	return repository
 }
 
 // ClaimDue exclusively leases due Customer.io lifecycle events for delivery.
@@ -34,6 +43,10 @@ func (r *CustomerIOLifecycleOutboxRepository) ClaimDue(
 	if limit <= 0 {
 		return nil, nil
 	}
+	if r.claimMu != nil {
+		r.claimMu.Lock()
+		defer r.claimMu.Unlock()
+	}
 
 	var claimed []model.CustomerIOOutbox
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -45,8 +58,8 @@ func (r *CustomerIOLifecycleOutboxRepository) ClaimDue(
 			model.CustomerIOOutboxStatusProcessing,
 			now,
 		).Order("next_attempt_at ASC, created_at ASC").Limit(limit)
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+		if locking := customerIOClaimLockingClause(tx.Dialector.Name()); locking != nil {
+			query = query.Clauses(locking)
 		}
 
 		var due []model.CustomerIOOutbox
@@ -172,7 +185,18 @@ func truncateCustomerIOLastError(lastError string) string {
 	if len(lastError) <= customerIOLastErrorMaxBytes {
 		return lastError
 	}
-	return lastError[:customerIOLastErrorMaxBytes]
+	lastError = lastError[:customerIOLastErrorMaxBytes]
+	for !utf8.ValidString(lastError) {
+		lastError = lastError[:len(lastError)-1]
+	}
+	return lastError
+}
+
+func customerIOClaimLockingClause(dialect string) clause.Expression {
+	if dialect != "postgres" {
+		return nil
+	}
+	return clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}
 }
 
 // Enqueue persists an event or returns the event already stored for its semantic key.

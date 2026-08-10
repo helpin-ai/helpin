@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -131,6 +134,64 @@ func TestCustomerIOLifecycleOutboxClaimDueAtomicallyIncrementsAttempts(t *testin
 	}
 	if persisted.Attempts != 2 {
 		t.Errorf("persisted attempts = %d, want 2", persisted.Attempts)
+	}
+}
+
+func TestCustomerIOLifecycleOutboxClaimDueConcurrentSQLiteHasSingleOwner(t *testing.T) {
+	db := openCustomerIOOutboxTestDB(t)
+	now := time.Date(2026, 8, 10, 12, 30, 0, 0, time.UTC)
+	enqueueCustomerIOOutboxTestRow(t, db, "event:concurrent-claim", now)
+	repositories := []*CustomerIOLifecycleOutboxRepository{
+		NewCustomerIOLifecycleOutboxRepository(db),
+		NewCustomerIOLifecycleOutboxRepository(db),
+	}
+
+	type claimResult struct {
+		rows []model.CustomerIOOutbox
+		err  error
+	}
+	start := make(chan struct{})
+	results := make(chan claimResult, len(repositories))
+	var wg sync.WaitGroup
+	for _, repo := range repositories {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			rows, err := repo.ClaimDue(context.Background(), now, 5*time.Minute, 1)
+			results <- claimResult{rows: rows, err: err}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	var claims []model.CustomerIOOutbox
+	for result := range results {
+		if result.err != nil {
+			t.Fatalf("concurrent claim: %v", result.err)
+		}
+		claims = append(claims, result.rows...)
+	}
+	if len(claims) != 1 {
+		t.Fatalf("live claim owners = %d, want 1", len(claims))
+	}
+	if claims[0].ClaimToken == nil {
+		t.Fatal("live claim has no token")
+	}
+}
+
+func TestCustomerIOLifecycleOutboxClaimDuePostgresUsesSkipLocked(t *testing.T) {
+	expression := customerIOClaimLockingClause("postgres")
+	locking, ok := expression.(clause.Locking)
+	if !ok {
+		t.Fatalf("PostgreSQL claim clause type = %T, want clause.Locking", expression)
+	}
+	if locking.Strength != "UPDATE" || locking.Options != "SKIP LOCKED" {
+		t.Errorf("PostgreSQL locking clause = %#v, want FOR UPDATE SKIP LOCKED", locking)
+	}
+	if got := customerIOClaimLockingClause("sqlite"); got != nil {
+		t.Errorf("SQLite locking clause = %#v, want nil", got)
 	}
 }
 
@@ -298,6 +359,19 @@ func TestCustomerIOLifecycleOutboxErrorTruncation(t *testing.T) {
 	}
 }
 
+func TestCustomerIOLifecycleOutboxErrorTruncationPreservesUTF8(t *testing.T) {
+	lastError := strings.Repeat("x", 2047) + "€"
+
+	got := truncateCustomerIOLastError(lastError)
+
+	if len(got) > 2*1024 {
+		t.Errorf("last error length = %d, want at most %d", len(got), 2*1024)
+	}
+	if !utf8.ValidString(got) {
+		t.Error("truncated last error is not valid UTF-8")
+	}
+}
+
 func TestCustomerIOLifecycleOutboxSQLiteRoundTrip(t *testing.T) {
 	db := openCustomerIOOutboxTestDB(t)
 	now := time.Date(2026, 8, 10, 12, 30, 0, 0, time.UTC)
@@ -360,7 +434,8 @@ func TestCustomerIOLifecycleOutboxSemanticKeyIsUnique(t *testing.T) {
 
 func openCustomerIOOutboxTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	dsn := "file:" + t.Name() + "-" + uuid.NewString() + "?mode=memory&cache=shared&_busy_timeout=5000"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
