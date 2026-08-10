@@ -66,6 +66,23 @@
         "additionalProperties": false
       },
       "presets": []
+    },
+    {
+      "name": "browser_record",
+      "description": "Start or stop a bounded Kernel replay of the current private browser session. Stopping persists the MP4 as a durable private workspace artifact without returning video bytes or provider URLs to the model.",
+      "category": "Browser",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["start", "stop"], "description": "Start or stop the current run-scoped browser recording." },
+          "name": { "type": "string", "description": "Short descriptive recording name. Used only with action=start and defaults to browser-recording." },
+          "max_duration_seconds": { "type": "integer", "minimum": 10, "maximum": 600, "description": "Maximum recording duration. Used only with action=start and defaults to 180 seconds." },
+          "record_audio": { "type": "boolean", "description": "Include browser audio. Used only with action=start and defaults to false." }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      },
+      "presets": []
     }
   ],
   "categories": ["Browser"]

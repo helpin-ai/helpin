@@ -573,7 +573,7 @@ func TestBrowserToolCatalogContracts(t *testing.T) {
 	catalog := ListToolCatalog()
 	want := map[string]bool{
 		"browser_open": false, "browser_snapshot": false,
-		"browser_act": false, "browser_screenshot": false,
+		"browser_act": false, "browser_screenshot": false, "browser_record": false,
 	}
 	for _, tool := range catalog.Tools {
 		if _, ok := want[tool.Name]; !ok {

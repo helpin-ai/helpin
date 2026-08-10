@@ -728,8 +728,8 @@ func askAgentPresetTools() []string {
 		"request_user_input", "request_approval", "update_plan",
 		// Web research.
 		"web_search_brave", "web_search_exa", "fetch_url", "crawl_url",
-		// Authenticated browser inspection and private screenshot artifacts.
-		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot",
+		// Authenticated browser inspection and private screenshot/video artifacts.
+		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
 		// Workspace / PM reads.
 		"list_workspace_teams", "list_team_workflows_with_stages",
 		"search_workspace", "list_tasks", "get_task_context",

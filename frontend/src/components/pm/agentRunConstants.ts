@@ -85,4 +85,5 @@ export const ARTIFACT_TYPE_LABELS: Record<string, string> = {
   review_findings: 'Review Findings',
   review_decision: 'Review Decision',
   browser_screenshot: 'Browser Screenshot',
+  browser_recording: 'Browser Recording',
 };

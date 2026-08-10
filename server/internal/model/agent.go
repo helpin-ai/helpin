@@ -507,6 +507,7 @@ const (
 
 const AgentRunArtifactTypeToolCall = "tool_call"
 const AgentRunArtifactTypeBrowserScreenshot = "browser_screenshot"
+const AgentRunArtifactTypeBrowserRecording = "browser_recording"
 
 const (
 	AgentRunPauseReasonNone           = "none"
