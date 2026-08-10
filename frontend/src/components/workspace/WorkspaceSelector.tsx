@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Favicon } from '@/components/ui/favicon';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useSupportUnreadByWorkspace } from '@/hooks/queries/useSupport';
 import { daysUntil, PLAN_LABEL } from '@/lib/billingUtils';
@@ -183,6 +184,14 @@ function WorkspaceCard({
     >
       <CardHeader className="pb-3">
         <div className="flex items-start gap-3">
+          <Favicon
+            src={ws.logo_url}
+            url={ws.website_url}
+            name={ws.name}
+            size={128}
+            className="h-9 w-9 shrink-0 rounded-md"
+            fallbackClassName="text-xs"
+          />
           <div className="min-w-0 flex-1">
             <CardTitle className="truncate text-base">{ws.name}</CardTitle>
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5">

@@ -118,7 +118,10 @@ function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
                   {selectedWorkspace ? (
                     <div className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
                       <Favicon
+                        src={selectedWorkspace.logo_url}
+                        url={selectedWorkspace.website_url}
                         name={selectedWorkspace.name}
+                        size={128}
                         className="h-8 w-8 rounded-md"
                         fallbackClassName="text-xs"
                       />
@@ -147,8 +150,11 @@ function ConsentForm({ request }: { request: MCPAuthorizationRequest }) {
                     >
                       <div className="flex min-w-0 flex-1 items-center gap-2.5">
                         <Favicon
+                          src={workspace.logo_url}
+                          url={workspace.website_url}
                           name={workspace.name}
                           className="h-8 w-8 rounded-md"
+                          size={128}
                           fallbackClassName="text-xs"
                         />
                         <div className="min-w-0 flex-1">
