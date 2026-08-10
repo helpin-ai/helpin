@@ -114,3 +114,44 @@ func TestSupportConversationCompanyContextMigrationContract(t *testing.T) {
 		t.Error("migration must not infer company context for existing widget sessions")
 	}
 }
+
+func TestCustomerIOLifecycleOutboxMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+
+	var migration *Migration
+	for i := range migrations {
+		if migrations[i].Version == "202608100001" {
+			migration = &migrations[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatal("expected Customer.io lifecycle outbox migration 202608100001 to be registered")
+	}
+	if migration.Name != "customer_io_lifecycle_outbox" {
+		t.Fatalf("migration name = %q, want %q", migration.Name, "customer_io_lifecycle_outbox")
+	}
+
+	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+	for _, clause := range []string{
+		"attributes jsonb not null default '{}'::jsonb",
+		"recipient_snapshot jsonb not null default '{}'::jsonb",
+		"check (status in ('pending', 'processing', 'delivered', 'failed'))",
+		"check (attempts >= 0)",
+		"unique (semantic_key)",
+		"workspace_id uuid null references workspaces(id) on delete set null",
+		"create index if not exists idx_customer_io_outbox_due_work on customer_io_outbox (status, next_attempt_at, lease_expires_at)",
+		"where status in ('pending', 'processing')",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("migration SQL missing contract clause %q", clause)
+		}
+	}
+
+	if !strings.Contains(sql, "create table if not exists customer_io_outbox") {
+		t.Error("migration must create the outbox table idempotently")
+	}
+}
