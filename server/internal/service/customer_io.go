@@ -464,6 +464,30 @@ func (s *CustomerIOIdentityService) SyncUser(ctx context.Context, user *model.Us
 	}
 }
 
+// TrackUserSignedUp records account creation after the person identity exists.
+// Delivery is best-effort so Customer.io can never fail account creation.
+func (s *CustomerIOIdentityService) TrackUserSignedUp(ctx context.Context, user *model.User, signupMethod string) {
+	if !s.Enabled() || user == nil || strings.TrimSpace(user.ID) == "" {
+		return
+	}
+	occurredAt := user.CreatedAt.UTC()
+	if occurredAt.IsZero() {
+		occurredAt = time.Now().UTC()
+	}
+	if err := s.client.TrackEvent(ctx, CustomerIOEvent{
+		UserID:     user.ID,
+		Name:       "user_signed_up",
+		OccurredAt: occurredAt,
+		Attributes: map[string]any{
+			"email":         user.Email,
+			"full_name":     user.FullName,
+			"signup_method": strings.TrimSpace(signupMethod),
+		},
+	}); err != nil {
+		s.logger.ErrorContext(ctx, "failed to track customer.io signup", "error", err, "user_id", user.ID)
+	}
+}
+
 func (s *CustomerIOIdentityService) SyncUserByID(ctx context.Context, userID string) {
 	if !s.Enabled() || s.userRepo == nil || strings.TrimSpace(userID) == "" {
 		return

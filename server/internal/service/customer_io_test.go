@@ -80,6 +80,41 @@ func TestCustomerIOTrackClientIdentifiesPersonWithTrackAPIEntityShape(t *testing
 	}
 }
 
+func TestCustomerIOIdentityTracksUserSignedUpWithSafeContract(t *testing.T) {
+	var requests []map[string]any
+	httpClient := &http.Client{Transport: customerIORoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		requests = append(requests, body)
+		return customerIOTestResponse(http.StatusOK), nil
+	})}
+	client := NewCustomerIOTrackClient(CustomerIOTrackConfig{SiteID: "site-id", APIKey: "api-key", Endpoint: "https://customer.test", HTTPClient: httpClient})
+	identity := NewCustomerIOIdentityService(client, nil, nil, nil, nil)
+	createdAt := time.Date(2026, 8, 10, 9, 30, 0, 0, time.UTC)
+	user := &model.User{ID: "user-1", Email: "owner@example.com", FullName: "Owner User", CreatedAt: createdAt}
+
+	identity.TrackUserSignedUp(context.Background(), user, "password")
+
+	if len(requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(requests))
+	}
+	got := requests[0]
+	if got["action"] != "event" || got["name"] != "user_signed_up" || got["timestamp"] != float64(createdAt.Unix()) {
+		t.Fatalf("unexpected event: %#v", got)
+	}
+	attrs := got["attributes"].(map[string]any)
+	if attrs["signup_method"] != "password" || attrs["email"] != "owner@example.com" || attrs["full_name"] != "Owner User" {
+		t.Fatalf("unexpected attributes: %#v", attrs)
+	}
+	for _, forbidden := range []string{"password", "password_hash", "access_token", "refresh_token"} {
+		if _, ok := attrs[forbidden]; ok {
+			t.Fatalf("forbidden attribute %q present", forbidden)
+		}
+	}
+}
+
 func TestCustomerIOWorkspaceEventAttributesIncludeContract(t *testing.T) {
 	got := customerIOWorkspaceEventAttributes(
 		map[string]any{"source": "backend"},
