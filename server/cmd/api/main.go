@@ -1062,7 +1062,23 @@ func main() {
 	docsHelpcenterService.SetHelpcenterCache(hcCache)
 	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsRedirectRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
 	docsHelpcenterTranslationService.SetSearchRepository(docsHelpcenterSearchRepo)
-	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
+	docsImportService := service.NewDocsImportService(
+		docsImportRepo,
+		docsSpaceService,
+		docsCollectionService,
+		docsDocumentService,
+		docsContentService,
+		docsHelpcenterService,
+		docsRedirectRepo,
+		s3Client,
+		supportLLMProvider,
+		service.DocsImportAIConversionConfig{
+			Enabled:      cfg.DocsImportAIConversionEnabled,
+			Provider:     cfg.DocsImportAIConversionProvider,
+			Model:        cfg.DocsImportAIConversionModel,
+			ArticleLimit: cfg.DocsImportAIConversionArticleLimit,
+		},
+	)
 	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)
 	docsCollectionService.SetTranslationService(docsHelpcenterTranslationService)
 	docsDocumentService.SetTranslationService(docsHelpcenterTranslationService)
