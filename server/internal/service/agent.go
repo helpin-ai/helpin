@@ -1038,6 +1038,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		return nil, fmt.Errorf("unsupported built-in preset %q", presetKey)
 	}
 	preset = enforceManagedAskAgentCapabilities(preset)
+	preset = enforceManagedDocumentationAgentCapabilities(preset)
 	if existing != nil {
 		changed := false
 		beforePresetKey := existing.PresetKey

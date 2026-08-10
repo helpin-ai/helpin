@@ -455,6 +455,22 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 	}
 }
 
+func TestManagedDocumentationAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
+	preset := enforceManagedDocumentationAgentCapabilities(model.AgentPresetDefinition{
+		Key:          model.AgentPresetDocumentationAgent,
+		AllowedTools: []string{"read_document", "write_document_content"},
+	})
+	if !slices.Contains(preset.AllowedTools, "insert_document_artifact") {
+		t.Fatalf("managed Documentation Agent artifact capability was not restored: %v", preset.AllowedTools)
+	}
+	if got := enforceManagedDocumentationAgentCapabilities(model.AgentPresetDefinition{
+		Key:          model.AgentPresetSupportAgent,
+		AllowedTools: []string{"read_document"},
+	}); slices.Contains(got.AllowedTools, "insert_document_artifact") {
+		t.Fatalf("artifact capability leaked into unrelated preset: %v", got.AllowedTools)
+	}
+}
+
 func TestListAgentPresetsTaskPlannerExcludesListEpicTasks(t *testing.T) {
 	presets := ListAgentPresets()
 	for _, preset := range presets {

@@ -816,6 +816,17 @@ func enforceManagedAskAgentCapabilities(preset model.AgentPresetDefinition) mode
 	return preset
 }
 
+// enforceManagedDocumentationAgentCapabilities keeps capabilities required by
+// Quill's managed prompt available when a workspace is pinned to a preset
+// snapshot created before those capabilities shipped.
+func enforceManagedDocumentationAgentCapabilities(preset model.AgentPresetDefinition) model.AgentPresetDefinition {
+	if normalizePresetKey(preset.Key) != model.AgentPresetDocumentationAgent {
+		return preset
+	}
+	preset.AllowedTools = appendPresetTools(preset.AllowedTools, []string{"insert_document_artifact"})
+	return preset
+}
+
 func appendPresetTools(base []string, additions ...[]string) []string {
 	tools := slices.Clone(base)
 	for _, addition := range additions {
