@@ -167,6 +167,29 @@ func TestMarkdownToJSON_InlineCode(t *testing.T) {
 	}
 }
 
+func TestMarkdownToJSON_InlineCodeExcludesOtherMarks(t *testing.T) {
+	raw := MarkdownToJSON("**`fmt.Println`**")
+	var doc Node
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	node := doc.Content[0].Content[0]
+	if node.Text != "fmt.Println" {
+		t.Fatalf("text = %q", node.Text)
+	}
+	if len(node.Marks) != 1 || node.Marks[0].Type != "code" {
+		t.Fatalf("expected code to be the only mark, got %+v", node.Marks)
+	}
+}
+
+func TestAppendMarkDeduplicatesMarkTypes(t *testing.T) {
+	marks := appendMark([]Mark{{Type: "bold"}}, Mark{Type: "bold"})
+	if len(marks) != 1 || marks[0].Type != "bold" {
+		t.Fatalf("expected one bold mark, got %+v", marks)
+	}
+}
+
 func TestMarkdownToJSON_Strikethrough(t *testing.T) {
 	raw := MarkdownToJSON("This is ~~deleted~~ text")
 	var doc Node
@@ -437,6 +460,66 @@ func TestMarkdownToJSON_Image(t *testing.T) {
 	alt, _ := img.Attrs["alt"].(string)
 	if src != "https://example.com/image.png" || alt != "alt text" {
 		t.Fatalf("expected src/alt, got src=%q alt=%q", src, alt)
+	}
+}
+
+func TestMarkdownToJSON_HoistsImagesMixedWithParagraphText(t *testing.T) {
+	raw := MarkdownToJSON("Before ![diagram](https://example.com/diagram.png) after")
+	var doc Node
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(doc.Content) != 3 {
+		t.Fatalf("expected paragraph, image, paragraph; got %+v", doc.Content)
+	}
+	if doc.Content[0].Type != "paragraph" || doc.Content[1].Type != "resizableImage" || doc.Content[2].Type != "paragraph" {
+		t.Fatalf("unexpected node sequence: %q, %q, %q", doc.Content[0].Type, doc.Content[1].Type, doc.Content[2].Type)
+	}
+	if got := doc.Content[0].Content[0].Text; got != "Before " {
+		t.Fatalf("leading text = %q", got)
+	}
+	if got := doc.Content[2].Content[0].Text; got != " after" {
+		t.Fatalf("trailing text = %q", got)
+	}
+}
+
+func TestMarkdownToJSON_ImageOnlyListItemStartsWithParagraph(t *testing.T) {
+	raw := MarkdownToJSON("- ![diagram](https://example.com/diagram.png)")
+	var doc Node
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	item := doc.Content[0].Content[0]
+	if len(item.Content) != 2 || item.Content[0].Type != "paragraph" || item.Content[1].Type != "resizableImage" {
+		t.Fatalf("expected list item to contain paragraph then image, got %+v", item.Content)
+	}
+}
+
+func TestNormalizeDocumentTreeRepairsListStructure(t *testing.T) {
+	doc := Node{Type: "doc", Content: []Node{
+		{Type: "orderedList"},
+		{
+			Type: "bulletList",
+			Content: []Node{{
+				Type: "listItem",
+				Content: []Node{{
+					Type:    "heading",
+					Attrs:   map[string]any{"level": 3},
+					Content: []Node{{Type: "text", Text: "Preserved"}},
+				}},
+			}},
+		},
+	}}
+
+	normalizeDocumentTree(&doc)
+	if len(doc.Content) != 1 || doc.Content[0].Type != "bulletList" {
+		t.Fatalf("expected empty ordered list to be removed, got %+v", doc.Content)
+	}
+	item := doc.Content[0].Content[0]
+	if len(item.Content) != 2 || item.Content[0].Type != "paragraph" || item.Content[1].Type != "heading" {
+		t.Fatalf("expected paragraph before preserved heading, got %+v", item.Content)
 	}
 }
 
