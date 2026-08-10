@@ -78,6 +78,22 @@ func (h *PMSprintHandler) PlanningWorkspace(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, workspace)
 }
 
+// ListBacklogTasks handles GET /api/pm/sprints/backlog-tasks.
+func (h *PMSprintHandler) ListBacklogTasks(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	pagination := queryPagination(r)
+	tasks, err := h.sprintService.ListBacklogTasksPage(r.Context(), workspaceID, queryStringPtr(r, "team_id"), pagination)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, tasks)
+}
+
 // Create handles POST /api/pm/sprints.
 func (h *PMSprintHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())

@@ -306,6 +306,29 @@ func renderNode(b *strings.Builder, n *Node) {
 			}
 		}
 
+	case "artifactVideo":
+		fileName := strAttr(n.Attrs, "fileName")
+		if fileName == "" {
+			fileName = "Private video recording"
+		}
+		description := strAttr(n.Attrs, "description")
+		caption := strAttr(n.Attrs, "caption")
+		b.WriteString(`<figure class="docs-artifact-video" data-private-artifact-video>`)
+		b.WriteString(`<div class="docs-artifact-video-placeholder">`)
+		b.WriteString(html.EscapeString(fileName))
+		if description != "" {
+			b.WriteString(`<span class="sr-only"> — `)
+			b.WriteString(html.EscapeString(description))
+			b.WriteString(`</span>`)
+		}
+		b.WriteString(`</div>`)
+		if caption != "" {
+			b.WriteString(`<figcaption>`)
+			b.WriteString(html.EscapeString(caption))
+			b.WriteString(`</figcaption>`)
+		}
+		b.WriteString("</figure>\n")
+
 	case "htmlBlock":
 		rawHTML := strAttr(n.Attrs, "html")
 		if rawHTML != "" {

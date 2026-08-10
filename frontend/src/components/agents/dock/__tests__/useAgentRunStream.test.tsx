@@ -296,6 +296,7 @@ describe('useAgentRunStream', () => {
 
     const delta = assistantEvent(2, 'Hi');
     await act(async () => {
+      dispatchSessionEvent(assistantEvent(1, ''));
       dispatchSessionEvent(delta);
       dispatchSessionEvent(assistantEvent(2, 'Hello', { id: delta.id }));
       dispatchSessionEvent(assistantEvent(3, 'wrong run', {
@@ -463,6 +464,62 @@ describe('useAgentRunStream', () => {
     vi.useRealTimers();
   });
 
+  it('holds an out-of-order v2 delta until the missing sequence arrives', async () => {
+    mocks.listRunEvents.mockResolvedValueOnce({
+      data: { events: [], next_sequence_no: 0 },
+      error: null,
+    });
+    await act(async () => {
+      root.render(<Probe />);
+    });
+    await waitFor(() => !latestState?.loading, 'initial stream fetch did not finish');
+
+    await act(async () => {
+      dispatchSessionEvent(assistantEvent(1, ''));
+      dispatchSessionEvent(assistantEvent(3, 'world'));
+    });
+    expect(liveAssistantContent()).toBe('');
+
+    await act(async () => {
+      dispatchSessionEvent(assistantEvent(2, 'Hello '));
+    });
+    expect(liveAssistantContent()).toBe('Hello world');
+  });
+
+  it('uses an authoritative snapshot to bridge a non-visual runtime sequence gap', async () => {
+    mocks.getRunSnapshot.mockResolvedValueOnce({
+      data: { id: 'run-1', status: 'running', stream_state_snapshot: liveSnapshot('Hello ', 1) },
+      error: null,
+    });
+    mocks.listRunEvents.mockResolvedValueOnce({
+      data: { events: [], next_sequence_no: 0 },
+      error: null,
+    });
+    await act(async () => {
+      root.render(<Probe />);
+    });
+    await waitFor(() => liveAssistantContent() === 'Hello ', 'initial snapshot did not load');
+
+    await act(async () => {
+      dispatchSessionEvent(assistantEvent(3, 'world'));
+    });
+    expect(liveAssistantContent()).toBe('Hello ');
+
+    mocks.getRunSnapshot.mockResolvedValueOnce({
+      data: { id: 'run-1', status: 'running', stream_state_snapshot: liveSnapshot('Hello world', 3) },
+      error: null,
+    });
+    mocks.listRunEvents.mockResolvedValueOnce({
+      data: { events: [], next_sequence_no: 0 },
+      error: null,
+    });
+    await act(async () => {
+      await latestState?.refetch();
+    });
+
+    expect(liveAssistantContent()).toBe('Hello world');
+  });
+
   it('reconciles once when the v2 runtime sequence has a gap', async () => {
     vi.useFakeTimers();
     mocks.listRunEvents.mockResolvedValue({
@@ -479,10 +536,12 @@ describe('useAgentRunStream', () => {
       dispatchSessionEvent(assistantEvent(1, ''));
       dispatchSessionEvent(assistantEvent(3, 'after gap'));
       dispatchSessionEvent(assistantEvent(4, ' once'));
+      expect(liveAssistantContent()).toBe('');
       await vi.advanceTimersByTimeAsync(100);
     });
 
     expect(mocks.listRunEvents).toHaveBeenCalledTimes(callsBeforeGap + 1);
+    expect(liveAssistantContent()).toBe('');
     vi.useRealTimers();
   });
 

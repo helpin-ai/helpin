@@ -1,4 +1,16 @@
-import type { AgentRun, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes'
+import type {
+  AgentIconKey,
+  AgentPresetKey,
+  AgentRun,
+  AgentRunMessage,
+  CodexAuthState,
+  CodingSession,
+  CodingSessionEventListResponse,
+  CodingSessionInteraction,
+  CommandBarPageContext,
+  CommandBarPlanSummary,
+  ResolveCodingSessionInteractionRequest,
+} from '@/lib/pmTypes'
 
 /** One user-owned dock conversation, backed by an agent-runtime chat-mode run. */
 export interface DockChat {
@@ -7,6 +19,7 @@ export interface DockChat {
   user_id: string
   title: string
   active_run_id?: string | null
+  active_run_status?: AgentRun['status'] | null
   last_message_at?: string | null
   archived_at?: string | null
   created_at: string
@@ -20,7 +33,20 @@ export interface DockChatDetail {
   plans?: CommandBarPlanSummary[]
 }
 
+export interface DockChatListResponse {
+  chats: DockChat[]
+  next_cursor?: string | null
+}
+
 export interface SendDockChatMessageRequest {
+  content: string
+  page_context?: CommandBarPageContext
+  references?: DockEntityReference[]
+}
+
+export type DockEntityReference = CommandBarPageContext
+
+export interface GenerateDockChatTitleRequest {
   content: string
   page_context?: CommandBarPageContext
 }
@@ -28,6 +54,39 @@ export interface SendDockChatMessageRequest {
 export interface UpdateDockChatRequest {
   title?: string
   archived?: boolean
+}
+
+export type DockRunAttentionKind = 'input' | 'approval' | 'authentication'
+
+export interface DockAgentIdentity {
+  id: string
+  name: string
+  icon_key?: AgentIconKey
+  preset_key?: AgentPresetKey
+}
+
+export interface DockRunSummary {
+  run: AgentRun
+  agent: DockAgentIdentity
+  attention_kind?: DockRunAttentionKind
+  last_activity_at: string
+}
+
+export interface DockRunListResponse {
+  runs: DockRunSummary[]
+  attention_count: number
+}
+
+export interface DockRunAPI {
+  getSnapshot: (workspaceId: string, runId: string) => Promise<{ data: CodingSession | null; error: string | null }>
+  listEvents: (workspaceId: string, runId: string, after?: number) => Promise<{ data: CodingSessionEventListResponse | null; error: string | null }>
+  listInteractions: (workspaceId: string, runId: string) => Promise<{ data: { interactions: CodingSessionInteraction[] } | null; error: string | null }>
+  resolveInteraction: (workspaceId: string, runId: string, interactionId: string, payload: ResolveCodingSessionInteractionRequest) => Promise<{ data: CodingSessionInteraction | null; error: string | null }>
+  sendMessage: (workspaceId: string, runId: string, content: string) => Promise<{ data: AgentRunMessage | null; error: string | null }>
+  continueRun: (workspaceId: string, runId: string, content?: string) => Promise<{ data: AgentRun | null; error: string | null }>
+  cancelRun: (workspaceId: string, runId: string) => Promise<{ data: AgentRun | null; error: string | null }>
+  startAuth: (workspaceId: string, runId: string) => Promise<{ data: CodexAuthState | null; error: string | null }>
+  cancelAuth: (workspaceId: string, runId: string) => Promise<{ data: CodexAuthState | null; error: string | null }>
 }
 
 /**
@@ -78,6 +137,8 @@ export interface DockPlanConfirmStep {
 /** Marker tags used inside chat-run message content. */
 export const DOCK_PAGE_CONTEXT_OPEN = '<page_context>'
 export const DOCK_PAGE_CONTEXT_CLOSE = '</page_context>'
+export const DOCK_REFERENCES_OPEN = '<references>'
+export const DOCK_REFERENCES_CLOSE = '</references>'
 export const DOCK_CHILD_RESULT_OPEN = '<child_run_result>'
 export const DOCK_CHILD_RESULT_CLOSE = '</child_run_result>'
 export const DOCK_PREVIOUS_CONVERSATION_OPEN = '<previous_conversation>'
@@ -107,11 +168,18 @@ export interface DockChildRunResult {
 
 /** Strips a trailing page-context block from a user message for display. */
 export function stripDockPageContext(content: string): string {
-  const start = content.lastIndexOf(DOCK_PAGE_CONTEXT_OPEN)
-  if (start < 0) return content
-  const end = content.indexOf(DOCK_PAGE_CONTEXT_CLOSE, start)
-  if (end < 0) return content
-  return (content.slice(0, start) + content.slice(end + DOCK_PAGE_CONTEXT_CLOSE.length)).trim()
+  let visible = content
+  for (const [open, close] of [
+    [DOCK_PAGE_CONTEXT_OPEN, DOCK_PAGE_CONTEXT_CLOSE],
+    [DOCK_REFERENCES_OPEN, DOCK_REFERENCES_CLOSE],
+  ] as const) {
+    const start = visible.lastIndexOf(open)
+    if (start < 0) continue
+    const end = visible.indexOf(close, start)
+    if (end < 0) continue
+    visible = visible.slice(0, start) + visible.slice(end + close.length)
+  }
+  return visible.trim()
 }
 
 /** Removes backend-owned context envelopes prepended to successor-run turns. */

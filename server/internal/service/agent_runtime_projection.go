@@ -29,6 +29,8 @@ const (
 	agentRuntimeUsageConsumedSummaryKey           = "agent_runtime_usage_consumed"
 	agentRuntimeUsageConsumedAtSummaryKey         = "agent_runtime_usage_consumed_at"
 	agentRuntimeTranscriptReconciledVersionKey    = "agent_runtime_transcript_reconciled_runtime_updated_at"
+	agentRuntimeV2ReplayThroughSummaryKey         = "agent_runtime_v2_replay_through"
+	agentRuntimeV2ReplayPageSize                  = 250
 	agentRuntimeEventCodexAuthStateChanged        = "codex_auth.state_changed"
 	agentRuntimeExecutionStageAuthCompleted       = "auth_completed"
 	agentRuntimeExecutionStageAwaitingAuth        = "awaiting_auth"
@@ -73,12 +75,16 @@ type agentRuntimeProjectionInteractionRepository interface {
 
 type agentRuntimeProjectionSessionSnapshotRepository interface {
 	GetByRun(ctx context.Context, workspaceID, runID string) (*model.CodingSessionStateSnapshot, error)
-	Upsert(ctx context.Context, snapshot *model.CodingSessionStateSnapshot) error
+	UpsertIfNewer(ctx context.Context, snapshot *model.CodingSessionStateSnapshot) (bool, error)
 	DeleteByRun(ctx context.Context, workspaceID, runID string) error
 }
 
 type agentRuntimeV2ReplayClient interface {
 	ListV2Events(ctx context.Context, runtimeRunID string, afterSequence int64) (*AgentRuntimeEventListResponse, error)
+}
+
+type agentRuntimeV2PagedReplayClient interface {
+	ListV2EventPage(ctx context.Context, runtimeRunID string, afterSequence int64, pageSize int) (*AgentRuntimeEventListResponse, error)
 }
 
 type agentRuntimeToolCallClient interface {
@@ -106,6 +112,7 @@ type AgentRuntimeProjectionService struct {
 	now                  func() time.Time
 	v2ReplayMu           sync.Mutex
 	v2ReplayThrough      map[string]int64
+	projectionLocks      [128]sync.Mutex
 }
 
 type agentRuntimeUsagePayload struct {
@@ -200,13 +207,17 @@ func (s *AgentRuntimeProjectionService) SetRunFinalizers(finalizers *AgentRunFin
 	return s
 }
 
-func (s *AgentRuntimeProjectionService) StartNATSConsumer(ctx context.Context, js nats.JetStreamContext) error {
+func (s *AgentRuntimeProjectionService) StartNATSConsumer(
+	ctx context.Context,
+	js nats.JetStreamContext,
+) (returnErr error) {
 	if s == nil || s.runRepo == nil || js == nil {
 		return nil
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			slog.ErrorContext(ctx, "agent runtime projection consumer panic", "panic", recovered)
+			returnErr = fmt.Errorf("agent runtime projection consumer panic: %v", recovered)
 		}
 	}()
 	durable := agentRuntimeProjectionDurable
@@ -252,13 +263,19 @@ func (s *AgentRuntimeProjectionService) StartNATSConsumer(ctx context.Context, j
 	})
 }
 
-func (s *AgentRuntimeProjectionService) StartReconciliationSweep(ctx context.Context, interval, staleAfter time.Duration, limit int) error {
+func (s *AgentRuntimeProjectionService) StartReconciliationSweep(
+	ctx context.Context,
+	interval time.Duration,
+	staleAfter time.Duration,
+	limit int,
+) (returnErr error) {
 	if s == nil || s.runRepo == nil || s.agentRuntimeClient == nil {
 		return nil
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			slog.ErrorContext(ctx, "agent runtime reconciliation sweep panic", "panic", recovered)
+			returnErr = fmt.Errorf("agent runtime reconciliation sweep panic: %v", recovered)
 		}
 	}()
 	if interval <= 0 {
@@ -374,11 +391,45 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 }
 
 func (s *AgentRuntimeProjectionService) replayV2Events(ctx context.Context, run *model.AgentRun, runtimeRunID string) error {
-	client, ok := s.agentRuntimeClient.(agentRuntimeV2ReplayClient)
-	if !ok || run == nil {
+	if run == nil {
 		return nil
 	}
-	afterSequence := s.v2ReplayCursor(runtimeRunID)
+	afterSequence := s.v2ReplayCursor(run, runtimeRunID)
+	if client, ok := s.agentRuntimeClient.(agentRuntimeV2PagedReplayClient); ok {
+		for {
+			response, err := client.ListV2EventPage(ctx, runtimeRunID, afterSequence, agentRuntimeV2ReplayPageSize)
+			if err != nil {
+				return err
+			}
+			if response == nil || len(response.Events) == 0 {
+				return nil
+			}
+			pageStart := afterSequence
+			for _, event := range response.Events {
+				if event.SequenceNo <= afterSequence {
+					continue
+				}
+				if err := s.ApplyEvent(ctx, event); err != nil {
+					return fmt.Errorf("apply sequence %d: %w", event.SequenceNo, err)
+				}
+				afterSequence = event.SequenceNo
+				s.setV2ReplayCursor(runtimeRunID, afterSequence)
+			}
+			if afterSequence == pageStart {
+				return fmt.Errorf("agent runtime v2 event page did not advance beyond sequence %d", pageStart)
+			}
+			if err := s.persistV2ReplayCursor(ctx, run, runtimeRunID, afterSequence); err != nil {
+				return err
+			}
+			if len(response.Events) < agentRuntimeV2ReplayPageSize {
+				return nil
+			}
+		}
+	}
+	client, ok := s.agentRuntimeClient.(agentRuntimeV2ReplayClient)
+	if !ok {
+		return nil
+	}
 	response, err := client.ListV2Events(ctx, runtimeRunID, afterSequence)
 	if err != nil {
 		return err
@@ -394,14 +445,25 @@ func (s *AgentRuntimeProjectionService) replayV2Events(ctx context.Context, run 
 			return fmt.Errorf("apply sequence %d: %w", event.SequenceNo, err)
 		}
 		s.setV2ReplayCursor(runtimeRunID, event.SequenceNo)
+		afterSequence = event.SequenceNo
+	}
+	if err := s.persistV2ReplayCursor(ctx, run, runtimeRunID, afterSequence); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (s *AgentRuntimeProjectionService) v2ReplayCursor(runtimeRunID string) int64 {
+func (s *AgentRuntimeProjectionService) v2ReplayCursor(run *model.AgentRun, runtimeRunID string) int64 {
+	persisted := int64(0)
+	if run != nil {
+		persisted = runtimeV2ReplayCursor(run.OutputSummary)
+	}
 	s.v2ReplayMu.Lock()
 	defer s.v2ReplayMu.Unlock()
-	return s.v2ReplayThrough[strings.TrimSpace(runtimeRunID)]
+	if current := s.v2ReplayThrough[strings.TrimSpace(runtimeRunID)]; current > persisted {
+		return current
+	}
+	return persisted
 }
 
 func (s *AgentRuntimeProjectionService) setV2ReplayCursor(runtimeRunID string, sequence int64) {
@@ -417,6 +479,64 @@ func (s *AgentRuntimeProjectionService) setV2ReplayCursor(runtimeRunID string, s
 	if sequence > s.v2ReplayThrough[key] {
 		s.v2ReplayThrough[key] = sequence
 	}
+}
+
+func (s *AgentRuntimeProjectionService) persistV2ReplayCursor(ctx context.Context, run *model.AgentRun, runtimeRunID string, sequence int64) error {
+	if run == nil || sequence <= 0 {
+		return nil
+	}
+	latest, err := s.runRepo.GetByIDAny(ctx, run.ID)
+	if err != nil {
+		return fmt.Errorf("load run before persisting v2 replay cursor: %w", err)
+	}
+	if latest != nil {
+		run.OutputSummary = append(json.RawMessage(nil), latest.OutputSummary...)
+	}
+	if !markRuntimeV2ReplayCursor(run, sequence) {
+		s.setV2ReplayCursor(runtimeRunID, sequence)
+		return nil
+	}
+	if err := s.runRepo.UpdateOutputSummary(ctx, run.ID, run.OutputSummary); err != nil {
+		return fmt.Errorf("persist v2 replay cursor %d: %w", sequence, err)
+	}
+	s.setV2ReplayCursor(runtimeRunID, sequence)
+	return nil
+}
+
+func markRuntimeV2ReplayCursor(run *model.AgentRun, sequence int64) bool {
+	if run == nil || sequence <= runtimeV2ReplayCursor(run.OutputSummary) {
+		return false
+	}
+	body := map[string]json.RawMessage{}
+	if len(run.OutputSummary) > 0 {
+		_ = json.Unmarshal(run.OutputSummary, &body)
+	}
+	value, err := json.Marshal(sequence)
+	if err != nil {
+		return false
+	}
+	body[agentRuntimeV2ReplayThroughSummaryKey] = value
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return false
+	}
+	run.OutputSummary = payload
+	return true
+}
+
+func runtimeV2ReplayCursor(summary json.RawMessage) int64 {
+	if len(summary) == 0 {
+		return 0
+	}
+	body := map[string]json.RawMessage{}
+	if err := json.Unmarshal(summary, &body); err != nil {
+		return 0
+	}
+	var sequence int64
+	if err := json.Unmarshal(body[agentRuntimeV2ReplayThroughSummaryKey], &sequence); err != nil || sequence < 0 {
+		return 0
+	}
+	return sequence
 }
 
 func reconciliationEventForRuntimeRun(runtimeRun *AgentRuntimeRun, localRun model.AgentRun, fallback time.Time) (AgentRuntimeEventEnvelope, bool) {
@@ -498,6 +618,10 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	if s == nil || s.runRepo == nil {
 		return fmt.Errorf("agent runtime projection service is not configured")
 	}
+	projectionLock := s.projectionLock(event)
+	projectionLock.Lock()
+	defer projectionLock.Unlock()
+
 	run, err := s.resolveRun(ctx, event)
 	if err != nil {
 		return err
@@ -720,6 +844,20 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	return nil
 }
 
+func (s *AgentRuntimeProjectionService) projectionLock(event AgentRuntimeEventEnvelope) *sync.Mutex {
+	key := firstNonEmptyString(
+		strings.TrimSpace(event.RunID),
+		strings.TrimSpace(event.HostRunID),
+		strings.TrimSpace(event.EventID),
+	)
+	var hash uint32 = 2166136261
+	for index := 0; index < len(key); index++ {
+		hash ^= uint32(key[index])
+		hash *= 16777619
+	}
+	return &s.projectionLocks[hash%uint32(len(s.projectionLocks))]
+}
+
 func (s *AgentRuntimeProjectionService) cancelPendingRuntimeInteractions(ctx context.Context, run *model.AgentRun, timestamp time.Time) error {
 	if s == nil || s.interactionRepo == nil || run == nil {
 		return nil
@@ -874,7 +1012,7 @@ func (s *AgentRuntimeProjectionService) recoverSupportCoverageGapOutcomeFromTool
 		case "create_document":
 			action = SupportCoverageAgentActionDocumentCreated
 			documentID = firstRuntimeToolCallString(call.Output, "document_id", "id")
-		case "write_document_content", "update_document_block", "insert_document_block", "insert_document_image":
+		case "write_document_content", "update_document_block", "insert_document_block", "insert_document_artifact", "insert_document_image":
 			action = SupportCoverageAgentActionDocumentUpdated
 			documentID = firstRuntimeToolCallString(call.Output, "document_id")
 			if documentID == "" {
@@ -1229,7 +1367,7 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 			"event_type", event.Type,
 			"error", err,
 		)
-		return true
+		return s.eventProtocol != "v2"
 	}
 
 	var snapshot *model.CodingSessionStreamSnapshot
@@ -1244,6 +1382,9 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 				"error", err,
 			)
 			record = nil
+		}
+		if snapshot != nil && record != nil && record.ThroughSequence > snapshot.ThroughSequence {
+			snapshot.ThroughSequence = record.ThroughSequence
 		}
 	}
 	if s.eventProtocol == "v2" && event.SequenceNo > 0 && snapshot != nil && snapshot.ThroughSequence >= event.SequenceNo {
@@ -1266,7 +1407,7 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 				)
 			}
 		}
-		return true
+		return s.eventProtocol != "v2"
 	}
 
 	encoded, err := model.EncodeCodingSessionStreamSnapshot(snapshot)
@@ -1278,20 +1419,22 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 			"event_type", event.Type,
 			"error", err,
 		)
-		return true
+		return s.eventProtocol != "v2"
 	}
 
 	nextRecord := &model.CodingSessionStateSnapshot{
 		WorkspaceID:     run.WorkspaceID,
 		RunID:           run.ID,
 		SchemaVersion:   model.CodingSessionStateSnapshotSchemaVersionV1,
+		ThroughSequence: snapshot.ThroughSequence,
 		SnapshotPayload: encoded,
 	}
 	if record != nil {
 		nextRecord.ID = record.ID
 		nextRecord.CreatedAt = record.CreatedAt
 	}
-	if err := s.sessionSnapshotRepo.Upsert(ctx, nextRecord); err != nil {
+	applied, err := s.sessionSnapshotRepo.UpsertIfNewer(ctx, nextRecord)
+	if err != nil {
 		slog.WarnContext(ctx, "persist delegated coding session stream snapshot failed",
 			"run_id", run.ID,
 			"workspace_id", run.WorkspaceID,
@@ -1299,12 +1442,12 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 			"event_type", event.Type,
 			"error", err,
 		)
-		return true
+		return s.eventProtocol != "v2"
 	}
 	// Stream snapshots are surfaced through coding_session_event websocket
 	// events. Do not emit a generic agent_run update for every transcript
 	// delta; that causes run-summary refetch storms in sheet/dock views.
-	return true
+	return applied
 }
 
 func (s *AgentRuntimeProjectionService) publishRuntimeCodingSessionEvent(run *model.AgentRun, event AgentRuntimeEventEnvelope) {
@@ -1721,13 +1864,14 @@ func (s *AgentRuntimeProjectionService) upsertRuntimeInteraction(ctx context.Con
 		}
 		return nil
 	}
+	interactionKind := projectedRuntimeInteractionKind(runtimeInteraction, run.RuntimeKind)
 	interaction := &model.AgentRunInteraction{
 		WorkspaceID:          run.WorkspaceID,
 		RunID:                run.ID,
 		RuntimeKind:          firstNonEmptyString(strings.TrimSpace(runtimeInteraction.RuntimeKind), strings.TrimSpace(run.RuntimeKind)),
-		InteractionKind:      normalizeRuntimeInteractionKind(runtimeInteraction.InteractionKind),
+		InteractionKind:      interactionKind,
 		Status:               normalizeRuntimeInteractionStatus(runtimeInteraction.Status),
-		RequestSchemaVersion: model.AgentRunInteractionSchemaVersionHelpinV1,
+		RequestSchemaVersion: projectedRuntimeInteractionSchemaVersion(runtimeInteraction, run.RuntimeKind, interactionKind),
 		RequestID:            strPtr(runtimeInteractionID),
 		Title:                stringPtrIfNotEmpty(runtimeInteraction.Title),
 		Summary:              stringPtrIfNotEmpty(runtimeInteraction.Summary),
@@ -1987,8 +2131,16 @@ func applyRuntimeInteraction(interaction *model.AgentRunInteraction, runtimeInte
 		interaction.RuntimeKind = value
 		changed = true
 	}
-	if value := normalizeRuntimeInteractionKind(runtimeInteraction.InteractionKind); strings.TrimSpace(interaction.InteractionKind) != value {
-		interaction.InteractionKind = value
+	projectedKind := projectedRuntimeInteractionKind(runtimeInteraction, run.RuntimeKind)
+	if projectedKind == model.AgentRunInteractionKindApprovalRequest && isCodexNativeApprovalInteractionKind(interaction.InteractionKind) {
+		projectedKind = strings.TrimSpace(interaction.InteractionKind)
+	}
+	if strings.TrimSpace(interaction.InteractionKind) != projectedKind {
+		interaction.InteractionKind = projectedKind
+		changed = true
+	}
+	if value := projectedRuntimeInteractionSchemaVersion(runtimeInteraction, run.RuntimeKind, projectedKind); strings.TrimSpace(interaction.RequestSchemaVersion) != value {
+		interaction.RequestSchemaVersion = value
 		changed = true
 	}
 	if value := normalizeRuntimeInteractionStatus(runtimeInteraction.Status); strings.TrimSpace(interaction.Status) != value {
@@ -2069,6 +2221,47 @@ func normalizeRuntimeInteractionKind(kind string) string {
 			return model.AgentRunInteractionKindRequestUserInput
 		}
 		return strings.TrimSpace(kind)
+	}
+}
+
+func projectedRuntimeInteractionKind(interaction AgentRuntimeInteraction, fallbackRuntimeKind string) string {
+	kind := normalizeRuntimeInteractionKind(interaction.InteractionKind)
+	if kind != model.AgentRunInteractionKindApprovalRequest || firstNonEmptyString(strings.TrimSpace(interaction.RuntimeKind), strings.TrimSpace(fallbackRuntimeKind)) != "codex" {
+		return kind
+	}
+	var metadata struct {
+		CodexRequestKind string `json:"codex_request_kind"`
+	}
+	if err := json.Unmarshal(interaction.ResponsePayload, &metadata); err != nil {
+		return kind
+	}
+	switch strings.TrimSpace(metadata.CodexRequestKind) {
+	case "command_execution":
+		return model.AgentRunInteractionKindCommandExecutionApproval
+	case "file_change":
+		return model.AgentRunInteractionKindFileChangeApproval
+	case "permissions":
+		return model.AgentRunInteractionKindPermissionsApproval
+	default:
+		return kind
+	}
+}
+
+func projectedRuntimeInteractionSchemaVersion(interaction AgentRuntimeInteraction, fallbackRuntimeKind, kind string) string {
+	if firstNonEmptyString(strings.TrimSpace(interaction.RuntimeKind), strings.TrimSpace(fallbackRuntimeKind)) == "codex" && isCodexNativeApprovalInteractionKind(kind) {
+		return model.AgentRunInteractionSchemaVersionCodexV2
+	}
+	return model.AgentRunInteractionSchemaVersionHelpinV1
+}
+
+func isCodexNativeApprovalInteractionKind(kind string) bool {
+	switch strings.TrimSpace(kind) {
+	case model.AgentRunInteractionKindCommandExecutionApproval,
+		model.AgentRunInteractionKindFileChangeApproval,
+		model.AgentRunInteractionKindPermissionsApproval:
+		return true
+	default:
+		return false
 	}
 }
 

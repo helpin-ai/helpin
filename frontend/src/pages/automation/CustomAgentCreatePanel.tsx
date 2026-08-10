@@ -3,7 +3,13 @@ import type { WorkspaceTeam } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AgentIconPicker } from '@/components/agents/AgentIconPicker';
-import { AGENT_RUNTIME_HELP_TEXT, AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
+import {
+  AGENT_RUNTIME_HELP_TEXT,
+  AGENT_RUNTIME_LABELS,
+  MAX_NATIVE_TOOL_STEPS,
+  MIN_NATIVE_TOOL_STEPS,
+  isValidNativeToolStepLimit,
+} from '@/lib/agentRuntime';
 import { HelpCircleIcon } from '@/lib/icons';
 import {
   Command,
@@ -300,6 +306,9 @@ export function CustomAgentCreatePanel({
       model: provider !== form.provider || !form.model.trim()
         ? defaultModelForAgentProvider(provider, providerOptions)
         : form.model,
+      reasoning_effort: runtimeKind === 'codex' ? form.reasoning_effort : '',
+      service_tier: runtimeKind === 'codex' ? form.service_tier : '',
+      max_tool_steps: runtimeKind === 'native_sdk' ? form.max_tool_steps : '',
       default_invocation_mode: normalizeInvocationMode(form.default_invocation_mode, runtimeKind),
     });
   };
@@ -339,10 +348,15 @@ export function CustomAgentCreatePanel({
     setToolRemovalMessage('');
     update({ allowed_tools: form.allowed_tools.filter((value) => value !== toolName) });
   };
-  const saveDisabled = saving || missing.length > 0 || canSave === false;
+  const maxToolStepsValid = isValidNativeToolStepLimit(form.runtime_kind, form.max_tool_steps);
+  const saveDisabled = saving || missing.length > 0 || !maxToolStepsValid || canSave === false;
   const primaryLabel = saving ? (isEditMode ? 'Saving...' : 'Creating...') : isEditMode ? 'Save changes' : 'Create agent';
-  const validationStatus = missing.length > 0 ? `Missing: ${missing.join(', ')}` : '';
-  const actionStatus = missing.length > 0 ? '' : statusText;
+  const validationStatus = !maxToolStepsValid
+    ? `Tool step limit must be a whole number from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}.`
+    : missing.length > 0
+      ? `Missing: ${missing.join(', ')}`
+      : '';
+  const actionStatus = validationStatus ? '' : statusText;
   const actionTooltip = saveDisabled && actionStatus ? actionStatus : '';
   const actionControls = started ? (
     <div className="flex flex-wrap items-center justify-end gap-2">
@@ -805,7 +819,7 @@ export function CustomAgentCreatePanel({
             >
               <span>
                 <span className="block text-sm font-semibold">Advanced settings</span>
-                <span className="mt-1 block text-xs text-muted-foreground">Runtime, model, parallel tasks, and token limits.</span>
+                <span className="mt-1 block text-xs text-muted-foreground">Runtime, model, execution limits, and parallel tasks.</span>
               </span>
               <span className="text-xs text-muted-foreground">{advancedOpen ? 'Hide' : 'Show'}</span>
             </button>
@@ -862,6 +876,35 @@ export function CustomAgentCreatePanel({
                         placeholder={defaultModelForAgentProvider(form.provider, providerOptions)}
                       />
                     </label>
+                    {form.runtime_kind === 'native_sdk' ? (
+                      <label className="block space-y-2">
+                        <FieldLabel tooltip="Maximum model and tool-call rounds in one run. Leave empty to use the agent default.">
+                          Tool step limit
+                        </FieldLabel>
+                        <input
+                          className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive/30"
+                          type="number"
+                          min={MIN_NATIVE_TOOL_STEPS}
+                          max={MAX_NATIVE_TOOL_STEPS}
+                          step={1}
+                          value={form.max_tool_steps}
+                          onChange={(event) => update({ max_tool_steps: event.target.value })}
+                          placeholder="Use agent default"
+                          aria-invalid={!maxToolStepsValid}
+                          aria-describedby="custom-agent-tool-step-limit-help"
+                        />
+                        <p
+                          id="custom-agent-tool-step-limit-help"
+                          className={maxToolStepsValid
+                            ? 'text-[11px] leading-relaxed text-muted-foreground'
+                            : 'text-[11px] leading-relaxed text-destructive'}
+                        >
+                          {maxToolStepsValid
+                            ? `${MIN_NATIVE_TOOL_STEPS}–${MAX_NATIVE_TOOL_STEPS} rounds per run.`
+                            : `Enter a whole number from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}.`}
+                        </p>
+                      </label>
+                    ) : null}
                     <label className="block space-y-2">
                       <FieldLabel tooltip="Coming soon: this will limit how many runs this agent can work on at the same time. It is saved as 1 today.">Parallel tasks</FieldLabel>
                       <div className="flex items-center gap-2">

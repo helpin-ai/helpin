@@ -78,6 +78,18 @@ func (s *PMSprintService) ListPlanningWorkspace(ctx context.Context, workspaceID
 	return s.sprintRepo.ListPlanningWorkspace(ctx, workspaceID, filters)
 }
 
+// ListBacklogTasksPage returns a paginated view of accessible unsprinted work.
+func (s *PMSprintService) ListBacklogTasksPage(ctx context.Context, workspaceID string, teamID *string, pagination model.PMPagination) (*model.PaginatedResponse, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	filters := model.PMSprintPlanningFilters{
+		TeamID:            teamID,
+		AccessibleTeamIDs: accessibleTeamIDs(ctx),
+	}
+	return s.sprintRepo.ListBacklogTasksPage(ctx, workspaceID, filters, pagination)
+}
+
 // GetByID returns sprint with stats.
 func (s *PMSprintService) GetByID(ctx context.Context, id string) (*model.SprintWithStats, error) {
 	sprint, err := s.sprintRepo.GetWithStats(ctx, id)
@@ -448,6 +460,9 @@ func (s *PMSprintService) LinkTasks(ctx context.Context, workspaceID, sprintID s
 	}
 	if sprint == nil || sprint.Sprint.WorkspaceID != workspaceID || sprint.Sprint.Archived {
 		return nil, fmt.Errorf("sprint not found")
+	}
+	if sprint.Sprint.Status == model.PMSprintStatusDone {
+		return nil, fmt.Errorf("completed sprints cannot accept new tasks")
 	}
 	if sprint.Sprint.TeamID == nil || strings.TrimSpace(*sprint.Sprint.TeamID) == "" {
 		return nil, fmt.Errorf("assign the sprint to a team before linking tasks")

@@ -189,9 +189,11 @@ func (r *fakeAgentRuntimeProjectionInteractionRepo) Update(_ context.Context, in
 }
 
 type fakeAgentRuntimeProjectionSessionSnapshotRepo struct {
-	record  *model.CodingSessionStateSnapshot
-	upserts int
-	deletes int
+	record        *model.CodingSessionStateSnapshot
+	upserts       int
+	deletes       int
+	upsertStarted chan<- struct{}
+	releaseUpsert <-chan struct{}
 }
 
 type fakeAgentRuntimeProjectionPublisher struct {
@@ -210,15 +212,28 @@ func (r *fakeAgentRuntimeProjectionSessionSnapshotRepo) GetByRun(_ context.Conte
 	return &copy, nil
 }
 
-func (r *fakeAgentRuntimeProjectionSessionSnapshotRepo) Upsert(_ context.Context, snapshot *model.CodingSessionStateSnapshot) error {
+func (r *fakeAgentRuntimeProjectionSessionSnapshotRepo) UpsertIfNewer(
+	_ context.Context,
+	snapshot *model.CodingSessionStateSnapshot,
+) (bool, error) {
 	r.upserts++
+	if r.upsertStarted != nil {
+		r.upsertStarted <- struct{}{}
+	}
+	if r.releaseUpsert != nil {
+		<-r.releaseUpsert
+	}
 	if snapshot == nil {
 		r.record = nil
-		return nil
+		return false, nil
+	}
+	if r.record != nil && snapshot.ThroughSequence > 0 &&
+		r.record.ThroughSequence >= snapshot.ThroughSequence {
+		return false, nil
 	}
 	copy := *snapshot
 	r.record = &copy
-	return nil
+	return true, nil
 }
 
 func (r *fakeAgentRuntimeProjectionSessionSnapshotRepo) DeleteByRun(_ context.Context, _, _ string) error {
@@ -552,6 +567,57 @@ func TestAgentRuntimeProjectionPausedRunBackfillsAndPublishesPendingInteraction(
 	}
 	if event.Type != "interaction.requested" || event.Payload["interaction_kind"] != model.AgentRunInteractionKindApprovalRequest {
 		t.Fatalf("unexpected interaction event: %#v", event)
+	}
+}
+
+func TestAgentRuntimeProjectionPreservesCodexNativeApprovalKinds(t *testing.T) {
+	tests := []struct {
+		name             string
+		runtimeKind      string
+		responseMetadata string
+		wantKind         string
+	}{
+		{name: "legacy command", runtimeKind: "human_approval", responseMetadata: `{"codex_request_kind":"command_execution"}`, wantKind: model.AgentRunInteractionKindCommandExecutionApproval},
+		{name: "legacy file change", runtimeKind: "human_approval", responseMetadata: `{"codex_request_kind":"file_change"}`, wantKind: model.AgentRunInteractionKindFileChangeApproval},
+		{name: "legacy permissions", runtimeKind: "human_approval", responseMetadata: `{"codex_request_kind":"permissions"}`, wantKind: model.AgentRunInteractionKindPermissionsApproval},
+		{name: "typed file change", runtimeKind: "file_change_approval", responseMetadata: `{}`, wantKind: model.AgentRunInteractionKindFileChangeApproval},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1", RuntimeKind: "codex"}
+			repo := &fakeAgentRuntimeProjectionInteractionRepo{}
+			svc := &AgentRuntimeProjectionService{interactionRepo: repo, runRepo: &fakeAgentRuntimeProjectionRunRepo{}}
+			runtimeInteraction := AgentRuntimeInteraction{
+				ID:              "runtime-interaction-1",
+				RuntimeKind:     "codex",
+				InteractionKind: tt.runtimeKind,
+				Status:          model.AgentRunInteractionStatusPending,
+				RequestPayload:  json.RawMessage(`{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1"}`),
+				ResponsePayload: json.RawMessage(tt.responseMetadata),
+			}
+			if err := svc.upsertRuntimeInteraction(context.Background(), run, runtimeInteraction); err != nil {
+				t.Fatalf("upsert pending interaction: %v", err)
+			}
+			if len(repo.interactions) != 1 {
+				t.Fatalf("expected one interaction, got %#v", repo.interactions)
+			}
+			projected := repo.interactions[0]
+			if projected.InteractionKind != tt.wantKind || projected.RequestSchemaVersion != model.AgentRunInteractionSchemaVersionCodexV2 {
+				t.Fatalf("unexpected projected contract: %#v", projected)
+			}
+
+			// Legacy runtime rows overwrite their temporary metadata when they
+			// resolve. The projected native kind must remain stable afterward.
+			runtimeInteraction.Status = model.AgentRunInteractionStatusResolved
+			runtimeInteraction.ResponsePayload = json.RawMessage(`{"decision":"accept"}`)
+			if err := svc.upsertRuntimeInteraction(context.Background(), run, runtimeInteraction); err != nil {
+				t.Fatalf("upsert resolved interaction: %v", err)
+			}
+			projected = repo.interactions[0]
+			if projected.InteractionKind != tt.wantKind || projected.RequestSchemaVersion != model.AgentRunInteractionSchemaVersionCodexV2 {
+				t.Fatalf("resolved projection lost native contract: %#v", projected)
+			}
+		})
 	}
 }
 
@@ -907,6 +973,147 @@ func TestAgentRuntimeProjectionPersistsCodingSessionStreamSnapshot(t *testing.T)
 	}
 	if liveEvent.RuntimeMetadata["source"] != "agent-runtime-v2" {
 		t.Fatalf("unexpected live event source: %#v", liveEvent.RuntimeMetadata)
+	}
+}
+
+func TestAgentRuntimeProjectionDoesNotPublishStaleStreamEvent(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-stale-stream",
+		WorkspaceID:       "ws-1",
+		Status:            model.AgentRunStatusRunning,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_stale_stream"),
+	}
+	payload, err := model.EncodeCodingSessionStreamSnapshot(&model.CodingSessionStreamSnapshot{
+		ThroughSequence: 10,
+		LiveAssistantMessage: &model.CodingSessionLiveAssistantMessage{
+			MessageID: "assistant-1",
+			Content:   "newer state",
+			Status:    "streaming",
+		},
+	})
+	if err != nil {
+		t.Fatalf("encode snapshot: %v", err)
+	}
+	snapshotRepo := &fakeAgentRuntimeProjectionSessionSnapshotRepo{
+		record: &model.CodingSessionStateSnapshot{
+			WorkspaceID:     run.WorkspaceID,
+			RunID:           run.ID,
+			ThroughSequence: 10,
+			SnapshotPayload: payload,
+		},
+	}
+	publisher := &fakeAgentRuntimeProjectionPublisher{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: &fakeAgentRuntimeProjectionRunRepo{
+			byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_stale_stream": run},
+		},
+		sessionSnapshotRepo: snapshotRepo,
+		wsPublisher:         publisher,
+		eventProtocol:       "v2",
+		now:                 time.Now,
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		EventID:    "stale-event",
+		RunID:      "run_runtime_stale_stream",
+		SequenceNo: 9,
+		Type:       "assistant_message_delta",
+		Data:       map[string]any{"message_id": "assistant-1", "content": " stale"},
+	}); err != nil {
+		t.Fatalf("ApplyEvent stale delta returned error: %v", err)
+	}
+	if snapshotRepo.upserts != 0 {
+		t.Fatalf("stale event caused %d snapshot upserts", snapshotRepo.upserts)
+	}
+	if len(publisher.events) != 0 {
+		t.Fatalf("stale event was published: %#v", publisher.events)
+	}
+}
+
+func TestAgentRuntimeProjectionSerializesConcurrentEventsForOneRun(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-concurrent-stream",
+		WorkspaceID:       "ws-1",
+		Status:            model.AgentRunStatusRunning,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_concurrent_stream"),
+	}
+	upsertStarted := make(chan struct{}, 1)
+	releaseUpsert := make(chan struct{})
+	snapshotRepo := &fakeAgentRuntimeProjectionSessionSnapshotRepo{
+		upsertStarted: upsertStarted,
+		releaseUpsert: releaseUpsert,
+	}
+	publisher := &fakeAgentRuntimeProjectionPublisher{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: &fakeAgentRuntimeProjectionRunRepo{
+			byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_concurrent_stream": run},
+		},
+		sessionSnapshotRepo: snapshotRepo,
+		wsPublisher:         publisher,
+		eventProtocol:       "v2",
+		now:                 time.Now,
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+			EventID:    "event-1",
+			RunID:      "run_runtime_concurrent_stream",
+			SequenceNo: 1,
+			Type:       "assistant_message_started",
+			Data:       map[string]any{"message_id": "assistant-1"},
+		})
+	}()
+	select {
+	case <-upsertStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first event did not reach snapshot upsert")
+	}
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+			EventID:    "event-2",
+			RunID:      "run_runtime_concurrent_stream",
+			SequenceNo: 2,
+			Type:       "assistant_message_delta",
+			Data:       map[string]any{"message_id": "assistant-1", "content": "hello"},
+		})
+	}()
+	select {
+	case <-upsertStarted:
+		t.Fatal("second event entered snapshot upsert while the first event was still applying")
+	case <-time.After(40 * time.Millisecond):
+	}
+	close(releaseUpsert)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first ApplyEvent returned error: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second ApplyEvent returned error: %v", err)
+	}
+
+	if len(publisher.events) != 2 {
+		t.Fatalf("published events = %#v, want two", publisher.events)
+	}
+	for index, published := range publisher.events {
+		var event model.CodingSessionEvent
+		if err := json.Unmarshal(published.Data, &event); err != nil {
+			t.Fatalf("decode published event %d: %v", index, err)
+		}
+		if event.SequenceNo != index+1 {
+			t.Fatalf("published sequence at index %d = %d, want %d", index, event.SequenceNo, index+1)
+		}
+	}
+	snapshot, err := model.DecodeCodingSessionStreamSnapshot(snapshotRepo.record.SnapshotPayload)
+	if err != nil {
+		t.Fatalf("decode final snapshot: %v", err)
+	}
+	if snapshot.ThroughSequence != 2 || snapshot.LiveAssistantMessage == nil ||
+		snapshot.LiveAssistantMessage.Content != "hello" {
+		t.Fatalf("final snapshot = %#v, want ordered sequence 2 state", snapshot)
 	}
 }
 
@@ -1464,7 +1671,17 @@ func TestAgentRuntimeProjectionReconcileReplaysMissedV2EventsFromCursor(t *testi
 	if err := svc.ReconcileMappedRuns(context.Background(), time.Second, 10); err != nil {
 		t.Fatalf("first ReconcileMappedRuns returned error: %v", err)
 	}
-	if err := svc.ReconcileMappedRuns(context.Background(), time.Second, 10); err != nil {
+	if runtimeV2ReplayCursor(run.OutputSummary) != 3 {
+		t.Fatalf("expected durable replay cursor 3, summary=%s", string(run.OutputSummary))
+	}
+	restartedSvc := &AgentRuntimeProjectionService{
+		runRepo:             runRepo,
+		agentRuntimeClient:  runtimeClient,
+		sessionSnapshotRepo: snapshotRepo,
+		eventProtocol:       "v2",
+		now:                 func() time.Time { return now.Add(time.Minute) },
+	}
+	if err := restartedSvc.ReconcileMappedRuns(context.Background(), time.Second, 10); err != nil {
 		t.Fatalf("second ReconcileMappedRuns returned error: %v", err)
 	}
 	if run.Status != model.AgentRunStatusRunning {
@@ -1482,6 +1699,53 @@ func TestAgentRuntimeProjectionReconcileReplaysMissedV2EventsFromCursor(t *testi
 	}
 	if snapshot == nil || snapshot.LiveAssistantMessage == nil || snapshot.LiveAssistantMessage.Content != "hello" || snapshot.ThroughSequence != 3 {
 		t.Fatalf("unexpected replayed snapshot: %#v", snapshot)
+	}
+}
+
+func TestAgentRuntimeProjectionReplaysV2EventsInBoundedPages(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-v2-pages",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		Status:            model.AgentRunStatusRunning,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("runtime-run-v2-pages"),
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byID:       map[string]*model.AgentRun{run.ID: run},
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|runtime-run-v2-pages": run},
+	}
+	events := make([]AgentRuntimeEventEnvelope, agentRuntimeV2ReplayPageSize+1)
+	for index := range events {
+		events[index] = AgentRuntimeEventEnvelope{
+			AppID:      "helpin",
+			RunID:      "runtime-run-v2-pages",
+			HostRunID:  run.ID,
+			Type:       "runtime.replay_checkpoint",
+			SequenceNo: int64(index + 1),
+		}
+	}
+	runtimeClient := &fakeAgentRuntimeSignalClient{
+		v2Events: map[string][]AgentRuntimeEventEnvelope{"runtime-run-v2-pages": events},
+	}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:            runRepo,
+		agentRuntimeClient: runtimeClient,
+		eventProtocol:      "v2",
+		now:                time.Now,
+	}
+
+	if err := svc.replayV2Events(context.Background(), run, "runtime-run-v2-pages"); err != nil {
+		t.Fatalf("replayV2Events returned error: %v", err)
+	}
+	if len(runtimeClient.listV2EventCalls) != 2 || runtimeClient.listV2EventCalls[0] != 0 || runtimeClient.listV2EventCalls[1] != agentRuntimeV2ReplayPageSize {
+		t.Fatalf("expected two bounded pages, cursors=%#v", runtimeClient.listV2EventCalls)
+	}
+	if runtimeV2ReplayCursor(run.OutputSummary) != int64(len(events)) {
+		t.Fatalf("expected final durable cursor %d, summary=%s", len(events), string(run.OutputSummary))
+	}
+	if runRepo.summaryUpdates != 2 {
+		t.Fatalf("expected one durable cursor update per page, got %d", runRepo.summaryUpdates)
 	}
 }
 

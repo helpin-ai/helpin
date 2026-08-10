@@ -305,9 +305,13 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    expect(container.textContent).toContain('User input required');
+    expect(container.textContent).toContain('Needs your input');
+    expect(container.textContent).not.toContain('User input required');
     expect(container.textContent).toContain('How should the coding run continue?');
     expect(container.textContent).toContain('Submit answers');
+    const interactionShell = container.querySelector<HTMLElement>('[data-coding-session-interaction-shell]');
+    expect(interactionShell?.className).toContain('border-y');
+    expect(interactionShell?.className).not.toContain('rounded-xl');
     expect(container.textContent).toContain('Review history');
     expect(container.textContent).toContain('Nil panic in retry path');
     expect(container.textContent).toContain('approved');

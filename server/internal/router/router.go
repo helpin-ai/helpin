@@ -702,6 +702,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requireAutomationEdit()).Delete("/versions/{versionID}", h.Automation.DeleteAgentVersion)
 					})
 				})
+				r.With(requireAutomationRead()).Get("/agent-fleet", h.Automation.GetAgentFleet)
 
 				r.Route("/runs", func(r chi.Router) {
 					r.With(requireAutomationRead()).Get("/", h.Automation.ListRuns)
@@ -785,11 +786,22 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}", h.DockChat.GetChat)
 				r.With(requireCommandBarRead()).Patch("/chats/{chatID}", h.DockChat.UpdateChat)
 				r.With(requireCommandBarRead()).Post("/chats/{chatID}/messages", h.DockChat.SendMessage)
+				r.With(requireCommandBarRead()).Post("/chats/{chatID}/title", h.DockChat.GenerateTitle)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run", h.DockChat.GetChatRun)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run/events", h.DockChat.ListChatRunEvents)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run/interactions", h.DockChat.ListChatRunInteractions)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/interactions/{interactionID}/resolve", h.DockChat.ResolveChatRunInteraction)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/cancel", h.DockChat.CancelChatRun)
+				r.With(requireCommandBarRead()).Get("/runs", h.DockChat.ListRuns)
+				r.With(requireCommandBarRead()).Get("/runs/{runID}/snapshot", h.DockChat.GetRunSnapshot)
+				r.With(requireCommandBarRead()).Get("/runs/{runID}/events", h.DockChat.ListRunEvents)
+				r.With(requireCommandBarRead()).Get("/runs/{runID}/interactions", h.DockChat.ListRunInteractions)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/interactions/{interactionID}/resolve", h.DockChat.ResolveRunInteraction)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/messages", h.DockChat.SendRunMessage)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/continue", h.DockChat.ContinueRun)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/cancel", h.DockChat.CancelRun)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/auth/device-code/start", h.DockChat.StartRunAuth)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/auth/device-code/cancel", h.DockChat.CancelRunAuth)
 			})
 
 			// Support module
@@ -1022,6 +1034,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Sprints (PM) — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints", h.PMSprint.List)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/planning", h.PMSprint.PlanningWorkspace)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/backlog-tasks", h.PMSprint.ListBacklogTasks)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/closeouts", h.PMSprint.ListCloseouts)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/sprints", h.PMSprint.Create)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}", h.PMSprint.Get)

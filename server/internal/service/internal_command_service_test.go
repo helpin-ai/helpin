@@ -67,6 +67,34 @@ func TestPMToolCatalogExecutorParity(t *testing.T) {
 	}
 }
 
+func TestInternalCommandExecutionTreatsTargetAsContextNotAuthorization(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	var gotMeta model.InternalCommandContext
+	svc.register(InternalCommandDefinition{
+		Name:                 "test.target_context",
+		SupportedTargetTypes: []string{"workspace"},
+		Execute: func(_ context.Context, meta model.InternalCommandContext, _ json.RawMessage) (json.RawMessage, error) {
+			gotMeta = meta
+			return json.RawMessage(`{"ok":true}`), nil
+		},
+	})
+
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "workspace-1",
+		TargetType:  "repository",
+		TargetID:    "repository-1",
+	}, "test.target_context", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("repository-targeted command returned error: %v", err)
+	}
+	if string(output) != `{"ok":true}` {
+		t.Fatalf("output = %s", output)
+	}
+	if gotMeta.TargetType != "repository" || gotMeta.TargetID != "repository-1" {
+		t.Fatalf("target context was not preserved: %#v", gotMeta)
+	}
+}
+
 func TestSafeOperationalToolExecutorParity(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	expected := []string{

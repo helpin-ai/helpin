@@ -45,17 +45,25 @@ func (r *DockChatRepository) GetByID(ctx context.Context, workspaceID, id string
 }
 
 // ListByWorkspaceUser returns the user's unarchived chats, most recently active first.
-func (r *DockChatRepository) ListByWorkspaceUser(ctx context.Context, workspaceID, userID string, limit int) ([]model.DockChat, error) {
+func (r *DockChatRepository) ListByWorkspaceUser(ctx context.Context, workspaceID, userID string, limit int, before *time.Time, beforeID string) ([]model.DockChat, error) {
 	if r == nil || r.db == nil {
 		return nil, gorm.ErrInvalidDB
 	}
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND user_id = ? AND archived_at IS NULL", workspaceID, userID)
+	if before != nil {
+		query = query.Where(
+			"((COALESCE(last_message_at, created_at) < ?) OR (COALESCE(last_message_at, created_at) = ? AND id < ?))",
+			*before, *before, beforeID,
+		)
+	}
 	var chats []model.DockChat
-	err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND user_id = ? AND archived_at IS NULL", workspaceID, userID).
+	err := query.
 		Order("COALESCE(last_message_at, created_at) DESC").
+		Order("id DESC").
 		Limit(limit).
 		Find(&chats).Error
 	if err != nil {
@@ -81,6 +89,18 @@ func (r *DockChatRepository) Update(ctx context.Context, workspaceID, id string,
 // SetActiveRun points the chat at its current backing run.
 func (r *DockChatRepository) SetActiveRun(ctx context.Context, workspaceID, id, runID string) error {
 	return r.Update(ctx, workspaceID, id, map[string]interface{}{"active_run_id": runID})
+}
+
+// SetTitleIfEmpty assigns an automatic title without overwriting a user rename.
+func (r *DockChatRepository) SetTitleIfEmpty(ctx context.Context, workspaceID, id, title string) error {
+	if r == nil || r.db == nil {
+		return gorm.ErrInvalidDB
+	}
+	return r.db.WithContext(ctx).
+		Model(&model.DockChat{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, id).
+		Where("TRIM(COALESCE(title, '')) = ''").
+		Update("title", title).Error
 }
 
 // TouchLastMessage bumps the chat's last activity timestamp.

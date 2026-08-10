@@ -9,6 +9,7 @@ export type DocsBlockKind =
   | 'richEmbed'
   | 'callout'
   | 'videoEmbed'
+  | 'artifactVideo'
   | 'excalidraw'
   | 'resizableImage';
 
@@ -90,6 +91,13 @@ export const docsBlockRegistry = {
     description: 'Embed from YouTube, Vimeo, Loom, Wistia',
     attrs: ['url', 'provider', 'title'],
     agentReadableKind: 'video',
+  },
+  artifactVideo: {
+    kind: 'artifactVideo',
+    label: 'Private video',
+    description: 'Embed a private Helpin artifact recording',
+    attrs: ['artifactId', 'fileName', 'contentType', 'description', 'caption'],
+    agentReadableKind: 'artifact_video',
   },
   excalidraw: {
     kind: 'excalidraw',

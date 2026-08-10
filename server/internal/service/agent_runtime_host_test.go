@@ -475,6 +475,61 @@ func TestAgentRuntimeHostRepositorySpecFallsBackToRuntimeRunMapping(t *testing.T
 	}
 }
 
+func TestAgentRuntimeHostRepositorySpecEnsuresEpicTaskBaseBranchWithRunMetadata(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	ensureEpicDeliveryTargetTable(t, db)
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO workspaces (
+		id, name, slug, workspace_key, owner_id, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"ws-1", "Demo Workspace", "demo", "HEL", "user-1", now, now)
+	mustExec(t, db, `INSERT INTO pm_epics (
+		id, workspace_id, name, external_id, team_id, planning_repository_id, position, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		"epic-1", "ws-1", "Helpin launch", "HEL-900", "team-1", "repo-1", now, now)
+	mustExec(t, db, `UPDATE task_delivery_targets
+		SET base_branch = ?, target_source = ?, source_epic_id = ?
+		WHERE id = ?`,
+		"epic/hel-900-helpin-launch", model.TaskDeliveryTargetSourceEpic, "epic-1", "target-1")
+
+	app := &fakeGitHubAppClient{}
+	host := NewAgentRuntimeHostService(
+		"helpin",
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		newGitDeliveryStatusService(db, app),
+	)
+
+	spec, err := host.ResolveRepositorySpec(context.Background(), agentruntime.PrepareWorkspaceRequest{
+		AppID:         "helpin",
+		RunID:         "run-runtime-epic-task",
+		AgentID:       "agent-scribe",
+		RuntimeKind:   "codex",
+		Target:        agentruntime.TargetRef{Type: "task", ID: "task-1"},
+		WorkspaceMode: agentruntime.WorkspaceModeRepository,
+		Metadata: map[string]interface{}{
+			"workspace_id":   "ws-1",
+			"repository_id":  "repo-1",
+			"repo_full_name": "acme/api",
+			"base_branch":    "epic/hel-900-helpin-launch",
+			"work_branch":    "hel-31-fix-merge-status",
+		},
+	})
+	if err != nil {
+		t.Fatalf("ResolveRepositorySpec returned error: %v", err)
+	}
+	if spec.BaseBranch != "epic/hel-900-helpin-launch" {
+		t.Fatalf("base branch = %q, want epic branch", spec.BaseBranch)
+	}
+	if len(app.ensureBranches) != 1 {
+		t.Fatalf("ensure branch calls = %d, want 1", len(app.ensureBranches))
+	}
+	call := app.ensureBranches[0]
+	if call.Branch != "epic/hel-900-helpin-launch" || call.Base != "main" {
+		t.Fatalf("unexpected ensure branch call: %#v", call)
+	}
+}
+
 func TestAgentRuntimeHostRepositorySpecRestoresDynamicCheckoutTargetAfterResume(t *testing.T) {
 	db := newTestDB(t)
 	seedGitDeliveryStatusFixture(t, db)

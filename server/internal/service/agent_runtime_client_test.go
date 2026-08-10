@@ -68,6 +68,39 @@ func TestAgentRuntimeClientRequiresAppID(t *testing.T) {
 	}
 }
 
+func TestAgentRuntimeClientListsBoundedV2EventPageWithoutSDKChange(t *testing.T) {
+	var gotPath, gotQuery, gotAuth, gotProtocol string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		gotQuery = r.URL.RawQuery
+		gotAuth = r.Header.Get("Authorization")
+		gotProtocol = r.Header.Get("X-Agent-Runtime-Event-Protocol")
+		_ = json.NewEncoder(w).Encode(AgentRuntimeEventListResponse{
+			Events:         []AgentRuntimeEventEnvelope{{RunID: "runtime/run", SequenceNo: 42, Type: "run.started"}},
+			NextSequenceNo: 42,
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewAgentRuntimeClient(server.URL, "helpin", "runtime-token", server.Client(), "v2")
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	response, err := client.ListV2EventPage(context.Background(), "runtime/run", 41, 250)
+	if err != nil {
+		t.Fatalf("list event page: %v", err)
+	}
+	if gotPath != "/v2/runs/runtime%2Frun/events" || gotQuery != "after_sequence=41&app_id=helpin&page_size=250" {
+		t.Fatalf("unexpected page request: %s?%s", gotPath, gotQuery)
+	}
+	if gotAuth != "Bearer runtime-token" || gotProtocol != "v2" {
+		t.Fatalf("unexpected page headers: auth=%q protocol=%q", gotAuth, gotProtocol)
+	}
+	if response == nil || len(response.Events) != 1 || response.Events[0].SequenceNo != 42 || response.NextSequenceNo != 42 {
+		t.Fatalf("unexpected page response: %#v", response)
+	}
+}
+
 func TestAgentRuntimeClientRotatesOnlyCredential(t *testing.T) {
 	var gotMethod, gotPath, gotQuery, gotProtocol string
 	var gotBody struct {

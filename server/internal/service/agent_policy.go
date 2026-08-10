@@ -48,6 +48,7 @@ func normalizeJSONSlice(raw json.RawMessage) json.RawMessage {
 
 var supportedAgentReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh"}
 var supportedAgentServiceTiers = []string{"fast", "flex"}
+
 var supportedAgentIconKeys = []string{
 	"violet_star", "ocean_orbit", "forest_cap", "sunset_flame",
 	"rose_wave", "teal_signal", "sky_quill", "amber_lens",
@@ -236,8 +237,22 @@ func parseAndValidateExecutionConfig(agent *model.Agent) (model.AgentExecutionCo
 		return config, nil
 	}
 
-	if strings.TrimSpace(agent.RuntimeKind) != "codex" {
-		return model.AgentExecutionConfig{}, fmt.Errorf("execution_config is only supported for runtime_kind codex")
+	runtimeKind := strings.TrimSpace(agent.RuntimeKind)
+	if config.MaxToolSteps != nil {
+		if runtimeKind != "native_sdk" {
+			return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.max_tool_steps is only supported for runtime_kind native_sdk")
+		}
+		if *config.MaxToolSteps < model.MinNativeToolSteps || *config.MaxToolSteps > model.MaxNativeToolSteps {
+			return model.AgentExecutionConfig{}, fmt.Errorf(
+				"execution_config.max_tool_steps must be between %d and %d",
+				model.MinNativeToolSteps,
+				model.MaxNativeToolSteps,
+			)
+		}
+	}
+
+	if (config.ReasoningEffort != nil || config.ServiceTier != nil) && runtimeKind != "codex" {
+		return model.AgentExecutionConfig{}, fmt.Errorf("execution_config model controls are only supported for runtime_kind codex")
 	}
 
 	if config.ReasoningEffort != nil && !slices.Contains(supportedAgentReasoningEfforts, strings.ToLower(strings.TrimSpace(*config.ReasoningEffort))) {

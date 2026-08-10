@@ -2,9 +2,14 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
@@ -35,24 +40,35 @@ type AgentRuntimeEventEnvelope = agentruntime.EventEnvelope
 type AgentRuntimeEventListResponse = agentruntime.EventListResponse
 
 // AgentRuntimeClient is Helpin's host-side client for delegated Agent Runtime
-// runs. It intentionally uses only /v1 routes; /internal runtime routes are not
-// a host contract.
+// runs. It uses public /v1 routes plus the negotiated /v2 event projection;
+// /internal runtime routes are not a host contract.
 type AgentRuntimeClient struct {
-	client *agentruntime.Client
-	appID  string
+	client        *agentruntime.Client
+	baseURL       string
+	appID         string
+	serviceToken  string
+	eventProtocol string
+	httpClient    *http.Client
 }
 
 func NewAgentRuntimeClient(baseURL, appID, token string, httpClient *http.Client, eventProtocol ...string) (*AgentRuntimeClient, error) {
 	if strings.TrimSpace(appID) == "" {
 		return nil, fmt.Errorf("agent runtime app ID is required")
 	}
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
+	protocol := ""
+	if len(eventProtocol) > 0 {
+		protocol = strings.ToLower(strings.TrimSpace(eventProtocol[0]))
+	}
 	options := []agentruntime.ClientOption{
 		agentruntime.WithAppID(appID),
 		agentruntime.WithServiceToken(token),
 		agentruntime.WithHTTPClient(httpClient),
 	}
-	if len(eventProtocol) > 0 {
-		options = append(options, agentruntime.WithEventProtocol(eventProtocol[0]))
+	if protocol != "" {
+		options = append(options, agentruntime.WithEventProtocol(protocol))
 	}
 	client, err := agentruntime.NewClient(
 		baseURL,
@@ -61,7 +77,14 @@ func NewAgentRuntimeClient(baseURL, appID, token string, httpClient *http.Client
 	if err != nil {
 		return nil, err
 	}
-	return &AgentRuntimeClient{client: client, appID: strings.TrimSpace(appID)}, nil
+	return &AgentRuntimeClient{
+		client:        client,
+		baseURL:       strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		appID:         strings.TrimSpace(appID),
+		serviceToken:  strings.TrimSpace(token),
+		eventProtocol: protocol,
+		httpClient:    httpClient,
+	}, nil
 }
 
 func (c *AgentRuntimeClient) AppID() string {
@@ -108,6 +131,52 @@ func (c *AgentRuntimeClient) ListMessages(ctx context.Context, runtimeRunID stri
 // a consumer restart without reconstructing provider-specific output.
 func (c *AgentRuntimeClient) ListV2Events(ctx context.Context, runtimeRunID string, afterSequence int64) (*AgentRuntimeEventListResponse, error) {
 	return c.client.ListV2Events(ctx, runtimeRunID, afterSequence)
+}
+
+// ListV2EventPage opts Helpin into the Runtime's bounded replay extension
+// without changing the shared SDK or the default behavior of other apps.
+func (c *AgentRuntimeClient) ListV2EventPage(ctx context.Context, runtimeRunID string, afterSequence int64, pageSize int) (*AgentRuntimeEventListResponse, error) {
+	if c == nil || c.httpClient == nil || c.baseURL == "" {
+		return nil, fmt.Errorf("agent runtime client is not configured")
+	}
+	if pageSize <= 0 {
+		return nil, fmt.Errorf("agent runtime v2 event page size must be positive")
+	}
+	query := url.Values{}
+	query.Set("app_id", c.AppID())
+	query.Set("after_sequence", strconv.FormatInt(max(afterSequence, 0), 10))
+	query.Set("page_size", strconv.Itoa(pageSize))
+	path := "/v2/runs/" + url.PathEscape(strings.TrimSpace(runtimeRunID)) + "/events"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path+"?"+query.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/json")
+	if c.serviceToken != "" {
+		request.Header.Set("Authorization", "Bearer "+c.serviceToken)
+	}
+	if c.eventProtocol != "" {
+		request.Header.Set(agentruntime.EventProtocolHeader, c.eventProtocol)
+	}
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("call agent runtime: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return nil, &agentruntime.HTTPStatusError{
+			Method:     http.MethodGet,
+			Path:       path,
+			StatusCode: response.StatusCode,
+			Body:       strings.TrimSpace(string(message)),
+		}
+	}
+	var result AgentRuntimeEventListResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode agent runtime response: %w", err)
+	}
+	return &result, nil
 }
 
 func (c *AgentRuntimeClient) ListArtifacts(ctx context.Context, runtimeRunID string) ([]AgentRuntimeArtifact, error) {

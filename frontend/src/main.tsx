@@ -92,7 +92,9 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <InnerApp />
-      <ReactQueryDevtools initialIsOpen={false} />
+      <div className="helpin-query-devtools">
+        <ReactQueryDevtools initialIsOpen={false} buttonPosition="top-right" />
+      </div>
     </QueryClientProvider>
   )
 }

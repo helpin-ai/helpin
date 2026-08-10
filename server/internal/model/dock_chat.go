@@ -9,15 +9,18 @@ import "time"
 // backed the chat carry AgentRun.DockChatID, so the full history is a real FK
 // chain rather than a heuristic match.
 type DockChat struct {
-	ID            string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID   string     `json:"workspace_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:1"`
-	UserID        string     `json:"user_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:2"`
-	Title         string     `json:"title"`
-	ActiveRunID   *string    `json:"active_run_id,omitempty" gorm:"type:uuid;index"`
-	LastMessageAt *time.Time `json:"last_message_at,omitempty"`
-	ArchivedAt    *time.Time `json:"archived_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt     time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID          string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string  `json:"workspace_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:1"`
+	UserID      string  `json:"user_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:2"`
+	Title       string  `json:"title"`
+	ActiveRunID *string `json:"active_run_id,omitempty" gorm:"type:uuid;index"`
+	// ActiveRunStatus is a read-only projection used by chat roster surfaces.
+	// It is hydrated from ActiveRunID and is not stored on the chat row.
+	ActiveRunStatus string     `json:"active_run_status,omitempty" gorm:"-"`
+	LastMessageAt   *time.Time `json:"last_message_at,omitempty"`
+	ArchivedAt      *time.Time `json:"archived_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt       time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 // TableName returns the dock chats table name.
@@ -38,6 +41,20 @@ type UpdateDockChatRequest struct {
 type SendDockChatMessageRequest struct {
 	Content     string                 `json:"content"`
 	PageContext map[string]interface{} `json:"page_context,omitempty"`
+	References  []DockEntityReference  `json:"references,omitempty"`
+}
+
+// DockEntityReference identifies supplemental workspace context attached to a dock turn.
+type DockEntityReference struct {
+	EntityType   string `json:"entity_type"`
+	EntityID     string `json:"entity_id"`
+	DisplayTitle string `json:"display_title"`
+}
+
+// GenerateDockChatTitleRequest is the first user turn used to name a chat.
+type GenerateDockChatTitleRequest struct {
+	Content     string                 `json:"content"`
+	PageContext map[string]interface{} `json:"page_context,omitempty"`
 }
 
 // DockChatDetail is the read model returned for a single chat: the chat row
@@ -47,4 +64,10 @@ type DockChatDetail struct {
 	Run     *AgentRun               `json:"run,omitempty"`
 	PlanIDs []string                `json:"plan_ids"`
 	Plans   []CommandBarPlanSummary `json:"plans,omitempty"`
+}
+
+// DockChatListResponse is one stable cursor page of the user's conversations.
+type DockChatListResponse struct {
+	Chats      []DockChat `json:"chats"`
+	NextCursor *string    `json:"next_cursor,omitempty"`
 }

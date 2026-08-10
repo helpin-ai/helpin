@@ -322,7 +322,7 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 				t.Fatalf("expected documentation target %q in %v", targetType, preset.AllowedTargetTypes)
 			}
 		}
-		for _, toolName := range []string{"list_repositories", "checkout_repository", "checkout_repositories", "read_file", "list_documents", "create_document", "write_document_content", "insert_document_image", "browser_open", "browser_screenshot", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
+		for _, toolName := range []string{"list_repositories", "checkout_repository", "checkout_repositories", "read_file", "list_documents", "create_document", "write_document_content", "insert_document_artifact", "browser_open", "browser_screenshot", "browser_record", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
 			if !slices.Contains(preset.AllowedTools, toolName) {
 				t.Fatalf("expected documentation tool %q in %v", toolName, preset.AllowedTools)
 			}
@@ -366,8 +366,8 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	}
 	for _, toolName := range []string{
 		"get_my_capabilities",
-		"create_task", "create_document", "write_document_content", "insert_document_image",
-		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot",
+		"create_task", "create_document", "write_document_content", "insert_document_artifact",
+		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
 		"search_workspace", "search_documents",
 		"list_available_skills", "search_available_skills", "read_skill",
 		"list_repositories", "checkout_repository", "checkout_repositories",
@@ -452,6 +452,22 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 	}
 	if _, ok := executionConfig["workspace"]; ok {
 		t.Fatalf("managed Ask config retained repository workspace mode: %#v", executionConfig)
+	}
+}
+
+func TestManagedDocumentationAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
+	preset := enforceManagedDocumentationAgentCapabilities(model.AgentPresetDefinition{
+		Key:          model.AgentPresetDocumentationAgent,
+		AllowedTools: []string{"read_document", "write_document_content"},
+	})
+	if !slices.Contains(preset.AllowedTools, "insert_document_artifact") {
+		t.Fatalf("managed Documentation Agent artifact capability was not restored: %v", preset.AllowedTools)
+	}
+	if got := enforceManagedDocumentationAgentCapabilities(model.AgentPresetDefinition{
+		Key:          model.AgentPresetSupportAgent,
+		AllowedTools: []string{"read_document"},
+	}); slices.Contains(got.AllowedTools, "insert_document_artifact") {
+		t.Fatalf("artifact capability leaked into unrelated preset: %v", got.AllowedTools)
 	}
 }
 
@@ -839,6 +855,68 @@ func TestValidateModelRoutingAllowsCodexReasoningConfig(t *testing.T) {
 	}
 	if strings.TrimSpace(string(agent.ExecutionConfig)) != `{"reasoning_effort":"high","service_tier":"fast"}` {
 		t.Fatalf("expected normalized execution config to persist, got %s", agent.ExecutionConfig)
+	}
+}
+
+func TestParseAndValidateExecutionConfigAllowsNativeToolStepLimit(t *testing.T) {
+	agent := &model.Agent{
+		RuntimeKind:     "native_sdk",
+		ExecutionConfig: model.JSONBlob(`{"max_tool_steps":640}`),
+	}
+
+	config, err := parseAndValidateExecutionConfig(agent)
+	if err != nil {
+		t.Fatalf("expected native tool step limit to validate, got %v", err)
+	}
+	if config.MaxToolSteps == nil || *config.MaxToolSteps != 640 {
+		t.Fatalf("MaxToolSteps = %#v, want 640", config.MaxToolSteps)
+	}
+	if got := strings.TrimSpace(string(model.MarshalAgentExecutionConfig(config))); got != `{"max_tool_steps":640}` {
+		t.Fatalf("normalized execution config = %s, want max_tool_steps", got)
+	}
+}
+
+func TestParseAndValidateExecutionConfigRejectsInvalidNativeToolStepLimit(t *testing.T) {
+	tests := []struct {
+		name        string
+		runtimeKind string
+		config      model.JSONBlob
+		wantError   string
+	}{
+		{
+			name:        "zero",
+			runtimeKind: "native_sdk",
+			config:      model.JSONBlob(`{"max_tool_steps":0}`),
+			wantError:   "must be between 1 and 1000",
+		},
+		{
+			name:        "above maximum",
+			runtimeKind: "native_sdk",
+			config:      model.JSONBlob(`{"max_tool_steps":1001}`),
+			wantError:   "must be between 1 and 1000",
+		},
+		{
+			name:        "codex runtime",
+			runtimeKind: "codex",
+			config:      model.JSONBlob(`{"max_tool_steps":500}`),
+			wantError:   "only supported for runtime_kind native_sdk",
+		},
+		{
+			name:        "native model control",
+			runtimeKind: "native_sdk",
+			config:      model.JSONBlob(`{"reasoning_effort":"high"}`),
+			wantError:   "model controls are only supported for runtime_kind codex",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := &model.Agent{RuntimeKind: tt.runtimeKind, ExecutionConfig: tt.config}
+			_, err := parseAndValidateExecutionConfig(agent)
+			if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("parseAndValidateExecutionConfig() error = %v, want containing %q", err, tt.wantError)
+			}
+		})
 	}
 }
 

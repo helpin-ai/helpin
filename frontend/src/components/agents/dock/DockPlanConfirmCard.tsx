@@ -36,23 +36,30 @@ export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCard
   const steps = action.steps ?? [];
 
   return (
-    <div className="rounded-lg border border-amber-300/60 bg-amber-50/60 p-3 text-sm dark:border-amber-500/30 dark:bg-amber-500/10">
-      <div className="mb-2 font-medium text-foreground">
+    <section
+      aria-label={payload.title?.trim() || 'Confirm agent action'}
+      className="border-y border-amber-400/40 py-3 text-sm dark:border-amber-500/35"
+      data-agent-dock-plan-confirm
+    >
+      <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
+        Needs your approval
+      </div>
+      <div className="font-semibold text-foreground">
         {payload.summary?.trim() || payload.title?.trim() || 'The agent wants to run this — confirm?'}
       </div>
       {steps.length > 0 && (
-        <ol className="mb-2 space-y-1.5">
+        <ol className="mt-3 divide-y divide-border/60 border-y border-border/60" data-agent-dock-plan-steps>
           {steps.map((step, index) => (
-            <li key={index} className="rounded-md border border-border/60 bg-background/80 px-2.5 py-1.5">
+            <li key={index} className="py-2.5">
               <DockPlanConfirmStepRow step={step} index={index} />
             </li>
           ))}
         </ol>
       )}
       {(action.operations?.length ?? 0) > 0 && (
-        <div className="mb-2 space-y-1.5">
+        <div className="mt-3 divide-y divide-border/60 border-y border-border/60" data-agent-dock-plan-operations>
           {action.operations!.map((operation, index) => (
-            <div key={`${operation.tool_name}-${index}`} className="rounded-md border border-border/60 bg-background/80 px-2.5 py-1.5">
+            <div key={`${operation.tool_name}-${index}`} className="py-2.5">
               <div className="flex items-center gap-2 text-xs">
                 <span className="font-mono font-medium text-foreground">{operation.tool_name}</span>
                 <span className="text-muted-foreground">up to {operation.max_calls ?? 1} call{(operation.max_calls ?? 1) === 1 ? '' : 's'}</span>
@@ -67,26 +74,26 @@ export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCard
         </div>
       )}
       {(action.expected_outcomes?.length ?? 0) > 0 && (
-        <ul className="mb-2 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+        <ul className="mt-3 list-disc space-y-0.5 border-t border-border/60 pt-3 pl-5 text-xs text-muted-foreground">
           {action.expected_outcomes!.map((outcome, index) => <li key={index}>{outcome}</li>)}
         </ul>
       )}
       {action.proposal_id && (action.operations?.length ?? 0) === 0 && steps.length === 0 && (
-        <p className="mb-2 text-xs text-muted-foreground">Scoped execution proposal <span className="font-mono">{action.proposal_id.slice(0, 8)}</span></p>
+        <p className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">Scoped execution proposal <span className="font-mono">{action.proposal_id.slice(0, 8)}</span></p>
       )}
       {action.description && (
-        <p className="mb-2 text-muted-foreground">
+        <p className="mt-3 border-t border-border/60 pt-3 text-muted-foreground">
           New agent{action.name ? ` “${action.name}”` : ''}: {action.description}
         </p>
       )}
       {action.run_id && (
-        <p className="mb-2 text-muted-foreground">
+        <p className="mt-3 border-t border-border/60 pt-3 text-muted-foreground">
           Promote run <span className="font-mono text-xs">{action.run_id}</span>
           {action.name ? ` to saved agent “${action.name}”` : ''}
         </p>
       )}
       {rejecting ? (
-        <div className="space-y-2">
+        <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
           <textarea
             autoFocus
             value={note}
@@ -110,7 +117,7 @@ export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCard
           </div>
         </div>
       ) : (
-        <div className="flex items-center gap-2">
+        <div className="mt-3 flex items-center gap-2 border-t border-border/60 pt-3">
           <Button size="sm" disabled={acting !== null} onClick={() => void decide('approve')}>
             {acting === 'approve' ? 'Approving…' : 'Approve'}
           </Button>
@@ -119,7 +126,7 @@ export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCard
           </Button>
         </div>
       )}
-    </div>
+    </section>
   );
 }
 

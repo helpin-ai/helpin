@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -25,9 +24,10 @@ func (h *AgentRuntimeHostHandler) UploadBrowserAsset(w http.ResponseWriter, r *h
 		writeError(w, http.StatusServiceUnavailable, "agent runtime host unavailable")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024+1024*1024)
-	if err := r.ParseMultipartForm(10 * 1024 * 1024); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid screenshot upload")
+	const maxBrowserArtifactBytes = 100 * 1024 * 1024
+	r.Body = http.MaxBytesReader(w, r.Body, maxBrowserArtifactBytes+1024*1024)
+	if err := r.ParseMultipartForm(8 * 1024 * 1024); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid browser artifact upload")
 		return
 	}
 	if r.MultipartForm != nil {
@@ -39,15 +39,24 @@ func (h *AgentRuntimeHostHandler) UploadBrowserAsset(w http.ResponseWriter, r *h
 		return
 	}
 	defer file.Close()
-	payload, err := io.ReadAll(io.LimitReader(file, 10*1024*1024+1))
-	if err != nil || len(payload) == 0 || len(payload) > 10*1024*1024 {
-		writeError(w, http.StatusBadRequest, "screenshot must be between 1 byte and 10 MB")
+	if header.Size <= 0 || header.Size > maxBrowserArtifactBytes {
+		writeError(w, http.StatusBadRequest, "browser artifact must be between 1 byte and 100 MB")
 		return
 	}
-	contentType := http.DetectContentType(payload)
+	sniff := make([]byte, 512)
+	n, readErr := io.ReadFull(file, sniff)
+	if readErr != nil && !errors.Is(readErr, io.EOF) && !errors.Is(readErr, io.ErrUnexpectedEOF) {
+		writeError(w, http.StatusBadRequest, "unable to read browser artifact")
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		writeError(w, http.StatusBadRequest, "unable to read browser artifact")
+		return
+	}
+	contentType := http.DetectContentType(sniff[:n])
 	asset, err := h.host.UploadBrowserAsset(r.Context(), service.AgentRuntimeBrowserAssetUpload{
 		AppID: r.FormValue("app_id"), RuntimeRunID: r.FormValue("run_id"), ArtifactType: r.FormValue("artifact_type"), Metadata: json.RawMessage(r.FormValue("metadata")),
-		FileName: header.Filename, ContentType: contentType, Size: int64(len(payload)), Body: bytes.NewReader(payload),
+		FileName: header.Filename, ContentType: contentType, Size: header.Size, Body: file,
 	})
 	if err != nil {
 		writeAgentRuntimeHostError(w, err)

@@ -331,6 +331,20 @@ func TestAskAgentPromptRecoversTruncatedResultWithoutRerun(t *testing.T) {
 	}
 }
 
+func TestAskAgentPromptUsesAttachedReferences(t *testing.T) {
+	prompt := askAgentSystemPrompt()
+	for _, required := range []string{
+		"<references>[...]</references>",
+		"supplemental entities the user explicitly attached",
+		"consider every attached reference relevant",
+		"never echo the raw block",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("Ask Agent prompt missing %q", required)
+		}
+	}
+}
+
 func TestAskAgentPromptLinksResolvedWorkspaceEntities(t *testing.T) {
 	prompt := askAgentSystemPrompt()
 	for _, required := range []string{

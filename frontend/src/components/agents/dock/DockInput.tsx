@@ -16,6 +16,7 @@ import {
   UserIcon,
 } from '@/lib/icons';
 import type { CommandBarPageContext } from '@/lib/pmTypes';
+import type { DockEntityReference } from '@/lib/dockTypes';
 import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
@@ -24,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { PageContextScopeOption } from '@/components/command-bar/pageContext';
+import { DockReferencePicker, type DockReferencePickerHandle } from './DockReferencePicker';
 
 const TYPE_LABEL: Record<CommandBarPageContext['entity_type'], string> = {
   task: 'Task',
@@ -35,20 +37,20 @@ const TYPE_LABEL: Record<CommandBarPageContext['entity_type'], string> = {
   repository: 'Repository',
 };
 
-function chipIcon(type: CommandBarPageContext['entity_type']) {
+function ContextIcon({ type, className = 'h-3 w-3 shrink-0' }: { type: CommandBarPageContext['entity_type']; className?: string }) {
   switch (type) {
     case 'task':
-      return RecordIcon;
+      return <RecordIcon className={className} />;
     case 'epic':
-      return BookOpen01Icon;
+      return <BookOpen01Icon className={className} />;
     case 'document':
-      return File01Icon;
+      return <File01Icon className={className} />;
     case 'crm_contact':
-      return UserIcon;
+      return <UserIcon className={className} />;
     case 'crm_deal':
-      return Briefcase01Icon;
+      return <Briefcase01Icon className={className} />;
     default:
-      return FolderKanbanIcon;
+      return <FolderKanbanIcon className={className} />;
   }
 }
 
@@ -90,6 +92,10 @@ export interface DockInputProps {
   activeContextKey?: string | null;
   onContextKeyChange?: (key: string) => void;
   onClearContext?: () => void;
+  workspaceId?: string;
+  references?: DockEntityReference[];
+  onAddReference?: (reference: DockEntityReference) => void;
+  onRemoveReference?: (reference: DockEntityReference) => void;
   busy?: boolean;
   disabled?: boolean;
   autoFocus?: boolean;
@@ -97,6 +103,7 @@ export interface DockInputProps {
   /** When set, the send button becomes a stop button for the active run. */
   onStop?: () => void;
   stopping?: boolean;
+  placeholder?: string;
 }
 
 export function DockInput({
@@ -111,15 +118,21 @@ export function DockInput({
   activeContextKey,
   onContextKeyChange,
   onClearContext,
+  workspaceId,
+  references = [],
+  onAddReference,
+  onRemoveReference,
   busy,
   disabled,
   autoFocus,
   textareaRef,
   onStop,
   stopping,
+  placeholder: placeholderOverride,
 }: DockInputProps) {
   const localRef = useRef<HTMLTextAreaElement | null>(null);
   const ref = textareaRef ?? localRef;
+  const referencePickerRef = useRef<DockReferencePickerHandle | null>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -129,13 +142,14 @@ export function DockInput({
   }, [value, ref]);
 
   useEffect(() => {
-    if (autoFocus) ref.current?.focus();
-  }, [autoFocus, ref]);
+    if (autoFocus && !disabled) ref.current?.focus();
+  }, [autoFocus, disabled, ref]);
 
-  const placeholder =
+  const placeholder = placeholderOverride ?? (
     mode === 'list'
       ? 'Search runs or ask something new…'
-      : 'Tell Atlas, Forge, Lens, or any agent what to do';
+      : 'Tell Atlas, Forge, Lens, or any agent what to do'
+  );
 
   // Hide the workspace-level chip — it just restates the current workspace
   // (already visible in the sidebar) and provides no scoping signal. Keep it
@@ -144,13 +158,14 @@ export function DockInput({
   const showChip = !!pageContext && (pageContext.entity_type !== 'workspace' || !!pageContext.metadata?.context_scope);
   const sendDisabled = !value.trim() || busy || disabled;
 
-  const showContextRow = mode === 'conversation' && (showChip || !!onAddContext);
+  const canAddReferences = !!workspaceId && !!onAddReference;
+  const showContextRow = mode === 'conversation' && (showChip || !!onAddContext || canAddReferences || references.length > 0);
 
   return (
     <div className="flex flex-col gap-2 px-3.5 pb-2.5 pt-2">
       {showContextRow ? (
         <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {showChip ? (
               <ContextChip
                 context={pageContext!}
@@ -158,6 +173,34 @@ export function DockInput({
                 activeKey={activeContextKey}
                 onChange={onContextKeyChange}
                 onClear={onClearContext}
+              />
+            ) : null}
+            {references.map((reference) => (
+              <span
+                key={`${reference.entity_type}:${reference.entity_id}`}
+                className="inline-flex max-w-[260px] items-center gap-1 rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[11px]"
+                title={reference.display_title}
+              >
+                <span className="text-[10px] font-medium uppercase text-muted-foreground">
+                  {TYPE_LABEL[reference.entity_type]}
+                </span>
+                <span className="truncate font-medium">{reference.display_title}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${reference.display_title} reference`}
+                  onClick={() => onRemoveReference?.(reference)}
+                  className="-mr-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+                >
+                  <Cancel01Icon className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+            {canAddReferences ? (
+              <DockReferencePicker
+                ref={referencePickerRef}
+                workspaceId={workspaceId!}
+                selected={references}
+                onSelect={onAddReference!}
               />
             ) : null}
             {onAddContext ? (
@@ -187,6 +230,11 @@ export function DockInput({
           onFocus={() => onFocusChange?.(true)}
           onBlur={() => onFocusChange?.(false)}
           onKeyDown={(e) => {
+            if (e.key === '@' && canAddReferences) {
+              e.preventDefault();
+              referencePickerRef.current?.open();
+              return;
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
               onSubmit();
@@ -255,7 +303,6 @@ function ContextChip({
   onChange?: (key: string) => void;
   onClear?: () => void;
 }) {
-  const Icon = chipIcon(context.entity_type);
   const blockScoped = isBlockScopedDocument(context);
   const allTasks = isAllTasksContext(context);
   const title = contextTitle(context);
@@ -269,7 +316,7 @@ function ContextChip({
   );
   const body = (
     <>
-      <Icon className="h-3 w-3 shrink-0" />
+      <ContextIcon type={context.entity_type} />
       <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
@@ -322,7 +369,6 @@ function ContextChip({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="z-[80] w-64">
         {options.map((option) => {
-          const OptionIcon = chipIcon(option.context.entity_type);
           const checked = option.key === activeKey;
           return (
             <DropdownMenuItem
@@ -330,7 +376,7 @@ function ContextChip({
               onClick={() => onChange?.(option.key)}
               className="cursor-pointer items-start gap-2"
             >
-              <OptionIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <ContextIcon type={option.context.entity_type} className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-medium">{option.label}</span>
                 {option.description ? (

@@ -2,6 +2,9 @@ import { api } from '../api';
 import type {
   DockChat,
   DockChatDetail,
+  DockChatListResponse,
+  GenerateDockChatTitleRequest,
+  DockRunListResponse,
   SendDockChatMessageRequest,
   UpdateDockChatRequest,
 } from '../dockTypes';
@@ -11,13 +14,18 @@ import type {
   CodingSessionEventListResponse,
   CodingSessionInteraction,
   ResolveCodingSessionInteractionRequest,
+  AgentRunMessage,
+  CodexAuthState,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const dockChatService = {
-  listChats: (workspaceId: string) =>
-    api.get<{ chats: DockChat[] }>(`/dock/chats${qs(workspaceId)}`),
+  listChats: (workspaceId: string, cursor?: string | null, limit = 30) => {
+    const query = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
+    return api.get<DockChatListResponse>(`/dock/chats?${query.toString()}`);
+  },
   createChat: (workspaceId: string, title = '') =>
     api.post<DockChat>(`/dock/chats${qs(workspaceId)}`, { title }),
   getChat: (workspaceId: string, chatId: string) =>
@@ -26,6 +34,8 @@ export const dockChatService = {
     api.patch<DockChat>(`/dock/chats/${encodeURIComponent(chatId)}${qs(workspaceId)}`, payload),
   sendMessage: (workspaceId: string, chatId: string, payload: SendDockChatMessageRequest) =>
     api.post<DockChatDetail>(`/dock/chats/${encodeURIComponent(chatId)}/messages${qs(workspaceId)}`, payload),
+  generateTitle: (workspaceId: string, chatId: string, payload: GenerateDockChatTitleRequest) =>
+    api.post<DockChat>(`/dock/chats/${encodeURIComponent(chatId)}/title${qs(workspaceId)}`, payload),
   getChatRun: (workspaceId: string, chatId: string) =>
     api.get<CodingSession>(`/dock/chats/${encodeURIComponent(chatId)}/run${qs(workspaceId)}`),
   listChatRunInteractions: (workspaceId: string, chatId: string) =>
@@ -48,4 +58,35 @@ export const dockChatService = {
     ),
   cancelChatRun: (workspaceId: string, chatId: string) =>
     api.post<AgentRun>(`/dock/chats/${encodeURIComponent(chatId)}/run/cancel${qs(workspaceId)}`),
+  listRuns: (workspaceId: string) =>
+    api.get<DockRunListResponse>(`/dock/runs${qs(workspaceId)}`),
+  getRunSnapshot: (workspaceId: string, runId: string) =>
+    api.get<CodingSession>(`/dock/runs/${encodeURIComponent(runId)}/snapshot${qs(workspaceId)}`),
+  listRunEvents: (workspaceId: string, runId: string, after = 0) =>
+    api.get<CodingSessionEventListResponse>(
+      `/dock/runs/${encodeURIComponent(runId)}/events${qs(workspaceId)}&after=${encodeURIComponent(after)}`,
+    ),
+  listRunInteractions: (workspaceId: string, runId: string) =>
+    api.get<{ interactions: CodingSessionInteraction[] }>(
+      `/dock/runs/${encodeURIComponent(runId)}/interactions${qs(workspaceId)}`,
+    ),
+  resolveRunInteraction: (
+    workspaceId: string,
+    runId: string,
+    interactionId: string,
+    payload: ResolveCodingSessionInteractionRequest,
+  ) => api.post<CodingSessionInteraction>(
+    `/dock/runs/${encodeURIComponent(runId)}/interactions/${encodeURIComponent(interactionId)}/resolve${qs(workspaceId)}`,
+    payload,
+  ),
+  sendRunMessage: (workspaceId: string, runId: string, content: string) =>
+    api.post<AgentRunMessage>(`/dock/runs/${encodeURIComponent(runId)}/messages${qs(workspaceId)}`, { content }),
+  continueRun: (workspaceId: string, runId: string, content?: string) =>
+    api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/continue${qs(workspaceId)}`, content ? { content } : {}),
+  cancelRun: (workspaceId: string, runId: string) =>
+    api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/cancel${qs(workspaceId)}`, {}),
+  startRunAuth: (workspaceId: string, runId: string) =>
+    api.post<CodexAuthState>(`/dock/runs/${encodeURIComponent(runId)}/auth/device-code/start${qs(workspaceId)}`, {}),
+  cancelRunAuth: (workspaceId: string, runId: string) =>
+    api.post<CodexAuthState>(`/dock/runs/${encodeURIComponent(runId)}/auth/device-code/cancel${qs(workspaceId)}`, {}),
 };

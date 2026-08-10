@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,9 @@ import (
 // by the requesting user.
 var ErrDockChatNotFound = errors.New("dock chat not found")
 
+// ErrDockChatInvalidCursor is returned for malformed list pagination cursors.
+var ErrDockChatInvalidCursor = errors.New("invalid dock chat cursor")
+
 const (
 	dockChatTriggerType        = "dock_chat"
 	dockChatTitleMaxRunes      = 60
@@ -25,7 +29,16 @@ const (
 	dockChatCarryForwardChars  = 500
 	dockChatCarryForwardTotal  = 6000
 	dockChatPageContextOpenTag = "<page_context>"
+	dockChatReferencesOpenTag  = "<references>"
+	dockChatReferencesMax      = 10
+	dockChatListDefaultLimit   = 30
+	dockChatListMaxLimit       = 50
 )
+
+type dockChatCursor struct {
+	ActivityAt time.Time `json:"activity_at"`
+	ID         string    `json:"id"`
+}
 
 // DockChatService owns dock chats: user-scoped conversations whose turns are
 // executed by an agent-runtime chat-mode run of the ask_agent preset.
@@ -37,6 +50,7 @@ type DockChatService struct {
 	agentService   *AgentService
 	commandService *InternalCommandService
 	authz          *authorization.AuthzService
+	titleLLM       dockChatTitleLLM
 }
 
 // NewDockChatService creates a DockChatService.
@@ -60,9 +74,52 @@ func NewDockChatService(
 	}
 }
 
-// ListChats returns the user's unarchived chats, most recently active first.
-func (s *DockChatService) ListChats(ctx context.Context, workspaceID, userID string) ([]model.DockChat, error) {
-	return s.chatRepo.ListByWorkspaceUser(ctx, workspaceID, userID, 50)
+// ListChats returns one stable cursor page of the user's unarchived chats.
+func (s *DockChatService) ListChats(ctx context.Context, workspaceID, userID string, limit int, encodedCursor string) (*model.DockChatListResponse, error) {
+	if limit <= 0 {
+		limit = dockChatListDefaultLimit
+	}
+	if limit > dockChatListMaxLimit {
+		limit = dockChatListMaxLimit
+	}
+	var before *time.Time
+	var beforeID string
+	if encodedCursor != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(encodedCursor)
+		if err != nil {
+			return nil, ErrDockChatInvalidCursor
+		}
+		var cursor dockChatCursor
+		if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.ActivityAt.IsZero() || cursor.ID == "" {
+			return nil, ErrDockChatInvalidCursor
+		}
+		before = &cursor.ActivityAt
+		beforeID = cursor.ID
+	}
+
+	chats, err := s.chatRepo.ListByWorkspaceUser(ctx, workspaceID, userID, limit+1, before, beforeID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.hydrateActiveRunStatuses(ctx, workspaceID, chats); err != nil {
+		return nil, err
+	}
+	response := &model.DockChatListResponse{Chats: chats}
+	if len(chats) > limit {
+		response.Chats = chats[:limit]
+		last := response.Chats[len(response.Chats)-1]
+		activityAt := last.CreatedAt
+		if last.LastMessageAt != nil {
+			activityAt = *last.LastMessageAt
+		}
+		payload, err := json.Marshal(dockChatCursor{ActivityAt: activityAt, ID: last.ID})
+		if err != nil {
+			return nil, fmt.Errorf("encode dock chat cursor: %w", err)
+		}
+		next := base64.RawURLEncoding.EncodeToString(payload)
+		response.NextCursor = &next
+	}
+	return response, nil
 }
 
 // CreateChat creates an empty chat; its backing run starts lazily on the
@@ -102,7 +159,15 @@ func (s *DockChatService) UpdateChat(ctx context.Context, workspaceID, userID, c
 	if err := s.chatRepo.Update(ctx, workspaceID, chat.ID, updates); err != nil {
 		return nil, fmt.Errorf("update dock chat: %w", err)
 	}
-	return s.chatRepo.GetByID(ctx, workspaceID, chat.ID)
+	updated, err := s.chatRepo.GetByID(ctx, workspaceID, chat.ID)
+	if err != nil || updated == nil {
+		return updated, err
+	}
+	chats := []model.DockChat{*updated}
+	if err := s.hydrateActiveRunStatuses(ctx, workspaceID, chats); err != nil {
+		return nil, err
+	}
+	return &chats[0], nil
 }
 
 // GetChat returns the chat with a summary of its current backing run.
@@ -142,7 +207,11 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 		return nil, err
 	}
 
-	composed := composeDockChatTurn(content, req.PageContext)
+	references, err := normalizeDockChatReferences(req.References)
+	if err != nil {
+		return nil, err
+	}
+	composed := composeDockChatTurn(content, req.PageContext, references)
 
 	var currentRun *model.AgentRun
 	if chat.ActiveRunID != nil {
@@ -190,9 +259,6 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 
 	now := time.Now().UTC()
 	updates := map[string]interface{}{"last_message_at": now}
-	if strings.TrimSpace(chat.Title) == "" {
-		updates["title"] = dockChatTitleFromContent(content)
-	}
 	if err := s.chatRepo.Update(ctx, workspaceID, chat.ID, updates); err != nil {
 		return nil, fmt.Errorf("touch dock chat: %w", err)
 	}
@@ -254,6 +320,10 @@ func (s *DockChatService) chatDetail(ctx context.Context, chat *model.DockChat) 
 		if err != nil {
 			return nil, fmt.Errorf("get chat run: %w", err)
 		}
+		if run != nil {
+			model.NormalizeAgentRunPauseState(run)
+			detail.Chat.ActiveRunStatus = run.Status
+		}
 		detail.Run = run
 	}
 	if s.planRepo != nil {
@@ -265,6 +335,49 @@ func (s *DockChatService) chatDetail(ctx context.Context, chat *model.DockChat) 
 		}
 	}
 	return detail, nil
+}
+
+// hydrateActiveRunStatuses attaches the current backing-run lifecycle to a
+// page of chats in one query so roster indicators do not require N+1 reads.
+func (s *DockChatService) hydrateActiveRunStatuses(ctx context.Context, workspaceID string, chats []model.DockChat) error {
+	if s.runRepo == nil || len(chats) == 0 {
+		return nil
+	}
+	runIDs := make([]string, 0, len(chats))
+	seen := make(map[string]struct{}, len(chats))
+	for i := range chats {
+		if chats[i].ActiveRunID == nil {
+			continue
+		}
+		runID := strings.TrimSpace(*chats[i].ActiveRunID)
+		if runID == "" {
+			continue
+		}
+		if _, exists := seen[runID]; exists {
+			continue
+		}
+		seen[runID] = struct{}{}
+		runIDs = append(runIDs, runID)
+	}
+	if len(runIDs) == 0 {
+		return nil
+	}
+
+	runs, err := s.runRepo.ListByIDs(ctx, workspaceID, runIDs)
+	if err != nil {
+		return fmt.Errorf("list dock chat run statuses: %w", err)
+	}
+	statusByID := make(map[string]string, len(runs))
+	for i := range runs {
+		model.NormalizeAgentRunPauseState(&runs[i])
+		statusByID[runs[i].ID] = runs[i].Status
+	}
+	for i := range chats {
+		if chats[i].ActiveRunID != nil {
+			chats[i].ActiveRunStatus = statusByID[strings.TrimSpace(*chats[i].ActiveRunID)]
+		}
+	}
+	return nil
 }
 
 func (s *DockChatService) ownedChat(ctx context.Context, workspaceID, userID, chatID string) (*model.DockChat, error) {
@@ -423,15 +536,48 @@ func (s *DockChatService) buildCarryForward(ctx context.Context, previousRun *mo
 	return b.String()
 }
 
-func composeDockChatTurn(content string, pageContext map[string]interface{}) string {
-	if len(pageContext) == 0 {
-		return content
+func composeDockChatTurn(content string, pageContext map[string]interface{}, references []model.DockEntityReference) string {
+	blocks := []string{content}
+	if len(pageContext) > 0 {
+		if encoded, err := json.Marshal(pageContext); err == nil {
+			blocks = append(blocks, dockChatPageContextOpenTag+string(encoded)+"</page_context>")
+		}
 	}
-	encoded, err := json.Marshal(pageContext)
-	if err != nil {
-		return content
+	if len(references) > 0 {
+		if encoded, err := json.Marshal(references); err == nil {
+			blocks = append(blocks, dockChatReferencesOpenTag+string(encoded)+"</references>")
+		}
 	}
-	return content + "\n\n" + dockChatPageContextOpenTag + string(encoded) + "</page_context>"
+	return strings.Join(blocks, "\n\n")
+}
+
+func normalizeDockChatReferences(references []model.DockEntityReference) ([]model.DockEntityReference, error) {
+	if len(references) > dockChatReferencesMax {
+		return nil, fmt.Errorf("at most %d references are allowed", dockChatReferencesMax)
+	}
+	allowedTypes := map[string]struct{}{
+		"task": {}, "epic": {}, "document": {}, "crm_contact": {}, "crm_deal": {},
+	}
+	seen := make(map[string]struct{}, len(references))
+	normalized := make([]model.DockEntityReference, 0, len(references))
+	for _, reference := range references {
+		reference.EntityType = strings.TrimSpace(reference.EntityType)
+		reference.EntityID = strings.TrimSpace(reference.EntityID)
+		reference.DisplayTitle = strings.TrimSpace(reference.DisplayTitle)
+		if _, ok := allowedTypes[reference.EntityType]; !ok {
+			return nil, fmt.Errorf("unsupported reference type %q", reference.EntityType)
+		}
+		if reference.EntityID == "" || reference.DisplayTitle == "" {
+			return nil, fmt.Errorf("reference entity_id and display_title are required")
+		}
+		key := reference.EntityType + ":" + reference.EntityID
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, reference)
+	}
+	return normalized, nil
 }
 
 func dockChatTitleFromContent(content string) string {

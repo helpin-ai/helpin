@@ -185,9 +185,9 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 
 	now := time.Now().UTC()
 	buckets := map[string]*model.SprintPlanningBucket{
-		"active":    {Key: "active", Label: "Active"},
-		"upcoming":  {Key: "upcoming", Label: "Upcoming"},
-		"completed": {Key: "completed", Label: "Completed"},
+		"active":    {Key: "active", Label: "Active", Sprints: []model.SprintPlanningCard{}},
+		"upcoming":  {Key: "upcoming", Label: "Upcoming", Sprints: []model.SprintPlanningCard{}},
+		"completed": {Key: "completed", Label: "Completed", Sprints: []model.SprintPlanningCard{}},
 	}
 	orderedBucketKeys := []string{"active", "upcoming", "completed"}
 
@@ -231,7 +231,9 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 				continue
 			}
 			card.Stats = statsBySprintID[sprintID]
-			card.PreviewTasks = previewStoriesBySprintID[sprintID]
+			if previewTasks, ok := previewStoriesBySprintID[sprintID]; ok {
+				card.PreviewTasks = previewTasks
+			}
 			if overflow := card.Stats.TaskCount - len(card.PreviewTasks); overflow > 0 {
 				card.TaskPreviewOverflow = overflow
 			}
@@ -727,15 +729,41 @@ func (r *PMSprintRepository) ListPreviewTasksPage(ctx context.Context, sprintID 
 	}, nil
 }
 
-func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, sprintIDs []string, limitPerSprint int) (map[string][]model.SprintPlanningTaskPreview, error) {
-	bySprint := make(map[string][]model.SprintPlanningTaskPreview, len(sprintIDs))
-	if len(sprintIDs) == 0 {
-		return bySprint, nil
+// ListBacklogTasksPage returns a paginated page of accessible, non-completed unsprinted tasks.
+func (r *PMSprintRepository) ListBacklogTasksPage(ctx context.Context, workspaceID string, filters model.PMSprintPlanningFilters, pagination model.PMPagination) (*model.PaginatedResponse, error) {
+	perPage := pagination.PerPage
+	if perPage <= 0 {
+		perPage = 50
+	}
+	page := pagination.Page
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * perPage
+
+	base := r.db.WithContext(ctx).
+		Table("pm_tasks s").
+		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
+		Where("s.workspace_id = ? AND s.archived = false AND s.sprint_id IS NULL", workspaceID).
+		Where("ws.state_type <> ?", model.PMStateTypeDone)
+	if filters.TeamID != nil && *filters.TeamID != "" {
+		base = base.Where("s.team_id = ?", *filters.TeamID)
+	}
+	if filters.AccessibleTeamIDs != nil {
+		if len(filters.AccessibleTeamIDs) == 0 {
+			base = base.Where("1 = 0")
+		} else {
+			base = base.Where("s.team_id IN ?", filters.AccessibleTeamIDs)
+		}
 	}
 
-	var rows []model.SprintPlanningTaskPreview
-	if err := r.db.WithContext(ctx).
-		Table("pm_tasks s").
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, fmt.Errorf("count planning backlog tasks: %w", err)
+	}
+
+	rows := make([]model.SprintPlanningTaskPreview, 0, perPage)
+	if err := base.
 		Select(`
 			s.id,
 			s.display_id,
@@ -748,9 +776,61 @@ func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, spr
 			s.sprint_id,
 			s.team_id
 		`).
+		Order("s.position ASC, s.updated_at DESC, s.created_at DESC").
+		Offset(offset).
+		Limit(perPage).
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list planning backlog task page: %w", err)
+	}
+	if err := r.enrichPlanningTaskPreviewOwners(ctx, rows); err != nil {
+		return nil, err
+	}
+
+	totalPages := 0
+	if perPage > 0 {
+		totalPages = int((total + int64(perPage) - 1) / int64(perPage))
+	}
+	return &model.PaginatedResponse{
+		Data:       rows,
+		Total:      int(total),
+		Page:       page,
+		PerPage:    perPage,
+		TotalPages: totalPages,
+	}, nil
+}
+
+func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, sprintIDs []string, limitPerSprint int) (map[string][]model.SprintPlanningTaskPreview, error) {
+	bySprint := make(map[string][]model.SprintPlanningTaskPreview, len(sprintIDs))
+	if len(sprintIDs) == 0 {
+		return bySprint, nil
+	}
+
+	ranked := r.db.WithContext(ctx).
+		Table("pm_tasks s").
+		Select(`
+			s.id,
+			s.display_id,
+			s.name,
+			s.workflow_state_id,
+			ws.name AS state_name,
+			ws.state_type AS state_type,
+			s.estimate,
+			s.priority,
+			s.sprint_id,
+			s.team_id,
+			ROW_NUMBER() OVER (
+				PARTITION BY s.sprint_id
+				ORDER BY s.position ASC, s.created_at DESC
+			) AS preview_rank
+		`).
 		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
-		Where("s.sprint_id IN ? AND s.archived = false", sprintIDs).
-		Order("s.sprint_id ASC, s.position ASC, s.created_at DESC").
+		Where("s.sprint_id IN ? AND s.archived = false", sprintIDs)
+
+	var rows []model.SprintPlanningTaskPreview
+	if err := r.db.WithContext(ctx).
+		Table("(?) AS ranked_tasks", ranked).
+		Where("preview_rank <= ?", limitPerSprint).
+		Order("sprint_id ASC, preview_rank ASC").
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list planning preview stories: %w", err)
 	}
@@ -762,11 +842,7 @@ func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, spr
 		if row.SprintID == nil {
 			continue
 		}
-		current := bySprint[*row.SprintID]
-		if len(current) >= limitPerSprint {
-			continue
-		}
-		bySprint[*row.SprintID] = append(current, row)
+		bySprint[*row.SprintID] = append(bySprint[*row.SprintID], row)
 	}
 	return bySprint, nil
 }
@@ -793,7 +869,9 @@ func (r *PMSprintRepository) listPlanningBacklogStories(ctx context.Context, wor
 		return nil, 0, fmt.Errorf("count planning backlog stories: %w", err)
 	}
 
-	var stories []model.SprintPlanningTaskPreview
+	// Always return an array to clients, including when the team's backlog is empty.
+	// A nil slice is encoded as JSON null, which is not a usable collection in the UI.
+	stories := make([]model.SprintPlanningTaskPreview, 0)
 	if err := base.
 		Select(`
 			s.id,

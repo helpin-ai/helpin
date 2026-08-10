@@ -137,6 +137,7 @@ const codingSessionSnapshotTestSchema = `CREATE TABLE coding_session_state_snaps
 	workspace_id TEXT NOT NULL,
 	run_id TEXT NOT NULL,
 	schema_version TEXT NOT NULL DEFAULT 'helpin.coding_session.stream.v1',
+	through_sequence INTEGER NOT NULL DEFAULT 0,
 	snapshot_payload TEXT NOT NULL DEFAULT '{}',
 	created_at DATETIME,
 	updated_at DATETIME,

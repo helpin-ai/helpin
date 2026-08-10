@@ -67,6 +67,19 @@ func TestSetupAIUsageFeaturesAreNotChargeable(t *testing.T) {
 	}
 }
 
+func TestDockChatTitleAIUsageIsNotChargeable(t *testing.T) {
+	feature, ok := AIUsageFeature(BillingFeatureDockChatTitle)
+	if !ok {
+		t.Fatal("missing dock chat title feature")
+	}
+	if feature.Chargeable {
+		t.Fatal("dock chat title feature is chargeable, want product chrome to be free")
+	}
+	if got := CalculateAIUsageUnits(AIUsageCalculation{FeatureKey: BillingFeatureDockChatTitle, InputTokens: 100, OutputTokens: 20}); got != 0 {
+		t.Fatalf("dock chat title usage units = %d, want 0", got)
+	}
+}
+
 func TestBillingCreditsForFeatureReturnsAIUsageFloors(t *testing.T) {
 	cases := map[string]int{
 		BillingFeatureSupportAIReply:        8,

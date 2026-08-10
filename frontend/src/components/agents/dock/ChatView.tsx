@@ -4,7 +4,7 @@ import { usePageContextState } from '@/components/command-bar/pageContext';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
 import { parseDockPlanConfirm } from '@/lib/dockTypes';
-import type { DockChatDetail } from '@/lib/dockTypes';
+import type { DockChatDetail, DockEntityReference } from '@/lib/dockTypes';
 import type { AgentRun, CodingSessionInteraction, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
@@ -14,9 +14,11 @@ import { ExecutionStrip } from './ExecutionStrip';
 import { PendingInteractionCard } from './PendingInteractionCard';
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
+import type { AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
+import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence';
 import { deriveLiveStatusLabel, ScrollToLatestButton } from '@/components/agents/transcript';
 import { planSummaryToRunPlan } from './planSummary';
-import { useAgentRunStream, type AgentRunStreamFetchers } from './useAgentRunStream';
+import type { AgentRunStreamState } from './useAgentRunStream';
 import {
   isStructuredInteractionKind,
   resolveDockComposerState,
@@ -29,6 +31,13 @@ interface ChatViewProps {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   initialDraft?: string;
   onDraftConsumed?: () => void;
+  draftValue?: string;
+  onDraftChange?: (value: string) => void;
+  onChatChanged?: () => void;
+  onRunStatusChange?: (runId: string | null, status: AgentRun['status'] | null) => void;
+  streamController: AgentRunStreamState;
+  onPresenceChange?: (state: AskAgentAvatarState | null) => void;
+  onRunIdChange?: (runId: string | null) => void;
 }
 
 const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
@@ -39,15 +48,38 @@ const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
  * chat. All run reads go through the chat-scoped /dock endpoints so users
  * without PM permissions can use their own dock.
  */
-export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDraftConsumed }: ChatViewProps) {
+export function ChatView({
+  workspaceId,
+  chatId,
+  textareaRef,
+  initialDraft,
+  onDraftConsumed,
+  draftValue,
+  onDraftChange,
+  onChatChanged,
+  onRunStatusChange,
+  streamController,
+  onPresenceChange,
+  onRunIdChange,
+}: ChatViewProps) {
   const [detail, setDetail] = useState<DockChatDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(true);
   const [plans, setPlans] = useState<CommandBarPlanSummary[]>([]);
-  const [value, setValue] = useState('');
+  const [localValue, setLocalValue] = useState('');
+  const value = draftValue ?? localValue;
+  const setValue = useCallback((next: string) => {
+    if (onDraftChange) onDraftChange(next);
+    else setLocalValue(next);
+  }, [onDraftChange]);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [pendingEcho, setPendingEcho] = useState<string | null>(null);
-  const [sendError, setSendError] = useState<{ message: string; content: string } | null>(null);
+  const [references, setReferences] = useState<DockEntityReference[]>([]);
+  const [sendError, setSendError] = useState<{
+    message: string;
+    content: string;
+    references: DockEntityReference[];
+  } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -57,26 +89,25 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
   const effectivePageContext = contextCleared ? null : pageContext;
 
   useEffect(() => {
-    if (initialDraft) {
+    if (!initialDraft) return;
+    const timer = window.setTimeout(() => {
       setValue(initialDraft);
       onDraftConsumed?.();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialDraft]);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [initialDraft, onDraftConsumed, setValue]);
 
   const run = detail?.run ?? null;
   const runActive = !!run && ACTIVE_RUN_STATUSES.has(run.status);
-
-  const fetchers = useMemo<AgentRunStreamFetchers>(
-    () => ({
-      getSnapshot: (ws) => dockChatService.getChatRun(ws, chatId),
-      listEvents: (ws, _runId, after) => dockChatService.listChatRunEvents(ws, chatId, after),
-    }),
-    [chatId],
-  );
+  useEffect(() => {
+    onRunIdChange?.(run?.id ?? null);
+  }, [onRunIdChange, run?.id]);
+  useEffect(() => {
+    onRunStatusChange?.(run?.id ?? null, run?.status ?? null);
+  }, [onRunStatusChange, run?.id, run?.status]);
 
   const { currentPlan, streamState, pendingInteraction, refetch, clearPendingInteraction } =
-    useAgentRunStream(workspaceId, run?.id, !!run, runActive ? 5_000 : 0, fetchers);
+    streamController;
 
   const refreshDetail = useCallback(async () => {
     const res = await dockChatService.getChat(workspaceId, chatId);
@@ -86,14 +117,11 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
 
   // Load chat on mount / chat switch.
   useEffect(() => {
-    setDetail(null);
-    setPlans([]);
-    setDetailLoading(true);
-    setPendingEcho(null);
-    setSendError(null);
     autoFollowRef.current = true;
-    setAtBottom(true);
-    void refreshDetail().finally(() => setDetailLoading(false));
+    const timer = window.setTimeout(() => {
+      void refreshDetail().finally(() => setDetailLoading(false));
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [refreshDetail]);
 
   // Refresh the run summary when its WS event fires (stream refetch is
@@ -121,8 +149,8 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
   useEffect(() => {
     const planIds = detail?.plan_ids ?? [];
     if (planIds.length === 0) {
-      setPlans([]);
-      return;
+      const timer = window.setTimeout(() => setPlans([]), 0);
+      return () => window.clearTimeout(timer);
     }
     let cancelled = false;
     void (async () => {
@@ -144,8 +172,8 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
     run?.status === 'paused' && (run.pause_reason === 'human_approval' || run.pause_reason === 'human_input');
   useEffect(() => {
     if (!pausedOnInteraction) {
-      setFallbackInteraction(null);
-      return;
+      const timer = window.setTimeout(() => setFallbackInteraction(null), 0);
+      return () => window.clearTimeout(timer);
     }
     let cancelled = false;
     void (async () => {
@@ -168,6 +196,17 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
   }, [chatId, pausedOnInteraction, workspaceId]);
 
   const transformed = useMemo(() => (streamState ? transformDockStream(streamState) : null), [streamState]);
+  const presenceState = deriveAskAgentAvatarState({
+    run: run ?? streamController.session,
+    stream: transformed?.stream ?? streamState,
+    sending,
+    error: sendError?.message,
+  });
+
+  useEffect(() => {
+    onPresenceChange?.(presenceState);
+  }, [onPresenceChange, presenceState]);
+  useEffect(() => () => onPresenceChange?.(null), [onPresenceChange]);
 
   // Drop the optimistic echo once the transcript contains it.
   useEffect(() => {
@@ -175,7 +214,10 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
     const matched = transformed.stream.transcript_messages.some(
       (message) => message.role === 'user' && message.content.trim() === pendingEcho.trim(),
     );
-    if (matched) setPendingEcho(null);
+    if (matched) {
+      const timer = window.setTimeout(() => setPendingEcho(null), 0);
+      return () => window.clearTimeout(timer);
+    }
   }, [pendingEcho, transformed]);
 
   // Track whether the user is near the tail; only then keep auto-following.
@@ -218,8 +260,9 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
   );
 
   const sendContent = useCallback(
-    async (content: string) => {
+    async (content: string, messageReferences: DockEntityReference[] = references) => {
       if (!content || sending) return;
+      const needsTitle = !detail?.chat.title.trim();
       setSending(true);
       setSendError(null);
       setPendingEcho(content);
@@ -229,13 +272,27 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
         const res = await dockChatService.sendMessage(workspaceId, chatId, {
           content,
           page_context: effectivePageContext ?? undefined,
+          references: messageReferences.length > 0 ? messageReferences : undefined,
         });
         if (res.error || !res.data) {
           setPendingEcho(null);
-          setSendError({ message: res.error ?? 'Failed to send message', content });
+          setSendError({ message: res.error ?? 'Failed to send message', content, references: messageReferences });
           return;
         }
+        setReferences([]);
         setDetail(res.data);
+        onChatChanged?.();
+        if (needsTitle) {
+          void (async () => {
+            const titleResult = await dockChatService.generateTitle(workspaceId, chatId, {
+              content,
+              page_context: effectivePageContext ?? undefined,
+            });
+            if (!titleResult.data) return;
+            setDetail((current) => current ? { ...current, chat: titleResult.data! } : current);
+            onChatChanged?.();
+          })();
+        }
         if (run?.id && res.data.run?.id === run.id) {
           // Same backing run: reconcile the persisted user message immediately.
           void refetch();
@@ -246,14 +303,14 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
         setSending(false);
       }
     },
-    [chatId, effectivePageContext, refetch, run?.id, sending, workspaceId],
+    [chatId, detail?.chat.title, effectivePageContext, onChatChanged, references, refetch, run?.id, sending, workspaceId],
   );
 
   const submit = async () => {
     const content = value.trim();
     if (!content) return;
     setValue('');
-    await sendContent(content);
+    await sendContent(content, references);
   };
 
   const canStop = runActive && (run?.status === 'queued' || run?.status === 'running');
@@ -334,7 +391,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
                 <button
                   type="button"
                   className="font-medium text-foreground hover:underline"
-                  onClick={() => void sendContent(sendError.content)}
+                  onClick={() => void sendContent(sendError.content, sendError.references)}
                 >
                   Retry
                 </button>
@@ -343,6 +400,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
                   className="text-muted-foreground hover:underline"
                   onClick={() => {
                     setValue(sendError.content);
+                    setReferences(sendError.references);
                     setSendError(null);
                   }}
                 >
@@ -356,20 +414,21 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
           <StreamingStatusText className="text-xs">{liveStatusLabel}</StreamingStatusText>
         )}
         {plans.length > 0 && (
-          <div className="space-y-2 rounded-lg border border-indigo-200/60 bg-indigo-50/50 p-2 dark:border-indigo-500/20 dark:bg-indigo-500/[0.07]">
-            <div className="px-1 text-[11px] font-medium uppercase tracking-wide text-indigo-600/80 dark:text-indigo-300/80">
+          <section className="divide-y divide-border/60 border-y border-border/70 py-2" data-agent-dock-sub-agent-runs>
+            <div className="px-1 pb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               Sub-agent runs
             </div>
             {plans.map((plan) => (
-              <ExecutionStrip
-                key={plan.id}
-                kind="plan"
-                workspaceId={workspaceId}
-                plan={planSummaryToRunPlan(plan)}
-                runsById={runsById}
-              />
+              <div key={plan.id} className="py-2 first:pt-0 last:pb-0">
+                <ExecutionStrip
+                  kind="plan"
+                  workspaceId={workspaceId}
+                  plan={planSummaryToRunPlan(plan)}
+                  runsById={runsById}
+                />
+              </div>
             ))}
-          </div>
+          </section>
         )}
         {effectiveInteraction && dockConfirm && (
           <DockPlanConfirmCard
@@ -413,8 +472,28 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
               setActiveScopeKey(key);
             }}
             onClearContext={() => setContextCleared(true)}
+            workspaceId={workspaceId}
+            references={references}
+            onAddReference={(reference) => {
+              setReferences((current) => {
+                if (current.length >= 10) {
+                  toast.error('You can attach up to 10 references.');
+                  return current;
+                }
+                const exists = current.some(
+                  (item) => item.entity_type === reference.entity_type && item.entity_id === reference.entity_id,
+                );
+                return exists ? current : [...current, reference];
+              });
+            }}
+            onRemoveReference={(reference) => {
+              setReferences((current) => current.filter(
+                (item) => item.entity_type !== reference.entity_type || item.entity_id !== reference.entity_id,
+              ));
+            }}
             busy={sending}
             disabled={!composer.enabled}
+            autoFocus
             textareaRef={textareaRef}
             onStop={canStop ? () => void handleStop() : undefined}
             stopping={stopping}

@@ -14,6 +14,7 @@ import type {
   CreateAgentRequest,
   CustomAgentDraft,
 } from '@/lib/pmTypes';
+import { parseNativeToolStepLimit } from '@/lib/agentRuntime';
 
 const FALLBACK_DEFAULT_MODELS: Record<AgentModelProvider, string> = {
   anthropic: 'claude-opus-4-8',
@@ -40,6 +41,7 @@ export interface CustomAgentFormData {
   model: string;
   reasoning_effort: AgentReasoningEffort | '';
   service_tier: AgentServiceTier | '';
+  max_tool_steps: string;
   system_prompt: string;
   instruction_preamble: string;
   instruction_skills: string[];
@@ -68,6 +70,7 @@ export function createDefaultCustomAgentForm(): CustomAgentFormData {
     model: defaultModelForAgentProvider('openai'),
     reasoning_effort: '',
     service_tier: '',
+    max_tool_steps: '',
     system_prompt: '',
     instruction_preamble: '',
     instruction_skills: [],
@@ -109,13 +112,20 @@ export function applyCustomAgentDraftToForm(
 }
 
 function buildExecutionConfigPayload(form: CustomAgentFormData): AgentExecutionConfig | undefined {
-  if (form.runtime_kind !== 'codex') return undefined;
   const config: AgentExecutionConfig = {};
-  if (form.reasoning_effort) {
-    config.reasoning_effort = form.reasoning_effort;
+  if (form.runtime_kind === 'codex') {
+    if (form.reasoning_effort) {
+      config.reasoning_effort = form.reasoning_effort;
+    }
+    if (form.provider === 'openai' && form.service_tier) {
+      config.service_tier = form.service_tier;
+    }
   }
-  if (form.provider === 'openai' && form.service_tier) {
-    config.service_tier = form.service_tier;
+  if (form.runtime_kind === 'native_sdk') {
+    const maxToolSteps = parseNativeToolStepLimit(form.max_tool_steps);
+    if (maxToolSteps !== undefined) {
+      config.max_tool_steps = maxToolSteps;
+    }
   }
   return Object.keys(config).length > 0 ? config : undefined;
 }

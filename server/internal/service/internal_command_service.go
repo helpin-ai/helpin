@@ -19,9 +19,14 @@ import (
 )
 
 type InternalCommandDefinition struct {
-	Name                   string
-	Module                 string
-	Mutating               bool
+	Name     string
+	Module   string
+	Mutating bool
+
+	// SupportedTargetTypes is legacy context metadata. It records the target
+	// types from which a command may derive defaults, but it is not an
+	// authorization boundary. Tool allowlists, actor permissions, workspace
+	// scoping, and command-specific validation govern execution.
 	SupportedTargetTypes   []string
 	RequiredPermissionsAll []authorization.Permission
 	Tool                   *commandtools.RuntimeToolMetadata
@@ -355,18 +360,6 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 	def, ok := s.Definition(name)
 	if !ok {
 		return nil, fmt.Errorf("unknown command %q", name)
-	}
-	if len(def.SupportedTargetTypes) > 0 && meta.TargetType != "" {
-		supported := false
-		for _, targetType := range def.SupportedTargetTypes {
-			if targetType == meta.TargetType {
-				supported = true
-				break
-			}
-		}
-		if !supported {
-			return nil, fmt.Errorf("command %q does not support target type %q", name, meta.TargetType)
-		}
 	}
 	if err := s.authorizeCommandActor(meta, def); err != nil {
 		return nil, err

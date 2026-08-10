@@ -7,6 +7,7 @@ import type {
 } from '../types';
 import type {
   Agent,
+  AgentFleetResponse,
   AgentAnalyticsResponse,
   AgentTemplate,
   AgentVersion,
@@ -145,6 +146,9 @@ export const automationService = {
 
   listAgents: (workspaceId: string) =>
     api.get<Agent[]>(`/automation/agents${qs(workspaceId)}`),
+
+  getAgentFleet: (workspaceId: string, signal?: AbortSignal) =>
+    api.get<AgentFleetResponse>(`/automation/agent-fleet${qs(workspaceId)}`, { signal }),
 
   listAgentTemplates: (workspaceId: string) =>
     api.get<AgentTemplate[]>(`/automation/agent-templates${qs(workspaceId)}`),

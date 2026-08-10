@@ -19,6 +19,14 @@ export const queryKeys = {
     workspace: (wsId: string) => ['billing', 'workspace', wsId] as const,
   },
 
+  dock: {
+    root: (wsId: string) => ['dock', wsId] as const,
+    runs: (wsId: string) => ['dock', wsId, 'runs'] as const,
+    chats: (wsId: string) => ['dock', wsId, 'chats'] as const,
+    run: (wsId: string, runId: string) => ['dock', wsId, 'runs', runId] as const,
+    chat: (wsId: string, chatId: string) => ['dock', wsId, 'chats', chatId] as const,
+  },
+
   workspaces: {
     all: (orgId?: string) => ['workspaces', { orgId }] as const,
     bySlug: (slug: string) => ['workspaces', 'slug', slug] as const,
@@ -50,6 +58,7 @@ export const queryKeys = {
     agentTemplate: (wsId: string, id: string) => ['automation', wsId, 'agent-templates', id] as const,
     agentsRoot: (wsId: string) => ['automation', wsId, 'agents'] as const,
     agents: (wsId: string) => ['automation', wsId, 'agents'] as const,
+    agentFleet: (wsId: string) => ['automation', wsId, 'agents', 'fleet'] as const,
     agent: (wsId: string, id: string) => ['automation', wsId, 'agents', id] as const,
     agentUsage: (wsId: string, id: string) => ['automation', wsId, 'agents', id, 'usage'] as const,
     runsRoot: (wsId: string) => ['automation', wsId, 'runs'] as const,
@@ -102,6 +111,8 @@ export const queryKeys = {
     sprintTasks: (wsId: string, sprintId: string) => ['pm', wsId, 'sprints', sprintId, 'tasks'] as const,
     sprintPreviewTasksRoot: (wsId: string) => ['pm', wsId, 'sprints', 'previewTasks'] as const,
     sprintPreviewTasks: (wsId: string, sprintId: string) => ['pm', wsId, 'sprints', 'previewTasks', sprintId] as const,
+    sprintBacklogTasksRoot: (wsId: string) => ['pm', wsId, 'sprints', 'backlogTasks'] as const,
+    sprintBacklogTasks: (wsId: string, teamId?: string) => ['pm', wsId, 'sprints', 'backlogTasks', teamId] as const,
 
     taskAssociations: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'associations'] as const,
     taskRelationships: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'relationships'] as const,
