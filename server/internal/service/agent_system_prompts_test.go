@@ -8,6 +8,30 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
+func TestManagedDocumentPromptsRequireArtifactInsertionTool(t *testing.T) {
+	documentationPrompt := defaultSystemPromptForPreset(model.AgentPresetDocumentationAgent)
+	if documentationPrompt == nil {
+		t.Fatal("expected documentation prompt")
+	}
+	prompts := map[string]string{
+		"ask agent":           askAgentSystemPrompt(),
+		"documentation agent": *documentationPrompt,
+	}
+	for name, prompt := range prompts {
+		for _, required := range []string{
+			"Required document artifact embedding policy",
+			"write_document_content does not embed",
+			"call insert_document_artifact",
+			"Use artifact_id, not artifact_ref",
+			"Do not claim an artifact is embedded until insert_document_artifact succeeds",
+		} {
+			if !strings.Contains(prompt, required) {
+				t.Fatalf("%s prompt missing %q:\n%s", name, required, prompt)
+			}
+		}
+	}
+}
+
 func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testing.T) {
 	prompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
 	if prompt == nil {

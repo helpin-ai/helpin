@@ -777,7 +777,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.write_document_content",
 		Alias:       "write_document_content",
 		Category:    "Docs",
-		Description: "Write content to the document identified by document_id, including from a workspace-targeted Dock run. Accepts either structured document JSON or a markdown string, which will be auto-converted.",
+		Description: "Write text or structured content to the document identified by document_id, including from a workspace-targeted Dock run. Markdown is auto-converted. This tool does not embed private run artifacts: after writing the document, call insert_document_artifact with the artifact_id returned by browser_screenshot or browser_record.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -910,7 +910,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.insert_document_artifact",
 		Alias:       "insert_document_artifact",
 		Category:    "Docs",
-		Description: "Insert a supported private run artifact into a Helpin Docs document. Helpin derives the correct document block from the trusted artifact record; never provide an artifact type, storage URL, or content type.",
+		Description: "Insert a supported private run artifact as an authenticated image or video block in a Helpin Docs document. Use the exact artifact_id returned by browser_screenshot or browser_record. A filename, artifact_ref, URL, or markdown link written with write_document_content is text only and is not an embed. Helpin derives the block from the trusted artifact record; never provide an artifact type, storage URL, or content type.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

@@ -231,8 +231,10 @@ func TestPMToolCatalogContracts(t *testing.T) {
 func TestInsertDocumentArtifactCatalogContract(t *testing.T) {
 	catalog := ListToolCatalog()
 	toolsByName := make(map[string]any, len(catalog.Tools))
+	descriptionsByName := make(map[string]string, len(catalog.Tools))
 	for _, tool := range catalog.Tools {
 		toolsByName[tool.Name] = tool.InputSchema
+		descriptionsByName[tool.Name] = tool.Description
 	}
 	schema := requireCatalogSchema(t, toolsByName, "insert_document_artifact")
 	assertSchemaFields(t, "insert_document_artifact", schema, []string{"document_id", "artifact_id", "description", "after_block_id", "caption"})
@@ -240,6 +242,17 @@ func TestInsertDocumentArtifactCatalogContract(t *testing.T) {
 	assertClosedObjectSchemas(t, schema, "insert_document_artifact")
 	if _, ok := toolsByName["insert_document_image"]; !ok {
 		t.Fatal("compatibility insert_document_image alias is missing")
+	}
+	for toolName, required := range map[string][]string{
+		"write_document_content":   {"does not embed private run artifacts", "call insert_document_artifact"},
+		"insert_document_artifact": {"authenticated image or video block", "artifact_id", "text only"},
+		"browser_record":           {"removes idle agent-reasoning gaps", "call insert_document_artifact", "does not embed the video"},
+	} {
+		for _, snippet := range required {
+			if !strings.Contains(descriptionsByName[toolName], snippet) {
+				t.Fatalf("%s description missing %q: %s", toolName, snippet, descriptionsByName[toolName])
+			}
+		}
 	}
 }
 

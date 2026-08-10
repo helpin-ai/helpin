@@ -69,7 +69,7 @@
     },
     {
       "name": "browser_record",
-      "description": "Start or stop a bounded Kernel replay of the current private browser session. Stopping persists the MP4 as a durable private workspace artifact without returning video bytes or provider URLs to the model.",
+      "description": "Start or stop a bounded Kernel replay of the current private browser session. Stopping removes idle agent-reasoning gaps when possible and persists one MP4 as a durable private workspace artifact without returning video bytes or provider URLs to the model. To embed it in a Helpin document, call insert_document_artifact with the returned artifact_id; writing its filename or artifact_ref into document content does not embed the video.",
       "category": "Browser",
       "input_schema": {
         "type": "object",

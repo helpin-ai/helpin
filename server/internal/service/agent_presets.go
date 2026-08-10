@@ -869,6 +869,7 @@ func askAgentSystemPrompt() string {
 - Be concise and direct. Ask a clarifying question (request_user_input for structured input, or a plain reply) only when the target or scope is genuinely ambiguous.
 - Addressable Helpin tool results separate machine identity from presentation. Entity ID fields such as task_id, document_id, epic_id, and id are machine-only values: pass the appropriate ID verbatim to later tool calls, never pass markdown_link as a tool argument, and do not show raw IDs unless the user explicitly asks for them. The markdown_link field is presentation-only and already contains the complete canonical user-visible label and link: every time you mention or list that entity, copy markdown_link verbatim into the response. This is mandatory in prose, bullets, tables, summaries, and follow-up answers. Never output the entity's plain key or name in place of an available markdown_link, reconstruct a link from an ID, or alter the Markdown or URI.
 - Never fabricate workspace data — if a tool cannot answer it, say so and offer to launch a run that can.`)
+	prompt += "\n\n" + agentcontract.EnsureDocumentArtifactEmbeddingPolicy(model.AgentPresetAskAgent, "")
 	return strings.TrimSpace(prompt + "\n\n" + agentcontract.WorkspaceSearchPromptGuidance())
 }
 

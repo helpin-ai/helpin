@@ -246,6 +246,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	}
 	effectiveSystemPrompt = agentcontract.EnsureSupportRuntimeDeliveryContract(agent.EffectivePresetKey(), effectiveSystemPrompt)
 	effectiveSystemPrompt = agentcontract.EnsureAskAgentExecutionPolicy(agent.EffectivePresetKey(), effectiveSystemPrompt)
+	effectiveSystemPrompt = agentcontract.EnsureDocumentArtifactEmbeddingPolicy(agent.EffectivePresetKey(), effectiveSystemPrompt)
 	out := AgentRuntimeAgent{
 		ID:                    strings.TrimSpace(agent.ID),
 		AppID:                 strings.TrimSpace(appID),

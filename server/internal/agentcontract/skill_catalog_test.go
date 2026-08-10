@@ -193,6 +193,32 @@ func TestEnsureSupportRuntimeDeliveryContractProtectsWorkspacePromptCopies(t *te
 	}
 }
 
+func TestEnsureDocumentArtifactEmbeddingPolicyProtectsManagedPromptCopies(t *testing.T) {
+	staleSnapshot := "You create useful workspace documents."
+	for _, presetKey := range []string{model.AgentPresetAskAgent, model.AgentPresetDocumentationAgent} {
+		prompt := EnsureDocumentArtifactEmbeddingPolicy(presetKey, staleSnapshot)
+		for _, required := range []string{
+			staleSnapshot,
+			"Required document artifact embedding policy",
+			"write_document_content does not embed",
+			"call insert_document_artifact",
+			"exact artifact_id returned by the browser tool",
+			"Only insert_document_artifact creates the authenticated image or video block",
+			"Do not claim an artifact is embedded until insert_document_artifact succeeds",
+		} {
+			if !strings.Contains(prompt, required) {
+				t.Fatalf("%s artifact embedding prompt missing %q:\n%s", presetKey, required, prompt)
+			}
+		}
+		if duplicated := EnsureDocumentArtifactEmbeddingPolicy(presetKey, prompt); duplicated != prompt {
+			t.Fatalf("%s artifact embedding policy should be idempotent", presetKey)
+		}
+	}
+	if got := EnsureDocumentArtifactEmbeddingPolicy(model.AgentPresetMarketer, staleSnapshot); got != staleSnapshot {
+		t.Fatalf("unmanaged prompt changed: %q", got)
+	}
+}
+
 func TestDocumentationSkillsDeclareExpectedGuidance(t *testing.T) {
 	cases := map[string][]string{
 		"public_help_doc_writing": {

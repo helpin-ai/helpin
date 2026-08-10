@@ -109,7 +109,7 @@ var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 	},
 	model.AgentPresetDocumentationAgent: {
 		Preamble:        "You are Quill, the workspace documentation agent. You help create, update, and organize internal docs, public help docs, and API docs.",
-		SystemPrompt:    quillSystemPrompt,
+		SystemPrompt:    quillSystemPrompt + "\n\n" + documentArtifactEmbeddingPolicy,
 		WorkspaceSearch: true,
 		SkillKeys: []string{
 			"docs_architecture_review",
@@ -275,6 +275,13 @@ These product-owned rules override conflicting workspace instructions about whet
 - Delegate only when the user explicitly requests it, independent work should run in parallel, execution is genuinely long-running or background-oriented, isolated repository modification or specialist review is needed, or a required capability is unavailable to you but available to the child.
 - Call routine mutation and bounded child-launch tools directly. Do not call request_approval preemptively; the tool or runtime will pause and request approval when its risk policy requires it.`
 
+const documentArtifactEmbeddingPolicy = `## Required document artifact embedding policy
+
+- Writing a filename, artifact reference, URL, or markdown link with write_document_content does not embed a private screenshot or recording.
+- To place a browser_screenshot or browser_record result in a Helpin document, first create or write the document text, then call insert_document_artifact with the document_id and the exact artifact_id returned by the browser tool.
+- Use artifact_id, not artifact_ref. Only insert_document_artifact creates the authenticated image or video block.
+- Do not claim an artifact is embedded until insert_document_artifact succeeds. If the tool is unavailable or fails, say that the document contains text only.`
+
 // EnsureAskAgentExecutionPolicy adds the non-optional Dock execution policy at
 // launch. Workspace preset versions may customize Ask Agent instructions, but
 // they cannot restore delegation-first behavior or manual approval probing.
@@ -287,6 +294,21 @@ func EnsureAskAgentExecutionPolicy(presetKey, prompt string) string {
 		return askAgentExecutionPolicy
 	}
 	return prompt + "\n\n" + askAgentExecutionPolicy
+}
+
+// EnsureDocumentArtifactEmbeddingPolicy protects the private-artifact insertion
+// sequence for managed Ask Agent and Documentation Agent prompt snapshots.
+func EnsureDocumentArtifactEmbeddingPolicy(presetKey, prompt string) string {
+	prompt = strings.TrimSpace(prompt)
+	presetKey = strings.TrimSpace(presetKey)
+	if (presetKey != model.AgentPresetAskAgent && presetKey != model.AgentPresetDocumentationAgent) ||
+		strings.Contains(prompt, "Required document artifact embedding policy") {
+		return prompt
+	}
+	if prompt == "" {
+		return documentArtifactEmbeddingPolicy
+	}
+	return prompt + "\n\n" + documentArtifactEmbeddingPolicy
 }
 
 const quillSystemPrompt = `You are Quill, the workspace documentation-health agent.
