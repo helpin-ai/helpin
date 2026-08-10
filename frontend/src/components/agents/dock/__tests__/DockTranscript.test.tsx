@@ -3,7 +3,11 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { CodingSessionStreamState, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
+import type {
+  CodingSessionLiveTurnSegment,
+  CodingSessionStreamState,
+  CodingSessionTranscriptMessage,
+} from '@/lib/pmTypes';
 import { useAuthStore } from '@/stores/authStore';
 import { DockTranscript } from '../DockTranscript';
 
@@ -82,6 +86,38 @@ function streamWithMessages(messages: CodingSessionTranscriptMessage[]): CodingS
   };
 }
 
+function toolTurn(
+  id: string,
+  toolName: string,
+  durationMs: number,
+  status: 'running' | 'completed' | 'failed' = 'completed',
+): CodingSessionLiveTurnSegment {
+  return {
+    segment_id: id,
+    kind: 'tool_call',
+    tool_call: {
+      tool_call_id: id,
+      tool_name: toolName,
+      args_text: '{}',
+      status,
+      duration_ms: durationMs,
+    },
+  };
+}
+
+function assistantTurn(id: string, content: string): CodingSessionLiveTurnSegment {
+  return {
+    segment_id: id,
+    kind: 'assistant_message',
+    assistant_message: {
+      message_id: id,
+      content,
+      status: 'completed',
+      tool_calls: [],
+    },
+  };
+}
+
 describe('DockTranscript', () => {
   it('never collapses the latest assistant message', () => {
     const longOlderMessage = `Older response ${'old '.repeat(180)}`;
@@ -125,5 +161,29 @@ describe('DockTranscript', () => {
       avatarBackgroundColor: '#fbbf24',
       fallbackSeed: 'Alice Johnson',
     });
+  });
+
+  it('groups adjacent successful calls, sums duration, and keeps failures separate', () => {
+    const message = {
+      ...assistantMessage('assistant-tools', '', 1),
+      turn_segments: [
+        toolTurn('tool-1', 'browser_act', 1_200),
+        toolTurn('tool-2', 'browser_act', 800),
+        toolTurn('tool-failed', 'browser_act', 400, 'failed'),
+        assistantTurn('assistant-break', 'I found the next step.'),
+        toolTurn('tool-3', 'browser_act', 500),
+        toolTurn('tool-4', 'browser_open', 300),
+      ],
+    };
+
+    act(() => {
+      root.render(<DockTranscript stream={streamWithMessages([message])} active={false} />);
+    });
+
+    expect(container.textContent).toContain('Browser Act x 2');
+    expect(container.textContent).toContain('2s');
+    expect(container.textContent?.match(/Browser Act/g)).toHaveLength(3);
+    expect(container.textContent).not.toContain('Browser Act x 3');
+    expect(container.textContent).toContain('Browser Open');
   });
 });

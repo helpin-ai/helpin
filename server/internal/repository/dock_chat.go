@@ -45,17 +45,25 @@ func (r *DockChatRepository) GetByID(ctx context.Context, workspaceID, id string
 }
 
 // ListByWorkspaceUser returns the user's unarchived chats, most recently active first.
-func (r *DockChatRepository) ListByWorkspaceUser(ctx context.Context, workspaceID, userID string, limit int) ([]model.DockChat, error) {
+func (r *DockChatRepository) ListByWorkspaceUser(ctx context.Context, workspaceID, userID string, limit int, before *time.Time, beforeID string) ([]model.DockChat, error) {
 	if r == nil || r.db == nil {
 		return nil, gorm.ErrInvalidDB
 	}
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND user_id = ? AND archived_at IS NULL", workspaceID, userID)
+	if before != nil {
+		query = query.Where(
+			"((COALESCE(last_message_at, created_at) < ?) OR (COALESCE(last_message_at, created_at) = ? AND id < ?))",
+			*before, *before, beforeID,
+		)
+	}
 	var chats []model.DockChat
-	err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND user_id = ? AND archived_at IS NULL", workspaceID, userID).
+	err := query.
 		Order("COALESCE(last_message_at, created_at) DESC").
+		Order("id DESC").
 		Limit(limit).
 		Find(&chats).Error
 	if err != nil {

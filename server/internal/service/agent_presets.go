@@ -728,8 +728,8 @@ func askAgentPresetTools() []string {
 		"request_user_input", "request_approval", "update_plan",
 		// Web research.
 		"web_search_brave", "web_search_exa", "fetch_url", "crawl_url",
-		// Authenticated browser inspection and private screenshot artifacts.
-		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot",
+		// Authenticated browser inspection and private screenshot/video artifacts.
+		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
 		// Workspace / PM reads.
 		"list_workspace_teams", "list_team_workflows_with_stages",
 		"search_workspace", "list_tasks", "get_task_context",
@@ -738,7 +738,7 @@ func askAgentPresetTools() []string {
 		"read_document", "get_document_blocks", "search_documents",
 		"create_space", "create_collection", "create_document", "update_space",
 		"update_collection", "move_document", "write_document_content",
-		"update_document_block", "insert_document_image", "link_document_to_object",
+		"update_document_block", "insert_document_artifact", "link_document_to_object",
 		"publish_document_change_proposal", "publish_ai_section_candidate",
 		// CRM reads and approval-gated writes.
 		"list_deals", "list_contacts", "list_buyer_signals", "add_deal_note",
@@ -816,6 +816,17 @@ func enforceManagedAskAgentCapabilities(preset model.AgentPresetDefinition) mode
 	return preset
 }
 
+// enforceManagedDocumentationAgentCapabilities keeps capabilities required by
+// Quill's managed prompt available when a workspace is pinned to a preset
+// snapshot created before those capabilities shipped.
+func enforceManagedDocumentationAgentCapabilities(preset model.AgentPresetDefinition) model.AgentPresetDefinition {
+	if normalizePresetKey(preset.Key) != model.AgentPresetDocumentationAgent {
+		return preset
+	}
+	preset.AllowedTools = appendPresetTools(preset.AllowedTools, []string{"insert_document_artifact"})
+	return preset
+}
+
 func appendPresetTools(base []string, additions ...[]string) []string {
 	tools := slices.Clone(base)
 	for _, addition := range additions {
@@ -869,6 +880,7 @@ func askAgentSystemPrompt() string {
 - Be concise and direct. Ask a clarifying question (request_user_input for structured input, or a plain reply) only when the target or scope is genuinely ambiguous.
 - Addressable Helpin tool results separate machine identity from presentation. Entity ID fields such as task_id, document_id, epic_id, and id are machine-only values: pass the appropriate ID verbatim to later tool calls, never pass markdown_link as a tool argument, and do not show raw IDs unless the user explicitly asks for them. The markdown_link field is presentation-only and already contains the complete canonical user-visible label and link: every time you mention or list that entity, copy markdown_link verbatim into the response. This is mandatory in prose, bullets, tables, summaries, and follow-up answers. Never output the entity's plain key or name in place of an available markdown_link, reconstruct a link from an ID, or alter the Markdown or URI.
 - Never fabricate workspace data — if a tool cannot answer it, say so and offer to launch a run that can.`)
+	prompt += "\n\n" + agentcontract.EnsureDocumentArtifactEmbeddingPolicy(model.AgentPresetAskAgent, "")
 	return strings.TrimSpace(prompt + "\n\n" + agentcontract.WorkspaceSearchPromptGuidance())
 }
 

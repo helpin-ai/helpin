@@ -14,6 +14,7 @@ const ADDRESSABLE_BLOCK_TYPES = new Set([
   'resizableImage',
   'image',
   'videoEmbed',
+  'artifactVideo',
   'htmlBlock',
   'aiSection',
   'citationBlock',

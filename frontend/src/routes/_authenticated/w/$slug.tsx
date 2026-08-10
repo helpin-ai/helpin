@@ -250,10 +250,7 @@ function RouteAwareHeader() {
   return <Header />
 }
 
-/** Hide the Ask Agents dock on support routes — support has its own assistant flow. */
 function RouteAwareAskAgentsDock() {
-  const location = useLocation()
-  if (isWorkspaceSupportRoute(location.pathname)) return null
   return <AskAgentsDock />
 }
 

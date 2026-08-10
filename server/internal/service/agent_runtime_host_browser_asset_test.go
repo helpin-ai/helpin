@@ -92,6 +92,54 @@ func TestAgentRuntimeHostUploadBrowserAssetPersistsMappedRunArtifact(t *testing.
 	}
 }
 
+func TestAgentRuntimeHostUploadBrowserRecordingPersistsPrivateMP4(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:agent-runtime-browser-recording?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	createAgentRuntimeBrowserAssetTables(t, db)
+	externalRuntime := agentRuntimeName
+	externalRuntimeID := "runtime-run-recording"
+	run := &model.AgentRun{
+		ID: "77777777-7777-7777-7777-777777777777", WorkspaceID: "88888888-8888-8888-8888-888888888888",
+		AgentID: "99999999-9999-9999-9999-999999999999", TargetType: "workspace", TargetID: "88888888-8888-8888-8888-888888888888",
+		RuntimeKind: "native_sdk", Status: model.AgentRunStatusRunning, ExternalRuntime: &externalRuntime, ExternalRuntimeID: &externalRuntimeID,
+	}
+	if err := db.Exec(`INSERT INTO agent_runs (id, workspace_id, external_runtime, external_runtime_id) VALUES (?, ?, ?, ?)`, run.ID, run.WorkspaceID, externalRuntime, externalRuntimeID).Error; err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	store := &fakeBrowserAssetStore{}
+	host := NewAgentRuntimeHostService("helpin", repository.NewAgentRunRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetBrowserAssetStore(repository.NewAgentRunArtifactRepository(db), store)
+	mp4 := []byte("\x00\x00\x00\x18ftypisomfixture")
+	asset, err := host.UploadBrowserAsset(context.Background(), AgentRuntimeBrowserAssetUpload{
+		AppID: "helpin", RuntimeRunID: externalRuntimeID, ArtifactType: model.AgentRunArtifactTypeBrowserRecording,
+		Metadata: json.RawMessage(`{"max_duration_seconds":180,"record_audio":false}`),
+		FileName: "Login flow.mp4", ContentType: "video/mp4", Size: int64(len(mp4)), Body: bytes.NewReader(mp4),
+	})
+	if err != nil {
+		t.Fatalf("UploadBrowserAsset: %v", err)
+	}
+	if asset.ContentType != "video/mp4" || asset.FileName != "Login flow.mp4" || asset.Visibility != "private" {
+		t.Fatalf("unexpected recording asset: %#v", asset)
+	}
+	artifacts, err := repository.NewAgentRunArtifactRepository(db).ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil || len(artifacts) != 1 {
+		t.Fatalf("artifacts=%#v err=%v", artifacts, err)
+	}
+	artifact := artifacts[0]
+	if artifact.ArtifactType != model.AgentRunArtifactTypeBrowserRecording || artifact.Format != "mp4" || artifact.StorageMode != "object" || artifact.ObjectKey == nil {
+		t.Fatalf("unexpected artifact: %#v", artifact)
+	}
+	if strings.Contains(string(artifact.Metadata), "replay_view_url") || !strings.Contains(string(artifact.Metadata), `"source":"kernel"`) {
+		t.Fatalf("unexpected recording metadata: %s", artifact.Metadata)
+	}
+	content, err := host.BrowserArtifactContentURL(context.Background(), run.WorkspaceID, asset.ArtifactID)
+	if err != nil || !strings.Contains(content.URL, "signed=true") {
+		t.Fatalf("private content URL=%#v err=%v", content, err)
+	}
+}
+
 func TestAgentRuntimeHostUploadBrowserAssetRejectsUnsupportedArtifactType(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:agent-runtime-browser-asset-mismatch?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

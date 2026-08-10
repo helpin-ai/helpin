@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { File01Icon, FileCodeIcon, CheckmarkCircle02Icon, GitPullRequestIcon, BotIcon, CheckListIcon, SecurityCheckIcon, Image01Icon } from '@/lib/icons';
+import { File01Icon, FileCodeIcon, CheckmarkCircle02Icon, GitPullRequestIcon, BotIcon, CheckListIcon, SecurityCheckIcon, Image01Icon, PlayCircleIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { AgentRunArtifact } from '@/lib/pmTypes';
@@ -31,6 +31,7 @@ const ARTIFACT_ICONS: Record<string, React.ReactNode> = {
   review_findings: <SecurityCheckIcon className="h-3.5 w-3.5" />,
   review_decision: <SecurityCheckIcon className="h-3.5 w-3.5" />,
   browser_screenshot: <Image01Icon className="h-3.5 w-3.5" />,
+  browser_recording: <PlayCircleIcon className="h-3.5 w-3.5" />,
 };
 
 interface Props {
@@ -45,28 +46,27 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
   const reviewFindings = artifact.artifact_type === 'review_findings' ? parseReviewFindingsArtifact(artifact.inline_content) : null;
   const reviewDecision = artifact.artifact_type === 'review_decision' ? parseReviewDecisionArtifact(artifact.inline_content) : null;
   const linkedDecision = artifact.artifact_type === 'review_findings' ? parseReviewDecisionArtifact(reviewDecisionArtifact?.inline_content) : null;
-  const [screenshotURL, setScreenshotURL] = useState<string | null>(null);
-  const [screenshotError, setScreenshotError] = useState(false);
+  const isBrowserMedia = artifact.artifact_type === 'browser_screenshot' || artifact.artifact_type === 'browser_recording';
+  const mediaKey = isBrowserMedia ? `${artifact.workspace_id}/${artifact.id}` : '';
+  const [mediaState, setMediaState] = useState<{ key: string; url: string | null; error: boolean }>({ key: '', url: null, error: false });
+  const mediaURL = mediaState.key === mediaKey ? mediaState.url : null;
+  const mediaError = mediaState.key === mediaKey && mediaState.error;
 
   useEffect(() => {
     let cancelled = false;
-    if (artifact.artifact_type !== 'browser_screenshot') {
-      setScreenshotURL(null);
-      setScreenshotError(false);
+    if (!isBrowserMedia) {
       return () => { cancelled = true; };
     }
-    setScreenshotURL(null);
-    setScreenshotError(false);
     void automationService.getArtifactContentURL(artifact.workspace_id, artifact.id).then((response) => {
       if (cancelled) return;
       if (response.error || !response.data?.url) {
-        setScreenshotError(true);
+        setMediaState({ key: mediaKey, url: null, error: true });
         return;
       }
-      setScreenshotURL(response.data.url);
+      setMediaState({ key: mediaKey, url: response.data.url, error: false });
     });
     return () => { cancelled = true; };
-  }, [artifact.artifact_type, artifact.id, artifact.workspace_id]);
+  }, [artifact.id, artifact.workspace_id, isBrowserMedia, mediaKey]);
 
   return (
     <div className="min-w-0 overflow-hidden rounded border border-border/60 bg-muted/30 p-2">
@@ -76,18 +76,34 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
         <span className="text-muted-foreground">({artifact.format})</span>
       </div>
       {artifact.artifact_type === 'browser_screenshot' ? (
-        screenshotURL ? (
-          <a href={screenshotURL} target="_blank" rel="noreferrer" className="block overflow-hidden rounded border border-border/60 bg-background">
+        mediaURL ? (
+          <a href={mediaURL} target="_blank" rel="noreferrer" className="block overflow-hidden rounded border border-border/60 bg-background">
             <img
-              src={screenshotURL}
+              src={mediaURL}
               alt={typeof artifact.metadata?.file_name === 'string' ? artifact.metadata.file_name : 'Browser screenshot'}
               className="max-h-72 w-full object-contain"
-              onError={() => { setScreenshotURL(null); setScreenshotError(true); }}
+              onError={() => { setMediaState({ key: mediaKey, url: null, error: true }); }}
             />
           </a>
         ) : (
           <div className="rounded border border-border/60 bg-background px-2 py-4 text-center text-[11px] text-muted-foreground">
-            {screenshotError ? 'Screenshot is unavailable' : 'Loading screenshot…'}
+            {mediaError ? 'Screenshot is unavailable' : 'Loading screenshot…'}
+          </div>
+        )
+      ) : artifact.artifact_type === 'browser_recording' ? (
+        mediaURL ? (
+          <video
+            src={mediaURL}
+            controls
+            preload="metadata"
+            className="max-h-96 w-full rounded border border-border/60 bg-black"
+            onError={() => { setMediaState({ key: mediaKey, url: null, error: true }); }}
+          >
+            Browser recording playback is not supported by this browser.
+          </video>
+        ) : (
+          <div className="rounded border border-border/60 bg-background px-2 py-4 text-center text-[11px] text-muted-foreground">
+            {mediaError ? 'Recording is unavailable' : 'Loading recording…'}
           </div>
         )
       ) : runPlan ? (

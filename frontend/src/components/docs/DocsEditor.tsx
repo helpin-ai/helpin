@@ -42,6 +42,7 @@ import { BlockIdExtension } from './BlockIdExtension'
 import { SlashMenu } from './SlashMenu'
 import { CalloutExtension } from './CalloutExtension'
 import { VideoEmbedExtension } from './VideoEmbedExtension'
+import { ArtifactVideoExtension } from './ArtifactVideoExtension'
 import { HtmlBlockExtension } from './HtmlBlockExtension'
 import { ExcalidrawExtension } from './ExcalidrawExtension'
 import { CodeBlockExtension } from '@/components/editor/CodeBlockExtension'
@@ -1381,6 +1382,7 @@ export function DocsEditor({
       SlashMenuExtension,
       CalloutExtension,
       VideoEmbedExtension,
+      ArtifactVideoExtension.configure({ workspaceId }),
       HtmlBlockExtension,
       ExcalidrawExtension.configure({
         onImmediateSave: saveImmediately,

@@ -48,3 +48,9 @@ type DockChatDetail struct {
 	PlanIDs []string                `json:"plan_ids"`
 	Plans   []CommandBarPlanSummary `json:"plans,omitempty"`
 }
+
+// DockChatListResponse is one stable cursor page of the user's conversations.
+type DockChatListResponse struct {
+	Chats      []DockChat `json:"chats"`
+	NextCursor *string    `json:"next_cursor,omitempty"`
+}

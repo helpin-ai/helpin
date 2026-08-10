@@ -7,6 +7,7 @@ import {
   TranscriptSegmentView,
 } from '@/components/agents/transcript';
 import { useAuthStore } from '@/stores/authStore';
+import { groupAdjacentDockTools } from './dockTranscriptGrouping';
 const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'user'] as const);
 
 /** True when the stream has at least one renderable assistant/tool segment. */
@@ -23,7 +24,8 @@ export function dockTranscriptHasContent(
  * one-shot agent's result is readable in the bar without opening the full
  * session sheet. The main chat also shows user turns; embedded execution
  * strips remain assistant/tool-only. All shared segments stay flat and
- * non-expandable.
+ * Tool-call rows remain permanently concise; long prose and reasoning can
+ * still disclose when the surrounding surface permits it.
  */
 export function DockTranscript({
   stream,
@@ -46,15 +48,17 @@ export function DockTranscript({
   });
   if (segments.length === 0) return null;
   const latestAssistantSegmentId = [...segments].reverse().find((segment) => segment.kind === 'assistant')?.id;
+  const entries = groupAdjacentDockTools(segments);
 
   return (
     <div className={cn('space-y-1.5', className)}>
-      {segments.map((segment) => (
+      {entries.map(({ key, segment, toolGroup }) => (
         <TranscriptSegmentView
-          key={segment.id}
+          key={key}
           segment={segment}
           options={{
             expandable: true,
+            toolGroup,
             collapseLongAssistantContent: segment.kind !== 'assistant' || segment.id !== latestAssistantSegmentId,
             fallbackUserLabel: 'You',
             resolveActor: user

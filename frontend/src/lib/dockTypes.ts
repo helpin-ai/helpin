@@ -1,4 +1,16 @@
-import type { AgentRun, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes'
+import type {
+  AgentIconKey,
+  AgentPresetKey,
+  AgentRun,
+  AgentRunMessage,
+  CodexAuthState,
+  CodingSession,
+  CodingSessionEventListResponse,
+  CodingSessionInteraction,
+  CommandBarPageContext,
+  CommandBarPlanSummary,
+  ResolveCodingSessionInteractionRequest,
+} from '@/lib/pmTypes'
 
 /** One user-owned dock conversation, backed by an agent-runtime chat-mode run. */
 export interface DockChat {
@@ -20,6 +32,11 @@ export interface DockChatDetail {
   plans?: CommandBarPlanSummary[]
 }
 
+export interface DockChatListResponse {
+  chats: DockChat[]
+  next_cursor?: string | null
+}
+
 export interface SendDockChatMessageRequest {
   content: string
   page_context?: CommandBarPageContext
@@ -28,6 +45,39 @@ export interface SendDockChatMessageRequest {
 export interface UpdateDockChatRequest {
   title?: string
   archived?: boolean
+}
+
+export type DockRunAttentionKind = 'input' | 'approval' | 'authentication'
+
+export interface DockAgentIdentity {
+  id: string
+  name: string
+  icon_key?: AgentIconKey
+  preset_key?: AgentPresetKey
+}
+
+export interface DockRunSummary {
+  run: AgentRun
+  agent: DockAgentIdentity
+  attention_kind?: DockRunAttentionKind
+  last_activity_at: string
+}
+
+export interface DockRunListResponse {
+  runs: DockRunSummary[]
+  attention_count: number
+}
+
+export interface DockRunAPI {
+  getSnapshot: (workspaceId: string, runId: string) => Promise<{ data: CodingSession | null; error: string | null }>
+  listEvents: (workspaceId: string, runId: string, after?: number) => Promise<{ data: CodingSessionEventListResponse | null; error: string | null }>
+  listInteractions: (workspaceId: string, runId: string) => Promise<{ data: { interactions: CodingSessionInteraction[] } | null; error: string | null }>
+  resolveInteraction: (workspaceId: string, runId: string, interactionId: string, payload: ResolveCodingSessionInteractionRequest) => Promise<{ data: CodingSessionInteraction | null; error: string | null }>
+  sendMessage: (workspaceId: string, runId: string, content: string) => Promise<{ data: AgentRunMessage | null; error: string | null }>
+  continueRun: (workspaceId: string, runId: string, content?: string) => Promise<{ data: AgentRun | null; error: string | null }>
+  cancelRun: (workspaceId: string, runId: string) => Promise<{ data: AgentRun | null; error: string | null }>
+  startAuth: (workspaceId: string, runId: string) => Promise<{ data: CodexAuthState | null; error: string | null }>
+  cancelAuth: (workspaceId: string, runId: string) => Promise<{ data: CodexAuthState | null; error: string | null }>
 }
 
 /**

@@ -40,7 +40,11 @@ const stuckPostRunThreshold = 2 * time.Minute
 const staleQueuedRunThreshold = 30 * time.Second
 const defaultSystemEpicPlannerName = "Atlas"
 
-var ErrAssignedAgentNotFound = errors.New("assigned agent not found")
+var (
+	ErrAssignedAgentNotFound = errors.New("assigned agent not found")
+	// ErrDockRunNotFound hides missing and non-owned runs behind one safe error.
+	ErrDockRunNotFound = errors.New("dock agent run not found")
+)
 
 const supportAutoTriggerType = "support.auto"
 
@@ -242,6 +246,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	}
 	effectiveSystemPrompt = agentcontract.EnsureSupportRuntimeDeliveryContract(agent.EffectivePresetKey(), effectiveSystemPrompt)
 	effectiveSystemPrompt = agentcontract.EnsureAskAgentExecutionPolicy(agent.EffectivePresetKey(), effectiveSystemPrompt)
+	effectiveSystemPrompt = agentcontract.EnsureDocumentArtifactEmbeddingPolicy(agent.EffectivePresetKey(), effectiveSystemPrompt)
 	out := AgentRuntimeAgent{
 		ID:                    strings.TrimSpace(agent.ID),
 		AppID:                 strings.TrimSpace(appID),
@@ -1033,6 +1038,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		return nil, fmt.Errorf("unsupported built-in preset %q", presetKey)
 	}
 	preset = enforceManagedAskAgentCapabilities(preset)
+	preset = enforceManagedDocumentationAgentCapabilities(preset)
 	if existing != nil {
 		changed := false
 		beforePresetKey := existing.PresetKey
@@ -3612,6 +3618,107 @@ func (s *AgentService) ListRecentRunsForActor(ctx context.Context, workspaceID, 
 	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
 	s.enrichRunTargets(ctx, workspaceID, normalized)
 	return normalized, nil
+}
+
+// ListDockRunsForActor returns the current user's live and recently-settled
+// non-chat runs, enriched for compact roster presentation.
+func (s *AgentService) ListDockRunsForActor(
+	ctx context.Context,
+	workspaceID string,
+	actorID string,
+	recentSince time.Time,
+) (*model.DockRunListResponse, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if strings.TrimSpace(actorID) == "" {
+		return &model.DockRunListResponse{Runs: []model.DockRunSummary{}}, nil
+	}
+	runs, err := s.runRepo.ListDockRunsForActor(ctx, workspaceID, actorID, recentSince, 100)
+	if err != nil {
+		return nil, err
+	}
+	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
+	s.enrichRunTargets(ctx, workspaceID, normalized)
+
+	agentIDs := make([]string, 0, len(normalized))
+	seenAgentIDs := make(map[string]struct{}, len(normalized))
+	for _, run := range normalized {
+		if _, seen := seenAgentIDs[run.AgentID]; seen {
+			continue
+		}
+		seenAgentIDs[run.AgentID] = struct{}{}
+		agentIDs = append(agentIDs, run.AgentID)
+	}
+	agents, err := s.agentRepo.ListByIDs(ctx, workspaceID, agentIDs)
+	if err != nil {
+		return nil, err
+	}
+	agentsByID := make(map[string]model.Agent, len(agents))
+	for _, agent := range agents {
+		agentsByID[agent.ID] = agent
+	}
+
+	response := &model.DockRunListResponse{Runs: make([]model.DockRunSummary, 0, len(normalized))}
+	for _, run := range normalized {
+		agent := agentsByID[run.AgentID]
+		agentID := run.AgentID
+		agentName := "Agent"
+		if agent.ID != "" {
+			agentID = agent.ID
+		}
+		if strings.TrimSpace(agent.Name) != "" {
+			agentName = agent.Name
+		}
+		attentionKind := dockRunAttentionKind(run)
+		if attentionKind != "" {
+			response.AttentionCount++
+		}
+		response.Runs = append(response.Runs, model.DockRunSummary{
+			Run: run,
+			Agent: model.DockAgentIdentity{
+				ID:        agentID,
+				Name:      agentName,
+				IconKey:   agent.IconKey,
+				PresetKey: agent.PresetKey,
+			},
+			AttentionKind:  attentionKind,
+			LastActivityAt: run.UpdatedAt,
+		})
+	}
+	return response, nil
+}
+
+// GetDockRunForActor returns a non-chat run only when it belongs to the actor.
+func (s *AgentService) GetDockRunForActor(ctx context.Context, workspaceID, actorID, runID string) (*model.AgentRun, error) {
+	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(actorID) == "" || strings.TrimSpace(runID) == "" {
+		return nil, ErrDockRunNotFound
+	}
+	run, err := s.runRepo.GetByID(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	if run == nil || run.TriggeredByUserID == nil || strings.TrimSpace(*run.TriggeredByUserID) != strings.TrimSpace(actorID) || run.DockChatID != nil {
+		return nil, ErrDockRunNotFound
+	}
+	model.NormalizeAgentRunPauseState(run)
+	return run, nil
+}
+
+func dockRunAttentionKind(run model.AgentRun) string {
+	if run.Status != model.AgentRunStatusPaused {
+		return ""
+	}
+	switch run.PauseReason {
+	case model.AgentRunPauseReasonHumanInput:
+		return "input"
+	case model.AgentRunPauseReasonHumanApproval:
+		return "approval"
+	case model.AgentRunPauseReasonAuthentication:
+		return "authentication"
+	default:
+		return ""
+	}
 }
 
 // GetAgentRun returns a single run.

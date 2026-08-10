@@ -1,10 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
@@ -15,6 +18,14 @@ import (
 // registerDocsRuntimeToolCommands registers command-backed variants of the
 // native docs search and product publish tools.
 func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
+	s.register(InternalCommandDefinition{
+		Name:                 "docs.insert_document_artifact",
+		Module:               "docs",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"workspace", "document", "support_coverage_gap"},
+		Tool:                 mustCommandToolMetadata("docs.insert_document_artifact"),
+		Execute:              s.executeInsertDocumentArtifact,
+	})
 	s.register(InternalCommandDefinition{
 		Name:                 "docs.insert_document_image",
 		Module:               "docs",
@@ -84,13 +95,23 @@ func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 	})
 }
 
+type insertDocumentArtifactRequest struct {
+	DocumentID   string  `json:"document_id"`
+	ArtifactID   string  `json:"artifact_id"`
+	AfterBlockID *string `json:"after_block_id,omitempty"`
+	Description  string  `json:"description"`
+	Caption      *string `json:"caption,omitempty"`
+}
+
+func (s *InternalCommandService) executeInsertDocumentArtifact(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	var req insertDocumentArtifactRequest
+	if err := decodeStrictInternalCommandInput(input, &req); err != nil {
+		return nil, fmt.Errorf("parse insert document artifact input: %w", err)
+	}
+	return s.insertDocumentArtifact(ctx, meta, req, "")
+}
+
 func (s *InternalCommandService) executeInsertDocumentImage(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-	if s.docsBlockService == nil {
-		return nil, fmt.Errorf("docs block service is not available")
-	}
-	if s.agentRunArtifactRepo == nil {
-		return nil, fmt.Errorf("agent run artifact repository is not available")
-	}
 	var req struct {
 		DocumentID   string  `json:"document_id"`
 		ArtifactID   string  `json:"artifact_id"`
@@ -98,14 +119,33 @@ func (s *InternalCommandService) executeInsertDocumentImage(ctx context.Context,
 		Alt          string  `json:"alt"`
 		Caption      *string `json:"caption,omitempty"`
 	}
-	if err := json.Unmarshal(input, &req); err != nil {
+	if err := decodeStrictInternalCommandInput(input, &req); err != nil {
 		return nil, fmt.Errorf("parse insert document image input: %w", err)
+	}
+	return s.insertDocumentArtifact(ctx, meta, insertDocumentArtifactRequest{
+		DocumentID: req.DocumentID, ArtifactID: req.ArtifactID, AfterBlockID: req.AfterBlockID,
+		Description: req.Alt, Caption: req.Caption,
+	}, model.AgentRunArtifactTypeBrowserScreenshot)
+}
+
+func (s *InternalCommandService) insertDocumentArtifact(ctx context.Context, meta model.InternalCommandContext, req insertDocumentArtifactRequest, requiredArtifactType string) (json.RawMessage, error) {
+	if s.docsBlockService == nil {
+		return nil, fmt.Errorf("docs block service is not available")
+	}
+	if s.agentRunArtifactRepo == nil {
+		return nil, fmt.Errorf("agent run artifact repository is not available")
 	}
 	req.DocumentID = strings.TrimSpace(req.DocumentID)
 	req.ArtifactID = strings.TrimSpace(req.ArtifactID)
-	req.Alt = strings.TrimSpace(req.Alt)
-	if req.DocumentID == "" || req.ArtifactID == "" || req.Alt == "" {
-		return nil, fmt.Errorf("document_id, artifact_id, and alt are required")
+	req.Description = strings.TrimSpace(req.Description)
+	if req.DocumentID == "" || req.ArtifactID == "" || req.Description == "" {
+		return nil, fmt.Errorf("document_id, artifact_id, and description are required")
+	}
+	if utf8.RuneCountInString(req.Description) > 1000 {
+		return nil, fmt.Errorf("description must be at most 1000 characters")
+	}
+	if req.Caption != nil && utf8.RuneCountInString(strings.TrimSpace(*req.Caption)) > 2000 {
+		return nil, fmt.Errorf("caption must be at most 2000 characters")
 	}
 	if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
 		return nil, err
@@ -114,36 +154,85 @@ func (s *InternalCommandService) executeInsertDocumentImage(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	if artifact == nil || artifact.ArtifactType != model.AgentRunArtifactTypeBrowserScreenshot || artifact.StorageMode != "object" || artifact.ObjectKey == nil || strings.TrimSpace(*artifact.ObjectKey) == "" {
+	if artifact == nil || artifact.StorageMode != "object" || artifact.ObjectKey == nil || strings.TrimSpace(*artifact.ObjectKey) == "" {
+		return nil, fmt.Errorf("private document artifact not found")
+	}
+	if requiredArtifactType != "" && artifact.ArtifactType != requiredArtifactType {
 		return nil, fmt.Errorf("private browser screenshot artifact not found")
 	}
-
-	attrs := map[string]any{
-		"src":        artifactReference(artifact.ID),
-		"artifactId": artifact.ID,
-		"alt":        req.Alt,
-		"width":      "100%",
-		"height":     "auto",
-		"alignment":  "center",
+	blockType, attrs, err := documentBlockForArtifact(artifact, req.Description)
+	if err != nil {
+		return nil, err
 	}
 	if req.Caption != nil && strings.TrimSpace(*req.Caption) != "" {
 		attrs["caption"] = strings.TrimSpace(*req.Caption)
 	}
-	block, err := json.Marshal(map[string]any{"type": "resizableImage", "attrs": attrs})
+	block, err := json.Marshal(map[string]any{"type": blockType, "attrs": attrs})
 	if err != nil {
-		return nil, fmt.Errorf("encode document image block: %w", err)
+		return nil, fmt.Errorf("encode document artifact block: %w", err)
 	}
 	content, err := s.docsBlockService.Create(ctx, req.DocumentID, req.AfterBlockID, block, meta.ActorID)
 	if err != nil {
 		return nil, err
 	}
 	return mustJSON(map[string]any{
-		"document_id":  req.DocumentID,
-		"content_id":   content.ID,
-		"artifact_id":  artifact.ID,
-		"artifact_ref": artifactReference(artifact.ID),
-		"visibility":   "private",
+		"document_id":   req.DocumentID,
+		"content_id":    content.ID,
+		"artifact_id":   artifact.ID,
+		"artifact_type": artifact.ArtifactType,
+		"artifact_ref":  artifactReference(artifact.ID),
+		"block_type":    blockType,
+		"visibility":    "private",
 	}), nil
+}
+
+func documentBlockForArtifact(artifact *model.AgentRunArtifact, description string) (string, map[string]any, error) {
+	if artifact == nil {
+		return "", nil, fmt.Errorf("private document artifact not found")
+	}
+	reference := artifactReference(artifact.ID)
+	switch artifact.ArtifactType {
+	case model.AgentRunArtifactTypeBrowserScreenshot:
+		return "resizableImage", map[string]any{
+			"src": reference, "artifactId": artifact.ID, "alt": description,
+			"width": "100%", "height": "auto", "alignment": "center",
+		}, nil
+	case model.AgentRunArtifactTypeBrowserRecording:
+		fileName, contentType := browserArtifactDisplayMetadata(artifact)
+		return "artifactVideo", map[string]any{
+			"src": reference, "artifactId": artifact.ID, "description": description,
+			"fileName": fileName, "contentType": contentType,
+		}, nil
+	default:
+		return "", nil, fmt.Errorf("artifact type %q cannot be inserted into a document", artifact.ArtifactType)
+	}
+}
+
+func browserArtifactDisplayMetadata(artifact *model.AgentRunArtifact) (string, string) {
+	fileName := "browser-recording.mp4"
+	contentType := "video/mp4"
+	var metadata map[string]any
+	if artifact != nil && json.Unmarshal(artifact.Metadata, &metadata) == nil {
+		if value, ok := metadata["file_name"].(string); ok && strings.TrimSpace(value) != "" {
+			fileName = strings.TrimSpace(value)
+		}
+		if value, ok := metadata["content_type"].(string); ok && strings.TrimSpace(value) != "" {
+			contentType = strings.TrimSpace(value)
+		}
+	}
+	return fileName, contentType
+}
+
+func decodeStrictInternalCommandInput(input json.RawMessage, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(input))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("input must contain one JSON object")
+	}
+	return nil
 }
 
 func (s *InternalCommandService) executeInsertDocumentBlock(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {

@@ -322,7 +322,7 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 				t.Fatalf("expected documentation target %q in %v", targetType, preset.AllowedTargetTypes)
 			}
 		}
-		for _, toolName := range []string{"list_repositories", "checkout_repository", "checkout_repositories", "read_file", "list_documents", "create_document", "write_document_content", "insert_document_image", "browser_open", "browser_screenshot", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
+		for _, toolName := range []string{"list_repositories", "checkout_repository", "checkout_repositories", "read_file", "list_documents", "create_document", "write_document_content", "insert_document_artifact", "browser_open", "browser_screenshot", "browser_record", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
 			if !slices.Contains(preset.AllowedTools, toolName) {
 				t.Fatalf("expected documentation tool %q in %v", toolName, preset.AllowedTools)
 			}
@@ -366,8 +366,8 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	}
 	for _, toolName := range []string{
 		"get_my_capabilities",
-		"create_task", "create_document", "write_document_content", "insert_document_image",
-		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot",
+		"create_task", "create_document", "write_document_content", "insert_document_artifact",
+		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
 		"search_workspace", "search_documents",
 		"list_available_skills", "search_available_skills", "read_skill",
 		"list_repositories", "checkout_repository", "checkout_repositories",
@@ -452,6 +452,22 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 	}
 	if _, ok := executionConfig["workspace"]; ok {
 		t.Fatalf("managed Ask config retained repository workspace mode: %#v", executionConfig)
+	}
+}
+
+func TestManagedDocumentationAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
+	preset := enforceManagedDocumentationAgentCapabilities(model.AgentPresetDefinition{
+		Key:          model.AgentPresetDocumentationAgent,
+		AllowedTools: []string{"read_document", "write_document_content"},
+	})
+	if !slices.Contains(preset.AllowedTools, "insert_document_artifact") {
+		t.Fatalf("managed Documentation Agent artifact capability was not restored: %v", preset.AllowedTools)
+	}
+	if got := enforceManagedDocumentationAgentCapabilities(model.AgentPresetDefinition{
+		Key:          model.AgentPresetSupportAgent,
+		AllowedTools: []string{"read_document"},
+	}); slices.Contains(got.AllowedTools, "insert_document_artifact") {
+		t.Fatalf("artifact capability leaked into unrelated preset: %v", got.AllowedTools)
 	}
 }
 

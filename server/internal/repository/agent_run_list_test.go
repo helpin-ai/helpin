@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -200,6 +201,148 @@ func TestAgentRunRepositoryCountWorkspaceRunsRequiringAttention(t *testing.T) {
 	}
 	if count != 4 {
 		t.Fatalf("attention count = %d, want 4", count)
+	}
+}
+
+func TestAgentRunRepositorySummarizeFleetSinceScopesAndAggregates(t *testing.T) {
+	db := openAgentRunListTestDB(t)
+	repo := NewAgentRunRepository(db)
+	now := time.Now().UTC()
+	since := now.Add(-7 * 24 * time.Hour)
+
+	rows := []struct {
+		id          string
+		workspaceID string
+		agentID     string
+		status      string
+		tokens      int
+		createdAt   time.Time
+	}{
+		{id: "completed", workspaceID: "workspace-1", agentID: "agent-1", status: model.AgentRunStatusCompleted, tokens: 120, createdAt: now.Add(-time.Hour)},
+		{id: "failed", workspaceID: "workspace-1", agentID: "agent-1", status: model.AgentRunStatusFailed, tokens: 30, createdAt: now.Add(-2 * time.Hour)},
+		{id: "running", workspaceID: "workspace-1", agentID: "agent-2", status: model.AgentRunStatusRunning, tokens: 10, createdAt: now.Add(-3 * time.Hour)},
+		{id: "old", workspaceID: "workspace-1", agentID: "agent-1", status: model.AgentRunStatusFailed, tokens: 999, createdAt: since.Add(-time.Hour)},
+		{id: "hidden-agent", workspaceID: "workspace-1", agentID: "agent-3", status: model.AgentRunStatusCompleted, tokens: 999, createdAt: now},
+		{id: "other-workspace", workspaceID: "workspace-2", agentID: "agent-1", status: model.AgentRunStatusCompleted, tokens: 999, createdAt: now},
+	}
+	for _, row := range rows {
+		seedAgentRunListTestRow(t, db, row.id, row.workspaceID, row.agentID, row.status, model.AgentRunPauseReasonNone, `{}`)
+		if err := db.Model(&model.AgentRun{}).Where("id = ?", row.id).Updates(map[string]any{
+			"tokens_used": row.tokens,
+			"created_at":  row.createdAt,
+			"updated_at":  row.createdAt,
+		}).Error; err != nil {
+			t.Fatalf("configure fleet run %q: %v", row.id, err)
+		}
+	}
+
+	aggregates, err := repo.SummarizeFleetSince(context.Background(), "workspace-1", []string{"agent-1", "agent-2"}, since)
+	if err != nil {
+		t.Fatalf("SummarizeFleetSince: %v", err)
+	}
+	byAgent := make(map[string]AgentRunFleetAggregate, len(aggregates))
+	for _, aggregate := range aggregates {
+		byAgent[aggregate.AgentID] = aggregate
+	}
+	if got := byAgent["agent-1"]; got.RecentRuns != 2 || got.RecentCompleted != 1 || got.RecentFailed != 1 || got.RecentTokens != 150 {
+		t.Fatalf("agent-1 aggregate = %+v, want runs=2 completed=1 failed=1 tokens=150", got)
+	}
+	if got := byAgent["agent-2"]; got.RecentRuns != 1 || got.RecentCompleted != 0 || got.RecentFailed != 0 || got.RecentTokens != 10 {
+		t.Fatalf("agent-2 aggregate = %+v, want runs=1 tokens=10", got)
+	}
+}
+
+func TestAgentRunRepositoryListRecentByAgentIDsLimitsPerAgent(t *testing.T) {
+	db := openAgentRunListTestDB(t)
+	repo := NewAgentRunRepository(db)
+	base := time.Now().UTC().Add(-time.Hour)
+
+	for _, agentID := range []string{"agent-1", "agent-2"} {
+		for idx := 0; idx < 7; idx++ {
+			id := fmt.Sprintf("%s-run-%d", agentID, idx)
+			seedAgentRunListTestRow(t, db, id, "workspace-1", agentID, model.AgentRunStatusCompleted, model.AgentRunPauseReasonNone, `{}`)
+			createdAt := base.Add(time.Duration(idx) * time.Minute)
+			if err := db.Model(&model.AgentRun{}).Where("id = ?", id).Updates(map[string]any{
+				"created_at": createdAt,
+				"updated_at": createdAt,
+			}).Error; err != nil {
+				t.Fatalf("set recent run timestamp: %v", err)
+			}
+		}
+	}
+	seedAgentRunListTestRow(t, db, "other-workspace", "workspace-2", "agent-1", model.AgentRunStatusCompleted, model.AgentRunPauseReasonNone, `{}`)
+
+	runs, err := repo.ListRecentByAgentIDs(context.Background(), "workspace-1", []string{"agent-1", "agent-2"}, 5)
+	if err != nil {
+		t.Fatalf("ListRecentByAgentIDs: %v", err)
+	}
+	byAgent := map[string][]string{}
+	for _, run := range runs {
+		byAgent[run.AgentID] = append(byAgent[run.AgentID], run.ID)
+	}
+	for _, agentID := range []string{"agent-1", "agent-2"} {
+		if len(byAgent[agentID]) != 5 {
+			t.Fatalf("%s recent run count = %d, want 5", agentID, len(byAgent[agentID]))
+		}
+		if want := agentID + "-run-6"; byAgent[agentID][0] != want {
+			t.Fatalf("%s first recent run = %q, want %q", agentID, byAgent[agentID][0], want)
+		}
+	}
+}
+
+func TestAgentRunRepositoryListDockRunsForActorScopesAndRetainsActiveRuns(t *testing.T) {
+	db := openAgentRunListTestDB(t)
+	repo := NewAgentRunRepository(db)
+	cutoff := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	old := cutoff.Add(-time.Hour)
+	recent := cutoff.Add(time.Hour)
+
+	rows := []struct {
+		id          string
+		workspaceID string
+		status      string
+		actorID     string
+		updatedAt   time.Time
+		dockChatID  *string
+	}{
+		{id: "active-old", workspaceID: "workspace-1", status: model.AgentRunStatusRunning, actorID: "user-1", updatedAt: old},
+		{id: "terminal-recent", workspaceID: "workspace-1", status: model.AgentRunStatusCompleted, actorID: "user-1", updatedAt: recent},
+		{id: "terminal-old", workspaceID: "workspace-1", status: model.AgentRunStatusCompleted, actorID: "user-1", updatedAt: old},
+		{id: "other-actor", workspaceID: "workspace-1", status: model.AgentRunStatusRunning, actorID: "user-2", updatedAt: recent},
+		{id: "other-workspace", workspaceID: "workspace-2", status: model.AgentRunStatusRunning, actorID: "user-1", updatedAt: recent},
+	}
+	chatID := "chat-1"
+	rows = append(rows, struct {
+		id          string
+		workspaceID string
+		status      string
+		actorID     string
+		updatedAt   time.Time
+		dockChatID  *string
+	}{id: "chat-backing", workspaceID: "workspace-1", status: model.AgentRunStatusRunning, actorID: "user-1", updatedAt: recent, dockChatID: &chatID})
+
+	for _, row := range rows {
+		seedAgentRunListTestRow(t, db, row.id, row.workspaceID, "agent-1", row.status, model.AgentRunPauseReasonNone, `{}`)
+		if err := db.Model(&model.AgentRun{}).Where("id = ?", row.id).Updates(map[string]any{
+			"triggered_by_user_id": row.actorID,
+			"dock_chat_id":         row.dockChatID,
+			"created_at":           row.updatedAt,
+			"updated_at":           row.updatedAt,
+		}).Error; err != nil {
+			t.Fatalf("configure dock run %q: %v", row.id, err)
+		}
+	}
+
+	runs, err := repo.ListDockRunsForActor(context.Background(), "workspace-1", "user-1", cutoff, 100)
+	if err != nil {
+		t.Fatalf("ListDockRunsForActor: %v", err)
+	}
+	got := make([]string, 0, len(runs))
+	for _, run := range runs {
+		got = append(got, run.ID)
+	}
+	if want := []string{"terminal-recent", "active-old"}; !slices.Equal(got, want) {
+		t.Fatalf("dock run ids = %v, want %v", got, want)
 	}
 }
 

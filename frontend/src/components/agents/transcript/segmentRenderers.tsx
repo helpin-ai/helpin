@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Copy01Icon, File01Icon, Loading01Icon, LockKeyIcon, Tick01Icon } from '@/lib/icons';
 
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type {
   CodingSessionActor,
@@ -9,12 +8,8 @@ import type {
   CodingSessionLiveToolCall,
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
-import { ApplyPatchDiff } from '@/components/pm/CodingSession/ApplyPatchDiff';
-import { isPublishedPreviewToolName } from '@/components/pm/runPreviews';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
-import { PublishedToolPreviewCard } from '@/components/pm/CodingSession/PublishedToolPreviewCard';
-import { describeToolCall, type ToolCallPresentation } from '@/components/pm/CodingSession/toolCallPresentation';
-import { isToolName } from '@/lib/toolNames';
+import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
 import { formatCodingSessionRelative } from '@/components/pm/CodingSession/codingSessionUtils';
 import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -22,8 +17,14 @@ import { TranscriptRow } from './TranscriptRow';
 import { formatToolDuration, toolStatusChrome } from './toolRowChrome';
 import type { TranscriptSegment } from './segments';
 
+export interface TranscriptToolGroupPresentation {
+  count: number;
+  totalDurationMs?: number;
+  status: CodingSessionLiveToolCall['status'];
+}
+
 export interface RenderSegmentOptions {
-  /** When true, rows with bodies (args/result/diff/reasoning) expand on click. */
+  /** When true, reasoning and run-context rows expand on click. */
   expandable: boolean;
   /** Whether long assistant text should use the Show more / Show less control. */
   collapseLongAssistantContent?: boolean;
@@ -31,6 +32,8 @@ export interface RenderSegmentOptions {
   resolveActor?: (message: CodingSessionTranscriptMessage) => CodingSessionActor | null;
   /** Surface-specific label when actor details are intentionally unavailable. */
   fallbackUserLabel?: string;
+  /** Dock-only aggregation metadata for adjacent calls to the same tool. */
+  toolGroup?: TranscriptToolGroupPresentation;
 }
 
 /** Renders a single normalized transcript segment as a flat one-line entry. */
@@ -51,7 +54,7 @@ export function TranscriptSegmentView({
         />
       );
     case 'tool':
-      return <ToolSegment toolCall={segment.toolCall} expandable={options.expandable} />;
+      return <ToolSegment toolCall={segment.toolCall} group={options.toolGroup} />;
     case 'reasoning':
       return <ReasoningSegment reasoning={segment.reasoning} expandable={options.expandable} />;
     case 'status':
@@ -116,92 +119,27 @@ function CopyMessageButton({ content }: { content: string }) {
 
 // ─── Tool call ───────────────────────────────────────────────────────────────
 
-function ToolSegment({ toolCall, expandable }: { toolCall: CodingSessionLiveToolCall; expandable: boolean }) {
-  const failed = toolCall.status === 'failed';
-  const isApplyPatch = isToolName(toolCall.tool_name, 'apply_patch');
-  const hasPublishedPreview = !failed
-    && !isApplyPatch
-    && toolCall.args_text.trim().length > 0
-    && isPublishedPreviewToolName(toolCall.tool_name);
-  // Any tool with a body (args, result, diff, preview card, or error output)
-  // earns a chevron; rows stay collapsed one-liners by default so detail is a
-  // click away. apply_patch opens by default; everything else stays collapsed.
-  const hasArgsOrResult = toolCall.args_text.trim().length > 0
-    || !!(toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim());
-  const hasBody = failed || isApplyPatch || hasPublishedPreview || hasArgsOrResult;
-  const rowExpandable = expandable && hasBody;
-  const { icon, className } = toolStatusChrome(toolCall.status);
+function ToolSegment({
+  toolCall,
+  group,
+}: {
+  toolCall: CodingSessionLiveToolCall;
+  group?: TranscriptToolGroupPresentation;
+}) {
+  const status = group?.status ?? toolCall.status;
+  const failed = status === 'failed';
+  const { icon, className } = toolStatusChrome(status);
   const presentation = describeToolCall(toolCall);
-  const durationLabel = rowExpandable ? formatToolDuration(toolCall.duration_ms) : undefined;
+  const grouped = !!group && group.count > 1;
 
   return (
     <TranscriptRow
       icon={icon}
       iconClassName={className}
-      label={presentation.primaryLabel}
+      label={grouped ? `${presentation.secondaryLabel} x ${group.count}` : presentation.primaryLabel}
       tone={failed ? 'failed' : 'muted'}
-      meta={durationLabel}
-      expandable={rowExpandable}
-      defaultOpen={isApplyPatch && !failed}
-    >
-      {rowExpandable ? <ToolBody toolCall={toolCall} presentation={presentation} /> : null}
-    </TranscriptRow>
-  );
-}
-
-function ToolBody({
-  toolCall,
-  presentation,
-}: {
-  toolCall: CodingSessionLiveToolCall;
-  presentation: ToolCallPresentation;
-}) {
-  const failed = toolCall.status === 'failed';
-  const isApplyPatch = isToolName(toolCall.tool_name, 'apply_patch');
-  const argsText = toolCall.args_text.trim();
-  const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
-  const showSecondary = presentation.secondaryLabel.trim().toLowerCase() !== presentation.primaryLabel.trim().toLowerCase();
-  const publishedPreviewCard = !failed && !isApplyPatch && argsText
-    ? <PublishedToolPreviewCard toolName={toolCall.tool_name} argsText={argsText} resultText={resultText} />
-    : null;
-  const filePaths = !isApplyPatch && !publishedPreviewCard && argsText ? extractFilePathsFromText(argsText) : [];
-  const chips = [...presentation.chips];
-  for (const filePath of filePaths) {
-    if (!chips.includes(filePath)) chips.push(filePath);
-  }
-
-  return (
-    <div className="space-y-1.5 text-xs text-muted-foreground">
-      {showSecondary || chips.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {showSecondary ? (
-            <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium text-muted-foreground">
-              {presentation.secondaryLabel}
-            </Badge>
-          ) : null}
-          {chips.map((chip) => (
-            <span key={chip} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-              {chip}
-            </span>
-          ))}
-        </div>
-      ) : null}
-      {publishedPreviewCard ?? (
-        <>
-          {isApplyPatch
-            ? <ApplyPatchDiff argsText={argsText || resultText} />
-            : argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
-          {resultText && !isApplyPatch ? (
-            failed || resultText.length > 300
-              ? <CollapsibleCodeBlock text={resultText} failed={failed} />
-              : <p className="text-[11px] text-muted-foreground">{resultText}</p>
-          ) : null}
-          {isApplyPatch && failed && resultText ? (
-            <CollapsibleCodeBlock text={resultText} failed />
-          ) : null}
-        </>
-      )}
-    </div>
+      meta={formatToolDuration(grouped ? group.totalDurationMs : toolCall.duration_ms)}
+    />
   );
 }
 
@@ -390,7 +328,6 @@ function ReviewDecisionSegment({
 // ─── Shared collapsibles ─────────────────────────────────────────────────────
 
 const CONTENT_COLLAPSE_CHAR_THRESHOLD = 600;
-const TOOL_COLLAPSED_LINES = 2;
 
 function CollapsibleMarkdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
   const [expanded, setExpanded] = useState(false);
@@ -443,49 +380,6 @@ function UserMessageBubble({ content }: { content: string }) {
         </div>
       ) : (
         <MarkdownContent content={content} className="text-inherit" />
-      )}
-    </div>
-  );
-}
-
-function extractFilePathsFromText(text: string): string[] {
-  const matches = text.match(/(?:^|\s)((?:\/|\.\.?\/)?[\w./-]+\.(?:ts|tsx|js|jsx|go|py|css|html|json|sql|md|yaml|yml|toml|sh))\b/g);
-  if (!matches) return [];
-  const unique = [...new Set(matches.map((m) => m.trim()))];
-  return unique.slice(0, 6);
-}
-
-function CollapsibleCodeBlock({ text, failed }: { text: string; failed?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const lines = text.split('\n');
-  const isLong = lines.length > TOOL_COLLAPSED_LINES;
-
-  return (
-    <div className="relative">
-      <pre className={cn(
-        'overflow-auto whitespace-pre-wrap break-all rounded-md border px-2.5 py-1.5 font-mono text-[11px] leading-5',
-        failed
-          ? 'border-destructive/20 bg-destructive/5 text-destructive dark:bg-destructive/10'
-          : 'border-border/60 bg-muted/50 text-foreground/80',
-        !expanded && isLong && 'max-h-[52px]',
-        expanded && 'max-h-60',
-      )}>
-        {expanded || !isLong ? text : lines.slice(0, TOOL_COLLAPSED_LINES).join('\n')}
-      </pre>
-      {isLong && !expanded && (
-        <div className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 h-6 rounded-b-md bg-gradient-to-t',
-          failed ? 'from-destructive/5 to-transparent' : 'from-muted/80 to-transparent',
-        )} />
-      )}
-      {isLong && (
-        <button
-          type="button"
-          className="mt-1 text-[11px] font-medium text-primary hover:underline"
-          onClick={() => setExpanded((prev) => !prev)}
-        >
-          {expanded ? 'Show less' : `Show more (${lines.length} lines)`}
-        </button>
       )}
     </div>
   );
