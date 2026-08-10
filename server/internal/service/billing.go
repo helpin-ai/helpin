@@ -290,13 +290,14 @@ type BillingSummary struct {
 }
 
 type BillingService struct {
-	repo          *repository.BillingRepository
-	gateway       BillingStripeGateway
-	now           func() time.Time
-	priceConf     BillingPriceConfig
-	orgRoles      orgBillingRoleResolver
-	workspaceRepo *repository.WorkspaceRepository
-	customerIO    *CustomerIOIdentityService
+	repo             *repository.BillingRepository
+	gateway          BillingStripeGateway
+	now              func() time.Time
+	priceConf        BillingPriceConfig
+	orgRoles         orgBillingRoleResolver
+	workspaceRepo    *repository.WorkspaceRepository
+	customerIO       *CustomerIOIdentityService
+	customerIOOutbox *repository.CustomerIOLifecycleOutboxRepository
 }
 
 func NewBillingService(repo *repository.BillingRepository, gateway BillingStripeGateway, now func() time.Time) *BillingService {
@@ -316,6 +317,11 @@ func (s *BillingService) SetWorkspaceRepository(repo *repository.WorkspaceReposi
 
 func (s *BillingService) SetCustomerIOIdentityService(identity *CustomerIOIdentityService) {
 	s.customerIO = identity
+}
+
+// SetCustomerIOLifecycleOutboxRepository enables durable lifecycle delivery.
+func (s *BillingService) SetCustomerIOLifecycleOutboxRepository(repo *repository.CustomerIOLifecycleOutboxRepository) {
+	s.customerIOOutbox = repo
 }
 
 func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceID string) (*BillingSummary, error) {
@@ -369,17 +375,25 @@ func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceI
 		CurrentPeriodEnd:   trialEnds,
 		TrialEndsAt:        &trialEnds,
 	}
-	if err := s.repo.UpsertWorkspaceBilling(ctx, billing); err != nil {
+	if s.customerIOOutbox != nil {
+		persisted, _, err := s.repo.CreateTrialWithLifecycleEvent(ctx, billing, repository.CustomerIOLifecycleEventInput{
+			SemanticKey: fmt.Sprintf("trial_started:%s:%d", workspaceID, trialEnds.Unix()),
+			WorkspaceID: workspaceID,
+			EventName:   "trial_started",
+			OccurredAt:  now,
+			Attributes:  map[string]any{"trial_ends_at": trialEnds},
+		})
+		if err != nil {
+			return nil, err
+		}
+		billing = persisted
+	} else if err := s.repo.UpsertWorkspaceBilling(ctx, billing); err != nil {
 		return nil, err
 	}
 	summary := s.summary(billing)
 	if err := s.addSeatEntitlements(ctx, summary); err != nil {
 		return nil, err
 	}
-	s.syncCustomerIOWorkspace(ctx, workspaceID)
-	s.trackCustomerIOWorkspaceEvent(ctx, workspaceID, "trial_started", now, map[string]any{
-		"trial_ends_at": trialEnds,
-	})
 	return summary, nil
 }
 
@@ -553,6 +567,9 @@ func (s *BillingService) ExpireOverdueTrials(ctx context.Context) (int64, error)
 		return 0, nil
 	}
 	now := s.now().UTC()
+	if s.customerIOOutbox != nil {
+		return s.repo.ExpireOverdueTrialsWithLifecycleEvents(ctx, now)
+	}
 	workspaceIDs, err := s.repo.ListOverdueTrialWorkspaceIDs(ctx, now)
 	if err != nil {
 		return 0, err
@@ -1241,11 +1258,24 @@ func (s *BillingService) summarizeAndNormalize(ctx context.Context, billing *mod
 	now := s.now().UTC()
 	changed := false
 	if billing.Status == model.BillingStatusTrialing && billing.TrialEndsAt != nil && !billing.TrialEndsAt.After(now) && billing.StripeSubscriptionID == nil {
-		billing.Status = model.BillingStatusTrialExpired
-		billing.IncludedCredits = includedCreditsForPlan(billing.Plan)
-		billing.OnDemandEnabled = false
-		billing.OnDemandBlocksInvoiced = 0
-		changed = true
+		if s.customerIOOutbox != nil {
+			if _, err := s.repo.ExpireOverdueTrialsWithLifecycleEvents(ctx, now); err != nil {
+				return nil, err
+			}
+			reloaded, err := s.repo.GetByWorkspaceID(ctx, billing.WorkspaceID)
+			if err != nil {
+				return nil, err
+			}
+			if reloaded != nil {
+				billing = reloaded
+			}
+		} else {
+			billing.Status = model.BillingStatusTrialExpired
+			billing.IncludedCredits = includedCreditsForPlan(billing.Plan)
+			billing.OnDemandEnabled = false
+			billing.OnDemandBlocksInvoiced = 0
+			changed = true
+		}
 	}
 	if billing.Plan == model.BillingPlanFounder && billing.Status == model.BillingStatusActive && !billing.CurrentPeriodEnd.After(now) {
 		billing.CurrentPeriodStart = now

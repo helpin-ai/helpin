@@ -23,6 +23,88 @@ func NewBillingRepository(db *gorm.DB) *BillingRepository {
 	return &BillingRepository{db: db}
 }
 
+// CreateTrialWithLifecycleEvent inserts a new trial and its lifecycle event atomically.
+func (r *BillingRepository) CreateTrialWithLifecycleEvent(
+	ctx context.Context,
+	billing *model.WorkspaceBilling,
+	event CustomerIOLifecycleEventInput,
+) (*model.WorkspaceBilling, bool, error) {
+	if billing.ID == "" {
+		billing.ID = uuid.NewString()
+	}
+	created := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "workspace_id"}},
+			DoNothing: true,
+		}).Create(billing)
+		if result.Error != nil {
+			return fmt.Errorf("create workspace trial: %w", result.Error)
+		}
+		created = result.RowsAffected == 1
+		if !created {
+			return nil
+		}
+		if _, err := enqueueCustomerIOLifecycleEventTx(ctx, tx, event); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if !created {
+		existing, err := r.GetByWorkspaceID(ctx, billing.WorkspaceID)
+		return existing, false, err
+	}
+	return billing, true, nil
+}
+
+// ExpireOverdueTrialsWithLifecycleEvents expires eligible trials and enqueues events atomically.
+func (r *BillingRepository) ExpireOverdueTrialsWithLifecycleEvents(ctx context.Context, now time.Time) (int64, error) {
+	var expired int64
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var candidates []model.WorkspaceBilling
+		if err := tx.Where(
+			"status = ? AND trial_ends_at IS NOT NULL AND trial_ends_at <= ? AND stripe_subscription_id IS NULL",
+			model.BillingStatusTrialing, now,
+		).Order("workspace_id ASC").Find(&candidates).Error; err != nil {
+			return fmt.Errorf("list overdue billing trials: %w", err)
+		}
+		for i := range candidates {
+			result := tx.Model(&model.WorkspaceBilling{}).
+				Where("workspace_id = ? AND status = ? AND trial_ends_at <= ? AND stripe_subscription_id IS NULL",
+					candidates[i].WorkspaceID, model.BillingStatusTrialing, now).
+				Updates(map[string]any{
+					"status": model.BillingStatusTrialExpired, "on_demand_enabled": false,
+					"on_demand_blocks_invoiced": 0, "updated_at": now,
+				})
+			if result.Error != nil {
+				return fmt.Errorf("expire workspace trial %q: %w", candidates[i].WorkspaceID, result.Error)
+			}
+			if result.RowsAffected == 0 {
+				continue
+			}
+			eventAt := candidates[i].TrialEndsAt.UTC()
+			if _, err := enqueueCustomerIOLifecycleEventTx(ctx, tx, CustomerIOLifecycleEventInput{
+				SemanticKey: fmt.Sprintf("trial_expired:%s:%d", candidates[i].WorkspaceID, eventAt.Unix()),
+				WorkspaceID: candidates[i].WorkspaceID,
+				EventName:   "trial_expired",
+				OccurredAt:  eventAt,
+				Attributes:  map[string]any{"expired_at": now, "plan": candidates[i].Plan, "trial_ends_at": eventAt},
+			}); err != nil {
+				return err
+			}
+			expired++
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("expire overdue trials with Customer.io events: %w", err)
+	}
+	return expired, nil
+}
+
 func (r *BillingRepository) GetByWorkspaceID(ctx context.Context, workspaceID string) (*model.WorkspaceBilling, error) {
 	var billing model.WorkspaceBilling
 	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).First(&billing).Error

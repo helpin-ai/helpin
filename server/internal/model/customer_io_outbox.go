@@ -19,6 +19,12 @@ const (
 	CustomerIOOutboxStatusFailed CustomerIOOutboxStatus = "failed"
 )
 
+// CustomerIOOutboxRecipient captures event-time workspace context for one recipient.
+type CustomerIOOutboxRecipient struct {
+	UserID        string `json:"user_id"`
+	WorkspaceRole string `json:"workspace_role"`
+}
+
 // CustomerIOOutbox stores a durable Customer.io lifecycle event and its delivery state.
 type CustomerIOOutbox struct {
 	ID                string                 `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`

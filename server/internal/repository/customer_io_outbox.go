@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -24,6 +25,15 @@ type CustomerIOLifecycleOutboxRepository struct {
 	claimMu *sync.Mutex
 }
 
+// CustomerIOLifecycleEventInput is the durable workspace-event payload to enqueue.
+type CustomerIOLifecycleEventInput struct {
+	SemanticKey string
+	WorkspaceID string
+	EventName   string
+	OccurredAt  time.Time
+	Attributes  map[string]any
+}
+
 // NewCustomerIOLifecycleOutboxRepository creates a Customer.io lifecycle outbox repository.
 func NewCustomerIOLifecycleOutboxRepository(db *gorm.DB) *CustomerIOLifecycleOutboxRepository {
 	repository := &CustomerIOLifecycleOutboxRepository{db: db}
@@ -31,6 +41,48 @@ func NewCustomerIOLifecycleOutboxRepository(db *gorm.DB) *CustomerIOLifecycleOut
 		repository.claimMu = &_customerIOSQLiteClaimMutex
 	}
 	return repository
+}
+
+func enqueueCustomerIOLifecycleEventTx(
+	ctx context.Context,
+	tx *gorm.DB,
+	input CustomerIOLifecycleEventInput,
+) (*model.CustomerIOOutbox, error) {
+	attributes, err := json.Marshal(input.Attributes)
+	if err != nil {
+		return nil, fmt.Errorf("marshal Customer.io lifecycle attributes: %w", err)
+	}
+	var recipients []model.CustomerIOOutboxRecipient
+	if err := tx.WithContext(ctx).
+		Table("workspace_members").
+		Select("user_id, role AS workspace_role").
+		Where("workspace_id = ? AND status = ? AND user_id IS NOT NULL", input.WorkspaceID, model.WorkspaceMemberStatusActive).
+		Order("user_id ASC").
+		Scan(&recipients).Error; err != nil {
+		return nil, fmt.Errorf("snapshot Customer.io lifecycle recipients: %w", err)
+	}
+	recipientSnapshot, err := json.Marshal(recipients)
+	if err != nil {
+		return nil, fmt.Errorf("marshal Customer.io lifecycle recipients: %w", err)
+	}
+	workspaceID := input.WorkspaceID
+	event := &model.CustomerIOOutbox{
+		ID:                uuid.NewString(),
+		SemanticKey:       input.SemanticKey,
+		WorkspaceID:       &workspaceID,
+		EventName:         input.EventName,
+		OccurredAt:        input.OccurredAt.UTC(),
+		Attributes:        attributes,
+		RecipientSnapshot: recipientSnapshot,
+		Status:            model.CustomerIOOutboxStatusPending,
+		NextAttemptAt:     input.OccurredAt.UTC(),
+	}
+	if err := tx.WithContext(ctx).
+		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "semantic_key"}}, DoNothing: true}).
+		Create(event).Error; err != nil {
+		return nil, fmt.Errorf("enqueue Customer.io lifecycle event %q: %w", input.SemanticKey, err)
+	}
+	return event, nil
 }
 
 // ClaimDue exclusively leases due Customer.io lifecycle events for delivery.
