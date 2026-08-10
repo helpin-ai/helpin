@@ -7,9 +7,16 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/llm"
 )
+
+func TestDocsImportAIRequestTimeoutAllowsLongArticleFormatting(t *testing.T) {
+	if defaultDocsImportAIRequestTimeout != 4*time.Minute {
+		t.Fatalf("request timeout = %s, want 4m", defaultDocsImportAIRequestTimeout)
+	}
+}
 
 type docsImportAIStub struct {
 	response string

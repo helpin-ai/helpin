@@ -18,7 +18,7 @@ const (
 	defaultDocsImportAIProvider       = "openrouter"
 	defaultDocsImportAIModel          = "deepseek/deepseek-v4-flash-0731"
 	defaultDocsImportAIMaxTokens      = 24000
-	defaultDocsImportAIRequestTimeout = 90 * time.Second
+	defaultDocsImportAIRequestTimeout = 4 * time.Minute
 )
 
 const docsImportAISystemPrompt = `You are a lossless help-center article formatter and copy editor.
