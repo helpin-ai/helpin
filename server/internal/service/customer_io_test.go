@@ -143,6 +143,34 @@ func TestCustomerIOWorkspaceEventStripsReservedOverridesAtTrackBoundary(t *testi
 	}
 }
 
+func TestCustomerIOEventAttributesPreserveNonReservedBlankAndNilValues(t *testing.T) {
+	source := map[string]any{
+		"recipient":    "attacker@example.com",
+		"from_address": "attacker@example.com",
+		"reply_to":     "attacker@example.com",
+		"blank_value":  "",
+		"nil_value":    nil,
+	}
+	got := customerIOEventAttributes(source)
+
+	for _, key := range []string{"recipient", "from_address", "reply_to"} {
+		if _, exists := got[key]; exists {
+			t.Fatalf("reserved override %q was not removed: %#v", key, got)
+		}
+	}
+	blank, exists := got["blank_value"]
+	if !exists || blank != "" {
+		t.Fatalf("blank_value = %#v, exists=%t; want preserved blank string", blank, exists)
+	}
+	value, exists := got["nil_value"]
+	if !exists || value != nil {
+		t.Fatalf("nil_value = %#v, exists=%t; want preserved nil", value, exists)
+	}
+	if source["recipient"] != "attacker@example.com" {
+		t.Fatalf("source attributes were mutated: %#v", source)
+	}
+}
+
 func TestCustomerIODeliveryErrorIncludesStatusAndRetryAfter(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -237,6 +265,56 @@ func TestCustomerIOULIDIsStablePerRecipientAndEmbedsOccurrenceTime(t *testing.T)
 	}
 	if otherRecipient == first {
 		t.Fatalf("different recipients received same ULID %q", first)
+	}
+}
+
+func TestCustomerIOTrackOutboxEventDeliversStablePerRecipientULID(t *testing.T) {
+	var eventIDs []string
+	httpClient := &http.Client{Transport: customerIORoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var payload customerIOEntityPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		eventIDs = append(eventIDs, payload.ID)
+		return customerIOTestResponse(http.StatusOK), nil
+	})}
+	identity := NewCustomerIOIdentityService(
+		NewCustomerIOTrackClient(CustomerIOTrackConfig{
+			SiteID: "site-id", APIKey: "api-key", Endpoint: "https://customer.test", HTTPClient: httpClient,
+		}),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	occurredAt := time.Date(2026, 8, 10, 12, 34, 56, 789000000, time.UTC)
+	outboxID := "018f6a31-1f4e-7d20-8d91-59a37c137a1a"
+
+	identity.TrackOutboxEvent(context.Background(), outboxID, CustomerIOEvent{
+		UserID: "user-1", Name: "trial_started", OccurredAt: occurredAt,
+	})
+	identity.TrackOutboxEvent(context.Background(), outboxID, CustomerIOEvent{
+		UserID: "user-1", Name: "trial_started", OccurredAt: occurredAt,
+	})
+	identity.TrackOutboxEvent(context.Background(), outboxID, CustomerIOEvent{
+		UserID: "user-2", Name: "trial_started", OccurredAt: occurredAt,
+	})
+
+	if len(eventIDs) != 3 {
+		t.Fatalf("delivered event IDs = %#v, want three deliveries", eventIDs)
+	}
+	first, err := ulid.ParseStrict(eventIDs[0])
+	if err != nil {
+		t.Fatalf("parse outgoing event ULID %q: %v", eventIDs[0], err)
+	}
+	if first.Time() != ulid.Timestamp(occurredAt) {
+		t.Fatalf("outgoing ULID timestamp = %d, want %d", first.Time(), ulid.Timestamp(occurredAt))
+	}
+	if eventIDs[1] != eventIDs[0] {
+		t.Fatalf("retry event ID = %q, want stable %q", eventIDs[1], eventIDs[0])
+	}
+	if eventIDs[2] == eventIDs[0] {
+		t.Fatalf("different recipients received same outgoing event ID %q", eventIDs[0])
 	}
 }
 

@@ -315,7 +315,10 @@ func customerIORetryAfter(value string, now time.Time) time.Duration {
 }
 
 func customerIOEventAttributes(attributes map[string]any) map[string]any {
-	attrs := compactAttributes(attributes)
+	attrs := make(map[string]any, len(attributes))
+	for key, value := range attributes {
+		attrs[key] = value
+	}
 	delete(attrs, "recipient")
 	delete(attrs, "from_address")
 	delete(attrs, "reply_to")
@@ -480,6 +483,12 @@ func (s *CustomerIOIdentityService) TrackEvent(ctx context.Context, event Custom
 	if err := s.client.TrackEvent(ctx, event); err != nil {
 		s.logger.ErrorContext(ctx, "failed to track customer.io event", "error", err, "event_name", event.Name, "user_id", event.UserID, "workspace_id", event.Attributes["workspace_id"])
 	}
+}
+
+// TrackOutboxEvent delivers a durable event with a stable per-recipient ID.
+func (s *CustomerIOIdentityService) TrackOutboxEvent(ctx context.Context, outboxID string, event CustomerIOEvent) {
+	event.EventID = customerIOEventULID(outboxID, event.UserID, event.OccurredAt)
+	s.TrackEvent(ctx, event)
 }
 
 // TrackWorkspaceEvent fans a workspace-scoped event out to its active members.
