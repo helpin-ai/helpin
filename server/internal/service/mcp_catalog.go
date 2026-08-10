@@ -75,6 +75,7 @@ func (s *MCPService) buildToolCatalog() []MCPToolDefinition {
 		"list_workspace_teams":  {Toolset: MCPToolsetContext, Scope: MCPScopeContextRead, Permission: authorization.PermWorkspaceRead},
 		"list_tasks":            {Toolset: MCPToolsetPM, Scope: MCPScopePMRead, Permission: authorization.PermPMRead, Module: model.ModulePM},
 		"create_task":           {Toolset: MCPToolsetPM, Scope: MCPScopePMWrite, Permission: authorization.PermPMEdit, Module: model.ModulePM, Mutating: true},
+		"create_epic":           {Toolset: MCPToolsetPM, Scope: MCPScopePMWrite, Permission: authorization.PermPMEdit, Module: model.ModulePM, Mutating: true},
 		"add_task_comment":      {Toolset: MCPToolsetPM, Scope: MCPScopePMWrite, Permission: authorization.PermPMEdit, Module: model.ModulePM, Mutating: true},
 		"update_task_state":     {Toolset: MCPToolsetPM, Scope: MCPScopePMWrite, Permission: authorization.PermPMEdit, Module: model.ModulePM, Mutating: true},
 		"set_task_dependencies": {Toolset: MCPToolsetPM, Scope: MCPScopePMWrite, Permission: authorization.PermPMEdit, Module: model.ModulePM, Mutating: true},
