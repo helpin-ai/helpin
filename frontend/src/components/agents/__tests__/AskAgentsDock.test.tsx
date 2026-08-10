@@ -211,7 +211,7 @@ describe('AskAgentsDock', () => {
   it('renders the collapsed pill and expands via the / key', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();
-    await waitForText('Ask agents');
+    await waitForText('Ask Agent');
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }));
@@ -452,7 +452,7 @@ describe('AskAgentsDock', () => {
     await renderDock();
     await waitForText('1 need you');
 
-    expect(document.body.textContent).toContain('Ask agents');
+    expect(document.body.textContent).toContain('Ask Agent');
     expect(document.body.textContent).toContain('1 agent need your attention');
   });
 
@@ -493,7 +493,7 @@ describe('AskAgentsDock', () => {
     useDockStore.setState({ collapsed: true, tab: 'chats' });
     mocks.listRuns.mockResolvedValue({ data: { runs: [DOCK_RUN], attention_count: 1 }, error: null });
     await renderDock();
-    await waitForText('Ask agents');
+    await waitForText('Ask Agent');
 
     const runButton = document.body.querySelector<HTMLButtonElement>('[aria-label^="Open HLP-42"]');
     expect(runButton).toBeTruthy();
@@ -506,7 +506,7 @@ describe('AskAgentsDock', () => {
       await new Promise((resolve) => window.setTimeout(resolve, 0));
     });
 
-    const askButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Ask agents"]');
+    const askButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Ask Agent"]');
     await act(async () => {
       askButton?.click();
       await new Promise((resolve) => window.setTimeout(resolve, 0));
@@ -530,7 +530,7 @@ describe('AskAgentsDock', () => {
   it('restores focus to the segment that opened the dock', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();
-    const askButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Ask agents"]');
+    const askButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Ask Agent"]');
     await act(async () => {
       askButton?.click();
       await new Promise((resolve) => window.setTimeout(resolve, 0));

@@ -231,6 +231,90 @@
   }
 }
 
+/* Ask Agent: a persistent product identity whose motion communicates runtime state. */
+.ask-agent-avatar {
+  display: inline-block;
+  flex: none;
+  color: var(--aa-color);
+  line-height: 0;
+}
+.ask-agent-avatar svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.ask-agent-plate { fill: var(--aa-plate); }
+.ask-agent-body { fill: currentColor; fill-rule: evenodd; }
+.ask-agent-ink { fill: var(--aa-ink); }
+.ask-agent-spark { fill: currentColor; }
+.ask-agent-stroke {
+  fill: none;
+  stroke: var(--aa-ink);
+  stroke-linecap: round;
+}
+.ask-agent-face,
+.ask-agent-eyes,
+.ask-agent-mouth,
+.ask-agent-mouth-sad,
+.ask-agent-body-group {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.ask-agent-eye-closed,
+.ask-agent-mouth-sad { opacity: 0; }
+.ask-agent-avatar[data-state] .ask-agent-eye-l .ask-agent-eye-open { animation: ask-agent-open-l 6.8s infinite; }
+.ask-agent-avatar[data-state] .ask-agent-eye-l .ask-agent-eye-closed { animation: ask-agent-shut-l 6.8s infinite; }
+.ask-agent-avatar[data-state] .ask-agent-eye-r .ask-agent-eye-open { animation: ask-agent-open-r 6.8s infinite; }
+.ask-agent-avatar[data-state] .ask-agent-eye-r .ask-agent-eye-closed { animation: ask-agent-shut-r 6.8s infinite; }
+.ask-agent-avatar[data-state="thinking"] .ask-agent-eyes { animation: ask-agent-scan 2.6s ease-in-out infinite; }
+.ask-agent-avatar[data-state="thinking"] .ask-agent-body-group { animation: ask-agent-breathe 2.6s ease-in-out infinite; }
+.ask-agent-avatar[data-state="speaking"] .ask-agent-mouth { animation: ask-agent-talk .42s ease-in-out infinite; }
+.ask-agent-avatar[data-state="error"] .ask-agent-mouth { opacity: 0; }
+.ask-agent-avatar[data-state="error"] .ask-agent-mouth-sad { opacity: 1; }
+.ask-agent-avatar[data-state="error"] .ask-agent-face,
+.ask-agent-avatar[data-state="error"] .ask-agent-body-group { animation: ask-agent-shake .34s ease-in-out 2; }
+
+@keyframes ask-agent-open-l {
+  0%, 25.9% { opacity: 1; } 26%, 28.4% { opacity: 0; }
+  28.5%, 31.9% { opacity: 1; } 32%, 34.4% { opacity: 0; }
+  34.5%, 100% { opacity: 1; }
+}
+@keyframes ask-agent-shut-l {
+  0%, 25.9% { opacity: 0; } 26%, 28.4% { opacity: 1; }
+  28.5%, 31.9% { opacity: 0; } 32%, 34.4% { opacity: 1; }
+  34.5%, 100% { opacity: 0; }
+}
+@keyframes ask-agent-open-r {
+  0%, 25.9% { opacity: 1; } 26%, 28.4% { opacity: 0; }
+  28.5%, 31.9% { opacity: 1; } 32%, 34.4% { opacity: 0; }
+  34.5%, 71.9% { opacity: 1; } 72%, 77.4% { opacity: 0; }
+  77.5%, 100% { opacity: 1; }
+}
+@keyframes ask-agent-shut-r {
+  0%, 25.9% { opacity: 0; } 26%, 28.4% { opacity: 1; }
+  28.5%, 31.9% { opacity: 0; } 32%, 34.4% { opacity: 1; }
+  34.5%, 71.9% { opacity: 0; } 72%, 77.4% { opacity: 1; }
+  77.5%, 100% { opacity: 0; }
+}
+@keyframes ask-agent-scan {
+  0%, 100% { transform: translateX(-1.1px); }
+  50% { transform: translateX(1.5px); }
+}
+@keyframes ask-agent-breathe {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.025) rotate(2.2deg); }
+}
+@keyframes ask-agent-talk {
+  0%, 100% { transform: scaleY(.55) translateY(.6px); }
+  50% { transform: scaleY(1.25); }
+}
+@keyframes ask-agent-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-1.6px); }
+  75% { transform: translateX(1.6px); }
+}
+
 /* Agent dock: a warm, operational presence layer independent of page chrome. */
 @keyframes agent-dock-rise {
   from { opacity: 0; transform: translateY(14px); }
@@ -307,7 +391,7 @@
     justify-content: center;
     padding-inline: 0;
   }
-  .agent-dock-new-chat .agent-dock-sparkle {
+  .agent-dock-new-chat .ask-agent-new-chat-mark {
     display: none;
   }
   .agent-dock-roster-copy,
@@ -403,6 +487,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ask-agent-avatar * {
+    animation: none !important;
+  }
+  .ask-agent-avatar .ask-agent-eye-closed {
+    opacity: 0 !important;
+  }
+  .ask-agent-avatar .ask-agent-eye-open {
+    opacity: 1 !important;
+  }
   .agent-dock-panel,
   .agent-dock-attention-dot,
   .agent-dock-attention-nudge {

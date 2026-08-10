@@ -1,4 +1,4 @@
-import { SparklesIcon } from '@/lib/icons';
+import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import { Button } from '@/components/ui/button';
 import { useEnrichments } from '@/hooks/queries/useCRM';
 import type { CRMEnrichmentResult, CRMObjectType } from '@/lib/crmTypes';
@@ -31,7 +31,7 @@ export function EnrichmentRailCard({ workspaceId, objectType, objectId }: Enrich
           Use a sub-agent to research and update safe CRM fields.
         </p>
         <Button size="sm" className="mt-1 gap-1.5" onClick={handleEnrich}>
-          <SparklesIcon className="h-3.5 w-3.5" />
+          <AskAgentAvatar plateStyle="feather" className="h-6 w-6" />
           {buttonLabel}
         </Button>
       </div>

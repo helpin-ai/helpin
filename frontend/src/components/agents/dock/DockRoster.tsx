@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { AiMagicIcon, BotIcon, MoreHorizontalIcon, NotificationBubbleIcon, PlusSignIcon } from '@/lib/icons';
+import { BotIcon, MoreHorizontalIcon, NotificationBubbleIcon, PlusSignIcon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,7 +81,7 @@ export function DockRoster(props: DockRosterProps) {
           className="agent-dock-new-chat flex min-h-8 items-center gap-2 rounded-[9px] border border-[#eae7e0] bg-[#fffefa] px-2.5 py-1.5 text-start text-[12.5px] text-[#8a8781] transition hover:border-[#d8d3c9] hover:text-[#4b4945] dark:border-[#34322d] dark:bg-[#242320] dark:text-[#a9a59d]"
         >
           <span className="agent-dock-new-chat-icon hidden" aria-hidden><PlusSignIcon className="h-4 w-4" /></span>
-          <span className="agent-dock-sparkle grid h-[11px] w-[11px] shrink-0 place-items-center rounded-[4px]" aria-hidden><AiMagicIcon className="h-2.5 w-2.5 text-white" /></span>
+          <AskAgentAvatar plateStyle="feather" className="ask-agent-new-chat-mark h-6 w-6" />
           <span className="agent-dock-roster-copy truncate">New chat or task</span>
           <kbd className="agent-dock-roster-copy ms-auto rounded border border-[#eeece7] px-1 font-mono text-[10.5px] text-[#b3b0a9] dark:border-[#3a3832]">N</kbd>
         </button>

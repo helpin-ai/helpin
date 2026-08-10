@@ -14,9 +14,11 @@ import { ExecutionStrip } from './ExecutionStrip';
 import { PendingInteractionCard } from './PendingInteractionCard';
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
+import type { AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
+import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence';
 import { deriveLiveStatusLabel, ScrollToLatestButton } from '@/components/agents/transcript';
 import { planSummaryToRunPlan } from './planSummary';
-import { useAgentRunStream, type AgentRunStreamFetchers } from './useAgentRunStream';
+import type { AgentRunStreamState } from './useAgentRunStream';
 import {
   isStructuredInteractionKind,
   resolveDockComposerState,
@@ -32,6 +34,9 @@ interface ChatViewProps {
   draftValue?: string;
   onDraftChange?: (value: string) => void;
   onChatChanged?: () => void;
+  streamController: AgentRunStreamState;
+  onPresenceChange?: (state: AskAgentAvatarState | null) => void;
+  onRunIdChange?: (runId: string | null) => void;
 }
 
 const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
@@ -42,7 +47,19 @@ const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
  * chat. All run reads go through the chat-scoped /dock endpoints so users
  * without PM permissions can use their own dock.
  */
-export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDraftConsumed, draftValue, onDraftChange, onChatChanged }: ChatViewProps) {
+export function ChatView({
+  workspaceId,
+  chatId,
+  textareaRef,
+  initialDraft,
+  onDraftConsumed,
+  draftValue,
+  onDraftChange,
+  onChatChanged,
+  streamController,
+  onPresenceChange,
+  onRunIdChange,
+}: ChatViewProps) {
   const [detail, setDetail] = useState<DockChatDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(true);
   const [plans, setPlans] = useState<CommandBarPlanSummary[]>([]);
@@ -75,17 +92,12 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
 
   const run = detail?.run ?? null;
   const runActive = !!run && ACTIVE_RUN_STATUSES.has(run.status);
-
-  const fetchers = useMemo<AgentRunStreamFetchers>(
-    () => ({
-      getSnapshot: (ws) => dockChatService.getChatRun(ws, chatId),
-      listEvents: (ws, _runId, after) => dockChatService.listChatRunEvents(ws, chatId, after),
-    }),
-    [chatId],
-  );
+  useEffect(() => {
+    onRunIdChange?.(run?.id ?? null);
+  }, [onRunIdChange, run?.id]);
 
   const { currentPlan, streamState, pendingInteraction, refetch, clearPendingInteraction } =
-    useAgentRunStream(workspaceId, run?.id, !!run, runActive ? 5_000 : 0, fetchers);
+    streamController;
 
   const refreshDetail = useCallback(async () => {
     const res = await dockChatService.getChat(workspaceId, chatId);
@@ -174,6 +186,17 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
   }, [chatId, pausedOnInteraction, workspaceId]);
 
   const transformed = useMemo(() => (streamState ? transformDockStream(streamState) : null), [streamState]);
+  const presenceState = deriveAskAgentAvatarState({
+    run: run ?? streamController.session,
+    stream: transformed?.stream ?? streamState,
+    sending,
+    error: sendError?.message,
+  });
+
+  useEffect(() => {
+    onPresenceChange?.(presenceState);
+  }, [onPresenceChange, presenceState]);
+  useEffect(() => () => onPresenceChange?.(null), [onPresenceChange]);
 
   // Drop the optimistic echo once the transcript contains it.
   useEffect(() => {
@@ -330,7 +353,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
             Ask a question about your workspace, or describe work for an agent to do.
           </p>
         )}
-        {transformed && <DockTranscript stream={transformed.stream} active={runActive} />}
+        {transformed && <DockTranscript stream={transformed.stream} active={runActive} showAskAgentAvatar />}
         {currentPlan && (
           <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
         )}

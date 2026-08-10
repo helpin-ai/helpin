@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import { AiMagicIcon, Cancel01Icon, Maximize01Icon, MoreHorizontalIcon } from '@/lib/icons';
+import { Cancel01Icon, Maximize01Icon, MoreHorizontalIcon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { AskAgentAvatar, type AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
+import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +19,7 @@ import type { DockChat, DockRunSummary } from '@/lib/dockTypes';
 import { DockRoster } from './dock/DockRoster';
 import { ChatView } from './dock/ChatView';
 import { DockRunView } from './dock/DockRunView';
+import { useAgentRunStream, type AgentRunStreamFetchers } from './dock/useAgentRunStream';
 import { dockRunContext, dockRunTitle, presentDockRun } from './dock/dockPresentation';
 import { buildCodingSessionPath } from '@/lib/codingSessionSurface';
 
@@ -55,6 +58,14 @@ export function AskAgentsDock() {
   const [attentionNudge, setAttentionNudge] = useState(false);
   const [nextChatCursor, setNextChatCursor] = useState<string | null>(null);
   const [loadingMoreChats, setLoadingMoreChats] = useState(false);
+  const [chatPresenceOverride, setChatPresenceOverride] = useState<{
+    chatId: string;
+    state: AskAgentAvatarState;
+  } | null>(null);
+  const [chatRunOverride, setChatRunOverride] = useState<{
+    chatId: string;
+    runId: string | null;
+  } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const askTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -83,6 +94,37 @@ export function AskAgentsDock() {
   }), [orderedRuns]);
   const activeRun = orderedRuns.find((summary) => summary.run.id === activeRunId) ?? null;
   const activeChat = chats.find((chat) => chat.id === activeChatId) ?? null;
+  const selectedChatId = activeChat?.id ?? null;
+  const activeChatRunId = chatRunOverride?.chatId === selectedChatId
+    ? chatRunOverride.runId
+    : activeChat?.active_run_id ?? null;
+  const chatStreamFetchers = useMemo<AgentRunStreamFetchers>(() => ({
+    getSnapshot: (ws) => selectedChatId
+      ? dockChatService.getChatRun(ws, selectedChatId)
+      : Promise.resolve({ data: null, error: null }),
+    listEvents: (ws, _runId, after) => selectedChatId
+      ? dockChatService.listChatRunEvents(ws, selectedChatId, after)
+      : Promise.resolve({ data: null, error: null }),
+  }), [selectedChatId]);
+  const chatStreamController = useAgentRunStream(
+    workspaceId,
+    activeChatRunId,
+    !!activeChatRunId,
+    5_000,
+    chatStreamFetchers,
+  );
+  const askAgentState = chatPresenceOverride?.chatId === selectedChatId
+    ? chatPresenceOverride.state
+    : deriveAskAgentAvatarState({
+    run: chatStreamController.session,
+    stream: chatStreamController.streamState,
+  });
+  const handleChatPresenceChange = useCallback((state: AskAgentAvatarState | null) => {
+    setChatPresenceOverride(state && selectedChatId ? { chatId: selectedChatId, state } : null);
+  }, [selectedChatId]);
+  const handleChatRunIdChange = useCallback((runId: string | null) => {
+    if (selectedChatId) setChatRunOverride({ chatId: selectedChatId, runId });
+  }, [selectedChatId]);
 
   const refreshRuns = useCallback(async () => {
     if (!workspaceId) return [];
@@ -439,6 +481,7 @@ export function AskAgentsDock() {
                 run={activeRun}
                 chat={activeChat}
                 workspaceSlug={workspace.slug}
+                askAgentState={askAgentState}
                 onClose={closeDock}
                 onRenameChat={renameChat}
                 onArchiveChat={archiveChat}
@@ -473,6 +516,9 @@ export function AskAgentsDock() {
                   draftValue={drafts[`chat:${activeChat.id}`] ?? ''}
                   onDraftChange={(value) => setDraft(`chat:${activeChat.id}`, value)}
                   onChatChanged={() => void refreshChats(true)}
+                  streamController={chatStreamController}
+                  onPresenceChange={handleChatPresenceChange}
+                  onRunIdChange={handleChatRunIdChange}
                 />
               ) : (
                 <EmptyChatPane onNewChat={() => void newChat()} />
@@ -487,6 +533,7 @@ export function AskAgentsDock() {
           runs={triggerRuns}
           attentionCount={attentionRuns.length}
           nudge={attentionNudge}
+          askAgentState={askAgentState}
           onAsk={(source) => openDock('chats', 'composer', source)}
           onRun={(runId, source) => {
             setActiveRunId(runId);
@@ -514,6 +561,7 @@ function DockPaneHeader({
   run,
   chat,
   workspaceSlug,
+  askAgentState,
   onClose,
   onRenameChat,
   onArchiveChat,
@@ -522,6 +570,7 @@ function DockPaneHeader({
   run: DockRunSummary | null;
   chat: DockChat | null;
   workspaceSlug?: string;
+  askAgentState: AskAgentAvatarState;
   onClose: () => void;
   onRenameChat: (chatId: string, title: string) => Promise<boolean>;
   onArchiveChat: (chatId: string) => Promise<boolean>;
@@ -546,7 +595,7 @@ function DockPaneHeader({
       {run && tab === 'agents' ? (
         <AgentAvatar name={run.agent.name} presetKey={run.agent.preset_key} iconKey={run.agent.icon_key} className="h-[26px] w-[26px] rounded-[8px] border-0 shadow-none" />
       ) : (
-        <span className="agent-dock-sparkle grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[8px]"><AiMagicIcon className="h-3.5 w-3.5 text-white" /></span>
+        <AskAgentAvatar state={askAgentState} plateStyle="feather" className="h-[34px] w-[34px]" />
       )}
       <span className="min-w-0 flex-1">
         {editingTitle && chat ? (
@@ -608,6 +657,7 @@ function DockTrigger({
   runs,
   attentionCount,
   nudge,
+  askAgentState,
   onAsk,
   onRun,
   onAttention,
@@ -618,6 +668,7 @@ function DockTrigger({
   runs: DockRunSummary[];
   attentionCount: number;
   nudge: boolean;
+  askAgentState: AskAgentAvatarState;
   onAsk: (source: HTMLButtonElement) => void;
   onRun: (runId: string, source: HTMLButtonElement) => void;
   onAttention: (source: HTMLButtonElement) => void;
@@ -638,12 +689,12 @@ function DockTrigger({
         type="button"
         aria-expanded={open}
         aria-controls="agent-dock-panel"
-        aria-label="Ask agents"
+        aria-label="Ask Agent"
         onClick={(event) => onAsk(event.currentTarget)}
         className="agent-dock-trigger-segment flex min-h-8 min-w-0 items-center gap-2 rounded-full px-3 outline-none transition hover:bg-[#f4f2ee] focus-visible:ring-2 focus-visible:ring-[#a855f7]/45 dark:hover:bg-[#302f2b]"
       >
-        <span className="agent-dock-sparkle grid h-[13px] w-[13px] shrink-0 place-items-center rounded-[4px]"><AiMagicIcon className="h-2.5 w-2.5 text-white" /></span>
-        <span className="truncate text-[13.5px] font-medium">Ask agents</span>
+        <AskAgentAvatar state={askAgentState} plateStyle="feather" className="h-8 w-8" />
+        <span className="truncate text-[13.5px] font-medium">Ask Agent</span>
         <kbd className="agent-dock-shortcut rounded-[5px] border border-[#eae7e0] px-[5px] py-px font-mono text-[11px] text-[#a5a29b] dark:border-[#3a3832]">/</kbd>
       </button>
       {runs.length > 0 ? (
@@ -706,6 +757,7 @@ function EmptyChatPane({ onNewChat }: { onNewChat: () => void }) {
   return (
     <div className="grid min-h-0 flex-1 place-items-center px-6 text-center">
       <div>
+        <AskAgentAvatar plateStyle="feather" className="mx-auto mb-2 h-[72px] w-[72px]" />
         <p className="text-[13px] text-[#8a8781]">No conversations yet.</p>
         <button type="button" onClick={onNewChat} className="mt-3 rounded-[9px] bg-[#1c1b19] px-3 py-2 text-[12.5px] font-semibold text-white hover:bg-[#34322e] dark:bg-[#eeeae1] dark:text-[#1c1b19]">Start a conversation</button>
       </div>

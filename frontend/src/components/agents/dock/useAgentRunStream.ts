@@ -39,7 +39,9 @@ const defaultFetchers: AgentRunStreamFetchers = {
   listEvents: (workspaceId, runId, after) => agentService.listRunEvents(workspaceId, runId, after),
 };
 
-interface AgentRunStreamState {
+export interface AgentRunStreamState {
+  /** Latest authoritative run snapshot, including status and pause reason. */
+  session: CodingSession | null;
   currentPlan: RunPlanArtifact | null;
   pendingInteraction: CodingSessionInteraction | null;
   /**
@@ -78,6 +80,7 @@ export function useAgentRunStream(
   fetchers: AgentRunStreamFetchers = defaultFetchers,
 ): AgentRunStreamState {
   const [currentPlan, setCurrentPlan] = useState<RunPlanArtifact | null>(null);
+  const [session, setSession] = useState<CodingSession | null>(null);
   const [streamState, setStreamState] = useState<CodingSessionStreamState | null>(null);
   const [pendingInteraction, setPendingInteraction] =
     useState<CodingSessionInteraction | null>(null);
@@ -145,6 +148,7 @@ export function useAgentRunStream(
       // a successor while this request is in flight, so never merge a response
       // that identifies a different host run.
       if (typeof snap.data?.id === 'string' && snap.data.id !== runId) return;
+      if (snap.data) setSession(snap.data);
       const acceptedEvents = (ev.data?.events ?? []).filter(
         (event) => event.session_id === runId && event.run_id === runId,
       );
@@ -247,6 +251,7 @@ export function useAgentRunStream(
     snapshotRef.current = null;
     clearedInteractionIdsRef.current = new Set();
     setCurrentPlan(null);
+    setSession(null);
     setStreamState(null);
     setPendingInteraction(null);
     setLoading(false);
@@ -294,11 +299,12 @@ export function useAgentRunStream(
   // Light polling fallback while active.
   useEffect(() => {
     if (!active || !workspaceId || !runId || pollMs <= 0) return;
+    if (session && ['completed', 'failed', 'cancelled'].includes(session.status)) return;
     const id = setInterval(() => {
       void refetch();
     }, pollMs);
     return () => clearInterval(id);
-  }, [active, pollMs, refetch, runId, workspaceId]);
+  }, [active, pollMs, refetch, runId, session, workspaceId]);
 
-  return { currentPlan, streamState, pendingInteraction, loading, refetch, clearPendingInteraction };
+  return { session, currentPlan, streamState, pendingInteraction, loading, refetch, clearPendingInteraction };
 }
