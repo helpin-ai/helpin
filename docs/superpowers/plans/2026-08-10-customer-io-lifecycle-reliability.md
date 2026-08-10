@@ -15,7 +15,7 @@
 ## File Map
 
 - Create `server/internal/model/customer_io_outbox.go` for persisted states, recipients, and rows.
-- Create `server/internal/dbmigrate/sql/202608100001_customer_io_lifecycle_outbox.sql` for production schema/indexes.
+- Create `server/internal/dbmigrate/sql/202608100002_customer_io_lifecycle_outbox.sql` for production schema/indexes.
 - Create `server/internal/repository/customer_io_outbox.go` and tests for enqueue/claim/fencing.
 - Modify `server/internal/dbmigrate/migrator_test.go` to assert the controlled migration contract.
 - Modify `server/internal/repository/billing.go` for atomic billing transitions and enqueue.
@@ -30,7 +30,7 @@
 
 **Files:**
 - Create: `server/internal/model/customer_io_outbox.go`
-- Create: `server/internal/dbmigrate/sql/202608100001_customer_io_lifecycle_outbox.sql`
+- Create: `server/internal/dbmigrate/sql/202608100002_customer_io_lifecycle_outbox.sql`
 - Create: `server/internal/repository/customer_io_outbox_test.go`
 - Modify: `server/internal/dbmigrate/migrator_test.go`
 

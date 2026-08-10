@@ -96,7 +96,7 @@ If a member is removed before delivery, the worker excludes that member because 
 
 ## Schema And Migration
 
-Add an idempotent controlled migration at `server/internal/dbmigrate/sql/202608100001_customer_io_lifecycle_outbox.sql`. The table uses JSONB defaults for attributes and recipients, a unique constraint on `semantic_key`, checks for valid status and non-negative attempts, and a nullable workspace foreign key with `ON DELETE SET NULL` so audit/deduplication survives workspace deletion. A partial index over due pending/processing rows supports polling by `status`, `next_attempt_at`, and `lease_expires_at`.
+Add an idempotent controlled migration at `server/internal/dbmigrate/sql/202608100002_customer_io_lifecycle_outbox.sql`. The table uses JSONB defaults for attributes and recipients, a unique constraint on `semantic_key`, checks for valid status and non-negative attempts, and a nullable workspace foreign key with `ON DELETE SET NULL` so audit/deduplication survives workspace deletion. A partial index over due pending/processing rows supports polling by `status`, `next_attempt_at`, and `lease_expires_at`.
 
 The repository exposes narrow operations for atomic billing transitions/enqueue, claiming, fenced completion, fenced retry, and fenced terminal failure. It does not expose a generic outbox abstraction.
 

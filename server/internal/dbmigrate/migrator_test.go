@@ -123,13 +123,13 @@ func TestCustomerIOLifecycleOutboxMigrationContract(t *testing.T) {
 
 	var migration *Migration
 	for i := range migrations {
-		if migrations[i].Version == "202608100001" {
+		if migrations[i].Version == "202608100002" {
 			migration = &migrations[i]
 			break
 		}
 	}
 	if migration == nil {
-		t.Fatal("expected Customer.io lifecycle outbox migration 202608100001 to be registered")
+		t.Fatal("expected Customer.io lifecycle outbox migration 202608100002 to be registered")
 	}
 	if migration.Name != "customer_io_lifecycle_outbox" {
 		t.Fatalf("migration name = %q, want %q", migration.Name, "customer_io_lifecycle_outbox")
