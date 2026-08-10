@@ -45,6 +45,7 @@ func TestAgentRuntimeFinalizersRepositoryDeliveryFiresOnPushedSummary(t *testing
 	}
 	finalizers := &AgentRunFinalizerService{
 		runRepo:            runRepo,
+		agentRepo:          &fakeFinalizerAgentRepo{agent: &model.Agent{ID: "agent-1", WorkspaceID: "ws-1", Name: "Forge", Status: "working"}},
 		repositoryDelivery: delivery,
 	}
 	svc := &AgentRuntimeProjectionService{
@@ -63,7 +64,7 @@ func TestAgentRuntimeFinalizersRepositoryDeliveryFiresOnPushedSummary(t *testing
 	if len(delivery.calls) != 1 {
 		t.Fatalf("expected one delivery call, got %d", len(delivery.calls))
 	}
-	if delivery.calls[0].Branch != "hel-31-fix" || delivery.calls[0].CommitSHA != "abc1234" {
+	if delivery.calls[0].Branch != "hel-31-fix" || delivery.calls[0].CommitSHA != "abc1234" || delivery.calls[0].AgentName != "Forge" {
 		t.Fatalf("unexpected delivery payload: %#v", delivery.calls[0])
 	}
 	if !runOutputSummaryFlag(run.OutputSummary, agentRuntimeFinalizerRepositoryDeliverySummaryKey) {

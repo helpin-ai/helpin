@@ -3,10 +3,13 @@ import { createRoot } from 'react-dom/client'
 import { createRouter, RouterProvider } from '@tanstack/react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+import { HelpinProvider } from '@helpin-ai/react'
 import { configureSessionStorage, createCookieSessionStorage } from '@helpin-ai/support-core'
 import { queryClient } from '@/lib/queryClient'
+import { helpinClient } from '@/lib/helpin'
 import { clearClientSession, useAuthStore } from '@/stores/authStore'
 import { startTokenRefreshTimer, stopTokenRefreshTimer, setupVisibilityRefresh } from '@/lib/api'
+import { HelpinIdentitySync } from '@/components/HelpinIdentitySync'
 import { RoutePendingState } from '@/components/layout/RoutePendingState'
 import { identifyAnalyticsUser, initializeAppAnalytics } from '@/lib/analytics'
 import { routeTree } from './routeTree.gen'
@@ -90,12 +93,15 @@ function InnerApp() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <InnerApp />
-      <div className="helpin-query-devtools">
-        <ReactQueryDevtools initialIsOpen={false} buttonPosition="top-right" />
-      </div>
-    </QueryClientProvider>
+    <HelpinProvider client={helpinClient}>
+      <QueryClientProvider client={queryClient}>
+        <HelpinIdentitySync />
+        <InnerApp />
+        <div className="helpin-query-devtools">
+          <ReactQueryDevtools initialIsOpen={false} buttonPosition="top-right" />
+        </div>
+      </QueryClientProvider>
+    </HelpinProvider>
   )
 }
 

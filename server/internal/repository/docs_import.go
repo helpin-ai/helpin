@@ -131,3 +131,34 @@ func (r *DocsImportRepository) SetError(ctx context.Context, id, errMsg string) 
 	}
 	return nil
 }
+
+// PrepareExecution stores the encrypted request and resets a job for workflow execution.
+func (r *DocsImportRepository) PrepareExecution(ctx context.Context, id, encryptedPayload, workflowID string) error {
+	updates := map[string]interface{}{
+		"payload_encrypted": encryptedPayload,
+		"workflow_id":       workflowID,
+		"status":            model.DocsImportStatusPending,
+		"error":             nil,
+		"completed_at":      nil,
+		"updated_at":        time.Now(),
+	}
+	if err := r.db.WithContext(ctx).Model(&model.DocsImportJob{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return fmt.Errorf("prepare docs import execution: %w", err)
+	}
+	return nil
+}
+
+// MarkInterrupted marks an active import as intentionally canceled.
+func (r *DocsImportRepository) MarkInterrupted(ctx context.Context, id, message string) error {
+	now := time.Now()
+	updates := map[string]interface{}{
+		"status":       model.DocsImportStatusInterrupted,
+		"error":        message,
+		"completed_at": &now,
+		"updated_at":   now,
+	}
+	if err := r.db.WithContext(ctx).Model(&model.DocsImportJob{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return fmt.Errorf("interrupt docs import job: %w", err)
+	}
+	return nil
+}

@@ -125,6 +125,8 @@ export type MCPAuthorizationWorkspace = {
   id: string;
   name: string;
   slug: string;
+  website_url?: string;
+  logo_url?: string;
   role: string;
   allowed_scopes: string[];
   allowed_toolsets: string[];

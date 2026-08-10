@@ -101,6 +101,17 @@ func (h *DocsHandler) ImportRetry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "retry started"})
 }
 
+// ImportCancel handles POST /api/docs/import/{jobId}/cancel.
+func (h *DocsHandler) ImportCancel(w http.ResponseWriter, r *http.Request) {
+	jobID := chi.URLParam(r, "jobId")
+	workspaceID := middleware.GetWorkspaceID(r.Context())
+	if err := h.importService.Cancel(r.Context(), jobID, workspaceID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "import canceled"})
+}
+
 // ImportGetRedirectMap handles GET /api/docs/import/{jobId}/redirect-map.
 func (h *DocsHandler) ImportGetRedirectMap(w http.ResponseWriter, r *http.Request) {
 	jobID := chi.URLParam(r, "jobId")

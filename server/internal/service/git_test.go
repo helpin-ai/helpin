@@ -1069,6 +1069,7 @@ func TestEpicDeliveryBranchFlowEnsuresMergesAndOpensFinalPR(t *testing.T) {
 
 	app := &fakeGitHubAppClient{}
 	svc := newGitDeliveryStatusService(db, app)
+	svc.appBaseURL = "https://stage.helpin.ai"
 	ctx := context.Background()
 
 	target, err := svc.GetEpicDeliveryTarget(ctx, "ws-1", "epic-1")
@@ -1131,6 +1132,9 @@ func TestEpicDeliveryBranchFlowEnsuresMergesAndOpensFinalPR(t *testing.T) {
 	prCall := app.ensurePRs[0]
 	if prCall.Head != "epic/hel-900-checkout-automation" || prCall.Base != "main" || prCall.Title != "Merge epic: Checkout automation" {
 		t.Fatalf("unexpected final PR call: %#v", prCall)
+	}
+	if !strings.Contains(prCall.Body, "https://stage.helpin.ai/w/demo/pm/epics/epic-1") || !strings.Contains(prCall.Body, "run_id=run-final") {
+		t.Fatalf("final PR body should link the epic and run: %s", prCall.Body)
 	}
 	if finalTarget.FinalPRNumber == nil || *finalTarget.FinalPRNumber != 1 || finalTarget.FinalPRStatus == nil || *finalTarget.FinalPRStatus != "open" {
 		t.Fatalf("final target PR fields = %#v", finalTarget)

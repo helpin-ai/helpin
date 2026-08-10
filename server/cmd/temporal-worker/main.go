@@ -22,6 +22,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
@@ -169,6 +170,11 @@ func main() {
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db, false)
+	docsHelpcenterPublicationRepo := repository.NewDocsHelpcenterPublicationRepository(db)
+	docsHelpcenterSearchRepo := repository.NewDocsHelpcenterSearchRepository(db)
+	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
+	docsImportRepo := repository.NewDocsImportRepository(db)
+	billingRepo := repository.NewBillingRepository(db)
 	docsAssetReferenceRepo := repository.NewDocsAssetReferenceRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsChunkRepo := repository.NewDocsChunkRepository(db)
@@ -232,13 +238,17 @@ func main() {
 	default:
 		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
 	}
-	_, supportEmbeddingProvider := llm.NewSupportRouter(
+	supportLLMRouter, supportEmbeddingProvider := llm.NewSupportRouter(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
 		cfg.OpenAIBaseURL,
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
+	stripeGateway := billingstripe.New(cfg.StripeSecretKey, cfg.StripeCreditBlockPriceID)
+	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
+	billingService.SetWorkspaceRepository(workspaceRepo)
+	supportLLMProvider := service.NewMeteredLLMProvider(supportLLMRouter, service.NewAIUsageMeter(billingService))
 	var redisClient *redis.Client
 	if cfg.RedisURL != "" {
 		redisOpts, err := redis.ParseURL(cfg.RedisURL)
@@ -386,7 +396,38 @@ func main() {
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo, wsPublisher)
+	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
+	docsHelpcenterService := service.NewDocsHelpcenterService(
+		docsHelpcenterRepo,
+		docsHelpcenterPublicationRepo,
+		docsDocumentRepo,
+		docsContentRepo,
+		docsSpaceRepo,
+		docsCollectionRepo,
+		docsRedirectRepo,
+		s3Client,
+		wsPublisher,
+	)
+	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
+	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
+	docsImportService := service.NewDocsImportService(
+		docsImportRepo,
+		docsSpaceService,
+		docsCollectionService,
+		docsDocumentService,
+		docsContentService,
+		docsHelpcenterService,
+		docsRedirectRepo,
+		s3Client,
+		supportLLMProvider,
+		service.DocsImportAIConversionConfig{
+			Enabled:      cfg.DocsImportAIConversionEnabled,
+			Provider:     cfg.DocsImportAIConversionProvider,
+			Model:        cfg.DocsImportAIConversionModel,
+			ArticleLimit: cfg.DocsImportAIConversionArticleLimit,
+		},
+	).SetTemporalClient(nil, resolvePMImportEncryptionKey(cfg))
 	docsBlockService := service.NewDocsBlockService(docsBlockRepo, docsContentService, docsDocumentRepo)
 	docsBlockService.SetActivityService(pmActivityService)
 	supportCoverageService.SetDocsBlockService(docsBlockService)
@@ -520,11 +561,12 @@ func main() {
 	docsAssetCleanupActivities := temporalapp.NewDocsAssetCleanupActivities(docsAssetReferenceRepo, s3Client)
 	contentSourceSyncActivities := temporalapp.NewContentSourceSyncActivities(supportContentSyncService)
 	pmImportActivities := service.NewPMImportActivities(pmImportService)
+	docsImportActivities := service.NewDocsImportActivities(docsImportService)
 
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, emailSyncActivities, signalActivities, summaryActivities, coverageActivities, coverageAnalysisActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, docsAssetCleanupActivities, contentSourceSyncActivities, pmImportActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, emailSyncActivities, signalActivities, summaryActivities, coverageActivities, coverageAnalysisActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, docsAssetCleanupActivities, contentSourceSyncActivities, pmImportActivities, docsImportActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -562,7 +604,7 @@ func parseLogLevel(value string) slog.Level {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, coverageActivities *temporalapp.CoverageGapActivities, coverageAnalysisActivities *temporalapp.CoverageAnalysisActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, docsAssetCleanupActivities *temporalapp.DocsAssetCleanupActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, coverageActivities *temporalapp.CoverageGapActivities, coverageAnalysisActivities *temporalapp.CoverageAnalysisActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, docsAssetCleanupActivities *temporalapp.DocsAssetCleanupActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities, docsImportActivities *service.DocsImportActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 		WorkerStopTimeout:                  temporalWorkerStopTimeout,
@@ -690,6 +732,14 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	if pmImportActivities != nil {
 		w.RegisterActivityWithOptions(pmImportActivities.ExecuteShortcutAPIImportActivity, activity.RegisterOptions{
 			Name: "PMImportActivities.ExecuteShortcutAPIImportActivity",
+		})
+	}
+
+	// Register durable docs import workflow and activity.
+	w.RegisterWorkflow(temporalapp.DocsImportWorkflow)
+	if docsImportActivities != nil {
+		w.RegisterActivityWithOptions(docsImportActivities.ExecuteHelpScoutImportActivity, activity.RegisterOptions{
+			Name: temporalapp.DocsImportExecuteActivityName,
 		})
 	}
 

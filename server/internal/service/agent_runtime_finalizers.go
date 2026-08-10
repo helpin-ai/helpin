@@ -505,9 +505,24 @@ func (s *AgentRunFinalizerService) finalizeRepositoryDelivery(ctx context.Contex
 	if runOutputSummaryFlag(run.OutputSummary, agentRuntimeFinalizerRepositoryDeliverySummaryKey) {
 		return nil
 	}
+	agentName := ""
+	if s.agentRepo != nil {
+		agent, agentErr := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID)
+		if agentErr != nil {
+			slog.WarnContext(ctx, "failed to resolve agent name for repository delivery",
+				"error", agentErr,
+				"workspace_id", run.WorkspaceID,
+				"run_id", run.ID,
+				"agent_id", run.AgentID,
+			)
+		} else if agent != nil {
+			agentName = strings.TrimSpace(agent.Name)
+		}
+	}
 	result, err := s.repositoryDelivery.FinalizeDelegatedRunDelivery(ctx, run, AgentRunRepositoryDelivery{
 		Branch:    strings.TrimSpace(repository.Branch),
 		CommitSHA: strings.TrimSpace(repository.Commit),
+		AgentName: agentName,
 	})
 	if err != nil {
 		return fmt.Errorf("deliver pushed branch %q: %w", strings.TrimSpace(repository.Branch), err)

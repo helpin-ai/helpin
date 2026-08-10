@@ -1411,6 +1411,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/nextra/start", h.Docs.ImportStartNextra)
 				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/{jobId}/status", h.Docs.ImportGetStatus)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/{jobId}/retry", h.Docs.ImportRetry)
+				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/{jobId}/cancel", h.Docs.ImportCancel)
 				r.With(requirePerm(authorization.PermDocsImport)).Get("/import/{jobId}/redirect-map", h.Docs.ImportGetRedirectMap)
 				r.With(requirePerm(authorization.PermDocsImport)).Post("/import/{jobId}/reconvert", h.Docs.ImportReconvert)
 			})

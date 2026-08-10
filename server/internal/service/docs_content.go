@@ -195,6 +195,6 @@ func (s *DocsContentService) ListBySpaceWithImportHTML(ctx context.Context, spac
 
 // SetImportProvenance stores the original import HTML and source metadata on a content record.
 // This is a snapshot for reconversion/debugging — not the live source of truth.
-func (s *DocsContentService) SetImportProvenance(ctx context.Context, contentID, sourceHTML, sourceSystem, sourceObjectID string) {
-	s.contentRepo.UpdateImportProvenance(ctx, contentID, sourceHTML, sourceSystem, sourceObjectID)
+func (s *DocsContentService) SetImportProvenance(ctx context.Context, contentID, sourceHTML, sourceSystem, sourceObjectID string) error {
+	return s.contentRepo.UpdateImportProvenance(ctx, contentID, sourceHTML, sourceSystem, sourceObjectID)
 }

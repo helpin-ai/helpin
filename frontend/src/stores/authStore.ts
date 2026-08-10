@@ -5,6 +5,7 @@ import { passkeyService } from '@/lib/services/passkeyService';
 import { stopTokenRefreshTimer } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
 import { resetAnalytics } from '@/lib/analytics';
+import { resetHelpinIdentity } from '@/lib/helpin';
 import { clearSession, hydrateSessionStorage, writeSession } from '@helpin-ai/support-core';
 
 interface AuthState {
@@ -28,6 +29,7 @@ let _initializing = false;
 
 export async function clearClientSession() {
   resetAnalytics();
+  await resetHelpinIdentity();
   stopTokenRefreshTimer();
   queryClient.clear();
 

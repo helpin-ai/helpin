@@ -84,6 +84,7 @@ type gitLabClient interface {
 	ListBranches(ctx context.Context, accessToken string, projectID int64) ([]gitlab.Branch, error)
 	ListMergeRequests(ctx context.Context, accessToken string, projectID int64, sourceBranch, targetBranch string) ([]gitlab.MergeRequest, error)
 	CreateMergeRequest(ctx context.Context, accessToken string, projectID int64, sourceBranch, targetBranch, title, description string) (*gitlab.MergeRequest, error)
+	UpdateMergeRequestDescription(ctx context.Context, accessToken string, projectID int64, mergeRequestIID int, description string) (*gitlab.MergeRequest, error)
 	UpsertProjectWebhook(ctx context.Context, accessToken string, projectID int64, hookURL, secret string) (*gitlab.ProjectWebhook, error)
 }
 
@@ -1880,19 +1881,18 @@ func (s *GitService) OpenEpicFinalPullRequest(ctx context.Context, workspaceID, 
 	if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
 		return nil, fmt.Errorf("git integration has no installation ID")
 	}
-	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
-	if err != nil {
-		return nil, err
+	run := &model.AgentRun{
+		ID:          strings.TrimSpace(runID),
+		WorkspaceID: workspaceID,
+		TargetType:  "epic",
+		TargetID:    epicID,
 	}
-	title := fmt.Sprintf("Merge epic %s", strings.TrimSpace(*target.EpicBranch))
-	if epicWithStats != nil && strings.TrimSpace(epicWithStats.Epic.Name) != "" {
-		title = "Merge epic: " + strings.TrimSpace(epicWithStats.Epic.Name)
-	}
+	title, body := s.buildDelegatedRunPullRequestContent(ctx, run, AgentRunRepositoryDelivery{}, strings.TrimSpace(*target.EpicBranch), strings.TrimSpace(*target.BaseBranch))
 	pr, err := s.githubApp.EnsurePullRequest(ctx, *integration.InstallationID, owner, repo, githubapp.EnsurePullRequestInput{
 		Head:  strings.TrimSpace(*target.EpicBranch),
 		Base:  strings.TrimSpace(*target.BaseBranch),
 		Title: title,
-		Body:  "Created by Helpin after all epic task branches were merged into the epic integration branch.",
+		Body:  body,
 	})
 	if err != nil {
 		return nil, err

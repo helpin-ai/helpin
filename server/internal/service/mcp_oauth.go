@@ -52,6 +52,8 @@ type MCPAuthorizationWorkspace struct {
 	ID               string   `json:"id"`
 	Name             string   `json:"name"`
 	Slug             string   `json:"slug"`
+	WebsiteURL       *string  `json:"website_url,omitempty"`
+	LogoURL          *string  `json:"logo_url,omitempty"`
 	Role             string   `json:"role"`
 	AllowedScopes    []string `json:"allowed_scopes"`
 	AllowedToolsets  []string `json:"allowed_toolsets"`
@@ -168,7 +170,8 @@ func (s *MCPService) GetAuthorizationRequest(ctx context.Context, userID string,
 			continue
 		}
 		options = append(options, MCPAuthorizationWorkspace{
-			ID: workspace.ID, Name: workspace.Name, Slug: workspace.Slug, Role: workspace.Role,
+			ID: workspace.ID, Name: workspace.Name, Slug: workspace.Slug,
+			WebsiteURL: workspace.WebsiteURL, LogoURL: workspace.LogoURL, Role: workspace.Role,
 			AllowedScopes: allowedScopes, AllowedToolsets: allowedToolsets,
 			ReadOnlyRequired: readOnlyRequired,
 		})
