@@ -34,6 +34,7 @@ export interface ImportSummary {
 
 export interface ImportStatusResponse {
   id: string;
+  space_id?: string | null;
   status: 'pending' | 'running' | 'done' | 'failed' | 'interrupted';
   source: string;
   total: number;

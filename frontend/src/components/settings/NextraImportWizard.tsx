@@ -71,26 +71,42 @@ export function NextraImportWizard({ workspaceId }: { workspaceId: string }) {
     }, 2000);
   }, [workspaceId]);
 
-  // Resume active import on mount.
+  // Resume the newest active server job, including imports started in another browser.
   useEffect(() => {
-    const savedJobId = localStorage.getItem(STORAGE_KEY);
-    if (savedJobId) {
-      docsImportService.getStatus(workspaceId, savedJobId).then(({ data }) => {
-        if (data && (data.status === 'running' || data.status === 'pending')) {
-          setJobId(savedJobId);
-          setJobStatus(data);
-          setStep(2);
-          startPolling(savedJobId);
-        } else if (data && (data.status === 'done' || data.status === 'failed')) {
-          setJobId(savedJobId);
-          setJobStatus(data);
-          setStep(2);
-        } else {
-          localStorage.removeItem(STORAGE_KEY);
-        }
-      });
-    }
+    let active = true;
+    const showJob = (job: ImportStatusResponse) => {
+      if (!active) return;
+      setJobId(job.id);
+      setJobStatus(job);
+      setStep(2);
+      localStorage.setItem(STORAGE_KEY, job.id);
+      if (job.status === 'running' || job.status === 'pending') startPolling(job.id);
+    };
+    const resumeImport = async () => {
+      const { data: jobs } = await docsImportService.listJobs(workspaceId);
+      const runningJob = (jobs ?? []).find(
+        (job) =>
+          job.source === 'nextra' &&
+          Boolean(job.space_id) &&
+          (job.status === 'running' || job.status === 'pending'),
+      );
+      if (runningJob) {
+        showJob(runningJob);
+        return;
+      }
+
+      const savedJobId = localStorage.getItem(STORAGE_KEY);
+      if (!savedJobId) return;
+      const { data: savedJob } = await docsImportService.getStatus(workspaceId, savedJobId);
+      if (savedJob?.source === 'nextra') {
+        showJob(savedJob);
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    };
+    void resumeImport();
     return () => {
+      active = false;
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [STORAGE_KEY, startPolling, workspaceId]);

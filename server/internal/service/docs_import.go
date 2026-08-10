@@ -390,7 +390,7 @@ func (s *DocsImportService) runImport(ctx context.Context, jobID, apiKey string,
 			SourceObjectType:     stringPtr("category"),
 			SourceObjectID:       stringPtr(cat.ID),
 		}
-		if err := s.redirectRepo.Create(ctx, catRedirect); err != nil {
+		if err := s.redirectRepo.Create(ctx, catRedirect); err != nil && !isUniqueConstraintViolation(err) {
 			s.logger.Error("create category redirect", "error", err, "category_id", cat.ID)
 		}
 	}
@@ -681,11 +681,11 @@ func (s *DocsImportService) importArticle(
 			SourceObjectType:     stringPtr("article"),
 			SourceObjectID:       stringPtr(ref.ID),
 		}
-		if err := s.redirectRepo.Create(ctx, articleRedirect); err != nil {
+		if err := s.redirectRepo.Create(ctx, articleRedirect); err == nil {
+			stats.RedirectCreated = true
+		} else if !isUniqueConstraintViolation(err) {
 			s.logger.Error("create article redirect", "error", err, "article_id", ref.ID)
 			// Non-fatal.
-		} else {
-			stats.RedirectCreated = true
 		}
 	}
 
