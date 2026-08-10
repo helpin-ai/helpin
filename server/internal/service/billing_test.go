@@ -197,6 +197,176 @@ func newBillingTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func configureBillingOutboxTest(t *testing.T, db *gorm.DB, svc *BillingService) *repository.CustomerIOLifecycleOutboxRepository {
+	t.Helper()
+	if err := db.Exec(`CREATE TABLE customer_io_outbox (
+		id TEXT PRIMARY KEY, semantic_key TEXT NOT NULL UNIQUE, workspace_id TEXT,
+		event_name TEXT NOT NULL, occurred_at DATETIME NOT NULL,
+		attributes TEXT NOT NULL DEFAULT '{}', recipient_snapshot TEXT NOT NULL DEFAULT '[]',
+		status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+		next_attempt_at DATETIME NOT NULL, claim_token TEXT, claimed_at DATETIME,
+		lease_expires_at DATETIME, last_error TEXT, created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create Customer.io outbox: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE workspace_members (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		user_id TEXT,
+		role TEXT NOT NULL,
+		status TEXT NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create workspace_members: %v", err)
+	}
+	outboxRepo := repository.NewCustomerIOLifecycleOutboxRepository(db)
+	svc.SetCustomerIOLifecycleOutboxRepository(outboxRepo)
+	return outboxRepo
+}
+
+func seedBillingOutboxWorkspace(t *testing.T, db *gorm.DB, workspaceID string, now time.Time) {
+	t.Helper()
+	if err := db.Exec(
+		`INSERT INTO workspaces (id, name, slug, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		workspaceID, "Acme", workspaceID, "owner-1", now, now,
+	).Error; err != nil {
+		t.Fatalf("seed workspace: %v", err)
+	}
+	if err := db.Exec(
+		`INSERT INTO workspace_members (id, workspace_id, user_id, role, status) VALUES (?, ?, ?, ?, ?)`,
+		"member-"+workspaceID, workspaceID, "owner-1", model.RoleOwner, model.WorkspaceMemberStatusActive,
+	).Error; err != nil {
+		t.Fatalf("seed workspace member: %v", err)
+	}
+}
+
+func TestBillingServiceTrialInitializationOutbox(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
+	configureBillingOutboxTest(t, db, svc)
+	seedBillingOutboxWorkspace(t, db, "workspace-trial-outbox", now)
+
+	first, err := svc.EnsureTrialForWorkspace(context.Background(), "workspace-trial-outbox")
+	if err != nil {
+		t.Fatalf("first ensure trial: %v", err)
+	}
+	second, err := svc.EnsureTrialForWorkspace(context.Background(), "workspace-trial-outbox")
+	if err != nil {
+		t.Fatalf("second ensure trial: %v", err)
+	}
+	if first.TrialEndsAt == nil || second.TrialEndsAt == nil || !first.TrialEndsAt.Equal(*second.TrialEndsAt) {
+		t.Fatalf("trial ends differ: first=%v second=%v", first.TrialEndsAt, second.TrialEndsAt)
+	}
+
+	var events []model.CustomerIOOutbox
+	if err := db.Find(&events).Error; err != nil {
+		t.Fatalf("list outbox: %v", err)
+	}
+	if len(events) != 1 || events[0].EventName != "trial_started" {
+		t.Fatalf("outbox events = %#v, want one trial_started", events)
+	}
+}
+
+func TestBillingServiceExpireOverdueTrialsOutboxIsIdempotent(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
+	configureBillingOutboxTest(t, db, svc)
+	seedBillingOutboxWorkspace(t, db, "workspace-expiry-outbox", now)
+	past := now.Add(-time.Hour)
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
+		WorkspaceID: "workspace-expiry-outbox", Plan: model.BillingPlanGrowth,
+		Status: model.BillingStatusTrialing, BillingInterval: "monthly",
+		CurrentPeriodStart: now.AddDate(0, 0, -14), CurrentPeriodEnd: past, TrialEndsAt: &past,
+	}); err != nil {
+		t.Fatalf("seed billing: %v", err)
+	}
+
+	first, err := svc.ExpireOverdueTrials(context.Background())
+	if err != nil {
+		t.Fatalf("first expiry: %v", err)
+	}
+	second, err := svc.ExpireOverdueTrials(context.Background())
+	if err != nil {
+		t.Fatalf("second expiry: %v", err)
+	}
+	if first != 1 || second != 0 {
+		t.Fatalf("expiry counts = %d, %d; want 1, 0", first, second)
+	}
+	var count int64
+	if err := db.Model(&model.CustomerIOOutbox{}).Where("event_name = ?", "trial_expired").Count(&count).Error; err != nil {
+		t.Fatalf("count expiry events: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("trial_expired outbox count = %d, want 1", count)
+	}
+}
+
+func TestBillingServiceExpireOverdueTrialsOutboxRollback(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
+	configureBillingOutboxTest(t, db, svc)
+	seedBillingOutboxWorkspace(t, db, "workspace-expiry-rollback", now)
+	past := now.Add(-time.Hour)
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
+		WorkspaceID: "workspace-expiry-rollback", Plan: model.BillingPlanGrowth,
+		Status: model.BillingStatusTrialing, BillingInterval: "monthly",
+		CurrentPeriodStart: now.AddDate(0, 0, -14), CurrentPeriodEnd: past, TrialEndsAt: &past,
+	}); err != nil {
+		t.Fatalf("seed billing: %v", err)
+	}
+	if err := db.Exec("DROP TABLE customer_io_outbox").Error; err != nil {
+		t.Fatalf("drop outbox: %v", err)
+	}
+
+	if _, err := svc.ExpireOverdueTrials(context.Background()); err == nil {
+		t.Fatal("expiry succeeded without outbox table")
+	}
+	billing, err := repo.GetByWorkspaceID(context.Background(), "workspace-expiry-rollback")
+	if err != nil {
+		t.Fatalf("reload billing: %v", err)
+	}
+	if billing.Status != model.BillingStatusTrialing {
+		t.Fatalf("billing status = %q, want rollback to trialing", billing.Status)
+	}
+}
+
+func TestBillingServiceReadExpiredTrialUsesOutbox(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
+	configureBillingOutboxTest(t, db, svc)
+	seedBillingOutboxWorkspace(t, db, "workspace-read-expired", now)
+	past := now.Add(-time.Hour)
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
+		WorkspaceID: "workspace-read-expired", Plan: model.BillingPlanGrowth,
+		Status: model.BillingStatusTrialing, BillingInterval: "monthly",
+		CurrentPeriodStart: now.AddDate(0, 0, -14), CurrentPeriodEnd: past, TrialEndsAt: &past,
+	}); err != nil {
+		t.Fatalf("seed billing: %v", err)
+	}
+
+	summary, err := svc.GetWorkspaceBilling(context.Background(), "workspace-read-expired")
+	if err != nil {
+		t.Fatalf("get expired billing: %v", err)
+	}
+	if summary.Status != model.BillingStatusTrialExpired {
+		t.Fatalf("status = %q, want trial_expired", summary.Status)
+	}
+	var count int64
+	if err := db.Model(&model.CustomerIOOutbox{}).Where("event_name = ?", "trial_expired").Count(&count).Error; err != nil {
+		t.Fatalf("count outbox: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("trial_expired outbox count = %d, want 1", count)
+	}
+}
+
 func TestBillingServiceEnsureTrialForFounderOrgStartsFounderPlan(t *testing.T) {
 	db := newBillingTestDB(t)
 	repo := repository.NewBillingRepository(db)
@@ -1189,6 +1359,69 @@ func TestBillingServiceRecordsPaymentFailedNotice(t *testing.T) {
 	}
 	if summary.BillingNoticeType != "payment_failed" || summary.BillingNoticeAt == nil || summary.PaymentFailedAt == nil {
 		t.Fatalf("unexpected billing notice: %#v", summary)
+	}
+}
+
+func TestBillingServicePaymentFailedAtomicallyEnqueuesLifecycleEvent(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	receivedAt := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	occurredAt := receivedAt.Add(-2 * time.Minute)
+	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return receivedAt })
+	configureBillingOutboxTest(t, db, svc)
+	if err := db.Exec(`INSERT INTO workspace_members (id, workspace_id, user_id, role, status) VALUES (?, ?, ?, ?, ?)`, "member-1", "workspace-1", "user-1", model.RoleOwner, model.WorkspaceMemberStatusActive).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{WorkspaceID: "workspace-1", Plan: model.BillingPlanGrowth, Status: model.BillingStatusActive, StripeCustomerID: billingStringPtr("cus_123"), StripeSubscriptionID: billingStringPtr("sub_123"), BillingInterval: "monthly", IncludedCredits: 25000, CurrentPeriodStart: receivedAt.Add(-24 * time.Hour), CurrentPeriodEnd: receivedAt.Add(29 * 24 * time.Hour)}); err != nil {
+		t.Fatalf("seed billing: %v", err)
+	}
+	event := BillingStripeInvoiceEvent{EventID: "evt_atomic_failed", EventType: "invoice.payment_failed", SubscriptionID: "sub_123", CustomerID: "cus_123", OccurredAt: occurredAt}
+	if _, err := svc.ApplyStripeInvoicePaymentFailed(context.Background(), event); err != nil {
+		t.Fatalf("apply event: %v", err)
+	}
+	if _, err := svc.ApplyStripeInvoicePaymentFailed(context.Background(), event); err != nil {
+		t.Fatalf("replay event: %v", err)
+	}
+	var row model.CustomerIOOutbox
+	if err := db.Where("semantic_key = ?", "stripe:"+event.EventID).First(&row).Error; err != nil {
+		t.Fatalf("load outbox: %v", err)
+	}
+	if row.EventName != "payment_failed" || !row.OccurredAt.Equal(occurredAt) {
+		t.Fatalf("unexpected outbox row: %#v", row)
+	}
+	var count int64
+	if err := db.Model(&model.CustomerIOOutbox{}).Where("semantic_key = ?", "stripe:"+event.EventID).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("outbox count = %d, err = %v", count, err)
+	}
+	var webhook model.StripeWebhookEvent
+	if err := db.First(&webhook, "id = ?", event.EventID).Error; err != nil || !webhook.Processed {
+		t.Fatalf("webhook not processed atomically: %#v err=%v", webhook, err)
+	}
+}
+
+func TestBillingServicePaymentFailedRollsBackWhenOutboxInsertFails(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
+	configureBillingOutboxTest(t, db, svc)
+	if err := db.Exec("DROP TABLE customer_io_outbox").Error; err != nil {
+		t.Fatalf("drop outbox: %v", err)
+	}
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{WorkspaceID: "workspace-1", Plan: model.BillingPlanGrowth, Status: model.BillingStatusActive, StripeSubscriptionID: billingStringPtr("sub_rollback"), BillingInterval: "monthly", CurrentPeriodStart: now.Add(-time.Hour), CurrentPeriodEnd: now.Add(30 * 24 * time.Hour)}); err != nil {
+		t.Fatalf("seed billing: %v", err)
+	}
+	_, err := svc.ApplyStripeInvoicePaymentFailed(context.Background(), BillingStripeInvoiceEvent{EventID: "evt_rollback", EventType: "invoice.payment_failed", SubscriptionID: "sub_rollback", OccurredAt: now})
+	if err == nil {
+		t.Fatal("expected outbox failure")
+	}
+	billing, err := repo.GetByWorkspaceID(context.Background(), "workspace-1")
+	if err != nil || billing.Status != model.BillingStatusActive {
+		t.Fatalf("billing mutation was not rolled back: %#v err=%v", billing, err)
+	}
+	var count int64
+	if err := db.Model(&model.StripeWebhookEvent{}).Where("id = ?", "evt_rollback").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("webhook insert was not rolled back: count=%d err=%v", count, err)
 	}
 }
 

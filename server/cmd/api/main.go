@@ -625,6 +625,7 @@ func main() {
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
 	billingRepo := repository.NewBillingRepository(db)
+	customerIOOutboxRepo := repository.NewCustomerIOLifecycleOutboxRepository(db)
 	supportTagRepo := repository.NewSupportTagRepository(db)
 	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
@@ -653,6 +654,14 @@ func main() {
 	})
 	billingService.SetWorkspaceRepository(workspaceRepo)
 	billingService.SetCustomerIOIdentityService(customerIOIdentityService)
+	billingService.SetCustomerIOLifecycleOutboxRepository(customerIOOutboxRepo)
+	customerIOOutboxWorker := service.NewCustomerIOLifecycleOutboxWorker(customerIOOutboxRepo, workspaceRepo, customerIOIdentityService)
+	customerIOOutboxCtx, customerIOOutboxCancel := context.WithCancel(context.Background())
+	customerIOOutboxDone := make(chan struct{})
+	go func() {
+		defer close(customerIOOutboxDone)
+		customerIOOutboxWorker.Run(customerIOOutboxCtx, 15*time.Second)
+	}()
 	aiUsageMeter := service.NewAIUsageMeter(billingService)
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
 	gitCredentialRepo := repository.NewGitCredentialRepository(db)
@@ -1907,6 +1916,12 @@ func main() {
 	slog.Info("server shutting down")
 	realtimeCancel()
 	agentRuntimeProjectionCancel()
+	customerIOOutboxCancel()
+	select {
+	case <-customerIOOutboxDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("customer.io outbox worker did not stop before shutdown timeout")
+	}
 	if emailFallbackCancel != nil {
 		emailFallbackCancel()
 	}

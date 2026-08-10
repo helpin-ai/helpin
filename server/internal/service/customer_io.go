@@ -3,14 +3,19 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/oklog/ulid/v2"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -38,6 +43,34 @@ type CustomerIOTrackClient struct {
 	httpClient               *http.Client
 }
 
+// CustomerIODeliveryError describes a failed Customer.io Track API delivery.
+// A zero StatusCode identifies a transport failure; Err remains available to
+// errors.Is and errors.As through Unwrap.
+type CustomerIODeliveryError struct {
+	StatusCode int
+	RetryAfter time.Duration
+	Body       string
+	Err        error
+}
+
+func (e *CustomerIODeliveryError) Error() string {
+	if e == nil {
+		return "customer.io delivery error"
+	}
+	if e.StatusCode != 0 {
+		return fmt.Sprintf("post customer.io entity: unexpected status %d", e.StatusCode)
+	}
+	return fmt.Sprintf("post customer.io entity: %v", e.Err)
+}
+
+// Unwrap returns the underlying transport error, when present.
+func (e *CustomerIODeliveryError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
 type CustomerIOWorkspaceIdentity struct {
 	Workspace          *model.Workspace
 	Billing            *BillingSummary
@@ -59,6 +92,7 @@ type CustomerIOOrganizationIdentity struct {
 	HighestPlan        string
 	HasTrialWorkspace  bool
 	HasPaidWorkspace   bool
+	PaidWorkspaceCount int
 	MonthlyDueCents    int
 }
 
@@ -143,7 +177,7 @@ func (c *CustomerIOTrackClient) TrackEvent(ctx context.Context, event CustomerIO
 		ID:          strings.TrimSpace(event.EventID),
 		Name:        strings.TrimSpace(event.Name),
 		Timestamp:   occurredAt.UTC().Unix(),
-		Attributes:  compactAttributes(event.Attributes),
+		Attributes:  customerIOEventAttributes(event.Attributes),
 	}
 	return c.postEntity(ctx, payload)
 }
@@ -242,13 +276,66 @@ func (c *CustomerIOTrackClient) postEntity(ctx context.Context, payload customer
 
 	res, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("post customer.io entity: %w", err)
+		return &CustomerIODeliveryError{Err: err}
 	}
-	defer res.Body.Close()
+	body, readErr := io.ReadAll(io.LimitReader(res.Body, 4096))
+	closeErr := res.Body.Close()
+	if readErr != nil {
+		return &CustomerIODeliveryError{StatusCode: res.StatusCode, Err: fmt.Errorf("read response body: %w", readErr)}
+	}
+	if closeErr != nil {
+		return &CustomerIODeliveryError{StatusCode: res.StatusCode, Err: fmt.Errorf("close response body: %w", closeErr)}
+	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return fmt.Errorf("post customer.io entity: unexpected status %d", res.StatusCode)
+		return &CustomerIODeliveryError{
+			StatusCode: res.StatusCode,
+			RetryAfter: customerIORetryAfter(res.Header.Get("Retry-After"), time.Now()),
+			Body:       strings.TrimSpace(string(body)),
+		}
 	}
 	return nil
+}
+
+func customerIORetryAfter(value string, now time.Time) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if seconds <= 0 {
+			return 0
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	retryAt, err := http.ParseTime(value)
+	if err != nil || !retryAt.After(now) {
+		return 0
+	}
+	return retryAt.Sub(now)
+}
+
+func customerIOEventAttributes(attributes map[string]any) map[string]any {
+	attrs := make(map[string]any, len(attributes))
+	for key, value := range attributes {
+		attrs[key] = value
+	}
+	delete(attrs, "recipient")
+	delete(attrs, "from_address")
+	delete(attrs, "reply_to")
+	return attrs
+}
+
+func customerIOEventULID(outboxID, recipientUserID string, occurredAt time.Time) string {
+	digest := sha256.Sum256([]byte(strings.Join([]string{
+		"helpin-customerio-event-v1",
+		outboxID,
+		recipientUserID,
+	}, "\x00")))
+	id, err := ulid.New(ulid.Timestamp(occurredAt), bytes.NewReader(digest[:10]))
+	if err != nil {
+		panic(fmt.Sprintf("derive customer.io event ULID: %v", err))
+	}
+	return id.String()
 }
 
 func customerIOEndpoint(region, override string) string {
@@ -323,23 +410,24 @@ func customerIOWorkspaceAttributes(input CustomerIOWorkspaceIdentity) map[string
 func customerIOOrganizationAttributes(input CustomerIOOrganizationIdentity) map[string]any {
 	org := input.Organization
 	return compactAttributes(map[string]any{
-		"name":                        org.Name,
-		"organization_id":             org.ID,
-		"organization_slug":           org.Slug,
-		"owner_user_id":               org.OwnerID,
-		"logo_url":                    customerIOStringValue(org.LogoURL),
-		"has_logo":                    strings.TrimSpace(customerIOStringValue(org.LogoURL)) != "",
-		"created_at":                  org.CreatedAt,
-		"updated_at":                  org.UpdatedAt,
-		"member_count":                input.MemberCount,
-		"workspace_count":             input.WorkspaceCount,
-		"trialing_workspace_count":    input.TrialingWorkspaces,
-		"active_workspace_count":      input.ActiveWorkspaces,
-		"locked_workspace_count":      input.LockedWorkspaces,
-		"highest_plan":                input.HighestPlan,
-		"has_trial_workspace":         input.HasTrialWorkspace,
-		"has_paid_workspace":          input.HasPaidWorkspace,
-		"estimated_monthly_due_cents": input.MonthlyDueCents,
+		"name":                     org.Name,
+		"organization_id":          org.ID,
+		"organization_slug":        org.Slug,
+		"owner_user_id":            org.OwnerID,
+		"logo_url":                 customerIOStringValue(org.LogoURL),
+		"has_logo":                 strings.TrimSpace(customerIOStringValue(org.LogoURL)) != "",
+		"created_at":               org.CreatedAt,
+		"updated_at":               org.UpdatedAt,
+		"member_count":             input.MemberCount,
+		"workspace_count":          input.WorkspaceCount,
+		"trialing_workspace_count": input.TrialingWorkspaces,
+		"active_workspace_count":   input.ActiveWorkspaces,
+		"locked_workspace_count":   input.LockedWorkspaces,
+		"highest_plan":             input.HighestPlan,
+		"has_trial_workspace":      input.HasTrialWorkspace,
+		"has_paid_workspace":       input.HasPaidWorkspace,
+		"paid_workspace_count":     input.PaidWorkspaceCount,
+		"monthly_due_cents":        input.MonthlyDueCents,
 	})
 }
 
@@ -376,6 +464,30 @@ func (s *CustomerIOIdentityService) SyncUser(ctx context.Context, user *model.Us
 	}
 }
 
+// TrackUserSignedUp records account creation after the person identity exists.
+// Delivery is best-effort so Customer.io can never fail account creation.
+func (s *CustomerIOIdentityService) TrackUserSignedUp(ctx context.Context, user *model.User, signupMethod string) {
+	if !s.Enabled() || user == nil || strings.TrimSpace(user.ID) == "" {
+		return
+	}
+	occurredAt := user.CreatedAt.UTC()
+	if occurredAt.IsZero() {
+		occurredAt = time.Now().UTC()
+	}
+	if err := s.client.TrackEvent(ctx, CustomerIOEvent{
+		UserID:     user.ID,
+		Name:       "user_signed_up",
+		OccurredAt: occurredAt,
+		Attributes: map[string]any{
+			"email":         user.Email,
+			"full_name":     user.FullName,
+			"signup_method": strings.TrimSpace(signupMethod),
+		},
+	}); err != nil {
+		s.logger.ErrorContext(ctx, "failed to track customer.io signup", "error", err, "user_id", user.ID)
+	}
+}
+
 func (s *CustomerIOIdentityService) SyncUserByID(ctx context.Context, userID string) {
 	if !s.Enabled() || s.userRepo == nil || strings.TrimSpace(userID) == "" {
 		return
@@ -395,6 +507,15 @@ func (s *CustomerIOIdentityService) TrackEvent(ctx context.Context, event Custom
 	if err := s.client.TrackEvent(ctx, event); err != nil {
 		s.logger.ErrorContext(ctx, "failed to track customer.io event", "error", err, "event_name", event.Name, "user_id", event.UserID, "workspace_id", event.Attributes["workspace_id"])
 	}
+}
+
+// TrackOutboxEvent delivers a durable event with a stable per-recipient ID.
+func (s *CustomerIOIdentityService) TrackOutboxEvent(ctx context.Context, outboxID string, event CustomerIOEvent) error {
+	if !s.Enabled() {
+		return nil
+	}
+	event.EventID = customerIOEventULID(outboxID, event.UserID, event.OccurredAt)
+	return s.client.TrackEvent(ctx, event)
 }
 
 // TrackWorkspaceEvent fans a workspace-scoped event out to its active members.
@@ -446,6 +567,7 @@ func customerIOWorkspaceEventAttributes(attributes map[string]any, workspace *mo
 		return base
 	}
 	base["workspace_id"] = workspace.ID
+	base["workspace_name"] = workspace.Name
 	base["workspace_slug"] = workspace.Slug
 	if workspace.OrganizationID != nil {
 		base["organization_id"] = *workspace.OrganizationID
@@ -538,6 +660,36 @@ func (s *CustomerIOIdentityService) SyncWorkspaceMembers(ctx context.Context, wo
 	}
 }
 
+// RefreshWorkspaceForOutbox updates current workspace and relationship state
+// and returns delivery errors to the durable worker. found is false when the
+// workspace was deleted after the event was enqueued.
+func (s *CustomerIOIdentityService) RefreshWorkspaceForOutbox(ctx context.Context, workspaceID string) (found bool, err error) {
+	if !s.Enabled() || s.workspaceRepo == nil || strings.TrimSpace(workspaceID) == "" {
+		return false, nil
+	}
+	workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil {
+		return false, fmt.Errorf("load workspace for Customer.io refresh: %w", err)
+	}
+	if workspace == nil {
+		return false, nil
+	}
+	billingSummary := s.workspaceBillingSummary(ctx, workspaceID)
+	members, err := s.workspaceRepo.ListMembers(ctx, workspaceID)
+	if err != nil {
+		return true, fmt.Errorf("load workspace members for Customer.io refresh: %w", err)
+	}
+	if len(members) == 0 {
+		members = []model.MemberWithUser{{UserID: workspace.OwnerID, Role: model.RoleOwner}}
+	}
+	for _, member := range members {
+		if err := s.identifyWorkspaceRelationship(ctx, workspace, billingSummary, member.UserID, member.Role, model.WorkspaceMemberStatusActive, 0); err != nil {
+			return true, err
+		}
+	}
+	return true, nil
+}
+
 func (s *CustomerIOIdentityService) workspaceBillingSummary(ctx context.Context, workspaceID string) *BillingSummary {
 	if s.billingRepo == nil {
 		return nil
@@ -599,6 +751,7 @@ func (s *CustomerIOIdentityService) SyncOrganization(ctx context.Context, orgID,
 		HighestPlan:        summary.HighestPlan,
 		HasTrialWorkspace:  summary.HasTrialWorkspace,
 		HasPaidWorkspace:   summary.HasPaidWorkspace,
+		PaidWorkspaceCount: summary.PaidWorkspaceCount,
 		MonthlyDueCents:    summary.MonthlyDueCents,
 	}); err != nil {
 		s.logger.ErrorContext(ctx, "failed to sync customer.io organization", "error", err, "organization_id", orgID)
@@ -640,6 +793,7 @@ func (s *CustomerIOIdentityService) SyncOrganizationMembers(ctx context.Context,
 			HighestPlan:        summary.HighestPlan,
 			HasTrialWorkspace:  summary.HasTrialWorkspace,
 			HasPaidWorkspace:   summary.HasPaidWorkspace,
+			PaidWorkspaceCount: summary.PaidWorkspaceCount,
 			MonthlyDueCents:    summary.MonthlyDueCents,
 		}); err != nil {
 			s.logger.ErrorContext(ctx, "failed to sync customer.io organization relationship", "error", err, "organization_id", orgID, "user_id", member.UserID)
@@ -656,6 +810,7 @@ type customerIOOrganizationSummary struct {
 	HighestPlan        string
 	HasTrialWorkspace  bool
 	HasPaidWorkspace   bool
+	PaidWorkspaceCount int
 	MonthlyDueCents    int
 }
 
@@ -687,6 +842,7 @@ func (s *CustomerIOIdentityService) organizationSummary(ctx context.Context, org
 			summary.ActiveWorkspaces++
 			if billing.StripeSubscriptionID != nil || billing.Plan == model.BillingPlanFounder {
 				summary.HasPaidWorkspace = true
+				summary.PaidWorkspaceCount++
 			}
 		}
 		if billingStatusLocked(billing.Status) || billing.Status == model.BillingStatusPastDue || billing.Status == model.BillingStatusUnpaid {

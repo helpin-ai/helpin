@@ -151,6 +151,7 @@ func (s *AuthService) Signup(ctx context.Context, req model.SignupRequest) (*mod
 	s.autoCreateOrganization(ctx, user)
 	if s.customerIOIdentity != nil {
 		s.customerIOIdentity.SyncUser(ctx, user)
+		s.customerIOIdentity.TrackUserSignedUp(ctx, user, "password")
 	}
 
 	return &model.AuthResponse{
@@ -201,6 +202,7 @@ func (s *AuthService) SignInWithGoogle(ctx context.Context, identity GoogleIdent
 		s.autoCreateOrganization(ctx, user)
 		if s.customerIOIdentity != nil {
 			s.customerIOIdentity.SyncUser(ctx, user)
+			s.customerIOIdentity.TrackUserSignedUp(ctx, user, "google")
 		}
 	} else {
 		if user.GoogleSubject == nil || *user.GoogleSubject == "" {
