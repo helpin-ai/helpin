@@ -1,6 +1,7 @@
 import { createElement, useCallback, useMemo, useRef } from 'react'
 
 import { LoadingImage } from '@/components/ui/loading-image'
+import { MermaidBlock } from '@/components/editor/MermaidBlock'
 import { MentionText } from '@/components/pm/MentionText'
 import { normalizeInlineAttachmentImageSrcs } from '@/components/pm/editorImageAttachments'
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types'
@@ -73,6 +74,20 @@ function renderNode(
   const element = node as HTMLElement
   const tag = element.tagName.toLowerCase()
   const props: Record<string, unknown> = { key, ...mapAttributes(element) }
+
+  if (tag === 'pre') {
+    const code = Array.from(element.children).find((child) => child.tagName.toLowerCase() === 'code')
+    const isMermaid = code && Array.from(code.classList)
+      .some((className) => className.toLowerCase() === 'language-mermaid')
+    if (code && isMermaid) {
+      const source = code.textContent ?? ''
+      return (
+        <div key={key} className="my-3 overflow-hidden rounded-md border border-border bg-muted/20">
+          <MermaidBlock source={source} />
+        </div>
+      )
+    }
+  }
 
   if (tag === 'img') {
     const alignment = element.getAttribute('data-alignment') || 'left'
