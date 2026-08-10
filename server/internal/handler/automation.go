@@ -578,6 +578,22 @@ func (h *AutomationHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, agents)
 }
 
+// GetAgentFleet handles GET /api/automation/agent-fleet.
+func (h *AutomationHandler) GetAgentFleet(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	fleet, err := h.agentService.GetAgentFleet(r.Context(), workspaceID, authorization.GetActor(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, fleet)
+}
+
 // DraftCustomAgent handles POST /api/automation/agents/draft.
 func (h *AutomationHandler) DraftCustomAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

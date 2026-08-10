@@ -174,6 +174,29 @@ export interface AgentRunAttentionCountResponse {
   count: number;
 }
 
+export interface AgentFleetStats {
+  recent_runs: number;
+  recent_completed: number;
+  recent_failed: number;
+  recent_tokens: number;
+  last_run?: AgentRun;
+  attention_run?: AgentRun;
+  attention_count: number;
+  recent_run_items: AgentRun[];
+}
+
+export interface AgentFleetItem {
+  agent: Agent;
+  stats: AgentFleetStats;
+  usage: AgentTriggerUsageSummary;
+}
+
+export interface AgentFleetResponse {
+  generated_at: string;
+  window_started_at: string;
+  agents: AgentFleetItem[];
+}
+
 export interface AgentRunTarget {
   target_type: string;
   target_id: string;

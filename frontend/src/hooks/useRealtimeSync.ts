@@ -439,6 +439,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         scheduleAgentRunInvalidation(queryKeys.automation.runAttentionCount(workspaceId))
         scheduleAgentRunInvalidation(queryKeys.automation.activityRoot(workspaceId))
         scheduleAgentRunInvalidation(queryKeys.automation.overview(workspaceId))
+        scheduleAgentRunInvalidation(queryKeys.automation.agentFleet(workspaceId))
         const eventAgentId = typeof event.data?.agent_id === 'string' ? event.data.agent_id : ''
         if (eventAgentId) {
           scheduleAgentRunInvalidation(queryKeys.automation.agent(workspaceId, eventAgentId))

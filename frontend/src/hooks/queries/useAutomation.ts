@@ -172,6 +172,16 @@ export function useAutomationAgents(wsId: string, enabled = true) {
   });
 }
 
+export function useAutomationAgentFleet(wsId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.automation.agentFleet(wsId),
+    queryFn: async ({ signal }) => unwrap(await automationService.getAgentFleet(wsId, signal)),
+    enabled: !!wsId && enabled,
+    placeholderData: (previousData) => previousData,
+    staleTime: 30_000,
+  });
+}
+
 export function useAutomationAgentTemplates(wsId: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.automation.agentTemplates(wsId),

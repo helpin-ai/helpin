@@ -702,6 +702,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requireAutomationEdit()).Delete("/versions/{versionID}", h.Automation.DeleteAgentVersion)
 					})
 				})
+				r.With(requireAutomationRead()).Get("/agent-fleet", h.Automation.GetAgentFleet)
 
 				r.Route("/runs", func(r chi.Router) {
 					r.With(requireAutomationRead()).Get("/", h.Automation.ListRuns)

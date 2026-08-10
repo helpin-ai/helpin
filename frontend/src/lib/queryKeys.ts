@@ -58,6 +58,7 @@ export const queryKeys = {
     agentTemplate: (wsId: string, id: string) => ['automation', wsId, 'agent-templates', id] as const,
     agentsRoot: (wsId: string) => ['automation', wsId, 'agents'] as const,
     agents: (wsId: string) => ['automation', wsId, 'agents'] as const,
+    agentFleet: (wsId: string) => ['automation', wsId, 'agents', 'fleet'] as const,
     agent: (wsId: string, id: string) => ['automation', wsId, 'agents', id] as const,
     agentUsage: (wsId: string, id: string) => ['automation', wsId, 'agents', id, 'usage'] as const,
     runsRoot: (wsId: string) => ['automation', wsId, 'runs'] as const,

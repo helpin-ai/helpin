@@ -15,14 +15,7 @@ export default defineConfig(({ mode }) => {
     TanStackRouterVite({ autoCodeSplitting: true }),
     react({
       babel: {
-        plugins: [
-          ['babel-plugin-react-compiler', {
-            // This page is currently a 7,600+ line module. Compiling it can use
-            // hundreds of MiB on its own and exhaust the Vite dev server heap.
-            // Remove this exclusion after the page has been split into smaller modules.
-            sources: (filename: string) => path.resolve(filename) !== path.resolve(__dirname, './src/pages/automation/Agents.tsx'),
-          }],
-        ],
+        plugins: ['babel-plugin-react-compiler'],
       },
     }),
     tailwindcss(),
