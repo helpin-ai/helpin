@@ -72,6 +72,14 @@ func (w *CustomerIOLifecycleOutboxWorker) deliver(ctx context.Context, row *mode
 	if row.WorkspaceID != nil {
 		workspaceID = *row.WorkspaceID
 	}
+	found, err := w.identity.RefreshWorkspaceForOutbox(ctx, workspaceID)
+	if err != nil {
+		return w.handleDeliveryError(ctx, row, token, err)
+	}
+	if !found {
+		_, err := w.repo.MarkDelivered(ctx, row.ID, token)
+		return err
+	}
 	members, err := w.workspaceRepo.ListMembers(ctx, workspaceID)
 	if err != nil {
 		return w.handleDeliveryError(ctx, row, token, err)

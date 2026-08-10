@@ -660,6 +660,36 @@ func (s *CustomerIOIdentityService) SyncWorkspaceMembers(ctx context.Context, wo
 	}
 }
 
+// RefreshWorkspaceForOutbox updates current workspace and relationship state
+// and returns delivery errors to the durable worker. found is false when the
+// workspace was deleted after the event was enqueued.
+func (s *CustomerIOIdentityService) RefreshWorkspaceForOutbox(ctx context.Context, workspaceID string) (found bool, err error) {
+	if !s.Enabled() || s.workspaceRepo == nil || strings.TrimSpace(workspaceID) == "" {
+		return false, nil
+	}
+	workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil {
+		return false, fmt.Errorf("load workspace for Customer.io refresh: %w", err)
+	}
+	if workspace == nil {
+		return false, nil
+	}
+	billingSummary := s.workspaceBillingSummary(ctx, workspaceID)
+	members, err := s.workspaceRepo.ListMembers(ctx, workspaceID)
+	if err != nil {
+		return true, fmt.Errorf("load workspace members for Customer.io refresh: %w", err)
+	}
+	if len(members) == 0 {
+		members = []model.MemberWithUser{{UserID: workspace.OwnerID, Role: model.RoleOwner}}
+	}
+	for _, member := range members {
+		if err := s.identifyWorkspaceRelationship(ctx, workspace, billingSummary, member.UserID, member.Role, model.WorkspaceMemberStatusActive, 0); err != nil {
+			return true, err
+		}
+	}
+	return true, nil
+}
+
 func (s *CustomerIOIdentityService) workspaceBillingSummary(ctx context.Context, workspaceID string) *BillingSummary {
 	if s.billingRepo == nil {
 		return nil
