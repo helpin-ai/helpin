@@ -38,6 +38,14 @@ type UpdateDockChatRequest struct {
 type SendDockChatMessageRequest struct {
 	Content     string                 `json:"content"`
 	PageContext map[string]interface{} `json:"page_context,omitempty"`
+	References  []DockEntityReference  `json:"references,omitempty"`
+}
+
+// DockEntityReference identifies supplemental workspace context attached to a dock turn.
+type DockEntityReference struct {
+	EntityType   string `json:"entity_type"`
+	EntityID     string `json:"entity_id"`
+	DisplayTitle string `json:"display_title"`
 }
 
 // DockChatDetail is the read model returned for a single chat: the chat row

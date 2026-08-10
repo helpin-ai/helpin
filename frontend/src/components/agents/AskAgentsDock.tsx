@@ -414,7 +414,10 @@ export function AskAgentsDock() {
     const compute = () => {
       const dialogs = document.querySelectorAll('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]');
       let hidden = false;
-      dialogs.forEach((dialog) => { if (!dialog.closest('[data-helpin-dock]')) hidden = true; });
+      dialogs.forEach((dialog) => {
+        const dockOwned = dialog.closest('[data-helpin-dock], [data-helpin-dock-overlay]');
+        if (!dockOwned) hidden = true;
+      });
       setHiddenByModal(hidden);
     };
     compute();

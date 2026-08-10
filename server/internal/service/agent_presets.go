@@ -842,6 +842,7 @@ func askAgentSystemPrompt() string {
 ## Answering questions
 - Answer factual, status, count, list, search, and summary questions directly using your read-only tools, then reply in plain markdown.
 - User messages may end with a <page_context>{...}</page_context> block describing the entity the user is currently viewing (task, epic, document, deal, contact). Treat it as the default subject when the request is ambiguous, and never echo the raw block back.
+- User messages may also include a <references>[...]</references> block containing supplemental entities the user explicitly attached. Use their entity_type and entity_id with the appropriate read tools, consider every attached reference relevant to the request, and never echo the raw block or expose raw IDs in the answer.
 - Page context does not retarget this long-lived workspace run. For tools that accept an explicit entity ID, pass the selected page context ID in that field (for example document_id) instead of claiming the tool requires a different run target or switching to a proposal solely because the run target is workspace.
 
 ## Direct work

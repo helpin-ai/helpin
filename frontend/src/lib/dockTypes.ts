@@ -40,7 +40,10 @@ export interface DockChatListResponse {
 export interface SendDockChatMessageRequest {
   content: string
   page_context?: CommandBarPageContext
+  references?: DockEntityReference[]
 }
+
+export type DockEntityReference = CommandBarPageContext
 
 export interface UpdateDockChatRequest {
   title?: string
@@ -128,6 +131,8 @@ export interface DockPlanConfirmStep {
 /** Marker tags used inside chat-run message content. */
 export const DOCK_PAGE_CONTEXT_OPEN = '<page_context>'
 export const DOCK_PAGE_CONTEXT_CLOSE = '</page_context>'
+export const DOCK_REFERENCES_OPEN = '<references>'
+export const DOCK_REFERENCES_CLOSE = '</references>'
 export const DOCK_CHILD_RESULT_OPEN = '<child_run_result>'
 export const DOCK_CHILD_RESULT_CLOSE = '</child_run_result>'
 export const DOCK_PREVIOUS_CONVERSATION_OPEN = '<previous_conversation>'
@@ -157,11 +162,18 @@ export interface DockChildRunResult {
 
 /** Strips a trailing page-context block from a user message for display. */
 export function stripDockPageContext(content: string): string {
-  const start = content.lastIndexOf(DOCK_PAGE_CONTEXT_OPEN)
-  if (start < 0) return content
-  const end = content.indexOf(DOCK_PAGE_CONTEXT_CLOSE, start)
-  if (end < 0) return content
-  return (content.slice(0, start) + content.slice(end + DOCK_PAGE_CONTEXT_CLOSE.length)).trim()
+  let visible = content
+  for (const [open, close] of [
+    [DOCK_PAGE_CONTEXT_OPEN, DOCK_PAGE_CONTEXT_CLOSE],
+    [DOCK_REFERENCES_OPEN, DOCK_REFERENCES_CLOSE],
+  ] as const) {
+    const start = visible.lastIndexOf(open)
+    if (start < 0) continue
+    const end = visible.indexOf(close, start)
+    if (end < 0) continue
+    visible = visible.slice(0, start) + visible.slice(end + close.length)
+  }
+  return visible.trim()
 }
 
 /** Removes backend-owned context envelopes prepended to successor-run turns. */
