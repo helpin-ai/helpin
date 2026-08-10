@@ -29,6 +29,8 @@ const (
 	agentRuntimeUsageConsumedSummaryKey           = "agent_runtime_usage_consumed"
 	agentRuntimeUsageConsumedAtSummaryKey         = "agent_runtime_usage_consumed_at"
 	agentRuntimeTranscriptReconciledVersionKey    = "agent_runtime_transcript_reconciled_runtime_updated_at"
+	agentRuntimeV2ReplayThroughSummaryKey         = "agent_runtime_v2_replay_through"
+	agentRuntimeV2ReplayPageSize                  = 250
 	agentRuntimeEventCodexAuthStateChanged        = "codex_auth.state_changed"
 	agentRuntimeExecutionStageAuthCompleted       = "auth_completed"
 	agentRuntimeExecutionStageAwaitingAuth        = "awaiting_auth"
@@ -79,6 +81,10 @@ type agentRuntimeProjectionSessionSnapshotRepository interface {
 
 type agentRuntimeV2ReplayClient interface {
 	ListV2Events(ctx context.Context, runtimeRunID string, afterSequence int64) (*AgentRuntimeEventListResponse, error)
+}
+
+type agentRuntimeV2PagedReplayClient interface {
+	ListV2EventPage(ctx context.Context, runtimeRunID string, afterSequence int64, pageSize int) (*AgentRuntimeEventListResponse, error)
 }
 
 type agentRuntimeToolCallClient interface {
@@ -374,11 +380,45 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 }
 
 func (s *AgentRuntimeProjectionService) replayV2Events(ctx context.Context, run *model.AgentRun, runtimeRunID string) error {
-	client, ok := s.agentRuntimeClient.(agentRuntimeV2ReplayClient)
-	if !ok || run == nil {
+	if run == nil {
 		return nil
 	}
-	afterSequence := s.v2ReplayCursor(runtimeRunID)
+	afterSequence := s.v2ReplayCursor(run, runtimeRunID)
+	if client, ok := s.agentRuntimeClient.(agentRuntimeV2PagedReplayClient); ok {
+		for {
+			response, err := client.ListV2EventPage(ctx, runtimeRunID, afterSequence, agentRuntimeV2ReplayPageSize)
+			if err != nil {
+				return err
+			}
+			if response == nil || len(response.Events) == 0 {
+				return nil
+			}
+			pageStart := afterSequence
+			for _, event := range response.Events {
+				if event.SequenceNo <= afterSequence {
+					continue
+				}
+				if err := s.ApplyEvent(ctx, event); err != nil {
+					return fmt.Errorf("apply sequence %d: %w", event.SequenceNo, err)
+				}
+				afterSequence = event.SequenceNo
+				s.setV2ReplayCursor(runtimeRunID, afterSequence)
+			}
+			if afterSequence == pageStart {
+				return fmt.Errorf("agent runtime v2 event page did not advance beyond sequence %d", pageStart)
+			}
+			if err := s.persistV2ReplayCursor(ctx, run, runtimeRunID, afterSequence); err != nil {
+				return err
+			}
+			if len(response.Events) < agentRuntimeV2ReplayPageSize {
+				return nil
+			}
+		}
+	}
+	client, ok := s.agentRuntimeClient.(agentRuntimeV2ReplayClient)
+	if !ok {
+		return nil
+	}
 	response, err := client.ListV2Events(ctx, runtimeRunID, afterSequence)
 	if err != nil {
 		return err
@@ -394,14 +434,25 @@ func (s *AgentRuntimeProjectionService) replayV2Events(ctx context.Context, run 
 			return fmt.Errorf("apply sequence %d: %w", event.SequenceNo, err)
 		}
 		s.setV2ReplayCursor(runtimeRunID, event.SequenceNo)
+		afterSequence = event.SequenceNo
+	}
+	if err := s.persistV2ReplayCursor(ctx, run, runtimeRunID, afterSequence); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (s *AgentRuntimeProjectionService) v2ReplayCursor(runtimeRunID string) int64 {
+func (s *AgentRuntimeProjectionService) v2ReplayCursor(run *model.AgentRun, runtimeRunID string) int64 {
+	persisted := int64(0)
+	if run != nil {
+		persisted = runtimeV2ReplayCursor(run.OutputSummary)
+	}
 	s.v2ReplayMu.Lock()
 	defer s.v2ReplayMu.Unlock()
-	return s.v2ReplayThrough[strings.TrimSpace(runtimeRunID)]
+	if current := s.v2ReplayThrough[strings.TrimSpace(runtimeRunID)]; current > persisted {
+		return current
+	}
+	return persisted
 }
 
 func (s *AgentRuntimeProjectionService) setV2ReplayCursor(runtimeRunID string, sequence int64) {
@@ -417,6 +468,64 @@ func (s *AgentRuntimeProjectionService) setV2ReplayCursor(runtimeRunID string, s
 	if sequence > s.v2ReplayThrough[key] {
 		s.v2ReplayThrough[key] = sequence
 	}
+}
+
+func (s *AgentRuntimeProjectionService) persistV2ReplayCursor(ctx context.Context, run *model.AgentRun, runtimeRunID string, sequence int64) error {
+	if run == nil || sequence <= 0 {
+		return nil
+	}
+	latest, err := s.runRepo.GetByIDAny(ctx, run.ID)
+	if err != nil {
+		return fmt.Errorf("load run before persisting v2 replay cursor: %w", err)
+	}
+	if latest != nil {
+		run.OutputSummary = append(json.RawMessage(nil), latest.OutputSummary...)
+	}
+	if !markRuntimeV2ReplayCursor(run, sequence) {
+		s.setV2ReplayCursor(runtimeRunID, sequence)
+		return nil
+	}
+	if err := s.runRepo.UpdateOutputSummary(ctx, run.ID, run.OutputSummary); err != nil {
+		return fmt.Errorf("persist v2 replay cursor %d: %w", sequence, err)
+	}
+	s.setV2ReplayCursor(runtimeRunID, sequence)
+	return nil
+}
+
+func markRuntimeV2ReplayCursor(run *model.AgentRun, sequence int64) bool {
+	if run == nil || sequence <= runtimeV2ReplayCursor(run.OutputSummary) {
+		return false
+	}
+	body := map[string]json.RawMessage{}
+	if len(run.OutputSummary) > 0 {
+		_ = json.Unmarshal(run.OutputSummary, &body)
+	}
+	value, err := json.Marshal(sequence)
+	if err != nil {
+		return false
+	}
+	body[agentRuntimeV2ReplayThroughSummaryKey] = value
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return false
+	}
+	run.OutputSummary = payload
+	return true
+}
+
+func runtimeV2ReplayCursor(summary json.RawMessage) int64 {
+	if len(summary) == 0 {
+		return 0
+	}
+	body := map[string]json.RawMessage{}
+	if err := json.Unmarshal(summary, &body); err != nil {
+		return 0
+	}
+	var sequence int64
+	if err := json.Unmarshal(body[agentRuntimeV2ReplayThroughSummaryKey], &sequence); err != nil || sequence < 0 {
+		return 0
+	}
+	return sequence
 }
 
 func reconciliationEventForRuntimeRun(runtimeRun *AgentRuntimeRun, localRun model.AgentRun, fallback time.Time) (AgentRuntimeEventEnvelope, bool) {

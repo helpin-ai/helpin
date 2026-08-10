@@ -1515,7 +1515,17 @@ func TestAgentRuntimeProjectionReconcileReplaysMissedV2EventsFromCursor(t *testi
 	if err := svc.ReconcileMappedRuns(context.Background(), time.Second, 10); err != nil {
 		t.Fatalf("first ReconcileMappedRuns returned error: %v", err)
 	}
-	if err := svc.ReconcileMappedRuns(context.Background(), time.Second, 10); err != nil {
+	if runtimeV2ReplayCursor(run.OutputSummary) != 3 {
+		t.Fatalf("expected durable replay cursor 3, summary=%s", string(run.OutputSummary))
+	}
+	restartedSvc := &AgentRuntimeProjectionService{
+		runRepo:             runRepo,
+		agentRuntimeClient:  runtimeClient,
+		sessionSnapshotRepo: snapshotRepo,
+		eventProtocol:       "v2",
+		now:                 func() time.Time { return now.Add(time.Minute) },
+	}
+	if err := restartedSvc.ReconcileMappedRuns(context.Background(), time.Second, 10); err != nil {
 		t.Fatalf("second ReconcileMappedRuns returned error: %v", err)
 	}
 	if run.Status != model.AgentRunStatusRunning {
@@ -1533,6 +1543,53 @@ func TestAgentRuntimeProjectionReconcileReplaysMissedV2EventsFromCursor(t *testi
 	}
 	if snapshot == nil || snapshot.LiveAssistantMessage == nil || snapshot.LiveAssistantMessage.Content != "hello" || snapshot.ThroughSequence != 3 {
 		t.Fatalf("unexpected replayed snapshot: %#v", snapshot)
+	}
+}
+
+func TestAgentRuntimeProjectionReplaysV2EventsInBoundedPages(t *testing.T) {
+	run := &model.AgentRun{
+		ID:                "helpin-run-v2-pages",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		Status:            model.AgentRunStatusRunning,
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("runtime-run-v2-pages"),
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byID:       map[string]*model.AgentRun{run.ID: run},
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|runtime-run-v2-pages": run},
+	}
+	events := make([]AgentRuntimeEventEnvelope, agentRuntimeV2ReplayPageSize+1)
+	for index := range events {
+		events[index] = AgentRuntimeEventEnvelope{
+			AppID:      "helpin",
+			RunID:      "runtime-run-v2-pages",
+			HostRunID:  run.ID,
+			Type:       "runtime.replay_checkpoint",
+			SequenceNo: int64(index + 1),
+		}
+	}
+	runtimeClient := &fakeAgentRuntimeSignalClient{
+		v2Events: map[string][]AgentRuntimeEventEnvelope{"runtime-run-v2-pages": events},
+	}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:            runRepo,
+		agentRuntimeClient: runtimeClient,
+		eventProtocol:      "v2",
+		now:                time.Now,
+	}
+
+	if err := svc.replayV2Events(context.Background(), run, "runtime-run-v2-pages"); err != nil {
+		t.Fatalf("replayV2Events returned error: %v", err)
+	}
+	if len(runtimeClient.listV2EventCalls) != 2 || runtimeClient.listV2EventCalls[0] != 0 || runtimeClient.listV2EventCalls[1] != agentRuntimeV2ReplayPageSize {
+		t.Fatalf("expected two bounded pages, cursors=%#v", runtimeClient.listV2EventCalls)
+	}
+	if runtimeV2ReplayCursor(run.OutputSummary) != int64(len(events)) {
+		t.Fatalf("expected final durable cursor %d, summary=%s", len(events), string(run.OutputSummary))
+	}
+	if runRepo.summaryUpdates != 2 {
+		t.Fatalf("expected one durable cursor update per page, got %d", runRepo.summaryUpdates)
 	}
 }
 
