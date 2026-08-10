@@ -62,16 +62,6 @@ func (h *CRMAssociationHandler) ListDealAssociations(w http.ResponseWriter, r *h
 	h.listByObject(w, r, model.CRMObjectDeal)
 }
 
-// ListEpicAssociations handles GET /api/pm/epics/{id}/associations.
-func (h *CRMAssociationHandler) ListEpicAssociations(w http.ResponseWriter, r *http.Request) {
-	h.listByObject(w, r, model.CRMObjectEpic)
-}
-
-// ListStoryAssociations handles GET /api/pm/tasks/{id}/associations.
-func (h *CRMAssociationHandler) ListStoryAssociations(w http.ResponseWriter, r *http.Request) {
-	h.listByObject(w, r, model.CRMObjectTask)
-}
-
 func (h *CRMAssociationHandler) listByObject(w http.ResponseWriter, r *http.Request, objectType string) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {

@@ -25,11 +25,6 @@ func (h *AssociationsHandler) ListEpicAssociations(w http.ResponseWriter, r *htt
 	h.listByObject(w, r, "epic")
 }
 
-// ListStoryAssociations handles GET /api/pm/tasks/{id}/associations.
-func (h *AssociationsHandler) ListStoryAssociations(w http.ResponseWriter, r *http.Request) {
-	h.listByObject(w, r, "task")
-}
-
 // ListTaskAssociations handles GET /api/pm/tasks/{id}/associations.
 func (h *AssociationsHandler) ListTaskAssociations(w http.ResponseWriter, r *http.Request) {
 	h.listByObject(w, r, "task")
@@ -54,30 +49,6 @@ func (h *AssociationsHandler) listByObject(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, response)
-}
-
-// CreateStoryRelationship handles POST /api/pm/tasks/{id}/relationships (legacy alias).
-func (h *AssociationsHandler) CreateStoryRelationship(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	if workspaceID == "" {
-		writeError(w, http.StatusBadRequest, "workspace_id is required")
-		return
-	}
-	taskID := chi.URLParam(r, "id")
-	actorID := middleware.GetUserID(r.Context())
-
-	var req model.CreateTaskRelationshipRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	link, err := h.associationsService.CreateTaskRelationship(r.Context(), workspaceID, taskID, actorID, req)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusCreated, link)
 }
 
 // CreateTaskRelationship handles POST /api/pm/tasks/{id}/relationships.
@@ -105,11 +76,6 @@ func (h *AssociationsHandler) CreateTaskRelationship(w http.ResponseWriter, r *h
 		return
 	}
 	writeJSON(w, http.StatusCreated, link)
-}
-
-// DeleteStoryRelationship handles DELETE /api/pm/task-relationships/{id} (legacy alias).
-func (h *AssociationsHandler) DeleteStoryRelationship(w http.ResponseWriter, r *http.Request) {
-	h.DeleteTaskRelationship(w, r)
 }
 
 // DeleteTaskRelationship handles DELETE /api/pm/task-relationships/{id}.

@@ -23,7 +23,6 @@ const (
 	BillingFeatureDealAutomationInference = "deal_automation_inference"
 	BillingFeatureCRMSummary              = "crm_summary"
 	BillingFeatureSupportTaskDraft        = "support_task_draft"
-	BillingFeatureDocsAISectionGeneration = "docs_ai_section_generation"
 	BillingFeatureDocsArticleTranslation  = "docs_article_translation"
 	BillingFeatureDocsArticleGeneration   = "docs_article_generation"
 	BillingFeatureBuiltInLightAgentRun    = "built_in_light_agent_run"
@@ -132,7 +131,6 @@ var aiUsageFeatures = map[string]AIUsageFeatureDefinition{
 	BillingFeatureCRMSummary:              {FeatureKey: BillingFeatureCRMSummary, Label: "CRM summary", Category: "CRM AI", FloorUnits: 6, Chargeable: true},
 	BillingFeatureSupportAIReply:          {FeatureKey: BillingFeatureSupportAIReply, Label: "Support reply draft", Category: "Support AI", FloorUnits: 8, Chargeable: true},
 	BillingFeatureSupportTaskDraft:        {FeatureKey: BillingFeatureSupportTaskDraft, Label: "Support task draft", Category: "Support AI", FloorUnits: 8, Chargeable: true},
-	BillingFeatureDocsAISectionGeneration: {FeatureKey: BillingFeatureDocsAISectionGeneration, Label: "Docs AI section", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
 	BillingFeatureDocsGeneration:          {FeatureKey: BillingFeatureDocsGeneration, Label: "Document generation", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
 	BillingFeatureDocsArticleTranslation:  {FeatureKey: BillingFeatureDocsArticleTranslation, Label: "Help article translation", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
 	BillingFeatureDocsArticleGeneration:   {FeatureKey: BillingFeatureDocsArticleGeneration, Label: "Help article generation", Category: "Docs AI", FloorUnits: 20, Chargeable: true},
