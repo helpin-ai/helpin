@@ -20,9 +20,8 @@ export interface TranscriptRowProps {
 
 /**
  * The single one-line transcript primitive: `[icon] label … [meta] [chevron]`.
- * Flat — no avatar, no connector rail. The dock renders it collapsed and
- * lossy (`expandable={false}`); the slider passes `expandable` so depth
- * (args/result/diff/reasoning) is a click away.
+ * Flat — no avatar, no connector rail. Tool calls use the static form; rows
+ * that still benefit from depth (reasoning and run context) opt into disclosure.
  */
 export function TranscriptRow({
   icon,

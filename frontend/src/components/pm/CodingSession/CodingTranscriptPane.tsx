@@ -122,7 +122,8 @@ export function CodingTranscriptPane({
     || session.status === 'paused';
 
   // Flatten the reconciled stream into one ordered segment list shared with the
-  // Ask Agents dock. The slider shows every kind and renders rows expandable.
+  // Ask Agents dock. The slider shows every kind; tool calls stay concise while
+  // reasoning and run-context rows can still disclose their content.
   const segments = useMemo(
     () => collectSegments(
       {

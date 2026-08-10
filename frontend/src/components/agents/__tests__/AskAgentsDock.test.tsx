@@ -94,6 +94,27 @@ const DOCK_RUN: DockRunSummary = {
   last_activity_at: '2026-08-09T12:00:00Z',
 };
 
+function dockRunWithStatus(
+  id: string,
+  title: string,
+  status: 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled',
+  attentionKind?: DockRunSummary['attention_kind'],
+): DockRunSummary {
+  return {
+    ...DOCK_RUN,
+    run: {
+      ...DOCK_RUN.run,
+      id,
+      status,
+      pause_reason: attentionKind ? 'human_approval' : 'none',
+      target_info: { task_key: id.toUpperCase(), title },
+    } as never,
+    agent: { ...DOCK_RUN.agent, id: `agent-${id}`, name: title },
+    attention_kind: attentionKind,
+    last_activity_at: `2026-08-09T12:00:0${id.length}Z`,
+  };
+}
+
 function chatDetail(overrides: Partial<DockChatDetail> = {}): DockChatDetail {
   return { chat: CHAT, run: null, plan_ids: [], ...overrides };
 }
@@ -433,6 +454,39 @@ describe('AskAgentsDock', () => {
 
     expect(document.body.textContent).toContain('Ask agents');
     expect(document.body.textContent).toContain('1 agent need your attention');
+  });
+
+  it('keeps completed and other inactive agents out of the minimized dock', async () => {
+    useDockStore.setState({ collapsed: true });
+    mocks.listRuns.mockResolvedValue({
+      data: {
+        runs: [
+          dockRunWithStatus('completed', 'Completed review', 'completed'),
+          dockRunWithStatus('failed', 'Failed review', 'failed'),
+          dockRunWithStatus('cancelled', 'Cancelled review', 'cancelled'),
+          dockRunWithStatus('paused', 'Passively paused review', 'paused'),
+          dockRunWithStatus('queued', 'Queued review', 'queued'),
+          dockRunWithStatus('running', 'Running review', 'running'),
+          DOCK_RUN,
+        ],
+        attention_count: 1,
+      },
+      error: null,
+    });
+
+    await renderDock();
+    await waitForText('1 need you');
+
+    expect(document.body.querySelector('[aria-label^="Open QUEUED"]')).toBeTruthy();
+    expect(document.body.querySelector('[aria-label^="Open RUNNING"]')).toBeTruthy();
+    expect(document.body.querySelector('[aria-label^="Open HLP-42"]')).toBeTruthy();
+    const statusDots = Array.from(document.body.querySelectorAll<HTMLElement>('[data-agent-dock-trigger-status-dot]'));
+    expect(statusDots).toHaveLength(3);
+    expect(statusDots.every((dot) => dot.className.includes('h-2.5') && dot.className.includes('w-2.5'))).toBe(true);
+    expect(document.body.querySelector('[aria-label^="Open COMPLETED"]')).toBeNull();
+    expect(document.body.querySelector('[aria-label^="Open FAILED"]')).toBeNull();
+    expect(document.body.querySelector('[aria-label^="Open CANCELLED"]')).toBeNull();
+    expect(document.body.querySelector('[aria-label^="Open PAUSED"]')).toBeNull();
   });
 
   it('routes each collapsed dock segment to its own destination', async () => {

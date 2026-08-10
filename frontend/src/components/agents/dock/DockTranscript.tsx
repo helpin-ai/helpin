@@ -23,7 +23,8 @@ export function dockTranscriptHasContent(
  * one-shot agent's result is readable in the bar without opening the full
  * session sheet. The main chat also shows user turns; embedded execution
  * strips remain assistant/tool-only. All shared segments stay flat and
- * non-expandable.
+ * Tool-call rows remain permanently concise; long prose and reasoning can
+ * still disclose when the surrounding surface permits it.
  */
 export function DockTranscript({
   stream,

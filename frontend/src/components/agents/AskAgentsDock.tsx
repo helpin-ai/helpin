@@ -69,7 +69,18 @@ export function AskAgentsDock() {
     const groupDelta = groupOrder[leftPresentation.group] - groupOrder[rightPresentation.group];
     return groupDelta || Date.parse(right.last_activity_at) - Date.parse(left.last_activity_at);
   }), [runs]);
-  const attentionRuns = useMemo(() => orderedRuns.filter((run) => !!run.attention_kind), [orderedRuns]);
+  const attentionRuns = useMemo(() => orderedRuns.filter((summary) => (
+    presentDockRun(summary.run.status, summary.run.pause_reason, summary.attention_kind).group === 'needs_you'
+  )), [orderedRuns]);
+  // The minimized bar is a live-status surface, not run history. Keep only
+  // queued/running work and paused runs that require the user's attention;
+  // terminal and passively paused runs remain available in the expanded roster.
+  const triggerRuns = useMemo(() => orderedRuns.filter((summary) => {
+    const presentation = presentDockRun(summary.run.status, summary.run.pause_reason, summary.attention_kind);
+    return presentation.group === 'needs_you'
+      || summary.run.status === 'queued'
+      || summary.run.status === 'running';
+  }), [orderedRuns]);
   const activeRun = orderedRuns.find((summary) => summary.run.id === activeRunId) ?? null;
   const activeChat = chats.find((chat) => chat.id === activeChatId) ?? null;
 
@@ -473,7 +484,7 @@ export function AskAgentsDock() {
         <DockTrigger
           askTriggerRef={askTriggerRef}
           open={!collapsed}
-          runs={orderedRuns}
+          runs={triggerRuns}
           attentionCount={attentionRuns.length}
           nudge={attentionNudge}
           onAsk={(source) => openDock('chats', 'composer', source)}
@@ -652,7 +663,11 @@ function DockTrigger({
                 >
                   <span className="relative flex h-[26px] w-[26px] shrink-0 leading-none">
                     <AgentAvatar name={summary.agent.name} presetKey={summary.agent.preset_key} iconKey={summary.agent.icon_key} className="h-[26px] w-[26px] rounded-[9px] border-0 shadow-[0_0_0_2px_#fffefa] dark:shadow-[0_0_0_2px_#242320]" />
-                    <span className="absolute -bottom-px -end-px h-2 w-2 rounded-full border-2 border-[#fffefa] dark:border-[#242320]" style={{ backgroundColor: presentation.dot }} />
+                    <span
+                      className="absolute -bottom-0.5 -end-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#fffefa] dark:border-[#242320]"
+                      style={{ backgroundColor: presentation.dot }}
+                      data-agent-dock-trigger-status-dot
+                    />
                   </span>
                 </button>
               );

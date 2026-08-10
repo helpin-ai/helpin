@@ -73,17 +73,15 @@ const applyPatchSegment: TranscriptSegment = {
 };
 
 describe('TranscriptSegmentView — tool', () => {
-  it('renders a successful tool with args as a collapsed row that expands to show them', () => {
+  it('renders a successful tool as a static one-liner with its duration', () => {
     render(toolSegment, true);
 
     expect(container.textContent).toContain('Run go build ./...');
-    const toggle = container.querySelector('button');
-    expect(toggle).not.toBeNull();
-    expect(container.querySelector('div.hidden')).not.toBeNull();
-
-    act(() => toggle?.click());
-    expect(container.querySelector('div.hidden')).toBeNull();
-    expect(container.textContent).toContain('go build ./...');
+    expect(container.textContent).toContain('2s');
+    expect(container.querySelector('button')).toBeNull();
+    expect(container.querySelector('[aria-expanded]')).toBeNull();
+    expect(container.textContent).not.toContain('▸');
+    expect(container.textContent).not.toContain('▾');
   });
 
   it('renders a successful tool with no args or result as a flat, non-expandable one-liner', () => {
@@ -103,31 +101,26 @@ describe('TranscriptSegmentView — tool', () => {
     expect(container.querySelector('div.hidden')).toBeNull();
   });
 
-  it('makes a failed tool expandable but collapsed by default', () => {
+  it('keeps failed tool output out of the transcript row', () => {
     render(failedToolSegment, true);
 
-    // Has a chevron/toggle, but the body is hidden until opened.
-    const toggle = container.querySelector('button');
-    expect(toggle).not.toBeNull();
-    expect(container.querySelector('div.hidden')).not.toBeNull();
-
-    act(() => toggle?.click());
-    expect(container.querySelector('div.hidden')).toBeNull();
-    expect(container.textContent).toContain('build failed: undefined symbol');
+    expect(container.querySelector('button')).toBeNull();
+    expect(container.textContent).not.toContain('build failed: undefined symbol');
   });
 
-  it('expands a successful apply_patch by default and shows the diff', () => {
+  it('keeps apply_patch as a static one-liner without an inline diff', () => {
     render(applyPatchSegment, true);
 
-    expect(container.querySelector('button')).not.toBeNull();
-    expect(container.querySelector('div.hidden')).toBeNull();
-    expect(container.textContent).toContain('a.ts');
+    expect(container.querySelector('button')).toBeNull();
+    expect(container.querySelector('[aria-expanded]')).toBeNull();
+    expect(container.textContent).not.toContain('*** Begin Patch');
   });
 
-  it('renders no expandable body and no toggle when expandable is false (dock)', () => {
-    render(failedToolSegment, false);
+  it('still shows duration when the surrounding transcript is non-expandable', () => {
+    render(toolSegment, false);
 
     expect(container.textContent).toContain('Run go build ./...');
+    expect(container.textContent).toContain('2s');
     expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('div.hidden')).toBeNull();
   });

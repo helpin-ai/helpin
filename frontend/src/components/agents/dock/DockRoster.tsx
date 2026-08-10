@@ -187,7 +187,11 @@ function DockAgentAvatar({ summary, dot }: { summary: DockRunSummary; dot: strin
         iconKey={summary.agent.icon_key}
         className="h-[26px] w-[26px] rounded-[9px] border-0 shadow-none"
       />
-      <span className="absolute -bottom-0.5 -end-0.5 h-[9px] w-[9px] rounded-full border-2 border-[#fbfaf8] dark:border-[#1d1c1a]" style={{ backgroundColor: dot }} />
+      <span
+        className="absolute -bottom-0.5 -end-0.5 h-[11px] w-[11px] rounded-full border-2 border-[#fbfaf8] dark:border-[#1d1c1a]"
+        style={{ backgroundColor: dot }}
+        data-agent-dock-roster-status-dot
+      />
     </span>
   );
 }

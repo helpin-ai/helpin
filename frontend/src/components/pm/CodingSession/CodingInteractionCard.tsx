@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { ArrowDown02Icon, ArrowExpandIcon, ArrowUp02Icon, CheckmarkCircle02Icon, File01Icon, GitCommitIcon, SecurityCheckIcon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
@@ -36,20 +36,16 @@ interface QuestionAnswerState {
 const APPROVAL_PREVIEW_COLLAPSED_LENGTH = 480;
 const approveButtonClassName = 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500';
 
-export function CodingInteractionCard({ interaction, acting, onResolve, compact = false, availablePreviewPanelKey, attachedPreview, onViewPreview }: Props) {
+export function CodingInteractionCard(props: Props) {
+  return <CodingInteractionCardContent key={props.interaction.interaction_id} {...props} />;
+}
+
+function CodingInteractionCardContent({ interaction, acting, onResolve, compact = false, availablePreviewPanelKey, attachedPreview, onViewPreview }: Props) {
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, QuestionAnswerState>>({});
   const [followupMessage, setFollowupMessage] = useState('');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedFindingIDs, setSelectedFindingIDs] = useState<string[]>([]);
   const [approvalPreviewExpanded, setApprovalPreviewExpanded] = useState(false);
-
-  useEffect(() => {
-    setQuestionAnswers({});
-    setFollowupMessage('');
-    setCurrentQuestionIndex(0);
-    setSelectedFindingIDs([]);
-    setApprovalPreviewExpanded(false);
-  }, [interaction.interaction_id]);
 
   const isBusy = acting !== null;
   const requestPayload = interaction.request_payload ?? {};
@@ -67,8 +63,8 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
       return (
         <InteractionShell compact={compact}
           icon={<CheckmarkCircle02Icon className="h-4 w-4" />}
-          eyebrow="User input required"
-          title={interaction.title ?? 'Answer the pending questions'}
+          eyebrow="Needs your input"
+          title={interaction.title && interaction.title.toLowerCase() !== 'user input required' ? interaction.title : 'Answer to continue'}
           summary={summary}
         >
           {showStepper ? (
@@ -77,12 +73,12 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
               <span>{Object.values(questionAnswers).filter((answer) => Boolean(answer?.value || answer?.freetext?.trim())).length} answered</span>
             </div>
           ) : null}
-          <div className="space-y-4">
+          <div className="divide-y divide-border/60">
             {visibleQuestions.map((question) => {
               const answer = questionAnswers[question.id];
               const isSecret = question.isSecret;
               return (
-                <div key={question.id} className="space-y-3 rounded-lg border border-border bg-muted/25 p-3">
+                <div key={question.id} className="space-y-3 py-3 first:pt-0 last:pb-0" data-coding-session-question>
                   <div>
                     {question.header ? (
                       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{question.header}</div>
@@ -93,50 +89,36 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
                     />
                   </div>
                   {question.options.length > 0 ? (
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       {question.options.map((option) => {
                         const selected = answer?.value === option.label;
                         return (
-                          <button
+                          <InteractionOption
                             key={option.label}
-                            type="button"
+                            selected={selected}
+                            label={option.label}
+                            description={option.description}
                             onClick={() => setQuestionAnswers((current) => ({
                               ...current,
                               [question.id]: { value: option.label },
                             }))}
-                            className={cn(
-                              'w-full rounded-lg border px-3 py-2 text-left transition-colors',
-                              selected
-                                ? 'border-primary/50 bg-primary/5 dark:bg-primary/10'
-                                : 'border-border/60 bg-background hover:border-border hover:bg-accent/40',
-                            )}
                             disabled={isBusy}
-                          >
-                            <div className={cn('font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{option.label}</div>
-                            {option.description ? (
-                              <div className="mt-1 text-xs leading-5 text-muted-foreground">{option.description}</div>
-                            ) : null}
-                          </button>
+                            compact={compact}
+                          />
                         );
                       })}
                       {question.isOther ? (
-                        <button
-                          type="button"
+                        <InteractionOption
+                          selected={answer?.value === '__other__'}
+                          label="Other"
+                          description="Provide a custom reply."
                           onClick={() => setQuestionAnswers((current) => ({
                             ...current,
                             [question.id]: { ...current[question.id], value: '__other__' },
                           }))}
-                          className={cn(
-                            'w-full rounded-lg border px-3 py-2 text-left transition-colors',
-                            answer?.value === '__other__'
-                              ? 'border-primary/50 bg-primary/5 dark:bg-primary/10'
-                              : 'border-border/60 bg-background hover:border-border hover:bg-accent/40',
-                          )}
                           disabled={isBusy}
-                        >
-                          <div className={cn('font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>Other</div>
-                          <div className="mt-1 text-xs leading-5 text-muted-foreground">Provide a custom reply.</div>
-                        </button>
+                          compact={compact}
+                        />
                       ) : null}
                     </div>
                   ) : null}
@@ -203,8 +185,8 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
       return (
         <InteractionShell compact={compact}
           icon={<CheckmarkCircle02Icon className="h-4 w-4" />}
-          eyebrow="User input required"
-          title={interaction.title ?? 'Answer the pending questions'}
+          eyebrow="Needs your input"
+          title={interaction.title && interaction.title.toLowerCase() !== 'user input required' ? interaction.title : 'Answer to continue'}
           summary={summary}
         >
           {showStepper ? (
@@ -213,37 +195,31 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
               <span>{Object.values(questionAnswers).filter((answer) => Boolean(answer?.value || answer?.freetext?.trim())).length} answered</span>
             </div>
           ) : null}
-          <div className="space-y-4">
+          <div className="divide-y divide-border/60">
             {visibleQuestions.map((question) => {
               const answer = questionAnswers[question.id];
               const selectedOption = question.options.find((option) => option.value === answer?.value);
               return (
-                <div key={question.id} className="space-y-3 rounded-lg border border-border bg-muted/25 p-3">
+                <div key={question.id} className="space-y-3 py-3 first:pt-0 last:pb-0" data-coding-session-question>
                   <MarkdownContent
                     content={question.text}
                     className={cn('text-foreground', compact ? 'text-sm leading-5' : 'text-sm leading-6')}
                   />
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     {question.options.map((option) => {
                       const selected = answer?.value === option.value;
                       return (
-                        <button
+                        <InteractionOption
                           key={option.value}
-                          type="button"
+                          selected={selected}
+                          label={option.label}
                           onClick={() => setQuestionAnswers((current) => ({
                             ...current,
                             [question.id]: { value: option.value, freetext: option.freetext ? current[question.id]?.freetext : undefined },
                           }))}
-                          className={cn(
-                            'w-full rounded-lg border px-3 py-2 text-left transition-colors',
-                            selected
-                              ? 'border-primary/50 bg-primary/5 dark:bg-primary/10'
-                              : 'border-border/60 bg-background hover:border-border hover:bg-accent/40',
-                          )}
                           disabled={isBusy}
-                        >
-                          <div className={cn('font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{option.label}</div>
-                        </button>
+                          compact={compact}
+                        />
                       );
                     })}
                   </div>
@@ -318,15 +294,17 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
     return (
       <InteractionShell compact={compact}
         icon={<SecurityCheckIcon className="h-4 w-4" />}
-        eyebrow={checkpoint?.phase ? `${checkpoint.phase} review checkpoint` : 'Review checkpoint'}
-        title={interaction.title ?? checkpoint?.title ?? 'Review required'}
+        eyebrow={checkpoint?.phase ? `${checkpoint.phase} · needs your review` : 'Needs your review'}
+        title={interaction.title && interaction.title.toLowerCase() !== 'review required'
+          ? interaction.title
+          : checkpoint?.title || 'Review findings to continue'}
         summary={interaction.summary ?? checkpoint?.summary}
       >
         {hasFindings ? (
           <div className="space-y-3">
             <ReviewCheckpointOverview checkpoint={checkpoint} compact={compact} />
-            <div className="rounded-lg border border-border bg-muted/25 p-3">
-              <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-2.5">
                 <div>
                   <div className={cn('font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>Findings</div>
                   <div className="text-xs text-muted-foreground">
@@ -344,18 +322,19 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
                   Select all
                 </label>
               </div>
-              <div className="space-y-2">
+              <div className="divide-y divide-border/60">
                 {findings.map((finding) => {
                   const selected = selectedFindingSet.has(finding.id);
                   return (
                     <label
                       key={finding.id}
                       className={cn(
-                        'flex gap-3 rounded-lg border px-3 py-3 transition-colors',
+                        '-mx-2 flex gap-3 px-2 py-3 transition-colors',
                         selected
-                          ? 'border-primary/50 bg-primary/5 dark:bg-primary/10'
-                          : 'border-border/60 bg-background hover:border-border hover:bg-accent/40',
+                          ? 'bg-primary/[0.05] dark:bg-primary/[0.08]'
+                          : 'hover:bg-muted/45',
                       )}
+                      data-coding-session-review-finding
                     >
                       <Checkbox
                         checked={selected}
@@ -487,11 +466,13 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
 
     return (
       <InteractionShell compact={compact}
+        icon={<SecurityCheckIcon className="h-4 w-4" />}
+        eyebrow="Needs your approval"
         title={interaction.title ?? approval?.title ?? 'Approval required'}
         action={fullPreviewAction}
       >
         {showApprovalContext ? (
-          <div className="mb-3 rounded-lg border border-border/70 bg-muted/25 px-3 py-2">
+          <div className="mb-3 border-y border-border/60 py-2.5" data-coding-session-approval-context>
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               What the agent wants to do
             </div>
@@ -646,6 +627,55 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
   );
 }
 
+function InteractionOption({
+  selected,
+  label,
+  description,
+  onClick,
+  disabled,
+  compact,
+}: {
+  selected: boolean;
+  label: string;
+  description?: string;
+  onClick: () => void;
+  disabled: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'group/option flex min-h-11 w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left outline-none transition-colors',
+        'hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/25 disabled:opacity-60',
+        selected && 'bg-primary/[0.06] hover:bg-primary/[0.08] dark:bg-primary/[0.1]',
+      )}
+      data-coding-session-interaction-option
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'mt-1 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border transition-colors',
+          selected ? 'border-primary' : 'border-muted-foreground/45 group-hover/option:border-muted-foreground/70',
+        )}
+      >
+        {selected ? <span className="h-1.5 w-1.5 rounded-full bg-primary" /> : null}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={cn('block font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>
+          {label}
+        </span>
+        {description ? (
+          <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{description}</span>
+        ) : null}
+      </span>
+    </button>
+  );
+}
+
 function InteractionShell({
   icon,
   eyebrow,
@@ -664,16 +694,18 @@ function InteractionShell({
   compact?: boolean;
 }) {
   return (
-    <div
+    <section
+      aria-label={title}
+      data-coding-session-interaction-shell
       className={cn(
-        'rounded-xl border bg-card',
+        'border-y bg-transparent',
         compact
-          ? 'border-amber-400/60 p-3 dark:border-amber-500/50'
-          : 'border-border p-4',
+          ? 'border-amber-400/40 py-3 dark:border-amber-500/35'
+          : 'border-border/70 py-4',
       )}
     >
       {eyebrow ? (
-        <div className={cn('mb-1.5 flex items-center gap-2 font-medium uppercase tracking-wide text-muted-foreground', compact ? 'text-[10px]' : 'text-[11px]')}>
+        <div className={cn('mb-1.5 flex items-center gap-2 font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400', compact ? 'text-[10px]' : 'text-[11px]')}>
           {icon}
           {eyebrow}
         </div>
@@ -689,7 +721,7 @@ function InteractionShell({
         />
       ) : null}
       <div className={compact ? 'mt-3' : 'mt-4'}>{children}</div>
-    </div>
+    </section>
   );
 }
 
@@ -1069,7 +1101,7 @@ function ReviewCheckpointOverview({
   if (!checkpoint.overallExplanation && badges.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-border bg-muted/25 p-3">
+    <div className="border-b border-border/60 pb-3" data-coding-session-review-overview>
       {badges.length > 0 ? (
         <div className="mb-2 flex flex-wrap gap-2">{badges}</div>
       ) : null}

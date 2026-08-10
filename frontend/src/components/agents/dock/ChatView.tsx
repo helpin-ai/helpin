@@ -366,20 +366,21 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
           <StreamingStatusText className="text-xs">{liveStatusLabel}</StreamingStatusText>
         )}
         {plans.length > 0 && (
-          <div className="space-y-2 rounded-lg border border-indigo-200/60 bg-indigo-50/50 p-2 dark:border-indigo-500/20 dark:bg-indigo-500/[0.07]">
-            <div className="px-1 text-[11px] font-medium uppercase tracking-wide text-indigo-600/80 dark:text-indigo-300/80">
+          <section className="divide-y divide-border/60 border-y border-border/70 py-2" data-agent-dock-sub-agent-runs>
+            <div className="px-1 pb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               Sub-agent runs
             </div>
             {plans.map((plan) => (
-              <ExecutionStrip
-                key={plan.id}
-                kind="plan"
-                workspaceId={workspaceId}
-                plan={planSummaryToRunPlan(plan)}
-                runsById={runsById}
-              />
+              <div key={plan.id} className="py-2 first:pt-0 last:pb-0">
+                <ExecutionStrip
+                  kind="plan"
+                  workspaceId={workspaceId}
+                  plan={planSummaryToRunPlan(plan)}
+                  runsById={runsById}
+                />
+              </div>
             ))}
-          </div>
+          </section>
         )}
         {effectiveInteraction && dockConfirm && (
           <DockPlanConfirmCard
