@@ -274,6 +274,30 @@ describe('CustomAgentCreatePanel', () => {
     expect(container?.textContent).toContain('Coming soon');
   });
 
+  it('shows a bounded per-agent tool step limit for Native SDK agents', () => {
+    renderPanel({
+      form: {
+        ...createDefaultCustomAgentForm(),
+        name: 'Native planner',
+        runtime_kind: 'native_sdk',
+        provider: 'anthropic',
+        model: 'claude-opus-4-8',
+        max_tool_steps: '640',
+      },
+      advancedOpen: true,
+    });
+
+    click('Start blank');
+
+    expect(container?.textContent).toContain('Tool step limit');
+    expect(container?.textContent).toContain('1–1000 rounds per run.');
+    const input = Array.from(container?.querySelectorAll('input') ?? [])
+      .find((candidate) => candidate.value === '640');
+    expect(input).toBeTruthy();
+    expect(input?.min).toBe('1');
+    expect(input?.max).toBe('1000');
+  });
+
   it('supports all-teams and multi-team access', () => {
     const onChange = vi.fn();
     renderPanel({

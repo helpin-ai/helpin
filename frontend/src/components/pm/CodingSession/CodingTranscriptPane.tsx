@@ -122,7 +122,8 @@ export function CodingTranscriptPane({
     || session.status === 'paused';
 
   // Flatten the reconciled stream into one ordered segment list shared with the
-  // Ask Agents dock. The slider shows every kind and renders rows expandable.
+  // Ask Agents dock. The slider shows every kind; tool calls stay concise while
+  // reasoning and run-context rows can still disclose their content.
   const segments = useMemo(
     () => collectSegments(
       {
@@ -267,6 +268,10 @@ export function CodingTranscriptPane({
         email: member.email,
         full_name: member.full_name,
         avatar_url: member.avatar_url,
+        avatar_style: member.avatar_style,
+        avatar_seed: member.avatar_seed,
+        avatar_background_mode: member.avatar_background_mode,
+        avatar_background_color: member.avatar_background_color,
       });
     }
     return map;
@@ -281,7 +286,8 @@ export function CodingTranscriptPane({
         const resolver = memberActorByUserId.get(message.resolver_user_id);
         if (resolver) return resolver;
       }
-      return triggeredBy;
+      if (!triggeredBy) return null;
+      return memberActorByUserId.get(triggeredBy.id) ?? triggeredBy;
     },
     [memberActorByUserId, triggeredBy],
   );

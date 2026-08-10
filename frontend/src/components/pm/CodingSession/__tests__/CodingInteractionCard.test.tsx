@@ -120,6 +120,11 @@ describe('CodingInteractionCard', () => {
     expect(findButton('Approve selected')).toBeUndefined();
     expect(findButton('Approve')).toBeTruthy();
     expect(findButton('Approve')?.hasAttribute('disabled')).toBe(true);
+    const shell = container.querySelector<HTMLElement>('[data-coding-session-interaction-shell]');
+    expect(shell?.className).toContain('border-y');
+    expect(shell?.className).not.toContain('rounded-xl');
+    expect(container.querySelector('[data-coding-session-review-overview]')?.className).not.toContain('rounded-lg');
+    expect(container.querySelectorAll('[data-coding-session-review-finding]')).toHaveLength(2);
 
     const checkboxes = Array.from(container.querySelectorAll('[data-slot="checkbox"]'));
     expect(checkboxes).toHaveLength(3);
@@ -322,14 +327,23 @@ describe('CodingInteractionCard', () => {
     expect(container.textContent).toContain('All HTTP 3xx (Recommended)');
     expect(container.textContent).not.toContain('"questions"');
     expect(container.textContent).not.toContain('"metric_scope"');
+    expect(container.textContent).toContain('Needs your input');
+    expect(container.textContent).not.toContain('User input required');
+
+    const question = container.querySelector<HTMLElement>('[data-coding-session-question]');
+    expect(question?.className).not.toContain('rounded-lg');
+    expect(question?.className).not.toContain('bg-muted/25');
 
     const option = Array.from(container.querySelectorAll('button')).find((candidate) => (
       candidate.textContent?.includes('All HTTP 3xx (Recommended)')
     ));
     expect(option).toBeTruthy();
+    expect(option?.hasAttribute('aria-pressed')).toBe(true);
+    expect(option?.className).not.toContain('border');
     act(() => {
       option!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
+    expect(option?.getAttribute('aria-pressed')).toBe('true');
     clickButton('Submit answers');
 
     expect(onResolve).toHaveBeenCalledWith(
@@ -380,7 +394,9 @@ describe('CodingInteractionCard', () => {
       compact: true,
     });
 
-    expect(container.firstElementChild?.className).toContain('border-amber-400/60');
+    expect(container.firstElementChild?.className).toContain('border-amber-400/40');
+    expect(container.firstElementChild?.className).toContain('border-y');
+    expect(container.firstElementChild?.className).not.toContain('rounded-xl');
     expect(container.firstElementChild?.className).not.toContain('border-l-2');
     expect(container.textContent).not.toContain('task_doc approval');
     expect(container.textContent).not.toContain('Review the proposed task document.');
@@ -450,6 +466,10 @@ describe('CodingInteractionCard', () => {
     expect(container.textContent).toContain('Command: rm -rf ./dist');
     expect(container.textContent).toContain('Working directory: /repo');
     expect(container.textContent).toContain('Reason: clean build output');
+    const approvalContext = container.querySelector<HTMLElement>('[data-coding-session-approval-context]');
+    expect(approvalContext?.className).toContain('border-y');
+    expect(approvalContext?.className).not.toContain('rounded-lg');
+    expect(approvalContext?.className).not.toContain('bg-muted/25');
   });
 
   it('does not duplicate the summary when a document preview already represents the request', () => {

@@ -51,6 +51,11 @@ describe('CodingPlanPanel', () => {
     render(stalePlan, 'running', 'Work plan');
     expect(container.textContent).toContain('Work plan');
     expect(container.textContent).not.toContain('Agent plan');
+    const panel = container.querySelector<HTMLElement>('[data-coding-session-plan]');
+    expect(panel?.className).toContain('border-y');
+    expect(panel?.className).not.toContain('rounded-xl');
+    expect(panel?.className).not.toContain('shadow');
+    expect(panel?.querySelector('[data-slot="badge"]')).toBeNull();
   });
 
   describe('live run (non-terminal)', () => {

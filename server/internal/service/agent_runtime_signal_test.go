@@ -29,6 +29,7 @@ type fakeAgentRuntimeSignalClient struct {
 	listInteractionCalls []string
 	listToolCallCalls    []string
 	listV2EventCalls     []int64
+	listV2EventPageSizes []int
 	getRuns              map[string]*AgentRuntimeRun
 	messages             map[string][]AgentRuntimeMessage
 	artifacts            map[string][]AgentRuntimeArtifact
@@ -118,6 +119,29 @@ func (c *fakeAgentRuntimeSignalClient) ListV2Events(_ context.Context, runtimeRu
 		}
 	}
 	return &AgentRuntimeEventListResponse{Events: events}, nil
+}
+
+func (c *fakeAgentRuntimeSignalClient) ListV2EventPage(_ context.Context, runtimeRunID string, afterSequence int64, pageSize int) (*AgentRuntimeEventListResponse, error) {
+	c.listV2EventCalls = append(c.listV2EventCalls, afterSequence)
+	c.listV2EventPageSizes = append(c.listV2EventPageSizes, pageSize)
+	if c.listErr != nil {
+		return nil, c.listErr
+	}
+	events := make([]AgentRuntimeEventEnvelope, 0, pageSize)
+	for _, event := range c.v2Events[runtimeRunID] {
+		if event.SequenceNo <= afterSequence {
+			continue
+		}
+		events = append(events, event)
+		if len(events) == pageSize {
+			break
+		}
+	}
+	nextSequence := afterSequence
+	if len(events) > 0 {
+		nextSequence = events[len(events)-1].SequenceNo
+	}
+	return &AgentRuntimeEventListResponse{Events: events, NextSequenceNo: nextSequence}, nil
 }
 
 func (c *fakeAgentRuntimeSignalClient) ListArtifacts(_ context.Context, runtimeRunID string) ([]AgentRuntimeArtifact, error) {

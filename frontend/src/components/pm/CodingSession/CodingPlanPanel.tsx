@@ -8,7 +8,6 @@ import {
   MinusSignIcon,
 } from '@/lib/icons';
 
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { AgentRunStatus, RunPlanArtifact, RunPlanStep } from '@/lib/pmTypes';
 
@@ -45,20 +44,21 @@ export function CodingPlanPanel({ plan, runStatus, title = 'Agent plan' }: Codin
 
   return (
     <details
-      className="rounded-xl border border-border bg-card shadow-sm"
+      className="border-y border-border/70 bg-transparent"
+      data-coding-session-plan
       open
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/25">
         <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           <CheckListIcon className="h-3.5 w-3.5" />
           {title}
         </div>
-        <Badge variant="outline" className="text-[10px]">
+        <span className="text-[11px] tabular-nums text-muted-foreground">
           {badgeLabel}
-        </Badge>
+        </span>
       </summary>
 
-      <div className="border-t border-border px-4 pb-3 pt-3">
+      <div className="border-t border-border/60 py-3">
         {plan?.note ? (
           <p className="mb-3 text-xs italic text-muted-foreground">{plan.note}</p>
         ) : null}
@@ -77,7 +77,7 @@ export function CodingPlanPanel({ plan, runStatus, title = 'Agent plan' }: Codin
         )}
 
         {unfinalized ? (
-          <div className="mt-3 flex items-start gap-2 rounded-md border border-border/60 bg-muted/40 px-2.5 py-2 text-[11px] text-muted-foreground">
+          <div className="mt-3 flex items-start gap-2 border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
             <InformationCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               {runStatus === 'completed'

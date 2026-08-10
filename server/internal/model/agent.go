@@ -37,6 +37,12 @@ const (
 	AgentRunTriggerTypeCommandBar = "command_bar"
 )
 
+// Native SDK tool-step limits mirror the bounds enforced by Agent Runtime.
+const (
+	MinNativeToolSteps = 1
+	MaxNativeToolSteps = 1000
+)
+
 // Agent represents an LLM agent in a workspace.
 type Agent struct {
 	ID                         string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -501,6 +507,7 @@ const (
 
 const AgentRunArtifactTypeToolCall = "tool_call"
 const AgentRunArtifactTypeBrowserScreenshot = "browser_screenshot"
+const AgentRunArtifactTypeBrowserRecording = "browser_recording"
 
 const (
 	AgentRunPauseReasonNone           = "none"
@@ -809,6 +816,7 @@ type AgentModelProviderOption struct {
 type AgentExecutionConfig struct {
 	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
 	ServiceTier     *string `json:"service_tier,omitempty"`
+	MaxToolSteps    *int    `json:"max_tool_steps,omitempty"`
 }
 
 type AgentSkillRef struct {
@@ -833,6 +841,35 @@ type AgentAnalyticsResponse struct {
 	Range  string                `json:"range"`
 	Bucket string                `json:"bucket"`
 	Series []AgentAnalyticsPoint `json:"series"`
+}
+
+// AgentFleetStats is the compact run summary used by the agents overview.
+// It intentionally contains list-safe AgentRun projections rather than full
+// run detail payloads.
+type AgentFleetStats struct {
+	RecentRuns      int        `json:"recent_runs"`
+	RecentCompleted int        `json:"recent_completed"`
+	RecentFailed    int        `json:"recent_failed"`
+	RecentTokens    int        `json:"recent_tokens"`
+	LastRun         *AgentRun  `json:"last_run,omitempty"`
+	AttentionRun    *AgentRun  `json:"attention_run,omitempty"`
+	AttentionCount  int        `json:"attention_count"`
+	RecentRunItems  []AgentRun `json:"recent_run_items"`
+}
+
+// AgentFleetItem combines the existing agent card data with the compact
+// runtime and trigger-binding summaries needed by the fleet page.
+type AgentFleetItem struct {
+	Agent Agent                    `json:"agent"`
+	Stats AgentFleetStats          `json:"stats"`
+	Usage AgentTriggerUsageSummary `json:"usage"`
+}
+
+// AgentFleetResponse is the page-specific read model for the agents overview.
+type AgentFleetResponse struct {
+	GeneratedAt     time.Time        `json:"generated_at"`
+	WindowStartedAt time.Time        `json:"window_started_at"`
+	Agents          []AgentFleetItem `json:"agents"`
 }
 
 func (r AgentSkillRef) Normalize() AgentSkillRef {
@@ -1000,7 +1037,7 @@ func (c AgentExecutionConfig) Normalize() AgentExecutionConfig {
 
 func (c AgentExecutionConfig) IsZero() bool {
 	normalized := c.Normalize()
-	return normalized.ReasoningEffort == nil && normalized.ServiceTier == nil
+	return normalized.ReasoningEffort == nil && normalized.ServiceTier == nil && normalized.MaxToolSteps == nil
 }
 
 func ParseAgentExecutionConfig(raw []byte) (AgentExecutionConfig, error) {

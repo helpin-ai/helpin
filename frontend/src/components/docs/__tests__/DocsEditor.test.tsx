@@ -139,6 +139,7 @@ vi.mock('../SlashMenuExtension', () => ({
 
 vi.mock('../CalloutExtension', () => ({ CalloutExtension: {} }))
 vi.mock('../VideoEmbedExtension', () => ({ VideoEmbedExtension: {} }))
+vi.mock('../ArtifactVideoExtension', () => ({ ArtifactVideoExtension: { configure: () => ({}) } }))
 vi.mock('../HtmlBlockExtension', () => ({ HtmlBlockExtension: {} }))
 vi.mock('@/components/editor/CodeBlockExtension', () => ({ CodeBlockExtension: {} }))
 vi.mock('../ExcalidrawExtension', () => ({ ExcalidrawExtension: { configure: () => ({}) } }))

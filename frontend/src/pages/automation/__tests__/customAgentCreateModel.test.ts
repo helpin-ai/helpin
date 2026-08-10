@@ -27,6 +27,7 @@ describe('custom agent create model', () => {
     expect(form.model).toBe('gpt-5.6-terra');
     expect(form.instruction_preamble).toBe('');
     expect(form.instruction_skills).toEqual([]);
+    expect(form.max_tool_steps).toBe('');
   });
 
   it('applies a validated backend draft to the custom form', () => {
@@ -132,6 +133,25 @@ describe('custom agent create model', () => {
     expect(buildCustomAgentCreatePayload('workspace-1', { ...base, max_concurrent_runs: '0' }, false).max_concurrent_runs).toBe(1);
     expect(buildCustomAgentCreatePayload('workspace-1', { ...base, max_concurrent_runs: 'abc' }, false).max_concurrent_runs).toBe(1);
     expect(buildCustomAgentCreatePayload('workspace-1', { ...base, max_concurrent_runs: '3' }, false).max_concurrent_runs).toBe(3);
+  });
+
+  it('includes a per-agent tool step limit only for the Native SDK runtime', () => {
+    const nativeForm = {
+      ...createDefaultCustomAgentForm(),
+      name: 'Native agent',
+      runtime_kind: 'native_sdk' as const,
+      max_tool_steps: '640',
+    };
+
+    expect(buildCustomAgentCreatePayload('workspace-1', nativeForm, true).execution_config).toEqual({
+      max_tool_steps: 640,
+    });
+
+    const codexForm = {
+      ...nativeForm,
+      runtime_kind: 'codex' as const,
+    };
+    expect(buildCustomAgentCreatePayload('workspace-1', codexForm, true).execution_config).toBeUndefined();
   });
 
   it('preserves advancedOpen payload semantics for runtime and leaves token limit unwired', () => {

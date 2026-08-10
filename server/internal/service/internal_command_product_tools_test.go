@@ -29,6 +29,8 @@ func TestProductToolCommandDefinitionsExposeNativeAliases(t *testing.T) {
 		{command: "crm.list_contacts", alias: "list_contacts", category: "CRM", mutating: false},
 		{command: "crm.list_buyer_signals", alias: "list_buyer_signals", category: "CRM", mutating: false},
 		{command: "docs.search_documents", alias: "search_documents", category: "Docs", mutating: false},
+		{command: "docs.insert_document_artifact", alias: "insert_document_artifact", category: "Docs", mutating: true},
+		{command: "docs.insert_document_image", alias: "insert_document_image", category: "Docs", mutating: true},
 		{command: "release.get_release_context", alias: "get_release_context", category: "Release", mutating: false},
 		{command: "release.find_tasks_for_git_changes", alias: "find_tasks_for_git_changes", category: "Release", mutating: false},
 		{command: "release.get_task_context", alias: "get_task_context", category: "Release", mutating: false},

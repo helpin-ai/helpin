@@ -424,9 +424,23 @@ func TestRuntimeAgentFromHelpinAgentPropagatesNativeToolBudget(t *testing.T) {
 			want:  300,
 		},
 		{
+			name:  "ask agent",
+			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetAskAgent, RuntimeKind: "native_sdk"},
+			want:  1000,
+		},
+		{
 			name:  "custom agent",
 			agent: &model.Agent{IsSystem: false, RuntimeKind: "native_sdk"},
 			want:  300,
+		},
+		{
+			name: "per-agent override",
+			agent: &model.Agent{
+				IsSystem:        false,
+				RuntimeKind:     "native_sdk",
+				ExecutionConfig: model.JSONBlob(`{"max_tool_steps":640}`),
+			},
+			want: 640,
 		},
 	}
 	for _, tt := range tests {

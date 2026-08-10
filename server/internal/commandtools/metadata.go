@@ -70,7 +70,8 @@ var runtimeToolRiskLevels = map[string]string{
 	"create_document": RiskLevelRoutine, "update_space": RiskLevelRoutine,
 	"update_collection": RiskLevelRoutine, "move_document": RiskLevelRoutine,
 	"write_document_content": RiskLevelRoutine, "update_document_block": RiskLevelRoutine,
-	"insert_document_block": RiskLevelRoutine, "insert_document_image": RiskLevelRoutine,
+	"insert_document_block": RiskLevelRoutine, "insert_document_artifact": RiskLevelRoutine,
+	"insert_document_image":   RiskLevelRoutine,
 	"link_document_to_object": RiskLevelRoutine, "ensure_epic_spec_doc": RiskLevelRoutine,
 	"ensure_task_plan_doc": RiskLevelRoutine, "publish_document_change_proposal": RiskLevelRoutine,
 	"publish_ai_section_candidate": RiskLevelRoutine,
@@ -776,7 +777,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.write_document_content",
 		Alias:       "write_document_content",
 		Category:    "Docs",
-		Description: "Write content to the document identified by document_id, including from a workspace-targeted Dock run. Accepts either structured document JSON or a markdown string, which will be auto-converted.",
+		Description: "Write text or structured content to the document identified by document_id, including from a workspace-targeted Dock run. Markdown is auto-converted. This tool does not embed private run artifacts: after writing the document, call insert_document_artifact with the artifact_id returned by browser_screenshot or browser_record.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -906,10 +907,49 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		},
 	},
 	{
+		CommandName: "docs.insert_document_artifact",
+		Alias:       "insert_document_artifact",
+		Category:    "Docs",
+		Description: "Insert a supported private run artifact as an authenticated image or video block in a Helpin Docs document. Use the exact artifact_id returned by browser_screenshot or browser_record. A filename, artifact_ref, URL, or markdown link written with write_document_content is text only and is not an embed. Helpin derives the block from the trusted artifact record; never provide an artifact type, storage URL, or content type.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"document_id": map[string]any{
+					"type":        "string",
+					"minLength":   1,
+					"description": "The document that will receive the artifact",
+				},
+				"artifact_id": map[string]any{
+					"type":        "string",
+					"minLength":   1,
+					"description": "The opaque artifact_id returned by a tool such as browser_screenshot or browser_record",
+				},
+				"after_block_id": map[string]any{
+					"type":        "string",
+					"minLength":   1,
+					"description": "Optional block ID after which to insert the artifact; omit to append",
+				},
+				"description": map[string]any{
+					"type":        "string",
+					"minLength":   1,
+					"maxLength":   1000,
+					"description": "Accessible description of the artifact content",
+				},
+				"caption": map[string]any{
+					"type":        "string",
+					"maxLength":   2000,
+					"description": "Optional visible caption",
+				},
+			},
+			"required":             []string{"document_id", "artifact_id", "description"},
+			"additionalProperties": false,
+		},
+	},
+	{
 		CommandName: "docs.insert_document_image",
 		Alias:       "insert_document_image",
 		Category:    "Docs",
-		Description: "Insert a private browser screenshot artifact into a Helpin Docs document. The artifact must belong to the current workspace; only its opaque artifact ID is persisted.",
+		Description: "Compatibility alias for inserting a private browser screenshot. Prefer insert_document_artifact for new calls.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

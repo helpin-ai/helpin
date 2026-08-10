@@ -41,10 +41,14 @@ type CodingSession struct {
 
 // CodingSessionActor describes the human user who triggered a coding session run.
 type CodingSessionActor struct {
-	ID        string  `json:"id"`
-	Email     string  `json:"email"`
-	FullName  string  `json:"full_name"`
-	AvatarURL *string `json:"avatar_url,omitempty"`
+	ID                    string  `json:"id"`
+	Email                 string  `json:"email"`
+	FullName              string  `json:"full_name"`
+	AvatarURL             *string `json:"avatar_url,omitempty"`
+	AvatarStyle           *string `json:"avatar_style,omitempty"`
+	AvatarSeed            *string `json:"avatar_seed,omitempty"`
+	AvatarBackgroundMode  *string `json:"avatar_background_mode,omitempty"`
+	AvatarBackgroundColor *string `json:"avatar_background_color,omitempty"`
 }
 
 type CodingSessionCapabilities struct {

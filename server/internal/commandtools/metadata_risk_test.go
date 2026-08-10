@@ -4,9 +4,10 @@ import "testing"
 
 func TestRuntimeToolRiskMetadata(t *testing.T) {
 	tests := map[string]string{
-		"create_task":            RiskLevelRoutine,
-		"create_document":        RiskLevelRoutine,
-		"write_document_content": RiskLevelRoutine,
+		"create_task":              RiskLevelRoutine,
+		"create_document":          RiskLevelRoutine,
+		"write_document_content":   RiskLevelRoutine,
+		"insert_document_artifact": RiskLevelRoutine,
 	}
 	for alias, want := range tests {
 		meta, ok := ToolMetadataForAlias(alias)

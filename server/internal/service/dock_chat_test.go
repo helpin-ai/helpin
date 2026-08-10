@@ -1,10 +1,62 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
+
+func TestDockChatListCursorPagination(t *testing.T) {
+	dbName := fmt.Sprintf("file:dock_chat_cursor_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE dock_chats (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
+		title TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create dock chats: %v", err)
+	}
+	base := time.Date(2026, 8, 10, 7, 0, 0, 0, time.UTC)
+	chats := []model.DockChat{
+		{ID: "chat-c", WorkspaceID: "ws-1", UserID: "user-1", Title: "C", CreatedAt: base.Add(2 * time.Hour), UpdatedAt: base.Add(2 * time.Hour)},
+		{ID: "chat-b", WorkspaceID: "ws-1", UserID: "user-1", Title: "B", CreatedAt: base.Add(time.Hour), UpdatedAt: base.Add(time.Hour)},
+		{ID: "chat-a", WorkspaceID: "ws-1", UserID: "user-1", Title: "A", CreatedAt: base.Add(time.Hour), UpdatedAt: base.Add(time.Hour)},
+		{ID: "chat-a0-other", WorkspaceID: "ws-2", UserID: "user-1", Title: "Other workspace", CreatedAt: base.Add(time.Hour), UpdatedAt: base.Add(time.Hour)},
+	}
+	if err := db.Create(&chats).Error; err != nil {
+		t.Fatalf("seed dock chats: %v", err)
+	}
+
+	service := &DockChatService{chatRepo: repository.NewDockChatRepository(db)}
+	first, err := service.ListChats(context.Background(), "ws-1", "user-1", 2, "")
+	if err != nil {
+		t.Fatalf("list first page: %v", err)
+	}
+	if len(first.Chats) != 2 || first.Chats[0].ID != "chat-c" || first.Chats[1].ID != "chat-b" || first.NextCursor == nil {
+		t.Fatalf("unexpected first page: %#v", first)
+	}
+	second, err := service.ListChats(context.Background(), "ws-1", "user-1", 2, *first.NextCursor)
+	if err != nil {
+		t.Fatalf("list second page: %v", err)
+	}
+	if len(second.Chats) != 1 || second.Chats[0].ID != "chat-a" || second.NextCursor != nil {
+		t.Fatalf("unexpected second page: %#v", second)
+	}
+	if _, err := service.ListChats(context.Background(), "ws-1", "user-1", 2, "not-a-cursor"); !errors.Is(err, ErrDockChatInvalidCursor) {
+		t.Fatalf("invalid cursor error = %v, want %v", err, ErrDockChatInvalidCursor)
+	}
+}
 
 func TestComposeDockChatTurn(t *testing.T) {
 	t.Run("without page context returns content unchanged", func(t *testing.T) {

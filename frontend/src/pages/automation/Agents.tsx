@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
@@ -29,23 +29,30 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
+import { useAutomationAgentFleet } from '@/hooks/queries/useAutomation';
 import { automationService } from '@/lib/services/automationService';
 import { agentService } from '@/lib/services/agentService';
 import { gitService } from '@/lib/services/gitService';
 import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
-import { AGENT_RUNTIME_HELP_TEXT, AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
+import {
+  AGENT_RUNTIME_HELP_TEXT,
+  AGENT_RUNTIME_LABELS,
+  MAX_NATIVE_TOOL_STEPS,
+  MIN_NATIVE_TOOL_STEPS,
+  isValidNativeToolStepLimit,
+  parseNativeToolStepLimit,
+} from '@/lib/agentRuntime';
 import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
 import { buildAutomationActivityPath, buildAutomationFlowsPath, buildAutomationToolConnectionsPath } from '@/lib/automationUi';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
-import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
+import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import type {
   Agent,
   AgentAnalyticsResponse,
@@ -134,12 +141,26 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CustomAgentCreatePanel } from './CustomAgentCreatePanel';
 import {
   buildCustomAgentCreatePayload,
   createDefaultCustomAgentForm,
   defaultModelForAgentProvider,
 } from './customAgentCreateModel';
+
+const CodingSessionDrawer = lazy(async () => {
+  const module = await import('@/components/pm/CodingSession/CodingSessionDrawer');
+  return { default: module.CodingSessionDrawer };
+});
+
+const CustomAgentCreatePanel = lazy(async () => {
+  const module = await import('./CustomAgentCreatePanel');
+  return { default: module.CustomAgentCreatePanel };
+});
+
+const AgentRunNowDialog = lazy(async () => {
+  const module = await import('./agents/AgentRunNowDialog');
+  return { default: module.AgentRunNowDialog };
+});
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -411,6 +432,7 @@ interface AgentFormData {
   model: string;
   reasoning_effort: AgentReasoningEffort | '';
   service_tier: AgentServiceTier | '';
+  max_tool_steps: string;
   system_prompt: string;
   instruction_preamble: string;
   instruction_skills: string[];
@@ -493,22 +515,6 @@ const RUN_NOW_SUPPORTED_TARGETS = new Set<AgentTargetType>([
   'workspace',
   'support_conversation',
 ]);
-
-const RUN_NOW_TARGET_ID_LABELS: Partial<Record<AgentTargetType, string>> = {
-  task: 'Task ID',
-  epic: 'Epic ID',
-  sprint: 'Sprint ID',
-  objective: 'Objective ID',
-  support_conversation: 'Conversation ID',
-};
-
-const RUN_NOW_TARGET_ID_PLACEHOLDERS: Partial<Record<AgentTargetType, string>> = {
-  task: 'Paste a task ID',
-  epic: 'Paste an epic ID',
-  sprint: 'Paste a sprint ID',
-  objective: 'Paste an objective ID',
-  support_conversation: 'Paste a support conversation ID',
-};
 
 function ProviderIcon({ provider, className = 'h-4 w-4' }: { provider: string; className?: string }) {
   switch (provider) {
@@ -794,28 +800,37 @@ function deriveExecutionConfigFields(
   runtimeKind: AgentRuntimeKind,
   provider: AgentModelProvider,
   executionConfig?: AgentExecutionConfig,
-): Pick<AgentFormData, 'reasoning_effort' | 'service_tier'> {
+): Pick<AgentFormData, 'reasoning_effort' | 'service_tier' | 'max_tool_steps'> {
   const normalizedProvider = normalizeProviderForRuntime(runtimeKind, provider);
   const reasoningEffort = runtimeKind === 'codex' ? (executionConfig?.reasoning_effort ?? '') : '';
   const serviceTier = runtimeKind === 'codex' && normalizedProvider === 'openai'
     ? (executionConfig?.service_tier ?? '')
     : '';
+  const maxToolSteps = runtimeKind === 'native_sdk' && executionConfig?.max_tool_steps
+    ? String(executionConfig.max_tool_steps)
+    : '';
   return {
     reasoning_effort: reasoningEffort,
     service_tier: serviceTier,
+    max_tool_steps: maxToolSteps,
   };
 }
 
 function buildExecutionConfigPayload(form: AgentFormData): AgentExecutionConfig | undefined {
-  if (form.runtime_kind !== 'codex') {
-    return undefined;
-  }
   const config: AgentExecutionConfig = {};
-  if (form.reasoning_effort) {
-    config.reasoning_effort = form.reasoning_effort;
+  if (form.runtime_kind === 'codex') {
+    if (form.reasoning_effort) {
+      config.reasoning_effort = form.reasoning_effort;
+    }
+    if (form.provider === 'openai' && form.service_tier) {
+      config.service_tier = form.service_tier;
+    }
   }
-  if (form.provider === 'openai' && form.service_tier) {
-    config.service_tier = form.service_tier;
+  if (form.runtime_kind === 'native_sdk') {
+    const maxToolSteps = parseNativeToolStepLimit(form.max_tool_steps);
+    if (maxToolSteps !== undefined) {
+      config.max_tool_steps = maxToolSteps;
+    }
   }
   return Object.keys(config).length > 0 ? config : undefined;
 }
@@ -845,13 +860,23 @@ function normalizeDefaultInvocationMode(
 function hasConfiguredAdvancedFields(agent: Agent | null, presets: AgentPresetDefinition[]): boolean {
   if (!agent) return false;
   if (!agent.is_system) {
-    return Boolean(agent.monthly_token_budget || agent.execution_config?.reasoning_effort || agent.execution_config?.service_tier);
+    return Boolean(
+      agent.monthly_token_budget
+      || agent.execution_config?.reasoning_effort
+      || agent.execution_config?.service_tier
+      || agent.execution_config?.max_tool_steps,
+    );
   }
   const presetKey = fallbackPresetKey(agent);
   const presetVersionKey = agent.preset_version_key ?? fallbackPresetVersionKey(presetKey);
   return (
     agent.runtime_kind !== presetRuntimeKindForSelection(presetKey, presetVersionKey, presets) ||
-    Boolean(agent.monthly_token_budget || agent.execution_config?.reasoning_effort || agent.execution_config?.service_tier)
+    Boolean(
+      agent.monthly_token_budget
+      || agent.execution_config?.reasoning_effort
+      || agent.execution_config?.service_tier
+      || agent.execution_config?.max_tool_steps,
+    )
   );
 }
 
@@ -1064,6 +1089,7 @@ function comparableCustomAgentForm(form: AgentFormData) {
     model: form.model.trim(),
     reasoning_effort: form.runtime_kind === 'codex' ? form.reasoning_effort : '',
     service_tier: form.runtime_kind === 'codex' && provider === 'openai' ? form.service_tier : '',
+    max_tool_steps: form.runtime_kind === 'native_sdk' ? parseNativeToolStepLimit(form.max_tool_steps) ?? 0 : 0,
     system_prompt: form.system_prompt.trim(),
     monthly_token_budget: normalizeTokenBudgetFormValue(form.monthly_token_budget),
     team_ids: teamIDs,
@@ -1357,6 +1383,56 @@ function FieldLabel({ htmlFor, children, tooltip }: { htmlFor?: string; children
   );
 }
 
+function NativeToolStepLimitField({
+  id,
+  value,
+  disabled = false,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const valid = isValidNativeToolStepLimit('native_sdk', value);
+  const helpID = `${id}-help`;
+  return (
+    <div className="space-y-2">
+      <FieldLabel
+        htmlFor={id}
+        tooltip="Maximum model and tool-call rounds in one run. Leave empty to use the agent default."
+      >
+        Tool step limit
+      </FieldLabel>
+      <Input
+        id={id}
+        type="number"
+        min={MIN_NATIVE_TOOL_STEPS}
+        max={MAX_NATIVE_TOOL_STEPS}
+        step={1}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Use agent default"
+        aria-invalid={!valid}
+        aria-describedby={helpID}
+        className="h-9 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive/30"
+      />
+      <p
+        id={helpID}
+        className={cn(
+          'text-[11px] leading-relaxed',
+          valid ? 'text-muted-foreground' : 'text-destructive',
+        )}
+      >
+        {valid
+          ? `${MIN_NATIVE_TOOL_STEPS}–${MAX_NATIVE_TOOL_STEPS} rounds per run.`
+          : `Enter a whole number from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}.`}
+      </p>
+    </div>
+  );
+}
+
 function DrawerConfigSection({
   title,
   description,
@@ -1623,7 +1699,7 @@ function agentPurpose(agent: Agent, presets: AgentPresetDefinition[]) {
 }
 
 // Legacy blank models resolve to the provider default and are not an error.
-function needsModelConfiguration(_agent: Agent) {
+function needsModelConfiguration() {
   return false;
 }
 
@@ -1635,8 +1711,8 @@ function isFailingAgent(stats?: AgentRunStats) {
   return Boolean(stats?.recentFailed) || stats?.lastRun?.status === 'failed';
 }
 
-function needsAttention(agent: Agent, stats?: AgentRunStats) {
-  return needsModelConfiguration(agent) || Boolean(stats?.attentionRunCount) || isUnusedAgent(stats) || isFailingAgent(stats);
+function needsAttention(stats?: AgentRunStats) {
+  return needsModelConfiguration() || Boolean(stats?.attentionRunCount) || isUnusedAgent(stats) || isFailingAgent(stats);
 }
 
 export function sortAgentsForDisplay(agents: Agent[]) {
@@ -1705,14 +1781,6 @@ function lastRunStatusClass(run?: AgentRun) {
     default:
       return 'border-border/70 bg-muted/40 text-muted-foreground';
   }
-}
-
-function attentionRunPriority(run: AgentRun) {
-  const displayStatus = getAgentRunDisplayStatus(run);
-  if (displayStatus === 'awaiting_approval') return 3;
-  if (displayStatus === 'awaiting_auth') return 2;
-  if (displayStatus === 'awaiting_input') return 1;
-  return 0;
 }
 
 function attentionRunLabel(run: AgentRun) {
@@ -2023,7 +2091,7 @@ function AgentCard({
 }) {
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
-  const attention = needsAttention(agent, stats);
+  const attention = needsAttention(stats);
   const runNowBlocker = agentRunNowBlocker(agent, stats);
   const showRunNow = canEdit && !agent.is_system;
   const canRunNow = showRunNow && !runNowBlocker;
@@ -2379,7 +2447,7 @@ function AgentRow({
 }) {
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
-  const attention = needsAttention(agent, stats);
+  const attention = needsAttention(stats);
   const invocationLabel = INVOCATION_MODE_LABELS[agent.default_invocation_mode];
 
   return (
@@ -2467,13 +2535,38 @@ export function AgentsPage() {
   const { canEdit } = usePermissions(access);
   const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId ?? '');
 
-  const [agents, setAgents] = useState<Agent[]>([]);
   const [providerOptions, setProviderOptions] = useState<AgentModelProviderOption[]>(FALLBACK_PROVIDER_OPTIONS);
   const [presets, setPresets] = useState<AgentPresetDefinition[]>([]);
   const [toolCatalog, setToolCatalog] = useState<ToolCatalogResponse | null>(null);
   const [skillCatalog, setSkillCatalog] = useState<SkillCatalogResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const agentFleetQuery = useAutomationAgentFleet(workspaceId ?? '');
+  const agents = useMemo(
+    () => (agentFleetQuery.data?.agents ?? []).map((item) => item.agent),
+    [agentFleetQuery.data?.agents],
+  );
+  const runStats = useMemo<Record<string, AgentRunStats>>(
+    () => Object.fromEntries((agentFleetQuery.data?.agents ?? []).map((item) => [item.agent.id, {
+      recentRuns: item.stats.recent_runs,
+      recentCompleted: item.stats.recent_completed,
+      recentFailed: item.stats.recent_failed,
+      recentTokens: item.stats.recent_tokens,
+      lastRun: item.stats.last_run,
+      attentionRun: item.stats.attention_run,
+      attentionRunCount: item.stats.attention_count,
+      lastFiveStatuses: item.stats.recent_run_items.map((run) => run.status),
+      recentRunItems: item.stats.recent_run_items,
+    }])),
+    [agentFleetQuery.data?.agents],
+  );
+  const agentUsageMap = useMemo<Record<string, AgentTriggerUsageSummary | null>>(
+    () => Object.fromEntries((agentFleetQuery.data?.agents ?? []).map((item) => [item.agent.id, item.usage])),
+    [agentFleetQuery.data?.agents],
+  );
+  const loading = agentFleetQuery.isPending;
+  const refetchAgentFleet = agentFleetQuery.refetch;
+  const error = agentFleetQuery.error instanceof Error
+    ? agentFleetQuery.error.message
+    : agentFleetQuery.error ? String(agentFleetQuery.error) : null;
 
   const { data: settings } = useWorkspaceSettings(workspaceId ?? '');
   const teams = settings?.teams ?? [];
@@ -2484,8 +2577,6 @@ export function AgentsPage() {
   const visibleTeams = isAdmin ? teams : accessibleTeams;
 
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
-  const [runStats, setRunStats] = useState<Record<string, AgentRunStats>>({});
-  const [agentUsageMap, setAgentUsageMap] = useState<Record<string, AgentTriggerUsageSummary | null>>({});
   const agentTemplates: AgentTemplate[] = [];
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [templateSetupDialogOpen, setTemplateSetupDialogOpen] = useState(false);
@@ -2588,16 +2679,8 @@ export function AgentsPage() {
 
   const loadAgents = useCallback(async () => {
     if (!workspaceId) return;
-    setLoading(true);
-    setError(null);
-    const agentsRes = await automationService.listAgents(workspaceId);
-    if (agentsRes.error) {
-      setError(agentsRes.error);
-    } else {
-      setAgents(agentsRes.data ?? []);
-    }
-    setLoading(false);
-  }, [workspaceId]);
+    await refetchAgentFleet();
+  }, [refetchAgentFleet, workspaceId]);
 
   const loadProviderOptions = useCallback(async () => {
     if (!workspaceId) return;
@@ -2834,86 +2917,8 @@ export function AgentsPage() {
   }, []);
 
   useEffect(() => {
-    loadAgents();
-    loadProviderOptions();
     loadPresets();
-    loadToolCatalog();
-    loadSkillCatalog();
-  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog]);
-
-  const loadFleetData = useCallback(async () => {
-    if (!workspaceId || agents.length === 0) {
-      setRunStats({});
-      setAgentUsageMap({});
-      return;
-    }
-
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const results: Record<string, AgentRunStats> = {};
-    for (const agent of agents) {
-      results[agent.id] = {
-        recentRuns: 0,
-        recentCompleted: 0,
-        recentFailed: 0,
-        recentTokens: 0,
-        lastRun: undefined,
-        attentionRun: undefined,
-        attentionRunCount: 0,
-        lastFiveStatuses: [],
-        recentRunItems: [],
-      };
-    }
-
-    const [runsRes, usageEntries] = await Promise.all([
-      automationService.listWorkspaceRuns(workspaceId, 1, 500),
-      Promise.all(
-        agents.map(async (agent) => {
-          const res = await automationService.getAgentUsage(workspaceId, agent.id);
-          return [agent.id, res.error ? null : (res.data ?? null)] as const;
-        }),
-      ),
-    ]);
-
-    const runs = runsRes.error ? [] : (runsRes.data?.data ?? []);
-    for (const run of runs) {
-      const stats = results[run.agent_id];
-      if (!stats) continue;
-
-      if (!stats.lastRun) {
-        stats.lastRun = run;
-      }
-
-      if (isPausedAgentRun(run)) {
-        stats.attentionRunCount += 1;
-        if (!stats.attentionRun || attentionRunPriority(run) > attentionRunPriority(stats.attentionRun)) {
-          stats.attentionRun = run;
-        }
-      }
-
-      if (stats.lastFiveStatuses.length < 5) {
-        stats.lastFiveStatuses.push(run.status);
-      }
-      if (stats.recentRunItems.length < 5) {
-        stats.recentRunItems.push(run);
-      }
-
-      const createdAt = new Date(run.created_at).getTime();
-      if (Number.isNaN(createdAt) || createdAt < sevenDaysAgo) continue;
-
-      stats.recentRuns += 1;
-      stats.recentTokens += run.tokens_used ?? 0;
-      if (run.status === 'completed') stats.recentCompleted += 1;
-      if (run.status === 'failed') stats.recentFailed += 1;
-    }
-
-    setRunStats(results);
-    setAgentUsageMap(Object.fromEntries(usageEntries));
-  }, [agents, workspaceId]);
-
-  // Fetch fleet-level run stats and trigger usage once, then derive agent rows from that shared data.
-  useEffect(() => {
-    void loadFleetData();
-  }, [loadFleetData]);
+  }, [loadPresets]);
 
   useEffect(() => {
     if (!systemDrawerOpen || systemDrawerTab !== 'analytics' || !editingAgent?.id) return;
@@ -2921,16 +2926,13 @@ export function AgentsPage() {
   }, [agentAnalyticsRange, editingAgent?.id, loadAgentAnalytics, systemDrawerOpen, systemDrawerTab]);
 
   useEffect(() => {
+    if (!systemDrawerOpen || systemDrawerTab !== 'analytics' || !editingAgent?.id) return;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const handler = (event: Event) => {
-      if (!isAgentRunLifecycleEvent(event)) return;
-      if (refreshTimer) return;
+      if (!isAgentRunLifecycleEvent(event) || refreshTimer) return;
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
-        void loadFleetData();
-        if (systemDrawerOpen && systemDrawerTab === 'analytics' && editingAgent?.id) {
-          void loadAgentAnalytics(editingAgent.id, agentAnalyticsRange);
-        }
+        void loadAgentAnalytics(editingAgent.id, agentAnalyticsRange);
       }, 400);
     };
     window.addEventListener('agent_run-created', handler);
@@ -2940,9 +2942,10 @@ export function AgentsPage() {
       window.removeEventListener('agent_run-created', handler);
       window.removeEventListener('agent_run-updated', handler);
     };
-  }, [agentAnalyticsRange, editingAgent?.id, loadAgentAnalytics, loadFleetData, systemDrawerOpen, systemDrawerTab]);
+  }, [agentAnalyticsRange, editingAgent?.id, loadAgentAnalytics, systemDrawerOpen, systemDrawerTab]);
 
   const openCreateDialog = () => {
+    void Promise.all([loadProviderOptions(), loadToolCatalog(), loadSkillCatalog()]);
     setEditingAgent(null);
     setTemplateDraft(null);
     setAgentUsage(null);
@@ -2959,6 +2962,7 @@ export function AgentsPage() {
   };
 
   const openCreateFromTemplateDrawer = async (template: AgentTemplate) => {
+    void Promise.all([loadProviderOptions(), loadToolCatalog(), loadSkillCatalog()]);
     setEditingAgent(null);
     const defaultStarterFlowEnabled = template.starter_flows?.some((flow) => flow.default_enabled) ?? false;
     setTemplateDraft({ template, createStarterFlow: defaultStarterFlowEnabled });
@@ -3149,6 +3153,7 @@ export function AgentsPage() {
   };
 
   const openEditDialog = (agent: Agent) => {
+    void Promise.all([loadProviderOptions(), loadToolCatalog(), loadSkillCatalog()]);
     setEditingAgent(agent);
     setTemplateDraft(null);
     setAgentUsage(null);
@@ -3189,9 +3194,6 @@ export function AgentsPage() {
       const payload = buildUpdatePayload(form, advancedOpen, presets, editingAgent);
       const res = await automationService.updateAgent(workspaceId, editingAgent.id, payload);
       if (!res.error) {
-        if (res.data) {
-          setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
-        }
         setDialogOpen(false);
         setSystemDrawerOpen(false);
         if (editingAgent.is_system) {
@@ -3557,7 +3559,6 @@ export function AgentsPage() {
     }
     if (res.data) {
       setEditingAgent(res.data);
-      setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
       setForm((current) => ({
         ...current,
         monthly_token_budget: res.data?.monthly_token_budget?.toString() ?? '',
@@ -3581,7 +3582,6 @@ export function AgentsPage() {
       }
       if (res.data) {
         setEditingAgent(res.data);
-        setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
         setForm(buildCustomAgentForm(res.data));
         await loadCustomAgentVersions(res.data);
       }
@@ -3603,7 +3603,6 @@ export function AgentsPage() {
     }
     if (res.data) {
       setEditingAgent(res.data);
-      setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
       setForm(buildSystemAgentForm(res.data, presets));
     }
     await loadPresets();
@@ -3682,10 +3681,6 @@ export function AgentsPage() {
     }
     setSaving(false);
   };
-
-  if (!workspace) {
-    return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
-  }
 
   const visibleAgents = agents.filter((agent) => {
     if (!agent.team_id) {
@@ -3793,6 +3788,7 @@ export function AgentsPage() {
     ?? templateDraft?.template.starter_flows?.[0];
   const supportsReasoningEffort = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_reasoning_effort);
   const supportsServiceTier = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_service_tier);
+  const maxToolStepsValid = isValidNativeToolStepLimit(form.runtime_kind, form.max_tool_steps);
   const versionToolEditingState = getVersionToolEditingState({ versionReadOnly, runtimeKind: form.runtime_kind });
   const isBlankCustomCreate = !editingAgent && !templateDraft;
   const isCustomEdit = Boolean(editingAgent && !editingAgent.is_system && !templateDraft);
@@ -3816,6 +3812,9 @@ export function AgentsPage() {
     }
     if (!providerConfigState.selectedProviderOption) {
       missing.push('compatible AI provider');
+    }
+    if (!maxToolStepsValid) {
+      missing.push(`tool step limit from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}`);
     }
     if (starterFlowEnabled && templateDraft?.template.key === 'release_notes_writer') {
       if (!templateForm.repository_id) missing.push('repository');
@@ -4030,261 +4029,8 @@ export function AgentsPage() {
     setForm(buildCustomAgentVersionForm(editingAgent, nextVersion));
   };
 
-  return (
-    <div className="mx-auto max-w-7xl space-y-4 pb-20">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold">Agents</h1>
-          <p className="text-sm text-muted-foreground">
-            Built-in and custom agents for manual runs and automated flows.
-          </p>
-        </div>
-        {sortedAgents.length > 0 && (
-          <div className="flex items-center gap-2">
-            <div className="flex items-center rounded-md border border-border">
-              <button
-                type="button"
-                className={`p-1.5 ${viewMode === 'list' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => setViewMode('list')}
-              >
-                <LayoutTable01Icon className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                className={`p-1.5 ${viewMode === 'cards' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => setViewMode('cards')}
-              >
-                <LayoutGridIcon className="h-4 w-4" />
-              </button>
-            </div>
-            {canEdit && (
-              <Button size="sm" onClick={openCreateDialog}>
-                <PlusSignIcon className="mr-1.5 h-4 w-4" />
-                New Custom Agent
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {loading && <p className="text-sm text-muted-foreground">Loading agents...</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
-      {/* ---- Empty state with onboarding ---- */}
-      {!loading && visibleAgents.length === 0 && !error && (
-        <div className="flex flex-col items-center justify-center py-16 px-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10 mb-5">
-            <BotIcon className="h-7 w-7 text-violet-500" />
-          </div>
-          <h3 className="text-lg font-semibold mb-1.5">Create your first agent</h3>
-          <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-            AI-powered teammates that plan features, write code, review work, update docs, reply to customers, and manage deals — automatically or on demand.
-          </p>
-          {canEdit && (
-            <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
-              <Button className="gap-2" onClick={openCreateDialog}>
-                <PlusSignIcon className="h-4 w-4" />
-                New Custom Agent
-              </Button>
-            </div>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
-            {EMPTY_STATE_CARDS.map((card) => (
-              <div key={card.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
-                <card.icon className="h-5 w-5 text-muted-foreground mb-3" />
-                <p className="text-sm font-medium mb-1">{card.title}</p>
-                <p className="text-sm text-muted-foreground leading-relaxed">{card.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ---- Agent list / grid ---- */}
-      {sortedAgents.length > 0 && viewMode === 'list' && (
-        <AgentsListTable>
-          <AgentsListHeader />
-          {sortedAgents.map((agent) => (
-            <AgentRow
-              key={agent.id}
-              agent={agent}
-              stats={runStats[agent.id]}
-              usage={agentUsageMap[agent.id]}
-              presets={presets}
-              onOpen={openEditDialog}
-              onOpenRun={openRunDetails}
-              onRunNow={openRunNowDialog}
-              onDelete={openDeleteDialog}
-              canEdit={canEdit}
-              workspaceSlug={workspace?.slug}
-            />
-          ))}
-        </AgentsListTable>
-      )}
-
-      {sortedAgents.length > 0 && viewMode === 'cards' && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {sortedAgents.map((agent) => (
-            <AgentCard
-              key={agent.id}
-              agent={agent}
-              stats={runStats[agent.id]}
-              usage={agentUsageMap[agent.id]}
-              presets={presets}
-              onOpen={openEditDialog}
-              onOpenRun={openRunDetails}
-              onRunNow={openRunNowDialog}
-              onDelete={openDeleteDialog}
-              canEdit={canEdit}
-              workspaceSlug={workspace?.slug}
-            />
-          ))}
-        </div>
-      )}
-
-      <Dialog
-        open={runNowOpen}
-        onOpenChange={(open) => {
-          setRunNowOpen(open);
-          if (!open) {
-            setRunNowAgent(null);
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-[560px]">
-          <DialogHeader>
-            <DialogTitle>Run agent now</DialogTitle>
-            <DialogDescription>
-              {runNowAgent ? `Start ${runNowAgent.name} manually with a concrete target and optional instructions.` : 'Start this agent manually.'}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            {runNowTargets.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
-                This agent does not have a manually runnable target enabled.
-              </div>
-            ) : (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="run-now-target-type">Target</Label>
-                  <Select value={runNowTargetType} onValueChange={handleRunNowTargetChange}>
-                    <SelectTrigger id="run-now-target-type">
-                      <SelectValue placeholder="Choose a target" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {runNowTargets.map((target) => (
-                        <SelectItem key={target} value={target}>
-                          {labelForAgentTarget(target)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {runNowTargetType === 'workspace' ? (
-                  <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
-                    <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Workspace</p>
-                    <p className="mt-1 text-sm">{workspace.name}</p>
-                  </div>
-                ) : null}
-
-                {runNowTargetType === 'repository' ? (
-                  <div className="space-y-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="run-now-repository">Repository</Label>
-                      <Select
-                        value={runNowTargetId}
-                        onValueChange={(repoId) => {
-                          setRunNowTargetId(repoId);
-                          const repo = repositories.find((item) => item.id === repoId);
-                          setRunNowBaseBranch(repo?.default_branch ?? '');
-                        }}
-                        disabled={runNowRepositoriesLoading || runnableRepositories.length === 0}
-                      >
-                        <SelectTrigger id="run-now-repository">
-                          <SelectValue placeholder={runNowRepositoriesLoading ? 'Loading repositories...' : 'Choose a repository'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {runnableRepositories.map((repo) => (
-                            <SelectItem key={repo.id} value={repo.id}>
-                              {repo.full_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {!runNowRepositoriesLoading && runnableRepositories.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          No workspace repositories are available for agent runs.
-                          {repositoriesSettingsHref ? (
-                            <>
-                              {' '}
-                              <a href={repositoriesSettingsHref} className="underline underline-offset-2 hover:text-foreground">Manage repositories</a>
-                            </>
-                          ) : null}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="run-now-base-branch">Base branch</Label>
-                      <Input
-                        id="run-now-base-branch"
-                        value={runNowBaseBranch}
-                        onChange={(event) => setRunNowBaseBranch(event.target.value)}
-                        placeholder={selectedRunNowRepository?.default_branch || 'Repository default branch'}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-
-                {runNowTargetType && !['workspace', 'repository'].includes(runNowTargetType) ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="run-now-target-id">{RUN_NOW_TARGET_ID_LABELS[runNowTargetType] ?? 'Target ID'}</Label>
-                    <Input
-                      id="run-now-target-id"
-                      value={runNowTargetId}
-                      onChange={(event) => setRunNowTargetId(event.target.value)}
-                      placeholder={RUN_NOW_TARGET_ID_PLACEHOLDERS[runNowTargetType] ?? 'Paste a target ID'}
-                    />
-                  </div>
-                ) : null}
-
-                <div className="space-y-2">
-                  <Label htmlFor="run-now-context">Run instructions</Label>
-                  <Textarea
-                    id="run-now-context"
-                    value={runNowAdditionalContext}
-                    onChange={(event) => setRunNowAdditionalContext(event.target.value)}
-                    placeholder="Add anything this run should focus on."
-                    rows={4}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setRunNowOpen(false)}
-              disabled={runNowSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void handleRunNow()}
-              disabled={!runNowCanSubmit || runNowSubmitting}
-            >
-              {runNowSubmitting ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ZapIcon className="mr-1.5 h-3.5 w-3.5" />}
-              Run now
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Sheet
+  const renderSystemDrawer = () => (
+<Sheet
         open={systemDrawerOpen}
         onOpenChange={(open) => {
           setSystemDrawerOpen(open);
@@ -5317,6 +5063,15 @@ export function AgentsPage() {
                             </p>
                           </div>
 
+                          {form.runtime_kind === 'native_sdk' && (
+                            <NativeToolStepLimitField
+                              id="system-agent-tool-step-limit"
+                              value={form.max_tool_steps}
+                              disabled={versionReadOnly}
+                              onChange={(value) => setForm((current) => ({ ...current, max_tool_steps: value }))}
+                            />
+                          )}
+
                           {supportsReasoningEffort && (
                             <div className="space-y-2">
                               <FieldLabel>Reasoning Effort</FieldLabel>
@@ -5415,7 +5170,13 @@ export function AgentsPage() {
               </Button>
               <Button
                 size="sm"
-	                disabled={saving || !(isEditingWorkspaceVersion || isEditingCustomVersion) || !hasVersionChanges || !providerConfigState.selectedProviderOption}
+                disabled={
+                  saving
+                  || !(isEditingWorkspaceVersion || isEditingCustomVersion)
+                  || !hasVersionChanges
+                  || !providerConfigState.selectedProviderOption
+                  || !maxToolStepsValid
+                }
                 onClick={() => handleSaveWorkspaceVersion()}
               >
                 {saving ? 'Saving…' : 'Save'}
@@ -5425,87 +5186,10 @@ export function AgentsPage() {
           )}
         </SheetContent>
       </Sheet>
+  );
 
-      {/* ---- New custom version dialog ---- */}
-      <Dialog
-        open={versionDraftOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setVersionDraftOpen(false);
-            setVersionLabelDraft('');
-            setVersionDescriptionDraft('');
-	            if (editingAgent) {
-	              if (editingAgent.is_system) {
-	                setForm(buildSystemAgentForm(editingAgent, presets));
-	              } else if (selectedCustomVersion) {
-	                setForm(buildCustomAgentVersionForm(editingAgent, selectedCustomVersion));
-	              }
-	            }
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader>
-            <DialogTitle>New custom version</DialogTitle>
-            <DialogDescription>
-              Creates a custom version from the current configuration. Review it first, then set it as active when you are ready.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <FieldLabel htmlFor="preset-version-label">Version label</FieldLabel>
-              <Input
-                id="preset-version-label"
-                value={versionLabelDraft}
-                onChange={(e) => setVersionLabelDraft(e.target.value)}
-                placeholder="e.g. Engineering tuned"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <FieldLabel htmlFor="preset-version-description">Description</FieldLabel>
-              <Textarea
-                id="preset-version-description"
-                value={versionDescriptionDraft}
-                onChange={(e) => setVersionDescriptionDraft(e.target.value)}
-                placeholder="What changed in this version?"
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setVersionDraftOpen(false);
-                setVersionLabelDraft('');
-                setVersionDescriptionDraft('');
-	                if (editingAgent) {
-	                  if (editingAgent.is_system) {
-	                    setForm(buildSystemAgentForm(editingAgent, presets));
-	                  } else if (selectedCustomVersion) {
-	                    setForm(buildCustomAgentVersionForm(editingAgent, selectedCustomVersion));
-	                  }
-	                }
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={creatingVersion || !versionLabelDraft.trim()}
-              onClick={handleCreatePresetVersion}
-            >
-              {creatingVersion ? 'Creating…' : 'Create custom version'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
+  const renderTemplateSetupDialog = () => (
+<Dialog
         open={templateSetupDialogOpen && Boolean(templateDraft)}
         onOpenChange={(open) => {
           if (!open) {
@@ -6246,9 +5930,10 @@ export function AgentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+  );
 
-      {/* ---- Create / Edit drawer ---- */}
-      <Sheet
+  const renderAgentEditor = () => (
+<Sheet
         open={dialogOpen}
         onOpenChange={(open) => {
           if (open) {
@@ -6268,22 +5953,24 @@ export function AgentsPage() {
           )}
         >
           {isBlankCustomCreate || isCustomEdit ? (
-            <CustomAgentCreatePanel
-              workspaceId={workspaceId ?? ''}
-              form={form}
-              onChange={setForm}
-              teams={visibleTeams}
-              tools={toolCatalogEntries}
-              skills={skillCatalogEntries}
-              providerOptions={visibleProviderOptions}
-              advancedOpen={advancedOpen}
-              onAdvancedOpenChange={setAdvancedOpen}
-              onCreate={handleSave}
-              saving={saving}
-              mode={isCustomEdit ? 'edit' : 'create'}
-              canSave={isCustomEdit ? customEditHasChanges : undefined}
-              statusText={isCustomEdit ? (customEditHasChanges ? 'Unsaved changes' : 'No changes to save') : undefined}
-            />
+            <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading editor…</div>}>
+              <CustomAgentCreatePanel
+                workspaceId={workspaceId ?? ''}
+                form={form}
+                onChange={setForm}
+                teams={visibleTeams}
+                tools={toolCatalogEntries}
+                skills={skillCatalogEntries}
+                providerOptions={visibleProviderOptions}
+                advancedOpen={advancedOpen}
+                onAdvancedOpenChange={setAdvancedOpen}
+                onCreate={handleSave}
+                saving={saving}
+                mode={isCustomEdit ? 'edit' : 'create'}
+                canSave={isCustomEdit ? customEditHasChanges : undefined}
+                statusText={isCustomEdit ? (customEditHasChanges ? 'Unsaved changes' : 'No changes to save') : undefined}
+              />
+            </Suspense>
           ) : (
             <>
               <SheetHeader className="border-b border-border/60 bg-muted/20 py-4 pl-6 pr-14">
@@ -7206,6 +6893,13 @@ export function AgentsPage() {
                     </Select>
                   </div>
                 )}
+                {form.runtime_kind === 'native_sdk' && (
+                  <NativeToolStepLimitField
+                    id="agent-tool-step-limit"
+                    value={form.max_tool_steps}
+                    onChange={(value) => setForm((current) => ({ ...current, max_tool_steps: value }))}
+                  />
+                )}
                 <div className="space-y-2">
                   <FieldLabel
                     htmlFor="agent-budget"
@@ -7260,6 +6954,241 @@ export function AgentsPage() {
           )}
         </SheetContent>
       </Sheet>
+  );
+
+  if (!workspace) {
+    return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
+  }
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-4 pb-20">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold">Agents</h1>
+          <p className="text-sm text-muted-foreground">
+            Built-in and custom agents for manual runs and automated flows.
+          </p>
+        </div>
+        {sortedAgents.length > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded-md border border-border">
+              <button
+                type="button"
+                className={`p-1.5 ${viewMode === 'list' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setViewMode('list')}
+              >
+                <LayoutTable01Icon className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                className={`p-1.5 ${viewMode === 'cards' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setViewMode('cards')}
+              >
+                <LayoutGridIcon className="h-4 w-4" />
+              </button>
+            </div>
+            {canEdit && (
+              <Button size="sm" onClick={openCreateDialog}>
+                <PlusSignIcon className="mr-1.5 h-4 w-4" />
+                New Custom Agent
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {loading && <p className="text-sm text-muted-foreground">Loading agents...</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {/* ---- Empty state with onboarding ---- */}
+      {!loading && visibleAgents.length === 0 && !error && (
+        <div className="flex flex-col items-center justify-center py-16 px-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10 mb-5">
+            <BotIcon className="h-7 w-7 text-violet-500" />
+          </div>
+          <h3 className="text-lg font-semibold mb-1.5">Create your first agent</h3>
+          <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
+            AI-powered teammates that plan features, write code, review work, update docs, reply to customers, and manage deals — automatically or on demand.
+          </p>
+          {canEdit && (
+            <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
+              <Button className="gap-2" onClick={openCreateDialog}>
+                <PlusSignIcon className="h-4 w-4" />
+                New Custom Agent
+              </Button>
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
+            {EMPTY_STATE_CARDS.map((card) => (
+              <div key={card.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
+                <card.icon className="h-5 w-5 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium mb-1">{card.title}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{card.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ---- Agent list / grid ---- */}
+      {sortedAgents.length > 0 && viewMode === 'list' && (
+        <AgentsListTable>
+          <AgentsListHeader />
+          {sortedAgents.map((agent) => (
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              stats={runStats[agent.id]}
+              usage={agentUsageMap[agent.id]}
+              presets={presets}
+              onOpen={openEditDialog}
+              onOpenRun={openRunDetails}
+              onRunNow={openRunNowDialog}
+              onDelete={openDeleteDialog}
+              canEdit={canEdit}
+              workspaceSlug={workspace?.slug}
+            />
+          ))}
+        </AgentsListTable>
+      )}
+
+      {sortedAgents.length > 0 && viewMode === 'cards' && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {sortedAgents.map((agent) => (
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              stats={runStats[agent.id]}
+              usage={agentUsageMap[agent.id]}
+              presets={presets}
+              onOpen={openEditDialog}
+              onOpenRun={openRunDetails}
+              onRunNow={openRunNowDialog}
+              onDelete={openDeleteDialog}
+              canEdit={canEdit}
+              workspaceSlug={workspace?.slug}
+            />
+          ))}
+        </div>
+      )}
+
+      {runNowOpen ? (
+        <Suspense fallback={null}>
+          <AgentRunNowDialog
+            open
+            onOpenChange={(open) => {
+              setRunNowOpen(open);
+              if (!open) setRunNowAgent(null);
+            }}
+            agent={runNowAgent}
+            targets={runNowTargets}
+            targetLabel={labelForAgentTarget}
+            targetType={runNowTargetType}
+            onTargetTypeChange={handleRunNowTargetChange}
+            workspaceName={workspace.name}
+            repositories={repositories}
+            runnableRepositories={runnableRepositories}
+            repositoriesLoading={runNowRepositoriesLoading}
+            repositoriesSettingsHref={repositoriesSettingsHref}
+            targetId={runNowTargetId}
+            onTargetIdChange={setRunNowTargetId}
+            baseBranch={runNowBaseBranch}
+            onBaseBranchChange={setRunNowBaseBranch}
+            selectedRepository={selectedRunNowRepository}
+            additionalContext={runNowAdditionalContext}
+            onAdditionalContextChange={setRunNowAdditionalContext}
+            submitting={runNowSubmitting}
+            canSubmit={runNowCanSubmit}
+            onSubmit={() => void handleRunNow()}
+          />
+        </Suspense>
+      ) : null}
+
+      {renderSystemDrawer()}
+
+      {/* ---- New custom version dialog ---- */}
+      <Dialog
+        open={versionDraftOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setVersionDraftOpen(false);
+            setVersionLabelDraft('');
+            setVersionDescriptionDraft('');
+	            if (editingAgent) {
+	              if (editingAgent.is_system) {
+	                setForm(buildSystemAgentForm(editingAgent, presets));
+	              } else if (selectedCustomVersion) {
+	                setForm(buildCustomAgentVersionForm(editingAgent, selectedCustomVersion));
+	              }
+	            }
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>New custom version</DialogTitle>
+            <DialogDescription>
+              Creates a custom version from the current configuration. Review it first, then set it as active when you are ready.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <FieldLabel htmlFor="preset-version-label">Version label</FieldLabel>
+              <Input
+                id="preset-version-label"
+                value={versionLabelDraft}
+                onChange={(e) => setVersionLabelDraft(e.target.value)}
+                placeholder="e.g. Engineering tuned"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <FieldLabel htmlFor="preset-version-description">Description</FieldLabel>
+              <Textarea
+                id="preset-version-description"
+                value={versionDescriptionDraft}
+                onChange={(e) => setVersionDescriptionDraft(e.target.value)}
+                placeholder="What changed in this version?"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setVersionDraftOpen(false);
+                setVersionLabelDraft('');
+                setVersionDescriptionDraft('');
+	                if (editingAgent) {
+	                  if (editingAgent.is_system) {
+	                    setForm(buildSystemAgentForm(editingAgent, presets));
+	                  } else if (selectedCustomVersion) {
+	                    setForm(buildCustomAgentVersionForm(editingAgent, selectedCustomVersion));
+	                  }
+	                }
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={creatingVersion || !versionLabelDraft.trim() || !maxToolStepsValid}
+              onClick={handleCreatePresetVersion}
+            >
+              {creatingVersion ? 'Creating…' : 'Create custom version'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {renderTemplateSetupDialog()}
+
+      {/* ---- Create / Edit drawer ---- */}
+      {renderAgentEditor()}
 
       <Dialog open={systemPromptEditorOpen} onOpenChange={setSystemPromptEditorOpen}>
         <DialogContent className="z-[140] max-h-[88vh] gap-0 overflow-hidden p-0 sm:max-w-5xl">
@@ -7488,16 +7417,20 @@ export function AgentsPage() {
         </DialogContent>
       </Dialog>
 
-      <CodingSessionDrawer
-        sessionId={selectedRunId}
-        open={runDrawerOpen && !!selectedRunId}
-        onOpenChange={(open) => {
-          setRunDrawerOpen(open);
-          if (!open) setSelectedRunId(null);
-        }}
-        title="Agent Run"
-        description="Interactive transcript, approvals, artifacts, and session details."
-      />
+      {runDrawerOpen && selectedRunId ? (
+        <Suspense fallback={null}>
+          <CodingSessionDrawer
+            sessionId={selectedRunId}
+            open
+            onOpenChange={(open) => {
+              setRunDrawerOpen(open);
+              if (!open) setSelectedRunId(null);
+            }}
+            title="Agent Run"
+            description="Interactive transcript, approvals, artifacts, and session details."
+          />
+        </Suspense>
+      ) : null}
       <UpgradeRequiredDialog
         open={upgradeDialogReason !== null}
         onOpenChange={(open) => {

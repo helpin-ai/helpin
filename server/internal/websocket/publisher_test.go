@@ -3,11 +3,16 @@ package websocket
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	nhooyrws "nhooyr.io/websocket"
 )
 
 func TestPublisher_NilSafe(t *testing.T) {
@@ -30,6 +35,61 @@ func TestPublisher_LocalOnly(t *testing.T) {
 
 	// Give the goroutine time to run.
 	time.Sleep(50 * time.Millisecond)
+}
+
+func TestPublisher_LocalDeliveryPreservesPublishOrder(t *testing.T) {
+	hub := NewHub()
+	ready := make(chan struct{})
+	done := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := nhooyrws.Accept(w, r, nil)
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		client := &Client{Conn: conn, ConnID: "ordered-client", UserID: "user-1", WorkspaceID: "ws-1"}
+		hub.Register(client)
+		close(ready)
+		<-done
+		hub.Unregister(client)
+		_ = conn.Close(nhooyrws.StatusNormalClosure, "test complete")
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := nhooyrws.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.CloseNow()
+	<-ready
+	defer close(done)
+
+	publisher := NewPublisher(hub, nil)
+	const eventCount = 100
+	for index := 0; index < eventCount; index++ {
+		publisher.Publish(Event{
+			Action:      "created",
+			Entity:      "coding_session_event",
+			EntityID:    fmt.Sprintf("event-%03d", index),
+			WorkspaceID: "ws-1",
+		})
+	}
+
+	for index := 0; index < eventCount; index++ {
+		_, payload, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read event %d: %v", index, err)
+		}
+		var event Event
+		if err := json.Unmarshal(payload, &event); err != nil {
+			t.Fatalf("decode event %d: %v", index, err)
+		}
+		if want := fmt.Sprintf("event-%03d", index); event.EntityID != want {
+			t.Fatalf("event %d id = %q, want %q", index, event.EntityID, want)
+		}
+	}
 }
 
 func TestPublisher_DualPublish(t *testing.T) {

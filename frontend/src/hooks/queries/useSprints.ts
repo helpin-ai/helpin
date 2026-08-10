@@ -2,12 +2,30 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { pmSprintService } from '@/lib/services/pmSprintService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
-import type { CreateSprintRequest, PaginatedResponse, SprintPlanningFilters, SprintPlanningTaskPreview, UpdateSprintRequest } from '@/lib/pmTypes'
+import type { CreateSprintRequest, PaginatedResponse, SprintPlanningFilters, SprintPlanningTaskPreview, SprintPlanningWorkspace, UpdateSprintRequest } from '@/lib/pmTypes'
 
 interface SprintFilters {
   team_id?: string
   status?: string
   archived?: boolean
+}
+
+// Planning responses from older API versions may contain null for empty slices.
+// Normalize them at the query boundary so every sprint view can safely treat
+// buckets, cards, and backlog tasks as collections.
+export function normalizeSprintPlanningWorkspace(workspace: SprintPlanningWorkspace | null | undefined): SprintPlanningWorkspace {
+  return {
+    ...(workspace ?? {}),
+    buckets: (workspace?.buckets ?? []).map((bucket) => ({
+      ...bucket,
+      sprints: (bucket.sprints ?? []).map((card) => ({
+        ...card,
+        preview_tasks: card.preview_tasks ?? [],
+      })),
+    })),
+    backlog_tasks: workspace?.backlog_tasks ?? [],
+    backlog_total: workspace?.backlog_total ?? 0,
+  }
 }
 
 export function useSprints(wsId: string, filters?: SprintFilters) {
@@ -48,6 +66,7 @@ export function useSprintPlanningWorkspace(wsId: string, filters?: SprintPlannin
     queryFn: async () => unwrap(await pmSprintService.planningWorkspace(wsId, filters)),
     enabled: !!wsId,
     placeholderData: (previous) => previous,
+    select: normalizeSprintPlanningWorkspace,
   })
 }
 
