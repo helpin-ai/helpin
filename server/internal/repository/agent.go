@@ -1172,34 +1172,42 @@ func (r *AgentTriggerExecutionRepository) ListLatestAutomationRuleExecutions(ctx
 	return result, nil
 }
 
-// CountAutomationRuleExecutions returns the lifetime trigger execution count
-// for each automation rule reference in the workspace.
-func (r *AgentTriggerExecutionRepository) CountAutomationRuleExecutions(ctx context.Context, workspaceID string, ruleIDs []string) (map[string]int64, error) {
+// AutomationRuleExecutionCounts contains lifetime execution totals used by the
+// Flows inventory read model.
+type AutomationRuleExecutionCounts struct {
+	Total  int64
+	Failed int64
+}
+
+// CountAutomationRuleExecutions returns lifetime total and failed trigger
+// execution counts for each automation rule reference in the workspace.
+func (r *AgentTriggerExecutionRepository) CountAutomationRuleExecutions(ctx context.Context, workspaceID string, ruleIDs []string) (map[string]AutomationRuleExecutionCounts, error) {
 	if len(ruleIDs) == 0 {
-		return map[string]int64{}, nil
+		return map[string]AutomationRuleExecutionCounts{}, nil
 	}
 
 	type countRow struct {
 		ReferenceID string
-		Count       int64
+		Total       int64
+		Failed      int64
 	}
 	var rows []countRow
 	if err := r.db.WithContext(ctx).
 		Model(&model.AgentTriggerExecution{}).
-		Select("reference_id, COUNT(*) AS count").
+		Select("reference_id, COUNT(*) AS total, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS failed", model.AgentTriggerExecutionStatusFailed).
 		Where("workspace_id = ? AND binding_kind = ? AND reference_type = ? AND reference_id IN ?", workspaceID, "automation_rule", "automation_rule", ruleIDs).
 		Group("reference_id").
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("count automation rule executions: %w", err)
 	}
 
-	counts := make(map[string]int64, len(rows))
+	counts := make(map[string]AutomationRuleExecutionCounts, len(rows))
 	for _, row := range rows {
 		refID := strings.TrimSpace(row.ReferenceID)
 		if refID == "" {
 			continue
 		}
-		counts[refID] = row.Count
+		counts[refID] = AutomationRuleExecutionCounts{Total: row.Total, Failed: row.Failed}
 	}
 	return counts, nil
 }

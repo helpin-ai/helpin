@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/docsimport"
 	"github.com/helpin-ai/helpin/server/internal/helpscout"
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
@@ -32,6 +33,8 @@ type DocsImportService struct {
 	helpcenterSvc *DocsHelpcenterService
 	redirectRepo  *repository.DocsRedirectRepository
 	s3Client      *storage.S3Client
+	llmProvider   llm.Provider
+	aiConversion  DocsImportAIConversionConfig
 	logger        *slog.Logger
 }
 
@@ -45,6 +48,8 @@ func NewDocsImportService(
 	helpcenterSvc *DocsHelpcenterService,
 	redirectRepo *repository.DocsRedirectRepository,
 	s3Client *storage.S3Client,
+	llmProvider llm.Provider,
+	aiConversion DocsImportAIConversionConfig,
 ) *DocsImportService {
 	return &DocsImportService{
 		importRepo:    importRepo,
@@ -55,6 +60,8 @@ func NewDocsImportService(
 		helpcenterSvc: helpcenterSvc,
 		redirectRepo:  redirectRepo,
 		s3Client:      s3Client,
+		llmProvider:   llmProvider,
+		aiConversion:  aiConversion.withDefaults(),
 		logger:        slog.Default().With("service", "docs_import"),
 	}
 }
@@ -337,6 +344,14 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 		s.failJob(ctx, jobID, fmt.Sprintf("list articles: %v", err))
 		return
 	}
+	if limit := s.aiConversion.ArticleLimit; s.aiConversion.Enabled && limit > 0 && len(articleRefs) > limit {
+		s.logger.InfoContext(ctx, "limiting AI docs import for test run",
+			"job_id", jobID,
+			"available_articles", len(articleRefs),
+			"article_limit", limit,
+		)
+		articleRefs = articleRefs[:limit]
+	}
 
 	// Update total count.
 	if err := s.importRepo.SetTotal(ctx, jobID, len(articleRefs)); err != nil {
@@ -402,8 +417,8 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 			normalizedNoteBlocks += stats.NormalizedNoteBlocks
 		}
 
-		// Update progress every 5 articles or on last article.
-		if (i+1)%5 == 0 || i == len(articleRefs)-1 {
+		// AI conversions can take longer, so expose progress after every article.
+		if s.aiConversion.Enabled || (i+1)%5 == 0 || i == len(articleRefs)-1 {
 			failuresJSON, _ := json.Marshal(failures)
 			if failuresJSON == nil {
 				failuresJSON = json.RawMessage("[]")
@@ -507,7 +522,7 @@ func (s *DocsImportService) importArticle(
 	}
 
 	sourceHTML := html
-	convResult, allWarnings, err := convertHelpScoutHTML(html)
+	convResult, allWarnings, err := s.convertHelpScoutHTML(ctx, workspaceID, ref.ID, article.Name, html)
 	if err != nil {
 		return nil, fmt.Errorf("convert HTML for article %s: %w", ref.ID, err)
 	}
@@ -633,6 +648,14 @@ func (s *DocsImportService) Reconvert(ctx context.Context, jobID string) (*Recon
 	if err != nil {
 		return nil, fmt.Errorf("list reconvertible docs: %w", err)
 	}
+	if limit := s.aiConversion.ArticleLimit; s.aiConversion.Enabled && limit > 0 && len(contents) > limit {
+		s.logger.InfoContext(ctx, "limiting AI docs reconversion for test run",
+			"job_id", jobID,
+			"available_articles", len(contents),
+			"article_limit", limit,
+		)
+		contents = contents[:limit]
+	}
 
 	result := &ReconvertResult{Total: len(contents)}
 
@@ -657,7 +680,7 @@ func (s *DocsImportService) Reconvert(ctx context.Context, jobID string) (*Recon
 
 		default:
 			// HelpScout and other HTML-based sources.
-			convResult, convWarnings, err := convertHelpScoutHTML(*c.ImportSourceHTML)
+			convResult, convWarnings, err := s.convertHelpScoutHTML(ctx, job.WorkspaceID, c.DocumentID, "Imported help article", *c.ImportSourceHTML)
 			if err != nil {
 				s.logger.Error("reconvert failed", "content_id", c.ID, "error", err)
 				result.Failed++

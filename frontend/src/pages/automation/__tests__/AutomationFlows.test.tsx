@@ -2,7 +2,7 @@
 
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   defaultTemplateInputs,
   FlowRow,
@@ -91,7 +91,7 @@ function healthItem(overrides: Partial<AutomationInventoryItem['health']> = {}):
 }
 
 describe('FlowRow', () => {
-  it('shows the flow identity separately from the action agent identity', () => {
+  it('shows the flow identity and compact trigger-to-action logic', () => {
     render(
       <FlowRow
         rule={baseRule}
@@ -107,8 +107,9 @@ describe('FlowRow', () => {
     );
 
     expect(container?.textContent).toContain('Release notes for acme/api');
-    expect(container?.textContent).toContain('When GitHub publishes a release in acme/api, draft release notes.');
-    expect(container?.querySelector('[data-testid="flow-row-title-area"]')?.textContent).not.toContain('Release Notes Writer agent');
+    expect(container?.textContent).not.toContain('When GitHub publishes a release in acme/api, draft release notes.');
+    expect(container?.textContent).toContain('When');
+    expect(container?.textContent).toContain('GitHubRelease published');
     expect(container?.querySelector('[data-testid="flow-row-action-agent"]')?.textContent).toContain('Release Notes Writer agent');
     const actionAgentChildren = Array.from(container?.querySelector('[data-testid="flow-row-action-agent"]')?.children ?? []);
     expect(actionAgentChildren.map((child) => child.getAttribute('data-testid'))).toEqual([
@@ -118,7 +119,7 @@ describe('FlowRow', () => {
     ]);
   });
 
-  it('enables full-name and description tooltips only when text is truncated', () => {
+  it('enables the full-name tooltip when the flow name is truncated', () => {
     const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
     const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
     Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, get: () => 240 });
@@ -140,7 +141,6 @@ describe('FlowRow', () => {
       );
 
       expect(container?.querySelector('[data-testid="flow-row-name-text"]')?.getAttribute('data-tooltip-enabled')).toBe('true');
-      expect(container?.querySelector('[data-testid="flow-row-description-text"]')?.getAttribute('data-tooltip-enabled')).toBe('true');
     } finally {
       if (originalScrollWidth) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', originalScrollWidth);
       if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth);
@@ -153,7 +153,7 @@ describe('FlowRow', () => {
     const cases: Array<{ rule: AutomationRule; healthItem?: AutomationInventoryItem; expected: string }> = [
       { rule: baseRule, expected: 'Active' },
       { rule: { ...baseRule, enabled: false }, expected: 'Paused' },
-      { rule: baseRule, healthItem: healthItem({ status: 'error', last_error_at: '2026-06-08T01:00:00Z' }), expected: 'Error' },
+      { rule: baseRule, healthItem: healthItem({ status: 'error', last_error_at: '2026-06-08T01:00:00Z' }), expected: 'Errored' },
       { rule: baseRule, healthItem: healthItem({ metrics: { needs_review: true } }), expected: 'Needs review' },
       { rule: { ...baseRule, action_config: { agent_id: 'missing-agent' } }, expected: 'Incomplete' },
     ];
@@ -185,91 +185,44 @@ describe('FlowRow', () => {
     }
   });
 
-  it('links the last run to automation activity when a run id is available', () => {
+  it('opens the detail drawer callback from the row with pointer and keyboard input', () => {
+    const onOpen = vi.fn();
     render(
       <FlowRow
         rule={baseRule}
         statesById={new Map()}
         agentNames={new Map([['agent-1', 'Release Notes Writer agent']])}
-        healthItem={healthItem({
-          last_seen_at: '2026-06-08T01:00:00Z',
-          metrics: { last_run_id: 'run-123', last_execution_id: 'exec-123' },
-        })}
-        workspaceSlug="test-docs"
         canEdit={false}
         canRunNowAction={false}
         onEdit={() => {}}
         onRunNow={() => {}}
         onToggle={() => {}}
         onDelete={() => {}}
+        onOpen={onOpen}
       />,
     );
 
-    const lastRunLink = container?.querySelector('a[href*="run_id=run-123"]');
-    expect(lastRunLink?.getAttribute('href')).toBe('/w/test-docs/automation/activity?source=automation_rule&reference_id=rule-1&run_id=run-123#trigger-executions');
+    const row = container?.querySelector('[role="button"]') as HTMLDivElement;
+    act(() => row.click());
+    act(() => row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    expect(onOpen).toHaveBeenCalledTimes(2);
   });
 
-  it('links the last run to the latest activity record when no agent run exists', () => {
-    render(
-      <FlowRow
-        rule={baseRule}
-        statesById={new Map()}
-        agentNames={new Map([['agent-1', 'Release Notes Writer agent']])}
-        healthItem={healthItem({
-          last_seen_at: '2026-06-08T01:00:00Z',
-          metrics: { last_execution_id: 'exec-123' },
-        })}
-        workspaceSlug="test-docs"
-        canEdit={false}
-        canRunNowAction={false}
-        onEdit={() => {}}
-        onRunNow={() => {}}
-        onToggle={() => {}}
-        onDelete={() => {}}
-      />,
-    );
-
-    const lastRunLink = container?.querySelector('a[href*="execution_id=exec-123"]');
-    expect(lastRunLink?.getAttribute('href')).toBe('/w/test-docs/automation/activity?source=automation_rule&reference_id=rule-1&execution_id=exec-123#trigger-executions');
-  });
-
-  it('shows a visible view runs action when the workspace slug is available', () => {
-    render(
-      <FlowRow
-        rule={baseRule}
-        statesById={new Map()}
-        agentNames={new Map([['agent-1', 'Release Notes Writer agent']])}
-        workspaceSlug="test-docs"
-        canEdit={false}
-        canRunNowAction={false}
-        onEdit={() => {}}
-        onRunNow={() => {}}
-        onToggle={() => {}}
-        onDelete={() => {}}
-      />,
-    );
-
-    const viewRunsLink = Array.from(container?.querySelectorAll('a') ?? [])
-      .find((link) => link.textContent?.includes('View runs'));
-    expect(viewRunsLink?.getAttribute('href')).toBe('/w/test-docs/automation/activity?source=automation_rule&reference_id=rule-1#trigger-executions');
-  });
-
-  it('prioritizes running, paused, incomplete, next run, and waiting activity states', () => {
+  it('prioritizes current, paused, incomplete, scheduled, and trigger-driven states', () => {
     const agentNames = new Map([['agent-1', 'Release Notes Writer agent']]);
     const cases: Array<{ rule: AutomationRule; healthItem?: AutomationInventoryItem; expected: string[]; absent?: string }> = [
       {
         rule: baseRule,
         healthItem: healthItem({ last_seen_at: '2026-06-08T01:00:00Z', metrics: { last_run_status: 'running' } }),
         expected: ['Running now'],
-        absent: 'Last run',
       },
-      { rule: { ...baseRule, enabled: false }, expected: ['No runs yet', 'Flow paused'], absent: 'Waiting for trigger' },
-      { rule: { ...baseRule, action_config: { agent_id: 'missing-agent' } }, expected: ['No runs yet', 'Setup incomplete'], absent: 'Waiting for trigger' },
+      { rule: { ...baseRule, enabled: false }, expected: ['Paused'] },
+      { rule: { ...baseRule, action_config: { agent_id: 'missing-agent' } }, expected: ['Missing agent', 'Setup incomplete'] },
       {
         rule: { ...baseRule, trigger_type: 'cron', trigger_config: { schedule: '0 * * * *' } },
-        expected: ['No runs yet', 'Next run'],
+        expected: ['Never', 'Every hour'],
       },
-      { rule: baseRule, expected: ['No runs yet', 'Runs when triggered'] },
+      { rule: baseRule, expected: ['Never', 'Runs when triggered'] },
     ];
 
     for (const item of cases) {
@@ -302,13 +255,13 @@ describe('FlowRow', () => {
     }
   });
 
-  it('shows trigger-driven scheduling text alongside last run activity', () => {
+  it('shows run totals and trigger-driven scheduling beside recent activity', () => {
     render(
       <FlowRow
         rule={baseRule}
         statesById={new Map()}
         agentNames={new Map([['agent-1', 'Release Notes Writer agent']])}
-        healthItem={healthItem({ last_seen_at: '2026-06-08T01:00:00Z' })}
+        healthItem={healthItem({ last_seen_at: '2026-06-08T01:00:00Z', metrics: { total_runs: 7 } })}
         canEdit={false}
         canRunNowAction={false}
         onEdit={() => {}}
@@ -318,11 +271,11 @@ describe('FlowRow', () => {
       />,
     );
 
-    expect(container?.textContent).toContain('Last run');
+    expect(container?.textContent).toContain('7');
     expect(container?.textContent).toContain('Runs when triggered');
   });
 
-  it('collapses long error messages with a show more action', () => {
+  it('keeps error diagnostics compact in the list row', () => {
     const longError = `Failed to start run: ${'permission denied while validating repository settings '.repeat(12)}final diagnostic tail`;
 
     render(
@@ -344,19 +297,8 @@ describe('FlowRow', () => {
       />,
     );
 
-    expect(container?.textContent).toContain('Show more');
-    expect(container?.textContent).not.toContain('final diagnostic tail');
-
-    const showMore = Array.from(container?.querySelectorAll('button') ?? [])
-      .find((button) => button.textContent?.trim() === 'Show more');
-    if (!showMore) throw new Error('Show more button not found');
-
-    act(() => {
-      showMore.click();
-    });
-
-    expect(container?.textContent).toContain('final diagnostic tail');
-    expect(container?.textContent).toContain('Show less');
+    expect(container?.textContent).toContain('Errored');
+    expect(container?.querySelector('p')?.className).toContain('truncate');
   });
 });
 

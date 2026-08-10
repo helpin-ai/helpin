@@ -94,14 +94,6 @@ func ProcessImagesDetailed(ctx context.Context, rawHTML string, uploader ImageUp
 	return ReplaceImageURLs(rawHTML, urlMap), kept, nil
 }
 
-// ProcessImages downloads images referenced in HTML, re-uploads them via the
-// provided uploader, and returns the HTML with URLs replaced. Individual image
-// failures are logged and skipped (the original URL is kept).
-func ProcessImages(ctx context.Context, rawHTML string, uploader ImageUploader, workspaceID string) (string, error) {
-	rewritten, _, err := ProcessImagesDetailed(ctx, rawHTML, uploader, workspaceID)
-	return rewritten, err
-}
-
 func htmlpkgParse(raw string) (*html.Node, error) {
 	return html.Parse(strings.NewReader(raw))
 }

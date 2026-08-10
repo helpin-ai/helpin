@@ -289,7 +289,6 @@ var (
 // It is a separate path from the existing AgentRun system (manual-assist mode).
 type SupportAIService struct {
 	llmProvider                    llm.Provider
-	taskDraftLLM                   supportTaskDraftLLM
 	embeddingProvider              llm.EmbeddingProvider
 	embeddingModel                 string
 	queryExpansionModel            string
@@ -532,17 +531,5 @@ func (s *SupportAIService) SetLinkPreviewService(linkPreviewService SupportMessa
 		return nil
 	}
 	s.linkPreviewService = linkPreviewService
-	return s
-}
-
-// SetTaskDraftLLM wires the preferred LLM backend for task draft generation.
-// When set, GenerateTaskDraftFromConversation uses this (schema-forced tool
-// calling via Eino) and only falls back to the plain ChatCompletion path on
-// error.
-func (s *SupportAIService) SetTaskDraftLLM(llm supportTaskDraftLLM) *SupportAIService {
-	if s == nil {
-		return nil
-	}
-	s.taskDraftLLM = llm
 	return s
 }

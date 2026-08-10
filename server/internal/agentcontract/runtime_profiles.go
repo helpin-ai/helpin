@@ -1,7 +1,6 @@
 package agentcontract
 
 import (
-	"slices"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -60,13 +59,6 @@ var runtimeProfiles = []model.RuntimeProfile{
 	},
 }
 
-// ListRuntimeProfiles returns the supported runtime profiles.
-func ListRuntimeProfiles() []model.RuntimeProfile {
-	out := make([]model.RuntimeProfile, len(runtimeProfiles))
-	copy(out, runtimeProfiles)
-	return out
-}
-
 // GetRuntimeProfile returns the named runtime profile, defaulting to code_builder.
 func GetRuntimeProfile(name string) model.RuntimeProfile {
 	name = normalizeRuntimeProfileName(name)
@@ -93,26 +85,4 @@ func normalizeRuntimeProfileName(name string) string {
 	default:
 		return strings.TrimSpace(name)
 	}
-}
-
-func allowedToolSet(resolved ResolvedProfile) map[string]bool {
-	set := make(map[string]bool, len(resolved.Tools))
-	for _, toolName := range resolved.Tools {
-		set[toolName] = true
-	}
-	return set
-}
-
-func allowedCommandsFor(resolved ResolvedProfile, config *WorkflowConfig) []string {
-	if config == nil || len(config.AllowedCommands) == 0 {
-		return slices.Clone(resolved.Commands)
-	}
-
-	allowed := make([]string, 0, len(config.AllowedCommands))
-	for _, command := range config.AllowedCommands {
-		if slices.Contains(resolved.Commands, command) {
-			allowed = append(allowed, command)
-		}
-	}
-	return allowed
 }

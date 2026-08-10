@@ -196,7 +196,7 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 	if conversation == nil {
 		return nil, fmt.Errorf("conversation is required")
 	}
-	if s.taskDraftLLM == nil && s.llmProvider == nil {
+	if s.llmProvider == nil {
 		return nil, fmt.Errorf("support chat LLM provider is not configured")
 	}
 
@@ -214,7 +214,7 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 	messages = append(messages, llm.Message{
 		Role: "user",
 		Content: fmt.Sprintf(
-			"Create one internal PM task draft for this support conversation.\n\nConversation ID: %s\nConversation Number: %d\nSubject: %s\nCustomer Name: %s\nCustomer Email: %s\nCurrent Status: %s\nCurrent Priority: %s\n\nCall the write_support_task_draft tool with fully-populated fields.",
+			"Create one internal PM task draft for this support conversation.\n\nConversation ID: %s\nConversation Number: %d\nSubject: %s\nCustomer Name: %s\nCustomer Email: %s\nCurrent Status: %s\nCurrent Priority: %s\n\nReturn every required task-draft field with a concrete value.",
 			conversation.ID,
 			conversation.DisplayID,
 			strings.TrimSpace(conversation.Subject),
@@ -225,41 +225,6 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 		),
 	})
 
-	// Preferred path: schema-forced tool calling via Eino. Claude cannot
-	// return off-schema JSON under this path — the tool definition constrains
-	// the output format at the API layer, not just in a system prompt.
-	if s.taskDraftLLM != nil {
-		draft, err := s.taskDraftLLM.GenerateTaskDraft(ctx, supportTaskDraftRequest{
-			WorkspaceID:    workspaceID,
-			ConversationID: conversation.ID,
-			SystemPrompt:   supportTaskDraftSystemPrompt,
-			Messages:       messages,
-			Model:          modelName,
-		})
-		if err == nil && draft != nil {
-			slog.InfoContext(ctx, "support task draft generated",
-				"workspace_id", workspaceID,
-				"conversation_id", conversation.ID,
-				"backend", "eino",
-				"provider", providerName,
-				"model", modelName,
-				"title_len", len(draft.Title),
-				"summary_len", len(draft.Summary),
-				"description_len", len(draft.Description),
-			)
-			return draft, nil
-		}
-		slog.WarnContext(ctx, "eino task draft generation failed; falling back to chat completion",
-			"workspace_id", workspaceID,
-			"conversation_id", conversation.ID,
-			"model", modelName,
-			"error", err,
-		)
-		if s.llmProvider == nil {
-			return nil, err
-		}
-	}
-
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureSupportTaskDraft,
@@ -268,13 +233,15 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 			"conversation_id": conversation.ID,
 		},
 	}), llm.ChatRequest{
-		SystemPrompt: supportTaskDraftSystemPrompt,
-		Messages:     messages,
-		Provider:     providerName,
-		Model:        modelName,
-		Temperature:  0.2,
-		MaxTokens:    1200,
-		JSONMode:     true,
+		SystemPrompt:     supportTaskDraftSystemPrompt,
+		Messages:         messages,
+		Provider:         providerName,
+		Model:            modelName,
+		Temperature:      0.2,
+		MaxTokens:        1200,
+		JSONMode:         true,
+		JSONSchema:       supportTaskDraftJSONSchema(),
+		JSONSchemaStrict: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generate support task draft: %w", err)
@@ -297,7 +264,7 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 	slog.InfoContext(ctx, "support task draft generated",
 		"workspace_id", workspaceID,
 		"conversation_id", conversation.ID,
-		"backend", "chat_completion",
+		"backend", "structured_chat_completion",
 		"provider", providerName,
 		"model", modelName,
 		"title_len", len(title),
@@ -767,6 +734,33 @@ Rules:
 - Prefer "feature" for requests or missing capability.
 - Prefer "chore" for operational follow-up, cleanup, or non-user-facing work.
 - If priority is unclear, use "medium".`
+
+func supportTaskDraftJSONSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"title":                map[string]any{"type": "string"},
+			"summary":              map[string]any{"type": "string"},
+			"description_markdown": map[string]any{"type": "string"},
+			"task_type": map[string]any{
+				"type": "string",
+				"enum": []string{"feature", "bug", "chore"},
+			},
+			"priority": map[string]any{
+				"type": "string",
+				"enum": []string{"none", "low", "medium", "high", "urgent"},
+			},
+		},
+		"required": []string{
+			"title",
+			"summary",
+			"description_markdown",
+			"task_type",
+			"priority",
+		},
+		"additionalProperties": false,
+	}
+}
 
 func previewHistoryToMessages(history []model.SupportAIPreviewHistoryTurn) []model.SupportMessage {
 	if len(history) == 0 {
