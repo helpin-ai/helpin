@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS customer_io_outbox (
     event_name TEXT NOT NULL,
     occurred_at TIMESTAMPTZ NOT NULL,
     attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
-    recipient_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    recipient_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
     status TEXT NOT NULL DEFAULT 'pending',
     attempts INTEGER NOT NULL DEFAULT 0,
     next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

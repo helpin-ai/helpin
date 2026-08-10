@@ -486,9 +486,12 @@ func (s *CustomerIOIdentityService) TrackEvent(ctx context.Context, event Custom
 }
 
 // TrackOutboxEvent delivers a durable event with a stable per-recipient ID.
-func (s *CustomerIOIdentityService) TrackOutboxEvent(ctx context.Context, outboxID string, event CustomerIOEvent) {
+func (s *CustomerIOIdentityService) TrackOutboxEvent(ctx context.Context, outboxID string, event CustomerIOEvent) error {
+	if !s.Enabled() {
+		return nil
+	}
 	event.EventID = customerIOEventULID(outboxID, event.UserID, event.OccurredAt)
-	s.TrackEvent(ctx, event)
+	return s.client.TrackEvent(ctx, event)
 }
 
 // TrackWorkspaceEvent fans a workspace-scoped event out to its active members.

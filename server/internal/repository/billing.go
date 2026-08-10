@@ -19,8 +19,69 @@ type BillingRepository struct {
 	db *gorm.DB
 }
 
+// StripeLifecycleMutation applies a billing change inside the webhook transaction
+// and returns the lifecycle event to enqueue. A nil event marks the webhook
+// processed without enqueueing (for example, when no billing row matches).
+type StripeLifecycleMutation func(*BillingRepository) (*model.WorkspaceBilling, *CustomerIOLifecycleEventInput, error)
+
 func NewBillingRepository(db *gorm.DB) *BillingRepository {
 	return &BillingRepository{db: db}
+}
+
+// ProcessStripeLifecycleEvent atomically deduplicates a Stripe webhook, applies
+// its billing mutation, snapshots recipients, enqueues Customer.io delivery,
+// and marks the webhook processed.
+func (r *BillingRepository) ProcessStripeLifecycleEvent(
+	ctx context.Context,
+	eventID string,
+	eventType string,
+	mutate StripeLifecycleMutation,
+) (*model.WorkspaceBilling, bool, error) {
+	var billing *model.WorkspaceBilling
+	processed := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if eventID != "" {
+			inserted := &model.StripeWebhookEvent{ID: eventID, Type: eventType}
+			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true}).Create(inserted).Error; err != nil {
+				return fmt.Errorf("insert stripe webhook event: %w", err)
+			}
+			query := tx.Where("id = ?", eventID)
+			if tx.Dialector.Name() == "postgres" {
+				query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+			}
+			var webhook model.StripeWebhookEvent
+			if err := query.First(&webhook).Error; err != nil {
+				return fmt.Errorf("lock stripe webhook event: %w", err)
+			}
+			if webhook.Processed {
+				return nil
+			}
+		}
+
+		txRepo := &BillingRepository{db: tx}
+		var lifecycle *CustomerIOLifecycleEventInput
+		var err error
+		billing, lifecycle, err = mutate(txRepo)
+		if err != nil {
+			return err
+		}
+		if lifecycle != nil {
+			if _, err := enqueueCustomerIOLifecycleEventTx(ctx, tx, *lifecycle); err != nil {
+				return err
+			}
+		}
+		if eventID != "" {
+			if err := tx.Model(&model.StripeWebhookEvent{}).Where("id = ?", eventID).Update("processed", true).Error; err != nil {
+				return fmt.Errorf("mark stripe webhook processed: %w", err)
+			}
+		}
+		processed = true
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return billing, processed, nil
 }
 
 // CreateTrialWithLifecycleEvent inserts a new trial and its lifecycle event atomically.

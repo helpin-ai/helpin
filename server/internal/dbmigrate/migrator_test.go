@@ -138,7 +138,7 @@ func TestCustomerIOLifecycleOutboxMigrationContract(t *testing.T) {
 	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
 	for _, clause := range []string{
 		"attributes jsonb not null default '{}'::jsonb",
-		"recipient_snapshot jsonb not null default '{}'::jsonb",
+		"recipient_snapshot jsonb not null default '[]'::jsonb",
 		"check (status in ('pending', 'processing', 'delivered', 'failed'))",
 		"check (attempts >= 0)",
 		"unique (semantic_key)",

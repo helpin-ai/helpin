@@ -456,6 +456,7 @@ func (h *BillingHandler) handleTrialWillEnd(r *http.Request, event stripe.Event)
 		SubscriptionID: subscription.ID,
 		CustomerID:     customerID,
 		TrialEndsAt:    trialEnd,
+		OccurredAt:     time.Unix(event.Created, 0).UTC(),
 	})
 	return err
 }
@@ -487,6 +488,7 @@ func parseStripeInvoiceEvent(event stripe.Event) (service.BillingStripeInvoiceEv
 		SubscriptionID: subscriptionID,
 		CustomerID:     customerID,
 		InvoiceID:      invoice.ID,
+		OccurredAt:     time.Unix(event.Created, 0).UTC(),
 	}, nil
 }
 

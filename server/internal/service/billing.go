@@ -141,6 +141,7 @@ type BillingStripeInvoiceEvent struct {
 	SubscriptionID string
 	CustomerID     string
 	InvoiceID      string
+	OccurredAt     time.Time
 }
 
 type BillingStripeTrialWillEndEvent struct {
@@ -149,6 +150,7 @@ type BillingStripeTrialWillEndEvent struct {
 	SubscriptionID string
 	CustomerID     string
 	TrialEndsAt    time.Time
+	OccurredAt     time.Time
 }
 
 type BillingSubscriptionChangeInput struct {
@@ -322,6 +324,13 @@ func (s *BillingService) SetCustomerIOIdentityService(identity *CustomerIOIdenti
 // SetCustomerIOLifecycleOutboxRepository enables durable lifecycle delivery.
 func (s *BillingService) SetCustomerIOLifecycleOutboxRepository(repo *repository.CustomerIOLifecycleOutboxRepository) {
 	s.customerIOOutbox = repo
+}
+
+func (s *BillingService) lifecycleEvent(input repository.CustomerIOLifecycleEventInput) *repository.CustomerIOLifecycleEventInput {
+	if s.customerIOOutbox == nil {
+		return nil
+	}
+	return &input
 }
 
 func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceID string) (*BillingSummary, error) {
@@ -975,142 +984,101 @@ func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, upda
 }
 
 func (s *BillingService) ApplyStripeInvoicePaymentFailed(ctx context.Context, event BillingStripeInvoiceEvent) (*BillingSummary, error) {
-	if event.EventID != "" {
-		isNew, err := s.repo.InsertStripeWebhookEvent(ctx, event.EventID, event.EventType)
-		if err != nil {
-			return nil, err
+	occurredAt := event.OccurredAt.UTC()
+	if occurredAt.IsZero() {
+		occurredAt = s.now().UTC()
+	}
+	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, event.EventID, event.EventType, func(repo *repository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
+		billing, err := billingForStripeInvoiceEvent(ctx, repo, event)
+		if err != nil || billing == nil {
+			return billing, nil, err
 		}
-		if !isNew {
-			return nil, nil
+		billing.Status = model.BillingStatusPastDue
+		billing.BillingNoticeType = optionalBillingString("payment_failed")
+		billing.BillingNoticeMessage = optionalBillingString("Payment failed. Update your payment method to keep this workspace active.")
+		billing.BillingNoticeAt, billing.PaymentFailedAt = &occurredAt, &occurredAt
+		if event.CustomerID != "" {
+			billing.StripeCustomerID = optionalBillingString(event.CustomerID)
 		}
-	}
-	billing, err := s.billingForStripeInvoiceEvent(ctx, event)
-	if err != nil {
-		return nil, err
-	}
-	if billing == nil {
-		return nil, nil
-	}
-	now := s.now().UTC()
-	billing.Status = model.BillingStatusPastDue
-	billing.BillingNoticeType = optionalBillingString("payment_failed")
-	billing.BillingNoticeMessage = optionalBillingString("Payment failed. Update your payment method to keep this workspace active.")
-	billing.BillingNoticeAt = &now
-	billing.PaymentFailedAt = &now
-	if event.CustomerID != "" {
-		billing.StripeCustomerID = optionalBillingString(event.CustomerID)
-	}
-	if event.SubscriptionID != "" {
-		billing.StripeSubscriptionID = optionalBillingString(event.SubscriptionID)
-	}
-	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
-		return nil, err
-	}
-	if event.EventID != "" {
-		if err := s.repo.MarkStripeWebhookProcessed(ctx, event.EventID); err != nil {
-			return nil, err
+		if event.SubscriptionID != "" {
+			billing.StripeSubscriptionID = optionalBillingString(event.SubscriptionID)
 		}
-	}
-	s.syncCustomerIOWorkspace(ctx, billing.WorkspaceID)
-	s.trackCustomerIOWorkspaceEvent(ctx, billing.WorkspaceID, "payment_failed", now, map[string]any{
-		"payment_failed_at": now,
+		if err := repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
+			return nil, nil, err
+		}
+		return billing, s.lifecycleEvent(repository.CustomerIOLifecycleEventInput{SemanticKey: "stripe:" + event.EventID, WorkspaceID: billing.WorkspaceID, EventName: "payment_failed", OccurredAt: occurredAt, Attributes: map[string]any{"payment_failed_at": occurredAt}}), nil
 	})
+	if err != nil || !processed || billing == nil {
+		return nil, err
+	}
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
 func (s *BillingService) ApplyStripeInvoicePaymentSucceeded(ctx context.Context, event BillingStripeInvoiceEvent) (*BillingSummary, error) {
-	if event.EventID != "" {
-		isNew, err := s.repo.InsertStripeWebhookEvent(ctx, event.EventID, event.EventType)
-		if err != nil {
-			return nil, err
-		}
-		if !isNew {
-			return nil, nil
-		}
+	occurredAt := event.OccurredAt.UTC()
+	if occurredAt.IsZero() {
+		occurredAt = s.now().UTC()
 	}
-	billing, err := s.billingForStripeInvoiceEvent(ctx, event)
-	if err != nil {
+	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, event.EventID, event.EventType, func(repo *repository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
+		billing, err := billingForStripeInvoiceEvent(ctx, repo, event)
+		if err != nil || billing == nil {
+			return billing, nil, err
+		}
+		if billing.Status == model.BillingStatusPastDue {
+			billing.Status = model.BillingStatusActive
+		}
+		billing.BillingNoticeType, billing.BillingNoticeMessage, billing.BillingNoticeAt, billing.PaymentFailedAt = nil, nil, nil, nil
+		if event.CustomerID != "" {
+			billing.StripeCustomerID = optionalBillingString(event.CustomerID)
+		}
+		if event.SubscriptionID != "" {
+			billing.StripeSubscriptionID = optionalBillingString(event.SubscriptionID)
+		}
+		if err := repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
+			return nil, nil, err
+		}
+		return billing, s.lifecycleEvent(repository.CustomerIOLifecycleEventInput{SemanticKey: "stripe:" + event.EventID, WorkspaceID: billing.WorkspaceID, EventName: "payment_succeeded", OccurredAt: occurredAt}), nil
+	})
+	if err != nil || !processed || billing == nil {
 		return nil, err
 	}
-	if billing == nil {
-		return nil, nil
-	}
-	if billing.Status == model.BillingStatusPastDue {
-		billing.Status = model.BillingStatusActive
-	}
-	billing.BillingNoticeType = nil
-	billing.BillingNoticeMessage = nil
-	billing.BillingNoticeAt = nil
-	billing.PaymentFailedAt = nil
-	if event.CustomerID != "" {
-		billing.StripeCustomerID = optionalBillingString(event.CustomerID)
-	}
-	if event.SubscriptionID != "" {
-		billing.StripeSubscriptionID = optionalBillingString(event.SubscriptionID)
-	}
-	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
-		return nil, err
-	}
-	if event.EventID != "" {
-		if err := s.repo.MarkStripeWebhookProcessed(ctx, event.EventID); err != nil {
-			return nil, err
-		}
-	}
-	s.syncCustomerIOWorkspace(ctx, billing.WorkspaceID)
-	s.trackCustomerIOWorkspaceEvent(ctx, billing.WorkspaceID, "payment_succeeded", s.now().UTC(), nil)
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
 func (s *BillingService) ApplyStripeTrialWillEnd(ctx context.Context, event BillingStripeTrialWillEndEvent) (*BillingSummary, error) {
-	if event.EventID != "" {
-		isNew, err := s.repo.InsertStripeWebhookEvent(ctx, event.EventID, event.EventType)
-		if err != nil {
-			return nil, err
-		}
-		if !isNew {
-			return nil, nil
-		}
+	occurredAt := event.OccurredAt.UTC()
+	if occurredAt.IsZero() {
+		occurredAt = s.now().UTC()
 	}
-	billing, err := s.billingForStripeInvoiceEvent(ctx, BillingStripeInvoiceEvent{
-		SubscriptionID: event.SubscriptionID,
-		CustomerID:     event.CustomerID,
+	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, event.EventID, event.EventType, func(repo *repository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
+		billing, err := billingForStripeInvoiceEvent(ctx, repo, BillingStripeInvoiceEvent{SubscriptionID: event.SubscriptionID, CustomerID: event.CustomerID})
+		if err != nil || billing == nil {
+			return billing, nil, err
+		}
+		trialEnd := event.TrialEndsAt
+		if trialEnd.IsZero() && billing.TrialEndsAt != nil {
+			trialEnd = *billing.TrialEndsAt
+		}
+		billing.BillingNoticeType = optionalBillingString("trial_will_end")
+		billing.BillingNoticeMessage = optionalBillingString("Your trial is ending soon. Choose a plan to keep paid features active.")
+		billing.BillingNoticeAt = &occurredAt
+		if !trialEnd.IsZero() {
+			billing.TrialWillEndAt, billing.TrialEndsAt = &trialEnd, &trialEnd
+		}
+		if event.CustomerID != "" {
+			billing.StripeCustomerID = optionalBillingString(event.CustomerID)
+		}
+		if event.SubscriptionID != "" {
+			billing.StripeSubscriptionID = optionalBillingString(event.SubscriptionID)
+		}
+		if err := repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
+			return nil, nil, err
+		}
+		return billing, s.lifecycleEvent(repository.CustomerIOLifecycleEventInput{SemanticKey: "stripe:" + event.EventID, WorkspaceID: billing.WorkspaceID, EventName: "trial_will_end", OccurredAt: occurredAt, Attributes: map[string]any{"trial_ends_at": trialEnd}}), nil
 	})
-	if err != nil {
+	if err != nil || !processed || billing == nil {
 		return nil, err
 	}
-	if billing == nil {
-		return nil, nil
-	}
-	now := s.now().UTC()
-	trialEnd := event.TrialEndsAt
-	if trialEnd.IsZero() && billing.TrialEndsAt != nil {
-		trialEnd = *billing.TrialEndsAt
-	}
-	billing.BillingNoticeType = optionalBillingString("trial_will_end")
-	billing.BillingNoticeMessage = optionalBillingString("Your trial is ending soon. Choose a plan to keep paid features active.")
-	billing.BillingNoticeAt = &now
-	if !trialEnd.IsZero() {
-		billing.TrialWillEndAt = &trialEnd
-		billing.TrialEndsAt = &trialEnd
-	}
-	if event.CustomerID != "" {
-		billing.StripeCustomerID = optionalBillingString(event.CustomerID)
-	}
-	if event.SubscriptionID != "" {
-		billing.StripeSubscriptionID = optionalBillingString(event.SubscriptionID)
-	}
-	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
-		return nil, err
-	}
-	if event.EventID != "" {
-		if err := s.repo.MarkStripeWebhookProcessed(ctx, event.EventID); err != nil {
-			return nil, err
-		}
-	}
-	s.syncCustomerIOWorkspace(ctx, billing.WorkspaceID)
-	s.trackCustomerIOWorkspaceEvent(ctx, billing.WorkspaceID, "trial_will_end", now, map[string]any{
-		"trial_ends_at": trialEnd,
-	})
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -1129,14 +1097,18 @@ func (s *BillingService) trackCustomerIOWorkspaceEvent(ctx context.Context, work
 }
 
 func (s *BillingService) billingForStripeInvoiceEvent(ctx context.Context, event BillingStripeInvoiceEvent) (*model.WorkspaceBilling, error) {
+	return billingForStripeInvoiceEvent(ctx, s.repo, event)
+}
+
+func billingForStripeInvoiceEvent(ctx context.Context, repo *repository.BillingRepository, event BillingStripeInvoiceEvent) (*model.WorkspaceBilling, error) {
 	if event.SubscriptionID != "" {
-		billing, err := s.repo.GetByStripeSubscriptionID(ctx, event.SubscriptionID)
+		billing, err := repo.GetByStripeSubscriptionID(ctx, event.SubscriptionID)
 		if err != nil || billing != nil {
 			return billing, err
 		}
 	}
 	if event.CustomerID != "" {
-		return s.repo.GetByStripeCustomerID(ctx, event.CustomerID)
+		return repo.GetByStripeCustomerID(ctx, event.CustomerID)
 	}
 	return nil, nil
 }

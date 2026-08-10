@@ -33,7 +33,7 @@ type CustomerIOOutbox struct {
 	EventName         string                 `json:"event_name" gorm:"not null"`
 	OccurredAt        time.Time              `json:"occurred_at" gorm:"not null"`
 	Attributes        json.RawMessage        `json:"attributes" gorm:"type:jsonb;not null;default:'{}'"`
-	RecipientSnapshot json.RawMessage        `json:"recipient_snapshot" gorm:"type:jsonb;not null;default:'{}'"`
+	RecipientSnapshot json.RawMessage        `json:"recipient_snapshot" gorm:"type:jsonb;not null;default:'[]'"`
 	Status            CustomerIOOutboxStatus `json:"status" gorm:"not null;default:pending;index"`
 	Attempts          int                    `json:"attempts" gorm:"not null;default:0"`
 	NextAttemptAt     time.Time              `json:"next_attempt_at" gorm:"not null;index"`

@@ -1362,6 +1362,69 @@ func TestBillingServiceRecordsPaymentFailedNotice(t *testing.T) {
 	}
 }
 
+func TestBillingServicePaymentFailedAtomicallyEnqueuesLifecycleEvent(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	receivedAt := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	occurredAt := receivedAt.Add(-2 * time.Minute)
+	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return receivedAt })
+	configureBillingOutboxTest(t, db, svc)
+	if err := db.Exec(`INSERT INTO workspace_members (id, workspace_id, user_id, role, status) VALUES (?, ?, ?, ?, ?)`, "member-1", "workspace-1", "user-1", model.RoleOwner, model.WorkspaceMemberStatusActive).Error; err != nil {
+		t.Fatalf("seed member: %v", err)
+	}
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{WorkspaceID: "workspace-1", Plan: model.BillingPlanGrowth, Status: model.BillingStatusActive, StripeCustomerID: billingStringPtr("cus_123"), StripeSubscriptionID: billingStringPtr("sub_123"), BillingInterval: "monthly", IncludedCredits: 25000, CurrentPeriodStart: receivedAt.Add(-24 * time.Hour), CurrentPeriodEnd: receivedAt.Add(29 * 24 * time.Hour)}); err != nil {
+		t.Fatalf("seed billing: %v", err)
+	}
+	event := BillingStripeInvoiceEvent{EventID: "evt_atomic_failed", EventType: "invoice.payment_failed", SubscriptionID: "sub_123", CustomerID: "cus_123", OccurredAt: occurredAt}
+	if _, err := svc.ApplyStripeInvoicePaymentFailed(context.Background(), event); err != nil {
+		t.Fatalf("apply event: %v", err)
+	}
+	if _, err := svc.ApplyStripeInvoicePaymentFailed(context.Background(), event); err != nil {
+		t.Fatalf("replay event: %v", err)
+	}
+	var row model.CustomerIOOutbox
+	if err := db.Where("semantic_key = ?", "stripe:"+event.EventID).First(&row).Error; err != nil {
+		t.Fatalf("load outbox: %v", err)
+	}
+	if row.EventName != "payment_failed" || !row.OccurredAt.Equal(occurredAt) {
+		t.Fatalf("unexpected outbox row: %#v", row)
+	}
+	var count int64
+	if err := db.Model(&model.CustomerIOOutbox{}).Where("semantic_key = ?", "stripe:"+event.EventID).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("outbox count = %d, err = %v", count, err)
+	}
+	var webhook model.StripeWebhookEvent
+	if err := db.First(&webhook, "id = ?", event.EventID).Error; err != nil || !webhook.Processed {
+		t.Fatalf("webhook not processed atomically: %#v err=%v", webhook, err)
+	}
+}
+
+func TestBillingServicePaymentFailedRollsBackWhenOutboxInsertFails(t *testing.T) {
+	db := newBillingTestDB(t)
+	repo := repository.NewBillingRepository(db)
+	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
+	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
+	configureBillingOutboxTest(t, db, svc)
+	if err := db.Exec("DROP TABLE customer_io_outbox").Error; err != nil {
+		t.Fatalf("drop outbox: %v", err)
+	}
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{WorkspaceID: "workspace-1", Plan: model.BillingPlanGrowth, Status: model.BillingStatusActive, StripeSubscriptionID: billingStringPtr("sub_rollback"), BillingInterval: "monthly", CurrentPeriodStart: now.Add(-time.Hour), CurrentPeriodEnd: now.Add(30 * 24 * time.Hour)}); err != nil {
+		t.Fatalf("seed billing: %v", err)
+	}
+	_, err := svc.ApplyStripeInvoicePaymentFailed(context.Background(), BillingStripeInvoiceEvent{EventID: "evt_rollback", EventType: "invoice.payment_failed", SubscriptionID: "sub_rollback", OccurredAt: now})
+	if err == nil {
+		t.Fatal("expected outbox failure")
+	}
+	billing, err := repo.GetByWorkspaceID(context.Background(), "workspace-1")
+	if err != nil || billing.Status != model.BillingStatusActive {
+		t.Fatalf("billing mutation was not rolled back: %#v err=%v", billing, err)
+	}
+	var count int64
+	if err := db.Model(&model.StripeWebhookEvent{}).Where("id = ?", "evt_rollback").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("webhook insert was not rolled back: count=%d err=%v", count, err)
+	}
+}
+
 func TestBillingServiceReprocessesUnprocessedWebhookEvent(t *testing.T) {
 	db := newBillingTestDB(t)
 	repo := repository.NewBillingRepository(db)
