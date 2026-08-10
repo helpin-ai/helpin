@@ -231,6 +231,139 @@
   }
 }
 
+/* Agent dock: a warm, operational presence layer independent of page chrome. */
+@keyframes agent-dock-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes agent-dock-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .35; transform: scale(1.5); }
+}
+@keyframes agent-dock-nudge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+.agent-dock-root {
+  pointer-events: none;
+  transition: opacity var(--speed-quick) ease-out;
+}
+.agent-dock-scrim {
+  pointer-events: auto;
+}
+.agent-dock-panel {
+  animation: agent-dock-rise 220ms var(--ease-out-quart) both;
+  color-scheme: light;
+}
+.dark .agent-dock-panel {
+  color-scheme: dark;
+}
+.agent-dock-sparkle {
+  background: linear-gradient(135deg, #f97316, #a855f7);
+}
+.agent-dock-attention-dot {
+  animation: agent-dock-pulse 1.6s ease-in-out infinite;
+}
+.agent-dock-attention-nudge {
+  animation: agent-dock-nudge 300ms var(--ease-out-quart) both;
+}
+
+@media (max-width: 999px) {
+  .agent-dock-panel {
+    width: min(760px, 94vw);
+  }
+  .agent-dock-roster {
+    width: 62px;
+  }
+  .agent-dock-roster-controls {
+    padding-inline: 8px;
+  }
+  .agent-dock-tab {
+    overflow: hidden;
+    font-size: 0;
+  }
+  .agent-dock-tab::first-letter {
+    font-size: 11px;
+  }
+  .agent-dock-new-chat {
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .agent-dock-roster-copy,
+  .agent-dock-chat-menu {
+    display: none !important;
+  }
+  .agent-dock-group-header,
+  .agent-dock-roster-row {
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .agent-dock-roster-row > button {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 719px) {
+  .agent-dock-anchor {
+    inset: 0;
+    bottom: 0;
+    justify-content: flex-end;
+    gap: 0;
+    padding: 0;
+  }
+  .agent-dock-panel {
+    height: 100dvh;
+    min-height: 0;
+    width: 100vw;
+    border-width: 0;
+    border-radius: 0;
+  }
+  .agent-dock-anchor:has(.agent-dock-panel) .agent-dock-trigger {
+    display: none;
+  }
+  .agent-dock-trigger {
+    margin-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+  .agent-dock-panel textarea {
+    font-size: 16px;
+  }
+  .agent-dock-panel button,
+  .agent-dock-panel a {
+    touch-action: manipulation;
+  }
+}
+
+@media (max-width: 520px) {
+  .agent-dock-attention-badge {
+    max-width: 28px;
+    overflow: hidden;
+    padding-inline: 10px;
+    color: transparent;
+  }
+  .agent-dock-attention-badge .agent-dock-attention-dot {
+    flex: none;
+  }
+  .agent-dock-stack-item:nth-child(n+3) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-dock-panel,
+  .agent-dock-attention-dot,
+  .agent-dock-attention-nudge {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .agent-dock-panel,
+  .agent-dock-trigger,
+  .agent-dock-roster-row[aria-current="true"] {
+    border: 1px solid CanvasText;
+  }
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

@@ -203,6 +203,62 @@ func TestAgentRunRepositoryCountWorkspaceRunsRequiringAttention(t *testing.T) {
 	}
 }
 
+func TestAgentRunRepositoryListDockRunsForActorScopesAndRetainsActiveRuns(t *testing.T) {
+	db := openAgentRunListTestDB(t)
+	repo := NewAgentRunRepository(db)
+	cutoff := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	old := cutoff.Add(-time.Hour)
+	recent := cutoff.Add(time.Hour)
+
+	rows := []struct {
+		id          string
+		workspaceID string
+		status      string
+		actorID     string
+		updatedAt   time.Time
+		dockChatID  *string
+	}{
+		{id: "active-old", workspaceID: "workspace-1", status: model.AgentRunStatusRunning, actorID: "user-1", updatedAt: old},
+		{id: "terminal-recent", workspaceID: "workspace-1", status: model.AgentRunStatusCompleted, actorID: "user-1", updatedAt: recent},
+		{id: "terminal-old", workspaceID: "workspace-1", status: model.AgentRunStatusCompleted, actorID: "user-1", updatedAt: old},
+		{id: "other-actor", workspaceID: "workspace-1", status: model.AgentRunStatusRunning, actorID: "user-2", updatedAt: recent},
+		{id: "other-workspace", workspaceID: "workspace-2", status: model.AgentRunStatusRunning, actorID: "user-1", updatedAt: recent},
+	}
+	chatID := "chat-1"
+	rows = append(rows, struct {
+		id          string
+		workspaceID string
+		status      string
+		actorID     string
+		updatedAt   time.Time
+		dockChatID  *string
+	}{id: "chat-backing", workspaceID: "workspace-1", status: model.AgentRunStatusRunning, actorID: "user-1", updatedAt: recent, dockChatID: &chatID})
+
+	for _, row := range rows {
+		seedAgentRunListTestRow(t, db, row.id, row.workspaceID, "agent-1", row.status, model.AgentRunPauseReasonNone, `{}`)
+		if err := db.Model(&model.AgentRun{}).Where("id = ?", row.id).Updates(map[string]any{
+			"triggered_by_user_id": row.actorID,
+			"dock_chat_id":         row.dockChatID,
+			"created_at":           row.updatedAt,
+			"updated_at":           row.updatedAt,
+		}).Error; err != nil {
+			t.Fatalf("configure dock run %q: %v", row.id, err)
+		}
+	}
+
+	runs, err := repo.ListDockRunsForActor(context.Background(), "workspace-1", "user-1", cutoff, 100)
+	if err != nil {
+		t.Fatalf("ListDockRunsForActor: %v", err)
+	}
+	got := make([]string, 0, len(runs))
+	for _, run := range runs {
+		got = append(got, run.ID)
+	}
+	if want := []string{"terminal-recent", "active-old"}; !slices.Equal(got, want) {
+		t.Fatalf("dock run ids = %v, want %v", got, want)
+	}
+}
+
 func TestAgentRunListPagination(t *testing.T) {
 	page, perPage := agentRunListPagination(model.PMPagination{Page: -1, PerPage: 5000})
 	if page != 1 {

@@ -35,20 +35,20 @@ const TYPE_LABEL: Record<CommandBarPageContext['entity_type'], string> = {
   repository: 'Repository',
 };
 
-function chipIcon(type: CommandBarPageContext['entity_type']) {
+function ContextIcon({ type, className = 'h-3 w-3 shrink-0' }: { type: CommandBarPageContext['entity_type']; className?: string }) {
   switch (type) {
     case 'task':
-      return RecordIcon;
+      return <RecordIcon className={className} />;
     case 'epic':
-      return BookOpen01Icon;
+      return <BookOpen01Icon className={className} />;
     case 'document':
-      return File01Icon;
+      return <File01Icon className={className} />;
     case 'crm_contact':
-      return UserIcon;
+      return <UserIcon className={className} />;
     case 'crm_deal':
-      return Briefcase01Icon;
+      return <Briefcase01Icon className={className} />;
     default:
-      return FolderKanbanIcon;
+      return <FolderKanbanIcon className={className} />;
   }
 }
 
@@ -97,6 +97,7 @@ export interface DockInputProps {
   /** When set, the send button becomes a stop button for the active run. */
   onStop?: () => void;
   stopping?: boolean;
+  placeholder?: string;
 }
 
 export function DockInput({
@@ -117,6 +118,7 @@ export function DockInput({
   textareaRef,
   onStop,
   stopping,
+  placeholder: placeholderOverride,
 }: DockInputProps) {
   const localRef = useRef<HTMLTextAreaElement | null>(null);
   const ref = textareaRef ?? localRef;
@@ -132,10 +134,11 @@ export function DockInput({
     if (autoFocus) ref.current?.focus();
   }, [autoFocus, ref]);
 
-  const placeholder =
+  const placeholder = placeholderOverride ?? (
     mode === 'list'
       ? 'Search runs or ask something new…'
-      : 'Tell Atlas, Forge, Lens, or any agent what to do';
+      : 'Tell Atlas, Forge, Lens, or any agent what to do'
+  );
 
   // Hide the workspace-level chip — it just restates the current workspace
   // (already visible in the sidebar) and provides no scoping signal. Keep it
@@ -255,7 +258,6 @@ function ContextChip({
   onChange?: (key: string) => void;
   onClear?: () => void;
 }) {
-  const Icon = chipIcon(context.entity_type);
   const blockScoped = isBlockScopedDocument(context);
   const allTasks = isAllTasksContext(context);
   const title = contextTitle(context);
@@ -269,7 +271,7 @@ function ContextChip({
   );
   const body = (
     <>
-      <Icon className="h-3 w-3 shrink-0" />
+      <ContextIcon type={context.entity_type} />
       <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
@@ -322,7 +324,6 @@ function ContextChip({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="z-[80] w-64">
         {options.map((option) => {
-          const OptionIcon = chipIcon(option.context.entity_type);
           const checked = option.key === activeKey;
           return (
             <DropdownMenuItem
@@ -330,7 +331,7 @@ function ContextChip({
               onClick={() => onChange?.(option.key)}
               className="cursor-pointer items-start gap-2"
             >
-              <OptionIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <ContextIcon type={option.context.entity_type} className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-medium">{option.label}</span>
                 {option.description ? (

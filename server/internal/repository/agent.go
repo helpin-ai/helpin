@@ -71,6 +71,21 @@ func (r *AgentRepository) GetByID(ctx context.Context, workspaceID, id string) (
 	return &agent, nil
 }
 
+// ListByIDs returns lightweight agent records for the requested workspace IDs.
+func (r *AgentRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.Agent, error) {
+	if len(ids) == 0 {
+		return []model.Agent{}, nil
+	}
+	var agents []model.Agent
+	if err := r.db.WithContext(ctx).
+		Select("id", "workspace_id", "name", "icon_key", "preset_key").
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Find(&agents).Error; err != nil {
+		return nil, fmt.Errorf("list agents by ids: %w", err)
+	}
+	return agents, nil
+}
+
 // GetSystemByPreset returns the first system agent for a preset within a workspace.
 func (r *AgentRepository) GetSystemByPreset(ctx context.Context, workspaceID, presetKey string) (*model.Agent, error) {
 	presetKeys := []string{presetKey}
@@ -647,6 +662,40 @@ func (r *AgentRunRepository) ListRecentForActor(ctx context.Context, workspaceID
 		Limit(limit).
 		Find(&runs).Error; err != nil {
 		return nil, fmt.Errorf("list recent agent runs for actor: %w", err)
+	}
+	return runs, nil
+}
+
+// ListDockRunsForActor returns active user-owned runs plus terminal runs
+// updated since the supplied cutoff. Chat-backing runs stay on the Chats tab.
+func (r *AgentRunRepository) ListDockRunsForActor(
+	ctx context.Context,
+	workspaceID string,
+	actorID string,
+	recentSince time.Time,
+	limit int,
+) ([]model.AgentRun, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("agent run repository is not configured")
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	activeStatuses := []string{
+		model.AgentRunStatusQueued,
+		model.AgentRunStatusRunning,
+		model.AgentRunStatusPaused,
+	}
+	var runs []model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Select(_agentRunListColumns).
+		Where("workspace_id = ? AND triggered_by_user_id = ?", workspaceID, actorID).
+		Where("dock_chat_id IS NULL").
+		Where("(status IN ? OR updated_at >= ?)", activeStatuses, recentSince).
+		Order("updated_at DESC, created_at DESC").
+		Limit(limit).
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list dock agent runs: %w", err)
 	}
 	return runs, nil
 }

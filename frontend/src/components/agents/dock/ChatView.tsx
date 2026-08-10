@@ -29,6 +29,9 @@ interface ChatViewProps {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   initialDraft?: string;
   onDraftConsumed?: () => void;
+  draftValue?: string;
+  onDraftChange?: (value: string) => void;
+  onChatChanged?: () => void;
 }
 
 const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
@@ -39,11 +42,16 @@ const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
  * chat. All run reads go through the chat-scoped /dock endpoints so users
  * without PM permissions can use their own dock.
  */
-export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDraftConsumed }: ChatViewProps) {
+export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDraftConsumed, draftValue, onDraftChange, onChatChanged }: ChatViewProps) {
   const [detail, setDetail] = useState<DockChatDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(true);
   const [plans, setPlans] = useState<CommandBarPlanSummary[]>([]);
-  const [value, setValue] = useState('');
+  const [localValue, setLocalValue] = useState('');
+  const value = draftValue ?? localValue;
+  const setValue = useCallback((next: string) => {
+    if (onDraftChange) onDraftChange(next);
+    else setLocalValue(next);
+  }, [onDraftChange]);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [pendingEcho, setPendingEcho] = useState<string | null>(null);
@@ -57,12 +65,13 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
   const effectivePageContext = contextCleared ? null : pageContext;
 
   useEffect(() => {
-    if (initialDraft) {
+    if (!initialDraft) return;
+    const timer = window.setTimeout(() => {
       setValue(initialDraft);
       onDraftConsumed?.();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialDraft]);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [initialDraft, onDraftConsumed, setValue]);
 
   const run = detail?.run ?? null;
   const runActive = !!run && ACTIVE_RUN_STATUSES.has(run.status);
@@ -86,14 +95,11 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
 
   // Load chat on mount / chat switch.
   useEffect(() => {
-    setDetail(null);
-    setPlans([]);
-    setDetailLoading(true);
-    setPendingEcho(null);
-    setSendError(null);
     autoFollowRef.current = true;
-    setAtBottom(true);
-    void refreshDetail().finally(() => setDetailLoading(false));
+    const timer = window.setTimeout(() => {
+      void refreshDetail().finally(() => setDetailLoading(false));
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [refreshDetail]);
 
   // Refresh the run summary when its WS event fires (stream refetch is
@@ -121,8 +127,8 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
   useEffect(() => {
     const planIds = detail?.plan_ids ?? [];
     if (planIds.length === 0) {
-      setPlans([]);
-      return;
+      const timer = window.setTimeout(() => setPlans([]), 0);
+      return () => window.clearTimeout(timer);
     }
     let cancelled = false;
     void (async () => {
@@ -144,8 +150,8 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
     run?.status === 'paused' && (run.pause_reason === 'human_approval' || run.pause_reason === 'human_input');
   useEffect(() => {
     if (!pausedOnInteraction) {
-      setFallbackInteraction(null);
-      return;
+      const timer = window.setTimeout(() => setFallbackInteraction(null), 0);
+      return () => window.clearTimeout(timer);
     }
     let cancelled = false;
     void (async () => {
@@ -175,7 +181,10 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
     const matched = transformed.stream.transcript_messages.some(
       (message) => message.role === 'user' && message.content.trim() === pendingEcho.trim(),
     );
-    if (matched) setPendingEcho(null);
+    if (matched) {
+      const timer = window.setTimeout(() => setPendingEcho(null), 0);
+      return () => window.clearTimeout(timer);
+    }
   }, [pendingEcho, transformed]);
 
   // Track whether the user is near the tail; only then keep auto-following.
@@ -236,6 +245,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
           return;
         }
         setDetail(res.data);
+        onChatChanged?.();
         if (run?.id && res.data.run?.id === run.id) {
           // Same backing run: reconcile the persisted user message immediately.
           void refetch();
@@ -246,7 +256,7 @@ export function ChatView({ workspaceId, chatId, textareaRef, initialDraft, onDra
         setSending(false);
       }
     },
-    [chatId, effectivePageContext, refetch, run?.id, sending, workspaceId],
+    [chatId, effectivePageContext, onChatChanged, refetch, run?.id, sending, workspaceId],
   );
 
   const submit = async () => {

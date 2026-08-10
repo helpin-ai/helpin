@@ -2,6 +2,7 @@ import { api } from '../api';
 import type {
   DockChat,
   DockChatDetail,
+  DockRunListResponse,
   SendDockChatMessageRequest,
   UpdateDockChatRequest,
 } from '../dockTypes';
@@ -11,6 +12,8 @@ import type {
   CodingSessionEventListResponse,
   CodingSessionInteraction,
   ResolveCodingSessionInteractionRequest,
+  AgentRunMessage,
+  CodexAuthState,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -48,4 +51,35 @@ export const dockChatService = {
     ),
   cancelChatRun: (workspaceId: string, chatId: string) =>
     api.post<AgentRun>(`/dock/chats/${encodeURIComponent(chatId)}/run/cancel${qs(workspaceId)}`),
+  listRuns: (workspaceId: string) =>
+    api.get<DockRunListResponse>(`/dock/runs${qs(workspaceId)}`),
+  getRunSnapshot: (workspaceId: string, runId: string) =>
+    api.get<CodingSession>(`/dock/runs/${encodeURIComponent(runId)}/snapshot${qs(workspaceId)}`),
+  listRunEvents: (workspaceId: string, runId: string, after = 0) =>
+    api.get<CodingSessionEventListResponse>(
+      `/dock/runs/${encodeURIComponent(runId)}/events${qs(workspaceId)}&after=${encodeURIComponent(after)}`,
+    ),
+  listRunInteractions: (workspaceId: string, runId: string) =>
+    api.get<{ interactions: CodingSessionInteraction[] }>(
+      `/dock/runs/${encodeURIComponent(runId)}/interactions${qs(workspaceId)}`,
+    ),
+  resolveRunInteraction: (
+    workspaceId: string,
+    runId: string,
+    interactionId: string,
+    payload: ResolveCodingSessionInteractionRequest,
+  ) => api.post<CodingSessionInteraction>(
+    `/dock/runs/${encodeURIComponent(runId)}/interactions/${encodeURIComponent(interactionId)}/resolve${qs(workspaceId)}`,
+    payload,
+  ),
+  sendRunMessage: (workspaceId: string, runId: string, content: string) =>
+    api.post<AgentRunMessage>(`/dock/runs/${encodeURIComponent(runId)}/messages${qs(workspaceId)}`, { content }),
+  continueRun: (workspaceId: string, runId: string, content?: string) =>
+    api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/continue${qs(workspaceId)}`, content ? { content } : {}),
+  cancelRun: (workspaceId: string, runId: string) =>
+    api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/cancel${qs(workspaceId)}`, {}),
+  startRunAuth: (workspaceId: string, runId: string) =>
+    api.post<CodexAuthState>(`/dock/runs/${encodeURIComponent(runId)}/auth/device-code/start${qs(workspaceId)}`, {}),
+  cancelRunAuth: (workspaceId: string, runId: string) =>
+    api.post<CodexAuthState>(`/dock/runs/${encodeURIComponent(runId)}/auth/device-code/cancel${qs(workspaceId)}`, {}),
 };

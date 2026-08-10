@@ -8,7 +8,7 @@ import { PageContextProvider } from '@/components/command-bar/pageContext';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDockStore } from '@/stores/dockStore';
-import type { DockChat, DockChatDetail } from '@/lib/dockTypes';
+import type { DockChat, DockChatDetail, DockRunSummary } from '@/lib/dockTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -23,6 +23,16 @@ const mocks = vi.hoisted(() => ({
   listChatRunInteractions: vi.fn(),
   resolveInteraction: vi.fn(),
   cancelChatRun: vi.fn(),
+  listRuns: vi.fn(),
+  getRunSnapshot: vi.fn(),
+  listRunEvents: vi.fn(),
+  listRunInteractions: vi.fn(),
+  resolveRunInteraction: vi.fn(),
+  sendRunMessage: vi.fn(),
+  continueRun: vi.fn(),
+  cancelRun: vi.fn(),
+  startRunAuth: vi.fn(),
+  cancelRunAuth: vi.fn(),
   getPlan: vi.fn(),
 }));
 
@@ -38,6 +48,16 @@ vi.mock('@/lib/services/dockChatService', () => ({
     listChatRunInteractions: mocks.listChatRunInteractions,
     resolveInteraction: mocks.resolveInteraction,
     cancelChatRun: mocks.cancelChatRun,
+    listRuns: mocks.listRuns,
+    getRunSnapshot: mocks.getRunSnapshot,
+    listRunEvents: mocks.listRunEvents,
+    listRunInteractions: mocks.listRunInteractions,
+    resolveRunInteraction: mocks.resolveRunInteraction,
+    sendRunMessage: mocks.sendRunMessage,
+    continueRun: mocks.continueRun,
+    cancelRun: mocks.cancelRun,
+    startRunAuth: mocks.startRunAuth,
+    cancelRunAuth: mocks.cancelRunAuth,
   },
 }));
 
@@ -57,6 +77,23 @@ const CHAT: DockChat = {
   updated_at: '2026-08-01T00:00:00Z',
 };
 
+const DOCK_RUN: DockRunSummary = {
+  run: {
+    id: 'agent-run-1',
+    workspace_id: 'ws-1',
+    agent_id: 'agent-review',
+    target_type: 'task',
+    target_id: 'task-42',
+    target_info: { task_key: 'HLP-42', title: 'Polish the agent dock' },
+    status: 'paused',
+    pause_reason: 'human_approval',
+    updated_at: '2026-08-09T12:00:00Z',
+  } as never,
+  agent: { id: 'agent-review', name: 'Review Agent', preset_key: 'task_reviewer' },
+  attention_kind: 'approval',
+  last_activity_at: '2026-08-09T12:00:00Z',
+};
+
 function chatDetail(overrides: Partial<DockChatDetail> = {}): DockChatDetail {
   return { chat: CHAT, run: null, plan_ids: [], ...overrides };
 }
@@ -69,13 +106,21 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   localStorage.clear();
-  useDockStore.setState({ collapsed: false, view: 'chat', activeChatId: null, chats: [] });
+  localStorage.setItem('helpin:agent-dock-selection:ws-1', JSON.stringify({ tab: 'chats', chatId: 'chat-1' }));
+  useDockStore.setState({ collapsed: false, view: 'chat', tab: 'chats', workspaceId: null, activeChatId: null, activeRunId: null, chats: [], drafts: {}, lastAttentionIds: [] });
   useWorkspaceStore.setState({
     currentWorkspace: { id: 'ws-1', name: 'Acme' } as never,
   });
   mocks.listChats.mockResolvedValue({ data: { chats: [CHAT] }, error: null });
+  mocks.listRuns.mockResolvedValue({ data: { runs: [], attention_count: 0 }, error: null });
   mocks.getChat.mockResolvedValue({ data: chatDetail(), error: null });
   mocks.getChatRun.mockResolvedValue({ data: null, error: null });
+  mocks.getRunSnapshot.mockResolvedValue({
+    data: { id: 'agent-run-1', status: 'paused', pause_reason: 'human_approval', stream_state_snapshot: null },
+    error: null,
+  });
+  mocks.listRunEvents.mockResolvedValue({ data: { events: [], next_sequence_no: 0 }, error: null });
+  mocks.listRunInteractions.mockResolvedValue({ data: { interactions: [] }, error: null });
   mocks.listChatRunEvents.mockResolvedValue({ data: { events: [], next_sequence_no: 0 }, error: null });
   mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [] }, error: null });
   mocks.getPlan.mockResolvedValue({ data: null, error: null });
@@ -283,6 +328,9 @@ describe('AskAgentsDock', () => {
       );
     });
     await waitForText('Sprint questions');
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
     expect(dockTextarea().value).toBe('enrich this contact');
   });
 
@@ -290,15 +338,23 @@ describe('AskAgentsDock', () => {
     await renderDock();
     await waitForText('Sprint questions');
 
+    const agentsButton = Array.from(document.body.querySelectorAll('[data-helpin-dock] button')).find(
+      (b) => b.textContent === 'Agents',
+    );
+    expect(agentsButton).toBeTruthy();
+    await act(async () => {
+      (agentsButton as HTMLButtonElement).click();
+    });
+    expect(useDockStore.getState().tab).toBe('agents');
+
     const chatsButton = Array.from(document.body.querySelectorAll('[data-helpin-dock] button')).find(
       (b) => b.textContent === 'Chats',
     );
-    expect(chatsButton).toBeTruthy();
     await act(async () => {
       (chatsButton as HTMLButtonElement).click();
     });
-    await waitForText('Rename');
-    expect(useDockStore.getState().view).toBe('chats');
+    await waitForText('Sprint questions');
+    expect(useDockStore.getState().tab).toBe('chats');
   });
 
   it('creates a new chat', async () => {
@@ -314,7 +370,7 @@ describe('AskAgentsDock', () => {
     await waitForText('Sprint questions');
 
     const newButton = Array.from(document.body.querySelectorAll('[data-helpin-dock] button')).find(
-      (b) => b.textContent === 'New chat',
+      (b) => b.textContent?.includes('New chat or task'),
     );
     await act(async () => {
       (newButton as HTMLButtonElement).click();
@@ -322,6 +378,52 @@ describe('AskAgentsDock', () => {
     await flush();
     expect(mocks.createChat).toHaveBeenCalledWith('ws-1');
     expect(useDockStore.getState().activeChatId).toBe('chat-2');
+  });
+
+  it('shows attention in the collapsed dock trigger', async () => {
+    useDockStore.setState({ collapsed: true });
+    mocks.listRuns.mockResolvedValue({ data: { runs: [DOCK_RUN], attention_count: 1 }, error: null });
+
+    await renderDock();
+    await waitForText('1 need you');
+
+    expect(document.body.textContent).toContain('Ask agents');
+    expect(document.body.textContent).toContain('1 agent need your attention');
+  });
+
+  it('renders and resolves an approval for a personal agent run', async () => {
+    localStorage.setItem('helpin:agent-dock-selection:ws-1', JSON.stringify({ tab: 'agents', runId: 'agent-run-1' }));
+    mocks.listRuns.mockResolvedValue({ data: { runs: [DOCK_RUN], attention_count: 1 }, error: null });
+    mocks.listRunInteractions.mockResolvedValue({
+      data: {
+        interactions: [{
+          id: 'run-int-1',
+          interaction_kind: 'approval_request',
+          status: 'pending',
+          request_schema_version: '1',
+          request_payload: { title: 'Approve agent action', raw_input: { action: { steps: [{ instructions: 'Review the dock' }] } } },
+        }],
+      },
+      error: null,
+    });
+    mocks.resolveRunInteraction.mockResolvedValue({ data: null, error: null });
+
+    await renderDock();
+    await waitForText('HLP-42 · Polish the agent dock');
+    await waitForText('Approve agent action');
+
+    const approve = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Approve');
+    await act(async () => {
+      (approve as HTMLButtonElement).click();
+    });
+    await flush();
+
+    expect(mocks.resolveRunInteraction).toHaveBeenCalledWith(
+      'ws-1',
+      'agent-run-1',
+      'run-int-1',
+      expect.objectContaining({ response_payload: { decision: 'approve' } }),
+    );
   });
 
   it('renders the approval card from the interactions fallback when events are empty', async () => {

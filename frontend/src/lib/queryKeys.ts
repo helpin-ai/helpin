@@ -19,6 +19,14 @@ export const queryKeys = {
     workspace: (wsId: string) => ['billing', 'workspace', wsId] as const,
   },
 
+  dock: {
+    root: (wsId: string) => ['dock', wsId] as const,
+    runs: (wsId: string) => ['dock', wsId, 'runs'] as const,
+    chats: (wsId: string) => ['dock', wsId, 'chats'] as const,
+    run: (wsId: string, runId: string) => ['dock', wsId, 'runs', runId] as const,
+    chat: (wsId: string, chatId: string) => ['dock', wsId, 'chats', chatId] as const,
+  },
+
   workspaces: {
     all: (orgId?: string) => ['workspaces', { orgId }] as const,
     bySlug: (slug: string) => ['workspaces', 'slug', slug] as const,

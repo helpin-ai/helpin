@@ -790,6 +790,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/run/interactions", h.DockChat.ListChatRunInteractions)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/interactions/{interactionID}/resolve", h.DockChat.ResolveChatRunInteraction)
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/cancel", h.DockChat.CancelChatRun)
+				r.With(requireCommandBarRead()).Get("/runs", h.DockChat.ListRuns)
+				r.With(requireCommandBarRead()).Get("/runs/{runID}/snapshot", h.DockChat.GetRunSnapshot)
+				r.With(requireCommandBarRead()).Get("/runs/{runID}/events", h.DockChat.ListRunEvents)
+				r.With(requireCommandBarRead()).Get("/runs/{runID}/interactions", h.DockChat.ListRunInteractions)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/interactions/{interactionID}/resolve", h.DockChat.ResolveRunInteraction)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/messages", h.DockChat.SendRunMessage)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/continue", h.DockChat.ContinueRun)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/cancel", h.DockChat.CancelRun)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/auth/device-code/start", h.DockChat.StartRunAuth)
+				r.With(requireCommandBarEdit()).Post("/runs/{runID}/auth/device-code/cancel", h.DockChat.CancelRunAuth)
 			})
 
 			// Support module
