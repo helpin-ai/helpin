@@ -96,6 +96,12 @@ export function Header() {
       insights: "Insights",
     };
 
+    const crmDetailLabelMap: Record<string, string> = {
+      contacts: "Contact Detail",
+      companies: "Company Detail",
+      deals: "Deal Detail",
+    };
+
     const pmSubMap: Record<string, string> = {
       "my-work": "My Work",
       tasks: "Tasks",
@@ -153,7 +159,7 @@ export function Header() {
         const crmLabel = crmSubMap[crmSub] ?? formatLabel(crmSub);
         if (subRoute[2]) {
           crumbs.push({ label: crmLabel, to: `/w/${slug}/crm/${crmSub}` });
-          crumbs.push({ label: `${crmLabel.replace(/s$/, "")} Detail` });
+          crumbs.push({ label: crmDetailLabelMap[crmSub] ?? `${crmLabel.replace(/s$/, "")} Detail` });
         } else {
           crumbs.push({ label: crmLabel });
         }
