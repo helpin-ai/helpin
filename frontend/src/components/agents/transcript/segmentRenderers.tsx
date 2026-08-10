@@ -17,6 +17,12 @@ import { TranscriptRow } from './TranscriptRow';
 import { formatToolDuration, toolStatusChrome } from './toolRowChrome';
 import type { TranscriptSegment } from './segments';
 
+export interface TranscriptToolGroupPresentation {
+  count: number;
+  totalDurationMs?: number;
+  status: CodingSessionLiveToolCall['status'];
+}
+
 export interface RenderSegmentOptions {
   /** When true, reasoning and run-context rows expand on click. */
   expandable: boolean;
@@ -26,6 +32,8 @@ export interface RenderSegmentOptions {
   resolveActor?: (message: CodingSessionTranscriptMessage) => CodingSessionActor | null;
   /** Surface-specific label when actor details are intentionally unavailable. */
   fallbackUserLabel?: string;
+  /** Dock-only aggregation metadata for adjacent calls to the same tool. */
+  toolGroup?: TranscriptToolGroupPresentation;
 }
 
 /** Renders a single normalized transcript segment as a flat one-line entry. */
@@ -46,7 +54,7 @@ export function TranscriptSegmentView({
         />
       );
     case 'tool':
-      return <ToolSegment toolCall={segment.toolCall} />;
+      return <ToolSegment toolCall={segment.toolCall} group={options.toolGroup} />;
     case 'reasoning':
       return <ReasoningSegment reasoning={segment.reasoning} expandable={options.expandable} />;
     case 'status':
@@ -111,18 +119,26 @@ function CopyMessageButton({ content }: { content: string }) {
 
 // ─── Tool call ───────────────────────────────────────────────────────────────
 
-function ToolSegment({ toolCall }: { toolCall: CodingSessionLiveToolCall }) {
-  const failed = toolCall.status === 'failed';
-  const { icon, className } = toolStatusChrome(toolCall.status);
+function ToolSegment({
+  toolCall,
+  group,
+}: {
+  toolCall: CodingSessionLiveToolCall;
+  group?: TranscriptToolGroupPresentation;
+}) {
+  const status = group?.status ?? toolCall.status;
+  const failed = status === 'failed';
+  const { icon, className } = toolStatusChrome(status);
   const presentation = describeToolCall(toolCall);
+  const grouped = !!group && group.count > 1;
 
   return (
     <TranscriptRow
       icon={icon}
       iconClassName={className}
-      label={presentation.primaryLabel}
+      label={grouped ? `${presentation.secondaryLabel} x ${group.count}` : presentation.primaryLabel}
       tone={failed ? 'failed' : 'muted'}
-      meta={formatToolDuration(toolCall.duration_ms)}
+      meta={formatToolDuration(grouped ? group.totalDurationMs : toolCall.duration_ms)}
     />
   );
 }

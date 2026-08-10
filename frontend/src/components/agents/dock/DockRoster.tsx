@@ -74,17 +74,6 @@ export function DockRoster(props: DockRosterProps) {
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          aria-label="New chat or task"
-          onClick={props.onNewChat}
-          className="agent-dock-new-chat flex min-h-8 items-center gap-2 rounded-[9px] border border-[#eae7e0] bg-[#fffefa] px-2.5 py-1.5 text-start text-[12.5px] text-[#8a8781] transition hover:border-[#d8d3c9] hover:text-[#4b4945] dark:border-[#34322d] dark:bg-[#242320] dark:text-[#a9a59d]"
-        >
-          <span className="agent-dock-new-chat-icon hidden" aria-hidden><PlusSignIcon className="h-4 w-4" /></span>
-          <AskAgentAvatar plateStyle="feather" className="ask-agent-new-chat-mark h-6 w-6" />
-          <span className="agent-dock-roster-copy truncate">New chat or task</span>
-          <kbd className="agent-dock-roster-copy ms-auto rounded border border-[#eeece7] px-1 font-mono text-[10.5px] text-[#b3b0a9] dark:border-[#3a3832]">N</kbd>
-        </button>
       </div>
 
       <div
@@ -100,6 +89,20 @@ export function DockRoster(props: DockRosterProps) {
         {props.tab === 'chats' && props.loadingMoreChats ? (
           <p className="agent-dock-roster-copy px-3 py-2 text-center text-[11px] text-[#8a8781]">Loading more…</p>
         ) : null}
+      </div>
+
+      <div className="agent-dock-new-chat-footer shrink-0 border-t border-[#f1efea] px-2 py-2 dark:border-[#302f2b]">
+        <button
+          type="button"
+          aria-label="New chat or task"
+          onClick={props.onNewChat}
+          className="agent-dock-new-chat flex min-h-9 w-full items-center gap-2 rounded-[7px] px-2 py-1.5 text-start text-[12.5px] font-medium text-[#8a8781] transition-colors hover:bg-[#f4f2ee] hover:text-[#1c1b19] dark:text-[#a9a59d] dark:hover:bg-[#292824] dark:hover:text-[#eeeae1]"
+        >
+          <span className="agent-dock-new-chat-icon hidden" aria-hidden><PlusSignIcon className="h-4 w-4" /></span>
+          <AskAgentAvatar plateStyle="feather" className="ask-agent-new-chat-mark h-6 w-6" />
+          <span className="agent-dock-roster-copy truncate">New chat or task</span>
+          <kbd className="agent-dock-roster-copy ms-auto rounded border border-[#e8e5df] px-1 font-mono text-[10.5px] font-normal text-[#b3b0a9] dark:border-[#3a3832]">N</kbd>
+        </button>
       </div>
     </aside>
   );

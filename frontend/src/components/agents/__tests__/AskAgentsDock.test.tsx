@@ -437,6 +437,11 @@ describe('AskAgentsDock', () => {
     const newButton = Array.from(document.body.querySelectorAll('[data-helpin-dock] button')).find(
       (b) => b.textContent?.includes('New chat or task'),
     );
+    const footer = document.body.querySelector('.agent-dock-new-chat-footer');
+    expect(footer).not.toBeNull();
+    expect(footer?.className).toContain('border-t');
+    expect(footer?.contains(newButton ?? null)).toBe(true);
+    expect(document.body.querySelector('.agent-dock-roster-controls')?.contains(newButton ?? null)).toBe(false);
     await act(async () => {
       (newButton as HTMLButtonElement).click();
     });

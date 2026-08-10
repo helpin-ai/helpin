@@ -353,7 +353,7 @@ export function ChatView({
             Ask a question about your workspace, or describe work for an agent to do.
           </p>
         )}
-        {transformed && <DockTranscript stream={transformed.stream} active={runActive} showAskAgentAvatar />}
+        {transformed && <DockTranscript stream={transformed.stream} active={runActive} />}
         {currentPlan && (
           <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
         )}
