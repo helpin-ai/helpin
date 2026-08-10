@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -60,7 +61,7 @@ func (h *AutomationRuleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		req.WorkspaceID = workspaceID
 	}
 
-	rule, err := h.ruleEngine.CreateRule(r.Context(), workspaceID, req)
+	rule, err := h.ruleEngine.CreateRuleForActor(r.Context(), workspaceID, middleware.GetUserID(r.Context()), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

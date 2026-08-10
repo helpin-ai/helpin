@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -171,44 +170,6 @@ func TestAISectionCandidateContentWithStatusRejectsInvalidJSON(t *testing.T) {
 	_, err := aiSectionCandidateContentWithStatus(json.RawMessage(`{`), model.DocsAISectionCandidateStatusApproved)
 	if err == nil || errors.Is(err, ErrDocsStaleBlockRevision) {
 		t.Fatalf("expected parse error, got %v", err)
-	}
-}
-
-func TestExtractAISectionInstructionURLs(t *testing.T) {
-	urls := extractAISectionInstructionURLs("Check https://usermaven.com/pricing, then https://example.com/docs. Also repeat https://usermaven.com/pricing")
-	if len(urls) != 2 {
-		t.Fatalf("expected 2 URLs, got %v", urls)
-	}
-	if urls[0] != "https://usermaven.com/pricing" || urls[1] != "https://example.com/docs" {
-		t.Fatalf("unexpected URLs: %v", urls)
-	}
-}
-
-func TestValidateAISectionFetchHostRejectsLocalHosts(t *testing.T) {
-	for _, host := range []string{"localhost", "app.local", "127.0.0.1", "10.0.0.8", "::1"} {
-		if err := validateAISectionFetchHost(host); err == nil {
-			t.Fatalf("expected host %q to be rejected", host)
-		}
-	}
-}
-
-func TestExtractAISectionHTMLTitle(t *testing.T) {
-	title := extractAISectionHTMLTitle(`<html><head><title>Usermaven Pricing &amp; Plans</title></head><body>Body</body></html>`)
-	if title != "Usermaven Pricing & Plans" {
-		t.Fatalf("title = %q", title)
-	}
-}
-
-func TestExcerptAISectionFetchedTextPrioritizesPricingFacts(t *testing.T) {
-	prefix := strings.Repeat("Introductory marketing copy without concrete plan prices. ", 80)
-	text := prefix + "Growth plan costs $84/month and includes 3 users. Scale costs $199/month and includes unlimited users. Enterprise has custom pricing and unlimited data history."
-
-	excerpt := excerptAISectionFetchedText(text, "get pricing from https://usermaven.com/pricing", "https://usermaven.com/pricing", 500)
-	if !strings.Contains(excerpt, "Growth plan costs $84/month") || !strings.Contains(excerpt, "Scale costs $199/month") {
-		t.Fatalf("pricing excerpt missed plan prices: %q", excerpt)
-	}
-	if len(excerpt) > 500 {
-		t.Fatalf("excerpt length = %d, want <= 500", len(excerpt))
 	}
 }
 

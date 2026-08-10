@@ -1019,7 +1019,13 @@ func main() {
 	docsBlockService := service.NewDocsBlockService(docsBlockRepo, docsContentService, docsDocumentRepo)
 	docsBlockService.SetActivityService(pmActivityService)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
-	docsAISectionService := service.NewDocsAISectionService(docsAISectionCandidateRepo, docsBlockRepo, docsBlockService, docsDocumentRepo, docsSearchService, supportConversationRepo, agentService, llmProvider, cfg.CrawlerProxyURLs)
+	docsAISectionService := service.NewDocsAISectionService(
+		docsAISectionCandidateRepo,
+		docsBlockRepo,
+		docsBlockService,
+		docsDocumentRepo,
+		agentService,
+	)
 	docsAISectionService.SetRuleEngine(ruleEngine)
 	docsAISectionService.SetActivityService(pmActivityService)
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
@@ -1324,9 +1330,6 @@ func main() {
 	if reranker := service.NewHTTPSupportKnowledgeReranker(cfg.SupportRerankerURL, cfg.SupportRerankerModel, cfg.SupportRerankerAPIKey); reranker != nil {
 		supportAIService.SetKnowledgeReranker(reranker)
 	}
-	if strings.TrimSpace(cfg.AnthropicAPIKey) != "" {
-		supportAIService.SetTaskDraftLLM(service.NewEinoSupportTaskDraftLLM(cfg.AnthropicAPIKey, "claude-sonnet-4-6"))
-	}
 	supportInboxService.SetSupportAIService(supportAIService)
 
 	// Coverage telemetry: repos → services → async recorder → inject into hot-path services.
@@ -1392,11 +1395,6 @@ func main() {
 			}
 		}()
 	}
-
-	supportCoverageDigestService := service.NewSupportCoverageDigestService(
-		supportCoverageRepo, workspaceRepo, appEmailClient, cfg.AppBaseURL,
-	)
-	_ = supportCoverageDigestService // wired to ticker in follow-up
 
 	orgService := service.NewOrganizationService(orgRepo)
 	orgService.SetCustomerIOIdentityService(customerIOIdentityService)

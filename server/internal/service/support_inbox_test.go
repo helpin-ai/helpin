@@ -2515,11 +2515,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_DoesNotFallBackSilentlyWh
 	}
 }
 
-// Verifies the Eino-backed structured-output path: when a supportTaskDraftLLM
-// is injected, the service uses its schema-forced tool-call output and
-// bypasses the plain ChatCompletion path. Guards the wiring added in the
-// Eino migration.
-func TestSupportInboxServiceCreateTaskFromConversation_UsesInjectedTaskDraftLLM(t *testing.T) {
+func TestSupportInboxServiceCreateTaskFromConversation_UsesStructuredLLMOutput(t *testing.T) {
 	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
@@ -2545,19 +2541,16 @@ func TestSupportInboxServiceCreateTaskFromConversation_UsesInjectedTaskDraftLLM(
 	)
 	svc.SetTaskService(env.svc)
 
-	fake := &fakeSupportTaskDraftLLM{
-		draft: &supportConversationTaskDraft{
-			Title:       "SERP Analyzer token rejected during content generation",
-			Summary:     "The SERP Analyzer integration rejects the stored token, blocking content generation end-to-end.",
-			Description: "## Problem\nSERP token is rejected.\n\n## Impact\nCustomer cannot generate content.\n",
-			TaskType:    "bug",
-			Priority:    "high",
-		},
+	fake := &recordingSupportTaskDraftProvider{
+		response: `{
+			"title":"SERP Analyzer token rejected during content generation",
+			"summary":"The SERP Analyzer integration rejects the stored token, blocking content generation end-to-end.",
+			"description_markdown":"## Problem\nSERP token is rejected.\n\n## Impact\nCustomer cannot generate content.\n",
+			"task_type":"bug",
+			"priority":"high"
+		}`,
 	}
-	// No llmProvider is set — the legacy ChatCompletion path would fail.
-	// If the Eino path is wired correctly, the service must not touch it.
-	aiSvc := &SupportAIService{}
-	aiSvc.SetTaskDraftLLM(fake)
+	aiSvc := &SupportAIService{llmProvider: fake}
 	svc.SetSupportAIService(aiSvc)
 
 	conversation := &model.SupportConversation{
@@ -2589,31 +2582,37 @@ func TestSupportInboxServiceCreateTaskFromConversation_UsesInjectedTaskDraftLLM(
 		t.Fatalf("CreateTaskFromConversation: %v", err)
 	}
 	if fake.calls != 1 {
-		t.Fatalf("expected taskDraftLLM to be called exactly once, got %d", fake.calls)
+		t.Fatalf("expected LLM provider to be called exactly once, got %d", fake.calls)
 	}
-	if fake.lastModel == "" {
-		t.Errorf("expected taskDraftLLM request to include a resolved model name")
+	if fake.request.Model == "" {
+		t.Error("expected request to include a resolved model name")
+	}
+	if !fake.request.JSONMode || !fake.request.JSONSchemaStrict {
+		t.Fatalf("expected strict structured output request, got %#v", fake.request)
+	}
+	properties, ok := fake.request.JSONSchema["properties"].(map[string]any)
+	if !ok || properties["description_markdown"] == nil {
+		t.Fatalf("expected task draft response schema, got %#v", fake.request.JSONSchema)
 	}
 	if resp.TaskName != "SERP Analyzer token rejected during content generation" {
 		t.Errorf("task_name = %q, want the injected draft title", resp.TaskName)
 	}
 }
 
-type fakeSupportTaskDraftLLM struct {
-	draft     *supportConversationTaskDraft
-	err       error
-	calls     int
-	lastModel string
+type recordingSupportTaskDraftProvider struct {
+	response string
+	err      error
+	calls    int
+	request  llm.ChatRequest
 }
 
-func (f *fakeSupportTaskDraftLLM) GenerateTaskDraft(_ context.Context, req supportTaskDraftRequest) (*supportConversationTaskDraft, error) {
+func (f *recordingSupportTaskDraftProvider) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	f.calls++
-	f.lastModel = req.Model
+	f.request = req
 	if f.err != nil {
 		return nil, f.err
 	}
-	copy := *f.draft
-	return &copy, nil
+	return &llm.ChatResponse{Content: f.response}, nil
 }
 
 func TestSupportInboxServiceCreateTaskFromConversation_FailsWhenContextIsTooWeak(t *testing.T) {

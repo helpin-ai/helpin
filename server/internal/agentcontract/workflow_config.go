@@ -40,11 +40,6 @@ const (
 	defaultWorkflowCommandTimeout = 2 * time.Minute
 )
 
-// DefaultWorkflowConfig returns host-side runtime defaults.
-func DefaultWorkflowConfig() *WorkflowConfig {
-	return DefaultWorkflowConfigForAgent(nil)
-}
-
 // DefaultWorkflowConfigForAgent returns host-side runtime defaults for an agent.
 func DefaultWorkflowConfigForAgent(agent *model.Agent) *WorkflowConfig {
 	maxIterations := defaultWorkflowMaxIterations

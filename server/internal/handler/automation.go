@@ -111,7 +111,7 @@ func (h *AutomationHandler) CreateFlow(w http.ResponseWriter, r *http.Request) {
 		req.WorkspaceID = workspaceID
 	}
 
-	rule, err := h.ruleEngine.CreateRule(r.Context(), workspaceID, req)
+	rule, err := h.ruleEngine.CreateRuleForActor(r.Context(), workspaceID, middleware.GetUserID(r.Context()), req)
 	if err != nil {
 		writeWorkspaceSkillError(w, err)
 		return

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
+	"github.com/helpin-ai/helpin/server/internal/automationcron"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -293,7 +294,7 @@ func (s *AutomationInventoryService) automationRuleItems(ctx context.Context, wo
 	}
 
 	healthByRuleID := map[string]model.AutomationHealthSummary{}
-	runCountsByRuleID := map[string]int64{}
+	runCountsByRuleID := map[string]repository.AutomationRuleExecutionCounts{}
 	if s.triggerExecRepo != nil {
 		ruleIDs := collectRuleIDs(rules)
 		latestExecutions, err := s.triggerExecRepo.ListLatestAutomationRuleExecutions(ctx, workspaceID, ruleIDs)
@@ -328,7 +329,19 @@ func (s *AutomationInventoryService) automationRuleItems(ctx context.Context, wo
 		health.Metrics = ensureMetrics(health.Metrics)
 		health.Metrics["trigger_type"] = rule.TriggerType
 		health.Metrics["action_type"] = rule.ActionType
-		health.Metrics["total_runs"] = runCountsByRuleID[rule.ID]
+		counts := runCountsByRuleID[rule.ID]
+		health.Metrics["total_runs"] = counts.Total
+		health.Metrics["error_runs"] = counts.Failed
+		if rule.Enabled && rule.TriggerType == model.TriggerCron {
+			var cfg model.TriggerConfigCron
+			if err := json.Unmarshal(rule.TriggerConfig, &cfg); err == nil {
+				if schedule, _, err := resolveCronTriggerConfig(cfg); err == nil {
+					if nextRun, err := automationcron.Next(schedule, time.Now()); err == nil {
+						health.Metrics["next_run_at"] = nextRun.Format(time.RFC3339)
+					}
+				}
+			}
+		}
 		items = append(items, inventoryItemFromCatalog(entry,
 			fmt.Sprintf("automation_rule:rule:%s", rule.ID),
 			model.AutomationScopeWorkspace, workspaceID,
