@@ -874,7 +874,7 @@ func (s *AgentRuntimeProjectionService) recoverSupportCoverageGapOutcomeFromTool
 		case "create_document":
 			action = SupportCoverageAgentActionDocumentCreated
 			documentID = firstRuntimeToolCallString(call.Output, "document_id", "id")
-		case "write_document_content", "update_document_block", "insert_document_block", "insert_document_image":
+		case "write_document_content", "update_document_block", "insert_document_block", "insert_document_artifact", "insert_document_image":
 			action = SupportCoverageAgentActionDocumentUpdated
 			documentID = firstRuntimeToolCallString(call.Output, "document_id")
 			if documentID == "" {

@@ -479,6 +479,22 @@ func TestRenderHTML_VideoEmbedUnsafeURL(t *testing.T) {
 	}
 }
 
+func TestRenderHTML_ArtifactVideoUsesPrivatePlaceholder(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"artifactVideo","attrs":{"artifactId":"asset-1","src":"helpin://artifacts/asset-1","fileName":"login-flow.mp4","description":"Login flow","caption":"Authentication walkthrough"}}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatalf("RenderHTML: %v", err)
+	}
+	for _, want := range []string{`data-private-artifact-video`, `login-flow.mp4`, `Authentication walkthrough`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected %q in artifact video HTML, got: %s", want, got)
+		}
+	}
+	if strings.Contains(got, "helpin://") || strings.Contains(got, "asset-1") {
+		t.Fatalf("private artifact reference leaked into static HTML: %s", got)
+	}
+}
+
 func TestRenderHTML_HTMLBlock(t *testing.T) {
 	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"html":"<div class=\"custom\"><p>Safe content</p></div>"}}]}`
 	got, err := RenderHTML(json.RawMessage(input))

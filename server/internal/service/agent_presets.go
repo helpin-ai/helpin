@@ -738,7 +738,7 @@ func askAgentPresetTools() []string {
 		"read_document", "get_document_blocks", "search_documents",
 		"create_space", "create_collection", "create_document", "update_space",
 		"update_collection", "move_document", "write_document_content",
-		"update_document_block", "insert_document_image", "link_document_to_object",
+		"update_document_block", "insert_document_artifact", "link_document_to_object",
 		"publish_document_change_proposal", "publish_ai_section_candidate",
 		// CRM reads and approval-gated writes.
 		"list_deals", "list_contacts", "list_buyer_signals", "add_deal_note",

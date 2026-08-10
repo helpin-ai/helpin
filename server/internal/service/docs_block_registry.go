@@ -10,20 +10,21 @@ import (
 type docsBlockKind string
 
 const (
-	docsBlockKindAISection   docsBlockKind = "aiSection"
-	docsBlockKindCitation    docsBlockKind = "citationBlock"
-	docsBlockKindEntityEmbed docsBlockKind = "entityEmbed"
-	docsBlockKindSavedView   docsBlockKind = "savedViewEmbed"
-	docsBlockKindToggle      docsBlockKind = "toggleSection"
-	docsBlockKindFile        docsBlockKind = "fileAttachment"
-	docsBlockKindTOC         docsBlockKind = "tableOfContents"
-	docsBlockKindRichEmbed   docsBlockKind = "richEmbed"
-	docsBlockKindCallout     docsBlockKind = "callout"
-	docsBlockKindImage       docsBlockKind = "resizableImage"
-	docsBlockKindVideo       docsBlockKind = "videoEmbed"
-	docsBlockKindTable       docsBlockKind = "table"
-	docsBlockKindCode        docsBlockKind = "codeBlock"
-	docsBlockKindHTML        docsBlockKind = "htmlBlock"
+	docsBlockKindAISection     docsBlockKind = "aiSection"
+	docsBlockKindCitation      docsBlockKind = "citationBlock"
+	docsBlockKindEntityEmbed   docsBlockKind = "entityEmbed"
+	docsBlockKindSavedView     docsBlockKind = "savedViewEmbed"
+	docsBlockKindToggle        docsBlockKind = "toggleSection"
+	docsBlockKindFile          docsBlockKind = "fileAttachment"
+	docsBlockKindTOC           docsBlockKind = "tableOfContents"
+	docsBlockKindRichEmbed     docsBlockKind = "richEmbed"
+	docsBlockKindCallout       docsBlockKind = "callout"
+	docsBlockKindImage         docsBlockKind = "resizableImage"
+	docsBlockKindVideo         docsBlockKind = "videoEmbed"
+	docsBlockKindArtifactVideo docsBlockKind = "artifactVideo"
+	docsBlockKindTable         docsBlockKind = "table"
+	docsBlockKindCode          docsBlockKind = "codeBlock"
+	docsBlockKindHTML          docsBlockKind = "htmlBlock"
 )
 
 type docsBlockDefinition struct {
@@ -109,6 +110,14 @@ var docsBlockRegistry = map[docsBlockKind]docsBlockDefinition{
 		Label:             "Video",
 		AgentReadableKind: "video",
 		Attrs:             []string{"provider", "sourceUrl", "embedUrl", "title"},
+	},
+	docsBlockKindArtifactVideo: {
+		Kind:               docsBlockKindArtifactVideo,
+		Label:              "Private video",
+		AgentReadableKind:  "artifact_video",
+		Attrs:              []string{"artifactId", "fileName", "contentType", "description", "caption"},
+		PermissionBehavior: "workspace_artifact",
+		AuditBehavior:      "artifact_linked",
 	},
 	docsBlockKindTable: {
 		Kind:              docsBlockKindTable,

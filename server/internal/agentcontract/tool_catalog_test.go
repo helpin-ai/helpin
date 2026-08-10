@@ -228,6 +228,21 @@ func TestPMToolCatalogContracts(t *testing.T) {
 	}
 }
 
+func TestInsertDocumentArtifactCatalogContract(t *testing.T) {
+	catalog := ListToolCatalog()
+	toolsByName := make(map[string]any, len(catalog.Tools))
+	for _, tool := range catalog.Tools {
+		toolsByName[tool.Name] = tool.InputSchema
+	}
+	schema := requireCatalogSchema(t, toolsByName, "insert_document_artifact")
+	assertSchemaFields(t, "insert_document_artifact", schema, []string{"document_id", "artifact_id", "description", "after_block_id", "caption"})
+	assertRequiredFields(t, "insert_document_artifact", schema, []string{"document_id", "artifact_id", "description"})
+	assertClosedObjectSchemas(t, schema, "insert_document_artifact")
+	if _, ok := toolsByName["insert_document_image"]; !ok {
+		t.Fatal("compatibility insert_document_image alias is missing")
+	}
+}
+
 func TestSafeOperationalToolCatalogContracts(t *testing.T) {
 	expected := map[string]string{
 		"update_task_delivery_target": "PM / Delivery", "update_epic_delivery_target": "PM / Delivery",
