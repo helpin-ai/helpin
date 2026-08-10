@@ -59,7 +59,7 @@
 
 - [ ] Read back each campaign immediately before mutation and save the complete recipients/trigger field group required by Fly API replacement semantics.
 - [ ] Preview campaign 4 entry change from `workspace_created` to `trial_started` with `cio ... --dry-run`.
-- [ ] Preview campaign 4 conditional-wait changes: `subscription_started` to `payment_succeeded`, retain `trial_expired`, remove unsupported `subscription_canceled`, and keep `workspace_id` correlation.
+- [ ] Preview campaign 4 conditional-wait changes: `subscription_started` to `payment_succeeded`, `subscription_canceled` to `payment_failed`, retain `trial_expired`, and keep `workspace_id` correlation while preserving the existing four-edge graph.
 - [ ] Preview campaign 5 recovery wait change from `payment_recovered` to `payment_succeeded` with `workspace_id` correlation.
 - [ ] Preview campaign 6 entry change from `subscription_started` to `payment_succeeded`.
 - [ ] Apply the previewed mutations without changing campaign state.

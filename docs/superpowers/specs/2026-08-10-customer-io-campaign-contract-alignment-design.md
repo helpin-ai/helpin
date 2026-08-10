@@ -45,7 +45,7 @@ All campaign mutations remain in draft.
 - Organization billing recovery (5): keep `payment_failed`; its recovery wait becomes `payment_succeeded`, correlated by `workspace_id` rather than organization-wide state.
 - Upgrade confirmation (6): entry event becomes `payment_succeeded`.
 
-The trial lifecycle conditional waits replace `subscription_started` with `payment_succeeded`, retain `trial_expired`, and remove unsupported `subscription_canceled` checks unless an equivalent canonical event is introduced later. All comparisons remain correlated by event `workspace_id`.
+The trial lifecycle conditional waits replace `subscription_started` with `payment_succeeded`, replace unsupported `subscription_canceled` with `payment_failed`, and retain `trial_expired`. This preserves the existing four-edge conditional-wait graph: successful payment, failed payment, or expiry exits onboarding, while timeout continues to the next message. All comparisons remain correlated by event `workspace_id`.
 
 ### Segments
 
