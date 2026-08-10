@@ -427,9 +427,9 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
 
     const workspaceWithCloseouts: SprintPlanningWorkspaceData = {
       ...planningQuery.data,
-      buckets: planningQuery.data.buckets.map((bucket) => ({
+      buckets: (planningQuery.data.buckets ?? []).map((bucket) => ({
         ...bucket,
-        sprints: bucket.sprints.map((card) => ({
+        sprints: (bucket.sprints ?? []).map((card) => ({
           ...card,
           closeout: closeoutBySprintId.get(card.sprint.id),
         })),
@@ -513,7 +513,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   };
 
   const handleOpenLinkTasks = (sprintId: string) => {
-    const card = planningQuery.data?.buckets
+    const card = (planningQuery.data?.buckets ?? [])
       .flatMap((bucket) => bucket.sprints ?? [])
       .find((entry) => entry.sprint.id === sprintId);
     const sprintTeamId = card?.sprint.team_id ?? '';
@@ -545,8 +545,8 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   };
 
   // Check unfiltered data for any sprints (to distinguish "no sprints ever" from "no sprints matching filter")
-  const hasAnySprintUnfiltered = Boolean(planningQuery.data?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
-  const hasAnySprintFiltered = Boolean(filteredWorkspace?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
+  const hasAnySprintUnfiltered = Boolean(planningQuery.data?.buckets?.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
+  const hasAnySprintFiltered = Boolean(filteredWorkspace?.buckets?.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
   const isSearchFiltered = normalizedSearchQuery.length > 0;
   const isFiltered = statusFilter !== 'all' || isSearchFiltered;
 

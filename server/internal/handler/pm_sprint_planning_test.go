@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,6 +78,9 @@ func TestPMSprintHandler_PlanningWorkspace(t *testing.T) {
 	}
 	if payload.BacklogTotal != 1 {
 		t.Fatalf("backlog_total = %d, want 1", payload.BacklogTotal)
+	}
+	if strings.Contains(rr.Body.String(), `"sprints":null`) || strings.Contains(rr.Body.String(), `"preview_tasks":null`) || strings.Contains(rr.Body.String(), `"backlog_tasks":null`) {
+		t.Fatalf("planning response must encode empty collections as arrays, body=%s", rr.Body.String())
 	}
 
 	backlogReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/pm/sprints/backlog-tasks?workspace_id=%s&team_id=%s&page=1&per_page=1", workspaceID, teamID), nil)

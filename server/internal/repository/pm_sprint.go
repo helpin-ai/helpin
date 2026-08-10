@@ -185,9 +185,9 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 
 	now := time.Now().UTC()
 	buckets := map[string]*model.SprintPlanningBucket{
-		"active":    {Key: "active", Label: "Active"},
-		"upcoming":  {Key: "upcoming", Label: "Upcoming"},
-		"completed": {Key: "completed", Label: "Completed"},
+		"active":    {Key: "active", Label: "Active", Sprints: []model.SprintPlanningCard{}},
+		"upcoming":  {Key: "upcoming", Label: "Upcoming", Sprints: []model.SprintPlanningCard{}},
+		"completed": {Key: "completed", Label: "Completed", Sprints: []model.SprintPlanningCard{}},
 	}
 	orderedBucketKeys := []string{"active", "upcoming", "completed"}
 
@@ -231,7 +231,9 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 				continue
 			}
 			card.Stats = statsBySprintID[sprintID]
-			card.PreviewTasks = previewStoriesBySprintID[sprintID]
+			if previewTasks, ok := previewStoriesBySprintID[sprintID]; ok {
+				card.PreviewTasks = previewTasks
+			}
 			if overflow := card.Stats.TaskCount - len(card.PreviewTasks); overflow > 0 {
 				card.TaskPreviewOverflow = overflow
 			}
@@ -867,7 +869,9 @@ func (r *PMSprintRepository) listPlanningBacklogStories(ctx context.Context, wor
 		return nil, 0, fmt.Errorf("count planning backlog stories: %w", err)
 	}
 
-	var stories []model.SprintPlanningTaskPreview
+	// Always return an array to clients, including when the team's backlog is empty.
+	// A nil slice is encoded as JSON null, which is not a usable collection in the UI.
+	stories := make([]model.SprintPlanningTaskPreview, 0)
 	if err := base.
 		Select(`
 			s.id,

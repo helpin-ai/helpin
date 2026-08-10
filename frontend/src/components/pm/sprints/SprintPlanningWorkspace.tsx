@@ -72,6 +72,7 @@ export function SprintPlanningWorkspace({
   onCreateTask,
   onAssignTask,
 }: SprintPlanningWorkspaceProps) {
+  const buckets = workspace?.buckets ?? [];
   const ownerByMemberId = useMemo(() => {
     const map = new Map<string, AssignableMember>();
     for (const member of members) {
@@ -82,10 +83,10 @@ export function SprintPlanningWorkspace({
   }, [members]);
 
   const preferredSprintId =
-    workspace?.buckets.find((bucket) => bucket.key === 'active')?.sprints?.[0]?.sprint.id ??
-    workspace?.buckets.find((bucket) => bucket.key === 'upcoming')?.sprints?.[0]?.sprint.id ??
+    buckets.find((bucket) => bucket.key === 'active')?.sprints?.[0]?.sprint.id ??
+    buckets.find((bucket) => bucket.key === 'upcoming')?.sprints?.[0]?.sprint.id ??
     null;
-  const hasAnySprint = Boolean(workspace?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
+  const hasAnySprint = buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0);
 
   const [activeTask, setActiveTask] = useState<SprintPlanningTaskPreview | null>(null);
   const [activeDropTargetId, setActiveDropTargetId] = useState<string | null>(null);
@@ -177,9 +178,9 @@ export function SprintPlanningWorkspace({
   const sprintCards = useMemo(
     () =>
       ['upcoming', 'active', 'completed'].flatMap(
-        (key) => workspace?.buckets.find((b) => b.key === key)?.sprints ?? [],
+        (key) => buckets.find((b) => b.key === key)?.sprints ?? [],
       ),
-    [workspace?.buckets],
+    [buckets],
   );
 
   if (!workspace || !hasAnySprint) {
