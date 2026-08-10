@@ -21,6 +21,13 @@ func TestPublisher_NilSafe(t *testing.T) {
 	p.Publish(Event{Action: "created", Entity: "test", WorkspaceID: "ws-1"})
 }
 
+func TestNewOrderedJetStreamPublisherUsesSynchronousDelivery(t *testing.T) {
+	publisher := NewOrderedJetStreamPublisher(nil)
+	if publisher.queue != nil {
+		t.Fatal("ordered JetStream publisher unexpectedly has an asynchronous queue")
+	}
+}
+
 func TestPublisher_LocalOnly(t *testing.T) {
 	hub := NewHub()
 	publisher := NewPublisher(hub, nil)

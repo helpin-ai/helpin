@@ -133,7 +133,13 @@ func TestReviewAgentSystemPromptIncludesInteractiveLoop(t *testing.T) {
 		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestReviewCheckpoint) + "`",
 		"Treat review as an interactive loop, not a one-shot report.",
 		"After the initial findings pass, produce a `review_checkpoint` handoff and stop.",
-		"Do not finish immediately after posting findings unless the latest human reply clearly says the review is done",
+		"Do not finish immediately after the initial findings pass unless the latest human reply clearly says the review is done",
+		"Do not ask for the same missing value again in the current run.",
+		"Do not offer a selectable option whose label merely promises to provide it",
+		"Ask at most once for a missing path, credential, deployment configuration, or other dependency outside the available workspace.",
+		"Treat an inaccessible external dependency as a delivery blocker, not as a new review finding.",
+		"finish whenever no useful in-scope action remains; an explicit \"done\" reply is not required.",
+		"If an approved finding remains blocked only by an unavailable external dependency, report the partial completion and blocker once and finish as well.",
 		"If the human asks you to implement changes based on the review",
 	} {
 		if !strings.Contains(*prompt, snippet) {

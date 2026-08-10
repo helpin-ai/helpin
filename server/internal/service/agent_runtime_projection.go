@@ -75,7 +75,7 @@ type agentRuntimeProjectionInteractionRepository interface {
 
 type agentRuntimeProjectionSessionSnapshotRepository interface {
 	GetByRun(ctx context.Context, workspaceID, runID string) (*model.CodingSessionStateSnapshot, error)
-	Upsert(ctx context.Context, snapshot *model.CodingSessionStateSnapshot) error
+	UpsertIfNewer(ctx context.Context, snapshot *model.CodingSessionStateSnapshot) (bool, error)
 	DeleteByRun(ctx context.Context, workspaceID, runID string) error
 }
 
@@ -112,6 +112,7 @@ type AgentRuntimeProjectionService struct {
 	now                  func() time.Time
 	v2ReplayMu           sync.Mutex
 	v2ReplayThrough      map[string]int64
+	projectionLocks      [128]sync.Mutex
 }
 
 type agentRuntimeUsagePayload struct {
@@ -206,13 +207,17 @@ func (s *AgentRuntimeProjectionService) SetRunFinalizers(finalizers *AgentRunFin
 	return s
 }
 
-func (s *AgentRuntimeProjectionService) StartNATSConsumer(ctx context.Context, js nats.JetStreamContext) error {
+func (s *AgentRuntimeProjectionService) StartNATSConsumer(
+	ctx context.Context,
+	js nats.JetStreamContext,
+) (returnErr error) {
 	if s == nil || s.runRepo == nil || js == nil {
 		return nil
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			slog.ErrorContext(ctx, "agent runtime projection consumer panic", "panic", recovered)
+			returnErr = fmt.Errorf("agent runtime projection consumer panic: %v", recovered)
 		}
 	}()
 	durable := agentRuntimeProjectionDurable
@@ -258,13 +263,19 @@ func (s *AgentRuntimeProjectionService) StartNATSConsumer(ctx context.Context, j
 	})
 }
 
-func (s *AgentRuntimeProjectionService) StartReconciliationSweep(ctx context.Context, interval, staleAfter time.Duration, limit int) error {
+func (s *AgentRuntimeProjectionService) StartReconciliationSweep(
+	ctx context.Context,
+	interval time.Duration,
+	staleAfter time.Duration,
+	limit int,
+) (returnErr error) {
 	if s == nil || s.runRepo == nil || s.agentRuntimeClient == nil {
 		return nil
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			slog.ErrorContext(ctx, "agent runtime reconciliation sweep panic", "panic", recovered)
+			returnErr = fmt.Errorf("agent runtime reconciliation sweep panic: %v", recovered)
 		}
 	}()
 	if interval <= 0 {
@@ -607,6 +618,10 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	if s == nil || s.runRepo == nil {
 		return fmt.Errorf("agent runtime projection service is not configured")
 	}
+	projectionLock := s.projectionLock(event)
+	projectionLock.Lock()
+	defer projectionLock.Unlock()
+
 	run, err := s.resolveRun(ctx, event)
 	if err != nil {
 		return err
@@ -827,6 +842,20 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}()
 	}
 	return nil
+}
+
+func (s *AgentRuntimeProjectionService) projectionLock(event AgentRuntimeEventEnvelope) *sync.Mutex {
+	key := firstNonEmptyString(
+		strings.TrimSpace(event.RunID),
+		strings.TrimSpace(event.HostRunID),
+		strings.TrimSpace(event.EventID),
+	)
+	var hash uint32 = 2166136261
+	for index := 0; index < len(key); index++ {
+		hash ^= uint32(key[index])
+		hash *= 16777619
+	}
+	return &s.projectionLocks[hash%uint32(len(s.projectionLocks))]
 }
 
 func (s *AgentRuntimeProjectionService) cancelPendingRuntimeInteractions(ctx context.Context, run *model.AgentRun, timestamp time.Time) error {
@@ -1338,7 +1367,7 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 			"event_type", event.Type,
 			"error", err,
 		)
-		return true
+		return s.eventProtocol != "v2"
 	}
 
 	var snapshot *model.CodingSessionStreamSnapshot
@@ -1353,6 +1382,9 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 				"error", err,
 			)
 			record = nil
+		}
+		if snapshot != nil && record != nil && record.ThroughSequence > snapshot.ThroughSequence {
+			snapshot.ThroughSequence = record.ThroughSequence
 		}
 	}
 	if s.eventProtocol == "v2" && event.SequenceNo > 0 && snapshot != nil && snapshot.ThroughSequence >= event.SequenceNo {
@@ -1375,7 +1407,7 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 				)
 			}
 		}
-		return true
+		return s.eventProtocol != "v2"
 	}
 
 	encoded, err := model.EncodeCodingSessionStreamSnapshot(snapshot)
@@ -1387,20 +1419,22 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 			"event_type", event.Type,
 			"error", err,
 		)
-		return true
+		return s.eventProtocol != "v2"
 	}
 
 	nextRecord := &model.CodingSessionStateSnapshot{
 		WorkspaceID:     run.WorkspaceID,
 		RunID:           run.ID,
 		SchemaVersion:   model.CodingSessionStateSnapshotSchemaVersionV1,
+		ThroughSequence: snapshot.ThroughSequence,
 		SnapshotPayload: encoded,
 	}
 	if record != nil {
 		nextRecord.ID = record.ID
 		nextRecord.CreatedAt = record.CreatedAt
 	}
-	if err := s.sessionSnapshotRepo.Upsert(ctx, nextRecord); err != nil {
+	applied, err := s.sessionSnapshotRepo.UpsertIfNewer(ctx, nextRecord)
+	if err != nil {
 		slog.WarnContext(ctx, "persist delegated coding session stream snapshot failed",
 			"run_id", run.ID,
 			"workspace_id", run.WorkspaceID,
@@ -1408,12 +1442,12 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 			"event_type", event.Type,
 			"error", err,
 		)
-		return true
+		return s.eventProtocol != "v2"
 	}
 	// Stream snapshots are surfaced through coding_session_event websocket
 	// events. Do not emit a generic agent_run update for every transcript
 	// delta; that causes run-summary refetch storms in sheet/dock views.
-	return true
+	return applied
 }
 
 func (s *AgentRuntimeProjectionService) publishRuntimeCodingSessionEvent(run *model.AgentRun, event AgentRuntimeEventEnvelope) {

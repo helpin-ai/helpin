@@ -109,6 +109,23 @@ func (h *DockChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, detail)
 }
 
+// GenerateTitle handles POST /api/dock/chats/{chatID}/title.
+func (h *DockChatHandler) GenerateTitle(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	userID := middleware.GetUserID(r.Context())
+	var req model.GenerateDockChatTitleRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	chat, err := h.dockChatService.GenerateTitle(r.Context(), workspaceID, userID, chi.URLParam(r, "chatID"), req)
+	if err != nil {
+		writeDockChatError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, chat)
+}
+
 // GetChatRun handles GET /api/dock/chats/{chatID}/run — the backing run's
 // coding-session snapshot, proxied through the chat ownership check.
 func (h *DockChatHandler) GetChatRun(w http.ResponseWriter, r *http.Request) {
