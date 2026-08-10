@@ -36,6 +36,7 @@
 
 - [ ] Write failing SQLite round-trip and unique-semantic-key tests. SQLite tests create their compatible table through GORM `AutoMigrate`; they do not execute PostgreSQL JSONB/index syntax.
 - [ ] Write a failing migration-contract test in `server/internal/dbmigrate/migrator_test.go` that loads the controlled SQL and asserts JSONB defaults, status/attempt checks, unique semantic key, nullable `ON DELETE SET NULL` FK, and the partial due-work index.
+- [ ] Run `cd server && go test ./internal/dbmigrate -run CustomerIO -count=1`; verify RED because the controlled migration is absent.
 - [ ] Run `cd server && go test ./internal/repository -run TestCustomerIOLifecycleOutbox -count=1`; verify compilation fails because the model is missing.
 - [ ] Define `pending`, `processing`, `delivered`, and `failed` states; store attributes and recipient snapshots as `json.RawMessage`.
 - [ ] Add idempotent DDL with JSONB defaults, status/attempt checks, unique `semantic_key`, nullable workspace FK with `ON DELETE SET NULL`, and a partial due-work index.
@@ -56,7 +57,8 @@
 - [ ] Implement only `MarkDelivered` with row ID, processing status, and claim token predicates; re-run and expect GREEN.
 - [ ] Write failing retry/failure tests for stale/current tokens and attempt state; run `go test ./internal/repository -run 'TestCustomerIOLifecycleOutbox(ScheduleRetry|MarkFailed)' -count=1` and verify RED.
 - [ ] Implement `ScheduleRetry` and `MarkFailed`; re-run and expect GREEN.
-- [ ] Write a failing 2 KiB error-truncation test; implement the minimal truncation helper and re-run it GREEN.
+- [ ] Write a failing `TestCustomerIOLifecycleOutboxErrorTruncation`; run `go test ./internal/repository -run TestCustomerIOLifecycleOutboxErrorTruncation -count=1` and verify RED.
+- [ ] Implement the minimal 2 KiB truncation helper; re-run the exact test and expect GREEN.
 - [ ] Commit with `git commit -m "feat(customerio): add fenced outbox claims"`.
 
 ### Task 3: Track Client Contract And Stable IDs
