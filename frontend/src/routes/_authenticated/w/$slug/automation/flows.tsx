@@ -53,7 +53,7 @@ function AutomationFlowsRoute() {
   };
 
   return (
-    <div className="h-full overflow-auto p-4 md:p-6">
+    <div className="h-full overflow-auto p-4 pb-20 md:p-6 md:pb-24">
       <AutomationFlowsPage search={search} onSearchChange={handleSearchChange} />
     </div>
   );

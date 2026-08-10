@@ -289,7 +289,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		Name:          "Hourly Repo Sweep",
 		Enabled:       true,
 		TriggerType:   model.TriggerCron,
-		TriggerConfig: json.RawMessage(`{}`),
+		TriggerConfig: json.RawMessage(`{"schedule":"0 * * * *"}`),
 		ActionType:    model.ActionStartAgentRun,
 		ActionConfig:  json.RawMessage(`{"agent_id":"agent-1","target_type":"repository","target_id":"repo-1"}`),
 	}).Error; err != nil {
@@ -322,7 +322,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		TriggerType:   testStringPtr(model.TriggerCron),
 		ReferenceID:   testStringPtr("rule-cron-1"),
 		ReferenceType: testStringPtr("automation_rule"),
-		Status:        model.AgentTriggerExecutionStatusCompleted,
+		Status:        model.AgentTriggerExecutionStatusFailed,
 		FiredAt:       now.Add(-25 * time.Hour),
 		CompletedAt:   &previousCompletedAt,
 	}).Error; err != nil {
@@ -409,6 +409,12 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 	}
 	if got := ruleItem.Health.Metrics["total_runs"]; got != float64(2) && got != int64(2) && got != 2 {
 		t.Fatalf("expected automation rule total_runs 2, got %#v", got)
+	}
+	if got := ruleItem.Health.Metrics["error_runs"]; got != float64(1) && got != int64(1) && got != 1 {
+		t.Fatalf("expected automation rule error_runs 1, got %#v", got)
+	}
+	if got, ok := ruleItem.Health.Metrics["next_run_at"].(string); !ok || got == "" {
+		t.Fatalf("expected automation rule next_run_at, got %#v", ruleItem.Health.Metrics["next_run_at"])
 	}
 	if got := ruleItem.Health.Metrics["last_execution_id"]; got != "exec-rule-cron-1" {
 		t.Fatalf("expected automation rule last_execution_id exec-rule-cron-1, got %#v", got)

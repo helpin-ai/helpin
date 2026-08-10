@@ -27,10 +27,6 @@ func HelpinMCPRuntimeToolName(alias string) string {
 	return HelpinMCPToolPrefix + canonical
 }
 
-func HelpinMCPDisplayToolName(name string) string {
-	return CanonicalToolName(name)
-}
-
 func IsHelpinMCPRuntimeToolName(name string) bool {
 	return strings.HasPrefix(strings.TrimSpace(name), HelpinMCPToolPrefix)
 }
@@ -61,17 +57,6 @@ func IsHelpinMCPToolAlias(name string) bool {
 
 func RuntimeToolNameForPrompt(alias string) string {
 	return HelpinMCPRuntimeToolName(alias)
-}
-
-func RuntimeToolNamesForPrompt(aliases ...string) []string {
-	names := make([]string, 0, len(aliases))
-	for _, alias := range aliases {
-		name := RuntimeToolNameForPrompt(alias)
-		if name != "" {
-			names = append(names, name)
-		}
-	}
-	return names
 }
 
 func HelpinMCPToolAliases() []string {
