@@ -16,7 +16,7 @@ import (
 
 const (
 	defaultDocsImportAIProvider       = "openrouter"
-	defaultDocsImportAIModel          = "deepseek/deepseek-v4-flash-0731"
+	defaultDocsImportAIModel          = "openai/gpt-5.6-luna"
 	defaultDocsImportAIMaxTokens      = 24000
 	defaultDocsImportAIRequestTimeout = 4 * time.Minute
 )
