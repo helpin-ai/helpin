@@ -62,13 +62,18 @@ type Config struct {
 	// default on the first chat provider that has an API key configured.
 	HelpcenterAnswerProvider string
 	HelpcenterAnswerModel    string
-	CodexOpenAIAuthMode      string
-	CodexEnableChatGPTOAuth  bool
-	CodexChatGPTAccessToken  string
-	CodexChatGPTAccountID    string
-	CloudflareAccountID      string
-	CloudflareAPIToken       string
-	CloudflareAPIBaseURL     string
+	// Docs import AI conversion is an opt-in formatter for imported help articles.
+	DocsImportAIConversionEnabled      bool
+	DocsImportAIConversionProvider     string
+	DocsImportAIConversionModel        string
+	DocsImportAIConversionArticleLimit int
+	CodexOpenAIAuthMode                string
+	CodexEnableChatGPTOAuth            bool
+	CodexChatGPTAccessToken            string
+	CodexChatGPTAccountID              string
+	CloudflareAccountID                string
+	CloudflareAPIToken                 string
+	CloudflareAPIBaseURL               string
 
 	// Website content crawler (optional — controls crawl engine and proxy)
 	CrawlerMode      string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
@@ -282,6 +287,10 @@ func Load() (*Config, error) {
 		OpenRouterBaseURL:                      strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")),
 		HelpcenterAnswerProvider:               strings.TrimSpace(os.Getenv("HELPCENTER_ANSWER_PROVIDER")),
 		HelpcenterAnswerModel:                  strings.TrimSpace(os.Getenv("HELPCENTER_ANSWER_MODEL")),
+		DocsImportAIConversionEnabled:          parseBoolEnv(os.Getenv("DOCS_IMPORT_AI_CONVERSION_ENABLED")),
+		DocsImportAIConversionProvider:         strings.TrimSpace(firstNonEmpty(os.Getenv("DOCS_IMPORT_AI_CONVERSION_PROVIDER"), "openrouter")),
+		DocsImportAIConversionModel:            strings.TrimSpace(firstNonEmpty(os.Getenv("DOCS_IMPORT_AI_CONVERSION_MODEL"), "deepseek/deepseek-v4-flash-0731")),
+		DocsImportAIConversionArticleLimit:     parsePositiveIntEnv(os.Getenv("DOCS_IMPORT_AI_CONVERSION_ARTICLE_LIMIT"), 0),
 		CodexOpenAIAuthMode:                    strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_OPENAI_AUTH_MODE"), "api_key")),
 		CodexEnableChatGPTOAuth:                parseBoolEnv(os.Getenv("CODEX_ENABLE_CHATGPT_OAUTH")),
 		CodexChatGPTAccessToken:                strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCESS_TOKEN")),

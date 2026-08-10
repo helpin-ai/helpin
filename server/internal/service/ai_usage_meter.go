@@ -25,6 +25,7 @@ const (
 	BillingFeatureSupportTaskDraft        = "support_task_draft"
 	BillingFeatureDocsArticleTranslation  = "docs_article_translation"
 	BillingFeatureDocsArticleGeneration   = "docs_article_generation"
+	BillingFeatureDocsImportConversion    = "docs_import_conversion"
 	BillingFeatureBuiltInLightAgentRun    = "built_in_light_agent_run"
 	BillingFeatureScribeRun               = "scribe_run"
 	BillingFeatureMiraRun                 = "mira_run"
@@ -134,6 +135,7 @@ var aiUsageFeatures = map[string]AIUsageFeatureDefinition{
 	BillingFeatureDocsGeneration:          {FeatureKey: BillingFeatureDocsGeneration, Label: "Document generation", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
 	BillingFeatureDocsArticleTranslation:  {FeatureKey: BillingFeatureDocsArticleTranslation, Label: "Help article translation", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
 	BillingFeatureDocsArticleGeneration:   {FeatureKey: BillingFeatureDocsArticleGeneration, Label: "Help article generation", Category: "Docs AI", FloorUnits: 20, Chargeable: true},
+	BillingFeatureDocsImportConversion:    {FeatureKey: BillingFeatureDocsImportConversion, Label: "Help article import formatting", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
 	BillingFeatureCRMAction:               {FeatureKey: BillingFeatureCRMAction, Label: "CRM / deal action", Category: "CRM AI", FloorUnits: 5, Chargeable: true},
 	BillingFeatureBuiltInLightAgentRun:    {FeatureKey: BillingFeatureBuiltInLightAgentRun, Label: "Built-in agent run", Category: "Agents", FloorUnits: 40, Chargeable: true},
 	BillingFeaturePlanningRun:             {FeatureKey: BillingFeaturePlanningRun, Label: "Planning run", Category: "Agents", FloorUnits: 80, Chargeable: true},
