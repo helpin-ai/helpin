@@ -12,7 +12,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-func TestCustomerIOOutboxSQLiteRoundTrip(t *testing.T) {
+func TestCustomerIOLifecycleOutboxSQLiteRoundTrip(t *testing.T) {
 	db := openCustomerIOOutboxTestDB(t)
 	now := time.Date(2026, 8, 10, 12, 30, 0, 0, time.UTC)
 	workspaceID := uuid.NewString()
@@ -51,7 +51,7 @@ func TestCustomerIOOutboxSQLiteRoundTrip(t *testing.T) {
 	}
 }
 
-func TestCustomerIOOutboxSemanticKeyIsUnique(t *testing.T) {
+func TestCustomerIOLifecycleOutboxSemanticKeyIsUnique(t *testing.T) {
 	db := openCustomerIOOutboxTestDB(t)
 	row := model.CustomerIOOutbox{
 		ID:                uuid.NewString(),
