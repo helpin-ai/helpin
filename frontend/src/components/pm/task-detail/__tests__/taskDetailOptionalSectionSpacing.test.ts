@@ -12,16 +12,23 @@ describe('TaskDetailPanel optional section spacing', () => {
     const checklistIndex = panelSource.indexOf('<ChecklistItems');
     const relatedIndex = panelSource.indexOf('<details id="task-related-section"');
     const relationshipsIndex = panelSource.indexOf('<TaskRelationshipsSection');
-    const externalLinksIndex = panelSource.indexOf('<ExternalLinks');
-    const associationsIndex = panelSource.indexOf('<AssociationsPanel');
+    const docsIndex = panelSource.indexOf('section="docs"');
+    const externalLinksIndex = panelSource.indexOf('<ExternalLinks', relationshipsIndex);
+    const supportIndex = panelSource.indexOf('section="support"');
+    const crmIndex = panelSource.indexOf('section="crm"');
 
     expect(overviewIndex).toBeGreaterThan(-1);
     expect(panelSource).toContain('<TaskStandingBriefCard');
     expect(checklistIndex).toBeGreaterThan(overviewIndex);
     expect(relatedIndex).toBeGreaterThan(checklistIndex);
     expect(relationshipsIndex).toBeGreaterThan(relatedIndex);
-    expect(externalLinksIndex).toBeGreaterThan(relationshipsIndex);
-    expect(associationsIndex).toBeGreaterThan(externalLinksIndex);
+    expect(docsIndex).toBeGreaterThan(relationshipsIndex);
+    expect(externalLinksIndex).toBeGreaterThan(docsIndex);
+    expect(supportIndex).toBeGreaterThan(externalLinksIndex);
+    expect(crmIndex).toBeGreaterThan(supportIndex);
+    expect(panelSource).not.toContain('<TabsList variant="line"');
+    expect(panelSource).toContain('hideDocs');
+    expect(panelSource).toContain('flat');
     expect(panelSource).toContain('excludeDocs');
   });
 

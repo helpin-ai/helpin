@@ -4,10 +4,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import { TaskRelationshipsSection } from '../TaskRelationshipsSection';
+import type { GroupedAssociations } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const associations = {
+const associations: GroupedAssociations = {
   task_relationships: {
     blocked_by: [],
     blocking: [],
@@ -16,10 +17,14 @@ const associations = {
     duplicates: [],
     duplicated_by: [],
   },
+  tasks: [],
+  support_conversations: [],
+  crm_records: [],
   docs: [],
 };
 
 vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children }: { children: React.ReactNode }) => <a href="#">{children}</a>,
   useLocation: () => ({ pathname: '/w/acme/pm/tasks' }),
   useNavigate: () => vi.fn(),
 }));
@@ -51,6 +56,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  associations.task_relationships.relates_to = [];
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -141,5 +147,39 @@ describe('TaskRelationshipsSection', () => {
 
     expect(createButton).toBeTruthy();
     expect(createButton?.disabled).toBe(false);
+  });
+
+  it('uses the relationship icon as the relationship-type menu trigger', async () => {
+    associations.task_relationships.relates_to = [
+      {
+        relationship_id: 'rel-1',
+        link_type: 'relates_to',
+        is_active: true,
+        task: {
+          object_type: 'task',
+          object_id: 'task-2',
+          title: 'Review launch copy',
+          task_key: 'MKT-12',
+          task_type: 'chore',
+        },
+      },
+    ];
+    renderSection({ flat: true, hideDocs: true });
+
+    const relationshipTrigger = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Change relationship: Relates to"]',
+    );
+
+    expect(relationshipTrigger).toBeTruthy();
+    expect(container.textContent).not.toContain('Relates to');
+
+    await act(async () => {
+      relationshipTrigger?.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent).toContain('Update Relationship Type');
   });
 });

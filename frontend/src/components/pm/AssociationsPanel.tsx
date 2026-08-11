@@ -129,6 +129,7 @@ interface AssociationsPanelProps {
   className?: string;
   includeTaskRelationships?: boolean;
   excludeDocs?: boolean;
+  section?: SectionKey;
 }
 
 export function AssociationsPanel({
@@ -137,6 +138,7 @@ export function AssociationsPanel({
   objectId,
   className,
   excludeDocs = false,
+  section,
 }: AssociationsPanelProps) {
   const navigate = useNavigate();
   const slug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
@@ -297,7 +299,8 @@ export function AssociationsPanel({
     'Search documents';
 
   return (
-    <div className={cn('px-3 py-4', className)}>
+    <div className={cn(section ? 'py-2' : 'px-3 py-4', className)}>
+      {(!section || section === 'support') && (
       <AssociationsRailSection
         title="Support"
         count={supportConversations.length}
@@ -347,9 +350,11 @@ export function AssociationsPanel({
           </div>
         ))}
       </AssociationsRailSection>
+      )}
 
-      <div className="my-4 h-px bg-border/60" />
+      {!section && <div className="my-4 h-px bg-border/60" />}
 
+      {(!section || section === 'crm') && (
       <AssociationsRailSection
         title="CRM"
         count={crmRecords.length}
@@ -400,10 +405,11 @@ export function AssociationsPanel({
           );
         })}
       </AssociationsRailSection>
+      )}
 
-      {!excludeDocs && (
+      {!excludeDocs && (!section || section === 'docs') && (
         <>
-          <div className="my-4 h-px bg-border/60" />
+          {!section && <div className="my-4 h-px bg-border/60" />}
           <AssociationsRailSection
             title="Docs"
             count={docs.length}

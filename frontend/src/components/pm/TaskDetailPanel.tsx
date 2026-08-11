@@ -1626,6 +1626,20 @@ function TaskDetailPanelBody({
             </MetadataRow>
             )}
 
+            {fieldVis.blocked && (
+            <MetadataRow icon={Shield02Icon} label="Blocker">
+              <input
+                value={form.blocker}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  updateField('blocker', value, { blocker: value || undefined });
+                }}
+                placeholder="None"
+                className="w-full bg-transparent px-1.5 py-0.5 text-xs outline-none placeholder:text-muted-foreground"
+              />
+            </MetadataRow>
+            )}
+
             <div className="col-span-3 h-px bg-border/40 my-1" />
             <MetadataRow icon={ArrowReloadHorizontalIcon} label="Recurrence">
               <button type="button" className="truncate rounded px-1.5 py-0.5 text-left hover:bg-accent" onClick={() => void openRecurringDialog()}>
@@ -1640,27 +1654,62 @@ function TaskDetailPanelBody({
               Related
             </summary>
             <div className="mt-4 space-y-4">
-            <TaskRelationshipsSection
-              workspaceId={workspaceId}
-              taskId={taskDetail.task.id}
-              taskName={taskDetail.task.name}
-              taskDisplayId={taskDetail.task.display_id}
-              workflowId={taskDetail.task.workflow_id}
-              workflowStateId={taskDetail.task.workflow_state_id}
-              epicId={taskDetail.task.epic_id}
-              sprintId={taskDetail.task.sprint_id}
-              teamId={taskDetail.task.team_id}
-              taskType={taskDetail.task.task_type}
-              priority={taskDetail.task.priority}
-              severity={taskDetail.task.severity}
-              externalBlocker={form.blocker}
-              onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
-              composerOpen={relationshipComposerOpen}
-              onComposerOpenChange={setRelationshipComposerOpen}
-              visible
-            />
-            <ExternalLinks workspaceId={workspaceId} entityType="task" entityId={taskDetail.task.id} />
-            <AssociationsPanel objectType="task" objectId={taskDetail.task.id} workspaceId={workspaceId} excludeDocs className="-mx-3 border-t border-border/60" />
+              <TaskRelationshipsSection
+                workspaceId={workspaceId}
+                taskId={taskDetail.task.id}
+                taskName={taskDetail.task.name}
+                taskDisplayId={taskDetail.task.display_id}
+                workflowId={taskDetail.task.workflow_id}
+                workflowStateId={taskDetail.task.workflow_state_id}
+                epicId={taskDetail.task.epic_id}
+                sprintId={taskDetail.task.sprint_id}
+                teamId={taskDetail.task.team_id}
+                taskType={taskDetail.task.task_type}
+                priority={taskDetail.task.priority}
+                severity={taskDetail.task.severity}
+                externalBlocker={form.blocker}
+                onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
+                composerOpen={relationshipComposerOpen}
+                onComposerOpenChange={setRelationshipComposerOpen}
+                hideDocs
+                flat
+                showExternalBlocker={false}
+                visible
+              />
+
+              <div className="h-px bg-border/60" />
+              <AssociationsPanel
+                objectType="task"
+                objectId={taskDetail.task.id}
+                workspaceId={workspaceId}
+                section="docs"
+              />
+
+              <div className="h-px bg-border/60" />
+              <ExternalLinks
+                workspaceId={workspaceId}
+                entityType="task"
+                entityId={taskDetail.task.id}
+                flat
+              />
+
+              <div className="h-px bg-border/60" />
+              <AssociationsPanel
+                objectType="task"
+                objectId={taskDetail.task.id}
+                workspaceId={workspaceId}
+                excludeDocs
+                section="support"
+              />
+
+              <div className="h-px bg-border/60" />
+              <AssociationsPanel
+                objectType="task"
+                objectId={taskDetail.task.id}
+                workspaceId={workspaceId}
+                excludeDocs
+                section="crm"
+              />
             </div>
           </details>
         </aside>

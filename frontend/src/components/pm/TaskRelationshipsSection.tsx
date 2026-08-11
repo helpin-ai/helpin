@@ -72,6 +72,9 @@ interface TaskRelationshipsSectionProps {
   className?: string;
   onContentChange?: (hasContent: boolean) => void;
   onCountChange?: (count: number) => void;
+  hideDocs?: boolean;
+  flat?: boolean;
+  showExternalBlocker?: boolean;
 }
 
 const RELATIONSHIP_OPTIONS: Array<{
@@ -124,18 +127,18 @@ const RELATIONSHIP_COLORS: Record<TaskRelationshipAction, { active: string; icon
 function getRelationshipMeta(linkType: string) {
   switch (linkType) {
     case 'blocks':
-      return { label: 'Blocks', icon: Alert01Icon, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40' };
+      return { label: 'Blocks', icon: Alert01Icon, color: 'text-amber-600 dark:text-amber-400' };
     case 'is_blocked_by':
-      return { label: 'Blocked by', icon: Shield02Icon, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-950/40' };
+      return { label: 'Blocked by', icon: Shield02Icon, color: 'text-red-600 dark:text-red-400' };
     case 'relates_to':
     case 'related_by':
-      return { label: 'Relates to', icon: ArrowLeftRightIcon, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/40' };
+      return { label: 'Relates to', icon: ArrowLeftRightIcon, color: 'text-blue-600 dark:text-blue-400' };
     case 'duplicates':
-      return { label: 'Duplicates', icon: Copy01Icon, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/40' };
+      return { label: 'Duplicates', icon: Copy01Icon, color: 'text-violet-600 dark:text-violet-400' };
     case 'is_duplicated_by':
-      return { label: 'Duplicated by', icon: Copy01Icon, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/40' };
+      return { label: 'Duplicated by', icon: Copy01Icon, color: 'text-violet-600 dark:text-violet-400' };
     default:
-      return { label: linkType, icon: ArrowLeftRightIcon, color: 'text-muted-foreground', bg: 'bg-muted/60' };
+      return { label: linkType, icon: ArrowLeftRightIcon, color: 'text-muted-foreground' };
   }
 }
 
@@ -244,6 +247,9 @@ export function TaskRelationshipsSection({
   className,
   onContentChange,
   onCountChange,
+  hideDocs = false,
+  flat = false,
+  showExternalBlocker = true,
 }: TaskRelationshipsSectionProps) {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const inlineAddRef = useRef<HTMLButtonElement>(null);
@@ -323,7 +329,7 @@ export function TaskRelationshipsSection({
   }, [data]);
 
   const linkedDocs = useMemo(() => data?.docs ?? [], [data]);
-  const relationshipContentCount = allRelationships.length + linkedDocs.length;
+  const relationshipContentCount = allRelationships.length + (hideDocs ? 0 : linkedDocs.length);
   const hasRelationshipContent = relationshipContentCount > 0;
 
   useEffect(() => {
@@ -400,8 +406,9 @@ export function TaskRelationshipsSection({
 
   const popoverBody: ReactNode = (
     <>
-      <div className="border-b border-border/60 bg-muted/20 px-3 pt-2.5 pb-2">
-        <Tabs
+      {!hideDocs && (
+        <div className="border-b border-border/60 bg-muted/20 px-3 pt-2.5 pb-2">
+          <Tabs
           value={popoverTab}
           onValueChange={(v) => {
             setPopoverTab(v as 'tasks' | 'docs');
@@ -424,8 +431,9 @@ export function TaskRelationshipsSection({
               Docs
             </TabsTrigger>
           </TabsList>
-        </Tabs>
-      </div>
+          </Tabs>
+        </div>
+      )}
 
       <div className="space-y-2.5 px-3 py-2.5">
         {popoverTab === 'tasks' ? (
@@ -545,12 +553,12 @@ export function TaskRelationshipsSection({
 
   return (
     <section id="task-relationships-section" className={className}>
-      <div className="rounded-lg border border-border/60 bg-card">
-        <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
+      <div className={cn(!flat && 'rounded-lg border border-border/60 bg-card')}>
+        <div className={cn('flex items-center justify-between', !flat && 'border-b border-border/40 px-3 py-2')}>
           <div className="flex items-center gap-1.5">
-            <ArrowLeftRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
+            {!flat && <ArrowLeftRightIcon className="h-3.5 w-3.5 text-muted-foreground" />}
             <span className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
-              Task Relationships
+              {flat ? 'Tasks' : 'Task Relationships'}
             </span>
             {relationshipContentCount > 0 ? (
               <span className="text-xs font-normal text-muted-foreground">
@@ -580,13 +588,46 @@ export function TaskRelationshipsSection({
             <div
               key={item.relationship_id}
               className={cn(
-                'group flex items-center gap-1.5 px-3 py-2 transition-colors hover:bg-muted/30',
+                'group flex items-center gap-2 px-1 py-2.5 transition-colors hover:bg-muted/30',
                 resolved && 'opacity-50',
               )}
             >
-              <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                <Icon className={cn('h-3.5 w-3.5 shrink-0', meta.color)} />
-                <span className={cn('shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium', meta.bg, meta.color)}>{meta.label}</span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent"
+                    aria-label={`Change relationship: ${meta.label}`}
+                    title={`${meta.label} — change relationship`}
+                  >
+                    <Icon className={cn('h-4 w-4', meta.color)} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-48">
+                  <DropdownMenuLabel className="text-xs">Update Relationship Type</DropdownMenuLabel>
+                  {UPDATE_TYPE_OPTIONS.map((opt) => {
+                    const OptIcon = opt.icon;
+                    return (
+                      <DropdownMenuItem
+                        key={opt.value}
+                        onClick={() => handleUpdateRelationshipType(item.relationship_id, relatedTask.object_id, opt.value)}
+                      >
+                        <OptIcon className="mr-2 h-3.5 w-3.5" />
+                        {opt.label}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => deleteRelationship.mutate(item.relationship_id)}
+                  >
+                    <Delete01Icon className="mr-2 h-3.5 w-3.5" />
+                    Remove relationship
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <div className="min-w-0 flex-1">
                 {workspace?.slug ? (
                   <Link
                     to="/w/$slug/pm/tasks/$taskId"
@@ -594,68 +635,33 @@ export function TaskRelationshipsSection({
                     search={{ team: undefined, run: undefined }}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="min-w-0 truncate text-ui font-medium text-foreground transition-colors hover:text-primary"
+                    className="block truncate text-sm font-medium text-foreground transition-colors hover:text-primary"
                   >
                     {relatedTask.title}
                   </Link>
                 ) : (
-                  <span className="min-w-0 truncate text-ui font-medium text-foreground">
+                  <span className="block truncate text-sm font-medium text-foreground">
                     {relatedTask.title}
                   </span>
                 )}
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
                 {(relatedTask.task_key || relatedTask.display_id) ? (
-                  <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium gap-1">
+                  <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                     {relatedTask.task_type ? (
-                      <TaskTypeIcon taskType={relatedTask.task_type} className="h-3.5 w-3.5" />
+                      <TaskTypeIcon taskType={relatedTask.task_type} className="h-3 w-3" />
                     ) : null}
-                    {relatedTask.task_key ?? relatedTask.display_id}
+                    <span>{relatedTask.task_key ?? relatedTask.display_id}</span>
                     {(relatedTask.completed || resolved) ? (
                       <Tick01Icon className="h-3 w-3 text-green-600" />
                     ) : null}
-                  </Badge>
+                  </div>
                 ) : null}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100"
-                    >
-                      <MoreHorizontalIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuLabel className="text-xs">Update Relationship Type</DropdownMenuLabel>
-                    {UPDATE_TYPE_OPTIONS.map((opt) => {
-                      const OptIcon = opt.icon;
-                      return (
-                        <DropdownMenuItem
-                          key={opt.value}
-                          onClick={() => handleUpdateRelationshipType(item.relationship_id, relatedTask.object_id, opt.value)}
-                        >
-                          <OptIcon className="mr-2 h-3.5 w-3.5" />
-                          {opt.label}
-                        </DropdownMenuItem>
-                      );
-                    })}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() => deleteRelationship.mutate(item.relationship_id)}
-                    >
-                      <Delete01Icon className="mr-2 h-3.5 w-3.5" />
-                      Remove relationship
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
               </div>
             </div>
           );
         })}
 
         {/* Linked docs */}
-        {linkedDocs.map((doc) => (
+        {!hideDocs && linkedDocs.map((doc) => (
           <div
             key={`doc-${doc.object_id}-${doc.association_id ?? 'f'}`}
             className="group flex items-center gap-1.5 px-3 py-2 transition-colors hover:bg-muted/30"
@@ -698,7 +704,7 @@ export function TaskRelationshipsSection({
         ) : null}
 
       {/* + Add Relationship */}
-      <div className="flex items-center gap-2 border-t border-border/40 px-3 py-2">
+      <div className={cn('flex items-center gap-2 py-2', flat ? 'px-1' : 'border-t border-border/40 px-3')}>
         <button
           ref={inlineAddRef}
           type="button"
@@ -755,7 +761,7 @@ export function TaskRelationshipsSection({
       />
 
       {/* External blocker */}
-      {externalBlocker || allRelationships.some((r) => r.link_type === 'is_blocked_by') ? (
+      {showExternalBlocker && (externalBlocker || allRelationships.some((r) => r.link_type === 'is_blocked_by')) ? (
         <div className="mt-4 space-y-1.5">
           <div className="flex items-center gap-1.5">
             <Shield02Icon className="h-3.5 w-3.5 text-muted-foreground" />
