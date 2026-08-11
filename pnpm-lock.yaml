@@ -215,8 +215,8 @@ importers:
         specifier: ^5.2.8
         version: 5.2.8
       '@helpin-ai/react':
-        specifier: ^0.0.38
-        version: 0.0.38(react-router@6.2.2(react@19.2.5))(react@19.2.5)
+        specifier: ^0.0.40
+        version: 0.0.40(react-router@6.2.2(react@19.2.5))(react@19.2.5)
       '@helpin-ai/widget-core':
         specifier: workspace:*
         version: link:../packages/widget-core
@@ -2297,14 +2297,14 @@ packages:
   '@hapi/topo@6.0.2':
     resolution: {integrity: sha512-KR3rD5inZbGMrHmgPxsJ9dbi6zEK+C3ZwUwTa+eMwWLz7oijWUTWD2pMSNNYJAU6Qq+65NkxXjqHr/7LM2Xkqg==}
 
-  '@helpin-ai/react@0.0.38':
-    resolution: {integrity: sha512-4D2ULJt4/Zf8myqJGsxpoQCe61IQGnLPsZdwPmazKY5crQuDCtFkZMtRpYoWFRqfT4etnXK9Cf5Q2ZxYgEMcRw==}
+  '@helpin-ai/react@0.0.40':
+    resolution: {integrity: sha512-qI+Hn02k+xKz4noaP8CsJAGpvJxfwIy7Ngky2/KXtE9YT4N/OLpNwBNfJlSUq6mri6jtTlhYwPBfe+nOYhPFVw==}
     peerDependencies:
       react: 15.x || 16.x || 17.x || 18.x || 19.x
       react-router: 5.x || 6.x || 7.x
 
-  '@helpin-ai/sdk-js@0.0.38':
-    resolution: {integrity: sha512-CdzYl9IUriOG4S4UigUpcgkh/rPDKf1UYviBTbTvHkKnj1fZrNIT0avM4amzMi9jmM95JftiwWTQiQjCiLAG0w==}
+  '@helpin-ai/sdk-js@0.0.40':
+    resolution: {integrity: sha512-dMncCQyjrK/MMdol6rAiI3InBNgDDna8WM6sFACoBvFz2yQo5q6Z4PtillYFaq4+xeyPe/SKl0tYWJ6z6DsPKA==}
 
   '@hono/node-server@1.19.11':
     resolution: {integrity: sha512-dr8/3zEaB+p0D2n/IUrlPF1HZm586qgJNXK1a9fhg/PzdtkK7Ksd5l312tJX2yBuALqDYBlG20QEbayqPyxn+g==}
@@ -12549,13 +12549,13 @@ snapshots:
     dependencies:
       '@hapi/hoek': 11.0.7
 
-  '@helpin-ai/react@0.0.38(react-router@6.2.2(react@19.2.5))(react@19.2.5)':
+  '@helpin-ai/react@0.0.40(react-router@6.2.2(react@19.2.5))(react@19.2.5)':
     dependencies:
-      '@helpin-ai/sdk-js': 0.0.38
+      '@helpin-ai/sdk-js': 0.0.40
       react: 19.2.5
       react-router: 6.2.2(react@19.2.5)
 
-  '@helpin-ai/sdk-js@0.0.38': {}
+  '@helpin-ai/sdk-js@0.0.40': {}
 
   '@hono/node-server@1.19.11(hono@4.12.7)':
     dependencies:
