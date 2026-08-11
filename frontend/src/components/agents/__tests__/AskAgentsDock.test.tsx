@@ -712,6 +712,36 @@ describe('AskAgentsDock', () => {
     expect(document.body.querySelector('[data-dock-header] [aria-label="Close agent dock"]')).toBeNull();
   });
 
+  it('maximizes and restores the dock without changing its active conversation', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const panel = document.body.querySelector<HTMLElement>('#agent-dock-panel');
+    const maximizeButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Maximize agent dock"]');
+    expect(panel?.getAttribute('data-maximized')).toBeNull();
+    expect(maximizeButton).not.toBeNull();
+
+    await act(async () => {
+      maximizeButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(panel?.getAttribute('data-maximized')).toBe('true');
+    expect(panel?.className).toContain('h-full');
+    expect(document.body.querySelector('[aria-label="Restore agent dock"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('Sprint questions');
+
+    const restoreButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Restore agent dock"]');
+    await act(async () => {
+      restoreButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(panel?.getAttribute('data-maximized')).toBeNull();
+    expect(panel?.className).toContain('w-[min(900px,92vw)]');
+    expect(document.body.querySelector('[aria-label="Maximize agent dock"]')).not.toBeNull();
+  });
+
   it('restores focus to the segment that opened the dock', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();
