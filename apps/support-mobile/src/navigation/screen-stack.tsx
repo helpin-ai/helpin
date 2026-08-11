@@ -18,9 +18,9 @@ export function backFallbackPath(pathname: string): string {
   return match ? `/w/${match[1]}/support` : '/workspaces'
 }
 
-/** Tab-level roots crossfade instead of sliding. */
-const TAB_ROOTS = [/^\/w\/[^/]+\/support$/, /^\/w\/[^/]+\/you$/]
-const isTabRoot = (path: string) => TAB_ROOTS.some((re) => re.test(path))
+/** The Inbox root crossfades; pushed destinations use the native-style slide. */
+const ROOT_SCREENS = [/^\/w\/[^/]+\/support$/]
+const isRootScreen = (path: string) => ROOT_SCREENS.some((re) => re.test(path))
 
 // AnimatePresence keeps EXITING children as frozen element instances from
 // their last-present render — a static `variants` object is captured then,
@@ -81,9 +81,9 @@ export function ScreenStack() {
   const direction = directionRef.current
 
   const reduced = useReducedMotion()
-  const crossfade = reduced || (isTabRoot(pathname) && direction !== 'pop')
+  const crossfade = reduced || (isRootScreen(pathname) && direction !== 'pop')
 
-  const swipeEnabled = !isTabRoot(pathname) && pathname !== '/login' && pathname !== '/workspaces'
+  const swipeEnabled = !isRootScreen(pathname) && pathname !== '/login' && pathname !== '/workspaces'
   const goBack = useCallback(() => {
     if (router.history.canGoBack()) router.history.back()
     else router.navigate({ to: backFallbackPath(pathname) })

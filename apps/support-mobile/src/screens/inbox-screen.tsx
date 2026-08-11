@@ -22,7 +22,6 @@ import { Skeleton } from '@mobile/ui/skeleton'
 import { EmptyState } from '@mobile/ui/empty-state'
 import { Pressable } from '@mobile/ui/pressable'
 import { Spinner } from '@mobile/ui/spinner'
-import { TabShell } from '@mobile/navigation/tab-bar'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
 import type { Workspace } from '@mobile/lib/types'
 import { toast } from 'sonner'
@@ -276,7 +275,7 @@ export function InboxScreen() {
   }
 
   return (
-    <TabShell workspaceSlug={slug ?? ''} workspaceId={workspaceId}>
+    <div className="relative h-dvh">
       <div
         ref={scrollRef}
         onPointerDown={pull.handlers.onPointerDown}
@@ -444,11 +443,12 @@ export function InboxScreen() {
         workspacesError={workspacesQuery.isError}
         onRetryWorkspaces={() => void workspacesQuery.refetch()}
         onSelectWorkspace={handleSelectWorkspace}
+        onOpenSettings={() => router.navigate({ to: '/w/$slug/settings', params: { slug: slug ?? '' } })}
         activeSelection={selection}
         onSelect={setSelection}
       />
 
       <PermissionPrimingSheet open={primingSheetOpen} onOpenChange={setPrimingSheetOpen} />
-    </TabShell>
+    </div>
   )
 }

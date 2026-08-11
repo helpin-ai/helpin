@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useParams } from '@tanstack/react-router'
+import { useParams, useRouter } from '@tanstack/react-router'
 import { useTheme } from 'next-themes'
 import { Bell } from 'lucide-react'
 import { toast } from 'sonner'
 import { TopBar } from '@mobile/ui/top-bar'
-import { TabShell } from '@mobile/navigation/tab-bar'
 import { Avatar } from '@mobile/ui/avatar'
 import { Pressable } from '@mobile/ui/pressable'
 import { Spinner } from '@mobile/ui/spinner'
@@ -103,8 +102,9 @@ function useNotificationsRowState() {
   return { pref, loaded, enabling, handleEnable }
 }
 
-export function YouScreen() {
+export function SettingsScreen() {
   const { slug } = useParams({ strict: false })
+  const router = useRouter()
   const user = useAuthStore((state) => state.user)
   const { theme, setTheme } = useTheme()
   const appVersion = useAppVersion()
@@ -112,14 +112,19 @@ export function YouScreen() {
   const notifications = useNotificationsRowState()
   const notificationsEnabled = notifications.pref?.decision === 'enabled'
 
-  // workspaceId is unresolved until Task 11 wires the real workspace lookup;
-  // TabShell/useUnreadStats stay inert (enabled: !!workspaceId) until then.
-  return (
-    <TabShell workspaceSlug={slug ?? ''} workspaceId="">
-      <div className="flex h-full flex-col overflow-y-auto">
-        <TopBar title="You" large />
+  const handleBack = () => {
+    if (router.history.canGoBack()) {
+      router.history.back()
+    } else {
+      router.navigate({ to: '/w/$slug/support', params: { slug: slug ?? '' } })
+    }
+  }
 
-        <div className="px-4 pb-[var(--safe-bottom)]">
+  return (
+    <div className="flex h-dvh flex-col overflow-y-auto">
+      <TopBar title="Settings" large onBack={handleBack} />
+
+      <div className="px-4 pb-[var(--safe-bottom)]">
           <section className="flex items-center gap-3 border-b border-border/70 py-3">
             <Avatar name={user?.full_name ?? ''} src={user?.avatar_url} size={44} />
             <span className="flex flex-1 flex-col">
@@ -183,8 +188,7 @@ export function YouScreen() {
           </section>
 
           <p className="pb-6 pt-2 text-center text-caption text-muted-foreground">Helpin Support v{appVersion}</p>
-        </div>
       </div>
-    </TabShell>
+    </div>
   )
 }

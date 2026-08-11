@@ -38,15 +38,36 @@ const workspaces: Workspace[] = [
   { id: 'other', name: 'Customer Success', slug: 'customer-success' },
 ]
 
-test('renders the Views and AI groups with the total count number and an unread dot', () => {
+test('renders built-in views as one unlabeled list with the total count number and an unread dot', () => {
   render(<ViewsDrawer open onOpenChange={vi.fn()} workspaceId="ws" activeSelection={active} onSelect={vi.fn()} />)
-  expect(screen.getByText('Views')).toBeTruthy()
-  expect(screen.getByText('AI')).toBeTruthy()
+  expect(screen.queryByText('Views')).toBeNull()
+  expect(screen.queryByText('AI')).toBeNull()
   expect(screen.getByText('Inbox')).toBeTruthy()
   expect(screen.getByText('AI Handling')).toBeTruthy()
   // Inbox: the number badge is the TOTAL (9), with a red dot for the 4 unread (mirrors web).
   expect(screen.getByText('9')).toBeTruthy()
   expect(screen.getByLabelText('4 unread')).toBeTruthy()
+})
+
+test('pins Settings outside the scrollable view list and closes before navigating', () => {
+  const onOpenSettings = vi.fn()
+  const onOpenChange = vi.fn()
+  render(
+    <ViewsDrawer
+      open
+      onOpenChange={onOpenChange}
+      workspaceId="ws"
+      activeSelection={active}
+      onSelect={vi.fn()}
+      onOpenSettings={onOpenSettings}
+    />,
+  )
+
+  const settings = screen.getByRole('button', { name: 'Settings' })
+  expect(settings.closest('[data-testid="drawer-footer"]')).toBeTruthy()
+  fireEvent.click(settings)
+  expect(onOpenChange).toHaveBeenCalledWith(false)
+  expect(onOpenSettings).toHaveBeenCalledOnce()
 })
 
 test('selecting a row fires onSelect with the selection and closes the drawer', () => {

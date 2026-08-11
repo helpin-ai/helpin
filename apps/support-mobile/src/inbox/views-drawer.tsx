@@ -8,6 +8,7 @@ import {
   CircleUser,
   Clock3,
   Inbox as InboxIcon,
+  Settings,
   Sparkles,
   Users,
   type LucideIcon,
@@ -121,6 +122,7 @@ export interface ViewsDrawerProps {
   workspacesError?: boolean
   onRetryWorkspaces?: () => void
   onSelectWorkspace?: (workspace: Workspace) => void
+  onOpenSettings?: () => void
   activeSelection: ViewSelection
   onSelect: (selection: ViewSelection) => void
 }
@@ -269,6 +271,7 @@ export function ViewsDrawer({
   workspacesError,
   onRetryWorkspaces,
   onSelectWorkspace,
+  onOpenSettings,
   activeSelection,
   onSelect,
 }: ViewsDrawerProps) {
@@ -336,23 +339,28 @@ export function ViewsDrawer({
             )}
             <div
               className={cn(
-                'flex-1 overflow-y-auto pb-[max(var(--safe-bottom),12px)]',
+                'flex-1 overflow-y-auto pb-3',
                 workspace ? '' : 'pt-[calc(var(--safe-top)+8px)]',
               )}
             >
-              {groups.map((group, groupIndex) => (
-                <div key={group.title} className={groupIndex === 0 ? 'pt-1' : 'pt-4'}>
-                  <p className="px-4 pb-1 text-caption uppercase text-muted-foreground">{group.title}</p>
-                  {group.items.map((item) => (
-                    <DrawerRow
-                      key={item.key}
-                      item={item}
-                      active={isItemActive(item, activeSelection)}
-                      onPress={() => handleSelect(item.selection)}
-                    />
-                  ))}
-                </div>
-              ))}
+              {groups.map((group, groupIndex) => {
+                const showLabel = group.title !== 'Views' && group.title !== 'AI'
+                return (
+                  <div key={group.title} className={groupIndex === 0 ? 'pt-2' : showLabel ? 'pt-4' : ''}>
+                    {showLabel && (
+                      <p className="px-4 pb-1 text-caption uppercase text-muted-foreground">{group.title}</p>
+                    )}
+                    {group.items.map((item) => (
+                      <DrawerRow
+                        key={item.key}
+                        item={item}
+                        active={isItemActive(item, activeSelection)}
+                        onPress={() => handleSelect(item.selection)}
+                      />
+                    ))}
+                  </div>
+                )
+              })}
               {loadingSections && (
                 <div className="space-y-2 px-4 pt-4">
                   {Array.from({ length: 3 }).map((_, i) => (
@@ -360,6 +368,22 @@ export function ViewsDrawer({
                   ))}
                 </div>
               )}
+            </div>
+            <div
+              data-testid="drawer-footer"
+              className="shrink-0 border-t border-border bg-background px-2 pb-[max(var(--safe-bottom),8px)] pt-2"
+            >
+              <Pressable
+                haptic="selection"
+                onPress={() => {
+                  onOpenChange(false)
+                  onOpenSettings?.()
+                }}
+                className="flex min-h-[48px] w-full items-center gap-3 rounded-xl px-3 text-left active:bg-muted"
+              >
+                <Settings className="h-[18px] w-[18px] text-muted-foreground" />
+                <span className="text-body font-medium">Settings</span>
+              </Pressable>
             </div>
           </motion.aside>
         </div>

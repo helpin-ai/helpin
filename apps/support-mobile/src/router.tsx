@@ -26,7 +26,7 @@ import {
 } from '@mobile/screens/workspaces-screen'
 import { InboxScreen } from '@mobile/screens/inbox-screen'
 import { ConversationPending } from '@mobile/screens/conversation-pending'
-import { YouScreen } from '@mobile/screens/you-screen'
+import { SettingsScreen } from '@mobile/screens/you-screen'
 
 export interface RouterContext {
   auth: {
@@ -126,11 +126,20 @@ const supportConversationRoute = createRoute({
   pendingMs: 0,
 })
 
-const youRoute = createRoute({
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/w/$slug/settings',
+  beforeLoad: requireAuth,
+  component: SettingsScreen,
+})
+
+const legacyYouRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/w/$slug/you',
-  beforeLoad: requireAuth,
-  component: YouScreen,
+  beforeLoad: (opts) => {
+    requireAuth(opts)
+    throw redirect({ to: '/w/$slug/settings', params: { slug: opts.params.slug }, replace: true })
+  },
 })
 
 const routeTree = rootRoute.addChildren([
@@ -138,7 +147,8 @@ const routeTree = rootRoute.addChildren([
   workspacesRoute,
   supportInboxRoute,
   supportConversationRoute,
-  youRoute,
+  settingsRoute,
+  legacyYouRoute,
 ])
 
 export const router = createRouter({
@@ -198,7 +208,6 @@ function RootComponent() {
     <AppThemeProvider>
       <RootRealtimeMount />
       <ScreenStack />
-      {/* TabBar rendered inside ScreenStack chrome for tab-level routes only */}
     </AppThemeProvider>
   )
 }
