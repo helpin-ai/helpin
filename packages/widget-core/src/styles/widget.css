@@ -155,6 +155,171 @@
   color: color-mix(in srgb, var(--helpin-primary) 62%, #ffffff);
 }
 
+/* Light theme — quiet canvas, crisp surfaces, and brand-aware interaction. */
+.helpin-theme-light {
+  --helpin-bg: #f7f8fb;
+  --helpin-bg-secondary: #f0f3f7;
+  --helpin-bg-muted: #e9edf3;
+  --helpin-fg: #172033;
+  --helpin-fg-secondary: #566176;
+  --helpin-fg-muted: #8490a3;
+  --helpin-border: #e1e6ee;
+  --helpin-card-bg: #ffffff;
+  --helpin-card-border: rgba(23, 32, 51, 0.09);
+  --helpin-card-shadow: 0 1px 2px rgba(23, 32, 51, 0.04), 0 5px 16px rgba(23, 32, 51, 0.035);
+  --helpin-card-shadow-hover: 0 2px 5px rgba(23, 32, 51, 0.06), 0 12px 26px rgba(23, 32, 51, 0.08);
+  --helpin-shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.07);
+  --helpin-shadow-xl: 0 28px 70px rgba(23, 32, 51, 0.16), 0 8px 22px rgba(23, 32, 51, 0.08);
+}
+
+.helpin-chat-window.helpin-theme-light {
+  border: 1px solid rgba(23, 32, 51, 0.09);
+  box-shadow: var(--helpin-shadow-xl), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.helpin-theme-light .helpin-home-header {
+  box-shadow: inset 0 -1px 0 rgba(17, 24, 39, 0.08);
+}
+
+.helpin-theme-light .helpin-home-content {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--helpin-primary) 3%, var(--helpin-bg)) 0,
+    var(--helpin-bg) 180px
+  );
+}
+
+.helpin-theme-light .helpin-messages-header,
+.helpin-theme-light .helpin-help-header,
+.helpin-theme-light .helpin-conversations-header,
+.helpin-theme-light .helpin-conversation-header,
+.helpin-theme-light .helpin-article-header {
+  background: rgba(255, 255, 255, 0.88);
+  border-bottom-color: rgba(23, 32, 51, 0.09);
+  box-shadow: 0 1px 0 rgba(23, 32, 51, 0.02);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.helpin-theme-light .helpin-home-action,
+.helpin-theme-light .helpin-help-link,
+.helpin-theme-light .helpin-conversation-item,
+.helpin-theme-light .helpin-help-link-skeleton {
+  border-color: var(--helpin-card-border);
+  box-shadow: var(--helpin-card-shadow);
+}
+
+.helpin-theme-light .helpin-home-action:hover,
+.helpin-theme-light .helpin-help-link:hover,
+.helpin-theme-light .helpin-conversation-item:hover {
+  background: color-mix(in srgb, var(--helpin-primary) 3.5%, var(--helpin-card-bg));
+  border-color: color-mix(in srgb, var(--helpin-primary) 24%, var(--helpin-card-border));
+  box-shadow: var(--helpin-card-shadow-hover);
+}
+
+.helpin-theme-light .helpin-home-action > svg:first-child,
+.helpin-theme-light .helpin-help-link > svg:first-child {
+  box-sizing: content-box;
+  padding: 7px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--helpin-primary) 9%, #ffffff);
+  color: color-mix(in srgb, var(--helpin-primary) 82%, #172033);
+}
+
+.helpin-theme-light .helpin-home-action:hover > svg:first-child,
+.helpin-theme-light .helpin-help-link:hover > svg:first-child,
+.helpin-theme-light .helpin-home-action:hover .helpin-home-action-arrow,
+.helpin-theme-light .helpin-help-link:hover .helpin-help-link-arrow,
+.helpin-theme-light .helpin-conversation-item:hover .helpin-conversation-item-arrow {
+  color: var(--helpin-primary);
+}
+
+.helpin-theme-light .helpin-help-link-skeleton-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.helpin-theme-light .helpin-help-search {
+  background: rgba(255, 255, 255, 0.94);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.helpin-theme-light .helpin-help-search:focus-within {
+  border-color: color-mix(in srgb, var(--helpin-primary) 42%, var(--helpin-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--helpin-primary) 10%, transparent),
+    var(--helpin-card-shadow);
+}
+
+.helpin-theme-light .helpin-help-back,
+.helpin-theme-light .helpin-conversation-back,
+.helpin-theme-light .helpin-window-close-inline,
+.helpin-theme-light .helpin-conversation-header-btn {
+  border-radius: 10px;
+}
+
+.helpin-theme-light .helpin-help-back,
+.helpin-theme-light .helpin-window-close-inline {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--helpin-card-border);
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.helpin-theme-light .helpin-window-close-inline:hover,
+.helpin-theme-light .helpin-conversation-back:hover,
+.helpin-theme-light .helpin-conversation-header-btn:hover {
+  background: color-mix(in srgb, var(--helpin-primary) 7%, #ffffff);
+  color: var(--helpin-fg);
+  opacity: 1;
+}
+
+.helpin-theme-light .helpin-message--agent,
+.helpin-theme-light .helpin-message--ai,
+.helpin-theme-light .helpin-message--system {
+  background: var(--helpin-card-bg);
+  border: 1px solid var(--helpin-card-border);
+  box-shadow: 0 1px 2px rgba(23, 32, 51, 0.04);
+}
+
+.helpin-theme-light .helpin-date-separator span {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--helpin-card-border);
+}
+
+.helpin-theme-light .helpin-compose-wrapper {
+  background: linear-gradient(to bottom, transparent, var(--helpin-bg) 20%);
+}
+
+.helpin-theme-light .helpin-compose-bar {
+  border: 1px solid var(--helpin-card-border);
+  background: #ffffff;
+  box-shadow: 0 4px 18px rgba(23, 32, 51, 0.07);
+}
+
+.helpin-theme-light .helpin-compose-bar:focus-within {
+  border-color: color-mix(in srgb, var(--helpin-primary) 48%, var(--helpin-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--helpin-primary) 10%, transparent),
+    0 6px 20px rgba(23, 32, 51, 0.08);
+}
+
+.helpin-theme-light .helpin-compose-send--active {
+  background: var(--helpin-primary);
+  color: var(--helpin-primary-foreground);
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--helpin-primary) 24%, transparent);
+}
+
+.helpin-theme-light .helpin-bottom-nav {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  box-shadow: 0 1px 2px rgba(23, 32, 51, 0.04), 0 12px 30px rgba(23, 32, 51, 0.09);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.helpin-theme-light .helpin-brand-attribution {
+  color: #8a95a7;
+}
+
 /* Launcher Button */
 .helpin-launcher {
   position: fixed;
@@ -3194,6 +3359,11 @@
     max-width: 100vw;
   }
 
+  .helpin-chat-window.helpin-theme-light {
+    border: 0;
+    box-shadow: none;
+  }
+
   .helpin-window-actions {
     top: calc(12px + env(safe-area-inset-top, 0px));
     right: calc(12px + env(safe-area-inset-right, 0px));
@@ -3361,6 +3531,15 @@
     border-radius: 0;
     box-shadow: none;
     border-top: 1px solid var(--helpin-border);
+    background: var(--helpin-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .helpin-theme-light .helpin-bottom-nav {
+    border: 0;
+    border-top: 1px solid var(--helpin-border);
+    box-shadow: none;
     background: var(--helpin-bg);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
