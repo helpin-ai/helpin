@@ -4,7 +4,6 @@ import type {
   DocsCollection,
   DocsDocument,
   DocsContent,
-  DocsFixFormattingResult,
   DocsBlock,
   AISectionCandidateResponse,
   DocsChangeProposal,
@@ -117,8 +116,6 @@ export const docsService = {
   // ── Content ─────────────────────────────────────────────────────────────
   getContent: (wsId: string, docId: string) =>
     api.get<DocsContent>(`/docs/documents/${docId}/content${qs(wsId)}`),
-  fixFormatting: (wsId: string, docId: string) =>
-    api.post<DocsFixFormattingResult>(`/docs/documents/${docId}/fix-formatting${qs(wsId)}`, {}),
   saveContent: (wsId: string, docId: string, payload: SaveDocsContentRequest) =>
     api.put<DocsContent>(`/docs/documents/${docId}/content${qs(wsId)}`, payload),
   saveMarkdownContent: (wsId: string, docId: string, markdown: string) =>
