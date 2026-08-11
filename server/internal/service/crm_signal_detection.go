@@ -64,7 +64,7 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 	ctx = WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    payload.WorkspaceID,
 		FeatureKey:     BillingFeatureCRMSignalDetection,
-		IdempotencyKey: aiUsageIdempotencyKey(payload.WorkspaceID, BillingFeatureCRMSignalDetection, payload.SourceType, payload.SourceID, derefString(payload.SourceThreadID)),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(payloadJSON, payload.WorkspaceID, BillingFeatureCRMSignalDetection, payload.SourceType, payload.SourceID, derefString(payload.SourceThreadID)),
 		Metadata: map[string]interface{}{
 			"source_type": payload.SourceType,
 			"source_id":   payload.SourceID,

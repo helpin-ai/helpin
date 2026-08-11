@@ -40,6 +40,8 @@ usage_units = max(feature_floor, ceil(weighted_tokens / 1000))
 
 The `6x` output and reasoning multiplier reflects the higher cost of generated and reasoning tokens. Cached input receives a `90%` discount. Weighted usage can exceed the feature floor on large runs.
 
+Provider usage is normalized before applying this formula. Cached reads are included in `input_tokens` and then discounted; reasoning is separated from provider totals that include it in output; cache-write tokens are retained in usage metadata for cost analysis but receive no separate customer multiplier.
+
 ## Feature Floors
 
 The highest feature floor is `100` usage units. No action should have a minimum above `100`, though actual token-based usage may exceed `100`.
@@ -50,7 +52,6 @@ The highest feature floor is `100` usage units. No action should have a minimum 
 | Coverage gap analysis, per conversation | 2 |
 | CRM signal detection | 3 |
 | Rewrite/improve support reply | 4 |
-| Command bar read-only answer | 4 |
 | Deal automation inference | 5 |
 | CRM summary | 6 |
 | Support reply draft | 8 |
@@ -88,9 +89,9 @@ AI usage is currently metered in two paths:
 - Setup/config calls that are intentionally free must use `WithAIUsageMeteringExempt(...)`. A metered provider call without usage context or an explicit exemption fails closed.
 - Agent runtimes call `PreflightAgentRunAIUsage(...)` before native SDK, Codex, or OpenCode execution starts, then call `RecordAgentRunAIUsage(...)` after token totals are persisted on the `agent_run`.
 
-Direct LLM metering is wired for support routing/replies/rewrite/task draft fallback, inbox triage, coverage gap analysis, coverage docs suggestions/enrichment, docs AI section generation, help center translation and auto-translation, CRM signal detection, CRM summaries, deal automation inference, and command-bar routing/answers.
+Direct LLM metering is wired for standalone support routing/replies/rewrite/task draft fallback, inbox triage, coverage gap analysis, coverage docs suggestions/enrichment, docs AI section generation, help center translation and auto-translation, CRM signal detection, CRM summaries, and deal automation inference.
 
-Agent run metering is wired for built-in agents, custom agents, and coding/review agents through the shared runtime callback. The feature key is selected from the agent preset where possible; custom coding/review agents receive the coding/review floor.
+Agent run metering is wired for built-in agents, custom agents, command-bar work, and coding/review agents through the shared runtime callback. The feature key is selected from the agent preset where possible; custom coding/review agents receive the coding/review floor. Runtime-delivered support replies are part of that agent run and do not create a second support-reply charge.
 
 The metering layer uses idempotency keys so retries or repeated persistence steps do not double-charge the same billable execution. Workspace attribution is required; unattributed internal previews do not consume AI usage.
 

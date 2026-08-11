@@ -225,10 +225,15 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 		),
 	})
 
+	messagesJSON, err := json.Marshal(messages)
+	if err != nil {
+		return nil, fmt.Errorf("marshal support task draft usage payload: %w", err)
+	}
+
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureSupportTaskDraft,
-		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureSupportTaskDraft, conversation.ID),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(messagesJSON, workspaceID, BillingFeatureSupportTaskDraft, conversation.ID),
 		Metadata: map[string]interface{}{
 			"conversation_id": conversation.ID,
 		},

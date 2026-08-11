@@ -36,12 +36,18 @@ func (p *ClaudeProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 	content := extractClaudeResponseContent(resp, req.JSONMode)
 
 	return &ChatResponse{
-		Content: content,
-		TokensUsed: TokenUsage{
-			InputTokens:  resp.Usage.InputTokens,
-			OutputTokens: resp.Usage.OutputTokens,
-		},
+		Content:    content,
+		TokensUsed: tokenUsageFromClaude(resp.Usage),
 	}, nil
+}
+
+func tokenUsageFromClaude(usage agentcontract.Usage) TokenUsage {
+	return TokenUsage{
+		InputTokens:       usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens,
+		CachedInputTokens: usage.CacheReadInputTokens,
+		CacheWriteTokens:  usage.CacheCreationInputTokens,
+		OutputTokens:      usage.OutputTokens,
+	}
 }
 
 func buildClaudeMessageRequest(req ChatRequest) agentcontract.CreateMessageRequest {

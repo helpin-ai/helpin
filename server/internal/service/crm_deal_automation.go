@@ -487,7 +487,7 @@ func (s *DealAutomationService) inferDealCreation(ctx context.Context, contact *
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    contact.WorkspaceID,
 		FeatureKey:     BillingFeatureDealAutomationInference,
-		IdempotencyKey: aiUsageIdempotencyKey(contact.WorkspaceID, BillingFeatureDealAutomationInference, "create_deal", contact.ID),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(payload, contact.WorkspaceID, BillingFeatureDealAutomationInference, "create_deal", contact.ID),
 		Metadata: map[string]interface{}{
 			"action":     "create_deal",
 			"contact_id": contact.ID,
@@ -545,7 +545,7 @@ func (s *DealAutomationService) inferDealProgression(ctx context.Context, deal *
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    deal.WorkspaceID,
 		FeatureKey:     BillingFeatureDealAutomationInference,
-		IdempotencyKey: aiUsageIdempotencyKey(deal.WorkspaceID, BillingFeatureDealAutomationInference, "progress_deal", deal.ID),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(payload, deal.WorkspaceID, BillingFeatureDealAutomationInference, "progress_deal", deal.ID),
 		Metadata: map[string]interface{}{
 			"action":  "progress_deal",
 			"deal_id": deal.ID,

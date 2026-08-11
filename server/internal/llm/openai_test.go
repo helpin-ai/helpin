@@ -163,6 +163,25 @@ func TestOpenAIProviderChatCompletionNilReceiver(t *testing.T) {
 	}
 }
 
+func TestTokenUsageFromOpenAIIncludesCacheAndReasoningBreakdown(t *testing.T) {
+	usage := tokenUsageFromOpenAI(openAIUsage{
+		PromptTokens:     1200,
+		CompletionTokens: 300,
+		PromptTokensDetails: openAIPromptTokenDetails{
+			CachedTokens:     800,
+			CacheWriteTokens: 200,
+		},
+		CompletionTokensDetails: openAICompletionTokenDetails{ReasoningTokens: 100},
+	})
+
+	if usage.InputTokens != 1200 || usage.CachedInputTokens != 800 || usage.CacheWriteTokens != 200 {
+		t.Fatalf("input usage = %#v", usage)
+	}
+	if usage.OutputTokens != 200 || usage.ReasoningTokens != 100 {
+		t.Fatalf("output usage = %#v", usage)
+	}
+}
+
 func TestOpenAIProviderCreateEmbeddingsNilReceiver(t *testing.T) {
 	var provider *OpenAIProvider
 

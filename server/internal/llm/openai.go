@@ -21,6 +21,31 @@ type OpenAIProvider struct {
 	httpClient *http.Client
 }
 
+type openAIPromptTokenDetails struct {
+	CachedTokens     int `json:"cached_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens"`
+}
+
+type openAICompletionTokenDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
+}
+
+type openAIUsage struct {
+	PromptTokens            int                          `json:"prompt_tokens"`
+	CompletionTokens        int                          `json:"completion_tokens"`
+	PromptTokensDetails     openAIPromptTokenDetails     `json:"prompt_tokens_details"`
+	CompletionTokensDetails openAICompletionTokenDetails `json:"completion_tokens_details"`
+}
+
+type openAIChatCompletionResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+	Usage openAIUsage `json:"usage"`
+}
+
 // NewOpenAIProvider creates an OpenAI-compatible LLM provider.
 func NewOpenAIProvider(apiKey, baseURL, model string) *OpenAIProvider {
 	if apiKey == "" {
@@ -95,17 +120,7 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 		return nil, fmt.Errorf("openai API error (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-		} `json:"usage"`
-	}
+	var result openAIChatCompletionResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
@@ -116,12 +131,23 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 	}
 
 	return &ChatResponse{
-		Content: content,
-		TokensUsed: TokenUsage{
-			InputTokens:  result.Usage.PromptTokens,
-			OutputTokens: result.Usage.CompletionTokens,
-		},
+		Content:    content,
+		TokensUsed: tokenUsageFromOpenAI(result.Usage),
 	}, nil
+}
+
+func tokenUsageFromOpenAI(usage openAIUsage) TokenUsage {
+	outputTokens := usage.CompletionTokens - usage.CompletionTokensDetails.ReasoningTokens
+	if outputTokens < 0 {
+		outputTokens = 0
+	}
+	return TokenUsage{
+		InputTokens:       usage.PromptTokens,
+		CachedInputTokens: usage.PromptTokensDetails.CachedTokens,
+		CacheWriteTokens:  usage.PromptTokensDetails.CacheWriteTokens,
+		OutputTokens:      outputTokens,
+		ReasoningTokens:   usage.CompletionTokensDetails.ReasoningTokens,
+	}
 }
 
 func (p *OpenAIProvider) buildChatCompletionBody(

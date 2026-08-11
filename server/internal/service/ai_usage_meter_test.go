@@ -45,6 +45,25 @@ func TestAIUsageFloorsDoNotExceedOneHundred(t *testing.T) {
 	}
 }
 
+func TestCommandBarAnswerIsNotASeparateUsageFeature(t *testing.T) {
+	if feature, ok := AIUsageFeature("command_bar_answer"); ok {
+		t.Fatalf("command_bar_answer feature = %#v, want command-bar work billed by its agent run", feature)
+	}
+}
+
+func TestAIUsagePayloadIdempotencyKeyTracksSourceSnapshot(t *testing.T) {
+	first := aiUsagePayloadIdempotencyKey([]byte(`{"value":"first"}`), "ws-1", "summary", "contact-1")
+	retry := aiUsagePayloadIdempotencyKey([]byte(`{"value":"first"}`), "ws-1", "summary", "contact-1")
+	changed := aiUsagePayloadIdempotencyKey([]byte(`{"value":"changed"}`), "ws-1", "summary", "contact-1")
+
+	if first != retry {
+		t.Fatalf("same source snapshot produced different keys: %q != %q", first, retry)
+	}
+	if first == changed {
+		t.Fatalf("changed source snapshot reused key %q", first)
+	}
+}
+
 func TestSetupAIUsageFeaturesAreNotChargeable(t *testing.T) {
 	for _, key := range []string{
 		BillingFeatureCustomAgentDraft,
@@ -143,8 +162,11 @@ func TestMeteredLLMProviderConsumesUsageFromContext(t *testing.T) {
 		response: &llm.ChatResponse{
 			Content: "ok",
 			TokensUsed: llm.TokenUsage{
-				InputTokens:  3000,
-				OutputTokens: 5000,
+				InputTokens:       3000,
+				CachedInputTokens: 1000,
+				CacheWriteTokens:  500,
+				OutputTokens:      5000,
+				ReasoningTokens:   1000,
 			},
 		},
 	}, meter)
@@ -164,14 +186,17 @@ func TestMeteredLLMProviderConsumesUsageFromContext(t *testing.T) {
 	if resp.Content != "ok" {
 		t.Fatalf("content = %q, want ok", resp.Content)
 	}
-	if consumer.input.Credits != 33 {
-		t.Fatalf("credits = %d, want 33", consumer.input.Credits)
+	if consumer.input.Credits != 39 {
+		t.Fatalf("credits = %d, want 39", consumer.input.Credits)
 	}
 	if consumer.input.FeatureKey != BillingFeatureDocsArticleGeneration {
 		t.Fatalf("feature = %q", consumer.input.FeatureKey)
 	}
 	if consumer.input.IdempotencyKey != "feature-1" {
 		t.Fatalf("idempotency key = %q", consumer.input.IdempotencyKey)
+	}
+	if consumer.input.Metadata["cache_write_tokens"] != 500 {
+		t.Fatalf("cache write metadata = %#v, want 500", consumer.input.Metadata["cache_write_tokens"])
 	}
 }
 

@@ -1193,10 +1193,17 @@ func (s *SupportCoverageDailyAnalyzer) createDocsSuggestionForFix(ctx context.Co
 	if fix.Type == model.SupportCoverageFixUpdateArticle {
 		suggestionType = model.SupportCoverageSuggestionUpdateArticle
 	}
+	usagePayload, err := json.Marshal(struct {
+		Result CoverageConversationAnalysisResult `json:"result"`
+		Fix    CoverageRecommendedFix             `json:"fix"`
+	}{Result: input.Result, Fix: fix})
+	if err != nil {
+		return nil, fmt.Errorf("marshal coverage suggestion usage payload: %w", err)
+	}
 	title, content, err := s.GenerateKnowledgeSuggestion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    input.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleGeneration,
-		IdempotencyKey: aiUsageIdempotencyKey(input.WorkspaceID, BillingFeatureDocsArticleGeneration, "coverage_suggestion", input.ConversationID, gapID, fix.Type, fix.TargetID),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(usagePayload, input.WorkspaceID, BillingFeatureDocsArticleGeneration, "coverage_suggestion", input.ConversationID, gapID, fix.Type, fix.TargetID),
 		Metadata: map[string]interface{}{
 			"conversation_id": input.ConversationID,
 			"gap_id":          gapID,
