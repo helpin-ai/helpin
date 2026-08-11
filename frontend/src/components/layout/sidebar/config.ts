@@ -32,6 +32,7 @@ import {
 } from '@/lib/icons';
 import { buildSettingsRoutePath, getSettingsSidebarGroups } from '@/lib/settingsSections';
 import { isWorkspaceSupportRoute } from '@/lib/workspaceRoutes';
+import type { WorkspaceTeam } from '@/lib/types';
 import type { NavGroup, RailId, RailItem } from './types';
 
 export function deriveActiveRail(pathname: string): RailId {
@@ -76,7 +77,17 @@ export function buildRailItems(wsSlug: string, totalSupportUnread: number, setup
   return items;
 }
 
-export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, permissionSet?: Set<string>, agentAttentionCount = 0): Record<RailId, NavGroup[]> {
+export function buildSettingsTeamLink(wsSlug: string, teamId: string): string {
+  return `${buildSettingsRoutePath(wsSlug, 'teams')}?team=${encodeURIComponent(teamId)}`;
+}
+
+export function buildPanelNavGroups(
+  wsSlug: string,
+  canManageSettings: boolean,
+  permissionSet?: Set<string>,
+  agentAttentionCount = 0,
+  settingsTeams: readonly Pick<WorkspaceTeam, 'id' | 'name'>[] = [],
+): Record<RailId, NavGroup[]> {
   return {
     projects: [
       {
@@ -141,6 +152,14 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, 
         link: buildSettingsRoutePath(wsSlug, section.id),
         label: section.label,
         icon: section.icon,
+        ...(section.id === 'teams' && settingsTeams.length > 0
+          ? {
+              children: settingsTeams.map((team) => ({
+                link: buildSettingsTeamLink(wsSlug, team.id),
+                label: team.name,
+              })),
+            }
+          : {}),
       })),
     })),
     setup: [],
