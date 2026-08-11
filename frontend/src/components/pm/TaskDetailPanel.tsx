@@ -1276,7 +1276,7 @@ function TaskDetailPanelBody({
             />
           </div>
 
-          <div className="mt-8">
+          <div className="mt-6 border-t border-border/60 pt-6" data-testid="checklist-section">
             <ChecklistItems
               workspaceId={workspaceId}
               taskId={taskDetail.task.id}

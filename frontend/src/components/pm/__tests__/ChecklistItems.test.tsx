@@ -203,7 +203,7 @@ describe('ChecklistItems', () => {
     expect(table?.className).not.toContain('border')
     expect(table?.className).not.toContain('rounded-lg')
     expect(header).toBeNull()
-    expect(items?.className).toContain('border-t')
+    expect(items?.className).not.toContain('border-t')
     expect(row?.className).toContain('border-b')
     expect(row?.className).not.toContain('last:border-b-0')
   })

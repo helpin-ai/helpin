@@ -19,6 +19,7 @@ describe('TaskDetailPanel optional section spacing', () => {
 
     expect(overviewIndex).toBeGreaterThan(-1);
     expect(panelSource).toContain('<TaskStandingBriefCard');
+    expect(panelSource).toContain('className="mt-6 border-t border-border/60 pt-6" data-testid="checklist-section"');
     expect(checklistIndex).toBeGreaterThan(overviewIndex);
     expect(relatedIndex).toBeGreaterThan(checklistIndex);
     expect(relationshipsIndex).toBeGreaterThan(relatedIndex);
