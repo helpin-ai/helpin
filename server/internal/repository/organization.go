@@ -129,6 +129,32 @@ func (r *OrganizationRepository) AddMember(ctx context.Context, orgID, userID, r
 	return result, nil
 }
 
+// EnsureMember adds a user to an organization only when no membership exists.
+// An existing membership, including its role, is left unchanged.
+func (r *OrganizationRepository) EnsureMember(ctx context.Context, orgID, userID, role string) (*model.OrganizationMember, error) {
+	m := &model.OrganizationMember{
+		OrganizationID: orgID,
+		UserID:         userID,
+		Role:           role,
+	}
+	if err := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "organization_id"}, {Name: "user_id"}},
+			DoNothing: true,
+		}).
+		Create(m).Error; err != nil {
+		return nil, fmt.Errorf("ensure organization member: %w", err)
+	}
+
+	result := &model.OrganizationMember{}
+	if err := r.db.WithContext(ctx).
+		Where("organization_id = ? AND user_id = ?", orgID, userID).
+		First(result).Error; err != nil {
+		return nil, fmt.Errorf("ensure organization member: %w", err)
+	}
+	return result, nil
+}
+
 // UpdateMemberRole updates a member's role.
 func (r *OrganizationRepository) UpdateMemberRole(ctx context.Context, orgID, userID, role string) error {
 	result := r.db.WithContext(ctx).

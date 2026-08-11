@@ -19,6 +19,7 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Building03Icon, Delete01Icon, UserGroupIcon } from '@/lib/icons';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { toast } from 'sonner';
+import { organizationRoleLabel } from '@/components/settings/roleScopePresentation';
 
 const ROLE_COLORS: Record<string, string> = {
   owner: 'bg-amber-100 text-amber-800',
@@ -202,7 +203,7 @@ export default function AccountSettings() {
                 <TableRow>
                   <TableHead>Member</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
+                  <TableHead>Organization role</TableHead>
                   {isAdminOrOwner && <TableHead className="w-10" />}
                 </TableRow>
               </TableHeader>
@@ -239,19 +240,19 @@ export default function AccountSettings() {
                             value={member.role}
                             onValueChange={(val) => handleRoleChange(member.user_id, val)}
                           >
-                            <SelectTrigger className="h-7 w-24 text-xs">
+                            <SelectTrigger className="h-7 w-40 text-xs">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {isOwner && <SelectItem value="owner">Owner</SelectItem>}
-                              <SelectItem value="admin">Admin</SelectItem>
-                              <SelectItem value="member">Member</SelectItem>
-                              <SelectItem value="viewer">Viewer</SelectItem>
+                              {isOwner && <SelectItem value="owner">{organizationRoleLabel('owner')}</SelectItem>}
+                              <SelectItem value="admin">{organizationRoleLabel('admin')}</SelectItem>
+                              <SelectItem value="member">{organizationRoleLabel('member')}</SelectItem>
+                              <SelectItem value="viewer">{organizationRoleLabel('viewer')}</SelectItem>
                             </SelectContent>
                           </Select>
                         ) : (
                           <Badge variant="secondary" className={cn('text-xs', ROLE_COLORS[member.role])}>
-                            {member.role}
+                            {organizationRoleLabel(member.role)}
                           </Badge>
                         )}
                       </TableCell>
