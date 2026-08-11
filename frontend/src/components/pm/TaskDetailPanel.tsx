@@ -278,7 +278,6 @@ function TaskDetailPanelBody({
   const [recurringDetail, setRecurringDetail] = useState<RecurringTemplateDetail | null>(null);
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
-  const openFilePickerRef = useRef<(() => void) | null>(null);
   const descriptionUploadRef = useRef<((files: FileList | File[], insertPos?: number) => Promise<void>) | null>(null);
   const queuedDescriptionDropRef = useRef<File[] | null>(null);
   const descriptionDragCounterRef = useRef(0);
@@ -1294,7 +1293,9 @@ function TaskDetailPanelBody({
               entityId={taskDetail.task.id}
               memberNameMap={memberNameMap}
               onDeleteAttachment={handleDescriptionAttachmentDelete}
-              onFilePickerReady={(fn) => { openFilePickerRef.current = fn; }}
+              editable={canEdit}
+              showAddAction
+              showEmptyState
             />
           </div>
           </>

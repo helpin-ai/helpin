@@ -43,6 +43,8 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(panelSource).toContain('<TaskGitPanel');
     expect(panelSource).toContain('<ChecklistItems');
     expect(panelSource).toContain('<Attachments');
+    expect(panelSource).toContain('showAddAction');
+    expect(panelSource).toContain('showEmptyState');
   });
 
   it('keeps comments and history out of Overview', () => {
