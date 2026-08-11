@@ -7,7 +7,8 @@ import { TypingIndicator } from './TypingIndicator';
 import { PreChatForm } from './PreChatForm';
 import { ImageLightbox } from './ImageLightbox';
 import { SpecialNoticeBanner } from './SpecialNoticeBanner';
-import { ChevronLeftIcon, MoreVerticalIcon, SparklesIcon, XIcon } from './icons';
+import { HelpinMark } from './HelpinMark';
+import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -560,7 +561,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       {isAIThinking && (
         <div className="helpin-ai-thinking" role="status" aria-live="polite">
           <span className="helpin-ai-thinking-icon" aria-hidden="true">
-            <SparklesIcon size={16} strokeWidth={1.8} />
+            <HelpinMark className="helpin-ai-thinking-mark" />
+            <span className="helpin-ai-thinking-status" />
           </span>
           <span className="helpin-ai-thinking-copy">
             <span className="helpin-ai-thinking-label" key={aiProgressLabel}>{aiProgressLabel}</span>
