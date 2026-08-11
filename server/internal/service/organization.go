@@ -165,44 +165,41 @@ func (s *OrganizationService) AddMember(ctx context.Context, orgID, actorID stri
 	return member, nil
 }
 
-// UpdateMember updates a member's role. Only owner or admin can update.
-func (s *OrganizationService) UpdateMember(ctx context.Context, orgID, actorID, targetUserID string, req model.UpdateOrgMemberRequest) error {
-	if actorID == targetUserID {
-		return fmt.Errorf("cannot change your own role")
+func validateOrganizationRoleUpdate(actorRole, targetRole, newRole string, isSelf bool) error {
+	if isSelf {
+		return fmt.Errorf("cannot change your own organization role")
 	}
+	if actorRole != model.RoleOwner && actorRole != model.RoleAdmin {
+		return fmt.Errorf("only organization owners and admins can update roles")
+	}
+	if targetRole == "" {
+		return fmt.Errorf("organization member not found")
+	}
+	if targetRole == model.RoleOwner {
+		return fmt.Errorf("organization owners cannot be changed here")
+	}
+	if newRole == model.RoleOwner {
+		return fmt.Errorf("organization ownership must be transferred separately")
+	}
+	if newRole != model.RoleAdmin && newRole != model.RoleMember && newRole != model.RoleViewer {
+		return fmt.Errorf("role must be 'admin', 'member', or 'viewer'")
+	}
+	return nil
+}
+
+// UpdateMember updates a non-owner member's organization role. Owners and
+// admins share this capability; ownership is managed separately.
+func (s *OrganizationService) UpdateMember(ctx context.Context, orgID, actorID, targetUserID string, req model.UpdateOrgMemberRequest) error {
 	actorRole, err := s.orgRepo.GetMemberRole(ctx, orgID, actorID)
 	if err != nil {
 		return err
-	}
-	if actorRole != model.RoleOwner && actorRole != model.RoleAdmin {
-		return fmt.Errorf("only owner or admin can update members")
-	}
-	if req.Role != model.RoleAdmin && req.Role != model.RoleMember && req.Role != model.RoleOwner && req.Role != model.RoleViewer {
-		return fmt.Errorf("invalid role")
 	}
 	targetRole, err := s.orgRepo.GetMemberRole(ctx, orgID, targetUserID)
 	if err != nil {
 		return err
 	}
-	// Only owners can manage owners and admins
-	if targetRole == model.RoleOwner && actorRole != model.RoleOwner {
-		return fmt.Errorf("only owners can change an owner's role")
-	}
-	if targetRole == model.RoleAdmin && actorRole != model.RoleOwner {
-		return fmt.Errorf("only owners can change an admin's role")
-	}
-	if req.Role == model.RoleOwner && actorRole != model.RoleOwner {
-		return fmt.Errorf("only owners can grant ownership")
-	}
-	// Prevent demoting the last owner
-	if targetRole == model.RoleOwner && req.Role != model.RoleOwner {
-		count, err := s.orgRepo.CountMembersByRole(ctx, orgID, model.RoleOwner)
-		if err != nil {
-			return err
-		}
-		if count <= 1 {
-			return fmt.Errorf("cannot demote the last owner")
-		}
+	if err := validateOrganizationRoleUpdate(actorRole, targetRole, req.Role, actorID == targetUserID); err != nil {
+		return err
 	}
 	if err := s.orgRepo.UpdateMemberRole(ctx, orgID, targetUserID, req.Role); err != nil {
 		return err
