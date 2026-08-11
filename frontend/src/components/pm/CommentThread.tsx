@@ -329,8 +329,12 @@ interface CommentThreadProps {
   onCommentsChange: (comments: CommentWithAuthor[]) => void;
   /** Hide the bottom-of-list "Add a comment…" composer (used when this thread is rendered inside an inline side card). */
   hideTopLevelComposer?: boolean;
+  /** Places the entity-level composer before the thread list (used by unified Updates views). */
+  composerPlacement?: 'top' | 'bottom';
   /** Hide all empty-state copy and the empty card itself (used when many threads render side-by-side). */
   hideEmptyState?: boolean;
+  /** Render only the entity-level composer while retaining the current comment collection. */
+  hideThreadList?: boolean;
 }
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -358,7 +362,9 @@ export function CommentThread({
   onCommentAnchorConsumed,
   onCommentsChange,
   hideTopLevelComposer = false,
+  composerPlacement = 'bottom',
   hideEmptyState = false,
+  hideThreadList = false,
 }: CommentThreadProps) {
   const [commentLoading, setCommentLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
@@ -1193,8 +1199,43 @@ export function CommentThread({
 
   return (
     <div className="space-y-3">
+      {!hideTopLevelComposer && composerPlacement === 'top' && comments.length > 0 && !topComposerOpen && (
+        <button
+          type="button"
+          onClick={openTopComposer}
+          className="group/comment-composer flex w-full items-start gap-2 rounded-md px-3 py-1 text-left transition-colors"
+        >
+          <UserAvatar
+            name={currentMember?.display_name ?? currentMember?.email ?? 'You'}
+            avatarUrl={currentMember?.avatar_url}
+            avatarStyle={currentMember?.avatar_style}
+            avatarSeed={currentMember?.avatar_seed}
+            avatarBackgroundMode={currentMember?.avatar_background_mode}
+            avatarBackgroundColor={currentMember?.avatar_background_color}
+            className="mt-0.5 h-7 w-7 shrink-0 text-[10px]"
+          />
+          <span className="flex min-h-9 flex-1 items-center rounded-md border border-border/70 bg-background px-3 text-sm text-muted-foreground transition-colors group-hover/comment-composer:border-primary/30 group-hover/comment-composer:bg-accent/30 group-hover/comment-composer:text-foreground">
+            Write an update…
+          </span>
+        </button>
+      )}
+      {!hideTopLevelComposer && composerPlacement === 'top' && (comments.length === 0 || topComposerOpen) && (
+        renderCommentComposer({
+          editorKey: `top-${topComposerKey}`,
+          autoFocus: topComposerKey > 0,
+          onSubmit: addComment,
+          loading: commentLoading,
+          placeholder: 'Write an update…',
+          variant: 'primary',
+          uploadedFiles: pendingAttachments,
+          onClose: comments.length > 0 ? closeTopComposer : undefined,
+          showAnchor: true,
+          showAvatar: comments.length > 0,
+          className: comments.length > 0 ? 'px-3' : undefined,
+        })
+      )}
       {/* Empty state */}
-      {comments.length === 0 && !hideEmptyState && (
+      {!hideThreadList && comments.length === 0 && !hideEmptyState && (
         <div className="rounded-lg border border-dashed border-border/60 px-4 py-8 text-center">
           <Message01Icon className="mx-auto mb-2 h-6 w-6 text-muted-foreground/40" />
           <p className="text-sm font-medium text-foreground">No comments yet</p>
@@ -1205,7 +1246,7 @@ export function CommentThread({
       )}
 
       {/* Thread list */}
-      {comments.length > 0 && (
+      {!hideThreadList && comments.length > 0 && (
         <div className="space-y-2">
           {comments.map((entry) => {
             const hasReplies = (entry.reply_count ?? 0) > 0;
@@ -1291,7 +1332,7 @@ export function CommentThread({
       )}
 
       {/* Top-level composer (creates a new doc/entity-scoped comment) */}
-      {!hideTopLevelComposer && comments.length > 0 && !topComposerOpen && (
+      {!hideTopLevelComposer && composerPlacement === 'bottom' && comments.length > 0 && !topComposerOpen && (
         <button
           type="button"
           onClick={openTopComposer}
@@ -1311,7 +1352,7 @@ export function CommentThread({
           </span>
         </button>
       )}
-      {!hideTopLevelComposer && (comments.length === 0 || topComposerOpen) && (
+      {!hideTopLevelComposer && composerPlacement === 'bottom' && (comments.length === 0 || topComposerOpen) && (
         renderCommentComposer({
           editorKey: `top-${topComposerKey}`,
           autoFocus: topComposerKey > 0,

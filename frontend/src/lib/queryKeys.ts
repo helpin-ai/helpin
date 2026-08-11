@@ -116,6 +116,8 @@ export const queryKeys = {
 
     taskAssociations: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'associations'] as const,
     taskRelationships: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'relationships'] as const,
+    taskUpdates: (wsId: string, taskId: string, filter: string) => ['pm', wsId, 'tasks', taskId, 'updates', filter] as const,
+    taskStandingBrief: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'standingBrief'] as const,
 
     labels: (wsId: string) => ['pm', wsId, 'labels'] as const,
     labelsWithStats: (wsId: string) => ['pm', wsId, 'labels', 'withStats'] as const,

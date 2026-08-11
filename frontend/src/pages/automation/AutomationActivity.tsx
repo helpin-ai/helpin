@@ -730,6 +730,8 @@ function StatusBadge({ status, errorMessage }: { status: string; errorMessage?: 
 
 const ACTIVITY_TABLE_GRID_CLASS =
   'xl:grid-cols-[minmax(15rem,1fr)_12rem_7rem_6.5rem_5.5rem_2.5rem]';
+const NEEDS_ATTENTION_TABLE_GRID_CLASS =
+  'xl:grid-cols-[minmax(15rem,1fr)_11rem_8.5rem_6.5rem_7rem_11.5rem]';
 
 export function ActivityTableHeader() {
   return (
@@ -749,7 +751,48 @@ export function ActivityTableHeader() {
   );
 }
 
-function NeedActionCard({
+export function NeedsAttentionTableHeader() {
+  return (
+    <div
+      className={cn(
+        'hidden items-center gap-4 border-b border-border px-[14px] pb-[9px] text-xs font-medium uppercase tracking-wide text-muted-foreground xl:grid',
+        NEEDS_ATTENTION_TABLE_GRID_CLASS,
+      )}
+    >
+      <div>Activity</div>
+      <div>Agent</div>
+      <div>Status</div>
+      <div>Waiting</div>
+      <div>Started</div>
+      <div className="text-right">Actions</div>
+    </div>
+  );
+}
+
+function AttentionStatusBadge({ run }: { run: AgentRun }) {
+  const badge = (
+    <Badge
+      variant="outline"
+      tabIndex={run.error_message?.trim() ? 0 : undefined}
+      className="rounded-full border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+    >
+      {runBlockingLabel(run)}
+    </Badge>
+  );
+
+  if (!run.error_message?.trim()) return badge;
+
+  return (
+    <Tooltip delayDuration={0}>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipContent side="top" className="max-w-sm whitespace-pre-wrap break-words text-xs leading-relaxed">
+        {run.error_message}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+export function NeedsAttentionTableRow({
   run,
   agent,
   onOpenRun,
@@ -771,44 +814,104 @@ function NeedActionCard({
   const target = buildActivityTargetPresentation({ run });
 
   return (
-    <div className="grid gap-4 rounded-2xl border border-border/70 bg-card/80 p-4 md:grid-cols-[1fr_auto] md:items-center">
-      <div className="min-w-0 space-y-2 border-l-2 border-amber-500 pl-3">
+    <div
+      className={cn(
+        'group grid gap-x-4 border-b border-border/60 px-[14px] py-[13px] outline-none transition-colors duration-100 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring xl:items-center',
+        NEEDS_ATTENTION_TABLE_GRID_CLASS,
+      )}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open run for ${target.primary}`}
+      onClick={() => onOpenRun(run.id)}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpenRun(run.id);
+        }
+      }}
+    >
+      <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Badge variant="outline" className="rounded-full border-amber-500/40 bg-amber-500/10 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-            {runBlockingLabel(run)}
-          </Badge>
+          <div className="xl:hidden"><AttentionStatusBadge run={run} /></div>
           <TargetSummaryButton
             target={target}
             onOpen={() => onOpenTarget(target.targetType, target.targetId)}
-            className="flex-1 text-[15px]"
+            className="flex-1"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          {agent ? <AgentAvatar agent={agent} className="h-6 w-6 rounded-none border-0 bg-transparent shadow-none" genericBare /> : null}
-          <span>{agent?.name ?? 'Agent'}</span>
+
+        <p className="mt-1.5 text-xs text-muted-foreground">{subtitle}</p>
+
+        <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground xl:hidden">
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-foreground">
+            {agent?.is_system ? (
+              <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
+            ) : (
+              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border/70 bg-muted/40">
+                <BotIcon className="h-3 w-3" />
+              </span>
+            )}
+            <span className="truncate">{agent?.name ?? 'Agent'}</span>
+          </span>
           <span className="text-muted-foreground/60">·</span>
-          <span>blocked for <span className="font-mono text-foreground/80">{waitTime}</span></span>
+          <span>Waiting <span className="tabular-nums text-foreground/80">{waitTime}</span></span>
           <span className="text-muted-foreground/60">·</span>
-          <span className="font-mono">{formatShortDate(run.created_at)}</span>
+          <span>{formatShortDate(run.created_at)}</span>
         </div>
-        <p className="text-xs text-muted-foreground">{subtitle}</p>
-        {run.error_message ? (
-          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
-            {run.error_message}
-          </div>
-        ) : null}
       </div>
-      <div className="flex items-center gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={() => onOpenRun(run.id)}>
+
+      <div className="hidden min-w-0 items-center gap-1.5 text-sm text-foreground xl:flex">
+        {agent?.is_system ? (
+          <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
+        ) : (
+          <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border/70 bg-muted/40">
+            <BotIcon className="h-3 w-3" />
+          </span>
+        )}
+        <span className="truncate">{agent?.name ?? 'Agent'}</span>
+      </div>
+      <div className="hidden xl:block"><AttentionStatusBadge run={run} /></div>
+      <div className="hidden text-xs tabular-nums text-muted-foreground xl:block">{waitTime}</div>
+      <div className="hidden text-xs text-muted-foreground xl:block">{formatShortDate(run.created_at)}</div>
+
+      <div className="mt-3 flex items-center gap-2 xl:mt-0 xl:justify-end">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2 text-muted-foreground hover:text-foreground"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenRun(run.id);
+          }}
+        >
           View run
         </Button>
         {needsApproval ? (
-          <Button type="button" size="sm" onClick={() => void onApprove(run.id)} disabled={approving}>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8"
+            onClick={(event) => {
+              event.stopPropagation();
+              void onApprove(run.id);
+            }}
+            disabled={approving}
+          >
             {approving ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
             Approve
           </Button>
         ) : (
-          <Button type="button" size="sm" onClick={() => onOpenRun(run.id)}>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenRun(run.id);
+            }}
+          >
             Respond
           </Button>
         )}
@@ -1555,11 +1658,12 @@ export function AutomationActivityPage({
             ) : null}
           </div>
 
-          <TabsContent value="needs_you" className="mt-0 space-y-3">
+          <TabsContent value="needs_you" className="mt-0">
             {pausedRuns.length > 0 ? (
-              <div className="space-y-3">
+              <div>
+                <NeedsAttentionTableHeader />
                 {pausedRuns.map((run) => (
-                  <NeedActionCard
+                  <NeedsAttentionTableRow
                     key={run.id}
                     run={run}
                     agent={agentById.get(run.agent_id)}
@@ -1571,7 +1675,7 @@ export function AutomationActivityPage({
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-border/70 px-6 py-10 text-center text-sm text-muted-foreground">
+              <div className="border-y border-border px-6 py-12 text-center text-sm text-muted-foreground">
                 No runs need your attention.
               </div>
             )}

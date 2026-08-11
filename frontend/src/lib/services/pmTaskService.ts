@@ -18,6 +18,9 @@ import type {
   TaskStateColumn,
   TaskStateCount,
   TaskUserLinkRequest,
+  TaskStandingBrief,
+  TaskUpdateFilter,
+  TaskUpdatesResponse,
   UpdateTaskRequest,
 } from '../pmTypes';
 
@@ -227,4 +230,19 @@ export const pmTaskService = {
     api.get<PaginatedResponse<ActivityLogEntry[]>>(
       `/pm/tasks/${id}/activity?${qs(workspaceId)}&page=${page}&per_page=${perPage}`
     ),
+  listUpdates: (workspaceId: string, id: string, filter: TaskUpdateFilter = 'all', cursor?: string) =>
+    api.get<TaskUpdatesResponse>(
+      `/pm/tasks/${id}/updates?${qs(workspaceId)}&filter=${encodeURIComponent(filter)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
+    ),
+  updateReadState: (workspaceId: string, id: string, seenThrough: string, initializeOnly = false) =>
+    api.put(`/pm/tasks/${id}/updates/read-state?${qs(workspaceId)}`, {
+      seen_through: seenThrough,
+      initialize_only: initializeOnly,
+    }),
+  getStandingBrief: (workspaceId: string, id: string) =>
+    api.get<TaskStandingBrief>(`/pm/tasks/${id}/standing-brief?${qs(workspaceId)}`),
+  refreshStandingBrief: (workspaceId: string, id: string) =>
+    api.post<TaskStandingBrief>(`/pm/tasks/${id}/standing-brief/refresh?${qs(workspaceId)}`, {}),
+  dismissStandingBriefSuggestion: (workspaceId: string, id: string, key: string) =>
+    api.post(`/pm/tasks/${id}/standing-brief/suggestions/${encodeURIComponent(key)}/dismiss?${qs(workspaceId)}`, {}),
 };
