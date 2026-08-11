@@ -33,7 +33,7 @@ export function TableOfContents({ items, activeId }: TableOfContentsProps) {
                   document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth' })
                 }}
                 className={cn(
-                  'block text-[13px] py-1 transition-colors border-l-2',
+                  'block min-w-0 break-words border-l-2 py-1 text-[13px] leading-snug transition-colors',
                   item.level === 3 ? 'pl-5' : 'pl-3',
                   activeId === item.id
                     ? 'border-primary text-primary font-medium'
