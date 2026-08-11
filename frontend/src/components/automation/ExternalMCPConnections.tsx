@@ -1,26 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
+import { ExternalMCPConnectDialog } from '@/components/automation/ExternalMCPConnectDialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 import {
-  useCreateExternalMCPServer,
   useDeleteExternalMCPServer,
   useExternalMCPProviders,
   useExternalMCPServers,
@@ -29,13 +20,7 @@ import {
   useUpdateExternalMCPServer,
   useUpdateExternalMCPTools,
 } from '@/hooks/queries/useExternalMCP';
-import type {
-  CreateExternalMCPServerRequest,
-  ExternalMCPAuthType,
-  ExternalMCPProvider,
-  ExternalMCPServer,
-  ExternalMCPTool,
-} from '@/lib/externalMCPTypes';
+import type { ExternalMCPServer, ExternalMCPTool } from '@/lib/externalMCPTypes';
 import {
   ArrowDown01Icon,
   ArrowReloadHorizontalIcon,
@@ -53,6 +38,8 @@ type ExternalMCPConnectionsProps = {
   workspaceId: string;
   workspaceName: string;
   canManageSettings: boolean;
+  createOpen: boolean;
+  onCreateOpenChange: (open: boolean) => void;
 };
 
 const STATUS_COPY: Record<ExternalMCPServer['status'], { label: string; className: string }> = {
@@ -65,31 +52,21 @@ const STATUS_COPY: Record<ExternalMCPServer['status'], { label: string; classNam
   disconnected: { label: 'Disconnected', className: 'text-muted-foreground' },
 };
 
-const CUSTOMER_SCOPE_COPY: Record<string, string> = {
-  read: 'Read workspace data',
-  'read:sensitive': 'Read sensitive data',
-  write: 'Create and update data',
-  'write:live': 'Apply changes to live campaigns',
-  configure: 'Change workspace configuration',
-};
-
-const AUTH_OPTIONS: Array<{ value: ExternalMCPAuthType; label: string; description: string }> = [
-  { value: 'oauth', label: 'OAuth', description: 'Sign in through the provider' },
-  { value: 'bearer_token', label: 'Bearer token', description: 'Send an API token' },
-  { value: 'headers', label: 'Custom headers', description: 'Send one or more secret headers' },
-  { value: 'none', label: 'No authentication', description: 'For public or network-protected servers' },
-];
-
 export function ExternalMCPConnections({
   workspaceId,
   workspaceName,
   canManageSettings,
+  createOpen,
+  onCreateOpenChange,
 }: ExternalMCPConnectionsProps) {
   const providersQuery = useExternalMCPProviders(workspaceId);
   const enabled = providersQuery.data?.enabled === true;
   const serversQuery = useExternalMCPServers(workspaceId, enabled);
-  const [createOpen, setCreateOpen] = useState(false);
   const servers = serversQuery.data ?? [];
+  const resolveServer = useCallback(async (serverId: string) => {
+    const result = await serversQuery.refetch();
+    return result.data?.find((server) => server.id === serverId);
+  }, [serversQuery]);
 
   if (providersQuery.isLoading) {
     return <div className="grid gap-4 lg:grid-cols-2"><Skeleton className="h-48" /><Skeleton className="h-48" /></div>;
@@ -125,36 +102,31 @@ export function ExternalMCPConnections({
         </Alert>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(260px,0.8fr)]">
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardHeader>
-            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-              <div>
-                <CardTitle className="text-base">Connected servers</CardTitle>
-                <CardDescription>Connect any approved remote MCP server, then choose which discovered tools agents may use.</CardDescription>
-              </div>
-              {canManageSettings ? (
-                <Button size="sm" onClick={() => setCreateOpen(true)}>
-                  <PlusSignIcon className="mr-1.5 h-4 w-4" /> Add server
-                </Button>
-              ) : null}
+      {serversQuery.isLoading ? <Skeleton className="h-48" /> : null}
+      {serversQuery.isError ? <Alert variant="destructive"><AlertTitle>Could not load servers</AlertTitle><AlertDescription>{serversQuery.error.message}</AlertDescription></Alert> : null}
+      {!serversQuery.isLoading && !serversQuery.isError && servers.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border/80 bg-card px-6 py-12">
+          <div className="mx-auto max-w-xl text-center">
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <Globe02Icon className="h-5 w-5" />
             </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {serversQuery.isLoading ? <Skeleton className="h-32" /> : null}
-            {serversQuery.isError ? <Alert variant="destructive"><AlertTitle>Could not load servers</AlertTitle><AlertDescription>{serversQuery.error.message}</AlertDescription></Alert> : null}
-            {!serversQuery.isLoading && servers.length === 0 ? (
-              <div className="rounded-xl border border-dashed px-6 py-10 text-center">
-                <Globe02Icon className="mx-auto h-6 w-6 text-muted-foreground" />
-                <p className="mt-3 text-sm font-medium">No external servers yet</p>
-                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                  {canManageSettings
-                    ? 'Connect any approved Streamable HTTP MCP server to make its tools available to Helpin agents.'
-                    : 'A workspace admin can connect an MCP server and make its tools available to Helpin agents.'}
-                </p>
-                {canManageSettings ? <Button className="mt-4" size="sm" variant="outline" onClick={() => setCreateOpen(true)}>Add your first server</Button> : null}
-              </div>
+            <h3 className="mt-4 text-base font-semibold">No MCP servers connected</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {canManageSettings
+                ? 'Connect a provider preset or any approved Streamable HTTP endpoint to make its tools available to Helpin agents.'
+                : 'A workspace admin can connect an MCP server and make its tools available to Helpin agents.'}
+            </p>
+            {canManageSettings ? (
+              <Button className="mt-5" size="sm" onClick={() => onCreateOpenChange(true)}>
+                <PlusSignIcon className="h-4 w-4" /> Add your first server
+              </Button>
             ) : null}
+          </div>
+        </div>
+      ) : null}
+      {!serversQuery.isLoading && !serversQuery.isError && servers.length > 0 ? (
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(260px,0.8fr)]">
+          <div className="min-w-0 space-y-3">
             {servers.map((server) => (
               <ExternalMCPServerCard
                 key={server.id}
@@ -163,33 +135,43 @@ export function ExternalMCPConnections({
                 canManageSettings={canManageSettings}
               />
             ))}
-          </CardContent>
-        </Card>
+          </div>
 
-        <Card className={`${LINEAR_CARD_CLASS} self-start`}>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base"><Shield01Icon className="h-4 w-4 text-muted-foreground" />Per-run security</CardTitle>
-            <CardDescription>Helpin keeps durable credentials. Agent Runtime gets only the exact selected tools and the current credential for one run.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <SecurityRow label="Workspace isolation" value={workspaceName || 'Current workspace'} />
-            <SecurityRow label="Tool policy" value="Explicit allowlist" />
-            <SecurityRow label="Write actions" value="Approval-aware" />
-            <SecurityRow label="Expired OAuth" value="Pauses and reconnects" />
-            <p className="border-t pt-3 text-xs leading-relaxed text-muted-foreground">Normal access-token expiry refreshes silently. You are notified only when consent is revoked or the refresh credential no longer works.</p>
-          </CardContent>
-        </Card>
-      </div>
+          <Card className={`${LINEAR_CARD_CLASS} self-start`}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base"><Shield01Icon className="h-4 w-4 text-muted-foreground" />Per-run security</CardTitle>
+              <CardDescription>Helpin keeps durable credentials. Agent Runtime gets only the exact selected tools and the current credential for one run.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <SecurityRow label="Workspace isolation" value={workspaceName || 'Current workspace'} />
+              <SecurityRow label="Tool policy" value="Explicit allowlist" />
+              <SecurityRow label="Write actions" value="Approval-aware" />
+              <SecurityRow label="Expired OAuth" value="Pauses and reconnects" />
+              <p className="border-t pt-3 text-xs leading-relaxed text-muted-foreground">Normal access-token expiry refreshes silently. You are notified only when consent is revoked or the refresh credential no longer works.</p>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
 
-      {canManageSettings ? (
-        <AddExternalMCPDialog
+      {canManageSettings && createOpen ? (
+        <ExternalMCPConnectDialog
           open={createOpen}
-          onOpenChange={setCreateOpen}
+          onOpenChange={onCreateOpenChange}
           workspaceId={workspaceId}
           providers={providersQuery.data?.providers ?? []}
+          resolveServer={resolveServer}
         />
       ) : null}
     </div>
+  );
+}
+
+export function ExternalMCPAddButton({ workspaceId, onAdd }: { workspaceId: string; onAdd: () => void }) {
+  const providersQuery = useExternalMCPProviders(workspaceId);
+  return (
+    <Button size="sm" onClick={onAdd} disabled={providersQuery.isLoading || providersQuery.data?.enabled !== true}>
+      <PlusSignIcon className="mr-1.5 h-4 w-4" /> Add server
+    </Button>
   );
 }
 
@@ -245,7 +227,7 @@ function ExternalMCPServerCard({
   };
 
   return (
-    <section className={cn('overflow-hidden rounded-xl border bg-background transition-opacity', !server.enabled && 'opacity-70')}>
+    <section className={cn('min-w-0 max-w-full overflow-hidden rounded-xl border bg-background transition-opacity', !server.enabled && 'opacity-70')}>
       <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/30">
           <DatabaseIcon className="h-4 w-4 text-muted-foreground" />
@@ -260,21 +242,31 @@ function ExternalMCPServerCard({
           {server.last_error_message ? <p className="mt-2 text-xs text-destructive">{server.last_error_message}</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
             {canManageSettings && needsOAuth ? <Button size="sm" onClick={() => void connect()} disabled={oauth.isPending}>{oauth.isPending ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Key01Icon className="mr-1.5 h-3.5 w-3.5" />}{server.status === 'pending_oauth' ? 'Connect' : 'Reconnect'}</Button> : null}
-            {canManageSettings && server.status === 'connected' ? <Button size="sm" variant="outline" onClick={() => void sync()} disabled={refresh.isPending}>{refresh.isPending ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ArrowReloadHorizontalIcon className="mr-1.5 h-3.5 w-3.5" />}Refresh tools</Button> : null}
             {tools.length > 0 ? <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Hide tools' : canManageSettings ? 'Manage tools' : 'View tools'}<ArrowDown01Icon className={cn('ml-1.5 h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} /></Button> : null}
           </div>
         </div>
         {canManageSettings ? (
-          <div className="flex items-center gap-1 self-start">
-            <Switch
-              checked={server.enabled}
-              aria-label={`${server.enabled ? 'Disable' : 'Enable'} ${server.name}`}
-              disabled={updateServer.isPending}
-              onCheckedChange={(enabled) => updateServer.mutate({ serverId: server.id, request: { enabled } })}
-            />
-            <Button size="icon-sm" variant="ghost" onClick={() => void remove()} disabled={deleteServer.isPending}>
-              <Delete01Icon className="h-4 w-4" /><span className="sr-only">Remove {server.name}</span>
-            </Button>
+          <div className="flex shrink-0 items-center gap-3 self-start sm:flex-col sm:items-end sm:gap-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{server.enabled ? 'Enabled' : 'Disabled'}</span>
+              <Switch
+                checked={server.enabled}
+                aria-label={`${server.enabled ? 'Disable' : 'Enable'} ${server.name}`}
+                disabled={updateServer.isPending}
+                onCheckedChange={(enabled) => updateServer.mutate({ serverId: server.id, request: { enabled } })}
+              />
+            </div>
+            <div className="flex items-center gap-0.5">
+              {server.status === 'connected' ? (
+                <Button size="icon-sm" variant="ghost" title={`Refresh tools for ${server.name}`} onClick={() => void sync()} disabled={refresh.isPending}>
+                  <ArrowReloadHorizontalIcon className={cn('h-4 w-4', refresh.isPending && 'animate-spin')} />
+                  <span className="sr-only">Refresh tools for {server.name}</span>
+                </Button>
+              ) : null}
+              <Button size="icon-sm" variant="ghost" title={`Remove ${server.name}`} onClick={() => void remove()} disabled={deleteServer.isPending}>
+                <Delete01Icon className="h-4 w-4" /><span className="sr-only">Remove {server.name}</span>
+              </Button>
+            </div>
           </div>
         ) : null}
       </div>
@@ -307,268 +299,56 @@ function ExternalMCPToolPolicies({
     }
   };
   return (
-    <div className="border-t bg-muted/15 px-4 py-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="min-w-0 max-w-full overflow-hidden border-t bg-muted/15 px-4 py-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
         <div><p className="text-sm font-medium">Agent tools</p><p className="text-xs text-muted-foreground">Enabled tools appear under External MCP in the agent editor.</p></div>
         <Badge variant="outline">{tools.length} discovered</Badge>
       </div>
-      <div className="space-y-2">
-        {tools.map((tool) => (
-          <div key={tool.id} className="flex flex-col gap-3 rounded-lg border bg-background p-3 sm:flex-row sm:items-center">
-            <Checkbox checked={tool.enabled} disabled={!canManageSettings || updateTools.isPending} onCheckedChange={(checked) => void update(tool.id, { enabled: checked === true })} aria-label={`Enable ${tool.remote_name}`} />
-            <div className="min-w-0 flex-1">
-              <p className="font-mono text-xs font-medium">{tool.remote_name}</p>
-              <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{tool.description}</p>
-            </div>
-            <div className="flex rounded-lg border p-0.5">
-              {(['read', 'write'] as const).map((access) => (
-                <button key={access} type="button" disabled={!canManageSettings || updateTools.isPending} onClick={() => void update(tool.id, { access })} className={cn('rounded-md px-2 py-1 text-xs capitalize transition-colors disabled:cursor-default', tool.access === access ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground disabled:hover:text-muted-foreground')}>{access}</button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-type CredentialHeader = { id: string; name: string; value: string };
-
-function AddExternalMCPDialog({ open, onOpenChange, workspaceId, providers }: { open: boolean; onOpenChange: (open: boolean) => void; workspaceId: string; providers: ExternalMCPProvider[] }) {
-  const create = useCreateExternalMCPServer(workspaceId);
-  const oauth = useStartExternalMCPOAuth(workspaceId);
-  const availableProviders = useMemo(() => {
-    const generic = providers.find((provider) => provider.provider === 'custom') ?? {
-      provider: 'custom' as const,
-      region: '',
-      name: 'Any MCP server',
-      endpoint_url: '',
-      auth_type: 'oauth' as const,
-      default_scopes: [],
-      optional_scopes: [],
-    };
-    return [generic, ...providers.filter((provider) => provider.provider !== 'custom')];
-  }, [providers]);
-  const providerShortcuts = availableProviders.filter((provider) => provider.provider !== 'custom');
-  const [providerKey, setProviderKey] = useState(() => {
-    const preferred = availableProviders[0];
-    return preferred ? `${preferred.provider}:${preferred.region}` : '';
-  });
-  const [showProviderShortcuts, setShowProviderShortcuts] = useState(false);
-  const [name, setName] = useState('');
-  const [endpointURL, setEndpointURL] = useState('');
-  const [authType, setAuthType] = useState<ExternalMCPAuthType>('oauth');
-  const [scopes, setScopes] = useState<string[]>([]);
-  const [bearerToken, setBearerToken] = useState('');
-  const [headers, setHeaders] = useState<CredentialHeader[]>([{ id: 'header-1', name: 'X-API-Key', value: '' }]);
-  const selected = useMemo(
-    () => availableProviders.find((provider) => `${provider.provider}:${provider.region}` === providerKey) ?? availableProviders[0],
-    [availableProviders, providerKey],
-  );
-  const isCustom = selected?.provider === 'custom';
-  const headersComplete = headers.length > 0 && headers.every((header) => header.name.trim() && header.value.trim());
-
-  const close = () => {
-    if (!create.isPending && !oauth.isPending) onOpenChange(false);
-  };
-  const submit = async () => {
-    if (!selected) return;
-    let credentialHeaders: Record<string, string> | undefined;
-    if (isCustom && authType === 'headers') {
-      const entries = new Map<string, string>();
-      for (const header of headersComplete ? headers : []) {
-        const headerName = header.name.trim();
-        if (entries.has(headerName.toLowerCase())) {
-          toast.error(`Credential header ${headerName} is duplicated`);
-          return;
-        }
-        entries.set(headerName.toLowerCase(), header.value.trim());
-      }
-      if (entries.size === 0) {
-        toast.error('Add a header name and value');
-        return;
-      }
-      credentialHeaders = Object.fromEntries(headers.map((header) => [header.name.trim(), header.value.trim()]));
-    }
-    const request: CreateExternalMCPServerRequest = isCustom ? {
-      name: name.trim(), provider: 'custom', endpoint_url: endpointURL.trim(), auth_type: authType,
-      oauth_scopes: authType === 'oauth' ? scopes : undefined,
-      bearer_token: authType === 'bearer_token' ? bearerToken.trim() : undefined,
-      headers: credentialHeaders,
-    } : {
-      name: name.trim(), provider: 'customer_io', region: selected.region, oauth_scopes: scopes,
-    };
-    try {
-      const server = await create.mutateAsync(request);
-      if (server.auth_type === 'oauth') {
-        const result = await oauth.mutateAsync(server.id);
-        window.location.assign(result.authorization_url);
-        return;
-      }
-      toast.success('External MCP server added');
-      onOpenChange(false);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not add server');
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Connect an MCP server</DialogTitle>
-          <DialogDescription>Use a provider preset or connect any approved remote MCP endpoint. Credentials are encrypted and never returned by the API.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-6 py-1">
-          <div className="space-y-2">
-            <div className="flex items-start gap-3 rounded-xl border bg-muted/20 p-3.5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-background">
-                <Globe02Icon className="h-4 w-4 text-muted-foreground" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{isCustom ? 'Remote MCP server' : selected?.name}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {isCustom
-                    ? 'Connect directly with a Streamable HTTP URL and the authentication method your server uses.'
-                    : `Provider shortcut · ${selected?.region.toUpperCase()} · OAuth`}
-                </p>
-              </div>
-              {!isCustom ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setProviderKey('custom:');
-                    setScopes([]);
-                    setName('');
-                  }}
-                >
-                  Use a URL
-                </Button>
-              ) : null}
-            </div>
-            {isCustom && providerShortcuts.length > 0 ? (
-              <>
-                <Button type="button" size="sm" variant="ghost" onClick={() => setShowProviderShortcuts((current) => !current)}>
-                  {showProviderShortcuts ? 'Hide provider shortcuts' : 'Use a provider shortcut'}
-                  <ArrowDown01Icon className={cn('ml-1.5 h-3.5 w-3.5 transition-transform', showProviderShortcuts && 'rotate-180')} />
-                </Button>
-                {showProviderShortcuts ? (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {providerShortcuts.map((provider) => {
-                      const key = `${provider.provider}:${provider.region}`;
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => {
-                            setProviderKey(key);
-                            setScopes(provider.default_scopes ?? []);
-                            setName('');
-                            setShowProviderShortcuts(false);
-                          }}
-                          className="rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          <span className="block text-sm font-medium">{provider.name}</span>
-                          <span className="mt-0.5 block text-xs text-muted-foreground">Preconfigured OAuth · {provider.region.toUpperCase()}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="external-mcp-name">Display name {!isCustom ? <span className="font-normal text-muted-foreground">(optional)</span> : null}</Label>
-            <Input id="external-mcp-name" value={name} onChange={(event) => setName(event.target.value)} placeholder={isCustom ? 'My MCP server' : selected?.name ?? 'MCP server'} maxLength={120} />
-          </div>
-          {isCustom ? (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="external-mcp-url">MCP server URL</Label>
-                <Input id="external-mcp-url" type="url" inputMode="url" autoCapitalize="off" spellCheck={false} value={endpointURL} onChange={(event) => setEndpointURL(event.target.value)} placeholder="https://mcp.example.com/mcp" />
-                <p className="text-xs text-muted-foreground">Remote Streamable HTTP endpoint. The host must be allowed by your Helpin environment.</p>
-              </div>
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">Authentication</legend>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {AUTH_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
+      <Table className="table-fixed">
+        <colgroup>
+          <col className="w-10" />
+          <col />
+          <col className="w-[116px]" />
+        </colgroup>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="h-9 px-2"><span className="sr-only">Enabled</span></TableHead>
+            <TableHead className="h-9 px-2 text-xs text-muted-foreground">Tool</TableHead>
+            <TableHead className="h-9 px-2 text-xs text-muted-foreground">Access</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {tools.map((tool) => (
+            <TableRow key={tool.id} className="hover:bg-transparent">
+              <TableCell className="px-2 py-3">
+                <Checkbox checked={tool.enabled} disabled={!canManageSettings || updateTools.isPending} onCheckedChange={(checked) => void update(tool.id, { enabled: checked === true })} aria-label={`Enable ${tool.remote_name}`} />
+              </TableCell>
+              <TableCell className="min-w-0 whitespace-normal px-2 py-3">
+                <p className="break-all font-mono text-xs font-medium">{tool.remote_name}</p>
+                <p className="mt-0.5 line-clamp-2 break-words text-xs leading-4 text-muted-foreground">{tool.description}</p>
+              </TableCell>
+              <TableCell className="px-2 py-3">
+                <div className="flex w-fit rounded-lg bg-muted/60 p-0.5">
+                  {(['read', 'write'] as const).map((access) => (
+                    <Button
+                      key={access}
                       type="button"
-                      aria-pressed={authType === option.value}
-                      onClick={() => setAuthType(option.value)}
-                      className={cn(
-                        'rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                        authType === option.value && 'border-primary bg-primary/5 ring-1 ring-primary/20',
-                      )}
+                      size="xs"
+                      variant="ghost"
+                      disabled={!canManageSettings || updateTools.isPending}
+                      onClick={() => void update(tool.id, { access })}
+                      className={cn('rounded-md px-2 capitalize', tool.access === access ? 'bg-background text-foreground shadow-sm hover:bg-background' : 'text-muted-foreground')}
                     >
-                      <span className="block text-sm font-medium">{option.label}</span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>
-                    </button>
+                      {access}
+                    </Button>
                   ))}
                 </div>
-              </fieldset>
-              {authType === 'bearer_token' ? (
-                <div className="space-y-2">
-                  <Label htmlFor="external-mcp-token">Bearer token</Label>
-                  <Input id="external-mcp-token" type="password" autoComplete="off" value={bearerToken} onChange={(event) => setBearerToken(event.target.value)} placeholder="Paste token" />
-                </div>
-              ) : null}
-              {authType === 'headers' ? (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <Label>Credential headers</Label>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => setHeaders((current) => [...current, { id: crypto.randomUUID(), name: '', value: '' }])}>
-                      <PlusSignIcon className="mr-1.5 h-3.5 w-3.5" /> Add header
-                    </Button>
-                  </div>
-                  <div className="space-y-2">
-                    {headers.map((header, index) => (
-                      <div key={header.id} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto] gap-2">
-                        <Input aria-label={`Header ${index + 1} name`} autoCapitalize="off" spellCheck={false} value={header.name} onChange={(event) => setHeaders((current) => current.map((item) => item.id === header.id ? { ...item, name: event.target.value } : item))} placeholder="X-API-Key" />
-                        <Input aria-label={`Header ${index + 1} value`} type="password" autoComplete="off" value={header.value} onChange={(event) => setHeaders((current) => current.map((item) => item.id === header.id ? { ...item, value: event.target.value } : item))} placeholder="Secret value" />
-                        <Button type="button" size="icon" variant="ghost" disabled={headers.length === 1} onClick={() => setHeaders((current) => current.filter((item) => item.id !== header.id))}>
-                          <Delete01Icon className="h-4 w-4" /><span className="sr-only">Remove header {index + 1}</span>
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground">Restricted transport headers such as Host, Cookie, Connection, and Proxy headers are blocked.</p>
-                </div>
-              ) : null}
-              {authType === 'oauth' ? (
-                <div className="space-y-2">
-                  <Label htmlFor="external-mcp-scopes">OAuth scopes <span className="font-normal text-muted-foreground">(optional)</span></Label>
-                  <Input id="external-mcp-scopes" value={scopes.join(' ')} onChange={(event) => setScopes(event.target.value.split(/[\s,]+/).filter(Boolean))} placeholder="read write" />
-                  <p className="text-xs text-muted-foreground">Helpin discovers the server's OAuth endpoints. Enter only scopes documented by the provider.</p>
-                </div>
-              ) : null}
-            </>
-          ) : null}
-          {!isCustom && selected ? (
-            <div className="space-y-2"><Label>OAuth access</Label><div className="grid gap-2 sm:grid-cols-2">{Array.from(new Set([...selected.default_scopes, ...selected.optional_scopes])).map((scope) => <label key={scope} className="flex items-start gap-2.5 rounded-lg border p-2.5 text-sm"><Checkbox checked={scopes.includes(scope)} disabled={selected.default_scopes.includes(scope)} onCheckedChange={(checked) => setScopes((current) => checked === true ? Array.from(new Set([...current, scope])) : current.filter((item) => item !== scope))} /><span><span className="block font-medium">{CUSTOMER_SCOPE_COPY[scope] ?? scope}</span><span className="font-mono text-[10px] text-muted-foreground">{scope}</span></span></label>)}</div></div>
-          ) : null}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={close}>Cancel</Button>
-          <Button
-            onClick={() => void submit()}
-            disabled={create.isPending || oauth.isPending || !selected || (isCustom && (
-              !name.trim()
-              || !endpointURL.trim()
-              || (authType === 'bearer_token' && !bearerToken.trim())
-              || (authType === 'headers' && !headersComplete)
-            ))}
-          >
-            {create.isPending || oauth.isPending ? <Loading01Icon className="mr-2 h-4 w-4 animate-spin" /> : null}
-            {selected?.auth_type === 'oauth' || isCustom && authType === 'oauth' ? 'Continue to authorize' : 'Connect server'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 

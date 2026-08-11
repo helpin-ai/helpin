@@ -24,6 +24,7 @@ type ExternalMCPProviderOption struct {
 	Provider       string   `json:"provider"`
 	Region         string   `json:"region"`
 	Name           string   `json:"name"`
+	WebsiteURL     string   `json:"website_url"`
 	EndpointURL    string   `json:"endpoint_url"`
 	AuthType       string   `json:"auth_type"`
 	DefaultScopes  []string `json:"default_scopes"`

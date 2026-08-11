@@ -8,6 +8,7 @@ type ExternalMCPSettingsSearch = {
   external_mcp_oauth?: 'connected' | 'failed';
   external_mcp_server_id?: string;
   external_mcp_resume?: 'failed';
+  external_mcp_popup?: '1';
 };
 
 function optionalString(value: unknown) {
@@ -21,6 +22,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/settings/external-
       : undefined,
     external_mcp_server_id: optionalString(search.external_mcp_server_id),
     external_mcp_resume: search.external_mcp_resume === 'failed' ? 'failed' : undefined,
+    external_mcp_popup: search.external_mcp_popup === '1' ? '1' : undefined,
   }),
   component: ExternalMCPSettingsRoute,
 });
@@ -32,6 +34,16 @@ function ExternalMCPSettingsRoute() {
   useEffect(() => {
     if (!search.external_mcp_oauth) return;
 
+    if (search.external_mcp_popup === '1' && window.opener) {
+      window.opener.postMessage({
+        type: 'helpin.external-mcp.oauth',
+        status: search.external_mcp_oauth,
+        serverId: search.external_mcp_server_id,
+      }, window.location.origin);
+      window.close();
+      return;
+    }
+
     if (search.external_mcp_oauth === 'connected') {
       toast.success(search.external_mcp_resume === 'failed'
         ? 'Server connected. A paused run could not be resumed automatically.'
@@ -41,7 +53,7 @@ function ExternalMCPSettingsRoute() {
     }
 
     void navigate({ search: {}, replace: true });
-  }, [navigate, search.external_mcp_oauth, search.external_mcp_resume]);
+  }, [navigate, search.external_mcp_oauth, search.external_mcp_popup, search.external_mcp_resume, search.external_mcp_server_id]);
 
   return (
     <SettingsRouteViewport>

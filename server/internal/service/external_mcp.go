@@ -97,8 +97,10 @@ func (s *ExternalMCPService) Enabled() bool { return s != nil && s.cfg.Enabled }
 func (s *ExternalMCPService) Providers() []ExternalMCPProviderOption {
 	return []ExternalMCPProviderOption{
 		{Provider: model.ExternalMCPProviderCustom, Name: "Any MCP server"},
-		{Provider: model.ExternalMCPProviderCustomerIO, Region: "us", Name: "Customer.io (US)", EndpointURL: customerIOMCPEndpointUS, AuthType: model.ExternalMCPAuthOAuth, DefaultScopes: []string{"read"}, OptionalScopes: []string{"read:sensitive", "write", "write:live", "configure"}},
-		{Provider: model.ExternalMCPProviderCustomerIO, Region: "eu", Name: "Customer.io (EU)", EndpointURL: customerIOMCPEndpointEU, AuthType: model.ExternalMCPAuthOAuth, DefaultScopes: []string{"read"}, OptionalScopes: []string{"read:sensitive", "write", "write:live", "configure"}},
+		{Provider: model.ExternalMCPProviderCustomerIO, Region: "us", Name: "Customer.io (US)", WebsiteURL: "https://customer.io", EndpointURL: customerIOMCPEndpointUS, AuthType: model.ExternalMCPAuthOAuth, DefaultScopes: []string{"read"}, OptionalScopes: []string{"read:sensitive", "write", "write:live", "configure"}},
+		{Provider: model.ExternalMCPProviderCustomerIO, Region: "eu", Name: "Customer.io (EU)", WebsiteURL: "https://customer.io", EndpointURL: customerIOMCPEndpointEU, AuthType: model.ExternalMCPAuthOAuth, DefaultScopes: []string{"read"}, OptionalScopes: []string{"read:sensitive", "write", "write:live", "configure"}},
+		{Provider: model.ExternalMCPProviderCustom, Region: "linear", Name: "Linear", WebsiteURL: "https://linear.app", EndpointURL: "https://mcp.linear.app/mcp", AuthType: model.ExternalMCPAuthOAuth},
+		{Provider: model.ExternalMCPProviderCustom, Region: "sentry", Name: "Sentry", WebsiteURL: "https://sentry.io", EndpointURL: "https://mcp.sentry.dev/mcp", AuthType: model.ExternalMCPAuthOAuth},
 	}
 }
 

@@ -49,6 +49,14 @@ func TestExternalMCPProvidersAlwaysIncludeGenericServer(t *testing.T) {
 	if len(providers) == 0 || providers[0].Provider != model.ExternalMCPProviderCustom {
 		t.Fatalf("generic MCP provider should be first, got %#v", providers)
 	}
+	if len(providers) != 5 {
+		t.Fatalf("expected generic server plus four presets, got %#v", providers)
+	}
+	for _, provider := range providers[1:] {
+		if provider.WebsiteURL == "" || provider.EndpointURL == "" {
+			t.Fatalf("preset should include website and endpoint metadata, got %#v", provider)
+		}
+	}
 }
 
 func TestExternalMCPServerNameIsRuntimeSafe(t *testing.T) {
