@@ -100,26 +100,25 @@ describe('TaskRelationshipsSection', () => {
     expect(container.querySelector('#task-relationships-section')).toBeNull();
   });
 
-  it('uses the inline treatment for the add relationship button', () => {
+  it('places the add relationship action in the section heading', () => {
     renderSection();
 
-    const addButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Add relationship',
+    const addButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Add task relationship"]',
     );
 
     expect(addButton).toBeTruthy();
-    expect(addButton?.className).toContain('text-xs');
+    expect(addButton?.textContent).toBe('+');
+    expect(addButton?.className).toContain('p-0.5');
     expect(addButton?.className).toContain('text-muted-foreground');
-    expect(addButton?.className).toContain('hover:text-foreground');
-    expect(addButton?.querySelector('svg')?.className.baseVal).not.toContain('text-primary');
   });
 
-  it('opens the composer from the add relationship button', () => {
+  it('opens the relationship modal from the heading action', async () => {
     const onComposerOpenChange = vi.fn();
     renderSection({ onComposerOpenChange });
 
-    const addButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Add relationship',
+    const addButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Add task relationship"]',
     );
 
     act(() => {
@@ -127,6 +126,14 @@ describe('TaskRelationshipsSection', () => {
     });
 
     expect(onComposerOpenChange).toHaveBeenCalledWith(true);
+
+    renderSection({ composerOpen: true, onComposerOpenChange });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(document.body.querySelector('[role="dialog"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('Add relationship');
   });
 
   it('keeps create related task available before search text is entered', async () => {

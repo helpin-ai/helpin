@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import {
   ArrowLeftRightIcon,
@@ -28,6 +28,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   useCreateDocAssociation,
   useCreateTask,
@@ -65,8 +72,7 @@ interface TaskRelationshipsSectionProps {
   composerOpen: boolean;
   onComposerOpenChange: (open: boolean) => void;
   visible?: boolean;
-  /** Ref to an external trigger (e.g. the action-bar "Relationships" button).
-   *  When set, clicking that element opens the popover anchored there instead of inline. */
+  /** Retained for callers that use an external relationship trigger. */
   externalTriggerRef?: RefObject<HTMLElement | null>;
   className?: string;
   onContentChange?: (hasContent: boolean) => void;
@@ -144,85 +150,6 @@ function getRelationshipMeta(linkType: string) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Floating popover rendered via a portal, positioned to an anchor   */
-/* ------------------------------------------------------------------ */
-
-function FloatingPopover({
-  open,
-  onOpenChange,
-  anchorEl,
-  children,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  anchorEl: HTMLElement | null;
-  children: ReactNode;
-}) {
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
-
-  // Track anchor position on scroll / resize
-  useEffect(() => {
-    if (!open || !anchorEl) return;
-    const update = () => {
-      const rect = anchorEl.getBoundingClientRect();
-      setPos({ top: rect.bottom + 4, left: rect.left });
-    };
-    update();
-    // Listen on the nearest scrollable ancestor + window resize
-    const scrollParent = anchorEl.closest('[class*="overflow"]') ?? window;
-    scrollParent.addEventListener('scroll', update, { passive: true });
-    window.addEventListener('resize', update, { passive: true });
-    return () => {
-      scrollParent.removeEventListener('scroll', update);
-      window.removeEventListener('resize', update);
-    };
-  }, [open, anchorEl]);
-
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node) &&
-        anchorEl &&
-        !anchorEl.contains(e.target as Node)
-      ) {
-        onOpenChange(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open, anchorEl, onOpenChange]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onOpenChange(false);
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [open, onOpenChange]);
-
-  if (!open || !anchorEl) return null;
-
-  return (
-    <div
-      ref={popoverRef}
-      className="fixed z-50 w-[min(38rem,calc(100vw-2rem))] rounded-xl border border-border/60 bg-popover text-popover-foreground shadow-lg ring-1 ring-black/[0.04] dark:ring-white/[0.04] animate-in fade-in-0 zoom-in-95 slide-in-from-top-2"
-      style={{
-        top: pos.top,
-        left: pos.left,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /*  Main component                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -244,7 +171,6 @@ export function TaskRelationshipsSection({
   composerOpen,
   onComposerOpenChange,
   visible = false,
-  externalTriggerRef,
   className,
   onContentChange,
   onCountChange,
@@ -253,8 +179,6 @@ export function TaskRelationshipsSection({
   showExternalBlocker = true,
 }: TaskRelationshipsSectionProps) {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
-  const inlineAddRef = useRef<HTMLButtonElement>(null);
-  const [anchorSource, setAnchorSource] = useState<'external' | 'inline'>('inline');
   const [popoverTab, setPopoverTab] = useState<'tasks' | 'docs'>('tasks');
   const [query, setQuery] = useState('');
   const [relationshipType, setRelationshipType] = useState<TaskRelationshipAction>('relates_to');
@@ -274,17 +198,6 @@ export function TaskRelationshipsSection({
   const createTask = useCreateTask(workspaceId);
   const createDocAssociation = useCreateDocAssociation(workspaceId, 'task', taskId);
   const deleteDocAssociation = useDeleteDocAssociation(workspaceId, 'task', taskId);
-
-  // Detect which trigger opened the popover
-  useEffect(() => {
-    if (composerOpen) {
-      const active = document.activeElement;
-      if (externalTriggerRef?.current && externalTriggerRef.current.contains(active as Node)) {
-        setAnchorSource('external');
-      }
-      // "inline" is set explicitly in the onClick handler
-    }
-  }, [composerOpen, externalTriggerRef]);
 
   useEffect(() => {
     if (!composerOpen) {
@@ -407,20 +320,15 @@ export function TaskRelationshipsSection({
     createDocAssociation.isPending ||
     deleteDocAssociation.isPending;
 
-  // Resolve the popover anchor element
-  const anchorEl =
-    anchorSource === 'external' && externalTriggerRef?.current
-      ? externalTriggerRef.current
-      : inlineAddRef.current;
   const createWorkflow = useMemo(
     () => workflowsQuery.data?.find((item) => item.workflow.id === workflowId),
     [workflowId, workflowsQuery.data],
   );
 
-  const popoverBody: ReactNode = (
+  const composerBody: ReactNode = (
     <>
       {!hideDocs && (
-        <div className="border-b border-border/60 bg-muted/20 px-3 pt-2.5 pb-2">
+        <div>
           <Tabs
           value={popoverTab}
           onValueChange={(v) => {
@@ -448,7 +356,7 @@ export function TaskRelationshipsSection({
         </div>
       )}
 
-      <div className="space-y-2.5 px-3 py-2.5">
+      <div className="space-y-2.5">
         {popoverTab === 'tasks' ? (
           <>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">This Task...</p>
@@ -559,7 +467,7 @@ export function TaskRelationshipsSection({
     </>
   );
 
-  // The action-bar toggle controls section visibility; the inline button controls the composer.
+  // The action-bar toggle controls section visibility; the heading action controls the composer.
   if (!visible && !composerOpen) {
     return null;
   }
@@ -578,6 +486,17 @@ export function TaskRelationshipsSection({
                 ({relationshipContentCount})
               </span>
             ) : null}
+          </div>
+          <div className="flex items-center gap-1">
+            {busy ? <Loading01Icon className="h-3 w-3 animate-spin text-muted-foreground" /> : null}
+            <button
+              type="button"
+              className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              onClick={() => onComposerOpenChange(true)}
+              aria-label="Add task relationship"
+            >
+              <span className="text-sm leading-none">+</span>
+            </button>
           </div>
         </div>
 
@@ -723,33 +642,19 @@ export function TaskRelationshipsSection({
           </div>
         ) : null}
 
-      {/* + Add Relationship */}
-      <div className={cn('flex items-center gap-2', flat ? 'px-1 py-1' : 'border-t border-border/40 px-3 py-2')}>
-        <button
-          ref={inlineAddRef}
-          type="button"
-          className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
-          onClick={() => {
-            setAnchorSource('inline');
-            onComposerOpenChange(true);
-          }}
-        >
-          <PlusSignIcon className="h-3 w-3" />
-          Add relationship
-        </button>
-
-        {busy ? (
-          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loading01Icon className="h-3 w-3 animate-spin" />
-          </span>
-        ) : null}
-      </div>
       </div>
 
-      {/* Floating popover — anchored to whichever trigger was clicked */}
-      <FloatingPopover open={composerOpen} onOpenChange={onComposerOpenChange} anchorEl={anchorEl}>
-        {popoverBody}
-      </FloatingPopover>
+      <Dialog open={composerOpen} onOpenChange={onComposerOpenChange}>
+        <DialogContent className="gap-4 sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Add relationship</DialogTitle>
+            <DialogDescription>
+              Link an existing task or create a related task.
+            </DialogDescription>
+          </DialogHeader>
+          {composerBody}
+        </DialogContent>
+      </Dialog>
 
       {createWorkflow ? (
         <CreateTaskModal
