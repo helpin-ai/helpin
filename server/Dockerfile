@@ -17,6 +17,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/migr
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/reconcile-git-pr-status ./cmd/reconcile-git-pr-status
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/recover-missed-support-emails ./cmd/recover-missed-support-emails
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/reindex-helpcenter-search ./cmd/reindex-helpcenter-search
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/repair-helpcenter-artifacts ./cmd/repair-helpcenter-artifacts
 
 # ---- Minimal runtime base ----
 FROM alpine:3.19 AS runtime-base
@@ -36,6 +37,7 @@ COPY --from=builder /app/server .
 COPY --from=builder /app/reconcile-git-pr-status .
 COPY --from=builder /app/recover-missed-support-emails .
 COPY --from=builder /app/reindex-helpcenter-search .
+COPY --from=builder /app/repair-helpcenter-artifacts .
 RUN chown -R app:app /app
 
 USER app:app

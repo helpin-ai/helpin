@@ -410,6 +410,7 @@ func main() {
 		wsPublisher,
 	)
 	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
+	docsHelpcenterService.SetPublicationArtifactDependencies(artifactRepo, s3Client)
 	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
 	docsImportService := service.NewDocsImportService(
 		docsImportRepo,

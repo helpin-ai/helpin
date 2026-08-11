@@ -33,6 +33,8 @@ type DocsHelpcenterService struct {
 	redirectRepo    *repository.DocsRedirectRepository
 	searchRepo      *repository.DocsHelpcenterSearchRepository
 	s3Client        *storage.S3Client
+	artifactRepo    publicationArtifactRepository
+	artifactStore   publicationArtifactStore
 	translationSvc  *DocsHelpcenterTranslationService
 	wsPublisher     *websocket.Publisher
 	hcCache         cache.Cache
@@ -50,7 +52,12 @@ func NewDocsHelpcenterService(
 	s3Client *storage.S3Client,
 	wsPublisher *websocket.Publisher,
 ) *DocsHelpcenterService {
-	return &DocsHelpcenterService{hcRepo: hcRepo, publicationRepo: publicationRepo, docRepo: docRepo, contentRepo: contentRepo, spaceRepo: spaceRepo, collectionRepo: collectionRepo, redirectRepo: redirectRepo, s3Client: s3Client, wsPublisher: wsPublisher}
+	return &DocsHelpcenterService{hcRepo: hcRepo, publicationRepo: publicationRepo, docRepo: docRepo, contentRepo: contentRepo, spaceRepo: spaceRepo, collectionRepo: collectionRepo, redirectRepo: redirectRepo, s3Client: s3Client, artifactStore: s3Client, wsPublisher: wsPublisher}
+}
+
+func (s *DocsHelpcenterService) SetPublicationArtifactDependencies(artifactRepo *repository.AgentRunArtifactRepository, artifactStore *storage.S3Client) {
+	s.artifactRepo = artifactRepo
+	s.artifactStore = artifactStore
 }
 
 func (s *DocsHelpcenterService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
@@ -902,10 +909,15 @@ func validatePublicationSnapshotContent(raw json.RawMessage) (json.RawMessage, e
 	if node.Type != "doc" {
 		return nil, fmt.Errorf("published_content root must be a doc node")
 	}
-	if _, err := tiptap.RenderHTML(trimmed); err != nil {
+	tiptap.NormalizeInternalAnchorLinks(&node)
+	normalized, err := json.Marshal(node)
+	if err != nil {
+		return nil, fmt.Errorf("published_content cannot be normalized: %w", err)
+	}
+	if _, err := tiptap.RenderHTML(normalized); err != nil {
 		return nil, fmt.Errorf("published_content cannot be rendered: %w", err)
 	}
-	return json.RawMessage(compactJSON(trimmed)), nil
+	return json.RawMessage(compactJSON(normalized)), nil
 }
 
 func publicationContentEqual(current json.RawMessage, published json.RawMessage) bool {
@@ -920,6 +932,7 @@ func normalizePublishedSourceContent(raw json.RawMessage) json.RawMessage {
 	if err := json.Unmarshal(raw, &node); err != nil {
 		return raw
 	}
+	tiptap.NormalizeInternalAnchorLinks(&node)
 	normalized := normalizePublishedSourceNode(node)
 	payload, err := json.Marshal(normalized)
 	if err != nil {
@@ -1085,6 +1098,14 @@ func (s *DocsHelpcenterService) buildSourceArticlePublication(ctx context.Contex
 	}
 	if len(publishedContent) > 0 {
 		publication.Content = publishedContent
+	}
+	publication.Content, err = materializePublicationArtifactReferences(ctx, s.artifactRepo, s.artifactStore, doc.WorkspaceID, doc.ID, publication.Content)
+	if err != nil {
+		return nil, err
+	}
+	publication.Content, err = validatePublicationSnapshotContent(publication.Content)
+	if err != nil {
+		return nil, err
 	}
 	return publication, nil
 }
