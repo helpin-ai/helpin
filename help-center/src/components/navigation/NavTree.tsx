@@ -157,8 +157,8 @@ function CollectionGroup({
     <AccordionItem value={node.item.id} className={cn('border-none', spacing)}>
       <AccordionTrigger
         className={cn(
-          'cursor-pointer rounded-lg py-[7px] hover:no-underline',
           indent,
+          'w-full min-w-0 cursor-pointer rounded-lg py-[7px] pr-4 hover:no-underline',
           headingClass,
           isActiveCollection
             ? 'bg-sidebar-active text-sidebar-active-foreground'
@@ -300,8 +300,8 @@ function NestedCollectionItem({
     <AccordionItem value={node.item.id} className={cn('border-none', spacing)}>
       <AccordionTrigger
         className={cn(
-          'cursor-pointer py-[7px] text-[13px] font-medium hover:no-underline',
           indent,
+          'w-full min-w-0 cursor-pointer py-[7px] pr-4 text-[13px] font-medium hover:no-underline',
           isActiveCollection
             ? 'bg-sidebar-active text-sidebar-active-foreground'
             : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
