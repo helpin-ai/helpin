@@ -106,19 +106,15 @@ func (r *OrganizationRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// AddMember adds a user as a member of an organization (upsert).
+// AddMember adds a new user to an organization. Existing memberships must be
+// changed through the role-update policy instead of this insert path.
 func (r *OrganizationRepository) AddMember(ctx context.Context, orgID, userID, role string) (*model.OrganizationMember, error) {
 	m := &model.OrganizationMember{
 		OrganizationID: orgID,
 		UserID:         userID,
 		Role:           role,
 	}
-	err := r.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "organization_id"}, {Name: "user_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"role"}),
-		}).
-		Create(m).Error
+	err := r.db.WithContext(ctx).Create(m).Error
 	if err != nil {
 		return nil, fmt.Errorf("add organization member: %w", err)
 	}
@@ -170,16 +166,55 @@ func (r *OrganizationRepository) UpdateMemberRole(ctx context.Context, orgID, us
 	return nil
 }
 
-// CountMembersByRole returns the number of members with a given role in an organization.
-func (r *OrganizationRepository) CountMembersByRole(ctx context.Context, orgID, role string) (int64, error) {
-	var count int64
-	if err := r.db.WithContext(ctx).
-		Model(&model.OrganizationMember{}).
-		Where("organization_id = ? AND role = ?", orgID, role).
-		Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("count members by role: %w", err)
-	}
-	return count, nil
+// TransferOwnership atomically replaces the canonical organization owner and
+// reconciles owner-role memberships to the same single-owner invariant.
+func (r *OrganizationRepository) TransferOwnership(ctx context.Context, orgID, currentOwnerID, newOwnerID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var org model.Organization
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", orgID).
+			First(&org).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("organization not found")
+			}
+			return fmt.Errorf("lock organization for ownership transfer: %w", err)
+		}
+		if org.OwnerID != currentOwnerID {
+			return fmt.Errorf("only the current organization owner can transfer ownership")
+		}
+
+		var target model.OrganizationMember
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("organization_id = ? AND user_id = ?", orgID, newOwnerID).
+			First(&target).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("new owner must be an organization member")
+			}
+			return fmt.Errorf("lock new owner membership: %w", err)
+		}
+
+		if err := tx.Model(&model.OrganizationMember{}).
+			Where("organization_id = ? AND role = ?", orgID, model.RoleOwner).
+			Update("role", model.RoleAdmin).Error; err != nil {
+			return fmt.Errorf("demote existing organization owners: %w", err)
+		}
+		if err := tx.Model(&model.OrganizationMember{}).
+			Where("organization_id = ? AND user_id = ?", orgID, newOwnerID).
+			Update("role", model.RoleOwner).Error; err != nil {
+			return fmt.Errorf("promote new organization owner: %w", err)
+		}
+
+		result := tx.Model(&model.Organization{}).
+			Where("id = ? AND owner_id = ?", orgID, currentOwnerID).
+			Update("owner_id", newOwnerID)
+		if result.Error != nil {
+			return fmt.Errorf("transfer organization ownership: %w", result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("organization ownership changed during transfer")
+		}
+		return nil
+	})
 }
 
 // RemoveMember removes a member from an organization.

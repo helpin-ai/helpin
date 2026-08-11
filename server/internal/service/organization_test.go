@@ -53,7 +53,7 @@ func TestValidateOrganizationRoleUpdate(t *testing.T) {
 		{name: "owner promotes member", actorRole: model.RoleOwner, targetRole: model.RoleMember, newRole: model.RoleAdmin},
 		{name: "owner demotes admin", actorRole: model.RoleOwner, targetRole: model.RoleAdmin, newRole: model.RoleViewer},
 		{name: "admin promotes member", actorRole: model.RoleAdmin, targetRole: model.RoleMember, newRole: model.RoleAdmin},
-		{name: "admin demotes another admin", actorRole: model.RoleAdmin, targetRole: model.RoleAdmin, newRole: model.RoleMember},
+		{name: "admin cannot demote another admin", actorRole: model.RoleAdmin, targetRole: model.RoleAdmin, newRole: model.RoleMember, wantError: "only organization owners can change an admin"},
 		{name: "member cannot manage roles", actorRole: model.RoleMember, targetRole: model.RoleViewer, newRole: model.RoleMember, wantError: "only organization owners and admins"},
 		{name: "viewer cannot manage roles", actorRole: model.RoleViewer, targetRole: model.RoleMember, newRole: model.RoleViewer, wantError: "only organization owners and admins"},
 		{name: "self change is denied", actorRole: model.RoleAdmin, targetRole: model.RoleAdmin, newRole: model.RoleMember, isSelf: true, wantError: "cannot change your own"},
@@ -79,7 +79,7 @@ func TestValidateOrganizationRoleUpdate(t *testing.T) {
 	}
 }
 
-func TestOrganizationServiceUpdateMemberAllowsAdminToManageAnotherAdmin(t *testing.T) {
+func TestOrganizationServiceUpdateMemberPreventsAdminFromManagingAnotherAdmin(t *testing.T) {
 	db := newTestDB(t)
 	orgRepo := repository.NewOrganizationRepository(db)
 	svc := NewOrganizationService(orgRepo)
@@ -96,14 +96,126 @@ func TestOrganizationServiceUpdateMemberAllowsAdminToManageAnotherAdmin(t *testi
 		t.Fatalf("AddMember(target) error = %v", err)
 	}
 
-	if err := svc.UpdateMember(ctx, org.ID, "admin-1", "admin-2", model.UpdateOrgMemberRequest{Role: model.RoleViewer}); err != nil {
-		t.Fatalf("UpdateMember() error = %v", err)
+	if err := svc.UpdateMember(ctx, org.ID, "admin-1", "admin-2", model.UpdateOrgMemberRequest{Role: model.RoleViewer}); err == nil {
+		t.Fatal("UpdateMember() error = nil, want admin peer-management rejection")
 	}
 	role, err := orgRepo.GetMemberRole(ctx, org.ID, "admin-2")
 	if err != nil {
 		t.Fatalf("GetMemberRole() error = %v", err)
 	}
-	if role != model.RoleViewer {
-		t.Fatalf("target role = %q, want viewer", role)
+	if role != model.RoleAdmin {
+		t.Fatalf("target role = %q, want admin", role)
+	}
+}
+
+func TestOrganizationServiceAddMemberAcceptsViewer(t *testing.T) {
+	db := newTestDB(t)
+	orgRepo := repository.NewOrganizationRepository(db)
+	svc := NewOrganizationService(orgRepo)
+	ctx := context.Background()
+
+	org, err := svc.Create(ctx, model.CreateOrganizationRequest{Name: "Viewer Org", Slug: "viewer-org"}, "owner-1")
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	member, err := svc.AddMember(ctx, org.ID, "owner-1", model.AddOrgMemberRequest{UserID: "viewer-1", Role: model.RoleViewer})
+	if err != nil {
+		t.Fatalf("AddMember() error = %v", err)
+	}
+	if member.Role != model.RoleViewer {
+		t.Fatalf("member role = %q, want viewer", member.Role)
+	}
+}
+
+func TestOrganizationServiceAddMemberCannotOverwriteExistingRole(t *testing.T) {
+	db := newTestDB(t)
+	orgRepo := repository.NewOrganizationRepository(db)
+	svc := NewOrganizationService(orgRepo)
+	ctx := context.Background()
+
+	org, err := svc.Create(ctx, model.CreateOrganizationRequest{Name: "Existing Member Org", Slug: "existing-member-org"}, "owner-1")
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := orgRepo.AddMember(ctx, org.ID, "admin-1", model.RoleAdmin); err != nil {
+		t.Fatalf("AddMember(admin) error = %v", err)
+	}
+
+	_, err = svc.AddMember(ctx, org.ID, "admin-1", model.AddOrgMemberRequest{UserID: "owner-1", Role: model.RoleViewer})
+	if err == nil || !strings.Contains(err.Error(), "already an organization member") {
+		t.Fatalf("AddMember(existing owner) error = %v, want existing-member rejection", err)
+	}
+	role, err := orgRepo.GetMemberRole(ctx, org.ID, "owner-1")
+	if err != nil {
+		t.Fatalf("GetMemberRole(owner) error = %v", err)
+	}
+	if role != model.RoleOwner {
+		t.Fatalf("owner role = %q, want owner", role)
+	}
+}
+
+func TestOrganizationServiceTransferOwnership(t *testing.T) {
+	db := newTestDB(t)
+	orgRepo := repository.NewOrganizationRepository(db)
+	svc := NewOrganizationService(orgRepo)
+	ctx := context.Background()
+
+	org, err := svc.Create(ctx, model.CreateOrganizationRequest{Name: "Transfer Org", Slug: "transfer-org"}, "owner-1")
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := orgRepo.AddMember(ctx, org.ID, "legacy-owner", model.RoleOwner); err != nil {
+		t.Fatalf("AddMember(legacy owner) error = %v", err)
+	}
+	if _, err := orgRepo.AddMember(ctx, org.ID, "member-1", model.RoleMember); err != nil {
+		t.Fatalf("AddMember(new owner) error = %v", err)
+	}
+
+	err = svc.TransferOwnership(ctx, org.ID, "owner-1", model.TransferOrganizationOwnershipRequest{NewOwnerID: "member-1"})
+	if err != nil {
+		t.Fatalf("TransferOwnership() error = %v", err)
+	}
+	updated, err := orgRepo.GetByID(ctx, org.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+	if updated == nil || updated.OwnerID != "member-1" {
+		t.Fatalf("organization owner = %v, want member-1", updated)
+	}
+	for userID, wantRole := range map[string]string{
+		"owner-1":      model.RoleAdmin,
+		"legacy-owner": model.RoleAdmin,
+		"member-1":     model.RoleOwner,
+	} {
+		role, err := orgRepo.GetMemberRole(ctx, org.ID, userID)
+		if err != nil {
+			t.Fatalf("GetMemberRole(%s) error = %v", userID, err)
+		}
+		if role != wantRole {
+			t.Fatalf("role for %s = %q, want %q", userID, role, wantRole)
+		}
+	}
+}
+
+func TestOrganizationServiceTransferOwnershipRejectsNonCanonicalOwner(t *testing.T) {
+	db := newTestDB(t)
+	orgRepo := repository.NewOrganizationRepository(db)
+	svc := NewOrganizationService(orgRepo)
+	ctx := context.Background()
+
+	org, err := svc.Create(ctx, model.CreateOrganizationRequest{Name: "Transfer Guard Org", Slug: "transfer-guard-org"}, "owner-1")
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := orgRepo.AddMember(ctx, org.ID, "legacy-owner", model.RoleOwner); err != nil {
+		t.Fatalf("AddMember(legacy owner) error = %v", err)
+	}
+	if _, err := orgRepo.AddMember(ctx, org.ID, "member-1", model.RoleMember); err != nil {
+		t.Fatalf("AddMember(new owner) error = %v", err)
+	}
+
+	err = svc.TransferOwnership(ctx, org.ID, "legacy-owner", model.TransferOrganizationOwnershipRequest{NewOwnerID: "member-1"})
+	if err == nil || !strings.Contains(err.Error(), "current organization owner") {
+		t.Fatalf("TransferOwnership() error = %v, want canonical-owner rejection", err)
 	}
 }

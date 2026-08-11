@@ -20,9 +20,9 @@ export function canEditOrganizationMemberRole(
   targetRole: string,
   isSelf: boolean,
 ): boolean {
-  return !isSelf
-    && targetRole !== 'owner'
-    && (actorRole === 'owner' || actorRole === 'admin');
+  if (isSelf || targetRole === 'owner') return false;
+  if (actorRole === 'owner') return true;
+  return actorRole === 'admin' && targetRole !== 'admin';
 }
 
 export function canRemoveOrganizationMember(

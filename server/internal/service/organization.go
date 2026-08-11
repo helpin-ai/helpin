@@ -151,8 +151,15 @@ func (s *OrganizationService) AddMember(ctx context.Context, orgID, actorID stri
 	if err := s.requireAdminOrOwner(ctx, orgID, actorID); err != nil {
 		return nil, err
 	}
-	if req.Role != model.RoleAdmin && req.Role != model.RoleMember {
-		return nil, fmt.Errorf("role must be 'admin' or 'member'")
+	if !isAssignableOrganizationRole(req.Role) {
+		return nil, fmt.Errorf("role must be 'admin', 'member', or 'viewer'")
+	}
+	existingRole, err := s.orgRepo.GetMemberRole(ctx, orgID, req.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if existingRole != "" {
+		return nil, fmt.Errorf("user is already an organization member")
 	}
 	member, err := s.orgRepo.AddMember(ctx, orgID, req.UserID, req.Role)
 	if err != nil {
@@ -163,6 +170,10 @@ func (s *OrganizationService) AddMember(ctx context.Context, orgID, actorID stri
 		s.customerIOIdentity.SyncOrganization(ctx, orgID, req.UserID)
 	}
 	return member, nil
+}
+
+func isAssignableOrganizationRole(role string) bool {
+	return role == model.RoleAdmin || role == model.RoleMember || role == model.RoleViewer
 }
 
 func validateOrganizationRoleUpdate(actorRole, targetRole, newRole string, isSelf bool) error {
@@ -178,11 +189,40 @@ func validateOrganizationRoleUpdate(actorRole, targetRole, newRole string, isSel
 	if targetRole == model.RoleOwner {
 		return fmt.Errorf("organization owners cannot be changed here")
 	}
+	if actorRole == model.RoleAdmin && targetRole == model.RoleAdmin {
+		return fmt.Errorf("only organization owners can change an admin's role")
+	}
 	if newRole == model.RoleOwner {
 		return fmt.Errorf("organization ownership must be transferred separately")
 	}
-	if newRole != model.RoleAdmin && newRole != model.RoleMember && newRole != model.RoleViewer {
+	if !isAssignableOrganizationRole(newRole) {
 		return fmt.Errorf("role must be 'admin', 'member', or 'viewer'")
+	}
+	return nil
+}
+
+// TransferOwnership atomically hands the organization to another member. Only
+// the canonical owner may transfer; the previous owner becomes an admin.
+func (s *OrganizationService) TransferOwnership(ctx context.Context, orgID, actorID string, req model.TransferOrganizationOwnershipRequest) error {
+	if req.NewOwnerID == "" {
+		return fmt.Errorf("new_owner_id is required")
+	}
+	if req.NewOwnerID == actorID {
+		return fmt.Errorf("new owner must be another organization member")
+	}
+	actorRole, err := s.orgRepo.GetMemberRole(ctx, orgID, actorID)
+	if err != nil {
+		return err
+	}
+	if actorRole != model.RoleOwner {
+		return fmt.Errorf("only the current organization owner can transfer ownership")
+	}
+	if err := s.orgRepo.TransferOwnership(ctx, orgID, actorID, req.NewOwnerID); err != nil {
+		return err
+	}
+	if s.customerIOIdentity != nil {
+		s.customerIOIdentity.SyncOrganization(ctx, orgID, actorID)
+		s.customerIOIdentity.SyncOrganization(ctx, orgID, req.NewOwnerID)
 	}
 	return nil
 }

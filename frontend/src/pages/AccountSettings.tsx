@@ -44,6 +44,9 @@ export default function AccountSettings() {
   const [members, setMembers] = useState<MemberWithUser[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
   const [updatingRoleUserIds, setUpdatingRoleUserIds] = useState<Set<string>>(() => new Set());
+  const [newOwnerId, setNewOwnerId] = useState('');
+  const [transferConfirmOpen, setTransferConfirmOpen] = useState(false);
+  const [transferringOwnership, setTransferringOwnership] = useState(false);
   const queryClient = useQueryClient();
 
   const orgId = currentOrganization?.id;
@@ -120,6 +123,8 @@ export default function AccountSettings() {
   };
 
   const { user } = useAuthStore();
+  const canTransferOwnership = isOwner && currentOrganization?.owner_id === user?.id;
+  const newOwner = members.find((member) => member.user_id === newOwnerId);
   const { data: workspaces = [] } = useWorkspaces(currentOrganization?.id);
   const [defaultWsId, setDefaultWsId] = useState<string>(user?.default_workspace_id ?? '');
   const [savingDefault, setSavingDefault] = useState(false);
@@ -141,6 +146,33 @@ export default function AccountSettings() {
       toast.success('Default workspace updated');
       if (data) useAuthStore.setState({ user: data });
     }
+  };
+
+  const handleTransferOwnership = async () => {
+    if (!orgId || !user || !newOwnerId || !canTransferOwnership) return;
+    setTransferringOwnership(true);
+    const { error } = await organizationsService.transferOwnership(orgId, newOwnerId);
+    setTransferringOwnership(false);
+    setTransferConfirmOpen(false);
+    if (error) {
+      toast.error("Couldn't transfer organization ownership", { description: error });
+      return;
+    }
+
+    setMembers((current) => current.map((member) => ({
+      ...member,
+      role: member.user_id === newOwnerId
+        ? 'owner'
+        : member.role === 'owner' ? 'admin' : member.role,
+    })));
+    setCurrentOrganization({ ...currentOrganization, owner_id: newOwnerId, role: 'admin' });
+    setNewOwnerId('');
+    queryClient.removeQueries({ queryKey: queryKeys.billing.org(orgId) });
+    queryClient.removeQueries({ queryKey: queryKeys.billing.cards(orgId) });
+    queryClient.removeQueries({ queryKey: queryKeys.billing.invoices(orgId) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.organizations.all });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.organizations.members(orgId) });
+    toast.success('Organization ownership transferred');
   };
 
   if (!currentOrganization) {
@@ -206,6 +238,41 @@ export default function AccountSettings() {
           </div>
         </CardContent>
       </Card>
+
+      {canTransferOwnership && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Transfer ownership</CardTitle>
+            <CardDescription>
+              The new owner will control organization billing and ownership. You will become an Organization admin.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="w-full space-y-2 sm:max-w-sm">
+              <Label htmlFor="new-organization-owner">New owner</Label>
+              <Select value={newOwnerId} onValueChange={setNewOwnerId} disabled={transferringOwnership}>
+                <SelectTrigger id="new-organization-owner" className="w-full">
+                  <SelectValue placeholder="Select an organization member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {members.filter((member) => member.user_id !== user?.id).map((member) => (
+                    <SelectItem key={member.user_id} value={member.user_id}>
+                      {member.full_name || member.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              variant="destructive"
+              disabled={!newOwnerId || transferringOwnership}
+              onClick={() => setTransferConfirmOpen(true)}
+            >
+              {transferringOwnership ? 'Transferring…' : 'Transfer ownership'}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Members */}
       <Card>
@@ -307,6 +374,16 @@ export default function AccountSettings() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={transferConfirmOpen}
+        onOpenChange={(open) => { if (!transferringOwnership) setTransferConfirmOpen(open); }}
+        title="Transfer organization ownership?"
+        description={`This gives ${newOwner?.full_name || newOwner?.email || 'the selected member'} control of organization billing and ownership. Your role will change to Organization admin.`}
+        confirmLabel={transferringOwnership ? 'Transferring…' : 'Transfer ownership'}
+        variant="destructive"
+        onConfirm={() => { void handleTransferOwnership(); }}
+      />
 
       <ConfirmDialog
         open={removeMemberConfirm !== null}

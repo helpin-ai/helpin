@@ -31,9 +31,12 @@ describe('role scope presentation', () => {
     expect(ASSIGNABLE_ORGANIZATION_ROLES).toEqual(['admin', 'member', 'viewer']);
   });
 
-  it('lets owners and admins edit non-owners, including other admins', () => {
+  it('lets owners edit non-owners, including admins', () => {
     expect(canEditOrganizationMemberRole('owner', 'admin', false)).toBe(true);
-    expect(canEditOrganizationMemberRole('admin', 'admin', false)).toBe(true);
+  });
+
+  it('lets admins edit members and viewers but not peer admins', () => {
+    expect(canEditOrganizationMemberRole('admin', 'admin', false)).toBe(false);
     expect(canEditOrganizationMemberRole('admin', 'member', false)).toBe(true);
     expect(canEditOrganizationMemberRole('admin', 'viewer', false)).toBe(true);
   });
