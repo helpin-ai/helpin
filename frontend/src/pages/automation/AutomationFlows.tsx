@@ -22,6 +22,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -1165,9 +1166,9 @@ function isFollowUpTaskSection(title: string) {
 function TemplateInputLabel({ input }: { input: FlowTemplateInput }) {
   return (
     <div className="flex items-center gap-1.5">
-      <label className="text-sm font-medium text-foreground">
+      <Label className="text-sm font-medium text-foreground">
         {input.label}{input.required ? ' *' : ''}
-      </label>
+      </Label>
       {input.help_text?.trim() && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -2179,64 +2180,64 @@ export function FlowRow({
         event.preventDefault();
         openRow();
       }}
-      className="group relative grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_28px] items-center gap-x-3 gap-y-2 border-b border-[#F1EFEA] px-[14px] py-[13px] outline-none transition-colors duration-100 hover:bg-[#F5F4F0] focus-visible:bg-[#F5F4F0] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C4C0B7] dark:border-border/60 dark:hover:bg-muted/50 dark:focus-visible:bg-muted/50 md:grid-cols-[minmax(0,1fr)_96px_116px_120px_28px] md:gap-4"
+      className="group relative grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_28px] items-center gap-x-3 gap-y-2 border-b border-border/60 px-[14px] py-[13px] outline-none transition-colors duration-100 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:grid-cols-[minmax(0,1fr)_96px_116px_120px_28px] md:gap-4"
       style={stateStyle.edge ? { boxShadow: `inset 2px 0 0 ${stateStyle.edge}` } : undefined}
     >
       <div className="min-w-0" data-testid="flow-row-title-area">
         <div className="flex min-w-0 items-center gap-2">
           <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ backgroundColor: stateStyle.color }} aria-hidden="true" />
           <span className="sr-only">{stateStyle.label}</span>
-          <TruncatedTextWithTooltip testId="flow-row-name-text" className="min-w-0 truncate text-[14px] font-medium tracking-[-0.01em] text-[#1A1917] dark:text-foreground">
+          <TruncatedTextWithTooltip testId="flow-row-name-text" className="min-w-0 truncate text-sm font-medium text-foreground">
             {rule.name}
           </TruncatedTextWithTooltip>
           {agentMissing ? (
-            <span className="shrink-0 rounded-[5px] bg-[#FAF2E3] px-1.5 py-0.5 text-[10.5px] font-medium text-[#8A6415] dark:bg-amber-500/15 dark:text-amber-300">Missing agent</span>
+            <span className="shrink-0 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">Missing agent</span>
           ) : isIncomplete ? (
-            <span className="shrink-0 rounded-[5px] bg-[#FAF2E3] px-1.5 py-0.5 text-[10.5px] font-medium text-[#8A6415] dark:bg-amber-500/15 dark:text-amber-300">Setup incomplete</span>
+            <span className="shrink-0 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">Setup incomplete</span>
           ) : null}
         </div>
-        <div className="mt-1.5 flex min-w-0 items-center gap-1.5 pl-[15px] text-[12px] text-[#45433D] dark:text-muted-foreground">
-          <span className="shrink-0 text-[11.5px] text-[#A5A199]">When</span>
-          <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-[#E6E3DD] bg-white px-2 py-0.5 dark:border-border dark:bg-background">
-            <span className="shrink-0 font-mono text-[9.5px] uppercase tracking-[0.05em] text-[#A5A199]">{triggerKind}</span>
+        <div className="mt-1.5 flex min-w-0 items-center gap-1.5 pl-[15px] text-xs text-foreground/80">
+          <span className="shrink-0 text-muted-foreground">When</span>
+          <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-0.5">
+            <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{triggerKind}</span>
             <span className="truncate">{trigger.value ? `${trigger.label} ${trigger.value}` : trigger.label}</span>
           </span>
-          <ArrowRight01Icon className="h-3 w-3 shrink-0 text-[#C4C0B7]" />
-          <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-[#E6E3DD] bg-white px-2 py-0.5 dark:border-border dark:bg-background" data-testid={agentName ? 'flow-row-action-agent' : undefined}>
-            <span className="shrink-0 font-mono text-[9.5px] uppercase tracking-[0.05em] text-[#A5A199]" data-testid={agentName ? 'flow-row-action-verb' : undefined}>{actionKind}</span>
+          <ArrowRight01Icon className="h-3 w-3 shrink-0 text-muted-foreground/50" />
+          <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-0.5" data-testid={agentName ? 'flow-row-action-agent' : undefined}>
+            <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground" data-testid={agentName ? 'flow-row-action-verb' : undefined}>{actionKind}</span>
             <span className="truncate" data-testid={agentName ? 'flow-row-action-agent-name' : undefined}>{action.label}</span>
             {agentName ? <span className="sr-only" data-testid="flow-row-action-agent-avatar">Agent avatar</span> : null}
           </span>
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 pl-[15px] font-mono text-[11px] text-[#8C8880] md:hidden">
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 pl-[15px] text-xs text-muted-foreground md:hidden">
           <span>{totalRuns ?? 0} runs</span>
           <span>{currentRunLabel ?? (hasRunActivity ? lastRunLabel : 'Never run')}</span>
           <span>{desktopNextLabel}</span>
         </div>
         {flowState === 'error' && lastErrorMessage ? (
-          <p className="mt-2 truncate pl-[15px] font-mono text-[11px] text-[#B0402F]">{lastErrorMessage}</p>
+          <p className="mt-2 truncate pl-[15px] text-xs text-destructive">{lastErrorMessage}</p>
         ) : null}
       </div>
 
-      <div className="hidden text-right font-mono text-[13px] text-[#45433D] dark:text-foreground md:block">{totalRuns ?? 0}</div>
-      <div className="hidden text-[12.5px] text-[#78756E] dark:text-muted-foreground md:block">{currentRunLabel ?? (hasRunActivity ? lastRunLabel : 'Never')}</div>
-      <div className={cn('hidden text-[12.5px] md:block', rule.enabled && nextRunLabel ? 'text-[#45433D] dark:text-foreground' : 'text-[#A5A199] dark:text-muted-foreground')}>{desktopNextLabel}</div>
+      <div className="hidden text-right text-sm tabular-nums text-foreground md:block">{totalRuns ?? 0}</div>
+      <div className="hidden text-xs text-muted-foreground md:block">{currentRunLabel ?? (hasRunActivity ? lastRunLabel : 'Never')}</div>
+      <div className={cn('hidden text-xs md:block', rule.enabled && nextRunLabel ? 'text-foreground' : 'text-muted-foreground')}>{desktopNextLabel}</div>
 
       <div onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
         <DropdownMenu onOpenChange={(open) => {
           if (!open) window.requestAnimationFrame(() => menuTriggerRef.current?.blur());
         }}>
           <DropdownMenuTrigger asChild>
-            <Button ref={menuTriggerRef} variant="ghost" size="sm" className="h-[26px] w-[26px] p-0 text-[#A5A199] hover:bg-[#EDEBE6] hover:text-[#45433D]" aria-label={`Actions for ${rule.name}`}>
+            <Button ref={menuTriggerRef} variant="ghost" size="sm" className="h-[26px] w-[26px] p-0 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`Actions for ${rule.name}`}>
               <MoreHorizontalIcon className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44 rounded-[9px] border-[#E6E3DD] p-1.5 shadow-[0_8px_26px_rgba(26,25,23,0.10)]">
+          <DropdownMenuContent align="end" className="w-44 rounded-lg p-1.5">
             {workspaceSlug ? <DropdownMenuItem asChild><a href={buildAutomationActivityPath(workspaceSlug, activitySearch, 'trigger-executions')}>View run history</a></DropdownMenuItem> : null}
             {supportsRunNow && showRunNow ? <DropdownMenuItem disabled={!canRunNow || runningNow} onClick={() => onRunNow(rule)}>{runningNow ? 'Running…' : 'Run now'}</DropdownMenuItem> : null}
             {canEdit ? <DropdownMenuItem onClick={() => onEdit(rule)}>Edit flow</DropdownMenuItem> : null}
             {canEdit ? <DropdownMenuItem onClick={() => onToggle(rule)}>{rule.enabled ? 'Disable' : 'Enable'}</DropdownMenuItem> : null}
-            {canEdit ? <DropdownMenuItem className="text-[#C0483C] focus:text-[#C0483C]" onClick={() => onDelete(rule)}>Delete</DropdownMenuItem> : null}
+            {canEdit ? <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => onDelete(rule)}>Delete</DropdownMenuItem> : null}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -2341,66 +2342,66 @@ function FlowDetailDrawer({
   return (
     <Sheet open={!!rule} onOpenChange={onOpenChange}>
       <SheetContent
-        className="w-full overflow-hidden border-l border-[#E6E3DD] bg-white p-0 shadow-none duration-150 sm:max-w-[460px] dark:border-border dark:bg-popover"
+        className="w-full overflow-hidden border-l border-border bg-popover p-0 shadow-none duration-150 sm:max-w-[460px]"
         overlayClassName="bg-[rgba(26,25,23,0.14)] backdrop-blur-none duration-150"
         showCloseButton
       >
         {rule ? (
           <>
-            <SheetHeader className="sticky top-0 z-10 border-b border-[#EDEBE6] bg-white px-[22px] py-[18px] pr-14 dark:border-border dark:bg-popover">
+            <SheetHeader className="sticky top-0 z-10 border-b border-border bg-popover px-[22px] py-[18px] pr-14">
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ backgroundColor: stateStyle.color }} aria-hidden="true" />
-                <SheetTitle className="truncate text-[14px] font-semibold tracking-[-0.01em]">{rule.name}</SheetTitle>
+                <SheetTitle className="truncate text-sm font-semibold">{rule.name}</SheetTitle>
               </div>
               <SheetDescription className="sr-only">Details and actions for {rule.name}</SheetDescription>
             </SheetHeader>
 
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[22px] py-[22px]">
               <div className="space-y-[26px]">
-                <p className="text-pretty text-[13.5px] leading-[1.55] text-[#55524B] dark:text-muted-foreground">
+                <p className="text-pretty text-sm leading-relaxed text-muted-foreground">
                   {rule.description?.trim() || 'This flow connects a trigger to an automated action.'}
                 </p>
 
                 <section className="space-y-2.5">
-                  <h3 className="text-[11px] font-medium uppercase tracking-[0.06em] text-[#A5A199]">Logic</h3>
-                  <div className="overflow-hidden rounded-[10px] border border-[#E6E3DD] dark:border-border">
+                  <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Logic</h3>
+                  <div className="overflow-hidden rounded-lg border border-border">
                     {[
                       ['When', trigger?.value ? `${trigger.label} ${trigger.value}` : trigger?.label || '—'],
                       ['Then', action?.label || '—'],
                       ['Using', agentName || (rule.action_type === 'start_agent_run' ? 'Not connected' : 'Built-in action')],
                       ['On', flowTargetLabel(rule, workspaceName)],
                     ].map(([label, value], index) => (
-                      <div key={label} className={cn('flex gap-3 px-[14px] py-[13px]', index > 0 && 'border-t border-[#EDEBE6] dark:border-border')}>
-                        <span className="w-[52px] shrink-0 text-[12px] text-[#A5A199]">{label}</span>
-                        <span className={cn('min-w-0 break-words text-[13px] text-[#1A1917] dark:text-foreground', label === 'On' && 'font-mono text-[12px] text-[#45433D] dark:text-foreground')}>{value}</span>
+                      <div key={label} className={cn('flex gap-3 px-[14px] py-[13px]', index > 0 && 'border-t border-border')}>
+                        <span className="w-[52px] shrink-0 text-xs text-muted-foreground">{label}</span>
+                        <span className="min-w-0 break-words text-sm text-foreground">{value}</span>
                       </div>
                     ))}
                   </div>
                 </section>
 
-                <section className="grid grid-cols-2 gap-px overflow-hidden rounded-[10px] border border-[#E6E3DD] bg-[#EDEBE6] dark:border-border dark:bg-border">
+                <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border">
                   {[
                     ['Total runs', String(metrics.totalRuns ?? 0), false],
                     ['Errors', String(metrics.errorRuns ?? 0), (metrics.errorRuns ?? 0) > 0],
                     ['Last run', lastRun, false],
                     ['Next run', nextRun, false],
                   ].map(([label, value, danger]) => (
-                    <div key={String(label)} className="flex min-h-[64px] flex-col gap-1 bg-white px-[14px] py-[13px] dark:bg-popover">
-                      <span className="text-[11.5px] text-[#A5A199]">{label}</span>
-                      <span className={cn(label === 'Total runs' || label === 'Errors' ? 'font-mono text-[15px]' : 'text-[13px]', danger && 'text-[#C0483C]')}>{String(value)}</span>
+                    <div key={String(label)} className="flex min-h-[64px] flex-col gap-1 bg-popover px-[14px] py-[13px]">
+                      <span className="text-xs text-muted-foreground">{label}</span>
+                      <span className={cn(label === 'Total runs' || label === 'Errors' ? 'text-base tabular-nums' : 'text-sm', danger && 'text-destructive')}>{String(value)}</span>
                     </div>
                   ))}
                 </section>
 
                 <section className="space-y-2.5">
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-[11px] font-medium uppercase tracking-[0.06em] text-[#A5A199]">Recent runs</h3>
-                    {workspaceSlug ? <a className="text-[12px] text-[#78756E] hover:text-[#1A1917] dark:hover:text-foreground" href={buildAutomationActivityPath(workspaceSlug, { source: 'automation_rule', reference_id: rule.id }, 'trigger-executions')}>View all</a> : null}
+                    <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Recent runs</h3>
+                    {workspaceSlug ? <a className="text-xs text-muted-foreground hover:text-foreground" href={buildAutomationActivityPath(workspaceSlug, { source: 'automation_rule', reference_id: rule.id }, 'trigger-executions')}>View all</a> : null}
                   </div>
                   <div>
                     {recentRuns.isLoading ? Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="mb-2 h-8 w-full rounded-md" />) : null}
-                    {recentRuns.isError ? <p className="py-3 text-[12.5px] text-[#C0483C]">Recent runs could not be loaded.</p> : null}
-                    {!recentRuns.isLoading && !recentRuns.isError && recentRuns.data?.data.length === 0 ? <p className="py-3 text-[12.5px] text-[#A5A199]">No runs yet.</p> : null}
+                    {recentRuns.isError ? <p className="py-3 text-xs text-destructive">Recent runs could not be loaded.</p> : null}
+                    {!recentRuns.isLoading && !recentRuns.isError && recentRuns.data?.data.length === 0 ? <p className="py-3 text-xs text-muted-foreground">No runs yet.</p> : null}
                     {recentRuns.data?.data.map((run) => {
                       const status = executionStatusMeta(run.status);
                       const path = workspaceSlug
@@ -2414,11 +2415,11 @@ function FlowDetailDrawer({
                       const content = (
                         <>
                           <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ backgroundColor: status.color }} aria-hidden="true" />
-                          <span className="min-w-0 flex-1 truncate text-[12.5px] text-[#45433D] dark:text-foreground">{status.label}{run.target_title ? ` · ${run.target_title}` : ''}</span>
-                          <span className="shrink-0 font-mono text-[11.5px] text-[#A5A199]">{relativeTime(run.fired_at)}</span>
+                          <span className="min-w-0 flex-1 truncate text-xs text-foreground">{status.label}{run.target_title ? ` · ${run.target_title}` : ''}</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(run.fired_at)}</span>
                         </>
                       );
-                      return path ? <a key={run.execution_id} href={path} className="flex items-center gap-2.5 border-b border-[#F1EFEA] px-0.5 py-2.5 hover:bg-[#F5F4F0] dark:border-border/60 dark:hover:bg-muted/50">{content}</a> : <div key={run.execution_id} className="flex items-center gap-2.5 border-b border-[#F1EFEA] px-0.5 py-2.5 dark:border-border/60">{content}</div>;
+                      return path ? <a key={run.execution_id} href={path} className="flex items-center gap-2.5 border-b border-border/60 px-0.5 py-2.5 hover:bg-muted/50">{content}</a> : <div key={run.execution_id} className="flex items-center gap-2.5 border-b border-border/60 px-0.5 py-2.5">{content}</div>;
                     })}
                   </div>
                 </section>
@@ -2660,8 +2661,9 @@ function FlowComposer({
         <div className="space-y-5">
           <div className="space-y-2">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Flow name</label>
+              <Label htmlFor="flow-name">Flow name</Label>
               <Input
+                id="flow-name"
                 value={draft.name}
                 onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
                 placeholder="Review merged PRs"
@@ -2670,8 +2672,9 @@ function FlowComposer({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Internal description</label>
+              <Label htmlFor="flow-description">Internal description</Label>
               <Textarea
+                id="flow-description"
                 rows={2}
                 value={draft.description}
                 onChange={(event) => updateDraft((current) => ({ ...current, description: event.target.value }))}
@@ -3262,10 +3265,10 @@ function FlowTemplateGallery({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[86vh] flex-col gap-4 rounded-[14px] border-[#E6E3DD] p-6 shadow-[0_24px_60px_rgba(26,25,23,0.16)] sm:max-w-[720px] dark:border-border">
+      <DialogContent className="flex max-h-[86vh] flex-col gap-4 p-6 sm:max-w-[720px]">
         <DialogHeader>
-          <DialogTitle className="text-[16px] font-semibold tracking-[-0.01em]">New flow</DialogTitle>
-          <DialogDescription className="text-[13px]">Pick a starting point, or build one from an empty trigger.</DialogDescription>
+          <DialogTitle>New flow</DialogTitle>
+          <DialogDescription>Pick a starting point, or build one from an empty trigger.</DialogDescription>
         </DialogHeader>
 
         <div className="relative">
@@ -3328,12 +3331,12 @@ function FlowTemplateGallery({
                 type="button"
                 onClick={() => onPick(template)}
                 className={cn(
-                  'group relative flex min-h-[112px] flex-col items-start gap-2 overflow-hidden rounded-[10px] border border-[#E6E3DD] bg-white p-[14px] text-left transition-colors duration-100 hover:border-[#DAD6CE] hover:bg-[#F5F4F0] focus-visible:border-[#C4C0B7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C4C0B7]/30 dark:border-border dark:bg-popover dark:hover:bg-muted/50',
+                  'group relative flex min-h-[112px] flex-col items-start gap-2 overflow-hidden rounded-lg border border-border bg-popover p-[14px] text-left transition-colors duration-100 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 )}
               >
-                <span className="font-mono text-[9.5px] uppercase tracking-[0.06em] text-[#A5A199]">{kind}</span>
-                <p className="text-[13.5px] font-medium leading-tight">{template.name}</p>
-                <p className="text-pretty text-[12.5px] leading-[1.45] text-[#78756E] dark:text-muted-foreground">{template.short_description}</p>
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{kind}</span>
+                <p className="text-sm font-medium leading-tight">{template.name}</p>
+                <p className="text-pretty text-xs leading-relaxed text-muted-foreground">{template.short_description}</p>
               </button>
             );
           })}
@@ -3543,16 +3546,18 @@ function FlowTemplateInstallDialog({
                     </p>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-foreground">Flow name</label>
+                    <Label htmlFor="template-flow-name">Flow name</Label>
                     <Input
+                      id="template-flow-name"
                       className="rounded-lg border-border bg-background"
                       value={flowSetup.name}
                       onChange={(event) => setFlowSetup({ name: event.target.value })}
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-foreground">Internal description</label>
+                    <Label htmlFor="template-flow-description">Internal description</Label>
                     <Textarea
+                      id="template-flow-description"
                       value={flowSetup.description}
                       rows={3}
                       placeholder="What this flow is for, who owns it, or what it should do."
@@ -3588,13 +3593,13 @@ function FlowTemplateInstallDialog({
               </div>
               <div className="grid gap-4 sm:grid-cols-[1fr_220px]">
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground">Agent name</label>
-                  <Input className="rounded-lg border-border bg-background" value={agentSetup.name} onChange={(event) => setAgentSetup({ name: event.target.value })} />
+                  <Label htmlFor="template-agent-name">Agent name</Label>
+                  <Input id="template-agent-name" className="rounded-lg border-border bg-background" value={agentSetup.name} onChange={(event) => setAgentSetup({ name: event.target.value })} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground">Run approval</label>
+                  <Label htmlFor="template-agent-approval">Run approval</Label>
                   <Select value={agentSetup.approval_mode} onValueChange={(value) => setAgentSetup({ approval_mode: value as AgentApprovalMode })}>
-                    <SelectTrigger className="w-full rounded-lg border-border bg-background">
+                    <SelectTrigger id="template-agent-approval" className="w-full rounded-lg border-border bg-background">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -3611,8 +3616,9 @@ function FlowTemplateInstallDialog({
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">Instructions</label>
+                <Label htmlFor="template-agent-instructions">Instructions</Label>
                 <Textarea
+                  id="template-agent-instructions"
                   value={agentSetup.system_prompt}
                   rows={8}
                   className="min-h-44 resize-y rounded-lg border-border bg-background font-mono text-xs leading-relaxed"
@@ -3727,8 +3733,9 @@ function FlowTemplateInstallDialog({
                 </p>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">Prompt context</label>
+                <Label htmlFor="template-prompt-context">Prompt context</Label>
                 <Textarea
+                  id="template-prompt-context"
                   value={runContext}
                   readOnly
                   rows={8}
@@ -3736,8 +3743,9 @@ function FlowTemplateInstallDialog({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">Additional instructions</label>
+                <Label htmlFor="template-additional-instructions">Additional instructions</Label>
                 <Textarea
+                  id="template-additional-instructions"
                   value={additionalInstructions}
                   rows={3}
                   placeholder="Optional. Add anything Quill should pay special attention to in this sweep."
@@ -4693,7 +4701,7 @@ export function AutomationFlowsPage({
   }
 
   return (
-    <div className="mx-auto max-w-5xl text-[#1A1917] dark:text-foreground">
+    <div className="mx-auto max-w-5xl text-foreground">
       <FlowTemplateGallery
         open={galleryOpen}
         onOpenChange={(open) => {
@@ -4833,12 +4841,12 @@ export function AutomationFlowsPage({
           {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-[68px] w-full rounded-[9px]" />)}
         </div>
       ) : rulesQuery.isError ? (
-        <div className="border-y border-[#EDEBE6] py-16 text-center dark:border-border">
+        <div className="border-y border-border py-16 text-center">
           <p className="text-sm text-muted-foreground">Flows could not be loaded.</p>
           <Button variant="outline" size="sm" className="mt-4" onClick={() => void rulesQuery.refetch()}>Try again</Button>
         </div>
       ) : authoredFlows.length === 0 ? (
-        <div className="border-y border-[#EDEBE6] px-4 py-16 text-center dark:border-border">
+        <div className="border-y border-border px-4 py-16 text-center">
           <h3 className="text-base font-semibold">Put routine work on autopilot</h3>
           <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">Start with a proven template or connect a trigger to an agent and build your own flow.</p>
           {permissions.canAdminAutomations && (
@@ -4869,14 +4877,14 @@ export function AutomationFlowsPage({
                   value={value}
                 >
                   <span>{label}</span>
-                  <span className="font-mono text-[11px] font-normal text-muted-foreground">{statusCounts[value]}</span>
+                  <span className="text-xs font-normal tabular-nums text-muted-foreground">{statusCounts[value]}</span>
                 </TabsTrigger>
               ))}
               </TabsList>
             </Tabs>
             <div className="flex min-w-0 flex-col gap-2 xs:flex-row sm:justify-end">
               <div className="relative min-w-0 sm:w-52">
-                <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#A5A199]" />
+                <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input aria-label="Search flows" value={flowQuery} onChange={(event) => setFlowQuery(event.target.value)} placeholder="Search flows" className="h-8 pl-8 text-sm" />
               </div>
               <Select value={scopeFilter} onValueChange={(value) => setScopeFilter(value as typeof scopeFilter)}>
@@ -4886,7 +4894,7 @@ export function AutomationFlowsPage({
             </div>
           </div>
 
-          <div className="hidden grid-cols-[minmax(0,1fr)_96px_116px_120px_28px] gap-4 border-b border-[#EDEBE6] px-[14px] pb-[9px] text-[11px] font-medium uppercase tracking-[0.06em] text-[#A5A199] dark:border-border md:grid">
+          <div className="hidden grid-cols-[minmax(0,1fr)_96px_116px_120px_28px] gap-4 border-b border-border px-[14px] pb-[9px] text-xs font-medium uppercase tracking-wide text-muted-foreground md:grid">
             <span>Flow</span><span className="text-right">Runs</span><span>Last run</span><span>Next run</span><span />
           </div>
           <div>
@@ -4919,7 +4927,7 @@ export function AutomationFlowsPage({
           </div>
 
           {permissions.canAdminAutomations ? (
-            <div className="mt-10 flex flex-col items-start justify-between gap-3 border-t border-[#EDEBE6] pt-5 sm:flex-row sm:items-center dark:border-border">
+            <div className="mt-10 flex flex-col items-start justify-between gap-3 border-t border-border pt-5 sm:flex-row sm:items-center">
               <span className="text-sm text-muted-foreground">Start from a template instead of building from scratch.</span>
               <Button variant="outline" size="sm" onClick={() => setGalleryOpen(true)}>Browse templates</Button>
             </div>
