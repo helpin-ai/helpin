@@ -100,7 +100,7 @@ export function ArticleRouteView({
         </>
       )}
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 lg:pl-8">
         <ArticleShell
           locale={locale}
           title={article.seo_title || article.title}
