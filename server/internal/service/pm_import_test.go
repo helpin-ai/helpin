@@ -1634,9 +1634,13 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 		)`,
 		`CREATE TABLE pm_comments (
 			id TEXT PRIMARY KEY,
+			workspace_id TEXT,
 			entity_type TEXT NOT NULL,
 			entity_id TEXT NOT NULL,
 			author_id TEXT NOT NULL,
+			agent_id TEXT,
+			agent_name TEXT,
+			agent_run_id TEXT,
 			body TEXT NOT NULL,
 			parent_id TEXT,
 			block_id TEXT,

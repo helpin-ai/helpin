@@ -190,6 +190,9 @@ func main() {
 			&model.PMComment{},
 			&model.PMCommentReaction{},
 			&model.PMActivityLog{},
+			&model.PMTaskUpdateRead{},
+			&model.PMTaskStandingBrief{},
+			&model.PMTaskBriefSuggestionDismissal{},
 			&model.PMAttachment{},
 			&model.PMObjective{},
 			&model.PMKeyResult{},
@@ -730,6 +733,7 @@ func main() {
 	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
+	pmTaskInsightsRepo := repository.NewPMTaskInsightsRepository(db)
 	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
 	crmWritingProfileRepo := repository.NewCRMWritingProfileRepository(db)
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
@@ -1081,11 +1085,21 @@ func main() {
 	hcL1 := cache.NewLRU(2048)
 	var hcCache cache.Cache = hcL1
 	if redisClient != nil {
-		hcL2 := cache.NewRedis(redisClient, "hc")
+		// Public help-center reads must fail open when the shared remote cache is
+		// degraded. Use a dedicated client with bounded retries/timeouts so an
+		// L2 miss or write can never hold a page response for many seconds.
+		hcRedisOpts := *redisClient.Options()
+		hcRedisOpts.DialTimeout = 500 * time.Millisecond
+		hcRedisOpts.ReadTimeout = 250 * time.Millisecond
+		hcRedisOpts.WriteTimeout = 250 * time.Millisecond
+		hcRedisOpts.PoolTimeout = 500 * time.Millisecond
+		hcRedisOpts.MaxRetries = -1
+		hcRedisClient := redis.NewClient(&hcRedisOpts)
+		hcL2 := cache.NewRedis(hcRedisClient, "hc")
 		tiered := cache.NewTiered(cache.TieredConfig{
 			L1:      hcL1,
 			L2:      hcL2,
-			Redis:   redisClient,
+			Redis:   hcRedisClient,
 			Channel: "cache:hc:invalidate",
 			PodID:   podID,
 			L1TTL:   60 * time.Second,
@@ -1228,6 +1242,7 @@ func main() {
 	}
 
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
+	pmTaskInsightsService := service.NewPMTaskInsightsService(pmTaskInsightsRepo, pmTaskRepo, pmCommentRepo, pmActivityRepo, agentRunRepo, agentRepo, taskGitLinkRepo, pmChecklistItemRepo, llmProvider)
 	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient, crmSummaryService)
 	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo)
@@ -1651,6 +1666,7 @@ func main() {
 		PMRoadmap:           handler.NewPMRoadmapHandler(pmRoadmapService),
 		PMSprint:            handler.NewPMSprintHandler(pmSprintService),
 		PMTask:              handler.NewPMTaskHandler(pmTaskService),
+		PMTaskInsights:      handler.NewPMTaskInsightsHandler(pmTaskInsightsService),
 		PMComment:           handler.NewPMCommentHandler(pmCommentService),
 		PMAttachment:        handler.NewPMAttachmentHandler(pmAttachmentService),
 		PMObjective:         handler.NewPMObjectiveHandler(pmObjectiveService),
@@ -1685,7 +1701,7 @@ func main() {
 		CRMCompany:          handler.NewCRMCompanyHandler(crmCompanyService),
 		CRMDeal:             handler.NewCRMDealHandler(crmDealService),
 		CRMAssociation:      handler.NewCRMAssociationHandler(crmAssociationService),
-		Associations:        handler.NewAssociationsHandler(associationsService),
+		Associations:        handler.NewAssociationsHandler(associationsService, authzService),
 		CRMActivity:         handler.NewCRMActivityHandler(crmActivityService),
 		CRMImport:           handler.NewCRMImportHandler(crmImportService),
 		CRMEmail:            handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),

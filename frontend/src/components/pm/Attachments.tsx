@@ -36,6 +36,8 @@ interface AttachmentsProps {
   /** Allow parent to programmatically upload files (e.g. from drag overlay) */
   onUploadReady?: (upload: (files: FileList | File[]) => Promise<void>) => void;
   editable?: boolean;
+  showAddAction?: boolean;
+  showEmptyState?: boolean;
 }
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -102,7 +104,18 @@ function isVideoType(contentType: string, fileName: string): boolean {
   return ['mp4', 'mov', 'webm', 'mkv', 'wmv', 'avi', 'mpeg', 'mpg'].includes(getFileExtension(fileName));
 }
 
-export function Attachments({ workspaceId, entityType, entityId, memberNameMap, onDeleteAttachment, onFilePickerReady, onUploadReady, editable = true }: AttachmentsProps) {
+export function Attachments({
+  workspaceId,
+  entityType,
+  entityId,
+  memberNameMap,
+  onDeleteAttachment,
+  onFilePickerReady,
+  onUploadReady,
+  editable = true,
+  showAddAction = false,
+  showEmptyState = false,
+}: AttachmentsProps) {
   const [attachments, setAttachments] = useState<AttachmentResponse[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -266,12 +279,26 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      {hasAttachments && (
-        <div className="flex items-center gap-1.5">
-          <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
-            Attachments
-          </h3>
+      {(hasAttachments || showAddAction || showEmptyState) && (
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5">
+            <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
+            <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
+              Attachments
+            </h3>
+          </div>
+          {showAddAction && editable ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <AttachmentIcon className="h-3 w-3" />
+              Attach files
+            </Button>
+          ) : null}
         </div>
       )}
 
@@ -312,6 +339,10 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
       )}
 
       {error && <p className="text-xs text-destructive">{error}</p>}
+
+      {showEmptyState && !hasAttachments && !dragging && !uploading ? (
+        <p className="text-sm text-muted-foreground">No attachments</p>
+      ) : null}
 
       {/* Unified attachment grid — images + files as consistent cards */}
       {attachments.length > 0 && (

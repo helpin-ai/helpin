@@ -3,8 +3,14 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ActivityTableHeader, ActivityTableRow } from '../AutomationActivity';
+import {
+  ActivityTableHeader,
+  ActivityTableRow,
+  NeedsAttentionTableHeader,
+  NeedsAttentionTableRow,
+} from '../AutomationActivity';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import type { AgentRun } from '@/lib/pmTypes';
 import type { AutomationTriggerExecutionListItem } from '@/lib/types';
 
 vi.mock('@/components/pm/CodingSession/CodingSessionDrawer', () => ({
@@ -56,6 +62,33 @@ const execution: AutomationTriggerExecutionListItem = {
   fired_at: '2026-08-11T09:00:00Z',
   started_at: '2026-08-11T09:00:00Z',
   completed_at: '2026-08-11T09:01:00Z',
+};
+
+const pausedRun: AgentRun = {
+  id: 'run-paused',
+  workspace_id: 'workspace-1',
+  agent_id: 'agent-1',
+  target_type: 'task',
+  target_id: 'task-1',
+  target_info: {
+    target_type: 'task',
+    target_id: 'task-1',
+    task_key: 'HELP-42',
+    title: 'Fix login',
+  },
+  runtime_kind: 'native_sdk',
+  invocation_mode: 'interactive',
+  approval_state: 'pending',
+  pause_reason: 'human_approval',
+  status: 'paused',
+  input: {},
+  output_summary: {},
+  cached_input_tokens: 0,
+  input_tokens: 0,
+  output_tokens: 0,
+  tokens_used: 0,
+  created_at: '2026-08-11T09:00:00Z',
+  updated_at: '2026-08-11T09:01:00Z',
 };
 
 describe('Activity table', () => {
@@ -116,5 +149,82 @@ describe('Activity table', () => {
     expect(row?.textContent).not.toContain('Connection refused');
     expect(failedBadge?.textContent).toBe('Failed');
     expect(failedBadge?.getAttribute('tabindex')).toBe('0');
+  });
+});
+
+describe('Needs attention table', () => {
+  it('uses attention-specific comparison columns without an outer card', () => {
+    render(<NeedsAttentionTableHeader />);
+
+    expect(container?.textContent).toContain('Activity');
+    expect(container?.textContent).toContain('Agent');
+    expect(container?.textContent).toContain('Status');
+    expect(container?.textContent).toContain('Waiting');
+    expect(container?.textContent).toContain('Started');
+    expect(container?.textContent).toContain('Actions');
+    expect(container?.firstElementChild?.className).toContain('border-b');
+    expect(container?.firstElementChild?.className).not.toContain('rounded');
+    expect(container?.firstElementChild?.className).not.toContain('bg-card');
+  });
+
+  it('keeps approval actions independent from row keyboard activation', () => {
+    const openRun = vi.fn();
+    const approveRun = vi.fn().mockResolvedValue(undefined);
+    render(
+      <NeedsAttentionTableRow
+        run={pausedRun}
+        onOpenRun={openRun}
+        onOpenTarget={() => {}}
+        onApprove={approveRun}
+        approving={false}
+      />,
+    );
+
+    const row = container?.querySelector('[aria-label="Open run for HELP-42 · Fix login"]');
+    const viewRun = Array.from(container?.querySelectorAll('button') ?? [])
+      .find((button) => button.textContent?.trim() === 'View run');
+    const approve = Array.from(container?.querySelectorAll('button') ?? [])
+      .find((button) => button.textContent?.trim() === 'Approve');
+
+    expect(row?.className).toContain('border-b');
+    expect(row?.className).not.toContain('rounded');
+    expect(row?.className).not.toContain('bg-card');
+
+    act(() => viewRun?.click());
+    expect(openRun).toHaveBeenCalledTimes(1);
+
+    act(() => approve?.click());
+    expect(approveRun).toHaveBeenCalledWith('run-paused');
+    expect(openRun).toHaveBeenCalledTimes(1);
+
+    act(() => row?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })));
+    expect(openRun).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows Respond for input pauses and keeps error detail in the status tooltip', () => {
+    render(
+      <NeedsAttentionTableRow
+        run={{
+          ...pausedRun,
+          approval_state: 'not_required',
+          pause_reason: 'human_input',
+          error_message: 'More context is required',
+        }}
+        onOpenRun={() => {}}
+        onOpenTarget={() => {}}
+        onApprove={async () => {}}
+        approving={false}
+      />,
+    );
+
+    const row = container?.querySelector('[aria-label="Open run for HELP-42 · Fix login"]');
+    const attentionBadges = Array.from(container?.querySelectorAll('[data-slot="tooltip-trigger"]') ?? [])
+      .filter((trigger) => trigger.textContent === 'Needs your input');
+
+    expect(row?.textContent).toContain('Respond');
+    expect(row?.textContent).not.toContain('Approve');
+    expect(row?.textContent).not.toContain('More context is required');
+    expect(attentionBadges.length).toBeGreaterThan(0);
+    expect(attentionBadges[0]?.getAttribute('tabindex')).toBe('0');
   });
 });

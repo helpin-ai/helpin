@@ -4,10 +4,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import { TaskRelationshipsSection } from '../TaskRelationshipsSection';
+import type { GroupedAssociations } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const associations = {
+const associations: GroupedAssociations = {
   task_relationships: {
     blocked_by: [],
     blocking: [],
@@ -16,10 +17,16 @@ const associations = {
     duplicates: [],
     duplicated_by: [],
   },
+  tasks: [],
+  support_conversations: [],
+  crm_records: [],
   docs: [],
 };
 
+const openTaskRouteMock = vi.hoisted(() => vi.fn());
+
 vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children }: { children: React.ReactNode }) => <a href="#">{children}</a>,
   useLocation: () => ({ pathname: '/w/acme/pm/tasks' }),
   useNavigate: () => vi.fn(),
 }));
@@ -37,6 +44,10 @@ vi.mock('@/components/pm/CreateTaskModal', () => ({
   CreateTaskModal: () => null,
 }));
 
+vi.mock('@/components/pm/task-detail/taskRouteNavigation', () => ({
+  openTaskRoute: openTaskRouteMock,
+}));
+
 vi.mock('@/hooks/queries', () => ({
   useTaskAssociations: () => ({ data: associations, isLoading: false, error: null }),
   useWorkflows: () => ({ data: [{ workflow: { id: 'workflow-1', default_state_id: 'state-1' }, states: [{ id: 'state-1' }] }] }),
@@ -51,6 +62,8 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  openTaskRouteMock.mockReset();
+  associations.task_relationships.relates_to = [];
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -94,26 +107,25 @@ describe('TaskRelationshipsSection', () => {
     expect(container.querySelector('#task-relationships-section')).toBeNull();
   });
 
-  it('uses the inline treatment for the add relationship button', () => {
+  it('places the add relationship action in the section heading', () => {
     renderSection();
 
-    const addButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Add relationship',
+    const addButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Add task relationship"]',
     );
 
     expect(addButton).toBeTruthy();
-    expect(addButton?.className).toContain('text-xs');
+    expect(addButton?.textContent).toBe('+');
+    expect(addButton?.className).toContain('p-0.5');
     expect(addButton?.className).toContain('text-muted-foreground');
-    expect(addButton?.className).toContain('hover:text-foreground');
-    expect(addButton?.querySelector('svg')?.className.baseVal).not.toContain('text-primary');
   });
 
-  it('opens the composer from the add relationship button', () => {
+  it('opens the relationship modal from the heading action', async () => {
     const onComposerOpenChange = vi.fn();
     renderSection({ onComposerOpenChange });
 
-    const addButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Add relationship',
+    const addButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Add task relationship"]',
     );
 
     act(() => {
@@ -121,6 +133,14 @@ describe('TaskRelationshipsSection', () => {
     });
 
     expect(onComposerOpenChange).toHaveBeenCalledWith(true);
+
+    renderSection({ composerOpen: true, onComposerOpenChange });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(document.body.querySelector('[role="dialog"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('Add relationship');
   });
 
   it('keeps create related task available before search text is entered', async () => {
@@ -141,5 +161,132 @@ describe('TaskRelationshipsSection', () => {
 
     expect(createButton).toBeTruthy();
     expect(createButton?.disabled).toBe(false);
+  });
+
+  it('uses the relationship icon as the relationship-type menu trigger', async () => {
+    associations.task_relationships.relates_to = [
+      {
+        relationship_id: 'rel-1',
+        link_type: 'relates_to',
+        is_active: true,
+        task: {
+          object_type: 'task',
+          object_id: 'task-2',
+          title: 'Review launch copy',
+          task_key: 'MKT-12',
+          task_type: 'chore',
+        },
+      },
+    ];
+    renderSection({ flat: true, hideDocs: true });
+
+    const relationshipTrigger = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Change relationship: Relates to"]',
+    );
+
+    expect(relationshipTrigger).toBeTruthy();
+    expect(container.textContent).not.toContain('Relates to');
+
+    await act(async () => {
+      relationshipTrigger?.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent).toContain('Update Relationship Type');
+  });
+
+  it('shows numeric task IDs without a hash prefix', () => {
+    associations.task_relationships.relates_to = [
+      {
+        relationship_id: 'rel-1',
+        link_type: 'relates_to',
+        is_active: true,
+        task: {
+          object_type: 'task',
+          object_id: 'task-2',
+          title: 'Review launch copy',
+          display_id: 12,
+        },
+      },
+    ];
+    renderSection({ flat: true, hideDocs: true });
+
+    expect(container.querySelector('[data-testid="related-task-id"]')?.textContent).toBe('12');
+  });
+
+  it('shows three compact task rows before revealing the remaining relationships', () => {
+    associations.task_relationships.relates_to = Array.from({ length: 4 }, (_, index) => ({
+      relationship_id: `rel-${index + 1}`,
+      link_type: 'relates_to',
+      is_active: true,
+      task: {
+        object_type: 'task',
+        object_id: `task-${index + 2}`,
+        title: `Related task ${index + 1}`,
+        task_key: `MKT-${index + 1}`,
+      },
+    }));
+    renderSection({ flat: true, hideDocs: true });
+
+    expect(container.querySelectorAll('[data-testid="related-task-row"]')).toHaveLength(3);
+    expect(container.textContent).not.toContain('Related task 4');
+
+    const taskId = container.querySelector('[data-testid="related-task-id"]');
+    const firstRow = container.querySelector('[data-testid="related-task-row"]');
+    const firstTaskLink = firstRow?.querySelector('[data-testid="related-task-link"]');
+    const relationshipTrigger = firstRow?.querySelector('button[aria-label="Change relationship: Relates to"]');
+    expect(taskId?.className).toContain('font-mono');
+    expect(taskId?.className).not.toContain('opacity-0');
+    expect(firstRow?.className).not.toContain('hover:');
+    expect(firstTaskLink?.className).not.toContain('hover:');
+    expect(firstTaskLink?.firstElementChild).toBe(taskId);
+    expect(firstTaskLink?.lastElementChild?.textContent).toBe('Related task 1');
+    expect(firstRow?.lastElementChild).toBe(relationshipTrigger);
+
+    const moreButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Show 1 more',
+    );
+    expect(moreButton).toBeTruthy();
+
+    act(() => {
+      moreButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.querySelectorAll('[data-testid="related-task-row"]')).toHaveLength(4);
+    expect(container.textContent).toContain('Related task 4');
+    expect(container.textContent).toContain('Show less');
+  });
+
+  it('opens a related task in the existing task panel instead of using a page link', () => {
+    associations.task_relationships.relates_to = [
+      {
+        relationship_id: 'rel-1',
+        link_type: 'relates_to',
+        is_active: true,
+        task: {
+          object_type: 'task',
+          object_id: 'task-2',
+          title: 'Review launch copy',
+          task_key: 'MKT-12',
+        },
+      },
+    ];
+    renderSection({ flat: true, hideDocs: true });
+
+    const taskButton = container.querySelector<HTMLButtonElement>('[data-testid="related-task-link"]');
+    expect(taskButton).toBeTruthy();
+
+    act(() => {
+      taskButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(openTaskRouteMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'acme',
+      'task-2',
+    );
   });
 });
