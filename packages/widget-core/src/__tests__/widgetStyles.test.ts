@@ -28,6 +28,7 @@ describe('widget scroll styles', () => {
     expect(ruleBody('.helpin-brand-attribution-brand')).toContain('gap: 2px');
     expect(ruleBody('.helpin-brand-attribution-name')).toContain('background-size: 0 1px');
     expect(ruleBody('.helpin-brand-attribution-icon')).not.toContain('transform: scale(1.25)');
+    expect(ruleBody('.helpin-theme-dark .helpin-brand-attribution-icon')).toContain('filter: brightness(0) invert(1)');
     expect(ruleBody('.helpin-brand-attribution:hover .helpin-brand-attribution-name')).toContain('background-size: 100% 1px');
   });
 

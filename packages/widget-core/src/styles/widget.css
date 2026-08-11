@@ -1380,6 +1380,15 @@
   flex: 0 0 auto;
 }
 
+.helpin-theme-dark .helpin-brand-attribution-icon {
+  filter: brightness(0) invert(1);
+  opacity: 0.82;
+}
+
+.helpin-theme-dark .helpin-brand-attribution:hover .helpin-brand-attribution-icon {
+  opacity: 1;
+}
+
 .helpin-brand-attribution:hover .helpin-brand-attribution-name {
   background-size: 100% 1px;
 }
