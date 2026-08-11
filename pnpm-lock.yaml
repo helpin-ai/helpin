@@ -911,6 +911,12 @@ importers:
 
   website:
     dependencies:
+      '@helpin-ai/nextjs':
+        specifier: 0.0.40
+        version: 0.0.40(next@15.5.12(@playwright/test@1.59.1)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(sass@1.51.0))(react@19.2.5)
+      '@helpin-ai/sdk-js':
+        specifier: 0.0.40
+        version: 0.0.40
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -2296,6 +2302,12 @@ packages:
 
   '@hapi/topo@6.0.2':
     resolution: {integrity: sha512-KR3rD5inZbGMrHmgPxsJ9dbi6zEK+C3ZwUwTa+eMwWLz7oijWUTWD2pMSNNYJAU6Qq+65NkxXjqHr/7LM2Xkqg==}
+
+  '@helpin-ai/nextjs@0.0.40':
+    resolution: {integrity: sha512-GtTE5dbrTQeYGBi0dTn5zXig7mA1a78NtOyE4Q3we8cncX/09UXyPc07ML9oMvR8xURSNGFNW/4aGPo+U9cApA==}
+    peerDependencies:
+      next: ^10.0.8 || ^11.0 || ^12.0 || ^13.0 || ^14.0 || ^15.0
+      react: 15.x || 16.x || 17.x || 18.x || 19.x
 
   '@helpin-ai/react@0.0.40':
     resolution: {integrity: sha512-qI+Hn02k+xKz4noaP8CsJAGpvJxfwIy7Ngky2/KXtE9YT4N/OLpNwBNfJlSUq6mri6jtTlhYwPBfe+nOYhPFVw==}
@@ -12548,6 +12560,13 @@ snapshots:
   '@hapi/topo@6.0.2':
     dependencies:
       '@hapi/hoek': 11.0.7
+
+  '@helpin-ai/nextjs@0.0.40(next@15.5.12(@playwright/test@1.59.1)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(sass@1.51.0))(react@19.2.5)':
+    dependencies:
+      '@helpin-ai/sdk-js': 0.0.40
+      cookie: 0.5.0
+      next: 15.5.12(@playwright/test@1.59.1)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(sass@1.51.0)
+      react: 19.2.5
 
   '@helpin-ai/react@0.0.40(react-router@6.2.2(react@19.2.5))(react@19.2.5)':
     dependencies:
