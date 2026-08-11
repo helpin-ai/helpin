@@ -189,7 +189,7 @@ describe('buildChecklistMentionOptions', () => {
 })
 
 describe('ChecklistItems', () => {
-  it('renders a flat table with horizontal row dividers and no column headers', async () => {
+  it('renders a flat table with dividers between rows but no trailing divider', async () => {
     await renderChecklist([
       makeChecklistItem(),
     ])
@@ -205,7 +205,7 @@ describe('ChecklistItems', () => {
     expect(header).toBeNull()
     expect(items?.className).not.toContain('border-t')
     expect(row?.className).toContain('border-b')
-    expect(row?.className).not.toContain('last:border-b-0')
+    expect(row?.className).toContain('last:border-b-0')
   })
 
   it('labels the assignee picker trigger for tooltips and assigned state', async () => {
