@@ -176,6 +176,12 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
           </div>
         ) : null}
 
+        {links.length === 0 && !addingLink ? (
+          <p className={flat ? 'mt-1 py-0.5 text-xs italic text-muted-foreground' : 'px-3 py-2 text-xs italic text-muted-foreground'}>
+            No external links
+          </p>
+        ) : null}
+
         {addingLink ? (
           <div className={flat ? 'flex items-center gap-2 px-1 py-1.5' : 'flex items-center gap-2 border-t border-border/40 px-3 py-2'}>
             <LinkSquare01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />

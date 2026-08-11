@@ -91,6 +91,7 @@ describe('ExternalLinks', () => {
       'button[aria-label="Add external link"]',
     )
     expect(addButton?.textContent).toBe('+')
+    expect(container?.textContent).toContain('No external links')
     expect(container?.querySelector('input[type="url"]')).toBeNull()
 
     act(() => {
@@ -98,5 +99,6 @@ describe('ExternalLinks', () => {
     })
 
     expect(container?.querySelector('input[type="url"]')).toBeTruthy()
+    expect(container?.textContent).not.toContain('No external links')
   })
 })
