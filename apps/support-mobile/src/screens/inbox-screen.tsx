@@ -13,7 +13,7 @@ import {
 import { cn } from '@mobile/lib/cn'
 import { haptic } from '@mobile/lib/haptics'
 import { isTauri } from '@mobile/lib/host'
-import { getPushPrimingPref, shouldShowPriming } from '@mobile/lib/prefs'
+import { getPushPrimingPref, setLastWorkspaceSlug, shouldShowPriming } from '@mobile/lib/prefs'
 import { PermissionPrimingSheet } from '@mobile/push/permission-priming-sheet'
 import { useAuthStore } from '@mobile/stores/auth-store'
 import { TopBar } from '@mobile/ui/top-bar'
@@ -24,6 +24,7 @@ import { Pressable } from '@mobile/ui/pressable'
 import { Spinner } from '@mobile/ui/spinner'
 import { TabShell } from '@mobile/navigation/tab-bar'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
+import type { Workspace } from '@mobile/lib/types'
 import { toast } from 'sonner'
 import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 import { useSupportViewStore } from '@mobile/stores/support-view-store'
@@ -85,6 +86,15 @@ export function InboxScreen() {
   const setSelection = useSupportViewStore((s) => s.setSelection)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const edgeStart = useRef<{ x: number; y: number } | null>(null)
+  const workspacesQuery = useQuery({
+    queryKey: ['workspaces'],
+    queryFn: async () => {
+      const { data, error } = await workspacesService.list()
+      if (error || !data) throw new Error(error ?? 'Failed to load workspaces')
+      return data
+    },
+    enabled: drawerOpen,
+  })
 
   // Push-notification permission priming: first time a signed-in user lands
   // on Inbox (after the workspace has resolved), show the priming sheet —
@@ -258,6 +268,13 @@ export function InboxScreen() {
     router.navigate({ to: '/w/$slug/support/$conversationId', params: { slug: slug ?? '', conversationId } })
   }
 
+  const handleSelectWorkspace = (nextWorkspace: Workspace) => {
+    void setLastWorkspaceSlug(nextWorkspace.slug)
+    setCurrentWorkspace({ id: nextWorkspace.id, slug: nextWorkspace.slug, name: nextWorkspace.name })
+    setSelection({ kind: 'builtin', navFilter: 'inbox', mailboxId: 'all' })
+    router.navigate({ to: '/w/$slug/support', params: { slug: nextWorkspace.slug } })
+  }
+
   return (
     <TabShell workspaceSlug={slug ?? ''} workspaceId={workspaceId}>
       <div
@@ -421,7 +438,12 @@ export function InboxScreen() {
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         workspaceId={workspaceId}
-        workspaceName={workspace?.name}
+        workspace={workspace}
+        workspaces={workspacesQuery.data}
+        workspacesLoading={workspacesQuery.isPending}
+        workspacesError={workspacesQuery.isError}
+        onRetryWorkspaces={() => void workspacesQuery.refetch()}
+        onSelectWorkspace={handleSelectWorkspace}
         activeSelection={selection}
         onSelect={setSelection}
       />

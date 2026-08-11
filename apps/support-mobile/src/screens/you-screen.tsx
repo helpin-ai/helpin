@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { useParams } from '@tanstack/react-router'
 import { useTheme } from 'next-themes'
-import { Bell, ChevronRight } from 'lucide-react'
+import { Bell } from 'lucide-react'
 import { toast } from 'sonner'
 import { TopBar } from '@mobile/ui/top-bar'
 import { TabShell } from '@mobile/navigation/tab-bar'
@@ -105,7 +105,6 @@ function useNotificationsRowState() {
 
 export function YouScreen() {
   const { slug } = useParams({ strict: false })
-  const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
   const { theme, setTheme } = useTheme()
   const appVersion = useAppVersion()
@@ -127,19 +126,6 @@ export function YouScreen() {
               <span className="text-headline">{user?.full_name}</span>
               <span className="text-footnote text-muted-foreground">{user?.email}</span>
             </span>
-          </section>
-
-          <section className="border-b border-border/70 py-1">
-            <Pressable
-              onPress={() => navigate({ to: '/workspaces' })}
-              className="flex w-full items-center justify-between py-2 text-left"
-            >
-              <span className="text-body">Workspace</span>
-              <span className="flex items-center gap-1 text-footnote text-muted-foreground">
-                {slug}
-                <ChevronRight className="h-4 w-4" />
-              </span>
-            </Pressable>
           </section>
 
           {isTauri() && notifications.loaded && (

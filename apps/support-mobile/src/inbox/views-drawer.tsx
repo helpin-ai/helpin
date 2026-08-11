@@ -2,6 +2,8 @@ import {
   BadgeCheck,
   Ban,
   Bookmark,
+  Check,
+  ChevronDown,
   CircleCheck,
   CircleUser,
   Clock3,
@@ -10,6 +12,7 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react'
+import { useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
   useInboxScopes,
@@ -22,7 +25,9 @@ import { cn } from '@mobile/lib/cn'
 import { stackSpring } from '@mobile/lib/motion'
 import { formatBadgeCount } from '@mobile/navigation/tab-bar'
 import { Pressable } from '@mobile/ui/pressable'
+import { Avatar } from '@mobile/ui/avatar'
 import { Skeleton } from '@mobile/ui/skeleton'
+import type { Workspace } from '@mobile/lib/types'
 import {
   buildDrawerGroups,
   isItemActive,
@@ -110,9 +115,143 @@ export interface ViewsDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   workspaceId: string
-  workspaceName?: string
+  workspace?: Workspace
+  workspaces?: Workspace[]
+  workspacesLoading?: boolean
+  workspacesError?: boolean
+  onRetryWorkspaces?: () => void
+  onSelectWorkspace?: (workspace: Workspace) => void
   activeSelection: ViewSelection
   onSelect: (selection: ViewSelection) => void
+}
+
+function WorkspaceSwitcher({
+  workspace,
+  workspaces = [],
+  loading,
+  error,
+  onRetry,
+  onSelect,
+  onClose,
+}: {
+  workspace: Workspace
+  workspaces?: Workspace[]
+  loading?: boolean
+  error?: boolean
+  onRetry?: () => void
+  onSelect?: (workspace: Workspace) => void
+  onClose: () => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const reduced = useReducedMotion()
+  const options = workspaces.some((item) => item.id === workspace.id)
+    ? workspaces
+    : [workspace, ...workspaces]
+
+  const handleSelect = (nextWorkspace: Workspace) => {
+    if (nextWorkspace.id === workspace.id) {
+      setExpanded(false)
+      return
+    }
+    onSelect?.(nextWorkspace)
+    onClose()
+  }
+
+  return (
+    <div className="shrink-0 border-b border-border/70 px-2 pb-2 pt-[calc(var(--safe-top)+8px)]">
+      <Pressable
+        haptic="selection"
+        aria-label={`Switch workspace, currently ${workspace.name}`}
+        aria-expanded={expanded}
+        onPress={() => setExpanded((value) => !value)}
+        className="flex min-h-[52px] w-full items-center gap-3 rounded-xl px-2 text-left active:bg-muted"
+      >
+        <Avatar name={workspace.name} src={workspace.logo_url} size={36} />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-caption text-muted-foreground">Workspace</span>
+          <span className="truncate text-headline">{workspace.name}</span>
+        </span>
+        <motion.span
+          aria-hidden
+          animate={{ rotate: expanded ? 180 : 0 }}
+          transition={reduced ? { duration: 0 } : { duration: 0.18, ease: 'easeOut' }}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted/70 text-muted-foreground"
+        >
+          <ChevronDown className="h-4 w-4" />
+        </motion.span>
+      </Pressable>
+
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={reduced ? false : { height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
+            transition={reduced ? { duration: 0 } : { duration: 0.2, ease: 'easeOut' }}
+            className="overflow-hidden"
+          >
+            <div
+              data-testid="workspace-options"
+              className="max-h-[min(42dvh,320px)] space-y-0.5 overflow-y-auto overscroll-contain pb-1 pt-1"
+            >
+              {options.map((item) => {
+                const current = item.id === workspace.id
+                const content = (
+                  <>
+                    <Avatar name={item.name} src={item.logo_url} size={28} />
+                    <span className={cn('min-w-0 flex-1 truncate text-body', current && 'font-medium text-primary')}>
+                      {item.name}
+                    </span>
+                    {current && <Check className="h-4 w-4 shrink-0 text-primary" strokeWidth={2.5} />}
+                  </>
+                )
+
+                return current ? (
+                  <div
+                    key={item.id}
+                    aria-label={`${item.name}, current workspace`}
+                    aria-current="true"
+                    className="flex min-h-[44px] w-full items-center gap-3 rounded-xl bg-primary/[0.06] px-2 text-left"
+                  >
+                    {content}
+                  </div>
+                ) : (
+                  <Pressable
+                    key={item.id}
+                    haptic="selection"
+                    aria-label={`Switch to ${item.name}`}
+                    onPress={() => handleSelect(item)}
+                    className="flex min-h-[44px] w-full items-center gap-3 rounded-xl px-2 text-left active:bg-muted"
+                  >
+                    {content}
+                  </Pressable>
+                )
+              })}
+              {loading && workspaces.length === 0 && (
+                <div className="flex min-h-[44px] items-center gap-3 px-2" aria-label="Loading workspaces">
+                  <Skeleton className="h-7 w-7 rounded-lg" />
+                  <Skeleton className="h-3.5 w-32" />
+                </div>
+              )}
+              {error && (
+                <div className="flex min-h-[44px] items-center justify-between gap-3 px-2 text-footnote">
+                  <span className="text-muted-foreground">Couldn't load workspaces</span>
+                  <Pressable
+                    haptic="selection"
+                    aria-label="Retry loading workspaces"
+                    onPress={onRetry}
+                    className="shrink-0 rounded-full px-3 py-1.5 font-medium text-primary active:bg-primary/10"
+                  >
+                    Retry
+                  </Pressable>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
 }
 
 /**
@@ -124,7 +263,12 @@ export function ViewsDrawer({
   open,
   onOpenChange,
   workspaceId,
-  workspaceName,
+  workspace,
+  workspaces,
+  workspacesLoading,
+  workspacesError,
+  onRetryWorkspaces,
+  onSelectWorkspace,
   activeSelection,
   onSelect,
 }: ViewsDrawerProps) {
@@ -179,15 +323,21 @@ export function ViewsDrawer({
               if (info.offset.x < -60 || info.velocity.x < -300) onOpenChange(false)
             }}
           >
-            {workspaceName && (
-              <div className="shrink-0 px-4 pb-2 pt-[calc(var(--safe-top)+12px)]">
-                <p className="truncate text-title">{workspaceName}</p>
-              </div>
+            {workspace && (
+              <WorkspaceSwitcher
+                workspace={workspace}
+                workspaces={workspaces}
+                loading={workspacesLoading}
+                error={workspacesError}
+                onRetry={onRetryWorkspaces}
+                onSelect={onSelectWorkspace}
+                onClose={() => onOpenChange(false)}
+              />
             )}
             <div
               className={cn(
                 'flex-1 overflow-y-auto pb-[max(var(--safe-bottom),12px)]',
-                workspaceName ? '' : 'pt-[calc(var(--safe-top)+8px)]',
+                workspace ? '' : 'pt-[calc(var(--safe-top)+8px)]',
               )}
             >
               {groups.map((group, groupIndex) => (

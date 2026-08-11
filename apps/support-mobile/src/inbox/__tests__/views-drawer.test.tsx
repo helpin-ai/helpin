@@ -7,6 +7,7 @@ import {
 } from '@helpin-ai/support-core'
 import { ViewsDrawer } from '../views-drawer'
 import type { ViewSelection } from '../use-inbox-filters'
+import type { Workspace } from '@mobile/lib/types'
 
 vi.mock('@helpin-ai/support-core', () => ({
   useUnreadStats: vi.fn(),
@@ -32,6 +33,10 @@ beforeEach(() => {
 })
 
 const active: ViewSelection = { kind: 'builtin', navFilter: 'inbox', mailboxId: 'all' }
+const workspaces: Workspace[] = [
+  { id: 'ws', name: 'Test Docs', slug: 'test-docs' },
+  { id: 'other', name: 'Customer Success', slug: 'customer-success' },
+]
 
 test('renders the Views and AI groups with the total count number and an unread dot', () => {
   render(<ViewsDrawer open onOpenChange={vi.fn()} workspaceId="ws" activeSelection={active} onSelect={vi.fn()} />)
@@ -58,4 +63,89 @@ test('renders nothing when closed', () => {
     <ViewsDrawer open={false} onOpenChange={vi.fn()} workspaceId="ws" activeSelection={active} onSelect={vi.fn()} />,
   )
   expect(container.querySelector('[aria-label="Inbox views"]')).toBeNull()
+})
+
+test('expands the workspace switcher from the current workspace name', () => {
+  render(
+    <ViewsDrawer
+      open
+      onOpenChange={vi.fn()}
+      workspaceId="ws"
+      workspace={workspaces[0]}
+      workspaces={workspaces}
+      activeSelection={active}
+      onSelect={vi.fn()}
+      onSelectWorkspace={vi.fn()}
+    />,
+  )
+
+  expect(screen.queryByText('Customer Success')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Switch workspace, currently Test Docs' }))
+  expect(screen.getByText('Customer Success')).toBeTruthy()
+  expect(screen.getByLabelText('Test Docs, current workspace')).toBeTruthy()
+})
+
+test('selecting a workspace switches and closes the drawer', () => {
+  const onSelectWorkspace = vi.fn()
+  const onOpenChange = vi.fn()
+  render(
+    <ViewsDrawer
+      open
+      onOpenChange={onOpenChange}
+      workspaceId="ws"
+      workspace={workspaces[0]}
+      workspaces={workspaces}
+      activeSelection={active}
+      onSelect={vi.fn()}
+      onSelectWorkspace={onSelectWorkspace}
+    />,
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: 'Switch workspace, currently Test Docs' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Switch to Customer Success' }))
+
+  expect(onSelectWorkspace).toHaveBeenCalledWith(workspaces[1])
+  expect(onOpenChange).toHaveBeenCalledWith(false)
+})
+
+test('keeps long workspace lists scrollable within the drawer viewport', () => {
+  render(
+    <ViewsDrawer
+      open
+      onOpenChange={vi.fn()}
+      workspaceId="ws"
+      workspace={workspaces[0]}
+      workspaces={workspaces}
+      activeSelection={active}
+      onSelect={vi.fn()}
+      onSelectWorkspace={vi.fn()}
+    />,
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: 'Switch workspace, currently Test Docs' }))
+  expect(screen.getByTestId('workspace-options').className).toContain('overflow-y-auto')
+  expect(screen.getByTestId('workspace-options').className).toContain('max-h-')
+})
+
+test('shows the current workspace and a retry action when loading workspaces fails', () => {
+  const onRetryWorkspaces = vi.fn()
+  render(
+    <ViewsDrawer
+      open
+      onOpenChange={vi.fn()}
+      workspaceId="ws"
+      workspace={workspaces[0]}
+      workspacesError
+      onRetryWorkspaces={onRetryWorkspaces}
+      activeSelection={active}
+      onSelect={vi.fn()}
+      onSelectWorkspace={vi.fn()}
+    />,
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: 'Switch workspace, currently Test Docs' }))
+  expect(screen.getByLabelText('Test Docs, current workspace')).toBeTruthy()
+  expect(screen.getByText("Couldn't load workspaces")).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Retry loading workspaces' }))
+  expect(onRetryWorkspaces).toHaveBeenCalledOnce()
 })
