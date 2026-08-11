@@ -1,5 +1,5 @@
 # Publish npm packages (production) on merge to main
-# Packages: @helpin-ai/sdk-js, @helpin-ai/react, @helpin-ai/nextjs
+# Packages: @helpin-ai/sdk-js, @helpin-ai/react, @helpin-ai/nextjs, @helpin-ai/vue
 # Required GitHub secrets: NODE_AUTH_TOKEN (npm access token)
 
 name: Publish npm Packages (Production)
@@ -63,7 +63,7 @@ jobs:
       - name: Update package versions
         run: |
           VERSION=${{ steps.release_version.outputs.RELEASE_VERSION }}
-          for pkg in packages/shared packages/widget-core packages/sdk-js packages/react packages/nextjs; do
+          for pkg in packages/shared packages/widget-core packages/sdk-js packages/react packages/nextjs packages/vue; do
             if [ -d "$pkg/package.json" ] || [ -f "$pkg/package.json" ]; then
               node -e "const p=require('./$pkg/package.json'); p.version='$VERSION'; require('fs').writeFileSync('./$pkg/package.json', JSON.stringify(p, null, 2) + '\n')"
             fi
@@ -99,4 +99,12 @@ jobs:
           NPM_CONFIG_PROVENANCE: false
         run: |
           cd packages/nextjs
+          pnpm publish --no-git-checks --access public
+
+      - name: Publish Vue package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+          NPM_CONFIG_PROVENANCE: false
+        run: |
+          cd packages/vue
           pnpm publish --no-git-checks --access public
