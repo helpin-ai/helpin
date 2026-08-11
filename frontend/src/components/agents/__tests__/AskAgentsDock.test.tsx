@@ -250,8 +250,39 @@ describe('AskAgentsDock', () => {
     expect(document.querySelector('.agent-dock-chat-row-dot')).not.toBeNull();
     expect(document.querySelector('.agent-dock-chat-marker')).not.toBeNull();
     expect(document.body.textContent).not.toContain('Ask Agent · Conversation');
+    const scrollContainer = document.body.querySelector<HTMLElement>('[data-agent-dock-chat-scroll]');
+    expect(scrollContainer?.className).toContain('min-h-0');
+    expect(scrollContainer?.className).not.toContain('max-h-[60vh]');
     const textarea = dockTextarea();
     expect(textarea.disabled).toBe(false);
+  });
+
+  it('scrolls an active chat to its latest message when selected again', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const scrollContainer = document.body.querySelector<HTMLElement>('[data-agent-dock-chat-scroll]');
+    expect(scrollContainer).not.toBeNull();
+    Object.defineProperties(scrollContainer!, {
+      scrollHeight: { configurable: true, value: 1_000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 200 },
+    });
+
+    await act(async () => {
+      scrollContainer?.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(scrollContainer?.scrollTop).toBe(200);
+
+    const activeChatButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Sprint questions, Stopped"]');
+    expect(activeChatButton).not.toBeNull();
+    await act(async () => {
+      activeChatButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(scrollContainer?.scrollTop).toBe(1_000);
   });
 
   it('shows running, paused, and stopped chat lifecycle indicators', async () => {
@@ -850,6 +881,30 @@ describe('AskAgentsDock', () => {
 
     await renderDock();
     await waitForText('Confirm fallback launch');
+
+    const scrollContainer = document.body.querySelector<HTMLElement>('[data-agent-dock-chat-scroll]');
+    expect(scrollContainer).not.toBeNull();
+    Object.defineProperties(scrollContainer!, {
+      scrollHeight: { configurable: true, value: 1_000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 200 },
+    });
+    await act(async () => {
+      scrollContainer?.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const approvalNotice = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.includes('Agent needs your approval'),
+    );
+    expect(approvalNotice).not.toBeUndefined();
+    await act(async () => {
+      approvalNotice?.click();
+      await Promise.resolve();
+    });
+
+    expect(scrollContainer?.scrollTop).toBe(1_000);
+    expect(document.body.textContent).not.toContain('Agent needs your approval');
 
     const approve = Array.from(document.body.querySelectorAll('button')).find(
       (b) => b.textContent === 'Approve',
