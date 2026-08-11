@@ -120,20 +120,22 @@ function CollectionGroup({
   const children = buildMergedChildren(node)
   const hasExpandableContent = children.length > 0
   const label = (
-    <span className="flex min-w-0 items-center gap-2">
+    <span className="flex min-w-0 flex-1 items-start gap-2">
       {node.item.icon && level === 0 ? (
         <PublicIcon
           name={node.item.icon}
           size={16}
           className={cn(
-            'shrink-0',
+            'mt-0.5 shrink-0',
             isActiveCollection
               ? 'text-sidebar-active-foreground'
               : 'text-muted-foreground',
           )}
         />
       ) : null}
-      <span className="truncate">{node.item.name}</span>
+      <span className="min-w-0 flex-1 whitespace-normal break-words text-left leading-5">
+        {node.item.name}
+      </span>
     </span>
   )
 
@@ -158,7 +160,7 @@ function CollectionGroup({
       <AccordionTrigger
         className={cn(
           indent,
-          'w-full min-w-0 cursor-pointer rounded-lg py-[7px] pr-4 hover:no-underline',
+          'w-full min-w-0 cursor-pointer items-start rounded-lg py-[7px] pr-4 hover:no-underline [&>svg]:mt-0.5',
           headingClass,
           isActiveCollection
             ? 'bg-sidebar-active text-sidebar-active-foreground'
@@ -283,7 +285,7 @@ function NestedCollectionItem({
         to={collectionHref}
         onClick={onArticleClick}
         className={cn(
-          'block rounded-lg py-[7px] text-[13px] transition-colors',
+          'block break-words rounded-lg py-[7px] text-[13px] leading-5 transition-colors',
           spacing,
           indent,
           isActiveCollection
@@ -301,13 +303,15 @@ function NestedCollectionItem({
       <AccordionTrigger
         className={cn(
           indent,
-          'w-full min-w-0 cursor-pointer py-[7px] pr-4 text-[13px] font-medium hover:no-underline',
+          'w-full min-w-0 cursor-pointer items-start py-[7px] pr-4 text-[13px] font-medium hover:no-underline [&>svg]:mt-0.5',
           isActiveCollection
             ? 'bg-sidebar-active text-sidebar-active-foreground'
             : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
         )}
       >
-        <span className="truncate">{node.item.name}</span>
+        <span className="min-w-0 flex-1 whitespace-normal break-words text-left leading-5">
+          {node.item.name}
+        </span>
       </AccordionTrigger>
 
       <AccordionContent className="pb-0">
@@ -359,7 +363,7 @@ function ArticleLink({
       to={href}
       onClick={onArticleClick}
       className={cn(
-        'block rounded-lg py-[7px] text-[13px] transition-colors',
+        'block break-words rounded-lg py-[7px] text-[13px] leading-5 transition-colors',
         indent,
         isActive
           ? 'bg-sidebar-active font-medium text-sidebar-active-foreground'
