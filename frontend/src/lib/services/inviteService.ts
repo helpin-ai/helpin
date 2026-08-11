@@ -1,4 +1,5 @@
 import { api } from '../api';
+import { getUsermavenAnonymousId } from '../analytics';
 import type { Invitation, InviteInfo, User } from '../types';
 
 export const inviteService = {
@@ -17,6 +18,6 @@ export const inviteService = {
   acceptWithSignup: (token: string, password: string, fullName: string) =>
     api.post<{ access_token: string; refresh_token: string; user: User; workspace_slug: string }>(
       '/invitations/accept-with-signup',
-      { token, password, full_name: fullName }
+      { token, password, full_name: fullName, anonymous_id: getUsermavenAnonymousId() }
     ),
 };

@@ -606,10 +606,7 @@ func (h *DocsHandler) GetContent(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, nil)
 		return
 	}
-	writeJSON(w, http.StatusOK, struct {
-		*model.DocsContent
-		ImportSourceSystem *string `json:"import_source_system,omitempty"`
-	}{DocsContent: content, ImportSourceSystem: content.ImportSourceSystem})
+	writeJSON(w, http.StatusOK, content)
 }
 
 // UpdateArticleSlug changes a help center article's slug and creates a redirect.

@@ -32,7 +32,8 @@ import (
 
 // SupportInboxService contains support business logic.
 type SupportInboxService struct {
-	conversationRepo        *repository.SupportConversationRepository
+	conversationRepo *repository.SupportConversationRepository
+	productAnalyticsEmitter
 	mailboxRepo             *repository.SupportMailboxRepository
 	emailRouteRepo          *repository.SupportEmailRouteRepository
 	emailSenderRepo         *repository.SupportEmailSenderRepository
@@ -1583,6 +1584,12 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 		}
 	}
 
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "support_ticket_created:" + ticket.ID, UserID: actorID,
+		WorkspaceID: ticket.WorkspaceID, Name: "support_ticket_created", Source: ticket.Source,
+		OccurredAt: ticket.CreatedAt,
+		Attributes: map[string]any{"entity_id": ticket.ID, "mailbox_id": ticket.MailboxID, "priority": ticket.Priority, "channel": ticket.Channel, "module": "support"},
+	})
 	return ticket, nil
 }
 
@@ -1790,6 +1797,14 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 
 	s.wsPublisher.Publish(buildSupportConversationStatusEvent(ticket, oldStatus, actorID))
 
+	if oldStatus != status && status == model.SupportConversationStatusResolved {
+		s.trackProductEvent(ctx, ProductAnalyticsEvent{
+			SemanticKey: fmt.Sprintf("support_ticket_resolved:%s:%d", ticket.ID, ticket.UpdatedAt.UnixNano()),
+			UserID:      actorID, WorkspaceID: workspaceID,
+			Name: "support_ticket_resolved", Source: "api", OccurredAt: ticket.UpdatedAt,
+			Attributes: map[string]any{"entity_id": ticket.ID, "mailbox_id": ticket.MailboxID, "flow_state": ticket.FlowState, "ai_turn_count": ticket.AITurnCount, "module": "support"},
+		})
+	}
 	return ticket, nil
 }
 
@@ -2189,6 +2204,17 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
+	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType != "customer" {
+		source := "api"
+		if msg.SenderType == "agent" {
+			source = "agent"
+		}
+		s.trackProductEvent(ctx, ProductAnalyticsEvent{
+			SemanticKey: "support_reply_sent:" + msg.ID, UserID: derefString(senderUserID),
+			WorkspaceID: workspaceID, Name: "support_reply_sent", Source: source, OccurredAt: msg.CreatedAt,
+			Attributes: map[string]any{"entity_id": msg.ID, "conversation_id": ticketID, "sender_type": msg.SenderType, "ai_assisted": req.AIAssisted, "channels": req.Channels, "module": "support"},
+		})
+	}
 	return msg, nil
 }
 

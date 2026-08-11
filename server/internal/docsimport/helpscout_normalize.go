@@ -153,6 +153,41 @@ func containsSupportedVideoEmbedNode(root *html.Node) bool {
 	return walk(root)
 }
 
+// ContainsGIFImage reports whether source HTML contains an animated GIF image.
+// GIFs must bypass the Markdown/AI conversion path because an omitted Markdown
+// image silently removes the animation from the imported article.
+func ContainsGIFImage(rawHTML string) bool {
+	doc, err := html.Parse(strings.NewReader(rawHTML))
+	if err != nil {
+		return false
+	}
+	found := false
+	walkElements(findBody(doc), func(node *html.Node) {
+		if found || node.Type != html.ElementNode || node.DataAtom != atom.Img {
+			return
+		}
+		found = isGIFImageSource(getAttr(node, "src")) ||
+			isGIFImageSource(getAttr(node, "data-src"))
+	})
+	return found
+}
+
+func isGIFImageSource(source string) bool {
+	value := strings.TrimSpace(source)
+	if value == "" {
+		return false
+	}
+	lower := strings.ToLower(value)
+	if strings.HasPrefix(lower, "data:image/gif;") {
+		return true
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(parsed.Path), ".gif")
+}
+
 // getAttr returns the value of an attribute on an HTML node.
 func getAttr(n *html.Node, key string) string {
 	for _, a := range n.Attr {

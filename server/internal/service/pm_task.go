@@ -19,7 +19,8 @@ var attachmentIDAttrPattern = regexp.MustCompile(`data-attachment-id=["']([^"']+
 
 // PMTaskService contains task business logic.
 type PMTaskService struct {
-	taskRepo            *repository.PMTaskRepository
+	taskRepo *repository.PMTaskRepository
+	productAnalyticsEmitter
 	templateRepo        *repository.PMTaskTemplateRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	workflowRepo        *repository.PMWorkflowRepository
@@ -621,6 +622,12 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		return nil, err
 	}
 	s.populateTaskDetail(ctx, detail)
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "task_created:" + newTask.ID, UserID: actorID,
+		WorkspaceID: newTask.WorkspaceID, Name: "task_created", Source: "api",
+		OccurredAt: newTask.CreatedAt,
+		Attributes: map[string]any{"entity_id": newTask.ID, "task_type": newTask.TaskType, "priority": newTask.Priority, "team_id": newTask.TeamID, "epic_id": newTask.EpicID, "module": "pm"},
+	})
 	return detail, nil
 }
 
@@ -1561,6 +1568,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			s.inheritEpicDeliveryTarget(ctx, current.WorkspaceID, current.ID, nextEpicID, actorID)
 		}
 	}
+	var addedOwnerIDs []string
 	if ownerChangeRequested {
 		previousSet := stringSet(previousOwnerIDs)
 		nextSet := stringSet(nextOwnerIDs)
@@ -1568,6 +1576,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			if _, existed := previousSet[ownerID]; existed {
 				continue
 			}
+			addedOwnerIDs = append(addedOwnerIDs, ownerID)
 			if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "owner_added", stringPtr("owner"), nil, &ownerID, nil); err != nil {
 				s.logger.ErrorContext(ctx, "failed to log activity for task owner add", "error", err, "task_id", current.ID)
 			}
@@ -1590,6 +1599,13 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 				s.logger.ErrorContext(ctx, "failed to log activity for task owner remove", "error", err, "task_id", current.ID)
 			}
 		}
+	}
+	if len(addedOwnerIDs) > 0 {
+		s.trackProductEvent(ctx, ProductAnalyticsEvent{
+			SemanticKey: fmt.Sprintf("task_assigned:%s:%d", current.ID, current.UpdatedAt.UnixNano()),
+			UserID:      actorID, WorkspaceID: current.WorkspaceID, Name: "task_assigned", Source: "api", OccurredAt: current.UpdatedAt,
+			Attributes: map[string]any{"entity_id": current.ID, "assigned_user_ids": addedOwnerIDs, "owner_count": len(nextOwnerIDs), "team_id": current.TeamID, "module": "pm"},
+		})
 	}
 
 	if stateChanged {
@@ -1941,6 +1957,14 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 		)
 	}
 	s.populateTaskDetail(ctx, detail)
+	if detail != nil && !current.Completed && detail.Task.Completed {
+		s.trackProductEvent(ctx, ProductAnalyticsEvent{
+			SemanticKey: fmt.Sprintf("task_completed:%s:%d", detail.Task.ID, detail.Task.UpdatedAt.UnixNano()),
+			UserID:      actorID, WorkspaceID: detail.Task.WorkspaceID,
+			Name: "task_completed", Source: "api", OccurredAt: detail.Task.UpdatedAt,
+			Attributes: map[string]any{"entity_id": detail.Task.ID, "workflow_state_id": detail.Task.WorkflowStateID, "task_type": detail.Task.TaskType, "team_id": detail.Task.TeamID, "module": "pm"},
+		})
+	}
 	return detail, nil
 }
 

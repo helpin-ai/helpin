@@ -58,7 +58,6 @@ import {
   useUnpublishDocsHelpcenterArticleTranslation,
   useMarkDocsHelpcenterArticleTranslationReviewed,
   useSaveDocsContent,
-  useFixDocsFormatting,
   useUpdateDocsDocument,
   useUpsertDocsHelpcenterArticleTranslation,
   usePublishDocsDocument,
@@ -120,9 +119,7 @@ import { PendingProposalBadge } from '@/components/docs/proposals/PendingProposa
 import { ProposalReviewView } from '@/components/docs/proposals/ProposalReviewView'
 import { InlineProposalReview } from '@/components/docs/InlineProposalReview'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog'
 import { CommentThread } from '@/components/pm/CommentThread'
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { suggestDocsSlug } from '@/lib/docsSlugs'
@@ -408,7 +405,7 @@ export function DocsDocumentDetail({
   )
 
   const { data: access } = useWorkspaceAccess(wsId)
-  const { has, canEditDocs, canPublishDocs, canAdminDocs, isAdmin } = usePermissions(access)
+  const { canEditDocs, canPublishDocs, canAdminDocs, isAdmin } = usePermissions(access)
   const currentUserId = useAuthStore((s) => s.user?.id)
 
   const { data: doc, isLoading: docLoading } = useDocsDocument(wsId, docId)
@@ -425,7 +422,6 @@ export function DocsDocumentDetail({
   const { data: articleTranslations = [] } = useDocsHelpcenterArticleTranslations(wsId, docId)
 
   const saveContent = useSaveDocsContent(wsId)
-  const fixFormatting = useFixDocsFormatting(wsId)
   const applyChangeProposal = useApplyDocsChangeProposal(wsId)
   const discardChangeProposal = useDiscardDocsChangeProposal(wsId)
   const applyingProposalId = applyChangeProposal.isPending ? applyChangeProposal.variables?.proposalId ?? null : null
@@ -641,8 +637,6 @@ export function DocsDocumentDetail({
   const [revertConfirmOpen, setRevertConfirmOpen] = useState(false)
   const [slugDialogOpen, setSlugDialogOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [fixFormattingConfirmOpen, setFixFormattingConfirmOpen] = useState(false)
-  const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null)
   const [pendingSlug, setPendingSlug] = useState('')
   const [pendingPublishLocale, setPendingPublishLocale] = useState<string | null>(null)
   const [proposalStatusMessage, setProposalStatusMessage] = useState('')
@@ -985,9 +979,6 @@ export function DocsDocumentDetail({
   const activeLocaleCandidate = selectedLocaleState?.docId === docId ? selectedLocaleState.locale : defaultLocale
   const activeLocale = enabledLocales.includes(activeLocaleCandidate) ? activeLocaleCandidate : defaultLocale
   const isSourceLocaleActive = activeLocale === defaultLocale
-  const formattingSource = content?.import_source_system?.trim().toLowerCase() ?? ''
-  const canFixImportedFormatting = has('docs.import')
-    && (formattingSource === 'helpscout' || formattingSource === 'nextra')
   const activeLocaleRow = localeRowsByLocale.get(activeLocale)
   const activeTranslation = !isSourceLocaleActive ? articleTranslationsByLocale.get(activeLocale) ?? null : null
   const activeTranslationStatus = activeLocaleRow?.state ?? 'missing'
@@ -1116,25 +1107,6 @@ export function DocsDocumentDetail({
       navigate({ to: '/w/$slug/docs', params: { slug: wsSlug } })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete')
-    }
-  }
-
-  const handleFixFormatting = async () => {
-    try {
-      const result = await fixFormatting.mutateAsync(docId)
-      setFixFormattingConfirmOpen(false)
-      if (result.html_block_fallbacks > 0) {
-        toast.warning(`Formatting refreshed with ${result.html_block_fallbacks} source block${result.html_block_fallbacks === 1 ? '' : 's'} preserved as HTML`)
-      } else {
-        toast.success(result.republished ? 'Formatting fixed and live article updated' : 'Formatting fixed')
-      }
-    } catch (err) {
-      const reason = getUpgradeRequiredReason(err)
-      if (reason) {
-        setUpgradeDialogReason(reason)
-        return
-      }
-      toast.error(err instanceof Error ? err.message : 'Failed to fix formatting')
     }
   }
 
@@ -2362,19 +2334,6 @@ export function DocsDocumentDetail({
                       {doc.is_locked ? 'Unlock document' : 'Lock document'}
                     </button>
                   )}
-                  {canFixImportedFormatting && (
-                    <button
-                      type="button"
-                      onClick={() => setFixFormattingConfirmOpen(true)}
-                      disabled={doc.is_locked || fixFormatting.isPending || editorSaveStatus === 'saving'}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-                    >
-                      {fixFormatting.isPending
-                        ? <Loading01Icon className="h-4 w-4 animate-spin text-muted-foreground" />
-                        : <MagicWand01Icon className="h-4 w-4 text-muted-foreground" />}
-                      {fixFormatting.isPending ? 'Fixing formatting...' : 'Fix formatting'}
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => setMoveDialogOpen(true)}
@@ -2564,20 +2523,6 @@ export function DocsDocumentDetail({
           />
 
           <ConfirmDialog
-            open={fixFormattingConfirmOpen}
-            onOpenChange={setFixFormattingConfirmOpen}
-            title="Fix imported formatting"
-            description={<div className="space-y-2">
-              <p>This replaces the current article content using its imported source and the latest formatting workflow.</p>
-              <p>{formattingSource === 'helpscout' ? 'The latest published Help Scout version will be fetched first.' : 'The stored Nextra import snapshot will be used.'}</p>
-              {sourceLivePublished && <p>The live article will be republished automatically.</p>}
-            </div>}
-            confirmLabel={fixFormatting.isPending ? 'Fixing...' : 'Fix formatting'}
-            variant="default"
-            onConfirm={() => void handleFixFormatting()}
-          />
-
-          <ConfirmDialog
             open={regenerateConfirmOpen}
             onOpenChange={setRegenerateConfirmOpen}
             title="Regenerate translation"
@@ -2654,13 +2599,6 @@ export function DocsDocumentDetail({
         onSlugChange={setPendingSlug}
         onConfirm={handleConfirmPublish}
         isPublishing={pendingPublishLocale && pendingPublishLocale !== defaultLocale ? publishArticleTranslation.isPending : publishDoc.isPending}
-      />
-      <UpgradeRequiredDialog
-        open={upgradeDialogReason !== null}
-        onOpenChange={(open) => {
-          if (!open) setUpgradeDialogReason(null)
-        }}
-        reason={upgradeDialogReason}
       />
     </div>
   )

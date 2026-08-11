@@ -676,6 +676,7 @@ func buildContinuationAdditionalContext(run *model.AgentRun, content string) str
 
 // AgentService contains agent business logic.
 type AgentService struct {
+	productAnalyticsEmitter
 	agentRepo                  *repository.AgentRepository
 	agentTemplateRepo          *repository.AgentTemplateRepository
 	workspaceRepo              *repository.WorkspaceRepository
@@ -3165,6 +3166,11 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	s.publishSimpleEvent("created", "agent", agent.ID, agent.WorkspaceID, actorID)
 
 	materializeAgentSystemPrompt(agent)
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "agent_created:" + agent.ID, UserID: actorID,
+		WorkspaceID: agent.WorkspaceID, Name: "agent_created", Source: "api", OccurredAt: agent.CreatedAt,
+		Attributes: map[string]any{"entity_id": agent.ID, "runtime_kind": agent.RuntimeKind, "trigger_mode": agent.TriggerMode, "source_template_id": agent.SourceTemplateID, "module": "automation"},
+	})
 	return agent, nil
 }
 
@@ -6117,6 +6123,15 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, err
 	}
+	source := "automation"
+	if run.TriggeredByUserID != nil {
+		source = "api"
+	}
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "agent_run_started:" + run.ID, UserID: derefString(run.TriggeredByUserID),
+		WorkspaceID: run.WorkspaceID, Name: "agent_run_started", Source: source, OccurredAt: run.CreatedAt,
+		Attributes: map[string]any{"entity_id": run.ID, "agent_id": run.AgentID, "target_type": run.TargetType, "target_id": run.TargetID, "runtime_kind": run.RuntimeKind, "invocation_mode": run.InvocationMode, "module": "automation"},
+	})
 	return run, nil
 }
 

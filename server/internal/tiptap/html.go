@@ -35,6 +35,7 @@ func RenderHTML(jsonContent json.RawMessage) (string, error) {
 	if err := json.Unmarshal(jsonContent, &doc); err != nil {
 		return "", fmt.Errorf("tiptap: unmarshal: %w", err)
 	}
+	NormalizeInternalAnchorLinks(&doc)
 
 	var b strings.Builder
 	b.Grow(len(jsonContent)) // rough estimate
@@ -555,6 +556,10 @@ func writeMarkOpen(b *strings.Builder, m *Mark) {
 		b.WriteString("<mark>")
 	case "link":
 		href := strAttr(m.Attrs, "href")
+		if strings.HasPrefix(href, "#") {
+			fmt.Fprintf(b, `<a href="%s">`, html.EscapeString(href))
+			break
+		}
 		target := strAttr(m.Attrs, "target")
 		rel := strAttr(m.Attrs, "rel")
 		if target == "" {

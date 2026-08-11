@@ -633,3 +633,46 @@ func customerIOTestResponse(status int) *http.Response {
 		Header:     make(http.Header),
 	}
 }
+
+func TestUsermavenClientSendsAuthenticatedStitchedEvent(t *testing.T) {
+	var got map[string]any
+	var authorization string
+	httpClient := &http.Client{Transport: customerIORoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		authorization = r.Header.Get("Authorization")
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode Usermaven body: %v", err)
+		}
+		return customerIOTestResponse(http.StatusOK), nil
+	})}
+	client := NewUsermavenClient(UsermavenConfig{
+		APIKey: "workspace-key", ServerToken: "server-token",
+		Endpoint: "https://events.test/api/v1/s2s/event", HTTPClient: httpClient,
+	})
+	occurredAt := time.Date(2026, 8, 11, 12, 30, 0, 0, time.UTC)
+	err := client.Track(context.Background(), UsermavenEvent{
+		Name: "user_identify", OccurredAt: occurredAt,
+		User:       map[string]any{"id": "user-1", "anonymous_id": "anon-1"},
+		Company:    map[string]any{"id": "org-1", "name": "Acme"},
+		Attributes: map[string]any{"signup_method": "password"},
+	})
+	if err != nil {
+		t.Fatalf("Track: %v", err)
+	}
+	if authorization != "Bearer workspace-key.server-token" {
+		t.Fatalf("Authorization = %q", authorization)
+	}
+	if got["api_key"] != "workspace-key" || got["event_type"] != "user_identify" {
+		t.Fatalf("unexpected envelope: %#v", got)
+	}
+	if got["timestamp"] != float64(occurredAt.UnixMilli()) {
+		t.Fatalf("timestamp = %#v", got["timestamp"])
+	}
+	user := got["user"].(map[string]any)
+	if user["id"] != "user-1" || user["anonymous_id"] != "anon-1" {
+		t.Fatalf("unexpected stitched user: %#v", user)
+	}
+	company := got["company"].(map[string]any)
+	if company["id"] != "org-1" {
+		t.Fatalf("unexpected company: %#v", company)
+	}
+}

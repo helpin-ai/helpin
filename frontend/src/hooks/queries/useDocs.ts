@@ -21,7 +21,6 @@ import type {
   UpsertDocsHelpcenterArticleTranslationRequest,
   DocsArticleFeedbackRequest,
   DocsDocument,
-  DocsFixFormattingResult,
   ReorderDocsSpacesRequest,
   ReorderDocsCollectionsRequest,
   ReorderDocsDocumentsRequest,
@@ -951,19 +950,5 @@ export function useSubmitDocsArticleFeedback(wsId: string) {
   return useMutation({
     mutationFn: async ({ docId, ...data }: DocsArticleFeedbackRequest & { docId: string }) =>
       unwrap(await docsService.submitArticleFeedback(wsId, docId, data)),
-  })
-}
-export function useFixDocsFormatting(wsId: string) {
-  const qc = useQueryClient()
-  return useMutation<DocsFixFormattingResult, Error, string>({
-    mutationFn: async (docId) =>
-      unwrap(await docsService.fixFormatting(wsId, docId)),
-    onSuccess: (_result, docId) => {
-      qc.invalidateQueries({ queryKey: queryKeys.docs.content(wsId, docId) })
-      qc.invalidateQueries({ queryKey: queryKeys.docs.blocks(wsId, docId) })
-      qc.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId), exact: true })
-      qc.invalidateQueries({ queryKey: queryKeys.docs.versions(wsId, docId) })
-      qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
-    },
   })
 }
