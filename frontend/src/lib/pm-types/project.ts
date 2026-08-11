@@ -519,6 +519,9 @@ export interface Comment {
   entity_type: 'task' | 'epic' | 'doc';
   entity_id: string;
   author_id: string;
+  agent_id?: string | null;
+  agent_name?: string;
+  agent_run_id?: string | null;
   body: string;
   parent_id?: string;
   block_id?: string;

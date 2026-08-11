@@ -101,6 +101,23 @@ type InternalCommandService struct {
 	definitions map[string]InternalCommandDefinition
 }
 
+func (s *InternalCommandService) withAgentCommentAttribution(ctx context.Context, meta model.InternalCommandContext, req model.CreateCommentRequest) model.CreateCommentRequest {
+	agentID := strings.TrimSpace(meta.AgentID)
+	if agentID == "" {
+		return req
+	}
+	req.AgentID = &agentID
+	if runID := strings.TrimSpace(meta.RunID); runID != "" {
+		req.AgentRunID = &runID
+	}
+	if s != nil && s.agentService != nil && s.agentService.agentRepo != nil {
+		if agents, err := s.agentService.agentRepo.ListByIDs(ctx, meta.WorkspaceID, []string{agentID}); err == nil && len(agents) == 1 {
+			req.AgentName = strings.TrimSpace(agents[0].Name)
+		}
+	}
+	return req
+}
+
 // commandReleaseFactsProvider is the narrow release-facts surface consumed by
 // command-backed release tools. *ReleaseFactsService satisfies it.
 type commandReleaseFactsProvider interface {
@@ -1452,11 +1469,11 @@ func (s *InternalCommandService) registerDefaults() {
 			if normalized := normalizeTaskDescriptionRichText(&content); normalized != nil {
 				content = *normalized
 			}
-			comment, err := s.commentService.Create(ctx, model.CreateCommentRequest{
+			comment, err := s.commentService.Create(ctx, s.withAgentCommentAttribution(ctx, meta, model.CreateCommentRequest{
 				EntityType: "task",
 				EntityID:   taskID,
 				Body:       content,
-			}, fallbackActor(meta), meta.WorkspaceID)
+			}), fallbackActor(meta), meta.WorkspaceID)
 			if err != nil {
 				return nil, err
 			}
