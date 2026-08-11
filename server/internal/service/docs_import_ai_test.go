@@ -164,6 +164,39 @@ func TestDocsImportAIConversionDisabledDoesNotCallProvider(t *testing.T) {
 	}
 }
 
+func TestDocsImportAIConversionUsesDeterministicConverterForVideo(t *testing.T) {
+	provider := &docsImportAIStub{response: `{"markdown":"[video](https://www.youtube.com/embed/ptlSTecgl3c)"}`}
+	service := &DocsImportService{
+		llmProvider:  provider,
+		aiConversion: DocsImportAIConversionConfig{Enabled: true}.withDefaults(),
+		logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	result, warnings, err := service.convertHelpScoutHTML(
+		context.Background(),
+		"workspace-1",
+		"article-video",
+		"Video article",
+		`<h2>Walkthrough</h2><iframe src="https://www.youtube.com/embed/ptlSTecgl3c"></iframe>`,
+	)
+	if err != nil {
+		t.Fatalf("convertHelpScoutHTML() error = %v", err)
+	}
+	if provider.calls != 0 {
+		t.Fatalf("provider calls = %d, want deterministic conversion without AI", provider.calls)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", warnings)
+	}
+	encoded, err := json.Marshal(result.Doc)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"type":"videoEmbed"`) || !strings.Contains(string(encoded), `"embedUrl":"https://www.youtube.com/embed/ptlSTecgl3c"`) {
+		t.Fatalf("expected native video embed, got: %s", encoded)
+	}
+}
+
 func TestParseDocsImportAIResponseAcceptsJSONFence(t *testing.T) {
 	markdown, err := parseDocsImportAIResponse("```json\n{\"markdown\":\"## Setup\"}\n```")
 	if err != nil {

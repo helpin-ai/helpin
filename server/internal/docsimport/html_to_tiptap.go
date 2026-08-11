@@ -143,7 +143,9 @@ func (c *converter) convertElement(n *html.Node) []Node {
 		c.warn(warnCalloutGuess(getAttr(n, "class"), variant))
 		return []Node{Callout(variant, content...)}
 	}
-	if isStyledCustomHTMLContainer(n) {
+	// Help Scout commonly wraps responsive video iframes in a positioned div.
+	// Convert supported embeds inside that wrapper before considering it custom HTML.
+	if isStyledCustomHTMLContainer(n) && !containsSupportedVideoEmbedNode(n) {
 		raw := renderNode(n)
 		if strings.TrimSpace(raw) != "" {
 			c.warn(warnHTMLBlockFallback())
@@ -588,6 +590,9 @@ func (c *converter) convertDetails(n *html.Node) []Node {
 
 // convertIframe handles iframe elements.
 func (c *converter) convertIframe(n *html.Node) []Node {
+	if provider, sourceURL, embedURL, ok := parseVideoIframe(getAttr(n, "src")); ok {
+		return []Node{VideoEmbed(provider, sourceURL, embedURL)}
+	}
 	raw := renderNode(n)
 	if strings.TrimSpace(raw) == "" {
 		return nil
