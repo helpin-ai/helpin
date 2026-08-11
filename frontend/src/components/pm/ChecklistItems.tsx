@@ -85,7 +85,8 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group grid ${CHECKLIST_TABLE_GRID_CLASS} items-center gap-x-2 rounded-md px-1 py-1.5 transition-colors hover:bg-muted/40 ${isDragging ? 'opacity-50' : ''}`}
+      data-testid="checklist-table-row"
+      className={`group grid ${CHECKLIST_TABLE_GRID_CLASS} items-center gap-x-2 border-b border-border/50 px-1 py-1.5 transition-colors last:border-b-0 hover:bg-muted/40 ${isDragging ? 'opacity-50' : ''}`}
     >
       <input
         type="checkbox"
@@ -351,7 +352,7 @@ export function ChecklistItems({
         <div>
           <div
             data-testid="checklist-table-header"
-            className={`grid ${CHECKLIST_TABLE_GRID_CLASS} gap-x-2 px-1 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70`}
+            className={`grid ${CHECKLIST_TABLE_GRID_CLASS} gap-x-2 border-b border-border/60 px-1 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70`}
           >
             <span className="sr-only">Completed</span>
             <span>Item</span>
