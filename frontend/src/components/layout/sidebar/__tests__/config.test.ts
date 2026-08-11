@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { buildRailItems, deriveActiveRail } from '../config';
 
+describe('workspace rail navigation', () => {
+  it('orders modules from projects through settings', () => {
+    const items = buildRailItems('acme', 0);
+
+    expect(items.map((item) => item.id)).toEqual([
+      'projects',
+      'support',
+      'docs',
+      'crm',
+      'automation',
+      'settings',
+    ]);
+  });
+});
+
 describe('setup success rail navigation', () => {
   it('places the persistent setup guide after settings with progress and a separator', () => {
     const items = buildRailItems('acme', 0, 42);

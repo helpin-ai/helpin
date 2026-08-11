@@ -257,4 +257,15 @@ describe('SupportRailNav', () => {
 
     rendered.cleanup()
   })
+
+  it('keeps the action footer in sidebar flow instead of overlaying the trial banner', () => {
+    const rendered = renderSupportRail()
+    const footer = rendered.container.querySelector('.support-bottom-bar')
+
+    expect(footer?.classList.contains('sticky')).toBe(true)
+    expect(footer?.classList.contains('fixed')).toBe(false)
+    expect(footer?.classList.contains('mt-auto')).toBe(true)
+
+    rendered.cleanup()
+  })
 })

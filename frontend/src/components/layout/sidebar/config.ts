@@ -64,10 +64,10 @@ export const projectCreateOptions = [
 export function buildRailItems(wsSlug: string, totalSupportUnread: number, setupProgress?: number): RailItem[] {
   const items: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanbanIcon, defaultLink: `/w/${wsSlug}/pm/my-work` },
-    { id: 'crm', label: 'CRM', icon: Briefcase01Icon, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: Message01Icon, defaultLink: `/w/${wsSlug}/support`, indicator: Boolean(totalSupportUnread) },
-    { id: 'automation', label: 'Automation', icon: BotIcon, defaultLink: `/w/${wsSlug}/automation/flows` },
     { id: 'docs', label: 'Docs', icon: File01Icon, defaultLink: `/w/${wsSlug}/docs` },
+    { id: 'crm', label: 'CRM', icon: Briefcase01Icon, defaultLink: `/w/${wsSlug}/crm/contacts` },
+    { id: 'automation', label: 'Automation', icon: BotIcon, defaultLink: `/w/${wsSlug}/automation/flows` },
     { id: 'settings', label: 'Settings', icon: Setting07Icon, defaultLink: buildSettingsRoutePath(wsSlug, 'profile') },
   ];
   if (setupProgress !== undefined) {

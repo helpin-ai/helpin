@@ -399,7 +399,7 @@ export function SupportRailNav({
         </SidebarGroup>
       )}
 
-      <div className="support-bottom-bar fixed inset-x-0 bottom-0 z-10 ml-16 w-[calc(var(--sidebar-width)-4rem)] border-t border-border/70 bg-[#fafafa] px-2 py-2 dark:bg-sidebar">
+      <div className="support-bottom-bar sticky bottom-0 z-10 -mx-2 mt-auto border-t border-border/70 bg-[#fafafa] px-2 py-2 dark:bg-sidebar">
         <div className="flex items-center justify-around">
           <Tooltip>
             <TooltipTrigger asChild>
