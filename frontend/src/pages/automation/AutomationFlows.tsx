@@ -4701,7 +4701,7 @@ export function AutomationFlowsPage({
   }
 
   return (
-    <div className="mx-auto max-w-5xl text-foreground">
+    <div className="text-foreground">
       <FlowTemplateGallery
         open={galleryOpen}
         onOpenChange={(open) => {

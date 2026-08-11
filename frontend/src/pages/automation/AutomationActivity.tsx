@@ -1435,7 +1435,6 @@ export function AutomationActivityPage({
       <AutomationShell
         title="Automation Activity"
         description="See what fired, what needs a human, and which flows are delivering value."
-        className="max-w-5xl"
       >
         <Card className={LINEAR_CARD_CLASS}>
           <CardContent className="px-5 py-6 text-sm text-muted-foreground">
@@ -1450,7 +1449,6 @@ export function AutomationActivityPage({
     <AutomationShell
       title="Activity"
       description="Answer the operator question first: what needs a human, what is healthy, and where the failures are clustering."
-      className="max-w-5xl"
       actions={(
         <Button
           variant="outline"

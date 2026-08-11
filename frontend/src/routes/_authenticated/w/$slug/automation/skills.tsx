@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { AutomationRouteViewport } from '@/components/automation/AutomationRouteViewport';
 import { SkillCatalogPage } from '@/pages/automation/SkillCatalog';
 
 export const Route = createFileRoute('/_authenticated/w/$slug/automation/skills')({
@@ -7,8 +8,8 @@ export const Route = createFileRoute('/_authenticated/w/$slug/automation/skills'
 
 function SkillCatalogRoute() {
   return (
-    <div className="h-full overflow-auto p-4 pb-20 md:p-6 md:pb-24">
+    <AutomationRouteViewport>
       <SkillCatalogPage />
-    </div>
+    </AutomationRouteViewport>
   );
 }

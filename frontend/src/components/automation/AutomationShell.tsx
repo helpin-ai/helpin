@@ -15,7 +15,7 @@ export function AutomationShell({
   className?: string;
 }) {
   return (
-    <div className={cn('mx-auto max-w-7xl space-y-5', className)}>
+    <div className={cn('space-y-5', className)}>
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold">{title}</h1>
