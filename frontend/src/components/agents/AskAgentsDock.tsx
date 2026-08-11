@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import { Cancel01Icon, Maximize01Icon, MoreVerticalIcon } from '@/lib/icons';
+import { Cancel01Icon, LinkSquare01Icon, Maximize01Icon, Minimize01Icon, MoreVerticalIcon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AskAgentAvatar, type AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
 import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence';
@@ -56,6 +56,7 @@ export function AskAgentsDock() {
   const [runsError, setRunsError] = useState<string | null>(null);
   const [chatsError, setChatsError] = useState<string | null>(null);
   const [hiddenByModal, setHiddenByModal] = useState(false);
+  const [maximized, setMaximized] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<string | undefined>();
   const [attentionNudge, setAttentionNudge] = useState(false);
   const [nextChatCursor, setNextChatCursor] = useState<string | null>(null);
@@ -316,6 +317,7 @@ export function AskAgentsDock() {
   }, [rememberFocusSource, setCollapsed, setTab]);
 
   const closeDock = useCallback(() => {
+    setMaximized(false);
     setCollapsed(true);
     window.setTimeout(() => {
       const target = returnFocusRef.current;
@@ -464,7 +466,12 @@ export function AskAgentsDock() {
         <button type="button" aria-label="Close agent dock" tabIndex={-1} onClick={closeDock} className="agent-dock-scrim absolute inset-0 bg-[rgba(28,27,25,.10)] backdrop-blur-[1.5px] dark:bg-black/35" />
       ) : null}
 
-      <div className="agent-dock-anchor pointer-events-none absolute inset-x-0 bottom-[calc(22px+env(safe-area-inset-bottom))] flex flex-col items-center gap-2.5 px-3">
+      <div className={cn(
+        'agent-dock-anchor pointer-events-none absolute inset-0 flex flex-col items-center justify-end motion-safe:transition-[padding] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)]',
+        maximized
+          ? 'gap-0 p-0'
+          : 'gap-2.5 px-3 pb-[calc(22px+env(safe-area-inset-bottom))]',
+      )}>
         {!collapsed ? (
           <div
             ref={panelRef}
@@ -472,8 +479,14 @@ export function AskAgentsDock() {
             role="dialog"
             aria-modal="true"
             aria-label="Agent runs and chats"
+            data-maximized={maximized || undefined}
             tabIndex={-1}
-            className="agent-dock-panel pointer-events-auto flex h-[min(600px,calc(100dvh-104px))] w-[min(900px,92vw)] min-h-[360px] overflow-hidden rounded-[18px] border border-[#e6e3dd] bg-[#fffefa] shadow-[0_30px_70px_-26px_rgba(28,27,25,.5)] dark:border-[#37352f] dark:bg-[#242320]"
+            className={cn(
+              'agent-dock-panel pointer-events-auto flex origin-bottom overflow-hidden bg-[#fffefa] will-change-[width,height] motion-safe:transition-[width,height,min-height,border-radius,box-shadow] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:bg-[#242320]',
+              maximized
+                ? 'h-full w-full min-h-0'
+                : 'h-[min(600px,calc(100dvh-104px))] w-[min(900px,92vw)] min-h-[360px] rounded-[18px] border border-[#e6e3dd] shadow-[0_30px_70px_-26px_rgba(28,27,25,.5)] dark:border-[#37352f]',
+            )}
           >
             <DockRoster
               workspaceId={workspaceId}
@@ -511,6 +524,8 @@ export function AskAgentsDock() {
                 chat={activeChat}
                 workspaceSlug={workspace.slug}
                 askAgentState={askAgentState}
+                maximized={maximized}
+                onToggleMaximized={() => setMaximized((value) => !value)}
                 onClose={closeDock}
                 onRenameChat={renameChat}
                 onArchiveChat={archiveChat}
@@ -557,7 +572,7 @@ export function AskAgentsDock() {
           </div>
         ) : null}
 
-        <DockTrigger
+        {!maximized ? <DockTrigger
           askTriggerRef={askTriggerRef}
           open={!collapsed}
           runs={triggerRuns}
@@ -578,7 +593,7 @@ export function AskAgentsDock() {
             if (collapsed) openDock(tab, tab === 'chats' ? 'composer' : 'selection', source);
             else closeDock();
           }}
-        />
+        /> : null}
       </div>
       <div className="sr-only" aria-live="polite">{attentionRuns.length > 0 ? `${attentionRuns.length} agent${attentionRuns.length === 1 ? '' : 's'} need your attention` : ''}</div>
     </div>,
@@ -592,6 +607,8 @@ function DockPaneHeader({
   chat,
   workspaceSlug,
   askAgentState,
+  maximized,
+  onToggleMaximized,
   onClose,
   onRenameChat,
   onArchiveChat,
@@ -601,6 +618,8 @@ function DockPaneHeader({
   chat: DockChat | null;
   workspaceSlug?: string;
   askAgentState: AskAgentAvatarState;
+  maximized: boolean;
+  onToggleMaximized: () => void;
   onClose: () => void;
   onRenameChat: (chatId: string, title: string) => Promise<boolean>;
   onArchiveChat: (chatId: string) => Promise<boolean>;
@@ -658,9 +677,24 @@ function DockPaneHeader({
           {presentation.label}
         </span>
       ) : null}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onToggleMaximized}
+            aria-label={maximized ? 'Restore agent dock' : 'Maximize agent dock'}
+            className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]"
+          >
+            {maximized
+              ? <Minimize01Icon className="h-3.5 w-3.5" />
+              : <Maximize01Icon className="h-3.5 w-3.5" />}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="z-[70]">{maximized ? 'Restore' : 'Maximize'}</TooltipContent>
+      </Tooltip>
       {fullPath ? (
         <a href={fullPath} aria-label="Open full agent session" title="Open full session" className="grid h-8 w-8 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
-          <Maximize01Icon className="h-3.5 w-3.5" />
+          <LinkSquare01Icon className="h-3.5 w-3.5" />
         </a>
       ) : null}
       {tab === 'chats' && chat ? (
