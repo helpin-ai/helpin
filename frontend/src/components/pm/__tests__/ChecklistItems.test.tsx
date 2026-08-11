@@ -189,7 +189,7 @@ describe('buildChecklistMentionOptions', () => {
 })
 
 describe('ChecklistItems', () => {
-  it('renders a flat table with horizontal dividers and no outer border', async () => {
+  it('renders a flat table with horizontal row dividers and no column headers', async () => {
     await renderChecklist([
       makeChecklistItem(),
     ])
@@ -201,11 +201,9 @@ describe('ChecklistItems', () => {
     expect(table).toBeTruthy()
     expect(table?.className).not.toContain('border')
     expect(table?.className).not.toContain('rounded-lg')
-    expect(header?.textContent).toContain('Item')
-    expect(header?.textContent).toContain('Assignee')
-    expect(header?.className).toContain('border-b')
+    expect(header).toBeNull()
     expect(row?.className).toContain('border-b')
-    expect(row?.className).toContain('last:border-b-0')
+    expect(row?.className).not.toContain('last:border-b-0')
   })
 
   it('labels the assignee picker trigger for tooltips and assigned state', async () => {
@@ -260,8 +258,20 @@ describe('ChecklistItems', () => {
     ])
 
     const progressFill = container?.querySelector<HTMLElement>('[style*="width: 50%"]')
+    const heading = container?.querySelector<HTMLElement>('[data-testid="checklist-heading"]')
+    const progress = container?.querySelector<HTMLElement>('[data-testid="checklist-progress"]')
+    const count = container?.querySelector<HTMLElement>('[data-testid="checklist-count"]')
+    const percentage = container?.querySelector<HTMLElement>('[data-testid="checklist-percentage"]')
 
     expect(progressFill).toBeTruthy()
+    expect(progress?.parentElement).toBe(heading)
+    expect(count).toBeTruthy()
+    expect(percentage).toBeTruthy()
+    expect(count?.compareDocumentPosition(progress!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(progress?.compareDocumentPosition(percentage!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(progress?.className).toContain('flex-1')
+    expect(progress?.className).not.toContain('max-w-')
+    expect(container?.querySelector('button[aria-label="Add checklist item"]')?.className).toContain('ml-4')
     expect(progressFill?.className).toContain('bg-green-500')
     expect(progressFill?.className).not.toContain('bg-primary')
   })

@@ -154,7 +154,7 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label={`Open ${link.title || getHostname(link.url)} in a new tab`}
-                      className="inline-flex max-w-full items-center gap-1 text-sm font-medium text-foreground/80 transition-colors hover:text-foreground hover:underline hover:decoration-muted-foreground/60 hover:underline-offset-2"
+                      className="inline-flex max-w-full items-center gap-1 text-sm font-medium text-foreground/75 transition-colors hover:text-foreground hover:underline hover:decoration-muted-foreground/60 hover:underline-offset-2 dark:text-foreground/80"
                     >
                       <span className="min-w-0 truncate">{link.title || getHostname(link.url)}</span>
                       <ArrowUpRight01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />

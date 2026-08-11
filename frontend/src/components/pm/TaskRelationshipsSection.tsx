@@ -574,19 +574,19 @@ export function TaskRelationshipsSection({
                       relatedTask.object_id,
                     )
                   }
-                  className="min-w-0 flex-1 truncate font-medium text-foreground transition-colors hover:text-primary"
+                  className="min-w-0 flex-1 truncate font-medium text-foreground/75 transition-colors hover:text-primary dark:text-foreground"
                 >
                   {relatedTask.title}
                 </button>
               ) : (
-                <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                <span className="min-w-0 flex-1 truncate font-medium text-foreground/75 dark:text-foreground">
                   {relatedTask.title}
                 </span>
               )}
               {(relatedTask.task_key || relatedTask.display_id) ? (
                 <span
                   data-testid="related-task-id"
-                  className="absolute right-1 bg-background pl-3 text-[10px] text-foreground opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200 group-focus-within:opacity-100"
+                  className="absolute right-1 bg-background pl-3 text-[10px] text-foreground/70 opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200 group-focus-within:opacity-100 dark:text-foreground"
                 >
                   {relatedTask.task_key ?? `#${relatedTask.display_id}`}
                 </span>
@@ -619,7 +619,7 @@ export function TaskRelationshipsSection({
             >
               <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <span className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Doc</span>
-              <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.title}</span>
+              <span className="min-w-0 flex-1 truncate text-ui font-medium text-foreground/75 dark:text-foreground">{doc.title}</span>
             </button>
             {doc.association_id ? (
               <div className="ml-auto flex shrink-0 items-center">

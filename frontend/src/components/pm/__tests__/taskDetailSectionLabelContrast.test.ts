@@ -36,4 +36,19 @@ describe('task detail optional section labels', () => {
     expect(combinedGateIndex).toBeGreaterThan(agentRunPanelIndex);
     expect(gitPanelIndex).toBeGreaterThan(combinedGateIndex);
   });
+
+  it('softens attached item titles only in light mode across tasks and epics', () => {
+    const relationships = readFileSync(resolve(__dirname, '../TaskRelationshipsSection.tsx'), 'utf8');
+    const associations = readFileSync(resolve(__dirname, '../AssociationsPanel.tsx'), 'utf8');
+    const externalLinks = readFileSync(resolve(__dirname, '../ExternalLinks.tsx'), 'utf8');
+    const taskPanel = readFileSync(resolve(__dirname, '../TaskDetailPanel.tsx'), 'utf8');
+    const epicDetail = readFileSync(resolve(__dirname, '../../../pages/pm/EpicDetail.tsx'), 'utf8');
+
+    expect(relationships).toContain('font-medium text-foreground/75 dark:text-foreground');
+    expect(associations).toContain('font-medium text-foreground/75 dark:text-foreground');
+    expect(externalLinks).toContain('font-medium text-foreground/75');
+    expect(externalLinks).toContain('dark:text-foreground/80');
+    expect(taskPanel).toContain('<AssociationsPanel');
+    expect(epicDetail).toContain('<AssociationsPanel');
+  });
 });

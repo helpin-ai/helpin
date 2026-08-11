@@ -86,7 +86,7 @@ function SortableItem({
       ref={setNodeRef}
       style={style}
       data-testid="checklist-table-row"
-      className={`group grid ${CHECKLIST_TABLE_GRID_CLASS} items-center gap-x-2 border-b border-border/50 px-1 py-1.5 transition-colors last:border-b-0 hover:bg-muted/40 ${isDragging ? 'opacity-50' : ''}`}
+      className={`group grid ${CHECKLIST_TABLE_GRID_CLASS} items-center gap-x-2 border-b border-border/50 px-1 py-1.5 transition-colors hover:bg-muted/40 ${isDragging ? 'opacity-50' : ''}`}
     >
       <input
         type="checkbox"
@@ -311,22 +311,36 @@ export function ChecklistItems({
   return (
     <div className="space-y-2" data-testid="checklist-table">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <CheckmarkSquare02Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        <div className="flex min-w-0 flex-1 items-center gap-1.5" data-testid="checklist-heading">
+          <CheckmarkSquare02Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
             Checklist
           </span>
           {items.length > 0 ? (
-            <span className="text-xs font-normal text-muted-foreground">
-              ({completedCount}/{items.length})
-            </span>
+            <>
+              <span className="shrink-0 text-xs font-normal text-muted-foreground" data-testid="checklist-count">
+                ({completedCount}/{items.length})
+              </span>
+              <div
+                className="mx-1 h-1.5 min-w-12 flex-1 overflow-hidden rounded-full bg-muted"
+                data-testid="checklist-progress"
+              >
+                <div
+                  className="h-full rounded-full bg-green-500 transition-all duration-300"
+                  style={{ width: `${(completedCount / items.length) * 100}%` }}
+                />
+              </div>
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground" data-testid="checklist-percentage">
+                {Math.round((completedCount / items.length) * 100)}%
+              </span>
+            </>
           ) : null}
         </div>
         <QuickTooltip label="Add item">
           <button
             type="button"
             aria-label="Add checklist item"
-            className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="ml-4 shrink-0 rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={() => setAddingItem(true)}
           >
             <PlusSignIcon className="h-3.5 w-3.5" />
@@ -334,31 +348,8 @@ export function ChecklistItems({
         </QuickTooltip>
       </div>
 
-      {items.length > 0 && (
-        <div className="flex items-center gap-2 py-1">
-          <span className="w-8 text-left text-xs tabular-nums text-muted-foreground">
-            {Math.round((completedCount / items.length) * 100)}%
-          </span>
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-green-500 transition-all duration-300"
-              style={{ width: `${(completedCount / items.length) * 100}%` }}
-            />
-          </div>
-        </div>
-      )}
-
       {items.length > 0 ? (
         <div>
-          <div
-            data-testid="checklist-table-header"
-            className={`grid ${CHECKLIST_TABLE_GRID_CLASS} gap-x-2 border-b border-border/60 px-1 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70`}
-          >
-            <span className="sr-only">Completed</span>
-            <span>Item</span>
-            <span className="text-right">Assignee</span>
-            <span className="sr-only">Actions</span>
-          </div>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
               <div className="space-y-0.5">
