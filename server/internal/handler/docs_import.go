@@ -188,3 +188,18 @@ func (h *DocsHandler) ImportStartNextra(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID})
 }
+
+// FixDocumentFormatting handles POST /api/docs/documents/{docId}/fix-formatting.
+func (h *DocsHandler) FixDocumentFormatting(w http.ResponseWriter, r *http.Request) {
+	result, err := h.importService.FixDocumentFormatting(
+		r.Context(),
+		middleware.GetWorkspaceID(r.Context()),
+		chi.URLParam(r, "docId"),
+		middleware.GetUserID(r.Context()),
+	)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}

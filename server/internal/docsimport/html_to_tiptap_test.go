@@ -274,9 +274,9 @@ func TestConvert_HelpScoutCalloutDanger(t *testing.T) {
 func TestConvert_YouTubeIframe(t *testing.T) {
 	r := convert(t, `<iframe src="https://www.youtube.com/embed/abc123" width="560" height="315"></iframe>`)
 	j := toJSON(t, r)
-	for _, want := range []string{`"type":"htmlBlock"`, `"renderMode":"sandboxed"`, `iframe src=\"https://www.youtube.com/embed/abc123\" width=\"560\" height=\"315\"`, `\u003c/iframe\u003e`} {
+	for _, want := range []string{`"type":"videoEmbed"`, `"provider":"youtube"`, `"sourceUrl":"https://www.youtube.com/embed/abc123"`, `"embedUrl":"https://www.youtube.com/embed/abc123"`} {
 		if !strings.Contains(j, want) {
-			t.Errorf("expected source iframe to be preserved as raw html block %q, got: %s", want, j)
+			t.Errorf("expected native YouTube video embed %q, got: %s", want, j)
 		}
 	}
 }
@@ -284,10 +284,42 @@ func TestConvert_YouTubeIframe(t *testing.T) {
 func TestConvert_VimeoIframe(t *testing.T) {
 	r := convert(t, `<iframe src="https://player.vimeo.com/video/123456"></iframe>`)
 	j := toJSON(t, r)
-	for _, want := range []string{`"type":"htmlBlock"`, `"renderMode":"sandboxed"`, `iframe src=\"https://player.vimeo.com/video/123456\"`, `\u003c/iframe\u003e`} {
+	for _, want := range []string{`"type":"videoEmbed"`, `"provider":"vimeo"`, `"embedUrl":"https://player.vimeo.com/video/123456"`} {
 		if !strings.Contains(j, want) {
-			t.Errorf("expected source iframe to be preserved as raw html block %q, got: %s", want, j)
+			t.Errorf("expected native Vimeo video embed %q, got: %s", want, j)
 		}
+	}
+}
+
+func TestConvert_LegacyUseLoomIframe(t *testing.T) {
+	r := convert(t, `<iframe src="https://www.useloom.com/embed/ff268c39480145f38eb0a89a38a275ca"></iframe>`)
+	j := toJSON(t, r)
+	for _, want := range []string{`"type":"videoEmbed"`, `"provider":"loom"`, `"sourceUrl":"https://www.useloom.com/embed/ff268c39480145f38eb0a89a38a275ca"`, `"embedUrl":"https://www.loom.com/embed/ff268c39480145f38eb0a89a38a275ca"`} {
+		if !strings.Contains(j, want) {
+			t.Errorf("expected legacy Loom URL normalized as native video embed %q, got: %s", want, j)
+		}
+	}
+}
+
+func TestConvert_VideoIframeInsideStyledWrapper(t *testing.T) {
+	r := convert(t, `<div style="position: relative; padding-bottom: 62.5%; height: 0;"><br><iframe style="position: absolute" src="https://www.useloom.com/embed/5308ed8e3c6d4374904cf1362154d715"></iframe></div>`)
+	j := toJSON(t, r)
+	for _, want := range []string{`"type":"videoEmbed"`, `"provider":"loom"`, `"embedUrl":"https://www.loom.com/embed/5308ed8e3c6d4374904cf1362154d715"`} {
+		if !strings.Contains(j, want) {
+			t.Errorf("expected wrapped Loom video embed %q, got: %s", want, j)
+		}
+	}
+	if strings.Contains(j, `"type":"htmlBlock"`) {
+		t.Errorf("expected wrapper to be converted natively, got: %s", j)
+	}
+}
+
+func TestContainsSupportedVideoEmbed(t *testing.T) {
+	if !ContainsSupportedVideoEmbed(`<p>Watch:</p><iframe src="https://www.youtube-nocookie.com/embed/abc123"></iframe>`) {
+		t.Fatal("expected supported YouTube iframe to be detected")
+	}
+	if ContainsSupportedVideoEmbed(`<iframe src="https://drive.google.com/file/example/preview"></iframe>`) {
+		t.Fatal("expected unsupported iframe not to be detected as a video")
 	}
 }
 

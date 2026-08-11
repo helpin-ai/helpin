@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { ArrowReloadHorizontalIcon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon, MoreHorizontalIcon, AttachmentIcon, PlusSignCircleIcon, MinusSignIcon } from '@/lib/icons';
+import { ArrowReloadHorizontalIcon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon, MoreHorizontalIcon, AttachmentIcon, PlusSignCircleIcon, MinusSignIcon, BotIcon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -1027,6 +1027,8 @@ export function CommentThread({
     const groupClass = isReply ? 'group/reply' : 'group';
     const isResolved = Boolean(entry.comment.resolved_at);
     const authorName = entry.author.full_name || entry.author.email;
+    const hasAgentAttribution = Boolean(entry.comment.agent_id || entry.comment.agent_name || entry.comment.agent_run_id);
+    const agentName = entry.comment.agent_name?.trim() || 'AI Agent';
     const replyTargetId = isReply ? entry.comment.parent_id : entry.comment.id;
     const showThreadConnector = Boolean(options.showThreadConnector && !isReply);
 
@@ -1062,6 +1064,12 @@ export function CommentThread({
                 )}
                 <div className="flex items-baseline gap-1.5 text-[13px] leading-tight">
                   <span className="font-semibold text-foreground">{authorName}</span>
+                  {hasAgentAttribution && (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" aria-label="AI agent comment">
+                      <BotIcon className="h-3 w-3 self-center" />
+                      <span>(via {agentName})</span>
+                    </span>
+                  )}
                   <span className="text-[11px] text-muted-foreground">{formatRelativeTimeAgo(entry.comment.created_at)}</span>
                 </div>
                 <div className="mt-0.5 text-[13px] leading-relaxed text-foreground/80">
