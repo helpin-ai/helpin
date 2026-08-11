@@ -10,7 +10,6 @@ import (
 
 type ExternalMCPServiceConfig struct {
 	Enabled                bool
-	CustomServersEnabled   bool
 	EncryptionKey          string
 	AllowedHosts           []string
 	OAuthRedirectURL       string

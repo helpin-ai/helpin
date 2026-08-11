@@ -43,6 +43,14 @@ func TestCustomerIOScopeAndToolPolicy(t *testing.T) {
 	}
 }
 
+func TestExternalMCPProvidersAlwaysIncludeGenericServer(t *testing.T) {
+	service := &ExternalMCPService{}
+	providers := service.Providers()
+	if len(providers) == 0 || providers[0].Provider != model.ExternalMCPProviderCustom {
+		t.Fatalf("generic MCP provider should be first, got %#v", providers)
+	}
+}
+
 func TestExternalMCPServerNameIsRuntimeSafe(t *testing.T) {
 	name := externalMCPServerName("Customer.io — EU Production")
 	if !validExternalMCPName.MatchString(name) {

@@ -110,7 +110,6 @@ type Config struct {
 	MCPSupportEnabled                 bool
 	MCPPublicBaseURL                  string
 	ExternalMCPEnabled                bool
-	ExternalMCPCustomServersEnabled   bool
 	ExternalMCPEncryptionKey          string
 	ExternalMCPAllowedHosts           []string
 	ExternalMCPOAuthRedirectURL       string
@@ -325,9 +324,8 @@ func Load() (*Config, error) {
 		MCPSupportEnabled:                      parseBoolEnvDefaultTrue(os.Getenv("MCP_SUPPORT_ENABLED")),
 		MCPPublicBaseURL:                       strings.TrimRight(strings.TrimSpace(firstNonEmpty(os.Getenv("MCP_PUBLIC_BASE_URL"), appBaseURL)), "/"),
 		ExternalMCPEnabled:                     parseBoolEnv(os.Getenv("EXTERNAL_MCP_ENABLED")),
-		ExternalMCPCustomServersEnabled:        parseBoolEnv(os.Getenv("EXTERNAL_MCP_CUSTOM_SERVERS_ENABLED")),
 		ExternalMCPEncryptionKey:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_ENCRYPTION_KEY")),
-		ExternalMCPAllowedHosts:                parseCSV(firstNonEmpty(os.Getenv("EXTERNAL_MCP_ALLOWED_HOSTS"), "mcp.customer.io,mcp-eu.customer.io")),
+		ExternalMCPAllowedHosts:                parseCSV(firstNonEmpty(os.Getenv("EXTERNAL_MCP_ALLOWED_HOSTS"), "*")),
 		ExternalMCPOAuthRedirectURL:            strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_REDIRECT_URL")),
 		ExternalMCPOAuthClientID:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_ID")),
 		ExternalMCPOAuthClientSecret:           strings.TrimSpace(os.Getenv("EXTERNAL_MCP_OAUTH_CLIENT_SECRET")),

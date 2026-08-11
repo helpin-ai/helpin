@@ -200,6 +200,9 @@ func hostMatchesAllowlist(host string, allowed []string) bool {
 	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
 	for _, pattern := range allowed {
 		pattern = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(pattern), "."))
+		if pattern == "*" {
+			return true
+		}
 		if pattern == host {
 			return true
 		}

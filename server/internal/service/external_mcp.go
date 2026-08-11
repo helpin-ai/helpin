@@ -95,14 +95,11 @@ func NewExternalMCPService(repo *repository.ExternalMCPRepository, notifications
 func (s *ExternalMCPService) Enabled() bool { return s != nil && s.cfg.Enabled }
 
 func (s *ExternalMCPService) Providers() []ExternalMCPProviderOption {
-	providers := []ExternalMCPProviderOption{
+	return []ExternalMCPProviderOption{
+		{Provider: model.ExternalMCPProviderCustom, Name: "Any MCP server"},
 		{Provider: model.ExternalMCPProviderCustomerIO, Region: "us", Name: "Customer.io (US)", EndpointURL: customerIOMCPEndpointUS, AuthType: model.ExternalMCPAuthOAuth, DefaultScopes: []string{"read"}, OptionalScopes: []string{"read:sensitive", "write", "write:live", "configure"}},
 		{Provider: model.ExternalMCPProviderCustomerIO, Region: "eu", Name: "Customer.io (EU)", EndpointURL: customerIOMCPEndpointEU, AuthType: model.ExternalMCPAuthOAuth, DefaultScopes: []string{"read"}, OptionalScopes: []string{"read:sensitive", "write", "write:live", "configure"}},
 	}
-	if s != nil && s.cfg.CustomServersEnabled {
-		providers = append(providers, ExternalMCPProviderOption{Provider: model.ExternalMCPProviderCustom, Name: "Custom MCP server"})
-	}
-	return providers
 }
 
 func (s *ExternalMCPService) ListServers(ctx context.Context, workspaceID string) ([]model.ExternalMCPServer, error) {
@@ -136,9 +133,6 @@ func (s *ExternalMCPService) CreateServer(ctx context.Context, workspaceID, acto
 			req.OAuthScopes = append([]string(nil), option.DefaultScopes...)
 		}
 	} else if provider == model.ExternalMCPProviderCustom {
-		if !s.cfg.CustomServersEnabled {
-			return nil, fmt.Errorf("custom external MCP servers are disabled")
-		}
 		if name == "" || endpoint == "" {
 			return nil, fmt.Errorf("name and endpoint_url are required")
 		}
