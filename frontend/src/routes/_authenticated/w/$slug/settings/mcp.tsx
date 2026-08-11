@@ -32,7 +32,7 @@ function MCPSettingsRoute() {
   if (search.tab === 'external') {
     return (
       <Navigate
-        to="/w/$slug/automation/tools/connections"
+        to="/w/$slug/settings/external-mcp"
         params={{ slug }}
         search={{
           external_mcp_oauth: search.external_mcp_oauth,

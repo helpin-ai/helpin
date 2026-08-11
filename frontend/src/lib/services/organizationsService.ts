@@ -14,6 +14,8 @@ export const organizationsService = {
     api.post(`/organizations/${id}/members`, data),
   updateMember: (id: string, userId: string, data: { role: string }) =>
     api.put(`/organizations/${id}/members/${userId}`, data),
+  transferOwnership: (id: string, newOwnerId: string) =>
+    api.post(`/organizations/${id}/transfer-ownership`, { new_owner_id: newOwnerId }),
   removeMember: (id: string, userId: string) =>
     api.del(`/organizations/${id}/members/${userId}`),
 };

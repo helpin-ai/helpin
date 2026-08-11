@@ -587,10 +587,10 @@ func (s *InviteService) cleanupInvitationPreassignments(ctx context.Context, inv
 
 func (s *InviteService) ensureOrgMembership(ctx context.Context, workspaceID, userID string) {
 	ws, err := s.workspaceRepo.GetByID(ctx, workspaceID)
-	if err != nil || ws == nil || ws.OrganizationID == nil {
+	if err != nil || ws == nil || ws.OrganizationID == nil || s.organizationRepo == nil {
 		return
 	}
-	if _, err := s.organizationRepo.AddMember(ctx, *ws.OrganizationID, userID, "member"); err != nil {
+	if _, err := s.organizationRepo.EnsureMember(ctx, *ws.OrganizationID, userID, model.RoleMember); err != nil {
 		s.logger.ErrorContext(ctx, "failed to add user to organization",
 			"error", err,
 			"organization_id", *ws.OrganizationID,

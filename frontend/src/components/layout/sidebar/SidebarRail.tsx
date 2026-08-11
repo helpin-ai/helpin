@@ -51,18 +51,18 @@ export function SidebarRail({
             >
               <div className={item.progressPercent !== undefined
                 ? 'flex h-8 w-8 items-center justify-center rounded-full p-0.5 text-[9px] font-bold tabular-nums text-foreground'
-                : `relative flex h-7 w-9 items-center justify-center rounded-md transition-colors ${activeRail === item.id ? 'bg-foreground text-background' : 'hover:bg-muted/80'}`
+                : `relative flex h-7 w-9 items-center justify-center rounded-md transition-colors ${activeRail === item.id ? 'sidebar-rail-active-plate text-background' : 'hover:bg-muted/80'}`
               } style={item.progressPercent !== undefined ? {
                 background: `conic-gradient(var(--color-emerald-500) ${item.progressPercent}%, var(--muted) 0)`,
               } : undefined}>
                 {item.progressPercent !== undefined
                   ? <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f0f0f2] dark:bg-sidebar">{item.progressPercent}%</span>
-                  : <item.icon className="h-4 w-4" />}
+                  : <item.icon className="relative z-10 h-4 w-4" />}
                 {item.indicator && (
-                  <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500" />
+                  <span className="absolute -right-0.5 -top-0.5 z-20 h-2 w-2 rounded-full bg-red-500" />
                 )}
                 {!!item.badge && (
-                  <span className="absolute -right-1.5 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold leading-none text-white">
+                  <span className="absolute -right-1.5 -top-1 z-20 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold leading-none text-white">
                     {item.badge > 99 ? '99+' : item.badge}
                   </span>
                 )}

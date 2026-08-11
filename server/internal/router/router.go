@@ -515,6 +515,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/organizations/{id}/members", h.Organization.AddMember)
 			r.Put("/organizations/{id}/members/{userId}", h.Organization.UpdateMember)
 			r.Delete("/organizations/{id}/members/{userId}", h.Organization.RemoveMember)
+			r.Post("/organizations/{id}/transfer-ownership", h.Organization.TransferOwnership)
 
 			// Organization billing is owner-only.
 			if h.Billing != nil {

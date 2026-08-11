@@ -73,7 +73,7 @@ export interface Organization {
 }
 
 export interface OrganizationWithRole extends Organization {
-  role: 'owner' | 'admin' | 'member';
+  role: 'owner' | 'admin' | 'member' | 'viewer';
 }
 
 export interface Workspace {

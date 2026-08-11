@@ -25,6 +25,7 @@ import {
   Route01Icon,
   Shield01Icon,
   Shield02Icon,
+  Globe02Icon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -63,6 +64,7 @@ const ChatWidget = hi(BubbleChatIcon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
 const MCP = hi(Robot01Icon);
+const ExternalMCP = hi(Globe02Icon);
 
 export type SettingsSection =
   | 'general'
@@ -70,6 +72,7 @@ export type SettingsSection =
   | 'teams'
   | 'access'
   | 'mcp'
+  | 'external-mcp'
   | 'billing'
   | 'repositories'
   | 'knowledge'
@@ -181,6 +184,14 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     icon: MCP,
     group: 'Workspace',
     requiredPermission: 'workspace.read',
+  },
+  {
+    id: 'external-mcp',
+    label: 'External MCP',
+    description: 'Connect remote MCP servers and choose which tools Helpin agents may use.',
+    icon: ExternalMCP,
+    group: 'Workspace',
+    requiredPermission: 'settings.read',
   },
   {
     id: 'repositories',

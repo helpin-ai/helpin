@@ -31,7 +31,7 @@ An agent never receives every tool merely because a server is installed in the w
 
 ## Generic servers versus presets
 
-Helpin does not need provider-specific protocol code for a standards-compliant HTTP MCP server. With `EXTERNAL_MCP_CUSTOM_SERVERS_ENABLED=true`, a workspace manager can supply an operator-approved endpoint and choose OAuth, bearer-token, custom-header, or unauthenticated access. The same discovery, credential lifecycle, tool policy, and per-run attachment path is used for every server.
+Helpin does not need provider-specific protocol code for a standards-compliant HTTP MCP server. A workspace manager can supply an endpoint and choose OAuth, bearer-token, custom-header, or unauthenticated access. The same discovery, credential lifecycle, tool policy, and per-run attachment path is used for every server.
 
 A provider preset is optional product metadata: a friendly name, canonical endpoint, suggested scopes, and—when justified—a reviewed read/write classification. Customer.io is included as the reference preset, but the MCP and OAuth implementations beneath it are generic.
 
@@ -109,10 +109,7 @@ Provider capabilities can evolve; use **Refresh tools** after Customer.io adds o
 
 ## Custom servers
 
-Custom servers require both:
-
-- `EXTERNAL_MCP_CUSTOM_SERVERS_ENABLED=true`; and
-- an endpoint host matching `EXTERNAL_MCP_ALLOWED_HOSTS`.
+Custom server endpoint hosts must match `EXTERNAL_MCP_ALLOWED_HOSTS`. The default `*` policy allows any public HTTPS host; operators may replace it with exact or wildcard domain patterns.
 
 Supported V1 transport/auth combinations are Streamable HTTP with browser OAuth, bearer token, custom credential headers, or no authentication. The settings UI never reads a credential back after creation.
 
@@ -201,9 +198,8 @@ Mutation bodies are strict JSON with unknown-field rejection and a 128 KiB limit
 | Environment variable | Meaning |
 | --- | --- |
 | `EXTERNAL_MCP_ENABLED` | Global outbound MCP rollout switch; default `false` |
-| `EXTERNAL_MCP_CUSTOM_SERVERS_ENABLED` | Allows custom endpoints; default `false` |
 | `EXTERNAL_MCP_ENCRYPTION_KEY` | Required when enabled; 32 raw bytes, 64 hex characters, or base64-encoded 32 bytes |
-| `EXTERNAL_MCP_ALLOWED_HOSTS` | Comma-separated exact/wildcard endpoint hosts; defaults to the Customer.io US/EU hosts |
+| `EXTERNAL_MCP_ALLOWED_HOSTS` | Comma-separated exact/wildcard endpoint hosts; defaults to `*` for any public HTTPS host |
 | `EXTERNAL_MCP_OAUTH_REDIRECT_URL` | Public Helpin API callback URL |
 | `EXTERNAL_MCP_OAUTH_CLIENT_ID` | Optional pre-registered OAuth client ID; otherwise DCR is used |
 | `EXTERNAL_MCP_OAUTH_CLIENT_SECRET` | Optional pre-registered client secret |
@@ -212,7 +208,7 @@ Mutation bodies are strict JSON with unknown-field rejection and a 128 KiB limit
 
 Agent Runtime must independently allow the same MCP hosts and have its run-credential encryption key configured. See its run-scoped MCP documentation for `AGENT_RUNTIME_MCP_*` variables.
 
-The Kubernetes stage/prod manifests explicitly keep outbound MCP and custom servers off. Enabling requires applying migration `202607300001_external_mcp_servers.sql`, setting secrets/configuration, confirming the public callback, configuring Agent Runtime's host allowlist, and changing the reviewed rollout switch.
+The Kubernetes stage/prod manifests explicitly keep outbound MCP off. Enabling requires applying migration `202607300001_external_mcp_servers.sql`, setting secrets/configuration, confirming the public callback, configuring Agent Runtime's host allowlist, and changing the reviewed rollout switch.
 
 ## End-to-end Customer.io verification
 

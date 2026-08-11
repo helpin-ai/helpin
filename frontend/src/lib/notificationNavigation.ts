@@ -1,5 +1,5 @@
 import type { Notification } from './notificationTypes'
-import { buildAutomationToolConnectionsPath } from './automationUi'
+import { buildSettingsRoutePath } from './settingsSections'
 
 function stringMetadataField(notification: Notification, key: string): string | null {
   const value = notification.metadata?.[key]
@@ -35,5 +35,5 @@ export function getExternalMCPNotificationTarget(notification: Notification, wor
     return null
   }
 
-  return buildAutomationToolConnectionsPath(workspaceSlug)
+  return buildSettingsRoutePath(workspaceSlug, 'external-mcp')
 }

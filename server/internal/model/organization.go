@@ -56,3 +56,9 @@ type AddOrgMemberRequest struct {
 type UpdateOrgMemberRequest struct {
 	Role string `json:"role"`
 }
+
+// TransferOrganizationOwnershipRequest is the payload for
+// POST /api/organizations/{id}/transfer-ownership.
+type TransferOrganizationOwnershipRequest struct {
+	NewOwnerID string `json:"new_owner_id"`
+}

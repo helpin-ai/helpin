@@ -59,6 +59,7 @@ import { Route as AuthenticatedWSlugSettingsInboxesRoutingRouteImport } from './
 import { Route as AuthenticatedWSlugSettingsImportRouteImport } from './routes/_authenticated/w/$slug/settings/import'
 import { Route as AuthenticatedWSlugSettingsHelpcenterRouteImport } from './routes/_authenticated/w/$slug/settings/helpcenter'
 import { Route as AuthenticatedWSlugSettingsGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/general'
+import { Route as AuthenticatedWSlugSettingsExternalMcpRouteImport } from './routes/_authenticated/w/$slug/settings/external-mcp'
 import { Route as AuthenticatedWSlugSettingsDeliveryRouteImport } from './routes/_authenticated/w/$slug/settings/delivery'
 import { Route as AuthenticatedWSlugSettingsCrmPipelinesRouteImport } from './routes/_authenticated/w/$slug/settings/crm-pipelines'
 import { Route as AuthenticatedWSlugSettingsCrmEmailRouteImport } from './routes/_authenticated/w/$slug/settings/crm-email'
@@ -392,6 +393,12 @@ const AuthenticatedWSlugSettingsGeneralRoute =
   AuthenticatedWSlugSettingsGeneralRouteImport.update({
     id: '/settings/general',
     path: '/settings/general',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsExternalMcpRoute =
+  AuthenticatedWSlugSettingsExternalMcpRouteImport.update({
+    id: '/settings/external-mcp',
+    path: '/settings/external-mcp',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsDeliveryRoute =
@@ -771,6 +778,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
+  '/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
   '/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
   '/w/$slug/settings/import': typeof AuthenticatedWSlugSettingsImportRoute
@@ -869,6 +877,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
+  '/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
   '/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
   '/w/$slug/settings/import': typeof AuthenticatedWSlugSettingsImportRoute
@@ -975,6 +984,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/_authenticated/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/_authenticated/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
+  '/_authenticated/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
   '/_authenticated/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/_authenticated/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
   '/_authenticated/w/$slug/settings/import': typeof AuthenticatedWSlugSettingsImportRoute
@@ -1081,6 +1091,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/crm-email'
     | '/w/$slug/settings/crm-pipelines'
     | '/w/$slug/settings/delivery'
+    | '/w/$slug/settings/external-mcp'
     | '/w/$slug/settings/general'
     | '/w/$slug/settings/helpcenter'
     | '/w/$slug/settings/import'
@@ -1179,6 +1190,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/crm-email'
     | '/w/$slug/settings/crm-pipelines'
     | '/w/$slug/settings/delivery'
+    | '/w/$slug/settings/external-mcp'
     | '/w/$slug/settings/general'
     | '/w/$slug/settings/helpcenter'
     | '/w/$slug/settings/import'
@@ -1284,6 +1296,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/crm-email'
     | '/_authenticated/w/$slug/settings/crm-pipelines'
     | '/_authenticated/w/$slug/settings/delivery'
+    | '/_authenticated/w/$slug/settings/external-mcp'
     | '/_authenticated/w/$slug/settings/general'
     | '/_authenticated/w/$slug/settings/helpcenter'
     | '/_authenticated/w/$slug/settings/import'
@@ -1693,6 +1706,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/general'
       fullPath: '/w/$slug/settings/general'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsGeneralRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/external-mcp': {
+      id: '/_authenticated/w/$slug/settings/external-mcp'
+      path: '/settings/external-mcp'
+      fullPath: '/w/$slug/settings/external-mcp'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsExternalMcpRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/delivery': {
@@ -2239,6 +2259,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsCrmEmailRoute: typeof AuthenticatedWSlugSettingsCrmEmailRoute
   AuthenticatedWSlugSettingsCrmPipelinesRoute: typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   AuthenticatedWSlugSettingsDeliveryRoute: typeof AuthenticatedWSlugSettingsDeliveryRoute
+  AuthenticatedWSlugSettingsExternalMcpRoute: typeof AuthenticatedWSlugSettingsExternalMcpRoute
   AuthenticatedWSlugSettingsGeneralRoute: typeof AuthenticatedWSlugSettingsGeneralRoute
   AuthenticatedWSlugSettingsHelpcenterRoute: typeof AuthenticatedWSlugSettingsHelpcenterRoute
   AuthenticatedWSlugSettingsImportRoute: typeof AuthenticatedWSlugSettingsImportRoute
@@ -2311,6 +2332,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsCrmPipelinesRoute,
   AuthenticatedWSlugSettingsDeliveryRoute:
     AuthenticatedWSlugSettingsDeliveryRoute,
+  AuthenticatedWSlugSettingsExternalMcpRoute:
+    AuthenticatedWSlugSettingsExternalMcpRoute,
   AuthenticatedWSlugSettingsGeneralRoute:
     AuthenticatedWSlugSettingsGeneralRoute,
   AuthenticatedWSlugSettingsHelpcenterRoute:
