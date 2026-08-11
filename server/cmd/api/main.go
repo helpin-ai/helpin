@@ -1081,11 +1081,21 @@ func main() {
 	hcL1 := cache.NewLRU(2048)
 	var hcCache cache.Cache = hcL1
 	if redisClient != nil {
-		hcL2 := cache.NewRedis(redisClient, "hc")
+		// Public help-center reads must fail open when the shared remote cache is
+		// degraded. Use a dedicated client with bounded retries/timeouts so an
+		// L2 miss or write can never hold a page response for many seconds.
+		hcRedisOpts := *redisClient.Options()
+		hcRedisOpts.DialTimeout = 500 * time.Millisecond
+		hcRedisOpts.ReadTimeout = 250 * time.Millisecond
+		hcRedisOpts.WriteTimeout = 250 * time.Millisecond
+		hcRedisOpts.PoolTimeout = 500 * time.Millisecond
+		hcRedisOpts.MaxRetries = -1
+		hcRedisClient := redis.NewClient(&hcRedisOpts)
+		hcL2 := cache.NewRedis(hcRedisClient, "hc")
 		tiered := cache.NewTiered(cache.TieredConfig{
 			L1:      hcL1,
 			L2:      hcL2,
-			Redis:   redisClient,
+			Redis:   hcRedisClient,
 			Channel: "cache:hc:invalidate",
 			PodID:   podID,
 			L1TTL:   60 * time.Second,

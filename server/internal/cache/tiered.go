@@ -93,18 +93,19 @@ func (t *Tiered) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	return v, true, nil
 }
 
-// Set writes through both tiers. L1 holds a short-TTL copy; L2 owns the
-// authoritative entry and tag set. L1's copy is not tagged because a remote
-// invalidation broadcast handles cross-pod drops.
+// Set writes through both tiers. Populate L1 first so a slow or unavailable
+// remote cache cannot prevent this pod from serving the freshly-computed
+// value. L2 remains authoritative across pods and errors are still surfaced
+// to the caller for logging/observability.
 func (t *Tiered) Set(ctx context.Context, key string, value []byte, ttl time.Duration, tags ...string) error {
-	if err := t.l2.Set(ctx, key, value, ttl, tags...); err != nil {
-		return err
-	}
 	l1TTL := t.l1TTL
 	if ttl > 0 && ttl < l1TTL {
 		l1TTL = ttl
 	}
-	return t.l1.Set(ctx, key, value, l1TTL, tags...)
+	if err := t.l1.Set(ctx, key, value, l1TTL, tags...); err != nil {
+		return err
+	}
+	return t.l2.Set(ctx, key, value, ttl, tags...)
 }
 
 // InvalidateTags invalidates in L2, then L1, then broadcasts so peer pods

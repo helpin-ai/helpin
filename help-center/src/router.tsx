@@ -82,6 +82,7 @@ export function getRouter() {
     scrollRestoration: true,
     defaultPreload: 'intent',
     defaultPendingComponent: () => <LoadingState />,
+    defaultPendingMs: 250,
     defaultPendingMinMs: 0,
     defaultErrorComponent: ChunkErrorHandler,
   })
