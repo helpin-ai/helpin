@@ -57,6 +57,7 @@ export function AskAgentsDock() {
   const [chatsError, setChatsError] = useState<string | null>(null);
   const [hiddenByModal, setHiddenByModal] = useState(false);
   const [maximized, setMaximized] = useState(false);
+  const [chatScrollRequest, setChatScrollRequest] = useState(0);
   const [pendingDraft, setPendingDraft] = useState<string | undefined>();
   const [attentionNudge, setAttentionNudge] = useState(false);
   const [nextChatCursor, setNextChatCursor] = useState<string | null>(null);
@@ -503,10 +504,18 @@ export function AskAgentsDock() {
                 focusTargetRef.current = 'selection';
                 setTab(next);
                 if (next === 'agents' && !activeRunId) setActiveRunId(orderedRuns[0]?.run.id ?? null);
-                if (next === 'chats' && !activeChatId) setActiveChatId(chats[0]?.id ?? null);
+                if (next === 'chats') {
+                  if (!activeChatId) setActiveChatId(chats[0]?.id ?? null);
+                  setChatScrollRequest((request) => request + 1);
+                }
               }}
               onSelectRun={(runId) => { focusTargetRef.current = 'selection'; setActiveRunId(runId); setTab('agents'); }}
-              onSelectChat={(chatId) => { focusTargetRef.current = 'selection'; setActiveChatId(chatId); setTab('chats'); }}
+              onSelectChat={(chatId) => {
+                focusTargetRef.current = 'selection';
+                setActiveChatId(chatId);
+                setTab('chats');
+                setChatScrollRequest((request) => request + 1);
+              }}
               onNewChat={() => void newChat()}
               onRenameChat={renameChat}
               onArchiveChat={archiveChat}
@@ -554,6 +563,7 @@ export function AskAgentsDock() {
                   key={activeChat.id}
                   workspaceId={workspaceId}
                   chatId={activeChat.id}
+                  scrollToLatestRequest={chatScrollRequest}
                   textareaRef={textareaRef}
                   initialDraft={pendingDraft}
                   onDraftConsumed={() => setPendingDraft(undefined)}

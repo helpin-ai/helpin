@@ -12,6 +12,7 @@ import { DockUserMessage } from './DockUserMessage';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
 import { ExecutionStrip } from './ExecutionStrip';
 import { PendingInteractionCard } from './PendingInteractionCard';
+import { ApprovalAttentionBanner } from './ApprovalAttentionBanner';
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
 import type { AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
@@ -28,6 +29,7 @@ import {
 interface ChatViewProps {
   workspaceId: string;
   chatId: string;
+  scrollToLatestRequest: number;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   initialDraft?: string;
   onDraftConsumed?: () => void;
@@ -51,6 +53,7 @@ const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
 export function ChatView({
   workspaceId,
   chatId,
+  scrollToLatestRequest,
   textareaRef,
   initialDraft,
   onDraftConsumed,
@@ -243,6 +246,12 @@ export function ChatView({
     node.scrollTop = node.scrollHeight;
   }, []);
 
+  // Selecting a chat is an explicit request to resume at its latest message,
+  // including when the already-active chat is selected again.
+  useEffect(() => {
+    scrollToLatest();
+  }, [detailLoading, scrollToLatest, scrollToLatestRequest]);
+
   // Keep the transcript pinned to the bottom as content streams in, unless the
   // user has scrolled up to read earlier turns.
   useEffect(() => {
@@ -365,10 +374,18 @@ export function ChatView({
     return map;
   }, [plans]);
 
+  const needsApproval = (
+    (run?.status === 'paused' && run.pause_reason === 'human_approval')
+    || effectiveInteraction?.interaction_kind.includes('approval') === true
+    || Object.values(runsById).some(
+      (childRun) => childRun.status === 'paused' && childRun.pause_reason === 'human_approval',
+    )
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="relative flex min-h-0 flex-1 flex-col">
-      <div ref={scrollRef} className="max-h-[60vh] min-h-24 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      <div ref={scrollRef} data-agent-dock-chat-scroll className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
         {detailLoading && !detail && (
           <p className="py-6 text-center text-sm text-muted-foreground">Loading chat…</p>
         )}
@@ -457,6 +474,9 @@ export function ChatView({
       </div>
       {!atBottom && <ScrollToLatestButton onClick={scrollToLatest} />}
       </div>
+      {needsApproval && !atBottom ? (
+        <ApprovalAttentionBanner onReview={scrollToLatest} />
+      ) : null}
       {composer.visible && (
         <div className="border-t border-border/60 p-2">
           <DockInput
