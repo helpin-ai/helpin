@@ -1320,39 +1320,37 @@ function TaskDetailPanelBody({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-[1fr_300px] border-b border-border/60">
-        <div role="tablist" aria-label="Task detail views" className="flex items-center gap-6 px-10">
-          {(['overview', 'updates', 'delivery'] as TaskDetailView[]).map((view) => (
-            <button
-              key={view}
-              type="button"
-              role="tab"
-              aria-selected={activeView === view}
-              className={cn(
-                '-mb-px flex items-center gap-2 border-b-2 px-0.5 py-3 text-sm font-medium capitalize transition-colors',
-                activeView === view ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-              onClick={() => selectView(view)}
-            >
-              {view}
-              {view === 'updates' && (updatesSummary.data?.unread_count ?? 0) > 0 && (
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
-                  {updatesSummary.data!.unread_count}
-                </span>
-              )}
-              {view === 'delivery' && taskDetail.task.latest_run_status === 'failed' && (
-                <span className="h-1.5 w-1.5 rounded-full bg-destructive" aria-label="Latest agent run failed" />
-              )}
-            </button>
-          ))}
-        </div>
-        <div className="border-l border-border/60 bg-muted/10" aria-hidden />
-      </div>
-
       {/* ── Two-column grid ─────────────────────────────────────── */}
       <div className="relative grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
         {/* ── Left column (main content) ────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto px-10 py-5 pb-40">
+        <div className="flex min-h-0 flex-col">
+          <div role="tablist" aria-label="Task detail views" className="flex items-center gap-6 border-b border-border/60 px-10">
+            {(['overview', 'updates', 'delivery'] as TaskDetailView[]).map((view) => (
+              <button
+                key={view}
+                type="button"
+                role="tab"
+                aria-selected={activeView === view}
+                className={cn(
+                  '-mb-px flex items-center gap-2 border-b-2 px-0.5 py-3 text-sm font-medium capitalize transition-colors',
+                  activeView === view ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => selectView(view)}
+              >
+                {view}
+                {view === 'updates' && (updatesSummary.data?.unread_count ?? 0) > 0 && (
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                    {updatesSummary.data!.unread_count}
+                  </span>
+                )}
+                {view === 'delivery' && taskDetail.task.latest_run_status === 'failed' && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-destructive" aria-label="Latest agent run failed" />
+                )}
+              </button>
+            ))}
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-10 py-5 pb-40">
           {activeView === 'overview' && (
           <>
           {/* Title */}
@@ -1487,6 +1485,7 @@ function TaskDetailPanelBody({
               />
             )
           )}
+          </div>
         </div>
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
