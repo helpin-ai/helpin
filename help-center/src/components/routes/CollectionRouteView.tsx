@@ -141,9 +141,9 @@ export function CollectionRouteView({
           </>
         )}
 
-        <main className="min-w-0 flex-1 pt-[41px] lg:pt-0">
+        <main className="min-w-0 flex-1 pt-[41px] lg:pl-8 lg:pt-0">
           <section
-            className="mx-auto px-5 pb-10 pt-16 lg:px-6"
+            className="mx-auto px-5 pb-10 pt-16 lg:px-8"
             style={{ maxWidth: 'var(--hc-content-max-width)' }}
           >
             <header className="border-b border-border/70 pb-6">
@@ -231,9 +231,9 @@ export function CollectionRouteView({
         </>
       )}
 
-      <main className="min-w-0 flex-1 pt-[41px] lg:pt-0">
+      <main className="min-w-0 flex-1 pt-[41px] lg:pl-8 lg:pt-0">
         <section
-          className="mx-auto px-5 pb-10 pt-16 lg:px-6"
+          className="mx-auto px-5 pb-10 pt-16 lg:px-8"
           style={{ maxWidth: 'var(--hc-content-max-width)' }}
         >
           <header className="border-b border-border/70 pb-6">
