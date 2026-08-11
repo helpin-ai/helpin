@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { BotIcon, GitBranchIcon, Loading01Icon } from '@/lib/icons';
-import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CommentThread } from '@/components/pm/CommentThread';
 import { useMarkTaskUpdatesRead, useTaskUpdates } from '@/hooks/queries';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
@@ -18,6 +18,12 @@ interface TaskUpdatesViewProps {
   members: AssignableMember[];
   onOpenDelivery: (runId?: string) => void;
 }
+
+const UPDATE_FILTERS: Array<{ value: TaskUpdateFilter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'discussion', label: 'Discussion' },
+  { value: 'changes', label: 'Changes' },
+];
 
 export function TaskUpdatesView(props: TaskUpdatesViewProps) {
   const [filter, setFilter] = useState<TaskUpdateFilter>('all');
@@ -68,11 +74,15 @@ export function TaskUpdatesView(props: TaskUpdatesViewProps) {
       />
 
       <div className="flex items-center gap-1">
-        {(['all', 'discussion', 'changes'] as TaskUpdateFilter[]).map((value) => (
-          <Button key={value} type="button" variant={filter === value ? 'secondary' : 'ghost'} size="xs" className="capitalize" onClick={() => setFilter(value)}>
-            {value}
-          </Button>
-        ))}
+        <Tabs value={filter} onValueChange={(value) => setFilter(value as TaskUpdateFilter)}>
+          <TabsList aria-label="Update type">
+            {UPDATE_FILTERS.map(({ value, label }) => (
+              <TabsTrigger key={value} value={value}>
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
         <span className="ml-auto text-xs text-muted-foreground">Newest first</span>
       </div>
 

@@ -23,7 +23,13 @@ describe('TaskDetailSectionHeading', () => {
 
     expect(panelSource).toContain('<TaskUpdatesView');
     expect(updatesSource).toContain('<CommentThread');
-    expect(updatesSource).toContain("(['all', 'discussion', 'changes'] as TaskUpdateFilter[])");
+    expect(updatesSource).toContain("from '@/components/ui/tabs'");
+    expect(updatesSource).toContain('<Tabs value={filter}');
+    expect(updatesSource).toContain('<TabsList aria-label="Update type">');
+    expect(updatesSource).toContain('<TabsTrigger');
+    expect(updatesSource).toContain("{ value: 'all', label: 'All' }");
+    expect(updatesSource).toContain("{ value: 'discussion', label: 'Discussion' }");
+    expect(updatesSource).toContain("{ value: 'changes', label: 'Changes' }");
     expect(panelSource).not.toContain('<TaskDetailSectionHeading title="Comments"');
     expect(panelSource).not.toContain('<TaskDetailSectionHeading title="Activity"');
     expect(relationshipsSource).toContain('Task Relationships');
