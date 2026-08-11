@@ -50,11 +50,19 @@ export const HelpCollectionView: FunctionComponent<HelpCollectionViewProps> = ({
   const [articles, setArticles] = useState<HelpArticleSummary[]>([]);
   const [collections, setCollections] = useState<HelpCollection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showLoadingSkeleton, setShowLoadingSkeleton] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const loadingSkeletonTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        setShowLoadingSkeleton(true);
+      }
+    }, 150);
+
     setIsLoading(true);
+    setShowLoadingSkeleton(false);
     setError(null);
 
     const articlesPromise = fetchHelpArticles(host, widgetKey, collectionSlug);
@@ -78,13 +86,16 @@ export const HelpCollectionView: FunctionComponent<HelpCollectionViewProps> = ({
         }
       })
       .finally(() => {
+        window.clearTimeout(loadingSkeletonTimer);
         if (!cancelled) {
           setIsLoading(false);
+          setShowLoadingSkeleton(false);
         }
       });
 
     return () => {
       cancelled = true;
+      window.clearTimeout(loadingSkeletonTimer);
     };
   }, [collectionSlug, host, widgetKey, spaceSlug]);
 
@@ -129,13 +140,28 @@ export const HelpCollectionView: FunctionComponent<HelpCollectionViewProps> = ({
         )}
       </div>
       <div className="helpin-help-content">
-        {isLoading && <p className="helpin-help-empty">Loading articles...</p>}
+        {isLoading && !showLoadingSkeleton && (
+          <div className="helpin-help-loading-reserve" aria-hidden="true" />
+        )}
+        {isLoading && showLoadingSkeleton && (
+          <div className="helpin-help-loading-list" role="status" aria-label="Loading articles">
+            {[0, 1, 2].map((item) => (
+              <div className="helpin-help-link-skeleton" key={item}>
+                <span className="helpin-help-link-skeleton-icon" />
+                <span className="helpin-help-link-skeleton-copy">
+                  <span className="helpin-help-link-skeleton-line helpin-help-link-skeleton-line-title" />
+                  <span className="helpin-help-link-skeleton-line helpin-help-link-skeleton-line-desc" />
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {!isLoading && error && <p className="helpin-help-empty">{error}</p>}
         {!isLoading && !error && !hasChildren && !hasArticles && (
           <p className="helpin-help-empty">No published articles are available yet.</p>
         )}
         {!isLoading && !error && (hasChildren || hasArticles) && (
-          <div className="helpin-help-list">
+          <div className="helpin-help-list helpin-stagger-list">
             {childCollections.map((child) => (
               <button
                 key={child.collection.slug}

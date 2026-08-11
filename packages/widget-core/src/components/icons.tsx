@@ -73,6 +73,11 @@ export const SmileIcon = createIcon(
 );
 
 // ── Chrome ────────────────────────────────────────────────────
+export const SparklesIcon = createIcon(
+  ['m12 3-1.1 3.2a2 2 0 0 1-1.2 1.2L6.5 8.5l3.2 1.1a2 2 0 0 1 1.2 1.2L12 14l1.1-3.2a2 2 0 0 1 1.2-1.2l3.2-1.1-3.2-1.1a2 2 0 0 1-1.2-1.2z', 'M5 3v4', 'M3 5h4', 'M19 17v4', 'M17 19h4'],
+  'SparklesIcon',
+);
+
 export const XIcon = createIcon(
   ['M18 6 6 18', 'M6 6l12 12'],
   'XIcon',

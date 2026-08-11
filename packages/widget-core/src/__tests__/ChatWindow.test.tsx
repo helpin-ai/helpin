@@ -81,6 +81,26 @@ describe('ChatWindow', () => {
     expect(windowEl.style.right).toBe('');
   });
 
+  it('uses the configured brand color and a contrasting icon color for the active rail item', () => {
+    const { container } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+      />,
+    );
+
+    const navigation = container.querySelector('.helpin-bottom-nav') as HTMLElement;
+    expect(navigation.style.getPropertyValue('--helpin-nav-active-color')).toBe('#6366f1');
+    expect(navigation.style.getPropertyValue('--helpin-nav-active-foreground')).toBe('#ffffff');
+    expect(container.querySelector('.helpin-bottom-nav-item--active')?.getAttribute('aria-current')).toBe('page');
+  });
+
   it('keeps the window mounted briefly while closing for the exit transition', () => {
     vi.useFakeTimers();
 
@@ -216,6 +236,8 @@ describe('ChatWindow', () => {
     expect(attribution?.querySelector('.helpin-brand-attribution-brand')).not.toBeNull();
     const mark = attribution?.querySelector('.helpin-brand-attribution-icon');
     expect(mark).not.toBeNull();
+    expect(mark?.tagName.toLowerCase()).toBe('svg');
+    expect(mark?.getAttribute('fill')).toBe('currentColor');
     expect(mark?.getAttribute('aria-hidden')).toBe('true');
   });
 
@@ -633,7 +655,7 @@ describe('ChatWindow', () => {
   });
 
   it('hides talk to human while AI is thinking', () => {
-    const { queryByText } = render(
+    const { container, getByRole, queryByText } = render(
       <ChatWindow
         config={{
           ...baseConfig,
@@ -656,6 +678,10 @@ describe('ChatWindow', () => {
     );
 
     expect(queryByText('Talk to a human')).toBeNull();
+    expect(getByRole('status').textContent).toContain('Preparing an answer');
+    expect(container.querySelector('.helpin-ai-thinking-icon svg')).toBeTruthy();
+    expect(container.querySelectorAll('.helpin-ai-thinking-line')).toHaveLength(2);
+    expect(queryByText('Thinking')).toBeNull();
   });
 
   it('hides talk to human while an agent is typing', () => {
