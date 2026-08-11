@@ -3092,6 +3092,13 @@ func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *m
 	if route == nil {
 		return nil
 	}
+	consumed, err := s.inspectInboundRouteVerification(ctx, route, payload)
+	if err != nil {
+		return err
+	}
+	if consumed {
+		return nil
+	}
 
 	conversation, err := s.resolveInboundRouteConversation(ctx, route.WorkspaceID, payload)
 	if err != nil {
@@ -3108,6 +3115,65 @@ func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *m
 	}
 
 	return s.createInboundConversationFromRoute(ctx, route, payload, rawPayload)
+}
+
+func (s *EmailFallbackService) inspectInboundRouteVerification(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload) (bool, error) {
+	if s == nil || route == nil || s.supportInboxService == nil || s.supportInboxService.emailRouteRepo == nil {
+		return false, nil
+	}
+	now := time.Now().UTC()
+	if s.now != nil {
+		now = s.now().UTC()
+	}
+
+	if isProviderForwardingConfirmation(payload) {
+		if route.ConfirmationReceivedAt == nil {
+			route.ConfirmationReceivedAt = &now
+			if err := s.supportInboxService.emailRouteRepo.Update(ctx, route); err != nil {
+				return false, err
+			}
+		}
+		return false, nil
+	}
+
+	token := strings.TrimSpace(route.ForwardingVerificationToken)
+	if strings.Contains(payload.Subject, supportEmailRouteVerificationSubject) {
+		if token != "" && strings.Contains(payload.Subject, "["+token+"]") {
+			route.ForwardingVerifiedAt = &now
+			route.LastInboundAt = &now
+			route.ForwardingVerificationToken = ""
+			route.ForwardingLastError = nil
+			if err := s.supportInboxService.emailRouteRepo.Update(ctx, route); err != nil {
+				return false, err
+			}
+			s.logger.InfoContext(ctx, "postmark inbound forwarding test verified",
+				"message_id", strings.TrimSpace(payload.MessageID),
+				"workspace_id", route.WorkspaceID,
+				"route_id", route.ID,
+			)
+		}
+		return true, nil
+	}
+
+	if route.ForwardingVerifiedAt == nil && route.SourceAddress != nil && inboundPayloadMentionsAddress(payload, *route.SourceAddress) {
+		route.ForwardingVerifiedAt = &now
+		route.ForwardingLastError = nil
+		if err := s.supportInboxService.emailRouteRepo.Update(ctx, route); err != nil {
+			return false, err
+		}
+	}
+	return false, nil
+}
+
+func isProviderForwardingConfirmation(payload model.PostmarkInboundPayload) bool {
+	sender := strings.ToLower(strings.TrimSpace(payload.FromFull.Email))
+	subject := strings.ToLower(strings.TrimSpace(payload.Subject))
+	body := strings.ToLower(payload.TextBody + "\n" + payload.HtmlBody)
+	if sender == "forwarding-noreply@google.com" || strings.Contains(body, "mail-settings.google.com/mail/vf-") {
+		return true
+	}
+	return strings.Contains(sender, "zoho") && strings.Contains(subject, "forward") &&
+		(strings.Contains(subject, "confirm") || strings.Contains(subject, "verif"))
 }
 
 func (s *EmailFallbackService) findInboundRouteByRecipient(ctx context.Context, recipientAddress string) (*model.SupportEmailRoute, error) {

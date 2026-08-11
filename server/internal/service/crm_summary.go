@@ -400,11 +400,15 @@ func (s *CRMSummaryService) generateContactSummary(ctx context.Context, workspac
 		RecentEmails: messages,
 		BuyerSignals: signals,
 	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return summaryGenerationOutput{}, nil, nil, nil, fmt.Errorf("marshal contact summary usage payload: %w", err)
+	}
 
 	output, err := s.generateSummaryLLM(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureCRMSummary,
-		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureCRMSummary, model.CRMObjectContact, contactID),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(payloadJSON, workspaceID, BillingFeatureCRMSummary, model.CRMObjectContact, contactID),
 		Metadata: map[string]interface{}{
 			"entity_type": model.CRMObjectContact,
 			"entity_id":   contactID,
@@ -448,11 +452,15 @@ func (s *CRMSummaryService) generateDealSummary(ctx context.Context, workspaceID
 		RecentEmails:   messages,
 		BuyerSignals:   signals,
 	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return summaryGenerationOutput{}, nil, nil, nil, fmt.Errorf("marshal deal summary usage payload: %w", err)
+	}
 
 	output, err := s.generateSummaryLLM(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureCRMSummary,
-		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureCRMSummary, model.CRMObjectDeal, dealID),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(payloadJSON, workspaceID, BillingFeatureCRMSummary, model.CRMObjectDeal, dealID),
 		Metadata: map[string]interface{}{
 			"entity_type": model.CRMObjectDeal,
 			"entity_id":   dealID,

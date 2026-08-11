@@ -27,6 +27,8 @@ type DocsHelpcenterTranslationService struct {
 	spaceRepo       *repository.DocsSpaceRepository
 	collectionRepo  *repository.DocsCollectionRepository
 	searchRepo      *repository.DocsHelpcenterSearchRepository
+	artifactRepo    publicationArtifactRepository
+	artifactStore   publicationArtifactStore
 	llmProvider     llm.Provider
 	entitlementSvc  *EntitlementService
 }
@@ -63,6 +65,11 @@ func (s *DocsHelpcenterTranslationService) SetEntitlementService(entitlementSvc 
 
 func (s *DocsHelpcenterTranslationService) SetSearchRepository(searchRepo *repository.DocsHelpcenterSearchRepository) {
 	s.searchRepo = searchRepo
+}
+
+func (s *DocsHelpcenterTranslationService) SetPublicationArtifactDependencies(artifactRepo *repository.AgentRunArtifactRepository, artifactStore publicationArtifactStore) {
+	s.artifactRepo = artifactRepo
+	s.artifactStore = artifactStore
 }
 
 func (s *DocsHelpcenterTranslationService) GetLocales(ctx context.Context, workspaceID string) (*model.DocsHelpcenterConfig, error) {
@@ -498,7 +505,7 @@ func (s *DocsHelpcenterTranslationService) GenerateArticleTranslationDraft(ctx c
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    doc.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleTranslation,
-		IdempotencyKey: aiUsageIdempotencyKey(doc.WorkspaceID, BillingFeatureDocsArticleTranslation, documentID, locale),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(sourceJSON, doc.WorkspaceID, BillingFeatureDocsArticleTranslation, documentID, locale),
 		Metadata: map[string]interface{}{
 			"document_id": documentID,
 			"locale":      locale,
@@ -1077,7 +1084,7 @@ func (s *DocsHelpcenterTranslationService) GenerateSpaceTranslation(ctx context.
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    space.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleTranslation,
-		IdempotencyKey: aiUsageIdempotencyKey(space.WorkspaceID, BillingFeatureDocsArticleTranslation, "space", spaceID, locale),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(payload, space.WorkspaceID, BillingFeatureDocsArticleTranslation, "space", spaceID, locale),
 		Metadata: map[string]interface{}{
 			"space_id": spaceID,
 			"locale":   locale,
@@ -1185,7 +1192,7 @@ func (s *DocsHelpcenterTranslationService) GenerateCollectionTranslation(ctx con
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    space.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleTranslation,
-		IdempotencyKey: aiUsageIdempotencyKey(space.WorkspaceID, BillingFeatureDocsArticleTranslation, "collection", collectionID, locale),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(payload, space.WorkspaceID, BillingFeatureDocsArticleTranslation, "collection", collectionID, locale),
 		Metadata: map[string]interface{}{
 			"collection_id": collectionID,
 			"locale":        locale,
@@ -1446,6 +1453,14 @@ func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context
 	publication := buildArticleTranslationPublication(translation)
 	if len(publishedContent) > 0 {
 		publication.Content = publishedContent
+	}
+	publication.Content, err = materializePublicationArtifactReferences(ctx, s.artifactRepo, s.artifactStore, doc.WorkspaceID, doc.ID, publication.Content)
+	if err != nil {
+		return nil, err
+	}
+	publication.Content, err = validatePublicationSnapshotContent(publication.Content)
+	if err != nil {
+		return nil, err
 	}
 	if _, err := s.publicationRepo.UpsertArticlePublication(ctx, publication); err != nil {
 		return nil, err

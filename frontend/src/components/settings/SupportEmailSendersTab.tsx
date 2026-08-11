@@ -301,7 +301,7 @@ function DomainTableRow({
   onEditSender: (sender: SupportEmailSender) => void;
 }) {
   const verified = isDomainVerified(group.senderDomain);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const addressLabel = group.senders.length === 0
     ? 'No addresses'
     : `${group.senders.length} ${group.senders.length === 1 ? 'address' : 'addresses'}`;

@@ -69,9 +69,10 @@ type InvitationWithDetails struct {
 
 // AcceptInvitationWithSignupRequest combines registration and invitation acceptance.
 type AcceptInvitationWithSignupRequest struct {
-	Token    string `json:"token"`
-	Password string `json:"password"`
-	FullName string `json:"full_name"`
+	Token       string `json:"token"`
+	Password    string `json:"password"`
+	FullName    string `json:"full_name"`
+	AnonymousID string `json:"anonymous_id,omitempty"`
 }
 
 // AcceptInvitationWithSignupResponse returns auth tokens and workspace info after signup+accept.

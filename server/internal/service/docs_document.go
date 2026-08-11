@@ -16,7 +16,8 @@ import (
 
 // DocsDocumentService handles business logic for documents.
 type DocsDocumentService struct {
-	docRepo        *repository.DocsDocumentRepository
+	docRepo *repository.DocsDocumentRepository
+	productAnalyticsEmitter
 	spaceRepo      *repository.DocsSpaceRepository
 	deletionDeps   DocsDocumentDeletionDependencies
 	translationSvc *DocsHelpcenterTranslationService
@@ -134,6 +135,12 @@ func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, re
 	created, err := s.docRepo.Create(ctx, doc)
 	if err == nil && created != nil {
 		publishWorkspaceEventWithParent(s.wsPublisher, "created", "docs_document", created.ID, workspaceID, userID, "docs_space", created.SpaceID, nil)
+		s.trackProductEvent(ctx, ProductAnalyticsEvent{
+			SemanticKey: "document_created:" + created.ID, UserID: userID,
+			WorkspaceID: workspaceID, Name: "document_created", Source: "api",
+			OccurredAt: created.CreatedAt,
+			Attributes: map[string]any{"entity_id": created.ID, "space_id": created.SpaceID, "module": "docs"},
+		})
 	}
 	return created, err
 }
@@ -282,6 +289,11 @@ func (s *DocsDocumentService) Publish(ctx context.Context, id string) (*model.Do
 	}
 	updated, err := s.docRepo.GetByID(ctx, id)
 	if err == nil && updated != nil {
+		s.trackProductEvent(ctx, ProductAnalyticsEvent{
+			SemanticKey: "document_published:" + updated.ID,
+			WorkspaceID: updated.WorkspaceID, Name: "document_published", Source: "api",
+			Attributes: map[string]any{"entity_id": updated.ID, "space_id": updated.SpaceID, "module": "docs"},
+		})
 		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
 		if s.ruleEngine != nil {
 			event := model.AutomationEvent{

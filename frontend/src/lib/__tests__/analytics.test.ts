@@ -16,7 +16,6 @@ import {
   resetAnalytics,
   shouldEnableAppAnalytics,
   trackAnalyticsEvent,
-  trackWorkspaceActivationEvent,
   type AnalyticsClients,
 } from '../analytics';
 
@@ -289,11 +288,38 @@ describe('app analytics', () => {
       plan: 'growth',
       relationshipAttributes: expect.objectContaining({ workspace_role: 'owner' }),
     }));
-    expect(clients.usermaven.track).toHaveBeenCalledWith('organization_identified', expect.objectContaining({
-      organization_id: 'org-1',
-      organization_role: 'owner',
-      user_id: 'user-1',
-    }));
+    expect(clients.usermaven.track).not.toHaveBeenCalled();
+  });
+
+  it('does not resend unchanged Usermaven identities after query refetches', () => {
+    const clients = makeClients();
+    const options = { hostname: 'app.helpin.ai', clients };
+    const workspaces = [baseWorkspace];
+
+    identifyAnalyticsUser(baseUser, undefined, options);
+    identifyAnalyticsUser({ ...baseUser }, undefined, options);
+    identifyAnalyticsOrganization(baseOrganization, baseUser, options, workspaces);
+    identifyAnalyticsOrganization(
+      { ...baseOrganization },
+      { ...baseUser },
+      options,
+      workspaces.map((workspace) => ({ ...workspace })),
+    );
+
+    expect(clients.usermaven.id).toHaveBeenCalledTimes(2);
+  });
+
+  it('resends a Usermaven organization identity when meaningful traits change', () => {
+    const clients = makeClients();
+    const options = { hostname: 'app.helpin.ai', clients };
+
+    identifyAnalyticsOrganization(baseOrganization, baseUser, options, [baseWorkspace]);
+    identifyAnalyticsOrganization(baseOrganization, baseUser, options, [
+      baseWorkspace,
+      { ...baseWorkspace, id: 'ws-2' },
+    ]);
+
+    expect(clients.usermaven.id).toHaveBeenCalledTimes(2);
   });
 
   it('builds billing lifecycle event properties for Usermaven', () => {
@@ -329,31 +355,4 @@ describe('app analytics', () => {
     expect(clients.customerio.reset).toHaveBeenCalled();
   });
 
-  it('tracks activation events with workspace and membership context', () => {
-    const clients = makeClients();
-
-    trackWorkspaceActivationEvent(
-      'module_first_value',
-      baseWorkspace,
-      baseAccess,
-      baseOrganization,
-      { module: 'support', milestone: 'first_reply_sent' },
-      { hostname: 'app.helpin.ai', clients },
-    );
-
-    expect(clients.usermaven.track).toHaveBeenCalledWith('module_first_value', expect.objectContaining({
-      workspace_id: 'ws-1',
-      organization_id: 'org-1',
-      workspace_role: 'owner',
-      module: 'support',
-      milestone: 'first_reply_sent',
-    }));
-    expect(clients.customerio.track).toHaveBeenCalledWith('module_first_value', expect.objectContaining({
-      workspace_id: 'ws-1',
-      organization_id: 'org-1',
-      workspace_role: 'owner',
-      module: 'support',
-      milestone: 'first_reply_sent',
-    }));
-  });
 });

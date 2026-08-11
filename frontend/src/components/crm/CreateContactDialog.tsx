@@ -10,7 +10,6 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCreateContact } from '@/hooks/queries';
 import type { CRMContact, LifecycleStage, LeadStatus } from '@/lib/crmTypes';
 import { entityCreatedToastIcons, showEntityCreatedToast } from '@/components/ui/entity-created-toast';
-import { trackWorkspaceFirstValueOnce } from '@/lib/analytics';
 
 interface CreateContactDialogProps {
   open: boolean;
@@ -109,9 +108,6 @@ export function CreateContactDialog({
         lifecycle_stage: lifecycleStage,
         lead_status: leadStatus,
         source: source || undefined,
-      });
-      trackWorkspaceFirstValueOnce(wsId, 'crm', 'first_contact_created', {
-        contact_id: contact.id,
       });
       await onCreated?.(contact);
       if (showCreatedToast) {

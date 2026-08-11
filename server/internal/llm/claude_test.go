@@ -141,6 +141,22 @@ func TestExtractClaudeResponseContentFallsBackToTextWhenToolInputMissing(t *test
 	}
 }
 
+func TestTokenUsageFromClaudeNormalizesSeparateCacheCounters(t *testing.T) {
+	usage := tokenUsageFromClaude(agentcontract.Usage{
+		InputTokens:              200,
+		CacheCreationInputTokens: 300,
+		CacheReadInputTokens:     700,
+		OutputTokens:             100,
+	})
+
+	if usage.InputTokens != 1200 {
+		t.Fatalf("total input tokens = %d, want 1200", usage.InputTokens)
+	}
+	if usage.CachedInputTokens != 700 || usage.CacheWriteTokens != 300 {
+		t.Fatalf("cache usage = %#v", usage)
+	}
+}
+
 func TestBuildClaudeMessageContentUsesImageBlocks(t *testing.T) {
 	content := buildClaudeMessageContent(Message{
 		Role: "user",

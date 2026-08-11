@@ -78,6 +78,18 @@ describe('EmailVerificationBanner', () => {
     unmount();
   });
 
+  it('centers the notification message and action as one responsive group', () => {
+    const { container, unmount } = render(<EmailVerificationBanner emailVerified={false} />);
+    const layout = container.querySelector('.max-w-screen-2xl');
+    const message = layout?.querySelector('.text-sm');
+
+    expect(layout?.classList.contains('justify-center')).toBe(true);
+    expect(layout?.classList.contains('flex-wrap')).toBe(true);
+    expect(message?.classList.contains('text-center')).toBe(true);
+
+    unmount();
+  });
+
   it('prevents repeated resend clicks during the cooldown', async () => {
     vi.useFakeTimers();
     resendVerification.mockResolvedValue({ data: { message: 'sent' }, error: null });

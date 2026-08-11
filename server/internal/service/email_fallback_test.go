@@ -3467,6 +3467,159 @@ func TestEmailFallbackProcessInboundEmailMarksSenderForwardingFailedWithoutSende
 	}
 }
 
+func TestEmailFallbackConsumesReturnedEmailRouteVerificationTest(t *testing.T) {
+	ctx := context.Background()
+	env := setupEmailFallbackInboundTestEnv(t, model.DefaultSupportInboxSettings())
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	sourceAddress := "support@example.com"
+	sentAt := time.Now().UTC().Add(-time.Minute)
+	route := &model.SupportEmailRoute{
+		WorkspaceID:                 workspaceID,
+		RouteKey:                    "route-forward-test",
+		InboundAddress:              "inbox@acme.on.helpin.email",
+		SourceAddress:               &sourceAddress,
+		ProviderType:                "forwarding",
+		Active:                      true,
+		VerificationSentAt:          &sentAt,
+		ForwardingVerificationToken: "test-token",
+		CreatedByID:                 actorID,
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MailboxHash:       route.RouteKey,
+		OriginalRecipient: route.InboundAddress,
+		To:                sourceAddress,
+		FromFull:          model.PostmarkAddress{Email: "noreply@example.com", Name: "Helpin"},
+		Subject:           "Helpin forwarding test [test-token]",
+		MessageID:         "pm-route-test-returned",
+		TextBody:          "No action is required.",
+		Headers:           []model.PostmarkHeader{{Name: "To", Value: sourceAddress}},
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-test-returned"}`); err != nil {
+		t.Fatalf("process returned forwarding test: %v", err)
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-test-returned"}`); err != nil {
+		t.Fatalf("process duplicate returned forwarding test: %v", err)
+	}
+
+	updated, err := env.routeRepo.GetByID(ctx, workspaceID, route.ID)
+	if err != nil {
+		t.Fatalf("reload route: %v", err)
+	}
+	if updated.ForwardingVerifiedAt == nil || updated.ForwardingVerificationToken != "" {
+		t.Fatalf("expected verified route with consumed token, got %#v", updated)
+	}
+	_, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("forwarding test should not create a conversation, got total=%d", total)
+	}
+}
+
+func TestEmailFallbackKeepsProviderConfirmationPendingAndVisible(t *testing.T) {
+	ctx := context.Background()
+	env := setupEmailFallbackInboundTestEnv(t, model.DefaultSupportInboxSettings())
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	sourceAddress := "support@example.com"
+	route := &model.SupportEmailRoute{
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-provider-confirmation",
+		InboundAddress: "inbox@acme.on.helpin.email",
+		SourceAddress:  &sourceAddress,
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MailboxHash:       route.RouteKey,
+		OriginalRecipient: route.InboundAddress,
+		To:                route.InboundAddress,
+		FromFull:          model.PostmarkAddress{Email: "forwarding-noreply@google.com", Name: "Gmail Team"},
+		Subject:           "Gmail Forwarding Confirmation - Receive Mail from support@example.com",
+		MessageID:         "pm-provider-confirmation",
+		TextBody:          "support@example.com requested forwarding. Confirm at https://mail-settings.google.com/mail/vf-token",
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-provider-confirmation"}`); err != nil {
+		t.Fatalf("process provider confirmation: %v", err)
+	}
+
+	updated, err := env.routeRepo.GetByID(ctx, workspaceID, route.ID)
+	if err != nil {
+		t.Fatalf("reload route: %v", err)
+	}
+	if updated.ConfirmationReceivedAt == nil || updated.ForwardingVerifiedAt != nil {
+		t.Fatalf("expected confirmation received but forwarding pending, got %#v", updated)
+	}
+	_, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("provider confirmation should remain visible as a conversation, got total=%d", total)
+	}
+}
+
+func TestEmailFallbackQualifyingCustomerMailVerifiesRoute(t *testing.T) {
+	ctx := context.Background()
+	env := setupEmailFallbackInboundTestEnv(t, model.DefaultSupportInboxSettings())
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	sourceAddress := "support@example.com"
+	route := &model.SupportEmailRoute{
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-customer-proof",
+		InboundAddress: "inbox@acme.on.helpin.email",
+		SourceAddress:  &sourceAddress,
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MailboxHash:       route.RouteKey,
+		OriginalRecipient: route.InboundAddress,
+		To:                sourceAddress,
+		FromFull:          model.PostmarkAddress{Email: "customer@example.net", Name: "Customer"},
+		Subject:           "Need help",
+		MessageID:         "pm-customer-proof",
+		TextBody:          "Please help with my account.",
+		Headers:           []model.PostmarkHeader{{Name: "To", Value: sourceAddress}},
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-customer-proof"}`); err != nil {
+		t.Fatalf("process customer mail: %v", err)
+	}
+
+	updated, err := env.routeRepo.GetByID(ctx, workspaceID, route.ID)
+	if err != nil {
+		t.Fatalf("reload route: %v", err)
+	}
+	if updated.ForwardingVerifiedAt == nil {
+		t.Fatalf("expected qualifying customer mail to verify route, got %#v", updated)
+	}
+	_, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("customer mail should create a conversation, got total=%d", total)
+	}
+}
+
 func TestEmailFallbackProcessInboundEmailRouteThreadsReply(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()

@@ -210,6 +210,10 @@ export interface SupportEmailRoute {
   provider_type: 'forwarding';
   active: boolean;
   last_inbound_at?: string | null;
+  confirmation_received_at?: string | null;
+  verification_sent_at?: string | null;
+  forwarding_verified_at?: string | null;
+  forwarding_last_error?: string | null;
   created_by_id: string;
   created_at: string;
   updated_at: string;

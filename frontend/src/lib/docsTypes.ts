@@ -98,18 +98,8 @@ export interface DocsContent {
   content: unknown;
   content_text: string;
   word_count: number;
-  import_source_system?: string;
   created_at: string;
   updated_at: string;
-}
-
-export interface DocsFixFormattingResult {
-  content: DocsContent;
-  source_system: string;
-  republished: boolean;
-  warnings: number;
-  html_block_fallbacks: number;
-  normalized_note_blocks: number;
 }
 
 export interface DocsBlock {

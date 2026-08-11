@@ -77,6 +77,7 @@ type AgentRunFinalizerService struct {
 	taskRepo            agentRunFinalizerTaskRepository
 	epicRepo            agentRunFinalizerEpicRepository
 	conversationRepo    agentRunFinalizerConversationRepository
+	productAnalyticsEmitter
 	supportMessageRepo  agentRunFinalizerSupportMessageRepository
 	ruleEngine          agentRunFinalizerRuleEvaluator
 	repositoryDelivery  agentRunFinalizerRepositoryDeliveryService
@@ -205,6 +206,19 @@ func (s *AgentRunFinalizerService) FinalizeTerminalRun(ctx context.Context, run 
 		return
 	}
 	completed := strings.TrimSpace(run.Status) == model.AgentRunStatusCompleted
+	eventName := ""
+	if completed {
+		eventName = "agent_run_completed"
+	} else if strings.TrimSpace(run.Status) == model.AgentRunStatusFailed {
+		eventName = "agent_run_failed"
+	}
+	if eventName != "" {
+		s.trackProductEvent(ctx, ProductAnalyticsEvent{
+			SemanticKey: eventName + ":" + run.ID, UserID: derefString(run.TriggeredByUserID),
+			WorkspaceID: run.WorkspaceID, Name: eventName, Source: "agent_runtime", OccurredAt: run.UpdatedAt,
+			Attributes: map[string]any{"entity_id": run.ID, "agent_id": run.AgentID, "target_type": run.TargetType, "target_id": run.TargetID, "runtime_kind": run.RuntimeKind, "invocation_mode": run.InvocationMode, "tokens_used": run.TokensUsed, "input_tokens": run.InputTokens, "output_tokens": run.OutputTokens, "started_at": run.StartedAt, "completed_at": run.CompletedAt, "module": "automation"},
+		})
+	}
 	finalizers := []struct {
 		name          string
 		completedOnly bool

@@ -65,6 +65,7 @@ type AuthService struct {
 	s3Client              *storage.S3Client
 	emailClient           authEmailSender
 	customerIOIdentity    *CustomerIOIdentityService
+	productAnalytics      *ProductAnalyticsService
 	appBaseURL            string
 	encryptionKey         []byte
 	logger                *slog.Logger
@@ -100,6 +101,10 @@ func NewAuthService(
 
 func (s *AuthService) SetCustomerIOIdentityService(identity *CustomerIOIdentityService) {
 	s.customerIOIdentity = identity
+}
+
+func (s *AuthService) SetProductAnalyticsService(analytics *ProductAnalyticsService) {
+	s.productAnalytics = analytics
 }
 
 // Signup creates a new user account and returns auth tokens.
@@ -152,6 +157,18 @@ func (s *AuthService) Signup(ctx context.Context, req model.SignupRequest) (*mod
 	if s.customerIOIdentity != nil {
 		s.customerIOIdentity.SyncUser(ctx, user)
 		s.customerIOIdentity.TrackUserSignedUp(ctx, user, "password")
+	}
+	if s.productAnalytics != nil {
+		s.productAnalytics.Track(ctx, ProductAnalyticsEvent{
+			SemanticKey: "user:" + user.ID + ":identify", UserID: user.ID, AnonymousID: req.AnonymousID,
+			Name: "user_identify", Source: "signup", OccurredAt: user.CreatedAt,
+			Attributes: map[string]any{"signup_method": "password"},
+		})
+		s.productAnalytics.Track(ctx, ProductAnalyticsEvent{
+			SemanticKey: "user:" + user.ID + ":signup_completed", UserID: user.ID,
+			Name: "signup_completed", Source: "signup", OccurredAt: user.CreatedAt,
+			Attributes: map[string]any{"signup_method": "password"},
+		})
 	}
 
 	return &model.AuthResponse{

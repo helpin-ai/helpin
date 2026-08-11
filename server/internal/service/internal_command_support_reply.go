@@ -465,23 +465,7 @@ func (s *InternalCommandService) supportTurnSourceMessageID(ctx context.Context,
 	return ""
 }
 
-// consumeSupportReplyBilling charges the support_ai_reply floor for a
-// delivered reply (token usage itself is billed by the run's usage
-// checkpoints).
-func (s *InternalCommandService) consumeSupportReplyBilling(ctx context.Context, workspaceID, conversationID, messageID string) {
-	if s.supportUsageMeter == nil {
-		return
-	}
-	if _, err := s.supportUsageMeter.Consume(ctx, AIUsageMeterInput{
-		WorkspaceID:    workspaceID,
-		FeatureKey:     BillingFeatureSupportAIReply,
-		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureSupportAIReply, conversationID, messageID),
-		Metadata: map[string]interface{}{
-			"conversation_id": conversationID,
-			"message_id":      messageID,
-			"origin":          "runtime_tool",
-		},
-	}); err != nil {
-		slog.WarnContext(ctx, "support reply billing failed", "error", err, "conversation_id", conversationID)
-	}
+// consumeSupportReplyBilling intentionally does not charge runtime-delivered
+// replies because their model work is already covered by the agent-run usage.
+func (s *InternalCommandService) consumeSupportReplyBilling(context.Context, string, string, string) {
 }

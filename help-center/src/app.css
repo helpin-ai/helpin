@@ -69,9 +69,9 @@
 
   /* Help Center layout tokens */
   --hc-sidebar-width: 320px;
-  --hc-toc-width: 400px;
+  --hc-toc-width: 288px;
   --hc-header-height: 52px;
-  --hc-content-max-width: 800px;
+  --hc-content-max-width: 960px;
 }
 
 /* ─── Dark Mode Overrides ──────────────────────────────────────────────── */

@@ -330,7 +330,7 @@ export function Sidebar() {
             )}
           />
 
-          <div className="min-w-0 flex-1 overflow-y-auto p-2 pb-16">
+          <div className="flex min-w-0 flex-1 flex-col overflow-y-auto p-2">
             {activeRail === 'projects' && (
               <SidebarCreateBar
                 primaryLabel={primaryCreate.label}

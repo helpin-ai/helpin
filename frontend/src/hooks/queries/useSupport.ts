@@ -46,6 +46,7 @@ import type {
   UpdateSupportInboxViewRequest,
   UpdateSupportInboxBuiltinViewRequest,
   CreateSupportEmailRouteRequest,
+  SupportEmailRoute,
   CreateSupportEmailSenderRequest,
   SetSupportEmailSenderDefaultRequest,
   UpdateSupportEmailSenderRequest,
@@ -425,9 +426,20 @@ export function useMailboxMembers(workspaceId: string, mailboxId?: string | null
 export function useSupportEmailRoutes(workspaceId: string) {
   return useQuery({
     queryKey: queryKeys.support.emailRoutes(workspaceId),
-    queryFn: async () => unwrap(await supportService.listEmailRoutes(workspaceId)),
+    queryFn: async (): Promise<SupportEmailRoute[]> => unwrap(await supportService.listEmailRoutes(workspaceId)),
     enabled: !!workspaceId,
     staleTime: 15_000,
+    refetchInterval: (query) => {
+      const routes = query.state.data;
+      const waiting = routes?.some((route) => {
+        if (!route.verification_sent_at) return false;
+        const verificationSentAt = new Date(route.verification_sent_at).getTime();
+        if (!Number.isFinite(verificationSentAt) || Date.now() - verificationSentAt > 10 * 60 * 1000) return false;
+        if (!route.forwarding_verified_at) return true;
+        return verificationSentAt > new Date(route.forwarding_verified_at).getTime();
+      });
+      return waiting ? 3_000 : false;
+    },
   });
 }
 
@@ -521,6 +533,20 @@ export function useCreateSupportEmailRoute(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to enable email forwarding', { description: error.message });
+    },
+  });
+}
+
+export function useSendSupportEmailRouteTest(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ routeId, sourceAddress }: { routeId: string; sourceAddress: string }) =>
+      supportService.sendEmailRouteTest(workspaceId, routeId, sourceAddress).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailRoutes(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to send forwarding test', { description: error.message });
     },
   });
 }

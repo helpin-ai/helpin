@@ -25,7 +25,7 @@ import { queryKeys } from '@/lib/queryKeys'
 import { isWorkspaceSupportRoute } from '@/lib/workspaceRoutes'
 import { BILLING_CHOOSE_PLAN_SEARCH, BILLING_OVERVIEW_SEARCH } from '@/lib/billingNavigation'
 import { WORKSPACE_AUTH_VIEWPORT_CLASS_NAME } from '@/lib/authenticatedLayout'
-import { identifyAnalyticsOrganization, identifyAnalyticsWorkspace, trackWorkspaceActivationEvent } from '@/lib/analytics'
+import { identifyAnalyticsOrganization, identifyAnalyticsWorkspace } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
 import type { WorkspaceBillingSummary } from '@/lib/types'
 import { useAuthStore } from '@/stores/authStore'
@@ -71,28 +71,6 @@ function WorkspaceLayout() {
     identifyAnalyticsOrganization(currentOrganization, user, undefined, organizationWorkspaces)
   }, [access, billing, currentOrganization, organizationWorkspaces, user, workspace])
 
-  useEffect(() => {
-    if (!workspace || !access) return
-    const match = location.pathname.match(/\/(pm|docs|support|crm|automation)(?:\/|$)/)
-    const module = match?.[1]
-    if (!module) return
-
-    const storageKey = `helpin:module-viewed:${workspace.id}:${module}`
-    try {
-      if (sessionStorage.getItem(storageKey)) return
-      sessionStorage.setItem(storageKey, new Date().toISOString())
-    } catch {
-      // Analytics should remain best-effort when browser storage is unavailable.
-    }
-
-    trackWorkspaceActivationEvent(
-      'module_viewed',
-      { ...workspace, billing: billing ?? workspace.billing },
-      access,
-      currentOrganization,
-      { module, milestone: 'module_entry', path: location.pathname },
-    )
-  }, [access, billing, currentOrganization, location.pathname, workspace])
 
   // Sync organization selection
   useEffect(() => {

@@ -19,7 +19,6 @@ const (
 	BillingFeatureCoverageGapAnalysis     = "coverage_gap_analysis"
 	BillingFeatureCRMSignalDetection      = "crm_signal_detection"
 	BillingFeatureSupportReplyRewrite     = "support_reply_rewrite"
-	BillingFeatureCommandBarAnswer        = "command_bar_answer"
 	BillingFeatureDealAutomationInference = "deal_automation_inference"
 	BillingFeatureCRMSummary              = "crm_summary"
 	BillingFeatureTaskStandingBrief       = "task_standing_brief"
@@ -71,6 +70,10 @@ func aiUsageStableHash(value string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
+func aiUsagePayloadIdempotencyKey(payload []byte, parts ...string) string {
+	return aiUsageIdempotencyKey(append(parts, aiUsageStableHash(string(payload)))...)
+}
+
 // AIUsageFeatureDefinition describes one metered AI feature.
 type AIUsageFeatureDefinition struct {
 	FeatureKey string
@@ -99,6 +102,7 @@ type AIUsageMeterInput struct {
 	OutputTokens      int
 	ReasoningTokens   int
 	CachedInputTokens int
+	CacheWriteTokens  int
 	Metadata          map[string]interface{}
 	AllowOverage      bool
 }
@@ -128,7 +132,6 @@ var aiUsageFeatures = map[string]AIUsageFeatureDefinition{
 	BillingFeatureCoverageGapAnalysis:     {FeatureKey: BillingFeatureCoverageGapAnalysis, Label: "Coverage gap analysis", Category: "Docs AI", FloorUnits: 2, Chargeable: true},
 	BillingFeatureCRMSignalDetection:      {FeatureKey: BillingFeatureCRMSignalDetection, Label: "CRM signal detection", Category: "CRM AI", FloorUnits: 3, Chargeable: true},
 	BillingFeatureSupportReplyRewrite:     {FeatureKey: BillingFeatureSupportReplyRewrite, Label: "Support reply rewrite", Category: "Support AI", FloorUnits: 4, Chargeable: true},
-	BillingFeatureCommandBarAnswer:        {FeatureKey: BillingFeatureCommandBarAnswer, Label: "Command bar answer", Category: "Agents", FloorUnits: 4, Chargeable: true},
 	BillingFeatureDealAutomationInference: {FeatureKey: BillingFeatureDealAutomationInference, Label: "Deal automation inference", Category: "CRM AI", FloorUnits: 5, Chargeable: true},
 	BillingFeatureCRMSummary:              {FeatureKey: BillingFeatureCRMSummary, Label: "CRM summary", Category: "CRM AI", FloorUnits: 6, Chargeable: true},
 	BillingFeatureTaskStandingBrief:       {FeatureKey: BillingFeatureTaskStandingBrief, Label: "Task standing brief", Category: "Project AI", FloorUnits: 6, Chargeable: true},
@@ -227,7 +230,9 @@ func (p *MeteredLLMProvider) ChatCompletion(ctx context.Context, req llm.ChatReq
 		IdempotencyKey:    metering.IdempotencyKey,
 		InputTokens:       resp.TokensUsed.InputTokens,
 		OutputTokens:      resp.TokensUsed.OutputTokens,
-		CachedInputTokens: 0,
+		ReasoningTokens:   resp.TokensUsed.ReasoningTokens,
+		CachedInputTokens: resp.TokensUsed.CachedInputTokens,
+		CacheWriteTokens:  resp.TokensUsed.CacheWriteTokens,
 		Metadata:          metering.Metadata,
 	}); err != nil {
 		return nil, err
@@ -298,6 +303,7 @@ func (m *AIUsageMeter) Consume(ctx context.Context, input AIUsageMeterInput) (*B
 	metadata["output_tokens"] = input.OutputTokens
 	metadata["reasoning_tokens"] = input.ReasoningTokens
 	metadata["cached_input_tokens"] = input.CachedInputTokens
+	metadata["cache_write_tokens"] = input.CacheWriteTokens
 	metadata["weighted_token_formula"] = "input + output*6 + reasoning*6 - cached_input*0.90"
 
 	return m.consumer.ConsumeCredits(ctx, BillingCreditConsumption{

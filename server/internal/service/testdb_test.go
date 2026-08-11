@@ -932,6 +932,11 @@ func newTestDB(t *testing.T) *gorm.DB {
 			provider_type TEXT NOT NULL DEFAULT 'forwarding',
 			active BOOLEAN NOT NULL DEFAULT 1,
 			last_inbound_at DATETIME,
+			confirmation_received_at DATETIME,
+			verification_sent_at DATETIME,
+			forwarding_verified_at DATETIME,
+			forwarding_verification_token TEXT,
+			forwarding_last_error TEXT,
 			created_by_id TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME

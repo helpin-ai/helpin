@@ -39,6 +39,23 @@ let defaultSdkPromise: Promise<void> | null = null;
 let pendingUsermavenOptions: UsermavenInitOptions | null = null;
 let pendingCustomerIoSettings: { writeKey: string } | null = null;
 let customerIoLoaded = false;
+const usermavenIdentityFingerprints = new WeakMap<AnalyticsClients['usermaven'], Map<string, string>>();
+
+function identifyUsermavenWhenChanged(
+  client: AnalyticsClients['usermaven'],
+  scope: string,
+  traits: AnalyticsTraits,
+) {
+  const fingerprint = JSON.stringify(traits);
+  let fingerprints = usermavenIdentityFingerprints.get(client);
+  if (!fingerprints) {
+    fingerprints = new Map();
+    usermavenIdentityFingerprints.set(client, fingerprints);
+  }
+  if (fingerprints.get(scope) === fingerprint) return;
+  fingerprints.set(scope, fingerprint);
+  void client.id(traits);
+}
 
 function ensureDefaultSdkClients() {
   if (!defaultSdkPromise) {
@@ -128,6 +145,18 @@ function clientsFor(options?: AnalyticsOptions) {
 
 function hostFor(options?: AnalyticsOptions) {
   return options?.hostname ?? currentHostname();
+}
+
+export function getUsermavenAnonymousId() {
+  if (typeof document === 'undefined') return undefined;
+  const cookie = document.cookie.split('; ').find((entry) => entry.startsWith('__eventn_id_'));
+  if (!cookie) return undefined;
+  const value = cookie.slice(cookie.indexOf('=') + 1);
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 export function shouldEnableAppAnalytics(hostname = currentHostname()) {
@@ -223,8 +252,7 @@ export function buildAnalyticsOrganizationTraits(organization: OrganizationWithR
       paid_workspace_count: paid.length,
       trialing_workspace_count: trialing.length,
       organization_trialing: trialing.length > 0,
-      organization_plan_mix: [...new Set(workspaces.map((workspace) => getWorkspaceAnalyticsPlan(workspace)))],
-      aggregates_updated_at: new Date().toISOString(),
+      organization_plan_mix: [...new Set(workspaces.map((workspace) => getWorkspaceAnalyticsPlan(workspace)))].sort(),
     };
   }
   return traits;
@@ -383,7 +411,7 @@ export function identifyAnalyticsUser(
   if (!user || !shouldEnableAppAnalytics(hostFor(options))) return;
   const traits = buildAnalyticsUserTraits(user, organization);
   const clients = clientsFor(options);
-  void clients.usermaven.id(traits);
+  identifyUsermavenWhenChanged(clients.usermaven, `user:${user.id}`, traits);
   void clients.customerio.identify(user.id, traits);
 }
 
@@ -409,20 +437,12 @@ export function identifyAnalyticsOrganization(
   if (!organization || !shouldEnableAppAnalytics(hostFor(options))) return;
   const clients = clientsFor(options);
   if (user) {
-    void clients.usermaven.id(buildAnalyticsUserTraits(user, organization, workspaces));
+    identifyUsermavenWhenChanged(
+      clients.usermaven,
+      `organization:${organization.id}:user:${user.id}`,
+      buildAnalyticsUserTraits(user, organization, workspaces),
+    );
   }
-  clients.usermaven.track('organization_identified', {
-    organization_id: organization.id,
-    organization_name: organization.name,
-    organization_slug: organization.slug,
-    organization_role: organization.role,
-    owner_user_id: organization.owner_id,
-    user_id: user?.id,
-    has_logo: !!organization.logo_url,
-    workspace_count: workspaces?.length,
-    paid_workspace_count: workspaces?.filter((workspace) => workspace.billing?.status === 'active').length,
-    trialing_workspace_count: workspaces?.filter((workspace) => workspace.billing?.trialing).length,
-  });
 }
 
 export function trackAnalyticsEvent(
@@ -436,68 +456,6 @@ export function trackAnalyticsEvent(
   void clients.customerio.track(eventName, properties);
 }
 
-export function buildAnalyticsWorkspaceEventProperties(
-  eventName: string,
-  workspace: Workspace,
-  access?: WorkspaceAccess | null,
-  organization?: OrganizationWithRole | null,
-  extra?: Record<string, unknown>,
-) {
-  return {
-    ...buildAnalyticsBillingEventProperties(eventName, workspace.id, workspace.billing, {
-      workspace_name: workspace.name,
-      workspace_slug: workspace.slug,
-      workspace_key: workspace.workspace_key,
-      organization_id: workspace.organization_id,
-      organization_name: organization?.name,
-      organization_slug: organization?.slug,
-      workspace_role: access?.membership?.role ?? workspace.role,
-      membership_status: access?.membership?.status,
-      enabled_modules: access?.modules ?? [],
-      module_count: access?.modules?.length ?? 0,
-      ...extra,
-    }),
-  };
-}
-
-export function trackWorkspaceActivationEvent(
-  eventName: string,
-  workspace: Workspace | null | undefined,
-  access?: WorkspaceAccess | null,
-  organization?: OrganizationWithRole | null,
-  extra?: Record<string, unknown>,
-  options?: AnalyticsOptions,
-) {
-  if (!workspace) return;
-  trackAnalyticsEvent(
-    eventName,
-    buildAnalyticsWorkspaceEventProperties(eventName, workspace, access, organization, extra),
-    options,
-  );
-}
-
-export function trackWorkspaceFirstValueOnce(
-  workspaceId: string,
-  module: string,
-  milestone: string,
-  properties?: Record<string, unknown>,
-  options?: AnalyticsOptions,
-) {
-  if (!workspaceId) return;
-  const storageKey = `helpin:activation:${workspaceId}:${module}:${milestone}`;
-  try {
-    if (localStorage.getItem(storageKey)) return;
-    localStorage.setItem(storageKey, new Date().toISOString());
-  } catch {
-    // Analytics remains best-effort when browser storage is unavailable.
-  }
-  trackAnalyticsEvent('module_first_value', {
-    workspace_id: workspaceId,
-    module,
-    milestone,
-    ...properties,
-  }, options);
-}
 
 export function trackWorkspaceBillingEvent(
   eventName: string,
@@ -513,6 +471,7 @@ export function trackWorkspaceBillingEvent(
 export function resetAnalytics(options?: AnalyticsOptions) {
   if (!shouldEnableAppAnalytics(hostFor(options))) return;
   const clients = clientsFor(options);
+  usermavenIdentityFingerprints.delete(clients.usermaven);
   void clients.usermaven.reset();
   clients.customerio.reset();
 }

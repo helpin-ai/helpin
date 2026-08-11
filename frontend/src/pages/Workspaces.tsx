@@ -386,7 +386,7 @@ export default function Workspaces({ dedicatedOnboarding = false }: { dedicatedO
     setSelectedUseCases((current) => {
       if (current.includes(useCase)) return current.filter((value) => value !== useCase);
       if (current.length >= 3) {
-        toast.info('Choose up to three priorities so your success guide stays focused.');
+        toast.info('You’ve selected 3 priorities. Deselect one to choose another.');
         return current;
       }
       return [...current, useCase];
@@ -697,7 +697,7 @@ export default function Workspaces({ dedicatedOnboarding = false }: { dedicatedO
 
   const workspaceOnboardingTitle =
     workspaceStep === 'details' ? 'Create workspace'
-      : workspaceStep === 'use-cases' ? 'What will you use Helpin AI agents for?'
+      : workspaceStep === 'use-cases' ? 'What would you like to set up first?'
       : workspaceStep === 'learning' ? `Learning about ${websiteDomain}`
       : workspaceStep === 'context' ? 'Company/product context'
       : workspaceStep === 'teams' ? 'Set up teams'
@@ -707,7 +707,7 @@ export default function Workspaces({ dedicatedOnboarding = false }: { dedicatedO
     workspaceStep === 'details'
       ? 'Set up a new workspace.'
       : workspaceStep === 'use-cases'
-      ? 'Select where you want AI agents to help.'
+      ? 'Choose up to 3 priorities to personalize your setup guide. You can add or change them anytime.'
       : workspaceStep === 'learning'
       ? 'Reading a few public pages and drafting a description you can review.'
       : workspaceStep === 'context'
@@ -807,51 +807,56 @@ export default function Workspaces({ dedicatedOnboarding = false }: { dedicatedO
         </div>
       )}
       {workspaceStep === 'use-cases' && (
-        <div className="grid gap-3 py-4 sm:grid-cols-2">
-          {ONBOARDING_USE_CASE_OPTIONS.map((option) => {
-            const selected = selectedUseCases.includes(option.value);
-            const Icon = useCaseIcons[option.value];
-            const iconStyle = useCaseIconStyles[option.value];
-            return (
-              <button
-                key={option.value}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => toggleUseCase(option.value)}
-                className={cn(
-                  'relative flex min-h-[156px] w-full flex-col rounded-lg border p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                  selected
-                    ? 'border-primary/50 bg-primary/5 shadow-sm'
-                    : 'border-border/70 bg-background hover:border-foreground/20 hover:bg-muted/30',
-                )}
-              >
-                <span className="flex items-start gap-3">
-                  <span className={cn(
-                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border',
-                    iconStyle,
-                    selected && 'ring-2 ring-current/15',
-                  )}>
-                    <Icon className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0 flex-1 pt-0.5 text-sm font-medium leading-5">{option.label}</span>
-                  <span className={cn(
-                    'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
+        <div className="space-y-3 py-4">
+          <p className="text-right text-xs font-medium text-muted-foreground">
+            {selectedUseCases.length} of 3 selected
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {ONBOARDING_USE_CASE_OPTIONS.map((option) => {
+              const selected = selectedUseCases.includes(option.value);
+              const Icon = useCaseIcons[option.value];
+              const iconStyle = useCaseIconStyles[option.value];
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => toggleUseCase(option.value)}
+                  className={cn(
+                    'relative flex min-h-[156px] w-full flex-col rounded-lg border p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                     selected
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border bg-background text-transparent',
-                  )}>
-                    <Tick01Icon className="h-3.5 w-3.5" />
+                      ? 'border-primary/50 bg-primary/5 shadow-sm'
+                      : 'border-border/70 bg-background hover:border-foreground/20 hover:bg-muted/30',
+                  )}
+                >
+                  <span className="flex items-start gap-3">
+                    <span className={cn(
+                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border',
+                      iconStyle,
+                      selected && 'ring-2 ring-current/15',
+                    )}>
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1 pt-0.5 text-sm font-medium leading-5">{option.label}</span>
+                    <span className={cn(
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
+                      selected
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-background text-transparent',
+                    )}>
+                      <Tick01Icon className="h-3.5 w-3.5" />
+                    </span>
                   </span>
-                </span>
-                <span className="mt-3 block min-w-0">
-                  <span className="block text-xs leading-5 text-muted-foreground">{option.description}</span>
-                </span>
-                <span className="mt-auto block border-t border-border/60 pt-3 text-[11px] leading-4 text-muted-foreground/80">
-                  {option.replaces}
-                </span>
-              </button>
-            );
-          })}
+                  <span className="mt-3 block min-w-0">
+                    <span className="block text-xs leading-5 text-muted-foreground">{option.description}</span>
+                  </span>
+                  <span className="mt-auto block border-t border-border/60 pt-3 text-[11px] leading-4 text-muted-foreground/80">
+                    {option.replaces}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
       {workspaceStep === 'context' && (
