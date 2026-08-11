@@ -59,6 +59,9 @@ describe('NavTree root collections', () => {
       />,
     )
 
+    const navigation = screen.getByRole('navigation')
+    expect(navigation.className).toContain('pr-5')
+
     const first = screen.getByRole('button', { name: 'First collection' })
     const second = screen.getByRole('button', { name: 'Second collection' })
     expect(first.className).toContain('w-full')

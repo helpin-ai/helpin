@@ -69,7 +69,7 @@ export function NavTree({
     .map((node) => node.item.id)
 
   return (
-    <nav key={pathname} className="px-3 py-4">
+    <nav key={pathname} className="py-4 pl-3 pr-5">
       <Accordion type="multiple" defaultValue={defaultOpenRoots}>
         {tree.map((node, idx) => (
           <CollectionGroup
