@@ -671,7 +671,7 @@ function SummaryCard({
   return (
     <Card
       className={cn(
-        'border-border/70 bg-card/80 transition',
+        'border-border/70 bg-card/80 py-0 transition',
         interactive && 'cursor-pointer hover:border-border hover:bg-card focus-within:ring-2 focus-within:ring-ring/60',
       )}
     >
@@ -729,7 +729,7 @@ function StatusBadge({ status, errorMessage }: { status: string; errorMessage?: 
 }
 
 const ACTIVITY_TABLE_GRID_CLASS =
-  'xl:grid-cols-[minmax(15rem,1fr)_8.5rem_7rem_6.5rem_5.5rem_2.5rem]';
+  'xl:grid-cols-[minmax(15rem,1fr)_12rem_7rem_6.5rem_5.5rem_2.5rem]';
 
 export function ActivityTableHeader() {
   return (
@@ -1529,7 +1529,7 @@ export function AutomationActivityPage({
         </div>
 
         <Tabs value={selectedActivityTab} onValueChange={(value) => setActiveTab(value as 'timeline' | 'needs_you')} className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <TabsList variant="line">
               <TabsTrigger value="timeline">
                 All runs
@@ -1543,6 +1543,16 @@ export function AutomationActivityPage({
                 ) : null}
               </TabsTrigger>
             </TabsList>
+            {selectedActivityTab === 'timeline' ? (
+              <ActivityFilterTrigger
+                definitions={activityFilterDefinitions}
+                filterState={activityFilterState}
+                visibleKeys={visibleActivityFilterKeys}
+                activeCount={activeActivityFilterKeys.length}
+                onAdd={handleActivityFilterAdd}
+                onToggle={handleActivityFilterToggle}
+              />
+            ) : null}
           </div>
 
           <TabsContent value="needs_you" className="mt-0 space-y-3">
@@ -1569,16 +1579,6 @@ export function AutomationActivityPage({
 
           <TabsContent value="timeline" className="mt-0 space-y-3">
             <div className="flex flex-col gap-2">
-              <div className="flex justify-start">
-                <ActivityFilterTrigger
-                  definitions={activityFilterDefinitions}
-                  filterState={activityFilterState}
-                  visibleKeys={visibleActivityFilterKeys}
-                  activeCount={activeActivityFilterKeys.length}
-                  onAdd={handleActivityFilterAdd}
-                  onToggle={handleActivityFilterToggle}
-                />
-              </div>
               {visibleActivityFilterKeys.length > 0 ? (
                 <div className="ui-divider-bottom-fade flex flex-wrap items-center justify-start gap-1.5 pb-2">
                   {activityFilterDefinitions
