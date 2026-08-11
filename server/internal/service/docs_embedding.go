@@ -21,6 +21,9 @@ const (
 	docsEmbeddingDimensions      = 1536
 	chunkSizeChars               = 1200
 	chunkOverlapChars            = 200
+	docsEmbeddingBatchSize       = 64
+	docsEmbeddingBatchAttempts   = 3
+	docsEmbeddingRetryDelay      = 500 * time.Millisecond
 )
 
 // DocsEmbeddingService keeps pgvector-backed support knowledge chunks in sync.
@@ -259,21 +262,17 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 			continue
 		}
 
-		resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
-			Provider: "openai",
-			Model:    s.embeddingModel,
-			Inputs:   structuredChunkSearchInputs(chunks),
-		})
+		vectors, err := s.createEmbeddingsBatched(ctx, structuredChunkSearchInputs(chunks))
 		if err != nil {
 			_ = s.markSourcesFailed(ctx, sources, err, &startedAt)
 			return err
 		}
-		if len(resp.Vectors) != len(chunks) {
+		if len(vectors) != len(chunks) {
 			err = fmt.Errorf("embedding count mismatch for document %s", doc.ID)
 			_ = s.markSourcesFailed(ctx, sources, err, &startedAt)
 			return err
 		}
-		for _, vector := range resp.Vectors {
+		for _, vector := range vectors {
 			if len(vector) != docsEmbeddingDimensions {
 				err = fmt.Errorf("embedding dimension mismatch for document %s: got %d want %d", doc.ID, len(vector), docsEmbeddingDimensions)
 				_ = s.markSourcesFailed(ctx, sources, err, &startedAt)
@@ -298,7 +297,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 				PreviousChunkIndex:  previous,
 				NextChunkIndex:      next,
 				ContentHash:         hashChunk(doc.Title, chunk.SearchContent),
-				Embedding:           formatVector(resp.Vectors[chunkIndex]),
+				Embedding:           formatVector(vectors[chunkIndex]),
 				EmbeddingProvider:   "openai",
 				EmbeddingModel:      s.embeddingModel,
 				EmbeddingVersion:    contentChunkEmbeddingVersion,
@@ -325,6 +324,54 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 
 	completedAt := time.Now()
 	return s.updateScopedSyncStates(ctx, sources, eligibleDocs, chunksByDocumentID, model.KnowledgeSourceSyncReady, 100, nil, &startedAt, &completedAt)
+}
+
+func (s *DocsEmbeddingService) createEmbeddingsBatched(ctx context.Context, inputs []string) ([][]float32, error) {
+	if s == nil || s.embedder == nil {
+		return nil, fmt.Errorf("embedding provider is not configured")
+	}
+	vectors := make([][]float32, 0, len(inputs))
+	for start := 0; start < len(inputs); start += docsEmbeddingBatchSize {
+		end := min(start+docsEmbeddingBatchSize, len(inputs))
+		batch := inputs[start:end]
+
+		var batchVectors [][]float32
+		var batchErr error
+		for attempt := 1; attempt <= docsEmbeddingBatchAttempts; attempt++ {
+			resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+				Provider: "openai",
+				Model:    s.embeddingModel,
+				Inputs:   batch,
+			})
+			batchErr = err
+			if batchErr == nil {
+				if resp == nil {
+					batchErr = fmt.Errorf("embedding provider returned a nil response")
+				} else if len(resp.Vectors) != len(batch) {
+					batchErr = fmt.Errorf("embedding count mismatch: got %d want %d", len(resp.Vectors), len(batch))
+				} else {
+					batchVectors = resp.Vectors
+					break
+				}
+			}
+			if attempt == docsEmbeddingBatchAttempts {
+				break
+			}
+
+			timer := time.NewTimer(docsEmbeddingRetryDelay * time.Duration(attempt))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
+		if batchErr != nil {
+			return nil, fmt.Errorf("embed inputs %d-%d of %d after %d attempts: %w", start+1, end, len(inputs), docsEmbeddingBatchAttempts, batchErr)
+		}
+		vectors = append(vectors, batchVectors...)
+	}
+	return vectors, nil
 }
 
 func (s *DocsEmbeddingService) listEligibleDocuments(ctx context.Context, workspaceID string, space model.DocsSpace) ([]model.DocsDocument, error) {

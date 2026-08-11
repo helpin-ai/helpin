@@ -154,6 +154,24 @@ func (h *OrganizationHandler) UpdateMember(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "member updated"})
 }
 
+// TransferOwnership handles POST /api/organizations/{id}/transfer-ownership.
+func (h *OrganizationHandler) TransferOwnership(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+
+	var req model.TransferOrganizationOwnershipRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.orgService.TransferOwnership(r.Context(), id, userID, req); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "organization ownership transferred"})
+}
+
 // RemoveMember handles DELETE /api/organizations/{id}/members/{userId}.
 func (h *OrganizationHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

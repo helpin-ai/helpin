@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -543,6 +544,80 @@ func TestAcceptInvitation(t *testing.T) {
 	}
 	if inv.AcceptedAt == nil {
 		t.Error("AcceptedAt should not be nil after acceptance")
+	}
+}
+
+func TestAcceptInvitationPreservesExistingOrganizationRole(t *testing.T) {
+	tests := []struct {
+		name         string
+		existingRole string
+		wantRole     string
+	}{
+		{name: "missing membership becomes member", wantRole: model.RoleMember},
+		{name: "admin remains admin", existingRole: model.RoleAdmin, wantRole: model.RoleAdmin},
+		{name: "owner remains owner", existingRole: model.RoleOwner, wantRole: model.RoleOwner},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newTestDB(t)
+			invitationRepo := repository.NewInvitationRepository(db)
+			workspaceRepo := repository.NewWorkspaceRepository(db)
+			organizationRepo := repository.NewOrganizationRepository(db)
+			userRepo := repository.NewUserRepository(db)
+			settingsRepo := repository.NewSettingsRepository(db)
+			jwtManager := auth.NewJWTManager("test-secret")
+			svc := NewInviteService(
+				invitationRepo,
+				workspaceRepo,
+				organizationRepo,
+				userRepo,
+				settingsRepo,
+				nil,
+				"http://localhost:3000",
+				jwtManager,
+			)
+
+			const (
+				ownerID   = "owner-001"
+				inviteeID = "user-002"
+				orgID     = "org-001"
+				wsID      = "ws-001"
+			)
+			now := time.Now()
+			seedUser(t, db, ownerID, "owner@example.com", "Owner User", "hashed")
+			seedUser(t, db, inviteeID, "invitee@example.com", "Invitee User", "hashed")
+			mustExec(t, db, `INSERT INTO organizations (id, name, slug, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+				orgID, "Test Organization", "test-org", ownerID, now, now)
+			seedWorkspace(t, db, wsID, "Test Workspace", "test-ws", ownerID)
+			mustExec(t, db, `UPDATE workspaces SET organization_id = ? WHERE id = ?`, orgID, wsID)
+			seedWorkspaceMember(t, db, "wm-001", wsID, ownerID, "owner@example.com", "Owner User", model.RoleOwner)
+			if tt.existingRole != "" {
+				mustExec(t, db, `INSERT INTO organization_members (id, organization_id, user_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+					"om-002", orgID, inviteeID, tt.existingRole, now, now)
+			}
+
+			resp, err := svc.CreateInvitation(context.Background(), model.CreateInvitationRequest{
+				WorkspaceID: wsID,
+				Email:       "invitee@example.com",
+				Role:        model.RoleMember,
+			}, ownerID)
+			if err != nil {
+				t.Fatalf("CreateInvitation() error = %v", err)
+			}
+			token := strings.TrimPrefix(resp.JoinURL, "http://localhost:3000/join/")
+			if err := svc.AcceptInvitation(context.Background(), token, inviteeID); err != nil {
+				t.Fatalf("AcceptInvitation() error = %v", err)
+			}
+
+			gotRole, err := organizationRepo.GetMemberRole(context.Background(), orgID, inviteeID)
+			if err != nil {
+				t.Fatalf("GetMemberRole() error = %v", err)
+			}
+			if gotRole != tt.wantRole {
+				t.Fatalf("organization role = %q, want %q", gotRole, tt.wantRole)
+			}
+		})
 	}
 }
 

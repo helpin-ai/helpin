@@ -18,7 +18,7 @@ export function TableOfContents({ items, activeId }: TableOfContentsProps) {
         height: 'calc(100vh - var(--hc-header-height))',
       }}
     >
-      <div className="pt-10 pb-6 pr-4 pl-1">
+      <div className="-translate-x-2 pt-10 pb-6 pr-4 pl-1">
         <h4 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-muted-foreground">
           <TocIcon size={14} />
           On this page

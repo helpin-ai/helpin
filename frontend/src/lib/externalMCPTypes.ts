@@ -54,6 +54,7 @@ export type ExternalMCPProvider = {
   provider: 'customer_io' | 'custom';
   region: string;
   name: string;
+  website_url: string;
   endpoint_url: string;
   auth_type: ExternalMCPAuthType;
   default_scopes: string[];

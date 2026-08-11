@@ -893,7 +893,6 @@ func main() {
 		notificationService,
 		service.ExternalMCPServiceConfig{
 			Enabled:                cfg.ExternalMCPEnabled,
-			CustomServersEnabled:   cfg.ExternalMCPCustomServersEnabled,
 			EncryptionKey:          cfg.ExternalMCPEncryptionKey,
 			AllowedHosts:           cfg.ExternalMCPAllowedHosts,
 			OAuthRedirectURL:       cfg.ExternalMCPOAuthRedirectURL,

@@ -78,7 +78,7 @@ export function useSpaceNavigation(
       spaceSlug,
       multilingualEnabled,
     ),
-    enabled: !!subdomain && !!locale && !!spaceSlug,
+    enabled: typeof window !== 'undefined' && !!subdomain && !!locale && !!spaceSlug,
   })
 }
 

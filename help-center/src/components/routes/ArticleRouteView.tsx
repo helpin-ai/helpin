@@ -10,7 +10,7 @@ import { ArticleContent } from '@/components/ArticleContent'
 import { TableOfContents } from '@/components/layout/TableOfContents'
 import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
-import { Sidebar } from '@/components/layout/Sidebar'
+import { Sidebar, SidebarSkeleton } from '@/components/layout/Sidebar'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { getArticlePager } from '@/lib/navigation'
 
@@ -77,11 +77,12 @@ export function ArticleRouteView({
         />
       )}
 
-      {navigation.length > 0 && (
+      {resolvedSpaceSlug && (
         <>
           <div className="fixed left-0 right-0 top-[var(--hc-header-height)] z-20 flex items-center gap-2 border-b border-border bg-background px-4 py-2 lg:hidden">
             <button
               onClick={() => setMobileNavOpen(true)}
+              disabled={navigation.length === 0}
               className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
               aria-label="Open navigation"
             >
@@ -91,11 +92,15 @@ export function ArticleRouteView({
               {article.title}
             </span>
           </div>
-          <Sidebar locale={locale} navigation={navigation} />
+          {navigation.length > 0 ? (
+            <Sidebar locale={locale} navigation={navigation} />
+          ) : (
+            <SidebarSkeleton />
+          )}
         </>
       )}
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 lg:pl-8">
         <ArticleShell
           locale={locale}
           title={article.seo_title || article.title}

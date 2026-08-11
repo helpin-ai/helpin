@@ -49,7 +49,7 @@ import {
   parseNativeToolStepLimit,
 } from '@/lib/agentRuntime';
 import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
-import { buildAutomationActivityPath, buildAutomationFlowsPath, buildAutomationToolConnectionsPath } from '@/lib/automationUi';
+import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
@@ -2530,7 +2530,7 @@ export function AgentsPage() {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
   const repositoriesSettingsHref = workspace?.slug ? buildSettingsRoutePath(workspace.slug, 'repositories') : undefined;
-  const toolConnectionsHref = workspace?.slug ? buildAutomationToolConnectionsPath(workspace.slug) : undefined;
+  const toolConnectionsHref = workspace?.slug ? buildSettingsRoutePath(workspace.slug, 'external-mcp') : undefined;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
   const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId ?? '');

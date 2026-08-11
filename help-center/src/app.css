@@ -68,10 +68,10 @@
   --color-sidebar-active-foreground: var(--sidebar-active-foreground);
 
   /* Help Center layout tokens */
-  --hc-sidebar-width: 280px;
+  --hc-sidebar-width: 320px;
   --hc-toc-width: 400px;
   --hc-header-height: 52px;
-  --hc-content-max-width: 720px;
+  --hc-content-max-width: 800px;
 }
 
 /* ─── Dark Mode Overrides ──────────────────────────────────────────────── */

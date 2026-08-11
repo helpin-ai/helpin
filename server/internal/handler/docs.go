@@ -100,6 +100,12 @@ type publicHelpcenterConfigResponse struct {
 	SupportWidgetKey *string `json:"support_widget_key,omitempty"`
 }
 
+type publicHelpcenterBootstrapResponse struct {
+	Config publicHelpcenterConfigResponse `json:"config"`
+	Locale string                         `json:"locale"`
+	Spaces []model.PublicSpaceResponse    `json:"spaces"`
+}
+
 // NewDocsHandler creates a new DocsHandler.
 func NewDocsHandler(
 	spaceSvc *service.DocsSpaceService,
@@ -1848,16 +1854,7 @@ func (h *DocsHandler) PublicGetConfig(w http.ResponseWriter, r *http.Request) {
 	if cfg == nil {
 		return
 	}
-	resp := publicHelpcenterConfigResponse{DocsHelpcenterConfig: cfg}
-	if cfg.ChatWidgetEnabled && h.supportWidgetConfig != nil {
-		inst, _, err := h.supportWidgetConfig.GetInstallation(r.Context(), cfg.WorkspaceID)
-		if err != nil {
-			slog.WarnContext(r.Context(), "public helpcenter widget config unavailable", "error", err, "workspace_id", cfg.WorkspaceID)
-		} else if inst != nil && inst.Active && strings.TrimSpace(inst.WidgetKey) != "" {
-			widgetKey := inst.WidgetKey
-			resp.SupportWidgetKey = &widgetKey
-		}
-	}
+	resp := h.publicHelpcenterConfigResponse(r, cfg)
 	setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
 	writeJSONWithETag(w, r, http.StatusOK, resp)
 }

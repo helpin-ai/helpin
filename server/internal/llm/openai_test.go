@@ -3,7 +3,10 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -168,6 +171,37 @@ func TestOpenAIProviderCreateEmbeddingsNilReceiver(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected nil provider error")
+	}
+}
+
+func TestOpenAIProviderCreateEmbeddingsAcceptsResponseLargerThanLegacyLimit(t *testing.T) {
+	responseBody := `{"data":[],"padding":"` + strings.Repeat("x", (4<<20)+1024) + `"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(responseBody))
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewOpenAIProvider("test-key", server.URL, "")
+	response, err := provider.CreateEmbeddings(context.Background(), EmbeddingRequest{Inputs: []string{"hello"}})
+	if err != nil {
+		t.Fatalf("CreateEmbeddings returned error for valid large response: %v", err)
+	}
+	if response == nil || len(response.Vectors) != 0 {
+		t.Fatalf("unexpected embeddings response: %#v", response)
+	}
+}
+
+func TestOpenAIProviderCreateEmbeddingsRejectsEmptySuccessResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewOpenAIProvider("test-key", server.URL, "")
+	_, err := provider.CreateEmbeddings(context.Background(), EmbeddingRequest{Inputs: []string{"hello"}})
+	if err == nil || !strings.Contains(err.Error(), "empty response") {
+		t.Fatalf("error = %v, want explicit empty response error", err)
 	}
 }
 

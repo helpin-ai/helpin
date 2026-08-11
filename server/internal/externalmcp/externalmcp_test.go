@@ -27,6 +27,15 @@ func TestNewClientRejectsUnapprovedAndInsecureEndpoints(t *testing.T) {
 	}
 }
 
+func TestHostAllowlistCanPermitAnyPublicHostname(t *testing.T) {
+	if !hostMatchesAllowlist("mcp.example.com", []string{"*"}) {
+		t.Fatal("expected wildcard host policy to allow a public MCP hostname")
+	}
+	if hostMatchesAllowlist("other.example.com", []string{"mcp.example.com"}) {
+		t.Fatal("expected an explicit host policy to remain restrictive")
+	}
+}
+
 func TestResolvedHostRejectsPrivateAndSharedAddresses(t *testing.T) {
 	if _, err := resolveAllowedHost(context.Background(), "127.0.0.1", false); err == nil {
 		t.Fatal("expected loopback to be rejected")

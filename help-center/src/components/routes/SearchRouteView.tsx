@@ -41,7 +41,7 @@ export function SearchRouteView({
 
   return (
     <div
-      className="mx-auto px-6 py-10"
+      className="mx-auto px-6 py-10 lg:px-8"
       style={{ maxWidth: 'var(--hc-content-max-width)' }}
     >
       <header className="mb-6">

@@ -23,6 +23,7 @@ import { Cancel01Icon, Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Sear
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { workspaceRoleLabel } from './roleScopePresentation';
 
 export function MembersTab({ workspaceId, organizationId, editable, canManageTeams = false, teams, userMemberships, onRefresh }: {
   workspaceId: string;
@@ -294,15 +295,15 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
 
   const roleOptions = (member: MemberWithUser): Array<{ value: 'owner' | 'admin' | 'member' | 'viewer'; label: string }> => {
     const options: Array<{ value: 'owner' | 'admin' | 'member' | 'viewer'; label: string }> = [
-      { value: 'admin', label: 'Admin' },
-      { value: 'member', label: 'Member' },
-      { value: 'viewer', label: 'Viewer' },
+      { value: 'admin', label: workspaceRoleLabel('admin') },
+      { value: 'member', label: workspaceRoleLabel('member') },
+      { value: 'viewer', label: workspaceRoleLabel('viewer') },
     ];
     if (actorRole === 'owner') {
-      options.unshift({ value: 'owner', label: 'Owner' });
+      options.unshift({ value: 'owner', label: workspaceRoleLabel('owner') });
     }
     if (actorRole !== 'owner' && member.role === 'admin') {
-      return [{ value: 'admin', label: 'Admin' }];
+      return [{ value: 'admin', label: workspaceRoleLabel('admin') }];
     }
     return options;
   };
@@ -317,7 +318,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
       return;
     }
     setMembers((prev) => prev.map((current) => current.id === member.id ? { ...current, role } : current));
-    toast.success('Member role updated');
+    toast.success('Workspace role updated');
   };
 
   const canRemoveMember = (member: MemberWithUser) => {
@@ -381,7 +382,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                 <TableHeader>
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
                     <TableHead>Email</TableHead>
-                    <TableHead className="w-[120px]">Role</TableHead>
+                    <TableHead className="w-[160px]">Workspace role</TableHead>
                     <TableHead className="w-[140px]">Sent</TableHead>
                     <TableHead className="w-[120px]">Actions</TableHead>
                   </TableRow>
@@ -390,7 +391,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                   {pendingInvitations.map((inv) => (
                     <TableRow key={inv.id}>
                       <TableCell className="font-medium">{inv.email}</TableCell>
-                      <TableCell><Badge variant="outline" className="text-xs">{inv.role}</Badge></TableCell>
+                      <TableCell><Badge variant="outline" className="text-xs">{workspaceRoleLabel(inv.role)}</Badge></TableCell>
                       <TableCell className="text-muted-foreground">
                         {new Date(inv.created_at).toLocaleDateString()}
                       </TableCell>
@@ -447,7 +448,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                   <TableHead>Email</TableHead>
                   <TableHead>Teams</TableHead>
                   <TableHead className="w-[88px] text-center">2FA</TableHead>
-                  <TableHead className="w-[120px]">Role</TableHead>
+                  <TableHead className="w-[160px]">Workspace role</TableHead>
                   {editable && <TableHead className="w-[72px] text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -591,7 +592,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                             onValueChange={(value) => void handleUpdateRole(m, value as 'owner' | 'admin' | 'member' | 'viewer')}
                             disabled={updatingMemberId === m.id}
                           >
-                            <SelectTrigger size="sm" className="h-7 w-[116px] px-2.5 text-xs">
+                            <SelectTrigger size="sm" className="h-7 w-[152px] px-2.5 text-xs">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="text-xs">
@@ -603,7 +604,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                             </SelectContent>
                           </Select>
                         ) : (
-                          <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
+                          <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{workspaceRoleLabel(m.role)}</Badge>
                         )}
                       </TableCell>
                       {editable && (
@@ -755,12 +756,12 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                   <p className="text-xs text-muted-foreground">Press comma, Enter, or Tab to turn each email into a chip. You can also paste a list.</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Role</Label>
+                  <Label>Workspace role</Label>
                   <div className="space-y-2">
                     {([
-                      { value: 'admin', label: 'Admin', description: 'Full access across all teams. Can manage settings, workflows, labels, and members.' },
-                      { value: 'member', label: 'Member', description: 'Can create and edit tasks in their teams. Can be promoted to team manager to manage epics, sprints, and objectives.' },
-                      { value: 'viewer', label: 'Viewer', description: 'Read-only access to tasks, epics, and sprints in their assigned teams only.' },
+                      { value: 'admin', label: workspaceRoleLabel('admin'), description: 'Full access across all teams. Can manage settings, workflows, labels, and members.' },
+                      { value: 'member', label: workspaceRoleLabel('member'), description: 'Can create and edit tasks in their teams. Can be promoted to team manager to manage epics, sprints, and objectives.' },
+                      { value: 'viewer', label: workspaceRoleLabel('viewer'), description: 'Read-only access to tasks, epics, and sprints in their assigned teams only.' },
                     ] as const).map((role) => (
                       <button
                         key={role.value}

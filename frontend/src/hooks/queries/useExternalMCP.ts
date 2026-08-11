@@ -69,10 +69,10 @@ export function useDeleteExternalMCPServer(workspaceId: string) {
 
 export function useStartExternalMCPOAuth(workspaceId: string) {
   return useMutation({
-    mutationFn: async (serverId: string) => unwrap(await externalMCPService.startOAuth(
+    mutationFn: async (input: string | { serverId: string; returnPath?: string }) => unwrap(await externalMCPService.startOAuth(
       workspaceId,
-      serverId,
-      window.location.pathname,
+      typeof input === 'string' ? input : input.serverId,
+      typeof input === 'string' ? window.location.pathname : input.returnPath ?? window.location.pathname,
     )),
   });
 }

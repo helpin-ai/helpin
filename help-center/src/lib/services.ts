@@ -1,6 +1,7 @@
 import { api } from './api'
 import type {
   HelpCenterConfig,
+  HelpCenterBootstrap,
   Space,
   ArticleDetail,
   CollectionPage,
@@ -26,6 +27,11 @@ function buildHelpCenterPath(
 export const helpCenterService = {
   getConfig: (subdomain: string) =>
     api.get<HelpCenterConfig>(`/hc/${subdomain}/config`),
+
+  getBootstrap: (subdomain: string, pathname: string) =>
+    api.get<HelpCenterBootstrap>(
+      `/hc/${subdomain}/bootstrap?path=${encodeURIComponent(pathname)}`,
+    ),
 
   getSpaces: (subdomain: string, locale: string, multilingualEnabled: boolean) =>
     api.get<Space[]>(

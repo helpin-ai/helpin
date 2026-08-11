@@ -113,6 +113,15 @@ describe('loadRootRouteData', () => {
       requests.push(path)
 
       switch (path) {
+        case '/api/hc/replug/bootstrap?path=%2Ffr%2Fbrands':
+          writeJSON(res, { config: hostedConfig, locale: 'fr', spaces: hostedFrenchSpaces })
+          return
+        case '/api/hc/docs.contentpen.ai/bootstrap?path=%2Fbrands':
+          writeJSON(res, { config: customDomainConfig, locale: 'en', spaces: customDomainSpaces })
+          return
+        case '/api/hc/usermaven/bootstrap?path=%2Fbrands':
+          writeJSON(res, { config: proxyConfig, locale: 'en', spaces: proxySpaces })
+          return
         case '/api/hc/replug/config':
           writeJSON(res, hostedConfig)
           return
@@ -184,10 +193,7 @@ describe('loadRootRouteData', () => {
     expect(rootData.activeLocale).toBe('fr')
     expect(rootData.multilingualEnabled).toBe(true)
     expect(rootData.spaces.map((space) => space.slug)).toEqual(['centre-daide'])
-    expect(requests).toEqual([
-      '/api/hc/replug/config',
-      '/api/hc/replug/fr/spaces',
-    ])
+    expect(requests).toEqual(['/api/hc/replug/bootstrap?path=%2Ffr%2Fbrands'])
   })
 
   it('loads custom-domain root data without locale prefixes in single-locale mode', async () => {
@@ -214,10 +220,7 @@ describe('loadRootRouteData', () => {
     expect(rootData.activeLocale).toBe('en')
     expect(rootData.multilingualEnabled).toBe(false)
     expect(rootData.spaces.map((space) => space.slug)).toEqual(['help-center'])
-    expect(requests).toEqual([
-      '/api/hc/docs.contentpen.ai/config',
-      '/api/hc/docs.contentpen.ai/spaces',
-    ])
+    expect(requests).toEqual(['/api/hc/docs.contentpen.ai/bootstrap?path=%2Fbrands'])
   })
 
   it('loads reverse-proxied root data with public origin and stripped base path', async () => {
@@ -245,9 +248,6 @@ describe('loadRootRouteData', () => {
     expect(rootData.activeLocale).toBe('en')
     expect(rootData.multilingualEnabled).toBe(false)
     expect(rootData.spaces.map((space) => space.slug)).toEqual(['docs'])
-    expect(requests).toEqual([
-      '/api/hc/usermaven/config',
-      '/api/hc/usermaven/spaces',
-    ])
+    expect(requests).toEqual(['/api/hc/usermaven/bootstrap?path=%2Fbrands'])
   })
 })
