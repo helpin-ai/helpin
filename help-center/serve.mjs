@@ -16,7 +16,14 @@ import {
   resolvePublicUrlParts,
 } from './serverSeo.mjs'
 import { prefixAssetUrls } from './assetUrls.mjs'
+import {
+  appendVary,
+  compressBody,
+  compressedAssetPath,
+  negotiateEncoding,
+} from './serverCompression.mjs'
 
+import { createSharedRenderCache, helpcenterIdentifierTag } from './serverRenderCache.mjs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLIENT_DIR = path.join(__dirname, 'dist', 'client')
 
@@ -38,32 +45,35 @@ const MIME_TYPES = {
   '.map': 'application/json',
 }
 
-function serveStaticFile(response, filePath, basepath = '') {
+async function serveStaticFile(request, response, filePath, basepath = '') {
   const ext = path.extname(filePath)
   const contentType = MIME_TYPES[ext] || 'application/octet-stream'
-  const stat = fs.statSync(filePath)
   response.statusCode = 200
   response.setHeader('Content-Type', contentType)
   response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+  response.setHeader('Vary', appendVary(response.getHeader('Vary'), 'Accept-Encoding'))
 
   if (basepath && (ext === '.js' || ext === '.mjs' || ext === '.css')) {
     const body = prefixAssetUrls(fs.readFileSync(filePath, 'utf8'), basepath)
-    response.setHeader('Content-Length', Buffer.byteLength(body))
-    response.end(body)
+    await writeCompressedBody(request, response, body)
     return
   }
 
+  const requestedEncoding = negotiateEncoding(request.headers['accept-encoding'])
+  const selected = compressedAssetPath(filePath, requestedEncoding, fs.existsSync)
+  const stat = fs.statSync(selected.filePath)
+  if (selected.encoding) response.setHeader('Content-Encoding', selected.encoding)
   response.setHeader('Content-Length', stat.size)
-  fs.createReadStream(filePath).pipe(response)
+  fs.createReadStream(selected.filePath).pipe(response)
 }
 
-function tryServeStatic(url, response, basepath = '') {
+async function tryServeStatic(request, url, response, basepath = '') {
   if (!url.pathname.startsWith('/assets/')) return false
   const safePath = path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, '')
   const filePath = path.join(CLIENT_DIR, safePath)
   if (!filePath.startsWith(CLIENT_DIR)) return false
   if (!fs.existsSync(filePath)) return false
-  serveStaticFile(response, filePath, basepath)
+  await serveStaticFile(request, response, filePath, basepath)
   return true
 }
 
@@ -81,15 +91,55 @@ const REDIRECT_CACHE_TTL_MS = Number.parseInt(
   10,
 )
 
+const SHARED_HTML_CACHE_TTL_SECONDS = Number.parseInt(
+  process.env.SHARED_HTML_CACHE_TTL_SECONDS || '300',
+  10,
+)
 const htmlCache = new Map()
 const redirectCache = new Map()
 
+
+function invalidateLocalRenderedPages(tags) {
+  const invalidatedTags = new Set(tags)
+  for (const [key, cached] of htmlCache.entries()) {
+    if (invalidatedTags.has(helpcenterIdentifierTag(cached.identifier))) {
+      htmlCache.delete(key)
+    }
+  }
+}
+
+const sharedRenderCache = await createSharedRenderCache({
+  redisURL: process.env.REDIS_URL,
+  ttlSeconds: SHARED_HTML_CACHE_TTL_SECONDS,
+  onInvalidate: invalidateLocalRenderedPages,
+})
+
+if (sharedRenderCache) {
+  console.log('help-center shared render cache enabled')
+}
 function normalizeHeaderValue(value) {
   return Array.isArray(value) ? value.join(', ') : value ?? ''
 }
 
 function firstHeaderValue(value) {
   return normalizeHeaderValue(value).split(',')[0].trim()
+}
+
+async function writeCompressedBody(request, response, body) {
+  const input = Buffer.isBuffer(body) ? body : Buffer.from(body)
+  const encoding = input.byteLength >= 1024
+    ? negotiateEncoding(request.headers['accept-encoding'])
+    : ''
+  const output = encoding ? await compressBody(input, encoding) : input
+  response.setHeader('Vary', appendVary(response.getHeader('Vary'), 'Accept-Encoding'))
+  response.removeHeader('Content-Length')
+  if (encoding) {
+    response.setHeader('Content-Encoding', encoding)
+  } else {
+    response.removeHeader('Content-Encoding')
+  }
+  response.setHeader('Content-Length', output.byteLength)
+  response.end(output)
 }
 
 function normalizeIdentifier(value) {
@@ -236,14 +286,14 @@ function setCachedRedirect(key, redirect) {
   }
 }
 
-function writeCachedResponse(nodeResponse, cached) {
+async function writeCachedResponse(request, nodeResponse, cached) {
   nodeResponse.statusCode = cached.status
 
   for (const [name, value] of cached.headers) {
     nodeResponse.setHeader(name, value)
   }
 
-  nodeResponse.end(cached.body)
+  await writeCompressedBody(request, nodeResponse, cached.body)
 }
 
 function isApiRequest(url) {
@@ -576,6 +626,7 @@ function toAbsoluteLocation(origin, location) {
 }
 
 async function handleRequest(request, response) {
+  const requestStartedAt = performance.now()
   if (request.url === '/healthz') {
     response.statusCode = 200
     response.setHeader('Cache-Control', 'no-store')
@@ -617,7 +668,7 @@ async function handleRequest(request, response) {
       return
     }
 
-    if (tryServeStatic(routeUrl, response, hcContext.basepath)) {
+    if (await tryServeStatic(request, routeUrl, response, hcContext.basepath)) {
       return
     }
 
@@ -640,8 +691,27 @@ async function handleRequest(request, response) {
     if (isHtmlRequest(request, routeUrl)) {
       const cached = getCachedResponse(cacheKey)
       if (cached) {
-        writeCachedResponse(response, cached)
+        response.setHeader('X-Helpin-Cache', 'L1')
+        response.setHeader(
+          'Server-Timing',
+          `cache;desc="L1";dur=${(performance.now() - requestStartedAt).toFixed(1)}`,
+        )
+        await writeCachedResponse(request, response, cached)
         return
+      }
+      if (sharedRenderCache) {
+        const shared = await sharedRenderCache.get(cacheKey)
+        if (shared) {
+          shared.expiresAt = Date.now() + HTML_CACHE_TTL_MS
+          setCachedResponse(cacheKey, shared)
+          response.setHeader('X-Helpin-Cache', 'L2')
+          response.setHeader(
+            'Server-Timing',
+            `cache;desc="L2";dur=${(performance.now() - requestStartedAt).toFixed(1)}`,
+          )
+          await writeCachedResponse(request, response, shared)
+          return
+        }
       }
     }
 
@@ -663,22 +733,36 @@ async function handleRequest(request, response) {
     const fetchResponse = await serverEntry.fetch(fetchRequest)
     const responseType = fetchResponse.headers.get('content-type') || ''
 
-    if (isHtmlRequest(request, routeUrl) && responseType.includes('text/html') && fetchResponse.ok) {
+    if (responseType.includes('text/html') && fetchResponse.ok) {
       const renderedBody = await fetchResponse.text()
       const body = prefixAssetUrls(renderedBody, hcContext.basepath)
       const headersToCache = Array.from(fetchResponse.headers.entries())
-      setCachedResponse(cacheKey, {
-        body,
-        expiresAt: Date.now() + HTML_CACHE_TTL_MS,
-        headers: headersToCache,
-        status: fetchResponse.status,
-      })
+        .filter(([name]) => !['cache-control', 'content-encoding', 'content-length'].includes(name))
+      headersToCache.push(['cache-control', 'public, max-age=0, must-revalidate'])
+      if (isHtmlRequest(request, routeUrl)) {
+        const cacheEntry = {
+          body,
+          expiresAt: Date.now() + HTML_CACHE_TTL_MS,
+          headers: headersToCache,
+          identifier: hcContext.subdomain,
+          status: fetchResponse.status,
+        }
+        setCachedResponse(cacheKey, cacheEntry)
+        if (sharedRenderCache) {
+          await sharedRenderCache.set(cacheKey, cacheEntry, hcContext.subdomain)
+        }
+      }
 
+      response.setHeader('X-Helpin-Cache', 'MISS')
       response.statusCode = fetchResponse.status
+      response.setHeader(
+        'Server-Timing',
+        `ssr;desc="MISS";dur=${(performance.now() - requestStartedAt).toFixed(1)}`,
+      )
       for (const [name, value] of headersToCache) {
         response.setHeader(name, value)
       }
-      response.end(body)
+      await writeCompressedBody(request, response, body)
       return
     }
 

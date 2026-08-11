@@ -33,6 +33,11 @@ spec:
               value: http://helpin-server-svc:8080/api
             - name: PORT
               value: "3000"
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-secrets
+                  key: REDIS_URL
           ports:
             - containerPort: 3000
           securityContext:

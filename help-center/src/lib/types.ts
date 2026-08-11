@@ -276,3 +276,9 @@ export interface AIAnswerResponse {
   confidence?: number
   cached: boolean
 }
+
+export interface HelpCenterBootstrap {
+  config: HelpCenterConfig
+  locale: string
+  spaces: Space[]
+}

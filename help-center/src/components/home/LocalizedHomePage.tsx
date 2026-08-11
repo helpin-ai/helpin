@@ -8,7 +8,7 @@ import {
   buildCanonicalSpacePath,
 } from '@/lib/locale'
 import { DocsLink } from '@/components/DocsLink'
-import { Sidebar } from '@/components/layout/Sidebar'
+import { Sidebar, SidebarSkeleton } from '@/components/layout/Sidebar'
 import { Footer } from '@/components/layout/Footer'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { PublicIcon } from '@/components/PublicIcon'
@@ -80,7 +80,11 @@ export function LocalizedHomePage() {
       )}
 
       {firstSpace && (
-        <Sidebar locale={locale} navigation={nav} />
+        nav.length > 0 ? (
+          <Sidebar locale={locale} navigation={nav} />
+        ) : (
+          <SidebarSkeleton />
+        )
       )}
 
       <main className="min-w-0 flex-1 pt-[41px] lg:pt-0">

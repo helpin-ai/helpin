@@ -13,7 +13,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { buildCanonicalArticlePath, buildCanonicalCollectionPath } from '@/lib/locale'
 import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
-import { Sidebar } from '@/components/layout/Sidebar'
+import { Sidebar, SidebarSkeleton } from '@/components/layout/Sidebar'
 import { Footer } from '@/components/layout/Footer'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { Breadcrumbs, type BreadcrumbEntry } from '@/components/navigation/Breadcrumbs'
@@ -118,11 +118,12 @@ export function CollectionRouteView({
           />
         )}
 
-        {spaceNavigation.length > 0 && (
+        {matchingSpace && (
           <>
             <div className="fixed left-0 right-0 top-[var(--hc-header-height)] z-20 flex items-center gap-2 border-b border-border bg-background px-4 py-2 lg:hidden">
               <button
                 onClick={() => setMobileNavOpen(true)}
+                disabled={spaceNavigation.length === 0}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                 aria-label="Open navigation"
               >
@@ -132,7 +133,11 @@ export function CollectionRouteView({
                 {activeHeading}
               </span>
             </div>
-            <Sidebar locale={locale} navigation={spaceNavigation} />
+            {spaceNavigation.length > 0 ? (
+              <Sidebar locale={locale} navigation={spaceNavigation} />
+            ) : (
+              <SidebarSkeleton />
+            )}
           </>
         )}
 
@@ -203,10 +208,11 @@ export function CollectionRouteView({
         />
       )}
 
-      {activeNavigation.length > 0 && (
+      {collectionSpaceSlug && (
         <>
           <div className="fixed left-0 right-0 top-[var(--hc-header-height)] z-20 flex items-center gap-2 border-b border-border bg-background px-4 py-2 lg:hidden">
             <button
+              disabled={activeNavigation.length === 0}
               onClick={() => setMobileNavOpen(true)}
               className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
               aria-label="Open navigation"
@@ -217,7 +223,11 @@ export function CollectionRouteView({
               {activeHeading}
             </span>
           </div>
-          <Sidebar locale={locale} navigation={activeNavigation} />
+          {activeNavigation.length > 0 ? (
+            <Sidebar locale={locale} navigation={activeNavigation} />
+          ) : (
+            <SidebarSkeleton />
+          )}
         </>
       )}
 

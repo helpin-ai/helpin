@@ -230,6 +230,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// Public Help Center routes
 		r.Route("/{subdomain}", func(r chi.Router) {
 			r.Get("/config", h.Docs.PublicGetConfig)
+			r.Get("/bootstrap", h.Docs.PublicGetBootstrap)
 			r.Get("/spaces", h.Docs.PublicGetSpaces)
 			r.Get("/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
 			r.Get("/spaces/{spaceSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
@@ -304,6 +305,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public Help Center routes (no JWT) ----
 		r.Route("/hc/{subdomain}", func(r chi.Router) {
 			r.Get("/config", h.Docs.PublicGetConfig)
+			r.Get("/bootstrap", h.Docs.PublicGetBootstrap)
 			r.Get("/{locale}/spaces", h.Docs.PublicGetSpaces)
 			r.Get("/{locale}/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
 			r.Get("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}", h.Docs.PublicGetCollectionPage)

@@ -239,7 +239,26 @@ func (s *DocsHelpcenterService) InvalidateHelpcenterCacheForWorkspace(ctx contex
 	if s.hcCache == nil || workspaceID == "" {
 		return
 	}
-	if err := s.hcCache.InvalidateTags(ctx, HelpcenterCacheTagWorkspace(workspaceID)); err != nil {
+
+	tags := []string{HelpcenterCacheTagWorkspace(workspaceID)}
+	cfg, err := s.hcRepo.GetConfig(ctx, workspaceID)
+	if err != nil {
+		slog.WarnContext(
+			ctx,
+			"hc cache: resolve identifiers for invalidation failed",
+			"error", err,
+			"workspace_id", workspaceID,
+		)
+	} else if cfg != nil {
+		if cfg.Subdomain != "" {
+			tags = append(tags, HelpcenterCacheTagIdentifier(cfg.Subdomain))
+		}
+		if cfg.CustomDomain != nil && strings.TrimSpace(*cfg.CustomDomain) != "" {
+			tags = append(tags, HelpcenterCacheTagIdentifier(*cfg.CustomDomain))
+		}
+	}
+
+	if err := s.hcCache.InvalidateTags(ctx, tags...); err != nil {
 		slog.WarnContext(ctx, "hc cache: invalidate failed", "error", err, "workspace_id", workspaceID)
 	}
 }
@@ -310,4 +329,10 @@ func hcCacheKey(parts ...string) string {
 		encoded = append(encoded, base64.RawURLEncoding.EncodeToString([]byte(part)))
 	}
 	return strings.Join(encoded, ":")
+}
+
+// HelpcenterCacheTagIdentifier returns the cache tag for a hosted subdomain or
+// custom-domain identifier used by the public renderer.
+func HelpcenterCacheTagIdentifier(identifier string) string {
+	return "hc:host:" + strings.ToLower(strings.TrimSpace(identifier))
 }

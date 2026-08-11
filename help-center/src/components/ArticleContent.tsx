@@ -62,7 +62,9 @@ export function ArticleContent({ html }: ArticleContentProps) {
     )
   }
 
-  const renderedHtml = rewriteInternalHelpCenterLinks(html, basepath)
+  const renderedHtml = addImageLoadingHints(
+    rewriteInternalHelpCenterLinks(html, basepath),
+  )
 
   return (
     <div
@@ -71,6 +73,21 @@ export function ArticleContent({ html }: ArticleContentProps) {
       dangerouslySetInnerHTML={{ __html: renderedHtml }}
     />
   )
+}
+
+function addImageLoadingHints(html: string) {
+  let imageIndex = 0
+  return html.replace(/<img\b([^>]*)>/gi, (_tag, attributes: string) => {
+    const isFirst = imageIndex === 0
+    imageIndex += 1
+    let next = attributes
+    if (!/\bdecoding\s*=/i.test(next)) next += ' decoding="async"'
+    if (!/\bloading\s*=/i.test(next)) {
+      next += isFirst ? ' loading="eager"' : ' loading="lazy"'
+    }
+    if (isFirst && !/\bfetchpriority\s*=/i.test(next)) next += ' fetchpriority="high"'
+    return `<img${next}>`
+  })
 }
 
 function rewriteInternalHelpCenterLinks(html: string, basepath: string) {
