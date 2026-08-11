@@ -81,6 +81,26 @@ describe('ChatWindow', () => {
     expect(windowEl.style.right).toBe('');
   });
 
+  it('uses the configured brand color and a contrasting icon color for the active rail item', () => {
+    const { container } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+      />,
+    );
+
+    const navigation = container.querySelector('.helpin-bottom-nav') as HTMLElement;
+    expect(navigation.style.getPropertyValue('--helpin-nav-active-color')).toBe('#6366f1');
+    expect(navigation.style.getPropertyValue('--helpin-nav-active-foreground')).toBe('#ffffff');
+    expect(container.querySelector('.helpin-bottom-nav-item--active')?.getAttribute('aria-current')).toBe('page');
+  });
+
   it('keeps the window mounted briefly while closing for the exit transition', () => {
     vi.useFakeTimers();
 

@@ -59,9 +59,10 @@ describe('widget scroll styles', () => {
     expect(ruleBody('.helpin-theme-dark')).toContain('--helpin-card-bg: #1b1f26');
     expect(ruleBody('.helpin-chat-window.helpin-theme-dark')).toContain('border: 1px solid rgba(255, 255, 255, 0.1)');
     expect(ruleBody('.helpin-theme-dark .helpin-bottom-nav-item--active')).not.toContain('border-radius');
-    expect(ruleBody('.helpin-theme-dark .helpin-bottom-nav-item--active .helpin-bottom-nav-icon')).toContain('var(--helpin-nav-active-color) 22%');
     expect(css).toContain('.helpin-bottom-nav-icon {\n  display: inline-flex;');
     expect(css).toContain('  border-radius: 9px;\n  transition: background 0.16s ease');
+    expect(ruleBody('.helpin-bottom-nav-item--active .helpin-bottom-nav-icon')).toContain('background: var(--helpin-nav-active-color)');
+    expect(ruleBody('.helpin-bottom-nav-item--active .helpin-bottom-nav-icon')).toContain('color: var(--helpin-nav-active-foreground)');
     expect(ruleBody('.helpin-theme-dark .helpin-ai-thinking-line')).toContain('rgba(255, 255, 255, 0.24)');
   });
 

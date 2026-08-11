@@ -135,12 +135,7 @@
 }
 
 .helpin-theme-dark .helpin-bottom-nav-item--active {
-  color: color-mix(in srgb, var(--helpin-nav-active-color) 72%, #ffffff) !important;
-}
-
-.helpin-theme-dark .helpin-bottom-nav-item--active .helpin-bottom-nav-icon {
-  background: color-mix(in srgb, var(--helpin-nav-active-color) 22%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--helpin-nav-active-color) 32%, transparent);
+  color: var(--helpin-fg) !important;
 }
 
 .helpin-theme-dark .helpin-home-input:focus {
@@ -1354,8 +1349,10 @@
 }
 
 .helpin-bottom-nav-item--active .helpin-bottom-nav-icon {
-  background: color-mix(in srgb, var(--helpin-nav-active-color) 11%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--helpin-nav-active-color) 16%, transparent);
+  background: var(--helpin-nav-active-color);
+  color: var(--helpin-nav-active-foreground);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--helpin-nav-active-color) 24%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .helpin-bottom-nav-label {
