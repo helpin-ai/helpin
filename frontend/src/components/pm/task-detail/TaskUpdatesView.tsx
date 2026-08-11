@@ -4,6 +4,7 @@ import { GitBranchIcon, Loading01Icon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CommentThread } from '@/components/pm/CommentThread';
+import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useMarkTaskUpdatesRead, useTaskUpdates } from '@/hooks/queries';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 import type { AgentRun, CommentWithAuthor, TaskUpdateEntry, TaskUpdateFilter } from '@/lib/pmTypes';
@@ -31,6 +32,22 @@ function activityRunId(entry: TaskUpdateEntry) {
   return typeof value === 'string' ? value : '';
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function EmphasizedActivityLabel({ label, names }: { label: string; names: string[] }) {
+  const emphasizedNames = [...new Set(names.map((name) => name.trim()).filter((name) => name && name !== 'Agent'))]
+    .sort((left, right) => right.length - left.length);
+  if (emphasizedNames.length === 0) return label;
+
+  const nameSet = new Set(emphasizedNames);
+  const parts = label.split(new RegExp(`(${emphasizedNames.map(escapeRegExp).join('|')})`, 'g'));
+  return parts.map((part, index) => nameSet.has(part)
+    ? <span key={`${part}-${index}`} className="font-semibold text-foreground/90">{part}</span>
+    : part);
+}
+
 function TaskSystemUpdateRow({
   entry,
   linkedRun,
@@ -42,16 +59,35 @@ function TaskSystemUpdateRow({
 }) {
   const agentActivity = taskUpdateAgentPresentation(entry, linkedRun);
   const label = agentActivity?.title ?? taskUpdateEventLabel(entry, linkedRun);
+  const humanActor = agentActivity && !agentActivity.automated && entry.kind === 'change'
+    ? entry.actor
+    : undefined;
+  const humanActorName = humanActor?.full_name?.trim() || humanActor?.email?.trim() || '';
   const rowClassName = 'flex w-full items-center gap-3 px-2 py-3 text-left text-sm transition-colors';
   const content = (
     <>
       {agentActivity ? (
-        <AgentAvatar
-          name={agentActivity.agentName}
-          presetKey={agentActivity.agentPresetKey}
-          className="h-6 w-6 rounded-none border-0 bg-transparent shadow-none"
-          genericBare
-        />
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+          {humanActor ? (
+            <UserAvatar
+              name={humanActorName}
+              avatarUrl={humanActor.avatar_url}
+              avatarStyle={humanActor.avatar_style}
+              avatarSeed={humanActor.avatar_seed}
+              avatarBackgroundMode={humanActor.avatar_background_mode}
+              avatarBackgroundColor={humanActor.avatar_background_color}
+              className="h-4 w-4"
+              fallbackClassName="text-[7px]"
+            />
+          ) : (
+            <AgentAvatar
+              name={agentActivity.agentName}
+              presetKey={agentActivity.agentPresetKey}
+              className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none"
+              genericBare
+            />
+          )}
+        </span>
       ) : (
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
           {entry.kind === 'git'
@@ -59,8 +95,11 @@ function TaskSystemUpdateRow({
             : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate text-foreground/75">
-        {label}
+      <span className="min-w-0 flex-1 truncate text-foreground/70">
+        <EmphasizedActivityLabel
+          label={label}
+          names={[humanActorName, agentActivity?.agentName ?? '']}
+        />
         {agentActivity?.detail ? <span className="text-muted-foreground"> — {agentActivity.detail}</span> : null}
       </span>
       {agentActivity?.runId ? <span className="shrink-0 text-xs text-muted-foreground">View run →</span> : null}

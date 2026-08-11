@@ -28,6 +28,9 @@ describe('TaskDetailSectionHeading', () => {
     expect(updatesSource).toContain('<TabsList aria-label="Update type">');
     expect(updatesSource).toContain('<TabsTrigger');
     expect(updatesSource).toContain('<AgentAvatar');
+    expect(updatesSource).toContain('<UserAvatar');
+    expect(updatesSource).toContain('!agentActivity.automated');
+    expect(updatesSource).toContain('font-semibold text-foreground/90');
     expect(updatesSource).toContain('taskUpdateAgentPresentation');
     expect(updatesSource).toContain("{ value: 'all', label: 'All' }");
     expect(updatesSource).toContain("{ value: 'discussion', label: 'Discussion' }");
