@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,10 +6,11 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAgents, useAutomationActivity, useAutomationOverview, useAutomationTriggerCatalog } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { ArrowRight01Icon, DashboardSpeed01Icon, SecurityCheckIcon, BotIcon } from '@/lib/icons';
+import { ArrowRight01Icon, DashboardSpeed01Icon, SecurityCheckIcon, BotIcon, Search01Icon } from '@/lib/icons';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import type {
@@ -169,6 +170,7 @@ interface SubgroupDef {
 }
 
 interface TriggerGroupDef {
+  id: 'flow' | 'manual' | 'built_in';
   label: string;
   helper: string;
   filter: (item: AutomationTriggerCatalogEntry) => boolean;
@@ -182,17 +184,20 @@ const SUBGROUPS: SubgroupDef[] = [
 
 const TRIGGER_GROUPS: TriggerGroupDef[] = [
   {
-    label: 'Manual triggers',
+    id: 'flow',
+    label: 'Flow',
+    helper: 'Event and schedule triggers used by automation flows.',
+    filter: (item) => item.category !== 'manual' && item.binding_kind === 'automation_rule',
+  },
+  {
+    id: 'manual',
+    label: 'Manual',
     helper: 'Human-started agent runs from product surfaces.',
     filter: (item) => item.category === 'manual',
   },
   {
-    label: 'Flow triggers',
-    helper: 'Event and schedule triggers used by automation flows.',
-    filter: (item) => item.binding_kind === 'automation_rule',
-  },
-  {
-    label: 'Built-in triggers',
+    id: 'built_in',
+    label: 'Built-in',
     helper: 'Product-owned triggers configured from feature settings.',
     filter: (item) => item.category !== 'manual' && item.binding_kind !== 'automation_rule',
   },
@@ -314,6 +319,25 @@ function AutomationRow({ item, slug }: { item: AutomationInventoryItem; slug?: s
   );
 }
 
+const TRIGGER_CATALOG_GRID_CLASS = 'lg:grid-cols-[minmax(18rem,1fr)_10rem_18rem]';
+
+function TriggerUsageBadge({ item }: { item: AutomationTriggerCatalogEntry }) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="outline" className="shrink-0 cursor-help text-[10px]">
+            {triggerCountLabel(item)}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-64 text-xs leading-relaxed">
+          {triggerCountTooltip(item)}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function TriggerRow({
   item,
   slug,
@@ -325,50 +349,137 @@ function TriggerRow({
   activityBasePath?: string;
   flowsBasePath?: string;
 }) {
-  const countLabel = triggerCountLabel(item);
-  const countTooltip = triggerCountTooltip(item);
   const historyHref = item.execution_search ? buildExecutionHistoryHref(slug, item.execution_search, activityBasePath) : undefined;
   const createRuleHref = buildWorkflowHref(slug, item.create_rule_search, flowsBasePath);
   const showRulesHref = buildWorkflowHref(slug, item.show_rules_search, flowsBasePath);
+  const actions = [
+    createRuleHref ? { href: createRuleHref, label: 'Create flow' } : undefined,
+    showRulesHref ? { href: showRulesHref, label: 'View flows' } : undefined,
+    historyHref ? { href: historyHref, label: 'View history' } : undefined,
+  ].filter((action): action is { href: string; label: string } => Boolean(action));
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5">
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{item.title}</span>
-        <span className="block text-xs text-muted-foreground">{item.description}</span>
-        <span className="mt-1 inline-flex max-w-full items-center rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[11px] text-muted-foreground/90">
-          <span className="shrink-0 font-medium text-muted-foreground">Source:</span>
-          <span className="ml-1 truncate">{item.source_surface}</span>
-        </span>
-      </span>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge variant="outline" className="shrink-0 cursor-help text-[10px]">
-              {countLabel}
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-64 text-xs leading-relaxed">
-            {countTooltip}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      {createRuleHref && (
-        <a href={createRuleHref} className="shrink-0 text-xs text-muted-foreground hover:text-foreground">
-          Create flow
-        </a>
-      )}
-      {showRulesHref && (
-        <a href={showRulesHref} className="shrink-0 text-xs text-muted-foreground hover:text-foreground">
-          View flows
-        </a>
-      )}
-      {historyHref && (
-        <a href={historyHref} className="shrink-0 text-xs text-muted-foreground hover:text-foreground">
-          View history
-        </a>
-      )}
+    <div
+      className={`grid gap-3 border-b border-border/60 px-[14px] py-[13px] transition-colors hover:bg-muted/40 focus-within:bg-muted/40 lg:items-center lg:gap-4 ${TRIGGER_CATALOG_GRID_CLASS}`}
+    >
+      <div className="min-w-0">
+        <div className="truncate text-sm font-medium">{item.title}</div>
+        <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{item.description}</div>
+        <div className="mt-1.5 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground/90">
+          <span className="shrink-0 font-medium">Source:</span>
+          <span className="truncate">{item.source_surface}</span>
+        </div>
+      </div>
+
+      <div className="hidden lg:flex">
+        <TriggerUsageBadge item={item} />
+      </div>
+
+      <div className="hidden items-center justify-end gap-4 lg:flex">
+        {actions.map((action) => (
+          <a key={action.label} href={action.href} className="shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground">
+            {action.label}
+          </a>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 lg:hidden">
+        <TriggerUsageBadge item={item} />
+        {actions.map((action) => (
+          <a key={action.label} href={action.href} className="shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground">
+            {action.label}
+          </a>
+        ))}
+      </div>
     </div>
+  );
+}
+
+function filterTriggerCatalog(items: AutomationTriggerCatalogEntry[], query: string) {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return items;
+
+  return items.filter((item) => (
+    [item.title, item.description, item.source_surface, item.trigger_type]
+      .some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
+  ));
+}
+
+export function TriggerCatalogList({
+  items,
+  slug,
+  activityBasePath,
+  flowsBasePath,
+}: {
+  items: AutomationTriggerCatalogEntry[];
+  slug?: string;
+  activityBasePath?: string;
+  flowsBasePath?: string;
+}) {
+  const [activeTab, setActiveTab] = useState<TriggerGroupDef['id']>('flow');
+  const [query, setQuery] = useState('');
+  const groups = useMemo(() => TRIGGER_GROUPS.map((group) => ({
+    ...group,
+    items: items.filter(group.filter),
+  })), [items]);
+
+  return (
+    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TriggerGroupDef['id'])} className="gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <TabsList variant="line" aria-label="Trigger category" className="max-w-full justify-start overflow-x-auto">
+          {groups.map((group) => (
+            <TabsTrigger key={group.id} value={group.id} title={group.helper}>
+              {group.label}
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {group.items.length}
+              </span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        <div className="relative w-full sm:w-64">
+          <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            aria-label="Search triggers"
+            placeholder="Search triggers..."
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
+      </div>
+
+      {groups.map((group) => {
+        const visibleItems = filterTriggerCatalog(group.items, query);
+        return (
+          <TabsContent key={group.id} value={group.id} className="mt-0">
+            {visibleItems.length > 0 ? (
+              <div className="border-t border-border/60">
+                <div className={`hidden gap-4 border-b border-border/60 px-[14px] py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:grid ${TRIGGER_CATALOG_GRID_CLASS}`}>
+                  <div>Trigger</div>
+                  <div>Usage</div>
+                  <div className="text-right">Actions</div>
+                </div>
+                {visibleItems.map((item) => (
+                  <TriggerRow
+                    key={item.id}
+                    item={item}
+                    slug={slug}
+                    activityBasePath={activityBasePath}
+                    flowsBasePath={flowsBasePath}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="border-y border-border/60 px-4 py-10 text-center text-sm text-muted-foreground">
+                {query.trim() ? `No ${group.label.toLocaleLowerCase()} triggers match “${query.trim()}”.` : `No ${group.label.toLocaleLowerCase()} triggers yet.`}
+              </div>
+            )}
+          </TabsContent>
+        );
+      })}
+    </Tabs>
   );
 }
 
@@ -538,12 +649,6 @@ export function AutomationOverviewPanel({
   const slug = currentWorkspace?.slug;
   const items = needsOverview ? (overviewQuery.data?.items ?? []) : [];
   const triggerCatalog = triggerCatalogQuery.data ?? [];
-  const triggerGroups = useMemo(() => {
-    return TRIGGER_GROUPS.map((group) => ({
-      ...group,
-      items: triggerCatalog.filter(group.filter),
-    })).filter((group) => group.items.length > 0);
-  }, [triggerCatalog]);
 
   const triggerTypeOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -626,39 +731,12 @@ export function AutomationOverviewPanel({
       )}
 
       {showTriggerCatalog && triggerCatalog.length > 0 && (
-        <div className="space-y-7">
-          {triggerGroups.map((group) => (
-            <section key={group.label} className="space-y-2">
-              <div className="px-1">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <h3 className="inline-flex cursor-help text-sm font-semibold text-foreground">
-                        {group.label} <span className="ml-1 text-muted-foreground">({group.items.length})</span>
-                      </h3>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" align="start" className="max-w-64 text-xs leading-relaxed">
-                      {group.helper}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-              <div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">
-                <div className="divide-y divide-border/50">
-                  {group.items.map((item) => (
-                    <TriggerRow
-                      key={item.id}
-                      item={item}
-                      slug={slug}
-                      activityBasePath={pathOverrides?.activityBasePath}
-                      flowsBasePath={pathOverrides?.flowsBasePath}
-                    />
-                  ))}
-                </div>
-              </div>
-            </section>
-          ))}
-        </div>
+        <TriggerCatalogList
+          items={triggerCatalog}
+          slug={slug}
+          activityBasePath={pathOverrides?.activityBasePath}
+          flowsBasePath={pathOverrides?.flowsBasePath}
+        />
       )}
 
       {showTriggerExecutions && (

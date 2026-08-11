@@ -5,6 +5,12 @@ export type NavItem = {
   label: string;
   icon: IconComponent;
   badge?: number;
+  children?: NavSubItem[];
+};
+
+export type NavSubItem = {
+  link: string;
+  label: string;
 };
 
 export type NavGroup = {

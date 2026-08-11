@@ -195,8 +195,8 @@ export function Sidebar() {
   };
 
   const panelNavGroups = useMemo(
-    () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet, agentAttentionCount),
-    [wsSlug, canManageSettings, permissionSet, agentAttentionCount],
+    () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet, agentAttentionCount, teams),
+    [wsSlug, canManageSettings, permissionSet, agentAttentionCount, teams],
   );
   const currentNavGroups = panelNavGroups[activeRail];
   const setupProgress = setup?.total_count ? Math.round((setup.completed_count / setup.total_count) * 100) : 0;
