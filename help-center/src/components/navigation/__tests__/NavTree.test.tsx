@@ -67,6 +67,12 @@ describe('NavTree root collections', () => {
     expect(first.className).toContain('w-full')
     expect(first.className).toContain('min-w-0')
     expect(first.className).toContain('pr-4')
+    expect(first.querySelector('svg')).not.toBeNull()
+
+    const firstLabel = screen.getByText('First collection')
+    expect(firstLabel.className).toContain('whitespace-normal')
+    expect(firstLabel.className).toContain('break-words')
+    expect(firstLabel.className).not.toContain('truncate')
 
     expect(first.getAttribute('aria-expanded')).toBe('true')
     expect(second.getAttribute('aria-expanded')).toBe('false')
