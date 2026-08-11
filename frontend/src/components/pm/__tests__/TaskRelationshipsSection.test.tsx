@@ -215,11 +215,16 @@ describe('TaskRelationshipsSection', () => {
     expect(container.textContent).not.toContain('Related task 4');
 
     const taskId = container.querySelector('[data-testid="related-task-id"]');
-    expect(taskId?.className).toContain('absolute');
-    expect(taskId?.className).toContain('bg-background');
-    expect(taskId?.className).toContain('text-foreground');
-    expect(taskId?.className).toContain('group-hover:opacity-100');
-    expect(taskId?.className).toContain('opacity-0');
+    const firstRow = container.querySelector('[data-testid="related-task-row"]');
+    const firstTaskLink = firstRow?.querySelector('[data-testid="related-task-link"]');
+    const relationshipTrigger = firstRow?.querySelector('button[aria-label="Change relationship: Relates to"]');
+    expect(taskId?.className).toContain('font-mono');
+    expect(taskId?.className).not.toContain('opacity-0');
+    expect(firstRow?.className).not.toContain('hover:');
+    expect(firstTaskLink?.className).not.toContain('hover:');
+    expect(firstTaskLink?.firstElementChild).toBe(taskId);
+    expect(firstTaskLink?.lastElementChild?.textContent).toBe('Related task 1');
+    expect(firstRow?.lastElementChild).toBe(relationshipTrigger);
 
     const moreButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === 'Show 1 more',
@@ -251,9 +256,7 @@ describe('TaskRelationshipsSection', () => {
     ];
     renderSection({ flat: true, hideDocs: true });
 
-    const taskButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Review launch copy',
-    );
+    const taskButton = container.querySelector<HTMLButtonElement>('[data-testid="related-task-link"]');
     expect(taskButton).toBeTruthy();
 
     act(() => {

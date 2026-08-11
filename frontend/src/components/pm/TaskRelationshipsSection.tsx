@@ -524,22 +524,57 @@ export function TaskRelationshipsSection({
               key={item.relationship_id}
               data-testid="related-task-row"
               className={cn(
-                'group relative flex items-center gap-1.5 rounded-md px-1 py-1 text-[12.5px] transition-colors hover:bg-muted/40',
+                'flex items-center gap-2 px-1 py-1 text-[12.5px]',
                 resolved && 'opacity-50',
               )}
             >
+              {workspace?.slug ? (
+                <button
+                  type="button"
+                  data-testid="related-task-link"
+                  onClick={() =>
+                    openTaskRoute(
+                      navigate as never,
+                      location as never,
+                      workspace.slug,
+                      relatedTask.object_id,
+                    )
+                  }
+                  className="flex min-w-0 flex-1 items-baseline gap-2 text-left"
+                >
+                  {(relatedTask.task_key || relatedTask.display_id) ? (
+                    <span data-testid="related-task-id" className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                      {relatedTask.task_key ?? `#${relatedTask.display_id}`}
+                    </span>
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground/75 dark:text-foreground">
+                    {relatedTask.title}
+                  </span>
+                </button>
+              ) : (
+                <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                  {(relatedTask.task_key || relatedTask.display_id) ? (
+                    <span data-testid="related-task-id" className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                      {relatedTask.task_key ?? `#${relatedTask.display_id}`}
+                    </span>
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground/75 dark:text-foreground">
+                    {relatedTask.title}
+                  </span>
+                </span>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors hover:bg-accent"
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
                     aria-label={`Change relationship: ${meta.label}`}
                     title={`${meta.label} — change relationship`}
                   >
                     <Icon className={cn('h-3.5 w-3.5', meta.color)} />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-48">
+                <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuLabel className="text-xs">Update Relationship Type</DropdownMenuLabel>
                   {UPDATE_TYPE_OPTIONS.map((opt) => {
                     const OptIcon = opt.icon;
@@ -563,34 +598,6 @@ export function TaskRelationshipsSection({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              {workspace?.slug ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    openTaskRoute(
-                      navigate as never,
-                      location as never,
-                      workspace.slug,
-                      relatedTask.object_id,
-                    )
-                  }
-                  className="min-w-0 flex-1 truncate font-medium text-foreground/75 transition-colors hover:text-primary dark:text-foreground"
-                >
-                  {relatedTask.title}
-                </button>
-              ) : (
-                <span className="min-w-0 flex-1 truncate font-medium text-foreground/75 dark:text-foreground">
-                  {relatedTask.title}
-                </span>
-              )}
-              {(relatedTask.task_key || relatedTask.display_id) ? (
-                <span
-                  data-testid="related-task-id"
-                  className="absolute right-1 bg-background pl-3 text-[10px] text-foreground/70 opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200 group-focus-within:opacity-100 dark:text-foreground"
-                >
-                  {relatedTask.task_key ?? `#${relatedTask.display_id}`}
-                </span>
-              ) : null}
             </div>
           );
         })}
