@@ -60,21 +60,30 @@ export function NavTree({
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const multilingualEnabled = isMultilingualEnabled(enabledLocales)
   const tree = buildNavTree(navigation)
+  const defaultOpenRoots = tree
+    .filter((node, index) => index === 0 || nodeContainsActivePath(node, {
+      locale,
+      multilingualEnabled,
+      pathname,
+    }))
+    .map((node) => node.item.id)
 
   return (
     <nav key={pathname} className="px-3 py-4">
-      {tree.map((node, idx) => (
-        <CollectionGroup
-          key={node.item.id}
-          locale={locale}
-          node={node}
-          multilingualEnabled={multilingualEnabled}
-          pathname={pathname}
-          onArticleClick={onArticleClick}
-          isFirst={idx === 0}
-          level={0}
-        />
-      ))}
+      <Accordion type="multiple" defaultValue={defaultOpenRoots}>
+        {tree.map((node, idx) => (
+          <CollectionGroup
+            key={node.item.id}
+            locale={locale}
+            node={node}
+            multilingualEnabled={multilingualEnabled}
+            pathname={pathname}
+            onArticleClick={onArticleClick}
+            isFirst={idx === 0}
+            level={0}
+          />
+        ))}
+      </Accordion>
     </nav>
   )
 }
@@ -108,43 +117,69 @@ function CollectionGroup({
     node.item.public_id,
   )
   const isActiveCollection = pathname === collectionHref
+  const children = buildMergedChildren(node)
+  const hasExpandableContent = children.length > 0
+  const label = (
+    <span className="flex min-w-0 items-center gap-2">
+      {node.item.icon && level === 0 ? (
+        <PublicIcon
+          name={node.item.icon}
+          size={16}
+          className={cn(
+            'shrink-0',
+            isActiveCollection
+              ? 'text-sidebar-active-foreground'
+              : 'text-muted-foreground',
+          )}
+        />
+      ) : null}
+      <span className="truncate">{node.item.name}</span>
+    </span>
+  )
 
-  return (
-    <div className={cn(spacing)}>
+  if (!hasExpandableContent) {
+    return (
       <div
         className={cn(
           'flex items-center gap-2 rounded-lg py-[7px]',
+          spacing,
           indent,
           headingClass,
           isActiveCollection && 'bg-sidebar-active text-sidebar-active-foreground',
         )}
       >
-        {node.item.icon && level === 0 ? (
-          <PublicIcon
-            name={node.item.icon}
-            size={16}
-            className={cn(
-              'shrink-0',
-              isActiveCollection
-                ? 'text-sidebar-active-foreground'
-                : 'text-muted-foreground',
-            )}
-          />
-        ) : null}
-        <span className="truncate">{node.item.name}</span>
+        {label}
       </div>
+    )
+  }
 
-      <div className="mt-0.5">
-        <MergedChildren
-          children={buildMergedChildren(node)}
-          locale={locale}
-          multilingualEnabled={multilingualEnabled}
-          pathname={pathname}
-          onArticleClick={onArticleClick}
-          level={level}
-        />
-      </div>
-    </div>
+  return (
+    <AccordionItem value={node.item.id} className={cn('border-none', spacing)}>
+      <AccordionTrigger
+        className={cn(
+          'cursor-pointer rounded-lg py-[7px] hover:no-underline',
+          indent,
+          headingClass,
+          isActiveCollection
+            ? 'bg-sidebar-active text-sidebar-active-foreground'
+            : 'hover:bg-muted/50',
+        )}
+      >
+        {label}
+      </AccordionTrigger>
+      <AccordionContent className="pb-0">
+        <div className="mt-0.5">
+          <MergedChildren
+            children={children}
+            locale={locale}
+            multilingualEnabled={multilingualEnabled}
+            pathname={pathname}
+            onArticleClick={onArticleClick}
+            level={level}
+          />
+        </div>
+      </AccordionContent>
+    </AccordionItem>
   )
 }
 
