@@ -53,6 +53,14 @@ describe('widget scroll styles', () => {
     expect(css).toContain('.helpin-help-link-skeleton-line');
   });
 
+  it('uses neutral elevated surfaces and visible shimmer contrast in dark mode', () => {
+    expect(ruleBody('.helpin-theme-dark')).toContain('--helpin-bg: #121419');
+    expect(ruleBody('.helpin-theme-dark')).toContain('--helpin-card-bg: #1b1f26');
+    expect(ruleBody('.helpin-chat-window.helpin-theme-dark')).toContain('border: 1px solid rgba(255, 255, 255, 0.1)');
+    expect(ruleBody('.helpin-theme-dark .helpin-bottom-nav-item--active')).toContain('var(--helpin-primary) 18%');
+    expect(ruleBody('.helpin-theme-dark .helpin-ai-thinking-line')).toContain('rgba(255, 255, 255, 0.24)');
+  });
+
   it('keeps projected and quoted email content width-safe', () => {
     expect(ruleBody('.helpin-email-message-content')).toContain('min-width: 0');
     expect(ruleBody('.helpin-email-message-content')).toContain('max-width: 100%');
