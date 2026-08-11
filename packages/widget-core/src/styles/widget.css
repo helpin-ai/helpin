@@ -1891,7 +1891,9 @@
   .helpin-stagger-list > .helpin-conversation-item,
   .helpin-help-link-skeleton-icon,
   .helpin-help-link-skeleton-line,
-  .helpin-ai-thinking-line {
+  .helpin-ai-thinking-line,
+  .helpin-ai-thinking-label,
+  .helpin-streaming-cursor {
     animation: none;
     transform: none;
     clip-path: none;
@@ -3210,14 +3212,33 @@
 
 .helpin-ai-thinking-shimmer {
   display: flex;
-  width: min(58%, 190px);
+  width: min(72%, 210px);
+  flex-direction: column;
+  gap: 5px;
+}
+
+.helpin-ai-thinking-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
   flex-direction: column;
   gap: 7px;
 }
 
+.helpin-ai-thinking-label {
+  overflow: hidden;
+  color: var(--helpin-text-secondary);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: helpin-progress-label-in 180ms ease-out;
+}
+
 .helpin-ai-thinking-line {
   display: block;
-  height: 10px;
+  height: 6px;
   border-radius: 999px;
   background: linear-gradient(
     90deg,
@@ -3258,6 +3279,27 @@
     rgba(255, 255, 255, 0.08)
   );
   background-size: 200% 100%;
+}
+
+@keyframes helpin-progress-label-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.helpin-streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  vertical-align: -0.12em;
+  animation: helpin-streaming-cursor-pulse 760ms ease-in-out infinite;
+}
+
+@keyframes helpin-streaming-cursor-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.9; }
 }
 
 /* CSAT Rating */

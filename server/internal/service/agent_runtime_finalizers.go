@@ -432,11 +432,13 @@ func (s *AgentRunFinalizerService) finalizeSupportDraft(ctx context.Context, run
 	}
 
 	if s.wsPublisher != nil {
-		event := websocket.SupportMessageEvent(run.WorkspaceID, existing, "")
-		if !createdMessage {
+		if createdMessage {
+			publishSupportAIMessageStream(s.wsPublisher, run.WorkspaceID, existing, "ai:"+run.AgentID)
+		} else {
+			event := websocket.SupportMessageEvent(run.WorkspaceID, existing, "")
 			event.Data = nil
+			s.wsPublisher.Publish(event)
 		}
-		s.wsPublisher.Publish(event)
 	}
 	s.pushVisitorConversationRefresh(ctx, run.WorkspaceID, conversation)
 	return nil

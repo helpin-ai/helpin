@@ -272,6 +272,14 @@ func (h *Hub) Broadcast(event Event) {
 		widgetData, _ = json.Marshal(widgetMessage{Type: "ai:thinking:start"})
 	case event.Entity == "support_conversation" && event.Action == "ai_thinking_stopped":
 		widgetData, _ = json.Marshal(widgetMessage{Type: "ai:thinking:stop"})
+	case event.Entity == SupportAIResponseStreamEntity && event.Action == "progress":
+		widgetData, _ = json.Marshal(widgetMessage{Type: "ai:progress", Data: event.Data})
+	case event.Entity == SupportAIResponseStreamEntity && event.Action == "response_started":
+		widgetData, _ = json.Marshal(widgetMessage{Type: "ai:response:start", Data: event.Data})
+	case event.Entity == SupportAIResponseStreamEntity && event.Action == "response_delta":
+		widgetData, _ = json.Marshal(widgetMessage{Type: "ai:response:delta", Data: event.Data})
+	case event.Entity == SupportAIResponseStreamEntity && event.Action == "response_completed":
+		widgetData, _ = json.Marshal(widgetMessage{Type: "ai:response:complete", Data: event.Data})
 	case event.Entity == "support_widget" && event.Action == "config_updated" && len(event.Data) > 0:
 		widgetData, _ = json.Marshal(widgetMessage{Type: "config:updated", Data: event.Data})
 	case event.Entity == "support_visitor_conversations" && event.Action == "updated" && len(event.Data) > 0:
@@ -345,6 +353,18 @@ func (h *Hub) shouldReceive(client *Client, event Event) bool {
 
 	if event.Entity == "support_teammate_presence" && event.Action == "updated" {
 		return client.IsWidget
+	}
+
+	// Customer-safe AI stream events are transient and widget-only. Internal
+	// clients already receive the richer coding-session event stream.
+	if event.Entity == SupportAIResponseStreamEntity {
+		switch event.Action {
+		case "progress", "response_started", "response_delta", "response_completed":
+		default:
+			return false
+		}
+		return client.IsWidget && client.ConversationID != nil &&
+			*client.ConversationID == event.ParentID
 	}
 
 	if event.Entity == "support_conversation" && (isTypingEvent(event.Action) || isViewingEvent(event.Action)) {

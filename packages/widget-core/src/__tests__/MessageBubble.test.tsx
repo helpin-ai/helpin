@@ -193,4 +193,13 @@ describe('MessageBubble', () => {
     const agentRender = render(<MessageBubble message={agentMessage} />);
     expect(agentRender.container.querySelector('.helpin-link-preview--outgoing')).toBeNull();
   });
+
+  it('renders an empty streaming AI bubble with a live cursor', () => {
+    const message = createMessage({ role: 'ai', content: '', isStreaming: true });
+    const { container } = render(<MessageBubble message={message} />);
+
+    expect(container.querySelector('.helpin-message--streaming')).toBeTruthy();
+    expect(container.querySelector('.helpin-streaming-cursor')).toBeTruthy();
+    expect(container.querySelector('.helpin-message-bubble')).toBeTruthy();
+  });
 });
