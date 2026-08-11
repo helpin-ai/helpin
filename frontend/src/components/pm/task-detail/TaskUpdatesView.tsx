@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { BotIcon, GitBranchIcon, Loading01Icon } from '@/lib/icons';
+import { GitBranchIcon, Loading01Icon } from '@/lib/icons';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CommentThread } from '@/components/pm/CommentThread';
 import { useMarkTaskUpdatesRead, useTaskUpdates } from '@/hooks/queries';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
-import type { CommentWithAuthor, TaskUpdateEntry, TaskUpdateFilter } from '@/lib/pmTypes';
-import { taskUpdateEventLabel } from './taskUpdateEventLabel';
+import type { AgentRun, CommentWithAuthor, TaskUpdateEntry, TaskUpdateFilter } from '@/lib/pmTypes';
+import { taskUpdateAgentPresentation, taskUpdateEventLabel } from './taskUpdateEventLabel';
 
 interface TaskUpdatesViewProps {
   workspaceId: string;
@@ -24,6 +25,65 @@ const UPDATE_FILTERS: Array<{ value: TaskUpdateFilter; label: string }> = [
   { value: 'discussion', label: 'Discussion' },
   { value: 'changes', label: 'Changes' },
 ];
+
+function activityRunId(entry: TaskUpdateEntry) {
+  const value = entry.activity?.metadata?.run_id;
+  return typeof value === 'string' ? value : '';
+}
+
+function TaskSystemUpdateRow({
+  entry,
+  linkedRun,
+  onOpenDelivery,
+}: {
+  entry: TaskUpdateEntry;
+  linkedRun?: AgentRun;
+  onOpenDelivery: (runId?: string) => void;
+}) {
+  const agentActivity = taskUpdateAgentPresentation(entry, linkedRun);
+  const label = agentActivity?.title ?? taskUpdateEventLabel(entry, linkedRun);
+  const rowClassName = 'flex w-full items-center gap-3 px-2 py-3 text-left text-sm transition-colors';
+  const content = (
+    <>
+      {agentActivity ? (
+        <AgentAvatar
+          name={agentActivity.agentName}
+          presetKey={agentActivity.agentPresetKey}
+          className="h-6 w-6 rounded-none border-0 bg-transparent shadow-none"
+          genericBare
+        />
+      ) : (
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          {entry.kind === 'git'
+            ? <GitBranchIcon className="h-3.5 w-3.5" />
+            : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
+        </span>
+      )}
+      <span className="min-w-0 flex-1 truncate text-foreground/75">
+        {label}
+        {agentActivity?.detail ? <span className="text-muted-foreground"> — {agentActivity.detail}</span> : null}
+      </span>
+      {agentActivity?.runId ? <span className="shrink-0 text-xs text-muted-foreground">View run →</span> : null}
+      <time className="w-16 shrink-0 text-right text-xs text-muted-foreground">
+        {formatDistanceToNow(new Date(entry.occurred_at), { addSuffix: true })}
+      </time>
+    </>
+  );
+
+  if (agentActivity?.runId) {
+    return (
+      <button
+        type="button"
+        className={`${rowClassName} hover:bg-muted/30`}
+        onClick={() => onOpenDelivery(agentActivity.runId)}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={rowClassName}>{content}</div>;
+}
 
 export function TaskUpdatesView(props: TaskUpdatesViewProps) {
   const [filter, setFilter] = useState<TaskUpdateFilter>('all');
@@ -47,6 +107,11 @@ export function TaskUpdatesView(props: TaskUpdatesViewProps) {
     }));
     return [...systemEntries, ...commentEntries].sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at));
   }, [data?.data, filter, props.comments]);
+  const agentRunsById = useMemo(() => new Map(
+    (data?.data ?? [])
+      .filter((entry): entry is TaskUpdateEntry & { agent_run: AgentRun } => entry.kind === 'agent_run' && !!entry.agent_run)
+      .map((entry) => [entry.agent_run.id, entry.agent_run]),
+  ), [data?.data]);
 
   const updateSingleComment = (commentId: string, next: CommentWithAuthor[]) => {
     const replacement = next.find((item) => item.comment.id === commentId);
@@ -108,19 +173,12 @@ export function TaskUpdatesView(props: TaskUpdatesViewProps) {
               />
             </div>
           ) : (
-            <button
+            <TaskSystemUpdateRow
               key={entry.id}
-              type="button"
-              className="flex w-full items-center gap-3 px-2 py-3 text-left text-sm transition-colors hover:bg-muted/30"
-              onClick={() => entry.kind === 'agent_run' ? props.onOpenDelivery(entry.agent_run?.id) : undefined}
-            >
-              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${entry.kind === 'agent_run' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                {entry.kind === 'agent_run' ? <BotIcon className="h-3.5 w-3.5" /> : entry.kind === 'git' ? <GitBranchIcon className="h-3.5 w-3.5" /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
-              </span>
-              <span className="min-w-0 flex-1 text-foreground/75">{taskUpdateEventLabel(entry)}</span>
-              {entry.kind === 'agent_run' && <span className="text-xs text-muted-foreground">View run →</span>}
-              <time className="w-16 shrink-0 text-right text-xs text-muted-foreground">{formatDistanceToNow(new Date(entry.occurred_at), { addSuffix: true })}</time>
-            </button>
+              entry={entry}
+              linkedRun={agentRunsById.get(activityRunId(entry))}
+              onOpenDelivery={props.onOpenDelivery}
+            />
           ))}
         </div>
       )}
