@@ -6,6 +6,7 @@ import { CommentThread } from '@/components/pm/CommentThread';
 import { useMarkTaskUpdatesRead, useTaskUpdates } from '@/hooks/queries';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 import type { CommentWithAuthor, TaskUpdateEntry, TaskUpdateFilter } from '@/lib/pmTypes';
+import { taskUpdateEventLabel } from './taskUpdateEventLabel';
 
 interface TaskUpdatesViewProps {
   workspaceId: string;
@@ -16,24 +17,6 @@ interface TaskUpdatesViewProps {
   teams: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
   members: AssignableMember[];
   onOpenDelivery: (runId?: string) => void;
-}
-
-function eventLabel(entry: TaskUpdateEntry) {
-  if (entry.kind === 'agent_run' && entry.agent_run) {
-    const name = entry.agent_name || 'Agent';
-    return `${name} ${entry.agent_run.status.replace(/_/g, ' ')}`;
-  }
-  if (entry.kind === 'git' && entry.git_link) {
-    if (entry.git_link.pr_number) return `Pull request #${entry.git_link.pr_number} · ${entry.git_link.pr_status ?? 'linked'}`;
-    if (entry.git_link.commit_sha) return `Commit ${entry.git_link.commit_sha.slice(0, 7)} linked`;
-    return `Branch ${entry.git_link.branch ?? ''} linked`;
-  }
-  const activity = entry.activity;
-  if (!activity) return 'Task updated';
-  if (activity.field_name && activity.new_value) {
-    return `${activity.field_name.replace(/_/g, ' ')} changed${activity.old_value ? ` · ${activity.old_value} → ${activity.new_value}` : ` to ${activity.new_value}`}`;
-  }
-  return activity.action.replace(/_/g, ' ');
 }
 
 export function TaskUpdatesView(props: TaskUpdatesViewProps) {
@@ -124,7 +107,7 @@ export function TaskUpdatesView(props: TaskUpdatesViewProps) {
               <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${entry.kind === 'agent_run' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
                 {entry.kind === 'agent_run' ? <BotIcon className="h-3.5 w-3.5" /> : entry.kind === 'git' ? <GitBranchIcon className="h-3.5 w-3.5" /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
               </span>
-              <span className="min-w-0 flex-1 capitalize text-foreground/75">{eventLabel(entry)}</span>
+              <span className="min-w-0 flex-1 text-foreground/75">{taskUpdateEventLabel(entry)}</span>
               {entry.kind === 'agent_run' && <span className="text-xs text-muted-foreground">View run →</span>}
               <time className="w-16 shrink-0 text-right text-xs text-muted-foreground">{formatDistanceToNow(new Date(entry.occurred_at), { addSuffix: true })}</time>
             </button>
