@@ -26,15 +26,13 @@ describe('task detail optional section labels', () => {
     expect(files.agentRuns).toContain('className="text-xs font-semibold uppercase tracking-wide text-foreground/70"');
   });
 
-  it('does not hide agent runs behind development history visibility', () => {
+  it('keeps agent runs visible while gating Git activity inside the unified delivery view', () => {
     const panel = readFileSync(resolve(__dirname, '../TaskDetailPanel.tsx'), 'utf8');
-    const gitPanelIndex = panel.indexOf('<TaskGitPanel');
     const agentRunPanelIndex = panel.indexOf('<AgentRunPanel');
-    const combinedGateIndex = panel.indexOf('{hasGitIntegration && fieldVis.dev_history && (');
 
     expect(agentRunPanelIndex).toBeGreaterThan(-1);
-    expect(combinedGateIndex).toBeGreaterThan(agentRunPanelIndex);
-    expect(gitPanelIndex).toBeGreaterThan(combinedGateIndex);
+    expect(panel).toContain('showDevelopmentHistory={hasGitIntegration && fieldVis.dev_history}');
+    expect(panel).not.toContain('<TaskGitPanel');
   });
 
   it('softens attached item titles only in light mode across tasks and epics', () => {

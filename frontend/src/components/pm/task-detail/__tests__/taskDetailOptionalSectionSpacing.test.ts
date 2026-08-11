@@ -57,12 +57,16 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(panelSource).toContain("(['overview', 'updates', 'delivery'] as TaskDetailView[])");
     expect(panelSource).toContain('<TaskUpdatesView');
     expect(panelSource).toContain('<AgentRunPanel');
-    expect(panelSource).toContain('<TaskGitPanel');
+    expect(panelSource).not.toContain('<TaskGitPanel');
+    expect(panelSource).toContain('showDevelopmentHistory={hasGitIntegration && fieldVis.dev_history}');
+    expect(panelSource).toContain('onEditDeliveryContext={openDeliveryContext}');
     expect(panelSource).toContain('<ChecklistItems');
     expect(panelSource).toContain('<Attachments');
     expect(panelSource).toContain('showAddAction');
     expect(panelSource).toContain('showEmptyState');
-    expect(agentRunSource).toContain('Runs on');
+    expect(agentRunSource).toContain('Execution context');
+    expect(agentRunSource).toContain('<TaskDeliveryTimeline');
+    expect(agentRunSource).toContain('Working branch');
     expect(agentRunSource).not.toContain('aria-label="Edit execution context"');
     expect(agentRunSource).not.toContain('<RepositoryBranchPicker');
   });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { BotIcon, GitBranchIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
@@ -7,7 +8,7 @@ import { AgentAvatar, resolveAgentPersonaKey, type AgentPersonaKey } from '@/com
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
-import { AgentRunTable } from '@/components/pm/AgentRunTable';
+import { TaskDeliveryTimeline } from '@/components/pm/TaskDeliveryTimeline';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -19,11 +20,13 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isAgentAvailableForTarget } from '@/lib/agentAccess';
 import { agentService } from '@/lib/services/agentService';
+import { gitService } from '@/lib/services/gitService';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import type { Agent, AgentPresetKey, AgentRun, GitRepository, TaskDeliveryTarget } from '@/lib/pmTypes';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from './agentRunConstants';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
+import { queryKeys } from '@/lib/queryKeys';
 
 interface Props {
   taskId: string;
@@ -31,6 +34,8 @@ interface Props {
   taskTeamId?: string | null;
   latestRunAgentId?: string | null;
   delivery?: AgentRunDeliveryContext;
+  showDevelopmentHistory?: boolean;
+  onEditDeliveryContext?: () => void;
 }
 
 export interface AgentRunDeliveryContext {
@@ -261,7 +266,15 @@ export function getTaskAgentRunExecutionContextLockReason({
   return `${activeName} is ${stateText}. Repository and branch can be changed after this run finishes.`;
 }
 
-export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentId, delivery }: Props) {
+export function AgentRunPanel({
+  taskId,
+  workspaceId,
+  taskTeamId,
+  latestRunAgentId,
+  delivery,
+  showDevelopmentHistory = false,
+  onEditDeliveryContext,
+}: Props) {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { run?: string };
   const urlRunId = search.run ?? null;
@@ -281,6 +294,15 @@ export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentI
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [loading, setLoading] = useState(true);
   const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
+  const gitLinksQuery = useQuery({
+    queryKey: queryKeys.git.taskLinks(workspaceId, taskId),
+    queryFn: async () => {
+      const response = await gitService.getTaskGitLinks(workspaceId, taskId);
+      if (response.error) throw new Error(response.error);
+      return response.data ?? [];
+    },
+    enabled: showDevelopmentHistory,
+  });
 
   const setRunInUrl = useCallback(
     (runId: string | null) => {
@@ -460,77 +482,116 @@ export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentI
     }
     return keys;
   }, [agents, runs]);
-  if (taskRunnableAgents.length === 0 && runs.length === 0 && !loading && !loadingAgents) return null;
+  const gitLinks = showDevelopmentHistory ? (gitLinksQuery.data ?? []) : [];
+  const latestRunFailed = !activeRun && latestRun?.status === 'failed';
+  const latestRunAgent = latestRun ? agents.find((agent) => agent.id === latestRun.agent_id) : null;
+
+  const retryLatestRun = async () => {
+    if (!latestRun) return;
+    setTriggering(true);
+    try {
+      await startRun(latestRun.agent_id);
+    } finally {
+      setTriggering(false);
+    }
+  };
+
+  if (
+    taskRunnableAgents.length === 0
+    && runs.length === 0
+    && gitLinks.length === 0
+    && !loading
+    && !loadingAgents
+    && !(showDevelopmentHistory && gitLinksQuery.isPending)
+    && !gitLinksQuery.error
+  ) return null;
 
   return (
-    <div className="mt-6">
-      <div className="overflow-hidden rounded-md border border-border/60 bg-card">
-        <div className="flex items-center gap-2 px-3 py-2">
-          <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
-            Agent Runs
-          </span>
-          {runs.length > 0 && (
-            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/60 bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
-              {runs.length}
-            </span>
-          )}
-        </div>
+    <div className="mt-6 space-y-7">
+      {delivery ? (
+        <AgentRunExecutionContext delivery={delivery} onEdit={onEditDeliveryContext} />
+      ) : null}
 
-        {delivery ? (
-          <AgentRunExecutionContext delivery={delivery} />
-        ) : null}
-
-        <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 text-xs text-muted-foreground">{pickerLabel}</span>
-            <Select
-              value={selectedAgentId || '__none__'}
-              onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}
-              disabled={agentSelectionDisabled}
-            >
-              <SelectTrigger size="sm" className="h-7 w-auto min-w-0 gap-1.5 text-xs">
-                <SelectValue placeholder={loadingAgents ? 'Loading agents...' : 'Select agent'} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__" className="text-xs">No agent selected</SelectItem>
-                {taskRunnableAgents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id} className="text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
-                      <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      <section aria-label="Next delivery action">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70">Next action</h2>
+        {latestRunFailed && latestRun ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-md bg-destructive/5 px-4 py-3 ring-1 ring-inset ring-destructive/15">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <BotIcon className="h-4 w-4 text-destructive" />
+                Last run failed
+              </div>
+              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                {latestRun.error_message || `${latestRunAgent?.name ?? 'The agent'} could not finish this task.`}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setRunInUrl(latestRun.id)}>
+                Review failure
+              </Button>
+              <Button type="button" size="sm" onClick={() => void retryLatestRun()} disabled={triggering}>
+                {triggering ? <Loading01Icon className="animate-spin" /> : <PlayIcon />}
+                Retry
+              </Button>
+            </div>
           </div>
-          {actionDisabledReason ? (
-            <p className="ml-auto min-w-0 truncate text-right text-[11px] text-muted-foreground">
-              {actionDisabledReason}
-            </p>
-          ) : null}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleRunAgent}
-                  disabled={loadingAgents || (primaryAction.kind === 'start' && (!selectedAgentId || launchState.disabled))}
-                  title={primaryAction.status}
-                  className="h-7 gap-1 px-2.5 text-xs"
-                >
-                  {triggering ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlayIcon className="h-3 w-3" />}
-                  {primaryAction.label}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            {actionDisabledReason ? (
-              <TooltipContent side="top">{actionDisabledReason}</TooltipContent>
-            ) : null}
-          </Tooltip>
-        </div>
+        ) : activeRun ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-md bg-muted/35 px-4 py-3 ring-1 ring-inset ring-border/50">
+            <AgentAvatar
+              agent={agents.find((agent) => agent.id === activeRun.agent_id)}
+              className="h-7 w-7 rounded-none border-0 bg-transparent shadow-none"
+              genericBare
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-foreground">{primaryAction.status}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Open the run to follow progress or respond.</p>
+            </div>
+            <Button type="button" size="sm" onClick={handleRunAgent}>{primaryAction.label}</Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3 rounded-md bg-muted/35 px-4 py-3 ring-1 ring-inset ring-border/50">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <span className="shrink-0 text-sm text-muted-foreground">{pickerLabel}</span>
+              <Select
+                value={selectedAgentId || '__none__'}
+                onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}
+                disabled={agentSelectionDisabled}
+              >
+                <SelectTrigger className="min-w-48 max-w-full">
+                  <SelectValue placeholder={loadingAgents ? 'Loading agents...' : 'Select agent'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No agent selected</SelectItem>
+                  {taskRunnableAgents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      <div className="flex items-center gap-1.5">
+                        <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
+                        <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {actionDisabledReason ? <p className="min-w-0 text-xs text-muted-foreground">{actionDisabledReason}</p> : null}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button
+                    type="button"
+                    onClick={handleRunAgent}
+                    disabled={loadingAgents || !selectedAgentId || launchState.disabled}
+                    title={primaryAction.status}
+                  >
+                    {triggering ? <Loading01Icon className="animate-spin" /> : <PlayIcon />}
+                    Run agent
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {actionDisabledReason ? <TooltipContent side="top">{actionDisabledReason}</TooltipContent> : null}
+            </Tooltip>
+          </div>
+        )}
 
         {latestCompletedAgent ? (
           <NextAgentHint
@@ -540,17 +601,17 @@ export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentI
             onRun={(agent) => startRun(agent.id)}
           />
         ) : null}
+      </section>
 
-        <div className="border-t border-border/60">
-          <AgentRunTable
-            runs={runs}
-            agents={agents}
-            selectedRunId={selectedRunId}
-            onSelectRun={(run) => setRunInUrl(run.id)}
-            loading={loading}
-          />
-        </div>
-      </div>
+      <TaskDeliveryTimeline
+        runs={runs}
+        agents={agents}
+        links={gitLinks}
+        deliveryTarget={delivery?.target}
+        loading={loading || (showDevelopmentHistory && gitLinksQuery.isPending)}
+        error={showDevelopmentHistory && gitLinksQuery.error instanceof Error ? gitLinksQuery.error.message : null}
+        onOpenRun={setRunInUrl}
+      />
 
       <CodingSessionDrawer
         sessionId={selectedRunId}
@@ -573,25 +634,45 @@ export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentI
 
 function AgentRunExecutionContext({
   delivery,
+  onEdit,
 }: {
   delivery: AgentRunDeliveryContext;
+  onEdit?: () => void;
 }) {
   const repositoryName = delivery.selectedRepository?.full_name ?? delivery.target?.repo_full_name ?? '';
-  const contextText = repositoryName
-    ? `${repositoryName} · ${delivery.resolvedBaseBranch} -> ${delivery.branchPreview}`
-    : 'Repository not configured';
+
+  if (!delivery.loading && !repositoryName) return null;
 
   return (
-    <div className="flex items-center gap-2 border-t border-border/60 px-3 py-2 text-xs">
-      <GitBranchIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <span className="shrink-0 text-muted-foreground">Runs on</span>
+    <section className="border-y border-border/60 py-4" aria-label="Execution context">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-foreground/70">Execution context</h2>
+        {onEdit ? <Button type="button" variant="outline" size="sm" onClick={onEdit}>Edit context</Button> : null}
+      </div>
       {delivery.loading ? (
-        <span className="min-w-0 text-muted-foreground">Loading execution context...</span>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loading01Icon className="h-4 w-4 animate-spin" />
+          Loading execution context…
+        </div>
       ) : (
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
-          {contextText}
-        </span>
+        <div className="grid min-w-0 gap-4 sm:grid-cols-3">
+          <ExecutionContextValue label="Repository" value={repositoryName} icon />
+          <ExecutionContextValue label="Base branch" value={delivery.resolvedBaseBranch || 'Not set'} />
+          <ExecutionContextValue label="Working branch" value={delivery.branchPreview || 'Not set'} />
+        </div>
       )}
+    </section>
+  );
+}
+
+function ExecutionContextValue({ label, value, icon = false }: { label: string; value: string; icon?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <span className="block text-[11px] text-muted-foreground">{label}</span>
+      <span className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-xs text-foreground">
+        {icon ? <GitBranchIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+        <span className="truncate">{value}</span>
+      </span>
     </div>
   );
 }

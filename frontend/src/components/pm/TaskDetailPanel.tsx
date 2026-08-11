@@ -59,7 +59,6 @@ import {
   extractInlineAttachmentIds,
   removeInlineImagesByAttachmentIds,
 } from '@/components/pm/editorImageAttachments';
-import { TaskGitPanel } from '@/components/pm/TaskGitPanel';
 import { useTaskDelivery } from '@/components/pm/TaskDeliveryPanel';
 import { AgentRunPanel, getTaskAgentRunExecutionContextLockReason } from '@/components/pm/AgentRunPanel';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
@@ -481,6 +480,13 @@ function TaskDetailPanelBody({
       replace: true,
     } as any);
   }, [navigate]);
+
+  const openDeliveryContext = useCallback(() => {
+    setDeliverySectionOpen(true);
+    window.requestAnimationFrame(() => {
+      document.getElementById('task-delivery-section')?.scrollIntoView({ block: 'nearest' });
+    });
+  }, []);
 
   useEffect(() => {
     const onPopState = () => {
@@ -1450,17 +1456,16 @@ function TaskDetailPanelBody({
           )}
 
           {activeView === 'delivery' && (
-            <div className="space-y-6">
+            <div>
               <AgentRunPanel
                 taskId={taskDetail.task.id}
                 workspaceId={workspaceId}
                 taskTeamId={taskDetail.task.team_id}
                 latestRunAgentId={taskDetail.task.latest_run_agent_id}
                 delivery={delivery}
+                showDevelopmentHistory={hasGitIntegration && fieldVis.dev_history}
+                onEditDeliveryContext={openDeliveryContext}
               />
-              {hasGitIntegration && fieldVis.dev_history && (
-                <TaskGitPanel taskId={taskDetail.task.id} workspaceId={workspaceId} />
-              )}
             </div>
           )}
 
