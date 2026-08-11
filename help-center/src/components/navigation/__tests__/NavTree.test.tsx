@@ -61,6 +61,10 @@ describe('NavTree root collections', () => {
 
     const first = screen.getByRole('button', { name: 'First collection' })
     const second = screen.getByRole('button', { name: 'Second collection' })
+    expect(first.className).toContain('w-full')
+    expect(first.className).toContain('min-w-0')
+    expect(first.className).toContain('pr-4')
+
     expect(first.getAttribute('aria-expanded')).toBe('true')
     expect(second.getAttribute('aria-expanded')).toBe('false')
     expect(screen.getByText('First article')).toBeTruthy()
