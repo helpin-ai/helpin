@@ -122,6 +122,14 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
               <span className="text-xs font-normal text-muted-foreground">({links.length})</span>
             ) : null}
           </div>
+          <button
+            type="button"
+            className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            onClick={() => setAddingLink(true)}
+            aria-label="Add external link"
+          >
+            <span className="text-sm leading-none">+</span>
+          </button>
         </div>
 
         {links.length > 0 ? (
@@ -214,16 +222,7 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
               </Button>
             )}
           </div>
-        ) : (
-          <button
-            type="button"
-            className={flat ? 'flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer' : 'flex items-center gap-1.5 border-t border-border/40 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer'}
-            onClick={() => setAddingLink(true)}
-          >
-            <PlusSignIcon className="h-3 w-3" />
-            Add link
-          </button>
-        )}
+        ) : null}
       </div>
     </div>
   );
