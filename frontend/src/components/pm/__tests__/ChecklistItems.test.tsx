@@ -189,6 +189,21 @@ describe('buildChecklistMentionOptions', () => {
 })
 
 describe('ChecklistItems', () => {
+  it('renders checklist items as a flat borderless table', async () => {
+    await renderChecklist([
+      makeChecklistItem(),
+    ])
+
+    const table = container?.querySelector<HTMLElement>('[data-testid="checklist-table"]')
+    const header = container?.querySelector<HTMLElement>('[data-testid="checklist-table-header"]')
+
+    expect(table).toBeTruthy()
+    expect(table?.className).not.toContain('border')
+    expect(table?.className).not.toContain('rounded-lg')
+    expect(header?.textContent).toContain('Item')
+    expect(header?.textContent).toContain('Assignee')
+  })
+
   it('labels the assignee picker trigger for tooltips and assigned state', async () => {
     await renderChecklist([
       makeChecklistItem({ assignee_id: 'user-1' }),
