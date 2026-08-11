@@ -544,7 +544,7 @@ export function TaskRelationshipsSection({
                 >
                   {(relatedTask.task_key || relatedTask.display_id) ? (
                     <span data-testid="related-task-id" className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                      {relatedTask.task_key ?? `#${relatedTask.display_id}`}
+                      {relatedTask.task_key ?? relatedTask.display_id}
                     </span>
                   ) : null}
                   <span className="min-w-0 flex-1 truncate font-medium text-foreground/75 dark:text-foreground">
@@ -555,7 +555,7 @@ export function TaskRelationshipsSection({
                 <span className="flex min-w-0 flex-1 items-baseline gap-2">
                   {(relatedTask.task_key || relatedTask.display_id) ? (
                     <span data-testid="related-task-id" className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                      {relatedTask.task_key ?? `#${relatedTask.display_id}`}
+                      {relatedTask.task_key ?? relatedTask.display_id}
                     </span>
                   ) : null}
                   <span className="min-w-0 flex-1 truncate font-medium text-foreground/75 dark:text-foreground">

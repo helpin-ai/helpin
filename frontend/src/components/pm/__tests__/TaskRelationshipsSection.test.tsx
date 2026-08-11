@@ -197,6 +197,25 @@ describe('TaskRelationshipsSection', () => {
     expect(document.body.textContent).toContain('Update Relationship Type');
   });
 
+  it('shows numeric task IDs without a hash prefix', () => {
+    associations.task_relationships.relates_to = [
+      {
+        relationship_id: 'rel-1',
+        link_type: 'relates_to',
+        is_active: true,
+        task: {
+          object_type: 'task',
+          object_id: 'task-2',
+          title: 'Review launch copy',
+          display_id: 12,
+        },
+      },
+    ];
+    renderSection({ flat: true, hideDocs: true });
+
+    expect(container.querySelector('[data-testid="related-task-id"]')?.textContent).toBe('12');
+  });
+
   it('shows three compact task rows before revealing the remaining relationships', () => {
     associations.task_relationships.relates_to = Array.from({ length: 4 }, (_, index) => ({
       relationship_id: `rel-${index + 1}`,
