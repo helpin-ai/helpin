@@ -122,6 +122,7 @@ type BillingPlanChangeRequest struct {
 type BillingStripeSubscriptionUpdate struct {
 	EventID              string
 	EventType            string
+	UserID               string
 	WorkspaceID          string
 	Plan                 string
 	Status               string
@@ -132,7 +133,16 @@ type BillingStripeSubscriptionUpdate struct {
 	CurrentPeriodStart   time.Time
 	CurrentPeriodEnd     time.Time
 	CancelAtPeriodEnd    bool
+	OccurredAt           time.Time
 	CanceledAt           *time.Time
+}
+
+type billingAnalyticsState struct {
+	Plan              string
+	Interval          string
+	Status            string
+	SubscriptionID    string
+	CancelAtPeriodEnd bool
 }
 
 type BillingStripeInvoiceEvent struct {
@@ -300,6 +310,7 @@ type BillingService struct {
 	workspaceRepo    *repository.WorkspaceRepository
 	customerIO       *CustomerIOIdentityService
 	customerIOOutbox *repository.CustomerIOLifecycleOutboxRepository
+	productAnalytics *ProductAnalyticsService
 }
 
 func NewBillingService(repo *repository.BillingRepository, gateway BillingStripeGateway, now func() time.Time) *BillingService {
@@ -324,6 +335,11 @@ func (s *BillingService) SetCustomerIOIdentityService(identity *CustomerIOIdenti
 // SetCustomerIOLifecycleOutboxRepository enables durable lifecycle delivery.
 func (s *BillingService) SetCustomerIOLifecycleOutboxRepository(repo *repository.CustomerIOLifecycleOutboxRepository) {
 	s.customerIOOutbox = repo
+}
+
+// SetProductAnalyticsService enables canonical backend product events.
+func (s *BillingService) SetProductAnalyticsService(analytics *ProductAnalyticsService) {
+	s.productAnalytics = analytics
 }
 
 func (s *BillingService) lifecycleEvent(input repository.CustomerIOLifecycleEventInput) *repository.CustomerIOLifecycleEventInput {
@@ -399,6 +415,12 @@ func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceI
 	} else if err := s.repo.UpsertWorkspaceBilling(ctx, billing); err != nil {
 		return nil, err
 	}
+	s.trackProductAnalytics(ctx, ProductAnalyticsEvent{
+		SemanticKey: fmt.Sprintf("trial_started:%s:%d", workspaceID, trialEnds.Unix()),
+		WorkspaceID: workspaceID,
+		Name:        "trial_started", Source: "system", OccurredAt: now,
+		Attributes: map[string]any{"trial_ends_at": trialEnds, "plan": billing.Plan},
+	})
 	summary := s.summary(billing)
 	if err := s.addSeatEntitlements(ctx, summary); err != nil {
 		return nil, err
@@ -466,11 +488,19 @@ func (s *BillingService) SetOnDemandEnabled(ctx context.Context, workspaceID str
 	if enabled && !billingCanUseOnDemand(billing) {
 		return nil, fmt.Errorf("extra AI usage is available only on active paid workspaces")
 	}
+	changed := billing.OnDemandEnabled != enabled
 	billing.OnDemandEnabled = enabled
 	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
 		return nil, err
 	}
 	s.syncCustomerIOWorkspace(ctx, workspaceID)
+	if changed {
+		s.trackProductAnalytics(ctx, ProductAnalyticsEvent{
+			SemanticKey: fmt.Sprintf("on_demand_billing_changed:%s:%d", workspaceID, s.now().UTC().UnixNano()),
+			WorkspaceID: workspaceID, Name: "on_demand_billing_changed", Source: "api",
+			Attributes: map[string]any{"on_demand_enabled": enabled, "plan": billing.Plan},
+		})
+	}
 	summary := s.summary(billing)
 	if err := s.addSeatEntitlements(ctx, summary); err != nil {
 		return nil, err
@@ -909,6 +939,13 @@ func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, upda
 		}
 		return s.summaryWithEntitlements(ctx, billing)
 	}
+	previousState := billingAnalyticsState{
+		Plan: billing.Plan, Interval: billing.BillingInterval, Status: billing.Status,
+		CancelAtPeriodEnd: billing.CancelAtPeriodEnd,
+	}
+	if billing.StripeSubscriptionID != nil {
+		previousState.SubscriptionID = *billing.StripeSubscriptionID
+	}
 	previousPeriodStart := billing.CurrentPeriodStart
 	if update.Plan == "" || update.BillingInterval == "" {
 		plan, interval := s.planIntervalForPriceID(update.StripePriceID)
@@ -979,6 +1016,7 @@ func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, upda
 			return nil, err
 		}
 	}
+	s.trackStripeSubscriptionEvents(ctx, previousState, update, billing)
 	s.syncCustomerIOWorkspace(ctx, update.WorkspaceID)
 	return s.summaryWithEntitlements(ctx, billing)
 }
@@ -1011,6 +1049,11 @@ func (s *BillingService) ApplyStripeInvoicePaymentFailed(ctx context.Context, ev
 	if err != nil || !processed || billing == nil {
 		return nil, err
 	}
+	s.trackProductAnalytics(ctx, ProductAnalyticsEvent{
+		SemanticKey: "stripe:" + event.EventID, WorkspaceID: billing.WorkspaceID,
+		Name: "payment_failed", Source: "stripe", OccurredAt: occurredAt,
+		Attributes: map[string]any{"invoice_id": event.InvoiceID, "subscription_id": event.SubscriptionID},
+	})
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -1042,6 +1085,11 @@ func (s *BillingService) ApplyStripeInvoicePaymentSucceeded(ctx context.Context,
 	if err != nil || !processed || billing == nil {
 		return nil, err
 	}
+	s.trackProductAnalytics(ctx, ProductAnalyticsEvent{
+		SemanticKey: "stripe:" + event.EventID, WorkspaceID: billing.WorkspaceID,
+		Name: "payment_succeeded", Source: "stripe", OccurredAt: occurredAt,
+		Attributes: map[string]any{"invoice_id": event.InvoiceID, "subscription_id": event.SubscriptionID},
+	})
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -1079,7 +1127,18 @@ func (s *BillingService) ApplyStripeTrialWillEnd(ctx context.Context, event Bill
 	if err != nil || !processed || billing == nil {
 		return nil, err
 	}
+	s.trackProductAnalytics(ctx, ProductAnalyticsEvent{
+		SemanticKey: "stripe:" + event.EventID, WorkspaceID: billing.WorkspaceID,
+		Name: "trial_will_end", Source: "stripe", OccurredAt: occurredAt,
+		Attributes: map[string]any{"trial_ends_at": event.TrialEndsAt, "subscription_id": event.SubscriptionID},
+	})
 	return s.summaryWithEntitlements(ctx, billing)
+}
+
+func (s *BillingService) trackProductAnalytics(ctx context.Context, event ProductAnalyticsEvent) {
+	if s.productAnalytics != nil {
+		s.productAnalytics.Track(ctx, event)
+	}
 }
 
 func (s *BillingService) syncCustomerIOWorkspace(ctx context.Context, workspaceID string) {

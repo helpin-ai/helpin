@@ -1,4 +1,5 @@
 import { api, API_BASE, fetchWithSessionAuth } from '../api';
+import { getUsermavenAnonymousId } from '../analytics';
 import type {
   AuthResponse,
   RecoveryCodesResponse,
@@ -10,7 +11,7 @@ import type {
 
 export const authService = {
   signup: (email: string, password: string, fullName: string) =>
-    api.post<AuthResponse>('/auth/signup', { email, password, full_name: fullName }),
+    api.post<AuthResponse>('/auth/signup', { email, password, full_name: fullName, anonymous_id: getUsermavenAnonymousId() }),
   signin: (email: string, password: string, rememberMe = true) =>
     api.post<SigninResponse>('/auth/signin', { email, password, remember_me: rememberMe }),
   verify2FASignin: (twoFaToken: string, code: string, useRecoveryCode = false) =>

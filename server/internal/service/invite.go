@@ -17,6 +17,7 @@ import (
 
 // InviteService handles invitation business logic.
 type InviteService struct {
+	productAnalyticsEmitter
 	invitationRepo   *repository.InvitationRepository
 	workspaceRepo    *repository.WorkspaceRepository
 	organizationRepo *repository.OrganizationRepository
@@ -162,6 +163,12 @@ func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateIn
 		}
 	}
 
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "invitation:" + created.ID + ":sent", UserID: inviterUserID,
+		WorkspaceID: created.WorkspaceID, Name: "invitation_sent", Source: "api", OccurredAt: created.CreatedAt,
+		Attributes: map[string]any{"invitation_id": created.ID, "invited_role": created.Role},
+	})
+
 	return &model.InvitationResponse{
 		ID:                created.ID,
 		WorkspaceID:       created.WorkspaceID,
@@ -263,6 +270,11 @@ func (s *InviteService) AcceptInvitation(ctx context.Context, token, userID stri
 		s.customerIO.SyncUserByID(ctx, userID)
 		s.customerIO.SyncWorkspace(ctx, inv.WorkspaceID, "")
 	}
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "invitation:" + inv.ID + ":accepted", UserID: userID,
+		WorkspaceID: inv.WorkspaceID, Name: "invitation_accepted", Source: "api", OccurredAt: now,
+		Attributes: map[string]any{"invitation_id": inv.ID, "invited_role": inv.Role},
+	})
 
 	return nil
 }
@@ -347,6 +359,22 @@ func (s *InviteService) AcceptInvitationWithSignup(ctx context.Context, req mode
 		s.customerIO.SyncUser(ctx, user)
 		s.customerIO.SyncWorkspace(ctx, inv.WorkspaceID, "")
 	}
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "user:" + user.ID + ":identify", UserID: user.ID,
+		AnonymousID: req.AnonymousID,
+		Name:        "user_identify", Source: "invite_signup", OccurredAt: user.CreatedAt,
+		Attributes: map[string]any{"signup_method": "invitation"},
+	})
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "user:" + user.ID + ":signup_completed", UserID: user.ID,
+		Name: "signup_completed", Source: "invite_signup", OccurredAt: user.CreatedAt,
+		Attributes: map[string]any{"signup_method": "invitation"},
+	})
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "invitation:" + inv.ID + ":accepted", UserID: user.ID,
+		WorkspaceID: inv.WorkspaceID, Name: "invitation_accepted", Source: "invite_signup", OccurredAt: now,
+		Attributes: map[string]any{"invitation_id": inv.ID, "invited_role": inv.Role},
+	})
 
 	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, false)
 	if err != nil {
@@ -516,6 +544,11 @@ func (s *InviteService) RevokeInvitation(ctx context.Context, invitationID, user
 		"workspace_id", inv.WorkspaceID,
 		"email", inv.Email,
 	)
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "invitation:" + inv.ID + ":revoked", UserID: userID,
+		WorkspaceID: inv.WorkspaceID, Name: "invitation_revoked", Source: "api",
+		Attributes: map[string]any{"invitation_id": inv.ID, "invited_role": inv.Role},
+	})
 
 	return nil
 }

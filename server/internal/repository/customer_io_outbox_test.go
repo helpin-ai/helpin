@@ -513,3 +513,40 @@ type customerIOOutboxSQLiteSchema struct {
 }
 
 func (customerIOOutboxSQLiteSchema) TableName() string { return "customer_io_outbox" }
+
+func TestProductAnalyticsOutboxEnqueueDeduplicatesSemanticKey(t *testing.T) {
+	db := openCustomerIOOutboxTestDB(t)
+	if err := db.Exec("CREATE TABLE product_analytics_outbox (id TEXT PRIMARY KEY, semantic_key TEXT NOT NULL UNIQUE, user_id TEXT, anonymous_id TEXT, workspace_id TEXT, event_name TEXT NOT NULL, source TEXT NOT NULL, occurred_at DATETIME NOT NULL, attributes TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL, next_attempt_at DATETIME NOT NULL, claim_token TEXT, claimed_at DATETIME, lease_expires_at DATETIME, last_error TEXT, created_at DATETIME, updated_at DATETIME)").Error; err != nil {
+		t.Fatalf("create product analytics outbox: %v", err)
+	}
+	repo := NewProductAnalyticsOutboxRepository(db)
+	input := ProductAnalyticsEventInput{
+		SemanticKey: "task:task-1:created",
+		UserID:      "user-1", AnonymousID: "anon-1", WorkspaceID: "workspace-1",
+		EventName: "task_created", Source: "api",
+		OccurredAt: time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC),
+		Attributes: map[string]any{"task_id": "task-1"},
+	}
+	first, err := repo.Enqueue(context.Background(), input)
+	if err != nil {
+		t.Fatalf("enqueue first event: %v", err)
+	}
+	input.Attributes = map[string]any{"task_id": "duplicate"}
+	second, err := repo.Enqueue(context.Background(), input)
+	if err != nil {
+		t.Fatalf("enqueue duplicate event: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("duplicate ID = %q, want %q", second.ID, first.ID)
+	}
+	var count int64
+	if err := db.Model(&model.ProductAnalyticsOutbox{}).Count(&count).Error; err != nil {
+		t.Fatalf("count product analytics events: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("event count = %d, want 1", count)
+	}
+	if second.AnonymousID == nil || *second.AnonymousID != "anon-1" {
+		t.Fatalf("anonymous ID = %#v", second.AnonymousID)
+	}
+}

@@ -18,7 +18,8 @@ import (
 
 // PMCommentService contains comment business logic.
 type PMCommentService struct {
-	commentRepo         *repository.PMCommentRepository
+	commentRepo *repository.PMCommentRepository
+	productAnalyticsEmitter
 	taskRepo            *repository.PMTaskRepository
 	attachmentRepo      *repository.PMAttachmentRepository
 	activityService     *PMActivityService
@@ -213,6 +214,12 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 			if story, _ := s.taskRepo.GetRawByID(ctx, req.EntityID); story != nil {
 				entityTitle = story.Name
 				entityTeamID = derefString(story.TeamID)
+				s.trackProductEvent(ctx, ProductAnalyticsEvent{
+					SemanticKey: "comment_created:" + comment.ID, UserID: authorID,
+					WorkspaceID: workspaceID, Name: "comment_created", Source: "api",
+					OccurredAt: comment.CreatedAt,
+					Attributes: map[string]any{"entity_id": comment.ID, "parent_type": req.EntityType, "parent_id": req.EntityID, "is_reply": comment.ParentID != nil, "module": "pm"},
+				})
 				readableTeamIDs = mentionScopeForTeamID(story.TeamID)
 			}
 		}
