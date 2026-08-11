@@ -10,6 +10,7 @@ describe('TaskDetailPanel optional section spacing', () => {
     const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
     const overviewIndex = panelSource.indexOf("activeView === 'overview'");
     const checklistIndex = panelSource.indexOf('<ChecklistItems');
+    const deliverySettingsIndex = panelSource.indexOf('<TaskDeliveryRailSection');
     const relatedIndex = panelSource.indexOf('<details id="task-related-section"');
     const relationshipsIndex = panelSource.indexOf('<TaskRelationshipsSection');
     const docsIndex = panelSource.indexOf('section="docs"');
@@ -22,6 +23,8 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(panelSource).toContain('className="mt-6 border-t border-border/60 pt-6" data-testid="checklist-section"');
     expect(panelSource).toContain('className="mt-6 border-t border-border/60 pt-6" id="attachments-section"');
     expect(checklistIndex).toBeGreaterThan(overviewIndex);
+    expect(deliverySettingsIndex).toBeGreaterThan(checklistIndex);
+    expect(relatedIndex).toBeGreaterThan(deliverySettingsIndex);
     expect(relatedIndex).toBeGreaterThan(checklistIndex);
     expect(relationshipsIndex).toBeGreaterThan(relatedIndex);
     expect(docsIndex).toBeGreaterThan(relationshipsIndex);
@@ -34,10 +37,21 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(panelSource).toContain('hideDocs');
     expect(panelSource).toContain('flat');
     expect(panelSource).toContain('excludeDocs');
+    expect(panelSource).toContain('const [deliverySectionOpen, setDeliverySectionOpen] = useState(false)');
+    expect(panelSource).toContain('if (panelOpen) setDeliverySectionOpen(false)');
+    expect(panelSource).toContain('data-testid="task-delivery-settings"');
+    expect(panelSource).toContain('label="Repository"');
+    expect(panelSource).toContain('label="Base branch"');
+    expect(panelSource).toContain('label="Task branch"');
+    expect(panelSource).toContain('label="Source"');
+    expect(panelSource).toContain('Use default');
+    expect(panelSource).toContain('Use epic branch');
+    expect(panelSource).toContain('ACTIVE_RUN_STATUSES.has(status)');
   });
 
   it('uses the three task views and existing shared task components', () => {
     const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
+    const agentRunSource = readFileSync(resolve(__dirname, '../../AgentRunPanel.tsx'), 'utf8');
 
     expect(panelSource).toContain("(['overview', 'updates', 'delivery'] as TaskDetailView[])");
     expect(panelSource).toContain('<TaskUpdatesView');
@@ -47,6 +61,9 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(panelSource).toContain('<Attachments');
     expect(panelSource).toContain('showAddAction');
     expect(panelSource).toContain('showEmptyState');
+    expect(agentRunSource).toContain('Runs on');
+    expect(agentRunSource).not.toContain('aria-label="Edit execution context"');
+    expect(agentRunSource).not.toContain('<RepositoryBranchPicker');
   });
 
   it('keeps comments and history out of Overview', () => {

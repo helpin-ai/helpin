@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { BotIcon, GitBranchIcon, Loading01Icon, PlayIcon, Settings02Icon } from '@/lib/icons';
+import { BotIcon, GitBranchIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 import { AgentAvatar, resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
@@ -8,9 +8,7 @@ import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialo
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { AgentRunTable } from '@/components/pm/AgentRunTable';
-import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -19,7 +17,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
 import { isAgentAvailableForTarget } from '@/lib/agentAccess';
 import { agentService } from '@/lib/services/agentService';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
@@ -34,23 +31,14 @@ interface Props {
   taskTeamId?: string | null;
   latestRunAgentId?: string | null;
   delivery?: AgentRunDeliveryContext;
-  canEditDelivery?: boolean;
 }
 
 export interface AgentRunDeliveryContext {
-  repositories: GitRepository[];
   target: TaskDeliveryTarget | null;
-  repositoryId: string;
-  baseBranch: string;
   loading: boolean;
-  savingTarget: boolean;
   resolvedBaseBranch: string;
   branchPreview: string;
-  deliveryTargetSaved: boolean;
   selectedRepository: GitRepository | null;
-  handleRepoChange: (repoId: string) => Promise<void>;
-  handleBaseBranchChange: (baseBranch: string) => Promise<boolean>;
-  ensureDeliveryTargetSaved: (showSuccessToast: boolean) => Promise<boolean>;
 }
 
 type TaskAgentRunPrimaryActionKind = 'start' | 'open';
@@ -273,7 +261,7 @@ export function getTaskAgentRunExecutionContextLockReason({
   return `${activeName} is ${stateText}. Repository and branch can be changed after this run finishes.`;
 }
 
-export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentId, delivery, canEditDelivery = false }: Props) {
+export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentId, delivery }: Props) {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { run?: string };
   const urlRunId = search.run ?? null;
@@ -434,10 +422,6 @@ export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentI
   });
   const launchState = getTaskAgentRunLaunchState({ activeRun, triggering });
   const pickerLabel = getTaskAgentRunPickerLabel({ activeRun, suggestedAgent: selectedAgent });
-  const executionContextLockReason = getTaskAgentRunExecutionContextLockReason({
-    activeRun,
-    activeRunAgentName,
-  });
   const agentSelectionDisabled = !!activeRun || triggering;
   const actionDisabledReason = primaryAction.kind === 'open'
     ? null
@@ -494,12 +478,7 @@ export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentI
         </div>
 
         {delivery ? (
-          <AgentRunExecutionContext
-            workspaceId={workspaceId}
-            delivery={delivery}
-            canEdit={canEditDelivery}
-            lockReason={executionContextLockReason}
-          />
+          <AgentRunExecutionContext delivery={delivery} />
         ) : null}
 
         <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2">
@@ -593,37 +572,14 @@ export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentI
 }
 
 function AgentRunExecutionContext({
-  workspaceId,
   delivery,
-  canEdit,
-  lockReason,
 }: {
-  workspaceId: string;
   delivery: AgentRunDeliveryContext;
-  canEdit: boolean;
-  lockReason?: string | null;
 }) {
-  const [open, setOpen] = useState(false);
-  const defaultRepository = useMemo(
-    () =>
-      delivery.repositories.find((repo) => repo.selected && repo.active && !repo.archived)
-      ?? delivery.repositories.find((repo) => repo.active && !repo.archived)
-      ?? delivery.repositories[0]
-      ?? null,
-    [delivery.repositories],
-  );
-
   const repositoryName = delivery.selectedRepository?.full_name ?? delivery.target?.repo_full_name ?? '';
-  const contextLocked = Boolean(lockReason);
-  const canUseDefaultRepository = canEdit && !contextLocked && !delivery.repositoryId && Boolean(defaultRepository);
   const contextText = repositoryName
     ? `${repositoryName} · ${delivery.resolvedBaseBranch} -> ${delivery.branchPreview}`
     : 'Repository not configured';
-
-  const handleUseDefaultRepository = async () => {
-    if (!defaultRepository) return;
-    await delivery.handleRepoChange(defaultRepository.id);
-  };
 
   return (
     <div className="flex items-center gap-2 border-t border-border/60 px-3 py-2 text-xs">
@@ -632,116 +588,9 @@ function AgentRunExecutionContext({
       {delivery.loading ? (
         <span className="min-w-0 text-muted-foreground">Loading execution context...</span>
       ) : (
-        <>
-          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
-            {contextText}
-          </span>
-          {canUseDefaultRepository ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleUseDefaultRepository}
-              disabled={delivery.savingTarget}
-              title={`Use ${defaultRepository?.full_name}`}
-              className="h-6 shrink-0 gap-1 px-2 text-[11px]"
-            >
-              {delivery.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : null}
-              Use default
-            </Button>
-          ) : null}
-          {canEdit ? (
-            <Popover open={open} onOpenChange={setOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  disabled={contextLocked}
-                  title={lockReason ?? 'Edit execution context'}
-                  className="h-6 w-6 shrink-0"
-                  aria-label="Edit execution context"
-                >
-                  <Settings02Icon className="h-3.5 w-3.5" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-80 space-y-3 p-3">
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-foreground">Execution context</p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Repository
-                  </label>
-                  <Select
-                    value={delivery.repositoryId || undefined}
-                    onValueChange={(repoId) => {
-                      void delivery.handleRepoChange(repoId);
-                    }}
-                    disabled={delivery.savingTarget}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Choose repository" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {delivery.repositories.map((repository) => (
-                        <SelectItem key={repository.id} value={repository.id} className="text-xs">
-                          {repository.full_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Base branch
-                  </label>
-                  <RepositoryBranchPicker
-                    workspaceId={workspaceId}
-                    repositoryId={delivery.repositoryId || undefined}
-                    value={delivery.baseBranch}
-                    onChange={(value) => {
-                      void delivery.handleBaseBranchChange(value);
-                    }}
-                    placeholder={delivery.selectedRepository?.default_branch || 'main'}
-                    emptyLabel={repositoryDefaultBranchLabel(delivery.selectedRepository?.default_branch)}
-                    extraOptions={
-                      delivery.branchPreview
-                        ? [{ value: delivery.branchPreview, label: taskBranchOptionLabel(delivery.branchPreview) }]
-                        : []
-                    }
-                    disabled={delivery.savingTarget}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Task branch
-                  </label>
-                  <div className="flex h-8 items-center rounded-md border border-border/70 bg-muted/30 px-2.5 text-xs">
-                    <span className="truncate font-mono">{delivery.branchPreview}</span>
-                  </div>
-                </div>
-
-                {!delivery.deliveryTargetSaved && delivery.repositoryId ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      void delivery.ensureDeliveryTargetSaved(true);
-                    }}
-                    disabled={delivery.savingTarget}
-                    className="h-7 w-full gap-1 text-xs"
-                  >
-                    {delivery.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : null}
-                    Save context
-                  </Button>
-                ) : null}
-              </PopoverContent>
-            </Popover>
-          ) : null}
-        </>
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
+          {contextText}
+        </span>
       )}
     </div>
   );

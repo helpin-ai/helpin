@@ -8,6 +8,7 @@ import {
   Copy01Icon,
   DashboardSpeed01Icon,
   File01Icon,
+  GitBranchIcon,
   HashtagIcon,
   HexagonIcon,
   Layers01Icon,
@@ -60,7 +61,8 @@ import {
 } from '@/components/pm/editorImageAttachments';
 import { TaskGitPanel } from '@/components/pm/TaskGitPanel';
 import { useTaskDelivery } from '@/components/pm/TaskDeliveryPanel';
-import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
+import { AgentRunPanel, getTaskAgentRunExecutionContextLockReason } from '@/components/pm/AgentRunPanel';
+import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { cn } from '@/lib/utils';
 import { gitService } from '@/lib/services/gitService';
 import { pmCommentService } from '@/lib/services/pmCommentService';
@@ -100,6 +102,8 @@ import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/p
 import { getTaskPatchSignature, isBlockedTaskPatch } from '@/components/pm/task-detail/taskAutosaveFailure';
 import { queryKeys } from '@/lib/queryKeys';
 import { isSprintOpenForPlanning } from '@/lib/pmSprintOptions';
+import { repositoryDefaultBranchLabel } from '@/lib/branchLabels';
+import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import { TaskStandingBriefCard } from '@/components/pm/task-detail/TaskStandingBriefCard';
 import { TaskUpdatesView } from '@/components/pm/task-detail/TaskUpdatesView';
@@ -118,6 +122,7 @@ import type {
   CommentWithAuthor,
   EpicWithStats,
   AttachmentResponse,
+  AgentRunStatus,
   SprintWithStats,
   Label,
   Priority,
@@ -230,6 +235,159 @@ function MetadataRow({
   );
 }
 
+type TaskDeliveryContext = ReturnType<typeof useTaskDelivery>;
+
+function TaskDeliveryRailSection({
+  workspaceId,
+  delivery,
+  open,
+  onOpenChange,
+  canEdit,
+  lockReason,
+}: {
+  workspaceId: string;
+  delivery: TaskDeliveryContext;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  canEdit: boolean;
+  lockReason: string | null;
+}) {
+  const repositoryName = delivery.selectedRepository?.full_name ?? delivery.target?.repo_full_name ?? '';
+  const defaultRepository = delivery.repositories.find((repository) => repository.selected && repository.active && !repository.archived)
+    ?? delivery.repositories.find((repository) => repository.active && !repository.archived)
+    ?? delivery.repositories[0]
+    ?? null;
+  const controlsDisabled = !canEdit || Boolean(lockReason) || delivery.savingTarget;
+  const canUseDefaultRepository = !controlsDisabled && !delivery.repositoryId && Boolean(defaultRepository);
+  const summary = delivery.loading ? 'Loading…' : repositoryName || 'Not configured';
+
+  return (
+    <section
+      id="task-delivery-section"
+      data-testid="task-delivery-section"
+      className="-mx-4 mt-4 border-t border-border/60 px-4 pt-4"
+    >
+      <button
+        type="button"
+        className="flex w-full items-center gap-1.5 text-left"
+        aria-expanded={open}
+        aria-controls="task-delivery-settings"
+        onClick={() => onOpenChange(!open)}
+      >
+        <ArrowRight01Icon className={cn('h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} />
+        <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+          Delivery
+        </span>
+        {delivery.savingTarget ? <Loading01Icon className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" /> : null}
+        <span className="ml-auto min-w-0 truncate text-[11px] text-muted-foreground">
+          {summary}
+        </span>
+      </button>
+
+      {open ? (
+        <div id="task-delivery-settings" data-testid="task-delivery-settings" className="mt-3">
+          {delivery.loading ? (
+            <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+              <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+              Loading delivery settings…
+            </div>
+          ) : (
+            <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
+              {lockReason ? (
+                <p className="col-span-3 text-[11px] leading-4 text-muted-foreground" role="status">
+                  {lockReason}
+                </p>
+              ) : null}
+
+              <MetadataRow icon={GitBranchIcon} label="Repository">
+                <SidebarPopoverSelect
+                  value={delivery.repositoryId || '__none__'}
+                  options={delivery.repositories.map((repository) => ({ value: repository.id, label: repository.full_name }))}
+                  onChange={(value) => { void delivery.handleRepoChange(value); }}
+                  renderTrigger={() => (
+                    <span className="block min-w-0 truncate">
+                      {repositoryName || 'None'}
+                    </span>
+                  )}
+                  disabled={controlsDisabled}
+                  width="w-72"
+                  searchPlaceholder="Search repositories…"
+                  emptyContent={<span className="px-2 py-1.5 text-xs text-muted-foreground">No repositories available</span>}
+                />
+              </MetadataRow>
+
+              {canUseDefaultRepository ? (
+                <MetadataRow icon={GitBranchIcon} label="Default">
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    disabled={delivery.savingTarget}
+                    onClick={() => { void delivery.handleRepoChange(defaultRepository!.id); }}
+                    title={`Use ${defaultRepository!.full_name}`}
+                  >
+                    Use default
+                  </Button>
+                </MetadataRow>
+              ) : null}
+
+              <MetadataRow icon={GitBranchIcon} label="Base branch">
+                <RepositoryBranchPicker
+                  workspaceId={workspaceId}
+                  repositoryId={delivery.repositoryId || undefined}
+                  value={delivery.baseBranch}
+                  onChange={(value) => { void delivery.handleBaseBranchChange(value); }}
+                  placeholder={delivery.selectedRepository?.default_branch || 'main'}
+                  emptyLabel={repositoryDefaultBranchLabel(delivery.selectedRepository?.default_branch)}
+                  extraOptions={delivery.branchOptions}
+                  disabled={controlsDisabled}
+                  variant="sidebar"
+                  width="w-72"
+                />
+              </MetadataRow>
+
+              <MetadataRow icon={GitBranchIcon} label="Task branch">
+                <span className="block min-w-0 truncate px-1.5 py-0.5 font-mono text-xs">
+                  {delivery.branchPreview}
+                </span>
+              </MetadataRow>
+
+              {delivery.deliveryStateCfg ? (
+                <MetadataRow icon={PlayIcon} label="Status">
+                  <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium leading-none', delivery.deliveryStateCfg.className)}>
+                    {delivery.deliveryStateCfg.label}
+                  </span>
+                </MetadataRow>
+              ) : null}
+
+              <MetadataRow icon={GitBranchIcon} label="Source">
+                <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium leading-none', delivery.sourceClassName)}>
+                  {delivery.sourceLabel}
+                </span>
+              </MetadataRow>
+
+              {delivery.canUseEpicTarget ? (
+                <MetadataRow icon={GitBranchIcon} label="Epic branch">
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    disabled={controlsDisabled}
+                    onClick={() => { void delivery.handleUseEpicTarget(); }}
+                  >
+                    {delivery.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <GitBranchIcon className="h-3 w-3" />}
+                    Use epic branch
+                  </Button>
+                </MetadataRow>
+              ) : null}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 
 // ── Main Body ──────────────────────────────────────────────────────
 
@@ -238,6 +396,7 @@ function TaskDetailPanelBody({
   taskDetail,
   states,
   initialRecurringSummary,
+  panelOpen,
   onOpenChange,
   onTaskUpdated,
   onTaskOpened,
@@ -247,6 +406,7 @@ function TaskDetailPanelBody({
   taskDetail: TaskDetail;
   states: WorkflowState[];
   initialRecurringSummary: TaskRecurringSummary | null;
+  panelOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onTaskUpdated: (task: TaskDetail) => void;
   onTaskOpened: (task: TaskDetail) => void;
@@ -297,6 +457,11 @@ function TaskDetailPanelBody({
   const [saveTemplateDialogOpen, setSaveTemplateDialogOpen] = useState(false);
   const [saveTemplateName, setSaveTemplateName] = useState(taskDetail.task.name);
   const [saveTemplateSaving, setSaveTemplateSaving] = useState(false);
+  const [deliverySectionOpen, setDeliverySectionOpen] = useState(false);
+
+  useEffect(() => {
+    if (panelOpen) setDeliverySectionOpen(false);
+  }, [panelOpen, taskId]);
 
   const selectView = useCallback((view: TaskDetailView) => {
     setActiveView(view);
@@ -418,6 +583,18 @@ function TaskDetailPanelBody({
 
   // ── Delivery (sidebar rows) ──────────────────────────────────────
   const delivery = useTaskDelivery(workspaceId, taskDetail, onTaskUpdated);
+  const deliveryLockReason = useMemo(() => {
+    const status = taskDetail.task.latest_run_status as AgentRunStatus | null | undefined;
+    if (!status || !ACTIVE_RUN_STATUSES.has(status)) return null;
+    return getTaskAgentRunExecutionContextLockReason({
+      activeRun: {
+        status,
+        pause_reason: taskDetail.task.latest_run_pause_reason ?? 'none',
+        approval_state: 'not_required',
+      },
+      activeRunAgentName: null,
+    });
+  }, [taskDetail.task.latest_run_pause_reason, taskDetail.task.latest_run_status]);
 
   // Re-sync form when taskDetail changes externally (e.g. real-time WS update)
   const lastSyncedAt = useRef(taskDetail.task.updated_at);
@@ -1309,7 +1486,6 @@ function TaskDetailPanelBody({
                 taskTeamId={taskDetail.task.team_id}
                 latestRunAgentId={taskDetail.task.latest_run_agent_id}
                 delivery={delivery}
-                canEditDelivery={canEdit && fieldVis.delivery}
               />
               {hasGitIntegration && fieldVis.dev_history && (
                 <TaskGitPanel taskId={taskDetail.task.id} workspaceId={workspaceId} />
@@ -1650,6 +1826,17 @@ function TaskDetailPanelBody({
 
           </div>
 
+          {hasGitIntegration && fieldVis.delivery && !delivery.hidden ? (
+            <TaskDeliveryRailSection
+              workspaceId={workspaceId}
+              delivery={delivery}
+              open={deliverySectionOpen}
+              onOpenChange={setDeliverySectionOpen}
+              canEdit={canEdit}
+              lockReason={deliveryLockReason}
+            />
+          ) : null}
+
           <details id="task-related-section" className="-mx-4 mt-4 border-t border-border/60 px-4 pt-4" open>
             <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-foreground/70">
               Related
@@ -1867,6 +2054,7 @@ export function TaskDetailPanel({
             taskDetail={taskDetail}
             states={states}
             initialRecurringSummary={initialRecurringSummary ?? null}
+            panelOpen={open}
             onOpenChange={onOpenChange}
             onTaskUpdated={onTaskUpdated}
             onTaskOpened={onTaskOpened}

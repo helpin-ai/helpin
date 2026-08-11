@@ -29,25 +29,24 @@ describe('TaskDetailSectionHeading', () => {
     expect(relationshipsSource).toContain('Task Relationships');
     expect(checklistSource).toContain('Checklist');
     expect(externalLinksSource).toContain('External Links');
-    expect(relationshipsSource).toContain('rounded-lg border border-border/60 bg-card');
-    expect(checklistSource).toContain('rounded-lg border border-border/60 bg-card');
-    expect(externalLinksSource).toContain('rounded-lg border border-border/60 bg-card');
+    expect(relationshipsSource).toContain("cn(!flat && 'rounded-lg border border-border/60 bg-card')");
+    expect(checklistSource).not.toContain('rounded-lg border border-border/60 bg-card');
+    expect(externalLinksSource).toContain("flat ? undefined : 'rounded-lg border border-border/60 bg-card'");
   });
 
   it('keeps the add relationship action inline', () => {
     const relationshipsSource = readFileSync(resolve(__dirname, '../../TaskRelationshipsSection.tsx'), 'utf8');
 
     expect(relationshipsSource).toContain('Add relationship');
-    expect(relationshipsSource).toContain('text-xs text-muted-foreground transition-colors hover:text-foreground');
-    expect(relationshipsSource).toContain('<PlusSignIcon className="h-3 w-3" />');
+    expect(relationshipsSource).toContain('aria-label="Add task relationship"');
+    expect(relationshipsSource).toContain('rounded-md p-0.5 text-muted-foreground');
   });
 
-  it('opens related task rows in a new tab', () => {
+  it('opens related task rows in the existing task panel', () => {
     const relationshipsSource = readFileSync(resolve(__dirname, '../../TaskRelationshipsSection.tsx'), 'utf8');
 
-    expect(relationshipsSource).toContain('to="/w/$slug/pm/tasks/$taskId"');
-    expect(relationshipsSource).toContain('target="_blank"');
-    expect(relationshipsSource).toContain('rel="noopener noreferrer"');
+    expect(relationshipsSource).toContain('openTaskRoute(');
+    expect(relationshipsSource).not.toContain('target="_blank"');
   });
 
   it('keeps checklist and external link add actions visually aligned with relationship add', () => {
@@ -57,13 +56,12 @@ describe('TaskDetailSectionHeading', () => {
     expect(checklistSource).toContain('const [addingItem, setAddingItem] = useState(false);');
     expect(checklistSource).toContain('Add item');
     expect(checklistSource).toContain('setAddingItem(true)');
-    expect(checklistSource).toContain('group flex items-center gap-2 py-0.5');
-    expect(checklistSource).toContain('text-xs text-muted-foreground transition-colors hover:text-foreground');
-    expect(checklistSource).toContain('<PlusSignIcon className="h-3 w-3" />');
+    expect(checklistSource).toContain('aria-label="Add checklist item"');
+    expect(checklistSource).toContain('rounded-md p-0.5 text-muted-foreground');
     expect(externalLinksSource).toContain('const [addingLink, setAddingLink] = useState(false);');
     expect(externalLinksSource).toContain('Add link');
     expect(externalLinksSource).toContain('setAddingLink(true)');
-    expect(externalLinksSource).toContain('text-xs text-muted-foreground transition-colors hover:text-foreground');
-    expect(externalLinksSource).toContain('<PlusSignIcon className="h-3 w-3" />');
+    expect(externalLinksSource).toContain('aria-label="Add external link"');
+    expect(externalLinksSource).toContain('rounded-md p-0.5 text-muted-foreground');
   });
 });
