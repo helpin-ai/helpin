@@ -2256,12 +2256,12 @@ function AgentCard({
 // ---------------------------------------------------------------------------
 
 const AGENTS_LIST_GRID_CLASS =
-  'lg:grid-cols-[minmax(12rem,1.6fr)_10rem_6.5rem_8.25rem_6.75rem_9rem] xl:grid-cols-[minmax(15rem,1.7fr)_12rem_7rem_9rem_8rem_9.5rem]';
+  'lg:grid-cols-[minmax(12rem,1.6fr)_17rem_6.5rem_8.25rem_4rem_2.5rem]';
 
 export function AgentsListTable({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-border/70 bg-card">
-      <div className="min-w-[64rem] xl:min-w-[72rem]">{children}</div>
+    <div className="overflow-x-auto">
+      <div className="min-w-[64rem]">{children}</div>
     </div>
   );
 }
@@ -2270,7 +2270,7 @@ export function AgentsListHeader() {
   return (
     <div
       className={cn(
-        'hidden items-center gap-4 border-b border-border/70 bg-muted/20 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:grid',
+        'hidden items-center gap-4 border-b border-border px-[14px] pb-[9px] text-xs font-medium uppercase tracking-wide text-muted-foreground lg:grid',
         AGENTS_LIST_GRID_CLASS,
       )}
     >
@@ -2278,8 +2278,8 @@ export function AgentsListHeader() {
       <div>Config</div>
       <div>Runs · 7d</div>
       <div>Last run</div>
-      <div>Used in flows</div>
-      <div className="text-right">Action</div>
+      <div className="whitespace-nowrap">Used in flows</div>
+      <div />
     </div>
   );
 }
@@ -2310,39 +2310,6 @@ export function AgentActions({
 
   return (
     <div className="flex items-center justify-end gap-1">
-      {showRunNow ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span
-              className={cn(
-                'inline-flex opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100',
-                canRunNow ? 'cursor-pointer' : 'cursor-not-allowed',
-              )}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!canRunNow}
-                className={cn(
-                  'h-8 px-2.5 text-xs',
-                  canRunNow ? 'cursor-pointer' : 'pointer-events-none cursor-not-allowed',
-                )}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRunNow(agent);
-                }}
-              >
-                <ZapIcon className="mr-1.5 h-3.5 w-3.5" />
-                Run now
-              </Button>
-            </span>
-          </TooltipTrigger>
-          {runNowBlocker ? <TooltipContent>{runNowBlocker}</TooltipContent> : null}
-        </Tooltip>
-      ) : null}
-
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -2422,7 +2389,7 @@ function versionReadOnlyHelperText(area: string) {
   return `Duplicate this version to edit ${area}.`;
 }
 
-function AgentRow({
+export function AgentRow({
   agent,
   stats,
   usage,
@@ -2447,17 +2414,23 @@ function AgentRow({
 }) {
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
-  const attention = needsAttention(stats);
   const invocationLabel = INVOCATION_MODE_LABELS[agent.default_invocation_mode];
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${agent.name}`}
       className={cn(
-        'group grid cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-3.5 transition-colors last:border-b-0 hover:bg-muted/25',
+        'group grid cursor-pointer items-center gap-4 border-b border-border/60 px-[14px] py-[13px] outline-none transition-colors duration-100 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
         AGENTS_LIST_GRID_CLASS,
-        attention && 'bg-amber-500/[0.03]',
       )}
       onClick={() => onOpen(agent)}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        onOpen(agent);
+      }}
     >
       <div className="min-w-0" title={purpose}>
         <div className="flex items-center gap-3">
@@ -2485,9 +2458,7 @@ function AgentRow({
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Runs · 7d</p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <RunBars5 statuses={stats?.lastFiveStatuses ?? []} />
-          <span className="text-sm">
-            <span className="font-mono text-foreground">{stats?.recentRuns ?? 0}</span>
-          </span>
+          <span className="text-sm tabular-nums text-foreground">{stats?.recentRuns ?? 0}</span>
         </div>
       </div>
 
@@ -2495,9 +2466,9 @@ function AgentRow({
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Last run</p>
         <AgentStatusBadge stats={stats} onOpenRun={onOpenRun} />
         {stats?.lastRun ? (
-          <p className="font-mono text-[11px] text-muted-foreground">{formatLastRunTime(stats.lastRun)}</p>
+          <p className="text-xs text-muted-foreground">{formatLastRunTime(stats.lastRun)}</p>
         ) : (
-          <p className="text-[11px] text-muted-foreground">Never</p>
+          <p className="text-xs text-muted-foreground">Never</p>
         )}
       </div>
 
@@ -6961,8 +6932,8 @@ export function AgentsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 pb-20">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <div className="mx-auto max-w-5xl space-y-5">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold">Agents</h1>
           <p className="text-sm text-muted-foreground">
